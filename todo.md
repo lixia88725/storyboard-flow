@@ -76,6 +76,7 @@
 - [x] Save composites visible bitmap layers into working TIFF while preserving rename preflight.
 - [x] Legacy stroke metadata is migrated into bitmap layer metadata/assets.
 - [x] Electron GUI smoke verified paint layer add/hide/opacity/delete autosave and PNG cleanup.
+- [x] Undo/redo history captures affected bitmap layer PNG snapshots for stroke, clear, and delete.
 
 ## Out Of Scope For Current MVP
 

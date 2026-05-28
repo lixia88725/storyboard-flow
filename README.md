@@ -42,6 +42,7 @@ npm run dev
 - 图层元数据保存在 `.storyboard-workbench/storyboard.project.json` 的 `shots[].layers`。
 - 每个可编辑图层是一张 PNG 工作层：`.storyboard-workbench/layers/{shotId}/{layerId}.png`。
 - 画笔、橡皮、清空和删除图层只写 `.storyboard-workbench/` 内部工作数据。
+- Undo / redo 会恢复相关 layer PNG snapshot 和 JSON metadata。
 - Save 时由 Electron/sharp 合成可见 bitmap layers 并写入工作 TIFF。
 
 图层面板支持新增、删除、重命名、显隐、opacity、blend mode 和拖动排序。`Image` 层固定在最底部，但在 UI 中可选中、绘制、擦除；选中 `Image` 后点击 `Delete current layer` 会删除当前可见底图内容并露出白底，不会立刻修改真实文件。

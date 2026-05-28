@@ -23,15 +23,10 @@ import {
 } from "react";
 import { Layer, Line, Stage } from "react-konva";
 import {
-  activeSketchLayerForShot,
   addBitmapLayer,
   addDialogue,
   addGeneratedShot,
-  addSketchLayer,
-  appendImageLayerEdit,
-  appendSketchStroke,
   applyRenamePlan,
-  clearSketch,
   createProject,
   createRenamePlan,
   defaultProjectNaming,
@@ -39,7 +34,6 @@ import {
   bitmapLayersForShot,
   clearBitmapLayer,
   deleteBitmapLayer,
-  deleteImageLayerContent,
   dialoguesForShot,
   getNextStoryboardIndex,
   imageBitmapLayerId,
@@ -47,25 +41,18 @@ import {
   mergeFolderImages,
   moveDialogueToShot,
   moveBitmapLayer,
-  moveSketchLayer,
   projectAcceptedExternalEdits,
   projectHasSwbWarning,
   projectNeedsSwbImport,
-  removeSketchLayer,
   removeDialogue,
   reorderShotGroup,
   reorderShots,
   selectBitmapLayer,
-  selectImageLayer,
-  selectSketchLayer,
   sketchBlendModes,
-  sketchLayersForShot,
   sortedShots,
   type ShotPlacement,
   updateDialogueText,
   updateBitmapLayer,
-  updateShotBaseVisibility,
-  updateSketchLayer
 } from "../shared/projectOps";
 import type {
   BitmapLayer,
@@ -76,11 +63,15 @@ import type {
   Shot,
   BlankShotPreset,
   SketchBlendMode,
-  SketchLayer,
   SketchStroke,
   SketchTool
 } from "../shared/types";
 import { getAnimationViewport, getStableBoardTop, maxStoryboardZoom } from "./animationViewport";
+import {
+  readLayerAssetSnapshots,
+  restoreLayerAssetSnapshots,
+  type LayerAssetSnapshot
+} from "./bitmapLayerHistory";
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { sketchCanvasSize, sketchPointFromClientPoint } from "./sketchGeometry";
 import type { CanvasSize } from "./sketchGeometry";
@@ -94,7 +85,6 @@ type DragData =
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
 const defaultEraserSize = 18;
-const imageLayerId = "__image-layer__";
 const maxUndoHistory = 60;
 const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: string }> = [
   { id: "16:9", label: "16:9", detail: "1920 x 1080" },
@@ -113,6 +103,7 @@ type UndoEntry = {
   project: Project;
   selectedShotIds: string[];
   fileNameSyncState: FileNameSyncState;
+  layerAssets?: LayerAssetSnapshot[];
 };
 type ProjectUpdate = Project | ((currentProject: Project) => Project);
 type HistoryShortcut = "undo" | "redo";
@@ -184,8 +175,11 @@ export const App = () => {
   );
   const selectionBoxRef = useRef<SelectionBox | undefined>(undefined);
   const projectRef = useRef(project);
+  const folderPathRef = useRef(folderPath);
   const fileNameSyncStateRef = useRef<FileNameSyncState>(fileNameSyncState);
   const selectedShotIdsRef = useRef<string[]>([]);
+  const undoStackRef = useRef<UndoEntry[]>([]);
+  const redoStackRef = useRef<UndoEntry[]>([]);
   const saveMenuRef = useRef<HTMLDivElement | null>(null);
   const recentMenuRef = useRef<HTMLDivElement | null>(null);
   const addShotMenuRef = useRef<HTMLDivElement | null>(null);
@@ -209,8 +203,20 @@ export const App = () => {
   }, [selectedShotIds]);
 
   useEffect(() => {
+    folderPathRef.current = folderPath;
+  }, [folderPath]);
+
+  useEffect(() => {
     projectRef.current = project;
   }, [project]);
+
+  useEffect(() => {
+    undoStackRef.current = undoStack;
+  }, [undoStack]);
+
+  useEffect(() => {
+    redoStackRef.current = redoStack;
+  }, [redoStack]);
 
   useEffect(() => {
     fileNameSyncStateRef.current = fileNameSyncState;
@@ -451,55 +457,13 @@ export const App = () => {
 
       if (historyShortcut === "undo") {
         event.preventDefault();
-        setUndoStack((current) => {
-          const previous = current.at(-1);
-          if (!previous) {
-            setStatus("Nothing to undo");
-            return current;
-          }
-
-          setRedoStack((redoEntries) =>
-            appendHistoryEntry(redoEntries, {
-              project: projectRef.current,
-              selectedShotIds: selectedShotIdsRef.current,
-              fileNameSyncState: fileNameSyncStateRef.current
-            })
-          );
-          setProject(previous.project);
-          setSelectedShotIds(previous.selectedShotIds);
-          setFileNameSyncState(previous.fileNameSyncState);
-          setWorkspaceSaveState("saving");
-          setAutosaveRevision((revision) => revision + 1);
-          setStatus("Undid last change");
-          return current.slice(0, -1);
-        });
+        void applyUndoEntry();
         return;
       }
 
       if (historyShortcut === "redo") {
         event.preventDefault();
-        setRedoStack((current) => {
-          const next = current.at(-1);
-          if (!next) {
-            setStatus("Nothing to redo");
-            return current;
-          }
-
-          setUndoStack((undoEntries) =>
-            appendHistoryEntry(undoEntries, {
-              project: projectRef.current,
-              selectedShotIds: selectedShotIdsRef.current,
-              fileNameSyncState: fileNameSyncStateRef.current
-            })
-          );
-          setProject(next.project);
-          setSelectedShotIds(next.selectedShotIds);
-          setFileNameSyncState(next.fileNameSyncState);
-          setWorkspaceSaveState("saving");
-          setAutosaveRevision((revision) => revision + 1);
-          setStatus("Redid last change");
-          return current.slice(0, -1);
-        });
+        void applyRedoEntry();
         return;
       }
 
@@ -571,6 +535,85 @@ export const App = () => {
     setAutosaveRevision((revision) => revision + 1);
   };
 
+  const createHistoryEntry = async (bitmapPaths: string[] = []): Promise<UndoEntry> => {
+    const activeFolderPath = folderPathRef.current;
+    const layerAssets =
+      window.storyboard && activeFolderPath && bitmapPaths.length > 0
+        ? await readLayerAssetSnapshots(window.storyboard, activeFolderPath, bitmapPaths)
+        : [];
+
+    return {
+      project: projectRef.current,
+      selectedShotIds: selectedShotIdsRef.current,
+      fileNameSyncState: fileNameSyncStateRef.current,
+      layerAssets
+    };
+  };
+
+  const recordUndoEntry = (entry: UndoEntry) => {
+    setUndoStack((current) => appendHistoryEntry(current, entry));
+    setRedoStack([]);
+  };
+
+  async function restoreHistoryLayerAssets(entry: UndoEntry) {
+    const activeFolderPath = folderPathRef.current;
+    if (!window.storyboard || !activeFolderPath || !entry.layerAssets?.length) {
+      return;
+    }
+
+    await restoreLayerAssetSnapshots(window.storyboard, activeFolderPath, entry.layerAssets);
+  }
+
+  async function applyUndoEntry() {
+    const previous = undoStackRef.current.at(-1);
+    if (!previous) {
+      setStatus("Nothing to undo");
+      return;
+    }
+
+    try {
+      const affectedPaths = previous.layerAssets?.map((snapshot) => snapshot.bitmapPath) ?? [];
+      const redoEntry = await createHistoryEntry(affectedPaths);
+      await restoreHistoryLayerAssets(previous);
+
+      setRedoStack((current) => appendHistoryEntry(current, redoEntry));
+      setUndoStack((current) => current.slice(0, -1));
+      setProject(previous.project);
+      setSelectedShotIds(previous.selectedShotIds);
+      setFileNameSyncState(previous.fileNameSyncState);
+      setWorkspaceSaveState("saving");
+      setAutosaveRevision((revision) => revision + 1);
+      setStatus("Undid last change");
+    } catch (error) {
+      setStatus(`Undo failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async function applyRedoEntry() {
+    const next = redoStackRef.current.at(-1);
+    if (!next) {
+      setStatus("Nothing to redo");
+      return;
+    }
+
+    try {
+      const affectedPaths = next.layerAssets?.map((snapshot) => snapshot.bitmapPath) ?? [];
+      const undoEntry = await createHistoryEntry(affectedPaths);
+      await restoreHistoryLayerAssets(next);
+
+      setUndoStack((current) => appendHistoryEntry(current, undoEntry));
+      setRedoStack((current) => current.slice(0, -1));
+      setProject(next.project);
+      setSelectedShotIds(next.selectedShotIds);
+      setFileNameSyncState(next.fileNameSyncState);
+      setWorkspaceSaveState("saving");
+      setAutosaveRevision((revision) => revision + 1);
+      setStatus("Redid last change");
+    } catch (error) {
+      setStatus(`Redo failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   const updateProjectName = (name: string) => {
     updateProject({
       ...project,
@@ -614,6 +657,7 @@ export const App = () => {
       return;
     }
 
+    const undoEntry = await createHistoryEntry([layer.bitmapPath]);
     const blankDataUrl = await createTransparentLayerDataUrl(layer.width, layer.height);
     const sourceDataUrl = layer.cleared
       ? blankDataUrl
@@ -628,7 +672,8 @@ export const App = () => {
       bitmapPath: layer.bitmapPath,
       dataUrl
     });
-    updateProject((currentProject) => markBitmapLayerPainted(currentProject, shot.id, layer.id), false);
+    recordUndoEntry(undoEntry);
+    updateProject((currentProject) => markBitmapLayerPainted(currentProject, shot.id, layer.id), false, false);
   };
 
   const handleClearBitmapLayer = async (shotId: string, layerId: string) => {
@@ -639,12 +684,14 @@ export const App = () => {
       return;
     }
 
+    const undoEntry = await createHistoryEntry([layer.bitmapPath]);
     await window.storyboard.writeLayerPng({
       folderPath,
       bitmapPath: layer.bitmapPath,
       dataUrl: await createTransparentLayerDataUrl(layer.width, layer.height)
     });
-    updateProject((currentProject) => clearBitmapLayer(currentProject, shotId, layerId), false);
+    recordUndoEntry(undoEntry);
+    updateProject((currentProject) => clearBitmapLayer(currentProject, shotId, layerId), false, false);
   };
 
   const handleRemoveBitmapLayer = async (shotId: string, layerId: string) => {
@@ -655,11 +702,13 @@ export const App = () => {
       return;
     }
 
+    const undoEntry = await createHistoryEntry([layer.bitmapPath]);
     await window.storyboard.deleteLayerPng({
       folderPath,
       bitmapPath: layer.bitmapPath
     });
-    updateProject((currentProject) => deleteBitmapLayer(currentProject, shotId, layerId), false);
+    recordUndoEntry(undoEntry);
+    updateProject((currentProject) => deleteBitmapLayer(currentProject, shotId, layerId), false, false);
   };
 
   const loadFolderScan = (scan: FolderScanPayload, nextStatus: string, dirty = false) => {
@@ -1747,12 +1796,6 @@ const LayerPanel = ({
   );
 };
 
-const LayerThumbnail = ({ layer, canvasSize }: { layer: SketchLayer; canvasSize: CanvasSize }) => (
-  <div className="layer-thumb" aria-hidden="true">
-    <LayerThumbnailSvg strokes={layer.strokes} opacity={layer.opacity} canvasSize={canvasSize} />
-  </div>
-);
-
 const BitmapLayerThumbnail = ({ layer, shot }: { layer: BitmapLayer; shot: Shot }) => (
   <div
     className={`layer-thumb ${layer.kind === "image" ? "layer-thumb-image" : ""}`}
@@ -1765,41 +1808,6 @@ const BitmapLayerThumbnail = ({ layer, shot }: { layer: BitmapLayer; shot: Shot 
     aria-hidden="true"
   />
 );
-
-const LayerThumbnailSvg = ({
-  strokes,
-  opacity,
-  canvasSize
-}: {
-  strokes: SketchStroke[];
-  opacity: number;
-  canvasSize: CanvasSize;
-}) => (
-  <svg viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`}>
-    {strokes.map((stroke) => (
-      <polyline
-        key={stroke.id}
-        points={pointsForThumbnail(stroke.points)}
-        fill="none"
-        stroke={stroke.tool === "eraser" ? "#ffffff" : stroke.color}
-        strokeOpacity={(stroke.opacity ?? 1) * opacity}
-        strokeWidth={stroke.size}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ))}
-  </svg>
-);
-
-const pointsForThumbnail = (points: number[]): string => {
-  const pairs: string[] = [];
-
-  for (let index = 0; index < points.length - 1; index += 2) {
-    pairs.push(`${points[index]},${points[index + 1]}`);
-  }
-
-  return pairs.join(" ");
-};
 
 const blendModeLabel = (blendMode: SketchBlendMode): string => {
   if (blendMode === "multiply") {

@@ -32,6 +32,8 @@
   - 图层面板改为操作 bitmap layers。
   - 完成 stroke 后读取 active layer PNG，用 canvas 写入像素，再通过 preload API 写回内部 PNG。
   - 清空当前 layer 会写透明 PNG，不会写真实 TIFF。
+  - Undo / redo 对 stroke、clear、delete 捕获并恢复相关 layer PNG snapshot 和 JSON metadata。
+  - Renderer 主流程已移除旧 stroke layer 操作函数引用；旧字段只留在 shared/Electron migration 路径。
   - `B` / `E` 快捷键仍切换 Brush / Eraser。
 - Save 路径：
   - 如果 shot 有 bitmap layers，Save 按可见 layer 顺序合成 PNG layers 到工作 TIFF。
@@ -55,6 +57,13 @@ npm run typecheck   # passed
 npm run build       # passed, Vite chunk size warning only
 ```
 
+新增 bitmap layer history helper 后，最新完整测试为：
+
+```bash
+npm run test        # passed, 71 tests
+npm run build       # passed, Vite chunk size warning only
+```
+
 Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench 窗口，并验证：
 
 - 打开普通 PNG 文件夹成功显示 shot。
@@ -69,7 +78,7 @@ Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench
 以下行为仍需手动或自动确认：
 
 - `TODO: verify` Image layer 上画、擦、清空、Save、重开的一致性。
-- `TODO: verify` 普通 paint layer 画、擦、blend mode、拖动排序、Save、重开的一致性。
+- `TODO: verify` 普通 paint layer 画、擦、undo/redo、blend mode、拖动排序、Save、重开的一致性。
 - `TODO: verify` 旧 stroke 项目迁移后的可见结果是否符合预期。
 - `TODO: verify` Onion Skin 在 bitmap layer 下的红绿透明度和相邻帧刷新。
 - `TODO: verify` mixed aspect-ratio 动画模式、timeline、multi-select shot dragging、double-click dialogue editing。

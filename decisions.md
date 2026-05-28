@@ -106,6 +106,10 @@ Reason: 洋葱皮是临时参考，不属于用户作品内容。
 
 Reason: Storyboard Workbench 更接近像素绘制工具而非矢量绘图工具；统一 bitmap layer 能减少 Image 层和普通图层的行为差异。
 
+Undo / redo for bitmap drawing stores command-level JSON snapshots plus the affected layer PNG data URLs. The history remains capped to avoid unbounded memory growth.
+
+Reason: bitmap layer pixels are no longer recoverable from JSON alone, so undo must restore both metadata and internal layer assets.
+
 ## Image Layer Behaves Like A Normal Layer In UI
 
 `Image` 层固定在最底部，但可选中、绘制、擦除；选中 Image 时 `Delete current layer` 删除其当前可见内容而不是删除 shot 或真实文件。
