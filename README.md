@@ -37,11 +37,12 @@ npm run dev
 
 ## Layers And Drawing
 
-当前绘图系统仍是 stroke-based：
+当前绘图系统以 bitmap layer 为主数据：
 
-- 普通 SWB 图层保存为 `sketchLayers[].strokes`。
-- `Image` 层编辑保存为 `imageLayerEdits`。
-- Save 时由 Electron/sharp 烘焙到 TIFF 像素。
+- 图层元数据保存在 `.storyboard-workbench/storyboard.project.json` 的 `shots[].layers`。
+- 每个可编辑图层是一张 PNG 工作层：`.storyboard-workbench/layers/{shotId}/{layerId}.png`。
+- 画笔、橡皮、清空和删除图层只写 `.storyboard-workbench/` 内部工作数据。
+- Save 时由 Electron/sharp 合成可见 bitmap layers 并写入工作 TIFF。
 
 图层面板支持新增、删除、重命名、显隐、opacity、blend mode 和拖动排序。`Image` 层固定在最底部，但在 UI 中可选中、绘制、擦除；选中 `Image` 后点击 `Delete current layer` 会删除当前可见底图内容并露出白底，不会立刻修改真实文件。
 
@@ -58,15 +59,7 @@ npm run dev
 - Zoom 到单张 storyboard 填满工作区时进入动画模式，底部显示时间线。
 - 动画模式支持左右键线性播放、时间线点击跳转，以及 Onion Skin 前后帧参考。
 
-## Current Direction
-
-下一轮大重构方向是将可编辑绘图源数据迁移为 bitmap layer：
-
-```text
-.storyboard-workbench/layers/{shotId}/{layerId}.png
-```
-
-目标是减少 `Image` 层和普通图层的技术差异，让绘制、擦除、删除、Save 的心智模型更接近普通像素绘图软件。Photoshop 图层兼容仍不属于当前目标。
+旧的 stroke 项目打开后会一次性生成 bitmap layer metadata 和内部 PNG layer assets。旧字段只作为迁移输入保留，主绘图流程不再依赖 `sketchLayers` / `imageLayerEdits`。
 
 ## MVP Non-Goals
 

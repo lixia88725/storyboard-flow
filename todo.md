@@ -2,14 +2,13 @@
 
 ## P0
 
-- [ ] Before bitmap layer refactor, create a clean Git commit for the current working state.
-- [ ] Manually verify Image layer ordinary-layer behavior in Electron:
+- [ ] Manually verify bitmap Image layer behavior in Electron:
   - Select `Image`, draw directly on it.
   - Erase on `Image` and confirm white background appears.
   - Click `-` while `Image` is selected and confirm the button still reads `Delete current layer`.
   - Undo/redo the delete.
   - Save, reopen, and confirm the visible result is preserved.
-- [ ] Manually verify Onion Skin in animation mode:
+- [ ] Manually verify bitmap Onion Skin in animation mode:
   - Toggle appears only in animation mode.
   - Previous frame is red, next frame is green.
   - Left/right playback updates ghost frames.
@@ -18,21 +17,17 @@
   - 16:9, 2.39:1, and 1.43:1 shots show without black bars.
   - Left/right playback keeps every shot centered.
   - Timeline remains visible at high zoom.
-- [ ] Manually verify Save safety after recent changes:
+- [ ] Manually verify bitmap Save safety after recent changes:
   - Rename preflight still blocks final and temporary path conflicts.
   - Save does not modify Archive originals.
   - Save naming still uses `项目名_场号_stb_艺术家名_版本号_0010.ext`.
 
 ## P1
 
-- [ ] Plan and implement bitmap layer drawing system:
-  - Store editable layers as bitmap assets under `.storyboard-workbench/layers/`.
-  - Keep JSON as layer metadata, not base64 image storage.
-  - Keep true TIFF writes behind Save only.
-  - Migrate current stroke data to bitmap layers once, then stop relying on strokes as primary data.
-- [ ] Revisit Import after bitmap layer refactor:
-  - Ordinary PNG/JPG/TIFF should open into SWB working layers automatically.
-  - Photoshop multi-layer TIFF round-trip remains out of scope unless separately researched.
+- [ ] Manually verify legacy stroke project migration:
+  - Old `sketchLayers` become paint bitmap layers.
+  - Old `imageLayerEdits` become Image bitmap pixels.
+  - Reopen uses bitmap layers as editable source.
 - [ ] Add Electron smoke coverage or a repeatable manual checklist for:
   - Open folder.
   - Draw on Image.
@@ -75,6 +70,11 @@
 - [x] Onion Skin toggle in animation mode.
 - [x] Image layer can be drawn, erased, and deleted like a normal layer in UI.
 - [x] Removed old `sketchData` compatibility layer.
+- [x] Bitmap layer metadata and internal PNG layer assets.
+- [x] Ordinary PNG/JPG/TIFF folders initialize editable bitmap layers automatically.
+- [x] Renderer drawing writes active layer PNG under `.storyboard-workbench/layers/`.
+- [x] Save composites visible bitmap layers into working TIFF while preserving rename preflight.
+- [x] Legacy stroke metadata is migrated into bitmap layer metadata/assets.
 
 ## Out Of Scope For Current MVP
 

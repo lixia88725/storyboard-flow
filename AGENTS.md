@@ -18,10 +18,10 @@ Storyboard Workbench MVP is a local-first Electron desktop app for arranging sto
 - React + TypeScript + Vite renderer.
 - `dnd-kit` for shot and dialogue drag behavior.
 - `Konva` / `react-konva` for sketch drawing.
-- `sharp` in the Electron main process for TIFF preview generation, blank TIFF creation, metadata writing, and Save-time TIFF baking.
+- `sharp` in the Electron main process for TIFF preview generation, blank TIFF creation, bitmap layer initialization, metadata writing, and Save-time TIFF baking.
 - Vitest for pure logic tests.
 
-Current drawing data is still stroke-based (`sketchLayers` and `imageLayerEdits`). The next major planned refactor is bitmap layers stored under `.storyboard-workbench/layers/`; do not assume that refactor is already implemented.
+Current drawing data is bitmap-layer based. Layer metadata lives in `shots[].layers`; editable layer pixels live under `.storyboard-workbench/layers/{shotId}/{layerId}.png`. Legacy `sketchLayers` and `imageLayerEdits` are migration inputs only; do not add new drawing behavior that depends on them as primary data.
 
 ## Commands
 
@@ -46,7 +46,7 @@ npm run build
 - Prefer small pure functions for ordering, dialogue, layer, sketch, SWB format, and rename behavior.
 - Preserve user files unless an explicit user action requires changing them.
 - Use two-stage renaming when changing image filenames in a folder.
-- Keep V1 data structures understandable and local-first: `Project`, `Shot`, `Dialogue`, `SketchLayer`, `SketchStroke`, SWB metadata, and naming metadata.
+- Keep V1 data structures understandable and local-first: `Project`, `Shot`, `Dialogue`, `BitmapLayer`, legacy migration stroke fields, SWB metadata, and naming metadata.
 - Avoid adding AI, export, database, cloud, Photoshop layer round-trip, or file watching code unless specifically requested.
 - Treat `Save` as the only operation that may synchronize real image filenames or write working TIFF pixels.
 

@@ -7,90 +7,84 @@
 - 本地 Electron + React + TypeScript + Vite 的 Storyboard Workbench MVP。
 - 一个场景仍等于一个本地图像文件夹；内部状态自动保存到 `.storyboard-workbench/storyboard.project.json`。
 - `Save` 仍是唯一会同步真实图片文件名、写工作 TIFF 像素的动作。
-- 当前绘图系统仍以 stroke/vector 数据为主：普通 SWB 图层是 `sketchLayers[].strokes`，Image 层编辑是 `imageLayerEdits`，Save 时由 Electron/sharp 烘焙到 TIFF。
-- 用户已决定下一轮“大施工”方向：把绘图系统重构为 bitmap layer。可编辑源数据放在 `.storyboard-workbench/`，真实 TIFF 仍只在 Save 时同步。
+- 当前绘图主数据已经迁移为 bitmap layer：
+  - JSON 保存 `shots[].layers` 和 `activeLayerId`。
+  - 可编辑像素保存在 `.storyboard-workbench/layers/{shotId}/{layerId}.png`。
+  - 画笔、橡皮、清空图层和删除普通图层只写 `.storyboard-workbench/`。
+- 旧 `sketchLayers` / `imageLayerEdits` 字段仍作为迁移输入保留；打开旧项目时会生成 bitmap layer metadata 和内部 PNG layer assets。
+- 不做 AI、导出、SQLite、云同步、Photoshop layer round-trip 或 Photoshop-compatible multi-layer TIFF writing。
 
 ## Completed In This Session
 
-- 顶部与状态 UI：
-  - Save 改为 split button，命名字段收纳到 Save 菜单。
-  - Recent 合并进地址栏右侧下拉，地址栏居中。
-  - Import 移到左上角。
-  - 状态信息移到右下角 `!` popover，移除状态栏重复路径。
-  - 整体界面改为深色主题，画布/图像区域保持真实白底显示。
-- Save 命名与项目元数据：
-  - 项目名、Scene、Artist、Version 可编辑并自动保存到 JSON。
-  - Save 文件命名规则改为 `项目名_场号_stb_艺术家名_版本号_0010.ext`，序号按 `0010, 0020...` 递增。
-  - Save 前继续走 rename preflight，保护真实文件。
-- Add Shot：
-  - Add Shot 改为 split button，可选择 `16:9`、`2.39:1`、`1.43:1 IMAX`。
-  - 新建不同画幅 storyboard 后，显示容器按真实 canvas 比例显示，去掉黑边。
-- 动画模式与 zoom：
-  - Zoom 进入动画模式的阈值按当前 shot 真实比例计算。
-  - 修复宽画幅最大 zoom 时不进入动画模式的问题。
-  - 修复混合尺寸图片在动画模式左右播放时偏上/偏下的问题；切换 shot 后会按当前显示尺寸重新居中。
-  - 动画模式新增 Onion Skin 开关：显示前后各一张，上一张偏红、下一张偏绿，只做屏幕预览，不进入 Save。
-- 绘图工具与图层：
-  - 左侧工具栏使用图标按钮，笔刷/橡皮参数改为右键菜单。
-  - 新增右下角图层面板，样式接近简化 Photoshop 图层面板。
-  - 支持普通图层新增、删除、重命名、显隐、opacity、blend mode、拖动排序。
-  - 移除旧 `sketchData` 兼容层，当前主流程只使用 `sketchLayers` 和 `imageLayerEdits`。
-  - Import 后不再默认新增空 Drawing 层，默认选中 Image。
-  - Image 层在 UI 心智上普通化：可选中、绘制、擦除；选中 Image 时 `-` 按钮仍显示 `Delete current layer`，点击后删除 Image 当前可见内容并露出白底。
-  - 修复 Image 被 Delete 后继续绘制不显示/不保存的问题。
-- SWB Format / Import / Save：
-  - 引入 SWB-owned TIFF + JSON 主数据方向。
-  - Import 会把非 SWB 图片转换为 SWB-owned TIFF，并移动原文件到 Archive。
-  - Save 会把 SWB 绘制内容烘焙到 TIFF 像素，并写入 XMP metadata snapshot。
-  - 兼容外部编辑方向：兼容的轻度外部 TIFF 修改可自动接受为新 base；不兼容修改保留 warning。
-- Undo/Redo：
-  - 加入平台区分的 Undo/Redo：macOS 使用 `Command+Z` / `Command+Shift+Z`，PC 使用 `Ctrl+Z`。
-  - 修复刚打开软件后第一笔绘制需要切换工具才可撤销的问题。
+- 新增 bitmap layer 数据模型：
+  - `BitmapLayer`、`Shot.layers`、`Shot.activeLayerId`。
+  - `.storyboard-workbench/layers/{shotId}/{layerId}.png` 路径规则。
+  - shared 层新增 add/select/update/move/delete/clear/painted bitmap layer 纯函数和测试。
+- 打开普通图片文件夹时，不再要求先 Import 才能开始编辑：
+  - 新扫描/导入图片会自动生成 `Image` bitmap layer metadata。
+  - 新文件夹首次打开会触发 autosave，创建 JSON 和内部 layer assets。
+- Electron layer asset API：
+  - `layers:writePng`
+  - `layers:readPng`
+  - `layers:deletePng`
+  - 路径限制在当前 folder 的 `.storyboard-workbench/layers/` 下。
+- Renderer 绘图主流程：
+  - 图层面板改为操作 bitmap layers。
+  - 完成 stroke 后读取 active layer PNG，用 canvas 写入像素，再通过 preload API 写回内部 PNG。
+  - 清空当前 layer 会写透明 PNG，不会写真实 TIFF。
+  - `B` / `E` 快捷键仍切换 Brush / Eraser。
+- Save 路径：
+  - 如果 shot 有 bitmap layers，Save 按可见 layer 顺序合成 PNG layers 到工作 TIFF。
+  - 继续执行现有 rename preflight。
+  - `Save` 仍是唯一会改真实文件名和工作 TIFF 像素的动作。
+- Legacy migration：
+  - 旧 stroke layer 会迁移为对应 paint bitmap layer metadata。
+  - Electron 初始化 layer assets 时会 rasterize 旧 stroke 到 PNG。
+  - 旧 Image layer edits 会迁移到 Image bitmap layer。
+- Onion Skin：
+  - 改为优先读取相邻 shot 的 bitmap layer PNG。
+  - 仍只做 renderer preview，不写 JSON、PNG、TIFF 或 Save 结果。
 
 ## Verification
 
 本次交接前已运行：
 
 ```bash
-npm run test        # passed, 63 tests
+npm run test        # passed, 69 tests
 npm run typecheck   # passed
 npm run build       # passed, Vite chunk size warning only
 ```
 
-当前 `git diff --stat` 看到的代码改动范围：
+Electron GUI smoke 尝试过，但本地 Electron 启动到默认 Electron 页面，Computer Use 未能拿到 Storyboard Workbench 窗口；未把 GUI smoke 记为通过。以下行为仍需手动或自动确认：
+
+- `TODO: verify` 新文件夹打开后首次 autosave 是否稳定创建 `.storyboard-workbench/layers/` PNG assets。
+- `TODO: verify` Image layer 上画、擦、清空、Save、重开的一致性。
+- `TODO: verify` 普通 paint layer 新增、画、擦、显隐、opacity、blend mode、拖动排序、Save、重开的一致性。
+- `TODO: verify` 旧 stroke 项目迁移后的可见结果是否符合预期。
+- `TODO: verify` Onion Skin 在 bitmap layer 下的红绿透明度和相邻帧刷新。
+- `TODO: verify` mixed aspect-ratio 动画模式、timeline、multi-select shot dragging、double-click dialogue editing。
+
+## Current Branch
+
+当前工作在隔离 worktree：
 
 ```text
-electron/main/main.ts
-electron/preload/preload.cjs
-electron/preload/preload.ts
-src/model/storyboard.ts
-src/renderer/App.tsx
-src/renderer/animationViewport.test.ts
-src/renderer/animationViewport.ts
-src/renderer/global.d.ts
-src/renderer/sketchGeometry.test.ts
-src/renderer/sketchGeometry.ts
-src/renderer/styles.css
-src/shared/projectOps.test.ts
-src/shared/projectOps.ts
-src/shared/types.ts
-src/renderer/onionSkin.ts
-src/renderer/onionSkin.test.ts
+/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers
 ```
 
-未做完整 Electron GUI smoke。用户已手动验证过多轮交互，但以下最新行为仍建议下个 session 或用户手动确认：
+分支：
 
-- Onion Skin 红绿透明度和绘制时的视觉干扰程度。
-- Image 层选中后 `Delete current layer`、Undo、Save、重开的一致性。
-- 深色主题下各菜单/按钮/图层面板的对比度。
-- 混合比例 storyboard 在动画模式下的居中和时间线稳定性。
+```text
+bitmap-layer-refactor
+```
 
-## Next Entry Point
+阶段提交：
 
-建议先把当前状态提交一次，避免下一轮 bitmap layer 大重构和本轮 UI/图层/Save 改动混在一起。
-
-下一轮如果开启新 session，建议用 `/goal` 执行 bitmap layer 重构计划：
-
-- 目标：把 `sketchLayers` / `imageLayerEdits` 的 stroke 主数据迁移为 `.storyboard-workbench/layers/{shotId}/{layerId}.png` bitmap layer。
-- 保留核心规则：真实 TIFF 和真实文件名仍只在 `Save` 时同步。
-- 不做 Photoshop 图层 round-trip；外部 TIFF 第一阶段只读取可见合成结果作为 SWB Image bitmap layer。
+```text
+def3653 feat: add bitmap layer metadata foundation
+0c6484a feat: composite bitmap layers on save
+b2370a3 fix: autosave new folders for layer assets
+371bcac feat: draw strokes into bitmap layer assets
+7eb3c2e feat: migrate legacy strokes to bitmap layers
+45e529b feat: render onion skin from bitmap layers
+```

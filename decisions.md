@@ -100,11 +100,11 @@ Reason: 混合画幅项目中，16:9、2.39:1、1.43:1 都不应出现额外黑�
 
 Reason: 洋葱皮是临时参考，不属于用户作品内容。
 
-## Current Drawing Layers Are Stroke-Based
+## Current Drawing Layers Are Bitmap-Based
 
-当前普通 SWB 图层使用 `sketchLayers[].strokes`，Image 层编辑使用 `imageLayerEdits`。Save 时由 Electron/sharp 将 stroke 烘焙到 TIFF 像素。
+当前普通 SWB 图层和 `Image` 层都使用 bitmap layer。JSON 保存 `shots[].layers` 元数据，像素源文件保存在 `.storyboard-workbench/layers/{shotId}/{layerId}.png`。Save 时由 Electron/sharp 合成可见 bitmap layers 并写入工作 TIFF。
 
-Reason: 这是当前已实现的 MVP 路径，易测试且体积小；但用户心智上比 bitmap layer 更复杂。
+Reason: Storyboard Workbench 更接近像素绘制工具而非矢量绘图工具；统一 bitmap layer 能减少 Image 层和普通图层的行为差异。
 
 ## Image Layer Behaves Like A Normal Layer In UI
 
@@ -112,11 +112,11 @@ Reason: 这是当前已实现的 MVP 路径，易测试且体积小；但用户�
 
 Reason: 原文件已有 Archive 和 Save 边界保护，用户在绘图时应获得所见即所得的普通图层体验。
 
-## Future Direction Is Bitmap Layers
+## Legacy Strokes Are Migration Input
 
-下一轮大重构方向是将可编辑绘图源数据迁移为 `.storyboard-workbench/layers/{shotId}/{layerId}.png` bitmap layer，JSON 只保存图层元数据和路径。
+旧项目中的 `sketchLayers`、`imageLayerEdits`、`baseVisible` 和 `activeLayerTarget` 只作为一次性迁移输入。打开旧项目后，Electron 会把旧 stroke 数据 rasterize 到内部 PNG layer assets，renderer 主流程不再依赖这些字段。
 
-Reason: Storyboard Workbench 更接近像素绘制工具而非矢量绘图工具；统一 bitmap layer 能减少 Image 层和普通图层的行为差异。
+Reason: 迁移必须保护旧项目可见结果，同时避免新代码继续扩展两套绘图主数据。
 
 Non-goal: bitmap layer 重构不代表 Photoshop 图层 round-trip。第一阶段仍只读取 Photoshop TIFF 的可见合成结果，不解析或写回 Photoshop 图层结构。
 
