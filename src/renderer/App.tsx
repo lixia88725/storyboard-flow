@@ -647,6 +647,21 @@ export const App = () => {
     updateProject((currentProject) => clearBitmapLayer(currentProject, shotId, layerId), false);
   };
 
+  const handleRemoveBitmapLayer = async (shotId: string, layerId: string) => {
+    const shot = projectRef.current.shots.find((item) => item.id === shotId);
+    const layer = shot ? bitmapLayersForShot(shot).find((item) => item.id === layerId) : undefined;
+
+    if (!window.storyboard || !folderPath || !layer || layer.kind === "image") {
+      return;
+    }
+
+    await window.storyboard.deleteLayerPng({
+      folderPath,
+      bitmapPath: layer.bitmapPath
+    });
+    updateProject((currentProject) => deleteBitmapLayer(currentProject, shotId, layerId), false);
+  };
+
   const loadFolderScan = (scan: FolderScanPayload, nextStatus: string, dirty = false) => {
     const baseProject = scan.project ?? createProject(scan.folderName || "Untitled Storyboard");
     const nextProject = mergeFolderImages(
@@ -1260,7 +1275,7 @@ export const App = () => {
             }, false)
           }
           onRemoveLayer={(shotId, layerId) =>
-            updateProject((currentProject) => deleteBitmapLayer(currentProject, shotId, layerId), false)
+            void handleRemoveBitmapLayer(shotId, layerId)
           }
           onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
           onSelectLayer={(shotId, layerId) =>

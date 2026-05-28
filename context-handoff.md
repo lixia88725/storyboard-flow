@@ -60,13 +60,16 @@ Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench
 - 打开普通 PNG 文件夹成功显示 shot。
 - 首次 autosave 会创建 `.storyboard-workbench/storyboard.project.json`。
 - 首次 autosave 会创建 `.storyboard-workbench/layers/{shotId}/layer-image.png`。
+- 图层面板中新增普通 paint layer 会创建 JSON metadata 和内部 PNG layer asset。
+- 普通 paint layer 的 hide 和 opacity 会 autosave 到 JSON。
+- 删除普通 paint layer 会移除 JSON metadata，并删除对应内部 PNG layer asset。
 - 对普通 PNG 执行 Save 后，原 PNG 进入 `Archive/`，生成命名 TIFF，JSON 指向 `status: "owned"` 的 TIFF。
 - Save 仍需要用户确认缺失命名字段时是否使用默认 Scene / Artist / Version。
 
 以下行为仍需手动或自动确认：
 
 - `TODO: verify` Image layer 上画、擦、清空、Save、重开的一致性。
-- `TODO: verify` 普通 paint layer 新增、画、擦、显隐、opacity、blend mode、拖动排序、Save、重开的一致性。
+- `TODO: verify` 普通 paint layer 画、擦、blend mode、拖动排序、Save、重开的一致性。
 - `TODO: verify` 旧 stroke 项目迁移后的可见结果是否符合预期。
 - `TODO: verify` Onion Skin 在 bitmap layer 下的红绿透明度和相邻帧刷新。
 - `TODO: verify` mixed aspect-ratio 动画模式、timeline、multi-select shot dragging、double-click dialogue editing。
