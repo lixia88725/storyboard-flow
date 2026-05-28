@@ -710,6 +710,29 @@ describe("project operations", () => {
     expect(updated.dialogues).toEqual([]);
   });
 
+  it("adds bitmap layer metadata to legacy stroke shots during folder merge", () => {
+    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
+
+    const updated = mergeFolderImages(project, [
+      {
+        imagePath: "/tmp/a.png",
+        fileName: "a.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "pixel-a"
+      }
+    ]);
+    const shot = updated.shots[0];
+
+    expect(bitmapLayersForShot(shot).map((layer) => [layer.id, layer.kind, layer.name])).toEqual([
+      ["layer-image", "image", "Image"],
+      ["layer-default", "paint", "Drawing"],
+      ["layer-shot-a-1", "paint", "Ink"]
+    ]);
+    expect(shot.activeLayerId).toBe("layer-image");
+    expect(shot.sketchLayers).toHaveLength(2);
+  });
+
   it("marks newly scanned non-SWB images as needing import", () => {
     const updated = mergeFolderImages(makeProject(), [
       {

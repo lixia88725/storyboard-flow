@@ -384,13 +384,113 @@ const ensureProjectLayerAssets = async (project: Project, folderPath: string): P
       await mkdir(path.dirname(filePath), { recursive: true });
 
       if (layer.kind === "image" && !layer.cleared) {
-        await sharp(shot.imagePath).rotate().png().toFile(filePath);
+        await createImageBitmapLayerPng(shot, filePath, layer.width, layer.height);
+        continue;
+      }
+
+      const legacySketchLayer = sketchLayersForShot(shot).find((item) => item.id === layer.id);
+      if (legacySketchLayer && legacySketchLayer.strokes.length > 0) {
+        await createPaintBitmapLayerPng(filePath, layer.width, layer.height, legacySketchLayer.strokes);
         continue;
       }
 
       await createTransparentLayerPng(filePath, layer.width, layer.height);
     }
   }
+};
+
+const createImageBitmapLayerPng = async (
+  shot: Project["shots"][number],
+  filePath: string,
+  width: number,
+  height: number
+): Promise<void> => {
+  let composited =
+    shot.baseVisible === false
+      ? sharp({
+          create: {
+            width: Math.max(1, Math.round(width)),
+            height: Math.max(1, Math.round(height)),
+            channels: 4,
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          }
+        })
+      : sharp(shot.imagePath).rotate().resize({
+          width: Math.max(1, Math.round(width)),
+          height: Math.max(1, Math.round(height)),
+          fit: "fill"
+        });
+
+  const edits = shot.imageLayerEdits ?? [];
+  if (edits.length > 0) {
+    let overlay = await transparentLayerBuffer(width, height);
+
+    for (const stroke of edits) {
+      if (stroke.points.length < 4) {
+        continue;
+      }
+
+      overlay = await sharp(overlay)
+        .composite([
+          {
+            input: strokeSvg(
+              stroke.tool === "eraser"
+                ? { ...stroke, tool: "brush", color: "#ffffff" }
+                : stroke,
+              width,
+              height
+            ),
+            blend: "over"
+          }
+        ])
+        .png()
+        .toBuffer();
+    }
+
+    composited = composited.composite([{ input: overlay, blend: "over" }]);
+  }
+
+  await composited.png().toFile(filePath);
+};
+
+const createPaintBitmapLayerPng = async (
+  filePath: string,
+  width: number,
+  height: number,
+  strokes: NonNullable<Project["shots"][number]["sketchLayers"]>[number]["strokes"]
+): Promise<void> => {
+  let layerBuffer = await transparentLayerBuffer(width, height);
+
+  for (const stroke of strokes) {
+    if (stroke.points.length < 4) {
+      continue;
+    }
+
+    layerBuffer = await sharp(layerBuffer)
+      .composite([
+        {
+          input: strokeSvg(stroke, width, height),
+          blend: stroke.tool === "eraser" ? "dest-out" : "over"
+        }
+      ])
+      .png()
+      .toBuffer();
+  }
+
+  await writeFile(filePath, layerBuffer);
+};
+
+const transparentLayerBuffer = async (width: number, height: number): Promise<Buffer> => {
+  return sharp({
+    create: {
+      width: Math.max(1, Math.round(width)),
+      height: Math.max(1, Math.round(height)),
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    }
+  })
+    .png()
+    .toBuffer();
 };
 
 const createTransparentLayerPng = async (

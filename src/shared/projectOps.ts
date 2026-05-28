@@ -181,6 +181,10 @@ export const mergeFolderImages = (project: Project, images: ImportedImage[]): Pr
         sketchLayers: sketchLayersForShot(shot),
         swb: scanned ? mergedSwbState(shot, scanned) : shot.swb
       };
+    })
+    .map((shot) => {
+      const scanned = imageByPath.get(shot.imagePath);
+      return ensureBitmapLayerMetadata(shot, scanned);
     });
   const keptPaths = new Set(keptShots.map((shot) => shot.imagePath));
   const newShots = images
@@ -629,6 +633,42 @@ export const bitmapLayersForShot = (shot: Shot): BitmapLayer[] => {
       return a.order - b.order;
     })
   );
+};
+
+export const ensureBitmapLayerMetadata = (shot: Shot, image?: ImportedImage): Shot => {
+  if ((shot.layers?.length ?? 0) > 0) {
+    return {
+      ...shot,
+      layers: bitmapLayersForShot(shot),
+      activeLayerId: shot.activeLayerId ?? bitmapLayersForShot(shot)[0]?.id
+    };
+  }
+
+  const width = image?.width ?? shot.swb?.canvasWidth ?? 1920;
+  const height = image?.height ?? shot.swb?.canvasHeight ?? 1080;
+  const sketchLayers = sketchLayersForShot(shot);
+  const layers: BitmapLayer[] = [
+    createImageBitmapLayer(shot.id, width, height),
+    ...sketchLayers.map((layer, index) => ({
+      id: layer.id,
+      kind: "paint" as const,
+      name: layer.name,
+      visible: layer.visible,
+      locked: layer.locked,
+      opacity: layer.opacity,
+      blendMode: layer.blendMode ?? "normal",
+      order: index + 1,
+      bitmapPath: bitmapLayerPath(shot.id, layer.id),
+      width,
+      height
+    }))
+  ];
+
+  return {
+    ...shot,
+    layers,
+    activeLayerId: imageBitmapLayerId
+  };
 };
 
 export type AddBitmapLayerOptions = {
