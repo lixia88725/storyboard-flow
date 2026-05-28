@@ -647,7 +647,7 @@ export const App = () => {
       return;
     }
 
-    loadFolderScan(result, "Folder opened");
+    loadFolderScan(result, "Folder opened", !result.project);
     void window.storyboard.getRecentFolders().then(setRecentFolders).catch(() => undefined);
   };
 
