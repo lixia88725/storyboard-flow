@@ -17,6 +17,16 @@ declare global {
         payload: WorkspacePayload & { renamePlan?: RenamePlanItem[] }
       ) => Promise<WorkspacePayload>;
       importSwbFormat: (payload: ImportSwbFormatPayload) => Promise<FolderScanPayload>;
+      writeLayerPng: (payload: {
+        folderPath: string;
+        bitmapPath: string;
+        dataUrl: string;
+      }) => Promise<{ folderPath: string; bitmapPath: string; dataUrl: string; filePath: string }>;
+      readLayerPng: (payload: { folderPath: string; bitmapPath: string }) => Promise<string>;
+      deleteLayerPng: (payload: {
+        folderPath: string;
+        bitmapPath: string;
+      }) => Promise<{ folderPath: string; bitmapPath: string }>;
       createBlankShot: (folderPath: string, options: BlankShotOptions) => Promise<ImportedImage>;
       getRecentFolders: () => Promise<string[]>;
       onOpenRecentFolder: (callback: (folderPath: string) => void) => () => void;

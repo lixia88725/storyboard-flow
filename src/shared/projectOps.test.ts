@@ -1,17 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
+  addBitmapLayer,
   addDialogue,
   addImportedImages,
   addSketchLayer,
   addGeneratedShot,
+  bitmapLayerPath,
+  bitmapLayersForShot,
+  clearBitmapLayer,
+  createImageBitmapLayer,
   clearSketch,
   createRenamePlan,
+  deleteBitmapLayer,
   flattenSketchLayers,
   getNextStoryboardIndex,
+  moveBitmapLayer,
   removeSketchLayer,
   reorderSketchLayer,
   moveSketchLayer,
+  selectBitmapLayer,
   selectSketchLayer,
+  updateBitmapLayer,
   updateSketchLayer,
   updateShotBaseVisibility,
   validateRenamePlan,
@@ -87,7 +96,155 @@ const createEmptyProject = (): Project => ({
   dialogues: []
 });
 
+const makeBitmapProject = (): Project => ({
+  ...makeProject(),
+  shots: [
+    {
+      id: "shot-a",
+      imagePath: "/tmp/a.tif",
+      fileName: "a.tif",
+      order: 0,
+      activeLayerId: "layer-image",
+      layers: [
+        {
+          id: "layer-image",
+          kind: "image",
+          name: "Image",
+          visible: true,
+          locked: false,
+          opacity: 1,
+          blendMode: "normal",
+          order: 0,
+          bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png",
+          width: 1920,
+          height: 1080
+        }
+      ]
+    }
+  ],
+  dialogues: []
+});
+
 describe("project operations", () => {
+  it("creates Image bitmap layer metadata for a shot", () => {
+    const layer = createImageBitmapLayer("shot-a", 1920, 1080);
+
+    expect(layer).toEqual({
+      id: "layer-image",
+      kind: "image",
+      name: "Image",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: "normal",
+      order: 0,
+      bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png",
+      width: 1920,
+      height: 1080
+    });
+    expect(bitmapLayerPath("shot-a", "paint-1")).toBe(
+      ".storyboard-workbench/layers/shot-a/paint-1.png"
+    );
+  });
+
+  it("adds a paint bitmap layer and selects it without touching the real image path", () => {
+    const project = makeBitmapProject();
+
+    const updated = addBitmapLayer(project, "shot-a", {
+      id: "paint-1",
+      name: "Paint",
+      width: 1920,
+      height: 1080
+    });
+    const shot = updated.shots[0];
+
+    expect(shot.imagePath).toBe("/tmp/a.tif");
+    expect(shot.activeLayerId).toBe("paint-1");
+    expect(bitmapLayersForShot(shot).map((layer) => [layer.id, layer.kind, layer.order])).toEqual([
+      ["layer-image", "image", 0],
+      ["paint-1", "paint", 1]
+    ]);
+    expect(shot.layers?.[1]).toMatchObject({
+      bitmapPath: ".storyboard-workbench/layers/shot-a/paint-1.png",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: "normal"
+    });
+  });
+
+  it("selects, updates, reorders, and deletes bitmap layers", () => {
+    const project = addBitmapLayer(
+      addBitmapLayer(makeBitmapProject(), "shot-a", {
+        id: "paint-1",
+        name: "Paint 1",
+        width: 1920,
+        height: 1080
+      }),
+      "shot-a",
+      {
+        id: "paint-2",
+        name: "Paint 2",
+        width: 1920,
+        height: 1080
+      }
+    );
+
+    const selected = selectBitmapLayer(project, "shot-a", "paint-1");
+    expect(selected.shots[0].activeLayerId).toBe("paint-1");
+
+    const updated = updateBitmapLayer(selected, "shot-a", "paint-1", {
+      visible: false,
+      opacity: 1.4,
+      blendMode: "multiply"
+    });
+    expect(
+      bitmapLayersForShot(updated.shots[0]).find((layer) => layer.id === "paint-1")
+    ).toMatchObject({
+      visible: false,
+      opacity: 1,
+      blendMode: "multiply"
+    });
+
+    const moved = moveBitmapLayer(updated, "shot-a", "paint-2", "paint-1");
+    expect(bitmapLayersForShot(moved.shots[0]).map((layer) => [layer.id, layer.order])).toEqual([
+      ["layer-image", 0],
+      ["paint-2", 1],
+      ["paint-1", 2]
+    ]);
+
+    const deleted = deleteBitmapLayer(moved, "shot-a", "paint-2");
+    expect(bitmapLayersForShot(deleted.shots[0]).map((layer) => layer.id)).toEqual([
+      "layer-image",
+      "paint-1"
+    ]);
+    expect(deleted.shots[0].activeLayerId).toBe("paint-1");
+  });
+
+  it("clears the Image bitmap layer without deleting its metadata", () => {
+    const project = makeBitmapProject();
+
+    const updated = clearBitmapLayer(project, "shot-a", "layer-image");
+
+    expect(updated.shots[0].activeLayerId).toBe("layer-image");
+    expect(bitmapLayersForShot(updated.shots[0])).toEqual([
+      {
+        id: "layer-image",
+        kind: "image",
+        name: "Image",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal",
+        order: 0,
+        bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png",
+        width: 1920,
+        height: 1080,
+        cleared: true
+      }
+    ]);
+  });
+
   it("reorders shots and normalizes their order values", () => {
     const project = makeProject();
 
@@ -574,8 +731,25 @@ describe("project operations", () => {
       }
     ]);
 
+    const shotId = updated.shots[0].id;
     expect(updated.shots[0].sketchLayers).toEqual([]);
     expect(updated.shots[0].activeLayerTarget).toBe("image");
+    expect(updated.shots[0].activeLayerId).toBe("layer-image");
+    expect(bitmapLayersForShot(updated.shots[0])).toEqual([
+      {
+        id: "layer-image",
+        kind: "image",
+        name: "Image",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal",
+        order: 0,
+        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-image.png`,
+        width: 1920,
+        height: 1080
+      }
+    ]);
   });
 
   it("defaults newly scanned images to the Image layer without an empty Drawing layer", () => {
@@ -589,8 +763,25 @@ describe("project operations", () => {
       }
     ]);
 
+    const shotId = updated.shots[0].id;
     expect(updated.shots[0].sketchLayers).toEqual([]);
     expect(updated.shots[0].activeLayerTarget).toBe("image");
+    expect(updated.shots[0].activeLayerId).toBe("layer-image");
+    expect(bitmapLayersForShot(updated.shots[0])).toEqual([
+      {
+        id: "layer-image",
+        kind: "image",
+        name: "Image",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal",
+        order: 0,
+        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-image.png`,
+        width: 1920,
+        height: 1080
+      }
+    ]);
   });
 
   it("accepts compatible external TIFF edits as a new base", () => {

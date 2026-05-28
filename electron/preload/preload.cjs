@@ -5,6 +5,9 @@ const api = {
   autosaveWorkspace: (payload) => ipcRenderer.invoke("workspace:autosave", payload),
   saveWorkspace: (payload) => ipcRenderer.invoke("workspace:save", payload),
   importSwbFormat: (payload) => ipcRenderer.invoke("workspace:importSwbFormat", payload),
+  writeLayerPng: (payload) => ipcRenderer.invoke("layers:writePng", payload),
+  readLayerPng: (payload) => ipcRenderer.invoke("layers:readPng", payload),
+  deleteLayerPng: (payload) => ipcRenderer.invoke("layers:deletePng", payload),
   createBlankShot: (folderPath, options) =>
     ipcRenderer.invoke("images:createBlankShot", folderPath, options),
   getRecentFolders: () => ipcRenderer.invoke("recent:getFolders"),

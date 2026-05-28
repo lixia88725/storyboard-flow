@@ -1,4 +1,5 @@
 import type {
+  BitmapLayer,
   Dialogue,
   ImportedImage,
   Project,
@@ -17,6 +18,7 @@ export type RenamePlanOptions = {
   allowDefaultNamingFields?: boolean;
 };
 export const sketchBlendModes = ["normal", "multiply", "screen"] as const;
+export const bitmapBlendModes = ["normal", "multiply", "screen"] as const;
 
 const now = () => new Date().toISOString();
 export const defaultProjectNaming: ProjectNaming = {
@@ -31,6 +33,8 @@ export const defaultSaveNaming: ProjectNaming = {
 };
 export const swbFormatVersion = 1;
 export const defaultSketchLayerName = "Drawing";
+export const imageBitmapLayerId = "layer-image";
+export const imageBitmapLayerName = "Image";
 
 export const createProject = (name = "Untitled Storyboard"): Project => {
   const timestamp = now();
@@ -110,16 +114,12 @@ export const addImportedImages = (project: Project, images: ImportedImage[]): Pr
   const existingPaths = new Set(project.shots.map((shot) => shot.imagePath));
   const newShots = images
     .filter((image) => !existingPaths.has(image.imagePath))
-    .map((image, index) => ({
-      id: crypto.randomUUID(),
-      imagePath: image.imagePath,
-      previewPath: image.previewPath,
-      fileName: image.fileName,
-      order: project.shots.length + index,
-      sketchLayers: [],
-      activeLayerTarget: "image" as const,
-      swb: swbStateForImportedImage(image)
-    }));
+    .map((image, index) =>
+      createShotFromImportedImage(image, project.shots.length + index, {
+        sourceFileName: undefined,
+        includeDefaultSketchLayer: false
+      })
+    );
 
   return normalizeShotOrder({
     ...project,
@@ -138,14 +138,18 @@ export const addGeneratedShot = (
     ? ordered.findIndex((shot) => shot.id === selectedShotId)
     : -1;
   const insertIndex = selectedIndex === -1 ? ordered.length : selectedIndex + 1;
+  const shotId = crypto.randomUUID();
   const newShot: Shot = {
-    id: crypto.randomUUID(),
+    id: shotId,
     imagePath: image.imagePath,
     previewPath: image.previewPath,
     fileName: image.fileName,
     sourceFileName: image.fileName,
     order: insertIndex,
     sketchLayers: [createDefaultSketchLayer([])],
+    activeLayerTarget: "image",
+    activeLayerId: imageBitmapLayerId,
+    layers: [createImageBitmapLayer(shotId, image.width ?? 1920, image.height ?? 1080)],
     swb: {
       version: swbFormatVersion,
       status: "owned",
@@ -181,16 +185,12 @@ export const mergeFolderImages = (project: Project, images: ImportedImage[]): Pr
   const keptPaths = new Set(keptShots.map((shot) => shot.imagePath));
   const newShots = images
     .filter((image) => !keptPaths.has(image.imagePath))
-    .map((image, index) => ({
-      id: crypto.randomUUID(),
-      imagePath: image.imagePath,
-      previewPath: image.previewPath,
-      fileName: image.fileName,
-      order: keptShots.length + index,
-      sketchLayers: [],
-      activeLayerTarget: "image" as const,
-      swb: swbStateForImportedImage(image)
-    }));
+    .map((image, index) =>
+      createShotFromImportedImage(image, keptShots.length + index, {
+        sourceFileName: undefined,
+        includeDefaultSketchLayer: false
+      })
+    );
   const keptShotIds = new Set(keptShots.map((shot) => shot.id));
 
   return normalizeDialogueOrder(
@@ -594,6 +594,182 @@ export const appendImageLayerEdit = (
   };
 };
 
+export const bitmapLayerPath = (shotId: string, layerId: string): string =>
+  `.storyboard-workbench/layers/${shotId}/${layerId}.png`;
+
+export const createImageBitmapLayer = (
+  shotId: string,
+  width: number,
+  height: number
+): BitmapLayer => ({
+  id: imageBitmapLayerId,
+  kind: "image",
+  name: imageBitmapLayerName,
+  visible: true,
+  locked: false,
+  opacity: 1,
+  blendMode: "normal",
+  order: 0,
+  bitmapPath: bitmapLayerPath(shotId, imageBitmapLayerId),
+  width,
+  height
+});
+
+export const bitmapLayersForShot = (shot: Shot): BitmapLayer[] => {
+  return normalizeBitmapLayerOrder(
+    [...(shot.layers ?? [])].sort((a, b) => {
+      if (a.kind === "image" && b.kind !== "image") {
+        return -1;
+      }
+
+      if (a.kind !== "image" && b.kind === "image") {
+        return 1;
+      }
+
+      return a.order - b.order;
+    })
+  );
+};
+
+export type AddBitmapLayerOptions = {
+  id?: string;
+  name?: string;
+  width: number;
+  height: number;
+};
+
+export const addBitmapLayer = (
+  project: Project,
+  shotId: string,
+  options: AddBitmapLayerOptions
+): Project => {
+  return updateBitmapLayers(project, shotId, (shot, layers) => {
+    const layerId = options.id ?? `layer-${shotId}-${layers.length}`;
+    const nextLayer: BitmapLayer = {
+      id: layerId,
+      kind: "paint",
+      name: options.name ?? "Layer",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: "normal",
+      order: layers.length,
+      bitmapPath: bitmapLayerPath(shot.id, layerId),
+      width: options.width,
+      height: options.height
+    };
+
+    return {
+      layers: [...layers, nextLayer],
+      activeLayerId: nextLayer.id
+    };
+  });
+};
+
+export const selectBitmapLayer = (
+  project: Project,
+  shotId: string,
+  layerId: string
+): Project => {
+  return updateBitmapLayers(project, shotId, (shot, layers) => {
+    const target = layers.find((layer) => layer.id === layerId);
+
+    return {
+      layers,
+      activeLayerId: target?.id ?? shot.activeLayerId ?? layers[0]?.id
+    };
+  });
+};
+
+export const updateBitmapLayer = (
+  project: Project,
+  shotId: string,
+  layerId: string,
+  patch: Partial<Pick<BitmapLayer, "name" | "visible" | "locked" | "opacity" | "blendMode">>
+): Project => {
+  return updateBitmapLayers(project, shotId, (shot, layers) => ({
+    layers: layers.map((layer) =>
+      layer.id === layerId
+        ? {
+            ...layer,
+            name: patch.name ?? layer.name,
+            visible: patch.visible ?? layer.visible,
+            locked: patch.locked ?? layer.locked,
+            opacity:
+              patch.opacity === undefined ? layer.opacity : Math.min(1, Math.max(0, patch.opacity)),
+            blendMode: patch.blendMode ?? layer.blendMode
+          }
+        : layer
+    ),
+    activeLayerId: shot.activeLayerId ?? layers[0]?.id
+  }));
+};
+
+export const moveBitmapLayer = (
+  project: Project,
+  shotId: string,
+  layerId: string,
+  targetLayerId: string
+): Project => {
+  if (layerId === targetLayerId) {
+    return project;
+  }
+
+  return updateBitmapLayers(project, shotId, (shot, layers) => {
+    const movingLayer = layers.find((layer) => layer.id === layerId);
+    const targetLayer = layers.find((layer) => layer.id === targetLayerId);
+
+    if (!movingLayer || !targetLayer || movingLayer.kind === "image") {
+      return { layers, activeLayerId: shot.activeLayerId ?? layers[0]?.id };
+    }
+
+    const paintLayers = layers.filter((layer) => layer.kind !== "image" && layer.id !== layerId);
+    const targetIndex = paintLayers.findIndex((layer) => layer.id === targetLayerId);
+    const insertIndex = targetIndex === -1 ? paintLayers.length : targetIndex;
+    const nextPaintLayers = [...paintLayers];
+    nextPaintLayers.splice(insertIndex, 0, movingLayer);
+
+    return {
+      layers: [...layers.filter((layer) => layer.kind === "image"), ...nextPaintLayers],
+      activeLayerId: shot.activeLayerId ?? layers[0]?.id
+    };
+  });
+};
+
+export const deleteBitmapLayer = (
+  project: Project,
+  shotId: string,
+  layerId: string
+): Project => {
+  return updateBitmapLayers(project, shotId, (shot, layers) => {
+    const target = layers.find((layer) => layer.id === layerId);
+
+    if (!target || target.kind === "image" || layers.length <= 1) {
+      return { layers, activeLayerId: shot.activeLayerId ?? layers[0]?.id };
+    }
+
+    const nextLayers = layers.filter((layer) => layer.id !== layerId);
+    const deletedIndex = layers.findIndex((layer) => layer.id === layerId);
+    const activeLayerId =
+      shot.activeLayerId === layerId
+        ? nextLayers[Math.max(0, Math.min(deletedIndex, nextLayers.length - 1))]?.id
+        : shot.activeLayerId ?? nextLayers[0]?.id;
+
+    return { layers: nextLayers, activeLayerId };
+  });
+};
+
+export const clearBitmapLayer = (
+  project: Project,
+  shotId: string,
+  layerId: string
+): Project => {
+  return updateBitmapLayers(project, shotId, (shot, layers) => ({
+    layers: layers.map((layer) => (layer.id === layerId ? { ...layer, cleared: true } : layer)),
+    activeLayerId: layerId
+  }));
+};
+
 export const clearImageLayerEdits = (project: Project, shotId: string): Project => {
   return {
     ...project,
@@ -719,6 +895,43 @@ const normalizeSketchLayerOrder = (layers: SketchLayer[]): SketchLayer[] => {
   }));
 };
 
+const normalizeBitmapLayerOrder = (layers: BitmapLayer[]): BitmapLayer[] => {
+  return layers.map((layer, order) => ({
+    ...layer,
+    visible: layer.visible ?? true,
+    locked: layer.locked ?? false,
+    opacity: layer.opacity ?? 1,
+    blendMode: layer.blendMode ?? "normal",
+    order
+  }));
+};
+
+const updateBitmapLayers = (
+  project: Project,
+  shotId: string,
+  update: (shot: Shot, layers: BitmapLayer[]) => { layers: BitmapLayer[]; activeLayerId?: string }
+): Project => {
+  let didChange = false;
+  const shots = project.shots.map((shot) => {
+    if (shot.id !== shotId) {
+      return shot;
+    }
+
+    const currentLayers = bitmapLayersForShot(shot);
+    const result = update(shot, currentLayers);
+    const nextLayers = normalizeBitmapLayerOrder(result.layers);
+    didChange = true;
+
+    return {
+      ...shot,
+      layers: nextLayers,
+      activeLayerId: result.activeLayerId ?? shot.activeLayerId ?? nextLayers[0]?.id
+    };
+  });
+
+  return didChange ? { ...project, shots, updatedAt: now() } : project;
+};
+
 const updateShotLayers = (
   project: Project,
   shotId: string,
@@ -830,6 +1043,33 @@ const normalizeDialogueOrder = (project: Project): Project => {
   return {
     ...project,
     dialogues: normalized
+  };
+};
+
+const createShotFromImportedImage = (
+  image: ImportedImage,
+  order: number,
+  options: {
+    sourceFileName?: string;
+    includeDefaultSketchLayer: boolean;
+  }
+): Shot => {
+  const shotId = crypto.randomUUID();
+  const width = image.width ?? image.swbMetadata?.canvasWidth ?? 1920;
+  const height = image.height ?? image.swbMetadata?.canvasHeight ?? 1080;
+
+  return {
+    id: shotId,
+    imagePath: image.imagePath,
+    previewPath: image.previewPath,
+    fileName: image.fileName,
+    sourceFileName: options.sourceFileName,
+    order,
+    sketchLayers: options.includeDefaultSketchLayer ? [createDefaultSketchLayer([])] : [],
+    activeLayerTarget: "image",
+    activeLayerId: imageBitmapLayerId,
+    layers: [createImageBitmapLayer(shotId, width, height)],
+    swb: swbStateForImportedImage(image)
   };
 };
 

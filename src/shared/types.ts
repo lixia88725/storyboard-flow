@@ -1,5 +1,6 @@
 export type SketchTool = "brush" | "eraser";
 export type SketchBlendMode = "normal" | "multiply" | "screen";
+export type BitmapBlendMode = "normal" | "multiply" | "screen";
 
 export type SketchStroke = {
   id: string;
@@ -19,6 +20,21 @@ export type SketchLayer = {
   blendMode?: SketchBlendMode;
   order: number;
   strokes: SketchStroke[];
+};
+
+export type BitmapLayer = {
+  id: string;
+  kind: "image" | "paint";
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  opacity: number;
+  blendMode: BitmapBlendMode;
+  order: number;
+  bitmapPath: string;
+  width: number;
+  height: number;
+  cleared?: boolean;
 };
 
 export type ShotSwbStatus =
@@ -46,6 +62,8 @@ export type Shot = {
   fileName: string;
   sourceFileName?: string;
   order: number;
+  layers?: BitmapLayer[];
+  activeLayerId?: string;
   sketchLayers?: SketchLayer[];
   activeSketchLayerId?: string;
   activeLayerTarget?: "image" | "sketch";

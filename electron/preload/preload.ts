@@ -7,6 +7,15 @@ type ProjectPayload = {
   renamePlan?: unknown[];
 };
 
+type LayerAssetPayload = {
+  folderPath: string;
+  bitmapPath: string;
+};
+
+type WriteLayerAssetPayload = LayerAssetPayload & {
+  dataUrl: string;
+};
+
 const api = {
   openFolderByPath: (folderPath: string) =>
     ipcRenderer.invoke("workspace:openFolderByPath", folderPath),
@@ -16,6 +25,12 @@ const api = {
     ipcRenderer.invoke("workspace:save", payload) as Promise<ProjectPayload>,
   importSwbFormat: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:importSwbFormat", payload),
+  writeLayerPng: (payload: WriteLayerAssetPayload) =>
+    ipcRenderer.invoke("layers:writePng", payload) as Promise<WriteLayerAssetPayload & { filePath: string }>,
+  readLayerPng: (payload: LayerAssetPayload) =>
+    ipcRenderer.invoke("layers:readPng", payload) as Promise<string>,
+  deleteLayerPng: (payload: LayerAssetPayload) =>
+    ipcRenderer.invoke("layers:deletePng", payload) as Promise<LayerAssetPayload>,
   createBlankShot: (folderPath: string, options: unknown) =>
     ipcRenderer.invoke("images:createBlankShot", folderPath, options),
   getRecentFolders: () => ipcRenderer.invoke("recent:getFolders") as Promise<string[]>,

@@ -28,6 +28,21 @@ type Project = {
     previewPath?: string;
     fileName: string;
     order: number;
+    layers?: Array<{
+      id: string;
+      kind: "image" | "paint";
+      name: string;
+      visible: boolean;
+      locked: boolean;
+      opacity: number;
+      blendMode: "normal" | "multiply" | "screen";
+      order: number;
+      bitmapPath: string;
+      width: number;
+      height: number;
+      cleared?: boolean;
+    }>;
+    activeLayerId?: string;
     sketchLayers?: Array<{
       id: string;
       name: string;
@@ -82,6 +97,15 @@ type ProjectPayload = {
   folderPath: string;
   metadataPath: string;
   renamePlan?: RenamePlanItem[];
+};
+
+type LayerAssetPayload = {
+  folderPath: string;
+  bitmapPath: string;
+};
+
+type WriteLayerAssetPayload = LayerAssetPayload & {
+  dataUrl: string;
 };
 
 type ImportedImage = {
@@ -220,6 +244,7 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("workspace:autosave", async (_event, payload: ProjectPayload) => {
+    await ensureProjectLayerAssets(payload.project, payload.folderPath);
     await writeProjectMetadata(payload.metadataPath, payload.project);
     return payload;
   });
@@ -242,6 +267,30 @@ const registerIpcHandlers = () => {
     await writeSwbMetadataToTiffs(project);
     await writeProjectMetadata(payload.metadataPath, project);
     return scanFolder(payload.folderPath);
+  });
+
+  ipcMain.handle("layers:writePng", async (_event, payload: WriteLayerAssetPayload) => {
+    const filePath = resolveLayerAssetPath(payload.folderPath, payload.bitmapPath);
+    const pngBuffer = pngBufferFromDataUrl(payload.dataUrl);
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, pngBuffer);
+    return { ...payload, filePath };
+  });
+
+  ipcMain.handle("layers:readPng", async (_event, payload: LayerAssetPayload) => {
+    const filePath = resolveLayerAssetPath(payload.folderPath, payload.bitmapPath);
+    const pngBuffer = await readFile(filePath);
+    return `data:image/png;base64,${pngBuffer.toString("base64")}`;
+  });
+
+  ipcMain.handle("layers:deletePng", async (_event, payload: LayerAssetPayload) => {
+    const filePath = resolveLayerAssetPath(payload.folderPath, payload.bitmapPath);
+    await unlink(filePath).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
+    });
+    return payload;
   });
 
   ipcMain.handle(
@@ -289,6 +338,72 @@ const pathExists = async (filePath: string): Promise<boolean> => {
 
     throw error;
   }
+};
+
+const resolveLayerAssetPath = (folderPath: string, bitmapPath: string): string => {
+  if (path.isAbsolute(bitmapPath)) {
+    throw new Error("Layer bitmap path must be relative");
+  }
+
+  const normalized = path.normalize(bitmapPath);
+  const expectedPrefix = path.join(".storyboard-workbench", "layers");
+
+  if (
+    normalized === expectedPrefix ||
+    !normalized.startsWith(`${expectedPrefix}${path.sep}`) ||
+    normalized.split(path.sep).includes("..")
+  ) {
+    throw new Error(`Layer bitmap path must stay under ${expectedPrefix}`);
+  }
+
+  return path.join(folderPath, normalized);
+};
+
+const pngBufferFromDataUrl = (dataUrl: string): Buffer => {
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/u.exec(dataUrl);
+
+  if (!match) {
+    throw new Error("Layer asset must be a PNG data URL");
+  }
+
+  return Buffer.from(match[1], "base64");
+};
+
+const ensureProjectLayerAssets = async (project: Project, folderPath: string): Promise<void> => {
+  for (const shot of project.shots) {
+    for (const layer of shot.layers ?? []) {
+      const filePath = resolveLayerAssetPath(folderPath, layer.bitmapPath);
+      if (await pathExists(filePath)) {
+        continue;
+      }
+
+      await mkdir(path.dirname(filePath), { recursive: true });
+
+      if (layer.kind === "image" && !layer.cleared) {
+        await sharp(shot.imagePath).rotate().png().toFile(filePath);
+        continue;
+      }
+
+      await createTransparentLayerPng(filePath, layer.width, layer.height);
+    }
+  }
+};
+
+const createTransparentLayerPng = async (
+  filePath: string,
+  width: number,
+  height: number
+): Promise<void> => {
+  await sharp({
+    create: {
+      width: Math.max(1, Math.round(width)),
+      height: Math.max(1, Math.round(height)),
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    }
+  })
+    .png()
+    .toFile(filePath);
 };
 
 const writeProjectMetadata = async (metadataPath: string, project: Project): Promise<void> => {
