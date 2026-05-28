@@ -2370,6 +2370,7 @@ const SketchPad = ({
           previousShot={onionSkinPreviousShot}
           nextShot={onionSkinNextShot}
           stageSize={stageSize}
+          folderPath={folderPath}
         />
         <Stage
           className="stage-overlay"
@@ -2414,9 +2415,10 @@ type OnionSkinOverlayProps = {
   previousShot?: Shot;
   nextShot?: Shot;
   stageSize: CanvasSize;
+  folderPath?: string;
 };
 
-const OnionSkinOverlay = ({ previousShot, nextShot, stageSize }: OnionSkinOverlayProps) => {
+const OnionSkinOverlay = ({ previousShot, nextShot, stageSize, folderPath }: OnionSkinOverlayProps) => {
   if (!previousShot && !nextShot) {
     return null;
   }
@@ -2424,9 +2426,11 @@ const OnionSkinOverlay = ({ previousShot, nextShot, stageSize }: OnionSkinOverla
   return (
     <div className="onion-skin-overlay" aria-hidden="true">
       {previousShot ? (
-        <OnionSkinGhost shot={previousShot} tone="previous" stageSize={stageSize} />
+        <OnionSkinGhost shot={previousShot} tone="previous" stageSize={stageSize} folderPath={folderPath} />
       ) : null}
-      {nextShot ? <OnionSkinGhost shot={nextShot} tone="next" stageSize={stageSize} /> : null}
+      {nextShot ? (
+        <OnionSkinGhost shot={nextShot} tone="next" stageSize={stageSize} folderPath={folderPath} />
+      ) : null}
     </div>
   );
 };
@@ -2434,76 +2438,78 @@ const OnionSkinOverlay = ({ previousShot, nextShot, stageSize }: OnionSkinOverla
 const OnionSkinGhost = ({
   shot,
   tone,
-  stageSize
+  stageSize,
+  folderPath
 }: {
   shot: Shot;
   tone: "previous" | "next";
   stageSize: CanvasSize;
+  folderPath?: string;
 }) => {
-  const canvasSize = canvasSizeForShot(shot);
   const imageSrc = window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath);
-  const sketchLayers = sketchLayersForShot(shot);
-  const tintColor = tone === "previous" ? "#ff4a3d" : "#43d96b";
+  const bitmapLayers = useMemo(() => bitmapLayersForShot(shot), [shot]);
+  const [layerDataUrls, setLayerDataUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLayers = async () => {
+      if (!folderPath) {
+        return;
+      }
+
+      const entries = await Promise.all(
+        bitmapLayers.map(async (layer) => {
+          if (layer.cleared) {
+            return [layer.id, undefined] as const;
+          }
+
+          const dataUrl = await window.storyboard
+            .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
+            .catch(() => undefined);
+          return [layer.id, dataUrl] as const;
+        })
+      );
+
+      if (!cancelled) {
+        setLayerDataUrls(
+          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1])))
+        );
+      }
+    };
+
+    void loadLayers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bitmapLayers, folderPath]);
 
   return (
     <div className={`onion-skin-ghost onion-skin-ghost-${tone}`}>
-      {shot.baseVisible !== false ? (
+      {bitmapLayers.length === 0 ? (
         <img src={imageSrc} alt="" draggable={false} className="onion-skin-image" />
       ) : null}
-      <Stage
-        className="onion-skin-stage"
-        width={stageSize.width}
-        height={stageSize.height}
-        listening={false}
-      >
-        {(shot.imageLayerEdits?.length ?? 0) > 0 ? (
-          <Layer
-            scaleX={stageSize.width / canvasSize.width}
-            scaleY={stageSize.height / canvasSize.height}
-          >
-            {(shot.imageLayerEdits ?? []).map((stroke) => (
-              <Line
-                key={stroke.id}
-                points={stroke.points}
-                stroke={stroke.tool === "eraser" ? "#ffffff" : tintColor}
-                opacity={stroke.opacity ?? 1}
-                strokeWidth={stroke.size}
-                tension={0.35}
-                lineCap="round"
-                lineJoin="round"
-                globalCompositeOperation="source-over"
-              />
-            ))}
-          </Layer>
-        ) : null}
-        {sketchLayers
-          .filter((layer) => layer.visible)
-          .map((layer) => (
-            <Layer
+      {bitmapLayers
+        .filter((layer) => layer.visible)
+        .map((layer) => {
+          const layerSrc =
+            layerDataUrls[layer.id] ?? (layer.kind === "image" && !layer.cleared ? imageSrc : undefined);
+
+          return layerSrc ? (
+            <img
               key={layer.id}
-              opacity={layer.opacity}
-              globalCompositeOperation={canvasBlendMode(layer.blendMode)}
-              scaleX={stageSize.width / canvasSize.width}
-              scaleY={stageSize.height / canvasSize.height}
-            >
-              {layer.strokes.map((stroke) => (
-                <Line
-                  key={stroke.id}
-                  points={stroke.points}
-                  stroke={stroke.tool === "eraser" ? "#ffffff" : tintColor}
-                  opacity={stroke.opacity ?? 1}
-                  strokeWidth={stroke.size}
-                  tension={0.35}
-                  lineCap="round"
-                  lineJoin="round"
-                  globalCompositeOperation={
-                    stroke.tool === "eraser" ? "destination-out" : "source-over"
-                  }
-                />
-              ))}
-            </Layer>
-          ))}
-      </Stage>
+              src={layerSrc}
+              alt=""
+              draggable={false}
+              className="onion-skin-image"
+              style={{
+                opacity: layer.opacity,
+                mixBlendMode: cssBlendMode(layer.blendMode)
+              }}
+            />
+          ) : null;
+        })}
     </div>
   );
 };
