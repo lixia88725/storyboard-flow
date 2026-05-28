@@ -28,7 +28,7 @@ const api = {
   writeLayerPng: (payload: WriteLayerAssetPayload) =>
     ipcRenderer.invoke("layers:writePng", payload) as Promise<WriteLayerAssetPayload & { filePath: string }>,
   readLayerPng: (payload: LayerAssetPayload) =>
-    ipcRenderer.invoke("layers:readPng", payload) as Promise<string>,
+    ipcRenderer.invoke("layers:readPng", payload) as Promise<string | undefined>,
   deleteLayerPng: (payload: LayerAssetPayload) =>
     ipcRenderer.invoke("layers:deletePng", payload) as Promise<LayerAssetPayload>,
   createBlankShot: (folderPath: string, options: unknown) =>

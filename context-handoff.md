@@ -55,9 +55,16 @@ npm run typecheck   # passed
 npm run build       # passed, Vite chunk size warning only
 ```
 
-Electron GUI smoke 尝试过，但本地 Electron 启动到默认 Electron 页面，Computer Use 未能拿到 Storyboard Workbench 窗口；未把 GUI smoke 记为通过。以下行为仍需手动或自动确认：
+Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench 窗口，并验证：
 
-- `TODO: verify` 新文件夹打开后首次 autosave 是否稳定创建 `.storyboard-workbench/layers/` PNG assets。
+- 打开普通 PNG 文件夹成功显示 shot。
+- 首次 autosave 会创建 `.storyboard-workbench/storyboard.project.json`。
+- 首次 autosave 会创建 `.storyboard-workbench/layers/{shotId}/layer-image.png`。
+- 对普通 PNG 执行 Save 后，原 PNG 进入 `Archive/`，生成命名 TIFF，JSON 指向 `status: "owned"` 的 TIFF。
+- Save 仍需要用户确认缺失命名字段时是否使用默认 Scene / Artist / Version。
+
+以下行为仍需手动或自动确认：
+
 - `TODO: verify` Image layer 上画、擦、清空、Save、重开的一致性。
 - `TODO: verify` 普通 paint layer 新增、画、擦、显隐、opacity、blend mode、拖动排序、Save、重开的一致性。
 - `TODO: verify` 旧 stroke 项目迁移后的可见结果是否符合预期。
@@ -87,4 +94,5 @@ b2370a3 fix: autosave new folders for layer assets
 371bcac feat: draw strokes into bitmap layer assets
 7eb3c2e feat: migrate legacy strokes to bitmap layers
 45e529b feat: render onion skin from bitmap layers
+2e0abcc docs: update handoff for bitmap layer workflow
 ```

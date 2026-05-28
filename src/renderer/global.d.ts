@@ -22,7 +22,7 @@ declare global {
         bitmapPath: string;
         dataUrl: string;
       }) => Promise<{ folderPath: string; bitmapPath: string; dataUrl: string; filePath: string }>;
-      readLayerPng: (payload: { folderPath: string; bitmapPath: string }) => Promise<string>;
+      readLayerPng: (payload: { folderPath: string; bitmapPath: string }) => Promise<string | undefined>;
       deleteLayerPng: (payload: {
         folderPath: string;
         bitmapPath: string;

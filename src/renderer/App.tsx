@@ -617,9 +617,10 @@ export const App = () => {
     const blankDataUrl = await createTransparentLayerDataUrl(layer.width, layer.height);
     const sourceDataUrl = layer.cleared
       ? blankDataUrl
-      : await window.storyboard
+      : (await window.storyboard
           .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
-          .catch(() => (layer.kind === "image" ? window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath) : blankDataUrl));
+          .catch(() => undefined)) ??
+        (layer.kind === "image" ? window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath) : blankDataUrl);
     const dataUrl = await drawStrokeOnBitmapLayer(sourceDataUrl, layer, stroke);
 
     await window.storyboard.writeLayerPng({
@@ -671,7 +672,7 @@ export const App = () => {
     setUndoStack([]);
     setRedoStack([]);
     setSelectedShotIds(nextProject.shots[0] ? [nextProject.shots[0].id] : []);
-    if (acceptedExternalEdits) {
+    if (dirty || acceptedExternalEdits) {
       setAutosaveRevision((revision) => revision + 1);
     }
   };

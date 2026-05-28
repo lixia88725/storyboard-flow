@@ -259,8 +259,9 @@ const registerIpcHandlers = () => {
       await applyFileRenamePlan(payload.renamePlan);
     }
 
-    await writeSwbMetadataToTiffs(payload.project, payload.folderPath);
-    const savedProject = clearSavedImageLayerEdits(payload.project);
+    const swbProject = await importProjectToSwbFormat(payload.project, payload.folderPath);
+    await writeSwbMetadataToTiffs(swbProject, payload.folderPath);
+    const savedProject = clearSavedImageLayerEdits(swbProject);
     await writeProjectMetadata(payload.metadataPath, savedProject);
 
     return { ...payload, project: savedProject };
@@ -283,6 +284,10 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle("layers:readPng", async (_event, payload: LayerAssetPayload) => {
     const filePath = resolveLayerAssetPath(payload.folderPath, payload.bitmapPath);
+    if (!(await pathExists(filePath))) {
+      return undefined;
+    }
+
     const pngBuffer = await readFile(filePath);
     return `data:image/png;base64,${pngBuffer.toString("base64")}`;
   });
