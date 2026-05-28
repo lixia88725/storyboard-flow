@@ -14,6 +14,7 @@ import {
   deleteBitmapLayer,
   flattenSketchLayers,
   getNextStoryboardIndex,
+  markBitmapLayerPainted,
   moveBitmapLayer,
   removeSketchLayer,
   reorderSketchLayer,
@@ -243,6 +244,15 @@ describe("project operations", () => {
         cleared: true
       }
     ]);
+  });
+
+  it("marks a cleared bitmap layer as painted again", () => {
+    const cleared = clearBitmapLayer(makeBitmapProject(), "shot-a", "layer-image");
+
+    const updated = markBitmapLayerPainted(cleared, "shot-a", "layer-image");
+
+    expect(bitmapLayersForShot(updated.shots[0])[0]).not.toHaveProperty("cleared");
+    expect(updated.shots[0].activeLayerId).toBe("layer-image");
   });
 
   it("reorders shots and normalizes their order values", () => {

@@ -770,6 +770,24 @@ export const clearBitmapLayer = (
   }));
 };
 
+export const markBitmapLayerPainted = (
+  project: Project,
+  shotId: string,
+  layerId: string
+): Project => {
+  return updateBitmapLayers(project, shotId, (shot, layers) => ({
+    layers: layers.map((layer) => {
+      if (layer.id !== layerId) {
+        return layer;
+      }
+
+      const { cleared, ...paintedLayer } = layer;
+      return paintedLayer;
+    }),
+    activeLayerId: layerId
+  }));
+};
+
 export const clearImageLayerEdits = (project: Project, shotId: string): Project => {
   return {
     ...project,

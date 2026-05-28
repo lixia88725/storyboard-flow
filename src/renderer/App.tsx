@@ -24,6 +24,7 @@ import {
 import { Layer, Line, Stage } from "react-konva";
 import {
   activeSketchLayerForShot,
+  addBitmapLayer,
   addDialogue,
   addGeneratedShot,
   addSketchLayer,
@@ -35,11 +36,17 @@ import {
   createRenamePlan,
   defaultProjectNaming,
   defaultSaveNaming,
+  bitmapLayersForShot,
+  clearBitmapLayer,
+  deleteBitmapLayer,
   deleteImageLayerContent,
   dialoguesForShot,
   getNextStoryboardIndex,
+  imageBitmapLayerId,
+  markBitmapLayerPainted,
   mergeFolderImages,
   moveDialogueToShot,
+  moveBitmapLayer,
   moveSketchLayer,
   projectAcceptedExternalEdits,
   projectHasSwbWarning,
@@ -48,6 +55,7 @@ import {
   removeDialogue,
   reorderShotGroup,
   reorderShots,
+  selectBitmapLayer,
   selectImageLayer,
   selectSketchLayer,
   sketchBlendModes,
@@ -55,10 +63,12 @@ import {
   sortedShots,
   type ShotPlacement,
   updateDialogueText,
+  updateBitmapLayer,
   updateShotBaseVisibility,
   updateSketchLayer
 } from "../shared/projectOps";
 import type {
+  BitmapLayer,
   Dialogue,
   FolderScanPayload,
   Project,
@@ -594,6 +604,48 @@ export const App = () => {
     setWorkspaceSaveState("saved");
   };
 
+  const handleBitmapStroke = async (shot: Shot, layerId: string, stroke: SketchStroke) => {
+    if (!window.storyboard || !folderPath) {
+      return;
+    }
+
+    const layer = bitmapLayersForShot(shot).find((item) => item.id === layerId);
+    if (!layer || layer.locked) {
+      return;
+    }
+
+    const blankDataUrl = await createTransparentLayerDataUrl(layer.width, layer.height);
+    const sourceDataUrl = layer.cleared
+      ? blankDataUrl
+      : await window.storyboard
+          .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
+          .catch(() => (layer.kind === "image" ? window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath) : blankDataUrl));
+    const dataUrl = await drawStrokeOnBitmapLayer(sourceDataUrl, layer, stroke);
+
+    await window.storyboard.writeLayerPng({
+      folderPath,
+      bitmapPath: layer.bitmapPath,
+      dataUrl
+    });
+    updateProject((currentProject) => markBitmapLayerPainted(currentProject, shot.id, layer.id), false);
+  };
+
+  const handleClearBitmapLayer = async (shotId: string, layerId: string) => {
+    const shot = projectRef.current.shots.find((item) => item.id === shotId);
+    const layer = shot ? bitmapLayersForShot(shot).find((item) => item.id === layerId) : undefined;
+
+    if (!window.storyboard || !folderPath || !layer) {
+      return;
+    }
+
+    await window.storyboard.writeLayerPng({
+      folderPath,
+      bitmapPath: layer.bitmapPath,
+      dataUrl: await createTransparentLayerDataUrl(layer.width, layer.height)
+    });
+    updateProject((currentProject) => clearBitmapLayer(currentProject, shotId, layerId), false);
+  };
+
   const loadFolderScan = (scan: FolderScanPayload, nextStatus: string, dirty = false) => {
     const baseProject = scan.project ?? createProject(scan.folderName || "Untitled Storyboard");
     const nextProject = mergeFolderImages(
@@ -1117,12 +1169,13 @@ export const App = () => {
                 setStatus("Select a shot before clearing a layer");
                 return;
               }
-              const activeLayer = activeSketchLayerForShot(primarySelectedShot);
-              updateProject((currentProject) =>
-                primarySelectedShot.activeLayerTarget === "image"
-                  ? deleteImageLayerContent(currentProject, primarySelectedShot.id)
-                  : clearSketch(currentProject, primarySelectedShot.id, activeLayer.id)
-              );
+              const activeLayer =
+                bitmapLayersForShot(primarySelectedShot).find(
+                  (layer) => layer.id === primarySelectedShot.activeLayerId
+                ) ?? bitmapLayersForShot(primarySelectedShot)[0];
+              if (activeLayer) {
+                void handleClearBitmapLayer(primarySelectedShot.id, activeLayer.id);
+              }
             }}
             title="Clear current layer"
             aria-label="Clear current layer"
@@ -1195,34 +1248,32 @@ export const App = () => {
           isOpen={isLayerPanelOpen}
           onToggle={() => setIsLayerPanelOpen((isOpen) => !isOpen)}
           onAddLayer={(shotId) =>
-            updateProject((currentProject) => addSketchLayer(currentProject, shotId, "Layer"))
+            updateProject((currentProject) => {
+              const shot = currentProject.shots.find((item) => item.id === shotId);
+              const canvasSize = shot ? canvasSizeForShot(shot) : sketchCanvasSize;
+              return addBitmapLayer(currentProject, shotId, {
+                name: "Layer",
+                width: canvasSize.width,
+                height: canvasSize.height
+              });
+            }, false)
           }
           onRemoveLayer={(shotId, layerId) =>
-            updateProject((currentProject) => removeSketchLayer(currentProject, shotId, layerId))
+            updateProject((currentProject) => deleteBitmapLayer(currentProject, shotId, layerId), false)
           }
-          onDeleteImageLayerContent={(shotId) =>
-            updateProject((currentProject) => deleteImageLayerContent(currentProject, shotId))
-          }
+          onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
           onSelectLayer={(shotId, layerId) =>
-            updateProject((currentProject) => selectSketchLayer(currentProject, shotId, layerId))
+            updateProject((currentProject) => selectBitmapLayer(currentProject, shotId, layerId), false, false)
           }
           onUpdateLayer={(shotId, layerId, patch) =>
             updateProject((currentProject) =>
-              updateSketchLayer(currentProject, shotId, layerId, patch)
-            )
+              updateBitmapLayer(currentProject, shotId, layerId, patch)
+            , false)
           }
           onMoveLayer={(shotId, layerId, targetLayerId) =>
             updateProject((currentProject) =>
-              moveSketchLayer(currentProject, shotId, layerId, targetLayerId)
-            )
-          }
-          onUpdateBaseVisibility={(shotId, visible) =>
-            updateProject((currentProject) =>
-              updateShotBaseVisibility(currentProject, shotId, visible)
-            )
-          }
-          onSelectImageLayer={(shotId) =>
-            updateProject((currentProject) => selectImageLayer(currentProject, shotId))
+              moveBitmapLayer(currentProject, shotId, layerId, targetLayerId)
+            , false)
           }
         />
 
@@ -1251,6 +1302,7 @@ export const App = () => {
                   shot={shot}
                   index={index}
                   project={project}
+                  folderPath={folderPath}
                   isSelected={selectedShotIds.includes(shot.id)}
                   activeSketchTool={activeSketchTool}
                   brushColor={brushColor}
@@ -1285,11 +1337,7 @@ export const App = () => {
                     setEditingDialogueId(undefined);
                   }}
                   onSketchStroke={(layerId, stroke) =>
-                    updateProject((currentProject) =>
-                      layerId === imageLayerId
-                        ? appendImageLayerEdit(currentProject, shot.id, stroke)
-                        : appendSketchStroke(currentProject, shot.id, layerId, stroke)
-                    )
+                    void handleBitmapStroke(shot, layerId, stroke)
                   }
                 />
               ))}
@@ -1502,16 +1550,14 @@ type LayerPanelProps = {
   onToggle: () => void;
   onAddLayer: (shotId: string) => void;
   onRemoveLayer: (shotId: string, layerId: string) => void;
-  onDeleteImageLayerContent: (shotId: string) => void;
+  onClearLayer: (shotId: string, layerId: string) => void;
   onSelectLayer: (shotId: string, layerId: string) => void;
   onUpdateLayer: (
     shotId: string,
     layerId: string,
-    patch: Partial<Pick<SketchLayer, "name" | "visible" | "locked" | "opacity" | "blendMode">>
+    patch: Partial<Pick<BitmapLayer, "name" | "visible" | "locked" | "opacity" | "blendMode">>
   ) => void;
   onMoveLayer: (shotId: string, layerId: string, targetLayerId: string) => void;
-  onUpdateBaseVisibility: (shotId: string, visible: boolean) => void;
-  onSelectImageLayer: (shotId: string) => void;
 };
 
 const LayerPanel = ({
@@ -1520,18 +1566,14 @@ const LayerPanel = ({
   onToggle,
   onAddLayer,
   onRemoveLayer,
-  onDeleteImageLayerContent,
+  onClearLayer,
   onSelectLayer,
   onUpdateLayer,
-  onMoveLayer,
-  onUpdateBaseVisibility,
-  onSelectImageLayer
+  onMoveLayer
 }: LayerPanelProps) => {
-  const layers = shot ? sketchLayersForShot(shot) : [];
-  const activeLayer = shot ? activeSketchLayerForShot(shot) : undefined;
+  const layers = shot ? bitmapLayersForShot(shot) : [];
+  const activeLayer = layers.find((layer) => layer.id === shot?.activeLayerId) ?? layers[0];
   const activeLayerId = activeLayer?.id;
-  const isImageLayerActive = shot?.activeLayerTarget === "image";
-  const baseVisible = shot?.baseVisible ?? true;
 
   return (
     <div className="layer-popover">
@@ -1542,12 +1584,12 @@ const LayerPanel = ({
               <span>Mode</span>
               <select
                 aria-label="Layer blend mode"
-                value={isImageLayerActive ? "normal" : activeLayer?.blendMode ?? "normal"}
-                disabled={!shot || !activeLayer || isImageLayerActive}
+                value={activeLayer?.blendMode ?? "normal"}
+                disabled={!shot || !activeLayer}
                 onChange={(event) => {
                   if (shot && activeLayer) {
                     onUpdateLayer(shot.id, activeLayer.id, {
-                      blendMode: event.target.value as SketchBlendMode
+                      blendMode: event.target.value as BitmapLayer["blendMode"]
                     });
                   }
                 }}
@@ -1563,7 +1605,7 @@ const LayerPanel = ({
               <span className="layer-control-header">
                 <span>Opacity</span>
                 <strong>
-                  {isImageLayerActive ? 100 : Math.round((activeLayer?.opacity ?? 1) * 100)}%
+                  {Math.round((activeLayer?.opacity ?? 1) * 100)}%
                 </strong>
               </span>
               <input
@@ -1572,8 +1614,8 @@ const LayerPanel = ({
                 min="0"
                 max="100"
                 step="5"
-                value={isImageLayerActive ? 100 : Math.round((activeLayer?.opacity ?? 1) * 100)}
-                disabled={!shot || !activeLayer || isImageLayerActive}
+                value={Math.round((activeLayer?.opacity ?? 1) * 100)}
+                disabled={!shot || !activeLayer}
                 onChange={(event) => {
                   if (shot && activeLayer) {
                     onUpdateLayer(shot.id, activeLayer.id, {
@@ -1589,10 +1631,10 @@ const LayerPanel = ({
               {layers.map((layer) => (
                 <div
                   key={layer.id}
-                  className={`layer-row ${
-                    !isImageLayerActive && layer.id === activeLayerId ? "is-active" : ""
-                  } ${layer.visible ? "" : "is-hidden"}`}
-                  draggable
+                  className={`layer-row ${layer.id === activeLayerId ? "is-active" : ""} ${
+                    layer.visible ? "" : "is-hidden"
+                  }`}
+                  draggable={layer.kind !== "image"}
                   onClick={() => onSelectLayer(shot.id, layer.id)}
                   onDragStart={(event) => {
                     event.dataTransfer.setData("text/plain", layer.id);
@@ -1624,7 +1666,7 @@ const LayerPanel = ({
                   >
                     <span className={layer.visible ? "layer-eye is-on" : "layer-eye"} />
                   </button>
-                  <LayerThumbnail layer={layer} canvasSize={canvasSizeForShot(shot)} />
+                  <BitmapLayerThumbnail layer={layer} shot={shot} />
                   <input
                     aria-label="Layer name"
                     value={layer.name}
@@ -1636,43 +1678,6 @@ const LayerPanel = ({
                   />
                 </div>
               ))}
-              <div
-                className={`layer-row layer-row-base ${isImageLayerActive ? "is-active" : ""} ${
-                  baseVisible ? "" : "is-hidden"
-                }`}
-                onClick={() => onSelectImageLayer(shot.id)}
-              >
-                <button
-                  type="button"
-                  className="layer-select"
-                  draggable={false}
-                  title={baseVisible ? "Hide image layer" : "Show image layer"}
-                  aria-label={baseVisible ? "Hide image layer" : "Show image layer"}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onUpdateBaseVisibility(shot.id, !baseVisible);
-                  }}
-                >
-                  <span className={baseVisible ? "layer-eye is-on" : "layer-eye"} />
-                </button>
-                <div
-                  className="layer-thumb layer-thumb-image"
-                  style={{
-                    backgroundImage: `url("${window.storyboard.assetUrl(
-                      shot.previewPath ?? shot.imagePath
-                    )}")`
-                  }}
-                  aria-hidden="true"
-                >
-                  <LayerThumbnailSvg
-                    strokes={shot.imageLayerEdits ?? []}
-                    opacity={1}
-                    canvasSize={canvasSizeForShot(shot)}
-                  />
-                </div>
-                <span className="layer-base-name">Image</span>
-              </div>
             </div>
           ) : (
             <p className="layer-empty">Select a shot to edit layers.</p>
@@ -1694,16 +1699,16 @@ const LayerPanel = ({
             <button
               type="button"
               onClick={() => {
-                if (shot && isImageLayerActive) {
-                  onDeleteImageLayerContent(shot.id);
-                  return;
-                }
-
                 if (shot && activeLayer) {
+                  if (activeLayer.kind === "image") {
+                    onClearLayer(shot.id, activeLayer.id);
+                    return;
+                  }
+
                   onRemoveLayer(shot.id, activeLayer.id);
                 }
               }}
-              disabled={!shot || (!isImageLayerActive && (!activeLayer || layers.length <= 1))}
+              disabled={!shot || !activeLayer || (activeLayer.kind !== "image" && layers.length <= 1)}
               title="Delete current layer"
               aria-label="Delete current layer"
             >
@@ -1730,6 +1735,19 @@ const LayerThumbnail = ({ layer, canvasSize }: { layer: SketchLayer; canvasSize:
   <div className="layer-thumb" aria-hidden="true">
     <LayerThumbnailSvg strokes={layer.strokes} opacity={layer.opacity} canvasSize={canvasSize} />
   </div>
+);
+
+const BitmapLayerThumbnail = ({ layer, shot }: { layer: BitmapLayer; shot: Shot }) => (
+  <div
+    className={`layer-thumb ${layer.kind === "image" ? "layer-thumb-image" : ""}`}
+    style={{
+      backgroundImage:
+        layer.kind === "image"
+          ? `url("${window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath)}")`
+          : undefined
+    }}
+    aria-hidden="true"
+  />
 );
 
 const LayerThumbnailSvg = ({
@@ -1787,6 +1805,75 @@ const canvasBlendMode = (blendMode: SketchBlendMode | undefined) => {
   return "source-over";
 };
 
+const cssBlendMode = (blendMode: BitmapLayer["blendMode"] | undefined) => {
+  if (blendMode === "multiply" || blendMode === "screen") {
+    return blendMode;
+  }
+
+  return "normal";
+};
+
+const createTransparentLayerDataUrl = async (width: number, height: number): Promise<string> => {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
+  return canvas.toDataURL("image/png");
+};
+
+const drawStrokeOnBitmapLayer = async (
+  sourceUrl: string,
+  layer: BitmapLayer,
+  stroke: SketchStroke
+): Promise<string> => {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(layer.width));
+  canvas.height = Math.max(1, Math.round(layer.height));
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    return sourceUrl;
+  }
+
+  await drawImageUrl(context, sourceUrl, canvas.width, canvas.height);
+
+  if (stroke.points.length >= 4) {
+    context.save();
+    context.globalAlpha = stroke.opacity ?? 1;
+    context.globalCompositeOperation =
+      stroke.tool === "eraser" ? "destination-out" : "source-over";
+    context.strokeStyle = stroke.color;
+    context.lineWidth = stroke.size;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.beginPath();
+    context.moveTo(stroke.points[0], stroke.points[1]);
+    for (let index = 2; index < stroke.points.length; index += 2) {
+      context.lineTo(stroke.points[index], stroke.points[index + 1]);
+    }
+    context.stroke();
+    context.restore();
+  }
+
+  return canvas.toDataURL("image/png");
+};
+
+const drawImageUrl = (
+  context: CanvasRenderingContext2D,
+  sourceUrl: string,
+  width: number,
+  height: number
+): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      context.clearRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+      resolve();
+    };
+    image.onerror = () => reject(new Error("Could not load layer bitmap"));
+    image.src = sourceUrl;
+  });
+
 const canvasSizeForShot = (shot: Shot): CanvasSize => {
   const width = shot.swb?.canvasWidth;
   const height = shot.swb?.canvasHeight;
@@ -1803,6 +1890,7 @@ type ShotCardProps = {
   shot: Shot;
   index: number;
   project: Project;
+  folderPath?: string;
   isSelected: boolean;
   activeSketchTool: SketchTool;
   brushColor: string;
@@ -1824,6 +1912,7 @@ const ShotCard = ({
   shot,
   index,
   project,
+  folderPath,
   isSelected,
   activeSketchTool,
   brushColor,
@@ -1880,6 +1969,7 @@ const ShotCard = ({
 
       <SketchPad
         shot={shot}
+        folderPath={folderPath}
         tool={activeSketchTool}
         brushColor={brushColor}
         brushOpacity={brushOpacity}
@@ -2035,6 +2125,7 @@ const ShotStackPreview = ({ shots }: { shots: Shot[] }) => {
 
 type SketchPadProps = {
   shot: Shot;
+  folderPath?: string;
   tool: SketchTool;
   brushColor: string;
   brushOpacity: number;
@@ -2048,6 +2139,7 @@ type SketchPadProps = {
 
 const SketchPad = ({
   shot,
+  folderPath,
   tool,
   brushColor,
   brushOpacity,
@@ -2065,13 +2157,50 @@ const SketchPad = ({
   const draftStrokeRef = useRef<SketchStroke | undefined>(undefined);
   const imageSrc = window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath);
   const canvasSize = useMemo(() => canvasSizeForShot(shot), [shot]);
-  const sketchLayers = useMemo(() => sketchLayersForShot(shot), [shot]);
-  const activeLayer = useMemo(() => activeSketchLayerForShot(shot), [shot]);
-  const activeDrawingLayerId = shot.activeLayerTarget === "image" ? imageLayerId : activeLayer.id;
+  const bitmapLayers = useMemo(() => bitmapLayersForShot(shot), [shot]);
+  const activeLayer = useMemo(
+    () => bitmapLayers.find((layer) => layer.id === shot.activeLayerId) ?? bitmapLayers[0],
+    [bitmapLayers, shot.activeLayerId]
+  );
+  const activeDrawingLayerId = activeLayer?.id ?? imageBitmapLayerId;
+  const [layerDataUrls, setLayerDataUrls] = useState<Record<string, string>>({});
 
   useEffect(() => {
     draftStrokeRef.current = draftStroke;
   }, [draftStroke]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLayers = async () => {
+      const entries = await Promise.all(
+        bitmapLayers.map(async (layer) => {
+          if (layer.cleared) {
+            return [layer.id, undefined] as const;
+          }
+
+          const dataUrl = folderPath
+            ? await window.storyboard
+                .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
+                .catch(() => undefined)
+            : undefined;
+          return [layer.id, dataUrl] as const;
+        })
+      );
+
+      if (!cancelled) {
+        setLayerDataUrls(
+          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1])))
+        );
+      }
+    };
+
+    void loadLayers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bitmapLayers, folderPath, shot]);
 
   useEffect(() => {
     const element = imageStageRef.current;
@@ -2217,9 +2346,26 @@ const SketchPad = ({
         ref={imageStageRef}
         style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}
       >
-        {shot.baseVisible !== false ? (
-          <img src={imageSrc} alt={shot.fileName} draggable={false} />
-        ) : null}
+        {bitmapLayers.length === 0 ? <img src={imageSrc} alt={shot.fileName} draggable={false} /> : null}
+        {bitmapLayers
+          .filter((layer) => layer.visible)
+          .map((layer) => {
+            const layerSrc =
+              layerDataUrls[layer.id] ?? (layer.kind === "image" && !layer.cleared ? imageSrc : undefined);
+
+            return layerSrc ? (
+              <img
+                key={layer.id}
+                src={layerSrc}
+                alt=""
+                draggable={false}
+                style={{
+                  opacity: layer.opacity,
+                  mixBlendMode: cssBlendMode(layer.blendMode)
+                }}
+              />
+            ) : null;
+          })}
         <OnionSkinOverlay
           previousShot={onionSkinPreviousShot}
           nextShot={onionSkinNextShot}
@@ -2236,16 +2382,12 @@ const SketchPad = ({
           onTouchMove={extendStroke}
           onTouchEnd={finishStroke}
         >
-          {(shot.imageLayerEdits?.length ?? 0) > 0 ||
-          (draftStroke && activeDrawingLayerId === imageLayerId) ? (
+          {draftStroke ? (
             <Layer
               scaleX={stageSize.width / canvasSize.width}
               scaleY={stageSize.height / canvasSize.height}
             >
-              {[
-                ...(shot.imageLayerEdits ?? []),
-                ...(draftStroke && activeDrawingLayerId === imageLayerId ? [draftStroke] : [])
-              ].map((stroke) => (
+              {[draftStroke].map((stroke) => (
                 <Line
                   key={stroke.id}
                   points={stroke.points}
@@ -2255,43 +2397,13 @@ const SketchPad = ({
                   tension={0.35}
                   lineCap="round"
                   lineJoin="round"
-                  globalCompositeOperation="source-over"
+                  globalCompositeOperation={
+                    stroke.tool === "eraser" ? "destination-out" : "source-over"
+                  }
                 />
               ))}
             </Layer>
           ) : null}
-          {sketchLayers
-            .filter((layer) => layer.visible)
-            .map((layer) => (
-              <Layer
-                key={layer.id}
-                opacity={layer.opacity}
-                globalCompositeOperation={canvasBlendMode(layer.blendMode)}
-                scaleX={stageSize.width / canvasSize.width}
-                scaleY={stageSize.height / canvasSize.height}
-              >
-                {[
-                  ...layer.strokes,
-                  ...(draftStroke && layer.id === activeLayer.id && activeDrawingLayerId !== imageLayerId
-                    ? [draftStroke]
-                    : [])
-                ].map((stroke) => (
-                  <Line
-                    key={stroke.id}
-                    points={stroke.points}
-                    stroke={stroke.color}
-                    opacity={stroke.opacity ?? 1}
-                    strokeWidth={stroke.size}
-                    tension={0.35}
-                    lineCap="round"
-                    lineJoin="round"
-                    globalCompositeOperation={
-                      stroke.tool === "eraser" ? "destination-out" : "source-over"
-                    }
-                  />
-                ))}
-              </Layer>
-            ))}
         </Stage>
       </div>
     </div>
