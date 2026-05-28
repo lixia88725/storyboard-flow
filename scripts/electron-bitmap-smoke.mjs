@@ -258,6 +258,25 @@ try {
 
   await evaluate(`
     (() => {
+      document.querySelector('button[aria-label="Clear current layer"]').click();
+      return true;
+    })()
+  `);
+
+  const clearedHash = await waitFor(async () => {
+    const nextHash = await hashFile(layerPath);
+    return nextHash !== drawnHash ? nextHash : undefined;
+  }, "layer hash change after clear");
+
+  await dispatchKeyZ(send, 4);
+
+  const undoClearHash = await waitFor(async () => {
+    const nextHash = await hashFile(layerPath);
+    return nextHash === drawnHash ? nextHash : undefined;
+  }, "layer hash restore after undo clear");
+
+  await evaluate(`
+    (() => {
       const saveButton = Array.from(document.querySelectorAll("button"))
         .find((button) => button.textContent.trim() === "Save");
       saveButton.click();
@@ -298,6 +317,8 @@ try {
         drawnHash,
         undoHash,
         redoHash,
+        clearedHash,
+        undoClearHash,
         savedFileName: savedTiffFiles[0],
         savedSwbStatus: savedProject.shots[0].swb.status,
         reopenedHash
