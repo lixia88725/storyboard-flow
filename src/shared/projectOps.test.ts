@@ -1,19 +1,47 @@
 import { describe, expect, it } from "vitest";
 import {
   addDialogue,
+  addImportedImages,
+  addSketchLayer,
   addGeneratedShot,
   clearSketch,
   createRenamePlan,
+  flattenSketchLayers,
   getNextStoryboardIndex,
+  removeSketchLayer,
+  reorderSketchLayer,
+  moveSketchLayer,
+  selectSketchLayer,
+  updateSketchLayer,
+  updateShotBaseVisibility,
   validateRenamePlan,
   mergeFolderImages,
   moveDialogueToShot,
+  projectAcceptedExternalEdits,
+  projectNeedsSwbImport,
   removeDialogue,
   reorderShots,
   reorderShotGroup,
+  sketchLayersForShot,
+  appendSketchStroke,
+  appendImageLayerEdit,
+  clearImageLayerEdits,
+  deleteImageLayerContent,
+  selectImageLayer,
   updateSketch
 } from "./projectOps";
 import type { Project, SketchStroke } from "./types";
+
+const defaultLayer = () => ({
+  id: "layer-default",
+  name: "Drawing",
+  visible: true,
+  locked: false,
+  opacity: 1,
+  blendMode: "normal" as const,
+  order: 0,
+  strokes: []
+});
 
 const makeProject = (): Project => ({
   id: "project-1",
@@ -26,21 +54,21 @@ const makeProject = (): Project => ({
       imagePath: "/tmp/a.png",
       fileName: "a.png",
       order: 0,
-      sketchData: []
+      sketchLayers: [defaultLayer()]
     },
     {
       id: "shot-b",
       imagePath: "/tmp/b.png",
       fileName: "b.png",
       order: 1,
-      sketchData: []
+      sketchLayers: [defaultLayer()]
     },
     {
       id: "shot-c",
       imagePath: "/tmp/c.png",
       fileName: "c.png",
       order: 2,
-      sketchData: []
+      sketchLayers: [defaultLayer()]
     }
   ],
   dialogues: [
@@ -51,6 +79,12 @@ const makeProject = (): Project => ({
       order: 0
     }
   ]
+});
+
+const createEmptyProject = (): Project => ({
+  ...makeProject(),
+  shots: [],
+  dialogues: []
 });
 
 describe("project operations", () => {
@@ -77,7 +111,7 @@ describe("project operations", () => {
           imagePath: "/tmp/d.png",
           fileName: "d.png",
           order: 3,
-          sketchData: []
+          sketchLayers: []
         }
       ]
     };
@@ -102,7 +136,7 @@ describe("project operations", () => {
           imagePath: "/tmp/d.png",
           fileName: "d.png",
           order: 3,
-          sketchData: []
+          sketchLayers: []
         }
       ]
     };
@@ -167,7 +201,7 @@ describe("project operations", () => {
     ]);
   });
 
-  it("updates sketch data for one shot without touching other shots", () => {
+  it("updates sketch layer strokes for one shot without touching other shots", () => {
     const project = makeProject();
     const stroke: SketchStroke = {
       id: "stroke-1",
@@ -179,11 +213,15 @@ describe("project operations", () => {
 
     const updated = updateSketch(project, "shot-b", [stroke]);
 
-    expect(updated.shots.find((shot) => shot.id === "shot-b")?.sketchData).toEqual([stroke]);
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchData).toEqual([]);
+    expect(updated.shots.find((shot) => shot.id === "shot-b")?.sketchLayers?.[0].strokes).toEqual([
+      stroke
+    ]);
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[0].strokes).toEqual(
+      []
+    );
   });
 
-  it("clears sketch data for one shot", () => {
+  it("clears sketch layer strokes for one shot", () => {
     const stroke: SketchStroke = {
       id: "stroke-1",
       tool: "brush",
@@ -195,7 +233,290 @@ describe("project operations", () => {
 
     const updated = clearSketch(project, "shot-a");
 
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchData).toEqual([]);
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[0].strokes).toEqual(
+      []
+    );
+  });
+
+  it("adds and selects a new sketch layer", () => {
+    const updated = addSketchLayer(makeProject(), "shot-a", "Ink");
+    const shot = updated.shots.find((item) => item.id === "shot-a");
+
+    expect(shot?.activeSketchLayerId).toBe("layer-shot-a-1");
+    expect(shot?.activeLayerTarget).toBe("sketch");
+    expect(shot?.sketchLayers).toMatchObject([
+      { id: "layer-default", name: "Drawing", order: 0 },
+      { id: "layer-shot-a-1", name: "Ink", order: 1, visible: true, locked: false, opacity: 1 }
+    ]);
+  });
+
+  it("updates sketch layer metadata without changing strokes", () => {
+    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
+
+    const updated = updateSketchLayer(project, "shot-a", "layer-shot-a-1", {
+      name: "Shadow",
+      visible: false,
+      locked: true,
+      opacity: 0.35,
+      blendMode: "multiply"
+    });
+
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[1]).toMatchObject({
+      name: "Shadow",
+      visible: false,
+      locked: true,
+      opacity: 0.35,
+      blendMode: "multiply",
+      strokes: []
+    });
+  });
+
+  it("appends strokes only to the active sketch layer", () => {
+    const strokeA: SketchStroke = {
+      id: "stroke-a",
+      tool: "brush",
+      color: "#111111",
+      size: 4,
+      points: [0, 0, 10, 10]
+    };
+    const strokeB: SketchStroke = {
+      id: "stroke-b",
+      tool: "brush",
+      color: "#222222",
+      size: 6,
+      points: [10, 10, 20, 20]
+    };
+    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
+
+    const updated = appendSketchStroke(project, "shot-a", "layer-shot-a-1", strokeA);
+    const locked = updateSketchLayer(updated, "shot-a", "layer-shot-a-1", { locked: true });
+    const appendedWhileLocked = appendSketchStroke(locked, "shot-a", "layer-shot-a-1", strokeB);
+
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[0].strokes).toEqual(
+      []
+    );
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[1].strokes).toEqual([
+      strokeA
+    ]);
+    expect(
+      appendedWhileLocked.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[1].strokes
+    ).toEqual([strokeA, strokeB]);
+  });
+
+  it("clears only the selected sketch layer", () => {
+    const strokeA: SketchStroke = {
+      id: "stroke-a",
+      tool: "brush",
+      color: "#111111",
+      size: 4,
+      points: [0, 0, 10, 10]
+    };
+    const strokeB: SketchStroke = {
+      id: "stroke-b",
+      tool: "brush",
+      color: "#222222",
+      size: 6,
+      points: [10, 10, 20, 20]
+    };
+    const withLayer = addSketchLayer(makeProject(), "shot-a", "Ink");
+    const withDefaultStroke = updateSketch(withLayer, "shot-a", [strokeA], "layer-default");
+    const withInkStroke = appendSketchStroke(withDefaultStroke, "shot-a", "layer-shot-a-1", strokeB);
+
+    const updated = clearSketch(withInkStroke, "shot-a", "layer-shot-a-1");
+
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[0].strokes).toEqual([
+      strokeA
+    ]);
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[1].strokes).toEqual(
+      []
+    );
+  });
+
+  it("removes a sketch layer and keeps at least one active layer", () => {
+    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
+
+    const updated = removeSketchLayer(project, "shot-a", "layer-shot-a-1");
+
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers).toHaveLength(1);
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.activeSketchLayerId).toBe(
+      "layer-default"
+    );
+  });
+
+  it("reorders sketch layers and normalizes their order values", () => {
+    const project = addSketchLayer(addSketchLayer(makeProject(), "shot-a", "Ink"), "shot-a", "FX");
+
+    const updated = reorderSketchLayer(project, "shot-a", "layer-shot-a-2", "up");
+
+    expect(
+      updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.map((layer) => [
+        layer.id,
+        layer.order
+      ])
+    ).toEqual([
+      ["layer-default", 0],
+      ["layer-shot-a-2", 1],
+      ["layer-shot-a-1", 2]
+    ]);
+  });
+
+  it("moves a sketch layer before a target layer by drag order", () => {
+    const project = addSketchLayer(addSketchLayer(makeProject(), "shot-a", "Ink"), "shot-a", "FX");
+
+    const updated = moveSketchLayer(project, "shot-a", "layer-shot-a-2", "layer-default");
+
+    expect(
+      updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.map((layer) => [
+        layer.id,
+        layer.order
+      ])
+    ).toEqual([
+      ["layer-shot-a-2", 0],
+      ["layer-default", 1],
+      ["layer-shot-a-1", 2]
+    ]);
+  });
+
+  it("selects an existing unlocked sketch layer", () => {
+    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
+
+    const updated = selectSketchLayer(project, "shot-a", "layer-default");
+
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.activeSketchLayerId).toBe(
+      "layer-default"
+    );
+  });
+
+  it("updates base image visibility without touching sketch layers", () => {
+    const project = updateSketchLayer(addSketchLayer(makeProject(), "shot-a", "Ink"), "shot-a", "layer-shot-a-1", {
+      name: "Ink"
+    });
+
+    const updated = updateShotBaseVisibility(project, "shot-a", false);
+
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.baseVisible).toBe(false);
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers).toHaveLength(2);
+    expect(updated.shots.find((shot) => shot.id === "shot-b")?.baseVisible).toBeUndefined();
+  });
+
+  it("selects the image layer without changing sketch layers", () => {
+    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
+
+    const updated = selectImageLayer(project, "shot-a");
+
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.activeLayerTarget).toBe("image");
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers).toHaveLength(2);
+  });
+
+  it("appends image layer edits without changing sketch layers", () => {
+    const stroke: SketchStroke = {
+      id: "image-stroke",
+      tool: "brush",
+      color: "#111111",
+      size: 4,
+      points: [0, 0, 10, 10]
+    };
+    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
+
+    const updated = appendImageLayerEdit(project, "shot-a", stroke);
+
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.imageLayerEdits).toEqual([stroke]);
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[0].strokes).toEqual(
+      []
+    );
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.activeLayerTarget).toBe("image");
+  });
+
+  it("appends image layer eraser edits without changing sketch layers", () => {
+    const stroke: SketchStroke = {
+      id: "image-eraser",
+      tool: "eraser",
+      color: "#ffffff",
+      size: 18,
+      points: [0, 0, 10, 10]
+    };
+    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
+
+    const updated = appendImageLayerEdit(project, "shot-a", stroke);
+
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.imageLayerEdits).toEqual([stroke]);
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers).toHaveLength(2);
+  });
+
+  it("clears image layer edits without changing sketch layers", () => {
+    const stroke: SketchStroke = {
+      id: "image-stroke",
+      tool: "brush",
+      color: "#111111",
+      size: 4,
+      points: [0, 0, 10, 10]
+    };
+    const project = appendImageLayerEdit(addSketchLayer(makeProject(), "shot-a", "Ink"), "shot-a", stroke);
+
+    const updated = clearImageLayerEdits(project, "shot-a");
+
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.imageLayerEdits).toEqual([]);
+    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers).toHaveLength(2);
+  });
+
+  it("deletes image layer content without changing sketch layers", () => {
+    const stroke: SketchStroke = {
+      id: "image-stroke",
+      tool: "brush",
+      color: "#111111",
+      size: 4,
+      points: [0, 0, 10, 10]
+    };
+    const project = appendImageLayerEdit(addSketchLayer(makeProject(), "shot-a", "Ink"), "shot-a", stroke);
+
+    const updated = deleteImageLayerContent(project, "shot-a");
+    const shot = updated.shots.find((item) => item.id === "shot-a");
+
+    expect(shot?.baseVisible).toBe(false);
+    expect(shot?.imageLayerEdits).toEqual([]);
+    expect(shot?.activeLayerTarget).toBe("image");
+    expect(shot?.sketchLayers).toHaveLength(2);
+  });
+
+  it("flattens visible sketch layers in order and applies layer opacity", () => {
+    const strokeA: SketchStroke = {
+      id: "stroke-a",
+      tool: "brush",
+      color: "#111111",
+      opacity: 0.5,
+      size: 4,
+      points: [0, 0, 10, 10]
+    };
+    const strokeB: SketchStroke = {
+      id: "stroke-b",
+      tool: "brush",
+      color: "#222222",
+      size: 6,
+      points: [10, 10, 20, 20]
+    };
+
+    expect(
+      flattenSketchLayers([
+        {
+          id: "hidden",
+          name: "Hidden",
+          visible: false,
+          locked: false,
+          opacity: 1,
+          order: 0,
+          strokes: [strokeA]
+        },
+        {
+          id: "visible",
+          name: "Visible",
+          visible: true,
+          locked: false,
+          opacity: 0.25,
+          order: 1,
+          strokes: [strokeB]
+        }
+      ])
+    ).toEqual([{ ...strokeB, opacity: 0.25 }]);
   });
 
   it("merges a folder scan with saved metadata and preserves shot data", () => {
@@ -218,8 +539,148 @@ describe("project operations", () => {
       ["/tmp/b.png", 0],
       ["/tmp/d.png", 1]
     ]);
-    expect(updated.shots[0].sketchData).toHaveLength(1);
+    expect(updated.shots[0].sketchLayers?.[0].strokes).toHaveLength(1);
     expect(updated.dialogues).toEqual([]);
+  });
+
+  it("marks newly scanned non-SWB images as needing import", () => {
+    const updated = mergeFolderImages(makeProject(), [
+      {
+        imagePath: "/tmp/a.png",
+        fileName: "a.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "pixel-a"
+      }
+    ]);
+
+    expect(updated.shots[0].swb).toMatchObject({
+      status: "non-swb",
+      canvasWidth: 1920,
+      canvasHeight: 1080,
+      baseFingerprint: "pixel-a"
+    });
+    expect(projectNeedsSwbImport(updated)).toBe(true);
+  });
+
+  it("does not create an empty Drawing layer for newly imported images", () => {
+    const updated = addImportedImages(createEmptyProject(), [
+      {
+        imagePath: "/tmp/a.tiff",
+        fileName: "a.tiff",
+        width: 1920,
+        height: 1080,
+        fingerprint: "pixel-a"
+      }
+    ]);
+
+    expect(updated.shots[0].sketchLayers).toEqual([]);
+    expect(updated.shots[0].activeLayerTarget).toBe("image");
+  });
+
+  it("defaults newly scanned images to the Image layer without an empty Drawing layer", () => {
+    const updated = mergeFolderImages(createEmptyProject(), [
+      {
+        imagePath: "/tmp/a.png",
+        fileName: "a.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "pixel-a"
+      }
+    ]);
+
+    expect(updated.shots[0].sketchLayers).toEqual([]);
+    expect(updated.shots[0].activeLayerTarget).toBe("image");
+  });
+
+  it("accepts compatible external TIFF edits as a new base", () => {
+    const project: Project = {
+      ...makeProject(),
+      shots: [
+        {
+          ...makeProject().shots[0],
+          swb: {
+            version: 1,
+            status: "owned",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "old-pixels"
+          }
+        }
+      ],
+      dialogues: []
+    };
+
+    const updated = mergeFolderImages(project, [
+      {
+        imagePath: "/tmp/a.png",
+        fileName: "a.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "new-pixels",
+        swbMetadata: {
+          app: "Storyboard Workbench",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "shot-a",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          baseFingerprint: "old-pixels",
+          updatedAt: "2026-05-25T00:00:00.000Z",
+          layers: []
+        }
+      }
+    ]);
+
+    expect(updated.shots[0].swb).toMatchObject({
+      status: "owned",
+      baseFingerprint: "new-pixels"
+    });
+    expect(projectAcceptedExternalEdits(updated)).toBe(true);
+  });
+
+  it("marks changed TIFF dimensions as incompatible external edits", () => {
+    const project: Project = {
+      ...makeProject(),
+      shots: [
+        {
+          ...makeProject().shots[0],
+          swb: {
+            version: 1,
+            status: "owned",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "old-pixels"
+          }
+        }
+      ],
+      dialogues: []
+    };
+
+    const updated = mergeFolderImages(project, [
+      {
+        imagePath: "/tmp/a.png",
+        fileName: "a.png",
+        width: 1280,
+        height: 720,
+        fingerprint: "new-pixels",
+        swbMetadata: {
+          app: "Storyboard Workbench",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "shot-a",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          baseFingerprint: "old-pixels",
+          updatedAt: "2026-05-25T00:00:00.000Z",
+          layers: []
+        }
+      }
+    ]);
+
+    expect(updated.shots[0].swb).toMatchObject({
+      status: "incompatible-external-edit"
+    });
   });
 
   it("inserts a generated shot after the selected shot", () => {
@@ -245,20 +706,25 @@ describe("project operations", () => {
   it("plans stable ordered filenames without stacking numeric prefixes", () => {
     const project: Project = {
       ...makeProject(),
+      naming: {
+        sceneCode: "sc01",
+        artistName: "artist",
+        version: "v001"
+      },
       shots: [
         {
           id: "shot-a",
           imagePath: "/tmp/001_alpha.png",
           fileName: "001_alpha.png",
           order: 1,
-          sketchData: []
+          sketchLayers: []
         },
         {
           id: "shot-b",
           imagePath: "/tmp/beta.tiff",
           fileName: "beta.tiff",
           order: 0,
-          sketchData: []
+          sketchLayers: []
         }
       ],
       dialogues: []
@@ -267,22 +733,77 @@ describe("project operations", () => {
     const plan = createRenamePlan(project);
 
     expect(plan.map((item) => [item.shotId, item.finalPath, item.finalFileName])).toEqual([
-      ["shot-b", "/tmp/001_beta.tiff", "001_beta.tiff"],
-      ["shot-a", "/tmp/002_alpha.png", "002_alpha.png"]
+      ["shot-b", "/tmp/Test_Project_sc01_stb_artist_v001_0010.tiff", "Test_Project_sc01_stb_artist_v001_0010.tiff"],
+      ["shot-a", "/tmp/Test_Project_sc01_stb_artist_v001_0020.png", "Test_Project_sc01_stb_artist_v001_0020.png"]
     ]);
+  });
+
+  it("uses storyboard naming metadata for Save filenames", () => {
+    const project: Project = {
+      ...makeProject(),
+      name: "项目",
+      naming: {
+        sceneCode: "场01",
+        artistName: "artist",
+        version: "v001"
+      }
+    };
+
+    const plan = createRenamePlan(project);
+
+    expect(plan.map((item) => item.finalFileName)).toEqual([
+      "项目_场01_stb_artist_v001_0010.png",
+      "项目_场01_stb_artist_v001_0020.png",
+      "项目_场01_stb_artist_v001_0030.png"
+    ]);
+  });
+
+  it("uses default optional naming fields when requested", () => {
+    const project: Project = {
+      ...makeProject(),
+      name: "Board",
+      naming: {
+        sceneCode: "",
+        artistName: "",
+        version: ""
+      }
+    };
+
+    const plan = createRenamePlan(project, { allowDefaultNamingFields: true });
+
+    expect(plan[0].finalFileName).toBe("Board_scene_stb_artist_v001_0010.png");
+  });
+
+  it("sanitizes naming fields and normalizes numeric versions", () => {
+    const project: Project = {
+      ...makeProject(),
+      name: "Board / Main",
+      naming: {
+        sceneCode: "sc:01",
+        artistName: "a/b",
+        version: "001"
+      }
+    };
+
+    const plan = createRenamePlan(project);
+
+    expect(plan[0].finalFileName).toBe("Board_Main_sc_01_stb_a_b_v001_0010.png");
   });
 
   it("reports rename preflight conflicts for existing final and temporary paths", () => {
     const plan = createRenamePlan(makeProject());
 
-    const result = validateRenamePlan(plan, new Set(["/tmp/001_a.png", "/tmp/.storyboard-renaming-shot-b.png"]));
+    const result = validateRenamePlan(
+      plan,
+      new Set(["/tmp/Test_Project_stb_0010.png", "/tmp/.storyboard-renaming-shot-b.png"])
+    );
 
     expect(result.ok).toBe(false);
     expect(result.issues).toEqual([
       {
-        path: "/tmp/001_a.png",
+        path: "/tmp/Test_Project_stb_0010.png",
         reason: "final-exists",
-        message: "Target file already exists: /tmp/001_a.png"
+        message: "Target file already exists: /tmp/Test_Project_stb_0010.png"
       },
       {
         path: "/tmp/.storyboard-renaming-shot-b.png",
@@ -302,7 +823,7 @@ describe("project operations", () => {
           fileName: "001_a.png",
           sourceFileName: "a.png",
           order: 0,
-          sketchData: []
+          sketchLayers: []
         },
         {
           id: "shot-b",
@@ -310,7 +831,7 @@ describe("project operations", () => {
           fileName: "002_b.png",
           sourceFileName: "b.png",
           order: 1,
-          sketchData: []
+          sketchLayers: []
         }
       ],
       dialogues: []

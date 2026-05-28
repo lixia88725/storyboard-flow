@@ -1,4 +1,5 @@
 export type SketchTool = "brush" | "eraser";
+export type SketchBlendMode = "normal" | "multiply" | "screen";
 
 export type SketchStroke = {
   id: string;
@@ -9,6 +10,35 @@ export type SketchStroke = {
   points: number[];
 };
 
+export type SketchLayer = {
+  id: string;
+  name: string;
+  visible: boolean;
+  locked: boolean;
+  opacity: number;
+  blendMode?: SketchBlendMode;
+  order: number;
+  strokes: SketchStroke[];
+};
+
+export type ShotSwbStatus =
+  | "owned"
+  | "non-swb"
+  | "compatible-external-edit"
+  | "incompatible-external-edit";
+
+export type ShotSwbState = {
+  version: number;
+  status: ShotSwbStatus;
+  canvasWidth: number;
+  canvasHeight: number;
+  baseFingerprint?: string;
+  sourcePath?: string;
+  archivePath?: string;
+  statusMessage?: string;
+  acceptedExternalEditAt?: string;
+};
+
 export type Shot = {
   id: string;
   imagePath: string;
@@ -16,7 +46,12 @@ export type Shot = {
   fileName: string;
   sourceFileName?: string;
   order: number;
-  sketchData: SketchStroke[];
+  sketchLayers?: SketchLayer[];
+  activeSketchLayerId?: string;
+  activeLayerTarget?: "image" | "sketch";
+  imageLayerEdits?: SketchStroke[];
+  baseVisible?: boolean;
+  swb?: ShotSwbState;
 };
 
 export type Dialogue = {
@@ -29,16 +64,59 @@ export type Dialogue = {
 export type Project = {
   id: string;
   name: string;
+  naming?: ProjectNaming;
   shots: Shot[];
   dialogues: Dialogue[];
   createdAt: string;
   updatedAt: string;
 };
 
+export type ProjectNaming = {
+  sceneCode: string;
+  artistName: string;
+  version: string;
+};
+
 export type ImportedImage = {
   imagePath: string;
   previewPath?: string;
   fileName: string;
+  width?: number;
+  height?: number;
+  fingerprint?: string;
+  swbMetadata?: SwbImageMetadata;
+};
+
+export type BlankShotPreset = "16:9" | "2.39:1" | "1.43:1";
+
+export type BlankShotOptions = {
+  preset: BlankShotPreset;
+};
+
+export type SwbImageMetadata = {
+  app: "Storyboard Workbench";
+  format: "swb-tiff";
+  version: number;
+  projectId?: string;
+  shotId: string;
+  canvasWidth: number;
+  canvasHeight: number;
+  baseFingerprint: string;
+  updatedAt: string;
+  sourcePath?: string;
+  archivePath?: string;
+  imageLayerEdits?: SketchStroke[];
+  sketchLayers?: SketchLayer[];
+  layers: Array<{
+    id: string;
+    name: string;
+    visible: boolean;
+    locked: boolean;
+    opacity: number;
+    blendMode?: SketchBlendMode;
+    order: number;
+    strokeCount: number;
+  }>;
 };
 
 export type WorkspacePayload = {
@@ -47,12 +125,15 @@ export type WorkspacePayload = {
   metadataPath: string;
 };
 
+export type ImportSwbFormatPayload = WorkspacePayload;
+
 export type FolderScanPayload = {
   folderPath: string;
   folderName: string;
   metadataPath: string;
   project?: Project;
   images: ImportedImage[];
+  importWarnings?: string[];
 };
 
 export type RenamePlanItem = {

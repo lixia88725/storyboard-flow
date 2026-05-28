@@ -3,6 +3,11 @@ export const sketchCanvasSize = {
   height: 265
 };
 
+export type CanvasSize = {
+  width: number;
+  height: number;
+};
+
 type ClientRectLike = {
   left: number;
   top: number;
@@ -13,9 +18,10 @@ type ClientRectLike = {
 export const sketchPointFromClientPoint = (
   clientX: number,
   clientY: number,
-  rect: ClientRectLike
+  rect: ClientRectLike,
+  canvasSize: CanvasSize = sketchCanvasSize
 ): { x: number; y: number } => {
-  const x = ((clientX - rect.left) / rect.width) * sketchCanvasSize.width;
-  const y = ((clientY - rect.top) / rect.height) * sketchCanvasSize.height;
+  const x = ((clientX - rect.left) / rect.width) * canvasSize.width;
+  const y = ((clientY - rect.top) / rect.height) * canvasSize.height;
   return { x, y };
 };

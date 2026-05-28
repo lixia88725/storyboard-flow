@@ -4,7 +4,9 @@ const api = {
   openFolderByPath: (folderPath) => ipcRenderer.invoke("workspace:openFolderByPath", folderPath),
   autosaveWorkspace: (payload) => ipcRenderer.invoke("workspace:autosave", payload),
   saveWorkspace: (payload) => ipcRenderer.invoke("workspace:save", payload),
-  createBlankShot: (folderPath) => ipcRenderer.invoke("images:createBlankShot", folderPath),
+  importSwbFormat: (payload) => ipcRenderer.invoke("workspace:importSwbFormat", payload),
+  createBlankShot: (folderPath, options) =>
+    ipcRenderer.invoke("images:createBlankShot", folderPath, options),
   getRecentFolders: () => ipcRenderer.invoke("recent:getFolders"),
   onOpenRecentFolder: (callback) => {
     const listener = (_event, folderPath) => callback(folderPath);

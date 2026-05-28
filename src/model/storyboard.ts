@@ -26,7 +26,7 @@ export const createShot = (imagePath: string, previewPath?: string): Shot => {
     previewPath,
     fileName: imagePath.split(/[\\/]/).at(-1) ?? imagePath,
     order: 0,
-    sketchData: []
+    sketchLayers: []
   };
 };
 

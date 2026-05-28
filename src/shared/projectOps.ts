@@ -2,16 +2,35 @@ import type {
   Dialogue,
   ImportedImage,
   Project,
+  ProjectNaming,
   RenamePlanItem,
   RenamePreflightResult,
   Shot,
+  ShotSwbState,
+  SketchLayer,
   SketchStroke
 } from "./types";
 
 export type ShotPlacement = "before" | "after";
 export type StoryboardDirection = "left" | "right" | "up" | "down";
+export type RenamePlanOptions = {
+  allowDefaultNamingFields?: boolean;
+};
+export const sketchBlendModes = ["normal", "multiply", "screen"] as const;
 
 const now = () => new Date().toISOString();
+export const defaultProjectNaming: ProjectNaming = {
+  sceneCode: "",
+  artistName: "",
+  version: ""
+};
+export const defaultSaveNaming: ProjectNaming = {
+  sceneCode: "scene",
+  artistName: "artist",
+  version: "v001"
+};
+export const swbFormatVersion = 1;
+export const defaultSketchLayerName = "Drawing";
 
 export const createProject = (name = "Untitled Storyboard"): Project => {
   const timestamp = now();
@@ -19,6 +38,7 @@ export const createProject = (name = "Untitled Storyboard"): Project => {
   return {
     id: crypto.randomUUID(),
     name,
+    naming: { ...defaultProjectNaming },
     shots: [],
     dialogues: [],
     createdAt: timestamp,
@@ -96,7 +116,9 @@ export const addImportedImages = (project: Project, images: ImportedImage[]): Pr
       previewPath: image.previewPath,
       fileName: image.fileName,
       order: project.shots.length + index,
-      sketchData: []
+      sketchLayers: [],
+      activeLayerTarget: "image" as const,
+      swb: swbStateForImportedImage(image)
     }));
 
   return normalizeShotOrder({
@@ -123,7 +145,14 @@ export const addGeneratedShot = (
     fileName: image.fileName,
     sourceFileName: image.fileName,
     order: insertIndex,
-    sketchData: []
+    sketchLayers: [createDefaultSketchLayer([])],
+    swb: {
+      version: swbFormatVersion,
+      status: "owned",
+      canvasWidth: image.width ?? 1920,
+      canvasHeight: image.height ?? 1080,
+      baseFingerprint: image.fingerprint
+    }
   };
   const nextShots = [...ordered.slice(0, insertIndex), newShot, ...ordered.slice(insertIndex)];
 
@@ -144,7 +173,9 @@ export const mergeFolderImages = (project: Project, images: ImportedImage[]): Pr
       return {
         ...shot,
         previewPath: scanned?.previewPath ?? shot.previewPath,
-        fileName: scanned?.fileName ?? shot.fileName
+        fileName: scanned?.fileName ?? shot.fileName,
+        sketchLayers: sketchLayersForShot(shot),
+        swb: scanned ? mergedSwbState(shot, scanned) : shot.swb
       };
     });
   const keptPaths = new Set(keptShots.map((shot) => shot.imagePath));
@@ -156,7 +187,9 @@ export const mergeFolderImages = (project: Project, images: ImportedImage[]): Pr
       previewPath: image.previewPath,
       fileName: image.fileName,
       order: keptShots.length + index,
-      sketchData: []
+      sketchLayers: [],
+      activeLayerTarget: "image" as const,
+      swb: swbStateForImportedImage(image)
     }));
   const keptShotIds = new Set(keptShots.map((shot) => shot.id));
 
@@ -307,24 +340,295 @@ export const moveDialogueToShot = (
 export const updateSketch = (
   project: Project,
   shotId: string,
-  sketchData: SketchStroke[]
+  strokes: SketchStroke[],
+  layerId?: string
+): Project => {
+  return {
+    ...project,
+    shots: project.shots.map((shot) => {
+      if (shot.id !== shotId) {
+        return shot;
+      }
+
+      const layers = sketchLayersForShot(shot);
+      const targetLayerId = layerId ?? shot.activeSketchLayerId ?? layers[0]?.id;
+      const targetLayer = layers.find((layer) => layer.id === targetLayerId) ?? layers[0];
+      if (!targetLayer) {
+        if (strokes.length === 0) {
+          return shot;
+        }
+        const nextLayers = [createDefaultSketchLayer(strokes)];
+        return {
+          ...shot,
+          activeLayerTarget: "sketch",
+          activeSketchLayerId: nextLayers[0].id,
+          sketchLayers: nextLayers
+        };
+      }
+      const nextLayers = layers.map((layer) =>
+        layer.id === targetLayer.id
+          ? {
+              ...layer,
+              strokes: [...strokes]
+            }
+          : layer
+      );
+      return {
+        ...shot,
+        activeLayerTarget: "sketch",
+        activeSketchLayerId: targetLayer.id,
+        sketchLayers: nextLayers
+      };
+    }),
+    updatedAt: now()
+  };
+};
+
+export const clearSketch = (project: Project, shotId: string, layerId?: string): Project => {
+  return updateSketch(project, shotId, [], layerId);
+};
+
+export const appendSketchStroke = (
+  project: Project,
+  shotId: string,
+  layerId: string,
+  stroke: SketchStroke
+): Project => {
+  const shot = project.shots.find((item) => item.id === shotId);
+  const layer = shot ? sketchLayersForShot(shot).find((item) => item.id === layerId) : undefined;
+
+  if (!layer) {
+    return project;
+  }
+
+  return updateSketch(project, shotId, [...layer.strokes, stroke], layer.id);
+};
+
+export const addSketchLayer = (project: Project, shotId: string, name = "Layer"): Project => {
+  return updateShotLayers(project, shotId, (shot, layers) => {
+    const nextOrder = layers.length;
+    const nextLayer: SketchLayer = {
+      id: `layer-${shotId}-${nextOrder}`,
+      name,
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: "normal",
+      order: nextOrder,
+      strokes: []
+    };
+    const nextLayers = normalizeSketchLayerOrder([...layers, nextLayer]);
+
+    return {
+      layers: nextLayers,
+      activeSketchLayerId: nextLayer.id,
+      activeLayerTarget: "sketch"
+    };
+  });
+};
+
+export const removeSketchLayer = (
+  project: Project,
+  shotId: string,
+  layerId: string
+): Project => {
+  return updateShotLayers(project, shotId, (shot, layers) => {
+    if (layers.length <= 1) {
+      return { layers, activeSketchLayerId: layers[0]?.id };
+    }
+
+    const nextLayers = normalizeSketchLayerOrder(layers.filter((layer) => layer.id !== layerId));
+    if (nextLayers.length === layers.length) {
+      return { layers, activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id };
+    }
+
+    const activeSketchLayerId =
+      shot.activeSketchLayerId === layerId
+        ? nextLayers[
+            Math.max(
+              0,
+              Math.min(layers.findIndex((layer) => layer.id === layerId), nextLayers.length - 1)
+            )
+          ]?.id
+        : shot.activeSketchLayerId ?? nextLayers[0]?.id;
+
+    return { layers: nextLayers, activeSketchLayerId };
+  });
+};
+
+export const selectSketchLayer = (
+  project: Project,
+  shotId: string,
+  layerId: string
+): Project => {
+  return updateShotLayers(project, shotId, (shot, layers) => {
+    const targetLayer = layers.find((layer) => layer.id === layerId);
+    return {
+      layers,
+      activeSketchLayerId: targetLayer ? targetLayer.id : shot.activeSketchLayerId ?? layers[0]?.id,
+      activeLayerTarget: targetLayer ? "sketch" : shot.activeLayerTarget ?? "sketch"
+    };
+  });
+};
+
+export const updateSketchLayer = (
+  project: Project,
+  shotId: string,
+  layerId: string,
+  patch: Partial<Pick<SketchLayer, "name" | "visible" | "locked" | "opacity" | "blendMode">>
+): Project => {
+  return updateShotLayers(project, shotId, (shot, layers) => ({
+    layers: layers.map((layer) =>
+      layer.id === layerId
+        ? {
+            ...layer,
+            name: patch.name ?? layer.name,
+            visible: patch.visible ?? layer.visible,
+            locked: patch.locked ?? layer.locked,
+            opacity:
+              patch.opacity === undefined ? layer.opacity : Math.min(1, Math.max(0, patch.opacity)),
+            blendMode: patch.blendMode ?? layer.blendMode ?? "normal"
+          }
+        : layer
+    ),
+    activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id
+  }));
+};
+
+export const reorderSketchLayer = (
+  project: Project,
+  shotId: string,
+  layerId: string,
+  direction: "up" | "down"
+): Project => {
+  return updateShotLayers(project, shotId, (shot, layers) => {
+    const currentIndex = layers.findIndex((layer) => layer.id === layerId);
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+
+    if (currentIndex === -1 || targetIndex < 0 || targetIndex >= layers.length) {
+      return { layers, activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id };
+    }
+
+    const nextLayers = [...layers];
+    const [moved] = nextLayers.splice(currentIndex, 1);
+    nextLayers.splice(targetIndex, 0, moved);
+
+    return {
+      layers: normalizeSketchLayerOrder(nextLayers),
+      activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id
+    };
+  });
+};
+
+export const moveSketchLayer = (
+  project: Project,
+  shotId: string,
+  layerId: string,
+  targetLayerId: string
+): Project => {
+  if (layerId === targetLayerId) {
+    return project;
+  }
+
+  return updateShotLayers(project, shotId, (shot, layers) => {
+    const fromIndex = layers.findIndex((layer) => layer.id === layerId);
+    const targetIndex = layers.findIndex((layer) => layer.id === targetLayerId);
+
+    if (fromIndex === -1 || targetIndex === -1) {
+      return { layers, activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id };
+    }
+
+    const nextLayers = [...layers];
+    const [movedLayer] = nextLayers.splice(fromIndex, 1);
+    const adjustedTargetIndex = fromIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    nextLayers.splice(adjustedTargetIndex, 0, movedLayer);
+
+    return {
+      layers: normalizeSketchLayerOrder(nextLayers),
+      activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id
+    };
+  });
+};
+
+export const updateShotBaseVisibility = (
+  project: Project,
+  shotId: string,
+  visible: boolean
 ): Project => {
   return {
     ...project,
     shots: project.shots.map((shot) =>
-      shot.id === shotId ? { ...shot, sketchData: [...sketchData] } : shot
+      shot.id === shotId ? { ...shot, baseVisible: visible } : shot
     ),
     updatedAt: now()
   };
 };
 
-export const clearSketch = (project: Project, shotId: string): Project => {
-  return updateSketch(project, shotId, []);
+export const selectImageLayer = (project: Project, shotId: string): Project => {
+  return {
+    ...project,
+    shots: project.shots.map((shot) =>
+      shot.id === shotId ? { ...shot, activeLayerTarget: "image" } : shot
+    ),
+    updatedAt: now()
+  };
 };
 
-export const createRenamePlan = (project: Project): RenamePlanItem[] => {
+export const appendImageLayerEdit = (
+  project: Project,
+  shotId: string,
+  stroke: SketchStroke
+): Project => {
+  return {
+    ...project,
+    shots: project.shots.map((shot) =>
+      shot.id === shotId
+        ? {
+            ...shot,
+            activeLayerTarget: "image",
+            imageLayerEdits: [...(shot.imageLayerEdits ?? []), stroke]
+          }
+        : shot
+    ),
+    updatedAt: now()
+  };
+};
+
+export const clearImageLayerEdits = (project: Project, shotId: string): Project => {
+  return {
+    ...project,
+    shots: project.shots.map((shot) =>
+      shot.id === shotId ? { ...shot, imageLayerEdits: [] } : shot
+    ),
+    updatedAt: now()
+  };
+};
+
+export const deleteImageLayerContent = (project: Project, shotId: string): Project => {
+  return {
+    ...project,
+    shots: project.shots.map((shot) =>
+      shot.id === shotId
+        ? {
+            ...shot,
+            activeLayerTarget: "image",
+            baseVisible: false,
+            imageLayerEdits: []
+          }
+        : shot
+    ),
+    updatedAt: now()
+  };
+};
+
+export const createRenamePlan = (
+  project: Project,
+  options: RenamePlanOptions = {}
+): RenamePlanItem[] => {
+  const namingPrefix = saveFilePrefix(project, options);
+
   return sortedShots(project.shots).map((shot, index) => {
-    const finalFileName = orderedFileName(shot.sourceFileName ?? shot.fileName, index);
+    const finalFileName = orderedFileName(namingPrefix, shot.fileName, index);
     const directory = dirname(shot.imagePath);
     return {
       shotId: shot.id,
@@ -354,6 +658,111 @@ export const applyRenamePlan = (project: Project, plan: RenamePlanItem[]): Proje
     }),
     updatedAt: now()
   };
+};
+
+export const sketchLayersForShot = (shot: Shot): SketchLayer[] => {
+  return normalizeSketchLayerOrder(
+    (shot.sketchLayers ?? [])
+      .map((layer, index) => ({
+        ...layer,
+        order: layer.order ?? index,
+        visible: layer.visible ?? true,
+        locked: layer.locked ?? false,
+        opacity: layer.opacity ?? 1,
+        blendMode: layer.blendMode ?? "normal",
+        strokes: [...(layer.strokes ?? [])]
+      }))
+      .sort((a, b) => a.order - b.order)
+  );
+};
+
+export const flattenSketchLayers = (layers: SketchLayer[]): SketchStroke[] => {
+  return layers
+    .filter((layer) => layer.visible)
+    .flatMap((layer) =>
+      layer.strokes.map((stroke) => ({
+        ...stroke,
+        opacity: (stroke.opacity ?? 1) * layer.opacity
+      }))
+    );
+};
+
+export const activeSketchLayerForShot = (shot: Shot): SketchLayer => {
+  const layers = sketchLayersForShot(shot);
+  return (
+    layers.find((layer) => layer.id === shot.activeSketchLayerId) ??
+    layers[0] ??
+    createDefaultSketchLayer([])
+  );
+};
+
+export const createDefaultSketchLayer = (strokes: SketchStroke[]): SketchLayer => ({
+  id: "layer-default",
+  name: defaultSketchLayerName,
+  visible: true,
+  locked: false,
+  opacity: 1,
+  blendMode: "normal",
+  order: 0,
+  strokes: [...strokes]
+});
+
+const normalizeSketchLayerOrder = (layers: SketchLayer[]): SketchLayer[] => {
+  return layers.map((layer, order) => ({
+    ...layer,
+    order,
+    visible: layer.visible ?? true,
+    locked: layer.locked ?? false,
+    opacity: layer.opacity ?? 1,
+    blendMode: layer.blendMode ?? "normal",
+    strokes: [...(layer.strokes ?? [])]
+  }));
+};
+
+const updateShotLayers = (
+  project: Project,
+  shotId: string,
+  update: (
+    shot: Shot,
+    layers: SketchLayer[]
+  ) => { layers: SketchLayer[]; activeSketchLayerId?: string; activeLayerTarget?: "image" | "sketch" }
+): Project => {
+  let didChange = false;
+  const shots = project.shots.map((shot) => {
+    if (shot.id !== shotId) {
+      return shot;
+    }
+
+    const currentLayers = sketchLayersForShot(shot);
+    const result = update(shot, currentLayers);
+    const nextLayers = normalizeSketchLayerOrder(result.layers);
+    didChange = true;
+
+    return {
+      ...shot,
+      activeLayerTarget: result.activeLayerTarget ?? shot.activeLayerTarget ?? "sketch",
+      activeSketchLayerId:
+        result.activeSketchLayerId ?? shot.activeSketchLayerId ?? nextLayers[0]?.id,
+      sketchLayers: nextLayers
+    };
+  });
+
+  return didChange ? { ...project, shots, updatedAt: now() } : project;
+};
+
+export const projectNeedsSwbImport = (project: Project): boolean => {
+  return project.shots.some((shot) => shot.swb?.status === "non-swb");
+};
+
+export const projectHasSwbWarning = (project: Project): boolean => {
+  return project.shots.some(
+    (shot) =>
+      shot.swb?.status === "non-swb" || shot.swb?.status === "incompatible-external-edit"
+  );
+};
+
+export const projectAcceptedExternalEdits = (project: Project): boolean => {
+  return project.shots.some((shot) => Boolean(shot.swb?.acceptedExternalEditAt));
 };
 
 export const validateRenamePlan = (
@@ -424,10 +833,121 @@ const normalizeDialogueOrder = (project: Project): Project => {
   };
 };
 
-const orderedFileName = (fileName: string, index: number): string => {
+const swbStateForImportedImage = (image: ImportedImage): ShotSwbState => {
+  if (image.swbMetadata) {
+    return {
+      version: image.swbMetadata.version,
+      status: "owned",
+      canvasWidth: image.swbMetadata.canvasWidth,
+      canvasHeight: image.swbMetadata.canvasHeight,
+      baseFingerprint: image.swbMetadata.baseFingerprint,
+      sourcePath: image.swbMetadata.sourcePath,
+      archivePath: image.swbMetadata.archivePath
+    };
+  }
+
+  return {
+    version: swbFormatVersion,
+    status: "non-swb",
+    canvasWidth: image.width ?? 0,
+    canvasHeight: image.height ?? 0,
+    baseFingerprint: image.fingerprint,
+    statusMessage: "Import to convert this image into Storyboard Workbench Format"
+  };
+};
+
+const mergedSwbState = (shot: Shot, image: ImportedImage): ShotSwbState => {
+  const existing = shot.swb;
+  const metadata = image.swbMetadata;
+
+  if (!existing || existing.status === "non-swb") {
+    return swbStateForImportedImage(image);
+  }
+
+  if (!metadata) {
+    return {
+      ...existing,
+      status: "incompatible-external-edit",
+      statusMessage: "SWB metadata is missing from this TIFF"
+    };
+  }
+
+  if (metadata.shotId !== shot.id) {
+    return {
+      ...existing,
+      status: "incompatible-external-edit",
+      statusMessage: "SWB shot id in TIFF does not match project metadata"
+    };
+  }
+
+  if (
+    (image.width && image.width !== existing.canvasWidth) ||
+    (image.height && image.height !== existing.canvasHeight)
+  ) {
+    return {
+      ...existing,
+      status: "incompatible-external-edit",
+      statusMessage: "TIFF dimensions changed outside Storyboard Workbench"
+    };
+  }
+
+  if (image.fingerprint && existing.baseFingerprint && image.fingerprint !== existing.baseFingerprint) {
+    return {
+      ...existing,
+      status: "owned",
+      baseFingerprint: image.fingerprint,
+      acceptedExternalEditAt: now(),
+      statusMessage: "External TIFF edits accepted as the new base image"
+    };
+  }
+
+  return {
+    ...existing,
+    status: "owned",
+    baseFingerprint: image.fingerprint ?? existing.baseFingerprint,
+    statusMessage: undefined
+  };
+};
+
+const saveFilePrefix = (project: Project, options: RenamePlanOptions): string => {
+  const naming = project.naming ?? defaultProjectNaming;
+  const projectName = sanitizeFileNamePart(project.name);
+  const sceneCode = sanitizeFileNamePart(
+    naming.sceneCode || (options.allowDefaultNamingFields ? defaultSaveNaming.sceneCode : "")
+  );
+  const artistName = sanitizeFileNamePart(
+    naming.artistName || (options.allowDefaultNamingFields ? defaultSaveNaming.artistName : "")
+  );
+  const version = sanitizeVersion(
+    naming.version || (options.allowDefaultNamingFields ? defaultSaveNaming.version : "")
+  );
+
+  return [projectName, sceneCode, "stb", artistName, version]
+    .filter((part) => part.length > 0)
+    .join("_");
+};
+
+const orderedFileName = (prefix: string, fileName: string, index: number): string => {
   const ext = extension(fileName);
-  const baseName = stripExtension(stripOrderPrefix(fileName));
-  return `${String(index + 1).padStart(3, "0")}_${baseName}${ext}`;
+  return `${prefix}_${String((index + 1) * 10).padStart(4, "0")}${ext}`;
+};
+
+const sanitizeVersion = (value: string): string => {
+  const sanitized = sanitizeFileNamePart(value);
+  if (/^\d+$/.test(sanitized)) {
+    return `v${sanitized.padStart(3, "0")}`;
+  }
+
+  return sanitized;
+};
+
+const sanitizeFileNamePart = (value: string): string => {
+  return value
+    .trim()
+    .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
 };
 
 const stripOrderPrefix = (fileName: string): string => {

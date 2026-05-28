@@ -1,6 +1,6 @@
 const baseShotWidth = 430;
-const imageAspectRatio = 420 / 265;
 const zoomStep = 5;
+export const maxStoryboardZoom = 260;
 
 type AnimationViewportInput = {
   boardWidth: number;
@@ -9,7 +9,9 @@ type AnimationViewportInput = {
   reservedBottom: number;
   margin: number;
   zoomLevel: number;
+  maxZoomLevel?: number;
   isAnimationMode: boolean;
+  imageAspectRatio: number;
 };
 
 type AnimationViewport = {
@@ -29,14 +31,17 @@ export const getAnimationViewport = ({
   reservedBottom,
   margin,
   zoomLevel,
-  isAnimationMode: wasAnimationMode
+  maxZoomLevel = maxStoryboardZoom,
+  isAnimationMode: wasAnimationMode,
+  imageAspectRatio
 }: AnimationViewportInput): AnimationViewport => {
+  const safeAspectRatio = imageAspectRatio > 0 ? imageAspectRatio : 420 / 265;
   const visibleTop = Math.max(boardTop, margin);
   const visibleHeight = Math.max(1, viewportHeight - visibleTop - reservedBottom - margin);
-  const fitWidth = Math.min(boardWidth, visibleHeight * imageAspectRatio);
-  const fitHeight = Math.round(fitWidth / imageAspectRatio);
+  const fitWidth = Math.min(boardWidth, visibleHeight * safeAspectRatio);
+  const fitHeight = Math.round(fitWidth / safeAspectRatio);
   const fitZoom = (fitWidth / baseShotWidth) * 100;
-  const animationStartZoom = Math.ceil(fitZoom / zoomStep) * zoomStep;
+  const animationStartZoom = Math.min(maxZoomLevel, Math.ceil(fitZoom / zoomStep) * zoomStep);
   const animationEndZoom = animationStartZoom - zoomStep;
   const isAnimationMode = wasAnimationMode
     ? zoomLevel >= animationEndZoom
@@ -48,6 +53,6 @@ export const getAnimationViewport = ({
   return {
     isAnimationMode,
     imageWidth,
-    imageHeight: Math.round(imageWidth / imageAspectRatio || fitHeight)
+    imageHeight: Math.round(imageWidth / safeAspectRatio || fitHeight)
   };
 };

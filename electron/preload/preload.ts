@@ -14,7 +14,10 @@ const api = {
     ipcRenderer.invoke("workspace:autosave", payload) as Promise<ProjectPayload>,
   saveWorkspace: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:save", payload) as Promise<ProjectPayload>,
-  createBlankShot: (folderPath: string) => ipcRenderer.invoke("images:createBlankShot", folderPath),
+  importSwbFormat: (payload: ProjectPayload) =>
+    ipcRenderer.invoke("workspace:importSwbFormat", payload),
+  createBlankShot: (folderPath: string, options: unknown) =>
+    ipcRenderer.invoke("images:createBlankShot", folderPath, options),
   getRecentFolders: () => ipcRenderer.invoke("recent:getFolders") as Promise<string[]>,
   onOpenRecentFolder: (callback: (folderPath: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, folderPath: string) => callback(folderPath);

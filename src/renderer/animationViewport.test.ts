@@ -10,7 +10,8 @@ describe("animation viewport", () => {
       reservedBottom: 180,
       margin: 14,
       zoomLevel: 220,
-      isAnimationMode: false
+      isAnimationMode: false,
+      imageAspectRatio: 420 / 265
     });
 
     expect(viewport.isAnimationMode).toBe(true);
@@ -26,7 +27,8 @@ describe("animation viewport", () => {
       reservedBottom: 180,
       margin: 14,
       zoomLevel: 150,
-      isAnimationMode: false
+      isAnimationMode: false,
+      imageAspectRatio: 420 / 265
     });
     const nextStep = getAnimationViewport({
       boardWidth: 1200,
@@ -35,7 +37,8 @@ describe("animation viewport", () => {
       reservedBottom: 180,
       margin: 14,
       zoomLevel: 155,
-      isAnimationMode: false
+      isAnimationMode: false,
+      imageAspectRatio: 420 / 265
     });
 
     expect(before.isAnimationMode).toBe(false);
@@ -51,7 +54,8 @@ describe("animation viewport", () => {
       reservedBottom: 180,
       margin: 14,
       zoomLevel: 220,
-      isAnimationMode: false
+      isAnimationMode: false,
+      imageAspectRatio: 420 / 265
     });
     const zoomed = getAnimationViewport({
       boardWidth: 1200,
@@ -60,7 +64,8 @@ describe("animation viewport", () => {
       reservedBottom: 180,
       margin: 14,
       zoomLevel: 250,
-      isAnimationMode: true
+      isAnimationMode: true,
+      imageAspectRatio: 420 / 265
     });
 
     expect(zoomed.imageWidth).toBeGreaterThan(fitted.imageWidth);
@@ -75,7 +80,8 @@ describe("animation viewport", () => {
       reservedBottom: 180,
       margin: 14,
       zoomLevel: 150,
-      isAnimationMode: false
+      isAnimationMode: false,
+      imageAspectRatio: 420 / 265
     });
 
     expect(viewport.isAnimationMode).toBe(false);
@@ -89,7 +95,8 @@ describe("animation viewport", () => {
       reservedBottom: 180,
       margin: 14,
       zoomLevel: 215,
-      isAnimationMode: true
+      isAnimationMode: true,
+      imageAspectRatio: 420 / 265
     });
     const storyboardMode = getAnimationViewport({
       boardWidth: 1200,
@@ -98,7 +105,8 @@ describe("animation viewport", () => {
       reservedBottom: 180,
       margin: 14,
       zoomLevel: 210,
-      isAnimationMode: true
+      isAnimationMode: true,
+      imageAspectRatio: 420 / 265
     });
 
     expect(stillAnimation.isAnimationMode).toBe(true);
@@ -118,7 +126,8 @@ describe("animation viewport", () => {
       reservedBottom: 180,
       margin: 14,
       zoomLevel: 220,
-      isAnimationMode: false
+      isAnimationMode: false,
+      imageAspectRatio: 420 / 265
     });
     const afterScroll = getAnimationViewport({
       boardWidth: 1200,
@@ -127,11 +136,48 @@ describe("animation viewport", () => {
       reservedBottom: 180,
       margin: 14,
       zoomLevel: 220,
-      isAnimationMode: true
+      isAnimationMode: true,
+      imageAspectRatio: 420 / 265
     });
 
     expect(beforeScroll.isAnimationMode).toBe(true);
     expect(afterScroll.isAnimationMode).toBe(true);
     expect(afterScroll.imageWidth).toBe(beforeScroll.imageWidth);
+  });
+
+  it("uses the provided image aspect ratio for animation sizing", () => {
+    const scope = {
+      boardWidth: 1200,
+      boardTop: 120,
+      viewportHeight: 900,
+      reservedBottom: 180,
+      margin: 14,
+      zoomLevel: 220,
+      isAnimationMode: false
+    };
+    const wide = getAnimationViewport({ ...scope, imageAspectRatio: 2581 / 1080 });
+    const tall = getAnimationViewport({ ...scope, imageAspectRatio: 1544 / 1080 });
+
+    expect(wide.imageHeight).toBeLessThan(tall.imageHeight);
+    expect(Math.round(wide.imageWidth / wide.imageHeight)).toBeCloseTo(Math.round(2581 / 1080), 0);
+    expect(tall.imageHeight).toBe(Math.round(tall.imageWidth / (1544 / 1080)));
+  });
+
+  it("enters animation mode at max zoom when a wide image would otherwise need more zoom", () => {
+    const viewport = getAnimationViewport({
+      boardWidth: 1200,
+      boardTop: 120,
+      viewportHeight: 900,
+      reservedBottom: 180,
+      margin: 14,
+      zoomLevel: 260,
+      maxZoomLevel: 260,
+      isAnimationMode: false,
+      imageAspectRatio: 2581 / 1080
+    });
+
+    expect(viewport.isAnimationMode).toBe(true);
+    expect(viewport.imageWidth).toBe(1200);
+    expect(viewport.imageHeight).toBe(Math.round(1200 / (2581 / 1080)));
   });
 });

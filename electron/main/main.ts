@@ -1,19 +1,52 @@
 import { app, BrowserWindow, ipcMain, Menu, net, protocol } from "electron";
-import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import sharp from "sharp";
 
+const swbFormatVersion = 1;
+const swbXmpTag = "swb:metadata";
+const blankShotPresets = {
+  "16:9": { width: 1920, height: 1080 },
+  "2.39:1": { width: 2581, height: 1080 },
+  "1.43:1": { width: 1544, height: 1080 }
+} as const;
+type BlankShotPreset = keyof typeof blankShotPresets;
+
 type Project = {
   id: string;
   name: string;
+  naming?: {
+    sceneCode: string;
+    artistName: string;
+    version: string;
+  };
   shots: Array<{
     id: string;
     imagePath: string;
     previewPath?: string;
     fileName: string;
     order: number;
-    sketchData: Array<{
+    sketchLayers?: Array<{
+      id: string;
+      name: string;
+      visible: boolean;
+      locked: boolean;
+      opacity: number;
+      blendMode?: "normal" | "multiply" | "screen";
+      order: number;
+      strokes: Array<{
+        id: string;
+        tool: "brush" | "eraser";
+        color: string;
+        size: number;
+        opacity?: number;
+        points: number[];
+      }>;
+    }>;
+    activeLayerTarget?: "image" | "sketch";
+    imageLayerEdits?: Array<{
       id: string;
       tool: "brush" | "eraser";
       color: string;
@@ -21,6 +54,18 @@ type Project = {
       opacity?: number;
       points: number[];
     }>;
+    baseVisible?: boolean;
+    swb?: {
+      version: number;
+      status: "owned" | "non-swb" | "compatible-external-edit" | "incompatible-external-edit";
+      canvasWidth: number;
+      canvasHeight: number;
+      baseFingerprint?: string;
+      sourcePath?: string;
+      archivePath?: string;
+      statusMessage?: string;
+      acceptedExternalEditAt?: string;
+    };
   }>;
   dialogues: Array<{
     id: string;
@@ -43,6 +88,36 @@ type ImportedImage = {
   imagePath: string;
   previewPath?: string;
   fileName: string;
+  width?: number;
+  height?: number;
+  fingerprint?: string;
+  swbMetadata?: SwbImageMetadata;
+};
+
+type SwbImageMetadata = {
+  app: "Storyboard Workbench";
+  format: "swb-tiff";
+  version: number;
+  projectId?: string;
+  shotId: string;
+  canvasWidth: number;
+  canvasHeight: number;
+  baseFingerprint: string;
+  updatedAt: string;
+  sourcePath?: string;
+  archivePath?: string;
+  imageLayerEdits?: Project["shots"][number]["imageLayerEdits"];
+  sketchLayers?: Project["shots"][number]["sketchLayers"];
+  layers: Array<{
+    id: string;
+    name: string;
+    visible: boolean;
+    locked: boolean;
+    opacity: number;
+    blendMode?: "normal" | "multiply" | "screen";
+    order: number;
+    strokeCount: number;
+  }>;
 };
 
 type FolderScanPayload = {
@@ -51,6 +126,7 @@ type FolderScanPayload = {
   metadataPath: string;
   project?: Project;
   images: ImportedImage[];
+  importWarnings?: string[];
 };
 
 type RenamePlanItem = {
@@ -154,17 +230,29 @@ const registerIpcHandlers = () => {
       await applyFileRenamePlan(payload.renamePlan);
     }
 
-    await writeProjectMetadata(payload.metadataPath, payload.project);
+    await writeSwbMetadataToTiffs(payload.project);
+    const savedProject = clearSavedImageLayerEdits(payload.project);
+    await writeProjectMetadata(payload.metadataPath, savedProject);
 
-    return payload;
+    return { ...payload, project: savedProject };
   });
 
-  ipcMain.handle("images:createBlankShot", async (_event, folderPath: string) => {
-    const imagePath = await createBlankShot(folderPath);
-    const previewRoot = previewRootForFolder(folderPath);
-    const [image] = await createImageRecords([imagePath], previewRoot);
-    return image;
+  ipcMain.handle("workspace:importSwbFormat", async (_event, payload: ProjectPayload) => {
+    const project = await importProjectToSwbFormat(payload.project, payload.folderPath);
+    await writeSwbMetadataToTiffs(project);
+    await writeProjectMetadata(payload.metadataPath, project);
+    return scanFolder(payload.folderPath);
   });
+
+  ipcMain.handle(
+    "images:createBlankShot",
+    async (_event, folderPath: string, options?: { preset?: BlankShotPreset }) => {
+      const imagePath = await createBlankShot(folderPath, options?.preset ?? "16:9");
+      const previewRoot = previewRootForFolder(folderPath);
+      const [image] = await createImageRecords([imagePath], previewRoot);
+      return image;
+    }
+  );
 
   ipcMain.handle("recent:getFolders", async () => {
     return readRecentFolders();
@@ -289,8 +377,320 @@ const applyFileRenamePlan = async (renamePlan: RenamePlanItem[]): Promise<void> 
   }
 };
 
-const createBlankShot = async (folderPath: string): Promise<string> => {
+const importProjectToSwbFormat = async (project: Project, folderPath: string): Promise<Project> => {
+  const archiveRoot = path.join(folderPath, "Archive", archiveStamp());
+  const tempRoot = path.join(folderPath, ".storyboard-workbench", "import-tmp", archiveStamp());
+  const importableShots = project.shots.filter((shot) => shot.swb?.status !== "owned");
+
+  if (importableShots.length === 0) {
+    return project;
+  }
+
+  await mkdir(tempRoot, { recursive: true });
+
+  const prepared = await Promise.all(
+    importableShots.map(async (shot) => {
+      const extension = path.extname(shot.imagePath).toLowerCase();
+      const baseName = path.basename(shot.imagePath, extension);
+      const targetPath = await uniquePath(path.dirname(shot.imagePath), `${baseName}.tiff`);
+      const archivePath = await uniquePath(archiveRoot, path.basename(shot.imagePath));
+      const tempPath = path.join(tempRoot, `${shot.id}.tiff`);
+
+      if (await pathExists(targetPath)) {
+        throw new Error(`SWB import target already exists: ${targetPath}`);
+      }
+
+      await sharp(shot.imagePath).rotate().tiff().toFile(tempPath);
+      const fingerprint = await pixelFingerprint(tempPath);
+      const metadata = await sharp(tempPath).metadata();
+
+      return {
+        shot,
+        targetPath,
+        archivePath,
+        tempPath,
+        fingerprint,
+        width: metadata.width ?? 0,
+        height: metadata.height ?? 0
+      };
+    })
+  );
+
+  await mkdir(archiveRoot, { recursive: true });
+
+  for (const item of prepared) {
+    await rename(item.shot.imagePath, item.archivePath);
+  }
+
+  for (const item of prepared) {
+    await rename(item.tempPath, item.targetPath);
+  }
+
+  return {
+    ...project,
+    shots: project.shots.map((shot) => {
+      const item = prepared.find((candidate) => candidate.shot.id === shot.id);
+      if (!item) {
+        return shot;
+      }
+
+      return {
+        ...shot,
+        imagePath: item.targetPath,
+        previewPath: undefined,
+        fileName: path.basename(item.targetPath),
+        sourceFileName: shot.fileName,
+        sketchLayers: emptyDefaultSketchLayers(shot) ? [] : shot.sketchLayers,
+        activeLayerTarget: "image",
+        swb: {
+          version: swbFormatVersion,
+          status: "owned",
+          canvasWidth: item.width,
+          canvasHeight: item.height,
+          baseFingerprint: item.fingerprint,
+          sourcePath: shot.imagePath,
+          archivePath: item.archivePath
+        }
+      };
+    }),
+    updatedAt: new Date().toISOString()
+  };
+};
+
+const emptyDefaultSketchLayers = (shot: Project["shots"][number]): boolean => {
+  return (
+    shot.sketchLayers?.length === 1 &&
+    shot.sketchLayers[0].id === "layer-default" &&
+    shot.sketchLayers[0].name === "Drawing" &&
+    shot.sketchLayers[0].strokes.length === 0
+  );
+};
+
+const sketchLayersForShot = (
+  shot: Project["shots"][number]
+): NonNullable<Project["shots"][number]["sketchLayers"]> => {
+  return shot.sketchLayers ?? [];
+};
+
+const writeSwbMetadataToTiffs = async (project: Project): Promise<void> => {
+  for (const shot of project.shots) {
+    const extension = path.extname(shot.imagePath).toLowerCase();
+    if ((extension !== ".tif" && extension !== ".tiff") || shot.swb?.status === "non-swb") {
+      continue;
+    }
+
+    if (shot.swb?.status === "incompatible-external-edit") {
+      continue;
+    }
+
+    const bakedPath = await bakeSketchOverlayToTiff(shot);
+    const imagePath = bakedPath ?? shot.imagePath;
+    const metadata = await sharp(imagePath).metadata();
+    const fingerprint = await pixelFingerprint(imagePath);
+    const canvasWidth = shot.swb?.canvasWidth || metadata.width || 0;
+    const canvasHeight = shot.swb?.canvasHeight || metadata.height || 0;
+    const layers = sketchLayersForShot(shot);
+    const swbMetadata: SwbImageMetadata = {
+      app: "Storyboard Workbench",
+      format: "swb-tiff",
+      version: swbFormatVersion,
+      projectId: project.id,
+      shotId: shot.id,
+      canvasWidth,
+      canvasHeight,
+      baseFingerprint: fingerprint,
+      updatedAt: new Date().toISOString(),
+      sourcePath: shot.swb?.sourcePath,
+      archivePath: shot.swb?.archivePath,
+      imageLayerEdits: [],
+      sketchLayers: layers,
+      layers: layers.map((layer) => ({
+        id: layer.id,
+        name: layer.name,
+        visible: layer.visible,
+        locked: layer.locked,
+        opacity: layer.opacity,
+        blendMode: layer.blendMode,
+        order: layer.order,
+        strokeCount: layer.strokes.length
+      }))
+    };
+
+    const tempPath = path.join(
+      path.dirname(imagePath),
+      `.storyboard-metadata-${shot.id}${path.extname(imagePath)}`
+    );
+    await sharp(imagePath).withXmp(swbMetadataXmp(swbMetadata)).tiff().toFile(tempPath);
+    await rename(tempPath, shot.imagePath);
+    if (bakedPath) {
+      await unlink(bakedPath).catch(() => undefined);
+    }
+  }
+};
+
+const clearSavedImageLayerEdits = (project: Project): Project => ({
+  ...project,
+  shots: project.shots.map((shot) => ({
+    ...shot,
+    baseVisible: shouldBakeShotImageEdits(shot) ? true : shot.baseVisible,
+    imageLayerEdits:
+      shouldBakeShotImageEdits(shot) && (shot.imageLayerEdits?.length ?? 0) > 0
+        ? []
+        : shot.imageLayerEdits
+  })),
+  updatedAt: new Date().toISOString()
+});
+
+const shouldBakeShotImageEdits = (shot: Project["shots"][number]): boolean => {
+  const extension = path.extname(shot.imagePath).toLowerCase();
+  return (
+    (extension === ".tif" || extension === ".tiff") &&
+    shot.swb?.status !== "non-swb" &&
+    shot.swb?.status !== "incompatible-external-edit" &&
+    (shot.baseVisible === false || (shot.imageLayerEdits?.length ?? 0) > 0)
+  );
+};
+
+const bakeSketchOverlayToTiff = async (
+  shot: Project["shots"][number]
+): Promise<string | undefined> => {
+  const layers = sketchLayersForShot(shot);
+  const visibleLayers = layers
+    .filter((layer) => layer.visible)
+    .sort((a, b) => a.order - b.order);
+  const visibleImageEdits = shot.imageLayerEdits ?? [];
+
+  if (
+    shot.baseVisible !== false &&
+    visibleImageEdits.length === 0 &&
+    !visibleLayers.some((layer) => layer.strokes.length > 0)
+  ) {
+    return undefined;
+  }
+
+  const imageMetadata = await sharp(shot.imagePath).metadata();
+  const width = imageMetadata.width;
+  const height = imageMetadata.height;
+
+  if (!width || !height) {
+    return undefined;
+  }
+
+  let composited =
+    shot.baseVisible === false
+      ? sharp({
+          create: {
+            width,
+            height,
+            channels: 4,
+            background: { r: 255, g: 255, b: 255, alpha: 1 }
+          }
+        })
+      : sharp(shot.imagePath);
+
+  if (visibleImageEdits.length > 0) {
+    let imageEditOverlay = await sharp({
+      create: {
+        width,
+        height,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      }
+    })
+      .png()
+      .toBuffer();
+
+    for (const stroke of visibleImageEdits) {
+      if (stroke.points.length < 4) {
+        continue;
+      }
+
+      imageEditOverlay = await sharp(imageEditOverlay)
+        .composite([
+          {
+            input: strokeSvg(
+              stroke.tool === "eraser"
+                ? { ...stroke, tool: "brush", color: "#ffffff" }
+                : stroke,
+              width,
+              height
+            ),
+            blend: "over"
+          }
+        ])
+        .png()
+        .toBuffer();
+    }
+
+    composited = composited.composite([{ input: imageEditOverlay, blend: "over" }]);
+  }
+
+  for (const layer of visibleLayers) {
+    if (layer.strokes.length === 0) {
+      continue;
+    }
+
+    let layerOverlay = await sharp({
+      create: {
+        width,
+        height,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      }
+    })
+      .png()
+      .toBuffer();
+
+    for (const stroke of layer.strokes) {
+      if (stroke.points.length < 4) {
+        continue;
+      }
+
+      layerOverlay = await sharp(layerOverlay)
+        .composite([
+          {
+            input: strokeSvg(
+              {
+                ...stroke,
+                opacity: (stroke.opacity ?? 1) * layer.opacity
+              },
+              width,
+              height
+            ),
+            blend: stroke.tool === "eraser" ? "dest-out" : "over"
+          }
+        ])
+        .png()
+        .toBuffer();
+    }
+
+    composited = composited.composite([
+      { input: layerOverlay, blend: sharpBlendMode(layer.blendMode) }
+    ]);
+  }
+
+  const tempPath = path.join(
+    path.dirname(shot.imagePath),
+    `.storyboard-bake-${shot.id}${path.extname(shot.imagePath)}`
+  );
+  await composited.tiff().toFile(tempPath);
+  return tempPath;
+};
+
+const sharpBlendMode = (blendMode: string | undefined): "over" | "multiply" | "screen" => {
+  if (blendMode === "multiply" || blendMode === "screen") {
+    return blendMode;
+  }
+
+  return "over";
+};
+
+const createBlankShot = async (
+  folderPath: string,
+  preset: BlankShotPreset = "16:9"
+): Promise<string> => {
   await mkdir(folderPath, { recursive: true });
+  const size = blankShotPresets[preset] ?? blankShotPresets["16:9"];
 
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const imagePath = path.join(folderPath, `new_shot_${Date.now()}_${attempt}.tiff`);
@@ -301,8 +701,8 @@ const createBlankShot = async (folderPath: string): Promise<string> => {
       if (code === "ENOENT") {
         await sharp({
           create: {
-            width: 1920,
-            height: 1080,
+            width: size.width,
+            height: size.height,
             channels: 3,
             background: "#ffffff"
           }
@@ -385,11 +785,20 @@ const createImageRecords = async (
         extension === ".tif" || extension === ".tiff"
           ? await createPreview(imagePath, previewRoot)
           : undefined;
+      const metadata = await sharp(imagePath).metadata();
+      const swbMetadata =
+        extension === ".tif" || extension === ".tiff"
+          ? await readSwbMetadata(imagePath)
+          : undefined;
 
       return {
         imagePath,
         previewPath,
-        fileName: path.basename(imagePath)
+        fileName: path.basename(imagePath),
+        width: metadata.width,
+        height: metadata.height,
+        fingerprint: await pixelFingerprint(imagePath),
+        swbMetadata
       };
     })
   );
@@ -408,4 +817,113 @@ const createPreview = async (imagePath: string, previewRoot: string): Promise<st
     .toFile(previewPath);
 
   return previewPath;
+};
+
+const pixelFingerprint = async (imagePath: string): Promise<string> => {
+  const { data, info } = await sharp(imagePath)
+    .rotate()
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const hash = createHash("sha256");
+  hash.update(`${info.width}x${info.height}:${info.channels}:`);
+  hash.update(data);
+  return hash.digest("hex");
+};
+
+const readSwbMetadata = async (imagePath: string): Promise<SwbImageMetadata | undefined> => {
+  const metadata = await sharp(imagePath).metadata();
+  const xmp = metadata.xmpAsString;
+  if (!xmp) {
+    return undefined;
+  }
+
+  const match = new RegExp(`<${swbXmpTag}>([^<]+)</${swbXmpTag}>`).exec(xmp);
+  if (!match) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(match[1], "base64").toString("utf8"));
+    if (
+      parsed &&
+      parsed.app === "Storyboard Workbench" &&
+      parsed.format === "swb-tiff" &&
+      typeof parsed.shotId === "string"
+    ) {
+      return parsed as SwbImageMetadata;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+};
+
+const swbMetadataXmp = (metadata: SwbImageMetadata): string => {
+  const encoded = Buffer.from(JSON.stringify(metadata), "utf8").toString("base64");
+  return `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:swb="https://storyboard-workbench.local/ns/1.0/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about="">
+      <${swbXmpTag}>${encoded}</${swbXmpTag}>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>`;
+};
+
+const strokeSvg = (
+  stroke: {
+    tool: "brush" | "eraser";
+    color: string;
+    size: number;
+    opacity?: number;
+    points: number[];
+  },
+  width: number,
+  height: number
+): Buffer => {
+  const [startX, startY, ...rest] = stroke.points;
+  const commands = [
+    `M ${svgNumber(startX)} ${svgNumber(startY)}`,
+    ...Array.from({ length: Math.floor(rest.length / 2) }, (_item, index) => {
+      const x = rest[index * 2];
+      const y = rest[index * 2 + 1];
+      return `L ${svgNumber(x)} ${svgNumber(y)}`;
+    })
+  ].join(" ");
+  const color = stroke.tool === "eraser" ? "#000000" : safeSvgColor(stroke.color);
+  const opacity = Math.max(0, Math.min(1, stroke.opacity ?? 1));
+  const strokeWidth = Math.max(1, stroke.size);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <path d="${commands}" fill="none" stroke="${color}" stroke-width="${svgNumber(strokeWidth)}" stroke-opacity="${svgNumber(opacity)}" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+
+  return Buffer.from(svg);
+};
+
+const svgNumber = (value: number): string => Number(value.toFixed(3)).toString();
+
+const safeSvgColor = (color: string): string => {
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : "#000000";
+};
+
+const archiveStamp = (): string => {
+  return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "");
+};
+
+const uniquePath = async (directory: string, fileName: string): Promise<string> => {
+  const extension = path.extname(fileName);
+  const baseName = path.basename(fileName, extension);
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const candidateName = attempt === 0 ? fileName : `${baseName}_${attempt}${extension}`;
+    const candidate = path.join(directory, candidateName);
+    if (!(await pathExists(candidate))) {
+      return candidate;
+    }
+  }
+
+  throw new Error(`Could not create a unique path for ${fileName}`);
 };

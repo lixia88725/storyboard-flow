@@ -1,5 +1,7 @@
 import type {
+  BlankShotOptions,
   FolderScanPayload,
+  ImportSwbFormatPayload,
   ImportedImage,
   Project,
   RenamePlanItem,
@@ -14,7 +16,8 @@ declare global {
       saveWorkspace: (
         payload: WorkspacePayload & { renamePlan?: RenamePlanItem[] }
       ) => Promise<WorkspacePayload>;
-      createBlankShot: (folderPath: string) => Promise<ImportedImage>;
+      importSwbFormat: (payload: ImportSwbFormatPayload) => Promise<FolderScanPayload>;
+      createBlankShot: (folderPath: string, options: BlankShotOptions) => Promise<ImportedImage>;
       getRecentFolders: () => Promise<string[]>;
       onOpenRecentFolder: (callback: (folderPath: string) => void) => () => void;
       onRecentFoldersChanged: (callback: (folders: string[]) => void) => () => void;

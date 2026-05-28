@@ -2,34 +2,85 @@
 
 ## P0
 
-- Verify multi-select group dragging in the Electron app with a real mouse/trackpad. Automated checks covered shared reorder logic and drag overlay DOM, but dnd-kit final drop behavior still needs hands-on confirmation.
-- Verify double-click dialogue creation/editing/autosave/reopen recovery after the compact dialogue-strip UI changes.
-- Verify dialogue editing edge cases: focus, blur, empty cleanup, and dragging immediately after editing.
+- [ ] Before bitmap layer refactor, create a clean Git commit for the current working state.
+- [ ] Manually verify Image layer ordinary-layer behavior in Electron:
+  - Select `Image`, draw directly on it.
+  - Erase on `Image` and confirm white background appears.
+  - Click `-` while `Image` is selected and confirm the button still reads `Delete current layer`.
+  - Undo/redo the delete.
+  - Save, reopen, and confirm the visible result is preserved.
+- [ ] Manually verify Onion Skin in animation mode:
+  - Toggle appears only in animation mode.
+  - Previous frame is red, next frame is green.
+  - Left/right playback updates ghost frames.
+  - Drawing still affects only the current shot.
+- [ ] Manually verify mixed aspect-ratio animation playback:
+  - 16:9, 2.39:1, and 1.43:1 shots show without black bars.
+  - Left/right playback keeps every shot centered.
+  - Timeline remains visible at high zoom.
+- [ ] Manually verify Save safety after recent changes:
+  - Rename preflight still blocks final and temporary path conflicts.
+  - Save does not modify Archive originals.
+  - Save naming still uses `项目名_场号_stb_艺术家名_版本号_0010.ext`.
 
 ## P1
 
-- Improve marquee selection so it is usable when the board is dense (current box-selection only starts from empty grid background).
-- Add validation or cleanup for missing Recent folder paths.
-- Add UI feedback for autosave failures that persists long enough for users to notice.
-- Add more focused tests for rename edge cases beyond current preflight coverage, including source names with existing numeric prefixes.
-- Add a clearer Save conflict resolution UI beyond the current preflight error message. Current `Save` has no confirmation UI, rollback UI, or detailed recovery flow for unexpected filesystem errors during rename.
+- [ ] Plan and implement bitmap layer drawing system:
+  - Store editable layers as bitmap assets under `.storyboard-workbench/layers/`.
+  - Keep JSON as layer metadata, not base64 image storage.
+  - Keep true TIFF writes behind Save only.
+  - Migrate current stroke data to bitmap layers once, then stop relying on strokes as primary data.
+- [ ] Revisit Import after bitmap layer refactor:
+  - Ordinary PNG/JPG/TIFF should open into SWB working layers automatically.
+  - Photoshop multi-layer TIFF round-trip remains out of scope unless separately researched.
+- [ ] Add Electron smoke coverage or a repeatable manual checklist for:
+  - Open folder.
+  - Draw on Image.
+  - Add/reorder/rename/hide layer.
+  - Save.
+  - Reopen.
+- [ ] Improve marquee selection so it is usable when the board is dense.
+- [ ] Add validation or cleanup for missing Recent folder paths.
+- [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
+- [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
 
 ## P2
 
-- Consider a dedicated select/hand/draw tool mode if drawing, selecting, and dragging conflict in real use.
-- Consider storing sketch canvas dimensions explicitly if zoom or image aspect behavior becomes more complex.
-- Review whether `electron/preload/preload.cjs` should continue to be manually maintained or generated from TypeScript.
+- [ ] Consider a dedicated select/hand/draw tool mode if drawing, selecting, and dragging conflict in real use.
+- [ ] Review whether `electron/preload/preload.cjs` should continue to be manually maintained or generated from TypeScript.
+- [ ] Consider opacity controls for Onion Skin if fixed red/green ghost strength feels too strong or too weak.
+- [ ] Consider a real select/transform tool only after bitmap layer model is stable.
 
-## Known Simplifications
+## Completed
 
-- Zoom slider changes card density, but sketch strokes are stored against a fixed Konva canvas size. Smoke tested at multiple zoom levels.
-- Recent folder entries are stored as paths in app userData and are not validated for existence.
+- [x] Save rename preflight.
+- [x] Multi-select storyboard drag ordering and stacked preview.
+- [x] Compact dialogue strip.
+- [x] Remove storyboard image white border/chrome.
+- [x] Brush color and opacity controls.
+- [x] Zoom-driven animation mode.
+- [x] Timeline click jump.
+- [x] Animation mode left/right direct switching.
+- [x] Storyboard mode arrow-key grid selection.
+- [x] `B` / `E` brush and eraser shortcuts.
+- [x] Drawing in animation mode and zoom > 100%.
+- [x] Save naming menu with Project / Scene / Artist / Version.
+- [x] Status popover in bottom-right.
+- [x] Recent dropdown merged into centered address bar.
+- [x] Add Shot split menu for `16:9`, `2.39:1`, `1.43:1`.
+- [x] Real image aspect-ratio display with no black bars.
+- [x] Mixed-size animation centering fix.
+- [x] Dark workbench theme.
+- [x] SWB layer panel MVP.
+- [x] Onion Skin toggle in animation mode.
+- [x] Image layer can be drawn, erased, and deleted like a normal layer in UI.
+- [x] Removed old `sketchData` compatibility layer.
 
 ## Out Of Scope For Current MVP
 
 - AI prompt fields or AI export.
 - PDF or image sequence export.
 - SQLite migration.
-- Photoshop integration or file watching.
 - Cloud sync or collaboration.
-- Advanced drawing tools.
+- Photoshop layer round-trip.
+- Full Photoshop-compatible multi-layer TIFF writing.
