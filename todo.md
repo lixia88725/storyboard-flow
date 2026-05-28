@@ -2,10 +2,6 @@
 
 ## P0
 
-- [ ] Manually verify remaining bitmap Image layer behavior in Electron:
-  - Erase on `Image` and confirm white background appears.
-  - Click `-` while `Image` is selected and confirm the button still reads `Delete current layer`.
-  - Undo/redo the delete.
 - [ ] Manually verify bitmap Onion Skin in animation mode:
   - Toggle appears only in animation mode.
   - Previous frame is red, next frame is green.
@@ -77,6 +73,7 @@
 - [x] Undo/redo history captures affected bitmap layer PNG snapshots for stroke, clear, and delete.
 - [x] Electron CDP smoke verified Image layer drawing changes internal PNG hash and undo/redo restores the expected hashes.
 - [x] Added repeatable `npm run smoke:bitmap` Electron CDP smoke for Image layer draw/undo/redo/clear/Save/reopen.
+- [x] Electron CDP smoke verified Image layer eraser and layer-panel Delete current layer clear/undo behavior.
 
 ## Out Of Scope For Current MVP
 

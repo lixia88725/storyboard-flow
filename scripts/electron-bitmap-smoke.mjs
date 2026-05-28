@@ -129,6 +129,40 @@ const dispatchKeyZ = async (send, modifiers) => {
   });
 };
 
+const waitForUndoReady = async () => {
+  await delay(700);
+};
+
+const dragStroke = async (send, startX, startY, endX, endY) => {
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: startX,
+    y: startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+
+  for (let index = 1; index <= 12; index += 1) {
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: Math.round(startX + ((endX - startX) * index) / 12),
+      y: Math.round(startY + ((endY - startY) * index) / 12),
+      button: "left",
+      buttons: 1
+    });
+  }
+
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: endX,
+    y: endY,
+    button: "left",
+    buttons: 0,
+    clickCount: 1
+  });
+};
+
 let electronProcess;
 
 try {
@@ -208,33 +242,7 @@ try {
   const endX = Math.round(rect.x + rect.width * 0.65);
   const endY = Math.round(rect.y + rect.height * 0.55);
 
-  await send("Input.dispatchMouseEvent", {
-    type: "mousePressed",
-    x: startX,
-    y: startY,
-    button: "left",
-    buttons: 1,
-    clickCount: 1
-  });
-
-  for (let index = 1; index <= 12; index += 1) {
-    await send("Input.dispatchMouseEvent", {
-      type: "mouseMoved",
-      x: Math.round(startX + ((endX - startX) * index) / 12),
-      y: Math.round(startY + ((endY - startY) * index) / 12),
-      button: "left",
-      buttons: 1
-    });
-  }
-
-  await send("Input.dispatchMouseEvent", {
-    type: "mouseReleased",
-    x: endX,
-    y: endY,
-    button: "left",
-    buttons: 0,
-    clickCount: 1
-  });
+  await dragStroke(send, startX, startY, endX, endY);
 
   const drawnHash = await waitFor(async () => {
     const nextHash = await hashFile(layerPath);
@@ -258,6 +266,28 @@ try {
 
   await evaluate(`
     (() => {
+      document.querySelector('button[aria-label="Eraser"]').click();
+      return true;
+    })()
+  `);
+
+  await dragStroke(send, endX, endY, startX, startY);
+
+  const erasedHash = await waitFor(async () => {
+    const nextHash = await hashFile(layerPath);
+    return nextHash !== drawnHash ? nextHash : undefined;
+  }, "layer hash change after eraser");
+
+  await waitForUndoReady();
+  await dispatchKeyZ(send, 4);
+
+  const undoEraseHash = await waitFor(async () => {
+    const nextHash = await hashFile(layerPath);
+    return nextHash === drawnHash ? nextHash : undefined;
+  }, "layer hash restore after undo eraser");
+
+  await evaluate(`
+    (() => {
       document.querySelector('button[aria-label="Clear current layer"]').click();
       return true;
     })()
@@ -268,12 +298,48 @@ try {
     return nextHash !== drawnHash ? nextHash : undefined;
   }, "layer hash change after clear");
 
+  await waitForUndoReady();
   await dispatchKeyZ(send, 4);
 
   const undoClearHash = await waitFor(async () => {
     const nextHash = await hashFile(layerPath);
     return nextHash === drawnHash ? nextHash : undefined;
   }, "layer hash restore after undo clear");
+
+  await evaluate(`
+    (() => {
+      document.querySelector('button[aria-label="Layers"]').click();
+      return true;
+    })()
+  `);
+
+  await waitFor(
+    () =>
+      evaluate(`
+        Boolean(document.querySelector('button[aria-label="Delete current layer"]'))
+      `),
+    "layer panel delete button"
+  );
+
+  await evaluate(`
+    (() => {
+      document.querySelector('button[aria-label="Delete current layer"]').click();
+      return true;
+    })()
+  `);
+
+  const layerPanelDeleteHash = await waitFor(async () => {
+    const nextHash = await hashFile(layerPath);
+    return nextHash === clearedHash ? nextHash : undefined;
+  }, "layer hash clear after layer panel delete");
+
+  await waitForUndoReady();
+  await dispatchKeyZ(send, 4);
+
+  const undoLayerPanelDeleteHash = await waitFor(async () => {
+    const nextHash = await hashFile(layerPath);
+    return nextHash === drawnHash ? nextHash : undefined;
+  }, "layer hash restore after undo layer panel delete");
 
   await evaluate(`
     (() => {
@@ -317,8 +383,12 @@ try {
         drawnHash,
         undoHash,
         redoHash,
+        erasedHash,
+        undoEraseHash,
         clearedHash,
         undoClearHash,
+        layerPanelDeleteHash,
+        undoLayerPanelDeleteHash,
         savedFileName: savedTiffFiles[0],
         savedSwbStatus: savedProject.shots[0].swb.status,
         reopenedHash
