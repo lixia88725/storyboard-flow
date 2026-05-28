@@ -73,16 +73,18 @@ Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench
 - 图层面板中新增普通 paint layer 会创建 JSON metadata 和内部 PNG layer asset。
 - 普通 paint layer 的 hide 和 opacity 会 autosave 到 JSON。
 - 删除普通 paint layer 会移除 JSON metadata，并删除对应内部 PNG layer asset。
-- Electron CDP smoke 验证了 Image layer 上真实绘制会改变内部 `layer-image.png` hash，`Cmd+Z` 会恢复原 hash，`Cmd+Shift+Z` 会恢复绘制后的 hash：
+- Electron CDP smoke 验证了 Image layer 上真实绘制会改变内部 `layer-image.png` hash，`Cmd+Z` 会恢复原 hash，`Cmd+Shift+Z` 会恢复绘制后的 hash，Save 会生成 SWB-owned TIFF，reload/reopen 后仍从内部 layer PNG 恢复绘制结果：
   - before / undo: `7c669eaf1130b4a32632e0e969acd3dce4df5f403404eab7a20cd125ab1ccfc4`
   - drawn / redo: `5c560fd38543631f9d5b96af9e86e1a6920f813522b58b8592d1c16d4385c369`
+  - saved file pattern: `swb-bitmap-smoke-*_scene_stb_artist_v001_0010.tiff`
+  - reopened hash: `5c560fd38543631f9d5b96af9e86e1a6920f813522b58b8592d1c16d4385c369`
 - 该 CDP smoke 已固化为 `npm run smoke:bitmap`。
 - 对普通 PNG 执行 Save 后，原 PNG 进入 `Archive/`，生成命名 TIFF，JSON 指向 `status: "owned"` 的 TIFF。
 - Save 仍需要用户确认缺失命名字段时是否使用默认 Scene / Artist / Version。
 
 以下行为仍需手动或自动确认：
 
-- `TODO: verify` Image layer 上画、擦、清空、Save、重开的一致性。
+- `TODO: verify` Image layer 擦、清空、Delete current layer 的一致性。
 - `TODO: verify` 普通 paint layer 画、擦、undo/redo、blend mode、拖动排序、Save、重开的一致性。
 - `TODO: verify` 旧 stroke 项目迁移后的可见结果是否符合预期。
 - `TODO: verify` Onion Skin 在 bitmap layer 下的红绿透明度和相邻帧刷新。

@@ -51,6 +51,15 @@ const findImageLayerPath = async (folderPath) => {
   return undefined;
 };
 
+const projectMetadataPath = (folderPath) =>
+  path.join(folderPath, ".storyboard-workbench", "storyboard.project.json");
+
+const readProjectMetadata = async (folderPath) =>
+  JSON.parse(await readFile(projectMetadataPath(folderPath), "utf8"));
+
+const findTiffFiles = async (folderPath) =>
+  (await readdir(folderPath)).filter((fileName) => /\.(tif|tiff)$/i.test(fileName));
+
 const connectToStoryboardPage = async () => {
   const page = await waitFor(async () => {
     const response = await fetch(`http://127.0.0.1:${port}/json/list`);
@@ -144,8 +153,24 @@ try {
   electronProcess.stderr.on("data", (chunk) => process.stderr.write(chunk));
 
   const { ws, send, evaluate } = await connectToStoryboardPage();
+  await send("Page.enable");
+  ws.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    if (message.method === "Page.javascriptDialogOpening") {
+      void send("Page.handleJavaScriptDialog", { accept: true });
+    }
+  });
 
-  await evaluate(`
+  const openFolder = async () => {
+    await waitFor(
+      () =>
+        evaluate(`
+          Boolean(document.querySelector('input[aria-label="Folder path"]'))
+        `),
+      "folder path input"
+    );
+
+    await evaluate(`
     (() => {
       const input = document.querySelector('input[aria-label="Folder path"]');
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
@@ -156,13 +181,16 @@ try {
     })()
   `);
 
-  await waitFor(
-    () =>
-      evaluate(`
+    await waitFor(
+      () =>
+        evaluate(`
         Boolean(document.querySelector(".image-stage"))
       `),
-    "shot stage"
-  );
+      "shot stage"
+    );
+  };
+
+  await openFolder();
 
   const layerPath = await waitFor(() => findImageLayerPath(smokeRoot), "image layer asset");
   const beforeHash = await hashFile(layerPath);
@@ -228,6 +256,37 @@ try {
     return nextHash === drawnHash ? nextHash : undefined;
   }, "layer hash restore after redo");
 
+  await evaluate(`
+    (() => {
+      const saveButton = Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent.trim() === "Save");
+      saveButton.click();
+      return true;
+    })()
+  `);
+
+  await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const tiffFiles = await findTiffFiles(smokeRoot);
+    return project.shots?.[0]?.swb?.status === "owned" && tiffFiles.length === 1;
+  }, "Save-owned TIFF and metadata");
+
+  const savedProject = await readProjectMetadata(smokeRoot);
+  const savedTiffFiles = await findTiffFiles(smokeRoot);
+  const savedLayerHash = await hashFile(layerPath);
+  if (savedLayerHash !== drawnHash) {
+    throw new Error("Save changed the editable layer asset hash");
+  }
+
+  await evaluate("location.reload()");
+  await openFolder();
+
+  const reopenedLayerPath = await waitFor(() => findImageLayerPath(smokeRoot), "reopened image layer asset");
+  const reopenedHash = await hashFile(reopenedLayerPath);
+  if (reopenedHash !== drawnHash) {
+    throw new Error("Reopen did not preserve the editable layer asset hash");
+  }
+
   ws.close();
 
   console.log(
@@ -238,7 +297,10 @@ try {
         beforeHash,
         drawnHash,
         undoHash,
-        redoHash
+        redoHash,
+        savedFileName: savedTiffFiles[0],
+        savedSwbStatus: savedProject.shots[0].swb.status,
+        reopenedHash
       },
       null,
       2
