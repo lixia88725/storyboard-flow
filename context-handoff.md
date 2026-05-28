@@ -95,4 +95,5 @@ b2370a3 fix: autosave new folders for layer assets
 7eb3c2e feat: migrate legacy strokes to bitmap layers
 45e529b feat: render onion skin from bitmap layers
 2e0abcc docs: update handoff for bitmap layer workflow
+40788ea fix: save ordinary images as swb tiffs
 ```
