@@ -62,6 +62,7 @@ npm run build       # passed, Vite chunk size warning only
 ```bash
 npm run test        # passed, 71 tests
 npm run build       # passed, Vite chunk size warning only
+npm run smoke:bitmap # passed, launches Electron via local CDP
 ```
 
 Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench 窗口，并验证：
@@ -75,6 +76,7 @@ Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench
 - Electron CDP smoke 验证了 Image layer 上真实绘制会改变内部 `layer-image.png` hash，`Cmd+Z` 会恢复原 hash，`Cmd+Shift+Z` 会恢复绘制后的 hash：
   - before / undo: `7c669eaf1130b4a32632e0e969acd3dce4df5f403404eab7a20cd125ab1ccfc4`
   - drawn / redo: `5c560fd38543631f9d5b96af9e86e1a6920f813522b58b8592d1c16d4385c369`
+- 该 CDP smoke 已固化为 `npm run smoke:bitmap`。
 - 对普通 PNG 执行 Save 后，原 PNG 进入 `Archive/`，生成命名 TIFF，JSON 指向 `status: "owned"` 的 TIFF。
 - Save 仍需要用户确认缺失命名字段时是否使用默认 Scene / Artist / Version。
 
@@ -113,4 +115,5 @@ b2370a3 fix: autosave new folders for layer assets
 40788ea fix: save ordinary images as swb tiffs
 17b983d fix: delete paint layer assets from renderer
 8ab9c95 feat: restore bitmap layer assets on undo
+7407d52 docs: record image layer cdp smoke
 ```

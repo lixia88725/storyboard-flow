@@ -78,6 +78,7 @@
 - [x] Electron GUI smoke verified paint layer add/hide/opacity/delete autosave and PNG cleanup.
 - [x] Undo/redo history captures affected bitmap layer PNG snapshots for stroke, clear, and delete.
 - [x] Electron CDP smoke verified Image layer drawing changes internal PNG hash and undo/redo restores the expected hashes.
+- [x] Added repeatable `npm run smoke:bitmap` Electron CDP smoke for Image layer draw/undo/redo.
 
 ## Out Of Scope For Current MVP
 
