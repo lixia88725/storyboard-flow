@@ -1,8 +1,6 @@
 # Storyboard Workbench MVP
 
-本项目是一个本地优先的故事板编排原型。V1 聚焦三件事：故事板排序、台词跨故事板移动、图片草图批注。
-
-当前工作流采用地址栏文件夹入口：粘贴一个本地图像文件夹路径就是打开一场戏。应用会读取文件夹内图片，并在该文件夹下保存排序、台词和草图元数据。
+Storyboard Workbench 是一个本地优先的故事板工作台。V1 聚焦：打开一个本地图像文件夹、排序 storyboard、移动台词、绘制修改、管理轻量图层，并在需要时把软件内顺序和画面同步回真实 TIFF。
 
 ## Scripts
 
@@ -14,14 +12,67 @@ npm run build
 npm run dev
 ```
 
-## Workspace Files
+## Workflow
 
-在顶部地址栏粘贴图片文件夹路径并按 Enter 后，应用会扫描 `.png`、`.jpg`、`.jpeg`、`.tif`、`.tiff`。打开过的文件夹会出现在 macOS `File > Open Recent` 和地址栏旁的 `Recent` 下拉中。
+- 一个本地图像文件夹就是一场戏。
+- 顶部地址栏输入或选择最近文件夹后，应用扫描 `.png`、`.jpg`、`.jpeg`、`.tif`、`.tiff`。
+- 内部状态自动保存到当前文件夹的 `.storyboard-workbench/storyboard.project.json`。
+- `Save` 是唯一会同步真实文件名和写工作 TIFF 像素的操作。
 
-点击 `Add Shot` 会在当前文件夹生成一张新的 1920x1080 白底 TIFF，并插入到当前选中 Shot 后方。拖拽排序、台词、草图会自动保存到当前图片文件夹下的 `.storyboard-workbench/storyboard.project.json`，所以不点击 `Save` 也能在重新打开后恢复软件内部状态。
+## Save
 
-点击 `Save` 只负责按软件内顺序把图像重命名为 `001_original.ext` 这种格式，让 Finder/Bridge 的文件名顺序和软件一致。TIFF preview 会生成到 `.storyboard-workbench/previews/` 目录。
+`Save` 会执行两件事：
 
-## MVP Scope
+- 按软件内 storyboard 顺序安全同步真实图片文件名。
+- 把当前可见 SWB 绘制结果烘焙到工作 TIFF。
 
-V1 不包含 AI 字段、导出、SQLite、Photoshop 集成、云同步或复杂绘画工具。
+当前命名规则：
+
+```text
+项目名_场号_stb_艺术家名_版本号_0010.ext
+项目名_场号_stb_艺术家名_版本号_0020.ext
+```
+
+序号按 10 递增，方便后续手动插入中间号位。真实重命名前会先做 preflight，避免覆盖或临时文件冲突。
+
+## Layers And Drawing
+
+当前绘图系统仍是 stroke-based：
+
+- 普通 SWB 图层保存为 `sketchLayers[].strokes`。
+- `Image` 层编辑保存为 `imageLayerEdits`。
+- Save 时由 Electron/sharp 烘焙到 TIFF 像素。
+
+图层面板支持新增、删除、重命名、显隐、opacity、blend mode 和拖动排序。`Image` 层固定在最底部，但在 UI 中可选中、绘制、擦除；选中 `Image` 后点击 `Delete current layer` 会删除当前可见底图内容并露出白底，不会立刻修改真实文件。
+
+## SWB Format
+
+非 SWB 图片可导入为 SWB-owned TIFF。导入会把原文件移动到 `Archive/YYYY-MM-DD-HHMMSS/`，工作 TIFF 由 Storyboard Workbench 管理。
+
+`.storyboard-workbench/storyboard.project.json` 是主数据；TIFF XMP metadata 只是便携快照。兼容的外部 TIFF 像素编辑可以被接受为新的 base，但 V1 不承诺 Photoshop 图层 round-trip。
+
+## Storyboard And Animation Mode
+
+- `Add Shot` 可创建白底 TIFF，支持 `16:9`、`2.39:1`、`1.43:1 IMAX`。
+- Storyboard 按真实画布比例显示，混合画幅不会额外加黑边。
+- Zoom 到单张 storyboard 填满工作区时进入动画模式，底部显示时间线。
+- 动画模式支持左右键线性播放、时间线点击跳转，以及 Onion Skin 前后帧参考。
+
+## Current Direction
+
+下一轮大重构方向是将可编辑绘图源数据迁移为 bitmap layer：
+
+```text
+.storyboard-workbench/layers/{shotId}/{layerId}.png
+```
+
+目标是减少 `Image` 层和普通图层的技术差异，让绘制、擦除、删除、Save 的心智模型更接近普通像素绘图软件。Photoshop 图层兼容仍不属于当前目标。
+
+## MVP Non-Goals
+
+- AI prompt fields or AI export.
+- PDF or image sequence export.
+- SQLite migration.
+- Cloud sync or collaboration.
+- Photoshop layer round-trip.
+- Full Photoshop-compatible multi-layer TIFF writing.
