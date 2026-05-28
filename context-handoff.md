@@ -80,13 +80,17 @@ Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench
   - cleared: `738440fafe37d11b377c33463c8e8cf6998ac5591591e4a1a066018b7ac6e247`
   - saved file pattern: `swb-bitmap-smoke-*_scene_stb_artist_v001_0010.tiff`
   - reopened hash: `5c560fd38543631f9d5b96af9e86e1a6920f813522b58b8592d1c16d4385c369`
+- Electron CDP smoke 也验证了新增普通 paint layer 的绘制、擦除、undo eraser、opacity `0.5`、blend mode `multiply`、Save 后 layer asset 不变、reload/reopen 后 paint layer metadata 和 PNG hash 保留：
+  - paint blank: `8acb6b57817a1fb71fc80513fbc392ed1a6941224f4984f88b7713f054716375`
+  - paint drawn / undo eraser / reopened: `f0d1314668ba878a956f3b9bedcbf5cc3a99ee1f9b5f2b47e1f236fa4940aca5`
+  - paint erased: `738440fafe37d11b377c33463c8e8cf6998ac5591591e4a1a066018b7ac6e247`
 - 该 CDP smoke 已固化为 `npm run smoke:bitmap`。
 - 对普通 PNG 执行 Save 后，原 PNG 进入 `Archive/`，生成命名 TIFF，JSON 指向 `status: "owned"` 的 TIFF。
 - Save 仍需要用户确认缺失命名字段时是否使用默认 Scene / Artist / Version。
 
 以下行为仍需手动或自动确认：
 
-- `TODO: verify` 普通 paint layer 画、擦、undo/redo、blend mode、拖动排序、Save、重开的一致性。
+- `TODO: verify` 普通 paint layer 拖动排序的一致性。
 - `TODO: verify` 旧 stroke 项目迁移后的可见结果是否符合预期。
 - `TODO: verify` Onion Skin 在 bitmap layer 下的红绿透明度和相邻帧刷新。
 - `TODO: verify` mixed aspect-ratio 动画模式、timeline、multi-select shot dragging、double-click dialogue editing。

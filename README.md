@@ -48,7 +48,7 @@ npm run dev
 
 图层面板支持新增、删除、重命名、显隐、opacity、blend mode 和拖动排序。`Image` 层固定在最底部，但在 UI 中可选中、绘制、擦除；选中 `Image` 后点击 `Delete current layer` 会删除当前可见底图内容并露出白底，不会立刻修改真实文件。
 
-`npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 绘制和清空会改变内部 PNG hash，undo / redo 会恢复预期 hash，Save 会生成 SWB-owned TIFF，重开后仍从内部 layer PNG 恢复可编辑结果。
+`npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、Save 和重开恢复。
 
 ## SWB Format
 

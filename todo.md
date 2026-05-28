@@ -74,6 +74,7 @@
 - [x] Electron CDP smoke verified Image layer drawing changes internal PNG hash and undo/redo restores the expected hashes.
 - [x] Added repeatable `npm run smoke:bitmap` Electron CDP smoke for Image layer draw/undo/redo/clear/Save/reopen.
 - [x] Electron CDP smoke verified Image layer eraser and layer-panel Delete current layer clear/undo behavior.
+- [x] Electron CDP smoke verified paint layer add/draw/erase/undo/opacity/blend mode/Save/reopen behavior.
 
 ## Out Of Scope For Current MVP
 

@@ -51,6 +51,8 @@ const findImageLayerPath = async (folderPath) => {
   return undefined;
 };
 
+const resolveLayerPath = (folderPath, bitmapPath) => path.join(folderPath, bitmapPath);
+
 const projectMetadataPath = (folderPath) =>
   path.join(folderPath, ".storyboard-workbench", "storyboard.project.json");
 
@@ -343,6 +345,76 @@ try {
 
   await evaluate(`
     (() => {
+      document.querySelector('button[aria-label="Add layer"]').click();
+      return true;
+    })()
+  `);
+
+  const paintLayer = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    return project.shots?.[0]?.layers?.find((layer) => layer.kind === "paint");
+  }, "paint layer metadata");
+  const paintLayerPath = resolveLayerPath(smokeRoot, paintLayer.bitmapPath);
+  const paintBlankHash = await hashFile(paintLayerPath);
+
+  await evaluate(`
+    (() => {
+      document.querySelector('button[aria-label="Brush"]').click();
+      return true;
+    })()
+  `);
+  await dragStroke(send, startX, startY, endX, endY);
+
+  const paintDrawnHash = await waitFor(async () => {
+    const nextHash = await hashFile(paintLayerPath);
+    return nextHash !== paintBlankHash ? nextHash : undefined;
+  }, "paint layer hash change after drawing");
+
+  await evaluate(`
+    (() => {
+      document.querySelector('button[aria-label="Eraser"]').click();
+      return true;
+    })()
+  `);
+  await dragStroke(send, endX, endY, startX, startY);
+
+  const paintErasedHash = await waitFor(async () => {
+    const nextHash = await hashFile(paintLayerPath);
+    return nextHash !== paintDrawnHash ? nextHash : undefined;
+  }, "paint layer hash change after eraser");
+
+  await waitForUndoReady();
+  await dispatchKeyZ(send, 4);
+
+  const paintUndoEraseHash = await waitFor(async () => {
+    const nextHash = await hashFile(paintLayerPath);
+    return nextHash === paintDrawnHash ? nextHash : undefined;
+  }, "paint layer hash restore after undo eraser");
+
+  await evaluate(`
+    (() => {
+      const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
+      const mode = document.querySelector('select[aria-label="Layer blend mode"]');
+      selectValueSetter.call(mode, "multiply");
+      mode.dispatchEvent(new Event("input", { bubbles: true }));
+      mode.dispatchEvent(new Event("change", { bubbles: true }));
+      const opacity = document.querySelector('input[aria-label="Active layer opacity"]');
+      inputValueSetter.call(opacity, "50");
+      opacity.dispatchEvent(new Event("input", { bubbles: true }));
+      opacity.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()
+  `);
+
+  const paintMetadata = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const layer = project.shots?.[0]?.layers?.find((item) => item.id === paintLayer.id);
+    return layer?.opacity === 0.5 && layer?.blendMode === "multiply" ? layer : undefined;
+  }, "paint layer opacity and blend mode metadata");
+
+  await evaluate(`
+    (() => {
       const saveButton = Array.from(document.querySelectorAll("button"))
         .find((button) => button.textContent.trim() === "Save");
       saveButton.click();
@@ -362,6 +434,10 @@ try {
   if (savedLayerHash !== drawnHash) {
     throw new Error("Save changed the editable layer asset hash");
   }
+  const savedPaintLayerHash = await hashFile(paintLayerPath);
+  if (savedPaintLayerHash !== paintDrawnHash) {
+    throw new Error("Save changed the editable paint layer asset hash");
+  }
 
   await evaluate("location.reload()");
   await openFolder();
@@ -370,6 +446,15 @@ try {
   const reopenedHash = await hashFile(reopenedLayerPath);
   if (reopenedHash !== drawnHash) {
     throw new Error("Reopen did not preserve the editable layer asset hash");
+  }
+  const reopenedProject = await readProjectMetadata(smokeRoot);
+  const reopenedPaintLayer = reopenedProject.shots?.[0]?.layers?.find((item) => item.id === paintLayer.id);
+  if (!reopenedPaintLayer || reopenedPaintLayer.opacity !== 0.5 || reopenedPaintLayer.blendMode !== "multiply") {
+    throw new Error("Reopen did not preserve paint layer metadata");
+  }
+  const reopenedPaintHash = await hashFile(resolveLayerPath(smokeRoot, reopenedPaintLayer.bitmapPath));
+  if (reopenedPaintHash !== paintDrawnHash) {
+    throw new Error("Reopen did not preserve the editable paint layer asset hash");
   }
 
   ws.close();
@@ -389,9 +474,17 @@ try {
         undoClearHash,
         layerPanelDeleteHash,
         undoLayerPanelDeleteHash,
+        paintLayerPath,
+        paintBlankHash,
+        paintDrawnHash,
+        paintErasedHash,
+        paintUndoEraseHash,
+        paintOpacity: paintMetadata.opacity,
+        paintBlendMode: paintMetadata.blendMode,
         savedFileName: savedTiffFiles[0],
         savedSwbStatus: savedProject.shots[0].swb.status,
-        reopenedHash
+        reopenedHash,
+        reopenedPaintHash
       },
       null,
       2
