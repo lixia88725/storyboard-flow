@@ -134,12 +134,16 @@ type SwbImageMetadata = {
   sketchLayers?: Project["shots"][number]["sketchLayers"];
   layers: Array<{
     id: string;
+    kind?: "image" | "paint";
     name: string;
     visible: boolean;
     locked: boolean;
     opacity: number;
     blendMode?: "normal" | "multiply" | "screen";
     order: number;
+    bitmapPath?: string;
+    width?: number;
+    height?: number;
     strokeCount: number;
   }>;
 };
@@ -255,7 +259,7 @@ const registerIpcHandlers = () => {
       await applyFileRenamePlan(payload.renamePlan);
     }
 
-    await writeSwbMetadataToTiffs(payload.project);
+    await writeSwbMetadataToTiffs(payload.project, payload.folderPath);
     const savedProject = clearSavedImageLayerEdits(payload.project);
     await writeProjectMetadata(payload.metadataPath, savedProject);
 
@@ -264,7 +268,7 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle("workspace:importSwbFormat", async (_event, payload: ProjectPayload) => {
     const project = await importProjectToSwbFormat(payload.project, payload.folderPath);
-    await writeSwbMetadataToTiffs(project);
+    await writeSwbMetadataToTiffs(project, payload.folderPath);
     await writeProjectMetadata(payload.metadataPath, project);
     return scanFolder(payload.folderPath);
   });
@@ -587,7 +591,9 @@ const sketchLayersForShot = (
   return shot.sketchLayers ?? [];
 };
 
-const writeSwbMetadataToTiffs = async (project: Project): Promise<void> => {
+const writeSwbMetadataToTiffs = async (project: Project, folderPath: string): Promise<void> => {
+  await ensureProjectLayerAssets(project, folderPath);
+
   for (const shot of project.shots) {
     const extension = path.extname(shot.imagePath).toLowerCase();
     if ((extension !== ".tif" && extension !== ".tiff") || shot.swb?.status === "non-swb") {
@@ -598,7 +604,11 @@ const writeSwbMetadataToTiffs = async (project: Project): Promise<void> => {
       continue;
     }
 
-    const bakedPath = await bakeSketchOverlayToTiff(shot);
+    const bitmapLayers = bitmapLayersForShot(shot);
+    const bakedPath =
+      bitmapLayers.length > 0
+        ? await bakeBitmapLayersToTiff(shot, folderPath)
+        : await bakeSketchOverlayToTiff(shot);
     const imagePath = bakedPath ?? shot.imagePath;
     const metadata = await sharp(imagePath).metadata();
     const fingerprint = await pixelFingerprint(imagePath);
@@ -619,16 +629,32 @@ const writeSwbMetadataToTiffs = async (project: Project): Promise<void> => {
       archivePath: shot.swb?.archivePath,
       imageLayerEdits: [],
       sketchLayers: layers,
-      layers: layers.map((layer) => ({
-        id: layer.id,
-        name: layer.name,
-        visible: layer.visible,
-        locked: layer.locked,
-        opacity: layer.opacity,
-        blendMode: layer.blendMode,
-        order: layer.order,
-        strokeCount: layer.strokes.length
-      }))
+      layers:
+        bitmapLayers.length > 0
+          ? bitmapLayers.map((layer) => ({
+              id: layer.id,
+              kind: layer.kind,
+              name: layer.name,
+              visible: layer.visible,
+              locked: layer.locked,
+              opacity: layer.opacity,
+              blendMode: layer.blendMode,
+              order: layer.order,
+              bitmapPath: layer.bitmapPath,
+              width: layer.width,
+              height: layer.height,
+              strokeCount: 0
+            }))
+          : layers.map((layer) => ({
+              id: layer.id,
+              name: layer.name,
+              visible: layer.visible,
+              locked: layer.locked,
+              opacity: layer.opacity,
+              blendMode: layer.blendMode,
+              order: layer.order,
+              strokeCount: layer.strokes.length
+            }))
     };
 
     const tempPath = path.join(
@@ -641,6 +667,29 @@ const writeSwbMetadataToTiffs = async (project: Project): Promise<void> => {
       await unlink(bakedPath).catch(() => undefined);
     }
   }
+};
+
+const bitmapLayersForShot = (shot: Project["shots"][number]) => {
+  return [...(shot.layers ?? [])]
+    .sort((a, b) => {
+      if (a.kind === "image" && b.kind !== "image") {
+        return -1;
+      }
+
+      if (a.kind !== "image" && b.kind === "image") {
+        return 1;
+      }
+
+      return a.order - b.order;
+    })
+    .map((layer, order) => ({
+      ...layer,
+      order,
+      visible: layer.visible ?? true,
+      locked: layer.locked ?? false,
+      opacity: layer.opacity ?? 1,
+      blendMode: layer.blendMode ?? "normal"
+    }));
 };
 
 const clearSavedImageLayerEdits = (project: Project): Project => ({
@@ -790,6 +839,74 @@ const bakeSketchOverlayToTiff = async (
   );
   await composited.tiff().toFile(tempPath);
   return tempPath;
+};
+
+const bakeBitmapLayersToTiff = async (
+  shot: Project["shots"][number],
+  folderPath: string
+): Promise<string | undefined> => {
+  const layers = bitmapLayersForShot(shot).filter((layer) => layer.visible);
+
+  if (layers.length === 0) {
+    return undefined;
+  }
+
+  const imageMetadata = await sharp(shot.imagePath).metadata();
+  const width = shot.swb?.canvasWidth || imageMetadata.width;
+  const height = shot.swb?.canvasHeight || imageMetadata.height;
+
+  if (!width || !height) {
+    return undefined;
+  }
+
+  let composited = sharp({
+    create: {
+      width,
+      height,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 }
+    }
+  });
+
+  for (const layer of layers) {
+    const layerPath = resolveLayerAssetPath(folderPath, layer.bitmapPath);
+    if (!(await pathExists(layerPath))) {
+      continue;
+    }
+
+    const input = await sharp(layerPath)
+      .resize({ width, height, fit: "fill" })
+      .ensureAlpha()
+      .png()
+      .toBuffer();
+    const layerOpacity = Math.min(1, Math.max(0, layer.opacity));
+
+    composited = composited.composite([
+      {
+        input: layerOpacity < 1 ? bitmapOpacitySvg(input, width, height, layerOpacity) : input,
+        blend: sharpBlendMode(layer.blendMode)
+      }
+    ]);
+  }
+
+  const tempPath = path.join(
+    path.dirname(shot.imagePath),
+    `.storyboard-bake-${shot.id}${path.extname(shot.imagePath)}`
+  );
+  await composited.tiff().toFile(tempPath);
+  return tempPath;
+};
+
+const bitmapOpacitySvg = (
+  pngBuffer: Buffer,
+  width: number,
+  height: number,
+  opacity: number
+): Buffer => {
+  const encoded = pngBuffer.toString("base64");
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><image href="data:image/png;base64,${encoded}" width="${width}" height="${height}" opacity="${opacity}"/></svg>`
+  );
 };
 
 const sharpBlendMode = (blendMode: string | undefined): "over" | "multiply" | "screen" => {
