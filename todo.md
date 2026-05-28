@@ -77,6 +77,7 @@
 - [x] Legacy stroke metadata is migrated into bitmap layer metadata/assets.
 - [x] Electron GUI smoke verified paint layer add/hide/opacity/delete autosave and PNG cleanup.
 - [x] Undo/redo history captures affected bitmap layer PNG snapshots for stroke, clear, and delete.
+- [x] Electron CDP smoke verified Image layer drawing changes internal PNG hash and undo/redo restores the expected hashes.
 
 ## Out Of Scope For Current MVP
 
