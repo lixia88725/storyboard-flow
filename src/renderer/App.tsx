@@ -698,7 +698,7 @@ export const App = () => {
     const shot = projectRef.current.shots.find((item) => item.id === shotId);
     const layer = shot ? bitmapLayersForShot(shot).find((item) => item.id === layerId) : undefined;
 
-    if (!window.storyboard || !folderPath || !layer || layer.kind === "image") {
+    if (!window.storyboard || !folderPath || !layer) {
       return;
     }
 
@@ -1765,15 +1765,10 @@ const LayerPanel = ({
               type="button"
               onClick={() => {
                 if (shot && activeLayer) {
-                  if (activeLayer.kind === "image") {
-                    onClearLayer(shot.id, activeLayer.id);
-                    return;
-                  }
-
                   onRemoveLayer(shot.id, activeLayer.id);
                 }
               }}
-              disabled={!shot || !activeLayer || (activeLayer.kind !== "image" && layers.length <= 1)}
+              disabled={!shot || !activeLayer || layers.length <= 1}
               title="Delete current layer"
               aria-label="Delete current layer"
             >

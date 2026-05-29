@@ -222,6 +222,29 @@ describe("project operations", () => {
     expect(deleted.shots[0].activeLayerId).toBe("paint-1");
   });
 
+  it("deletes the Image bitmap layer when another layer remains", () => {
+    const project = addBitmapLayer(makeBitmapProject(), "shot-a", {
+      id: "paint-1",
+      name: "Paint",
+      width: 1920,
+      height: 1080
+    });
+
+    const deleted = deleteBitmapLayer(project, "shot-a", "layer-image");
+
+    expect(bitmapLayersForShot(deleted.shots[0]).map((layer) => layer.id)).toEqual(["paint-1"]);
+    expect(deleted.shots[0].activeLayerId).toBe("paint-1");
+  });
+
+  it("does not delete the Image bitmap layer when it is the only layer", () => {
+    const project = makeBitmapProject();
+
+    const deleted = deleteBitmapLayer(project, "shot-a", "layer-image");
+
+    expect(bitmapLayersForShot(deleted.shots[0]).map((layer) => layer.id)).toEqual(["layer-image"]);
+    expect(deleted.shots[0].activeLayerId).toBe("layer-image");
+  });
+
   it("clears the Image bitmap layer without deleting its metadata", () => {
     const project = makeBitmapProject();
 

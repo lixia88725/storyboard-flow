@@ -784,7 +784,7 @@ export const deleteBitmapLayer = (
   return updateBitmapLayers(project, shotId, (shot, layers) => {
     const target = layers.find((layer) => layer.id === layerId);
 
-    if (!target || target.kind === "image" || layers.length <= 1) {
+    if (!target || layers.length <= 1) {
       return { layers, activeLayerId: shot.activeLayerId ?? layers[0]?.id };
     }
 

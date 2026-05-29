@@ -59,6 +59,16 @@ const readProjectMetadata = async (folderPath) =>
 const findTiffFiles = async (folderPath) =>
   (await readdir(folderPath)).filter((fileName) => /\.(tif|tiff)$/i.test(fileName));
 
+const fileExists = async (filePath) =>
+  stat(filePath)
+    .then(() => true)
+    .catch(() => false);
+
+const topLeftRgb = async (filePath) => {
+  const { data } = await sharp(filePath).raw().toBuffer({ resolveWithObject: true });
+  return Array.from(data.slice(0, 3));
+};
+
 const findArchivedFileByHash = async (folderPath, expectedHash) => {
   const archiveRoot = path.join(folderPath, "Archive");
   const batches = await readdir(archiveRoot).catch(() => []);
@@ -194,7 +204,7 @@ try {
       width: 320,
       height: 180,
       channels: 4,
-      background: "white"
+      background: "#c9dcff"
     }
   })
     .png()
@@ -436,25 +446,12 @@ try {
     "layer panel delete button"
   );
 
-  await evaluate(`
-    (() => {
-      document.querySelector('button[aria-label="Delete current layer"]').click();
-      return true;
-    })()
+  const imageOnlyDeleteDisabled = await evaluate(`
+    document.querySelector('button[aria-label="Delete current layer"]').disabled
   `);
-
-  const layerPanelDeleteHash = await waitFor(async () => {
-    const nextHash = await hashFile(layerPath);
-    return nextHash === clearedHash ? nextHash : undefined;
-  }, "layer hash clear after layer panel delete");
-
-  await waitForUndoReady();
-  await dispatchKeyZ(send, 4);
-
-  const undoLayerPanelDeleteHash = await waitFor(async () => {
-    const nextHash = await hashFile(layerPath);
-    return nextHash === drawnHash ? nextHash : undefined;
-  }, "layer hash restore after undo layer panel delete");
+  if (!imageOnlyDeleteDisabled) {
+    throw new Error("Image-only layer delete button should be disabled");
+  }
 
   await evaluate(`
     (() => {
@@ -569,6 +566,36 @@ try {
     throw new Error("Drawing on the selected shot changed a neighboring shot layer");
   }
 
+  await evaluate(`
+    (async () => {
+      const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const imageRow = Array.from(document.querySelectorAll(".layer-row"))
+        .find((row) => row.querySelector('input[aria-label="Layer name"]')?.value === "Image");
+      imageRow.click();
+
+      for (
+        let index = 0;
+        index < 30 &&
+        document.querySelector(".layer-row.is-active input[aria-label='Layer name']")?.value !== "Image";
+        index += 1
+      ) {
+        await delay(100);
+      }
+
+      document.querySelector('button[aria-label="Delete current layer"]').click();
+      return true;
+    })()
+  `);
+
+  const imageLayerDeletedMetadata = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const layerIds = project.shots?.[0]?.layers?.map((layer) => layer.id);
+    return layerIds && !layerIds.includes("layer-image") && layerIds.length === 2 ? layerIds : undefined;
+  }, "Image layer deleted from metadata");
+  const imageLayerAssetDeleted = await waitFor(async () => {
+    return (await fileExists(layerPath)) ? undefined : true;
+  }, "Image layer asset deleted");
+
   const projectBeforeConflictSave = await readProjectMetadata(smokeRoot);
   const temporaryConflictPath = path.join(
     smokeRoot,
@@ -614,6 +641,14 @@ try {
 
   const savedProject = await readProjectMetadata(smokeRoot);
   const savedTiffFiles = await findTiffFiles(smokeRoot);
+  const firstSavedTiff = savedTiffFiles.find((fileName) => fileName.endsWith("_0010.tiff"));
+  if (!firstSavedTiff) {
+    throw new Error("Could not find first saved TIFF");
+  }
+  const firstSavedTopLeftRgb = await topLeftRgb(path.join(smokeRoot, firstSavedTiff));
+  if (!firstSavedTopLeftRgb.every((channel) => channel === 255)) {
+    throw new Error(`Deleted Image layer still contributed base pixels: ${firstSavedTopLeftRgb.join(",")}`);
+  }
   const archivedShotAPath = await waitFor(
     () => findArchivedFileByHash(smokeRoot, originalShotAHash),
     "archived original shot"
@@ -621,10 +656,6 @@ try {
   const archivedShotAHash = await hashFile(archivedShotAPath);
   if (archivedShotAHash !== originalShotAHash) {
     throw new Error("Save modified the archived original image");
-  }
-  const savedLayerHash = await hashFile(layerPath);
-  if (savedLayerHash !== drawnHash) {
-    throw new Error("Save changed the editable layer asset hash");
   }
   const savedPaintLayerHash = await hashFile(paintLayerPath);
   if (savedPaintLayerHash !== paintDrawnHash) {
@@ -634,12 +665,11 @@ try {
   await evaluate("location.reload()");
   await openFolder();
 
-  const reopenedLayerPath = await waitFor(() => findShotLayerPath(smokeRoot, 0), "reopened image layer asset");
-  const reopenedHash = await hashFile(reopenedLayerPath);
-  if (reopenedHash !== drawnHash) {
-    throw new Error("Reopen did not preserve the editable layer asset hash");
-  }
   const reopenedProject = await readProjectMetadata(smokeRoot);
+  const reopenedLayerIds = reopenedProject.shots?.[0]?.layers?.map((layer) => layer.id);
+  if (reopenedLayerIds.includes("layer-image")) {
+    throw new Error("Reopen restored a deleted Image layer");
+  }
   const reopenedPaintLayer = reopenedProject.shots?.[0]?.layers?.find((item) => item.id === paintLayer.id);
   if (!reopenedPaintLayer || reopenedPaintLayer.opacity !== 0.5 || reopenedPaintLayer.blendMode !== "multiply") {
     throw new Error("Reopen did not preserve paint layer metadata");
@@ -817,8 +847,9 @@ try {
         undoEraseHash,
         clearedHash,
         undoClearHash,
-        layerPanelDeleteHash,
-        undoLayerPanelDeleteHash,
+        imageOnlyDeleteDisabled,
+        imageLayerDeletedMetadata,
+        imageLayerAssetDeleted,
         paintLayerPath,
         paintBlankHash,
         paintDrawnHash,
@@ -829,10 +860,11 @@ try {
         paintOrderBeforeDrag,
         paintOrderAfterDrag,
         saveConflictBlocked,
+        firstSavedTopLeftRgb,
         archivedShotAHash,
         savedFileNames: savedTiffFiles,
         savedSwbStatuses: savedProject.shots.map((shot) => shot.swb.status),
-        reopenedHash,
+        reopenedLayerIds,
         reopenedPaintHash,
         animationChecks,
         addShotUiCount,

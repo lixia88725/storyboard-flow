@@ -10,7 +10,7 @@
 - 当前绘图主数据已经迁移为 bitmap layer：
   - JSON 保存 `shots[].layers` 和 `activeLayerId`。
   - 可编辑像素保存在 `.storyboard-workbench/layers/{shotId}/{layerId}.png`。
-  - 画笔、橡皮、清空图层和删除普通图层只写 `.storyboard-workbench/`。
+  - 画笔、橡皮、清空图层和删除图层只写 `.storyboard-workbench/`。
 - 旧 `sketchLayers` / `imageLayerEdits` 字段仍作为迁移输入保留；打开旧项目时会生成 bitmap layer metadata 和内部 PNG layer assets。
 - 不做 AI、导出、SQLite、云同步、Photoshop layer round-trip 或 Photoshop-compatible multi-layer TIFF writing。
 
@@ -73,13 +73,14 @@ Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench
 - 图层面板中新增普通 paint layer 会创建 JSON metadata 和内部 PNG layer asset。
 - 普通 paint layer 的 hide 和 opacity 会 autosave 到 JSON。
 - 删除普通 paint layer 会移除 JSON metadata，并删除对应内部 PNG layer asset。
-- Electron CDP smoke 验证了 Image layer 上真实绘制会改变内部 `layer-image.png` hash，`Cmd+Z` 会恢复原 hash，`Cmd+Shift+Z` 会恢复绘制后的 hash；Eraser 会改变 Image layer hash 且 undo eraser 会恢复绘制 hash；Clear current layer 会写透明 layer hash，undo clear 会恢复绘制 hash；Layer panel 的 `Delete current layer` 对 Image layer 执行同样清空语义且可 undo；Save 会生成 SWB-owned TIFF，reload/reopen 后仍从内部 layer PNG 恢复绘制结果：
-  - before / undo: `7c669eaf1130b4a32632e0e969acd3dce4df5f403404eab7a20cd125ab1ccfc4`
-  - drawn / redo: `5c560fd38543631f9d5b96af9e86e1a6920f813522b58b8592d1c16d4385c369`
-  - erased: `fa3894548c6c300769aea2d1ae7d48459e7eebfdf9b6ea23496039f4de935db7`
+- Electron CDP smoke 验证了 Image layer 上真实绘制会改变内部 `layer-image.png` hash，`Cmd+Z` 会恢复原 hash，`Cmd+Shift+Z` 会恢复绘制后的 hash；Eraser 会改变 Image layer hash 且 undo eraser 会恢复绘制 hash；Clear current layer 会写透明 layer hash，undo clear 会恢复绘制 hash；只有 Image layer 时 `Delete current layer` 禁用；有其他图层时删除 Image layer 会移除 `layer-image` metadata 和 `layer-image.png` asset，Save 后 TIFF 不再包含原底图像素，reload/reopen 后不会自动补回 Image layer：
+  - before / undo: `762fec4dcf6915adfbd05c31e2e6b021cfe28c107e3be18debace6b6eac7ac3d`
+  - drawn / redo: `b7bf0b89629f242ce6c00bea65f1a4566f4edd22dc80390419c5ff5623f3f955`
+  - erased: `6bac591d11490870e4e1928807c1be1250882faba16d44dd1e629a96895d03ea`
   - cleared: `738440fafe37d11b377c33463c8e8cf6998ac5591591e4a1a066018b7ac6e247`
   - saved file pattern: `swb-bitmap-smoke-*_scene_stb_artist_v001_0010.tiff`
-  - reopened hash: `5c560fd38543631f9d5b96af9e86e1a6920f813522b58b8592d1c16d4385c369`
+  - deleted Image layer metadata: `[paint-2, paint-1]`
+  - deleted Image layer saved TIFF top-left RGB: `[255, 255, 255]`
 - Electron CDP smoke 也验证了新增普通 paint layer 的绘制、擦除、undo eraser、opacity `0.5`、blend mode `multiply`、拖动排序、Save 后 layer asset 不变、reload/reopen 后 paint layer metadata 和 PNG hash 保留：
   - paint blank: `8acb6b57817a1fb71fc80513fbc392ed1a6941224f4984f88b7713f054716375`
   - paint drawn / undo eraser / reopened: `f0d1314668ba878a956f3b9bedcbf5cc3a99ee1f9b5f2b47e1f236fa4940aca5`

@@ -46,7 +46,7 @@ npm run dev
 - Undo / redo 会恢复相关 layer PNG snapshot 和 JSON metadata。
 - Save 时由 Electron/sharp 合成可见 bitmap layers 并写入工作 TIFF。
 
-图层面板支持新增、删除、重命名、显隐、opacity、blend mode 和拖动排序。`Image` 层固定在最底部，但在 UI 中可选中、绘制、擦除；选中 `Image` 后点击 `Delete current layer` 会删除当前可见底图内容并露出白底，不会立刻修改真实文件。
+图层面板支持新增、删除、重命名、显隐、opacity、blend mode 和拖动排序。`Image` 层固定在最底部，但在 UI 中可选中、绘制、擦除；如果当前 shot 有多个图层，选中 `Image` 后点击 `Delete current layer` 会像普通图层一样移除 Image layer 和内部 PNG asset。每个 shot 至少保留一个图层，所以只剩一个 `Image` 层时删除按钮会禁用。
 
 `npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、拖动排序、Add Shot、Save safety、混合画幅动画模式、Onion Skin 和重开恢复；它也覆盖旧 stroke 项目的 bitmap migration。
 
