@@ -190,6 +190,123 @@ const dragStroke = async (send, startX, startY, endX, endY) => {
   });
 };
 
+const liveBitmapCanvasSnapshot = (evaluate) =>
+  evaluate(`
+    (() => {
+      const canvas = Array.from(document.querySelectorAll(".live-bitmap-canvas")).find(
+        (item) => getComputedStyle(item).display !== "none"
+      );
+      return canvas ? { dataUrl: canvas.toDataURL("image/png") } : undefined;
+    })()
+  `);
+
+const dragStrokeWithLiveBitmapPreview = async (send, evaluate, startX, startY, endX, endY) => {
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: startX,
+    y: startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+
+  const liveBefore = await waitFor(
+    () => liveBitmapCanvasSnapshot(evaluate),
+    "live bitmap canvas visible during eraser"
+  );
+
+  for (let index = 1; index <= 6; index += 1) {
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: Math.round(startX + ((endX - startX) * index) / 12),
+      y: Math.round(startY + ((endY - startY) * index) / 12),
+      button: "left",
+      buttons: 1
+    });
+  }
+
+  await waitFor(async () => {
+    const liveAfter = await liveBitmapCanvasSnapshot(evaluate);
+    return liveAfter?.dataUrl && liveAfter.dataUrl !== liveBefore.dataUrl ? true : undefined;
+  }, "live bitmap canvas changes before eraser mouseup");
+
+  for (let index = 7; index <= 12; index += 1) {
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: Math.round(startX + ((endX - startX) * index) / 12),
+      y: Math.round(startY + ((endY - startY) * index) / 12),
+      button: "left",
+      buttons: 1
+    });
+  }
+
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: endX,
+    y: endY,
+    button: "left",
+    buttons: 0,
+    clickCount: 1
+  });
+};
+
+const dragWithoutRelease = async (send, startX, startY, endX, endY) => {
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: startX,
+    y: startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+
+  for (let index = 1; index <= 12; index += 1) {
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: Math.round(startX + ((endX - startX) * index) / 12),
+      y: Math.round(startY + ((endY - startY) * index) / 12),
+      button: "left",
+      buttons: 1
+    });
+  }
+};
+
+const releaseMouse = async (send, x, y) => {
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x,
+    y,
+    button: "left",
+    buttons: 0,
+    clickCount: 1
+  });
+};
+
+const dragPolyline = async (send, points) => {
+  const [start, ...rest] = points;
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: start.x,
+    y: start.y,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+
+  for (const point of rest) {
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: point.x,
+      y: point.y,
+      button: "left",
+      buttons: 1
+    });
+  }
+
+  const end = rest.at(-1) ?? start;
+  await releaseMouse(send, end.x, end.y);
+};
+
 let electronProcess;
 
 try {
@@ -361,6 +478,75 @@ try {
       return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
     })()
   `);
+  const sketchSettingsIgnoredOutsideStage = await evaluate(`
+    (() => {
+      const topbar = document.querySelector(".topbar");
+      const rect = topbar.getBoundingClientRect();
+      topbar.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: rect.left + 20,
+        clientY: rect.top + 20
+      }));
+      return !document.querySelector(".sketch-settings-menu");
+    })()
+  `);
+  if (!sketchSettingsIgnoredOutsideStage) {
+    throw new Error("Sketch settings menu opened outside the stage");
+  }
+  const sketchSettingsOpensOnStage = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const stage = document.querySelector(".image-stage");
+          const rect = stage.getBoundingClientRect();
+          stage.dispatchEvent(new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX: rect.left + rect.width / 2,
+            clientY: rect.top + rect.height / 2
+          }));
+          return Boolean(document.querySelector(".sketch-settings-menu"));
+        })()
+      `),
+    "sketch settings menu opens on stage"
+  );
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape" });
+  await waitFor(
+    () => evaluate(`!document.querySelector(".sketch-settings-menu")`),
+    "sketch settings menu closed after stage check"
+  );
+
+  const zoomBeforeWheel = await evaluate(`document.querySelector(".bottom-bar span")?.textContent`);
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseWheel",
+    x: Math.round(rect.x + rect.width / 2),
+    y: Math.round(rect.y + rect.height / 2),
+    deltaX: 0,
+    deltaY: -120
+  });
+  const zoomAfterWheel = await waitFor(
+    () => evaluate(`document.querySelector(".bottom-bar span")?.textContent === "105%"`),
+    "stage wheel zoom in"
+  );
+  if (zoomBeforeWheel !== "100%" || !zoomAfterWheel) {
+    throw new Error(`Stage wheel zoom failed: ${zoomBeforeWheel}`);
+  }
+  await evaluate(`
+    (() => {
+      const slider = document.querySelector('.bottom-bar input[type="range"]');
+      const rangeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      rangeSetter.call(slider, "100");
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      slider.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()
+  `);
+  await waitFor(
+    () => evaluate(`document.querySelector(".bottom-bar span")?.textContent === "100%"`),
+    "stage wheel zoom reset"
+  );
 
   const startX = Math.round(rect.x + rect.width * 0.35);
   const startY = Math.round(rect.y + rect.height * 0.45);
@@ -396,7 +582,7 @@ try {
     })()
   `);
 
-  await dragStroke(send, endX, endY, startX, startY);
+  await dragStrokeWithLiveBitmapPreview(send, evaluate, endX, endY, startX, startY);
 
   const erasedHash = await waitFor(async () => {
     const nextHash = await hashFile(layerPath);
@@ -433,7 +619,7 @@ try {
 
   await evaluate(`
     (() => {
-      document.querySelector('button[aria-label="Layers"]').click();
+      document.querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]').click();
       return true;
     })()
   `);
@@ -441,9 +627,38 @@ try {
   await waitFor(
     () =>
       evaluate(`
-        Boolean(document.querySelector('button[aria-label="Delete current layer"]'))
+        (() => {
+          const firstShot = document.querySelector('[data-shot-id]');
+          const stageRect = firstShot?.querySelector('.image-stage')?.getBoundingClientRect();
+          const dialogueRect = firstShot?.querySelector('.dialogue-zone')?.getBoundingClientRect();
+          const panelRect = firstShot?.querySelector('.shot-layer-popover .layer-panel')?.getBoundingClientRect();
+          const toggle = firstShot?.querySelector('.shot-layer-popover button[aria-label="Toggle shot layers"]');
+          const toggleRect = toggle?.getBoundingClientRect();
+          const footerButtonRect = firstShot
+            ?.querySelector('.layer-panel-footer button[aria-label="Add layer"]')
+            ?.getBoundingClientRect();
+          const checks = {
+            hasDelete: Boolean(firstShot?.querySelector('.shot-layer-popover button[aria-label="Delete current layer"]')),
+            noFixedPopover: !document.body.querySelector(':scope > .layer-popover'),
+            hasRects: Boolean(stageRect && dialogueRect && panelRect && toggleRect && footerButtonRect),
+            panelAligned: Boolean(stageRect && panelRect && panelRect.left >= stageRect.right - 1),
+            panelBottomAligned: Boolean(dialogueRect && panelRect && Math.abs(panelRect.bottom - dialogueRect.bottom) <= 2),
+            toggleRight: Boolean(panelRect && toggleRect && toggleRect.left >= panelRect.right - 1),
+            toggleBottomAligned: Boolean(stageRect && toggleRect && Math.abs(toggleRect.bottom - stageRect.bottom) <= 1),
+            toggleVertical: Boolean(toggleRect && toggleRect.height > toggleRect.width),
+            footerCompact: Boolean(footerButtonRect && footerButtonRect.height <= 20),
+            noBlendSelect: !firstShot.querySelector('select[aria-label="Layer blend mode"]'),
+            noOpacitySlider: !firstShot.querySelector('input[aria-label="Active layer opacity"]'),
+            hasBlendDot: Boolean(firstShot.querySelector('button[aria-label="Layer blend mode: normal"]')),
+            toggleEmpty: toggle?.textContent.trim() === ""
+          };
+          if (!Object.values(checks).every(Boolean)) {
+            throw new Error(JSON.stringify(checks));
+          }
+          return true;
+        })()
       `),
-    "layer panel delete button"
+    "inline shot layer panel delete button"
   );
 
   const imageOnlyDeleteDisabled = await evaluate(`
@@ -452,6 +667,79 @@ try {
   if (!imageOnlyDeleteDisabled) {
     throw new Error("Image-only layer delete button should be disabled");
   }
+
+  await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const popover = document.querySelector('.shot-layer-popover');
+          return Boolean(popover && popover.getAnimations().every((animation) => animation.playState !== "running"));
+        })()
+      `),
+    "initial layer panel open animation settled"
+  );
+  const openLayerToggleBottom = await evaluate(`
+    document
+      .querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]')
+      ?.getBoundingClientRect().bottom
+  `);
+  await evaluate(`
+    (() => {
+      document.querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]').click();
+      return true;
+    })()
+  `);
+  const layerToggleClickClosedPanel = await waitFor(
+    () => evaluate(`!document.querySelector('.shot-layer-popover .layer-panel')`),
+    "layer panel closes after toggle click"
+  );
+  const layerToggleBottomStableAfterClose = await waitFor(
+    async () => {
+      const state = await evaluate(`
+        (() => {
+          const panel = document.querySelector('.shot-layer-popover .layer-panel');
+          const toggle = document
+            .querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]');
+          const stage = document.querySelector('[data-shot-id] .image-stage');
+          const bottom = toggle?.getBoundingClientRect().bottom;
+          return {
+            ok: Boolean(!panel && toggle && Math.abs(bottom - ${openLayerToggleBottom}) <= 1),
+            hasPanel: Boolean(panel),
+            hasToggle: Boolean(toggle),
+            openBottom: ${openLayerToggleBottom},
+            closedBottom: bottom,
+            stageBottom: stage?.getBoundingClientRect().bottom
+          };
+        })()
+      `);
+      if (!state.ok) {
+        throw new Error(JSON.stringify(state));
+      }
+      return true;
+    },
+    "layer toggle bottom stable after close animation"
+  );
+
+  await evaluate(`
+    (() => {
+      document.querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]').click();
+      return true;
+    })()
+  `);
+  await waitFor(
+    () => evaluate(`Boolean(document.querySelector('.shot-layer-popover .layer-panel'))`),
+    "layer panel reopened after close animation"
+  );
+  await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const popover = document.querySelector('.shot-layer-popover');
+          return Boolean(popover && popover.getAnimations().every((animation) => animation.playState !== "running"));
+        })()
+      `),
+    "layer panel reopen animation settled"
+  );
 
   await evaluate(`
     (() => {
@@ -469,6 +757,7 @@ try {
 
   await evaluate(`
     (() => {
+      document.querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]').click();
       document.querySelector('button[aria-label="Brush"]').click();
       return true;
     })()
@@ -482,6 +771,26 @@ try {
 
   await evaluate(`
     (() => {
+      document.querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]').click();
+      return true;
+    })()
+  `);
+
+  const paintThumbnailLoaded = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const row = document.querySelector('[data-layer-id="${paintLayer.id}"]');
+          const image = row?.querySelector('.layer-thumb img');
+          return Boolean(image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0);
+        })()
+      `),
+    "paint layer thumbnail image"
+  );
+
+  await evaluate(`
+    (() => {
+      document.querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]').click();
       document.querySelector('button[aria-label="Eraser"]').click();
       return true;
     })()
@@ -503,25 +812,262 @@ try {
 
   await evaluate(`
     (() => {
-      const inputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-      const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
-      const mode = document.querySelector('select[aria-label="Layer blend mode"]');
-      selectValueSetter.call(mode, "multiply");
-      mode.dispatchEvent(new Event("input", { bubbles: true }));
-      mode.dispatchEvent(new Event("change", { bubbles: true }));
-      const opacity = document.querySelector('input[aria-label="Active layer opacity"]');
-      inputValueSetter.call(opacity, "50");
-      opacity.dispatchEvent(new Event("input", { bubbles: true }));
-      opacity.dispatchEvent(new Event("change", { bubbles: true }));
+      document.querySelector('button[aria-label="Select"]').click();
+      return true;
+    })()
+  `);
+  await waitFor(
+    () => evaluate(`document.querySelector('button[aria-label="Select"]')?.classList.contains("selected")`),
+    "select tool active"
+  );
+
+  const lassoStartX = Math.round(rect.x + rect.width * 0.30);
+  const lassoStartY = Math.round(rect.y + rect.height * 0.40);
+  const lassoEndX = Math.round(rect.x + rect.width * 0.70);
+  const lassoEndY = Math.round(rect.y + rect.height * 0.68);
+  await dragPolyline(send, [
+    { x: lassoStartX, y: lassoStartY },
+    { x: lassoEndX, y: lassoStartY },
+    { x: lassoEndX, y: lassoEndY },
+    { x: lassoStartX, y: lassoEndY },
+    { x: lassoStartX, y: lassoStartY }
+  ]);
+
+  await waitFor(
+    () => evaluate(`Boolean(document.querySelector(".bitmap-selection-outline"))`),
+    "lasso selection outline"
+  );
+
+  const lassoMoveStartX = Math.round((lassoStartX + lassoEndX) / 2);
+  const lassoMoveStartY = Math.round((lassoStartY + lassoEndY) / 2);
+  await dragStroke(send, lassoMoveStartX, lassoMoveStartY, lassoMoveStartX + 24, lassoMoveStartY + 10);
+
+  const paintLassoMovedHash = await waitFor(async () => {
+    const nextHash = await hashFile(paintLayerPath);
+    return nextHash !== paintDrawnHash ? nextHash : undefined;
+  }, "paint layer hash change after lasso move");
+
+  await waitForUndoReady();
+  await dispatchKeyZ(send, 4);
+
+  const paintUndoLassoMoveHash = await waitFor(async () => {
+    const nextHash = await hashFile(paintLayerPath);
+    return nextHash === paintDrawnHash ? nextHash : undefined;
+  }, "paint layer hash restore after undo lasso move");
+
+  await evaluate(`
+    (() => {
+      document.querySelector('button[aria-label="Brush"]').click();
+      return true;
+    })()
+  `);
+  const selectionClearedAfterToolSwitch = await waitFor(
+    () =>
+      evaluate(`
+        !document.querySelector(".bitmap-selection-handle") &&
+        !document.querySelector(".bitmap-selection-outline")
+      `),
+    "selection handles clear after switching tools"
+  );
+
+  await evaluate(`
+    (() => {
+      document.querySelector('button[aria-label="Select"]').click();
+      return true;
+    })()
+  `);
+  await waitFor(
+    () => evaluate(`document.querySelector('button[aria-label="Select"]')?.classList.contains("selected")`),
+    "select tool active before rectangle"
+  );
+
+  await evaluate(`
+    (() => {
+      const button = document.querySelector('button[aria-label="Select"]');
+      const rect = button.getBoundingClientRect();
+      button.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2
+      }));
+      return true;
+    })()
+  `);
+  await evaluate(`
+    (() => {
+      Array.from(document.querySelectorAll('.selection-mode-menu button'))
+        .find((button) => button.textContent.trim() === 'Rectangle')
+        .click();
       return true;
     })()
   `);
 
+  await dragStroke(send, lassoStartX, lassoStartY, lassoEndX, lassoEndY);
+  await waitFor(
+    () => evaluate(`Boolean(document.querySelector(".bitmap-selection-bounds"))`),
+    "rectangle selection bounds"
+  );
+  await dragStroke(send, lassoEndX, lassoEndY, lassoEndX + 24, lassoEndY + 16);
+
+  const paintRectangleScaledHash = await waitFor(async () => {
+    const nextHash = await hashFile(paintLayerPath);
+    return nextHash !== paintDrawnHash ? nextHash : undefined;
+  }, "paint layer hash change after rectangle scale");
+
+  await waitForUndoReady();
+  await dispatchKeyZ(send, 4);
+
+  const paintUndoRectangleScaleHash = await waitFor(async () => {
+    const nextHash = await hashFile(paintLayerPath);
+    return nextHash === paintDrawnHash ? nextHash : undefined;
+  }, "paint layer hash restore after undo rectangle scale");
+
+  await evaluate(`
+    (() => {
+      if (!document.querySelector('.shot-layer-popover .layer-panel')) {
+        document.querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]').click();
+      }
+      return true;
+    })()
+  `);
+  await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const popover = document.querySelector('.shot-layer-popover');
+          return Boolean(popover && popover.getAnimations().every((animation) => animation.playState !== "running"));
+        })()
+      `),
+    "layer panel open animation settled"
+  );
+
+  await evaluate(`
+    (() => {
+      document.querySelector('[data-layer-id="${paintLayer.id}"] button[aria-label="Layer blend mode: normal"]').click();
+      return true;
+    })()
+  `);
+
+  await waitFor(
+    () => evaluate(`Boolean(document.querySelector('.layer-blend-menu'))`),
+    "paint layer blend mode menu"
+  );
+
+  const multiplyBlendButton = await evaluate(`
+    (() => {
+      const button = Array.from(document.querySelectorAll('.layer-blend-menu button'))
+        .find((button) => button.textContent.trim() === 'Multiply');
+      const rect = button.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()
+  `);
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: multiplyBlendButton.x,
+    y: multiplyBlendButton.y,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: multiplyBlendButton.x,
+    y: multiplyBlendButton.y,
+    button: "left",
+    buttons: 0,
+    clickCount: 1
+  });
+
+  await evaluate(`
+    (() => {
+      document.querySelector('[data-layer-id="${paintLayer.id}"]').click();
+      return true;
+    })()
+  `);
+
+  await waitFor(
+    () => evaluate(`document.querySelector('[data-layer-id="${paintLayer.id}"]')?.classList.contains('is-active')`),
+    "paint layer active before opacity drag"
+  );
+
+  const paintBlendDotUpdated = await waitFor(
+    () =>
+      evaluate(`
+        Boolean(document.querySelector('[data-layer-id="${paintLayer.id}"] button[aria-label="Layer blend mode: multiply"]'))
+      `),
+    "paint layer blend mode dot update"
+  );
+  const paintBlendModeAppliedToStage = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const layerIndex = Array.from(document.querySelectorAll(".image-stage img"))
+            .findIndex((image) => getComputedStyle(image).mixBlendMode === "multiply");
+          return layerIndex >= 0 && getComputedStyle(document.querySelector(".image-stage")).isolation === "isolate";
+        })()
+      `),
+    "paint layer blend mode applied to stage"
+  );
+
+  const paintOrderBeforeOpacityDrag = (await readProjectMetadata(smokeRoot)).shots[0].layers.map((layer) => layer.id);
+  const paintOpacityDrag = await evaluate(`
+    (() => {
+      const row = document.querySelector('[data-layer-id="${paintLayer.id}"]');
+      const rect = row.getBoundingClientRect();
+      return {
+        startX: rect.left + rect.width * 0.25,
+        startY: rect.top + rect.height / 2,
+        endX: rect.left + rect.width * 0.35,
+        endY: rect.top + rect.height / 2
+      };
+    })()
+  `);
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: paintOpacityDrag.startX,
+    y: paintOpacityDrag.startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: paintOpacityDrag.endX,
+    y: paintOpacityDrag.endY,
+    button: "left",
+    buttons: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: paintOpacityDrag.endX,
+    y: paintOpacityDrag.endY,
+    button: "left",
+    buttons: 0,
+    clickCount: 1
+  });
+
   const paintMetadata = await waitFor(async () => {
     const project = await readProjectMetadata(smokeRoot);
     const layer = project.shots?.[0]?.layers?.find((item) => item.id === paintLayer.id);
-    return layer?.opacity === 0.5 && layer?.blendMode === "multiply" ? layer : undefined;
-  }, "paint layer opacity and blend mode metadata");
+    return layer?.opacity === 0.35 && layer?.blendMode === "multiply" ? layer : undefined;
+  }, "paint layer row opacity drag metadata");
+  const paintOrderAfterOpacityDrag = (await readProjectMetadata(smokeRoot)).shots[0].layers.map((layer) => layer.id);
+  if (JSON.stringify(paintOrderAfterOpacityDrag) !== JSON.stringify(paintOrderBeforeOpacityDrag)) {
+    throw new Error("Horizontal opacity drag changed layer order");
+  }
+  const paintOpacityFillUpdated = await waitFor(
+    () =>
+      evaluate(`
+        document
+          .querySelector('[data-layer-id="${paintLayer.id}"]')
+          ?.style.getPropertyValue("--layer-opacity-width") === "35%"
+      `),
+    "paint layer opacity fill update"
+  );
+  const layerRowHeightBeforeAdd = await evaluate(`
+    document.querySelector('[data-layer-id="${paintLayer.id}"]')?.getBoundingClientRect().height
+  `);
 
   await evaluate(`
     (() => {
@@ -536,29 +1082,135 @@ try {
       (layer) => layer.kind === "paint" && layer.id !== paintLayer.id
     );
   }, "second paint layer metadata");
+  const layerRowsKeepFixedHeight = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const row = document.querySelector('[data-layer-id="${paintLayer.id}"]');
+          return row && Math.abs(row.getBoundingClientRect().height - ${layerRowHeightBeforeAdd}) < 0.5;
+        })()
+      `),
+    "layer rows keep fixed height after adding layer"
+  );
 
   const paintOrderBeforeDrag = (await readProjectMetadata(smokeRoot)).shots[0].layers.map((layer) => layer.id);
 
-  await evaluate(`
+  const paintLayerDrag = await evaluate(`
     (() => {
-      const rows = Array.from(document.querySelectorAll(".layer-row"));
-      const firstPaintRow = rows[1];
-      const secondPaintRow = rows[2];
-      const dataTransfer = new DataTransfer();
-      secondPaintRow.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer }));
-      firstPaintRow.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
-      firstPaintRow.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
-      return true;
+      const paintRows = Array.from(document.querySelectorAll(".layer-row")).filter(
+        (row) => row.querySelector('input[aria-label="Layer name"]')?.value !== "Image"
+      );
+      const secondPaintRow = paintRows[0];
+      const firstPaintRow = paintRows[1];
+      const source = secondPaintRow.getBoundingClientRect();
+      const target = firstPaintRow.getBoundingClientRect();
+      return {
+        startX: source.left + source.width * 0.62,
+        startY: source.top + source.height / 2,
+        endX: target.left + target.width * 0.62,
+        endY: target.bottom - 2
+      };
     })()
   `);
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: paintLayerDrag.startX,
+    y: paintLayerDrag.startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: paintLayerDrag.endX,
+    y: paintLayerDrag.endY,
+    button: "left",
+    buttons: 1
+  });
+  const paintLayerDragPreviewVisible = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const row = document.querySelector('[data-layer-id="${secondPaintLayer.id}"]');
+          return Boolean(
+            row?.classList.contains("is-reorder-dragging") &&
+            row?.classList.contains("is-dragging-layer") &&
+            row.style.transform.startsWith("translateY(")
+          );
+        })()
+      `),
+    "paint layer drag visual preview"
+  );
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: paintLayerDrag.endX,
+    y: paintLayerDrag.endY,
+    button: "left",
+    buttons: 0,
+    clickCount: 1
+  });
 
   const paintOrderAfterDrag = await waitFor(async () => {
     const project = await readProjectMetadata(smokeRoot);
     const layerIds = project.shots?.[0]?.layers?.map((layer) => layer.id);
-    return layerIds?.[1] === secondPaintLayer.id && layerIds?.[2] === paintLayer.id
-      ? layerIds
-      : undefined;
+    if (layerIds?.[1] === secondPaintLayer.id && layerIds?.[2] === paintLayer.id) {
+      return layerIds;
+    }
+
+    throw new Error(`current order: ${JSON.stringify(layerIds)}`);
   }, "paint layer drag sort metadata");
+  const paintLayerAfterVerticalDrag = (await readProjectMetadata(smokeRoot)).shots[0].layers.find((layer) => layer.id === secondPaintLayer.id);
+  if (paintLayerAfterVerticalDrag?.opacity !== 1) {
+    throw new Error("Vertical layer reorder drag changed opacity");
+  }
+
+  const dragTopLayerToBottomBlank = await evaluate(`
+    (() => {
+      const sourceRow = document.querySelector('[data-layer-id="${paintLayer.id}"]');
+      const layerList = document.querySelector(".layer-list");
+      const source = sourceRow.getBoundingClientRect();
+      const list = layerList.getBoundingClientRect();
+      return {
+        startX: source.left + source.width * 0.62,
+        startY: source.top + source.height / 2,
+        endX: source.left + source.width * 0.62,
+        endY: list.bottom - 4
+      };
+    })()
+  `);
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: dragTopLayerToBottomBlank.startX,
+    y: dragTopLayerToBottomBlank.startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: dragTopLayerToBottomBlank.endX,
+    y: dragTopLayerToBottomBlank.endY,
+    button: "left",
+    buttons: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: dragTopLayerToBottomBlank.endX,
+    y: dragTopLayerToBottomBlank.endY,
+    button: "left",
+    buttons: 0,
+    clickCount: 1
+  });
+
+  const paintOrderAfterBottomBlankDrag = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const layerIds = project.shots?.[0]?.layers?.map((layer) => layer.id);
+    if (layerIds?.[0] === paintLayer.id && layerIds?.[1] === "layer-image" && layerIds?.[2] === secondPaintLayer.id) {
+      return layerIds;
+    }
+
+    throw new Error(`current order: ${JSON.stringify(layerIds)}`);
+  }, "paint layer drag to bottom blank area metadata");
   if (
     (await hashFile(secondShotLayerPath)) !== secondShotBeforeHash ||
     (await hashFile(thirdShotLayerPath)) !== thirdShotBeforeHash
@@ -671,7 +1323,7 @@ try {
     throw new Error("Reopen restored a deleted Image layer");
   }
   const reopenedPaintLayer = reopenedProject.shots?.[0]?.layers?.find((item) => item.id === paintLayer.id);
-  if (!reopenedPaintLayer || reopenedPaintLayer.opacity !== 0.5 || reopenedPaintLayer.blendMode !== "multiply") {
+  if (!reopenedPaintLayer || reopenedPaintLayer.opacity !== 0.35 || reopenedPaintLayer.blendMode !== "multiply") {
     throw new Error("Reopen did not preserve paint layer metadata");
   }
   const reopenedPaintHash = await hashFile(resolveLayerPath(smokeRoot, reopenedPaintLayer.bitmapPath));
@@ -853,12 +1505,28 @@ try {
         paintLayerPath,
         paintBlankHash,
         paintDrawnHash,
+        paintThumbnailLoaded,
         paintErasedHash,
         paintUndoEraseHash,
+        paintLassoMovedHash,
+        paintUndoLassoMoveHash,
+        selectionClearedAfterToolSwitch,
+        paintRectangleScaledHash,
+        paintUndoRectangleScaleHash,
         paintOpacity: paintMetadata.opacity,
         paintBlendMode: paintMetadata.blendMode,
+        paintBlendDotUpdated,
+        paintBlendModeAppliedToStage,
+        paintOpacityFillUpdated,
+        paintLayerDragPreviewVisible,
+        sketchSettingsOpensOnStage,
+        sketchSettingsIgnoredOutsideStage,
+        layerToggleClickClosedPanel,
+        layerToggleBottomStableAfterClose,
+        layerRowsKeepFixedHeight,
         paintOrderBeforeDrag,
         paintOrderAfterDrag,
+        paintOrderAfterBottomBlankDrag,
         saveConflictBlocked,
         firstSavedTopLeftRgb,
         archivedShotAHash,

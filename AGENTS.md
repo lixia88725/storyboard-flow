@@ -17,11 +17,11 @@ Storyboard Workbench MVP is a local-first Electron desktop app for arranging sto
 - Electron main/preload process.
 - React + TypeScript + Vite renderer.
 - `dnd-kit` for shot and dialogue drag behavior.
-- `Konva` / `react-konva` for sketch drawing.
+- Canvas / `react-konva` renderer code for bitmap drawing, live brush/eraser preview, and legacy sketch migration paths.
 - `sharp` in the Electron main process for TIFF preview generation, blank TIFF creation, bitmap layer initialization, metadata writing, and Save-time TIFF baking.
 - Vitest for pure logic tests.
 
-Current drawing data is bitmap-layer based. Layer metadata lives in `shots[].layers`; editable layer pixels live under `.storyboard-workbench/layers/{shotId}/{layerId}.png`. Legacy `sketchLayers` and `imageLayerEdits` are migration inputs only; do not add new drawing behavior that depends on them as primary data.
+Current drawing data is bitmap-layer based. Layer metadata lives in `shots[].layers`; editable layer pixels live under `.storyboard-workbench/layers/{shotId}/{layerId}.png`. Brush, eraser, Select transform, and layer operations should write bitmap layer assets/metadata, not legacy stroke state. Legacy `sketchLayers` and `imageLayerEdits` are migration inputs only; do not add new drawing behavior that depends on them as primary data.
 
 ## Commands
 
@@ -31,6 +31,7 @@ npm run dev
 npm run test
 npm run typecheck
 npm run build
+npm run smoke:bitmap
 ```
 
 ## Code Organization
@@ -69,6 +70,6 @@ npm run typecheck
 npm run build
 ```
 
-For UI interaction changes, also perform a manual or automated app smoke test when feasible. The canonical smoke areas for this app are Save rename safety, Save TIFF baking, Image layer drawing/erasing/delete, layer panel operations, multi-select shot dragging, double-click dialogue editing, zoomed sketch drawing, Add Shot aspect presets, timeline navigation when animation mode is active, mixed-aspect animation centering, Onion Skin, and `B` / `E` tool shortcuts.
+For UI interaction changes, also perform a manual or automated app smoke test when feasible. The canonical smoke areas for this app are Save rename safety, Save TIFF baking, Image layer drawing/erasing/delete/reorder, layer panel operations, bitmap Select move/scale, live eraser preview, layer thumbnails, layer row opacity/reorder gestures, multi-select shot dragging, double-click dialogue editing, zoomed sketch drawing, Add Shot aspect presets, timeline navigation when animation mode is active, mixed-aspect animation centering, Onion Skin, and `B` / `E` tool shortcuts.
 
 Mark any untested GUI behavior as `TODO: verify`, especially dnd-kit drag behavior that automated tooling cannot fully prove.

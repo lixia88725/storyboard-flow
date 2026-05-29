@@ -112,9 +112,21 @@ Reason: bitmap layer pixels are no longer recoverable from JSON alone, so undo m
 
 ## Image Layer Behaves Like A Normal Layer In UI
 
-`Image` 层固定在最底部，但可选中、绘制、擦除；如果当前 shot 还有其他图层，选中 Image 时 `Delete current layer` 会删除 Image layer metadata 和内部 `layer-image.png`。如果只剩一个 Image layer，删除按钮禁用。删除 Image layer 不会立刻移动或删除真实原图；真实文件仍只在 Save/import 边界处理。
+`Image` 层可选中、绘制、擦除、显隐、重排；如果当前 shot 还有其他图层，选中 Image 时 `Delete current layer` 会删除 Image layer metadata 和内部 `layer-image.png`。如果只剩一个 Image layer，删除按钮禁用。删除 Image layer 不会立刻移动或删除真实原图；真实文件仍只在 Save/import 边界处理。
 
 Reason: 原文件已有 Archive 和 Save 边界保护，用户在绘图时应获得所见即所得的普通图层体验。
+
+## Bitmap Selection Is A Transient Active-Layer Tool
+
+Select 工具的 lasso / rectangle 选区只作用于当前 active bitmap layer。选区状态不写入 `storyboard.project.json`；移动或缩放提交后，只把像素结果写回当前 layer PNG，并通过 bitmap layer snapshot 进入 undo/redo。
+
+Reason: V1 先提供接近 Photoshop 的基础选区移动/缩放体验，同时避免跨图层、保存选区、羽化、魔棒、旋转、自由变形等复杂状态污染内部项目格式。
+
+## Layer Drawer Opens By Click, Not Pointer Drag
+
+当前 per-shot 图层抽屉通过右侧小把手点击打开/关闭。实验性的按住拖动推入/拉出交互已移除；图层本身的行拖动排序和横向 opacity 拖动保留。
+
+Reason: 抽屉拖动需要更明确的遮挡和动画模型，否则容易出现窗口浮在画面上或被裁切的错觉。生产工具优先保持干净、稳定、可预期的点击交互。
 
 ## Photoshop Interop Stays Separate From Internal Working Data
 

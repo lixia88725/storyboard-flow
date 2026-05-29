@@ -174,6 +174,113 @@ describe("project operations", () => {
     });
   });
 
+  it("adds a paint bitmap layer with a unique path after the Image layer was removed", () => {
+    const project = deleteBitmapLayer(
+      addBitmapLayer(makeBitmapProject(), "shot-a", {
+        id: "layer-shot-a-1",
+        name: "Paint",
+        width: 1920,
+        height: 1080
+      }),
+      "shot-a",
+      "layer-image"
+    );
+
+    const updated = addBitmapLayer(project, "shot-a", {
+      name: "Layer",
+      width: 1920,
+      height: 1080
+    });
+
+    const shot = updated.shots[0];
+    expect(bitmapLayersForShot(shot).map((layer) => layer.id)).toEqual([
+      "layer-shot-a-1",
+      "layer-shot-a-2"
+    ]);
+    expect(bitmapLayersForShot(shot).map((layer) => layer.bitmapPath)).toEqual([
+      ".storyboard-workbench/layers/shot-a/layer-shot-a-1.png",
+      ".storyboard-workbench/layers/shot-a/layer-shot-a-2.png"
+    ]);
+    expect(shot.activeLayerId).toBe("layer-shot-a-2");
+  });
+
+  it("deduplicates bitmap layers that point at the same layer asset", () => {
+    const project = addBitmapLayer(makeBitmapProject(), "shot-a", {
+      id: "layer-shot-a-1",
+      name: "Paint",
+      width: 1920,
+      height: 1080
+    });
+    const duplicate = project.shots[0].layers?.[1];
+
+    const layers = bitmapLayersForShot({
+      ...project.shots[0],
+      layers: duplicate ? [project.shots[0].layers![0], duplicate, { ...duplicate, order: 2 }] : []
+    });
+
+    expect(layers.map((layer) => layer.id)).toEqual(["layer-image", "layer-shot-a-1"]);
+  });
+
+  it("restores Image metadata from scanned SWB TIFF metadata when duplicate paint layers corrupted it", () => {
+    const paintLayer = {
+      id: "layer-shot-a-1",
+      kind: "paint" as const,
+      name: "Layer",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: "normal" as const,
+      order: 0,
+      bitmapPath: ".storyboard-workbench/layers/shot-a/layer-shot-a-1.png",
+      width: 1920,
+      height: 1080
+    };
+    const project: Project = {
+      ...makeBitmapProject(),
+      shots: [
+        {
+          ...makeBitmapProject().shots[0],
+          layers: [paintLayer, { ...paintLayer, order: 1 }],
+          activeLayerId: paintLayer.id,
+          swb: {
+            version: 1,
+            status: "owned",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "pixel-a"
+          }
+        }
+      ]
+    };
+
+    const updated = mergeFolderImages(project, [
+      {
+        imagePath: "/tmp/a.tif",
+        fileName: "a.tif",
+        width: 1920,
+        height: 1080,
+        fingerprint: "pixel-a",
+        swbMetadata: {
+          app: "Storyboard Workbench",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "shot-a",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          baseFingerprint: "pixel-a",
+          updatedAt: "2026-05-29T00:00:00.000Z",
+          layers: [{ id: "layer-image", kind: "image" }]
+        } as any
+      }
+    ]);
+
+    expect(bitmapLayersForShot(updated.shots[0]).map((layer) => layer.id)).toEqual([
+      "layer-image",
+      "layer-shot-a-1"
+    ]);
+    expect(updated.shots[0].activeLayerId).toBe("layer-shot-a-1");
+  });
+
   it("selects, updates, reorders, and deletes bitmap layers", () => {
     const project = addBitmapLayer(
       addBitmapLayer(makeBitmapProject(), "shot-a", {
@@ -220,6 +327,27 @@ describe("project operations", () => {
       "paint-1"
     ]);
     expect(deleted.shots[0].activeLayerId).toBe("paint-1");
+  });
+
+  it("moves the Image bitmap layer like an ordinary layer", () => {
+    const project = addBitmapLayer(makeBitmapProject(), "shot-a", {
+      id: "paint-1",
+      name: "Paint",
+      width: 1920,
+      height: 1080
+    });
+
+    const movedAbove = moveBitmapLayer(project, "shot-a", "layer-image", "paint-1", "after");
+    expect(bitmapLayersForShot(movedAbove.shots[0]).map((layer) => [layer.id, layer.order])).toEqual([
+      ["paint-1", 0],
+      ["layer-image", 1]
+    ]);
+
+    const movedBelow = moveBitmapLayer(movedAbove, "shot-a", "layer-image", "paint-1");
+    expect(bitmapLayersForShot(movedBelow.shots[0]).map((layer) => [layer.id, layer.order])).toEqual([
+      ["layer-image", 0],
+      ["paint-1", 1]
+    ]);
   });
 
   it("deletes the Image bitmap layer when another layer remains", () => {
@@ -749,7 +877,6 @@ describe("project operations", () => {
 
     expect(bitmapLayersForShot(shot).map((layer) => [layer.id, layer.kind, layer.name])).toEqual([
       ["layer-image", "image", "Image"],
-      ["layer-default", "paint", "Drawing"],
       ["layer-shot-a-1", "paint", "Ink"]
     ]);
     expect(shot.activeLayerId).toBe("layer-image");

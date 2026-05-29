@@ -12,6 +12,7 @@ import {
 import { rectSortingStrategy, SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -56,6 +57,7 @@ import {
 } from "../shared/projectOps";
 import type {
   BitmapLayer,
+  BitmapSelectionMode,
   Dialogue,
   FolderScanPayload,
   Project,
@@ -64,7 +66,8 @@ import type {
   BlankShotPreset,
   SketchBlendMode,
   SketchStroke,
-  SketchTool
+  SketchTool,
+  StrokeTool
 } from "../shared/types";
 import { getAnimationViewport, getStableBoardTop, maxStoryboardZoom } from "./animationViewport";
 import {
@@ -73,8 +76,22 @@ import {
   type LayerAssetSnapshot
 } from "./bitmapLayerHistory";
 import { getOnionSkinNeighbors } from "./onionSkin";
-import { sketchCanvasSize, sketchPointFromClientPoint } from "./sketchGeometry";
-import type { CanvasSize } from "./sketchGeometry";
+import {
+  bitmapSelectionBounds,
+  bitmapSelectionHitTarget,
+  blendMenuDirectionFromRects,
+  layerDropPlacementFromClientY,
+  layerOpacityFromClientX,
+  layerRowDragIntentFromDelta,
+  latestStrokeSegment,
+  scaleBitmapSelectionBounds,
+  shouldRenderLiveStroke,
+  shouldAppendStrokePoint,
+  sketchCanvasSize,
+  sketchPointFromClientPoint
+} from "./sketchGeometry";
+import type { LayerRowDragIntent } from "./sketchGeometry";
+import type { Bounds, CanvasSize, Point, SelectionCorner } from "./sketchGeometry";
 import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
 
 type DragData =
@@ -83,6 +100,7 @@ type DragData =
   | { type: "drop-zone"; shotId: string };
 
 const defaultBrushColor = "#f05a28";
+const defaultBrushSwatches = ["#f05a28", "#1f6f62", "#2d6cdf", "#f3c14b", "#211f1a"];
 const defaultBrushSize = 4;
 const defaultEraserSize = 18;
 const maxUndoHistory = 60;
@@ -99,6 +117,43 @@ type WorkspaceSaveState = "saved" | "saving" | "error";
 type FileNameSyncState = "synced" | "unsynced";
 type SelectionBox = { startX: number; startY: number; currentX: number; currentY: number };
 type SketchSettingsMenu = { tool: SketchTool; x: number; y: number };
+type LayerRowGesture = {
+  layerId: string;
+  startX: number;
+  startY: number;
+  intent?: LayerRowDragIntent;
+};
+type LayerRowGestureVisual = {
+  layerId: string;
+  intent: LayerRowDragIntent;
+  deltaY: number;
+};
+type BlendMenuState = {
+  layerId: string;
+  direction: "down" | "up";
+};
+type BitmapSelection = {
+  mode: BitmapSelectionMode;
+  points: Point[];
+  bounds: Bounds;
+};
+type BitmapSelectionDraft = {
+  mode: BitmapSelectionMode;
+  points: Point[];
+};
+type BitmapTransformDraft = {
+  type: "move" | "scale";
+  startPoint: Point;
+  startBounds: Bounds;
+  currentBounds: Bounds;
+  corner?: SelectionCorner;
+};
+type PreparedBitmapTransform = {
+  layerId: string;
+  selection: BitmapSelection;
+  sourceCanvas: HTMLCanvasElement;
+  patchCanvas: HTMLCanvasElement;
+};
 type UndoEntry = {
   project: Project;
   selectedShotIds: string[];
@@ -147,10 +202,12 @@ export const App = () => {
   const [selectedShotIds, setSelectedShotIds] = useState<string[]>([]);
   const [activeSketchTool, setActiveSketchTool] = useState<SketchTool>("brush");
   const [brushColor, setBrushColor] = useState(defaultBrushColor);
+  const [brushSwatches, setBrushSwatches] = useState(defaultBrushSwatches);
   const [brushOpacity, setBrushOpacity] = useState(1);
   const [brushSize, setBrushSize] = useState(defaultBrushSize);
   const [eraserSize, setEraserSize] = useState(defaultEraserSize);
   const [eraserOpacity, setEraserOpacity] = useState(1);
+  const [selectionMode, setSelectionMode] = useState<BitmapSelectionMode>("lasso");
   const [workspaceSaveState, setWorkspaceSaveState] = useState<WorkspaceSaveState>("saved");
   const [fileNameSyncState, setFileNameSyncState] = useState<FileNameSyncState>("synced");
   const [recentFolders, setRecentFolders] = useState<string[]>([]);
@@ -647,7 +704,12 @@ export const App = () => {
     setWorkspaceSaveState("saved");
   };
 
-  const handleBitmapStroke = async (shot: Shot, layerId: string, stroke: SketchStroke) => {
+  const handleBitmapStroke = async (
+    shot: Shot,
+    layerId: string,
+    stroke: SketchStroke,
+    renderedDataUrl?: string
+  ) => {
     if (!window.storyboard || !folderPath) {
       return;
     }
@@ -658,14 +720,18 @@ export const App = () => {
     }
 
     const undoEntry = await createHistoryEntry([layer.bitmapPath]);
-    const blankDataUrl = await createTransparentLayerDataUrl(layer.width, layer.height);
-    const sourceDataUrl = layer.cleared
-      ? blankDataUrl
-      : (await window.storyboard
-          .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
-          .catch(() => undefined)) ??
-        (layer.kind === "image" ? window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath) : blankDataUrl);
-    const dataUrl = await drawStrokeOnBitmapLayer(sourceDataUrl, layer, stroke);
+    let dataUrl = renderedDataUrl;
+
+    if (!dataUrl) {
+      const blankDataUrl = await createTransparentLayerDataUrl(layer.width, layer.height);
+      const sourceDataUrl = layer.cleared
+        ? blankDataUrl
+        : (await window.storyboard
+            .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
+            .catch(() => undefined)) ??
+          (layer.kind === "image" ? window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath) : blankDataUrl);
+      dataUrl = await drawStrokeOnBitmapLayer(sourceDataUrl, layer, stroke);
+    }
 
     await window.storyboard.writeLayerPng({
       folderPath,
@@ -674,6 +740,28 @@ export const App = () => {
     });
     recordUndoEntry(undoEntry);
     updateProject((currentProject) => markBitmapLayerPainted(currentProject, shot.id, layer.id), false, false);
+    return dataUrl;
+  };
+
+  const handleBitmapSelectionTransform = async (shot: Shot, layerId: string, dataUrl: string) => {
+    if (!window.storyboard || !folderPath) {
+      return;
+    }
+
+    const layer = bitmapLayersForShot(shot).find((item) => item.id === layerId);
+    if (!layer || layer.locked) {
+      return;
+    }
+
+    const undoEntry = await createHistoryEntry([layer.bitmapPath]);
+    await window.storyboard.writeLayerPng({
+      folderPath,
+      bitmapPath: layer.bitmapPath,
+      dataUrl
+    });
+    recordUndoEntry(undoEntry);
+    updateProject((currentProject) => markBitmapLayerPainted(currentProject, shot.id, layer.id), false, false);
+    return dataUrl;
   };
 
   const handleClearBitmapLayer = async (shotId: string, layerId: string) => {
@@ -1014,7 +1102,10 @@ export const App = () => {
 
   const openSketchSettingsMenu = (event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
-    if (target.closest("input, textarea, select, .save-menu, .sketch-settings-menu")) {
+    if (
+      !target.closest(".image-stage") ||
+      target.closest("input, textarea, select, .save-menu, .sketch-settings-menu")
+    ) {
       return;
     }
 
@@ -1026,6 +1117,14 @@ export const App = () => {
       tool: activeSketchTool,
       x: Math.min(event.clientX, window.innerWidth - menuWidth - margin),
       y: Math.min(event.clientY, window.innerHeight - menuHeight - margin)
+    });
+  };
+
+  const handleStageWheelZoom = (deltaY: number) => {
+    setZoomLevel((current) => {
+      const direction = deltaY < 0 ? 1 : -1;
+      const nextZoom = Math.round(current / 5) * 5 + direction * 5;
+      return Math.min(maxStoryboardZoom, Math.max(25, nextZoom));
     });
   };
 
@@ -1229,6 +1328,15 @@ export const App = () => {
           </button>
           <button
             type="button"
+            className={activeSketchTool === "select" ? "selected" : ""}
+            onClick={() => setActiveSketchTool("select")}
+            title="Select"
+            aria-label="Select"
+          >
+            <SelectIcon />
+          </button>
+          <button
+            type="button"
             onClick={() => {
               if (!primarySelectedShot) {
                 setStatus("Select a shot before clearing a layer");
@@ -1265,6 +1373,17 @@ export const App = () => {
           >
             {sketchSettingsMenu.tool === "brush" ? (
               <>
+                <BrushSwatchPicker
+                  swatches={brushSwatches}
+                  activeColor={brushColor}
+                  onPickColor={setBrushColor}
+                  onChangeSwatch={(index, color) => {
+                    setBrushSwatches((current) =>
+                      current.map((swatch, swatchIndex) => (swatchIndex === index ? color : swatch))
+                    );
+                    setBrushColor(color);
+                  }}
+                />
                 <SketchSettingSlider
                   label="Brush size"
                   value={brushSize}
@@ -1284,7 +1403,7 @@ export const App = () => {
                   onChange={(value) => setBrushOpacity(value / 100)}
                 />
               </>
-            ) : (
+            ) : sketchSettingsMenu.tool === "eraser" ? (
               <>
                 <SketchSettingSlider
                   label="Eraser size"
@@ -1305,43 +1424,32 @@ export const App = () => {
                   onChange={(value) => setEraserOpacity(value / 100)}
                 />
               </>
+            ) : (
+              <div className="selection-mode-menu" aria-label="Selection mode">
+                <button
+                  type="button"
+                  className={selectionMode === "lasso" ? "is-selected" : ""}
+                  onClick={() => {
+                    setSelectionMode("lasso");
+                    setSketchSettingsMenu(undefined);
+                  }}
+                >
+                  Lasso
+                </button>
+                <button
+                  type="button"
+                  className={selectionMode === "rectangle" ? "is-selected" : ""}
+                  onClick={() => {
+                    setSelectionMode("rectangle");
+                    setSketchSettingsMenu(undefined);
+                  }}
+                >
+                  Rectangle
+                </button>
+              </div>
             )}
           </div>
         ) : null}
-        <LayerPanel
-          shot={primarySelectedShot}
-          isOpen={isLayerPanelOpen}
-          onToggle={() => setIsLayerPanelOpen((isOpen) => !isOpen)}
-          onAddLayer={(shotId) =>
-            updateProject((currentProject) => {
-              const shot = currentProject.shots.find((item) => item.id === shotId);
-              const canvasSize = shot ? canvasSizeForShot(shot) : sketchCanvasSize;
-              return addBitmapLayer(currentProject, shotId, {
-                name: "Layer",
-                width: canvasSize.width,
-                height: canvasSize.height
-              });
-            }, false)
-          }
-          onRemoveLayer={(shotId, layerId) =>
-            void handleRemoveBitmapLayer(shotId, layerId)
-          }
-          onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
-          onSelectLayer={(shotId, layerId) =>
-            updateProject((currentProject) => selectBitmapLayer(currentProject, shotId, layerId), false, false)
-          }
-          onUpdateLayer={(shotId, layerId, patch) =>
-            updateProject((currentProject) =>
-              updateBitmapLayer(currentProject, shotId, layerId, patch)
-            , false)
-          }
-          onMoveLayer={(shotId, layerId, targetLayerId) =>
-            updateProject((currentProject) =>
-              moveBitmapLayer(currentProject, shotId, layerId, targetLayerId)
-            , false)
-          }
-        />
-
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -1368,8 +1476,9 @@ export const App = () => {
                   index={index}
                   project={project}
                   folderPath={folderPath}
-                  isSelected={selectedShotIds.includes(shot.id)}
+                  isSelected={selectedShotIds.length > 1 && selectedShotIds.includes(shot.id)}
                   activeSketchTool={activeSketchTool}
+                  selectionMode={selectionMode}
                   brushColor={brushColor}
                   brushOpacity={brushOpacity}
                   brushSize={brushSize}
@@ -1387,6 +1496,42 @@ export const App = () => {
                   }
                   editingDialogueId={editingDialogueId}
                   onSelect={(event) => handleShotSelect(shot.id, event)}
+                  onFocusShot={() => setSelectedShotIds([shot.id])}
+                  onStageWheel={handleStageWheelZoom}
+                  isLayerPanelOpen={isLayerPanelOpen && shot.id === primarySelectedShotId}
+                  thumbnailRevision={autosaveRevision}
+                  onToggleLayerPanel={() => {
+                    setSelectedShotIds([shot.id]);
+                    setIsLayerPanelOpen((isOpen) => (shot.id === primarySelectedShotId ? !isOpen : true));
+                  }}
+                  onAddLayer={(shotId) =>
+                    updateProject((currentProject) => {
+                      const targetShot = currentProject.shots.find((item) => item.id === shotId);
+                      const canvasSize = targetShot ? canvasSizeForShot(targetShot) : sketchCanvasSize;
+                      return addBitmapLayer(currentProject, shotId, {
+                        name: "Layer",
+                        width: canvasSize.width,
+                        height: canvasSize.height
+                      });
+                    }, false)
+                  }
+                  onRemoveLayer={(shotId, layerId) =>
+                    void handleRemoveBitmapLayer(shotId, layerId)
+                  }
+                  onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
+                  onSelectLayer={(shotId, layerId) =>
+                    updateProject((currentProject) => selectBitmapLayer(currentProject, shotId, layerId), false, false)
+                  }
+                  onUpdateLayer={(shotId, layerId, patch) =>
+                    updateProject((currentProject) =>
+                      updateBitmapLayer(currentProject, shotId, layerId, patch)
+                    , false)
+                  }
+                  onMoveLayer={(shotId, layerId, targetLayerId, placement) =>
+                    updateProject((currentProject) =>
+                      moveBitmapLayer(currentProject, shotId, layerId, targetLayerId, placement)
+                    , false)
+                  }
                   onCreateDialogue={handleCreateDialogue}
                   onDialogueText={(dialogueId, text) =>
                     updateProject((currentProject) =>
@@ -1401,8 +1546,9 @@ export const App = () => {
                     }
                     setEditingDialogueId(undefined);
                   }}
-                  onSketchStroke={(layerId, stroke) =>
-                    void handleBitmapStroke(shot, layerId, stroke)
+                  onSketchStroke={(layerId, stroke) => handleBitmapStroke(shot, layerId, stroke)}
+                  onSelectionTransform={(layerId, dataUrl) =>
+                    handleBitmapSelectionTransform(shot, layerId, dataUrl)
                   }
                 />
               ))}
@@ -1457,7 +1603,7 @@ export const App = () => {
           onClick={() => setIsStatusPanelOpen((isOpen) => !isOpen)}
           title="Workspace status"
         >
-          !
+          i
         </button>
       </div>
       <footer className="bottom-bar">
@@ -1562,6 +1708,13 @@ const EraserIcon = () => (
   </svg>
 );
 
+const SelectIcon = () => (
+  <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
+    <path d="M8 5 24 16 16 18 12 26z" />
+    <path d="M17 18 23 25" />
+  </svg>
+);
+
 const ClearIcon = () => (
   <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
     <path d="M9 10h14" />
@@ -1609,9 +1762,54 @@ const SketchSettingSlider = ({
   </label>
 );
 
+const BrushSwatchPicker = ({
+  swatches,
+  activeColor,
+  onPickColor,
+  onChangeSwatch
+}: {
+  swatches: string[];
+  activeColor: string;
+  onPickColor: (color: string) => void;
+  onChangeSwatch: (index: number, color: string) => void;
+}) => {
+  const colorInputs = useRef<Array<HTMLInputElement | null>>([]);
+
+  return (
+    <div className="brush-swatch-picker" aria-label="Brush swatches">
+      {swatches.map((color, index) => (
+        <button
+          key={index}
+          type="button"
+          className={color.toLowerCase() === activeColor.toLowerCase() ? "is-selected" : ""}
+          style={{ backgroundColor: color }}
+          aria-label={`Brush swatch ${index + 1}`}
+          title="Click to pick, double-click to edit"
+          onClick={() => onPickColor(color)}
+          onDoubleClick={() => colorInputs.current[index]?.click()}
+        >
+          <input
+            ref={(element) => {
+              colorInputs.current[index] = element;
+            }}
+            aria-label={`Brush swatch ${index + 1} color`}
+            type="color"
+            value={color}
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => onChangeSwatch(index, event.target.value)}
+          />
+        </button>
+      ))}
+    </div>
+  );
+};
+
 type LayerPanelProps = {
   shot?: Shot;
+  folderPath?: string;
+  thumbnailRevision: number;
   isOpen: boolean;
+  isRendered: boolean;
   onToggle: () => void;
   onAddLayer: (shotId: string) => void;
   onRemoveLayer: (shotId: string, layerId: string) => void;
@@ -1622,12 +1820,20 @@ type LayerPanelProps = {
     layerId: string,
     patch: Partial<Pick<BitmapLayer, "name" | "visible" | "locked" | "opacity" | "blendMode">>
   ) => void;
-  onMoveLayer: (shotId: string, layerId: string, targetLayerId: string) => void;
+  onMoveLayer: (
+    shotId: string,
+    layerId: string,
+    targetLayerId: string,
+    placement: "before" | "after"
+  ) => void;
 };
 
 const LayerPanel = ({
   shot,
+  folderPath,
+  thumbnailRevision,
   isOpen,
+  isRendered,
   onToggle,
   onAddLayer,
   onRemoveLayer,
@@ -1637,112 +1843,265 @@ const LayerPanel = ({
   onMoveLayer
 }: LayerPanelProps) => {
   const layers = shot ? bitmapLayersForShot(shot) : [];
+  const displayLayers = [...layers].reverse();
   const activeLayer = layers.find((layer) => layer.id === shot?.activeLayerId) ?? layers[0];
   const activeLayerId = activeLayer?.id;
+  const [openBlendMenu, setOpenBlendMenu] = useState<BlendMenuState | undefined>();
+  const [rowGestureVisual, setRowGestureVisual] = useState<LayerRowGestureVisual | undefined>();
+
+  const interactiveLayerRowTarget = (target: EventTarget | null) => {
+    return target instanceof HTMLElement
+      ? target.closest("button, textarea, select, .layer-blend-menu")
+      : null;
+  };
+
+  const layerRowFromPoint = (clientX: number, clientY: number, excludedLayerId?: string) => {
+    const directRow = document
+      .elementsFromPoint(clientX, clientY)
+      .find((element): element is HTMLElement =>
+        element instanceof HTMLElement &&
+        element.classList.contains("layer-row") &&
+        element.dataset.layerId !== excludedLayerId
+      );
+    if (directRow) {
+      return directRow;
+    }
+
+    const layerList = document
+      .elementsFromPoint(clientX, clientY)
+      .find((element): element is HTMLElement =>
+        element instanceof HTMLElement && element.classList.contains("layer-list")
+      );
+    if (!layerList) {
+      return undefined;
+    }
+
+    const rows = Array.from(layerList.querySelectorAll<HTMLElement>(".layer-row")).filter(
+      (row) => row.dataset.layerId !== excludedLayerId
+    );
+    return clientY < (rows[0]?.getBoundingClientRect().top ?? 0) ? rows[0] : rows.at(-1);
+  };
+
+  const beginLayerRowGesture = (event: PointerEvent<HTMLDivElement>, layer: BitmapLayer) => {
+    if (!shot || event.button !== 0 || interactiveLayerRowTarget(event.target)) {
+      return;
+    }
+
+    event.stopPropagation();
+    onSelectLayer(shot.id, layer.id);
+    setOpenBlendMenu(undefined);
+    const initialTarget = event.target;
+
+    const gesture: LayerRowGesture = {
+      layerId: layer.id,
+      startX: event.clientX,
+      startY: event.clientY
+    };
+
+    const updateOpacity = (clientX: number) => {
+      const row = document.querySelector<HTMLElement>(`[data-layer-id="${gesture.layerId}"]`);
+      if (!row) {
+        return;
+      }
+
+      const rect = row.getBoundingClientRect();
+      onUpdateLayer(
+        shot.id,
+        gesture.layerId,
+        { opacity: layerOpacityFromClientX(clientX, rect.left, rect.width) }
+      );
+    };
+
+    const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
+      moveEvent.preventDefault();
+      const deltaX = moveEvent.clientX - gesture.startX;
+      const deltaY = moveEvent.clientY - gesture.startY;
+
+      if (!gesture.intent) {
+        const intent = layerRowDragIntentFromDelta(deltaX, deltaY);
+        if (!intent) {
+          return;
+        }
+        moveEvent.preventDefault();
+        if (initialTarget instanceof HTMLInputElement) {
+          initialTarget.blur();
+        }
+        gesture.intent = intent;
+        setRowGestureVisual({ layerId: gesture.layerId, intent, deltaY: intent === "reorder" ? deltaY : 0 });
+      }
+
+      if (gesture.intent === "opacity") {
+        moveEvent.preventDefault();
+        updateOpacity(moveEvent.clientX);
+      } else if (gesture.intent === "reorder") {
+        moveEvent.preventDefault();
+        setRowGestureVisual({ layerId: gesture.layerId, intent: "reorder", deltaY });
+      }
+    };
+
+    const handlePointerUp = (upEvent: globalThis.PointerEvent) => {
+      if (gesture.intent) {
+        upEvent.preventDefault();
+      }
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+      setRowGestureVisual(undefined);
+
+      if (gesture.intent === "reorder") {
+        const targetRow = layerRowFromPoint(upEvent.clientX, upEvent.clientY, gesture.layerId);
+        const targetLayerId = targetRow?.dataset.layerId;
+        if (targetRow && targetLayerId && targetLayerId !== gesture.layerId) {
+          const rect = targetRow.getBoundingClientRect();
+          onMoveLayer(
+            shot.id,
+            gesture.layerId,
+            targetLayerId,
+            layerDropPlacementFromClientY(upEvent.clientY, rect.top, rect.height)
+          );
+        }
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerUp, { once: true });
+  };
 
   return (
-    <div className="layer-popover">
-      {isOpen ? (
-        <section className="layer-panel" aria-label="Storyboard layers">
-          <div className="layer-panel-controls">
-            <label>
-              <span>Mode</span>
-              <select
-                aria-label="Layer blend mode"
-                value={activeLayer?.blendMode ?? "normal"}
-                disabled={!shot || !activeLayer}
-                onChange={(event) => {
-                  if (shot && activeLayer) {
-                    onUpdateLayer(shot.id, activeLayer.id, {
-                      blendMode: event.target.value as BitmapLayer["blendMode"]
-                    });
-                  }
-                }}
-              >
-                {sketchBlendModes.map((blendMode) => (
-                  <option key={blendMode} value={blendMode}>
-                    {blendModeLabel(blendMode)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span className="layer-control-header">
-                <span>Opacity</span>
-                <strong>
-                  {Math.round((activeLayer?.opacity ?? 1) * 100)}%
-                </strong>
-              </span>
-              <input
-                aria-label="Active layer opacity"
-                type="range"
-                min="0"
-                max="100"
-                step="5"
-                value={Math.round((activeLayer?.opacity ?? 1) * 100)}
-                disabled={!shot || !activeLayer}
-                onChange={(event) => {
-                  if (shot && activeLayer) {
-                    onUpdateLayer(shot.id, activeLayer.id, {
-                      opacity: Number(event.target.value) / 100
-                    });
-                  }
-                }}
-              />
-            </label>
-          </div>
+    <div
+      className={`shot-layer-popover ${isRendered ? (isOpen ? "is-open" : "is-closing") : ""}`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onDragStart={(event) => event.stopPropagation()}
+      onDragOver={(event) => event.stopPropagation()}
+      onDrop={(event) => event.stopPropagation()}
+    >
+      {isRendered ? (
+        <section
+          className="layer-panel"
+          aria-label="Storyboard layers"
+        >
           {shot ? (
             <div className="layer-list">
-              {layers.map((layer) => (
-                <div
-                  key={layer.id}
-                  className={`layer-row ${layer.id === activeLayerId ? "is-active" : ""} ${
-                    layer.visible ? "" : "is-hidden"
-                  }`}
-                  draggable={layer.kind !== "image"}
-                  onClick={() => onSelectLayer(shot.id, layer.id)}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("text/plain", layer.id);
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const draggedLayerId = event.dataTransfer.getData("text/plain");
-                    if (draggedLayerId) {
-                      onMoveLayer(shot.id, draggedLayerId, layer.id);
-                    }
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="layer-select"
-                    draggable={false}
-                    title={layer.visible ? "Hide layer" : "Show layer"}
-                    aria-label={layer.visible ? "Hide layer" : "Show layer"}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onUpdateLayer(shot.id, layer.id, { visible: !layer.visible });
-                    }}
+              {displayLayers.map((layer) => {
+                const layerBlendMode = layer.blendMode ?? "normal";
+                const rowVisual =
+                  rowGestureVisual?.layerId === layer.id ? rowGestureVisual : undefined;
+                return (
+                  <div
+                    key={layer.id}
+                    data-layer-id={layer.id}
+                    className={`layer-row ${rowVisual ? `is-${rowVisual.intent}-dragging is-dragging-layer` : ""} ${
+                      layer.id === activeLayerId ? "is-active" : ""
+                    } ${
+                      layer.visible ? "" : "is-hidden"
+                    }`}
+                    style={{
+                      "--layer-opacity-width": `${Math.round((layer.opacity ?? 1) * 100)}%`,
+                      transform:
+                        rowVisual?.intent === "reorder"
+                          ? `translateY(${rowVisual.deltaY}px)`
+                          : undefined
+                    } as CSSProperties}
+                    onClick={() => onSelectLayer(shot.id, layer.id)}
+                    onPointerDown={(event) => beginLayerRowGesture(event, layer)}
                   >
-                    <span className={layer.visible ? "layer-eye is-on" : "layer-eye"} />
-                  </button>
-                  <BitmapLayerThumbnail layer={layer} shot={shot} />
-                  <input
-                    aria-label="Layer name"
-                    value={layer.name}
-                    draggable={false}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={(event) =>
-                      onUpdateLayer(shot.id, layer.id, { name: event.target.value })
-                    }
-                  />
-                </div>
-              ))}
+                    <button
+                      type="button"
+                      className="layer-select"
+                      draggable={false}
+                      title={layer.visible ? "Hide layer" : "Show layer"}
+                      aria-label={layer.visible ? "Hide layer" : "Show layer"}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onUpdateLayer(shot.id, layer.id, { visible: !layer.visible });
+                      }}
+                    >
+                      <span className={layer.visible ? "layer-eye is-on" : "layer-eye"} />
+                    </button>
+                    <BitmapLayerThumbnail
+                      layer={layer}
+                      shot={shot}
+                      folderPath={folderPath}
+                      revision={thumbnailRevision}
+                    />
+                    <input
+                      aria-label="Layer name"
+                      value={layer.name}
+                      draggable={false}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) =>
+                        onUpdateLayer(shot.id, layer.id, { name: event.target.value })
+                      }
+                    />
+                    <button
+                      type="button"
+                      className={`layer-blend-dot layer-blend-dot-${layerBlendMode}`}
+                      draggable={false}
+                      title={`Blend mode: ${blendModeLabel(layerBlendMode)}`}
+                      aria-label={`Layer blend mode: ${layerBlendMode}`}
+                      aria-expanded={openBlendMenu?.layerId === layer.id}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        const rowRect = event.currentTarget
+                          .closest(".layer-row")
+                          ?.getBoundingClientRect();
+                        const listRect = event.currentTarget
+                          .closest(".layer-list")
+                          ?.getBoundingClientRect();
+                        const direction =
+                          rowRect && listRect
+                            ? blendMenuDirectionFromRects(
+                                rowRect.top,
+                                rowRect.bottom,
+                                listRect.top,
+                                listRect.bottom
+                              )
+                            : "down";
+                        setOpenBlendMenu((current) => {
+                          if (current?.layerId === layer.id) {
+                            return undefined;
+                          }
+
+                          return {
+                            layerId: layer.id,
+                            direction
+                          };
+                        });
+                      }}
+                    />
+                    {openBlendMenu?.layerId === layer.id ? (
+                      <div
+                        className={`layer-blend-menu layer-blend-menu-${openBlendMenu.direction}`}
+                        role="menu"
+                        aria-label="Layer blend mode options"
+                      >
+                        {sketchBlendModes.map((blendMode) => (
+                          <button
+                            key={blendMode}
+                            type="button"
+                            className={layerBlendMode === blendMode ? "is-selected" : ""}
+                            role="menuitem"
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onUpdateLayer(shot.id, layer.id, { blendMode });
+                              setOpenBlendMenu(undefined);
+                            }}
+                          >
+                            <span className={`layer-blend-dot layer-blend-dot-${blendMode}`} />
+                            {blendModeLabel(blendMode)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="layer-empty">Select a shot to edit layers.</p>
@@ -1782,27 +2141,66 @@ const LayerPanel = ({
         className={`layer-toggle ${isOpen ? "is-open" : ""}`}
         onClick={onToggle}
         title="Layers"
-        aria-label="Layers"
+        aria-label="Toggle shot layers"
         aria-expanded={isOpen}
-      >
-        Layers
-      </button>
+      />
     </div>
   );
 };
 
-const BitmapLayerThumbnail = ({ layer, shot }: { layer: BitmapLayer; shot: Shot }) => (
-  <div
-    className={`layer-thumb ${layer.kind === "image" ? "layer-thumb-image" : ""}`}
-    style={{
-      backgroundImage:
-        layer.kind === "image"
-          ? `url("${window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath)}")`
-          : undefined
-    }}
-    aria-hidden="true"
-  />
-);
+const BitmapLayerThumbnail = ({
+  layer,
+  shot,
+  folderPath,
+  revision
+}: {
+  layer: BitmapLayer;
+  shot: Shot;
+  folderPath?: string;
+  revision: number;
+}) => {
+  const fallbackImageSrc =
+    layer.kind === "image" && !layer.cleared
+      ? window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath)
+      : undefined;
+  const [thumbnailSrc, setThumbnailSrc] = useState<string | undefined>(fallbackImageSrc);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadThumbnail = async () => {
+      if (layer.cleared) {
+        setThumbnailSrc(undefined);
+        return;
+      }
+
+      const layerDataUrl = folderPath
+        ? await window.storyboard
+            .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
+            .catch(() => undefined)
+        : undefined;
+
+      if (!cancelled) {
+        setThumbnailSrc(layerDataUrl ?? fallbackImageSrc);
+      }
+    };
+
+    void loadThumbnail();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackImageSrc, folderPath, layer.bitmapPath, layer.cleared, revision]);
+
+  return (
+    <div
+      className={`layer-thumb ${layer.kind === "image" ? "layer-thumb-image" : ""}`}
+      aria-hidden="true"
+    >
+      {thumbnailSrc ? <img src={thumbnailSrc} alt="" draggable={false} /> : null}
+    </div>
+  );
+};
 
 const blendModeLabel = (blendMode: SketchBlendMode): string => {
   if (blendMode === "multiply") {
@@ -1856,24 +2254,38 @@ const drawStrokeOnBitmapLayer = async (
   await drawImageUrl(context, sourceUrl, canvas.width, canvas.height);
 
   if (stroke.points.length >= 4) {
-    context.save();
-    context.globalAlpha = stroke.opacity ?? 1;
-    context.globalCompositeOperation =
-      stroke.tool === "eraser" ? "destination-out" : "source-over";
-    context.strokeStyle = stroke.color;
-    context.lineWidth = stroke.size;
-    context.lineCap = "round";
-    context.lineJoin = "round";
-    context.beginPath();
+    drawStrokePathOnCanvas(context, stroke);
+  }
+
+  return canvas.toDataURL("image/png");
+};
+
+const drawStrokePathOnCanvas = (
+  context: CanvasRenderingContext2D,
+  stroke: SketchStroke,
+  segment?: readonly [number, number, number, number]
+) => {
+  context.save();
+  context.globalAlpha = stroke.opacity ?? 1;
+  context.globalCompositeOperation = stroke.tool === "eraser" ? "destination-out" : "source-over";
+  context.strokeStyle = stroke.color;
+  context.lineWidth = stroke.size;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.beginPath();
+
+  if (segment) {
+    context.moveTo(segment[0], segment[1]);
+    context.lineTo(segment[2], segment[3]);
+  } else {
     context.moveTo(stroke.points[0], stroke.points[1]);
     for (let index = 2; index < stroke.points.length; index += 2) {
       context.lineTo(stroke.points[index], stroke.points[index + 1]);
     }
-    context.stroke();
-    context.restore();
   }
 
-  return canvas.toDataURL("image/png");
+  context.stroke();
+  context.restore();
 };
 
 const drawImageUrl = (
@@ -1892,6 +2304,73 @@ const drawImageUrl = (
     image.onerror = () => reject(new Error("Could not load layer bitmap"));
     image.src = sourceUrl;
   });
+
+const BitmapSelectionOverlay = ({
+  selection,
+  draft,
+  transformBounds,
+  stageSize,
+  canvasSize
+}: {
+  selection?: BitmapSelection;
+  draft?: BitmapSelectionDraft;
+  transformBounds?: Bounds;
+  stageSize: CanvasSize;
+  canvasSize: CanvasSize;
+}) => {
+  const scaleX = stageSize.width / canvasSize.width;
+  const scaleY = stageSize.height / canvasSize.height;
+  const activeBounds = transformBounds ?? selection?.bounds;
+  const draftSelection = draft ? buildOverlaySelection(draft) : undefined;
+  const points = draftSelection?.points ?? selection?.points;
+  const pathPoints = points?.map((point) => `${point.x * scaleX},${point.y * scaleY}`).join(" ");
+
+  return (
+    <svg className="bitmap-selection-overlay" viewBox={`0 0 ${stageSize.width} ${stageSize.height}`}>
+      {pathPoints ? <polygon className="bitmap-selection-outline" points={pathPoints} /> : null}
+      {activeBounds ? (
+        <>
+          <rect
+            className="bitmap-selection-bounds"
+            x={activeBounds.x * scaleX}
+            y={activeBounds.y * scaleY}
+            width={activeBounds.width * scaleX}
+            height={activeBounds.height * scaleY}
+          />
+          {[
+            [activeBounds.x, activeBounds.y],
+            [activeBounds.x + activeBounds.width, activeBounds.y],
+            [activeBounds.x, activeBounds.y + activeBounds.height],
+            [activeBounds.x + activeBounds.width, activeBounds.y + activeBounds.height]
+          ].map(([x, y]) => (
+            <rect
+              key={`${x}-${y}`}
+              className="bitmap-selection-handle"
+              x={x * scaleX - 4}
+              y={y * scaleY - 4}
+              width={8}
+              height={8}
+            />
+          ))}
+        </>
+      ) : null}
+    </svg>
+  );
+};
+
+const buildOverlaySelection = (draft: BitmapSelectionDraft): BitmapSelection | undefined => {
+  const points =
+    draft.mode === "rectangle" && draft.points.length >= 2
+      ? [
+          draft.points[0],
+          { x: draft.points[1].x, y: draft.points[0].y },
+          draft.points[1],
+          { x: draft.points[0].x, y: draft.points[1].y }
+        ]
+      : draft.points;
+  const bounds = bitmapSelectionBounds(points);
+  return bounds ? { mode: draft.mode, points, bounds } : undefined;
+};
 
 const canvasSizeForShot = (shot: Shot): CanvasSize => {
   const width = shot.swb?.canvasWidth;
@@ -1912,6 +2391,7 @@ type ShotCardProps = {
   folderPath?: string;
   isSelected: boolean;
   activeSketchTool: SketchTool;
+  selectionMode: BitmapSelectionMode;
   brushColor: string;
   brushOpacity: number;
   brushSize: number;
@@ -1920,11 +2400,36 @@ type ShotCardProps = {
   onionSkinPreviousShot?: Shot;
   onionSkinNextShot?: Shot;
   editingDialogueId?: string;
+  isLayerPanelOpen: boolean;
+  thumbnailRevision: number;
   onSelect: (event: MouseEvent) => void;
+  onFocusShot: () => void;
+  onStageWheel: (deltaY: number) => void;
+  onToggleLayerPanel: () => void;
+  onAddLayer: (shotId: string) => void;
+  onRemoveLayer: (shotId: string, layerId: string) => void;
+  onClearLayer: (shotId: string, layerId: string) => void;
+  onSelectLayer: (shotId: string, layerId: string) => void;
+  onUpdateLayer: (
+    shotId: string,
+    layerId: string,
+    patch: Partial<Pick<BitmapLayer, "name" | "visible" | "locked" | "opacity" | "blendMode">>
+  ) => void;
+  onMoveLayer: (
+    shotId: string,
+    layerId: string,
+    targetLayerId: string,
+    placement: "before" | "after"
+  ) => void;
   onCreateDialogue: (shotId: string) => void;
   onDialogueText: (dialogueId: string, text: string) => void;
   onDialogueBlur: (dialogue: Dialogue) => void;
-  onSketchStroke: (layerId: string, stroke: SketchStroke) => void;
+  onSketchStroke: (
+    layerId: string,
+    stroke: SketchStroke,
+    renderedDataUrl?: string
+  ) => Promise<string | undefined>;
+  onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
 };
 
 const ShotCard = ({
@@ -1934,6 +2439,7 @@ const ShotCard = ({
   folderPath,
   isSelected,
   activeSketchTool,
+  selectionMode,
   brushColor,
   brushOpacity,
   brushSize,
@@ -1942,12 +2448,25 @@ const ShotCard = ({
   onionSkinPreviousShot,
   onionSkinNextShot,
   editingDialogueId,
+  isLayerPanelOpen,
+  thumbnailRevision,
   onSelect,
+  onFocusShot,
+  onStageWheel,
+  onToggleLayerPanel,
+  onAddLayer,
+  onRemoveLayer,
+  onClearLayer,
+  onSelectLayer,
+  onUpdateLayer,
+  onMoveLayer,
   onCreateDialogue,
   onDialogueText,
   onDialogueBlur,
-  onSketchStroke
+  onSketchStroke,
+  onSelectionTransform
 }: ShotCardProps) => {
+  const [isLayerPanelRendered, setIsLayerPanelRendered] = useState(isLayerPanelOpen);
   const sortable = useSortable({
     id: shot.id,
     data: { type: "shot", shotId: shot.id } satisfies DragData
@@ -1957,17 +2476,28 @@ const ShotCard = ({
     data: { type: "drop-zone", shotId: shot.id } satisfies DragData
   });
   const dialogues = dialoguesForShot(project, shot.id);
+  const isLayerPanelVisible = isLayerPanelOpen || isLayerPanelRendered;
   const style = {
     transform: CSS.Transform.toString(sortable.transform),
     transition: sortable.transition
   };
+
+  useEffect(() => {
+    if (isLayerPanelOpen) {
+      setIsLayerPanelRendered(true);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setIsLayerPanelRendered(false), 140);
+    return () => window.clearTimeout(timeout);
+  }, [isLayerPanelOpen]);
 
   return (
     <article
       ref={sortable.setNodeRef}
       className={`shot-card ${sortable.isDragging ? "is-dragging" : ""} ${
         isSelected ? "is-selected" : ""
-      }`}
+      } ${isLayerPanelVisible ? "has-layer-panel-open" : ""}`}
       style={style}
       data-shot-id={shot.id}
       onClick={onSelect}
@@ -1983,22 +2513,42 @@ const ShotCard = ({
         >
           #{String(index + 1).padStart(3, "0")}
         </button>
-        <span title={shot.fileName}>{shot.fileName}</span>
+        <span aria-label="Shot summary placeholder" />
       </div>
 
-      <SketchPad
-        shot={shot}
-        folderPath={folderPath}
-        tool={activeSketchTool}
-        brushColor={brushColor}
-        brushOpacity={brushOpacity}
-        brushSize={brushSize}
-        eraserOpacity={eraserOpacity}
-        eraserSize={eraserSize}
-        onionSkinPreviousShot={onionSkinPreviousShot}
-        onionSkinNextShot={onionSkinNextShot}
-        onStroke={onSketchStroke}
-      />
+      <div className={`shot-image-shell ${isLayerPanelVisible ? "has-layer-panel" : ""}`}>
+        <SketchPad
+          shot={shot}
+          folderPath={folderPath}
+          tool={activeSketchTool}
+          selectionMode={selectionMode}
+          brushColor={brushColor}
+          brushOpacity={brushOpacity}
+          brushSize={brushSize}
+          eraserOpacity={eraserOpacity}
+          eraserSize={eraserSize}
+          onionSkinPreviousShot={onionSkinPreviousShot}
+          onionSkinNextShot={onionSkinNextShot}
+          onStroke={onSketchStroke}
+          onSelectionTransform={onSelectionTransform}
+          onFocusShot={onFocusShot}
+          onWheel={onStageWheel}
+        />
+        <LayerPanel
+          shot={shot}
+          folderPath={folderPath}
+          thumbnailRevision={thumbnailRevision}
+          isOpen={isLayerPanelOpen}
+          isRendered={isLayerPanelVisible}
+          onToggle={onToggleLayerPanel}
+          onAddLayer={onAddLayer}
+          onRemoveLayer={onRemoveLayer}
+          onClearLayer={onClearLayer}
+          onSelectLayer={onSelectLayer}
+          onUpdateLayer={onUpdateLayer}
+          onMoveLayer={onMoveLayer}
+        />
+      </div>
 
       <div
         ref={dropZone.setNodeRef}
@@ -2146,6 +2696,7 @@ type SketchPadProps = {
   shot: Shot;
   folderPath?: string;
   tool: SketchTool;
+  selectionMode: BitmapSelectionMode;
   brushColor: string;
   brushOpacity: number;
   brushSize: number;
@@ -2153,13 +2704,21 @@ type SketchPadProps = {
   eraserSize: number;
   onionSkinPreviousShot?: Shot;
   onionSkinNextShot?: Shot;
-  onStroke: (layerId: string, stroke: SketchStroke) => void;
+  onStroke: (
+    layerId: string,
+    stroke: SketchStroke,
+    renderedDataUrl?: string
+  ) => Promise<string | undefined>;
+  onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onFocusShot: () => void;
+  onWheel: (deltaY: number) => void;
 };
 
 const SketchPad = ({
   shot,
   folderPath,
   tool,
+  selectionMode,
   brushColor,
   brushOpacity,
   brushSize,
@@ -2167,13 +2726,28 @@ const SketchPad = ({
   eraserSize,
   onionSkinPreviousShot,
   onionSkinNextShot,
-  onStroke
+  onStroke,
+  onSelectionTransform,
+  onFocusShot,
+  onWheel
 }: SketchPadProps) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [draftStroke, setDraftStroke] = useState<SketchStroke | undefined>();
   const [stageSize, setStageSize] = useState(sketchCanvasSize);
   const imageStageRef = useRef<HTMLDivElement | null>(null);
+  const isDrawingRef = useRef(false);
   const draftStrokeRef = useRef<SketchStroke | undefined>(undefined);
+  const draftStrokeRenderFrameRef = useRef<number | undefined>(undefined);
+  const pendingDraftStrokeRef = useRef<SketchStroke | undefined>(undefined);
+  const liveBitmapCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
+  const liveBitmapLayerIdRef = useRef<string | undefined>(undefined);
+  const liveBitmapEditRunRef = useRef(0);
+  const transformPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const bitmapSelectionRef = useRef<BitmapSelection | undefined>(undefined);
+  const selectionDraftRef = useRef<BitmapSelectionDraft | undefined>(undefined);
+  const transformDraftRef = useRef<BitmapTransformDraft | undefined>(undefined);
+  const preparedTransformRef = useRef<PreparedBitmapTransform | undefined>(undefined);
+  const transformPrepareRunRef = useRef(0);
   const imageSrc = window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath);
   const canvasSize = useMemo(() => canvasSizeForShot(shot), [shot]);
   const bitmapLayers = useMemo(() => bitmapLayersForShot(shot), [shot]);
@@ -2183,10 +2757,45 @@ const SketchPad = ({
   );
   const activeDrawingLayerId = activeLayer?.id ?? imageBitmapLayerId;
   const [layerDataUrls, setLayerDataUrls] = useState<Record<string, string>>({});
+  const [liveBitmapLayerId, setLiveBitmapLayerId] = useState<string | undefined>();
+  const [bitmapSelection, setBitmapSelection] = useState<BitmapSelection | undefined>();
+  const [selectionDraft, setSelectionDraft] = useState<BitmapSelectionDraft | undefined>();
+  const [transformDraft, setTransformDraft] = useState<BitmapTransformDraft | undefined>();
+  const [isTransformPreviewReady, setIsTransformPreviewReady] = useState(false);
 
   useEffect(() => {
     draftStrokeRef.current = draftStroke;
   }, [draftStroke]);
+
+  useEffect(
+    () => () => {
+      if (draftStrokeRenderFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(draftStrokeRenderFrameRef.current);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    clearBitmapSelectionState();
+  }, [activeDrawingLayerId, selectionMode, shot.id]);
+
+  useEffect(() => {
+    if (tool !== "select") {
+      clearBitmapSelectionState();
+    }
+  }, [tool]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        clearBitmapSelectionState();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2242,19 +2851,41 @@ const SketchPad = ({
   }, []);
 
   useEffect(() => {
+    const element = imageStageRef.current;
+    if (!element) {
+      return;
+    }
+
+    const handleWheel = (event: globalThis.WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onWheel(event.deltaY);
+    };
+
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, [onWheel]);
+
+  useEffect(() => {
     if (!isDrawing) {
       return;
     }
 
     const finishGlobalStroke = () => {
-      const currentStroke = draftStrokeRef.current;
-      if (currentStroke && currentStroke.points.length >= 4) {
-        onStroke(activeDrawingLayerId, currentStroke);
+      if (tool === "select") {
+        void finishBitmapSelection();
+        updateDrawingState(false);
+        return;
       }
 
-      setIsDrawing(false);
-      setDraftStroke(undefined);
-      draftStrokeRef.current = undefined;
+      const currentStroke = draftStrokeRef.current;
+      if (currentStroke && currentStroke.points.length >= 4) {
+        void commitStroke(activeDrawingLayerId, currentStroke);
+      } else {
+        clearDraftStroke();
+      }
+
+      updateDrawingState(false);
     };
 
     window.addEventListener("mouseup", finishGlobalStroke, { once: true });
@@ -2264,7 +2895,315 @@ const SketchPad = ({
       window.removeEventListener("mouseup", finishGlobalStroke);
       window.removeEventListener("touchend", finishGlobalStroke);
     };
-  }, [activeDrawingLayerId, isDrawing, onStroke]);
+  }, [activeDrawingLayerId, isDrawing, onStroke, tool, selectionDraft, transformDraft, bitmapSelection]);
+
+  const commitStroke = async (layerId: string, stroke: SketchStroke) => {
+    try {
+      const renderedDataUrl =
+        stroke.tool === "eraser" && liveBitmapLayerIdRef.current === layerId
+          ? liveBitmapCanvasRefs.current[layerId]?.toDataURL("image/png")
+          : undefined;
+      const dataUrl = await onStroke(layerId, stroke, renderedDataUrl);
+      if (dataUrl) {
+        setLayerDataUrls((current) => ({ ...current, [layerId]: dataUrl }));
+      }
+    } finally {
+      if (draftStrokeRef.current?.id === stroke.id) {
+        clearDraftStroke();
+      }
+      clearLiveBitmapEdit();
+    }
+  };
+
+  const scheduleDraftStrokeRender = (stroke: SketchStroke) => {
+    pendingDraftStrokeRef.current = stroke;
+    if (draftStrokeRenderFrameRef.current !== undefined) {
+      return;
+    }
+
+    draftStrokeRenderFrameRef.current = window.requestAnimationFrame(() => {
+      draftStrokeRenderFrameRef.current = undefined;
+      setDraftStroke(pendingDraftStrokeRef.current);
+    });
+  };
+
+  const clearDraftStroke = () => {
+    if (draftStrokeRenderFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(draftStrokeRenderFrameRef.current);
+      draftStrokeRenderFrameRef.current = undefined;
+    }
+
+    pendingDraftStrokeRef.current = undefined;
+    setDraftStroke(undefined);
+    draftStrokeRef.current = undefined;
+  };
+
+  const updateDrawingState = (drawing: boolean) => {
+    isDrawingRef.current = drawing;
+    setIsDrawing(drawing);
+  };
+
+  const updateBitmapSelectionState = (selection: BitmapSelection | undefined) => {
+    bitmapSelectionRef.current = selection;
+    setBitmapSelection(selection);
+  };
+
+  const updateSelectionDraftState = (draft: BitmapSelectionDraft | undefined) => {
+    selectionDraftRef.current = draft;
+    setSelectionDraft(draft);
+  };
+
+  const updateTransformDraftState = (draft: BitmapTransformDraft | undefined) => {
+    transformDraftRef.current = draft;
+    setTransformDraft(draft);
+  };
+
+  const clearBitmapSelectionState = () => {
+    updateBitmapSelectionState(undefined);
+    updateSelectionDraftState(undefined);
+    updateTransformDraftState(undefined);
+    clearPreparedTransform();
+  };
+
+  const clearPreparedTransform = () => {
+    transformPrepareRunRef.current += 1;
+    preparedTransformRef.current = undefined;
+    setIsTransformPreviewReady(false);
+    const previewCanvas = transformPreviewCanvasRef.current;
+    previewCanvas?.getContext("2d")?.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+  };
+
+  const layerSourceUrl = (layer: BitmapLayer) =>
+    layerDataUrls[layer.id] ?? (layer.kind === "image" && !layer.cleared ? imageSrc : undefined);
+
+  const prepareLiveBitmapEdit = async (layer: BitmapLayer) => {
+    const editRun = liveBitmapEditRunRef.current + 1;
+    liveBitmapEditRunRef.current = editRun;
+    const canvas = liveBitmapCanvasRefs.current[layer.id];
+    const context = canvas?.getContext("2d");
+
+    if (!canvas || !context) {
+      return;
+    }
+
+    canvas.width = Math.max(1, Math.round(layer.width));
+    canvas.height = Math.max(1, Math.round(layer.height));
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
+    const sourceUrl = layerSourceUrl(layer);
+    if (sourceUrl) {
+      await drawImageUrl(context, sourceUrl, canvas.width, canvas.height).catch(() => {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+      });
+    }
+
+    if (liveBitmapEditRunRef.current !== editRun || draftStrokeRef.current?.tool !== "eraser") {
+      return;
+    }
+
+    liveBitmapLayerIdRef.current = layer.id;
+    setLiveBitmapLayerId(layer.id);
+
+    const currentStroke = draftStrokeRef.current;
+    if (currentStroke?.tool === "eraser" && currentStroke.points.length >= 4) {
+      drawStrokePathOnCanvas(context, currentStroke);
+    }
+  };
+
+  const drawLiveBitmapSegment = (stroke: SketchStroke) => {
+    if (stroke.tool !== "eraser" || !activeLayer || liveBitmapLayerIdRef.current !== activeLayer.id) {
+      return;
+    }
+
+    const segment = latestStrokeSegment(stroke);
+    const canvas = liveBitmapCanvasRefs.current[activeLayer.id];
+    const context = canvas?.getContext("2d");
+
+    if (!segment || !context) {
+      return;
+    }
+
+    drawStrokePathOnCanvas(context, stroke, segment);
+  };
+
+  const clearLiveBitmapEdit = () => {
+    liveBitmapEditRunRef.current += 1;
+    liveBitmapLayerIdRef.current = undefined;
+    setLiveBitmapLayerId(undefined);
+  };
+
+  const buildBitmapSelection = (draft: BitmapSelectionDraft): BitmapSelection | undefined => {
+    const points =
+      draft.mode === "rectangle" && draft.points.length >= 2
+        ? [
+            draft.points[0],
+            { x: draft.points[1].x, y: draft.points[0].y },
+            draft.points[1],
+            { x: draft.points[0].x, y: draft.points[1].y }
+          ]
+        : draft.points;
+    const bounds = bitmapSelectionBounds(points);
+
+    if (!bounds || bounds.width < 2 || bounds.height < 2) {
+      return undefined;
+    }
+
+    return { mode: draft.mode, points, bounds };
+  };
+
+  const drawSelectionMask = (
+    context: CanvasRenderingContext2D,
+    selection: BitmapSelection,
+    offset: Point = { x: 0, y: 0 }
+  ) => {
+    context.beginPath();
+    selection.points.forEach((point, index) => {
+      const x = point.x - offset.x;
+      const y = point.y - offset.y;
+      if (index === 0) {
+        context.moveTo(x, y);
+      } else {
+        context.lineTo(x, y);
+      }
+    });
+    context.closePath();
+  };
+
+  const prepareTransformPreview = async (selection: BitmapSelection) => {
+    if (!activeLayer) {
+      return;
+    }
+
+    const prepareRun = transformPrepareRunRef.current + 1;
+    transformPrepareRunRef.current = prepareRun;
+    setIsTransformPreviewReady(false);
+
+    const previewCanvas = transformPreviewCanvasRef.current;
+    const previewContext = previewCanvas?.getContext("2d");
+    if (!previewCanvas || !previewContext) {
+      return;
+    }
+
+    const canvasWidth = Math.max(1, Math.round(activeLayer.width));
+    const canvasHeight = Math.max(1, Math.round(activeLayer.height));
+    if (previewCanvas.width !== canvasWidth) {
+      previewCanvas.width = canvasWidth;
+    }
+    if (previewCanvas.height !== canvasHeight) {
+      previewCanvas.height = canvasHeight;
+    }
+
+    const sourceUrl = layerSourceUrl(activeLayer);
+    const sourceCanvas = document.createElement("canvas");
+    sourceCanvas.width = canvasWidth;
+    sourceCanvas.height = canvasHeight;
+    const sourceContext = sourceCanvas.getContext("2d");
+    if (!sourceContext) {
+      return;
+    }
+
+    if (sourceUrl) {
+      await drawImageUrl(sourceContext, sourceUrl, sourceCanvas.width, sourceCanvas.height).catch(() => {
+        sourceContext.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+      });
+    }
+
+    const sourcePatch = document.createElement("canvas");
+    sourcePatch.width = Math.max(1, Math.round(selection.bounds.width));
+    sourcePatch.height = Math.max(1, Math.round(selection.bounds.height));
+    const sourcePatchContext = sourcePatch.getContext("2d");
+    if (!sourcePatchContext) {
+      return;
+    }
+
+    sourcePatchContext.save();
+    drawSelectionMask(sourcePatchContext, selection, selection.bounds);
+    sourcePatchContext.clip();
+    sourcePatchContext.drawImage(
+      sourceCanvas,
+      selection.bounds.x,
+      selection.bounds.y,
+      selection.bounds.width,
+      selection.bounds.height,
+      0,
+      0,
+      sourcePatch.width,
+      sourcePatch.height
+    );
+    sourcePatchContext.restore();
+
+    if (transformPrepareRunRef.current !== prepareRun || !transformDraftRef.current) {
+      return;
+    }
+
+    preparedTransformRef.current = {
+      layerId: activeLayer.id,
+      selection,
+      sourceCanvas,
+      patchCanvas: sourcePatch
+    };
+    drawPreparedTransformPreview(transformDraftRef.current.currentBounds);
+    setIsTransformPreviewReady(true);
+  };
+
+  const drawPreparedTransformPreview = (targetBounds: Bounds): string | undefined => {
+    const preparedTransform = preparedTransformRef.current;
+    const previewCanvas = transformPreviewCanvasRef.current;
+    const previewContext = previewCanvas?.getContext("2d");
+
+    if (!preparedTransform || !previewCanvas || !previewContext) {
+      return undefined;
+    }
+
+    previewContext.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+    previewContext.drawImage(preparedTransform.sourceCanvas, 0, 0);
+    previewContext.save();
+    previewContext.globalCompositeOperation = "destination-out";
+    drawSelectionMask(previewContext, preparedTransform.selection);
+    previewContext.fill();
+    previewContext.restore();
+    previewContext.drawImage(
+      preparedTransform.patchCanvas,
+      targetBounds.x,
+      targetBounds.y,
+      targetBounds.width,
+      targetBounds.height
+    );
+
+    return previewCanvas.toDataURL("image/png");
+  };
+
+  const commitSelectionTransform = async (targetBounds: Bounds) => {
+    const currentSelection = bitmapSelectionRef.current;
+    if (!currentSelection || !activeLayer || activeLayer.locked) {
+      return;
+    }
+
+    if (!preparedTransformRef.current) {
+      await prepareTransformPreview(currentSelection);
+    }
+
+    const dataUrl = drawPreparedTransformPreview(targetBounds);
+    if (!dataUrl) {
+      return;
+    }
+
+    const writtenDataUrl = await onSelectionTransform(activeLayer.id, dataUrl);
+    if (writtenDataUrl) {
+      setLayerDataUrls((current) => ({ ...current, [activeLayer.id]: writtenDataUrl }));
+    }
+
+    updateBitmapSelectionState({
+      ...currentSelection,
+      bounds: targetBounds,
+      points: [
+        { x: targetBounds.x, y: targetBounds.y },
+        { x: targetBounds.x + targetBounds.width, y: targetBounds.y },
+        { x: targetBounds.x + targetBounds.width, y: targetBounds.y + targetBounds.height },
+        { x: targetBounds.x, y: targetBounds.y + targetBounds.height }
+      ]
+    });
+  };
 
   const getSketchPoint = (event: {
     evt?: globalThis.MouseEvent | globalThis.TouchEvent;
@@ -2303,19 +3242,69 @@ const SketchPad = ({
       return;
     }
 
-    setIsDrawing(true);
+    if (tool === "select") {
+      beginBitmapSelection(position);
+      return;
+    }
+
+    updateDrawingState(true);
+    const strokeTool: StrokeTool = tool;
     const toolSize = tool === "eraser" ? eraserSize : brushSize;
     const canvasScale = canvasSize.width / sketchCanvasSize.width;
     const nextStroke = {
       id: crypto.randomUUID(),
-      tool,
+      tool: strokeTool,
       color: tool === "eraser" ? "#ffffff" : brushColor,
       opacity: tool === "eraser" ? eraserOpacity : brushOpacity,
       size: toolSize * canvasScale,
       points: [position.x, position.y]
     };
     draftStrokeRef.current = nextStroke;
-    setDraftStroke(nextStroke);
+    if (shouldRenderLiveStroke(nextStroke)) {
+      setDraftStroke(nextStroke);
+    } else if (tool === "eraser" && activeLayer) {
+      void prepareLiveBitmapEdit(activeLayer);
+    }
+  };
+
+  const beginBitmapSelection = (position: Point) => {
+    const currentSelection = bitmapSelectionRef.current;
+    if (currentSelection) {
+      const hit = bitmapSelectionHitTarget(position, currentSelection.bounds, 8);
+      if (hit.type === "move") {
+        const nextTransform = {
+          type: "move",
+          startPoint: position,
+          startBounds: currentSelection.bounds,
+          currentBounds: currentSelection.bounds
+        } satisfies BitmapTransformDraft;
+        updateTransformDraftState(nextTransform);
+        updateDrawingState(true);
+        void prepareTransformPreview(currentSelection);
+        return;
+      }
+
+      if (hit.type === "scale") {
+        const nextTransform = {
+          type: "scale",
+          corner: hit.corner,
+          startPoint: position,
+          startBounds: currentSelection.bounds,
+          currentBounds: currentSelection.bounds
+        } satisfies BitmapTransformDraft;
+        updateTransformDraftState(nextTransform);
+        updateDrawingState(true);
+        void prepareTransformPreview(currentSelection);
+        return;
+      }
+
+      updateBitmapSelectionState(undefined);
+    }
+
+    const nextDraft = { mode: selectionMode, points: [position] };
+    updateSelectionDraftState(nextDraft);
+    updateTransformDraftState(undefined);
+    updateDrawingState(true);
   };
 
   const extendStroke = (event: {
@@ -2325,7 +3314,7 @@ const SketchPad = ({
     event.evt?.preventDefault();
     event.evt?.stopPropagation();
 
-    if (!isDrawing || !draftStrokeRef.current) {
+    if (!isDrawingRef.current || (tool !== "select" && !draftStrokeRef.current)) {
       return;
     }
 
@@ -2335,29 +3324,111 @@ const SketchPad = ({
       return;
     }
 
+    if (tool === "select") {
+      extendBitmapSelection(position);
+      return;
+    }
+
+    const currentStroke = draftStrokeRef.current;
+    if (!currentStroke) {
+      return;
+    }
+
+    const toolSize = currentStroke.tool === "eraser" ? eraserSize : brushSize;
+    const canvasScale = canvasSize.width / sketchCanvasSize.width;
+    const minPointDistance =
+      currentStroke.tool === "eraser" ? Math.max(3, toolSize * canvasScale * 0.25) : 1;
+    if (!shouldAppendStrokePoint(currentStroke, position, minPointDistance)) {
+      return;
+    }
+
     const nextStroke = {
-      ...draftStrokeRef.current,
-      points: [...draftStrokeRef.current.points, position.x, position.y]
+      ...currentStroke,
+      points: [...currentStroke.points, position.x, position.y]
     };
     draftStrokeRef.current = nextStroke;
-    setDraftStroke(nextStroke);
+    if (shouldRenderLiveStroke(nextStroke)) {
+      scheduleDraftStrokeRender(nextStroke);
+    } else {
+      drawLiveBitmapSegment(nextStroke);
+    }
+  };
+
+  const extendBitmapSelection = (position: Point) => {
+    const currentTransform = transformDraftRef.current;
+    if (currentTransform) {
+      const nextBounds =
+        currentTransform.type === "move"
+          ? {
+              ...currentTransform.startBounds,
+              x: currentTransform.startBounds.x + position.x - currentTransform.startPoint.x,
+              y: currentTransform.startBounds.y + position.y - currentTransform.startPoint.y
+            }
+          : scaleBitmapSelectionBounds(
+              currentTransform.startBounds,
+              currentTransform.corner ?? "se",
+              position
+            );
+      updateTransformDraftState({ ...currentTransform, currentBounds: nextBounds });
+      const currentSelection = bitmapSelectionRef.current;
+      if (currentSelection && preparedTransformRef.current) {
+        drawPreparedTransformPreview(nextBounds);
+      }
+      return;
+    }
+
+    const currentDraft = selectionDraftRef.current;
+    if (!currentDraft) {
+      return;
+    }
+
+    const nextDraft =
+      currentDraft.mode === "rectangle"
+        ? { ...currentDraft, points: [currentDraft.points[0], position] }
+        : { ...currentDraft, points: [...currentDraft.points, position] };
+    updateSelectionDraftState(nextDraft);
   };
 
   const finishStroke = () => {
-    const currentStroke = draftStrokeRef.current;
-    if (currentStroke && currentStroke.points.length >= 4) {
-      onStroke(activeDrawingLayerId, currentStroke);
+    if (tool === "select") {
+      void finishBitmapSelection();
+      updateDrawingState(false);
+      return;
     }
 
-    setIsDrawing(false);
-    setDraftStroke(undefined);
-    draftStrokeRef.current = undefined;
+    const currentStroke = draftStrokeRef.current;
+    if (currentStroke && currentStroke.points.length >= 4) {
+      void commitStroke(activeDrawingLayerId, currentStroke);
+    } else {
+      clearDraftStroke();
+    }
+
+    updateDrawingState(false);
+  };
+
+  const finishBitmapSelection = async () => {
+    const currentTransform = transformDraftRef.current;
+    if (currentTransform) {
+      await commitSelectionTransform(currentTransform.currentBounds);
+      updateTransformDraftState(undefined);
+      clearPreparedTransform();
+      return;
+    }
+
+    const currentDraft = selectionDraftRef.current;
+    if (currentDraft) {
+      updateBitmapSelectionState(buildBitmapSelection(currentDraft));
+      updateSelectionDraftState(undefined);
+    }
   };
 
   return (
     <div
       className="sketch-panel"
-      onMouseDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => {
+        onFocusShot();
+        event.stopPropagation();
+      }}
       onClick={(event) => event.stopPropagation()}
     >
       <div
@@ -2369,22 +3440,45 @@ const SketchPad = ({
         {bitmapLayers
           .filter((layer) => layer.visible)
           .map((layer) => {
-            const layerSrc =
-              layerDataUrls[layer.id] ?? (layer.kind === "image" && !layer.cleared ? imageSrc : undefined);
+            const layerSrc = layerSourceUrl(layer);
+            const isLiveBitmapLayer = liveBitmapLayerId === layer.id;
+            const isTransformingLayer =
+              transformDraft && isTransformPreviewReady && activeLayer?.id === layer.id;
+            const layerStyle: CSSProperties = {
+              opacity: layer.opacity,
+              mixBlendMode: cssBlendMode(layer.blendMode)
+            };
 
-            return layerSrc ? (
-              <img
-                key={layer.id}
-                src={layerSrc}
-                alt=""
-                draggable={false}
-                style={{
-                  opacity: layer.opacity,
-                  mixBlendMode: cssBlendMode(layer.blendMode)
-                }}
-              />
-            ) : null;
+            return (
+              <Fragment key={layer.id}>
+                {layerSrc && !isLiveBitmapLayer && !isTransformingLayer ? (
+                  <img src={layerSrc} alt="" draggable={false} style={layerStyle} />
+                ) : null}
+                <canvas
+                  ref={(element) => {
+                    liveBitmapCanvasRefs.current[layer.id] = element;
+                  }}
+                  className="live-bitmap-canvas"
+                  style={{
+                    ...layerStyle,
+                    display: isLiveBitmapLayer ? "block" : "none"
+                  }}
+                />
+              </Fragment>
+            );
           })}
+        <canvas
+          ref={transformPreviewCanvasRef}
+          className="selection-transform-canvas"
+          style={{ display: transformDraft && isTransformPreviewReady ? "block" : "none" }}
+        />
+        <BitmapSelectionOverlay
+          selection={bitmapSelection}
+          draft={selectionDraft}
+          transformBounds={transformDraft?.currentBounds}
+          stageSize={stageSize}
+          canvasSize={canvasSize}
+        />
         <OnionSkinOverlay
           previousShot={onionSkinPreviousShot}
           nextShot={onionSkinNextShot}

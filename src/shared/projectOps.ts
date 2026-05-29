@@ -621,32 +621,50 @@ export const createImageBitmapLayer = (
 
 export const bitmapLayersForShot = (shot: Shot): BitmapLayer[] => {
   return normalizeBitmapLayerOrder(
-    [...(shot.layers ?? [])].sort((a, b) => {
-      if (a.kind === "image" && b.kind !== "image") {
-        return -1;
-      }
-
-      if (a.kind !== "image" && b.kind === "image") {
-        return 1;
-      }
-
-      return a.order - b.order;
-    })
+    uniqueBitmapLayers(
+      [...(shot.layers ?? [])].sort((a, b) => a.order - b.order)
+    )
   );
+};
+
+const uniqueBitmapLayers = (layers: BitmapLayer[]): BitmapLayer[] => {
+  const seenIds = new Set<string>();
+  const seenPaths = new Set<string>();
+  const uniqueLayers: BitmapLayer[] = [];
+
+  for (const layer of layers) {
+    if (seenIds.has(layer.id) || seenPaths.has(layer.bitmapPath)) {
+      continue;
+    }
+
+    seenIds.add(layer.id);
+    seenPaths.add(layer.bitmapPath);
+    uniqueLayers.push(layer);
+  }
+
+  return uniqueLayers;
 };
 
 export const ensureBitmapLayerMetadata = (shot: Shot, image?: ImportedImage): Shot => {
   if ((shot.layers?.length ?? 0) > 0) {
+    const layers = bitmapLayersForShot(shot);
+    const repairedLayers =
+      layers.length < (shot.layers?.length ?? 0) &&
+      !layers.some((layer) => layer.kind === "image") &&
+      scannedMetadataHasImageLayer(image)
+        ? [createImageBitmapLayer(shot.id, image?.width ?? shot.swb?.canvasWidth ?? 1920, image?.height ?? shot.swb?.canvasHeight ?? 1080), ...layers]
+        : layers;
+
     return {
       ...shot,
-      layers: bitmapLayersForShot(shot),
-      activeLayerId: shot.activeLayerId ?? bitmapLayersForShot(shot)[0]?.id
+      layers: repairedLayers,
+      activeLayerId: shot.activeLayerId ?? repairedLayers[0]?.id
     };
   }
 
   const width = image?.width ?? shot.swb?.canvasWidth ?? 1920;
   const height = image?.height ?? shot.swb?.canvasHeight ?? 1080;
-  const sketchLayers = sketchLayersForShot(shot);
+  const sketchLayers = sketchLayersForShot(shot).filter((layer) => !isEmptyDefaultSketchLayer(layer));
   const layers: BitmapLayer[] = [
     createImageBitmapLayer(shot.id, width, height),
     ...sketchLayers.map((layer, index) => ({
@@ -671,6 +689,22 @@ export const ensureBitmapLayerMetadata = (shot: Shot, image?: ImportedImage): Sh
   };
 };
 
+const isEmptyDefaultSketchLayer = (layer: SketchLayer): boolean => {
+  return (
+    layer.id === "layer-default" &&
+    layer.name === defaultSketchLayerName &&
+    layer.strokes.length === 0
+  );
+};
+
+const scannedMetadataHasImageLayer = (image?: ImportedImage): boolean => {
+  return Boolean(
+    image?.swbMetadata?.layers.some(
+      (layer) => layer.id === imageBitmapLayerId || (layer as { kind?: string }).kind === "image"
+    )
+  );
+};
+
 export type AddBitmapLayerOptions = {
   id?: string;
   name?: string;
@@ -684,7 +718,7 @@ export const addBitmapLayer = (
   options: AddBitmapLayerOptions
 ): Project => {
   return updateBitmapLayers(project, shotId, (shot, layers) => {
-    const layerId = options.id ?? `layer-${shotId}-${layers.length}`;
+    const layerId = options.id ?? nextBitmapLayerId(shotId, layers);
     const nextLayer: BitmapLayer = {
       id: layerId,
       kind: "paint",
@@ -704,6 +738,19 @@ export const addBitmapLayer = (
       activeLayerId: nextLayer.id
     };
   });
+};
+
+const nextBitmapLayerId = (shotId: string, layers: BitmapLayer[]): string => {
+  const existingIds = new Set(layers.map((layer) => layer.id));
+  let index = layers.length;
+  let layerId = `layer-${shotId}-${index}`;
+
+  while (existingIds.has(layerId)) {
+    index += 1;
+    layerId = `layer-${shotId}-${index}`;
+  }
+
+  return layerId;
 };
 
 export const selectBitmapLayer = (
@@ -749,7 +796,8 @@ export const moveBitmapLayer = (
   project: Project,
   shotId: string,
   layerId: string,
-  targetLayerId: string
+  targetLayerId: string,
+  placement: "before" | "after" = "before"
 ): Project => {
   if (layerId === targetLayerId) {
     return project;
@@ -759,18 +807,23 @@ export const moveBitmapLayer = (
     const movingLayer = layers.find((layer) => layer.id === layerId);
     const targetLayer = layers.find((layer) => layer.id === targetLayerId);
 
-    if (!movingLayer || !targetLayer || movingLayer.kind === "image") {
+    if (!movingLayer || !targetLayer) {
       return { layers, activeLayerId: shot.activeLayerId ?? layers[0]?.id };
     }
 
-    const paintLayers = layers.filter((layer) => layer.kind !== "image" && layer.id !== layerId);
-    const targetIndex = paintLayers.findIndex((layer) => layer.id === targetLayerId);
-    const insertIndex = targetIndex === -1 ? paintLayers.length : targetIndex;
-    const nextPaintLayers = [...paintLayers];
-    nextPaintLayers.splice(insertIndex, 0, movingLayer);
+    const remainingLayers = layers.filter((layer) => layer.id !== layerId);
+    const targetIndex = remainingLayers.findIndex((layer) => layer.id === targetLayerId);
+    const insertIndex =
+      targetIndex === -1
+        ? remainingLayers.length
+        : placement === "after"
+          ? targetIndex + 1
+          : targetIndex;
+    const nextLayers = [...remainingLayers];
+    nextLayers.splice(insertIndex, 0, movingLayer);
 
     return {
-      layers: [...layers.filter((layer) => layer.kind === "image"), ...nextPaintLayers],
+      layers: nextLayers,
       activeLayerId: shot.activeLayerId ?? layers[0]?.id
     };
   });

@@ -6,6 +6,8 @@
 
 ## P1
 
+- [ ] Dogfood bitmap Select tool V1 on real storyboard files; note lasso/rectangle move and scale UX issues before adding more features.
+- [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
 - [ ] Spike PSD-first workflow with `ag-psd`: read Photoshop-created RGB 8-bit raster PSD layers, write SWB raster layers back to PSD, and verify both directions in Photoshop 2026.
 - [ ] Define PSD complex-layer policy for text, smart objects, adjustment layers, shapes, masks, effects, CMYK, 16-bit, and PSB. Recommended v1 default: rasterize unsupported layer types and mark them as such.
 - [ ] Add PSD import layer parsing once the spike proves the library path.
@@ -21,7 +23,7 @@
 - [ ] Consider a dedicated select/hand/draw tool mode if drawing, selecting, and dragging conflict in real use.
 - [ ] Review whether `electron/preload/preload.cjs` should continue to be manually maintained or generated from TypeScript.
 - [ ] Consider opacity controls for Onion Skin if fixed red/green ghost strength feels too strong or too weak.
-- [ ] Consider a real select/transform tool only after bitmap layer model is stable.
+- [ ] Consider code splitting or manual chunks if the existing Vite chunk-size warning becomes noisy or affects startup.
 
 ## Completed
 
@@ -67,6 +69,25 @@
 - [x] Image layer delete now behaves like normal layer delete when another layer remains; smoke verifies metadata removal, PNG asset deletion, Save output, and reopen persistence.
 - [x] Photoshop layered TIFF spike generated a Photoshop 2026-readable layered TIFF with `psdtags + tifffile`.
 - [x] Photoshop 2026 verification confirmed the layered TIFF opens with two layers; sharp/libvips standard multi-page TIFF opened as one background layer.
+- [x] Added bitmap Select tool V1 with lasso and rectangle selection, active-layer move, corner scale, transient marching-ants UI, and undo snapshots.
+- [x] Added geometry/unit coverage for bitmap selection bounds, hit testing, scaling, row drag intent, opacity mapping, row placement, and blend menu direction.
+- [x] Added live eraser bitmap preview during pointer movement.
+- [x] Restricted brush/eraser/select right-click settings menus to the storyboard image stage.
+- [x] Added five custom brush color swatches with click-to-pick and double-click color picker.
+- [x] Fixed paint layer creation so new layers stay transparent.
+- [x] Made Image layer reorderable like ordinary bitmap layers.
+- [x] Fixed layer thumbnails to show actual bitmap layer PNG content.
+- [x] Moved blend mode controls into per-row colored dots and verified normal/multiply/screen metadata and stage preview.
+- [x] Added layer row gestures: vertical drag reorders, horizontal drag adjusts opacity, with row opacity fill visualization.
+- [x] Kept layer rows fixed height and added dragged-row preview while reordering.
+- [x] Verified layer drag-to-bottom through the panel blank area in smoke.
+- [x] Replaced the global Layers popover with a per-shot click-toggle layer drawer aligned beside the storyboard image.
+- [x] Removed the experimental pointer-drag open/close behavior for the layer drawer; click toggle remains.
+- [x] Made top status bar and tool rail sticky while scrolling.
+- [x] Reduced top bar and shot header height; removed raw source filename display from shot headers.
+- [x] Added mouse-wheel zoom over the storyboard image stage.
+- [x] Restyled and repositioned the status/info button to be smaller and less urgent.
+- [x] Expanded `npm run smoke:bitmap` to cover layer drawer click toggle, thumbnails, blend menu direction, opacity drag, layer row drag preview, selection move/scale, eraser preview, right-click stage scoping, and wheel zoom.
 
 ## Out Of Scope For Current MVP
 

@@ -1,10 +1,12 @@
-export type SketchTool = "brush" | "eraser";
+export type SketchTool = "brush" | "eraser" | "select";
+export type StrokeTool = "brush" | "eraser";
+export type BitmapSelectionMode = "lasso" | "rectangle";
 export type SketchBlendMode = "normal" | "multiply" | "screen";
 export type BitmapBlendMode = "normal" | "multiply" | "screen";
 
 export type SketchStroke = {
   id: string;
-  tool: SketchTool;
+  tool: StrokeTool;
   color: string;
   opacity?: number;
   size: number;
