@@ -64,6 +64,7 @@
 - [x] Electron CDP smoke verified mixed 16:9 / 2.39:1 / 1.43:1 animation stage ratios and high-zoom timeline visibility.
 - [x] Electron CDP smoke verified Onion Skin animation-only toggle, previous/next ghost filters, left/right neighbor refresh, and current-shot drawing isolation.
 - [x] Electron CDP smoke verified legacy `imageLayerEdits` and `sketchLayers` migrate into visible bitmap layer PNG assets.
+- [x] Electron CDP smoke verified Add Shot creates a blank TIFF and updates the storyboard UI and metadata.
 
 ## Out Of Scope For Current MVP
 

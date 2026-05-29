@@ -752,6 +752,31 @@ try {
     throw new Error(`Animation/onion skin check failed: ${JSON.stringify(animationChecks)}`);
   }
 
+  const addShotUiCount = await evaluate(`
+    (async () => {
+      const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const beforeCount = document.querySelectorAll("[data-shot-id]").length;
+      const addShotButton = Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent.trim() === "Add Shot");
+      addShotButton.click();
+
+      for (let index = 0; index < 30 && document.querySelectorAll("[data-shot-id]").length !== beforeCount + 1; index += 1) {
+        await delay(100);
+      }
+
+      return document.querySelectorAll("[data-shot-id]").length;
+    })()
+  `);
+  if (addShotUiCount !== 4) {
+    throw new Error(`Add Shot did not update the storyboard UI: ${addShotUiCount}`);
+  }
+
+  await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const tiffFiles = await findTiffFiles(smokeRoot);
+    return project.shots?.length === 4 && tiffFiles.length === 4 ? project : undefined;
+  }, "Add Shot metadata and TIFF file");
+
   await openFolder(legacyRoot);
   const legacyProject = await waitFor(async () => {
     const project = await readProjectMetadata(legacyRoot);
@@ -810,6 +835,7 @@ try {
         reopenedHash,
         reopenedPaintHash,
         animationChecks,
+        addShotUiCount,
         legacyMigration: {
           layerIds: legacyProject.shots[0].layers.map((layer) => layer.id),
           legacyImageLayerHash,
