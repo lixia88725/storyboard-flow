@@ -112,9 +112,15 @@ Reason: bitmap layer pixels are no longer recoverable from JSON alone, so undo m
 
 ## Image Layer Behaves Like A Normal Layer In UI
 
-`Image` 层固定在最底部，但可选中、绘制、擦除；选中 Image 时 `Delete current layer` 删除其当前可见内容而不是删除 shot 或真实文件。
+`Image` 层固定在最底部，但可选中、绘制、擦除；如果当前 shot 还有其他图层，选中 Image 时 `Delete current layer` 会删除 Image layer metadata 和内部 `layer-image.png`。如果只剩一个 Image layer，删除按钮禁用。删除 Image layer 不会立刻移动或删除真实原图；真实文件仍只在 Save/import 边界处理。
 
 Reason: 原文件已有 Archive 和 Save 边界保护，用户在绘图时应获得所见即所得的普通图层体验。
+
+## Photoshop Interop Stays Separate From Internal Working Data
+
+SWB 内部工作格式继续使用 `.storyboard-workbench/layers/*.png` 加 `storyboard.project.json`。Photoshop 互操作优先作为显式 PSD/export 工作流探索，不直接替代内部 autosave 数据模型。
+
+Reason: Photoshop PSD/TIFF 图层格式适合作为交换格式，但不适合作为 V1 的内部事务日志。PNG layer assets + JSON 更容易做 autosave、undo/redo、迁移和安全恢复。
 
 ## Legacy Strokes Are Migration Input
 
@@ -122,7 +128,7 @@ Reason: 原文件已有 Archive 和 Save 边界保护，用户在绘图时应获
 
 Reason: 迁移必须保护旧项目可见结果，同时避免新代码继续扩展两套绘图主数据。
 
-Non-goal: bitmap layer 重构不代表 Photoshop 图层 round-trip。第一阶段仍只读取 Photoshop TIFF 的可见合成结果，不解析或写回 Photoshop 图层结构。
+Non-goal: bitmap layer 重构不代表 Photoshop 图层 round-trip。Photoshop layered TIFF 已被 spike 证明可行，但尚未产品化；PSD-first 仍是待验证方向。
 
 ## V1 Avoids Heavy Features
 

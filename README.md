@@ -56,6 +56,10 @@ npm run dev
 
 `.storyboard-workbench/storyboard.project.json` 是主数据；TIFF XMP metadata 只是便携快照。兼容的外部 TIFF 像素编辑可以被接受为新的 base，但 V1 不承诺 Photoshop 图层 round-trip。
 
+`docs/photoshop-layered-tiff-spike.md` 记录了一个独立 spike：Python `psdtags + tifffile` 可以生成 Photoshop 2026 识别为多图层的 Photoshop-style layered TIFF；sharp/libvips 标准 multi-page TIFF 不能被 Photoshop 当作图层打开。该 spike 未接入主 Save 流程。
+
+下一阶段讨论方向是 PSD-first Photoshop interoperability：先验证 PSD raster layer import/export，再决定是否作为显式 Photoshop 交换工作流产品化。当前 PSD 支持尚未实现。
+
 ## Storyboard And Animation Mode
 
 - `Add Shot` 可创建白底 TIFF，支持 `16:9`、`2.39:1`、`1.43:1 IMAX`。
@@ -71,5 +75,5 @@ npm run dev
 - PDF or image sequence export.
 - SQLite migration.
 - Cloud sync or collaboration.
-- Photoshop layer round-trip.
-- Full Photoshop-compatible multi-layer TIFF writing.
+- Photoshop layer round-trip as a production feature.
+- Full Photoshop-compatible multi-layer TIFF writing as a production Save path.

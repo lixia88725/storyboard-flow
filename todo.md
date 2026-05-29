@@ -6,12 +6,11 @@
 
 ## P1
 
-- [ ] Add Electron smoke coverage or a repeatable manual checklist for:
-  - Open folder.
-  - Draw on Image.
-  - Add/reorder/rename/hide layer.
-  - Save.
-  - Reopen.
+- [ ] Spike PSD-first workflow with `ag-psd`: read Photoshop-created RGB 8-bit raster PSD layers, write SWB raster layers back to PSD, and verify both directions in Photoshop 2026.
+- [ ] Define PSD complex-layer policy for text, smart objects, adjustment layers, shapes, masks, effects, CMYK, 16-bit, and PSB. Recommended v1 default: rasterize unsupported layer types and mark them as such.
+- [ ] Add PSD import layer parsing once the spike proves the library path.
+- [ ] Add PSD export round-trip smoke: import PSD, edit/add/reorder layers, Save/Export PSD, reopen in Photoshop and SWB.
+- [ ] Verify Photoshop PSD compatibility on Windows, not only macOS.
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Add validation or cleanup for missing Recent folder paths.
 - [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
@@ -66,6 +65,8 @@
 - [x] Electron CDP smoke verified legacy `imageLayerEdits` and `sketchLayers` migrate into visible bitmap layer PNG assets.
 - [x] Electron CDP smoke verified Add Shot creates a blank TIFF and updates the storyboard UI and metadata.
 - [x] Image layer delete now behaves like normal layer delete when another layer remains; smoke verifies metadata removal, PNG asset deletion, Save output, and reopen persistence.
+- [x] Photoshop layered TIFF spike generated a Photoshop 2026-readable layered TIFF with `psdtags + tifffile`.
+- [x] Photoshop 2026 verification confirmed the layered TIFF opens with two layers; sharp/libvips standard multi-page TIFF opened as one background layer.
 
 ## Out Of Scope For Current MVP
 
@@ -73,5 +74,5 @@
 - PDF or image sequence export.
 - SQLite migration.
 - Cloud sync or collaboration.
-- Photoshop layer round-trip.
-- Full Photoshop-compatible multi-layer TIFF writing.
+- Photoshop layer round-trip as a production feature.
+- Full Photoshop-compatible multi-layer TIFF writing as a production Save path.

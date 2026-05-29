@@ -2,132 +2,87 @@
 
 跨 session 交接文档。稳定规则见 `AGENTS.md` 和 `decisions.md`，待办事项见 `todo.md`。此处记录当前代码状态快照，每次 session 结束时覆盖重写。
 
+## Current Workspace
+
+- Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
+- Branch: `bitmap-layer-refactor`
+- Functional baseline before this handoff-doc commit: `4135066 spike: verify photoshop layered tiff output`
+- Original worktree remains at `/Users/xiali/Documents/Codex/2026-05-25/applications-mentioned-by-the-user-appshot` on `master`; continue new work from the `appshot-bitmap-layers` worktree unless explicitly merging back.
+
 ## Current Product State
 
-- 本地 Electron + React + TypeScript + Vite 的 Storyboard Workbench MVP。
-- 一个场景仍等于一个本地图像文件夹；内部状态自动保存到 `.storyboard-workbench/storyboard.project.json`。
-- `Save` 仍是唯一会同步真实图片文件名、写工作 TIFF 像素的动作。
-- 当前绘图主数据已经迁移为 bitmap layer：
-  - JSON 保存 `shots[].layers` 和 `activeLayerId`。
-  - 可编辑像素保存在 `.storyboard-workbench/layers/{shotId}/{layerId}.png`。
-  - 画笔、橡皮、清空图层和删除图层只写 `.storyboard-workbench/`。
-- 旧 `sketchLayers` / `imageLayerEdits` 字段仍作为迁移输入保留；打开旧项目时会生成 bitmap layer metadata 和内部 PNG layer assets。
-- 不做 AI、导出、SQLite、云同步、Photoshop layer round-trip 或 Photoshop-compatible multi-layer TIFF writing。
+- Storyboard Workbench is a local Electron + React + TypeScript + Vite app.
+- One local image folder is still one scene; metadata autosaves to `.storyboard-workbench/storyboard.project.json`.
+- Drawing is now bitmap-layer based:
+  - JSON stores `shots[].layers` and `activeLayerId`.
+  - Editable pixels live in `.storyboard-workbench/layers/{shotId}/{layerId}.png`.
+  - Brush, eraser, clear, delete, undo, and redo operate on internal PNG layer assets plus JSON metadata.
+- `Save` remains the only boundary that changes real delivery files: it performs filename sync, archives originals when needed, and bakes visible SWB layers into working TIFF.
+- `Image` is treated like a normal visible layer in the UI: it can be selected, drawn on, erased, cleared, hidden, and deleted when another layer remains. Deleting it removes its metadata and internal `layer-image.png`; it does not immediately delete or move the original source file.
+- Legacy `sketchLayers` and `imageLayerEdits` remain migration inputs only. New renderer editing no longer depends on the old stroke model.
 
-## Completed In This Session
+## Completed Work
 
-- 新增 bitmap layer 数据模型：
-  - `BitmapLayer`、`Shot.layers`、`Shot.activeLayerId`。
-  - `.storyboard-workbench/layers/{shotId}/{layerId}.png` 路径规则。
-  - shared 层新增 add/select/update/move/delete/clear/painted bitmap layer 纯函数和测试。
-- 打开普通图片文件夹时，不再要求先 Import 才能开始编辑：
-  - 新扫描/导入图片会自动生成 `Image` bitmap layer metadata。
-  - 新文件夹首次打开会触发 autosave，创建 JSON 和内部 layer assets。
-- Electron layer asset API：
-  - `layers:writePng`
-  - `layers:readPng`
-  - `layers:deletePng`
-  - 路径限制在当前 folder 的 `.storyboard-workbench/layers/` 下。
-- Renderer 绘图主流程：
-  - 图层面板改为操作 bitmap layers。
-  - 完成 stroke 后读取 active layer PNG，用 canvas 写入像素，再通过 preload API 写回内部 PNG。
-  - 清空当前 layer 会写透明 PNG，不会写真实 TIFF。
-  - Undo / redo 对 stroke、clear、delete 捕获并恢复相关 layer PNG snapshot 和 JSON metadata。
-  - Renderer 主流程已移除旧 stroke layer 操作函数引用；旧字段只留在 shared/Electron migration 路径。
-  - `B` / `E` 快捷键仍切换 Brush / Eraser。
-- Save 路径：
-  - 如果 shot 有 bitmap layers，Save 按可见 layer 顺序合成 PNG layers 到工作 TIFF。
-  - 继续执行现有 rename preflight。
-  - `Save` 仍是唯一会改真实文件名和工作 TIFF 像素的动作。
-- Legacy migration：
-  - 旧 stroke layer 会迁移为对应 paint bitmap layer metadata。
-  - Electron 初始化 layer assets 时会 rasterize 旧 stroke 到 PNG。
-  - 旧 Image layer edits 会迁移到 Image bitmap layer。
-- Onion Skin：
-  - 改为优先读取相邻 shot 的 bitmap layer PNG。
-  - 仍只做 renderer preview，不写 JSON、PNG、TIFF 或 Save 结果。
+- Bitmap layer refactor:
+  - Added bitmap layer metadata and internal PNG layer assets.
+  - Ordinary PNG/JPG/TIFF folders initialize editable `Image` bitmap layers automatically.
+  - Renderer drawing writes active layer pixels under `.storyboard-workbench/layers/`.
+  - Undo/redo restores affected bitmap layer PNG snapshots and JSON metadata.
+  - Save composites visible bitmap layers into SWB-owned TIFF while preserving rename preflight and Archive safety.
+  - Legacy stroke projects migrate visible old image edits and sketch layers into bitmap layer PNG assets.
+- Layer UX and smoke coverage:
+  - Paint layer add/draw/erase/undo/opacity/blend/reorder/delete flows are covered by Electron CDP smoke.
+  - `Image` layer delete now truly removes the layer when multiple layers exist; only one remaining layer disables delete.
+  - Add Shot smoke verifies blank TIFF creation plus UI and metadata update.
+  - Mixed 16:9 / 2.39:1 / 1.43:1 animation layout, high-zoom timeline visibility, Onion Skin, and current-shot drawing isolation are covered in `npm run smoke:bitmap`.
+- Photoshop layered TIFF spike:
+  - Added `scripts/photoshop-layered-tiff-spike.py`.
+  - Added `docs/photoshop-layered-tiff-spike.md`.
+  - Generated `/private/tmp/swb-photoshop-layered-spike.tiff` using Python `psdtags + tifffile`.
+  - Photoshop 2026 opened the file as a layered document with `layers=2`, names `Paint 1,背景`, size `320 x 180`, RGB mode.
+  - A sharp/libvips standard multi-page TIFF control opened in Photoshop as one background layer, proving ordinary multi-page TIFF is not enough for Photoshop layer recognition.
 
-## Verification
+## Latest Verification
 
-本次交接前已运行：
+Fresh verification before this handoff update:
 
 ```bash
-npm run test        # passed, 69 tests
-npm run typecheck   # passed
-npm run build       # passed, Vite chunk size warning only
+npm run test
+# passed: 7 test files, 73 tests
+
+npm run typecheck
+# passed
+
+npm run build
+# passed; Vite reported the existing chunk-size warning only
 ```
 
-新增 bitmap layer history helper 后，最新完整测试为：
+Earlier full Electron smoke evidence on this branch:
 
 ```bash
-npm run test        # passed, 71 tests
-npm run build       # passed, Vite chunk size warning only
-npm run smoke:bitmap # passed, launches Electron via local CDP
+npm run smoke:bitmap
+# passed; launches Electron via local CDP
 ```
 
-Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench 窗口，并验证：
+The smoke covers Image layer draw/erase/clear/delete, paint layer draw/erase/undo/opacity/blend/reorder, Add Shot, Save safety, Archive original hash preservation, mixed-aspect animation mode, Onion Skin, reopen persistence, and legacy stroke migration.
 
-- 打开普通 PNG 文件夹成功显示 shot。
-- 首次 autosave 会创建 `.storyboard-workbench/storyboard.project.json`。
-- 首次 autosave 会创建 `.storyboard-workbench/layers/{shotId}/layer-image.png`。
-- 图层面板中新增普通 paint layer 会创建 JSON metadata 和内部 PNG layer asset。
-- 普通 paint layer 的 hide 和 opacity 会 autosave 到 JSON。
-- 删除普通 paint layer 会移除 JSON metadata，并删除对应内部 PNG layer asset。
-- Electron CDP smoke 验证了 Image layer 上真实绘制会改变内部 `layer-image.png` hash，`Cmd+Z` 会恢复原 hash，`Cmd+Shift+Z` 会恢复绘制后的 hash；Eraser 会改变 Image layer hash 且 undo eraser 会恢复绘制 hash；Clear current layer 会写透明 layer hash，undo clear 会恢复绘制 hash；只有 Image layer 时 `Delete current layer` 禁用；有其他图层时删除 Image layer 会移除 `layer-image` metadata 和 `layer-image.png` asset，Save 后 TIFF 不再包含原底图像素，reload/reopen 后不会自动补回 Image layer：
-  - before / undo: `762fec4dcf6915adfbd05c31e2e6b021cfe28c107e3be18debace6b6eac7ac3d`
-  - drawn / redo: `b7bf0b89629f242ce6c00bea65f1a4566f4edd22dc80390419c5ff5623f3f955`
-  - erased: `6bac591d11490870e4e1928807c1be1250882faba16d44dd1e629a96895d03ea`
-  - cleared: `738440fafe37d11b377c33463c8e8cf6998ac5591591e4a1a066018b7ac6e247`
-  - saved file pattern: `swb-bitmap-smoke-*_scene_stb_artist_v001_0010.tiff`
-  - deleted Image layer metadata: `[paint-2, paint-1]`
-  - deleted Image layer saved TIFF top-left RGB: `[255, 255, 255]`
-- Electron CDP smoke 也验证了新增普通 paint layer 的绘制、擦除、undo eraser、opacity `0.5`、blend mode `multiply`、拖动排序、Save 后 layer asset 不变、reload/reopen 后 paint layer metadata 和 PNG hash 保留：
-  - paint blank: `8acb6b57817a1fb71fc80513fbc392ed1a6941224f4984f88b7713f054716375`
-  - paint drawn / undo eraser / reopened: `f0d1314668ba878a956f3b9bedcbf5cc3a99ee1f9b5f2b47e1f236fa4940aca5`
-  - paint erased: `738440fafe37d11b377c33463c8e8cf6998ac5591591e4a1a066018b7ac6e247`
-  - paint drag order: `[layer-image, paint-1, paint-2]` -> `[layer-image, paint-2, paint-1]`
-- Electron CDP smoke 扩展到三张不同比例 PNG，并验证：
-  - 当前 shot 绘制不会改变相邻 shot 的 Image layer hash。
-  - 临时 rename path 冲突会阻止 Save 生成 TIFF；`validateRenamePlan` 单元测试覆盖 final 和 temporary path conflicts。
-  - Save 后三张图生成 `*_0010.tiff` / `*_0020.tiff` / `*_0030.tiff`，三个 shot 都是 `status: "owned"`。
-  - Archive 中能按原 PNG hash 找到未改动原图。
-  - 16:9、2.39:1、1.43:1 在动画模式下 stage ratio 分别保持约 `1.78`、`2.39`、`1.43`，timeline 在高 zoom 下可见。
-  - Onion Skin toggle 只在动画模式出现；中间帧开启后 previous / next ghost 同时存在，opacity 为 `0.28`，左右键切到边缘帧后 ghost 数量刷新为 1，再切回中间帧恢复为 2。
-- Electron CDP smoke 还会打开一个旧 stroke JSON 项目，验证旧 `imageLayerEdits` 生成非 base hash 的 Image bitmap layer，旧 `sketchLayers` 生成非空 paint bitmap layer。
-- 该 CDP smoke 已固化为 `npm run smoke:bitmap`。
-- 对普通 PNG 执行 Save 后，原 PNG 进入 `Archive/`，生成命名 TIFF，JSON 指向 `status: "owned"` 的 TIFF。
-- Save 仍需要用户确认缺失命名字段时是否使用默认 Scene / Artist / Version。
+## Next Handoff Target
 
-以下行为仍需手动或自动确认：
+The next large direction discussed is PSD-first Photoshop interoperability. Do not wire this directly into the main Save path first.
 
-- `TODO: verify` multi-select shot dragging 和 double-click dialogue editing 在 bitmap layer refactor 后仍符合预期。
+Recommended next step:
 
-## Current Branch
+1. Build a small PSD spike, separate from app UI and Save.
+2. Prefer testing `ag-psd` first because it is TypeScript/JavaScript and fits the current Electron main-process stack.
+3. Verify both directions with Photoshop 2026:
+   - Read a simple Photoshop-created RGB 8-bit raster PSD and extract layers.
+   - Write a simple multi-layer raster PSD and confirm Photoshop sees editable layers.
+4. Record limitations clearly: v1 should target raster RGB 8-bit PSD layers, not full Photoshop round-trip of text layers, smart objects, adjustment layers, masks, effects, CMYK, 16-bit, or PSB.
+5. Keep SWB internal working data as PNG layer assets + JSON unless a later spike proves a safer architecture.
 
-当前工作在隔离 worktree：
+## Known Remaining Work
 
-```text
-/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers
-```
-
-分支：
-
-```text
-bitmap-layer-refactor
-```
-
-阶段提交：
-
-```text
-def3653 feat: add bitmap layer metadata foundation
-0c6484a feat: composite bitmap layers on save
-b2370a3 fix: autosave new folders for layer assets
-371bcac feat: draw strokes into bitmap layer assets
-7eb3c2e feat: migrate legacy strokes to bitmap layers
-45e529b feat: render onion skin from bitmap layers
-2e0abcc docs: update handoff for bitmap layer workflow
-40788ea fix: save ordinary images as swb tiffs
-17b983d fix: delete paint layer assets from renderer
-8ab9c95 feat: restore bitmap layer assets on undo
-7407d52 docs: record image layer cdp smoke
-```
+- Manually verify multi-select shot dragging and double-click dialogue editing after the bitmap layer refactor.
+- PSD-first spike and compatibility matrix are not implemented.
+- Windows Photoshop compatibility has not been tested.
+- Current build still emits the Vite chunk-size warning.
