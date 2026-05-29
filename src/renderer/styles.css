@@ -351,15 +351,6 @@ button.primary {
   position: relative;
 }
 
-.app-shell.is-animation-mode .workspace-layout::before {
-  content: "";
-  position: fixed;
-  inset: 52px 0 42px 64px;
-  z-index: 10;
-  pointer-events: none;
-  background: rgba(18, 17, 14, 0.94);
-}
-
 .tool-rail {
   position: sticky;
   top: 60px;
@@ -1098,6 +1089,17 @@ button.layer-blend-dot {
 
 .shot-head:active {
   cursor: grabbing;
+}
+
+.app-shell.is-animation-mode .shot-card:focus,
+.app-shell.is-animation-mode .shot-card:focus-visible,
+.app-shell.is-animation-mode .shot-card :focus,
+.app-shell.is-animation-mode .shot-card :focus-visible,
+.app-shell.is-animation-mode .shot-head:focus,
+.app-shell.is-animation-mode .shot-head:focus-visible,
+.app-shell.is-animation-mode .timeline-shot:focus,
+.app-shell.is-animation-mode .timeline-shot:focus-visible {
+  outline: none !important;
 }
 
 .shot-index {

@@ -1624,6 +1624,7 @@ try {
 
       return {
         onionToggleHiddenBeforeAnimation,
+        renderedShotCount: document.querySelectorAll("[data-shot-id]").length,
         aspectRatios,
         ghostInfoBefore,
         focusedBeforeTimelineKeys: {
@@ -1677,6 +1678,7 @@ try {
     animationChecks.ghostCountAfterRight !== 1 ||
     animationChecks.selectedAfterLeft !== "002" ||
     animationChecks.ghostCountAfterLeft !== 2 ||
+    animationChecks.renderedShotCount !== 1 ||
     !animationChecks.timelineVisible
   ) {
     throw new Error(`Animation/onion skin check failed: ${JSON.stringify(animationChecks)}`);
@@ -1685,20 +1687,23 @@ try {
   const addShotUiCount = await evaluate(`
     (async () => {
       const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      const beforeCount = document.querySelectorAll("[data-shot-id]").length;
+      const beforeTimelineCount = document.querySelectorAll(".timeline-shot").length;
       const addShotButton = Array.from(document.querySelectorAll("button"))
         .find((button) => button.textContent.trim() === "Add Shot");
       addShotButton.click();
 
-      for (let index = 0; index < 30 && document.querySelectorAll("[data-shot-id]").length !== beforeCount + 1; index += 1) {
+      for (let index = 0; index < 30 && document.querySelectorAll(".timeline-shot").length !== beforeTimelineCount + 1; index += 1) {
         await delay(100);
       }
 
-      return document.querySelectorAll("[data-shot-id]").length;
+      return {
+        boardShotCount: document.querySelectorAll("[data-shot-id]").length,
+        timelineShotCount: document.querySelectorAll(".timeline-shot").length
+      };
     })()
   `);
-  if (addShotUiCount !== 4) {
-    throw new Error(`Add Shot did not update the storyboard UI: ${addShotUiCount}`);
+  if (addShotUiCount.boardShotCount !== 1 || addShotUiCount.timelineShotCount !== 4) {
+    throw new Error(`Add Shot did not update the storyboard UI: ${JSON.stringify(addShotUiCount)}`);
   }
 
   await waitFor(async () => {

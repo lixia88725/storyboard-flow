@@ -46,9 +46,9 @@ npm run dev
 - Select 工具支持 V1 lasso / rectangle 选区，对当前 active bitmap layer 做移动和角点缩放；选区本身不写入项目文件，提交后的像素结果写回当前 layer PNG。
 - Undo / redo 会恢复相关 layer PNG snapshot 和 JSON metadata。
 - 新增图层进入 undo 时会记录新增 layer PNG 的空快照；如果 autosave 已创建内部 PNG，Undo 会删除该 orphan asset，Redo 会恢复它。
-- Save 时由 Electron/sharp 合成可见 bitmap layers 并写入工作 TIFF。
+- Save 时由 Electron/sharp 合成可见 bitmap layers 并写入工作 TIFF，包含图层 opacity 和 blend mode。
 
-图层面板是每张 storyboard 右侧的 click-toggle 抽屉，支持新增、删除、重命名、显隐、opacity、blend mode 和拖动排序。图层行纵向拖动用于排序，横向拖动用于调整 opacity；顶部独立 opacity slider 已移除。`Image` 层在 UI 中可像普通图层一样选中、绘制、擦除、重排；如果当前 shot 有多个图层，选中 `Image` 后点击 `Delete current layer` 会移除 Image layer 和内部 PNG asset。每个 shot 至少保留一个图层，所以只剩一个 `Image` 层时删除按钮会禁用。
+图层面板是每张 storyboard 右侧的 click-toggle 抽屉，支持新增、删除、重命名、显隐、opacity、blend mode 和拖动排序。图层行纵向拖动用于排序，横向拖动用于调整 opacity；顶部独立 opacity slider 已移除。隐藏图层不会成为 active 绘制目标。`Image` 层在 UI 中可像普通图层一样选中、绘制、擦除、重排；如果当前 shot 有多个图层，选中 `Image` 后点击 `Delete current layer` 会移除 Image layer 和内部 PNG asset。每个 shot 至少保留一个图层，所以只剩一个 `Image` 层时删除按钮会禁用。
 
 工具栏顶部的齿轮按钮可配置本机快捷键，覆盖 Brush、Eraser、Select、Clear layer、Save、Add Shot、Onion Skin、左右切帧、Undo 和 Redo。快捷键设置写入 Electron `userData`，不是项目文件的一部分。`Escape` 默认用于 Clear layer；当菜单打开时，`Escape` 优先关闭菜单。
 
@@ -70,7 +70,7 @@ npm run dev
 - Storyboard 按真实画布比例显示，混合画幅不会额外加黑边。
 - Zoom 到单张 storyboard 填满工作区时进入动画模式，底部显示时间线。
 - 动画模式支持左右键线性播放、时间线点击跳转，以及 Onion Skin 前后帧参考。
-- 动画模式使用深色遮罩和稳定 matte frame，让当前 storyboard 保持视觉焦点；不同画幅图片在 frame 内居中显示，不被拉伸。
+- 动画模式主画面只渲染当前 storyboard，并放入稳定 dark matte frame；不同画幅图片在 frame 内居中显示，不被拉伸。
 
 旧的 stroke 项目打开后会一次性生成 bitmap layer metadata 和内部 PNG layer assets。旧字段只作为迁移输入保留，主绘图流程不再依赖 `sketchLayers` / `imageLayerEdits`。
 

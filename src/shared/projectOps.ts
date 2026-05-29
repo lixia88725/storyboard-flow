@@ -759,11 +759,11 @@ export const selectBitmapLayer = (
   layerId: string
 ): Project => {
   return updateBitmapLayers(project, shotId, (shot, layers) => {
-    const target = layers.find((layer) => layer.id === layerId);
+    const target = layers.find((layer) => layer.id === layerId && layer.visible);
 
     return {
       layers,
-      activeLayerId: target?.id ?? shot.activeLayerId ?? layers[0]?.id
+      activeLayerId: target?.id ?? shot.activeLayerId
     };
   });
 };
@@ -1017,6 +1017,15 @@ const normalizeBitmapLayerOrder = (layers: BitmapLayer[]): BitmapLayer[] => {
   }));
 };
 
+const visibleBitmapLayerId = (layers: BitmapLayer[], preferredLayerId?: string): string | undefined => {
+  const preferredLayer = layers.find((layer) => layer.id === preferredLayerId);
+  if (preferredLayer?.visible) {
+    return preferredLayer.id;
+  }
+
+  return [...layers].reverse().find((layer) => layer.visible)?.id;
+};
+
 const updateBitmapLayers = (
   project: Project,
   shotId: string,
@@ -1036,7 +1045,7 @@ const updateBitmapLayers = (
     return {
       ...shot,
       layers: nextLayers,
-      activeLayerId: result.activeLayerId ?? shot.activeLayerId ?? nextLayers[0]?.id
+      activeLayerId: visibleBitmapLayerId(nextLayers, result.activeLayerId ?? shot.activeLayerId)
     };
   });
 

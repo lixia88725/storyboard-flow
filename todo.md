@@ -39,6 +39,12 @@
 - [x] Add-layer undo removes orphaned internal bitmap PNG assets and redo restores them.
 - [x] Smoke checks that `.storyboard-workbench/layers` has no unreferenced PNG layer assets.
 - [x] Local audit cleanup for rollback helper naming, rollback call sites, and new smoke helper structure.
+- [x] Save applies bitmap layer opacity to baked TIFF output.
+- [x] Save flattens all visible bitmap layers into baked TIFF output instead of only the last/top layer.
+- [x] Hidden bitmap layers cannot stay selected as the active drawing target and fall back to the topmost visible layer.
+- [x] Drawing on a storyboard canvas selects that storyboard before layer commands run.
+- [x] Animation mode removes stale header focus outline and keeps only the active red frame.
+- [x] Animation mode main board renders only the active storyboard while timeline keeps all shot thumbnails.
 - [x] Multi-select storyboard drag ordering and stacked preview.
 - [x] Compact dialogue strip.
 - [x] Remove storyboard image white border/chrome.
@@ -108,7 +114,7 @@
 - [x] Made dialogue textareas auto-size from one to three rows and clamp input to three explicit lines.
 - [x] Replaced the Select tool pointer icon with a lasso-style icon.
 - [x] Hid the animation timeline scrollbar.
-- [x] Added a dark animation-mode mask and stable dark frame so only the current storyboard is emphasized and mixed-aspect left/right playback is visually calmer.
+- [x] Added a stable animation-mode dark frame and later switched the main board to single active storyboard rendering.
 - [x] Fixed animation-mode left/right shortcuts when focus is on the Zoom range input.
 - [x] Enlarged bitmap Select corner hit targets in screen space so high-resolution lasso/rectangle selections can be scaled reliably.
 - [x] Expanded `npm run smoke:bitmap` to cover isolated shortcut settings persistence, blank-board wheel zoom, dialogue row clamp, and real CDP left/right animation navigation.

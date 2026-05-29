@@ -126,6 +126,12 @@ const animationReservedBottom = 180;
 const animationViewportMargin = 14;
 const maxDialogueRows = 3;
 
+const activeVisibleBitmapLayerForShot = (shot: Shot): BitmapLayer | undefined => {
+  const layers = bitmapLayersForShot(shot);
+  const activeLayer = layers.find((layer) => layer.id === shot.activeLayerId && layer.visible);
+  return activeLayer ?? [...layers].reverse().find((layer) => layer.visible);
+};
+
 type WorkspaceSaveState = "saved" | "saving" | "error";
 type FileNameSyncState = "synced" | "unsynced";
 type SelectionBox = { startX: number; startY: number; currentX: number; currentY: number };
@@ -314,6 +320,18 @@ export const App = () => {
     () => orderedShots.find((shot) => shot.id === primarySelectedShotId),
     [orderedShots, primarySelectedShotId]
   );
+  const renderedShotEntries = useMemo(() => {
+    if (!isAnimationMode) {
+      return orderedShots.map((shot, index) => ({ shot, index }));
+    }
+
+    const activeShot = primarySelectedShot ?? orderedShots[0];
+    if (!activeShot) {
+      return [];
+    }
+
+    return [{ shot: activeShot, index: orderedShots.findIndex((shot) => shot.id === activeShot.id) }];
+  }, [isAnimationMode, orderedShots, primarySelectedShot]);
   const onionSkinNeighbors = useMemo(
     () => getOnionSkinNeighbors(orderedShots, primarySelectedShotId, isAnimationMode && isOnionSkinEnabled),
     [isAnimationMode, isOnionSkinEnabled, orderedShots, primarySelectedShotId]
@@ -711,11 +729,7 @@ export const App = () => {
 
         if (shortcutAction === "clearLayer") {
           const activeShot = primarySelectedShot ?? orderedShots[0];
-          const activeLayer =
-            activeShot
-              ? bitmapLayersForShot(activeShot).find((layer) => layer.id === activeShot.activeLayerId) ??
-                bitmapLayersForShot(activeShot)[0]
-              : undefined;
+          const activeLayer = activeShot ? activeVisibleBitmapLayerForShot(activeShot) : undefined;
 
           if (activeShot && activeLayer) {
             void handleClearBitmapLayer(activeShot.id, activeLayer.id);
@@ -1701,10 +1715,7 @@ export const App = () => {
                 setStatus("Select a shot before clearing a layer");
                 return;
               }
-              const activeLayer =
-                bitmapLayersForShot(primarySelectedShot).find(
-                  (layer) => layer.id === primarySelectedShot.activeLayerId
-                ) ?? bitmapLayersForShot(primarySelectedShot)[0];
+              const activeLayer = activeVisibleBitmapLayerForShot(primarySelectedShot);
               if (activeLayer) {
                 void handleClearBitmapLayer(primarySelectedShot.id, activeLayer.id);
               }
@@ -1815,7 +1826,7 @@ export const App = () => {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <SortableContext items={orderedShots.map((shot) => shot.id)} strategy={rectSortingStrategy}>
+          <SortableContext items={renderedShotEntries.map(({ shot }) => shot.id)} strategy={rectSortingStrategy}>
             <section
               ref={boardGridRef}
               className="board-grid"
@@ -1830,7 +1841,7 @@ export const App = () => {
               }
               onPointerDown={handleSelectionPointerDown}
             >
-              {orderedShots.map((shot, index) => (
+              {renderedShotEntries.map(({ shot, index }) => (
                 <ShotCard
                   key={shot.id}
                   shot={shot}
@@ -2203,7 +2214,7 @@ const LayerPanel = ({
 }: LayerPanelProps) => {
   const layers = shot ? bitmapLayersForShot(shot) : [];
   const displayLayers = [...layers].reverse();
-  const activeLayer = layers.find((layer) => layer.id === shot?.activeLayerId) ?? layers[0];
+  const activeLayer = shot ? activeVisibleBitmapLayerForShot(shot) : undefined;
   const activeLayerId = activeLayer?.id;
   const [openBlendMenu, setOpenBlendMenu] = useState<BlendMenuState | undefined>();
   const [rowGestureVisual, setRowGestureVisual] = useState<LayerRowGestureVisual | undefined>();
@@ -3109,7 +3120,9 @@ const SketchPad = ({
   const canvasSize = useMemo(() => canvasSizeForShot(shot), [shot]);
   const bitmapLayers = useMemo(() => bitmapLayersForShot(shot), [shot]);
   const activeLayer = useMemo(
-    () => bitmapLayers.find((layer) => layer.id === shot.activeLayerId) ?? bitmapLayers[0],
+    () =>
+      bitmapLayers.find((layer) => layer.id === shot.activeLayerId && layer.visible) ??
+      [...bitmapLayers].reverse().find((layer) => layer.visible),
     [bitmapLayers, shot.activeLayerId]
   );
   const activeDrawingLayerId = activeLayer?.id ?? imageBitmapLayerId;
@@ -3575,6 +3588,7 @@ const SketchPad = ({
     target: { getStage: () => { container: () => HTMLDivElement } | null };
   }) => {
     blurActiveFormControl();
+    onFocusShot();
     event.evt?.preventDefault();
     event.evt?.stopPropagation();
     const position = getSketchPoint(event);
@@ -3584,7 +3598,14 @@ const SketchPad = ({
     }
 
     if (tool === "select") {
+      if (!activeLayer) {
+        return;
+      }
       beginBitmapSelection(position);
+      return;
+    }
+
+    if (!activeLayer) {
       return;
     }
 

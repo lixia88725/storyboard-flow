@@ -11,6 +11,7 @@ import {
   type AppliedFileMoves,
   type AppliedFileRenamePlan
 } from "./fileRenames.js";
+import { flattenBitmapLayerBuffersToTiff, type BitmapLayerComposite } from "./bitmapLayers.js";
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
@@ -1057,14 +1058,7 @@ const bakeBitmapLayersToTiff = async (
     return undefined;
   }
 
-  let composited = sharp({
-    create: {
-      width,
-      height,
-      channels: 4,
-      background: { r: 255, g: 255, b: 255, alpha: 1 }
-    }
-  });
+  const composites: BitmapLayerComposite[] = [];
 
   for (const layer of layers) {
     const layerPath = resolveLayerAssetPath(folderPath, layer.bitmapPath);
@@ -1077,34 +1071,23 @@ const bakeBitmapLayersToTiff = async (
       .ensureAlpha()
       .png()
       .toBuffer();
-    const layerOpacity = Math.min(1, Math.max(0, layer.opacity));
+    composites.push({
+      input,
+      opacity: layer.opacity,
+      blend: sharpBlendMode(layer.blendMode)
+    });
+  }
 
-    composited = composited.composite([
-      {
-        input: layerOpacity < 1 ? bitmapOpacitySvg(input, width, height, layerOpacity) : input,
-        blend: sharpBlendMode(layer.blendMode)
-      }
-    ]);
+  if (composites.length === 0) {
+    return undefined;
   }
 
   const tempPath = path.join(
     path.dirname(shot.imagePath),
     `.storyboard-bake-${shot.id}${path.extname(shot.imagePath)}`
   );
-  await composited.tiff().toFile(tempPath);
+  await writeFile(tempPath, await flattenBitmapLayerBuffersToTiff(width, height, composites));
   return tempPath;
-};
-
-const bitmapOpacitySvg = (
-  pngBuffer: Buffer,
-  width: number,
-  height: number,
-  opacity: number
-): Buffer => {
-  const encoded = pngBuffer.toString("base64");
-  return Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><image href="data:image/png;base64,${encoded}" width="${width}" height="${height}" opacity="${opacity}"/></svg>`
-  );
 };
 
 const sharpBlendMode = (blendMode: string | undefined): "over" | "multiply" | "screen" => {

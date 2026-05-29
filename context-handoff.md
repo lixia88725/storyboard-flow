@@ -47,6 +47,16 @@
 - Audit cleanup:
   - Kept cleanup local to the audit diff: clarified Electron file-move helper naming, deduplicated rollback call sites, and extracted small smoke helpers for layer asset checks.
   - Did not split `App.tsx`, split the full smoke script, change UI behavior, or address the existing Vite chunk-size warning.
+- Bitmap layer behavior fixes:
+  - Save now flattens all visible bitmap layer PNGs in one composite call, so lower visible layers are preserved in the working TIFF instead of only the last/top layer.
+  - Layer opacity is applied by multiplying each layer PNG alpha before compositing into the working TIFF.
+  - Hidden bitmap layers are no longer valid active layer targets; hiding the active layer selects the topmost visible layer when one exists.
+  - Starting a brush/eraser/select interaction on a storyboard canvas now also selects that storyboard, so Clear layer targets the canvas that was just edited.
+  - Animation mode suppresses the stale header focus outline so the current storyboard focus is represented by the active red frame only.
+- Animation mode single-shot layout:
+  - Animation mode now renders only the active storyboard in the main board area; the timeline still renders all shot thumbnails for navigation.
+  - Removed the dark mask overlay that previously hid non-focused storyboard cards, because non-active cards are no longer mounted in the animation board.
+  - Existing `ShotCard` / `SketchPad` / bitmap layer / Onion Skin paths are reused; this is a layout-level split, not a second animation drawing stack.
 - Toolbar and shortcut system:
   - Added a gear button at the top of the tool rail for editing shortcuts.
   - Added configurable shortcuts for Brush, Eraser, Select, Clear layer, Save, Add Shot, Onion Skin, previous/next shot, Undo, and Redo.
@@ -66,8 +76,8 @@
   - Bitmap Select corner hit testing now converts a 12px screen target into canvas coordinates, making lasso / rectangle corner scaling reachable on high-resolution images.
 - Animation mode:
   - Timeline scrollbar is visually hidden.
-  - Animation mode adds a dark mask over non-focused storyboard edges so only the current storyboard remains visually prominent.
-  - Animation mode now uses a stable dark frame; mixed-aspect shots are centered inside it without stretching, reducing visual jumps when stepping left/right.
+  - Animation mode renders one active storyboard in a stable dark frame while the timeline shows all shots.
+  - Mixed-aspect shots are centered inside the stable frame without stretching, reducing visual jumps when stepping left/right.
   - Left/right timeline navigation works even when focus is on the Zoom range input.
 - Smoke coverage:
   - `npm run smoke:bitmap` now isolates keyboard shortcut settings, verifies shortcut persistence, verifies blank-board wheel zoom, dialogue row clamp, animation left/right key events via CDP, range-focus timeline navigation, and existing bitmap layer/select flows.
@@ -78,7 +88,7 @@ Fresh verification before this handoff update:
 
 ```bash
 npm run test
-# passed: 9 test files, 100 tests
+# passed: 10 test files, 102 tests
 
 npm run typecheck
 # passed

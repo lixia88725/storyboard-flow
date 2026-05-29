@@ -313,6 +313,10 @@ describe("project operations", () => {
       opacity: 1,
       blendMode: "multiply"
     });
+    expect(updated.shots[0].activeLayerId).toBe("paint-2");
+
+    const hiddenSelection = selectBitmapLayer(updated, "shot-a", "paint-1");
+    expect(hiddenSelection.shots[0].activeLayerId).toBe("paint-2");
 
     const moved = moveBitmapLayer(updated, "shot-a", "paint-2", "paint-1");
     expect(bitmapLayersForShot(moved.shots[0]).map((layer) => [layer.id, layer.order])).toEqual([
@@ -326,7 +330,7 @@ describe("project operations", () => {
       "layer-image",
       "paint-1"
     ]);
-    expect(deleted.shots[0].activeLayerId).toBe("paint-1");
+    expect(deleted.shots[0].activeLayerId).toBe("layer-image");
   });
 
   it("moves the Image bitmap layer like an ordinary layer", () => {

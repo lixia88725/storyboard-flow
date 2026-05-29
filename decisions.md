@@ -94,9 +94,9 @@ Reason: 这是从全局整理顺序切换到线性感知故事板流动的状态
 
 ## Animation Mode Uses A Stable Dark Frame
 
-动画模式用深色遮罩弱化非当前 storyboard，并把当前 storyboard 的真实画幅居中放入稳定的深色 frame。不同画幅切换时 frame 尺寸保持稳定，图片本身不拉伸。
+动画模式主画面只渲染当前 storyboard，并把当前 storyboard 的真实画幅居中放入稳定的深色 frame。不同画幅切换时 frame 尺寸保持稳定，图片本身不拉伸；timeline 仍显示全部 shot 缩略图用于跳转。
 
-Reason: 线性播放时用户注意力应集中在当前画面；混合 16:9、2.39:1、1.43:1 时，外框尺寸跳动会干扰阅读节奏。
+Reason: 线性播放时用户注意力应集中在当前画面；不挂载非当前 storyboard 可以避免其他卡片的 header、z-index 或滚动几何干扰 timeline。混合 16:9、2.39:1、1.43:1 时，外框尺寸跳动会干扰阅读节奏。
 
 ## Storyboard Display Uses Real Canvas Aspect Ratio
 
