@@ -415,6 +415,43 @@ try {
 
   await evaluate(`
     (() => {
+      document.querySelector('button[aria-label="Add layer"]').click();
+      return true;
+    })()
+  `);
+
+  const secondPaintLayer = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    return project.shots?.[0]?.layers?.find(
+      (layer) => layer.kind === "paint" && layer.id !== paintLayer.id
+    );
+  }, "second paint layer metadata");
+
+  const paintOrderBeforeDrag = (await readProjectMetadata(smokeRoot)).shots[0].layers.map((layer) => layer.id);
+
+  await evaluate(`
+    (() => {
+      const rows = Array.from(document.querySelectorAll(".layer-row"));
+      const firstPaintRow = rows[1];
+      const secondPaintRow = rows[2];
+      const dataTransfer = new DataTransfer();
+      secondPaintRow.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer }));
+      firstPaintRow.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
+      firstPaintRow.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+      return true;
+    })()
+  `);
+
+  const paintOrderAfterDrag = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const layerIds = project.shots?.[0]?.layers?.map((layer) => layer.id);
+    return layerIds?.[1] === secondPaintLayer.id && layerIds?.[2] === paintLayer.id
+      ? layerIds
+      : undefined;
+  }, "paint layer drag sort metadata");
+
+  await evaluate(`
+    (() => {
       const saveButton = Array.from(document.querySelectorAll("button"))
         .find((button) => button.textContent.trim() === "Save");
       saveButton.click();
@@ -481,6 +518,8 @@ try {
         paintUndoEraseHash,
         paintOpacity: paintMetadata.opacity,
         paintBlendMode: paintMetadata.blendMode,
+        paintOrderBeforeDrag,
+        paintOrderAfterDrag,
         savedFileName: savedTiffFiles[0],
         savedSwbStatus: savedProject.shots[0].swb.status,
         reopenedHash,
