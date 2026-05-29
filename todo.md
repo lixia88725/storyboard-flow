@@ -2,6 +2,9 @@
 
 ## P0
 
+- [ ] Manually dogfood configurable keyboard shortcuts in the app, especially recording `Escape`, duplicate shortcut errors, and persistence across restart.
+- [ ] Manually dogfood bitmap Select lasso/rectangle corner scaling on high-resolution real storyboard images.
+- [ ] Manually review mixed-aspect animation mode with the new dark matte/stable frame and decide whether the visual treatment needs refinement.
 - [ ] Manually verify multi-select shot dragging and double-click dialogue editing after the bitmap layer refactor.
 
 ## P1
@@ -23,6 +26,7 @@
 - [ ] Consider a dedicated select/hand/draw tool mode if drawing, selecting, and dragging conflict in real use.
 - [ ] Review whether `electron/preload/preload.cjs` should continue to be manually maintained or generated from TypeScript.
 - [ ] Consider opacity controls for Onion Skin if fixed red/green ghost strength feels too strong or too weak.
+- [ ] Consider adding a visible cursor affordance for bitmap Select scale handles if users still miss corner scaling after hit target enlargement.
 - [ ] Consider code splitting or manual chunks if the existing Vite chunk-size warning becomes noisy or affects startup.
 
 ## Completed
@@ -88,6 +92,19 @@
 - [x] Added mouse-wheel zoom over the storyboard image stage.
 - [x] Restyled and repositioned the status/info button to be smaller and less urgent.
 - [x] Expanded `npm run smoke:bitmap` to cover layer drawer click toggle, thumbnails, blend menu direction, opacity drag, layer row drag preview, selection move/scale, eraser preview, right-click stage scoping, and wheel zoom.
+- [x] Added configurable keyboard shortcuts for tools, Clear layer, Save, Add Shot, Onion Skin, previous/next shot, Undo, and Redo, persisted in local Electron settings.
+- [x] Made `Escape` the default Clear layer shortcut while preserving menu-close behavior and shortcut capture.
+- [x] Added a tool-rail gear button and compact shortcut editor.
+- [x] Changed workbench mouse wheel behavior so wheel over blank board space also adjusts Zoom.
+- [x] Reduced shot header visual weight, removed `#` / black shot-number badge, and made the whole header bar the drag activator.
+- [x] Made dialogue grips and empty dialogue hints lower contrast.
+- [x] Made dialogue textareas auto-size from one to three rows and clamp input to three explicit lines.
+- [x] Replaced the Select tool pointer icon with a lasso-style icon.
+- [x] Hid the animation timeline scrollbar.
+- [x] Added a dark animation-mode mask and stable dark frame so only the current storyboard is emphasized and mixed-aspect left/right playback is visually calmer.
+- [x] Fixed animation-mode left/right shortcuts when focus is on the Zoom range input.
+- [x] Enlarged bitmap Select corner hit targets in screen space so high-resolution lasso/rectangle selections can be scaled reliably.
+- [x] Expanded `npm run smoke:bitmap` to cover isolated shortcut settings persistence, blank-board wheel zoom, dialogue row clamp, and real CDP left/right animation navigation.
 
 ## Out Of Scope For Current MVP
 

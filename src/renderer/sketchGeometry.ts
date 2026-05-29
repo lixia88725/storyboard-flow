@@ -189,6 +189,18 @@ export const bitmapSelectionHitTarget = (
   return { type: "none" };
 };
 
+export const bitmapSelectionHandleRadiusForStage = (
+  canvasSize: CanvasSize,
+  stageSize: CanvasSize,
+  screenRadius: number
+): number => {
+  const scaleX = stageSize.width / canvasSize.width;
+  const scaleY = stageSize.height / canvasSize.height;
+  const scale = Math.min(scaleX, scaleY);
+
+  return scale > 0 ? screenRadius / scale : screenRadius;
+};
+
 export const scaleBitmapSelectionBounds = (
   bounds: Bounds,
   corner: SelectionCorner,

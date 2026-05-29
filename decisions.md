@@ -88,6 +88,12 @@ Reason: 用户会把多选组拖到前方或后方的 storyboard，只有“插�
 
 Reason: 这是从全局整理顺序切换到线性感知故事板流动的状态，不应该只依赖某个固定 zoom 数字。
 
+## Animation Mode Uses A Stable Dark Frame
+
+动画模式用深色遮罩弱化非当前 storyboard，并把当前 storyboard 的真实画幅居中放入稳定的深色 frame。不同画幅切换时 frame 尺寸保持稳定，图片本身不拉伸。
+
+Reason: 线性播放时用户注意力应集中在当前画面；混合 16:9、2.39:1、1.43:1 时，外框尺寸跳动会干扰阅读节奏。
+
 ## Storyboard Display Uses Real Canvas Aspect Ratio
 
 Storyboard 显示容器按每张 shot 的 `swb.canvasWidth/canvasHeight` 设置比例，不再使用固定比例容器。
@@ -121,6 +127,16 @@ Reason: 原文件已有 Archive 和 Save 边界保护，用户在绘图时应获
 Select 工具的 lasso / rectangle 选区只作用于当前 active bitmap layer。选区状态不写入 `storyboard.project.json`；移动或缩放提交后，只把像素结果写回当前 layer PNG，并通过 bitmap layer snapshot 进入 undo/redo。
 
 Reason: V1 先提供接近 Photoshop 的基础选区移动/缩放体验，同时避免跨图层、保存选区、羽化、魔棒、旋转、自由变形等复杂状态污染内部项目格式。
+
+Selection transform hit testing converts a visible screen-space handle target into canvas coordinates.
+
+Reason: storyboard images can be much larger than their displayed size. A fixed canvas-space radius makes corner scale handles effectively unclickable on high-resolution images.
+
+## Keyboard Shortcuts Are Local User Settings
+
+快捷键配置通过 Electron IPC 读写到本机 `app.getPath("userData")/keyboard-shortcuts.json`。项目文件不保存快捷键配置；`SWB_USER_DATA_DIR` 只用于 smoke 隔离测试环境。
+
+Reason: 快捷键是用户个人偏好，不属于 storyboard 项目内容，也不应随项目文件在团队间传播。
 
 ## Layer Drawer Opens By Click, Not Pointer Drag
 

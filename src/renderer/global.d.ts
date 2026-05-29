@@ -7,6 +7,7 @@ import type {
   RenamePlanItem,
   WorkspacePayload
 } from "../shared/types";
+import type { KeyboardShortcuts } from "./keyboardShortcuts";
 
 declare global {
   interface Window {
@@ -29,6 +30,8 @@ declare global {
       }) => Promise<{ folderPath: string; bitmapPath: string }>;
       createBlankShot: (folderPath: string, options: BlankShotOptions) => Promise<ImportedImage>;
       getRecentFolders: () => Promise<string[]>;
+      getKeyboardShortcuts: () => Promise<Partial<KeyboardShortcuts>>;
+      setKeyboardShortcuts: (shortcuts: KeyboardShortcuts) => Promise<Partial<KeyboardShortcuts>>;
       onOpenRecentFolder: (callback: (folderPath: string) => void) => () => void;
       onRecentFoldersChanged: (callback: (folders: string[]) => void) => () => void;
       assetUrl: (filePath: string) => string;

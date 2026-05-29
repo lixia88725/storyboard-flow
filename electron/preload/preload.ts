@@ -34,6 +34,10 @@ const api = {
   createBlankShot: (folderPath: string, options: unknown) =>
     ipcRenderer.invoke("images:createBlankShot", folderPath, options),
   getRecentFolders: () => ipcRenderer.invoke("recent:getFolders") as Promise<string[]>,
+  getKeyboardShortcuts: () =>
+    ipcRenderer.invoke("settings:getKeyboardShortcuts") as Promise<Record<string, string>>,
+  setKeyboardShortcuts: (shortcuts: Record<string, string>) =>
+    ipcRenderer.invoke("settings:setKeyboardShortcuts", shortcuts) as Promise<Record<string, string>>,
   onOpenRecentFolder: (callback: (folderPath: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, folderPath: string) => callback(folderPath);
     ipcRenderer.on("recent:openFolder", listener);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bitmapSelectionBounds,
+  bitmapSelectionHandleRadiusForStage,
   bitmapSelectionHitTarget,
   blendMenuDirectionFromRects,
   layerOpacityFromClientX,
@@ -150,6 +151,16 @@ describe("sketch geometry", () => {
     });
     expect(bitmapSelectionHitTarget({ x: 60, y: 60 }, bounds, 8)).toEqual({ type: "move" });
     expect(bitmapSelectionHitTarget({ x: 10, y: 60 }, bounds, 8)).toEqual({ type: "none" });
+  });
+
+  it("keeps bitmap selection handles easy to hit when large canvases are displayed smaller", () => {
+    expect(
+      bitmapSelectionHandleRadiusForStage(
+        { width: 2581, height: 1080 },
+        { width: 430, height: 180 },
+        12
+      )
+    ).toBeCloseTo(72.03, 2);
   });
 
   it("scales bitmap selection bounds from a corner while preserving the opposite corner", () => {

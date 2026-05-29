@@ -163,6 +163,24 @@ describe("animation viewport", () => {
     expect(tall.imageHeight).toBe(Math.round(tall.imageWidth / (1544 / 1080)));
   });
 
+  it("keeps the animation frame stable across different image aspect ratios", () => {
+    const scope = {
+      boardWidth: 1200,
+      boardTop: 120,
+      viewportHeight: 900,
+      reservedBottom: 180,
+      margin: 14,
+      zoomLevel: 260,
+      isAnimationMode: true
+    };
+    const wide = getAnimationViewport({ ...scope, imageAspectRatio: 2581 / 1080 });
+    const tall = getAnimationViewport({ ...scope, imageAspectRatio: 1544 / 1080 });
+
+    expect(wide.frameWidth).toBe(tall.frameWidth);
+    expect(wide.frameHeight).toBe(tall.frameHeight);
+    expect(wide.imageHeight).not.toBe(tall.imageHeight);
+  });
+
   it("enters animation mode at max zoom when a wide image would otherwise need more zoom", () => {
     const viewport = getAnimationViewport({
       boardWidth: 1200,

@@ -348,6 +348,16 @@ button.primary {
   grid-template-columns: 54px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
+  position: relative;
+}
+
+.app-shell.is-animation-mode .workspace-layout::before {
+  content: "";
+  position: fixed;
+  inset: 52px 0 42px 64px;
+  z-index: 10;
+  pointer-events: none;
+  background: rgba(18, 17, 14, 0.94);
 }
 
 .tool-rail {
@@ -380,6 +390,76 @@ button.primary {
   stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.shortcut-menu-container {
+  position: relative;
+}
+
+.shortcut-menu {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 10px);
+  z-index: 36;
+  display: grid;
+  gap: 10px;
+  width: 270px;
+  border: 1px solid #27231d;
+  background: #fffdf7;
+  border-radius: 6px;
+  padding: 10px;
+  box-shadow: 0 8px 0 rgba(39, 35, 29, 0.14);
+}
+
+.shortcut-menu-head {
+  display: grid;
+  gap: 2px;
+}
+
+.shortcut-menu-head strong {
+  font-size: 13px;
+}
+
+.shortcut-menu-head span,
+.shortcut-error {
+  margin: 0;
+  color: #6f675d;
+  font-size: 11px;
+}
+
+.shortcut-list {
+  display: grid;
+  gap: 6px;
+}
+
+.shortcut-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 8px;
+  align-items: center;
+  color: #4c463d;
+  font-size: 12px;
+}
+
+.shortcut-key-input {
+  width: 100%;
+  height: 26px;
+  border: 1px solid #27231d;
+  border-radius: 4px;
+  background: #fffaf0;
+  color: #211f1a;
+  padding: 3px 6px;
+  text-align: center;
+  box-shadow: 0 1px 0 #27231d;
+}
+
+.shortcut-key-input:focus {
+  outline: 2px solid #1f6f62;
+  outline-offset: 1px;
+}
+
+.shortcut-error {
+  color: #9d4b32;
 }
 
 .color-control {
@@ -972,7 +1052,7 @@ button.layer-blend-dot {
 }
 
 .app-shell.is-animation-mode .shot-card {
-  width: var(--animation-image-width);
+  width: var(--animation-frame-width);
   scroll-margin-bottom: 164px;
   font-size: 14px;
 }
@@ -994,44 +1074,71 @@ button.layer-blend-dot {
   z-index: 20;
 }
 
+.app-shell.is-animation-mode .shot-card.is-animation-focus {
+  z-index: 12;
+}
+
 .shot-card.is-selected {
   outline: 4px solid #f05a28;
   outline-offset: 3px;
 }
 
 .shot-head {
+  position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
   align-items: center;
-  padding: 4px 7px;
-  border-bottom: 2px solid #25221d;
+  padding: 2px 5px;
+  border-bottom: 1px solid #25221d;
   background: #e7ddc6;
+  cursor: grab;
+  user-select: none;
 }
 
-.shot-head span {
+.shot-head:active {
+  cursor: grabbing;
+}
+
+.shot-index {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
   font-weight: 700;
+  letter-spacing: 0;
 }
 
-.drag-handle {
-  background: #25221d;
-  color: #fffaf0;
-  box-shadow: none;
-  cursor: grab;
-  min-width: 58px;
-  min-height: 26px;
-  padding: 3px 7px;
-  font-size: 12px;
+.shot-head-grip {
+  width: 18px;
+  height: 14px;
+  opacity: 0;
+  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
+  background-position: 0 0;
+  background-size: 6px 6px;
+  color: #91887a;
+  transition: opacity 120ms ease;
+}
+
+.shot-head:hover .shot-head-grip,
+.shot-head:focus-visible .shot-head-grip {
+  opacity: 0.75;
 }
 
 .sketch-panel {
   padding: 0;
   border-bottom: 2px solid #25221d;
+}
+
+.app-shell.is-animation-mode .sketch-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--animation-frame-width);
+  height: var(--animation-frame-height);
+  overflow: hidden;
+  background: #10100d;
 }
 
 .image-stage {
@@ -1164,8 +1271,9 @@ button.layer-blend-dot {
 
 .drop-hint {
   margin: 0;
-  color: #8a8273;
-  font-size: 11px;
+  color: #a89f90;
+  font-size: 10px;
+  opacity: 0.48;
   user-select: none;
 }
 
@@ -1181,16 +1289,17 @@ button.layer-blend-dot {
   padding: 0;
   min-height: 30px;
   cursor: grab;
-  color: #fffaf0;
-  background: #8f321e;
-  border-color: #642416;
+  color: #c8c0b4;
+  background: #4b4841;
+  border-color: #3a3731;
   box-shadow: none;
 }
 
 .dialogue-card textarea {
   width: 100%;
-  min-height: 30px;
+  min-height: 0;
   resize: none;
+  overflow: hidden;
   border: 1px solid #2a271f;
   background: #fffdf7;
   color: #211f1a;
@@ -1297,6 +1406,11 @@ button.layer-blend-dot {
   border: 2px solid #25221d;
   background: rgba(255, 250, 240, 0.97);
   box-shadow: 0 -4px 0 rgba(37, 34, 29, 0.12);
+  scrollbar-width: none;
+}
+
+.timeline::-webkit-scrollbar {
+  display: none;
 }
 
 .timeline-shot {
@@ -1484,11 +1598,29 @@ button.primary {
 .add-shot-menu,
 .save-menu,
 .sketch-settings-menu,
+.shortcut-menu,
 .status-panel {
   border-color: #0f0e0b;
   background: #292723;
   box-shadow: 0 8px 0 rgba(0, 0, 0, 0.22);
   color: #d8d0c3;
+}
+
+.shortcut-menu-head span,
+.shortcut-field,
+.shortcut-error {
+  color: #b8ad9d;
+}
+
+.shortcut-key-input {
+  border-color: #0f0e0b;
+  background: #211f1a;
+  color: #fffaf0;
+  box-shadow: 0 1px 0 #0f0e0b;
+}
+
+.shortcut-error {
+  color: #c98268;
 }
 
 .recent-menu button,
@@ -1543,9 +1675,8 @@ button.primary {
   color: #eee6d4;
 }
 
-.drag-handle {
-  background: #171511;
-  color: #eee6d4;
+.shot-head-grip {
+  color: #8f8678;
 }
 
 .sketch-panel {
@@ -1562,13 +1693,14 @@ button.primary {
 }
 
 .drop-hint {
-  color: #8f8678;
+  color: #7a7267;
+  opacity: 0.42;
 }
 
 .dialogue-grip {
-  color: #fffaf0;
-  background: #8f321e;
-  border-color: #642416;
+  color: #c8c0b4;
+  background: #4b4841;
+  border-color: #3a3731;
 }
 
 .dialogue-preview,

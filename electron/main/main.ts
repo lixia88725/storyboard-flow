@@ -108,6 +108,8 @@ type WriteLayerAssetPayload = LayerAssetPayload & {
   dataUrl: string;
 };
 
+type KeyboardShortcuts = Record<string, string>;
+
 type ImportedImage = {
   imagePath: string;
   previewPath?: string;
@@ -179,6 +181,10 @@ protocol.registerSchemesAsPrivileged([
     }
   }
 ]);
+
+if (process.env.SWB_USER_DATA_DIR) {
+  app.setPath("userData", process.env.SWB_USER_DATA_DIR);
+}
 
 const createWindow = async () => {
   mainWindow = new BrowserWindow({
@@ -314,6 +320,15 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle("recent:getFolders", async () => {
     return readRecentFolders();
+  });
+
+  ipcMain.handle("settings:getKeyboardShortcuts", async () => {
+    return readKeyboardShortcuts();
+  });
+
+  ipcMain.handle("settings:setKeyboardShortcuts", async (_event, shortcuts: KeyboardShortcuts) => {
+    await writeKeyboardShortcuts(shortcuts);
+    return shortcuts;
   });
 };
 
@@ -522,6 +537,36 @@ const writeProjectMetadata = async (metadataPath: string, project: Project): Pro
 
 const recentFoldersPath = (): string => {
   return path.join(app.getPath("userData"), "recent-folders.json");
+};
+
+const keyboardShortcutsPath = (): string => {
+  return path.join(app.getPath("userData"), "keyboard-shortcuts.json");
+};
+
+const readKeyboardShortcuts = async (): Promise<KeyboardShortcuts> => {
+  try {
+    const contents = await readFile(keyboardShortcutsPath(), "utf8");
+    const parsed = JSON.parse(contents);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    );
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
+    if (code === "ENOENT") {
+      return {};
+    }
+
+    throw error;
+  }
+};
+
+const writeKeyboardShortcuts = async (shortcuts: KeyboardShortcuts): Promise<void> => {
+  await mkdir(path.dirname(keyboardShortcutsPath()), { recursive: true });
+  await writeFile(keyboardShortcutsPath(), `${JSON.stringify(shortcuts, null, 2)}\n`, "utf8");
 };
 
 const readRecentFolders = async (): Promise<string[]> => {

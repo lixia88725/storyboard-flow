@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type PointerEvent
 } from "react";
@@ -75,9 +76,20 @@ import {
   restoreLayerAssetSnapshots,
   type LayerAssetSnapshot
 } from "./bitmapLayerHistory";
+import {
+  defaultKeyboardShortcuts,
+  duplicateShortcutValues,
+  formatShortcutFromKeyboardEvent,
+  keyboardEventMatchesShortcut,
+  normalizeKeyboardShortcuts,
+  shortcutActions,
+  type KeyboardShortcuts,
+  type ShortcutAction
+} from "./keyboardShortcuts";
 import { getOnionSkinNeighbors } from "./onionSkin";
 import {
   bitmapSelectionBounds,
+  bitmapSelectionHandleRadiusForStage,
   bitmapSelectionHitTarget,
   blendMenuDirectionFromRects,
   layerDropPlacementFromClientY,
@@ -112,6 +124,7 @@ const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: stri
 const autosaveDelayMs = 600;
 const animationReservedBottom = 180;
 const animationViewportMargin = 14;
+const maxDialogueRows = 3;
 
 type WorkspaceSaveState = "saved" | "saving" | "error";
 type FileNameSyncState = "synced" | "unsynced";
@@ -161,24 +174,53 @@ type UndoEntry = {
   layerAssets?: LayerAssetSnapshot[];
 };
 type ProjectUpdate = Project | ((currentProject: Project) => Project);
-type HistoryShortcut = "undo" | "redo";
 
-const isMacPlatform = () => /mac|iphone|ipad|ipod/i.test(navigator.platform);
+const shortcutLabels: Array<{ action: ShortcutAction; label: string }> = [
+  { action: "brush", label: "Brush" },
+  { action: "eraser", label: "Eraser" },
+  { action: "select", label: "Select" },
+  { action: "clearLayer", label: "Clear layer" },
+  { action: "save", label: "Save" },
+  { action: "addShot", label: "Add Shot" },
+  { action: "onionSkin", label: "Onion Skin" },
+  { action: "previousShot", label: "Previous shot" },
+  { action: "nextShot", label: "Next shot" },
+  { action: "undo", label: "Undo" },
+  { action: "redo", label: "Redo" }
+];
 
-const historyShortcutForEvent = (event: KeyboardEvent): HistoryShortcut | undefined => {
-  if (event.key.toLowerCase() !== "z" || event.altKey) {
-    return undefined;
+const isKeyboardEditableTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
   }
 
-  const isMac = isMacPlatform();
-  const hasPlatformModifier = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-
-  if (!hasPlatformModifier) {
-    return undefined;
+  if (target.isContentEditable || target.closest("textarea, select")) {
+    return true;
   }
 
-  return event.shiftKey ? "redo" : "undo";
+  const input = target.closest("input");
+  if (!input) {
+    return false;
+  }
+
+  return !["button", "checkbox", "color", "file", "radio", "submit"].includes(input.type);
 };
+
+const isRangeInputTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const input = target.closest("input");
+  return input?.type === "range";
+};
+
+const hasOpenShortcutBlockingMenu = (): boolean =>
+  Boolean(
+    document.querySelector(
+      ".shortcut-menu, .save-menu, .recent-menu, .add-shot-menu, .sketch-settings-menu"
+    )
+  );
 
 const appendHistoryEntry = (entries: UndoEntry[], entry: UndoEntry) => [
   ...entries.slice(Math.max(0, entries.length - maxUndoHistory + 1)),
@@ -191,6 +233,21 @@ const blurActiveFormControl = () => {
     activeElement.blur();
   }
 };
+
+const shouldIgnoreWorkbenchWheel = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  Boolean(
+    target.closest(
+      "input, textarea, select, .recent-menu, .add-shot-menu, .save-menu, .sketch-settings-menu, .shortcut-menu"
+    )
+  );
+
+const dialogueLines = (text: string) => text.replace(/\r\n?/g, "\n").split("\n");
+
+const clampDialogueText = (text: string) => dialogueLines(text).slice(0, maxDialogueRows).join("\n");
+
+const dialogueRowsForText = (text: string) =>
+  Math.min(maxDialogueRows, Math.max(1, dialogueLines(text).length));
 
 export const App = () => {
   const [project, setProject] = useState<Project>(() => createProject("Untitled Storyboard"));
@@ -215,6 +272,7 @@ export const App = () => {
   const [isAnimationMode, setIsAnimationMode] = useState(false);
   const [isOnionSkinEnabled, setIsOnionSkinEnabled] = useState(false);
   const [animationImageSize, setAnimationImageSize] = useState({ width: 430, height: 271 });
+  const [animationFrameSize, setAnimationFrameSize] = useState({ width: 430, height: 271 });
   const [autosaveRevision, setAutosaveRevision] = useState(0);
   const [editingDialogueId, setEditingDialogueId] = useState<string | undefined>();
   const [isSaveMenuOpen, setIsSaveMenuOpen] = useState(false);
@@ -224,6 +282,10 @@ export const App = () => {
   const [sketchSettingsMenu, setSketchSettingsMenu] = useState<SketchSettingsMenu | undefined>();
   const [isStatusPanelOpen, setIsStatusPanelOpen] = useState(false);
   const [isLayerPanelOpen, setIsLayerPanelOpen] = useState(false);
+  const [isShortcutMenuOpen, setIsShortcutMenuOpen] = useState(false);
+  const [keyboardShortcuts, setKeyboardShortcuts] = useState<KeyboardShortcuts>(defaultKeyboardShortcuts);
+  const [capturingShortcutAction, setCapturingShortcutAction] = useState<ShortcutAction | undefined>();
+  const [shortcutError, setShortcutError] = useState("");
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<UndoEntry[]>([]);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | undefined>();
@@ -240,6 +302,8 @@ export const App = () => {
   const saveMenuRef = useRef<HTMLDivElement | null>(null);
   const recentMenuRef = useRef<HTMLDivElement | null>(null);
   const addShotMenuRef = useRef<HTMLDivElement | null>(null);
+  const shortcutMenuRef = useRef<HTMLDivElement | null>(null);
+  const appShellRef = useRef<HTMLElement | null>(null);
   const boardGridRef = useRef<HTMLElement | null>(null);
   const orderedShots = useMemo(() => sortedShots(project.shots), [project.shots]);
   const needsSwbImport = useMemo(() => projectNeedsSwbImport(project), [project]);
@@ -254,6 +318,30 @@ export const App = () => {
     () => getOnionSkinNeighbors(orderedShots, primarySelectedShotId, isAnimationMode && isOnionSkinEnabled),
     [isAnimationMode, isOnionSkinEnabled, orderedShots, primarySelectedShotId]
   );
+
+  useEffect(() => {
+    const element = appShellRef.current;
+    if (!element) {
+      return;
+    }
+
+    const handleWheel = (event: globalThis.WheelEvent) => {
+      if (shouldIgnoreWorkbenchWheel(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      setZoomLevel((current) => {
+        const direction = event.deltaY < 0 ? 1 : -1;
+        const nextZoom = Math.round(current / 5) * 5 + direction * 5;
+        return Math.min(maxStoryboardZoom, Math.max(25, nextZoom));
+      });
+    };
+
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, []);
 
   useEffect(() => {
     selectedShotIdsRef.current = selectedShotIds;
@@ -278,6 +366,58 @@ export const App = () => {
   useEffect(() => {
     fileNameSyncStateRef.current = fileNameSyncState;
   }, [fileNameSyncState]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    window.storyboard
+      .getKeyboardShortcuts()
+      .then((shortcuts) => {
+        if (isMounted) {
+          setKeyboardShortcuts(normalizeKeyboardShortcuts(shortcuts));
+        }
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setStatus(`Keyboard shortcuts unavailable: ${message}`);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isShortcutMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      if (!shortcutMenuRef.current?.contains(event.target as Node)) {
+        setIsShortcutMenuOpen(false);
+        setShortcutError("");
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (capturingShortcutAction) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setIsShortcutMenuOpen(false);
+        setShortcutError("");
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [capturingShortcutAction, isShortcutMenuOpen]);
 
   useEffect(() => {
     if (!isSaveMenuOpen) {
@@ -461,6 +601,7 @@ export const App = () => {
     });
     setIsAnimationMode(viewport.isAnimationMode);
     setAnimationImageSize({ width: viewport.imageWidth, height: viewport.imageHeight });
+    setAnimationFrameSize({ width: viewport.frameWidth, height: viewport.frameHeight });
   }, [isAnimationMode, orderedShots, primarySelectedShot, zoomLevel]);
 
   useEffect(() => {
@@ -505,64 +646,145 @@ export const App = () => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select")) {
-        return;
-      }
-
-      const historyShortcut = historyShortcutForEvent(event);
-
-      if (historyShortcut === "undo") {
-        event.preventDefault();
-        void applyUndoEntry();
-        return;
-      }
-
-      if (historyShortcut === "redo") {
-        event.preventDefault();
-        void applyRedoEntry();
+      const target = event.target;
+      const isMenuOpen =
+        isShortcutMenuOpen ||
+        isSaveMenuOpen ||
+        isRecentMenuOpen ||
+        isAddShotMenuOpen ||
+        Boolean(sketchSettingsMenu) ||
+        hasOpenShortcutBlockingMenu();
+      if (isMenuOpen) {
         return;
       }
 
       const key = event.key.toLowerCase();
+      const shortcutAction = shortcutActions.find((action) =>
+        keyboardEventMatchesShortcut(event, keyboardShortcuts[action])
+      );
+      const allowsRangeTarget =
+        isAnimationMode &&
+        isRangeInputTarget(target) &&
+        (shortcutAction === "previousShot" || shortcutAction === "nextShot");
 
-      if (key === "b") {
-        setActiveSketchTool("brush");
+      if (isKeyboardEditableTarget(target) && !allowsRangeTarget) {
         return;
       }
 
-      if (key === "e") {
-        setActiveSketchTool("eraser");
-        return;
+      const moveSelection = (direction: "left" | "right" | "up" | "down") => {
+        setSelectedShotIds((current) => {
+          if (orderedShots.length === 0) {
+            return [];
+          }
+
+          const currentIndex = current[0]
+            ? orderedShots.findIndex((shot) => shot.id === current[0])
+            : -1;
+          const nextIndex = getNextStoryboardIndex(
+            currentIndex,
+            orderedShots.length,
+            measureGridColumns(),
+            direction,
+            isAnimationMode
+          );
+          return [orderedShots[nextIndex].id];
+        });
+      };
+
+      if (shortcutAction) {
+        event.preventDefault();
+
+        if (shortcutAction === "brush") {
+          setActiveSketchTool("brush");
+          return;
+        }
+
+        if (shortcutAction === "eraser") {
+          setActiveSketchTool("eraser");
+          return;
+        }
+
+        if (shortcutAction === "select") {
+          setActiveSketchTool("select");
+          return;
+        }
+
+        if (shortcutAction === "clearLayer") {
+          const activeShot = primarySelectedShot ?? orderedShots[0];
+          const activeLayer =
+            activeShot
+              ? bitmapLayersForShot(activeShot).find((layer) => layer.id === activeShot.activeLayerId) ??
+                bitmapLayersForShot(activeShot)[0]
+              : undefined;
+
+          if (activeShot && activeLayer) {
+            void handleClearBitmapLayer(activeShot.id, activeLayer.id);
+          }
+          return;
+        }
+
+        if (shortcutAction === "save") {
+          void handleSaveProject();
+          return;
+        }
+
+        if (shortcutAction === "addShot") {
+          void handleAddShot();
+          return;
+        }
+
+        if (shortcutAction === "onionSkin") {
+          if (isAnimationMode) {
+            setIsOnionSkinEnabled((isEnabled) => !isEnabled);
+          } else {
+            setStatus("Onion Skin is available in animation mode");
+          }
+          return;
+        }
+
+        if (shortcutAction === "previousShot") {
+          moveSelection("left");
+          return;
+        }
+
+        if (shortcutAction === "nextShot") {
+          moveSelection("right");
+          return;
+        }
+
+        if (shortcutAction === "undo") {
+          void applyUndoEntry();
+          return;
+        }
+
+        if (shortcutAction === "redo") {
+          void applyRedoEntry();
+          return;
+        }
       }
 
-      if (!["arrowright", "arrowdown", "arrowleft", "arrowup"].includes(key)) {
+      if (!["arrowdown", "arrowup"].includes(key)) {
         return;
       }
 
       event.preventDefault();
-      setSelectedShotIds((current) => {
-        if (orderedShots.length === 0) {
-          return [];
-        }
-
-        const currentIndex = current[0]
-          ? orderedShots.findIndex((shot) => shot.id === current[0])
-          : -1;
-        const nextIndex = getNextStoryboardIndex(
-          currentIndex,
-          orderedShots.length,
-          measureGridColumns(),
-          key.replace("arrow", "") as "left" | "right" | "up" | "down",
-          isAnimationMode
-        );
-        return [orderedShots[nextIndex].id];
-      });
+      moveSelection(key.replace("arrow", "") as "up" | "down");
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isAnimationMode, measureGridColumns, orderedShots]);
+  }, [
+    isAddShotMenuOpen,
+    isAnimationMode,
+    isRecentMenuOpen,
+    isSaveMenuOpen,
+    isShortcutMenuOpen,
+    keyboardShortcuts,
+    measureGridColumns,
+    orderedShots,
+    primarySelectedShot,
+    sketchSettingsMenu
+  ]);
 
   const updateProject = (
     projectUpdate: ProjectUpdate,
@@ -1120,16 +1342,88 @@ export const App = () => {
     });
   };
 
-  const handleStageWheelZoom = (deltaY: number) => {
-    setZoomLevel((current) => {
-      const direction = deltaY < 0 ? 1 : -1;
-      const nextZoom = Math.round(current / 5) * 5 + direction * 5;
-      return Math.min(maxStoryboardZoom, Math.max(25, nextZoom));
+  const handleShortcutCapture = async (action: ShortcutAction, event: ReactKeyboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const nextShortcut = event.key === "Backspace" || event.key === "Delete"
+      ? ""
+      : formatShortcutFromKeyboardEvent(event.nativeEvent);
+    if (nextShortcut === "" && event.key !== "Backspace" && event.key !== "Delete") {
+      return;
+    }
+
+    const nextShortcuts = normalizeKeyboardShortcuts({
+      ...keyboardShortcuts,
+      [action]: nextShortcut
     });
+    const duplicates = duplicateShortcutValues(nextShortcuts);
+    if (duplicates.length > 0) {
+      setShortcutError(`${duplicates.join(", ")} is already assigned`);
+      return;
+    }
+
+    setShortcutError("");
+    setKeyboardShortcuts(nextShortcuts);
+    const saved = await withStatus(
+      "Keyboard shortcut save failed",
+      () => window.storyboard.setKeyboardShortcuts(nextShortcuts),
+      setStatus
+    );
+    if (saved) {
+      setKeyboardShortcuts(normalizeKeyboardShortcuts(saved));
+    }
   };
+
+  const handleNativeShortcutCapture = async (action: ShortcutAction, event: KeyboardEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const nextShortcut = event.key === "Backspace" || event.key === "Delete"
+      ? ""
+      : formatShortcutFromKeyboardEvent(event);
+    if (nextShortcut === "" && event.key !== "Backspace" && event.key !== "Delete") {
+      return;
+    }
+
+    const nextShortcuts = normalizeKeyboardShortcuts({
+      ...keyboardShortcuts,
+      [action]: nextShortcut
+    });
+    const duplicates = duplicateShortcutValues(nextShortcuts);
+    if (duplicates.length > 0) {
+      setShortcutError(`${duplicates.join(", ")} is already assigned`);
+      return;
+    }
+
+    setShortcutError("");
+    setKeyboardShortcuts(nextShortcuts);
+    const saved = await withStatus(
+      "Keyboard shortcut save failed",
+      () => window.storyboard.setKeyboardShortcuts(nextShortcuts),
+      setStatus
+    );
+    if (saved) {
+      setKeyboardShortcuts(normalizeKeyboardShortcuts(saved));
+    }
+  };
+
+  useEffect(() => {
+    if (!capturingShortcutAction) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      void handleNativeShortcutCapture(capturingShortcutAction, event);
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [capturingShortcutAction, keyboardShortcuts]);
 
   return (
     <main
+      ref={appShellRef}
       className={`app-shell ${isAnimationMode ? "is-animation-mode" : ""}`}
       onContextMenu={openSketchSettingsMenu}
     >
@@ -1308,6 +1602,49 @@ export const App = () => {
 
       <div className="workspace-layout">
         <aside className="tool-rail" aria-label="Sketch tools">
+          <div className="shortcut-menu-container" ref={shortcutMenuRef}>
+            <button
+              type="button"
+              className={isShortcutMenuOpen ? "selected" : ""}
+              onClick={() => {
+                setIsShortcutMenuOpen((isOpen) => !isOpen);
+                setShortcutError("");
+              }}
+              title="Keyboard shortcuts"
+              aria-label="Keyboard shortcuts"
+              aria-expanded={isShortcutMenuOpen}
+            >
+              <GearIcon />
+            </button>
+            {isShortcutMenuOpen ? (
+              <div className="shortcut-menu" aria-label="Keyboard shortcuts">
+                <div className="shortcut-menu-head">
+                  <strong>Shortcuts</strong>
+                  <span>Press a key combo. Backspace/Delete clears.</span>
+                </div>
+                <div className="shortcut-list">
+                  {shortcutLabels.map(({ action, label }) => (
+                    <label key={action} className="shortcut-field">
+                      <span>{label}</span>
+                      <input
+                        className="shortcut-key-input"
+                        value={keyboardShortcuts[action]}
+                        readOnly
+                        onKeyDown={(event) => void handleShortcutCapture(action, event)}
+                        onFocus={(event) => {
+                          setCapturingShortcutAction(action);
+                          event.currentTarget.select();
+                        }}
+                        onBlur={() => setCapturingShortcutAction(undefined)}
+                        aria-label={`${label} shortcut`}
+                      />
+                    </label>
+                  ))}
+                </div>
+                {shortcutError ? <p className="shortcut-error">{shortcutError}</p> : null}
+              </div>
+            ) : null}
+          </div>
           <button
             type="button"
             className={activeSketchTool === "brush" ? "selected" : ""}
@@ -1464,7 +1801,9 @@ export const App = () => {
                 {
                   "--shot-scale": zoomLevel / 100,
                   "--animation-image-width": `${animationImageSize.width}px`,
-                  "--animation-image-height": `${animationImageSize.height}px`
+                  "--animation-image-height": `${animationImageSize.height}px`,
+                  "--animation-frame-width": `${animationFrameSize.width}px`,
+                  "--animation-frame-height": `${animationFrameSize.height}px`
                 } as CSSProperties
               }
               onPointerDown={handleSelectionPointerDown}
@@ -1477,6 +1816,7 @@ export const App = () => {
                   project={project}
                   folderPath={folderPath}
                   isSelected={selectedShotIds.length > 1 && selectedShotIds.includes(shot.id)}
+                  isAnimationFocused={isAnimationMode && shot.id === primarySelectedShotId}
                   activeSketchTool={activeSketchTool}
                   selectionMode={selectionMode}
                   brushColor={brushColor}
@@ -1497,7 +1837,6 @@ export const App = () => {
                   editingDialogueId={editingDialogueId}
                   onSelect={(event) => handleShotSelect(shot.id, event)}
                   onFocusShot={() => setSelectedShotIds([shot.id])}
-                  onStageWheel={handleStageWheelZoom}
                   isLayerPanelOpen={isLayerPanelOpen && shot.id === primarySelectedShotId}
                   thumbnailRevision={autosaveRevision}
                   onToggleLayerPanel={() => {
@@ -1693,6 +2032,13 @@ const withStatus = async <T,>(
   }
 };
 
+const GearIcon = () => (
+  <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
+    <path d="M13.5 5h5l.8 3.2 2.7 1.1 2.8-1.7 3.5 3.5-1.7 2.8 1.1 2.7 3.3.9v5l-3.3.8-1.1 2.7 1.7 2.8-3.5 3.5-2.8-1.7-2.7 1.1-.8 3.3h-5l-.8-3.3-2.7-1.1-2.8 1.7-3.5-3.5 1.7-2.8-1.1-2.7-3.3-.8v-5l3.3-.9 1.1-2.7-1.7-2.8 3.5-3.5 2.8 1.7 2.7-1.1z" />
+    <circle cx="16" cy="18" r="4.2" />
+  </svg>
+);
+
 const BrushIcon = () => (
   <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
     <path d="M20.5 5.5 26.5 11.5 14 24 8 18z" />
@@ -1710,8 +2056,9 @@ const EraserIcon = () => (
 
 const SelectIcon = () => (
   <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
-    <path d="M8 5 24 16 16 18 12 26z" />
-    <path d="M17 18 23 25" />
+    <path d="M10.5 8.5c-3.1 1.5-4.8 4-4.1 6.5 1 3.9 7 5.7 13.5 4.1 4.9-1.2 7.9-3.6 7.5-6.1-.4-2.6-4.5-3.9-9.2-2.9-3.4.7-5.7 2.2-5.4 3.6.3 1.3 2.9 1.8 5.9 1.1" />
+    <path d="M19.2 19.2 14.5 27l-2.1-8.6" />
+    <path d="M14.5 27 9.7 23.6" />
   </svg>
 );
 
@@ -2390,6 +2737,7 @@ type ShotCardProps = {
   project: Project;
   folderPath?: string;
   isSelected: boolean;
+  isAnimationFocused: boolean;
   activeSketchTool: SketchTool;
   selectionMode: BitmapSelectionMode;
   brushColor: string;
@@ -2404,7 +2752,6 @@ type ShotCardProps = {
   thumbnailRevision: number;
   onSelect: (event: MouseEvent) => void;
   onFocusShot: () => void;
-  onStageWheel: (deltaY: number) => void;
   onToggleLayerPanel: () => void;
   onAddLayer: (shotId: string) => void;
   onRemoveLayer: (shotId: string, layerId: string) => void;
@@ -2438,6 +2785,7 @@ const ShotCard = ({
   project,
   folderPath,
   isSelected,
+  isAnimationFocused,
   activeSketchTool,
   selectionMode,
   brushColor,
@@ -2452,7 +2800,6 @@ const ShotCard = ({
   thumbnailRevision,
   onSelect,
   onFocusShot,
-  onStageWheel,
   onToggleLayerPanel,
   onAddLayer,
   onRemoveLayer,
@@ -2497,23 +2844,22 @@ const ShotCard = ({
       ref={sortable.setNodeRef}
       className={`shot-card ${sortable.isDragging ? "is-dragging" : ""} ${
         isSelected ? "is-selected" : ""
-      } ${isLayerPanelVisible ? "has-layer-panel-open" : ""}`}
+      } ${isAnimationFocused ? "is-animation-focus" : ""} ${
+        isLayerPanelVisible ? "has-layer-panel-open" : ""
+      }`}
       style={style}
       data-shot-id={shot.id}
       onClick={onSelect}
     >
-      <div className="shot-head">
-        <button
-          type="button"
-          className="drag-handle"
-          ref={sortable.setActivatorNodeRef}
-          {...sortable.attributes}
-          {...sortable.listeners}
-          title="Drag to reorder shot"
-        >
-          #{String(index + 1).padStart(3, "0")}
-        </button>
-        <span aria-label="Shot summary placeholder" />
+      <div
+        className="shot-head"
+        ref={sortable.setActivatorNodeRef}
+        {...sortable.attributes}
+        {...sortable.listeners}
+        title="Drag to reorder shot"
+      >
+        <span className="shot-index">{String(index + 1).padStart(3, "0")}</span>
+        <span className="shot-head-grip" aria-hidden="true" />
       </div>
 
       <div className={`shot-image-shell ${isLayerPanelVisible ? "has-layer-panel" : ""}`}>
@@ -2532,7 +2878,6 @@ const ShotCard = ({
           onStroke={onSketchStroke}
           onSelectionTransform={onSelectionTransform}
           onFocusShot={onFocusShot}
-          onWheel={onStageWheel}
         />
         <LayerPanel
           shot={shot}
@@ -2586,6 +2931,7 @@ type DialogueCardProps = {
 
 const DialogueCard = ({ dialogue, isEditing, onChange, onBlur }: DialogueCardProps) => {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const rows = dialogueRowsForText(dialogue.text);
   const sortable = useSortable({
     id: dialogue.id,
     data: {
@@ -2622,8 +2968,9 @@ const DialogueCard = ({ dialogue, isEditing, onChange, onBlur }: DialogueCardPro
       </button>
       <textarea
         ref={textareaRef}
+        rows={rows}
         value={dialogue.text}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => onChange(clampDialogueText(event.target.value))}
         onBlur={onBlur}
       />
     </div>
@@ -2711,7 +3058,6 @@ type SketchPadProps = {
   ) => Promise<string | undefined>;
   onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
   onFocusShot: () => void;
-  onWheel: (deltaY: number) => void;
 };
 
 const SketchPad = ({
@@ -2728,8 +3074,7 @@ const SketchPad = ({
   onionSkinNextShot,
   onStroke,
   onSelectionTransform,
-  onFocusShot,
-  onWheel
+  onFocusShot
 }: SketchPadProps) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [draftStroke, setDraftStroke] = useState<SketchStroke | undefined>();
@@ -2849,22 +3194,6 @@ const SketchPad = ({
 
     return () => resizeObserver.disconnect();
   }, []);
-
-  useEffect(() => {
-    const element = imageStageRef.current;
-    if (!element) {
-      return;
-    }
-
-    const handleWheel = (event: globalThis.WheelEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onWheel(event.deltaY);
-    };
-
-    element.addEventListener("wheel", handleWheel, { passive: false });
-    return () => element.removeEventListener("wheel", handleWheel);
-  }, [onWheel]);
 
   useEffect(() => {
     if (!isDrawing) {
@@ -3270,7 +3599,8 @@ const SketchPad = ({
   const beginBitmapSelection = (position: Point) => {
     const currentSelection = bitmapSelectionRef.current;
     if (currentSelection) {
-      const hit = bitmapSelectionHitTarget(position, currentSelection.bounds, 8);
+      const handleRadius = bitmapSelectionHandleRadiusForStage(canvasSize, stageSize, 12);
+      const hit = bitmapSelectionHitTarget(position, currentSelection.bounds, handleRadius);
       if (hit.type === "move") {
         const nextTransform = {
           type: "move",

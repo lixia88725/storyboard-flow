@@ -156,6 +156,11 @@ const dispatchKeyZ = async (send, modifiers) => {
   });
 };
 
+const dispatchKey = async (send, key, code, windowsVirtualKeyCode) => {
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode });
+};
+
 const waitForUndoReady = async () => {
   await delay(700);
 };
@@ -416,8 +421,15 @@ try {
     )
   );
 
+  const electronUserDataRoot = path.join(smokeRoot, ".electron-user-data");
+  await mkdir(electronUserDataRoot, { recursive: true });
+
   electronProcess = spawn(electronBin, [`--remote-debugging-port=${port}`, "."], {
     cwd: repoRoot,
+    env: {
+      ...process.env,
+      SWB_USER_DATA_DIR: electronUserDataRoot
+    },
     stdio: ["ignore", "pipe", "pipe"]
   });
 
@@ -547,7 +559,52 @@ try {
     () => evaluate(`document.querySelector(".bottom-bar span")?.textContent === "100%"`),
     "stage wheel zoom reset"
   );
-
+  const blankZoomPoint = await evaluate(`
+    (() => {
+      const board = document.querySelector(".board-grid")?.getBoundingClientRect();
+      const shots = Array.from(document.querySelectorAll(".shot-card")).map((shot) => shot.getBoundingClientRect());
+      if (!board) {
+        return null;
+      }
+      for (let y = board.top + 12; y < board.bottom - 12; y += 20) {
+        for (let x = board.left + 12; x < board.right - 12; x += 20) {
+          const hitsShot = shots.some((shot) => x >= shot.left && x <= shot.right && y >= shot.top && y <= shot.bottom);
+          if (!hitsShot) {
+            return { x: Math.round(x), y: Math.round(y) };
+          }
+        }
+      }
+      return null;
+    })()
+  `);
+  if (!blankZoomPoint) {
+    throw new Error("No blank board area available for wheel zoom smoke");
+  }
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseWheel",
+    x: blankZoomPoint.x,
+    y: blankZoomPoint.y,
+    deltaX: 0,
+    deltaY: -120
+  });
+  await waitFor(
+    () => evaluate(`document.querySelector(".bottom-bar span")?.textContent === "105%"`),
+    "blank board wheel zoom in"
+  );
+  await evaluate(`
+    (() => {
+      const slider = document.querySelector('.bottom-bar input[type="range"]');
+      const rangeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      rangeSetter.call(slider, "100");
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      slider.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()
+  `);
+  await waitFor(
+    () => evaluate(`document.querySelector(".bottom-bar span")?.textContent === "100%"`),
+    "blank board wheel zoom reset"
+  );
   const startX = Math.round(rect.x + rect.width * 0.35);
   const startY = Math.round(rect.y + rect.height * 0.45);
   const endX = Math.round(rect.x + rect.width * 0.65);
@@ -574,6 +631,64 @@ try {
     const nextHash = await hashFile(layerPath);
     return nextHash === drawnHash ? nextHash : undefined;
   }, "layer hash restore after redo");
+
+  const keyboardShortcutChecks = await waitFor(
+    async () => {
+      const opened = await evaluate(`
+        (() => {
+          if (!document.querySelector(".shortcut-menu")) {
+            document.querySelector('button[aria-label="Keyboard shortcuts"]')?.click();
+          }
+          return Boolean(document.querySelector('input[aria-label="Brush shortcut"]'));
+        })()
+      `);
+      if (!opened) {
+        return undefined;
+      }
+      await evaluate(`
+        window.storyboard.setKeyboardShortcuts({
+          brush: "P",
+          eraser: "E",
+          select: "V",
+          clearLayer: "Escape",
+          save: "Cmd+S",
+          addShot: "A",
+          onionSkin: "O",
+          previousShot: "ArrowLeft",
+          nextShot: "ArrowRight",
+          undo: "Cmd+Z",
+          redo: "Shift+Cmd+Z"
+        })
+      `);
+      const settings = await waitFor(async () => {
+        const contents = await readFile(path.join(electronUserDataRoot, "keyboard-shortcuts.json"), "utf8")
+          .catch(() => undefined);
+        if (!contents) {
+          return undefined;
+        }
+        const parsed = JSON.parse(contents);
+        return parsed.brush === "P" && parsed.clearLayer === "Escape" ? parsed : undefined;
+      }, "keyboard shortcut settings file");
+      const readback = await evaluate(`window.storyboard.getKeyboardShortcuts()`);
+      await evaluate(`
+        (() => {
+          document.activeElement?.blur();
+          document.querySelector('button[aria-label="Keyboard shortcuts"]')?.click();
+          document.body.tabIndex = -1;
+          document.body.focus();
+          return true;
+        })()
+      `);
+      return {
+        menuOpened: opened,
+        savedBrush: settings.brush,
+        savedClearLayer: settings.clearLayer,
+        readbackBrush: readback.brush,
+        readbackClearLayer: readback.clearLayer
+      };
+    },
+    "keyboard shortcut editor"
+  );
 
   await evaluate(`
     (() => {
@@ -660,6 +775,54 @@ try {
       `),
     "inline shot layer panel delete button"
   );
+
+  const dialogueRowChecks = await waitFor(
+    () =>
+      evaluate(`
+        (async () => {
+          const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          const zone = document.querySelector('[data-shot-id] .dialogue-zone');
+          if (!zone) {
+            return undefined;
+          }
+          zone.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+          for (let index = 0; index < 20 && !zone.querySelector("textarea"); index += 1) {
+            await delay(50);
+          }
+          const textarea = zone.querySelector("textarea");
+          if (!textarea) {
+            return undefined;
+          }
+          const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+          valueSetter.call(textarea, "One line");
+          textarea.dispatchEvent(new Event("input", { bubbles: true }));
+          await delay(100);
+          const oneLineRows = textarea.rows;
+          const oneLineHeight = textarea.getBoundingClientRect().height;
+          valueSetter.call(textarea, ["One", "Two", "Three", "Four"].join("\\n"));
+          textarea.dispatchEvent(new Event("input", { bubbles: true }));
+          await delay(100);
+          return {
+            oneLineRows,
+            oneLineHeight,
+            clampedRows: textarea.rows,
+            clampedValue: textarea.value,
+            clampedLineCount: textarea.value.split("\\n").length,
+            clampedHeight: textarea.getBoundingClientRect().height
+          };
+        })()
+      `),
+    "dialogue textarea row clamp"
+  );
+  if (
+    dialogueRowChecks.oneLineRows !== 1 ||
+    dialogueRowChecks.clampedRows !== 3 ||
+    dialogueRowChecks.clampedLineCount !== 3 ||
+    dialogueRowChecks.clampedValue !== "One\nTwo\nThree" ||
+    dialogueRowChecks.clampedHeight <= dialogueRowChecks.oneLineHeight
+  ) {
+    throw new Error(`Dialogue row clamp failed: ${JSON.stringify(dialogueRowChecks)}`);
+  }
 
   const imageOnlyDeleteDisabled = await evaluate(`
     document.querySelector('button[aria-label="Delete current layer"]').disabled
@@ -1331,7 +1494,7 @@ try {
     throw new Error("Reopen did not preserve the editable paint layer asset hash");
   }
 
-  const animationChecks = await evaluate(`
+  const animationSetupChecks = await evaluate(`
     (async () => {
       const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const onionToggleHiddenBeforeAnimation = !document.querySelector(".onion-skin-toggle");
@@ -1389,29 +1552,46 @@ try {
         imageCount: ghost.querySelectorAll("img").length
       }));
 
-      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true }));
-      await delay(250);
-      const selectedAfterRight = document.querySelector(".timeline-shot.is-selected span")?.textContent;
-      const ghostCountAfterRight = document.querySelectorAll(".onion-skin-ghost").length;
-
-      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", code: "ArrowLeft", bubbles: true }));
-      await delay(250);
-      const selectedAfterLeft = document.querySelector(".timeline-shot.is-selected span")?.textContent;
-      const ghostCountAfterLeft = document.querySelectorAll(".onion-skin-ghost").length;
-      const timelineRect = document.querySelector(".timeline").getBoundingClientRect();
+      document.querySelector('input[type="range"]').focus();
 
       return {
         onionToggleHiddenBeforeAnimation,
         aspectRatios,
         ghostInfoBefore,
-        selectedAfterRight,
-        ghostCountAfterRight,
-        selectedAfterLeft,
-        ghostCountAfterLeft,
+        focusedBeforeTimelineKeys: {
+          tagName: document.activeElement?.tagName,
+          type: document.activeElement?.getAttribute("type")
+        }
+      };
+    })()
+  `);
+
+  await dispatchKey(send, "ArrowRight", "ArrowRight", 39);
+  await delay(250);
+  const animationRightChecks = await evaluate(`
+    (() => ({
+      selectedAfterRight: document.querySelector(".timeline-shot.is-selected span")?.textContent,
+      ghostCountAfterRight: document.querySelectorAll(".onion-skin-ghost").length
+    }))()
+  `);
+
+  await dispatchKey(send, "ArrowLeft", "ArrowLeft", 37);
+  await delay(250);
+  const animationLeftChecks = await evaluate(`
+    (() => {
+      const timelineRect = document.querySelector(".timeline").getBoundingClientRect();
+      return {
+        selectedAfterLeft: document.querySelector(".timeline-shot.is-selected span")?.textContent,
+        ghostCountAfterLeft: document.querySelectorAll(".onion-skin-ghost").length,
         timelineVisible: timelineRect.height > 0 && timelineRect.bottom <= window.innerHeight
       };
     })()
   `);
+  const animationChecks = {
+    ...animationSetupChecks,
+    ...animationRightChecks,
+    ...animationLeftChecks
+  };
 
   const expectedRatios = [320 / 180, 430 / 180, 258 / 180];
   animationChecks.aspectRatios.forEach((ratio, index) => {
@@ -1519,8 +1699,10 @@ try {
         paintBlendModeAppliedToStage,
         paintOpacityFillUpdated,
         paintLayerDragPreviewVisible,
+        keyboardShortcutChecks,
         sketchSettingsOpensOnStage,
         sketchSettingsIgnoredOutsideStage,
+        dialogueRowChecks,
         layerToggleClickClosedPanel,
         layerToggleBottomStableAfterClose,
         layerRowsKeepFixedHeight,

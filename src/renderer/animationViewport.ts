@@ -18,6 +18,8 @@ type AnimationViewport = {
   isAnimationMode: boolean;
   imageWidth: number;
   imageHeight: number;
+  frameWidth: number;
+  frameHeight: number;
 };
 
 export const getStableBoardTop = (boardViewportTop: number, scrollY: number): number => {
@@ -38,7 +40,9 @@ export const getAnimationViewport = ({
   const safeAspectRatio = imageAspectRatio > 0 ? imageAspectRatio : 420 / 265;
   const visibleTop = Math.max(boardTop, margin);
   const visibleHeight = Math.max(1, viewportHeight - visibleTop - reservedBottom - margin);
-  const fitWidth = Math.min(boardWidth, visibleHeight * safeAspectRatio);
+  const frameWidth = boardWidth;
+  const frameHeight = Math.round(visibleHeight);
+  const fitWidth = Math.min(frameWidth, frameHeight * safeAspectRatio);
   const fitHeight = Math.round(fitWidth / safeAspectRatio);
   const fitZoom = (fitWidth / baseShotWidth) * 100;
   const animationStartZoom = Math.min(maxZoomLevel, Math.ceil(fitZoom / zoomStep) * zoomStep);
@@ -53,6 +57,8 @@ export const getAnimationViewport = ({
   return {
     isAnimationMode,
     imageWidth,
-    imageHeight: Math.round(imageWidth / safeAspectRatio || fitHeight)
+    imageHeight: Math.round(imageWidth / safeAspectRatio || fitHeight),
+    frameWidth,
+    frameHeight
   };
 };
