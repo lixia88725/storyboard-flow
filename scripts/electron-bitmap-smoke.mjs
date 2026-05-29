@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const smokeRoot = path.join("/private/tmp", `swb-bitmap-smoke-${Date.now()}`);
+const legacyRoot = path.join("/private/tmp", `swb-legacy-smoke-${Date.now()}`);
 const port = String(9300 + Math.floor(Math.random() * 400));
 const electronBin = path.join(repoRoot, "node_modules", ".bin", "electron");
 
@@ -34,21 +35,17 @@ const waitFor = async (fn, label, timeoutMs = 10000) => {
 const hashFile = async (filePath) =>
   createHash("sha256").update(await readFile(filePath)).digest("hex");
 
-const findImageLayerPath = async (folderPath) => {
-  const layersRoot = path.join(folderPath, ".storyboard-workbench", "layers");
-  const shotIds = await readdir(layersRoot);
-
-  for (const shotId of shotIds) {
-    const filePath = path.join(layersRoot, shotId, "layer-image.png");
-    try {
-      await stat(filePath);
-      return filePath;
-    } catch {
-      // Keep looking while autosave initializes layer assets.
-    }
+const findShotLayerPath = async (folderPath, shotIndex, layerId = "layer-image") => {
+  const project = await readProjectMetadata(folderPath);
+  const shot = project.shots?.[shotIndex];
+  const layer = shot?.layers?.find((item) => item.id === layerId);
+  if (!layer) {
+    return undefined;
   }
 
-  return undefined;
+  const filePath = resolveLayerPath(folderPath, layer.bitmapPath);
+  await stat(filePath);
+  return filePath;
 };
 
 const resolveLayerPath = (folderPath, bitmapPath) => path.join(folderPath, bitmapPath);
@@ -61,6 +58,24 @@ const readProjectMetadata = async (folderPath) =>
 
 const findTiffFiles = async (folderPath) =>
   (await readdir(folderPath)).filter((fileName) => /\.(tif|tiff)$/i.test(fileName));
+
+const findArchivedFileByHash = async (folderPath, expectedHash) => {
+  const archiveRoot = path.join(folderPath, "Archive");
+  const batches = await readdir(archiveRoot).catch(() => []);
+
+  for (const batch of batches) {
+    const batchPath = path.join(archiveRoot, batch);
+    const fileNames = await readdir(batchPath).catch(() => []);
+    for (const fileName of fileNames) {
+      const candidate = path.join(batchPath, fileName);
+      if ((await hashFile(candidate).catch(() => undefined)) === expectedHash) {
+        return candidate;
+      }
+    }
+  }
+
+  return undefined;
+};
 
 const connectToStoryboardPage = async () => {
   const page = await waitFor(async () => {
@@ -169,6 +184,11 @@ let electronProcess;
 
 try {
   await mkdir(smokeRoot, { recursive: true });
+  const originalShotAPath = path.join(smokeRoot, "shot_a.png");
+  const originalShotBPath = path.join(smokeRoot, "shot_b.png");
+  const originalShotCPath = path.join(smokeRoot, "shot_c.png");
+  const legacyImagePath = path.join(legacyRoot, "legacy.png");
+
   await sharp({
     create: {
       width: 320,
@@ -178,7 +198,96 @@ try {
     }
   })
     .png()
-    .toFile(path.join(smokeRoot, "shot_a.png"));
+    .toFile(originalShotAPath);
+  await sharp({
+    create: {
+      width: 430,
+      height: 180,
+      channels: 4,
+      background: "#dceeff"
+    }
+  })
+    .png()
+    .toFile(originalShotBPath);
+  await sharp({
+    create: {
+      width: 258,
+      height: 180,
+      channels: 4,
+      background: "#ffe8d6"
+    }
+  })
+    .png()
+    .toFile(originalShotCPath);
+  const originalShotAHash = await hashFile(originalShotAPath);
+
+  await mkdir(path.join(legacyRoot, ".storyboard-workbench"), { recursive: true });
+  await sharp({
+    create: {
+      width: 320,
+      height: 180,
+      channels: 4,
+      background: "white"
+    }
+  })
+    .png()
+    .toFile(legacyImagePath);
+  await writeFile(
+    projectMetadataPath(legacyRoot),
+    JSON.stringify(
+      {
+        id: "legacy-project",
+        name: "Legacy Project",
+        naming: { sceneCode: "legacy", artistName: "artist", version: "v001" },
+        shots: [
+          {
+            id: "legacy-shot",
+            imagePath: legacyImagePath,
+            fileName: "legacy.png",
+            order: 0,
+            activeLayerTarget: "image",
+            activeSketchLayerId: "legacy-ink",
+            imageLayerEdits: [
+              {
+                id: "legacy-image-edit",
+                tool: "brush",
+                color: "#ff0000",
+                opacity: 1,
+                size: 24,
+                points: [60, 60, 260, 120]
+              }
+            ],
+            sketchLayers: [
+              {
+                id: "legacy-ink",
+                name: "Legacy Ink",
+                visible: true,
+                locked: false,
+                opacity: 1,
+                blendMode: "normal",
+                order: 0,
+                strokes: [
+                  {
+                    id: "legacy-stroke",
+                    tool: "brush",
+                    color: "#0000ff",
+                    opacity: 1,
+                    size: 20,
+                    points: [70, 130, 250, 40]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        dialogues: [],
+        createdAt: "2026-05-28T00:00:00.000Z",
+        updatedAt: "2026-05-28T00:00:00.000Z"
+      },
+      null,
+      2
+    )
+  );
 
   electronProcess = spawn(electronBin, [`--remote-debugging-port=${port}`, "."], {
     cwd: repoRoot,
@@ -197,7 +306,7 @@ try {
     }
   });
 
-  const openFolder = async () => {
+  const openFolder = async (folderPath = smokeRoot) => {
     await waitFor(
       () =>
         evaluate(`
@@ -210,7 +319,7 @@ try {
     (() => {
       const input = document.querySelector('input[aria-label="Folder path"]');
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-      setter.call(input, ${JSON.stringify(smokeRoot)});
+      setter.call(input, ${JSON.stringify(folderPath)});
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.closest("form").requestSubmit();
       return input.value;
@@ -228,8 +337,12 @@ try {
 
   await openFolder();
 
-  const layerPath = await waitFor(() => findImageLayerPath(smokeRoot), "image layer asset");
+  const layerPath = await waitFor(() => findShotLayerPath(smokeRoot, 0), "image layer asset");
+  const secondShotLayerPath = await waitFor(() => findShotLayerPath(smokeRoot, 1), "second shot image layer asset");
+  const thirdShotLayerPath = await waitFor(() => findShotLayerPath(smokeRoot, 2), "third shot image layer asset");
   const beforeHash = await hashFile(layerPath);
+  const secondShotBeforeHash = await hashFile(secondShotLayerPath);
+  const thirdShotBeforeHash = await hashFile(thirdShotLayerPath);
 
   const rect = await evaluate(`
     (() => {
@@ -449,6 +562,40 @@ try {
       ? layerIds
       : undefined;
   }, "paint layer drag sort metadata");
+  if (
+    (await hashFile(secondShotLayerPath)) !== secondShotBeforeHash ||
+    (await hashFile(thirdShotLayerPath)) !== thirdShotBeforeHash
+  ) {
+    throw new Error("Drawing on the selected shot changed a neighboring shot layer");
+  }
+
+  const projectBeforeConflictSave = await readProjectMetadata(smokeRoot);
+  const temporaryConflictPath = path.join(
+    smokeRoot,
+    `.storyboard-renaming-${projectBeforeConflictSave.shots[1].id}.png`
+  );
+  await writeFile(temporaryConflictPath, "conflict");
+
+  await evaluate(`
+    (() => {
+      const saveButton = Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent.trim() === "Save");
+      saveButton.click();
+      return true;
+    })()
+  `);
+
+  await delay(500);
+  const saveConflictBlocked =
+    (await findTiffFiles(smokeRoot)).length === 0 &&
+    (await stat(temporaryConflictPath)
+      .then(() => true)
+      .catch(() => false));
+  if (!saveConflictBlocked) {
+    throw new Error("Save was not blocked by the temporary rename conflict");
+  }
+
+  await unlink(temporaryConflictPath);
 
   await evaluate(`
     (() => {
@@ -462,11 +609,19 @@ try {
   await waitFor(async () => {
     const project = await readProjectMetadata(smokeRoot);
     const tiffFiles = await findTiffFiles(smokeRoot);
-    return project.shots?.[0]?.swb?.status === "owned" && tiffFiles.length === 1;
+    return project.shots?.every((shot) => shot.swb?.status === "owned") && tiffFiles.length === 3;
   }, "Save-owned TIFF and metadata");
 
   const savedProject = await readProjectMetadata(smokeRoot);
   const savedTiffFiles = await findTiffFiles(smokeRoot);
+  const archivedShotAPath = await waitFor(
+    () => findArchivedFileByHash(smokeRoot, originalShotAHash),
+    "archived original shot"
+  );
+  const archivedShotAHash = await hashFile(archivedShotAPath);
+  if (archivedShotAHash !== originalShotAHash) {
+    throw new Error("Save modified the archived original image");
+  }
   const savedLayerHash = await hashFile(layerPath);
   if (savedLayerHash !== drawnHash) {
     throw new Error("Save changed the editable layer asset hash");
@@ -479,7 +634,7 @@ try {
   await evaluate("location.reload()");
   await openFolder();
 
-  const reopenedLayerPath = await waitFor(() => findImageLayerPath(smokeRoot), "reopened image layer asset");
+  const reopenedLayerPath = await waitFor(() => findShotLayerPath(smokeRoot, 0), "reopened image layer asset");
   const reopenedHash = await hashFile(reopenedLayerPath);
   if (reopenedHash !== drawnHash) {
     throw new Error("Reopen did not preserve the editable layer asset hash");
@@ -494,6 +649,132 @@ try {
     throw new Error("Reopen did not preserve the editable paint layer asset hash");
   }
 
+  const animationChecks = await evaluate(`
+    (async () => {
+      const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const onionToggleHiddenBeforeAnimation = !document.querySelector(".onion-skin-toggle");
+      const slider = document.querySelector('input[type="range"]');
+      const rangeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      rangeSetter.call(slider, "260");
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      slider.dispatchEvent(new Event("change", { bubbles: true }));
+
+      for (let index = 0; index < 30 && !document.querySelector(".timeline"); index += 1) {
+        await delay(100);
+      }
+
+      const timelineButtons = Array.from(document.querySelectorAll(".timeline-shot"));
+      if (timelineButtons.length !== 3) {
+        throw new Error("Timeline did not render all three shots");
+      }
+
+      const stageRatioForTimelineIndex = async (index) => {
+        timelineButtons[index].click();
+        await delay(250);
+        const rect = document.querySelector(".image-stage").getBoundingClientRect();
+        return rect.width / rect.height;
+      };
+
+      const aspectRatios = [
+        await stageRatioForTimelineIndex(0),
+        await stageRatioForTimelineIndex(1),
+        await stageRatioForTimelineIndex(2)
+      ];
+
+      timelineButtons[1].click();
+      await delay(250);
+      const checkbox = document.querySelector('.onion-skin-toggle input[type="checkbox"]');
+      checkbox.click();
+
+      for (
+        let index = 0;
+        index < 30 &&
+        !(
+          document.querySelectorAll(".onion-skin-ghost").length === 2 &&
+          Array.from(document.querySelectorAll(".onion-skin-ghost")).every(
+            (ghost) => ghost.querySelectorAll("img").length >= 1
+          )
+        );
+        index += 1
+      ) {
+        await delay(100);
+      }
+
+      const ghostInfoBefore = Array.from(document.querySelectorAll(".onion-skin-ghost")).map((ghost) => ({
+        className: ghost.className,
+        opacity: getComputedStyle(ghost).opacity,
+        filter: getComputedStyle(ghost).filter,
+        imageCount: ghost.querySelectorAll("img").length
+      }));
+
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true }));
+      await delay(250);
+      const selectedAfterRight = document.querySelector(".timeline-shot.is-selected span")?.textContent;
+      const ghostCountAfterRight = document.querySelectorAll(".onion-skin-ghost").length;
+
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", code: "ArrowLeft", bubbles: true }));
+      await delay(250);
+      const selectedAfterLeft = document.querySelector(".timeline-shot.is-selected span")?.textContent;
+      const ghostCountAfterLeft = document.querySelectorAll(".onion-skin-ghost").length;
+      const timelineRect = document.querySelector(".timeline").getBoundingClientRect();
+
+      return {
+        onionToggleHiddenBeforeAnimation,
+        aspectRatios,
+        ghostInfoBefore,
+        selectedAfterRight,
+        ghostCountAfterRight,
+        selectedAfterLeft,
+        ghostCountAfterLeft,
+        timelineVisible: timelineRect.height > 0 && timelineRect.bottom <= window.innerHeight
+      };
+    })()
+  `);
+
+  const expectedRatios = [320 / 180, 430 / 180, 258 / 180];
+  animationChecks.aspectRatios.forEach((ratio, index) => {
+    if (Math.abs(ratio - expectedRatios[index]) > 0.04) {
+      throw new Error(`Animation stage ratio mismatch for shot ${index + 1}: ${ratio}`);
+    }
+  });
+  if (
+    animationChecks.ghostInfoBefore.length !== 2 ||
+    !animationChecks.ghostInfoBefore.every((ghost) => ghost.opacity === "0.28" && ghost.imageCount >= 1) ||
+    !animationChecks.ghostInfoBefore.some((ghost) => ghost.className.includes("previous")) ||
+    !animationChecks.ghostInfoBefore.some((ghost) => ghost.className.includes("next")) ||
+    !animationChecks.onionToggleHiddenBeforeAnimation ||
+    animationChecks.selectedAfterRight !== "003" ||
+    animationChecks.ghostCountAfterRight !== 1 ||
+    animationChecks.selectedAfterLeft !== "002" ||
+    animationChecks.ghostCountAfterLeft !== 2 ||
+    !animationChecks.timelineVisible
+  ) {
+    throw new Error(`Animation/onion skin check failed: ${JSON.stringify(animationChecks)}`);
+  }
+
+  await openFolder(legacyRoot);
+  const legacyProject = await waitFor(async () => {
+    const project = await readProjectMetadata(legacyRoot);
+    const shot = project.shots?.[0];
+    return shot?.layers?.length === 2 && shot.layers.some((layer) => layer.id === "legacy-ink")
+      ? project
+      : undefined;
+  }, "legacy bitmap metadata autosave");
+  const legacyImageLayerPath = await waitFor(
+    () => findShotLayerPath(legacyRoot, 0),
+    "legacy image layer asset"
+  );
+  const legacyPaintLayerPath = await waitFor(
+    () => findShotLayerPath(legacyRoot, 0, "legacy-ink"),
+    "legacy paint layer asset"
+  );
+  const legacyBaseHash = await hashFile(legacyImagePath);
+  const legacyImageLayerHash = await hashFile(legacyImageLayerPath);
+  const legacyPaintLayerHash = await hashFile(legacyPaintLayerPath);
+  if (legacyImageLayerHash === legacyBaseHash || legacyPaintLayerHash === paintBlankHash) {
+    throw new Error("Legacy stroke migration did not create visible bitmap layer pixels");
+  }
+
   ws.close();
 
   console.log(
@@ -505,6 +786,8 @@ try {
         drawnHash,
         undoHash,
         redoHash,
+        secondShotBeforeHash,
+        thirdShotBeforeHash,
         erasedHash,
         undoEraseHash,
         clearedHash,
@@ -520,10 +803,18 @@ try {
         paintBlendMode: paintMetadata.blendMode,
         paintOrderBeforeDrag,
         paintOrderAfterDrag,
-        savedFileName: savedTiffFiles[0],
-        savedSwbStatus: savedProject.shots[0].swb.status,
+        saveConflictBlocked,
+        archivedShotAHash,
+        savedFileNames: savedTiffFiles,
+        savedSwbStatuses: savedProject.shots.map((shot) => shot.swb.status),
         reopenedHash,
-        reopenedPaintHash
+        reopenedPaintHash,
+        animationChecks,
+        legacyMigration: {
+          layerIds: legacyProject.shots[0].layers.map((layer) => layer.id),
+          legacyImageLayerHash,
+          legacyPaintLayerHash
+        }
       },
       null,
       2
@@ -532,4 +823,5 @@ try {
 } finally {
   electronProcess?.kill();
   await rm(smokeRoot, { recursive: true, force: true });
+  await rm(legacyRoot, { recursive: true, force: true });
 }

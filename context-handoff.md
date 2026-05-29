@@ -85,15 +85,21 @@ Electron GUI smoke 已用本地 Electron app path 定位到 Storyboard Workbench
   - paint drawn / undo eraser / reopened: `f0d1314668ba878a956f3b9bedcbf5cc3a99ee1f9b5f2b47e1f236fa4940aca5`
   - paint erased: `738440fafe37d11b377c33463c8e8cf6998ac5591591e4a1a066018b7ac6e247`
   - paint drag order: `[layer-image, paint-1, paint-2]` -> `[layer-image, paint-2, paint-1]`
+- Electron CDP smoke 扩展到三张不同比例 PNG，并验证：
+  - 当前 shot 绘制不会改变相邻 shot 的 Image layer hash。
+  - 临时 rename path 冲突会阻止 Save 生成 TIFF；`validateRenamePlan` 单元测试覆盖 final 和 temporary path conflicts。
+  - Save 后三张图生成 `*_0010.tiff` / `*_0020.tiff` / `*_0030.tiff`，三个 shot 都是 `status: "owned"`。
+  - Archive 中能按原 PNG hash 找到未改动原图。
+  - 16:9、2.39:1、1.43:1 在动画模式下 stage ratio 分别保持约 `1.78`、`2.39`、`1.43`，timeline 在高 zoom 下可见。
+  - Onion Skin toggle 只在动画模式出现；中间帧开启后 previous / next ghost 同时存在，opacity 为 `0.28`，左右键切到边缘帧后 ghost 数量刷新为 1，再切回中间帧恢复为 2。
+- Electron CDP smoke 还会打开一个旧 stroke JSON 项目，验证旧 `imageLayerEdits` 生成非 base hash 的 Image bitmap layer，旧 `sketchLayers` 生成非空 paint bitmap layer。
 - 该 CDP smoke 已固化为 `npm run smoke:bitmap`。
 - 对普通 PNG 执行 Save 后，原 PNG 进入 `Archive/`，生成命名 TIFF，JSON 指向 `status: "owned"` 的 TIFF。
 - Save 仍需要用户确认缺失命名字段时是否使用默认 Scene / Artist / Version。
 
 以下行为仍需手动或自动确认：
 
-- `TODO: verify` 旧 stroke 项目迁移后的可见结果是否符合预期。
-- `TODO: verify` Onion Skin 在 bitmap layer 下的红绿透明度和相邻帧刷新。
-- `TODO: verify` mixed aspect-ratio 动画模式、timeline、multi-select shot dragging、double-click dialogue editing。
+- `TODO: verify` multi-select shot dragging 和 double-click dialogue editing 在 bitmap layer refactor 后仍符合预期。
 
 ## Current Branch
 

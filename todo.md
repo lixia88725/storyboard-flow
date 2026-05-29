@@ -2,26 +2,10 @@
 
 ## P0
 
-- [ ] Manually verify bitmap Onion Skin in animation mode:
-  - Toggle appears only in animation mode.
-  - Previous frame is red, next frame is green.
-  - Left/right playback updates ghost frames.
-  - Drawing still affects only the current shot.
-- [ ] Manually verify mixed aspect-ratio animation playback:
-  - 16:9, 2.39:1, and 1.43:1 shots show without black bars.
-  - Left/right playback keeps every shot centered.
-  - Timeline remains visible at high zoom.
-- [ ] Manually verify bitmap Save safety after recent changes:
-  - Rename preflight still blocks final and temporary path conflicts.
-  - Save does not modify Archive originals.
-  - Save naming still uses `项目名_场号_stb_艺术家名_版本号_0010.ext`.
+- [ ] Manually verify multi-select shot dragging and double-click dialogue editing after the bitmap layer refactor.
 
 ## P1
 
-- [ ] Manually verify legacy stroke project migration:
-  - Old `sketchLayers` become paint bitmap layers.
-  - Old `imageLayerEdits` become Image bitmap pixels.
-  - Reopen uses bitmap layers as editable source.
 - [ ] Add Electron smoke coverage or a repeatable manual checklist for:
   - Open folder.
   - Draw on Image.
@@ -76,6 +60,10 @@
 - [x] Electron CDP smoke verified Image layer eraser and layer-panel Delete current layer clear/undo behavior.
 - [x] Electron CDP smoke verified paint layer add/draw/erase/undo/opacity/blend mode/Save/reopen behavior.
 - [x] Electron CDP smoke verified paint layer drag sorting updates JSON order.
+- [x] Electron CDP smoke verified Save temp-conflict blocking, archive original hash preservation, multi-shot SWB-owned TIFF naming/status, and unit coverage still verifies final/temp rename preflight conflicts.
+- [x] Electron CDP smoke verified mixed 16:9 / 2.39:1 / 1.43:1 animation stage ratios and high-zoom timeline visibility.
+- [x] Electron CDP smoke verified Onion Skin animation-only toggle, previous/next ghost filters, left/right neighbor refresh, and current-shot drawing isolation.
+- [x] Electron CDP smoke verified legacy `imageLayerEdits` and `sketchLayers` migrate into visible bitmap layer PNG assets.
 
 ## Out Of Scope For Current MVP
 
