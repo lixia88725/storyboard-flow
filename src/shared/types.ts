@@ -129,12 +129,16 @@ export type SwbImageMetadata = {
   sketchLayers?: SketchLayer[];
   layers: Array<{
     id: string;
+    kind?: "image" | "paint";
     name: string;
     visible: boolean;
     locked: boolean;
     opacity: number;
     blendMode?: SketchBlendMode;
     order: number;
+    bitmapPath?: string;
+    width?: number;
+    height?: number;
     strokeCount: number;
   }>;
 };

@@ -32,6 +32,13 @@
 ## Completed
 
 - [x] Save rename preflight.
+- [x] Save two-stage rename rollback on execution failure.
+- [x] Import SWB archive/target move rollback, including later metadata write failures.
+- [x] TIFF metadata temp replacement cleanup on replace failure.
+- [x] Shared SWB metadata layer typing includes bitmap layer fields.
+- [x] Add-layer undo removes orphaned internal bitmap PNG assets and redo restores them.
+- [x] Smoke checks that `.storyboard-workbench/layers` has no unreferenced PNG layer assets.
+- [x] Local audit cleanup for rollback helper naming, rollback call sites, and new smoke helper structure.
 - [x] Multi-select storyboard drag ordering and stacked preview.
 - [x] Compact dialogue strip.
 - [x] Remove storyboard image white border/chrome.

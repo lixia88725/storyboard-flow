@@ -40,6 +40,10 @@ Reason: Finder 和 Bridge 能够显示与 app 内一致的顺序，同时保留�
 
 Reason: `Save` 是唯一会改动真实图片文件名的操作，必须先发现冲突，避免半完成重命名或覆盖用户文件。
 
+如果两阶段真实重命名在执行中失败，应尽力回滚已经移动到临时名或最终名的文件。
+
+如果 Save 过程中导入非 SWB 图像，Archive 原图移动、工作 TIFF 移动和后续 metadata 写入失败也应尽力回滚；`Save` 失败不应把用户原图永久留在 `Archive/` 而项目 metadata 仍未更新。
+
 ## TIFF Preview Is A Cache
 
 TIFF 文件在 `.storyboard-workbench/previews/` 下生成 PNG 预览。

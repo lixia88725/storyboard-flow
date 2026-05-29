@@ -1021,6 +1021,28 @@ export const App = () => {
     updateProject((currentProject) => deleteBitmapLayer(currentProject, shotId, layerId), false, false);
   };
 
+  const handleAddBitmapLayer = async (shotId: string) => {
+    const currentProject = projectRef.current;
+    const targetShot = currentProject.shots.find((item) => item.id === shotId);
+    const canvasSize = targetShot ? canvasSizeForShot(targetShot) : sketchCanvasSize;
+    const existingLayerIds = new Set(
+      targetShot ? bitmapLayersForShot(targetShot).map((layer) => layer.id) : []
+    );
+    const nextProject = addBitmapLayer(currentProject, shotId, {
+      name: "Layer",
+      width: canvasSize.width,
+      height: canvasSize.height
+    });
+    const nextShot = nextProject.shots.find((item) => item.id === shotId);
+    const addedLayer = nextShot
+      ? bitmapLayersForShot(nextShot).find((layer) => !existingLayerIds.has(layer.id))
+      : undefined;
+    const undoEntry = await createHistoryEntry(addedLayer ? [addedLayer.bitmapPath] : []);
+
+    recordUndoEntry(undoEntry);
+    updateProject(nextProject, false, false);
+  };
+
   const loadFolderScan = (scan: FolderScanPayload, nextStatus: string, dirty = false) => {
     const baseProject = scan.project ?? createProject(scan.folderName || "Untitled Storyboard");
     const nextProject = mergeFolderImages(
@@ -1843,17 +1865,7 @@ export const App = () => {
                     setSelectedShotIds([shot.id]);
                     setIsLayerPanelOpen((isOpen) => (shot.id === primarySelectedShotId ? !isOpen : true));
                   }}
-                  onAddLayer={(shotId) =>
-                    updateProject((currentProject) => {
-                      const targetShot = currentProject.shots.find((item) => item.id === shotId);
-                      const canvasSize = targetShot ? canvasSizeForShot(targetShot) : sketchCanvasSize;
-                      return addBitmapLayer(currentProject, shotId, {
-                        name: "Layer",
-                        width: canvasSize.width,
-                        height: canvasSize.height
-                      });
-                    }, false)
-                  }
+                  onAddLayer={(shotId) => void handleAddBitmapLayer(shotId)}
                   onRemoveLayer={(shotId, layerId) =>
                     void handleRemoveBitmapLayer(shotId, layerId)
                   }

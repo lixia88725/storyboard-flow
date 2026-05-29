@@ -64,6 +64,51 @@ const fileExists = async (filePath) =>
     .then(() => true)
     .catch(() => false);
 
+const collectLayerAssetPaths = async (folderPath) => {
+  const layerRoot = path.join(folderPath, ".storyboard-workbench", "layers");
+  const results = [];
+
+  const visit = async (directory) => {
+    const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await visit(entryPath);
+      } else if (entry.isFile() && entry.name.endsWith(".png")) {
+        results.push(entryPath);
+      }
+    }
+  };
+
+  await visit(layerRoot);
+  return results;
+};
+
+const waitForLayerAssetPath = (folderPath, bitmapPath, label) =>
+  waitFor(async () => {
+    const layerPath = resolveLayerPath(folderPath, bitmapPath);
+    return (await fileExists(layerPath)) ? layerPath : undefined;
+  }, label);
+
+const assertNoUnreferencedLayerAssets = async (folderPath, project) => {
+  const referencedLayerAssetPaths = new Set(
+    project.shots.flatMap((shot) =>
+      (shot.layers ?? []).map((layer) => resolveLayerPath(folderPath, layer.bitmapPath))
+    )
+  );
+  const orphanLayerAssets = (await collectLayerAssetPaths(folderPath)).filter(
+    (layerPath) => !referencedLayerAssetPaths.has(layerPath)
+  );
+  if (orphanLayerAssets.length > 0) {
+    throw new Error(`Unreferenced layer assets remain: ${JSON.stringify(orphanLayerAssets)}`);
+  }
+
+  return {
+    referenced: referencedLayerAssetPaths.size,
+    orphaned: orphanLayerAssets.length
+  };
+};
+
 const topLeftRgb = async (filePath) => {
   const { data } = await sharp(filePath).raw().toBuffer({ resolveWithObject: true });
   return Array.from(data.slice(0, 3));
@@ -1245,6 +1290,29 @@ try {
       (layer) => layer.kind === "paint" && layer.id !== paintLayer.id
     );
   }, "second paint layer metadata");
+  const secondPaintLayerPath = await waitForLayerAssetPath(
+    smokeRoot,
+    secondPaintLayer.bitmapPath,
+    "second paint layer asset created"
+  );
+  await evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+  await waitForUndoReady();
+  await dispatchKeyZ(send, 4);
+  const addLayerUndoChecks = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const layerIds = project.shots?.[0]?.layers?.map((layer) => layer.id) ?? [];
+    const assetExists = await fileExists(secondPaintLayerPath);
+    return !layerIds.includes(secondPaintLayer.id) && !assetExists
+      ? { metadataRemoved: true, assetDeleted: true }
+      : undefined;
+  }, "added paint layer undo removes metadata and asset");
+  await dispatchKeyZ(send, 12);
+  const addLayerRedoChecks = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const layer = project.shots?.[0]?.layers?.find((item) => item.id === secondPaintLayer.id);
+    const assetExists = await fileExists(secondPaintLayerPath);
+    return layer && assetExists ? { metadataRestored: true, assetRestored: true } : undefined;
+  }, "added paint layer redo restores metadata and asset");
   const layerRowsKeepFixedHeight = await waitFor(
     () =>
       evaluate(`
@@ -1662,6 +1730,9 @@ try {
     throw new Error("Legacy stroke migration did not create visible bitmap layer pixels");
   }
 
+  const finalProject = await readProjectMetadata(smokeRoot);
+  const layerAssetConsistency = await assertNoUnreferencedLayerAssets(smokeRoot, finalProject);
+
   ws.close();
 
   console.log(
@@ -1698,6 +1769,8 @@ try {
         paintBlendDotUpdated,
         paintBlendModeAppliedToStage,
         paintOpacityFillUpdated,
+        addLayerUndoChecks,
+        addLayerRedoChecks,
         paintLayerDragPreviewVisible,
         keyboardShortcutChecks,
         sketchSettingsOpensOnStage,
@@ -1718,6 +1791,7 @@ try {
         reopenedPaintHash,
         animationChecks,
         addShotUiCount,
+        layerAssetConsistency,
         legacyMigration: {
           layerIds: legacyProject.shots[0].layers.map((layer) => layer.id),
           legacyImageLayerHash,

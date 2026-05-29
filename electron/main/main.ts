@@ -4,6 +4,13 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import sharp from "sharp";
+import {
+  applyFileMoves,
+  applyFileRenamePlan,
+  replaceFileWithTemp,
+  type AppliedFileMoves,
+  type AppliedFileRenamePlan
+} from "./fileRenames.js";
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
@@ -167,6 +174,11 @@ type RenamePlanItem = {
   finalFileName: string;
 };
 
+type SwbImportResult = {
+  project: Project;
+  rollback: () => Promise<void>;
+};
+
 const supportedExtensions = new Set([".png", ".jpg", ".jpeg", ".tif", ".tiff"]);
 let mainWindow: BrowserWindow | undefined;
 const maxRecentFolders = 10;
@@ -260,24 +272,42 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("workspace:save", async (_event, payload: ProjectPayload) => {
-    if (payload.renamePlan && payload.renamePlan.length > 0) {
-      await assertRenamePlanSafe(payload.renamePlan);
-      await applyFileRenamePlan(payload.renamePlan);
+    let appliedRenamePlan: AppliedFileRenamePlan | undefined;
+    let swbImport: SwbImportResult | undefined;
+
+    try {
+      if (payload.renamePlan && payload.renamePlan.length > 0) {
+        await assertRenamePlanSafe(payload.renamePlan);
+        appliedRenamePlan = await applyFileRenamePlan(payload.renamePlan, {
+          mkdir: ensureDirectory,
+          rename
+        });
+      }
+
+      swbImport = await importProjectToSwbFormat(payload.project, payload.folderPath);
+      const swbProject = swbImport.project;
+      await writeSwbMetadataToTiffs(swbProject, payload.folderPath);
+      const savedProject = clearSavedImageLayerEdits(swbProject);
+      await writeProjectMetadata(payload.metadataPath, savedProject);
+
+      return { ...payload, project: savedProject };
+    } catch (error) {
+      await swbImport?.rollback();
+      await appliedRenamePlan?.rollback();
+      throw error;
     }
-
-    const swbProject = await importProjectToSwbFormat(payload.project, payload.folderPath);
-    await writeSwbMetadataToTiffs(swbProject, payload.folderPath);
-    const savedProject = clearSavedImageLayerEdits(swbProject);
-    await writeProjectMetadata(payload.metadataPath, savedProject);
-
-    return { ...payload, project: savedProject };
   });
 
   ipcMain.handle("workspace:importSwbFormat", async (_event, payload: ProjectPayload) => {
-    const project = await importProjectToSwbFormat(payload.project, payload.folderPath);
-    await writeSwbMetadataToTiffs(project, payload.folderPath);
-    await writeProjectMetadata(payload.metadataPath, project);
-    return scanFolder(payload.folderPath);
+    const swbImport = await importProjectToSwbFormat(payload.project, payload.folderPath);
+    try {
+      await writeSwbMetadataToTiffs(swbImport.project, payload.folderPath);
+      await writeProjectMetadata(payload.metadataPath, swbImport.project);
+      return scanFolder(payload.folderPath);
+    } catch (error) {
+      await swbImport.rollback();
+      throw error;
+    }
   });
 
   ipcMain.handle("layers:writePng", async (_event, payload: WriteLayerAssetPayload) => {
@@ -362,6 +392,10 @@ const pathExists = async (filePath: string): Promise<boolean> => {
 
     throw error;
   }
+};
+
+const ensureDirectory = async (directoryPath: string): Promise<void> => {
+  await mkdir(directoryPath, { recursive: true });
 };
 
 const resolveLayerAssetPath = (folderPath: string, bitmapPath: string): string => {
@@ -632,27 +666,16 @@ const updateRecentFoldersMenu = async (): Promise<void> => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 };
 
-const applyFileRenamePlan = async (renamePlan: RenamePlanItem[]): Promise<void> => {
-  const renames = renamePlan.filter((item) => item.fromPath !== item.finalPath);
-
-  for (const item of renames) {
-    await mkdir(path.dirname(item.temporaryPath), { recursive: true });
-    await rename(item.fromPath, item.temporaryPath);
-  }
-
-  for (const item of renames) {
-    await mkdir(path.dirname(item.finalPath), { recursive: true });
-    await rename(item.temporaryPath, item.finalPath);
-  }
-};
-
-const importProjectToSwbFormat = async (project: Project, folderPath: string): Promise<Project> => {
+const importProjectToSwbFormat = async (project: Project, folderPath: string): Promise<SwbImportResult> => {
   const archiveRoot = path.join(folderPath, "Archive", archiveStamp());
   const tempRoot = path.join(folderPath, ".storyboard-workbench", "import-tmp", archiveStamp());
   const importableShots = project.shots.filter((shot) => shot.swb?.status !== "owned");
 
   if (importableShots.length === 0) {
-    return project;
+    return {
+      project,
+      rollback: async () => undefined
+    };
   }
 
   await mkdir(tempRoot, { recursive: true });
@@ -685,17 +708,33 @@ const importProjectToSwbFormat = async (project: Project, folderPath: string): P
     })
   );
 
-  await mkdir(archiveRoot, { recursive: true });
+  let archivedOriginals: AppliedFileMoves | undefined;
+  let importedTargets: AppliedFileMoves | undefined;
+  const rollbackImportMoves = async () => {
+    await importedTargets?.rollback();
+    await archivedOriginals?.rollback();
+  };
 
-  for (const item of prepared) {
-    await rename(item.shot.imagePath, item.archivePath);
+  try {
+    await mkdir(archiveRoot, { recursive: true });
+    const moveOps = {
+      mkdir: ensureDirectory,
+      rename
+    };
+    archivedOriginals = await applyFileMoves(
+      prepared.map((item) => ({ fromPath: item.shot.imagePath, toPath: item.archivePath })),
+      moveOps
+    );
+    importedTargets = await applyFileMoves(
+      prepared.map((item) => ({ fromPath: item.tempPath, toPath: item.targetPath })),
+      moveOps
+    );
+  } catch (error) {
+    await rollbackImportMoves();
+    throw error;
   }
 
-  for (const item of prepared) {
-    await rename(item.tempPath, item.targetPath);
-  }
-
-  return {
+  const nextProject: Project = {
     ...project,
     shots: project.shots.map((shot) => {
       const item = prepared.find((candidate) => candidate.shot.id === shot.id);
@@ -723,6 +762,11 @@ const importProjectToSwbFormat = async (project: Project, folderPath: string): P
       };
     }),
     updatedAt: new Date().toISOString()
+  };
+
+  return {
+    project: nextProject,
+    rollback: rollbackImportMoves
   };
 };
 
@@ -811,10 +855,14 @@ const writeSwbMetadataToTiffs = async (project: Project, folderPath: string): Pr
       path.dirname(imagePath),
       `.storyboard-metadata-${shot.id}${path.extname(imagePath)}`
     );
-    await sharp(imagePath).withXmp(swbMetadataXmp(swbMetadata)).tiff().toFile(tempPath);
-    await rename(tempPath, shot.imagePath);
-    if (bakedPath) {
-      await unlink(bakedPath).catch(() => undefined);
+    try {
+      await sharp(imagePath).withXmp(swbMetadataXmp(swbMetadata)).tiff().toFile(tempPath);
+      await replaceFileWithTemp(tempPath, shot.imagePath, { rename, unlink });
+    } finally {
+      await unlink(tempPath).catch(() => undefined);
+      if (bakedPath) {
+        await unlink(bakedPath).catch(() => undefined);
+      }
     }
   }
 };

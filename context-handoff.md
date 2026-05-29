@@ -6,7 +6,8 @@
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `bitmap-layer-refactor`
-- Latest handoff baseline before this session: `58f24b9 交接存档：记录 bitmap 图层交互与选区 V1`
+- Latest handoff baseline before this session: `4744696 交接存档：记录快捷键和动画模式小修`
+- Previous handoff baseline: `58f24b9 交接存档：记录 bitmap 图层交互与选区 V1`
 - Earlier handoff baseline: `12a2f7a 交接存档：记录 Photoshop 图层格式验证和后续 PSD 方向`
 - Functional bitmap baseline: `4135066 spike: verify photoshop layered tiff output`
 - Continue in this bitmap worktree unless explicitly asked to merge or switch.
@@ -26,6 +27,26 @@
 
 ## Completed This Session
 
+- Save rename safety:
+  - Extracted the Electron two-stage rename executor into `electron/main/fileRenames.ts`.
+  - Added rollback for execution failures after preflight, so files already moved to temporary or final names are restored to their original paths when possible.
+  - Save now also keeps the applied rename rollback handle while TIFF import/bake/metadata writes run, so later Save failures can attempt to restore renamed files.
+  - Added Electron-side Vitest coverage for final-rename failure rollback and included Electron tests in the Vitest config while excluding test files from the Electron build.
+- Bitmap layer undo cleanup:
+  - Added a dedicated add-bitmap-layer path that records the new layer PNG path in the undo entry before metadata changes.
+  - Undoing a newly added bitmap layer now removes its internal PNG asset if the asset did not exist before the layer was added; redo restores both metadata and asset.
+  - Expanded `npm run smoke:bitmap` to verify add-layer undo removes metadata and the internal PNG, then redo restores both.
+- Import and metadata write safety:
+  - Added rollback for `importProjectToSwbFormat` archive and target moves.
+  - If import succeeds but later Save / Import SWB metadata writes fail, the imported working TIFFs and archived originals are rolled back in reverse order.
+  - Metadata temp replacement now deletes the `.storyboard-metadata-*` temp file on replace failure and still cleans baked temp TIFFs.
+  - Added Electron-side Vitest coverage for import move rollback handles and metadata temp cleanup.
+- Metadata typing and asset consistency:
+  - Aligned shared `SwbImageMetadata.layers` typing with Electron metadata fields (`kind`, `bitmapPath`, `width`, `height`) and removed a local cast.
+  - Expanded `npm run smoke:bitmap` to scan `.storyboard-workbench/layers` and fail if unreferenced PNG layer assets remain.
+- Audit cleanup:
+  - Kept cleanup local to the audit diff: clarified Electron file-move helper naming, deduplicated rollback call sites, and extracted small smoke helpers for layer asset checks.
+  - Did not split `App.tsx`, split the full smoke script, change UI behavior, or address the existing Vite chunk-size warning.
 - Toolbar and shortcut system:
   - Added a gear button at the top of the tool rail for editing shortcuts.
   - Added configurable shortcuts for Brush, Eraser, Select, Clear layer, Save, Add Shot, Onion Skin, previous/next shot, Undo, and Redo.
@@ -57,7 +78,7 @@ Fresh verification before this handoff update:
 
 ```bash
 npm run test
-# passed: 8 test files, 95 tests
+# passed: 9 test files, 100 tests
 
 npm run typecheck
 # passed
@@ -80,23 +101,18 @@ The smoke intentionally triggers a Save temporary rename conflict and logs `Temp
 Files changed in this session:
 
 - `electron/main/main.ts`
-- `electron/preload/preload.cjs`
-- `electron/preload/preload.ts`
+- `electron/main/fileRenames.ts`
+- `electron/main/fileRenames.test.ts`
 - `scripts/electron-bitmap-smoke.mjs`
 - `src/renderer/App.tsx`
-- `src/renderer/animationViewport.test.ts`
-- `src/renderer/animationViewport.ts`
-- `src/renderer/global.d.ts`
-- `src/renderer/keyboardShortcuts.test.ts`
-- `src/renderer/keyboardShortcuts.ts`
-- `src/renderer/sketchGeometry.test.ts`
-- `src/renderer/sketchGeometry.ts`
-- `src/renderer/styles.css`
+- `src/shared/projectOps.ts`
+- `src/shared/types.ts`
+- `tsconfig.electron.json`
+- `vitest.config.ts`
 - `context-handoff.md`
 - `todo.md`
 - `decisions.md`
 - `README.md`
-- `AGENTS.md`
 
 ## Next Handoff Target
 

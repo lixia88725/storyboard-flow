@@ -700,7 +700,7 @@ const isEmptyDefaultSketchLayer = (layer: SketchLayer): boolean => {
 const scannedMetadataHasImageLayer = (image?: ImportedImage): boolean => {
   return Boolean(
     image?.swbMetadata?.layers.some(
-      (layer) => layer.id === imageBitmapLayerId || (layer as { kind?: string }).kind === "image"
+      (layer) => layer.id === imageBitmapLayerId || layer.kind === "image"
     )
   );
 };
