@@ -273,30 +273,7 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("workspace:save", async (_event, payload: ProjectPayload) => {
-    let appliedRenamePlan: AppliedFileRenamePlan | undefined;
-    let swbImport: SwbImportResult | undefined;
-
-    try {
-      if (payload.renamePlan && payload.renamePlan.length > 0) {
-        await assertRenamePlanSafe(payload.renamePlan);
-        appliedRenamePlan = await applyFileRenamePlan(payload.renamePlan, {
-          mkdir: ensureDirectory,
-          rename
-        });
-      }
-
-      swbImport = await importProjectToSwbFormat(payload.project, payload.folderPath);
-      const swbProject = swbImport.project;
-      await writeSwbMetadataToTiffs(swbProject, payload.folderPath);
-      const savedProject = clearSavedImageLayerEdits(swbProject);
-      await writeProjectMetadata(payload.metadataPath, savedProject);
-
-      return { ...payload, project: savedProject };
-    } catch (error) {
-      await swbImport?.rollback();
-      await appliedRenamePlan?.rollback();
-      throw error;
-    }
+    return saveWorkspace(payload);
   });
 
   ipcMain.handle("workspace:importSwbFormat", async (_event, payload: ProjectPayload) => {
@@ -361,6 +338,33 @@ const registerIpcHandlers = () => {
     await writeKeyboardShortcuts(shortcuts);
     return shortcuts;
   });
+};
+
+const saveWorkspace = async (payload: ProjectPayload): Promise<ProjectPayload> => {
+  let appliedRenamePlan: AppliedFileRenamePlan | undefined;
+  let swbImport: SwbImportResult | undefined;
+
+  try {
+    if (payload.renamePlan && payload.renamePlan.length > 0) {
+      await assertRenamePlanSafe(payload.renamePlan);
+      appliedRenamePlan = await applyFileRenamePlan(payload.renamePlan, {
+        mkdir: ensureDirectory,
+        rename
+      });
+    }
+
+    swbImport = await importProjectToSwbFormat(payload.project, payload.folderPath);
+    const swbProject = swbImport.project;
+    await writeSwbMetadataToTiffs(swbProject, payload.folderPath);
+    const savedProject = clearSavedImageLayerEdits(swbProject);
+    await writeProjectMetadata(payload.metadataPath, savedProject);
+
+    return { ...payload, project: savedProject };
+  } catch (error) {
+    await swbImport?.rollback();
+    await appliedRenamePlan?.rollback();
+    throw error;
+  }
 };
 
 const assertRenamePlanSafe = async (renamePlan: RenamePlanItem[]): Promise<void> => {
@@ -790,67 +794,17 @@ const writeSwbMetadataToTiffs = async (project: Project, folderPath: string): Pr
   await ensureProjectLayerAssets(project, folderPath);
 
   for (const shot of project.shots) {
-    const extension = path.extname(shot.imagePath).toLowerCase();
-    if ((extension !== ".tif" && extension !== ".tiff") || shot.swb?.status === "non-swb") {
+    if (!shouldWriteSwbMetadata(shot)) {
       continue;
     }
 
-    if (shot.swb?.status === "incompatible-external-edit") {
-      continue;
-    }
-
-    const bitmapLayers = bitmapLayersForShot(shot);
-    const bakedPath =
-      bitmapLayers.length > 0
-        ? await bakeBitmapLayersToTiff(shot, folderPath)
-        : await bakeSketchOverlayToTiff(shot);
+    const bakedPath = await bakeShotToWorkingTiff(shot, folderPath);
     const imagePath = bakedPath ?? shot.imagePath;
     const metadata = await sharp(imagePath).metadata();
     const fingerprint = await pixelFingerprint(imagePath);
     const canvasWidth = shot.swb?.canvasWidth || metadata.width || 0;
     const canvasHeight = shot.swb?.canvasHeight || metadata.height || 0;
-    const layers = sketchLayersForShot(shot);
-    const swbMetadata: SwbImageMetadata = {
-      app: "Storyboard Workbench",
-      format: "swb-tiff",
-      version: swbFormatVersion,
-      projectId: project.id,
-      shotId: shot.id,
-      canvasWidth,
-      canvasHeight,
-      baseFingerprint: fingerprint,
-      updatedAt: new Date().toISOString(),
-      sourcePath: shot.swb?.sourcePath,
-      archivePath: shot.swb?.archivePath,
-      imageLayerEdits: [],
-      sketchLayers: layers,
-      layers:
-        bitmapLayers.length > 0
-          ? bitmapLayers.map((layer) => ({
-              id: layer.id,
-              kind: layer.kind,
-              name: layer.name,
-              visible: layer.visible,
-              locked: layer.locked,
-              opacity: layer.opacity,
-              blendMode: layer.blendMode,
-              order: layer.order,
-              bitmapPath: layer.bitmapPath,
-              width: layer.width,
-              height: layer.height,
-              strokeCount: 0
-            }))
-          : layers.map((layer) => ({
-              id: layer.id,
-              name: layer.name,
-              visible: layer.visible,
-              locked: layer.locked,
-              opacity: layer.opacity,
-              blendMode: layer.blendMode,
-              order: layer.order,
-              strokeCount: layer.strokes.length
-            }))
-    };
+    const swbMetadata = swbMetadataForShot(project.id, shot, canvasWidth, canvasHeight, fingerprint);
 
     const tempPath = path.join(
       path.dirname(imagePath),
@@ -866,6 +820,77 @@ const writeSwbMetadataToTiffs = async (project: Project, folderPath: string): Pr
       }
     }
   }
+};
+
+const shouldWriteSwbMetadata = (shot: Project["shots"][number]): boolean => {
+  const extension = path.extname(shot.imagePath).toLowerCase();
+  return (
+    (extension === ".tif" || extension === ".tiff") &&
+    shot.swb?.status !== "non-swb" &&
+    shot.swb?.status !== "incompatible-external-edit"
+  );
+};
+
+const bakeShotToWorkingTiff = async (
+  shot: Project["shots"][number],
+  folderPath: string
+): Promise<string | undefined> => {
+  return bitmapLayersForShot(shot).length > 0
+    ? bakeBitmapLayersToTiff(shot, folderPath)
+    : bakeSketchOverlayToTiff(shot);
+};
+
+const swbMetadataForShot = (
+  projectId: string,
+  shot: Project["shots"][number],
+  canvasWidth: number,
+  canvasHeight: number,
+  baseFingerprint: string
+): SwbImageMetadata => {
+  const bitmapLayers = bitmapLayersForShot(shot);
+  const sketchLayers = sketchLayersForShot(shot);
+
+  return {
+    app: "Storyboard Workbench",
+    format: "swb-tiff",
+    version: swbFormatVersion,
+    projectId,
+    shotId: shot.id,
+    canvasWidth,
+    canvasHeight,
+    baseFingerprint,
+    updatedAt: new Date().toISOString(),
+    sourcePath: shot.swb?.sourcePath,
+    archivePath: shot.swb?.archivePath,
+    imageLayerEdits: [],
+    sketchLayers,
+    layers:
+      bitmapLayers.length > 0
+        ? bitmapLayers.map((layer) => ({
+            id: layer.id,
+            kind: layer.kind,
+            name: layer.name,
+            visible: layer.visible,
+            locked: layer.locked,
+            opacity: layer.opacity,
+            blendMode: layer.blendMode,
+            order: layer.order,
+            bitmapPath: layer.bitmapPath,
+            width: layer.width,
+            height: layer.height,
+            strokeCount: 0
+          }))
+        : sketchLayers.map((layer) => ({
+            id: layer.id,
+            name: layer.name,
+            visible: layer.visible,
+            locked: layer.locked,
+            opacity: layer.opacity,
+            blendMode: layer.blendMode,
+            order: layer.order,
+            strokeCount: layer.strokes.length
+          }))
+  };
 };
 
 const bitmapLayersForShot = (shot: Project["shots"][number]) => {

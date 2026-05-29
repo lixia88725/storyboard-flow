@@ -6,9 +6,10 @@
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `bitmap-layer-refactor`
-- Latest handoff baseline before this session: `4744696 交接存档：记录快捷键和动画模式小修`
+- Latest committed baseline before this refactor pass: `40873ea fix: stabilize bitmap layers and animation mode`
+- Earlier handoff baseline: `4744696 交接存档：记录快捷键和动画模式小修`
 - Previous handoff baseline: `58f24b9 交接存档：记录 bitmap 图层交互与选区 V1`
-- Earlier handoff baseline: `12a2f7a 交接存档：记录 Photoshop 图层格式验证和后续 PSD 方向`
+- Photoshop layered TIFF spike handoff baseline: `12a2f7a 交接存档：记录 Photoshop 图层格式验证和后续 PSD 方向`
 - Functional bitmap baseline: `4135066 spike: verify photoshop layered tiff output`
 - Continue in this bitmap worktree unless explicitly asked to merge or switch.
 
@@ -32,6 +33,14 @@
   - Added rollback for execution failures after preflight, so files already moved to temporary or final names are restored to their original paths when possible.
   - Save now also keeps the applied rename rollback handle while TIFF import/bake/metadata writes run, so later Save failures can attempt to restore renamed files.
   - Added Electron-side Vitest coverage for final-rename failure rollback and included Electron tests in the Vitest config while excluding test files from the Electron build.
+- Save / bake boundary refactor:
+  - `workspace:save` now delegates to a focused `saveWorkspace` helper, keeping the Save flow readable as rename, SWB import, TIFF metadata/bake, then project JSON write.
+  - TIFF metadata writing now uses small helpers for TIFF eligibility, working-TIFF baking, and SWB metadata construction.
+  - This pass is structure-only; it does not change Save semantics, filesystem boundaries, renderer behavior, or the bitmap layer data model.
+- Renderer active target refactor:
+  - Extracted active storyboard and active visible bitmap-layer resolution into `src/renderer/activeTargets.ts`.
+  - `App` and `SketchPad` now share the same rule: use the active layer only when it is visible, otherwise fall back to the topmost visible bitmap layer.
+  - Added renderer unit coverage for selected-shot lookup, command fallback, hidden active layer fallback, and no-visible-layer cases.
 - Bitmap layer undo cleanup:
   - Added a dedicated add-bitmap-layer path that records the new layer PNG path in the undo entry before metadata changes.
   - Undoing a newly added bitmap layer now removes its internal PNG asset if the asset did not exist before the layer was added; redo restores both metadata and asset.
@@ -88,7 +97,7 @@ Fresh verification before this handoff update:
 
 ```bash
 npm run test
-# passed: 10 test files, 102 tests
+# passed: 11 test files, 107 tests
 
 npm run typecheck
 # passed
@@ -111,18 +120,11 @@ The smoke intentionally triggers a Save temporary rename conflict and logs `Temp
 Files changed in this session:
 
 - `electron/main/main.ts`
-- `electron/main/fileRenames.ts`
-- `electron/main/fileRenames.test.ts`
-- `scripts/electron-bitmap-smoke.mjs`
 - `src/renderer/App.tsx`
-- `src/shared/projectOps.ts`
-- `src/shared/types.ts`
-- `tsconfig.electron.json`
-- `vitest.config.ts`
+- `src/renderer/activeTargets.ts`
+- `src/renderer/activeTargets.test.ts`
 - `context-handoff.md`
 - `todo.md`
-- `decisions.md`
-- `README.md`
 
 ## Next Handoff Target
 

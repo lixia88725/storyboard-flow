@@ -41,6 +41,8 @@
 - [x] Local audit cleanup for rollback helper naming, rollback call sites, and new smoke helper structure.
 - [x] Save applies bitmap layer opacity to baked TIFF output.
 - [x] Save flattens all visible bitmap layers into baked TIFF output instead of only the last/top layer.
+- [x] Refactored the Electron Save / TIFF bake path into smaller helpers without changing Save behavior.
+- [x] Extracted renderer active shot / active visible bitmap-layer helpers with unit coverage.
 - [x] Hidden bitmap layers cannot stay selected as the active drawing target and fall back to the topmost visible layer.
 - [x] Drawing on a storyboard canvas selects that storyboard before layer commands run.
 - [x] Animation mode removes stale header focus outline and keeps only the active red frame.

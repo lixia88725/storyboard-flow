@@ -72,6 +72,11 @@ import type {
 } from "../shared/types";
 import { getAnimationViewport, getStableBoardTop, maxStoryboardZoom } from "./animationViewport";
 import {
+  activeVisibleBitmapLayerForShot,
+  primaryShotFromSelection,
+  primaryShotOrFirst
+} from "./activeTargets";
+import {
   readLayerAssetSnapshots,
   restoreLayerAssetSnapshots,
   type LayerAssetSnapshot
@@ -125,12 +130,6 @@ const autosaveDelayMs = 600;
 const animationReservedBottom = 180;
 const animationViewportMargin = 14;
 const maxDialogueRows = 3;
-
-const activeVisibleBitmapLayerForShot = (shot: Shot): BitmapLayer | undefined => {
-  const layers = bitmapLayersForShot(shot);
-  const activeLayer = layers.find((layer) => layer.id === shot.activeLayerId && layer.visible);
-  return activeLayer ?? [...layers].reverse().find((layer) => layer.visible);
-};
 
 type WorkspaceSaveState = "saved" | "saving" | "error";
 type FileNameSyncState = "synced" | "unsynced";
@@ -317,8 +316,8 @@ export const App = () => {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const primarySelectedShotId = selectedShotIds[0];
   const primarySelectedShot = useMemo(
-    () => orderedShots.find((shot) => shot.id === primarySelectedShotId),
-    [orderedShots, primarySelectedShotId]
+    () => primaryShotFromSelection(orderedShots, selectedShotIds),
+    [orderedShots, selectedShotIds]
   );
   const renderedShotEntries = useMemo(() => {
     if (!isAnimationMode) {
@@ -728,7 +727,7 @@ export const App = () => {
         }
 
         if (shortcutAction === "clearLayer") {
-          const activeShot = primarySelectedShot ?? orderedShots[0];
+          const activeShot = primaryShotOrFirst(orderedShots, selectedShotIdsRef.current);
           const activeLayer = activeShot ? activeVisibleBitmapLayerForShot(activeShot) : undefined;
 
           if (activeShot && activeLayer) {
