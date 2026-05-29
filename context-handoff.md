@@ -6,7 +6,8 @@
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `bitmap-layer-refactor`
-- Latest committed baseline before this refactor pass: `40873ea fix: stabilize bitmap layers and animation mode`
+- Latest committed baseline: `5cbedf9 refactor: clarify save and active layer targets`
+- Previous committed baseline: `40873ea fix: stabilize bitmap layers and animation mode`
 - Earlier handoff baseline: `4744696 交接存档：记录快捷键和动画模式小修`
 - Previous handoff baseline: `58f24b9 交接存档：记录 bitmap 图层交互与选区 V1`
 - Photoshop layered TIFF spike handoff baseline: `12a2f7a 交接存档：记录 Photoshop 图层格式验证和后续 PSD 方向`
@@ -115,16 +116,15 @@ npm run smoke:bitmap
 
 The smoke intentionally triggers a Save temporary rename conflict and logs `Temporary rename file already exists`; this is expected inside the conflict-safety test when the command exits 0.
 
-## Current Git Diff Before Commit
+## Current Git State
 
-Files changed in this session:
+The refactor pass was committed as:
 
-- `electron/main/main.ts`
-- `src/renderer/App.tsx`
-- `src/renderer/activeTargets.ts`
-- `src/renderer/activeTargets.test.ts`
-- `context-handoff.md`
-- `todo.md`
+```bash
+5cbedf9 refactor: clarify save and active layer targets
+```
+
+The worktree was clean immediately after that commit.
 
 ## Next Handoff Target
 
@@ -134,13 +134,15 @@ Recommended next steps:
 2. Manually verify bitmap Select lasso and rectangle scaling on real high-resolution storyboard images; automated smoke covers selection move/scale, but hand feel still matters.
 3. Manually review animation mode with mixed 16:9 / 2.39:1 / 1.43:1 shots and decide whether the stable dark matte should be visually refined.
 4. Manually verify multi-select shot dragging and double-click dialogue editing, because those dnd-kit / text-editing flows are still best checked in the app.
-5. If drawer drag is revisited, start with a tiny visual mock/prototype first. Do not re-add pointer-drag drawer code directly into production UI without a clearer occlusion/animation model.
-6. PSD-first Photoshop interoperability remains a future spike, separate from the main Save path.
+5. If the next session starts implementation work, a good small feature is making layer lock behavior truly enforce drawing/editing restrictions before adding larger Photoshop interoperability work.
+6. If drawer drag is revisited, start with a tiny visual mock/prototype first. Do not re-add pointer-drag drawer code directly into production UI without a clearer occlusion/animation model.
+7. PSD-first Photoshop interoperability remains a future spike, separate from the main Save path.
 
 ## Known Remaining Work
 
 - Manual dogfood remains needed for shortcut editing, bitmap Select hand feel, mixed-aspect animation matte, multi-select shot dragging, and double-click dialogue editing.
 - Bitmap Select tool is still V1: no rotation, feathering, magic wand, saved selections, cross-layer transform, or free transform.
+- Layer `locked` exists in metadata/UI but still needs a product pass to define and enforce which operations are blocked.
 - Pointer-drag open/close for the layer drawer was removed; future rework needs a better interaction design first.
 - PSD-first spike and compatibility matrix are not implemented.
 - Windows Photoshop compatibility has not been tested.

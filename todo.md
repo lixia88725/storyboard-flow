@@ -20,6 +20,7 @@
 - [ ] Add validation or cleanup for missing Recent folder paths.
 - [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
 - [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
+- [ ] Define and enforce bitmap layer lock behavior for drawing, erasing, clearing, deleting, renaming, opacity, blend mode, and reorder operations.
 
 ## P2
 
