@@ -62,12 +62,22 @@ def normalize_rgba(image: numpy.ndarray, layer: Any, width: int, height: int) ->
         left = int(layer.rectangle.left)
         bottom = top + image.shape[0]
         right = left + image.shape[1]
-        if top < 0 or left < 0 or bottom > height or right > width:
-            raise ValueError(
-                f"Layer '{layer.name}' rectangle places pixels outside the canvas: "
-                f"left={left}, top={top}, right={right}, bottom={bottom}, canvas={width}x{height}"
-            )
-        canvas[top : top + image.shape[0], left : left + image.shape[1], :] = image
+        target_top = max(0, top)
+        target_left = max(0, left)
+        target_bottom = min(height, bottom)
+        target_right = min(width, right)
+        if target_top >= target_bottom or target_left >= target_right:
+            return canvas
+
+        source_top = target_top - top
+        source_left = target_left - left
+        source_bottom = source_top + (target_bottom - target_top)
+        source_right = source_left + (target_right - target_left)
+        canvas[target_top:target_bottom, target_left:target_right, :] = image[
+            source_top:source_bottom,
+            source_left:source_right,
+            :,
+        ]
         return canvas
 
     return numpy.ascontiguousarray(image)
