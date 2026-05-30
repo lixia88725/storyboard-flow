@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import path from "node:path";
+import sharp from "sharp";
 
 type BitmapLayer = {
   id: string;
@@ -47,6 +48,32 @@ export const isLikelyTiffPath = (filePath: string): boolean => {
 
 export const isPhotoshopTiffNoLayersError = (error: unknown): boolean => {
   return error instanceof Error && error.message.includes(photoshopTiffNoLayersMarker);
+};
+
+export const writeSwbImportWorkingTiff = async ({
+  sourcePath,
+  outputPath,
+  usePlaceholder
+}: {
+  sourcePath: string;
+  outputPath: string;
+  usePlaceholder: boolean;
+}): Promise<void> => {
+  if (!usePlaceholder) {
+    await sharp(sourcePath).rotate().tiff().toFile(outputPath);
+    return;
+  }
+
+  await sharp({
+    create: {
+      width: 1,
+      height: 1,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    }
+  })
+    .tiff()
+    .toFile(outputPath);
 };
 
 export const ensureLayerMoveDestinationsAvailable = async (

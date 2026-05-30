@@ -1,10 +1,14 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildPhotoshopTiffImportAssetPlan,
   ensureLayerMoveDestinationsAvailable,
   importedLayerToBitmapLayer,
   isPhotoshopTiffNoLayersError,
-  isLikelyTiffPath
+  isLikelyTiffPath,
+  writeSwbImportWorkingTiff
 } from "./photoshopTiffImport.js";
 
 describe("photoshopTiffImport", () => {
@@ -213,5 +217,26 @@ describe("photoshopTiffImport", () => {
         "/tmp/extracted"
       )
     ).toThrow("Imported layer asset must stay under");
+  });
+
+  it("writes a placeholder working TIFF for already-extracted Photoshop layers", async () => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-import-placeholder-"));
+
+    try {
+      const invalidSourcePath = path.join(folderPath, "source.tiff");
+      const outputPath = path.join(folderPath, "working.tiff");
+      await writeFile(invalidSourcePath, "not a readable tiff", "utf8");
+
+      await writeSwbImportWorkingTiff({
+        sourcePath: invalidSourcePath,
+        outputPath,
+        usePlaceholder: true
+      });
+
+      const bytes = await readFile(outputPath);
+      expect(bytes.subarray(0, 4).toString("latin1")).toMatch(/^(II\*\u0000|MM\u0000\*)/u);
+    } finally {
+      await rm(folderPath, { recursive: true, force: true });
+    }
   });
 });

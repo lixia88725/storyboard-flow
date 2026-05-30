@@ -28,6 +28,7 @@ import {
   isPhotoshopTiffNoLayersError,
   isLikelyTiffPath,
   runPhotoshopTiffImporter,
+  writeSwbImportWorkingTiff,
   type ImportedPhotoshopTiffManifest
 } from "./photoshopTiffImport.js";
 
@@ -780,6 +781,7 @@ const importProjectToSwbFormat = async (
       const tempPath = path.join(tempRoot, `${shot.id}.tiff`);
       let importedLayers: NonNullable<Project["shots"][number]["layers"]> | undefined;
       let importedLayerMoves: Array<{ fromPath: string; toPath: string }> = [];
+      let importedCanvasSize: { width: number; height: number } | undefined;
       let importWarnings: string[] = [];
 
       if (await pathExists(targetPath)) {
@@ -806,6 +808,7 @@ const importProjectToSwbFormat = async (
           const layerPlan = buildPhotoshopTiffImportAssetPlan(manifest, shot.id, finalLayerRoot, extractedDir);
           importedLayers = layerPlan.layers;
           importedLayerMoves = layerPlan.moves;
+          importedCanvasSize = { width: manifest.width, height: manifest.height };
           importWarnings = manifest.warnings;
         } catch (error) {
           if (!isPhotoshopTiffNoLayersError(error)) {
@@ -814,7 +817,11 @@ const importProjectToSwbFormat = async (
         }
       }
 
-      await sharp(shot.imagePath).rotate().tiff().toFile(tempPath);
+      await writeSwbImportWorkingTiff({
+        sourcePath: shot.imagePath,
+        outputPath: tempPath,
+        usePlaceholder: Boolean(importedLayers)
+      });
       const fingerprint = await pixelFingerprint(tempPath);
       const metadata = await sharp(tempPath).metadata();
       reportShotImported();
@@ -825,8 +832,8 @@ const importProjectToSwbFormat = async (
         archivePath,
         tempPath,
         fingerprint,
-        width: metadata.width ?? 0,
-        height: metadata.height ?? 0,
+        width: importedCanvasSize?.width ?? metadata.width ?? 0,
+        height: importedCanvasSize?.height ?? metadata.height ?? 0,
         importedLayers,
         importedLayerMoves,
         importWarnings
