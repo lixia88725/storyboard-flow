@@ -117,7 +117,7 @@ def layer_record(layer: dict[str, Any], image: numpy.ndarray, *, background: boo
     )
 
     flags = PsdLayerFlag.PHOTOSHOP5
-    if layer.get("visible", True):
+    if not layer.get("visible", True):
         flags |= PsdLayerFlag.VISIBLE
     if background:
         flags |= PsdLayerFlag.TRANSPARENCY_PROTECTED

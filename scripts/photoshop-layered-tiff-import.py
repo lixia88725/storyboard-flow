@@ -17,7 +17,7 @@ if deps_dir:
 import imagecodecs
 import numpy
 import tifffile
-from psdtags import PsdBlendMode, PsdKey, PsdLayerFlag, TiffImageSourceData
+from psdtags import PsdBlendMode, PsdKey, PsdLayerFlag, PsdSectionDividerType, TiffImageSourceData
 
 
 SUPPORTED_BLEND_MODES = {
@@ -36,6 +36,33 @@ def layer_visible(layer: Any) -> bool:
     # Photoshop stores this bit as hidden-state data in the ImageSourceData
     # records, despite the psdtags enum name.
     return not bool(layer.flags & PsdLayerFlag.VISIBLE)
+
+
+def section_divider(layer: Any) -> Any | None:
+    for info in getattr(layer, "info", []):
+        if getattr(info, "key", None) == PsdKey.SECTION_DIVIDER_SETTING:
+            return info
+    return None
+
+
+def effective_layer_visibility(layers: list[Any]) -> list[bool]:
+    visible = [False] * len(layers)
+    parent_visibility: list[bool] = []
+
+    for index in range(len(layers) - 1, -1, -1):
+        layer = layers[index]
+        section = section_divider(layer)
+        self_visible = layer_visible(layer)
+        visible[index] = self_visible and all(parent_visibility)
+
+        if section is None:
+            continue
+        if section.kind in (PsdSectionDividerType.OPEN_FOLDER, PsdSectionDividerType.CLOSED_FOLDER):
+            parent_visibility.append(self_visible)
+        elif section.kind == PsdSectionDividerType.BOUNDING_SECTION_DIVIDER and parent_visibility:
+            parent_visibility.pop()
+
+    return visible
 
 
 def has_visible_pixels(image: numpy.ndarray) -> bool:
@@ -124,9 +151,14 @@ def extract_layered_tiff(source: Path, output_dir: Path, manifest_path: Path) ->
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_layers = []
     warnings = []
+    effective_visibility = effective_layer_visibility(layers)
 
     for index, layer in enumerate(layers):
         name = layer_name(layer)
+        if not effective_visibility[index]:
+            warnings.append(f"Skipped hidden Photoshop layer '{name}'.")
+            continue
+
         image = normalize_rgba(layer.asarray(), layer, width, height)
         if not has_visible_pixels(image):
             warnings.append(f"Skipped empty Photoshop layer '{name}'.")
@@ -145,7 +177,7 @@ def extract_layered_tiff(source: Path, output_dir: Path, manifest_path: Path) ->
             {
                 "name": name,
                 "assetPath": str(output_path),
-                "visible": layer_visible(layer),
+                "visible": True,
                 "opacity": max(0, min(1, int(layer.opacity) / 255)),
                 "blendMode": blend_mode,
                 "order": index,
@@ -153,7 +185,7 @@ def extract_layered_tiff(source: Path, output_dir: Path, manifest_path: Path) ->
         )
 
     if not manifest_layers:
-        raise NoPhotoshopLayersError("No non-empty Photoshop raster layers found")
+        raise ValueError("No visible non-empty Photoshop raster layers found")
 
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
