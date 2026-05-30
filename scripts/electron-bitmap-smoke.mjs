@@ -50,6 +50,16 @@ const findShotLayerPath = async (folderPath, shotIndex, layerId = "layer-image")
   return filePath;
 };
 
+const findShotLayerMetadataPath = async (folderPath, shotIndex, layerId = "layer-image") => {
+  const project = await readProjectMetadata(folderPath);
+  const shot = project.shots?.[shotIndex];
+  const layer = shot?.layers?.find((item) => item.id === layerId);
+  return layer ? resolveLayerPath(folderPath, layer.bitmapPath) : undefined;
+};
+
+const layerAssetState = async (filePath) =>
+  (await fileExists(filePath)) ? hashFile(filePath) : "missing";
+
 const resolveLayerPath = (folderPath, bitmapPath) => path.join(folderPath, bitmapPath);
 
 const projectMetadataPath = (folderPath) =>
@@ -172,6 +182,19 @@ const assertNoUnreferencedLayerAssets = async (folderPath, project) => {
 const topLeftRgb = async (filePath) => {
   const { data } = await sharp(filePath).raw().toBuffer({ resolveWithObject: true });
   return Array.from(data.slice(0, 3));
+};
+
+const hasNonTransparentPixels = async (filePath) => {
+  const { data, info } = await sharp(filePath)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  for (let offset = 3; offset < data.length; offset += info.channels) {
+    if (data[offset] > 0) {
+      return true;
+    }
+  }
+  return false;
 };
 
 const findArchivedFileByHash = async (folderPath, expectedHash) => {
@@ -593,12 +616,12 @@ try {
 
   await openFolder();
 
-  const layerPath = await waitFor(() => findShotLayerPath(smokeRoot, 0), "image layer asset");
-  const secondShotLayerPath = await waitFor(() => findShotLayerPath(smokeRoot, 1), "second shot image layer asset");
-  const thirdShotLayerPath = await waitFor(() => findShotLayerPath(smokeRoot, 2), "third shot image layer asset");
-  const beforeHash = await hashFile(layerPath);
-  const secondShotBeforeHash = await hashFile(secondShotLayerPath);
-  const thirdShotBeforeHash = await hashFile(thirdShotLayerPath);
+  const layerPath = await waitFor(() => findShotLayerMetadataPath(smokeRoot, 0), "image layer metadata path");
+  const secondShotLayerPath = await waitFor(() => findShotLayerMetadataPath(smokeRoot, 1), "second shot image layer metadata path");
+  const thirdShotLayerPath = await waitFor(() => findShotLayerMetadataPath(smokeRoot, 2), "third shot image layer metadata path");
+  const beforeHash = await layerAssetState(layerPath);
+  const secondShotBeforeHash = await layerAssetState(secondShotLayerPath);
+  const thirdShotBeforeHash = await layerAssetState(thirdShotLayerPath);
 
   const rect = await evaluate(`
     (() => {
@@ -730,14 +753,14 @@ try {
   await dragStroke(send, startX, startY, endX, endY);
 
   const drawnHash = await waitFor(async () => {
-    const nextHash = await hashFile(layerPath);
+    const nextHash = await layerAssetState(layerPath);
     return nextHash !== beforeHash ? nextHash : undefined;
   }, "layer hash change after drawing");
 
   await dispatchKeyZ(send, 4);
 
   const undoHash = await waitFor(async () => {
-    const nextHash = await hashFile(layerPath);
+    const nextHash = await layerAssetState(layerPath);
     return nextHash === beforeHash ? nextHash : undefined;
   }, "layer hash restore after undo");
 
@@ -745,7 +768,7 @@ try {
   await dispatchKeyZ(send, 12);
 
   const redoHash = await waitFor(async () => {
-    const nextHash = await hashFile(layerPath);
+    const nextHash = await layerAssetState(layerPath);
     return nextHash === drawnHash ? nextHash : undefined;
   }, "layer hash restore after redo");
 
@@ -817,7 +840,7 @@ try {
   await dragStrokeWithLiveBitmapPreview(send, evaluate, endX, endY, startX, startY);
 
   const erasedHash = await waitFor(async () => {
-    const nextHash = await hashFile(layerPath);
+    const nextHash = await layerAssetState(layerPath);
     return nextHash !== drawnHash ? nextHash : undefined;
   }, "layer hash change after eraser");
 
@@ -825,7 +848,7 @@ try {
   await dispatchKeyZ(send, 4);
 
   const undoEraseHash = await waitFor(async () => {
-    const nextHash = await hashFile(layerPath);
+    const nextHash = await layerAssetState(layerPath);
     return nextHash === drawnHash ? nextHash : undefined;
   }, "layer hash restore after undo eraser");
 
@@ -837,7 +860,7 @@ try {
   `);
 
   const clearedHash = await waitFor(async () => {
-    const nextHash = await hashFile(layerPath);
+    const nextHash = await layerAssetState(layerPath);
     return nextHash !== drawnHash ? nextHash : undefined;
   }, "layer hash change after clear");
 
@@ -845,7 +868,7 @@ try {
   await dispatchKeyZ(send, 4);
 
   const undoClearHash = await waitFor(async () => {
-    const nextHash = await hashFile(layerPath);
+    const nextHash = await layerAssetState(layerPath);
     return nextHash === drawnHash ? nextHash : undefined;
   }, "layer hash restore after undo clear");
 
@@ -1033,7 +1056,7 @@ try {
     return project.shots?.[0]?.layers?.find((layer) => layer.kind === "paint");
   }, "paint layer metadata");
   const paintLayerPath = resolveLayerPath(smokeRoot, paintLayer.bitmapPath);
-  const paintBlankHash = await hashFile(paintLayerPath);
+  const paintBlankHash = await layerAssetState(paintLayerPath);
 
   await evaluate(`
     (() => {
@@ -1045,7 +1068,7 @@ try {
   await dragStroke(send, startX, startY, endX, endY);
 
   const paintDrawnHash = await waitFor(async () => {
-    const nextHash = await hashFile(paintLayerPath);
+    const nextHash = await layerAssetState(paintLayerPath);
     return nextHash !== paintBlankHash ? nextHash : undefined;
   }, "paint layer hash change after drawing");
 
@@ -1078,7 +1101,7 @@ try {
   await dragStroke(send, endX, endY, startX, startY);
 
   const paintErasedHash = await waitFor(async () => {
-    const nextHash = await hashFile(paintLayerPath);
+    const nextHash = await layerAssetState(paintLayerPath);
     return nextHash !== paintDrawnHash ? nextHash : undefined;
   }, "paint layer hash change after eraser");
 
@@ -1086,7 +1109,7 @@ try {
   await dispatchKeyZ(send, 4);
 
   const paintUndoEraseHash = await waitFor(async () => {
-    const nextHash = await hashFile(paintLayerPath);
+    const nextHash = await layerAssetState(paintLayerPath);
     return nextHash === paintDrawnHash ? nextHash : undefined;
   }, "paint layer hash restore after undo eraser");
 
@@ -1123,7 +1146,7 @@ try {
   await dragStroke(send, lassoMoveStartX, lassoMoveStartY, lassoMoveStartX + 24, lassoMoveStartY + 10);
 
   const paintLassoMovedHash = await waitFor(async () => {
-    const nextHash = await hashFile(paintLayerPath);
+    const nextHash = await layerAssetState(paintLayerPath);
     return nextHash !== paintDrawnHash ? nextHash : undefined;
   }, "paint layer hash change after lasso move");
 
@@ -1131,7 +1154,7 @@ try {
   await dispatchKeyZ(send, 4);
 
   const paintUndoLassoMoveHash = await waitFor(async () => {
-    const nextHash = await hashFile(paintLayerPath);
+    const nextHash = await layerAssetState(paintLayerPath);
     return nextHash === paintDrawnHash ? nextHash : undefined;
   }, "paint layer hash restore after undo lasso move");
 
@@ -1191,7 +1214,7 @@ try {
   await dragStroke(send, lassoEndX, lassoEndY, lassoEndX + 24, lassoEndY + 16);
 
   const paintRectangleScaledHash = await waitFor(async () => {
-    const nextHash = await hashFile(paintLayerPath);
+    const nextHash = await layerAssetState(paintLayerPath);
     return nextHash !== paintDrawnHash ? nextHash : undefined;
   }, "paint layer hash change after rectangle scale");
 
@@ -1199,7 +1222,7 @@ try {
   await dispatchKeyZ(send, 4);
 
   const paintUndoRectangleScaleHash = await waitFor(async () => {
-    const nextHash = await hashFile(paintLayerPath);
+    const nextHash = await layerAssetState(paintLayerPath);
     return nextHash === paintDrawnHash ? nextHash : undefined;
   }, "paint layer hash restore after undo rectangle scale");
 
@@ -1362,29 +1385,28 @@ try {
       (layer) => layer.kind === "paint" && layer.id !== paintLayer.id
     );
   }, "second paint layer metadata");
-  const secondPaintLayerPath = await waitForLayerAssetPath(
-    smokeRoot,
-    secondPaintLayer.bitmapPath,
-    "second paint layer asset created"
-  );
+  const secondPaintLayerPath = resolveLayerPath(smokeRoot, secondPaintLayer.bitmapPath);
+  const secondPaintLayerAssetState = await layerAssetState(secondPaintLayerPath);
   await evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
   await waitForUndoReady();
   await dispatchKeyZ(send, 4);
   const addLayerUndoChecks = await waitFor(async () => {
     const project = await readProjectMetadata(smokeRoot);
     const layerIds = project.shots?.[0]?.layers?.map((layer) => layer.id) ?? [];
-    const assetExists = await fileExists(secondPaintLayerPath);
-    return !layerIds.includes(secondPaintLayer.id) && !assetExists
-      ? { metadataRemoved: true, assetDeleted: true }
+    const assetState = await layerAssetState(secondPaintLayerPath);
+    return !layerIds.includes(secondPaintLayer.id) && assetState === secondPaintLayerAssetState
+      ? { metadataRemoved: true, assetUnchanged: true }
       : undefined;
-  }, "added paint layer undo removes metadata and asset");
+  }, "added paint layer undo removes metadata");
   await dispatchKeyZ(send, 12);
   const addLayerRedoChecks = await waitFor(async () => {
     const project = await readProjectMetadata(smokeRoot);
     const layer = project.shots?.[0]?.layers?.find((item) => item.id === secondPaintLayer.id);
-    const assetExists = await fileExists(secondPaintLayerPath);
-    return layer && assetExists ? { metadataRestored: true, assetRestored: true } : undefined;
-  }, "added paint layer redo restores metadata and asset");
+    const assetState = await layerAssetState(secondPaintLayerPath);
+    return layer && assetState === secondPaintLayerAssetState
+      ? { metadataRestored: true, assetUnchanged: true }
+      : undefined;
+  }, "added paint layer redo restores metadata");
   const layerRowsKeepFixedHeight = await waitFor(
     () =>
       evaluate(`
@@ -1515,8 +1537,8 @@ try {
     throw new Error(`current order: ${JSON.stringify(layerIds)}`);
   }, "paint layer drag to bottom blank area metadata");
   if (
-    (await hashFile(secondShotLayerPath)) !== secondShotBeforeHash ||
-    (await hashFile(thirdShotLayerPath)) !== thirdShotBeforeHash
+    (await layerAssetState(secondShotLayerPath)) !== secondShotBeforeHash ||
+    (await layerAssetState(thirdShotLayerPath)) !== thirdShotBeforeHash
   ) {
     throw new Error("Drawing on the selected shot changed a neighboring shot layer");
   }
@@ -1547,10 +1569,6 @@ try {
   const photoshopImportSourceHash = await hashFile(photoshopImportSourcePath);
 
   await openFolder(photoshopImportRoot);
-  await rm(path.join(photoshopImportRoot, ".storyboard-workbench", "layers"), {
-    recursive: true,
-    force: true
-  });
   await waitFor(
     () =>
       evaluate(`
@@ -1576,11 +1594,12 @@ try {
     return shot?.swb?.sourceKind === "photoshop-layered-tiff" ? project : undefined;
   }, "Photoshop layered TIFF round-trip import", 20000);
   const photoshopImportedShot = photoshopImportedProject.shots?.[0];
+  const photoshopImportedLayers = photoshopImportedShot?.layers ?? [];
   const photoshopImportedLayerNames = photoshopImportedShot?.layers?.map((layer) => layer.name) ?? [];
   const expectedImportedPaintLayerNames = photoshopLayerNames.filter((name) => name !== "Image");
   if (
     photoshopImportedProject.shots?.length !== 1 ||
-    (photoshopImportedShot?.layers?.length ?? 0) < 2 ||
+    photoshopImportedLayers.length !== photoshopLayerNames.length ||
     !photoshopImportedLayerNames.includes("Image") ||
     !expectedImportedPaintLayerNames.some((name) => photoshopImportedLayerNames.includes(name))
   ) {
@@ -1589,8 +1608,35 @@ try {
         shotCount: photoshopImportedProject.shots?.length,
         sourceKind: photoshopImportedShot?.swb?.sourceKind,
         layerNames: photoshopImportedLayerNames,
+        layerCount: photoshopImportedLayers.length,
+        expectedLayerCount: photoshopLayerNames.length,
         expectedImportedPaintLayerNames
       })}`
+    );
+  }
+  const photoshopImportedLayerAssetChecks = await Promise.all(
+    photoshopImportedLayers.map(async (layer) => {
+      const filePath = resolveLayerPath(photoshopImportRoot, layer.bitmapPath);
+      const exists = await fileExists(filePath);
+      const nonTransparent = layer.kind === "paint" ? exists && (await hasNonTransparentPixels(filePath)) : exists;
+      return {
+        id: layer.id,
+        kind: layer.kind,
+        name: layer.name,
+        filePath,
+        exists,
+        nonTransparent
+      };
+    })
+  );
+  if (
+    photoshopImportedLayerAssetChecks.some((item) => !item.exists) ||
+    !photoshopImportedLayerAssetChecks.some((item) => item.kind === "paint" && item.nonTransparent)
+  ) {
+    throw new Error(
+      `Photoshop TIFF round-trip import did not create expected layer assets: ${JSON.stringify(
+        photoshopImportedLayerAssetChecks
+      )}`
     );
   }
   const photoshopImportSourceArchivedPath = await waitFor(
@@ -1875,6 +1921,18 @@ try {
       ? project
       : undefined;
   }, "legacy bitmap metadata autosave");
+  await evaluate(`
+    (() => {
+      const exportButton = Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent.trim() === "Export TIFF");
+      exportButton.click();
+      return true;
+    })()
+  `);
+  await waitFor(async () => {
+    const files = await findPhotoshopExportFiles(legacyRoot);
+    return files.length === 1 ? files : undefined;
+  }, "legacy Photoshop TIFF export files");
   const legacyImageLayerPath = await waitFor(
     () => findShotLayerPath(legacyRoot, 0),
     "legacy image layer asset"
@@ -1948,6 +2006,7 @@ try {
           folderPath: photoshopImportRoot,
           sourceArchivedPath: photoshopImportSourceArchivedPath,
           layerNames: photoshopImportedLayerNames,
+          layerAssetChecks: photoshopImportedLayerAssetChecks,
           sourceKind: photoshopImportedShot.swb.sourceKind
         },
         saveConflictBlocked,
