@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
@@ -8,6 +8,7 @@ import sharp from "sharp";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const smokeRoot = path.join("/private/tmp", `swb-bitmap-smoke-${Date.now()}`);
 const legacyRoot = path.join("/private/tmp", `swb-legacy-smoke-${Date.now()}`);
+const photoshopImportRoot = path.join("/private/tmp", `swb-photoshop-import-${Date.now()}`);
 const port = String(9300 + Math.floor(Math.random() * 400));
 const electronBin = path.join(repoRoot, "node_modules", ".bin", "electron");
 const photoshopPythonDepsDir = process.env.SWB_PYTHON_DEPS_DIR ?? "/private/tmp/psdtags-spike-deps";
@@ -577,6 +578,17 @@ try {
       `),
       "shot stage"
     );
+
+    await waitFor(async () => {
+      const project = await readProjectMetadata(folderPath);
+      const shotCount = project.shots?.length ?? 0;
+      if (shotCount === 0) {
+        return undefined;
+      }
+
+      const renderedShotCount = await evaluate(`document.querySelectorAll("[data-shot-id]").length`);
+      return renderedShotCount === shotCount ? project : undefined;
+    }, `project metadata for ${folderPath}`);
   };
 
   await openFolder();
@@ -1529,6 +1541,69 @@ try {
     throw new Error(`Photoshop TIFF readback did not preserve layers: ${JSON.stringify(photoshopLayerNames)}`);
   }
 
+  await mkdir(photoshopImportRoot, { recursive: true });
+  const photoshopImportSourcePath = path.join(photoshopImportRoot, "import-me.tiff");
+  await copyFile(photoshopExportFiles[0], photoshopImportSourcePath);
+  const photoshopImportSourceHash = await hashFile(photoshopImportSourcePath);
+
+  await openFolder(photoshopImportRoot);
+  await rm(path.join(photoshopImportRoot, ".storyboard-workbench", "layers"), {
+    recursive: true,
+    force: true
+  });
+  await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const importButton = Array.from(document.querySelectorAll("button"))
+            .find((button) => button.textContent.trim() === "Import");
+          return Boolean(importButton && !importButton.disabled);
+        })()
+      `),
+    "Photoshop TIFF import button enabled"
+  );
+  await evaluate(`
+    (() => {
+      const importButton = Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent.trim() === "Import");
+      importButton.click();
+      return true;
+    })()
+  `);
+  const photoshopImportedProject = await waitFor(async () => {
+    const project = await readProjectMetadata(photoshopImportRoot);
+    const shot = project.shots?.[0];
+    return shot?.swb?.sourceKind === "photoshop-layered-tiff" ? project : undefined;
+  }, "Photoshop layered TIFF round-trip import", 20000);
+  const photoshopImportedShot = photoshopImportedProject.shots?.[0];
+  const photoshopImportedLayerNames = photoshopImportedShot?.layers?.map((layer) => layer.name) ?? [];
+  const expectedImportedPaintLayerNames = photoshopLayerNames.filter((name) => name !== "Image");
+  if (
+    photoshopImportedProject.shots?.length !== 1 ||
+    (photoshopImportedShot?.layers?.length ?? 0) < 2 ||
+    !photoshopImportedLayerNames.includes("Image") ||
+    !expectedImportedPaintLayerNames.some((name) => photoshopImportedLayerNames.includes(name))
+  ) {
+    throw new Error(
+      `Photoshop TIFF round-trip import did not preserve bitmap layers: ${JSON.stringify({
+        shotCount: photoshopImportedProject.shots?.length,
+        sourceKind: photoshopImportedShot?.swb?.sourceKind,
+        layerNames: photoshopImportedLayerNames,
+        expectedImportedPaintLayerNames
+      })}`
+    );
+  }
+  const photoshopImportSourceArchivedPath = await waitFor(
+    () => findArchivedFileByHash(photoshopImportRoot, photoshopImportSourceHash),
+    "archived Photoshop layered TIFF import source"
+  );
+  const photoshopImportSourceStillAtRoot = await fileExists(photoshopImportSourcePath);
+  if (photoshopImportSourceStillAtRoot) {
+    throw new Error("Photoshop layered TIFF import source remained at the folder root");
+  }
+
+  await openFolder(smokeRoot);
+
   await evaluate(`
     (async () => {
       const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1869,6 +1944,12 @@ try {
         paintOrderAfterBottomBlankDrag,
         photoshopExportFiles,
         photoshopLayerNames,
+        photoshopRoundTripImport: {
+          folderPath: photoshopImportRoot,
+          sourceArchivedPath: photoshopImportSourceArchivedPath,
+          layerNames: photoshopImportedLayerNames,
+          sourceKind: photoshopImportedShot.swb.sourceKind
+        },
         saveConflictBlocked,
         firstSavedTopLeftRgb,
         archivedShotAHash,
@@ -1893,4 +1974,5 @@ try {
   electronProcess?.kill();
   await rm(smokeRoot, { recursive: true, force: true });
   await rm(legacyRoot, { recursive: true, force: true });
+  await rm(photoshopImportRoot, { recursive: true, force: true });
 }
