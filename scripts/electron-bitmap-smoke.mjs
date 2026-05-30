@@ -1599,7 +1599,8 @@ try {
   const expectedImportedPaintLayerNames = photoshopLayerNames.filter((name) => name !== "Image");
   if (
     photoshopImportedProject.shots?.length !== 1 ||
-    photoshopImportedLayers.length !== photoshopLayerNames.length ||
+    photoshopImportedLayers.length < 2 ||
+    photoshopImportedLayers.length > photoshopLayerNames.length ||
     !photoshopImportedLayerNames.includes("Image") ||
     !expectedImportedPaintLayerNames.some((name) => photoshopImportedLayerNames.includes(name))
   ) {
@@ -1609,7 +1610,7 @@ try {
         sourceKind: photoshopImportedShot?.swb?.sourceKind,
         layerNames: photoshopImportedLayerNames,
         layerCount: photoshopImportedLayers.length,
-        expectedLayerCount: photoshopLayerNames.length,
+        maxExpectedLayerCount: photoshopLayerNames.length,
         expectedImportedPaintLayerNames
       })}`
     );
@@ -1631,7 +1632,8 @@ try {
   );
   if (
     photoshopImportedLayerAssetChecks.some((item) => !item.exists) ||
-    !photoshopImportedLayerAssetChecks.some((item) => item.kind === "paint" && item.nonTransparent)
+    !photoshopImportedLayerAssetChecks.some((item) => item.kind === "paint" && item.nonTransparent) ||
+    photoshopImportedLayerAssetChecks.some((item) => item.kind === "paint" && !item.nonTransparent)
   ) {
     throw new Error(
       `Photoshop TIFF round-trip import did not create expected layer assets: ${JSON.stringify(

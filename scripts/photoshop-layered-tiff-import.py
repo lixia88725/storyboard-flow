@@ -33,9 +33,13 @@ class NoPhotoshopLayersError(Exception):
 
 
 def layer_visible(layer: Any) -> bool:
-    # Current SWB exports set VISIBLE for visible layers. Layers without that
-    # flag import as hidden.
-    return bool(layer.flags & PsdLayerFlag.VISIBLE)
+    # Photoshop stores this bit as hidden-state data in the ImageSourceData
+    # records, despite the psdtags enum name.
+    return not bool(layer.flags & PsdLayerFlag.VISIBLE)
+
+
+def has_visible_pixels(image: numpy.ndarray) -> bool:
+    return bool(image.shape[0] and image.shape[1] and image[..., 3].max() > 0)
 
 
 def normalize_rgba(image: numpy.ndarray, layer: Any, width: int, height: int) -> numpy.ndarray:
@@ -114,6 +118,10 @@ def extract_layered_tiff(source: Path, output_dir: Path, manifest_path: Path) ->
 
     for index, layer in enumerate(layers):
         image = normalize_rgba(layer.asarray(), layer, width, height)
+        if not has_visible_pixels(image):
+            warnings.append(f"Skipped empty Photoshop layer '{layer.name}'.")
+            continue
+
         file_name = f"{index:04d}-{safe_layer_name(str(layer.name), index)}.png"
         output_path = output_dir / file_name
         imagecodecs.imwrite(output_path, image)
@@ -133,6 +141,9 @@ def extract_layered_tiff(source: Path, output_dir: Path, manifest_path: Path) ->
                 "order": index,
             }
         )
+
+    if not manifest_layers:
+        raise NoPhotoshopLayersError("No non-empty Photoshop raster layers found")
 
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
