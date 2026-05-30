@@ -118,12 +118,28 @@ describe("storyboardScript", () => {
       ]
     };
 
-    expect(planStoryboardScriptImport(project, ["Repeat", "Brand new", "Alpha", "Repeat"])).toEqual([
+    expect(planStoryboardScriptImport(project, ["Repeat", "Brand new", "Alpha", "Repeat", "Extra"])).toEqual([
       { type: "existing", shotId: "shot-b", scriptText: "Repeat" },
       { type: "new", scriptText: "Brand new" },
       { type: "existing", shotId: "shot-a", scriptText: "Alpha" },
       { type: "existing", shotId: "shot-c", scriptText: "Repeat" },
+      { type: "new", scriptText: "Extra" },
       { type: "existing", shotId: "shot-d", scriptText: "Missing from markdown" }
+    ]);
+  });
+
+  it("plans same-length markdown imports as positional script text edits", () => {
+    const project: TestProject = {
+      ...projectWithScripts(),
+      shots: [
+        { ...projectWithScripts().shots[0], id: "shot-a", order: 0, scriptText: "Alpha" },
+        { ...projectWithScripts().shots[1], id: "shot-b", order: 1, scriptText: "Beta" }
+      ]
+    };
+
+    expect(planStoryboardScriptImport(project, ["Edited A", "Edited B"])).toEqual([
+      { type: "existing", shotId: "shot-a", scriptText: "Edited A" },
+      { type: "existing", shotId: "shot-b", scriptText: "Edited B" }
     ]);
   });
 
@@ -135,7 +151,7 @@ describe("storyboardScript", () => {
         { ...projectWithScripts().shots[1], id: "shot-b", order: 1, scriptText: "Beta" }
       ]
     };
-    const plan = planStoryboardScriptImport(project, ["New text", "Alpha"]);
+    const plan = planStoryboardScriptImport(project, ["New text", "Alpha", "Beta"]);
     const updated = applyStoryboardScriptImportPlan(project, plan, [
       {
         id: "shot-new",

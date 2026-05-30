@@ -126,6 +126,7 @@
 - Save boundary was dogfooded after a small dirty brush stroke on the first shot. Save used default naming fields, renamed all 302 root TIFFs to `TEST2_scene_stb_artist_v001_####.tiff`, kept all 302 project paths valid, and preserved `owned` status on every shot.
 - Follow-up finding fixed: successful Save now removes its per-save manifest directory and `save-backup/<stamp>/` directory after replacement commit. Rollback still preserves artifacts for recovery/diagnostics.
 - Layer Lock dogfood passed on shot 171's Photoshop-imported locked `背景` layer: locked controls were disabled, locked drawing did not change the PNG, unlocking allowed drawing, then the layer was locked back and saved. TEST2 still has 13 locked layers.
+- Script card / Markdown import dogfood found and fixed same-length `storyboard-script.md` edits creating blank `new_shot...` storyboards. Same-length Markdown now updates existing shots positionally; extra Markdown entries still create new blank shots. TEST2 was restored to 302 shots with only shot 1 containing `TEST2 dogfood script line`.
 
 ## Verification Run For Handoff
 
@@ -225,7 +226,7 @@ Recommended next steps:
 
 ## Known Remaining Work
 
-- Real dogfood is still needed for script card editing, Delete-to-Trash recovery, external image Import warning, bitmap Select high-resolution scaling, mixed-aspect animation, multi-select dragging, and double-click dialogue editing.
+- Real dogfood is still needed for Delete-to-Trash recovery, external image Import warning, bitmap Select high-resolution scaling, mixed-aspect animation, multi-select dragging, and double-click dialogue editing.
 - Delete currently leaves internal `.storyboard-workbench/layers/<shotId>/...` assets behind; orphan cleanup should be a separate conservative task.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.

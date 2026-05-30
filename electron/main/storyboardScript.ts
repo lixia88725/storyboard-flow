@@ -97,6 +97,14 @@ export const planStoryboardScriptImport = (
   markdownEntries: string[]
 ): StoryboardScriptImportPlanItem[] => {
   const remainingShots = sortedProjectShots(project.shots);
+  if (markdownEntries.length === remainingShots.length) {
+    return remainingShots.map((shot, index) => ({
+      type: "existing",
+      shotId: shot.id,
+      scriptText: markdownEntries[index] ?? ""
+    }));
+  }
+
   const plan: StoryboardScriptImportPlanItem[] = [];
 
   for (const scriptText of markdownEntries) {

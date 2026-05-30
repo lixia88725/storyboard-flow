@@ -696,7 +696,7 @@ try {
 
   await writeFile(
     scriptMarkdownPath,
-    ["1. New exterior beat", "2. Opening shot", "   Camera pushes in", "3. "].join("\n") + "\n",
+    ["1. New exterior beat", "2. Opening shot", "   Camera pushes in", "3. ", "4. "].join("\n") + "\n",
     "utf8"
   );
   await evaluate(`window.dispatchEvent(new Event("focus"))`);

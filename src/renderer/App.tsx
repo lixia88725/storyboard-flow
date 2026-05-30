@@ -134,6 +134,25 @@ const animationReservedBottom = 180;
 const animationViewportMargin = 14;
 const maxDialogueRows = 3;
 
+const projectChangedDuringLoad = (before: Project, after: Project): boolean => {
+  if (before.shots.length !== after.shots.length) {
+    return true;
+  }
+
+  const beforeShotsById = new Map(before.shots.map((shot) => [shot.id, shot]));
+  return after.shots.some((afterShot) => {
+    const beforeShot = beforeShotsById.get(afterShot.id);
+    return (
+      !beforeShot ||
+      beforeShot.previewPath !== afterShot.previewPath ||
+      beforeShot.fileName !== afterShot.fileName ||
+      beforeShot.activeLayerId !== afterShot.activeLayerId ||
+      JSON.stringify(beforeShot.layers ?? []) !== JSON.stringify(afterShot.layers ?? []) ||
+      JSON.stringify(beforeShot.sketchLayers ?? []) !== JSON.stringify(afterShot.sketchLayers ?? [])
+    );
+  });
+};
+
 type WorkspaceSaveState = "saved" | "saving" | "error";
 type FileNameSyncState = "synced" | "unsynced";
 type CardFace = "image" | "script";
@@ -601,20 +620,23 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
-    if (autosaveRevision === 0 || !folderPath || !metadataPath || !window.storyboard) {
+    const activeFolderPath = folderPathRef.current;
+    const activeMetadataPath = metadataPathRef.current;
+    if (autosaveRevision === 0 || !activeFolderPath || !activeMetadataPath || !window.storyboard) {
       return;
     }
 
+    const projectToSave = projectRef.current;
     setWorkspaceSaveState("saving");
     const timer = window.setTimeout(() => {
-      void persistWorkspace(project).catch((error) => {
+      void persistWorkspace(projectToSave, activeFolderPath, activeMetadataPath).catch((error) => {
         setWorkspaceSaveState("error");
         setStatus(`Autosave failed: ${error instanceof Error ? error.message : String(error)}`);
       });
     }, autosaveDelayMs);
 
     return () => window.clearTimeout(timer);
-  }, [autosaveRevision, folderPath, metadataPath, project]);
+  }, [autosaveRevision]);
 
   useEffect(() => {
     const handleFocus = () => {
@@ -1042,15 +1064,19 @@ export const App = () => {
     }));
   };
 
-  const persistWorkspace = async (projectToSave: Project) => {
-    if (!window.storyboard || !folderPath || !metadataPath) {
+  const persistWorkspace = async (
+    projectToSave: Project,
+    activeFolderPath = folderPath,
+    activeMetadataPath = metadataPath
+  ) => {
+    if (!window.storyboard || !activeFolderPath || !activeMetadataPath) {
       return;
     }
 
     await window.storyboard.autosaveWorkspace({
       project: { ...projectToSave, updatedAt: new Date().toISOString() },
-      folderPath,
-      metadataPath
+      folderPath: activeFolderPath,
+      metadataPath: activeMetadataPath
     });
     scriptImportCheckIdRef.current += 1;
     setScriptImportNeeded(false);
@@ -1253,13 +1279,14 @@ export const App = () => {
       ? projectWithDefaults
       : mergeFolderImages(projectWithDefaults, scan.images);
     const acceptedExternalEdits = projectAcceptedExternalEdits(nextProject);
+    const loadedProjectChanged = projectChangedDuringLoad(projectWithDefaults, nextProject);
     let nextScriptImportNeeded = Boolean(scan.scriptImportNeeded);
 
     setProject(nextProject);
     setFolderPath(scan.folderPath);
     setFolderInputValue(scan.folderPath);
     setMetadataPath(scan.metadataPath);
-    setWorkspaceSaveState(dirty || acceptedExternalEdits ? "saving" : "saved");
+    setWorkspaceSaveState(dirty || acceptedExternalEdits || loadedProjectChanged ? "saving" : "saved");
     setFileNameSyncState("synced");
     setStatus(acceptedExternalEdits ? "External TIFF edits accepted as new base" : nextStatus);
     setUndoStack([]);
@@ -1277,7 +1304,7 @@ export const App = () => {
       setScriptImportNeeded(nextScriptImportNeeded);
     }
 
-    if ((dirty || acceptedExternalEdits) && !nextScriptImportNeeded) {
+    if ((dirty || acceptedExternalEdits || loadedProjectChanged) && !nextScriptImportNeeded) {
       setAutosaveRevision((revision) => revision + 1);
     }
   };

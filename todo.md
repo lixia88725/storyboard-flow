@@ -6,7 +6,6 @@
 - [ ] Manually dogfood bitmap Select lasso/rectangle corner scaling on high-resolution real storyboard images.
 - [ ] Manually review mixed-aspect animation mode with the dark matte/stable frame and decide whether the visual treatment needs refinement.
 - [ ] Manually verify multi-select shot dragging and double-click dialogue editing after the bitmap layer refactor.
-- [ ] Manually dogfood `文 / 图` script card editing and external `storyboard-script.md` reorder/import on a real storyboard folder.
 - [ ] Manually dogfood Delete-to-Trash on real folders: single delete, multi-select delete, Undo, Save, and Finder Trash recovery.
 - [ ] Manually dogfood adding images externally from Finder/Bridge and confirm the yellow Import warning appears only when needed.
 
@@ -68,6 +67,7 @@
 - [x] Real-folder `TEST2` Save boundary dogfood passed after a dirty first-shot brush stroke: 302 root TIFFs renamed to default Save names, all project paths existed, and all shots remained `owned`.
 - [x] Successful Save now removes its `save-tmp/<stamp>` manifests and `save-backup/<stamp>` directory after replacement commit, while rollback still preserves artifacts.
 - [x] Real-folder `TEST2` Layer Lock dogfood passed on a Photoshop-imported locked `背景` layer: locked UI disabled edits/delete, locked drawing did not change the layer PNG, unlock allowed drawing, and the layer was locked back and saved.
+- [x] Real-folder `TEST2` script card and `storyboard-script.md` import dogfood found and fixed same-length Markdown edits creating blank `new_shot...` storyboards instead of updating existing shot script text.
 
 ## Out Of Scope For Current MVP
 

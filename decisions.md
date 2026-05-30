@@ -202,6 +202,12 @@ Reason: 锁定的核心目的是避免误改像素和图层属性。显示/隐�
 
 Reason: 迁移必须保护旧项目可见结果，同时避免新代码继续扩展两套绘图主数据。
 
+## Storyboard Script Same-Length Imports Are Positional
+
+当 `storyboard-script.md` 的条目数和当前 shot 数相同，Import 按列表位置更新现有 shot 的 `scriptText`，不根据文字内容匹配并创建新 shot。只有 Markdown 条目多于当前 shot 数时，额外条目才会创建新的 blank shot。
+
+Reason: `storyboard-script.md` 是用户可编辑的文字镜像。用户修改某个编号下的文字时，预期是更新对应 shot 的脚本文字，而不是因为文字变成新内容就生成新的 storyboard。
+
 Non-goal: bitmap layer 重构不代表完整 Photoshop 图层 round-trip。Photoshop layered TIFF import/export 已经产品化为 raster layer 交换路径；PSD-first、复杂 Photoshop 图层完整保真和文件监听同步仍是待验证方向。
 
 ## V1 Avoids Heavy Features
