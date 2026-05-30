@@ -7,6 +7,8 @@ import sharp from "sharp";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const smokeRoot = path.join("/private/tmp", `swb-bitmap-smoke-${Date.now()}`);
+const scriptRoot = path.join("/private/tmp", `swb-script-smoke-${Date.now()}`);
+const deleteRoot = path.join("/private/tmp", `swb-delete-smoke-${Date.now()}`);
 const legacyRoot = path.join("/private/tmp", `swb-legacy-smoke-${Date.now()}`);
 const photoshopImportRoot = path.join("/private/tmp", `swb-photoshop-import-${Date.now()}`);
 const savedLayeredImportRoot = path.join("/private/tmp", `swb-saved-layered-import-${Date.now()}`);
@@ -447,9 +449,19 @@ let electronProcess;
 try {
   // Fixture setup.
   await mkdir(smokeRoot, { recursive: true });
+  await mkdir(scriptRoot, { recursive: true });
+  await mkdir(deleteRoot, { recursive: true });
   const originalShotAPath = path.join(smokeRoot, "shot_a.png");
   const originalShotBPath = path.join(smokeRoot, "shot_b.png");
   const originalShotCPath = path.join(smokeRoot, "shot_c.png");
+  const scriptShotAPath = path.join(scriptRoot, "script_a.png");
+  const scriptShotBPath = path.join(scriptRoot, "script_b.png");
+  const scriptShotCPath = path.join(scriptRoot, "script_c.png");
+  const scriptExternalShotAPath = path.join(scriptRoot, "script_external_a.png");
+  const scriptExternalShotBPath = path.join(scriptRoot, "script_external_b.png");
+  const deleteShotAPath = path.join(deleteRoot, "delete_a.png");
+  const deleteShotBPath = path.join(deleteRoot, "delete_b.png");
+  const deleteShotCPath = path.join(deleteRoot, "delete_c.png");
   const legacyImagePath = path.join(legacyRoot, "legacy.png");
 
   await sharp({
@@ -482,6 +494,12 @@ try {
   })
     .png()
     .toFile(originalShotCPath);
+  await copyFile(originalShotAPath, scriptShotAPath);
+  await copyFile(originalShotBPath, scriptShotBPath);
+  await copyFile(originalShotCPath, scriptShotCPath);
+  await copyFile(originalShotAPath, deleteShotAPath);
+  await copyFile(originalShotBPath, deleteShotBPath);
+  await copyFile(originalShotCPath, deleteShotCPath);
   const originalShotAHash = await hashFile(originalShotAPath);
 
   await mkdir(path.join(legacyRoot, ".storyboard-workbench"), { recursive: true });
@@ -628,6 +646,200 @@ try {
       })})
     `);
   };
+
+  await openFolder(scriptRoot);
+
+  // Scenario: storyboard script back side and root markdown sync/import.
+  const scriptMarkdownPath = path.join(scriptRoot, "storyboard-script.md");
+  await evaluate(`
+    (() => {
+      document.querySelector(".tool-rail .card-face-tool").click();
+      return true;
+    })()
+  `);
+  await waitFor(
+    () => evaluate(`document.querySelector("[data-shot-id]")?.classList.contains("is-script-face")`),
+    "storyboard script side visible"
+  );
+  const scriptCardGeometry = await evaluate(`
+    (() => Array.from(document.querySelectorAll(".shot-card.is-script-face")).map((card) => {
+      const cardRect = card.getBoundingClientRect();
+      const textareaRect = card.querySelector(".shot-script-textarea")?.getBoundingClientRect();
+      return {
+        shotId: card.getAttribute("data-shot-id"),
+        cardBottom: cardRect.bottom,
+        textareaBottom: textareaRect?.bottom ?? null,
+        textareaWithinCard: textareaRect ? textareaRect.bottom <= cardRect.bottom + 1 : false
+      };
+    }))()
+  `);
+  if (scriptCardGeometry.some((item) => !item.textareaWithinCard)) {
+    throw new Error(`Script textarea overflowed card bounds: ${JSON.stringify(scriptCardGeometry)}`);
+  }
+  await evaluate(`
+    (() => {
+      const textarea = document.querySelector(".shot-script-textarea");
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+      setter.call(textarea, "Opening shot\\nCamera pushes in");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      return textarea.value;
+    })()
+  `);
+  const scriptBackMetadata = await waitFor(async () => {
+    const project = await readProjectMetadata(scriptRoot);
+    return project.shots?.[0]?.scriptText === "Opening shot\nCamera pushes in" ? project : undefined;
+  }, "storyboard script metadata autosave");
+  const scriptMarkdownWritten = await waitFor(async () => {
+    const contents = await readFile(scriptMarkdownPath, "utf8").catch(() => "");
+    return contents.includes("1. Opening shot\n   Camera pushes in") ? contents : undefined;
+  }, "storyboard script markdown autosave");
+
+  await writeFile(
+    scriptMarkdownPath,
+    ["1. New exterior beat", "2. Opening shot", "   Camera pushes in", "3. "].join("\n") + "\n",
+    "utf8"
+  );
+  await evaluate(`window.dispatchEvent(new Event("focus"))`);
+  await waitFor(
+    () => evaluate(`!document.querySelector(".import-control button").disabled`),
+    "storyboard script import enabled"
+  );
+  await evaluate(`document.querySelector(".import-warning").click()`);
+  const importHelpText = await waitFor(
+    () => evaluate(`document.querySelector(".import-help-popover")?.textContent ?? ""`),
+    "import help popover"
+  );
+  if (!importHelpText.includes("原始 TIFF") ||
+    !importHelpText.includes("Archive") ||
+    !importHelpText.includes("storyboard-script.md") ||
+    !importHelpText.includes("点击 Import")) {
+    throw new Error(`Import help popover copy was incomplete: ${importHelpText}`);
+  }
+  await evaluate(`document.querySelector(".import-control button").click()`);
+  const scriptImportedProject = await waitFor(async () => {
+    const project = await readProjectMetadata(scriptRoot);
+    const scripts = project.shots?.map((shot) => shot.scriptText ?? "");
+    return project.shots?.length === 4 &&
+      scripts?.[0] === "New exterior beat" &&
+      scripts?.[1] === "Opening shot\nCamera pushes in"
+      ? project
+      : undefined;
+  }, "storyboard script markdown import");
+  const scriptMarkdownAfterImport = await readFile(scriptMarkdownPath, "utf8");
+  if (!scriptMarkdownAfterImport.includes("3. \n4. \n")) {
+    throw new Error(`Storyboard script markdown empty items missed marker spaces: ${scriptMarkdownAfterImport}`);
+  }
+  await waitFor(
+    () => evaluate(`!document.querySelector(".import-warning")`),
+    "import warning hidden after storyboard script import"
+  );
+  const scriptBackChecks = {
+    metadataText: scriptBackMetadata.shots[0].scriptText,
+    markdownWritten: scriptMarkdownWritten.includes("1. Opening shot\n   Camera pushes in"),
+    importedScripts: scriptImportedProject.shots.map((shot) => shot.scriptText ?? ""),
+    importedFileNames: scriptImportedProject.shots.map((shot) => shot.fileName),
+    markdownAfterImport: scriptMarkdownAfterImport
+  };
+  await evaluate(`document.querySelector(".shot-script-textarea")?.focus()`);
+  await dispatchKey(send, "Backspace", "Backspace", 8);
+  const deleteInScriptTextareaKeptCards = await evaluate(
+    `document.querySelectorAll("[data-shot-id]").length`
+  );
+  if (deleteInScriptTextareaKeptCards !== scriptImportedProject.shots.length) {
+    throw new Error("Delete inside script textarea removed a storyboard card");
+  }
+  await copyFile(originalShotBPath, scriptExternalShotAPath);
+  await copyFile(originalShotCPath, scriptExternalShotBPath);
+  await evaluate(`window.dispatchEvent(new Event("focus"))`);
+  await waitFor(async () => {
+    const importEnabled = await evaluate(`!document.querySelector(".import-control button").disabled`);
+    const warningVisible = await evaluate(`Boolean(document.querySelector(".import-warning"))`);
+    const renderedShotCount = await evaluate(`document.querySelectorAll("[data-shot-id]").length`);
+    return importEnabled &&
+      warningVisible &&
+      renderedShotCount === scriptImportedProject.shots.length + 2
+      ? true
+      : undefined;
+  }, "external folder images trigger import warning");
+  await evaluate(`document.querySelector(".import-control button").click()`);
+  const externalImageWarningProject = await waitFor(async () => {
+    const project = await readProjectMetadata(scriptRoot);
+    return project.shots?.length === scriptImportedProject.shots.length + 2 &&
+      project.shots.slice(-2).every((shot) => shot.swb?.status === "owned")
+      ? project
+      : undefined;
+  }, "external folder images import");
+  await evaluate(`
+    (() => {
+      const button = document.querySelector(".tool-rail .card-face-tool");
+      if (button.textContent.trim() === "图") {
+        button.click();
+      }
+      return true;
+    })()
+  `);
+
+  // Scenario: Delete removes selected storyboards in the app, Undo restores them, and Save moves files to Trash.
+  await openFolder(deleteRoot);
+  const deleteInitialProject = await readProjectMetadata(deleteRoot);
+  const deleteTargetPath = deleteInitialProject.shots[1].imagePath;
+  await evaluate(`
+    (() => {
+      document.querySelectorAll("[data-shot-id]")[1].click();
+      return true;
+    })()
+  `);
+  await dispatchKey(send, "Backspace", "Backspace", 8);
+  const deletePendingProject = await waitFor(async () => {
+    const project = await readProjectMetadata(deleteRoot);
+    return project.shots?.length === 2 && project.pendingDeletedShots?.length === 1
+      ? project
+      : undefined;
+  }, "Delete key pending deletion autosave");
+  if (!(await fileExists(deleteTargetPath))) {
+    throw new Error("Delete moved the storyboard file before Save");
+  }
+
+  await dispatchKeyZ(send, 4);
+  await waitFor(async () => {
+    const project = await readProjectMetadata(deleteRoot);
+    return project.shots?.length === 3 && !project.pendingDeletedShots?.length
+      ? project
+      : undefined;
+  }, "Delete undo restored project");
+  if (!(await fileExists(deleteTargetPath))) {
+    throw new Error("Undo delete did not keep the storyboard file in place");
+  }
+
+  await evaluate(`
+    (() => {
+      document.querySelectorAll("[data-shot-id]")[1].click();
+      return true;
+    })()
+  `);
+  await dispatchKey(send, "Backspace", "Backspace", 8);
+  await waitFor(async () => {
+    const project = await readProjectMetadata(deleteRoot);
+    return project.shots?.length === 2 && project.pendingDeletedShots?.length === 1
+      ? project
+      : undefined;
+  }, "Delete key pending deletion after undo");
+  await evaluate(`
+    (() => {
+      const saveButton = Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent.trim() === "Save");
+      saveButton.click();
+      return true;
+    })()
+  `);
+  const deleteSavedProject = await waitFor(async () => {
+    const project = await readProjectMetadata(deleteRoot);
+    return project.shots?.length === 2 &&
+      !project.pendingDeletedShots?.length &&
+      !(await fileExists(deleteTargetPath))
+      ? project
+      : undefined;
+  }, "Save moved deleted storyboard file to Trash", 20000);
 
   await openFolder();
 
@@ -904,8 +1116,8 @@ try {
   `);
 
   await waitFor(
-    () =>
-      evaluate(`
+    async () => {
+      const checks = await evaluate(`
         (() => {
           const firstShot = document.querySelector('[data-shot-id]');
           const stageRect = firstShot?.querySelector('.image-stage')?.getBoundingClientRect();
@@ -922,21 +1134,28 @@ try {
             hasRects: Boolean(stageRect && dialogueRect && panelRect && toggleRect && footerButtonRect),
             panelAligned: Boolean(stageRect && panelRect && panelRect.left >= stageRect.right - 1),
             panelBottomAligned: Boolean(dialogueRect && panelRect && Math.abs(panelRect.bottom - dialogueRect.bottom) <= 2),
-            toggleRight: Boolean(panelRect && toggleRect && toggleRect.left >= panelRect.right - 1),
+            toggleAttachedToPanelRight: Boolean(panelRect && toggleRect && Math.abs(toggleRect.left - panelRect.right) <= 1),
             toggleBottomAligned: Boolean(stageRect && toggleRect && Math.abs(toggleRect.bottom - stageRect.bottom) <= 1),
             toggleVertical: Boolean(toggleRect && toggleRect.height > toggleRect.width),
             footerCompact: Boolean(footerButtonRect && footerButtonRect.height <= 20),
             noBlendSelect: !firstShot.querySelector('select[aria-label="Layer blend mode"]'),
             noOpacitySlider: !firstShot.querySelector('input[aria-label="Active layer opacity"]'),
             hasBlendDot: Boolean(firstShot.querySelector('button[aria-label="Layer blend mode: normal"]')),
-            toggleEmpty: toggle?.textContent.trim() === ""
+            toggleEmpty: toggle?.textContent.trim() === "",
+            panelBottomDelta: dialogueRect && panelRect ? panelRect.bottom - dialogueRect.bottom : null,
+            toggleBottomDelta: stageRect && toggleRect ? toggleRect.bottom - stageRect.bottom : null
           };
-          if (!Object.values(checks).every(Boolean)) {
-            throw new Error(JSON.stringify(checks));
-          }
-          return true;
+          const result = { ...checks };
+          delete result.panelBottomDelta;
+          delete result.toggleBottomDelta;
+          return Object.values(result).every(Boolean) ? true : checks;
         })()
-      `),
+      `);
+      if (checks !== true) {
+        throw new Error(JSON.stringify(checks));
+      }
+      return true;
+    },
     "inline shot layer panel delete button"
   );
 
@@ -949,6 +1168,7 @@ try {
           if (!zone) {
             return undefined;
           }
+          const emptyZoneHeight = zone.getBoundingClientRect().height;
           zone.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
           for (let index = 0; index < 20 && !zone.querySelector("textarea"); index += 1) {
             await delay(50);
@@ -963,12 +1183,15 @@ try {
           await delay(100);
           const oneLineRows = textarea.rows;
           const oneLineHeight = textarea.getBoundingClientRect().height;
+          const oneLineZoneHeight = zone.getBoundingClientRect().height;
           valueSetter.call(textarea, ["One", "Two", "Three", "Four"].join("\\n"));
           textarea.dispatchEvent(new Event("input", { bubbles: true }));
           await delay(100);
           return {
+            emptyZoneHeight,
             oneLineRows,
             oneLineHeight,
+            oneLineZoneHeight,
             clampedRows: textarea.rows,
             clampedValue: textarea.value,
             clampedLineCount: textarea.value.split("\\n").length,
@@ -980,6 +1203,7 @@ try {
   );
   if (
     dialogueRowChecks.oneLineRows !== 1 ||
+    dialogueRowChecks.oneLineZoneHeight > dialogueRowChecks.emptyZoneHeight + 2 ||
     dialogueRowChecks.clampedRows !== 3 ||
     dialogueRowChecks.clampedLineCount !== 3 ||
     dialogueRowChecks.clampedValue !== "One\nTwo\nThree" ||
@@ -1005,6 +1229,26 @@ try {
       `),
     "initial layer panel open animation settled"
   );
+  const layerPanelPlacement = await evaluate(`
+    (() => {
+      const stage = document.querySelector('[data-shot-id] .image-stage')?.getBoundingClientRect();
+      const panel = document.querySelector('.shot-layer-popover .layer-panel')?.getBoundingClientRect();
+      const toggle = document
+        .querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]')
+        ?.getBoundingClientRect();
+      return {
+        stageRight: stage?.right ?? null,
+        panelLeft: panel?.left ?? null,
+        panelRight: panel?.right ?? null,
+        toggleLeft: toggle?.left ?? null,
+        panelStartsAfterStage: Boolean(stage && panel && panel.left >= stage.right - 1),
+        toggleAttachedToPanelRight: Boolean(panel && toggle && Math.abs(toggle.left - panel.right) <= 1)
+      };
+    })()
+  `);
+  if (!layerPanelPlacement.panelStartsAfterStage || !layerPanelPlacement.toggleAttachedToPanelRight) {
+    throw new Error(`Layer panel is not attached to the shot edge: ${JSON.stringify(layerPanelPlacement)}`);
+  }
   const openLayerToggleBottom = await evaluate(`
     document
       .querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]')
@@ -1803,7 +2047,7 @@ try {
   const importProgressShown = await waitFor(
     () =>
       evaluate(`
-        document.querySelector(".workspace-task-progress")?.textContent.includes("Importing Photoshop layers")
+        document.querySelector(".workspace-task-progress")?.textContent.includes("Importing workspace changes")
       `),
     "Import progress indicator"
   );
@@ -1812,6 +2056,23 @@ try {
     const shot = project.shots?.[0];
     return shot?.swb?.sourceKind === "photoshop-layered-tiff" ? project : undefined;
   }, "Photoshop layered TIFF round-trip import", 20000);
+  await waitFor(
+    () =>
+      evaluate(`
+        (() => ({
+          warningVisible: Boolean(document.querySelector(".import-warning")),
+          importDisabled: Boolean(Array.from(document.querySelectorAll("button"))
+            .find((button) => button.textContent.trim() === "Import")?.disabled),
+          statusText: document.querySelector(".status-popover")?.textContent ?? ""
+        }))()
+      `).then((state) => {
+        if (!state.warningVisible && state.importDisabled) {
+          return true;
+        }
+        throw new Error(JSON.stringify(state));
+      }),
+    "import warning hidden after Photoshop TIFF import"
+  );
   const photoshopImportedShot = photoshopImportedProject.shots?.[0];
   const photoshopImportedLayers = photoshopImportedShot?.layers ?? [];
   const photoshopImportedLayerNames = photoshopImportedShot?.layers?.map((layer) => layer.name) ?? [];
@@ -2239,6 +2500,17 @@ try {
         redoHash,
         secondShotBeforeHash,
         thirdShotBeforeHash,
+        scriptBackChecks,
+        externalImageWarning: {
+          shotCount: externalImageWarningProject.shots.length,
+          appendedStatuses: externalImageWarningProject.shots.slice(-2).map((shot) => shot.swb.status)
+        },
+        deleteShotChecks: {
+          pendingIds: deletePendingProject.pendingDeletedShots.map((shot) => shot.id),
+          savedShotCount: deleteSavedProject.shots.length,
+          deletedFileStillExists: await fileExists(deleteTargetPath),
+          deleteInScriptTextareaKeptCards
+        },
         erasedHash,
         undoEraseHash,
         clearedHash,
@@ -2319,6 +2591,8 @@ try {
 } finally {
   electronProcess?.kill();
   await rm(smokeRoot, { recursive: true, force: true });
+  await rm(scriptRoot, { recursive: true, force: true });
+  await rm(deleteRoot, { recursive: true, force: true });
   await rm(legacyRoot, { recursive: true, force: true });
   await rm(photoshopImportRoot, { recursive: true, force: true });
   await rm(savedLayeredImportRoot, { recursive: true, force: true });

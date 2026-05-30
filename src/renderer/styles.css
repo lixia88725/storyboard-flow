@@ -71,7 +71,7 @@ button.primary {
   top: 0;
   z-index: 40;
   display: grid;
-  grid-template-columns: minmax(130px, 1fr) minmax(420px, 720px) minmax(220px, 1fr);
+  grid-template-columns: minmax(130px, 0.7fr) minmax(420px, 720px) minmax(220px, 1fr);
   align-items: center;
   gap: 18px;
   margin-top: -22px;
@@ -155,6 +155,7 @@ button.primary {
 }
 
 .import-control {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -316,12 +317,41 @@ button.primary {
   place-items: center;
   width: 22px;
   height: 22px;
+  padding: 0;
   border: 1px solid #26231d;
   border-radius: 999px;
   background: #fff7d6;
   color: #26231d;
   font-size: 0.82rem;
   font-weight: 800;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.import-help-popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 8px);
+  z-index: 45;
+  width: min(420px, calc(100vw - 44px));
+  padding: 12px 14px;
+  border: 1px solid #26231d;
+  background: #fffaf0;
+  color: #2a261f;
+  box-shadow: 0 8px 0 rgba(37, 34, 29, 0.16);
+  font-size: 12px;
+  line-height: 1.42;
+  text-transform: none;
+}
+
+.import-help-popover strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.import-help-popover p {
+  margin: 7px 0 0;
 }
 
 .save-menu-container {
@@ -423,6 +453,12 @@ button.primary {
   background: #f05a28;
   color: #fffaf0;
   border-color: #9b3218;
+}
+
+.card-face-tool {
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .tool-icon {
@@ -616,7 +652,7 @@ button.primary {
 
 .shot-layer-popover {
   position: absolute;
-  right: -1.1em;
+  right: -0.78em;
   bottom: 0;
   z-index: 12;
   display: grid;
@@ -633,8 +669,9 @@ button.primary {
 
 .shot-image-shell.has-layer-panel .shot-layer-popover {
   top: 0;
-  right: -15.45em;
-  bottom: -2.14em;
+  right: auto;
+  left: 100%;
+  bottom: -2.43em;
   width: 15em;
   display: block;
 }
@@ -649,7 +686,7 @@ button.primary {
 }
 
 .layer-toggle {
-  min-width: 1.15em;
+  min-width: 0.78em;
   min-height: 3.15em;
   padding: 0;
   font-size: 0.86em;
@@ -660,7 +697,7 @@ button.primary {
 .layer-toggle::before {
   content: "";
   display: block;
-  width: 0.32em;
+  width: 0.24em;
   height: 1.25em;
   margin: auto;
   border-radius: 999px;
@@ -676,10 +713,14 @@ button.primary {
 .shot-image-shell.has-layer-panel .layer-toggle {
   position: absolute;
   left: auto;
-  right: -1.12em;
+  right: -0.78em;
   top: auto;
-  bottom: 2.44em;
+  bottom: 2.77em;
   transform: none;
+  border-left: 0;
+  border-radius: 0 5px 5px 0;
+  background: #292723;
+  box-shadow: none;
 }
 
 .layer-panel {
@@ -702,6 +743,9 @@ button.primary {
   height: 100%;
   max-height: none;
   width: 100%;
+  box-shadow:
+    8px 12px 0 rgba(15, 14, 11, 0.26),
+    0 3px 0 rgba(39, 35, 29, 0.24);
 }
 
 @keyframes layer-panel-open {
@@ -1112,7 +1156,7 @@ button.layer-blend-dot:disabled {
   position: relative;
   display: grid;
   grid-template-columns: repeat(auto-fill, calc(430px * var(--shot-scale)));
-  gap: 18px;
+  gap: 18px 16px;
   align-items: start;
   justify-content: center;
   padding-top: 18px;
@@ -1155,6 +1199,56 @@ button.layer-blend-dot:disabled {
 .shot-card.is-selected {
   outline: 4px solid #f05a28;
   outline-offset: 3px;
+}
+
+.shot-flip-shell {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 180ms ease;
+}
+
+.shot-card.is-script-face .shot-flip-shell {
+  transform: rotateY(180deg);
+}
+
+.shot-face {
+  display: grid;
+  backface-visibility: hidden;
+}
+
+.shot-face-back {
+  position: absolute;
+  inset: 0;
+  min-height: 100%;
+  transform: rotateY(180deg);
+  background: #fffaf0;
+  overflow: hidden;
+}
+
+.shot-card.is-script-face .shot-face-front {
+  pointer-events: none;
+}
+
+.shot-card:not(.is-script-face) .shot-face-back {
+  pointer-events: none;
+}
+
+.shot-script-textarea {
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  resize: none;
+  border: 0;
+  background: #fffdf7;
+  color: #211f1a;
+  padding: 16px;
+  line-height: 1.45;
+  font-size: 13px;
+  overflow: auto;
+}
+
+.shot-script-textarea::placeholder {
+  color: #8b8172;
 }
 
 .shot-head {
@@ -1343,9 +1437,9 @@ button.layer-blend-dot:disabled {
 }
 
 .dialogue-zone {
-  padding: 5px 8px;
-  min-height: 28px;
-  background: #f8f1df;
+  padding: 4px 8px;
+  min-height: 32px;
+  background: #e7ddc6;
 }
 
 .dialogue-zone.is-over {
@@ -1364,20 +1458,31 @@ button.layer-blend-dot:disabled {
 
 .dialogue-card {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr);
   gap: 6px;
-  align-items: stretch;
-  margin-top: 4px;
+  align-items: center;
+  margin: 0;
 }
 
 .dialogue-grip {
   padding: 0;
-  min-height: 30px;
+  width: 18px;
+  min-height: 18px;
+  justify-self: center;
   cursor: grab;
-  color: #c8c0b4;
-  background: #4b4841;
-  border-color: #3a3731;
+  border: 0;
+  background:
+    radial-gradient(currentColor 1.2px, transparent 1.2px) 0 0 / 6px 6px;
+  color: #91887a;
   box-shadow: none;
+  font-size: 0;
+  opacity: 0.75;
+}
+
+.dialogue-grip:hover,
+.dialogue-grip:focus-visible {
+  background:
+    radial-gradient(currentColor 1.2px, transparent 1.2px) 0 0 / 6px 6px;
 }
 
 .dialogue-card textarea {
@@ -1389,8 +1494,8 @@ button.layer-blend-dot:disabled {
   background: #fffdf7;
   color: #211f1a;
   border-radius: 4px;
-  padding: 5px 7px;
-  line-height: 1.25;
+  padding: 3px 7px;
+  line-height: 1.15;
 }
 
 .dialogue-preview {
@@ -1666,7 +1771,8 @@ button.primary {
 
 .path-form input,
 .save-menu-field input,
-.dialogue-card textarea {
+.dialogue-card textarea,
+.shot-script-textarea {
   border-color: #0f0e0b;
   background: #211f1a;
   color: #fffaf0;
@@ -1675,7 +1781,8 @@ button.primary {
 
 .path-form input::placeholder,
 .save-menu-field input::placeholder,
-.dialogue-card textarea::placeholder {
+.dialogue-card textarea::placeholder,
+.shot-script-textarea::placeholder {
   color: #8f8678;
 }
 
@@ -1684,6 +1791,7 @@ button.primary {
 .save-menu,
 .sketch-settings-menu,
 .shortcut-menu,
+.import-help-popover,
 .status-panel {
   border-color: #0f0e0b;
   background: #292723;
@@ -1754,6 +1862,10 @@ button.primary {
   box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.22);
 }
 
+.shot-face-back {
+  background: #24221e;
+}
+
 .shot-head {
   border-bottom-color: #0f0e0b;
   background: #302d27;
@@ -1769,8 +1881,14 @@ button.primary {
   background: #0f0e0b;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .shot-flip-shell {
+    transition: none;
+  }
+}
+
 .dialogue-zone {
-  background: #211f1a;
+  background: #302d27;
 }
 
 .dialogue-zone.is-over {
@@ -1783,9 +1901,9 @@ button.primary {
 }
 
 .dialogue-grip {
-  color: #c8c0b4;
-  background: #4b4841;
-  border-color: #3a3731;
+  color: #8f8678;
+  background:
+    radial-gradient(currentColor 1.2px, transparent 1.2px) 0 0 / 6px 6px;
 }
 
 .dialogue-preview,

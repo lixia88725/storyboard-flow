@@ -65,6 +65,7 @@ export type Shot = {
   fileName: string;
   sourceFileName?: string;
   order: number;
+  scriptText?: string;
   layers?: BitmapLayer[];
   activeLayerId?: string;
   sketchLayers?: SketchLayer[];
@@ -82,12 +83,19 @@ export type Dialogue = {
   order: number;
 };
 
+export type PendingDeletedShot = {
+  id: string;
+  imagePath: string;
+  fileName: string;
+};
+
 export type Project = {
   id: string;
   name: string;
   naming?: ProjectNaming;
   shots: Shot[];
   dialogues: Dialogue[];
+  pendingDeletedShots?: PendingDeletedShot[];
   createdAt: string;
   updatedAt: string;
 };
@@ -148,6 +156,8 @@ export type WorkspacePayload = {
   project: Project;
   folderPath: string;
   metadataPath: string;
+  blankShotPreset?: BlankShotPreset;
+  dirtyShotIds?: string[];
 };
 
 export type ImportSwbFormatPayload = WorkspacePayload;
@@ -159,6 +169,8 @@ export type FolderScanPayload = {
   project?: Project;
   images: ImportedImage[];
   importWarnings?: string[];
+  scriptImportNeeded?: boolean;
+  preserveProjectWithoutImageMerge?: boolean;
 };
 
 export type RenamePlanItem = {

@@ -50,6 +50,7 @@ npm run smoke:bitmap
 - Renderer UI wiring: `src/renderer/App.tsx` is the current integration point for toolbar state, shot cards, layer panel, drawing, selection, shortcuts, animation, and autosave. Keep edits narrow because this file is a collaboration hotspot.
 - Electron Save/Import/filesystem behavior: start in `electron/main/main.ts`, but avoid changing `saveWorkspace` ordering unless the task explicitly targets Save.
 - Electron bitmap layer ordering/defaulting: use `electron/main/bitmapLayerOrdering.ts` so Save and Photoshop export stay aligned.
+- Storyboard script Markdown behavior: use `electron/main/storyboardScript.ts` and its tests so the production parser/serializer/import planner stays covered.
 - Safe file rename and temp replacement behavior: use `electron/main/fileRenames.ts` and its tests.
 - Photoshop layered TIFF exchange: use `electron/main/photoshopTiffExport.ts`, `electron/main/photoshopTiffImport.ts`, and the Python scripts in `scripts/`.
 - Renderer-safe API surface: update both `electron/preload/preload.ts` and `electron/preload/preload.cjs`, then run `npm run check:preload`.
@@ -72,6 +73,7 @@ npm run smoke:bitmap
 - Keep V1 data structures understandable and local-first: `Project`, `Shot`, `Dialogue`, `BitmapLayer`, legacy migration stroke fields, SWB metadata, and naming metadata.
 - Avoid adding AI, export, database, cloud, Photoshop layer round-trip, or file watching code unless specifically requested.
 - Treat `Save` as the only operation that may synchronize real image filenames or write working TIFF pixels.
+- Treat storyboard deletion as pending app state until `Save`; deleted root image files move to the system Trash, not `Archive`.
 
 ## Prohibited Actions
 
@@ -96,6 +98,6 @@ Run `npm run check:preload` whenever preload files change.
 
 For renderer or Electron changes that affect built output, run `npm run build` before `npm run smoke:bitmap`; the smoke uses `dist` and `dist-electron`.
 
-For UI interaction changes, also perform a manual or automated app smoke test when feasible. The canonical smoke areas for this app are Save rename safety, Save TIFF baking, Image layer drawing/erasing/delete/reorder, layer panel operations, bitmap Select move/scale, live eraser preview, layer thumbnails, layer row opacity/reorder gestures, configurable keyboard shortcuts, multi-select shot dragging, double-click dialogue editing, zoomed sketch drawing, Add Shot aspect presets, timeline navigation when animation mode is active, mixed-aspect animation centering, Onion Skin, and tool shortcuts.
+For UI interaction changes, also perform a manual or automated app smoke test when feasible. The canonical smoke areas for this app are Save rename safety, Save TIFF baking, Image layer drawing/erasing/delete/reorder, storyboard Delete-to-Trash, layer panel operations, script card editing and Markdown Import, external root image Import warning, bitmap Select move/scale, live eraser preview, layer thumbnails, layer row opacity/reorder gestures, configurable keyboard shortcuts, multi-select shot dragging, double-click dialogue editing, zoomed sketch drawing, Add Shot aspect presets, timeline navigation when animation mode is active, mixed-aspect animation centering, Onion Skin, and tool shortcuts.
 
 Mark any untested GUI behavior as `TODO: verify`, especially dnd-kit drag behavior that automated tooling cannot fully prove.

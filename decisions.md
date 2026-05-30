@@ -160,6 +160,24 @@ Electron Save and Photoshop TIFF export must use the same bitmap layer filtering
 
 Reason: Save and export both serialize SWB bitmap layers into external TIFF outputs. Keeping layer eligibility and order in one helper reduces drift without changing the Save boundary or treating Photoshop TIFF as the internal working format.
 
+## Storyboard Script Markdown Is A Mirror
+
+Each shot may store `scriptText` in project JSON. The root `storyboard-script.md` file is a human-editable ordered-list mirror of shot order and script text, not the primary project state. App edits autosave JSON and rewrite the Markdown mirror; external Markdown edits are absorbed only when the user clicks `Import`.
+
+Reason: JSON remains the transactional app source of truth, while the Markdown file gives users a simple text workflow in tools like Obsidian or Typora. Explicit Import prevents silent external text changes from reordering or creating shots without user intent.
+
+## Import Also Handles External Root Images
+
+When the app window regains focus, Electron may scan the current root folder for newly added supported image files. It only builds image records for paths that are not already in `project.shots` and not pending deletion. Newly detected images become `non-swb` shots and require explicit `Import`.
+
+Reason: Finder/Bridge-style workflows need the app to notice externally added images, but focus checks must stay cheap and must not resurrect shots that the user deleted before Save.
+
+## Deleted Storyboards Go To System Trash On Save
+
+Pressing Delete/Backspace removes selected shots from the app state and records their root image paths in `pendingDeletedShots`. The files are moved to the system Trash during `Save` with Electron `shell.trashItem()`. They are not moved to `Archive`; `Archive` remains reserved for original files preserved by Import. Internal layer assets for deleted shots are intentionally left alone for now.
+
+Reason: Users expect manual storyboard deletion to behave like Finder/Bridge deletion, where the system Trash is recoverable. Mixing intentional deletes into `Archive` would pollute the Import backup area.
+
 ## Layered TIFF Save Writes Once
 
 多图层 TIFF 的 Save 只写一次最终 Photoshop-readable TIFF。Electron 把 SWB metadata 传给 Python writer；Python writer 在生成最终 composite 后计算 `baseFingerprint`，再把 SWB XMP 和 Photoshop layer records 一起写入最终 TIFF。

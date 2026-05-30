@@ -112,14 +112,21 @@ export const dialoguesForShot = (project: Project, shotId: string): Dialogue[] =
 
 export const addImportedImages = (project: Project, images: ImportedImage[]): Project => {
   const existingPaths = new Set(project.shots.map((shot) => shot.imagePath));
+  const pendingDeletedPaths = new Set(
+    (project.pendingDeletedShots ?? []).map((shot) => shot.imagePath)
+  );
   const newShots = images
-    .filter((image) => !existingPaths.has(image.imagePath))
+    .filter((image) => !existingPaths.has(image.imagePath) && !pendingDeletedPaths.has(image.imagePath))
     .map((image, index) =>
       createShotFromImportedImage(image, project.shots.length + index, {
         sourceFileName: undefined,
         includeDefaultSketchLayer: false
       })
     );
+
+  if (newShots.length === 0) {
+    return project;
+  }
 
   return normalizeShotOrder({
     ...project,
@@ -168,8 +175,12 @@ export const addGeneratedShot = (
 };
 
 export const mergeFolderImages = (project: Project, images: ImportedImage[]): Project => {
-  const scannedPaths = new Set(images.map((image) => image.imagePath));
-  const imageByPath = new Map(images.map((image) => [image.imagePath, image]));
+  const pendingDeletedPaths = new Set(
+    (project.pendingDeletedShots ?? []).map((shot) => shot.imagePath)
+  );
+  const mergeImages = images.filter((image) => !pendingDeletedPaths.has(image.imagePath));
+  const scannedPaths = new Set(mergeImages.map((image) => image.imagePath));
+  const imageByPath = new Map(mergeImages.map((image) => [image.imagePath, image]));
   const keptShots = sortedShots(project.shots)
     .filter((shot) => scannedPaths.has(shot.imagePath))
     .map((shot) => {
@@ -187,7 +198,7 @@ export const mergeFolderImages = (project: Project, images: ImportedImage[]): Pr
       return ensureBitmapLayerMetadata(shot, scanned);
     });
   const keptPaths = new Set(keptShots.map((shot) => shot.imagePath));
-  const newShots = images
+  const newShots = mergeImages
     .filter((image) => !keptPaths.has(image.imagePath))
     .map((image, index) =>
       createShotFromImportedImage(image, keptShots.length + index, {
@@ -205,6 +216,52 @@ export const mergeFolderImages = (project: Project, images: ImportedImage[]): Pr
       updatedAt: now()
     })
   );
+};
+
+export const deleteShots = (project: Project, shotIds: string[]): Project => {
+  const deletedShotIds = new Set(shotIds);
+
+  if (deletedShotIds.size === 0) {
+    return project;
+  }
+
+  const orderedShots = sortedShots(project.shots);
+  const deletedShots = orderedShots.filter((shot) => deletedShotIds.has(shot.id));
+
+  if (deletedShots.length === 0) {
+    return project;
+  }
+
+  const remainingShots = orderedShots
+    .filter((shot) => !deletedShotIds.has(shot.id))
+    .map((shot, order) => ({ ...shot, order }));
+  const existingPending = project.pendingDeletedShots ?? [];
+  const existingPendingKeys = new Set(
+    existingPending.map((shot) => `${shot.id}\n${shot.imagePath}`)
+  );
+  const addedPending = deletedShots
+    .map((shot) => ({
+      id: shot.id,
+      imagePath: shot.imagePath,
+      fileName: shot.fileName
+    }))
+    .filter((shot) => {
+      const key = `${shot.id}\n${shot.imagePath}`;
+      if (existingPendingKeys.has(key)) {
+        return false;
+      }
+      existingPendingKeys.add(key);
+      return true;
+    });
+  const remainingShotIds = new Set(remainingShots.map((shot) => shot.id));
+
+  return normalizeDialogueOrder({
+    ...project,
+    shots: remainingShots,
+    dialogues: project.dialogues.filter((dialogue) => remainingShotIds.has(dialogue.shotId)),
+    pendingDeletedShots: [...existingPending, ...addedPending],
+    updatedAt: now()
+  });
 };
 
 export const reorderShots = (
@@ -1086,7 +1143,9 @@ const updateShotLayers = (
 };
 
 export const projectNeedsSwbImport = (project: Project): boolean => {
-  return project.shots.some((shot) => shot.swb?.status === "non-swb");
+  return project.shots.some(
+    (shot) => shot.swb?.status === "non-swb" || shot.swb?.status === "incompatible-external-edit"
+  );
 };
 
 export const projectHasSwbWarning = (project: Project): boolean => {

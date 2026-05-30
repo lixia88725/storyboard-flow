@@ -21,6 +21,7 @@ npm run dev
 - `src/shared/projectOps.ts`：项目数据、排序、重命名计划、bitmap layer metadata 等纯逻辑。改项目行为时优先在这里补单测。
 - `electron/main/main.ts`：Electron IPC、文件扫描、Import、Save 编排、TIFF metadata 和 bitmap asset 初始化。
 - `electron/main/bitmapLayerOrdering.ts`：Electron Save / Photoshop export 共用的 bitmap layer 排序和默认值规则。
+- `electron/main/storyboardScript.ts`：`storyboard-script.md` 的序列化、解析和 Import 计划 helper。
 - `electron/main/photoshopTiffExport.ts` / `electron/main/photoshopTiffImport.ts`：Photoshop layered TIFF 交换路径。
 - `electron/preload/preload.ts` 和 `electron/preload/preload.cjs`：renderer-safe API。改其中一个后跑 `npm run check:preload`。
 - `src/renderer/App.tsx`：主 UI 状态、工具栏、图层面板、shot card 和 drawing wiring。它是协作热点，优先做小步改动。
@@ -32,7 +33,9 @@ npm run dev
 - 一个本地图像文件夹就是一场戏。
 - 顶部地址栏输入或选择最近文件夹后，应用扫描 `.png`、`.jpg`、`.jpeg`、`.tif`、`.tiff`。
 - 内部状态自动保存到当前文件夹的 `.storyboard-workbench/storyboard.project.json`。
+- 分镜脚本文字同步到根目录 `storyboard-script.md`；软件内编辑会自动写入，外部修改需要点击 `Import` 导入。
 - `Save` 是唯一会同步真实文件名和写工作 TIFF 像素的操作。
+- 选中 storyboard 后按 Delete/Backspace 会先在软件内移除卡片；点击 `Save` 后对应根目录图片进入系统垃圾箱，不进入 `Archive`。
 
 ## Save
 
@@ -74,6 +77,8 @@ npm run dev
 
 现有 `Import` 操作也会检测 Photoshop layered TIFF，并把 raster Photoshop layers 转换成 SWB-owned bitmap layers。源 TIFF 会移动到 `Archive/YYYY-MM-DD-HHMMSS/`，SWB 继续使用 `.storyboard-workbench/layers/*.png` 和 `storyboard.project.json` 作为内部工作数据。
 
+如果用户在 Finder/Bridge 中向当前根目录新增图片，应用窗口重新获得焦点后会把新增路径追加为待 Import 的 `non-swb` shot，并点亮 Import 旁的黄色感叹号。该检测只处理新增图片，不重新解码所有已知图片，也不会把 pending deleted 的图片重新加回项目。
+
 当前 Photoshop TIFF import/export 路径依赖 Python `psdtags + tifffile + imagecodecs + numpy`。依赖目录解析顺序是：`SWB_PYTHON_DEPS_DIR`、打包资源目录 `python-deps/photoshop-tiff`、开发目录 `vendor/python/photoshop-tiff`，最后才 fallback 到旧 spike 目录 `/private/tmp/psdtags-spike-deps`。开发环境可运行 `npm run setup:photoshop-tiff-deps` 安装到 `vendor/python/photoshop-tiff`。`npm run smoke:bitmap` 会导出一组 Photoshop TIFF，用 `psdtags` 读回 layer names，并把其中一个导出的 layered TIFF 作为外部文件重新 Import，验证导入后的 SWB shot 有匹配数量的 bitmap layers、layer PNG assets 和 `swb.sourceKind: "photoshop-layered-tiff"`。
 
 ## SWB Format
@@ -89,6 +94,8 @@ npm run dev
 ## Storyboard And Animation Mode
 
 - `Add Shot` 可创建白底 TIFF，支持 `16:9`、`2.39:1`、`1.43:1 IMAX`。
+- 工具栏 `文 / 图` 可在图片面和文字面之间切换；文字面编辑每张 shot 的分镜脚本。
+- 根目录 `storyboard-script.md` 用标准 Markdown ordered list 表示当前 shot 顺序；空 shot 仍保留空条目，外部 MD 修改通过 Import 吸收。
 - Storyboard 按真实画布比例显示，混合画幅不会额外加黑边。
 - Zoom 到单张 storyboard 填满工作区时进入动画模式，底部显示时间线。
 - 动画模式支持左右键线性播放、时间线点击跳转，以及 Onion Skin 前后帧参考。

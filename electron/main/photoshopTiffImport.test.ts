@@ -57,6 +57,7 @@ describe("photoshopTiffImport", () => {
             name: "Paint",
             assetPath: "/tmp/extracted/0001-Paint.png",
             visible: false,
+            locked: true,
             opacity: 0.5,
             blendMode: "multiply",
             order: 1
@@ -79,9 +80,9 @@ describe("photoshopTiffImport", () => {
         toPath: "/scene/.storyboard-workbench/import-tmp/stamp/layers/shot-a/layer-0001.png"
       }
     ]);
-    expect(plan.layers.map((layer) => [layer.id, layer.kind, layer.name, layer.order])).toEqual([
-      ["layer-image", "image", "Image", 0],
-      ["layer-0001", "paint", "Paint", 1]
+    expect(plan.layers.map((layer) => [layer.id, layer.kind, layer.name, layer.locked, layer.order])).toEqual([
+      ["layer-image", "image", "Image", false, 0],
+      ["layer-0001", "paint", "Paint", true, 1]
     ]);
   });
 

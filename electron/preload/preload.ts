@@ -5,6 +5,8 @@ type ProjectPayload = {
   folderPath: string;
   metadataPath: string;
   renamePlan?: unknown[];
+  blankShotPreset?: string;
+  dirtyShotIds?: string[];
 };
 
 type LayerAssetPayload = {
@@ -36,6 +38,13 @@ const api = {
     }>,
   importSwbFormat: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:importSwbFormat", payload),
+  checkStoryboardScript: (payload: ProjectPayload) =>
+    ipcRenderer.invoke("workspace:checkStoryboardScript", payload) as Promise<{ scriptImportNeeded: boolean }>,
+  checkExternalChanges: (payload: ProjectPayload) =>
+    ipcRenderer.invoke("workspace:checkExternalChanges", payload) as Promise<{
+      images: unknown[];
+      scriptImportNeeded: boolean;
+    }>,
   writeLayerPng: (payload: WriteLayerAssetPayload) =>
     ipcRenderer.invoke("layers:writePng", payload) as Promise<WriteLayerAssetPayload & { filePath: string }>,
   readLayerPng: (payload: LayerAssetPayload) =>

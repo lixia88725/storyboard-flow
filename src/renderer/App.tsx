@@ -28,6 +28,7 @@ import {
   addBitmapLayer,
   addDialogue,
   addGeneratedShot,
+  addImportedImages,
   applyRenamePlan,
   createProject,
   createRenamePlan,
@@ -35,6 +36,7 @@ import {
   defaultSaveNaming,
   bitmapLayersForShot,
   clearBitmapLayer,
+  deleteShots,
   deleteBitmapLayer,
   dialoguesForShot,
   getNextStoryboardIndex,
@@ -140,6 +142,7 @@ const maxDialogueRows = 3;
 
 type WorkspaceSaveState = "saved" | "saving" | "error";
 type FileNameSyncState = "synced" | "unsynced";
+type CardFace = "image" | "script";
 type WorkspaceTask = {
   kind: "save" | "import";
   label: string;
@@ -302,6 +305,9 @@ export const App = () => {
   const [isStatusPanelOpen, setIsStatusPanelOpen] = useState(false);
   const [isLayerPanelOpen, setIsLayerPanelOpen] = useState(false);
   const [isShortcutMenuOpen, setIsShortcutMenuOpen] = useState(false);
+  const [isImportHelpOpen, setIsImportHelpOpen] = useState(false);
+  const [cardFace, setCardFace] = useState<CardFace>("image");
+  const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
   const [keyboardShortcuts, setKeyboardShortcuts] = useState<KeyboardShortcuts>(defaultKeyboardShortcuts);
   const [capturingShortcutAction, setCapturingShortcutAction] = useState<ShortcutAction | undefined>();
   const [shortcutError, setShortcutError] = useState("");
@@ -314,6 +320,9 @@ export const App = () => {
   const selectionBoxRef = useRef<SelectionBox | undefined>(undefined);
   const projectRef = useRef(project);
   const folderPathRef = useRef(folderPath);
+  const metadataPathRef = useRef(metadataPath);
+  const scriptImportCheckIdRef = useRef(0);
+  const dirtyShotIdsRef = useRef<Set<string>>(new Set());
   const fileNameSyncStateRef = useRef<FileNameSyncState>(fileNameSyncState);
   const selectedShotIdsRef = useRef<string[]>([]);
   const undoStackRef = useRef<UndoEntry[]>([]);
@@ -322,11 +331,13 @@ export const App = () => {
   const recentMenuRef = useRef<HTMLDivElement | null>(null);
   const addShotMenuRef = useRef<HTMLDivElement | null>(null);
   const shortcutMenuRef = useRef<HTMLDivElement | null>(null);
+  const importHelpRef = useRef<HTMLDivElement | null>(null);
   const appShellRef = useRef<HTMLElement | null>(null);
   const boardGridRef = useRef<HTMLElement | null>(null);
   const orderedShots = useMemo(() => sortedShots(project.shots), [project.shots]);
-  const needsSwbImport = useMemo(() => projectNeedsSwbImport(project), [project]);
-  const hasSwbWarning = useMemo(() => projectHasSwbWarning(project), [project]);
+  const needsImageImport = useMemo(() => projectNeedsSwbImport(project), [project]);
+  const needsSwbImport = needsImageImport || scriptImportNeeded;
+  const hasSwbWarning = useMemo(() => projectHasSwbWarning(project), [project]) || scriptImportNeeded;
   const isWorkspaceTaskRunning = Boolean(workspaceTask);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const primarySelectedShotId = selectedShotIds[0];
@@ -382,6 +393,10 @@ export const App = () => {
   useEffect(() => {
     folderPathRef.current = folderPath;
   }, [folderPath]);
+
+  useEffect(() => {
+    metadataPathRef.current = metadataPath;
+  }, [metadataPath]);
 
   useEffect(() => {
     projectRef.current = project;
@@ -530,6 +545,32 @@ export const App = () => {
   }, [isAddShotMenuOpen]);
 
   useEffect(() => {
+    if (!isImportHelpOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      if (!importHelpRef.current?.contains(event.target as Node)) {
+        setIsImportHelpOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsImportHelpOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isImportHelpOpen]);
+
+  useEffect(() => {
     if (!sketchSettingsMenu) {
       return;
     }
@@ -595,6 +636,15 @@ export const App = () => {
 
     return () => window.clearTimeout(timer);
   }, [autosaveRevision, folderPath, metadataPath, project]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      void refreshExternalImportState();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [metadataPath]);
 
   useEffect(() => {
     selectionBoxRef.current = selectionBox;
@@ -692,6 +742,7 @@ export const App = () => {
         isSaveMenuOpen ||
         isRecentMenuOpen ||
         isAddShotMenuOpen ||
+        isImportHelpOpen ||
         Boolean(sketchSettingsMenu) ||
         hasOpenShortcutBlockingMenu();
       if (isMenuOpen) {
@@ -708,6 +759,17 @@ export const App = () => {
         (shortcutAction === "previousShot" || shortcutAction === "nextShot");
 
       if (isKeyboardEditableTarget(target) && !allowsRangeTarget) {
+        return;
+      }
+
+      if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
+        event.preventDefault();
+        handleDeleteSelectedShots();
         return;
       }
 
@@ -812,6 +874,7 @@ export const App = () => {
   }, [
     isAddShotMenuOpen,
     isAnimationMode,
+    isImportHelpOpen,
     isRecentMenuOpen,
     isSaveMenuOpen,
     isShortcutMenuOpen,
@@ -848,6 +911,43 @@ export const App = () => {
       setFileNameSyncState("unsynced");
     }
     setAutosaveRevision((revision) => revision + 1);
+  };
+
+  const markShotsDirty = (shotIds: string[]) => {
+    for (const shotId of shotIds) {
+      dirtyShotIdsRef.current.add(shotId);
+    }
+  };
+
+  const markAllShotsDirty = () => {
+    markShotsDirty(projectRef.current.shots.map((shot) => shot.id));
+  };
+
+  const handleDeleteSelectedShots = () => {
+    const selectedIds = selectedShotIdsRef.current;
+
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    const currentProject = projectRef.current;
+    const selected = new Set(selectedIds);
+    const ordered = sortedShots(currentProject.shots);
+    const firstDeletedIndex = ordered.findIndex((shot) => selected.has(shot.id));
+    const remaining = ordered.filter((shot) => !selected.has(shot.id));
+
+    if (firstDeletedIndex === -1 || remaining.length === ordered.length) {
+      return;
+    }
+
+    const nextSelectedShot = remaining[Math.min(firstDeletedIndex, remaining.length - 1)];
+    updateProject((projectToUpdate) => deleteShots(projectToUpdate, selectedIds));
+    setSelectedShotIds(nextSelectedShot ? [nextSelectedShot.id] : []);
+    setStatus(
+      selectedIds.length === 1
+        ? "Storyboard deleted; Save will move its file to Trash"
+        : `${selectedIds.length} storyboards deleted; Save will move their files to Trash`
+    );
   };
 
   const createHistoryEntry = async (bitmapPaths: string[] = []): Promise<UndoEntry> => {
@@ -894,9 +994,11 @@ export const App = () => {
       setRedoStack((current) => appendHistoryEntry(current, redoEntry));
       setUndoStack((current) => current.slice(0, -1));
       setProject(previous.project);
+      projectRef.current = previous.project;
       setSelectedShotIds(previous.selectedShotIds);
       setFileNameSyncState(previous.fileNameSyncState);
       setWorkspaceSaveState("saving");
+      markAllShotsDirty();
       setAutosaveRevision((revision) => revision + 1);
       setStatus("Undid last change");
     } catch (error) {
@@ -919,9 +1021,11 @@ export const App = () => {
       setUndoStack((current) => appendHistoryEntry(current, undoEntry));
       setRedoStack((current) => current.slice(0, -1));
       setProject(next.project);
+      projectRef.current = next.project;
       setSelectedShotIds(next.selectedShotIds);
       setFileNameSyncState(next.fileNameSyncState);
       setWorkspaceSaveState("saving");
+      markAllShotsDirty();
       setAutosaveRevision((revision) => revision + 1);
       setStatus("Redid last change");
     } catch (error) {
@@ -949,6 +1053,16 @@ export const App = () => {
     });
   };
 
+  const handleShotScriptText = (shotId: string, scriptText: string) => {
+    updateProject((currentProject) => ({
+      ...currentProject,
+      shots: currentProject.shots.map((shot) =>
+        shot.id === shotId ? { ...shot, scriptText } : shot
+      ),
+      updatedAt: new Date().toISOString()
+    }));
+  };
+
   const persistWorkspace = async (projectToSave: Project) => {
     if (!window.storyboard || !folderPath || !metadataPath) {
       return;
@@ -959,7 +1073,63 @@ export const App = () => {
       folderPath,
       metadataPath
     });
+    scriptImportCheckIdRef.current += 1;
+    setScriptImportNeeded(false);
     setWorkspaceSaveState("saved");
+  };
+
+  const checkStoryboardScriptImportState = async (
+    projectToCheck: Project,
+    nextFolderPath: string,
+    nextMetadataPath: string
+  ): Promise<boolean | undefined> => {
+    const result = await withStatus(
+      "Storyboard script check failed",
+      () =>
+        window.storyboard.checkStoryboardScript({
+          project: projectToCheck,
+          folderPath: nextFolderPath,
+          metadataPath: nextMetadataPath
+        }),
+      setStatus
+    );
+
+    return result?.scriptImportNeeded;
+  };
+
+  const refreshExternalImportState = async () => {
+    if (!window.storyboard || !folderPathRef.current || !metadataPathRef.current) {
+      return;
+    }
+
+    const checkId = (scriptImportCheckIdRef.current += 1);
+    const projectToCheck = projectRef.current;
+    const nextFolderPath = folderPathRef.current;
+    const nextMetadataPath = metadataPathRef.current;
+    const result = await withStatus(
+      "Workspace change check failed",
+      () =>
+        window.storyboard.checkExternalChanges({
+          project: projectToCheck,
+          folderPath: nextFolderPath,
+          metadataPath: nextMetadataPath
+        }),
+      setStatus
+    );
+
+    if (
+      result &&
+      checkId === scriptImportCheckIdRef.current &&
+      projectRef.current === projectToCheck &&
+      folderPathRef.current === nextFolderPath &&
+      metadataPathRef.current === nextMetadataPath
+    ) {
+      const nextProject = addImportedImages(projectToCheck, result.images);
+      if (nextProject !== projectToCheck) {
+        setProject(nextProject);
+      }
+      setScriptImportNeeded(result.scriptImportNeeded);
+    }
   };
 
   const handleBitmapStroke = async (
@@ -996,6 +1166,7 @@ export const App = () => {
       bitmapPath: layer.bitmapPath,
       dataUrl
     });
+    markShotsDirty([shot.id]);
     recordUndoEntry(undoEntry);
     updateProject((currentProject) => markBitmapLayerPainted(currentProject, shot.id, layer.id), false, false);
     return dataUrl;
@@ -1017,6 +1188,7 @@ export const App = () => {
       bitmapPath: layer.bitmapPath,
       dataUrl
     });
+    markShotsDirty([shot.id]);
     recordUndoEntry(undoEntry);
     updateProject((currentProject) => markBitmapLayerPainted(currentProject, shot.id, layer.id), false, false);
     return dataUrl;
@@ -1036,6 +1208,7 @@ export const App = () => {
       bitmapPath: layer.bitmapPath,
       dataUrl: await createTransparentLayerDataUrl(layer.width, layer.height)
     });
+    markShotsDirty([shotId]);
     recordUndoEntry(undoEntry);
     updateProject((currentProject) => clearBitmapLayer(currentProject, shotId, layerId), false, false);
   };
@@ -1053,6 +1226,7 @@ export const App = () => {
       folderPath,
       bitmapPath: layer.bitmapPath
     });
+    markShotsDirty([shotId]);
     recordUndoEntry(undoEntry);
     updateProject((currentProject) => deleteBitmapLayer(currentProject, shotId, layerId), false, false);
   };
@@ -1076,23 +1250,31 @@ export const App = () => {
     const undoEntry = await createHistoryEntry(addedLayer ? [addedLayer.bitmapPath] : []);
 
     recordUndoEntry(undoEntry);
+    markShotsDirty([shotId]);
     updateProject(nextProject, false, false);
   };
 
-  const loadFolderScan = (scan: FolderScanPayload, nextStatus: string, dirty = false) => {
+  const loadFolderScan = async (
+    scan: FolderScanPayload,
+    nextStatus: string,
+    dirty = false,
+    resetDirtyShots = true
+  ) => {
+    const checkId = (scriptImportCheckIdRef.current += 1);
     const baseProject = scan.project ?? createProject(scan.folderName || "Untitled Storyboard");
-    const nextProject = mergeFolderImages(
-      {
-        ...baseProject,
-        name: scan.project ? baseProject.name : scan.folderName || baseProject.name,
-        naming: {
-          ...defaultProjectNaming,
-          ...baseProject.naming
-        }
-      },
-      scan.images
-    );
+    const projectWithDefaults = {
+      ...baseProject,
+      name: scan.project ? baseProject.name : scan.folderName || baseProject.name,
+      naming: {
+        ...defaultProjectNaming,
+        ...baseProject.naming
+      }
+    };
+    const nextProject = scan.preserveProjectWithoutImageMerge
+      ? projectWithDefaults
+      : mergeFolderImages(projectWithDefaults, scan.images);
     const acceptedExternalEdits = projectAcceptedExternalEdits(nextProject);
+    let nextScriptImportNeeded = Boolean(scan.scriptImportNeeded);
 
     setProject(nextProject);
     setFolderPath(scan.folderPath);
@@ -1104,7 +1286,19 @@ export const App = () => {
     setUndoStack([]);
     setRedoStack([]);
     setSelectedShotIds(nextProject.shots[0] ? [nextProject.shots[0].id] : []);
-    if (dirty || acceptedExternalEdits) {
+    if (resetDirtyShots) {
+      dirtyShotIdsRef.current = new Set();
+    }
+
+    if (!nextScriptImportNeeded && window.storyboard) {
+      nextScriptImportNeeded =
+        (await checkStoryboardScriptImportState(nextProject, scan.folderPath, scan.metadataPath)) ?? false;
+    }
+    if (checkId === scriptImportCheckIdRef.current) {
+      setScriptImportNeeded(nextScriptImportNeeded);
+    }
+
+    if ((dirty || acceptedExternalEdits) && !nextScriptImportNeeded) {
       setAutosaveRevision((revision) => revision + 1);
     }
   };
@@ -1132,7 +1326,7 @@ export const App = () => {
       return;
     }
 
-    loadFolderScan(result, "Folder opened", !result.project);
+    await loadFolderScan(result, "Folder opened", !result.project);
     void window.storyboard.getRecentFolders().then(setRecentFolders).catch(() => undefined);
   };
 
@@ -1201,7 +1395,8 @@ export const App = () => {
             project: { ...renamedProject, updatedAt: new Date().toISOString() },
             folderPath,
             metadataPath,
-            renamePlan
+            renamePlan,
+            dirtyShotIds: [...dirtyShotIdsRef.current]
           }),
           setStatus
         );
@@ -1220,6 +1415,7 @@ export const App = () => {
     setMetadataPath(result.metadataPath);
     setWorkspaceSaveState("saved");
     setFileNameSyncState("synced");
+    dirtyShotIdsRef.current = new Set();
     setUndoStack([]);
     setRedoStack([]);
     setStatus("Saved and synced file names");
@@ -1249,6 +1445,9 @@ export const App = () => {
     const nextProject = addGeneratedShot(project, image, primarySelectedShotId);
     updateProject(nextProject, true, false);
     const nextShotId = nextProject.shots.find((shot) => shot.imagePath === image.imagePath)?.id;
+    if (nextShotId) {
+      markShotsDirty([nextShotId]);
+    }
     setSelectedShotIds(nextShotId ? [nextShotId] : []);
     setStatus(`Added ${blankShotPreset} shot: ${image.fileName}`);
   };
@@ -1269,11 +1468,14 @@ export const App = () => {
       return;
     }
 
+    setIsImportHelpOpen(false);
     setWorkspaceTask({
       kind: "import",
-      label: "Importing Photoshop layers...",
+      label: needsImageImport ? "Importing workspace changes..." : "Importing storyboard script...",
       current: 0,
-      total: project.shots.filter((shot) => shot.swb?.status !== "owned").length || project.shots.length
+      total: needsImageImport
+        ? project.shots.filter((shot) => shot.swb?.status !== "owned").length || project.shots.length
+        : 1
     });
 
     const result = await (async () => {
@@ -1284,7 +1486,8 @@ export const App = () => {
             window.storyboard.importSwbFormat({
               project,
               folderPath,
-              metadataPath
+              metadataPath,
+              blankShotPreset
             }),
           setStatus
         );
@@ -1297,7 +1500,14 @@ export const App = () => {
       return;
     }
 
-    loadFolderScan(result, "Imported images into Storyboard Workbench Format");
+    await loadFolderScan(
+      result,
+      needsImageImport
+        ? "Imported images into Storyboard Workbench Format"
+        : "Imported storyboard script changes",
+      false,
+      false
+    );
   };
 
   const handleCreateDialogue = (shotId: string) => {
@@ -1361,6 +1571,10 @@ export const App = () => {
   };
 
   const handleShotSelect = (shotId: string, event: MouseEvent) => {
+    if (!isKeyboardEditableTarget(event.target)) {
+      blurActiveFormControl();
+    }
+
     if (event.shiftKey || event.metaKey) {
       setSelectedShotIds((current) =>
         current.includes(shotId) ? current.filter((id) => id !== shotId) : [...current, shotId]
@@ -1512,22 +1726,46 @@ export const App = () => {
       onContextMenu={openSketchSettingsMenu}
     >
       <header className="topbar">
-        <div className="import-control">
+        <div className="import-control" ref={importHelpRef}>
           <button
             type="button"
             onClick={() => void handleImportSwbFormat()}
             disabled={!needsSwbImport || isWorkspaceTaskRunning}
-            title="Convert non-SWB images into Storyboard Workbench Format"
+            title="Import image or storyboard-script.md changes into Storyboard Workbench"
           >
             {workspaceTask?.kind === "import" ? "Importing..." : "Import"}
           </button>
           {hasSwbWarning ? (
-            <span
+            <button
+              type="button"
               className="import-warning"
-              title="Import will move original files to Archive/YYYY-MM-DD-HHMMSS. Compatible external TIFF edits are accepted automatically; incompatible edits require manual import or resolve."
+              aria-label="Import explanation"
+              aria-expanded={isImportHelpOpen}
+              onClick={() => setIsImportHelpOpen((isOpen) => !isOpen)}
             >
               !
-            </span>
+            </button>
+          ) : null}
+          {isImportHelpOpen ? (
+            <div className="import-help-popover" role="dialog" aria-label="Import explanation">
+              <strong>为什么需要 Import？</strong>
+              <p>
+                Import 会把外部 TIFF 和 storyboard-script.md 的变化导入 Storyboard
+                Workbench。在你点击 Import 之前，软件内的编辑仍然是当前工作状态。
+              </p>
+              <p>
+                原始 TIFF 会先移动到 Archive，然后 Storyboard Workbench 接管工作文件。
+                能匹配上的镜头顺序、台词、分镜脚本文字和支持的位图图层会尽量继承。
+              </p>
+              <p>
+                Photoshop-only 信息不会作为内部工作格式。Save 会从
+                .storyboard-workbench/layers 下的 PNG 数据重建工作 TIFF。
+              </p>
+              <p>
+                storyboard-script.md 是根目录下的文字镜像。软件内编辑会自动写入；
+                外部修改这个 MD 文档后，需要点击 Import 才会导入软件。
+              </p>
+            </div>
           ) : null}
         </div>
         <div className="address-bar-container" ref={recentMenuRef}>
@@ -1702,6 +1940,15 @@ export const App = () => {
 
       <div className="workspace-layout">
         <aside className="tool-rail" aria-label="Sketch tools">
+          <button
+            type="button"
+            className={`card-face-tool ${cardFace === "script" ? "selected" : ""}`}
+            onClick={() => setCardFace((face) => (face === "image" ? "script" : "image"))}
+            title={cardFace === "image" ? "Show script side" : "Show image side"}
+            aria-label={cardFace === "image" ? "Show script side" : "Show image side"}
+          >
+            {cardFace === "image" ? "文" : "图"}
+          </button>
           <div className="shortcut-menu-container" ref={shortcutMenuRef}>
             <button
               type="button"
@@ -1921,6 +2168,7 @@ export const App = () => {
                   brushSize={brushSize}
                   eraserOpacity={eraserOpacity}
                   eraserSize={eraserSize}
+                  cardFace={cardFace}
                   onionSkinPreviousShot={
                     isAnimationMode && shot.id === primarySelectedShotId
                       ? onionSkinNeighbors.previous
@@ -1948,16 +2196,21 @@ export const App = () => {
                   onSelectLayer={(shotId, layerId) =>
                     updateProject((currentProject) => selectBitmapLayer(currentProject, shotId, layerId), false, false)
                   }
-                  onUpdateLayer={(shotId, layerId, patch) =>
-                    updateProject((currentProject) =>
-                      updateBitmapLayer(currentProject, shotId, layerId, patch)
-                    , false)
-                  }
-                  onMoveLayer={(shotId, layerId, targetLayerId, placement) =>
-                    updateProject((currentProject) =>
-                      moveBitmapLayer(currentProject, shotId, layerId, targetLayerId, placement)
-                    , false)
-                  }
+                  onUpdateLayer={(shotId, layerId, patch) => {
+                    markShotsDirty([shotId]);
+                    updateProject(
+                      (currentProject) => updateBitmapLayer(currentProject, shotId, layerId, patch),
+                      false
+                    );
+                  }}
+                  onMoveLayer={(shotId, layerId, targetLayerId, placement) => {
+                    markShotsDirty([shotId]);
+                    updateProject(
+                      (currentProject) =>
+                        moveBitmapLayer(currentProject, shotId, layerId, targetLayerId, placement),
+                      false
+                    );
+                  }}
                   onCreateDialogue={handleCreateDialogue}
                   onDialogueText={(dialogueId, text) =>
                     updateProject((currentProject) =>
@@ -1972,6 +2225,7 @@ export const App = () => {
                     }
                     setEditingDialogueId(undefined);
                   }}
+                  onScriptText={(shotId, scriptText) => handleShotScriptText(shotId, scriptText)}
                   onSketchStroke={(layerId, stroke) => handleBitmapStroke(shot, layerId, stroke)}
                   onSelectionTransform={(layerId, dataUrl) =>
                     handleBitmapSelectionTransform(shot, layerId, dataUrl)
@@ -2726,6 +2980,7 @@ type ShotCardProps = {
   brushSize: number;
   eraserOpacity: number;
   eraserSize: number;
+  cardFace: CardFace;
   onionSkinPreviousShot?: Shot;
   onionSkinNextShot?: Shot;
   editingDialogueId?: string;
@@ -2752,6 +3007,7 @@ type ShotCardProps = {
   onCreateDialogue: (shotId: string) => void;
   onDialogueText: (dialogueId: string, text: string) => void;
   onDialogueBlur: (dialogue: Dialogue) => void;
+  onScriptText: (shotId: string, scriptText: string) => void;
   onSketchStroke: (
     layerId: string,
     stroke: SketchStroke,
@@ -2774,6 +3030,7 @@ const ShotCard = ({
   brushSize,
   eraserOpacity,
   eraserSize,
+  cardFace,
   onionSkinPreviousShot,
   onionSkinNextShot,
   editingDialogueId,
@@ -2791,6 +3048,7 @@ const ShotCard = ({
   onCreateDialogue,
   onDialogueText,
   onDialogueBlur,
+  onScriptText,
   onSketchStroke,
   onSelectionTransform
 }: ShotCardProps) => {
@@ -2827,7 +3085,7 @@ const ShotCard = ({
         isSelected ? "is-selected" : ""
       } ${isAnimationFocused ? "is-animation-focus" : ""} ${
         isLayerPanelVisible ? "has-layer-panel-open" : ""
-      }`}
+      } ${cardFace === "script" ? "is-script-face" : ""}`}
       style={style}
       data-shot-id={shot.id}
       onClick={onSelect}
@@ -2843,61 +3101,75 @@ const ShotCard = ({
         <span className="shot-head-grip" aria-hidden="true" />
       </div>
 
-      <div className={`shot-image-shell ${isLayerPanelVisible ? "has-layer-panel" : ""}`}>
-        <SketchPad
-          shot={shot}
-          folderPath={folderPath}
-          tool={activeSketchTool}
-          selectionMode={selectionMode}
-          brushColor={brushColor}
-          brushOpacity={brushOpacity}
-          brushSize={brushSize}
-          eraserOpacity={eraserOpacity}
-          eraserSize={eraserSize}
-          onionSkinPreviousShot={onionSkinPreviousShot}
-          onionSkinNextShot={onionSkinNextShot}
-          onStroke={onSketchStroke}
-          onSelectionTransform={onSelectionTransform}
-          onFocusShot={onFocusShot}
-        />
-        <LayerPanel
-          shot={shot}
-          folderPath={folderPath}
-          thumbnailRevision={thumbnailRevision}
-          isOpen={isLayerPanelOpen}
-          isRendered={isLayerPanelVisible}
-          onToggle={onToggleLayerPanel}
-          onAddLayer={onAddLayer}
-          onRemoveLayer={onRemoveLayer}
-          onClearLayer={onClearLayer}
-          onSelectLayer={onSelectLayer}
-          onUpdateLayer={onUpdateLayer}
-          onMoveLayer={onMoveLayer}
-        />
-      </div>
+      <div className="shot-flip-shell">
+        <div className="shot-face shot-face-front" aria-hidden={cardFace === "script"}>
+          <div className={`shot-image-shell ${isLayerPanelVisible ? "has-layer-panel" : ""}`}>
+            <SketchPad
+              shot={shot}
+              folderPath={folderPath}
+              tool={activeSketchTool}
+              selectionMode={selectionMode}
+              brushColor={brushColor}
+              brushOpacity={brushOpacity}
+              brushSize={brushSize}
+              eraserOpacity={eraserOpacity}
+              eraserSize={eraserSize}
+              onionSkinPreviousShot={onionSkinPreviousShot}
+              onionSkinNextShot={onionSkinNextShot}
+              onStroke={onSketchStroke}
+              onSelectionTransform={onSelectionTransform}
+              onFocusShot={onFocusShot}
+            />
+            <LayerPanel
+              shot={shot}
+              folderPath={folderPath}
+              thumbnailRevision={thumbnailRevision}
+              isOpen={isLayerPanelOpen}
+              isRendered={isLayerPanelVisible}
+              onToggle={onToggleLayerPanel}
+              onAddLayer={onAddLayer}
+              onRemoveLayer={onRemoveLayer}
+              onClearLayer={onClearLayer}
+              onSelectLayer={onSelectLayer}
+              onUpdateLayer={onUpdateLayer}
+              onMoveLayer={onMoveLayer}
+            />
+          </div>
 
-      <div
-        ref={dropZone.setNodeRef}
-        className={`dialogue-zone ${dropZone.isOver ? "is-over" : ""}`}
-        onDoubleClick={(event) => {
-          if ((event.target as HTMLElement).closest(".dialogue-card")) {
-            return;
-          }
-          onCreateDialogue(shot.id);
-        }}
-      >
-        {dialogues.length === 0 ? (
-          <p className="drop-hint">Double-click to type dialogue</p>
-        ) : null}
-        {dialogues.map((dialogue) => (
-          <DialogueCard
-            key={dialogue.id}
-            dialogue={dialogue}
-            isEditing={dialogue.id === editingDialogueId}
-            onChange={(text) => onDialogueText(dialogue.id, text)}
-            onBlur={() => onDialogueBlur(dialogue)}
+          <div
+            ref={dropZone.setNodeRef}
+            className={`dialogue-zone ${dropZone.isOver ? "is-over" : ""}`}
+            onDoubleClick={(event) => {
+              if ((event.target as HTMLElement).closest(".dialogue-card")) {
+                return;
+              }
+              onCreateDialogue(shot.id);
+            }}
+          >
+            {dialogues.length === 0 ? (
+              <p className="drop-hint">Double-click to type dialogue</p>
+            ) : null}
+            {dialogues.map((dialogue) => (
+              <DialogueCard
+                key={dialogue.id}
+                dialogue={dialogue}
+                isEditing={dialogue.id === editingDialogueId}
+                onChange={(text) => onDialogueText(dialogue.id, text)}
+                onBlur={() => onDialogueBlur(dialogue)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="shot-face shot-face-back" aria-hidden={cardFace === "image"}>
+          <textarea
+            className="shot-script-textarea"
+            aria-label={`Shot ${index + 1} storyboard script`}
+            value={shot.scriptText ?? ""}
+            onChange={(event) => onScriptText(shot.id, event.target.value)}
+            placeholder="分镜头脚本"
           />
-        ))}
+        </div>
       </div>
     </article>
   );

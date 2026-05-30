@@ -1,6 +1,15 @@
-import { app, BrowserWindow, ipcMain, Menu, net, protocol, type IpcMainInvokeEvent } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  net,
+  protocol,
+  shell,
+  type IpcMainInvokeEvent
+} from "electron";
 import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import sharp from "sharp";
@@ -34,6 +43,14 @@ import {
   type ImportedPhotoshopTiffManifest
 } from "./photoshopTiffImport.js";
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
+import {
+  applyStoryboardScriptImportPlan,
+  parseStoryboardScriptMarkdown,
+  planStoryboardScriptImport,
+  serializeStoryboardScriptMarkdown,
+  storyboardScriptFileName,
+  storyboardScriptNeedsImport
+} from "./storyboardScript.js";
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
@@ -50,6 +67,12 @@ type WorkspaceTaskProgress = {
 };
 type WorkspaceTaskProgressReporter = (progress: WorkspaceTaskProgress) => void;
 
+type PendingDeletedShot = {
+  id: string;
+  imagePath: string;
+  fileName: string;
+};
+
 type Project = {
   id: string;
   name: string;
@@ -63,7 +86,9 @@ type Project = {
     imagePath: string;
     previewPath?: string;
     fileName: string;
+    sourceFileName?: string;
     order: number;
+    scriptText?: string;
     layers?: Array<{
       id: string;
       kind: "image" | "paint";
@@ -126,6 +151,7 @@ type Project = {
     text: string;
     order: number;
   }>;
+  pendingDeletedShots?: PendingDeletedShot[];
   createdAt: string;
   updatedAt: string;
 };
@@ -135,6 +161,8 @@ type ProjectPayload = {
   folderPath: string;
   metadataPath: string;
   renamePlan?: RenamePlanItem[];
+  blankShotPreset?: BlankShotPreset;
+  dirtyShotIds?: string[];
 };
 
 type LayerAssetPayload = {
@@ -195,6 +223,8 @@ type FolderScanPayload = {
   project?: Project;
   images: ImportedImage[];
   importWarnings?: string[];
+  scriptImportNeeded?: boolean;
+  preserveProjectWithoutImageMerge?: boolean;
 };
 
 type RenamePlanItem = {
@@ -206,6 +236,12 @@ type RenamePlanItem = {
 };
 
 type SwbImportResult = {
+  project: Project;
+  importedShotIds: string[];
+  rollback: () => Promise<void>;
+};
+
+type StoryboardScriptImportResult = {
   project: Project;
   rollback: () => Promise<void>;
 };
@@ -298,7 +334,7 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle("workspace:autosave", async (_event, payload: ProjectPayload) => {
     await ensureProjectLayerAssets(payload.project, payload.folderPath, { includeExternalShots: false });
-    await writeProjectMetadata(payload.metadataPath, payload.project);
+    await writeProjectFiles(payload.metadataPath, payload.folderPath, payload.project);
     return payload;
   });
 
@@ -318,19 +354,79 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("workspace:importSwbFormat", async (event, payload: ProjectPayload) => {
-    const swbImport = await importProjectToSwbFormat(
-      payload.project,
-      payload.folderPath,
-      workspaceTaskProgressReporter(event, "import")
-    );
+    let scriptImport: StoryboardScriptImportResult | undefined;
+    let swbImport: SwbImportResult | undefined;
     try {
-      await writeSwbMetadataToTiffs(swbImport.project, payload.folderPath);
-      await writeProjectMetadata(payload.metadataPath, swbImport.project);
-      return scanFolder(payload.folderPath);
+      const imageImportNeeded = projectNeedsSwbImport(payload.project);
+      scriptImport = await importStoryboardScriptMarkdown(
+        payload.project,
+        payload.folderPath,
+        payload.blankShotPreset ?? "16:9"
+      );
+
+      if (!imageImportNeeded) {
+        await writeProjectFiles(payload.metadataPath, payload.folderPath, scriptImport.project);
+        return {
+          folderPath: payload.folderPath,
+          folderName: path.basename(payload.folderPath),
+          metadataPath: payload.metadataPath,
+          project: scriptImport.project,
+          images: [],
+          scriptImportNeeded: false,
+          preserveProjectWithoutImageMerge: true
+        } satisfies FolderScanPayload;
+      }
+
+      swbImport = await importProjectToSwbFormat(
+        scriptImport.project,
+        payload.folderPath,
+        workspaceTaskProgressReporter(event, "import")
+      );
+      await writeSwbMetadataToTiffs(swbImport.project, payload.folderPath, undefined, {
+        shotIds: new Set(swbImport.importedShotIds)
+      });
+      const importedProject = await createProjectPreviewsForShots(
+        swbImport.project,
+        payload.folderPath,
+        new Set(swbImport.importedShotIds)
+      );
+      await writeProjectFiles(payload.metadataPath, payload.folderPath, importedProject);
+      return {
+        folderPath: payload.folderPath,
+        folderName: path.basename(payload.folderPath),
+        metadataPath: payload.metadataPath,
+        project: importedProject,
+        images: [],
+        scriptImportNeeded: false,
+        preserveProjectWithoutImageMerge: true
+      } satisfies FolderScanPayload;
     } catch (error) {
-      await swbImport.rollback();
+      await swbImport?.rollback();
+      await scriptImport?.rollback();
       throw error;
     }
+  });
+
+  ipcMain.handle("workspace:checkStoryboardScript", async (_event, payload: ProjectPayload) => {
+    return {
+      scriptImportNeeded: await ensureStoryboardScriptMarkdown(payload.folderPath, payload.project)
+    };
+  });
+
+  ipcMain.handle("workspace:checkExternalChanges", async (_event, payload: ProjectPayload) => {
+    const previewRoot = previewRootForFolder(payload.folderPath);
+    const imagePaths = await collectImagePaths([payload.folderPath]);
+    const existingPaths = new Set(payload.project.shots.map((shot) => shot.imagePath));
+    const pendingDeletedPaths = new Set(
+      (payload.project.pendingDeletedShots ?? []).map((shot) => shot.imagePath)
+    );
+    const newImagePaths = imagePaths.filter(
+      (imagePath) => !existingPaths.has(imagePath) && !pendingDeletedPaths.has(imagePath)
+    );
+    return {
+      images: await createImageRecords(newImagePaths, previewRoot),
+      scriptImportNeeded: await ensureStoryboardScriptMarkdown(payload.folderPath, payload.project)
+    };
   });
 
   ipcMain.handle("layers:writePng", async (_event, payload: WriteLayerAssetPayload) => {
@@ -398,6 +494,7 @@ const saveWorkspace = async (
   let appliedRenamePlan: AppliedFileRenamePlan | undefined;
   let swbImport: SwbImportResult | undefined;
   let appliedTiffReplacements: AppliedFileReplacements | undefined;
+  let savedProject: Project | undefined;
   let savedShots = 0;
   const totalShots = payload.project.shots.length;
   const reportShotSaved = () => {
@@ -417,22 +514,81 @@ const saveWorkspace = async (
 
     swbImport = await importProjectToSwbFormat(payload.project, payload.folderPath);
     const swbProject = swbImport.project;
+    const saveShotIds = new Set([...(payload.dirtyShotIds ?? []), ...swbImport.importedShotIds]);
     appliedTiffReplacements = await writeSwbMetadataToTiffs(
       swbProject,
       payload.folderPath,
-      reportShotSaved
+      reportShotSaved,
+      { shotIds: payload.dirtyShotIds ? saveShotIds : undefined }
     );
-    const savedProject = clearSavedImageLayerEdits(swbProject);
-    await writeProjectMetadata(payload.metadataPath, savedProject);
+    savedProject = clearSavedImageLayerEdits(
+      swbProject,
+      payload.dirtyShotIds ? { shotIds: saveShotIds } : undefined
+    );
+    await writeProjectFiles(payload.metadataPath, payload.folderPath, savedProject);
     await appliedTiffReplacements?.commit();
-
-    return { ...payload, project: savedProject };
   } catch (error) {
     await appliedTiffReplacements?.rollback();
     await swbImport?.rollback();
     await appliedRenamePlan?.rollback();
     throw error;
   }
+
+  if (!savedProject) {
+    throw new Error("Save did not produce a project");
+  }
+
+  const trashResult = await trashPendingDeletedShotFiles(savedProject);
+  if (trashResult.project !== savedProject) {
+    await writeProjectFiles(payload.metadataPath, payload.folderPath, trashResult.project);
+  }
+  if (trashResult.error) {
+    throw trashResult.error;
+  }
+
+  return { ...payload, project: trashResult.project };
+};
+
+const trashPendingDeletedShotFiles = async (
+  project: Project
+): Promise<{ project: Project; error?: Error }> => {
+  const pending = project.pendingDeletedShots ?? [];
+
+  if (pending.length === 0) {
+    return { project };
+  }
+
+  const remaining: PendingDeletedShot[] = [];
+  const failed: PendingDeletedShot[] = [];
+
+  for (const shot of pending) {
+    if (!(await pathExists(shot.imagePath))) {
+      continue;
+    }
+
+    try {
+      await shell.trashItem(shot.imagePath);
+    } catch {
+      remaining.push(shot);
+      failed.push(shot);
+    }
+  }
+
+  const nextProject: Project = {
+    ...project,
+    pendingDeletedShots: remaining.length > 0 ? remaining : undefined,
+    updatedAt: new Date().toISOString()
+  };
+
+  if (failed.length === 0) {
+    return { project: nextProject };
+  }
+
+  const fileList = failed.map((shot) => shot.fileName).join(", ");
+  return {
+    project: nextProject,
+    error: new Error(`Could not move deleted storyboard files to Trash: ${fileList}`)
+  };
 };
 
 const assertRenamePlanSafe = async (renamePlan: RenamePlanItem[]): Promise<void> => {
@@ -503,9 +659,13 @@ const pngBufferFromDataUrl = (dataUrl: string): Buffer => {
 const ensureProjectLayerAssets = async (
   project: Project,
   folderPath: string,
-  options: { includeExternalShots?: boolean } = {}
+  options: { includeExternalShots?: boolean; shotIds?: Set<string> } = {}
 ): Promise<void> => {
   for (const shot of project.shots) {
+    if (options.shotIds && !options.shotIds.has(shot.id)) {
+      continue;
+    }
+
     if (!shouldEnsureLayerAssetsForShot(shot, options)) {
       continue;
     }
@@ -650,6 +810,50 @@ const writeProjectMetadata = async (metadataPath: string, project: Project): Pro
   await writeFile(metadataPath, `${JSON.stringify(project, null, 2)}\n`, "utf8");
 };
 
+const writeProjectFiles = async (
+  metadataPath: string,
+  folderPath: string,
+  project: Project
+): Promise<void> => {
+  await writeProjectMetadata(metadataPath, project);
+  await writeStoryboardScriptMarkdown(folderPath, project);
+};
+
+const storyboardScriptPathForFolder = (folderPath: string): string =>
+  path.join(folderPath, storyboardScriptFileName);
+
+const projectNeedsSwbImport = (project: Project): boolean => {
+  return project.shots.some(
+    (shot) => shot.swb?.status === "non-swb" || shot.swb?.status === "incompatible-external-edit"
+  );
+};
+
+const writeStoryboardScriptMarkdown = async (folderPath: string, project: Project): Promise<void> => {
+  await writeFile(storyboardScriptPathForFolder(folderPath), serializeStoryboardScriptMarkdown(project), "utf8");
+};
+
+const ensureStoryboardScriptMarkdown = async (
+  folderPath: string,
+  project?: Project
+): Promise<boolean> => {
+  if (!project) {
+    return false;
+  }
+
+  try {
+    const markdown = await readFile(storyboardScriptPathForFolder(folderPath), "utf8");
+    return storyboardScriptNeedsImport(project, markdown);
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
+    if (code === "ENOENT") {
+      await writeStoryboardScriptMarkdown(folderPath, project);
+      return false;
+    }
+
+    throw error;
+  }
+};
+
 const recentFoldersPath = (): string => {
   return path.join(app.getPath("userData"), "recent-folders.json");
 };
@@ -763,9 +967,10 @@ const importProjectToSwbFormat = async (
     onProgress?.({ kind: "import", current: importedShots, total: importableShots.length });
   };
 
-  if (importableShots.length === 0) {
+    if (importableShots.length === 0) {
     return {
       project,
+      importedShotIds: [],
       rollback: async () => undefined
     };
   }
@@ -911,7 +1116,118 @@ const importProjectToSwbFormat = async (
 
   return {
     project: nextProject,
+    importedShotIds: prepared.map((item) => item.shot.id),
     rollback: rollbackImportMoves
+  };
+};
+
+const createGeneratedShotFromImage = (
+  image: ImportedImage,
+  order: number,
+  scriptText = ""
+): Project["shots"][number] => {
+  const shotId = randomUUID();
+  const width = image.width ?? 1920;
+  const height = image.height ?? 1080;
+
+  return {
+    id: shotId,
+    imagePath: image.imagePath,
+    previewPath: image.previewPath,
+    fileName: image.fileName,
+    sourceFileName: image.fileName,
+    order,
+    scriptText,
+    sketchLayers: [],
+    activeLayerTarget: "image",
+    activeLayerId: "layer-image",
+    layers: [
+      {
+        id: "layer-image",
+        kind: "image",
+        name: "Image",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal",
+        order: 0,
+        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-image.png`,
+        width,
+        height
+      }
+    ],
+    swb: {
+      version: swbFormatVersion,
+      status: "owned",
+      canvasWidth: width,
+      canvasHeight: height,
+      baseFingerprint: image.fingerprint
+    }
+  };
+};
+
+const importStoryboardScriptMarkdown = async (
+  project: Project,
+  folderPath: string,
+  blankShotPreset: BlankShotPreset
+): Promise<StoryboardScriptImportResult> => {
+  let markdown: string;
+  try {
+    markdown = await readFile(storyboardScriptPathForFolder(folderPath), "utf8");
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
+    if (code === "ENOENT") {
+      await writeStoryboardScriptMarkdown(folderPath, project);
+      return { project, rollback: async () => undefined };
+    }
+    throw error;
+  }
+
+  if (!storyboardScriptNeedsImport(project, markdown)) {
+    return { project, rollback: async () => undefined };
+  }
+
+  const plan = planStoryboardScriptImport(project, parseStoryboardScriptMarkdown(markdown));
+  const previewRoot = previewRootForFolder(folderPath);
+  const createdPaths: string[] = [];
+  const newShots: Project["shots"] = [];
+  const rollbackCreatedPaths = async () => {
+    await Promise.all(
+      createdPaths.map((filePath) =>
+        unlink(filePath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") {
+            throw error;
+          }
+        })
+      )
+    );
+  };
+
+  try {
+    for (const item of plan) {
+      if (item.type !== "new") {
+        continue;
+      }
+
+      const imagePath = await createBlankShot(folderPath, blankShotPreset);
+      createdPaths.push(imagePath);
+      const [image] = await createImageRecords([imagePath], previewRoot);
+      if (!image) {
+        throw new Error("Blank storyboard script shot did not produce an image record");
+      }
+      if (image.previewPath) {
+        createdPaths.push(image.previewPath);
+      }
+      newShots.push(createGeneratedShotFromImage(image, 0, item.scriptText));
+    }
+  } catch (error) {
+    await rollbackCreatedPaths().catch(() => undefined);
+    throw error;
+  }
+
+  return {
+    project: applyStoryboardScriptImportPlan(project, plan, newShots),
+    rollback: rollbackCreatedPaths
   };
 };
 
@@ -933,14 +1249,23 @@ const sketchLayersForShot = (
 const writeSwbMetadataToTiffs = async (
   project: Project,
   folderPath: string,
-  onShotWritten?: () => void
+  onShotWritten?: () => void,
+  options: { shotIds?: Set<string> } = {}
 ): Promise<AppliedFileReplacements | undefined> => {
-  await ensureProjectLayerAssets(project, folderPath);
+  await ensureProjectLayerAssets(project, folderPath, { shotIds: options.shotIds });
+  const shouldProcessShot = (shot: Project["shots"][number]) =>
+    !options.shotIds || options.shotIds.has(shot.id);
   const layeredShotIds = new Set(
-    project.shots.filter(shouldWritePhotoshopLayeredTiffOnSave).map((shot) => shot.id)
+    project.shots
+      .filter((shot) => shouldProcessShot(shot) && shouldWritePhotoshopLayeredTiffOnSave(shot))
+      .map((shot) => shot.id)
   );
 
   for (const shot of project.shots) {
+    if (!shouldProcessShot(shot)) {
+      continue;
+    }
+
     if (!shouldWriteSwbMetadata(shot)) {
       onShotWritten?.();
       continue;
@@ -1032,6 +1357,41 @@ const writePhotoshopLayeredTiffsForSave = async (
   );
 };
 
+const createProjectPreviewsForShots = async (
+  project: Project,
+  folderPath: string,
+  shotIds: Set<string>
+): Promise<Project> => {
+  if (shotIds.size === 0) {
+    return project;
+  }
+
+  const previewRoot = previewRootForFolder(folderPath);
+  const previewByShotId = new Map<string, string>();
+
+  await Promise.all(
+    project.shots.map(async (shot) => {
+      if (!shotIds.has(shot.id) || !isLikelyTiffPath(shot.imagePath)) {
+        return;
+      }
+
+      previewByShotId.set(shot.id, await createPreview(shot.imagePath, previewRoot));
+    })
+  );
+
+  if (previewByShotId.size === 0) {
+    return project;
+  }
+
+  return {
+    ...project,
+    shots: project.shots.map((shot) => {
+      const previewPath = previewByShotId.get(shot.id);
+      return previewPath ? { ...shot, previewPath } : shot;
+    })
+  };
+};
+
 const shouldWriteSwbMetadata = (shot: Project["shots"][number]): boolean => {
   const extension = path.extname(shot.imagePath).toLowerCase();
   return (
@@ -1107,16 +1467,25 @@ const swbMetadataForShot = (
   };
 };
 
-const clearSavedImageLayerEdits = (project: Project): Project => ({
+const clearSavedImageLayerEdits = (
+  project: Project,
+  options: { shotIds?: Set<string> } = {}
+): Project => ({
   ...project,
-  shots: project.shots.map((shot) => ({
-    ...shot,
-    baseVisible: shouldBakeShotImageEdits(shot) ? true : shot.baseVisible,
-    imageLayerEdits:
-      shouldBakeShotImageEdits(shot) && (shot.imageLayerEdits?.length ?? 0) > 0
-        ? []
-        : shot.imageLayerEdits
-  })),
+  shots: project.shots.map((shot) => {
+    if (options.shotIds && !options.shotIds.has(shot.id)) {
+      return shot;
+    }
+
+    return {
+      ...shot,
+      baseVisible: shouldBakeShotImageEdits(shot) ? true : shot.baseVisible,
+      imageLayerEdits:
+        shouldBakeShotImageEdits(shot) && (shot.imageLayerEdits?.length ?? 0) > 0
+          ? []
+          : shot.imageLayerEdits
+    };
+  }),
   updatedAt: new Date().toISOString()
 });
 
@@ -1352,13 +1721,15 @@ const scanFolder = async (folderPath: string): Promise<FolderScanPayload> => {
   const metadataPath = metadataPathForFolder(folderPath);
   const previewRoot = previewRootForFolder(folderPath);
   const imagePaths = await collectImagePaths([folderPath]);
+  const project = await readProject(metadataPath);
 
   return {
     folderPath,
     folderName: path.basename(folderPath),
     metadataPath,
-    project: await readProject(metadataPath),
-    images: await createImageRecords(imagePaths, previewRoot)
+    project,
+    images: await createImageRecords(imagePaths, previewRoot),
+    scriptImportNeeded: await ensureStoryboardScriptMarkdown(folderPath, project)
   };
 };
 

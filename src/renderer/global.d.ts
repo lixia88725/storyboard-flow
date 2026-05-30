@@ -28,6 +28,12 @@ declare global {
         exportedFiles: string[];
       }>;
       importSwbFormat: (payload: ImportSwbFormatPayload) => Promise<FolderScanPayload>;
+      checkStoryboardScript: (
+        payload: WorkspacePayload
+      ) => Promise<{ scriptImportNeeded: boolean }>;
+      checkExternalChanges: (
+        payload: WorkspacePayload
+      ) => Promise<{ images: ImportedImage[]; scriptImportNeeded: boolean }>;
       writeLayerPng: (payload: {
         folderPath: string;
         bitmapPath: string;

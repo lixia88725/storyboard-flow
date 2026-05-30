@@ -7,6 +7,9 @@
 - [ ] Manually review mixed-aspect animation mode with the dark matte/stable frame and decide whether the visual treatment needs refinement.
 - [ ] Manually verify multi-select shot dragging and double-click dialogue editing after the bitmap layer refactor.
 - [ ] Manually dogfood Save speed and Layer Lock behavior on a real multi-shot, multi-layer storyboard folder.
+- [ ] Manually dogfood `文 / 图` script card editing and external `storyboard-script.md` reorder/import on a real storyboard folder.
+- [ ] Manually dogfood Delete-to-Trash on real folders: single delete, multi-select delete, Undo, Save, and Finder Trash recovery.
+- [ ] Manually dogfood adding images externally from Finder/Bridge and confirm the yellow Import warning appears only when needed.
 
 ## P1
 
@@ -18,6 +21,7 @@
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Add validation or cleanup for missing Recent folder paths.
 - [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
+- [ ] Add conservative orphan cleanup for `.storyboard-workbench/layers/<deletedShotId>/...` after Delete-to-Trash behavior is proven in real use.
 
 ## P2
 
@@ -49,6 +53,13 @@
 - [x] UI polish for dark workbench theme, sticky top/tool rails, compact shot/dialogue headers, wheel zoom, status button, shortcut editor, and lower-contrast dialogue affordances.
 - [x] Repeatable `npm run smoke:bitmap` covering renderer + Electron + filesystem paths: drawing, erasing, layer operations, Save safety, Photoshop TIFF round trip, shortcut persistence, animation, Onion Skin, Add Shot, reopen, and legacy migration.
 - [x] Audit/cleanup pass added `docs/audit-2026-05-30.md`, `docs/superpowers/plans/2026-05-30-audit-cleanup.md`, README/AGENTS developer maps, shared Electron bitmap layer ordering, preload sync checking, and low-risk `App.tsx` component extraction.
+- [x] Photoshop layered TIFF import now inherits Photoshop lock/protection signals into SWB bitmap layer `locked` state.
+- [x] Storyboard script back side added with global `文 / 图` toggle, per-shot `scriptText`, root `storyboard-script.md` mirror, and explicit Import of external MD changes.
+- [x] Import warning help localized to Chinese and expanded to explain TIFF Archive, SWB internal PNG data, Photoshop-only limits, and Markdown sync.
+- [x] Import and Save speed improved by avoiding full post-import scans and narrowing Save TIFF writes to dirty/imported shots.
+- [x] Delete/Backspace removes selected storyboards in-app, supports Undo, records pending deleted files, and moves root image files to system Trash on Save.
+- [x] Focus-time external image detection now lights Import warning for newly added root images without decoding every existing image.
+- [x] Script card, layer drawer handle, shot spacing, and dialogue row UI were polished with smoke coverage.
 
 ## Out Of Scope For Current MVP
 

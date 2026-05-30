@@ -21,6 +21,7 @@ export type ImportedPhotoshopTiffLayer = {
   name: string;
   assetPath: string;
   visible: boolean;
+  locked?: boolean;
   opacity: number;
   blendMode: "normal" | "multiply" | "screen";
   order: number;
@@ -110,7 +111,7 @@ export const importedLayerToBitmapLayer = (
     kind: isImageLayer ? "image" : "paint",
     name: layer.name || (isImageLayer ? "Image" : `Layer ${index + 1}`),
     visible: layer.visible,
-    locked: false,
+    locked: layer.locked ?? false,
     opacity: layer.opacity,
     blendMode: layer.blendMode,
     order: index,

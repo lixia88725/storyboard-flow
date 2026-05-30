@@ -38,6 +38,20 @@ def layer_visible(layer: Any) -> bool:
     return not bool(layer.flags & PsdLayerFlag.VISIBLE)
 
 
+def layer_locked(layer: Any) -> bool:
+    if bool(layer.flags & PsdLayerFlag.TRANSPARENCY_PROTECTED):
+        return True
+
+    for info in getattr(layer, "info", []):
+        if getattr(info, "key", None) == PsdKey.PROTECTED_SETTING:
+            try:
+                return int(getattr(info, "value", 0)) != 0
+            except (TypeError, ValueError):
+                return True
+
+    return False
+
+
 def section_divider(layer: Any) -> Any | None:
     for info in getattr(layer, "info", []):
         if getattr(info, "key", None) == PsdKey.SECTION_DIVIDER_SETTING:
@@ -178,6 +192,7 @@ def extract_layered_tiff(source: Path, output_dir: Path, manifest_path: Path) ->
                 "name": name,
                 "assetPath": str(output_path),
                 "visible": True,
+                "locked": layer_locked(layer),
                 "opacity": max(0, min(1, int(layer.opacity) / 255)),
                 "blendMode": blend_mode,
                 "order": index,

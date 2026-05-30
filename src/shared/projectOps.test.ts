@@ -11,6 +11,7 @@ import {
   createImageBitmapLayer,
   clearSketch,
   createRenamePlan,
+  deleteShots,
   deleteBitmapLayer,
   flattenSketchLayers,
   getNextStoryboardIndex,
@@ -491,6 +492,78 @@ describe("project operations", () => {
       ["shot-a", 2],
       ["shot-b", 3]
     ]);
+  });
+
+  it("deletes selected shots, records pending deleted files, and removes their dialogues", () => {
+    const project = addDialogue(makeProject(), "shot-b", "Second line", "dialogue-2");
+
+    const updated = deleteShots(project, ["shot-b"]);
+
+    expect(updated.shots.map((shot) => [shot.id, shot.order])).toEqual([
+      ["shot-a", 0],
+      ["shot-c", 1]
+    ]);
+    expect(updated.dialogues.map((dialogue) => dialogue.id)).toEqual(["dialogue-1"]);
+    expect(updated.pendingDeletedShots).toEqual([
+      {
+        id: "shot-b",
+        imagePath: "/tmp/b.png",
+        fileName: "b.png"
+      }
+    ]);
+    expect(project.pendingDeletedShots).toBeUndefined();
+  });
+
+  it("deletes multiple selected shots and keeps order continuous", () => {
+    const updated = deleteShots(makeProject(), ["shot-a", "shot-c"]);
+
+    expect(updated.shots.map((shot) => [shot.id, shot.order])).toEqual([["shot-b", 0]]);
+    expect(updated.dialogues).toEqual([]);
+    expect(updated.pendingDeletedShots?.map((shot) => shot.id)).toEqual(["shot-a", "shot-c"]);
+  });
+
+  it("does not re-add pending deleted shots when appending imported folder images", () => {
+    const project = deleteShots(makeProject(), ["shot-b"]);
+
+    const updated = addImportedImages(project, [
+      { imagePath: "/tmp/a.png", fileName: "a.png" },
+      { imagePath: "/tmp/b.png", fileName: "b.png" },
+      { imagePath: "/tmp/c.png", fileName: "c.png" },
+      { imagePath: "/tmp/d.png", fileName: "d.png" }
+    ]);
+
+    expect(updated.shots.map((shot) => shot.imagePath)).toEqual([
+      "/tmp/a.png",
+      "/tmp/c.png",
+      "/tmp/d.png"
+    ]);
+    expect(updated.shots.map((shot) => shot.order)).toEqual([0, 1, 2]);
+    expect(updated.pendingDeletedShots?.map((shot) => shot.id)).toEqual(["shot-b"]);
+  });
+
+  it("keeps the same project object when no imported folder images are new", () => {
+    const project = makeProject();
+
+    const updated = addImportedImages(project, [
+      { imagePath: "/tmp/a.png", fileName: "a.png" },
+      { imagePath: "/tmp/b.png", fileName: "b.png" },
+      { imagePath: "/tmp/c.png", fileName: "c.png" }
+    ]);
+
+    expect(updated).toBe(project);
+  });
+
+  it("ignores pending deleted image paths when merging folder images", () => {
+    const project = deleteShots(makeProject(), ["shot-b"]);
+
+    const merged = mergeFolderImages(project, [
+      { imagePath: "/tmp/a.png", fileName: "a.png" },
+      { imagePath: "/tmp/b.png", fileName: "b.png" },
+      { imagePath: "/tmp/c.png", fileName: "c.png" }
+    ]);
+
+    expect(merged.shots.map((shot) => shot.id)).toEqual(["shot-a", "shot-c"]);
+    expect(merged.pendingDeletedShots?.map((shot) => shot.id)).toEqual(["shot-b"]);
   });
 
   it("navigates storyboard grid horizontally and vertically by column count", () => {
@@ -1111,6 +1184,7 @@ describe("project operations", () => {
     expect(updated.shots[0].swb).toMatchObject({
       status: "incompatible-external-edit"
     });
+    expect(projectNeedsSwbImport(updated)).toBe(true);
   });
 
   it("inserts a generated shot after the selected shot", () => {
