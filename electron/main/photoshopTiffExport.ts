@@ -83,6 +83,7 @@ export type PhotoshopTiffInPlaceSavePlan = {
 };
 
 export const photoshopTiffExportRootName = "Photoshop TIFF Export";
+const defaultInPlaceSaveConcurrency = 2;
 
 export const buildPhotoshopTiffExportPlan = (
   project: Project,
@@ -171,24 +172,43 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
     env?: NodeJS.ProcessEnv;
     xmpByShotId?: Record<string, string>;
     onJobWritten?: () => void;
+    concurrency?: number;
   }
 ): Promise<PhotoshopTiffInPlaceSaveResult> => {
   const plan = buildPhotoshopTiffInPlaceSavePlan(project, folderPath, options.saveStamp);
   await mkdir(plan.manifestFolderPath, { recursive: true });
 
-  for (const job of plan.jobs) {
+  await runWithConcurrency(plan.jobs, options.concurrency ?? defaultInPlaceSaveConcurrency, async (job) => {
     const manifestPath = path.join(plan.manifestFolderPath, `${job.shotId}.json`);
     const xmp = options.xmpByShotId?.[job.shotId];
     const manifest = xmp ? { ...job.manifest, xmp } : job.manifest;
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     await runPythonExporter(options.pythonPath ?? "python3", options.scriptPath, manifestPath, options.env);
     options.onJobWritten?.();
-  }
+  });
 
   return {
     tempFolderPath: plan.tempFolderPath,
     replacements: plan.jobs.map((job) => ({ fromPath: job.outputPath, toPath: job.finalPath }))
   };
+};
+
+const runWithConcurrency = async <T>(
+  items: T[],
+  concurrency: number,
+  run: (item: T) => Promise<void>
+): Promise<void> => {
+  const limit = Math.max(1, Math.floor(concurrency));
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const item = items[nextIndex];
+      nextIndex += 1;
+      await run(item);
+    }
+  });
+
+  await Promise.all(workers);
 };
 
 const runPythonExporter = (

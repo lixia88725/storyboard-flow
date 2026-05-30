@@ -301,6 +301,82 @@ describe("buildPhotoshopTiffExportPlan", () => {
     }
   });
 
+  it("runs in-place Photoshop TIFF save jobs with limited concurrency", async () => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-save-concurrency-"));
+
+    try {
+      const originalAPath = path.join(folderPath, "a.tiff");
+      const originalBPath = path.join(folderPath, "b.tiff");
+      const fakeWriterPath = path.join(folderPath, "fake-writer.mjs");
+      const layerAPath = path.join(folderPath, ".storyboard-workbench/layers/shot-a/layer-image.png");
+      const layerBPath = path.join(folderPath, ".storyboard-workbench/layers/shot-b/layer-image.png");
+
+      await writeFile(originalAPath, "original-a", "utf8");
+      await writeFile(originalBPath, "original-b", "utf8");
+      await mkdir(path.dirname(layerAPath), { recursive: true });
+      await mkdir(path.dirname(layerBPath), { recursive: true });
+      await writeFile(layerAPath, "fake-png-a", "utf8");
+      await writeFile(layerBPath, "fake-png-b", "utf8");
+      await writeFile(
+        fakeWriterPath,
+        [
+          "import { readFile, writeFile, stat } from 'node:fs/promises';",
+          "import path from 'node:path';",
+          "const manifest = JSON.parse(await readFile(process.argv[2], 'utf8'));",
+          "const root = path.dirname(path.dirname(manifest.outputPath));",
+          "const marker = path.join(root, `${manifest.documentName}.started`);",
+          "await writeFile(marker, 'started', 'utf8');",
+          "if (manifest.documentName === 'a') {",
+          "  const peer = path.join(root, 'b.started');",
+          "  const started = Date.now();",
+          "  while (Date.now() - started < 1000) {",
+          "    try { await stat(peer); break; } catch { await new Promise((resolve) => setTimeout(resolve, 20)); }",
+          "  }",
+          "  try { await stat(peer); } catch { process.exit(2); }",
+          "}",
+          "await writeFile(manifest.outputPath, `layered:${manifest.documentName}`, 'utf8');"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await writePhotoshopLayeredTiffsForInPlaceSave(
+        {
+          name: "Demo",
+          shots: [
+            {
+              id: "shot-a",
+              imagePath: originalAPath,
+              fileName: "a.tiff",
+              order: 0,
+              swb: { canvasWidth: 320, canvasHeight: 180 },
+              layers: [layer({ bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png" })]
+            },
+            {
+              id: "shot-b",
+              imagePath: originalBPath,
+              fileName: "b.tiff",
+              order: 1,
+              swb: { canvasWidth: 320, canvasHeight: 180 },
+              layers: [layer({ bitmapPath: ".storyboard-workbench/layers/shot-b/layer-image.png" })]
+            }
+          ]
+        },
+        folderPath,
+        {
+          scriptPath: fakeWriterPath,
+          pythonPath: process.execPath,
+          saveStamp: "save-123",
+          concurrency: 2
+        }
+      );
+
+      await expect(readFile(result.replacements[0].fromPath, "utf8")).resolves.toBe("layered:a");
+      await expect(readFile(result.replacements[1].fromPath, "utf8")).resolves.toBe("layered:b");
+    } finally {
+      await rm(folderPath, { recursive: true, force: true });
+    }
+  });
+
   it("writes optional XMP into Photoshop layered TIFFs without dropping layer data", async () => {
     const depsDir = "/private/tmp/psdtags-spike-deps";
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-xmp-"));
