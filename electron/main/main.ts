@@ -13,6 +13,14 @@ import {
 } from "./fileRenames.js";
 import { flattenBitmapLayerBuffersToTiff, type BitmapLayerComposite } from "./bitmapLayers.js";
 import { exportPhotoshopLayeredTiffs } from "./photoshopTiffExport.js";
+import {
+  buildPhotoshopTiffImportAssetPlan,
+  ensureLayerMoveDestinationsAvailable,
+  isPhotoshopTiffNoLayersError,
+  isLikelyTiffPath,
+  runPhotoshopTiffImporter,
+  type ImportedPhotoshopTiffManifest
+} from "./photoshopTiffImport.js";
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
@@ -90,7 +98,9 @@ type Project = {
       archivePath?: string;
       statusMessage?: string;
       acceptedExternalEditAt?: string;
+      sourceKind?: "photoshop-layered-tiff";
     };
+    importWarnings?: string[];
   }>;
   dialogues: Array<{
     id: string;
@@ -688,6 +698,8 @@ const updateRecentFoldersMenu = async (): Promise<void> => {
 const importProjectToSwbFormat = async (project: Project, folderPath: string): Promise<SwbImportResult> => {
   const archiveRoot = path.join(folderPath, "Archive", archiveStamp());
   const tempRoot = path.join(folderPath, ".storyboard-workbench", "import-tmp", archiveStamp());
+  const photoshopLayerRoot = path.join(tempRoot, "photoshop-layers");
+  const finalLayerRoot = path.join(folderPath, ".storyboard-workbench", "layers");
   const importableShots = project.shots.filter((shot) => shot.swb?.status !== "owned");
 
   if (importableShots.length === 0) {
@@ -706,9 +718,40 @@ const importProjectToSwbFormat = async (project: Project, folderPath: string): P
       const targetPath = await uniquePath(path.dirname(shot.imagePath), `${baseName}.tiff`);
       const archivePath = await uniquePath(archiveRoot, path.basename(shot.imagePath));
       const tempPath = path.join(tempRoot, `${shot.id}.tiff`);
+      let importedLayers: NonNullable<Project["shots"][number]["layers"]> | undefined;
+      let importedLayerMoves: Array<{ fromPath: string; toPath: string }> = [];
+      let importWarnings: string[] = [];
 
       if (await pathExists(targetPath)) {
         throw new Error(`SWB import target already exists: ${targetPath}`);
+      }
+
+      if (isLikelyTiffPath(shot.imagePath)) {
+        const extractedDir = path.join(photoshopLayerRoot, shot.id, "extracted");
+        const manifestPath = path.join(photoshopLayerRoot, shot.id, "manifest.json");
+
+        try {
+          await runPhotoshopTiffImporter(
+            "python3",
+            path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-import.py"),
+            shot.imagePath,
+            extractedDir,
+            manifestPath,
+            {
+              ...process.env,
+              SWB_PYTHON_DEPS_DIR: process.env.SWB_PYTHON_DEPS_DIR ?? defaultPhotoshopTiffPythonDepsDir
+            }
+          );
+          const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as ImportedPhotoshopTiffManifest;
+          const layerPlan = buildPhotoshopTiffImportAssetPlan(manifest, shot.id, finalLayerRoot, extractedDir);
+          importedLayers = layerPlan.layers;
+          importedLayerMoves = layerPlan.moves;
+          importWarnings = manifest.warnings;
+        } catch (error) {
+          if (!isPhotoshopTiffNoLayersError(error)) {
+            throw error;
+          }
+        }
       }
 
       await sharp(shot.imagePath).rotate().tiff().toFile(tempPath);
@@ -722,14 +765,19 @@ const importProjectToSwbFormat = async (project: Project, folderPath: string): P
         tempPath,
         fingerprint,
         width: metadata.width ?? 0,
-        height: metadata.height ?? 0
+        height: metadata.height ?? 0,
+        importedLayers,
+        importedLayerMoves,
+        importWarnings
       };
     })
   );
 
   let archivedOriginals: AppliedFileMoves | undefined;
   let importedTargets: AppliedFileMoves | undefined;
+  let importedLayerTargets: AppliedFileMoves | undefined;
   const rollbackImportMoves = async () => {
+    await importedLayerTargets?.rollback();
     await importedTargets?.rollback();
     await archivedOriginals?.rollback();
   };
@@ -748,6 +796,11 @@ const importProjectToSwbFormat = async (project: Project, folderPath: string): P
       prepared.map((item) => ({ fromPath: item.tempPath, toPath: item.targetPath })),
       moveOps
     );
+    const layerMoves = prepared.flatMap((item) => item.importedLayerMoves);
+    if (layerMoves.length > 0) {
+      await ensureLayerMoveDestinationsAvailable(layerMoves, pathExists);
+      importedLayerTargets = await applyFileMoves(layerMoves, moveOps);
+    }
   } catch (error) {
     await rollbackImportMoves();
     throw error;
@@ -767,8 +820,11 @@ const importProjectToSwbFormat = async (project: Project, folderPath: string): P
         previewPath: undefined,
         fileName: path.basename(item.targetPath),
         sourceFileName: shot.fileName,
-        sketchLayers: emptyDefaultSketchLayers(shot) ? [] : shot.sketchLayers,
+        layers: item.importedLayers ?? shot.layers,
+        sketchLayers: item.importedLayers ? [] : emptyDefaultSketchLayers(shot) ? [] : shot.sketchLayers,
         activeLayerTarget: "image",
+        ...(item.importedLayers ? { activeLayerId: "layer-image" } : {}),
+        importWarnings: item.importWarnings.length > 0 ? item.importWarnings : shot.importWarnings,
         swb: {
           version: swbFormatVersion,
           status: "owned",
@@ -776,7 +832,8 @@ const importProjectToSwbFormat = async (project: Project, folderPath: string): P
           canvasHeight: item.height,
           baseFingerprint: item.fingerprint,
           sourcePath: shot.imagePath,
-          archivePath: item.archivePath
+          archivePath: item.archivePath,
+          sourceKind: item.importedLayers ? "photoshop-layered-tiff" : undefined
         }
       };
     }),

@@ -1,7 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { buildPhotoshopTiffImportAssetPlan, importedLayerToBitmapLayer } from "./photoshopTiffImport.js";
+import {
+  buildPhotoshopTiffImportAssetPlan,
+  ensureLayerMoveDestinationsAvailable,
+  importedLayerToBitmapLayer,
+  isPhotoshopTiffNoLayersError,
+  isLikelyTiffPath
+} from "./photoshopTiffImport.js";
 
 describe("photoshopTiffImport", () => {
+  it("only considers TIFF paths for Photoshop layered TIFF import", () => {
+    expect(isLikelyTiffPath("/scene/a.tiff")).toBe(true);
+    expect(isLikelyTiffPath("/scene/a.tif")).toBe(true);
+    expect(isLikelyTiffPath("/scene/a.png")).toBe(false);
+    expect(isLikelyTiffPath("/scene/a.jpg")).toBe(false);
+  });
+
+  it("recognizes only the explicit no-Photoshop-layer importer marker as fallback-safe", () => {
+    expect(isPhotoshopTiffNoLayersError(new Error("SWB_PHOTOSHOP_TIFF_NO_LAYERS: no tag"))).toBe(true);
+    expect(isPhotoshopTiffNoLayersError(new Error("ModuleNotFoundError: No module named 'psdtags'"))).toBe(false);
+    expect(isPhotoshopTiffNoLayersError(new Error("Unexpected token in manifest JSON"))).toBe(false);
+  });
+
+  it("rejects layer asset moves when a destination already exists", async () => {
+    await expect(
+      ensureLayerMoveDestinationsAvailable(
+        [
+          { fromPath: "/tmp/extracted/layer-image.png", toPath: "/scene/.storyboard-workbench/layers/shot-a/layer-image.png" },
+          { fromPath: "/tmp/extracted/layer-0001.png", toPath: "/scene/.storyboard-workbench/layers/shot-a/layer-0001.png" }
+        ],
+        async (filePath) => filePath.endsWith("layer-0001.png")
+      )
+    ).rejects.toThrow("Photoshop TIFF import layer asset already exists");
+  });
+
   it("builds SWB layer asset destinations under the temp import root", () => {
     const plan = buildPhotoshopTiffImportAssetPlan(
       {

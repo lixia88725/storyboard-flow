@@ -38,6 +38,28 @@ export type PhotoshopTiffImportAssetPlan = {
   moves: Array<{ fromPath: string; toPath: string }>;
 };
 
+export const photoshopTiffNoLayersMarker = "SWB_PHOTOSHOP_TIFF_NO_LAYERS";
+
+export const isLikelyTiffPath = (filePath: string): boolean => {
+  const extension = path.extname(filePath).toLowerCase();
+  return extension === ".tif" || extension === ".tiff";
+};
+
+export const isPhotoshopTiffNoLayersError = (error: unknown): boolean => {
+  return error instanceof Error && error.message.includes(photoshopTiffNoLayersMarker);
+};
+
+export const ensureLayerMoveDestinationsAvailable = async (
+  moves: Array<{ toPath: string }>,
+  pathExists: (filePath: string) => Promise<boolean>
+): Promise<void> => {
+  for (const move of moves) {
+    if (await pathExists(move.toPath)) {
+      throw new Error(`Photoshop TIFF import layer asset already exists: ${move.toPath}`);
+    }
+  }
+};
+
 const bitmapLayerPath = (shotId: string, layerId: string): string =>
   `.storyboard-workbench/layers/${shotId}/${layerId}.png`;
 

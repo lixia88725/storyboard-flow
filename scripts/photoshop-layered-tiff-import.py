@@ -25,6 +25,11 @@ SUPPORTED_BLEND_MODES = {
     PsdBlendMode.MULTIPLY: "multiply",
     PsdBlendMode.SCREEN: "screen",
 }
+NO_LAYERS_MARKER = "SWB_PHOTOSHOP_TIFF_NO_LAYERS"
+
+
+class NoPhotoshopLayersError(Exception):
+    pass
 
 
 def layer_visible(layer: Any) -> bool:
@@ -74,11 +79,20 @@ def safe_layer_name(name: str, index: int) -> str:
     return cleaned or f"Layer {index + 1}"
 
 
+def read_image_source_data(source: Path) -> TiffImageSourceData:
+    try:
+        return TiffImageSourceData.fromtiff(source)
+    except ValueError as error:
+        if "contains no ImageSourceData tag" in str(error):
+            raise NoPhotoshopLayersError(str(error)) from error
+        raise
+
+
 def extract_layered_tiff(source: Path, output_dir: Path, manifest_path: Path) -> None:
-    image_source_data = TiffImageSourceData.fromtiff(source)
+    image_source_data = read_image_source_data(source)
     layers = list(image_source_data.layers or [])
     if not layers:
-        raise ValueError("No Photoshop layers found")
+        raise NoPhotoshopLayersError("No Photoshop layers found")
 
     with tifffile.TiffFile(source) as tiff:
         page = tiff.pages[0]
@@ -134,7 +148,11 @@ def main() -> None:
     parser.add_argument("manifest", help="Path for the JSON import manifest.")
     args = parser.parse_args()
 
-    extract_layered_tiff(Path(args.source), Path(args.output_dir), Path(args.manifest))
+    try:
+        extract_layered_tiff(Path(args.source), Path(args.output_dir), Path(args.manifest))
+    except NoPhotoshopLayersError as error:
+        print(f"{NO_LAYERS_MARKER}: {error}", file=sys.stderr)
+        raise SystemExit(2) from error
 
 
 if __name__ == "__main__":

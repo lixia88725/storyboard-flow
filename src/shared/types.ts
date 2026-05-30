@@ -55,6 +55,7 @@ export type ShotSwbState = {
   archivePath?: string;
   statusMessage?: string;
   acceptedExternalEditAt?: string;
+  sourceKind?: "photoshop-layered-tiff";
 };
 
 export type Shot = {
