@@ -27,7 +27,7 @@
 - `Image` behaves like a normal layer in the UI: selectable, drawable, erasable, clearable, reorderable, and deletable when another layer remains.
 - Legacy `sketchLayers` and `imageLayerEdits` remain migration inputs only. New renderer editing no longer depends on the old stroke model.
 - Keyboard shortcuts are configurable from the gear button at the top of the tool rail and are persisted in the local Electron `userData` settings file.
-- Photoshop layered TIFF is now part of `Save` for multi-layer shots and still available through explicit `Export TIFF`: `Save` writes the working TIFF in-place, while `Export TIFF` writes one Photoshop-readable layered TIFF per shot under `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`. Existing `Import` ingests Photoshop layered TIFF raster layers into SWB-owned bitmap layer PNG assets and archives the source TIFF.
+- Photoshop layered TIFF is now part of `Save` for multi-layer shots. The main UI hides `Export TIFF`; the underlying export API remains available for smoke and developer debugging, writing one Photoshop-readable layered TIFF per shot under `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`. Existing `Import` ingests Photoshop layered TIFF raster layers into SWB-owned bitmap layer PNG assets and archives the source TIFF.
 
 ## Completed This Session
 
@@ -36,10 +36,10 @@
   - Added `scripts/photoshop-layered-tiff-export.py`, a manifest-driven production helper based on the validated spike.
   - Added Electron export planning/orchestration in `electron/main/photoshopTiffExport.ts`.
   - Added `workspace:exportPhotoshopTiffs` IPC and preload APIs.
-  - Added a top-toolbar `Export TIFF` action that exports the current whole scene, one TIFF per shot, without changing `Save`.
+  - Added and later hid the top-toolbar `Export TIFF` action; the underlying export API remains available for smoke/developer debugging.
   - Export output goes to `Photoshop TIFF Export/YYYYMMDDTHHMMSS/` under the current scene folder.
   - Development dependency path defaults to `/private/tmp/psdtags-spike-deps` unless `SWB_PYTHON_DEPS_DIR` is set.
-  - Extended `npm run smoke:bitmap` to click `Export TIFF`, verify three exported TIFFs, and read back layer names through `psdtags`.
+  - Extended `npm run smoke:bitmap` to call the hidden export API, verify three exported TIFFs, and read back layer names through `psdtags`.
   - Live Photoshop 2026 verification opened an exported TIFF and reported `layers=2;names=Paint 1,背景;width=320;height=180;mode=DocumentMode.RGB`.
 - Photoshop layered TIFF import:
   - Added `scripts/photoshop-layered-tiff-import.py`, which reads Photoshop `ImageSourceData` tag `37724`, extracts 8-bit raster layers to PNG assets, and writes a JSON manifest.

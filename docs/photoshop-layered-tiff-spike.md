@@ -11,8 +11,9 @@ alone.
 The spike path is now connected to Storyboard Workbench Save and a dedicated
 export command. `Save` writes multi bitmap layer shots in-place as
 Photoshop-readable layered TIFFs, while single-layer shots remain ordinary TIFFs.
-`Export TIFF` still writes one Photoshop-readable layered TIFF per shot into
-`Photoshop TIFF Export/YYYYMMDDTHHMMSS/`.
+The main UI hides `Export TIFF`; the underlying export API still writes one
+Photoshop-readable layered TIFF per shot into
+`Photoshop TIFF Export/YYYYMMDDTHHMMSS/` for smoke and developer debugging.
 
 The export smoke verifies the generated TIFFs with `psdtags` readback. A live
 Photoshop 2026 check on `/private/tmp/swb-photoshop-export-validation/.../0010-shot.tiff`

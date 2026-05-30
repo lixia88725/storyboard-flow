@@ -56,7 +56,7 @@ npm run dev
 
 ## Photoshop Layered TIFF Export
 
-`Save` 是正式写入入口：有多个 bitmap layer 的 shot 会直接写回当前场景文件夹中的 Photoshop-readable layered TIFF；只有单层内容的 shot 继续保存为普通单层 TIFF。顶部工具栏的 `Export TIFF` 仍可把当前场景中的所有 shot 另存为 Photoshop-readable layered TIFF，位置为当前场景文件夹下的 `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`，主要用于交换、调试和对比验证。
+`Save` 是正式写入入口：有多个 bitmap layer 的 shot 会直接写回当前场景文件夹中的 Photoshop-readable layered TIFF；只有单层内容的 shot 继续保存为普通单层 TIFF。主界面不再显示 `Export TIFF` 按钮，以降低用户心智负担；底层 export API 仍保留给 smoke 和开发调试使用，可另存 Photoshop-readable layered TIFF 到 `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`。
 
 现有 `Import` 操作也会检测 Photoshop layered TIFF，并把 raster Photoshop layers 转换成 SWB-owned bitmap layers。源 TIFF 会移动到 `Archive/YYYY-MM-DD-HHMMSS/`，SWB 继续使用 `.storyboard-workbench/layers/*.png` 和 `storyboard.project.json` 作为内部工作数据。
 

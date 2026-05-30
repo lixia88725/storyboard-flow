@@ -614,7 +614,26 @@ try {
     }, `project metadata for ${folderPath}`);
   };
 
+  const exportPhotoshopTiffsViaDebugApi = async (folderPath) => {
+    const project = await readProjectMetadata(folderPath);
+    await evaluate(`
+      window.storyboard.exportPhotoshopTiffs(${JSON.stringify({
+        project,
+        folderPath,
+        metadataPath: projectMetadataPath(folderPath)
+      })})
+    `);
+  };
+
   await openFolder();
+
+  const exportTiffButtonVisible = await evaluate(`
+    Array.from(document.querySelectorAll("button"))
+      .some((button) => button.textContent.trim() === "Export TIFF")
+  `);
+  if (exportTiffButtonVisible) {
+    throw new Error("Export TIFF button should not be visible in the main window");
+  }
 
   const layerPath = await waitFor(() => findShotLayerMetadataPath(smokeRoot, 0), "image layer metadata path");
   const secondShotLayerPath = await waitFor(() => findShotLayerMetadataPath(smokeRoot, 1), "second shot image layer metadata path");
@@ -1663,14 +1682,7 @@ try {
     throw new Error("Drawing on the selected shot changed a neighboring shot layer");
   }
 
-  await evaluate(`
-    (() => {
-      const exportButton = Array.from(document.querySelectorAll("button"))
-        .find((button) => button.textContent.trim() === "Export TIFF");
-      exportButton.click();
-      return true;
-    })()
-  `);
+  await exportPhotoshopTiffsViaDebugApi(smokeRoot);
   const photoshopExportFiles = await waitFor(async () => {
     const files = await findPhotoshopExportFiles(smokeRoot);
     return files.length === 3 ? files : undefined;
@@ -2049,14 +2061,7 @@ try {
       ? project
       : undefined;
   }, "legacy bitmap metadata autosave");
-  await evaluate(`
-    (() => {
-      const exportButton = Array.from(document.querySelectorAll("button"))
-        .find((button) => button.textContent.trim() === "Export TIFF");
-      exportButton.click();
-      return true;
-    })()
-  `);
+  await exportPhotoshopTiffsViaDebugApi(legacyRoot);
   await waitFor(async () => {
     const files = await findPhotoshopExportFiles(legacyRoot);
     return files.length === 1 ? files : undefined;

@@ -320,12 +320,6 @@ button.primary {
   box-shadow: 0 8px 0 rgba(39, 35, 29, 0.14);
 }
 
-.export-photoshop-button {
-  padding-top: 4px;
-  padding-bottom: 4px;
-  white-space: nowrap;
-}
-
 .save-menu-field {
   display: grid;
   gap: 5px;
