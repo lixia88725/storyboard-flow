@@ -123,7 +123,8 @@
 - Script card edit wrote `TEST2 dogfood script line` to the first shot and `storyboard-script.md`.
 - First shot LayerPanel opened with 7 imported Photoshop raster layers and preserved Chinese layer names.
 - Reopen responsiveness issue was fixed by deferring heavy `SketchPad`/LayerPanel rendering for offscreen cards. TEST2 reopened to 302 cards without hanging; initial viewport mounted 14 Konva stages, and after scrolling to bottom only 15 stages were mounted.
-- Save was not re-run in this pass because TEST2 had 0 dirty shots and 0 pending deletes; Save speed remains a separate real-folder dogfood item.
+- Save boundary was dogfooded after a small dirty brush stroke on the first shot. Save used default naming fields, renamed all 302 root TIFFs to `TEST2_scene_stb_artist_v001_####.tiff`, kept all 302 project paths valid, and preserved `owned` status on every shot.
+- Follow-up finding: successful Save leaves a per-save manifest directory and an empty `save-backup/<stamp>/` directory behind. This is a cleanup/maintenance candidate, not a data-loss issue observed in the dogfood pass.
 
 ## Verification Run For Handoff
 
@@ -223,7 +224,7 @@ Recommended next steps:
 
 ## Known Remaining Work
 
-- Real dogfood is still needed for Save speed, Layer Lock feel, script card editing, Delete-to-Trash recovery, external image Import warning, bitmap Select high-resolution scaling, mixed-aspect animation, multi-select dragging, and double-click dialogue editing.
+- Real dogfood is still needed for Layer Lock feel, script card editing, Delete-to-Trash recovery, external image Import warning, bitmap Select high-resolution scaling, mixed-aspect animation, multi-select dragging, and double-click dialogue editing.
 - Delete currently leaves internal `.storyboard-workbench/layers/<shotId>/...` assets behind; orphan cleanup should be a separate conservative task.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.

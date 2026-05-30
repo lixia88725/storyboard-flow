@@ -6,7 +6,7 @@
 - [ ] Manually dogfood bitmap Select lasso/rectangle corner scaling on high-resolution real storyboard images.
 - [ ] Manually review mixed-aspect animation mode with the dark matte/stable frame and decide whether the visual treatment needs refinement.
 - [ ] Manually verify multi-select shot dragging and double-click dialogue editing after the bitmap layer refactor.
-- [ ] Manually dogfood Save speed and Layer Lock behavior on a real multi-shot, multi-layer storyboard folder.
+- [ ] Manually dogfood Layer Lock behavior on a real multi-shot, multi-layer storyboard folder.
 - [ ] Manually dogfood `文 / 图` script card editing and external `storyboard-script.md` reorder/import on a real storyboard folder.
 - [ ] Manually dogfood Delete-to-Trash on real folders: single delete, multi-select delete, Undo, Save, and Finder Trash recovery.
 - [ ] Manually dogfood adding images externally from Finder/Bridge and confirm the yellow Import warning appears only when needed.
@@ -20,6 +20,7 @@
 - [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Add validation or cleanup for missing Recent folder paths.
+- [ ] Clean up successful Save temp artifacts after replacement commit: per-save `.manifests/` files and empty `save-backup/<stamp>/` directories.
 - [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
 - [ ] Add conservative orphan cleanup for `.storyboard-workbench/layers/<deletedShotId>/...` after Delete-to-Trash behavior is proven in real use.
 
@@ -66,6 +67,7 @@
 - [x] Post-extraction automated dogfood baseline recorded in `docs/dogfood-2026-05-30.md`; no new functional failures found in the smoke-covered paths.
 - [x] Real-folder `TEST2` dogfood found and fixed preview/import failures for TIFFs with large custom tag data by using `sharp` source reads with `unlimited: true`.
 - [x] Real-folder `TEST2` reopen dogfood found and fixed renderer overload from mounting all 302 `SketchPad`/Konva stages and 2060 layer PNG reads at once.
+- [x] Real-folder `TEST2` Save boundary dogfood passed after a dirty first-shot brush stroke: 302 root TIFFs renamed to default Save names, all project paths existed, and all shots remained `owned`.
 
 ## Out Of Scope For Current MVP
 
