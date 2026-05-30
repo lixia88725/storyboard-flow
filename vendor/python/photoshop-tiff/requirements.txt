@@ -1,0 +1,4 @@
+imagecodecs
+numpy
+psdtags
+tifffile

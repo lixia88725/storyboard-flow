@@ -1388,6 +1388,80 @@ try {
       `),
     "paint layer opacity fill update"
   );
+  await evaluate(`
+    (() => {
+      document.querySelector('[data-layer-id="${paintLayer.id}"] button[aria-label="Lock layer"]').click();
+      return true;
+    })()
+  `);
+  await waitFor(
+    async () => {
+      const project = await readProjectMetadata(smokeRoot);
+      return project.shots?.[0]?.layers?.find((item) => item.id === paintLayer.id)?.locked === true;
+    },
+    "paint layer locked metadata"
+  );
+  const lockedOpacityDrag = await evaluate(`
+    (() => {
+      const row = document.querySelector('[data-layer-id="${paintLayer.id}"]');
+      const rect = row.getBoundingClientRect();
+      return {
+        startX: rect.left + rect.width * 0.35,
+        startY: rect.top + rect.height / 2,
+        endX: rect.left + rect.width * 0.75,
+        endY: rect.top + rect.height / 2
+      };
+    })()
+  `);
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: lockedOpacityDrag.startX,
+    y: lockedOpacityDrag.startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: lockedOpacityDrag.endX,
+    y: lockedOpacityDrag.endY,
+    button: "left",
+    buttons: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: lockedOpacityDrag.endX,
+    y: lockedOpacityDrag.endY,
+    button: "left",
+    buttons: 0,
+    clickCount: 1
+  });
+  const layerLockChecks = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const layer = project.shots?.[0]?.layers?.find((item) => item.id === paintLayer.id);
+    const blendDisabled = await evaluate(`
+      document.querySelector('[data-layer-id="${paintLayer.id}"] button[aria-label="Layer blend mode: multiply"]')?.disabled === true
+    `);
+    const deleteDisabled = await evaluate(`
+      document.querySelector('button[aria-label="Delete current layer"]')?.disabled === true
+    `);
+    return layer?.locked === true && layer.opacity === 0.35 && layer.blendMode === "multiply" && blendDisabled && deleteDisabled
+      ? { opacityBlocked: true, blendDisabled, deleteDisabled }
+      : undefined;
+  }, "locked paint layer blocks edits");
+  await evaluate(`
+    (() => {
+      document.querySelector('[data-layer-id="${paintLayer.id}"] button[aria-label="Unlock layer"]').click();
+      return true;
+    })()
+  `);
+  await waitFor(
+    async () => {
+      const project = await readProjectMetadata(smokeRoot);
+      return project.shots?.[0]?.layers?.find((item) => item.id === paintLayer.id)?.locked === false;
+    },
+    "paint layer unlocked metadata"
+  );
   const layerRowHeightBeforeAdd = await evaluate(`
     document.querySelector('[data-layer-id="${paintLayer.id}"]')?.getBoundingClientRect().height
   `);
@@ -2182,6 +2256,7 @@ try {
         paintBlendDotUpdated,
         paintBlendModeAppliedToStage,
         paintOpacityFillUpdated,
+        layerLockChecks,
         addLayerUndoChecks,
         addLayerRedoChecks,
         paintLayerDragPreviewVisible,

@@ -16,13 +16,11 @@
 - [ ] Add PSD import layer parsing once the spike proves the library path.
 - [ ] Add PSD export round-trip smoke: import PSD, edit/add/reorder layers, Save/Export PSD, reopen in Photoshop and SWB.
 - [ ] Verify Photoshop PSD compatibility on Windows, not only macOS.
-- [ ] Replace the temporary `/private/tmp/psdtags-spike-deps` development dependency path with a packaged or installer-managed Python dependency story for Photoshop TIFF import/export.
-- [ ] Optimize layered TIFF Save performance; current implementation writes Photoshop TIFFs twice so it can compute SWB XMP/fingerprints without stripping layer data.
+- [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Add validation or cleanup for missing Recent folder paths.
 - [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
 - [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
-- [ ] Define and enforce bitmap layer lock behavior for drawing, erasing, clearing, deleting, renaming, opacity, blend mode, and reorder operations.
 
 ## P2
 
@@ -105,6 +103,10 @@
 - [x] Save and Import show thin progress feedback while layered TIFF work is running.
 - [x] Save writes layered TIFFs concurrently with a limited worker count.
 - [x] Import skips redundant full-source TIFF conversion when Photoshop layers were already extracted.
+- [x] Layered TIFF Save writes the final Photoshop TIFF once; the Python writer computes the composite fingerprint and embeds SWB XMP during that write.
+- [x] Photoshop TIFF Python deps resolve from env, packaged resources, or `vendor/python/photoshop-tiff` before falling back to the old spike directory.
+- [x] Added `npm run setup:photoshop-tiff-deps` for installing Photoshop TIFF Python deps into the local vendor directory.
+- [x] Enforced bitmap layer lock behavior for drawing, erasing, selection transforms, clearing, deleting, renaming, opacity, blend mode, and reorder operations while still allowing visibility toggles.
 - [x] Added bitmap Select tool V1 with lasso and rectangle selection, active-layer move, corner scale, transient marching-ants UI, and undo snapshots.
 - [x] Added geometry/unit coverage for bitmap selection bounds, hit testing, scaling, row drag intent, opacity mapping, row placement, and blend menu direction.
 - [x] Added live eraser bitmap preview during pointer movement.

@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import os
 import sys
@@ -94,6 +96,31 @@ def flatten_over_white(image: numpy.ndarray) -> numpy.ndarray:
     ).astype(numpy.uint8)
     opaque_alpha = numpy.full((image.shape[0], image.shape[1], 1), 255, dtype=numpy.uint8)
     return numpy.concatenate([rgb, opaque_alpha], axis=-1)
+
+
+def composite_fingerprint(image: numpy.ndarray) -> str:
+    contiguous = numpy.ascontiguousarray(image)
+    digest = hashlib.sha256()
+    digest.update(f"{contiguous.shape[1]}x{contiguous.shape[0]}:{contiguous.shape[2]}:".encode("utf8"))
+    digest.update(contiguous.tobytes())
+    return digest.hexdigest()
+
+
+def swb_metadata_xmp(metadata: dict[str, Any], fingerprint: str) -> str:
+    next_metadata = dict(metadata)
+    next_metadata["baseFingerprint"] = fingerprint
+    encoded = base64.b64encode(
+        json.dumps(next_metadata, separators=(",", ":")).encode("utf8")
+    ).decode("ascii")
+    return f"""<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:swb="https://storyboard-workbench.local/ns/1.0/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about="">
+      <swb:metadata>{encoded}</swb:metadata>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"""
 
 
 def macroman_safe_name(name: str) -> str:
@@ -202,8 +229,11 @@ def write_layered_tiff(manifest_path: Path) -> None:
         image_source_data.tifftag(maxworkers=4),
         (34675, 7, None, imagecodecs.cms_profile("srgb"), True),
     ]
-    if manifest.get("xmp"):
-        extra_tags.append((700, 1, None, str(manifest["xmp"]).encode("utf8"), True))
+    xmp = manifest.get("xmp")
+    if manifest.get("swbMetadata"):
+        xmp = swb_metadata_xmp(manifest["swbMetadata"], composite_fingerprint(composite))
+    if xmp:
+        extra_tags.append((700, 1, None, str(xmp).encode("utf8"), True))
 
     tifffile.imwrite(
         output,

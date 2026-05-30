@@ -802,7 +802,7 @@ button.primary {
 .layer-row {
   position: relative;
   display: grid;
-  grid-template-columns: 2.45em 3.45em minmax(0, 1fr) 2.1em;
+  grid-template-columns: 2.45em 3.45em minmax(0, 1fr) 1.7em 2.1em;
   gap: 0;
   align-items: center;
   height: 3.45em;
@@ -838,6 +838,10 @@ button.primary {
 
 .layer-row.is-active {
   box-shadow: inset 3px 0 0 #f05a28;
+}
+
+.layer-row.is-locked {
+  cursor: default;
 }
 
 .layer-row.is-active.is-dragging-layer {
@@ -884,6 +888,11 @@ button.primary {
   user-select: text;
 }
 
+.layer-row input[aria-label="Layer name"]:disabled {
+  opacity: 0.72;
+  cursor: default;
+}
+
 .layer-blend-dot {
   justify-self: center;
   width: 0.78em;
@@ -898,6 +907,28 @@ button.primary {
 
 button.layer-blend-dot {
   cursor: pointer;
+}
+
+button.layer-blend-dot:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.layer-lock {
+  justify-self: center;
+  width: 1.25em;
+  height: 1.25em;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 250, 240, 0.42);
+  border-radius: 2px;
+  background: rgba(255, 250, 240, 0.08);
+  color: #fffaf0;
+  box-shadow: none;
+  font-size: 0.68em;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .layer-blend-dot-normal {

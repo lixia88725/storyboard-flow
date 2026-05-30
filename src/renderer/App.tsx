@@ -1020,7 +1020,7 @@ export const App = () => {
     const shot = projectRef.current.shots.find((item) => item.id === shotId);
     const layer = shot ? bitmapLayersForShot(shot).find((item) => item.id === layerId) : undefined;
 
-    if (!window.storyboard || !folderPath || !layer) {
+    if (!window.storyboard || !folderPath || !layer || layer.locked) {
       return;
     }
 
@@ -1038,7 +1038,7 @@ export const App = () => {
     const shot = projectRef.current.shots.find((item) => item.id === shotId);
     const layer = shot ? bitmapLayersForShot(shot).find((item) => item.id === layerId) : undefined;
 
-    if (!window.storyboard || !folderPath || !layer) {
+    if (!window.storyboard || !folderPath || !layer || layer.locked) {
       return;
     }
 
@@ -2311,7 +2311,7 @@ const LayerPanel = ({
   };
 
   const beginLayerRowGesture = (event: PointerEvent<HTMLDivElement>, layer: BitmapLayer) => {
-    if (!shot || event.button !== 0 || interactiveLayerRowTarget(event.target)) {
+    if (!shot || layer.locked || event.button !== 0 || interactiveLayerRowTarget(event.target)) {
       return;
     }
 
@@ -2480,6 +2480,8 @@ const LayerPanel = ({
                       layer.id === activeLayerId ? "is-active" : ""
                     } ${
                       layer.visible ? "" : "is-hidden"
+                    } ${
+                      layer.locked ? "is-locked" : ""
                     }`}
                     style={{
                       "--layer-opacity-width": `${Math.round((layer.opacity ?? 1) * 100)}%`,
@@ -2518,6 +2520,7 @@ const LayerPanel = ({
                       aria-label="Layer name"
                       value={layer.name}
                       draggable={false}
+                      disabled={layer.locked}
                       onClick={(event) => event.stopPropagation()}
                       onChange={(event) =>
                         onUpdateLayer(shot.id, layer.id, { name: event.target.value })
@@ -2525,8 +2528,23 @@ const LayerPanel = ({
                     />
                     <button
                       type="button"
+                      className="layer-lock"
+                      draggable={false}
+                      title={layer.locked ? "Unlock layer" : "Lock layer"}
+                      aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onUpdateLayer(shot.id, layer.id, { locked: !layer.locked });
+                      }}
+                    >
+                      {layer.locked ? "L" : ""}
+                    </button>
+                    <button
+                      type="button"
                       className={`layer-blend-dot layer-blend-dot-${layerBlendMode}`}
                       draggable={false}
+                      disabled={layer.locked}
                       title={`Blend mode: ${blendModeLabel(layerBlendMode)}`}
                       aria-label={`Layer blend mode: ${layerBlendMode}`}
                       aria-expanded={openBlendMenu?.layerId === layer.id}
@@ -2613,7 +2631,7 @@ const LayerPanel = ({
                   onRemoveLayer(shot.id, activeLayer.id);
                 }
               }}
-              disabled={!shot || !activeLayer || layers.length <= 1}
+              disabled={!shot || !activeLayer || activeLayer.locked || layers.length <= 1}
               title="Delete current layer"
               aria-label="Delete current layer"
             >
@@ -3714,14 +3732,14 @@ const SketchPad = ({
     }
 
     if (tool === "select") {
-      if (!activeLayer) {
+      if (!activeLayer || activeLayer.locked) {
         return;
       }
       beginBitmapSelection(position);
       return;
     }
 
-    if (!activeLayer) {
+    if (!activeLayer || activeLayer.locked) {
       return;
     }
 

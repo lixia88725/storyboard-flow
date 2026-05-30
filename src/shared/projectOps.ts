@@ -779,12 +779,14 @@ export const updateBitmapLayer = (
       layer.id === layerId
         ? {
             ...layer,
-            name: patch.name ?? layer.name,
+            name: layer.locked ? layer.name : patch.name ?? layer.name,
             visible: patch.visible ?? layer.visible,
             locked: patch.locked ?? layer.locked,
             opacity:
-              patch.opacity === undefined ? layer.opacity : Math.min(1, Math.max(0, patch.opacity)),
-            blendMode: patch.blendMode ?? layer.blendMode
+              layer.locked || patch.opacity === undefined
+                ? layer.opacity
+                : Math.min(1, Math.max(0, patch.opacity)),
+            blendMode: layer.locked ? layer.blendMode : patch.blendMode ?? layer.blendMode
           }
         : layer
     ),

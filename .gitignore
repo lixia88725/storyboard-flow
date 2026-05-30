@@ -5,3 +5,5 @@ dist-electron/
 .DS_Store
 src/.DS_Store
 npm-debug.log*
+vendor/python/photoshop-tiff/*
+!vendor/python/photoshop-tiff/requirements.txt

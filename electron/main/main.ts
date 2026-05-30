@@ -32,10 +32,10 @@ import {
   writeSwbImportWorkingTiff,
   type ImportedPhotoshopTiffManifest
 } from "./photoshopTiffImport.js";
+import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
-const defaultPhotoshopTiffPythonDepsDir = "/private/tmp/psdtags-spike-deps";
 const blankShotPresets = {
   "16:9": { width: 1920, height: 1080 },
   "2.39:1": { width: 2581, height: 1080 },
@@ -311,8 +311,7 @@ const registerIpcHandlers = () => {
       scriptPath: path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-export.py"),
       env: {
         ...process.env,
-        SWB_PYTHON_DEPS_DIR:
-          process.env.SWB_PYTHON_DEPS_DIR ?? defaultPhotoshopTiffPythonDepsDir
+        SWB_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() })
       }
     });
   });
@@ -802,7 +801,7 @@ const importProjectToSwbFormat = async (
             manifestPath,
             {
               ...process.env,
-              SWB_PYTHON_DEPS_DIR: process.env.SWB_PYTHON_DEPS_DIR ?? defaultPhotoshopTiffPythonDepsDir
+              SWB_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() })
             }
           );
           const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as ImportedPhotoshopTiffManifest;
@@ -997,34 +996,22 @@ const writePhotoshopLayeredTiffsForSave = async (
   const scriptPath = path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-export.py");
   const env = {
     ...process.env,
-    SWB_PYTHON_DEPS_DIR: process.env.SWB_PYTHON_DEPS_DIR ?? defaultPhotoshopTiffPythonDepsDir
+    SWB_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() })
   };
-  const firstWrite = await writePhotoshopLayeredTiffsForInPlaceSave(project, folderPath, {
-    scriptPath,
-    saveStamp,
-    env
-  });
-  const xmpByShotId: Record<string, string> = {};
+  const swbMetadataByShotId: Record<string, SwbImageMetadata> = {};
 
   for (const shot of project.shots) {
-    const replacement = firstWrite.replacements.find((item) => item.toPath === shot.imagePath);
-    if (!replacement) {
-      continue;
-    }
-
-    const metadata = await sharp(replacement.fromPath).metadata();
-    const fingerprint = await pixelFingerprint(replacement.fromPath);
-    const canvasWidth = shot.swb?.canvasWidth || metadata.width || 0;
-    const canvasHeight = shot.swb?.canvasHeight || metadata.height || 0;
-    const swbMetadata = swbMetadataForShot(project.id, shot, canvasWidth, canvasHeight, fingerprint);
-    xmpByShotId[shot.id] = swbMetadataXmp(swbMetadata);
+    const layers = bitmapLayersForShot(shot);
+    const canvasWidth = shot.swb?.canvasWidth || layers[0]?.width || 0;
+    const canvasHeight = shot.swb?.canvasHeight || layers[0]?.height || 0;
+    swbMetadataByShotId[shot.id] = swbMetadataForShot(project.id, shot, canvasWidth, canvasHeight, "");
   }
 
   const finalWrite = await writePhotoshopLayeredTiffsForInPlaceSave(project, folderPath, {
     scriptPath,
     saveStamp,
     env,
-    xmpByShotId,
+    swbMetadataByShotId,
     onJobWritten: onShotWritten
   });
 

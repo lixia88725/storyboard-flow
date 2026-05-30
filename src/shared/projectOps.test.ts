@@ -368,6 +368,26 @@ describe("project operations", () => {
     expect(deleted.shots[0].activeLayerId).toBe("paint-1");
   });
 
+  it("keeps locked bitmap layer content-affecting metadata unchanged while allowing visibility and unlock", () => {
+    const project = makeBitmapProject();
+    const locked = updateBitmapLayer(project, "shot-a", "layer-image", { locked: true });
+    const updated = updateBitmapLayer(locked, "shot-a", "layer-image", {
+      name: "Renamed",
+      visible: false,
+      locked: false,
+      opacity: 0.25,
+      blendMode: "screen"
+    });
+
+    expect(bitmapLayersForShot(updated.shots[0]).find((layer) => layer.id === "layer-image")).toMatchObject({
+      name: "Image",
+      visible: false,
+      locked: false,
+      opacity: 1,
+      blendMode: "normal"
+    });
+  });
+
   it("does not delete the Image bitmap layer when it is the only layer", () => {
     const project = makeBitmapProject();
 

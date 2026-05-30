@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -301,6 +302,58 @@ describe("buildPhotoshopTiffExportPlan", () => {
     }
   });
 
+  it("injects per-shot SWB metadata into in-place Photoshop TIFF save manifests", async () => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-save-swb-metadata-"));
+
+    try {
+      const originalPath = path.join(folderPath, "a.tiff");
+      const fakeWriterPath = path.join(folderPath, "fake-writer.mjs");
+      const layerPath = path.join(folderPath, ".storyboard-workbench/layers/shot-a/layer-image.png");
+
+      await writeFile(originalPath, "original", "utf8");
+      await mkdir(path.dirname(layerPath), { recursive: true });
+      await writeFile(layerPath, "fake-png", "utf8");
+      await writeFile(
+        fakeWriterPath,
+        [
+          "import { readFile, writeFile } from 'node:fs/promises';",
+          "const manifest = JSON.parse(await readFile(process.argv[2], 'utf8'));",
+          "await writeFile(manifest.outputPath, JSON.stringify(manifest.swbMetadata ?? null), 'utf8');"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await writePhotoshopLayeredTiffsForInPlaceSave(
+        {
+          name: "Demo",
+          shots: [
+            {
+              id: "shot-a",
+              imagePath: originalPath,
+              fileName: "a.tiff",
+              order: 0,
+              swb: { canvasWidth: 320, canvasHeight: 180 },
+              layers: [layer({ bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png" })]
+            }
+          ]
+        },
+        folderPath,
+        {
+          scriptPath: fakeWriterPath,
+          pythonPath: process.execPath,
+          saveStamp: "save-123",
+          swbMetadataByShotId: { "shot-a": { shotId: "shot-a", baseFingerprint: "" } }
+        }
+      );
+
+      await expect(readFile(result.replacements[0].fromPath, "utf8")).resolves.toBe(
+        JSON.stringify({ shotId: "shot-a", baseFingerprint: "" })
+      );
+    } finally {
+      await rm(folderPath, { recursive: true, force: true });
+    }
+  });
+
   it("runs in-place Photoshop TIFF save jobs with limited concurrency", async () => {
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-save-concurrency-"));
 
@@ -440,6 +493,92 @@ describe("buildPhotoshopTiffExportPlan", () => {
 
       const metadata = await sharp(outputPath).metadata();
       expect(metadata.xmpAsString).toContain("<swb:metadata>eyJzaG90SWQiOiJzaG90LWEifQ==</swb:metadata>");
+      const { stdout } = await execFileAsync("python3", [
+        "-c",
+        "import sys; sys.path.insert(0, sys.argv[2]); from psdtags import TiffImageSourceData; print(len(TiffImageSourceData.fromtiff(sys.argv[1]).layers))",
+        outputPath,
+        depsDir
+      ]);
+      expect(stdout.trim()).toBe("1");
+    } finally {
+      await rm(folderPath, { recursive: true, force: true });
+    }
+  });
+
+  it("writes SWB metadata XMP with a computed composite fingerprint", async () => {
+    const depsDir = "/private/tmp/psdtags-spike-deps";
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-swb-metadata-"));
+
+    try {
+      const layerPath = path.join(folderPath, "layer.png");
+      const outputPath = path.join(folderPath, "out.tiff");
+      const manifestPath = path.join(folderPath, "manifest.json");
+      const scriptPath = path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py");
+      const expectedFingerprint = createHash("sha256")
+        .update("2x2:4:")
+        .update(Buffer.from([
+          255, 0, 0, 255,
+          255, 0, 0, 255,
+          255, 0, 0, 255,
+          255, 0, 0, 255
+        ]))
+        .digest("hex");
+
+      await sharp({
+        create: {
+          width: 2,
+          height: 2,
+          channels: 4,
+          background: { r: 255, g: 0, b: 0, alpha: 1 }
+        }
+      })
+        .png()
+        .toFile(layerPath);
+      await writeFile(
+        manifestPath,
+        `${JSON.stringify(
+          {
+            outputPath,
+            width: 2,
+            height: 2,
+            documentName: "swb-metadata-test",
+            swbMetadata: {
+              app: "Storyboard Workbench",
+              format: "swb-tiff",
+              version: 1,
+              shotId: "shot-a",
+              canvasWidth: 2,
+              canvasHeight: 2,
+              baseFingerprint: "",
+              updatedAt: "2026-05-30T00:00:00.000Z",
+              layers: []
+            },
+            layers: [
+              {
+                name: "Layer 1",
+                path: layerPath,
+                opacity: 1,
+                blendMode: "normal",
+                visible: true,
+                background: true
+              }
+            ]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      await execFileAsync("python3", [scriptPath, manifestPath], {
+        env: { ...process.env, SWB_PYTHON_DEPS_DIR: depsDir }
+      });
+
+      const metadata = await sharp(outputPath).metadata();
+      const match = /<swb:metadata>([^<]+)<\/swb:metadata>/u.exec(metadata.xmpAsString ?? "");
+      expect(match).toBeTruthy();
+      const parsed = JSON.parse(Buffer.from(match?.[1] ?? "", "base64").toString("utf8"));
+      expect(parsed.baseFingerprint).toBe(expectedFingerprint);
       const { stdout } = await execFileAsync("python3", [
         "-c",
         "import sys; sys.path.insert(0, sys.argv[2]); from psdtags import TiffImageSourceData; print(len(TiffImageSourceData.fromtiff(sys.argv[1]).layers))",

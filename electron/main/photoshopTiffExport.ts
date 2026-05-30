@@ -47,6 +47,7 @@ export type PhotoshopTiffExportManifest = {
   height: number;
   documentName: string;
   xmp?: string;
+  swbMetadata?: unknown;
   layers: PhotoshopTiffExportLayer[];
 };
 
@@ -171,6 +172,7 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
     pythonPath?: string;
     env?: NodeJS.ProcessEnv;
     xmpByShotId?: Record<string, string>;
+    swbMetadataByShotId?: Record<string, unknown>;
     onJobWritten?: () => void;
     concurrency?: number;
   }
@@ -181,7 +183,8 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
   await runWithConcurrency(plan.jobs, options.concurrency ?? defaultInPlaceSaveConcurrency, async (job) => {
     const manifestPath = path.join(plan.manifestFolderPath, `${job.shotId}.json`);
     const xmp = options.xmpByShotId?.[job.shotId];
-    const manifest = xmp ? { ...job.manifest, xmp } : job.manifest;
+    const swbMetadata = options.swbMetadataByShotId?.[job.shotId];
+    const manifest = { ...job.manifest, ...(xmp ? { xmp } : {}), ...(swbMetadata ? { swbMetadata } : {}) };
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     await runPythonExporter(options.pythonPath ?? "python3", options.scriptPath, manifestPath, options.env);
     options.onJobWritten?.();

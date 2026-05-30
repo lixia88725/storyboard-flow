@@ -48,7 +48,7 @@ npm run dev
 - 新增图层进入 undo 时会记录新增 layer PNG 的空快照；如果 autosave 已创建内部 PNG，Undo 会删除该 orphan asset，Redo 会恢复它。
 - Save 时由 Electron 写入工作 TIFF：单层内容走 sharp 单层 TIFF；多 bitmap layer shot 走 Photoshop-readable layered TIFF，包含图层顺序、名称、显隐、opacity 和 blend mode。
 
-图层面板是每张 storyboard 右侧的 click-toggle 抽屉，支持新增、删除、重命名、显隐、opacity、blend mode 和拖动排序。图层行纵向拖动用于排序，横向拖动用于调整 opacity；顶部独立 opacity slider 已移除。隐藏图层不会成为 active 绘制目标。`Image` 层在 UI 中可像普通图层一样选中、绘制、擦除、重排；如果当前 shot 有多个图层，选中 `Image` 后点击 `Delete current layer` 会移除 Image layer 和内部 PNG asset。每个 shot 至少保留一个图层，所以只剩一个 `Image` 层时删除按钮会禁用。
+图层面板是每张 storyboard 右侧的 click-toggle 抽屉，支持新增、删除、重命名、显隐、lock、opacity、blend mode 和拖动排序。图层行纵向拖动用于排序，横向拖动用于调整 opacity；顶部独立 opacity slider 已移除。隐藏图层不会成为 active 绘制目标。锁定图层仍可选择和显隐，但不能绘制、擦除、选区变换、清空、删除、重命名、调整 opacity / blend mode 或排序。`Image` 层在 UI 中可像普通图层一样选中、绘制、擦除、重排；如果当前 shot 有多个图层，选中 `Image` 后点击 `Delete current layer` 会移除 Image layer 和内部 PNG asset。每个 shot 至少保留一个图层，所以只剩一个 `Image` 层时删除按钮会禁用。
 
 工具栏顶部的齿轮按钮可配置本机快捷键，覆盖 Brush、Eraser、Select、Clear layer、Save、Add Shot、Onion Skin、左右切帧、Undo 和 Redo。快捷键设置写入 Electron `userData`，不是项目文件的一部分。`Escape` 默认用于 Clear layer；当菜单打开时，`Escape` 优先关闭菜单。
 
@@ -60,7 +60,7 @@ npm run dev
 
 现有 `Import` 操作也会检测 Photoshop layered TIFF，并把 raster Photoshop layers 转换成 SWB-owned bitmap layers。源 TIFF 会移动到 `Archive/YYYY-MM-DD-HHMMSS/`，SWB 继续使用 `.storyboard-workbench/layers/*.png` 和 `storyboard.project.json` 作为内部工作数据。
 
-当前 Photoshop TIFF import/export 路径依赖 Python `psdtags + tifffile + imagecodecs + numpy`。开发环境默认使用 spike 依赖目录 `/private/tmp/psdtags-spike-deps`，也可以通过 `SWB_PYTHON_DEPS_DIR` 指向其他依赖目录。`npm run smoke:bitmap` 会导出一组 Photoshop TIFF，用 `psdtags` 读回 layer names，并把其中一个导出的 layered TIFF 作为外部文件重新 Import，验证导入后的 SWB shot 有匹配数量的 bitmap layers、layer PNG assets 和 `swb.sourceKind: "photoshop-layered-tiff"`。
+当前 Photoshop TIFF import/export 路径依赖 Python `psdtags + tifffile + imagecodecs + numpy`。依赖目录解析顺序是：`SWB_PYTHON_DEPS_DIR`、打包资源目录 `python-deps/photoshop-tiff`、开发目录 `vendor/python/photoshop-tiff`，最后才 fallback 到旧 spike 目录 `/private/tmp/psdtags-spike-deps`。开发环境可运行 `npm run setup:photoshop-tiff-deps` 安装到 `vendor/python/photoshop-tiff`。`npm run smoke:bitmap` 会导出一组 Photoshop TIFF，用 `psdtags` 读回 layer names，并把其中一个导出的 layered TIFF 作为外部文件重新 Import，验证导入后的 SWB shot 有匹配数量的 bitmap layers、layer PNG assets 和 `swb.sourceKind: "photoshop-layered-tiff"`。
 
 ## SWB Format
 
