@@ -16,7 +16,7 @@
 - [ ] Add PSD import layer parsing once the spike proves the library path.
 - [ ] Add PSD export round-trip smoke: import PSD, edit/add/reorder layers, Save/Export PSD, reopen in Photoshop and SWB.
 - [ ] Verify Photoshop PSD compatibility on Windows, not only macOS.
-- [ ] Replace the temporary `/private/tmp/psdtags-spike-deps` development dependency path with a packaged or installer-managed Python dependency story for Photoshop TIFF export.
+- [ ] Replace the temporary `/private/tmp/psdtags-spike-deps` development dependency path with a packaged or installer-managed Python dependency story for Photoshop TIFF import/export.
 - [ ] Decide whether Photoshop TIFF export should preserve hidden layer visibility exactly, or export only visible layers in a future compatibility pass.
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Add validation or cleanup for missing Recent folder paths.
@@ -94,6 +94,8 @@
 - [x] Added explicit SWB -> Photoshop layered TIFF export for the whole current scene, with one TIFF per shot.
 - [x] Electron smoke verifies Photoshop TIFF export through the UI and reads back layer names with `psdtags`.
 - [x] Photoshop 2026 verification confirmed an exported SWB layered TIFF opens with editable layers.
+- [x] Added Photoshop layered TIFF import through the existing Import flow; source TIFFs are archived and raster Photoshop layers become SWB bitmap layer PNG assets.
+- [x] Electron smoke verifies SWB export -> Photoshop layered TIFF -> SWB import round trip, including matching layer count, layer PNG assets, `sourceKind`, and archived source TIFF.
 - [x] Added bitmap Select tool V1 with lasso and rectangle selection, active-layer move, corner scale, transient marching-ants UI, and undo snapshots.
 - [x] Added geometry/unit coverage for bitmap selection bounds, hit testing, scaling, row drag intent, opacity mapping, row placement, and blend menu direction.
 - [x] Added live eraser bitmap preview during pointer movement.

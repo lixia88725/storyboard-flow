@@ -52,21 +52,23 @@ npm run dev
 
 工具栏顶部的齿轮按钮可配置本机快捷键，覆盖 Brush、Eraser、Select、Clear layer、Save、Add Shot、Onion Skin、左右切帧、Undo 和 Redo。快捷键设置写入 Electron `userData`，不是项目文件的一部分。`Escape` 默认用于 Clear layer；当菜单打开时，`Escape` 优先关闭菜单。
 
-`npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、拖动排序、图层缩略图、Select 移动/缩放、Add Shot、Save safety、快捷键持久化、混合画幅动画模式、Onion Skin 和重开恢复；它也覆盖旧 stroke 项目的 bitmap migration，并检查内部 layer PNG 没有 metadata 未引用的 orphan asset。
+`npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、拖动排序、图层缩略图、Select 移动/缩放、Add Shot、Save safety、快捷键持久化、混合画幅动画模式、Onion Skin 和重开恢复；它也覆盖旧 stroke 项目的 bitmap migration、Photoshop layered TIFF export/import round trip，并检查内部 layer PNG 没有 metadata 未引用的 orphan asset。
 
 ## Photoshop Layered TIFF Export
 
 顶部工具栏的 `Export TIFF` 会把当前场景中的所有 shot 导出为 Photoshop-readable layered TIFF。每个 shot 输出一个 `.tiff`，位置为当前场景文件夹下的 `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`。该导出使用 SWB 内部 bitmap layer PNG 和 JSON metadata 生成 Photoshop `ImageSourceData` tag `37724`，不改变真实 storyboard 图片文件名，也不替代 `Save`。
 
-当前导出路径依赖 Python `psdtags + tifffile + imagecodecs + numpy`。开发环境默认使用 spike 依赖目录 `/private/tmp/psdtags-spike-deps`，也可以通过 `SWB_PYTHON_DEPS_DIR` 指向其他依赖目录。`npm run smoke:bitmap` 会导出一组 Photoshop TIFF，并用 `psdtags` 读回 layer names 验证它不是普通扁平 TIFF。
+现有 `Import` 操作也会检测 Photoshop layered TIFF，并把 raster Photoshop layers 转换成 SWB-owned bitmap layers。源 TIFF 会移动到 `Archive/YYYY-MM-DD-HHMMSS/`，SWB 继续使用 `.storyboard-workbench/layers/*.png` 和 `storyboard.project.json` 作为内部工作数据。
+
+当前 Photoshop TIFF import/export 路径依赖 Python `psdtags + tifffile + imagecodecs + numpy`。开发环境默认使用 spike 依赖目录 `/private/tmp/psdtags-spike-deps`，也可以通过 `SWB_PYTHON_DEPS_DIR` 指向其他依赖目录。`npm run smoke:bitmap` 会导出一组 Photoshop TIFF，用 `psdtags` 读回 layer names，并把其中一个导出的 layered TIFF 作为外部文件重新 Import，验证导入后的 SWB shot 有匹配数量的 bitmap layers、layer PNG assets 和 `swb.sourceKind: "photoshop-layered-tiff"`。
 
 ## SWB Format
 
 非 SWB 图片可导入为 SWB-owned TIFF。导入会把原文件移动到 `Archive/YYYY-MM-DD-HHMMSS/`，工作 TIFF 由 Storyboard Workbench 管理。
 
-`.storyboard-workbench/storyboard.project.json` 是主数据；TIFF XMP metadata 只是便携快照。兼容的外部 TIFF 像素编辑可以被接受为新的 base，但 V1 不承诺 Photoshop 图层 round-trip。
+`.storyboard-workbench/storyboard.project.json` 是主数据；TIFF XMP metadata 只是便携快照。兼容的外部 TIFF 像素编辑可以被接受为新的 base；Photoshop layered TIFF 作为显式 import/export 交换格式支持，不是内部 Save 格式。
 
-`docs/photoshop-layered-tiff-spike.md` 记录了最初的格式 spike：Python `psdtags + tifffile` 可以生成 Photoshop 2026 识别为多图层的 Photoshop-style layered TIFF；sharp/libvips 标准 multi-page TIFF 不能被 Photoshop 当作图层打开。当前产品化范围是显式 export，不是 Photoshop import 或 Save 替换。
+`docs/photoshop-layered-tiff-spike.md` 记录了最初的格式 spike：Python `psdtags + tifffile` 可以生成 Photoshop 2026 识别为多图层的 Photoshop-style layered TIFF；sharp/libvips 标准 multi-page TIFF 不能被 Photoshop 当作图层打开。当前产品化范围是显式 import/export，不是 Save 替换。
 
 下一阶段讨论方向是 PSD-first Photoshop interoperability：先验证 PSD raster layer import/export，再决定是否作为显式 Photoshop 交换工作流产品化。当前 PSD 支持尚未实现。
 
