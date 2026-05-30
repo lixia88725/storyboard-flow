@@ -1417,6 +1417,126 @@ try {
       `),
     "layer rows keep fixed height after adding layer"
   );
+  const layerListWheelPreservedZoom = await evaluate(`
+    (() => {
+      const zoom = document.querySelector('input[type="range"]');
+      const list = document.querySelector(".layer-list");
+      const before = zoom.value;
+      list.dispatchEvent(new WheelEvent("wheel", {
+        bubbles: true,
+        cancelable: true,
+        deltaY: 120
+      }));
+      return zoom.value === before;
+    })()
+  `);
+  if (!layerListWheelPreservedZoom) {
+    throw new Error("Layer list wheel event changed storyboard zoom");
+  }
+
+  const layerVisibilityHideDrag = await evaluate(`
+    (() => {
+      const first = document
+        .querySelector('[data-layer-id="${secondPaintLayer.id}"] .layer-select')
+        .getBoundingClientRect();
+      const second = document
+        .querySelector('[data-layer-id="${paintLayer.id}"] .layer-select')
+        .getBoundingClientRect();
+      return {
+        startX: first.left + first.width / 2,
+        startY: first.top + first.height / 2,
+        endX: second.left + second.width / 2,
+        endY: second.top + second.height / 2
+      };
+    })()
+  `);
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: layerVisibilityHideDrag.startX,
+    y: layerVisibilityHideDrag.startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: layerVisibilityHideDrag.endX,
+    y: layerVisibilityHideDrag.endY,
+    button: "left",
+    buttons: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: layerVisibilityHideDrag.endX,
+    y: layerVisibilityHideDrag.endY,
+    button: "left",
+    buttons: 0,
+    clickCount: 1
+  });
+  const hiddenByVisibilityDrag = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const hiddenPaintLayer = project.shots?.[0]?.layers?.find((layer) => layer.id === paintLayer.id);
+    const hiddenSecondLayer = project.shots?.[0]?.layers?.find((layer) => layer.id === secondPaintLayer.id);
+    if (hiddenPaintLayer?.visible === false && hiddenSecondLayer?.visible === false) {
+      return true;
+    }
+    throw new Error(
+      JSON.stringify({
+        paintLayerVisible: hiddenPaintLayer?.visible,
+        secondPaintLayerVisible: hiddenSecondLayer?.visible
+      })
+    );
+  }, "layer visibility drag hides crossed layer buttons");
+
+  const layerVisibilityShowDrag = await evaluate(`
+    (() => {
+      const first = document
+        .querySelector('[data-layer-id="${paintLayer.id}"] .layer-select')
+        .getBoundingClientRect();
+      const second = document
+        .querySelector('[data-layer-id="${secondPaintLayer.id}"] .layer-select')
+        .getBoundingClientRect();
+      return {
+        startX: first.left + first.width / 2,
+        startY: first.top + first.height / 2,
+        endX: second.left + second.width / 2,
+        endY: second.top + second.height / 2
+      };
+    })()
+  `);
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: layerVisibilityShowDrag.startX,
+    y: layerVisibilityShowDrag.startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: layerVisibilityShowDrag.endX,
+    y: layerVisibilityShowDrag.endY,
+    button: "left",
+    buttons: 1
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: layerVisibilityShowDrag.endX,
+    y: layerVisibilityShowDrag.endY,
+    button: "left",
+    buttons: 0,
+    clickCount: 1
+  });
+  const shownByVisibilityDrag = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const shownPaintLayer = project.shots?.[0]?.layers?.find((layer) => layer.id === paintLayer.id);
+    const shownSecondLayer = project.shots?.[0]?.layers?.find((layer) => layer.id === secondPaintLayer.id);
+    return shownPaintLayer?.visible === true && shownSecondLayer?.visible === true ? true : undefined;
+  }, "layer visibility drag shows crossed layer buttons");
+  const layerVisibilityDragChecks = {
+    hiddenByVisibilityDrag,
+    shownByVisibilityDrag
+  };
 
   const paintOrderBeforeDrag = (await readProjectMetadata(smokeRoot)).shots[0].layers.map((layer) => layer.id);
 
@@ -1999,6 +2119,8 @@ try {
         layerToggleClickClosedPanel,
         layerToggleBottomStableAfterClose,
         layerRowsKeepFixedHeight,
+        layerListWheelPreservedZoom,
+        layerVisibilityDragChecks,
         paintOrderBeforeDrag,
         paintOrderAfterDrag,
         paintOrderAfterBottomBlankDrag,

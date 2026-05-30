@@ -244,7 +244,7 @@ const shouldIgnoreWorkbenchWheel = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   Boolean(
     target.closest(
-      "input, textarea, select, .recent-menu, .add-shot-menu, .save-menu, .sketch-settings-menu, .shortcut-menu"
+      "input, textarea, select, .recent-menu, .add-shot-menu, .save-menu, .sketch-settings-menu, .shortcut-menu, .layer-panel"
     )
   );
 
@@ -2377,6 +2377,61 @@ const LayerPanel = ({
     window.addEventListener("pointercancel", handlePointerUp, { once: true });
   };
 
+  const beginLayerVisibilityDrag = (event: MouseEvent<HTMLButtonElement>, layer: BitmapLayer) => {
+    if (!shot || event.button > 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const targetVisible = !layer.visible;
+    const gesture = {
+      targetVisible,
+      visitedLayerIds: new Set()
+    };
+
+    const applyToLayer = (layerId: string) => {
+      if (!shot || gesture.visitedLayerIds.has(layerId)) {
+        return;
+      }
+      const targetLayer = displayLayers.find((item) => item.id === layerId);
+      if (!targetLayer || targetLayer.visible === gesture.targetVisible) {
+        gesture.visitedLayerIds.add(layerId);
+        return;
+      }
+      gesture.visitedLayerIds.add(layerId);
+      onUpdateLayer(shot.id, layerId, { visible: gesture.targetVisible });
+    };
+
+    const layerIdFromPoint = (clientX: number, clientY: number) => {
+      const button = document
+        .elementsFromPoint(clientX, clientY)
+        .find((element): element is HTMLElement =>
+          element instanceof HTMLElement && Boolean(element.closest(".layer-select"))
+        )
+        ?.closest<HTMLElement>(".layer-select");
+      return button?.dataset.layerId;
+    };
+
+    const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
+      moveEvent.preventDefault();
+      const layerId = layerIdFromPoint(moveEvent.clientX, moveEvent.clientY);
+      if (layerId) {
+        applyToLayer(layerId);
+      }
+    };
+
+    const handleMouseUp = (upEvent: globalThis.MouseEvent) => {
+      upEvent.preventDefault();
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    applyToLayer(layer.id);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp, { once: true });
+  };
+
   return (
     <div
       className={`shot-layer-popover ${isRendered ? (isOpen ? "is-open" : "is-closing") : ""}`}
@@ -2420,13 +2475,16 @@ const LayerPanel = ({
                     <button
                       type="button"
                       className="layer-select"
+                      data-layer-id={layer.id}
                       draggable={false}
                       title={layer.visible ? "Hide layer" : "Show layer"}
                       aria-label={layer.visible ? "Hide layer" : "Show layer"}
-                      onPointerDown={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => beginLayerVisibilityDrag(event, layer)}
                       onClick={(event) => {
                         event.stopPropagation();
-                        onUpdateLayer(shot.id, layer.id, { visible: !layer.visible });
+                        if (event.detail === 0) {
+                          onUpdateLayer(shot.id, layer.id, { visible: !layer.visible });
+                        }
                       }}
                     >
                       <span className={layer.visible ? "layer-eye is-on" : "layer-eye"} />
