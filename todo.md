@@ -20,7 +20,6 @@
 - [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Add validation or cleanup for missing Recent folder paths.
-- [ ] Clean up successful Save temp artifacts after replacement commit: per-save `.manifests/` files and empty `save-backup/<stamp>/` directories.
 - [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
 - [ ] Add conservative orphan cleanup for `.storyboard-workbench/layers/<deletedShotId>/...` after Delete-to-Trash behavior is proven in real use.
 
@@ -68,6 +67,7 @@
 - [x] Real-folder `TEST2` dogfood found and fixed preview/import failures for TIFFs with large custom tag data by using `sharp` source reads with `unlimited: true`.
 - [x] Real-folder `TEST2` reopen dogfood found and fixed renderer overload from mounting all 302 `SketchPad`/Konva stages and 2060 layer PNG reads at once.
 - [x] Real-folder `TEST2` Save boundary dogfood passed after a dirty first-shot brush stroke: 302 root TIFFs renamed to default Save names, all project paths existed, and all shots remained `owned`.
+- [x] Successful Save now removes its `save-tmp/<stamp>` manifests and `save-backup/<stamp>` directory after replacement commit, while rollback still preserves artifacts.
 
 ## Out Of Scope For Current MVP
 

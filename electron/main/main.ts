@@ -8,7 +8,7 @@ import {
   shell,
   type IpcMainInvokeEvent
 } from "electron";
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -32,6 +32,7 @@ import {
   exportPhotoshopLayeredTiffs,
   writePhotoshopLayeredTiffsForInPlaceSave
 } from "./photoshopTiffExport.js";
+import { withSuccessfulSaveArtifactCleanup } from "./saveArtifacts.js";
 import {
   buildPhotoshopTiffImportAssetPlan,
   ensureLayerMoveDestinationsAvailable,
@@ -1343,20 +1344,21 @@ const writePhotoshopLayeredTiffsForSave = async (
     onJobWritten: onShotWritten
   });
 
-  return applyFileReplacements(
+  const backupFolderPath = path.join(folderPath, ".storyboard-workbench", "save-backup", saveStamp);
+  const applied = await applyFileReplacements(
     finalWrite.replacements.map((replacement) => ({
       tempPath: replacement.fromPath,
       targetPath: replacement.toPath,
-      backupPath: path.join(
-        folderPath,
-        ".storyboard-workbench",
-        "save-backup",
-        saveStamp,
-        path.basename(replacement.toPath)
-      )
+      backupPath: path.join(backupFolderPath, path.basename(replacement.toPath))
     })),
     { mkdir: ensureDirectory, rename, unlink }
   );
+
+  return withSuccessfulSaveArtifactCleanup(applied, {
+    tempFolderPath: finalWrite.tempFolderPath,
+    backupFolderPath,
+    remove: rm
+  });
 };
 
 const createProjectPreviewsForShots = async (

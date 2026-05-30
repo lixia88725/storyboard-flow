@@ -124,7 +124,7 @@
 - First shot LayerPanel opened with 7 imported Photoshop raster layers and preserved Chinese layer names.
 - Reopen responsiveness issue was fixed by deferring heavy `SketchPad`/LayerPanel rendering for offscreen cards. TEST2 reopened to 302 cards without hanging; initial viewport mounted 14 Konva stages, and after scrolling to bottom only 15 stages were mounted.
 - Save boundary was dogfooded after a small dirty brush stroke on the first shot. Save used default naming fields, renamed all 302 root TIFFs to `TEST2_scene_stb_artist_v001_####.tiff`, kept all 302 project paths valid, and preserved `owned` status on every shot.
-- Follow-up finding: successful Save leaves a per-save manifest directory and an empty `save-backup/<stamp>/` directory behind. This is a cleanup/maintenance candidate, not a data-loss issue observed in the dogfood pass.
+- Follow-up finding fixed: successful Save now removes its per-save manifest directory and `save-backup/<stamp>/` directory after replacement commit. Rollback still preserves artifacts for recovery/diagnostics.
 
 ## Verification Run For Handoff
 
