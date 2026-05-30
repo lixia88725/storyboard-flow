@@ -2139,6 +2139,7 @@ export const App = () => {
                   project={project}
                   folderPath={folderPath}
                   isSelected={selectedShotIds.length > 1 && selectedShotIds.includes(shot.id)}
+                  isPrimarySelected={shot.id === primarySelectedShotId}
                   isAnimationFocused={isAnimationMode && shot.id === primarySelectedShotId}
                   activeSketchTool={activeSketchTool}
                   selectionMode={selectionMode}
@@ -2519,6 +2520,7 @@ type ShotCardProps = {
   project: Project;
   folderPath?: string;
   isSelected: boolean;
+  isPrimarySelected: boolean;
   isAnimationFocused: boolean;
   activeSketchTool: SketchTool;
   selectionMode: BitmapSelectionMode;
@@ -2569,6 +2571,7 @@ const ShotCard = ({
   project,
   folderPath,
   isSelected,
+  isPrimarySelected,
   isAnimationFocused,
   activeSketchTool,
   selectionMode,
@@ -2599,6 +2602,8 @@ const ShotCard = ({
   onSketchStroke,
   onSelectionTransform
 }: ShotCardProps) => {
+  const cardRef = useRef<HTMLElement | null>(null);
+  const [isNearViewport, setIsNearViewport] = useState(index < 12);
   const [isLayerPanelRendered, setIsLayerPanelRendered] = useState(isLayerPanelOpen);
   const sortable = useSortable({
     id: shot.id,
@@ -2610,10 +2615,42 @@ const ShotCard = ({
   });
   const dialogues = dialoguesForShot(project, shot.id);
   const isLayerPanelVisible = isLayerPanelOpen || isLayerPanelRendered;
+  const shouldRenderMedia = isNearViewport || isPrimarySelected || isAnimationFocused || isLayerPanelVisible;
   const style = {
     transform: CSS.Transform.toString(sortable.transform),
     transition: sortable.transition
   };
+  const setCardNodeRef = useCallback(
+    (element: HTMLElement | null) => {
+      cardRef.current = element;
+      sortable.setNodeRef(element);
+    },
+    [sortable.setNodeRef]
+  );
+
+  useEffect(() => {
+    if (index < 12) {
+      setIsNearViewport(true);
+    }
+  }, [index]);
+
+  useEffect(() => {
+    const element = cardRef.current;
+    if (!element || typeof IntersectionObserver === "undefined") {
+      setIsNearViewport(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsNearViewport(entry.isIntersecting);
+      },
+      { rootMargin: "1200px 0px" }
+    );
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (isLayerPanelOpen) {
@@ -2627,7 +2664,7 @@ const ShotCard = ({
 
   return (
     <article
-      ref={sortable.setNodeRef}
+      ref={setCardNodeRef}
       className={`shot-card ${sortable.isDragging ? "is-dragging" : ""} ${
         isSelected ? "is-selected" : ""
       } ${isAnimationFocused ? "is-animation-focus" : ""} ${
@@ -2651,36 +2688,42 @@ const ShotCard = ({
       <div className="shot-flip-shell">
         <div className="shot-face shot-face-front" aria-hidden={cardFace === "script"}>
           <div className={`shot-image-shell ${isLayerPanelVisible ? "has-layer-panel" : ""}`}>
-            <SketchPad
-              shot={shot}
-              folderPath={folderPath}
-              tool={activeSketchTool}
-              selectionMode={selectionMode}
-              brushColor={brushColor}
-              brushOpacity={brushOpacity}
-              brushSize={brushSize}
-              eraserOpacity={eraserOpacity}
-              eraserSize={eraserSize}
-              onionSkinPreviousShot={onionSkinPreviousShot}
-              onionSkinNextShot={onionSkinNextShot}
-              onStroke={onSketchStroke}
-              onSelectionTransform={onSelectionTransform}
-              onFocusShot={onFocusShot}
-            />
-            <LayerPanel
-              shot={shot}
-              folderPath={folderPath}
-              thumbnailRevision={thumbnailRevision}
-              isOpen={isLayerPanelOpen}
-              isRendered={isLayerPanelVisible}
-              onToggle={onToggleLayerPanel}
-              onAddLayer={onAddLayer}
-              onRemoveLayer={onRemoveLayer}
-              onClearLayer={onClearLayer}
-              onSelectLayer={onSelectLayer}
-              onUpdateLayer={onUpdateLayer}
-              onMoveLayer={onMoveLayer}
-            />
+            {shouldRenderMedia ? (
+              <>
+                <SketchPad
+                  shot={shot}
+                  folderPath={folderPath}
+                  tool={activeSketchTool}
+                  selectionMode={selectionMode}
+                  brushColor={brushColor}
+                  brushOpacity={brushOpacity}
+                  brushSize={brushSize}
+                  eraserOpacity={eraserOpacity}
+                  eraserSize={eraserSize}
+                  onionSkinPreviousShot={onionSkinPreviousShot}
+                  onionSkinNextShot={onionSkinNextShot}
+                  onStroke={onSketchStroke}
+                  onSelectionTransform={onSelectionTransform}
+                  onFocusShot={onFocusShot}
+                />
+                <LayerPanel
+                  shot={shot}
+                  folderPath={folderPath}
+                  thumbnailRevision={thumbnailRevision}
+                  isOpen={isLayerPanelOpen}
+                  isRendered={isLayerPanelVisible}
+                  onToggle={onToggleLayerPanel}
+                  onAddLayer={onAddLayer}
+                  onRemoveLayer={onRemoveLayer}
+                  onClearLayer={onClearLayer}
+                  onSelectLayer={onSelectLayer}
+                  onUpdateLayer={onUpdateLayer}
+                  onMoveLayer={onMoveLayer}
+                />
+              </>
+            ) : (
+              <DeferredShotMedia shot={shot} />
+            )}
           </div>
 
           <div
@@ -2719,6 +2762,19 @@ const ShotCard = ({
         </div>
       </div>
     </article>
+  );
+};
+
+const DeferredShotMedia = ({ shot }: { shot: Shot }) => {
+  const canvasSize = canvasSizeForShot(shot);
+
+  return (
+    <div className="sketch-panel" aria-hidden="true">
+      <div
+        className="image-stage"
+        style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}
+      />
+    </div>
   );
 };
 

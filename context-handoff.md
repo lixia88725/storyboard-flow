@@ -122,7 +122,8 @@
 - After the fix, `TEST2` opened, generated 302/302 previews, imported 302/302 shots as `owned`, archived 302 original TIFFs, and created 2060 internal layer PNGs.
 - Script card edit wrote `TEST2 dogfood script line` to the first shot and `storyboard-script.md`.
 - First shot LayerPanel opened with 7 imported Photoshop raster layers and preserved Chinese layer names.
-- Remaining open issue: after importing this 302-shot / 2060-layer project, restarting and reopening `TEST2` made CDP/UI automation stop responding before Save could be completed. Investigate large-project render/reopen responsiveness before retesting Save speed.
+- Reopen responsiveness issue was fixed by deferring heavy `SketchPad`/LayerPanel rendering for offscreen cards. TEST2 reopened to 302 cards without hanging; initial viewport mounted 14 Konva stages, and after scrolling to bottom only 15 stages were mounted.
+- Save was not re-run in this pass because TEST2 had 0 dirty shots and 0 pending deletes; Save speed remains a separate real-folder dogfood item.
 
 ## Verification Run For Handoff
 
@@ -222,7 +223,6 @@ Recommended next steps:
 
 ## Known Remaining Work
 
-- Large imported project reopen/render responsiveness is now the top real-dogfood issue. `TEST2` is the current repro: 302 owned shots, 302 previews, 2060 layer PNGs.
 - Real dogfood is still needed for Save speed, Layer Lock feel, script card editing, Delete-to-Trash recovery, external image Import warning, bitmap Select high-resolution scaling, mixed-aspect animation, multi-select dragging, and double-click dialogue editing.
 - Delete currently leaves internal `.storyboard-workbench/layers/<shotId>/...` assets behind; orphan cleanup should be a separate conservative task.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
