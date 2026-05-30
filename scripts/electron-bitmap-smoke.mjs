@@ -1721,6 +1721,13 @@ try {
       return true;
     })()
   `);
+  const importProgressShown = await waitFor(
+    () =>
+      evaluate(`
+        document.querySelector(".workspace-task-progress")?.textContent.includes("Importing Photoshop layers")
+      `),
+    "Import progress indicator"
+  );
   const photoshopImportedProject = await waitFor(async () => {
     const project = await readProjectMetadata(photoshopImportRoot);
     const shot = project.shots?.[0];
@@ -1851,6 +1858,13 @@ try {
       return true;
     })()
   `);
+  const saveProgressShown = await waitFor(
+    () =>
+      evaluate(`
+        document.querySelector(".workspace-task-progress")?.textContent.includes("Saving layered TIFFs")
+      `),
+    "Save progress indicator"
+  );
 
   await waitFor(async () => {
     const project = await readProjectMetadata(smokeRoot);
@@ -2175,6 +2189,7 @@ try {
         paintOrderAfterBottomBlankDrag,
         photoshopExportFiles,
         photoshopLayerNames,
+        importProgressShown,
         photoshopRoundTripImport: {
           folderPath: photoshopImportRoot,
           sourceArchivedPath: photoshopImportSourceArchivedPath,
@@ -2183,6 +2198,7 @@ try {
           sourceKind: photoshopImportedShot.swb.sourceKind
         },
         saveConflictBlocked,
+        saveProgressShown,
         firstSavedTopLeftRgb,
         savedPhotoshopLayerNames,
         savedLayeredImport: {

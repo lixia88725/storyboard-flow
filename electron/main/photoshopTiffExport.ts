@@ -170,6 +170,7 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
     pythonPath?: string;
     env?: NodeJS.ProcessEnv;
     xmpByShotId?: Record<string, string>;
+    onJobWritten?: () => void;
   }
 ): Promise<PhotoshopTiffInPlaceSaveResult> => {
   const plan = buildPhotoshopTiffInPlaceSavePlan(project, folderPath, options.saveStamp);
@@ -181,6 +182,7 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
     const manifest = xmp ? { ...job.manifest, xmp } : job.manifest;
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     await runPythonExporter(options.pythonPath ?? "python3", options.scriptPath, manifestPath, options.env);
+    options.onJobWritten?.();
   }
 
   return {

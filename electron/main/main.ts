@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, net, protocol } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, net, protocol, type IpcMainInvokeEvent } from "electron";
 import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -40,6 +40,12 @@ const blankShotPresets = {
   "1.43:1": { width: 1544, height: 1080 }
 } as const;
 type BlankShotPreset = keyof typeof blankShotPresets;
+type WorkspaceTaskProgress = {
+  kind: "save" | "import";
+  current: number;
+  total: number;
+};
+type WorkspaceTaskProgressReporter = (progress: WorkspaceTaskProgress) => void;
 
 type Project = {
   id: string;
@@ -293,8 +299,8 @@ const registerIpcHandlers = () => {
     return payload;
   });
 
-  ipcMain.handle("workspace:save", async (_event, payload: ProjectPayload) => {
-    return saveWorkspace(payload);
+  ipcMain.handle("workspace:save", async (event, payload: ProjectPayload) => {
+    return saveWorkspace(payload, workspaceTaskProgressReporter(event, "save"));
   });
 
   ipcMain.handle("workspace:exportPhotoshopTiffs", async (_event, payload: ProjectPayload) => {
@@ -309,8 +315,12 @@ const registerIpcHandlers = () => {
     });
   });
 
-  ipcMain.handle("workspace:importSwbFormat", async (_event, payload: ProjectPayload) => {
-    const swbImport = await importProjectToSwbFormat(payload.project, payload.folderPath);
+  ipcMain.handle("workspace:importSwbFormat", async (event, payload: ProjectPayload) => {
+    const swbImport = await importProjectToSwbFormat(
+      payload.project,
+      payload.folderPath,
+      workspaceTaskProgressReporter(event, "import")
+    );
     try {
       await writeSwbMetadataToTiffs(swbImport.project, payload.folderPath);
       await writeProjectMetadata(payload.metadataPath, swbImport.project);
@@ -373,12 +383,28 @@ const registerIpcHandlers = () => {
   });
 };
 
-const saveWorkspace = async (payload: ProjectPayload): Promise<ProjectPayload> => {
+const workspaceTaskProgressReporter =
+  (event: IpcMainInvokeEvent, kind: WorkspaceTaskProgress["kind"]): WorkspaceTaskProgressReporter =>
+  (progress) => {
+    event.sender.send("workspace:taskProgress", { ...progress, kind });
+  };
+
+const saveWorkspace = async (
+  payload: ProjectPayload,
+  onProgress?: WorkspaceTaskProgressReporter
+): Promise<ProjectPayload> => {
   let appliedRenamePlan: AppliedFileRenamePlan | undefined;
   let swbImport: SwbImportResult | undefined;
   let appliedTiffReplacements: AppliedFileReplacements | undefined;
+  let savedShots = 0;
+  const totalShots = payload.project.shots.length;
+  const reportShotSaved = () => {
+    savedShots = Math.min(totalShots, savedShots + 1);
+    onProgress?.({ kind: "save", current: savedShots, total: totalShots });
+  };
 
   try {
+    onProgress?.({ kind: "save", current: 0, total: totalShots });
     if (payload.renamePlan && payload.renamePlan.length > 0) {
       await assertRenamePlanSafe(payload.renamePlan);
       appliedRenamePlan = await applyFileRenamePlan(payload.renamePlan, {
@@ -389,7 +415,11 @@ const saveWorkspace = async (payload: ProjectPayload): Promise<ProjectPayload> =
 
     swbImport = await importProjectToSwbFormat(payload.project, payload.folderPath);
     const swbProject = swbImport.project;
-    appliedTiffReplacements = await writeSwbMetadataToTiffs(swbProject, payload.folderPath);
+    appliedTiffReplacements = await writeSwbMetadataToTiffs(
+      swbProject,
+      payload.folderPath,
+      reportShotSaved
+    );
     const savedProject = clearSavedImageLayerEdits(swbProject);
     await writeProjectMetadata(payload.metadataPath, savedProject);
     await appliedTiffReplacements?.commit();
@@ -715,12 +745,21 @@ const updateRecentFoldersMenu = async (): Promise<void> => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 };
 
-const importProjectToSwbFormat = async (project: Project, folderPath: string): Promise<SwbImportResult> => {
+const importProjectToSwbFormat = async (
+  project: Project,
+  folderPath: string,
+  onProgress?: WorkspaceTaskProgressReporter
+): Promise<SwbImportResult> => {
   const archiveRoot = path.join(folderPath, "Archive", archiveStamp());
   const tempRoot = path.join(folderPath, ".storyboard-workbench", "import-tmp", archiveStamp());
   const photoshopLayerRoot = path.join(tempRoot, "photoshop-layers");
   const finalLayerRoot = path.join(folderPath, ".storyboard-workbench", "layers");
   const importableShots = project.shots.filter((shot) => shot.swb?.status !== "owned");
+  let importedShots = 0;
+  const reportShotImported = () => {
+    importedShots = Math.min(importableShots.length, importedShots + 1);
+    onProgress?.({ kind: "import", current: importedShots, total: importableShots.length });
+  };
 
   if (importableShots.length === 0) {
     return {
@@ -729,6 +768,7 @@ const importProjectToSwbFormat = async (project: Project, folderPath: string): P
     };
   }
 
+  onProgress?.({ kind: "import", current: 0, total: importableShots.length });
   await mkdir(tempRoot, { recursive: true });
 
   const prepared = await Promise.all(
@@ -777,6 +817,7 @@ const importProjectToSwbFormat = async (project: Project, folderPath: string): P
       await sharp(shot.imagePath).rotate().tiff().toFile(tempPath);
       const fingerprint = await pixelFingerprint(tempPath);
       const metadata = await sharp(tempPath).metadata();
+      reportShotImported();
 
       return {
         shot,
@@ -883,7 +924,8 @@ const sketchLayersForShot = (
 
 const writeSwbMetadataToTiffs = async (
   project: Project,
-  folderPath: string
+  folderPath: string,
+  onShotWritten?: () => void
 ): Promise<AppliedFileReplacements | undefined> => {
   await ensureProjectLayerAssets(project, folderPath);
   const layeredShotIds = new Set(
@@ -891,7 +933,12 @@ const writeSwbMetadataToTiffs = async (
   );
 
   for (const shot of project.shots) {
-    if (!shouldWriteSwbMetadata(shot) || layeredShotIds.has(shot.id)) {
+    if (!shouldWriteSwbMetadata(shot)) {
+      onShotWritten?.();
+      continue;
+    }
+
+    if (layeredShotIds.has(shot.id)) {
       continue;
     }
 
@@ -916,6 +963,7 @@ const writeSwbMetadataToTiffs = async (
         await unlink(bakedPath).catch(() => undefined);
       }
     }
+    onShotWritten?.();
   }
 
   if (layeredShotIds.size === 0) {
@@ -927,13 +975,15 @@ const writeSwbMetadataToTiffs = async (
       ...project,
       shots: project.shots.filter((shot) => layeredShotIds.has(shot.id))
     },
-    folderPath
+    folderPath,
+    onShotWritten
   );
 };
 
 const writePhotoshopLayeredTiffsForSave = async (
   project: Project,
-  folderPath: string
+  folderPath: string,
+  onShotWritten?: () => void
 ): Promise<AppliedFileReplacements> => {
   const saveStamp = archiveStamp();
   const scriptPath = path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-export.py");
@@ -966,7 +1016,8 @@ const writePhotoshopLayeredTiffsForSave = async (
     scriptPath,
     saveStamp,
     env,
-    xmpByShotId
+    xmpByShotId,
+    onJobWritten: onShotWritten
   });
 
   return applyFileReplacements(

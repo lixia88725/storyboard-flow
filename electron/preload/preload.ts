@@ -16,6 +16,12 @@ type WriteLayerAssetPayload = LayerAssetPayload & {
   dataUrl: string;
 };
 
+type WorkspaceTaskProgress = {
+  kind: "save" | "import";
+  current: number;
+  total: number;
+};
+
 const api = {
   openFolderByPath: (folderPath: string) =>
     ipcRenderer.invoke("workspace:openFolderByPath", folderPath),
@@ -52,6 +58,12 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, folders: string[]) => callback(folders);
     ipcRenderer.on("recent:foldersChanged", listener);
     return () => ipcRenderer.removeListener("recent:foldersChanged", listener);
+  },
+  onWorkspaceTaskProgress: (callback: (progress: WorkspaceTaskProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: WorkspaceTaskProgress) =>
+      callback(progress);
+    ipcRenderer.on("workspace:taskProgress", listener);
+    return () => ipcRenderer.removeListener("workspace:taskProgress", listener);
   },
   assetUrl: (filePath: string) => `storyboard-img://asset?path=${encodeURIComponent(filePath)}`
 };

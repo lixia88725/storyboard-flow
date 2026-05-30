@@ -9,6 +9,12 @@ import type {
 } from "../shared/types";
 import type { KeyboardShortcuts } from "./keyboardShortcuts";
 
+type WorkspaceTaskProgress = {
+  kind: "save" | "import";
+  current: number;
+  total: number;
+};
+
 declare global {
   interface Window {
     storyboard: {
@@ -38,6 +44,7 @@ declare global {
       setKeyboardShortcuts: (shortcuts: KeyboardShortcuts) => Promise<Partial<KeyboardShortcuts>>;
       onOpenRecentFolder: (callback: (folderPath: string) => void) => () => void;
       onRecentFoldersChanged: (callback: (folders: string[]) => void) => () => void;
+      onWorkspaceTaskProgress: (callback: (progress: WorkspaceTaskProgress) => void) => () => void;
       assetUrl: (filePath: string) => string;
     };
   }

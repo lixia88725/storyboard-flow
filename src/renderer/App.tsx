@@ -134,6 +134,12 @@ const maxDialogueRows = 3;
 
 type WorkspaceSaveState = "saved" | "saving" | "error";
 type FileNameSyncState = "synced" | "unsynced";
+type WorkspaceTask = {
+  kind: "save" | "import";
+  label: string;
+  current: number;
+  total: number;
+};
 type SelectionBox = { startX: number; startY: number; currentX: number; currentY: number };
 type SketchSettingsMenu = { tool: SketchTool; x: number; y: number };
 type LayerRowGesture = {
@@ -272,6 +278,7 @@ export const App = () => {
   const [eraserOpacity, setEraserOpacity] = useState(1);
   const [selectionMode, setSelectionMode] = useState<BitmapSelectionMode>("lasso");
   const [workspaceSaveState, setWorkspaceSaveState] = useState<WorkspaceSaveState>("saved");
+  const [workspaceTask, setWorkspaceTask] = useState<WorkspaceTask | undefined>();
   const [fileNameSyncState, setFileNameSyncState] = useState<FileNameSyncState>("synced");
   const [recentFolders, setRecentFolders] = useState<string[]>([]);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -314,6 +321,7 @@ export const App = () => {
   const orderedShots = useMemo(() => sortedShots(project.shots), [project.shots]);
   const needsSwbImport = useMemo(() => projectNeedsSwbImport(project), [project]);
   const hasSwbWarning = useMemo(() => projectHasSwbWarning(project), [project]);
+  const isWorkspaceTaskRunning = Boolean(workspaceTask);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const primarySelectedShotId = selectedShotIds[0];
   const primarySelectedShot = useMemo(
@@ -551,10 +559,18 @@ export const App = () => {
       void handleOpenFolderByPath(nextFolderPath);
     });
     const removeChangedListener = window.storyboard.onRecentFoldersChanged(setRecentFolders);
+    const removeTaskProgressListener = window.storyboard.onWorkspaceTaskProgress((progress) => {
+      setWorkspaceTask((task) =>
+        task && task.kind === progress.kind
+          ? { ...task, current: progress.current, total: progress.total }
+          : task
+      );
+    });
 
     return () => {
       removeOpenListener();
       removeChangedListener();
+      removeTaskProgressListener();
     };
   }, []);
 
@@ -1160,20 +1176,33 @@ export const App = () => {
           }
         : project;
 
-    await persistWorkspace(projectToSave);
-    const renamePlan = createRenamePlan(projectToSave, {
-      allowDefaultNamingFields: missingNamingFields.length > 0
+    setWorkspaceTask({
+      kind: "save",
+      label: "Saving layered TIFFs...",
+      current: 0,
+      total: projectToSave.shots.length
     });
-    const renamedProject = applyRenamePlan(projectToSave, renamePlan);
-    const result = await withStatus("Save failed", () =>
-      window.storyboard.saveWorkspace({
-        project: { ...renamedProject, updatedAt: new Date().toISOString() },
-        folderPath,
-        metadataPath,
-        renamePlan
-      }),
-      setStatus
-    );
+
+    const result = await (async () => {
+      try {
+        await persistWorkspace(projectToSave);
+        const renamePlan = createRenamePlan(projectToSave, {
+          allowDefaultNamingFields: missingNamingFields.length > 0
+        });
+        const renamedProject = applyRenamePlan(projectToSave, renamePlan);
+        return await withStatus("Save failed", () =>
+          window.storyboard.saveWorkspace({
+            project: { ...renamedProject, updatedAt: new Date().toISOString() },
+            folderPath,
+            metadataPath,
+            renamePlan
+          }),
+          setStatus
+        );
+      } finally {
+        setWorkspaceTask(undefined);
+      }
+    })();
 
     if (!result) {
       return;
@@ -1234,16 +1263,29 @@ export const App = () => {
       return;
     }
 
-    const result = await withStatus(
-      "Import failed",
-      () =>
-        window.storyboard.importSwbFormat({
-          project,
-          folderPath,
-          metadataPath
-        }),
-      setStatus
-    );
+    setWorkspaceTask({
+      kind: "import",
+      label: "Importing Photoshop layers...",
+      current: 0,
+      total: project.shots.filter((shot) => shot.swb?.status !== "owned").length || project.shots.length
+    });
+
+    const result = await (async () => {
+      try {
+        return await withStatus(
+          "Import failed",
+          () =>
+            window.storyboard.importSwbFormat({
+              project,
+              folderPath,
+              metadataPath
+            }),
+          setStatus
+        );
+      } finally {
+        setWorkspaceTask(undefined);
+      }
+    })();
 
     if (!result) {
       return;
@@ -1468,10 +1510,10 @@ export const App = () => {
           <button
             type="button"
             onClick={() => void handleImportSwbFormat()}
-            disabled={!needsSwbImport}
+            disabled={!needsSwbImport || isWorkspaceTaskRunning}
             title="Convert non-SWB images into Storyboard Workbench Format"
           >
-            Import
+            {workspaceTask?.kind === "import" ? "Importing..." : "Import"}
           </button>
           {hasSwbWarning ? (
             <span
@@ -1575,18 +1617,20 @@ export const App = () => {
               <button
                 type="button"
                 className="primary save-main-button"
+                disabled={isWorkspaceTaskRunning}
                 onClick={() => {
                   setIsSaveMenuOpen(false);
                   void handleSaveProject();
                 }}
               >
-                Save
+                {workspaceTask?.kind === "save" ? "Saving..." : "Save"}
               </button>
               <button
                 type="button"
                 className="primary save-menu-toggle"
                 aria-label="Save naming options"
                 aria-expanded={isSaveMenuOpen}
+                disabled={isWorkspaceTaskRunning}
                 onClick={() => setIsSaveMenuOpen((isOpen) => !isOpen)}
               >
                 <span className="save-caret" aria-hidden="true" />
@@ -1635,6 +1679,20 @@ export const App = () => {
           </div>
         </div>
       </header>
+
+      {workspaceTask ? (
+        <div className="workspace-task-progress" role="status" aria-live="polite">
+          <div className="workspace-task-progress-copy">
+            <span>{workspaceTask.label}</span>
+            <span>
+              {workspaceTask.current} / {workspaceTask.total} shots
+            </span>
+          </div>
+          <div className="workspace-task-progress-track" aria-hidden="true">
+            <div className="workspace-task-progress-line" />
+          </div>
+        </div>
+      ) : null}
 
       <div className="workspace-layout">
         <aside className="tool-rail" aria-label="Sketch tools">

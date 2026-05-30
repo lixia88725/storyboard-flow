@@ -24,6 +24,11 @@ const api = {
     ipcRenderer.on("recent:foldersChanged", listener);
     return () => ipcRenderer.removeListener("recent:foldersChanged", listener);
   },
+  onWorkspaceTaskProgress: (callback) => {
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on("workspace:taskProgress", listener);
+    return () => ipcRenderer.removeListener("workspace:taskProgress", listener);
+  },
   assetUrl: (filePath) => `storyboard-img://asset?path=${encodeURIComponent(filePath)}`
 };
 
