@@ -1,12 +1,17 @@
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import {
   buildPhotoshopTiffExportPlan,
   buildPhotoshopTiffInPlaceSavePlan,
   writePhotoshopLayeredTiffsForInPlaceSave
 } from "./photoshopTiffExport.js";
+
+const execFileAsync = promisify(execFile);
 
 const layer = (patch: Partial<Parameters<typeof buildPhotoshopTiffExportPlan>[0]["shots"][number]["layers"][number]>) => ({
   id: "layer-image",
@@ -241,6 +246,81 @@ describe("buildPhotoshopTiffExportPlan", () => {
       await expect(readFile(originalPath, "utf8")).resolves.toBe("original");
       await expect(readFile(result.replacements[0].fromPath, "utf8")).resolves.toBe("layered:a");
       await expect(stat(path.join(folderPath, ".storyboard-workbench/save-tmp/save-123/.manifests/shot-a.json"))).resolves.toBeDefined();
+    } finally {
+      await rm(folderPath, { recursive: true, force: true });
+    }
+  });
+
+  it("writes optional XMP into Photoshop layered TIFFs without dropping layer data", async () => {
+    const depsDir = "/private/tmp/psdtags-spike-deps";
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-xmp-"));
+
+    try {
+      const layerPath = path.join(folderPath, "layer.png");
+      const outputPath = path.join(folderPath, "out.tiff");
+      const manifestPath = path.join(folderPath, "manifest.json");
+      const scriptPath = path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py");
+      const xmp = [
+        '<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:swb="https://storyboard-workbench.local/ns/1.0/">',
+        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+        '<rdf:Description rdf:about="">',
+        '<swb:metadata>eyJzaG90SWQiOiJzaG90LWEifQ==</swb:metadata>',
+        '</rdf:Description>',
+        '</rdf:RDF>',
+        '</x:xmpmeta>',
+        '<?xpacket end="w"?>'
+      ].join("\n");
+
+      await sharp({
+        create: {
+          width: 2,
+          height: 2,
+          channels: 4,
+          background: { r: 255, g: 0, b: 0, alpha: 1 }
+        }
+      })
+        .png()
+        .toFile(layerPath);
+      await writeFile(
+        manifestPath,
+        `${JSON.stringify(
+          {
+            outputPath,
+            width: 2,
+            height: 2,
+            documentName: "xmp-test",
+            xmp,
+            layers: [
+              {
+                name: "Layer 1",
+                path: layerPath,
+                opacity: 1,
+                blendMode: "normal",
+                visible: true,
+                background: true
+              }
+            ]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      await execFileAsync("python3", [scriptPath, manifestPath], {
+        env: { ...process.env, SWB_PYTHON_DEPS_DIR: depsDir }
+      });
+
+      const metadata = await sharp(outputPath).metadata();
+      expect(metadata.xmpAsString).toContain("<swb:metadata>eyJzaG90SWQiOiJzaG90LWEifQ==</swb:metadata>");
+      const { stdout } = await execFileAsync("python3", [
+        "-c",
+        "import sys; sys.path.insert(0, sys.argv[2]); from psdtags import TiffImageSourceData; print(len(TiffImageSourceData.fromtiff(sys.argv[1]).layers))",
+        outputPath,
+        depsDir
+      ]);
+      expect(stdout.trim()).toBe("1");
     } finally {
       await rm(folderPath, { recursive: true, force: true });
     }

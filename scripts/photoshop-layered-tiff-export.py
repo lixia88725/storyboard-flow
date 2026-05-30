@@ -181,6 +181,13 @@ def write_layered_tiff(manifest_path: Path) -> None:
     composite = overlay(*composite_layers, shape=(height, width))
     output = Path(manifest["outputPath"])
     output.parent.mkdir(parents=True, exist_ok=True)
+    extra_tags = [
+        image_source_data.tifftag(maxworkers=4),
+        (34675, 7, None, imagecodecs.cms_profile("srgb"), True),
+    ]
+    if manifest.get("xmp"):
+        extra_tags.append((700, 1, None, str(manifest["xmp"]).encode("utf8"), True))
+
     tifffile.imwrite(
         output,
         composite,
@@ -189,10 +196,7 @@ def write_layered_tiff(manifest_path: Path) -> None:
         resolution=((720000, 10000), (720000, 10000)),
         resolutionunit="inch",
         metadata=None,
-        extratags=[
-            image_source_data.tifftag(maxworkers=4),
-            (34675, 7, None, imagecodecs.cms_profile("srgb"), True),
-        ],
+        extratags=extra_tags,
     )
 
     reread = TiffImageSourceData.fromtiff(output)

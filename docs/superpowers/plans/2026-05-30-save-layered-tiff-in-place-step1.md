@@ -179,3 +179,29 @@ Observed: PASS.
 - [x] **Step 5: Cover explicit rollback after successful replacement**
 
 Added a test that applies a replacement, verifies the target contains the new content, calls `rollback()`, and verifies the target contains the original content again.
+
+### Task 4: Preserve SWB XMP In Photoshop Layered TIFF Writer
+
+**Files:**
+- Modify: `scripts/photoshop-layered-tiff-export.py`
+- Test: `electron/main/photoshopTiffExport.test.ts`
+
+- [x] **Step 1: Write the failing test**
+
+Added an integration test that writes a real 2x2 Photoshop layered TIFF with manifest `xmp`, then verifies `sharp` can read back the XMP and `psdtags` can still read one Photoshop layer.
+
+- [x] **Step 2: Run test to verify it fails**
+
+Run: `npm run test -- electron/main/photoshopTiffExport.test.ts`
+
+Observed: FAIL because `metadata.xmpAsString` is undefined.
+
+- [x] **Step 3: Write minimal implementation**
+
+Updated `scripts/photoshop-layered-tiff-export.py` to write optional manifest `xmp` as TIFF tag `700` alongside Photoshop ImageSourceData tag `37724`.
+
+- [x] **Step 4: Run test to verify it passes**
+
+Run: `npm run test -- electron/main/photoshopTiffExport.test.ts`
+
+Observed: PASS; `sharp` reads XMP and `psdtags` still reads the layer data.
