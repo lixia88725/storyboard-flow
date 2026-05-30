@@ -491,7 +491,7 @@ if (isLikelyTiffPath(shot.imagePath)) {
       SWB_PYTHON_DEPS_DIR: process.env.SWB_PYTHON_DEPS_DIR ?? defaultPhotoshopTiffPythonDepsDir
     });
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as ImportedPhotoshopTiffManifest;
-    const layerPlan = buildPhotoshopTiffImportAssetPlan(manifest, shot.id, finalLayerRoot);
+    const layerPlan = buildPhotoshopTiffImportAssetPlan(manifest, shot.id, finalLayerRoot, extractedDir);
     importedLayers = layerPlan.layers;
     importedLayerMoves = layerPlan.moves;
     importWarnings = manifest.warnings;
