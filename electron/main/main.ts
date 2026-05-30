@@ -11,7 +11,11 @@ import {
   type AppliedFileMoves,
   type AppliedFileRenamePlan
 } from "./fileRenames.js";
-import { flattenBitmapLayerBuffersToTiff, type BitmapLayerComposite } from "./bitmapLayers.js";
+import {
+  flattenBitmapLayerBuffersToTiff,
+  shouldEnsureLayerAssetsForShot,
+  type BitmapLayerComposite
+} from "./bitmapLayers.js";
 import { exportPhotoshopLayeredTiffs } from "./photoshopTiffExport.js";
 import {
   buildPhotoshopTiffImportAssetPlan,
@@ -279,7 +283,7 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("workspace:autosave", async (_event, payload: ProjectPayload) => {
-    await ensureProjectLayerAssets(payload.project, payload.folderPath);
+    await ensureProjectLayerAssets(payload.project, payload.folderPath, { includeExternalShots: false });
     await writeProjectMetadata(payload.metadataPath, payload.project);
     return payload;
   });
@@ -456,8 +460,16 @@ const pngBufferFromDataUrl = (dataUrl: string): Buffer => {
   return Buffer.from(match[1], "base64");
 };
 
-const ensureProjectLayerAssets = async (project: Project, folderPath: string): Promise<void> => {
+const ensureProjectLayerAssets = async (
+  project: Project,
+  folderPath: string,
+  options: { includeExternalShots?: boolean } = {}
+): Promise<void> => {
   for (const shot of project.shots) {
+    if (!shouldEnsureLayerAssetsForShot(shot, options)) {
+      continue;
+    }
+
     for (const layer of shot.layers ?? []) {
       const filePath = resolveLayerAssetPath(folderPath, layer.bitmapPath);
       if (await pathExists(filePath)) {

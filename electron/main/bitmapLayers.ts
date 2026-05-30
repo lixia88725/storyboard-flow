@@ -8,6 +8,13 @@ export type BitmapLayerComposite = {
   opacity: number;
 };
 
+export const shouldEnsureLayerAssetsForShot = (
+  shot: { swb?: { status?: string } },
+  options: { includeExternalShots?: boolean } = {}
+): boolean => {
+  return options.includeExternalShots !== false || shot.swb?.status === "owned";
+};
+
 export const applyBitmapLayerOpacity = async (
   pngBuffer: Buffer,
   opacity: number

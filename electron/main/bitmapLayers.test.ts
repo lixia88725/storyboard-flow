@@ -1,8 +1,23 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { applyBitmapLayerOpacity, flattenBitmapLayerBuffersToTiff } from "./bitmapLayers.js";
+import { applyBitmapLayerOpacity, flattenBitmapLayerBuffersToTiff, shouldEnsureLayerAssetsForShot } from "./bitmapLayers.js";
 
 describe("applyBitmapLayerOpacity", () => {
+  it("skips external shot layer assets only when external shots are excluded", () => {
+    expect(shouldEnsureLayerAssetsForShot({ swb: { status: "owned" } })).toBe(true);
+    expect(shouldEnsureLayerAssetsForShot({ swb: { status: "non-swb" } })).toBe(true);
+    expect(shouldEnsureLayerAssetsForShot({ swb: { status: "compatible-external-edit" } })).toBe(true);
+    expect(shouldEnsureLayerAssetsForShot({ swb: { status: "incompatible-external-edit" } })).toBe(true);
+    expect(shouldEnsureLayerAssetsForShot({})).toBe(true);
+    expect(
+      shouldEnsureLayerAssetsForShot({ swb: { status: "owned" } }, { includeExternalShots: false })
+    ).toBe(true);
+    expect(
+      shouldEnsureLayerAssetsForShot({ swb: { status: "non-swb" } }, { includeExternalShots: false })
+    ).toBe(false);
+    expect(shouldEnsureLayerAssetsForShot({}, { includeExternalShots: false })).toBe(false);
+  });
+
   it("multiplies the bitmap alpha by the layer opacity", async () => {
     const source = await sharp({
       create: {
