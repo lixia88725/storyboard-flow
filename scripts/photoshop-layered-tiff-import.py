@@ -17,7 +17,7 @@ if deps_dir:
 import imagecodecs
 import numpy
 import tifffile
-from psdtags import PsdBlendMode, PsdLayerFlag, TiffImageSourceData
+from psdtags import PsdBlendMode, PsdKey, PsdLayerFlag, TiffImageSourceData
 
 
 SUPPORTED_BLEND_MODES = {
@@ -40,6 +40,15 @@ def layer_visible(layer: Any) -> bool:
 
 def has_visible_pixels(image: numpy.ndarray) -> bool:
     return bool(image.shape[0] and image.shape[1] and image[..., 3].max() > 0)
+
+
+def layer_name(layer: Any) -> str:
+    for info in getattr(layer, "info", []):
+        if getattr(info, "key", None) == PsdKey.UNICODE_LAYER_NAME:
+            name = str(getattr(info, "value", "")).strip()
+            if name:
+                return name
+    return str(layer.name)
 
 
 def normalize_rgba(image: numpy.ndarray, layer: Any, width: int, height: int) -> numpy.ndarray:
@@ -117,23 +126,24 @@ def extract_layered_tiff(source: Path, output_dir: Path, manifest_path: Path) ->
     warnings = []
 
     for index, layer in enumerate(layers):
+        name = layer_name(layer)
         image = normalize_rgba(layer.asarray(), layer, width, height)
         if not has_visible_pixels(image):
-            warnings.append(f"Skipped empty Photoshop layer '{layer.name}'.")
+            warnings.append(f"Skipped empty Photoshop layer '{name}'.")
             continue
 
-        file_name = f"{index:04d}-{safe_layer_name(str(layer.name), index)}.png"
+        file_name = f"{index:04d}-{safe_layer_name(name, index)}.png"
         output_path = output_dir / file_name
         imagecodecs.imwrite(output_path, image)
 
         blend_mode = SUPPORTED_BLEND_MODES.get(layer.blendmode)
         if blend_mode is None:
             blend_mode = "normal"
-            warnings.append(f"Layer '{layer.name}' used unsupported blend mode {layer.blendmode}; imported as normal.")
+            warnings.append(f"Layer '{name}' used unsupported blend mode {layer.blendmode}; imported as normal.")
 
         manifest_layers.append(
             {
-                "name": str(layer.name),
+                "name": name,
                 "assetPath": str(output_path),
                 "visible": layer_visible(layer),
                 "opacity": max(0, min(1, int(layer.opacity) / 255)),
