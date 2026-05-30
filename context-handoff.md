@@ -129,6 +129,7 @@
 - Script card / Markdown import dogfood found and fixed same-length `storyboard-script.md` edits creating blank `new_shot...` storyboards. Same-length Markdown now updates existing shots positionally; extra Markdown entries still create new blank shots. TEST2 was restored to 302 shots with only shot 1 containing `TEST2 dogfood script line`.
 - Delete-to-Trash dogfood passed on the last TEST2 shot, `TEST2_scene_stb_artist_v001_3020.tiff`: Delete recorded the pending removal without touching the root file, Undo restored the shot and cleared pending state, final Delete + Save removed the root TIFF, cleared `pendingDeletedShots`, did not move the file into `Archive/`, and left TEST2 with 301 shots. macOS blocked direct shell listing of `~/.Trash`, so Finder Trash contents were not independently enumerated.
 - External image Import warning dogfood passed after adding `TEST2_external_import_dogfood_1780162936784.png` to the TEST2 root outside SWB and triggering the app focus check. The warning appeared, Import was enabled, deleted `3020.tiff` did not reappear, Import moved the PNG to `Archive/20260530T174638/`, created `TEST2_external_import_dogfood_1780162936784.tiff`, cleared the warning, and left TEST2 with 302 owned shots.
+- Bitmap Select high-resolution dogfood passed on shot 2, `TEST2_scene_stb_artist_v001_0020.tiff`, layer `layer-0004` / `图层 5`: lasso move and rectangle corner scale both changed the 1920x1080 layer PNG, Save wrote the dirty TIFF in 1274 ms, project/root TIFF counts stayed 302, and the old deleted shot id did not return. After Save, the prior external-import dogfood shot was correctly renamed to the ordered file name `TEST2_scene_stb_artist_v001_3020.tiff` as a different shot id.
 
 ## Verification Run For Handoff
 
@@ -222,13 +223,13 @@ docs/dogfood-2026-05-30.md
 
 Recommended next steps:
 
-1. Continue real-folder dogfood for Save speed, actual Finder/Bridge app handoff, bitmap Select scaling, multi-select dragging, and double-click dialogue editing.
+1. Continue real-folder dogfood for Save speed, actual Finder/Bridge app handoff, multi-select dragging, double-click dialogue editing, and mixed-aspect animation review.
 2. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
 3. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
 
 ## Known Remaining Work
 
-- Real dogfood is still needed for actual Finder/Bridge app handoff, bitmap Select high-resolution scaling, mixed-aspect animation, multi-select dragging, and double-click dialogue editing.
+- Real dogfood is still needed for actual Finder/Bridge app handoff, mixed-aspect animation, multi-select dragging, and double-click dialogue editing.
 - Delete currently leaves internal `.storyboard-workbench/layers/<shotId>/...` assets behind; orphan cleanup should be a separate conservative task.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.
