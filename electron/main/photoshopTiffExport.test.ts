@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPhotoshopTiffExportPlan } from "./photoshopTiffExport.js";
+import { buildPhotoshopTiffExportPlan, buildPhotoshopTiffInPlaceSavePlan } from "./photoshopTiffExport.js";
 
 const layer = (patch: Partial<Parameters<typeof buildPhotoshopTiffExportPlan>[0]["shots"][number]["layers"][number]>) => ({
   id: "layer-image",
@@ -145,5 +145,40 @@ describe("buildPhotoshopTiffExportPlan", () => {
         new Date("2026-05-30T01:02:03.000Z")
       )
     ).toThrow("Layer bitmap path must stay under");
+  });
+
+  it("plans in-place Photoshop TIFF writes through temporary sibling files", () => {
+    const plan = buildPhotoshopTiffInPlaceSavePlan(
+      {
+        name: "Demo",
+        shots: [
+          {
+            id: "shot-a",
+            imagePath: "/scene/a.tiff",
+            fileName: "a.tiff",
+            order: 0,
+            swb: { canvasWidth: 320, canvasHeight: 180 },
+            layers: [
+              layer({}),
+              layer({
+                id: "paint-1",
+                kind: "paint",
+                name: "Paint 1",
+                order: 1,
+                bitmapPath: ".storyboard-workbench/layers/shot-a/paint-1.png"
+              })
+            ]
+          }
+        ]
+      },
+      "/scene",
+      "save-123"
+    );
+
+    expect(plan.jobs).toHaveLength(1);
+    expect(plan.jobs[0].outputPath).toBe("/scene/.storyboard-workbench/save-tmp/save-123/a.tiff");
+    expect(plan.jobs[0].finalPath).toBe("/scene/a.tiff");
+    expect(plan.jobs[0].manifest.outputPath).toBe("/scene/.storyboard-workbench/save-tmp/save-123/a.tiff");
+    expect(plan.jobs[0].manifest.documentName).toBe("a");
   });
 });

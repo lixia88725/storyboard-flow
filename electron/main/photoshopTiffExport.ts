@@ -66,6 +66,16 @@ export type PhotoshopTiffExportResult = {
   exportedFiles: string[];
 };
 
+export type PhotoshopTiffInPlaceSaveJob = PhotoshopTiffExportJob & {
+  finalPath: string;
+};
+
+export type PhotoshopTiffInPlaceSavePlan = {
+  tempFolderPath: string;
+  manifestFolderPath: string;
+  jobs: PhotoshopTiffInPlaceSaveJob[];
+};
+
 export const photoshopTiffExportRootName = "Photoshop TIFF Export";
 
 export const buildPhotoshopTiffExportPlan = (
@@ -82,18 +92,6 @@ export const buildPhotoshopTiffExportPlan = (
   const sortedShots = [...project.shots].sort((a, b) => a.order - b.order);
 
   const jobs = sortedShots.map((shot, index) => {
-    const layers = bitmapLayersForShot(shot);
-    const width = shot.swb?.canvasWidth ?? layers[0]?.width;
-    const height = shot.swb?.canvasHeight ?? layers[0]?.height;
-
-    if (!width || !height) {
-      throw new Error(`Cannot export Photoshop TIFF for ${shot.fileName}: missing canvas size`);
-    }
-
-    if (layers.length === 0) {
-      throw new Error(`Cannot export Photoshop TIFF for ${shot.fileName}: no bitmap layers`);
-    }
-
     const shotNumber = String((index + 1) * 10).padStart(4, "0");
     const fileStem = safeFileStem(`${shotNumber}-${path.parse(shot.fileName).name || shot.id}`);
     const outputPath = path.join(exportFolderPath, `${fileStem}.tiff`);
@@ -101,24 +99,35 @@ export const buildPhotoshopTiffExportPlan = (
     return {
       shotId: shot.id,
       outputPath,
-      manifest: {
-        outputPath,
-        width,
-        height,
-        documentName: fileStem,
-        layers: layers.map((layer, layerIndex) => ({
-          name: layer.name,
-          path: resolveLayerAssetPath(folderPath, layer.bitmapPath),
-          opacity: layer.opacity,
-          blendMode: layer.blendMode,
-          visible: layer.visible,
-          background: layerIndex === 0 && layer.kind === "image"
-        }))
-      }
+      manifest: buildPhotoshopTiffManifestForShot(shot, folderPath, outputPath, fileStem)
     };
   });
 
   return { exportFolderPath, manifestFolderPath, jobs };
+};
+
+export const buildPhotoshopTiffInPlaceSavePlan = (
+  project: Project,
+  folderPath: string,
+  saveStamp: string
+): PhotoshopTiffInPlaceSavePlan => {
+  const tempFolderPath = path.join(folderPath, ".storyboard-workbench", "save-tmp", saveStamp);
+  const manifestFolderPath = path.join(tempFolderPath, ".manifests");
+  const sortedShots = [...project.shots].sort((a, b) => a.order - b.order);
+
+  const jobs = sortedShots.map((shot) => {
+    const outputPath = path.join(tempFolderPath, shot.fileName);
+    const documentName = path.parse(shot.fileName).name || shot.id;
+
+    return {
+      shotId: shot.id,
+      outputPath,
+      finalPath: shot.imagePath,
+      manifest: buildPhotoshopTiffManifestForShot(shot, folderPath, outputPath, documentName)
+    };
+  });
+
+  return { tempFolderPath, manifestFolderPath, jobs };
 };
 
 export const exportPhotoshopLayeredTiffs = async (
@@ -177,6 +186,40 @@ const safeFileStem = (value: string): string => {
     .replace(/[^\w.-]+/gu, "_")
     .replace(/^_+|_+$/gu, "");
   return safe || "shot";
+};
+
+const buildPhotoshopTiffManifestForShot = (
+  shot: Project["shots"][number],
+  folderPath: string,
+  outputPath: string,
+  documentName: string
+): PhotoshopTiffExportManifest => {
+  const layers = bitmapLayersForShot(shot);
+  const width = shot.swb?.canvasWidth ?? layers[0]?.width;
+  const height = shot.swb?.canvasHeight ?? layers[0]?.height;
+
+  if (!width || !height) {
+    throw new Error(`Cannot export Photoshop TIFF for ${shot.fileName}: missing canvas size`);
+  }
+
+  if (layers.length === 0) {
+    throw new Error(`Cannot export Photoshop TIFF for ${shot.fileName}: no bitmap layers`);
+  }
+
+  return {
+    outputPath,
+    width,
+    height,
+    documentName,
+    layers: layers.map((layer, layerIndex) => ({
+      name: layer.name,
+      path: resolveLayerAssetPath(folderPath, layer.bitmapPath),
+      opacity: layer.opacity,
+      blendMode: layer.blendMode,
+      visible: layer.visible,
+      background: layerIndex === 0 && layer.kind === "image"
+    }))
+  };
 };
 
 const bitmapLayersForShot = (shot: Project["shots"][number]): BitmapLayer[] => {
