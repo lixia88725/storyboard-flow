@@ -43,7 +43,7 @@ import {
   type ImportedPhotoshopTiffManifest
 } from "./photoshopTiffImport.js";
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
-import { previewPathForImage } from "./previewPaths.js";
+import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
 import {
   applyStoryboardScriptImportPlan,
   parseStoryboardScriptMarkdown,
@@ -1755,10 +1755,6 @@ const collectImagePaths = async (filePaths: string[]): Promise<string[]> => {
 
 const metadataPathForFolder = (folderPath: string): string => {
   return path.join(folderPath, ".storyboard-workbench", "storyboard.project.json");
-};
-
-const previewRootForFolder = (folderPath: string): string => {
-  return path.join(folderPath, ".storyboard-workbench", "previews");
 };
 
 const readProject = async (metadataPath: string): Promise<Project | undefined> => {

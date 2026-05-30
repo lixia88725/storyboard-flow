@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { previewPathForImage } from "./previewPaths.js";
+import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
 
 describe("previewPathForImage", () => {
   it("keeps preview file names short for deeply nested image paths", () => {
@@ -29,5 +29,8 @@ describe("previewPathForImage", () => {
       previewPathForImage("/scene/b.tiff", previewRoot)
     );
   });
-});
 
+  it("resolves the preview cache root inside the SWB workspace folder", () => {
+    expect(previewRootForFolder("/scene")).toBe("/scene/.storyboard-workbench/previews");
+  });
+});
