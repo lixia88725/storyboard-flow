@@ -127,6 +127,7 @@
 - Follow-up finding fixed: successful Save now removes its per-save manifest directory and `save-backup/<stamp>/` directory after replacement commit. Rollback still preserves artifacts for recovery/diagnostics.
 - Layer Lock dogfood passed on shot 171's Photoshop-imported locked `背景` layer: locked controls were disabled, locked drawing did not change the PNG, unlocking allowed drawing, then the layer was locked back and saved. TEST2 still has 13 locked layers.
 - Script card / Markdown import dogfood found and fixed same-length `storyboard-script.md` edits creating blank `new_shot...` storyboards. Same-length Markdown now updates existing shots positionally; extra Markdown entries still create new blank shots. TEST2 was restored to 302 shots with only shot 1 containing `TEST2 dogfood script line`.
+- Delete-to-Trash dogfood passed on the last TEST2 shot, `TEST2_scene_stb_artist_v001_3020.tiff`: Delete recorded the pending removal without touching the root file, Undo restored the shot and cleared pending state, final Delete + Save removed the root TIFF, cleared `pendingDeletedShots`, did not move the file into `Archive/`, and left TEST2 with 301 shots. macOS blocked direct shell listing of `~/.Trash`, so Finder Trash contents were not independently enumerated.
 
 ## Verification Run For Handoff
 
@@ -220,13 +221,13 @@ docs/dogfood-2026-05-30.md
 
 Recommended next steps:
 
-1. Continue real-folder dogfood for Save speed, Delete-to-Trash recovery, external image Import warning, script editing, bitmap Select scaling, multi-select dragging, and double-click dialogue editing.
+1. Continue real-folder dogfood for Save speed, external image Import warning, bitmap Select scaling, multi-select dragging, and double-click dialogue editing.
 2. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
 3. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
 
 ## Known Remaining Work
 
-- Real dogfood is still needed for Delete-to-Trash recovery, external image Import warning, bitmap Select high-resolution scaling, mixed-aspect animation, multi-select dragging, and double-click dialogue editing.
+- Real dogfood is still needed for external image Import warning, bitmap Select high-resolution scaling, mixed-aspect animation, multi-select dragging, and double-click dialogue editing.
 - Delete currently leaves internal `.storyboard-workbench/layers/<shotId>/...` assets behind; orphan cleanup should be a separate conservative task.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.

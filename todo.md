@@ -6,13 +6,12 @@
 - [ ] Manually dogfood bitmap Select lasso/rectangle corner scaling on high-resolution real storyboard images.
 - [ ] Manually review mixed-aspect animation mode with the dark matte/stable frame and decide whether the visual treatment needs refinement.
 - [ ] Manually verify multi-select shot dragging and double-click dialogue editing after the bitmap layer refactor.
-- [ ] Manually dogfood Delete-to-Trash on real folders: single delete, multi-select delete, Undo, Save, and Finder Trash recovery.
 - [ ] Manually dogfood adding images externally from Finder/Bridge and confirm the yellow Import warning appears only when needed.
 
 ## P1
 
 - [ ] Dogfood bitmap Select tool V1 on real storyboard files; note lasso/rectangle move and scale UX issues before adding more features.
-- [ ] Run real-folder P0 dogfood using `docs/dogfood-2026-05-30.md` as the automated baseline, especially Save speed, Trash recovery, Finder/Bridge focus behavior, high-resolution Select scaling, mixed-aspect animation review, multi-select dragging, and double-click dialogue editing.
+- [ ] Run real-folder P0 dogfood using `docs/dogfood-2026-05-30.md` as the automated baseline, especially Save speed, Finder/Bridge focus behavior, high-resolution Select scaling, mixed-aspect animation review, multi-select dragging, and double-click dialogue editing.
 - [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
 - [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
 - [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
@@ -68,6 +67,7 @@
 - [x] Successful Save now removes its `save-tmp/<stamp>` manifests and `save-backup/<stamp>` directory after replacement commit, while rollback still preserves artifacts.
 - [x] Real-folder `TEST2` Layer Lock dogfood passed on a Photoshop-imported locked `背景` layer: locked UI disabled edits/delete, locked drawing did not change the layer PNG, unlock allowed drawing, and the layer was locked back and saved.
 - [x] Real-folder `TEST2` script card and `storyboard-script.md` import dogfood found and fixed same-length Markdown edits creating blank `new_shot...` storyboards instead of updating existing shot script text.
+- [x] Real-folder `TEST2` Delete-to-Trash dogfood passed for single-shot Delete, Undo, Save, root file removal, Archive non-use, and pending deletion cleanup. Direct `~/.Trash` enumeration was blocked by macOS permission, and internal orphan layer cleanup remains separate.
 
 ## Out Of Scope For Current MVP
 
