@@ -1194,6 +1194,17 @@ const createShotFromImportedImage = (
 };
 
 const swbStateForImportedImage = (image: ImportedImage): ShotSwbState => {
+  if (isStandaloneLayeredTiffSnapshot(image)) {
+    return {
+      version: swbFormatVersion,
+      status: "non-swb",
+      canvasWidth: image.swbMetadata?.canvasWidth ?? image.width ?? 0,
+      canvasHeight: image.swbMetadata?.canvasHeight ?? image.height ?? 0,
+      baseFingerprint: image.fingerprint,
+      statusMessage: "Import to convert this Photoshop layered TIFF into Storyboard Workbench Format"
+    };
+  }
+
   if (image.swbMetadata) {
     return {
       version: image.swbMetadata.version,
@@ -1214,6 +1225,14 @@ const swbStateForImportedImage = (image: ImportedImage): ShotSwbState => {
     baseFingerprint: image.fingerprint,
     statusMessage: "Import to convert this image into Storyboard Workbench Format"
   };
+};
+
+const isStandaloneLayeredTiffSnapshot = (image: ImportedImage): boolean => {
+  return (
+    Boolean(image.swbMetadata) &&
+    image.fileName.toLowerCase().match(/\.tiff?$/u) !== null &&
+    (image.swbMetadata?.layers.filter((layer) => layer.kind !== "image").length ?? 0) > 0
+  );
 };
 
 const mergedSwbState = (shot: Shot, image: ImportedImage): ShotSwbState => {

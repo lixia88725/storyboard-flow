@@ -907,6 +907,38 @@ describe("project operations", () => {
     expect(projectNeedsSwbImport(updated)).toBe(true);
   });
 
+  it("marks standalone multi-layer SWB TIFF snapshots as needing Photoshop import", () => {
+    const updated = mergeFolderImages(createEmptyProject(), [
+      {
+        imagePath: "/tmp/a.tiff",
+        fileName: "a.tiff",
+        width: 1920,
+        height: 1080,
+        fingerprint: "pixel-a",
+        swbMetadata: {
+          app: "Storyboard Workbench",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "shot-a",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          baseFingerprint: "pixel-a",
+          updatedAt: "2026-05-30T00:00:00.000Z",
+          layers: [
+            { id: "layer-image", kind: "image" },
+            { id: "layer-0001", kind: "paint" }
+          ]
+        } as any
+      }
+    ]);
+
+    expect(updated.shots[0].swb).toMatchObject({
+      status: "non-swb",
+      statusMessage: "Import to convert this Photoshop layered TIFF into Storyboard Workbench Format"
+    });
+    expect(projectNeedsSwbImport(updated)).toBe(true);
+  });
+
   it("does not create an empty Drawing layer for newly imported images", () => {
     const updated = addImportedImages(createEmptyProject(), [
       {

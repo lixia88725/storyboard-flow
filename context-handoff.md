@@ -55,6 +55,7 @@
   - Layered Save writes to `.storyboard-workbench/save-tmp/<stamp>/`, then replaces working TIFFs through rollback-safe backups in `.storyboard-workbench/save-backup/<stamp>/`.
   - The main TIFF composite is flattened over white to preserve existing Save output expectations when the Image layer is deleted or transparent.
   - `npm run smoke:bitmap` now verifies the saved current `_0010.tiff` has Photoshop layer names via `psdtags`.
+  - Fixed standalone Save-produced layered TIFF reopening/import: multi-layer SWB XMP TIFF snapshots are no longer misclassified as already-owned when there is no local project/layer asset state, so Import can ingest Photoshop layers and archive the source.
 - Save rename safety:
   - Extracted the Electron two-stage rename executor into `electron/main/fileRenames.ts`.
   - Added rollback for execution failures after preflight, so files already moved to temporary or final names are restored to their original paths when possible.

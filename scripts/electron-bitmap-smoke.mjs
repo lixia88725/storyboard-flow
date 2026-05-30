@@ -9,6 +9,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const smokeRoot = path.join("/private/tmp", `swb-bitmap-smoke-${Date.now()}`);
 const legacyRoot = path.join("/private/tmp", `swb-legacy-smoke-${Date.now()}`);
 const photoshopImportRoot = path.join("/private/tmp", `swb-photoshop-import-${Date.now()}`);
+const savedLayeredImportRoot = path.join("/private/tmp", `swb-saved-layered-import-${Date.now()}`);
 const port = String(9300 + Math.floor(Math.random() * 400));
 const electronBin = path.join(repoRoot, "node_modules", ".bin", "electron");
 const photoshopPythonDepsDir = process.env.SWB_PYTHON_DEPS_DIR ?? "/private/tmp/psdtags-spike-deps";
@@ -1873,6 +1874,43 @@ try {
       `Save did not write the current multi-layer shot as editable Photoshop layers: ${savedPhotoshopLayerNames.join(",")}`
     );
   }
+  await mkdir(savedLayeredImportRoot, { recursive: true });
+  const savedLayeredImportSourcePath = path.join(savedLayeredImportRoot, "saved-layered.tiff");
+  await copyFile(path.join(smokeRoot, firstSavedTiff), savedLayeredImportSourcePath);
+  const savedLayeredImportSourceHash = await hashFile(savedLayeredImportSourcePath);
+  await openFolder(savedLayeredImportRoot);
+  await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const importButton = Array.from(document.querySelectorAll("button"))
+            .find((button) => button.textContent.trim() === "Import");
+          return Boolean(importButton && !importButton.disabled);
+        })()
+      `),
+    "saved layered TIFF import button enabled"
+  );
+  await evaluate(`
+    (() => {
+      const importButton = Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent.trim() === "Import");
+      importButton.click();
+      return true;
+    })()
+  `);
+  const savedLayeredImportedProject = await waitFor(async () => {
+    const project = await readProjectMetadata(savedLayeredImportRoot);
+    const shot = project.shots?.[0];
+    return shot?.swb?.sourceKind === "photoshop-layered-tiff" &&
+      (shot.layers?.length ?? 0) > 0
+      ? project
+      : undefined;
+  }, "Save-produced Photoshop layered TIFF import", 20000);
+  const savedLayeredImportedLayerNames = savedLayeredImportedProject.shots?.[0]?.layers?.map((layer) => layer.name) ?? [];
+  const savedLayeredImportSourceArchivedPath = await waitFor(
+    () => findArchivedFileByHash(savedLayeredImportRoot, savedLayeredImportSourceHash),
+    "archived Save-produced Photoshop layered TIFF source"
+  );
   const archivedShotAPath = await waitFor(
     () => findArchivedFileByHash(smokeRoot, originalShotAHash),
     "archived original shot"
@@ -2147,6 +2185,11 @@ try {
         saveConflictBlocked,
         firstSavedTopLeftRgb,
         savedPhotoshopLayerNames,
+        savedLayeredImport: {
+          folderPath: savedLayeredImportRoot,
+          sourceArchivedPath: savedLayeredImportSourceArchivedPath,
+          layerNames: savedLayeredImportedLayerNames
+        },
         archivedShotAHash,
         savedFileNames: savedTiffFiles,
         savedSwbStatuses: savedProject.shots.map((shot) => shot.swb.status),
@@ -2170,4 +2213,5 @@ try {
   await rm(smokeRoot, { recursive: true, force: true });
   await rm(legacyRoot, { recursive: true, force: true });
   await rm(photoshopImportRoot, { recursive: true, force: true });
+  await rm(savedLayeredImportRoot, { recursive: true, force: true });
 }
