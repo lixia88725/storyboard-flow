@@ -101,6 +101,7 @@ import {
   layerOpacityFromClientX,
   layerRowDragIntentFromDelta,
   latestStrokeSegment,
+  liveStrokePreviewOpacity,
   scaleBitmapSelectionBounds,
   shouldRenderLiveStroke,
   shouldAppendStrokePoint,
@@ -3907,7 +3908,7 @@ const SketchPad = ({
                   key={stroke.id}
                   points={stroke.points}
                   stroke={stroke.color}
-                  opacity={stroke.opacity ?? 1}
+                  opacity={liveStrokePreviewOpacity(stroke, activeLayer?.opacity)}
                   strokeWidth={stroke.size}
                   tension={0.35}
                   lineCap="round"

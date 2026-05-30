@@ -8,6 +8,7 @@ import {
   layerRowDragIntentFromDelta,
   scaleBitmapSelectionBounds,
   layerDropPlacementFromClientY,
+  liveStrokePreviewOpacity,
   latestStrokeSegment,
   shouldRenderLiveStroke,
   shouldAppendStrokePoint,
@@ -119,6 +120,13 @@ describe("sketch geometry", () => {
   it("does not render live eraser strokes", () => {
     expect(shouldRenderLiveStroke({ tool: "brush" })).toBe(true);
     expect(shouldRenderLiveStroke({ tool: "eraser" })).toBe(false);
+  });
+
+  it("matches live brush preview opacity to the active bitmap layer opacity", () => {
+    expect(liveStrokePreviewOpacity({ tool: "brush", opacity: 1 }, 0.35)).toBe(0.35);
+    expect(liveStrokePreviewOpacity({ tool: "brush", opacity: 0.5 }, 0.5)).toBe(0.25);
+    expect(liveStrokePreviewOpacity({ tool: "brush", opacity: 1 }, undefined)).toBe(1);
+    expect(liveStrokePreviewOpacity({ tool: "eraser", opacity: 0.5 }, 0.35)).toBe(0.5);
   });
 
   it("builds bitmap selection bounds from rectangle and lasso points", () => {

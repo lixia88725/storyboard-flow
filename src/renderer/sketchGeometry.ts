@@ -134,6 +134,14 @@ export const shouldRenderLiveStroke = (stroke: { tool?: "brush" | "eraser" }): b
   return stroke.tool !== "eraser";
 };
 
+export const liveStrokePreviewOpacity = (
+  stroke: { tool?: "brush" | "eraser"; opacity?: number },
+  layerOpacity = 1
+): number => {
+  const strokeOpacity = stroke.opacity ?? 1;
+  return stroke.tool === "eraser" ? strokeOpacity : strokeOpacity * layerOpacity;
+};
+
 export const bitmapSelectionBounds = (points: Point[]): Bounds | undefined => {
   if (points.length === 0) {
     return undefined;
