@@ -154,6 +154,24 @@ SWB 内部工作格式继续使用 `.storyboard-workbench/layers/*.png` 加 `sto
 
 Reason: Photoshop PSD/TIFF 图层格式适合作为交换格式，但不适合作为 V1 的内部事务日志。PNG layer assets + JSON 更容易做 autosave、undo/redo、迁移和安全恢复。
 
+## Layered TIFF Save Writes Once
+
+多图层 TIFF 的 Save 只写一次最终 Photoshop-readable TIFF。Electron 把 SWB metadata 传给 Python writer；Python writer 在生成最终 composite 后计算 `baseFingerprint`，再把 SWB XMP 和 Photoshop layer records 一起写入最终 TIFF。
+
+Reason: 之前的两遍写入是为了先得到最终 TIFF fingerprint，再第二次写入 XMP。把 fingerprint 计算放进最终 writer 后，可以保留 SWB metadata 和 Photoshop layers，同时少做一次大 TIFF 写入。
+
+## Photoshop TIFF Python Dependencies Resolve From Stable Locations
+
+Photoshop TIFF import/export Python deps 的解析顺序是 `SWB_PYTHON_DEPS_DIR`、packaged resources `python-deps/photoshop-tiff`、local dev vendor `vendor/python/photoshop-tiff`，最后才 fallback 到旧 spike 目录 `/private/tmp/psdtags-spike-deps`。
+
+Reason: 临时 spike 目录不适合作为长期默认依赖来源。保留 fallback 保护现有开发环境，同时让开发目录和未来打包资源目录成为稳定路径。
+
+## Locked Bitmap Layers Protect Content But Not Visibility
+
+Locked bitmap layer 仍可被选中，也可显示/隐藏；但不能绘制、擦除、Select transform、Clear、Delete、重命名、调整 opacity / blend mode 或排序。
+
+Reason: 锁定的核心目的是避免误改像素和图层属性。显示/隐藏属于查看状态，允许切换可以保持接近 Photoshop 的图层管理体验。
+
 ## Legacy Strokes Are Migration Input
 
 旧项目中的 `sketchLayers`、`imageLayerEdits`、`baseVisible` 和 `activeLayerTarget` 只作为一次性迁移输入。打开旧项目后，Electron 会把旧 stroke 数据 rasterize 到内部 PNG layer assets，renderer 主流程不再依赖这些字段。
