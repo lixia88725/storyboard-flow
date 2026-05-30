@@ -7,16 +7,21 @@ import sharp from "sharp";
 import {
   applyFileMoves,
   applyFileRenamePlan,
+  applyFileReplacements,
   replaceFileWithTemp,
   type AppliedFileMoves,
-  type AppliedFileRenamePlan
+  type AppliedFileRenamePlan,
+  type AppliedFileReplacements
 } from "./fileRenames.js";
 import {
   flattenBitmapLayerBuffersToTiff,
   shouldEnsureLayerAssetsForShot,
   type BitmapLayerComposite
 } from "./bitmapLayers.js";
-import { exportPhotoshopLayeredTiffs } from "./photoshopTiffExport.js";
+import {
+  exportPhotoshopLayeredTiffs,
+  writePhotoshopLayeredTiffsForInPlaceSave
+} from "./photoshopTiffExport.js";
 import {
   buildPhotoshopTiffImportAssetPlan,
   ensureLayerMoveDestinationsAvailable,
@@ -371,6 +376,7 @@ const registerIpcHandlers = () => {
 const saveWorkspace = async (payload: ProjectPayload): Promise<ProjectPayload> => {
   let appliedRenamePlan: AppliedFileRenamePlan | undefined;
   let swbImport: SwbImportResult | undefined;
+  let appliedTiffReplacements: AppliedFileReplacements | undefined;
 
   try {
     if (payload.renamePlan && payload.renamePlan.length > 0) {
@@ -383,12 +389,14 @@ const saveWorkspace = async (payload: ProjectPayload): Promise<ProjectPayload> =
 
     swbImport = await importProjectToSwbFormat(payload.project, payload.folderPath);
     const swbProject = swbImport.project;
-    await writeSwbMetadataToTiffs(swbProject, payload.folderPath);
+    appliedTiffReplacements = await writeSwbMetadataToTiffs(swbProject, payload.folderPath);
     const savedProject = clearSavedImageLayerEdits(swbProject);
     await writeProjectMetadata(payload.metadataPath, savedProject);
+    await appliedTiffReplacements?.commit();
 
     return { ...payload, project: savedProject };
   } catch (error) {
+    await appliedTiffReplacements?.rollback();
     await swbImport?.rollback();
     await appliedRenamePlan?.rollback();
     throw error;
@@ -873,11 +881,17 @@ const sketchLayersForShot = (
   return shot.sketchLayers ?? [];
 };
 
-const writeSwbMetadataToTiffs = async (project: Project, folderPath: string): Promise<void> => {
+const writeSwbMetadataToTiffs = async (
+  project: Project,
+  folderPath: string
+): Promise<AppliedFileReplacements | undefined> => {
   await ensureProjectLayerAssets(project, folderPath);
+  const layeredShotIds = new Set(
+    project.shots.filter(shouldWritePhotoshopLayeredTiffOnSave).map((shot) => shot.id)
+  );
 
   for (const shot of project.shots) {
-    if (!shouldWriteSwbMetadata(shot)) {
+    if (!shouldWriteSwbMetadata(shot) || layeredShotIds.has(shot.id)) {
       continue;
     }
 
@@ -903,6 +917,72 @@ const writeSwbMetadataToTiffs = async (project: Project, folderPath: string): Pr
       }
     }
   }
+
+  if (layeredShotIds.size === 0) {
+    return undefined;
+  }
+
+  return writePhotoshopLayeredTiffsForSave(
+    {
+      ...project,
+      shots: project.shots.filter((shot) => layeredShotIds.has(shot.id))
+    },
+    folderPath
+  );
+};
+
+const writePhotoshopLayeredTiffsForSave = async (
+  project: Project,
+  folderPath: string
+): Promise<AppliedFileReplacements> => {
+  const saveStamp = archiveStamp();
+  const scriptPath = path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-export.py");
+  const env = {
+    ...process.env,
+    SWB_PYTHON_DEPS_DIR: process.env.SWB_PYTHON_DEPS_DIR ?? defaultPhotoshopTiffPythonDepsDir
+  };
+  const firstWrite = await writePhotoshopLayeredTiffsForInPlaceSave(project, folderPath, {
+    scriptPath,
+    saveStamp,
+    env
+  });
+  const xmpByShotId: Record<string, string> = {};
+
+  for (const shot of project.shots) {
+    const replacement = firstWrite.replacements.find((item) => item.toPath === shot.imagePath);
+    if (!replacement) {
+      continue;
+    }
+
+    const metadata = await sharp(replacement.fromPath).metadata();
+    const fingerprint = await pixelFingerprint(replacement.fromPath);
+    const canvasWidth = shot.swb?.canvasWidth || metadata.width || 0;
+    const canvasHeight = shot.swb?.canvasHeight || metadata.height || 0;
+    const swbMetadata = swbMetadataForShot(project.id, shot, canvasWidth, canvasHeight, fingerprint);
+    xmpByShotId[shot.id] = swbMetadataXmp(swbMetadata);
+  }
+
+  const finalWrite = await writePhotoshopLayeredTiffsForInPlaceSave(project, folderPath, {
+    scriptPath,
+    saveStamp,
+    env,
+    xmpByShotId
+  });
+
+  return applyFileReplacements(
+    finalWrite.replacements.map((replacement) => ({
+      tempPath: replacement.fromPath,
+      targetPath: replacement.toPath,
+      backupPath: path.join(
+        folderPath,
+        ".storyboard-workbench",
+        "save-backup",
+        saveStamp,
+        path.basename(replacement.toPath)
+      )
+    })),
+    { mkdir: ensureDirectory, rename, unlink }
+  );
 };
 
 const shouldWriteSwbMetadata = (shot: Project["shots"][number]): boolean => {
@@ -912,6 +992,10 @@ const shouldWriteSwbMetadata = (shot: Project["shots"][number]): boolean => {
     shot.swb?.status !== "non-swb" &&
     shot.swb?.status !== "incompatible-external-edit"
   );
+};
+
+const shouldWritePhotoshopLayeredTiffOnSave = (shot: Project["shots"][number]): boolean => {
+  return shouldWriteSwbMetadata(shot) && bitmapLayersForShot(shot).length > 1;
 };
 
 const bakeShotToWorkingTiff = async (

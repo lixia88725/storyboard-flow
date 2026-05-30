@@ -25,7 +25,7 @@ npm run dev
 `Save` 会执行两件事：
 
 - 按软件内 storyboard 顺序安全同步真实图片文件名。
-- 把当前可见 SWB 绘制结果烘焙到工作 TIFF。
+- 把当前 SWB 图层状态写入工作 TIFF：单层 shot 保存为普通单层 TIFF；多 bitmap layer shot 保存为 Photoshop-readable layered TIFF，并保留 SWB XMP metadata。
 
 当前命名规则：
 
@@ -46,17 +46,17 @@ npm run dev
 - Select 工具支持 V1 lasso / rectangle 选区，对当前 active bitmap layer 做移动和角点缩放；选区本身不写入项目文件，提交后的像素结果写回当前 layer PNG。
 - Undo / redo 会恢复相关 layer PNG snapshot 和 JSON metadata。
 - 新增图层进入 undo 时会记录新增 layer PNG 的空快照；如果 autosave 已创建内部 PNG，Undo 会删除该 orphan asset，Redo 会恢复它。
-- Save 时由 Electron/sharp 合成可见 bitmap layers 并写入工作 TIFF，包含图层 opacity 和 blend mode。
+- Save 时由 Electron 写入工作 TIFF：单层内容走 sharp 单层 TIFF；多 bitmap layer shot 走 Photoshop-readable layered TIFF，包含图层顺序、名称、显隐、opacity 和 blend mode。
 
 图层面板是每张 storyboard 右侧的 click-toggle 抽屉，支持新增、删除、重命名、显隐、opacity、blend mode 和拖动排序。图层行纵向拖动用于排序，横向拖动用于调整 opacity；顶部独立 opacity slider 已移除。隐藏图层不会成为 active 绘制目标。`Image` 层在 UI 中可像普通图层一样选中、绘制、擦除、重排；如果当前 shot 有多个图层，选中 `Image` 后点击 `Delete current layer` 会移除 Image layer 和内部 PNG asset。每个 shot 至少保留一个图层，所以只剩一个 `Image` 层时删除按钮会禁用。
 
 工具栏顶部的齿轮按钮可配置本机快捷键，覆盖 Brush、Eraser、Select、Clear layer、Save、Add Shot、Onion Skin、左右切帧、Undo 和 Redo。快捷键设置写入 Electron `userData`，不是项目文件的一部分。`Escape` 默认用于 Clear layer；当菜单打开时，`Escape` 优先关闭菜单。
 
-`npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、拖动排序、图层缩略图、Select 移动/缩放、Add Shot、Save safety、快捷键持久化、混合画幅动画模式、Onion Skin 和重开恢复；它也覆盖旧 stroke 项目的 bitmap migration、Photoshop layered TIFF export/import round trip，并检查内部 layer PNG 没有 metadata 未引用的 orphan asset。
+`npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、拖动排序、图层缩略图、Select 移动/缩放、Add Shot、Save safety、Save 写入 Photoshop-readable layered TIFF、快捷键持久化、混合画幅动画模式、Onion Skin 和重开恢复；它也覆盖旧 stroke 项目的 bitmap migration、Photoshop layered TIFF export/import round trip，并检查内部 layer PNG 没有 metadata 未引用的 orphan asset。
 
 ## Photoshop Layered TIFF Export
 
-顶部工具栏的 `Export TIFF` 会把当前场景中的所有 shot 导出为 Photoshop-readable layered TIFF。每个 shot 输出一个 `.tiff`，位置为当前场景文件夹下的 `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`。该导出使用 SWB 内部 bitmap layer PNG 和 JSON metadata 生成 Photoshop `ImageSourceData` tag `37724`，不改变真实 storyboard 图片文件名，也不替代 `Save`。
+`Save` 是正式写入入口：有多个 bitmap layer 的 shot 会直接写回当前场景文件夹中的 Photoshop-readable layered TIFF；只有单层内容的 shot 继续保存为普通单层 TIFF。顶部工具栏的 `Export TIFF` 仍可把当前场景中的所有 shot 另存为 Photoshop-readable layered TIFF，位置为当前场景文件夹下的 `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`，主要用于交换、调试和对比验证。
 
 现有 `Import` 操作也会检测 Photoshop layered TIFF，并把 raster Photoshop layers 转换成 SWB-owned bitmap layers。源 TIFF 会移动到 `Archive/YYYY-MM-DD-HHMMSS/`，SWB 继续使用 `.storyboard-workbench/layers/*.png` 和 `storyboard.project.json` 作为内部工作数据。
 
@@ -66,9 +66,9 @@ npm run dev
 
 非 SWB 图片可导入为 SWB-owned TIFF。导入会把原文件移动到 `Archive/YYYY-MM-DD-HHMMSS/`，工作 TIFF 由 Storyboard Workbench 管理。
 
-`.storyboard-workbench/storyboard.project.json` 是主数据；TIFF XMP metadata 只是便携快照。兼容的外部 TIFF 像素编辑可以被接受为新的 base；Photoshop layered TIFF 作为显式 import/export 交换格式支持，不是内部 Save 格式。
+`.storyboard-workbench/storyboard.project.json` 是主数据；TIFF XMP metadata 只是便携快照。兼容的外部 TIFF 像素编辑可以被接受为新的 base；Photoshop layered TIFF 是 Save/Export 的 Photoshop 交换写入格式，但不是 autosave 的内部事务格式。
 
-`docs/photoshop-layered-tiff-spike.md` 记录了最初的格式 spike：Python `psdtags + tifffile` 可以生成 Photoshop 2026 识别为多图层的 Photoshop-style layered TIFF；sharp/libvips 标准 multi-page TIFF 不能被 Photoshop 当作图层打开。当前产品化范围是显式 import/export，不是 Save 替换。
+`docs/photoshop-layered-tiff-spike.md` 记录了最初的格式 spike：Python `psdtags + tifffile` 可以生成 Photoshop 2026 识别为多图层的 Photoshop-style layered TIFF；sharp/libvips 标准 multi-page TIFF 不能被 Photoshop 当作图层打开。
 
 下一阶段讨论方向是 PSD-first Photoshop interoperability：先验证 PSD raster layer import/export，再决定是否作为显式 Photoshop 交换工作流产品化。当前 PSD 支持尚未实现。
 
@@ -89,4 +89,3 @@ npm run dev
 - SQLite migration.
 - Cloud sync or collaboration.
 - Photoshop layer round-trip as a production feature.
-- Full Photoshop-compatible multi-layer TIFF writing as the production Save path.

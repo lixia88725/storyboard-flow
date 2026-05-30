@@ -84,6 +84,18 @@ def apply_opacity(image: numpy.ndarray, opacity: float) -> numpy.ndarray:
     return result
 
 
+def flatten_over_white(image: numpy.ndarray) -> numpy.ndarray:
+    if image.shape[2] < 4:
+        return image
+
+    alpha = image[..., 3:4].astype(numpy.float32) / 255.0
+    rgb = numpy.round(
+        image[..., :3].astype(numpy.float32) * alpha + 255.0 * (1.0 - alpha)
+    ).astype(numpy.uint8)
+    opaque_alpha = numpy.full((image.shape[0], image.shape[1], 1), 255, dtype=numpy.uint8)
+    return numpy.concatenate([rgb, opaque_alpha], axis=-1)
+
+
 def layer_record(layer: dict[str, Any], image: numpy.ndarray, *, background: bool) -> PsdLayer:
     channels = []
 
@@ -178,7 +190,7 @@ def write_layered_tiff(manifest_path: Path) -> None:
     )
 
     composite_layers = [(image, (0, 0)) for _layer, image, _background in loaded_layers]
-    composite = overlay(*composite_layers, shape=(height, width))
+    composite = flatten_over_white(overlay(*composite_layers, shape=(height, width)))
     output = Path(manifest["outputPath"])
     output.parent.mkdir(parents=True, exist_ok=True)
     extra_tags = [

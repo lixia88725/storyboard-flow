@@ -1855,6 +1855,12 @@ try {
   if (!firstSavedTopLeftRgb.every((channel) => channel === 255)) {
     throw new Error(`Deleted Image layer still contributed base pixels: ${firstSavedTopLeftRgb.join(",")}`);
   }
+  const savedPhotoshopLayerNames = await readPhotoshopLayerNames(path.join(smokeRoot, firstSavedTiff));
+  if (savedPhotoshopLayerNames.length !== 2 || savedPhotoshopLayerNames.includes("Image")) {
+    throw new Error(
+      `Save did not write the current multi-layer shot as editable Photoshop layers: ${savedPhotoshopLayerNames.join(",")}`
+    );
+  }
   const archivedShotAPath = await waitFor(
     () => findArchivedFileByHash(smokeRoot, originalShotAHash),
     "archived original shot"
@@ -2135,6 +2141,7 @@ try {
         },
         saveConflictBlocked,
         firstSavedTopLeftRgb,
+        savedPhotoshopLayerNames,
         archivedShotAHash,
         savedFileNames: savedTiffFiles,
         savedSwbStatuses: savedProject.shots.map((shot) => shot.swb.status),

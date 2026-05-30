@@ -251,6 +251,56 @@ describe("buildPhotoshopTiffExportPlan", () => {
     }
   });
 
+  it("injects per-shot XMP into in-place Photoshop TIFF save manifests", async () => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-save-xmp-"));
+
+    try {
+      const originalPath = path.join(folderPath, "a.tiff");
+      const fakeWriterPath = path.join(folderPath, "fake-writer.mjs");
+      const layerPath = path.join(folderPath, ".storyboard-workbench/layers/shot-a/layer-image.png");
+
+      await writeFile(originalPath, "original", "utf8");
+      await mkdir(path.dirname(layerPath), { recursive: true });
+      await writeFile(layerPath, "fake-png", "utf8");
+      await writeFile(
+        fakeWriterPath,
+        [
+          "import { readFile, writeFile } from 'node:fs/promises';",
+          "const manifest = JSON.parse(await readFile(process.argv[2], 'utf8'));",
+          "await writeFile(manifest.outputPath, manifest.xmp ?? 'missing-xmp', 'utf8');"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await writePhotoshopLayeredTiffsForInPlaceSave(
+        {
+          name: "Demo",
+          shots: [
+            {
+              id: "shot-a",
+              imagePath: originalPath,
+              fileName: "a.tiff",
+              order: 0,
+              swb: { canvasWidth: 320, canvasHeight: 180 },
+              layers: [layer({ bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png" })]
+            }
+          ]
+        },
+        folderPath,
+        {
+          scriptPath: fakeWriterPath,
+          pythonPath: process.execPath,
+          saveStamp: "save-123",
+          xmpByShotId: { "shot-a": "<xmp>shot-a</xmp>" }
+        }
+      );
+
+      await expect(readFile(result.replacements[0].fromPath, "utf8")).resolves.toBe("<xmp>shot-a</xmp>");
+    } finally {
+      await rm(folderPath, { recursive: true, force: true });
+    }
+  });
+
   it("writes optional XMP into Photoshop layered TIFFs without dropping layer data", async () => {
     const depsDir = "/private/tmp/psdtags-spike-deps";
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-xmp-"));
@@ -314,6 +364,69 @@ describe("buildPhotoshopTiffExportPlan", () => {
 
       const metadata = await sharp(outputPath).metadata();
       expect(metadata.xmpAsString).toContain("<swb:metadata>eyJzaG90SWQiOiJzaG90LWEifQ==</swb:metadata>");
+      const { stdout } = await execFileAsync("python3", [
+        "-c",
+        "import sys; sys.path.insert(0, sys.argv[2]); from psdtags import TiffImageSourceData; print(len(TiffImageSourceData.fromtiff(sys.argv[1]).layers))",
+        outputPath,
+        depsDir
+      ]);
+      expect(stdout.trim()).toBe("1");
+    } finally {
+      await rm(folderPath, { recursive: true, force: true });
+    }
+  });
+
+  it("writes the main Photoshop TIFF composite over a white canvas", async () => {
+    const depsDir = "/private/tmp/psdtags-spike-deps";
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-white-"));
+
+    try {
+      const layerPath = path.join(folderPath, "transparent-layer.png");
+      const outputPath = path.join(folderPath, "out.tiff");
+      const manifestPath = path.join(folderPath, "manifest.json");
+      const scriptPath = path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py");
+
+      await sharp({
+        create: {
+          width: 2,
+          height: 2,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 }
+        }
+      })
+        .png()
+        .toFile(layerPath);
+      await writeFile(
+        manifestPath,
+        `${JSON.stringify(
+          {
+            outputPath,
+            width: 2,
+            height: 2,
+            documentName: "white-composite-test",
+            layers: [
+              {
+                name: "Transparent Paint",
+                path: layerPath,
+                opacity: 1,
+                blendMode: "normal",
+                visible: true,
+                background: false
+              }
+            ]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      await execFileAsync("python3", [scriptPath, manifestPath], {
+        env: { ...process.env, SWB_PYTHON_DEPS_DIR: depsDir }
+      });
+
+      const { data } = await sharp(outputPath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      expect(Array.from(data.slice(0, 4))).toEqual([255, 255, 255, 255]);
       const { stdout } = await execFileAsync("python3", [
         "-c",
         "import sys; sys.path.insert(0, sys.argv[2]); from psdtags import TiffImageSourceData; print(len(TiffImageSourceData.fromtiff(sys.argv[1]).layers))",

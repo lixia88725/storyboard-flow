@@ -81,6 +81,7 @@ type AppliedReplacement = {
 };
 
 export type AppliedFileReplacements = {
+  commit: () => Promise<void>;
   rollback: () => Promise<void>;
 };
 
@@ -135,8 +136,18 @@ export const applyFileReplacements = async (
   }
 
   return {
+    commit: () => cleanupAppliedReplacementBackups(applied, ops),
     rollback: () => rollbackAppliedReplacements(applied, ops)
   };
+};
+
+const cleanupAppliedReplacementBackups = async (
+  applied: AppliedReplacement[],
+  ops: Required<TempReplaceOps>
+): Promise<void> => {
+  for (const entry of applied) {
+    await ops.unlink(entry.item.backupPath).catch(() => undefined);
+  }
 };
 
 const rollbackAppliedReplacements = async (

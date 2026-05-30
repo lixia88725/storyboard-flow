@@ -205,3 +205,36 @@ Updated `scripts/photoshop-layered-tiff-export.py` to write optional manifest `x
 Run: `npm run test -- electron/main/photoshopTiffExport.test.ts`
 
 Observed: PASS; `sharp` reads XMP and `psdtags` still reads the layer data.
+
+### Task 5: Make Save Use Photoshop Layered TIFF For Multi-Layer Shots
+
+**Files:**
+- Modify: `electron/main/main.ts`
+- Modify: `electron/main/fileRenames.ts`
+- Modify: `electron/main/photoshopTiffExport.ts`
+- Modify: `scripts/photoshop-layered-tiff-export.py`
+- Modify: `scripts/electron-bitmap-smoke.mjs`
+
+- [x] **Step 1: Add per-shot XMP injection for in-place save manifests**
+
+`writePhotoshopLayeredTiffsForInPlaceSave` accepts `xmpByShotId` and writes the matching XMP into each manifest.
+
+- [x] **Step 2: Connect multi-layer Save to the Photoshop TIFF writer**
+
+`writeSwbMetadataToTiffs` keeps single-layer shots on the existing sharp path and routes shots with more than one bitmap layer through the Photoshop layered TIFF writer.
+
+- [x] **Step 3: Preserve rollback behavior**
+
+Layered Save writes to `.storyboard-workbench/save-tmp/<stamp>/`, replaces current TIFFs through `applyFileReplacements`, and keeps the replacement rollback handle inside `saveWorkspace` until project metadata has been written.
+
+- [x] **Step 4: Keep SWB metadata without flattening Photoshop layers**
+
+Save writes layered TIFFs once to compute the final fingerprint, then writes them again with SWB XMP tag `700`; it does not run sharp over the finished layered TIFF.
+
+- [x] **Step 5: Match existing white-background Save output**
+
+The Python writer flattens the main TIFF composite over white while preserving per-layer alpha in Photoshop layer records.
+
+- [x] **Step 6: Verify through Electron smoke**
+
+`npm run smoke:bitmap` verifies Save-produced working TIFFs contain Photoshop layer records via `psdtags` and still reopen correctly in SWB.

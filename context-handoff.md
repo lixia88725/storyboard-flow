@@ -23,11 +23,11 @@
   - JSON stores `shots[].layers` and `activeLayerId`.
   - Editable pixels live in `.storyboard-workbench/layers/{shotId}/{layerId}.png`.
   - Brush, eraser, clear, delete, undo, redo, bitmap Select move, and bitmap Select corner scale operate on internal PNG layer assets plus JSON metadata.
-- `Save` remains the only boundary that changes real delivery files: it performs filename sync, archives originals when needed, and bakes visible SWB layers into working TIFF.
+- `Save` remains the only boundary that changes real delivery files: it performs filename sync, archives originals when needed, writes single-layer shots as ordinary TIFFs, and writes multi bitmap layer shots as Photoshop-readable layered TIFFs.
 - `Image` behaves like a normal layer in the UI: selectable, drawable, erasable, clearable, reorderable, and deletable when another layer remains.
 - Legacy `sketchLayers` and `imageLayerEdits` remain migration inputs only. New renderer editing no longer depends on the old stroke model.
 - Keyboard shortcuts are configurable from the gear button at the top of the tool rail and are persisted in the local Electron `userData` settings file.
-- Photoshop layered TIFF import/export are now explicit Photoshop exchange paths, not part of `Save`: `Export TIFF` writes one Photoshop-readable layered TIFF per shot under `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`; existing `Import` ingests Photoshop layered TIFF raster layers into SWB-owned bitmap layer PNG assets and archives the source TIFF.
+- Photoshop layered TIFF is now part of `Save` for multi-layer shots and still available through explicit `Export TIFF`: `Save` writes the working TIFF in-place, while `Export TIFF` writes one Photoshop-readable layered TIFF per shot under `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`. Existing `Import` ingests Photoshop layered TIFF raster layers into SWB-owned bitmap layer PNG assets and archives the source TIFF.
 
 ## Completed This Session
 
@@ -49,6 +49,12 @@
   - Added `swb.sourceKind: "photoshop-layered-tiff"` for imported Photoshop layered TIFF shots.
   - Autosave no longer materializes layer PNG assets for external non-owned shots, preventing provisional `layer-image.png` conflicts before explicit Import. Explicit Export/Save still ensure layer assets.
   - Extended `npm run smoke:bitmap` to verify SWB export -> Photoshop layered TIFF -> SWB import round trip, matching layer count, layer PNG assets, archived source TIFF, and `sourceKind`.
+- Save writes Photoshop layered TIFFs:
+  - Multi bitmap layer shots now save in-place as Photoshop-readable layered TIFFs; single-layer shots keep the ordinary TIFF path.
+  - The writer now supports optional XMP tag `700`, so Save can keep SWB metadata without running sharp over the finished layered TIFF and stripping Photoshop layer data.
+  - Layered Save writes to `.storyboard-workbench/save-tmp/<stamp>/`, then replaces working TIFFs through rollback-safe backups in `.storyboard-workbench/save-backup/<stamp>/`.
+  - The main TIFF composite is flattened over white to preserve existing Save output expectations when the Image layer is deleted or transparent.
+  - `npm run smoke:bitmap` now verifies the saved current `_0010.tiff` has Photoshop layer names via `psdtags`.
 - Save rename safety:
   - Extracted the Electron two-stage rename executor into `electron/main/fileRenames.ts`.
   - Added rollback for execution failures after preflight, so files already moved to temporary or final names are restored to their original paths when possible.
@@ -167,8 +173,8 @@ Recommended next steps:
 4. Manually verify multi-select shot dragging and double-click dialogue editing, because those dnd-kit / text-editing flows are still best checked in the app.
 5. If the next session starts implementation work, a good small feature is making layer lock behavior truly enforce drawing/editing restrictions before adding larger Photoshop interoperability work.
 6. If drawer drag is revisited, start with a tiny visual mock/prototype first. Do not re-add pointer-drag drawer code directly into production UI without a clearer occlusion/animation model.
-7. Replace the temporary Python dependency path for Photoshop TIFF import/export with a packaged or installer-managed dependency story before treating the feature as distribution-ready.
-8. PSD-first Photoshop interoperability remains a future spike, separate from the main Save path.
+7. Replace the temporary Python dependency path for Photoshop TIFF Save/import/export with a packaged or installer-managed dependency story before treating the feature as distribution-ready.
+8. PSD-first Photoshop interoperability remains a future spike.
 
 ## Known Remaining Work
 
@@ -177,7 +183,7 @@ Recommended next steps:
 - Layer `locked` exists in metadata/UI but still needs a product pass to define and enforce which operations are blocked.
 - Pointer-drag open/close for the layer drawer was removed; future rework needs a better interaction design first.
 - PSD-first spike and compatibility matrix are not implemented.
-- Photoshop layered TIFF import/export currently relies on Python deps available via `SWB_PYTHON_DEPS_DIR` or `/private/tmp/psdtags-spike-deps`; packaging is not solved.
+- Photoshop layered TIFF Save/import/export currently relies on Python deps available via `SWB_PYTHON_DEPS_DIR` or `/private/tmp/psdtags-spike-deps`; packaging is not solved.
 - Photoshop layered TIFF import supports raster layer ingestion for V1; full Photoshop feature round-trip is not implemented.
 - Windows Photoshop compatibility has not been tested.
 - Current build still emits the Vite chunk-size warning.

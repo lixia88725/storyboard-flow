@@ -46,6 +46,7 @@ export type PhotoshopTiffExportManifest = {
   width: number;
   height: number;
   documentName: string;
+  xmp?: string;
   layers: PhotoshopTiffExportLayer[];
 };
 
@@ -168,6 +169,7 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
     saveStamp: string;
     pythonPath?: string;
     env?: NodeJS.ProcessEnv;
+    xmpByShotId?: Record<string, string>;
   }
 ): Promise<PhotoshopTiffInPlaceSaveResult> => {
   const plan = buildPhotoshopTiffInPlaceSavePlan(project, folderPath, options.saveStamp);
@@ -175,7 +177,9 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
 
   for (const job of plan.jobs) {
     const manifestPath = path.join(plan.manifestFolderPath, `${job.shotId}.json`);
-    await writeFile(manifestPath, `${JSON.stringify(job.manifest, null, 2)}\n`, "utf8");
+    const xmp = options.xmpByShotId?.[job.shotId];
+    const manifest = xmp ? { ...job.manifest, xmp } : job.manifest;
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     await runPythonExporter(options.pythonPath ?? "python3", options.scriptPath, manifestPath, options.env);
   }
 

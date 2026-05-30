@@ -150,7 +150,7 @@ Reason: 抽屉拖动需要更明确的遮挡和动画模型，否则容易出现
 
 ## Photoshop Interop Stays Separate From Internal Working Data
 
-SWB 内部工作格式继续使用 `.storyboard-workbench/layers/*.png` 加 `storyboard.project.json`。Photoshop 互操作作为显式 import/export 工作流，不直接替代内部 autosave 数据模型。当前已产品化的是 Photoshop layered TIFF export/import：`Export TIFF` 每个 shot 输出一个 Photoshop-readable layered TIFF 到 `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`；现有 `Import` 会把 Photoshop layered TIFF 的 raster layers 吸收到 SWB-owned bitmap layer assets，并归档源 TIFF。两者都不改变 `Save`。
+SWB 内部工作格式继续使用 `.storyboard-workbench/layers/*.png` 加 `storyboard.project.json`。Photoshop layered TIFF 是 Save/Export 的交换写入格式，不替代内部 autosave 数据模型。当前 `Save` 会把多 bitmap layer shot 写回当前场景文件夹中的 Photoshop-readable layered TIFF；单层 shot 仍保存为普通单层 TIFF。`Export TIFF` 仍可另存一份 Photoshop-readable layered TIFF 到 `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`；现有 `Import` 会把 Photoshop layered TIFF 的 raster layers 吸收到 SWB-owned bitmap layer assets，并归档源 TIFF。
 
 Reason: Photoshop PSD/TIFF 图层格式适合作为交换格式，但不适合作为 V1 的内部事务日志。PNG layer assets + JSON 更容易做 autosave、undo/redo、迁移和安全恢复。
 
@@ -160,7 +160,7 @@ Reason: Photoshop PSD/TIFF 图层格式适合作为交换格式，但不适合�
 
 Reason: 迁移必须保护旧项目可见结果，同时避免新代码继续扩展两套绘图主数据。
 
-Non-goal: bitmap layer 重构不代表完整 Photoshop 图层 round-trip。Photoshop layered TIFF import/export 已经产品化为显式交换路径；PSD-first、复杂 Photoshop 图层完整保真、文件监听同步和把 layered TIFF 作为 Save 主路径仍是待验证方向。
+Non-goal: bitmap layer 重构不代表完整 Photoshop 图层 round-trip。Photoshop layered TIFF import/export 已经产品化为 raster layer 交换路径；PSD-first、复杂 Photoshop 图层完整保真和文件监听同步仍是待验证方向。
 
 ## V1 Avoids Heavy Features
 

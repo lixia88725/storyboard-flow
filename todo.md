@@ -96,6 +96,8 @@
 - [x] Photoshop 2026 verification confirmed an exported SWB layered TIFF opens with editable layers.
 - [x] Added Photoshop layered TIFF import through the existing Import flow; source TIFFs are archived and raster Photoshop layers become SWB bitmap layer PNG assets.
 - [x] Electron smoke verifies SWB export -> Photoshop layered TIFF -> SWB import round trip, including matching layer count, layer PNG assets, `sourceKind`, and archived source TIFF.
+- [x] Save writes multi bitmap layer shots back to the current scene as Photoshop-readable layered TIFFs, while single-layer shots remain ordinary TIFFs.
+- [x] Electron smoke verifies Save-produced working TIFFs contain Photoshop layer records via `psdtags`.
 - [x] Added bitmap Select tool V1 with lasso and rectangle selection, active-layer move, corner scale, transient marching-ants UI, and undo snapshots.
 - [x] Added geometry/unit coverage for bitmap selection bounds, hit testing, scaling, row drag intent, opacity mapping, row placement, and blend menu direction.
 - [x] Added live eraser bitmap preview during pointer movement.
@@ -136,4 +138,3 @@
 - SQLite migration.
 - Cloud sync or collaboration.
 - Photoshop layer round-trip as a production feature.
-- Full Photoshop-compatible multi-layer TIFF writing as a production Save path.
