@@ -14,7 +14,7 @@
 ## P1
 
 - [ ] Dogfood bitmap Select tool V1 on real storyboard files; note lasso/rectangle move and scale UX issues before adding more features.
-- [ ] Extract `LayerPanel` from `App.tsx` into `src/renderer/LayerPanel.tsx` in a dedicated pass with smoke verification. Follow `docs/layer-panel-extraction-audit-2026-05-30.md`; keep `SketchPad` untouched.
+- [ ] Run real-folder P0 dogfood using `docs/dogfood-2026-05-30.md` as the automated baseline, especially Save speed, Trash recovery, Finder/Bridge focus behavior, high-resolution Select scaling, mixed-aspect animation review, multi-select dragging, and double-click dialogue editing.
 - [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
 - [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
 - [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
@@ -62,6 +62,8 @@
 - [x] Script card, layer drawer handle, shot spacing, and dialogue row UI were polished with smoke coverage.
 - [x] Long nested project paths no longer break TIFF preview generation during Import; preview cache filenames now use stable SHA-256 names.
 - [x] LayerPanel extraction boundary audited in `docs/layer-panel-extraction-audit-2026-05-30.md`.
+- [x] `LayerPanel` was extracted from `App.tsx` into `src/renderer/LayerPanel.tsx` as a behavior-preserving move, with test/typecheck/build/smoke verification.
+- [x] Post-extraction automated dogfood baseline recorded in `docs/dogfood-2026-05-30.md`; no new functional failures found in the smoke-covered paths.
 
 ## Out Of Scope For Current MVP
 

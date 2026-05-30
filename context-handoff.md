@@ -10,7 +10,9 @@
 - Latest continuation commits:
   - `2f2f52a fix: shorten preview cache filenames`
   - `e61b232 refactor: centralize preview cache paths`
-- This handoff records the continuation through the long-path Import fix and the LayerPanel extraction audit.
+  - `13155a6 docs: record layer panel extraction audit`
+  - `7e56d19 refactor: extract layer panel component`
+- This handoff records the continuation through the long-path Import fix and the behavior-preserving LayerPanel extraction.
 
 ## Current Product State
 
@@ -95,6 +97,21 @@
 - Move only local panel UI state, gesture handlers, menu state, props, and `blendModeLabel`.
 - Do not extract `SketchPad` in the same pass.
 
+### LayerPanel Extraction
+
+- Extracted `LayerPanel` from `src/renderer/App.tsx` into `src/renderer/LayerPanel.tsx`.
+- Kept `ShotCard`, `SketchPad`, top-level panel open state, project mutation handlers, undo/history, CSS classes, and interaction behavior unchanged.
+- Moved only the panel props, local layer-row gesture/menu types, panel-local helper functions, UI state, and `blendModeLabel`.
+- Latest implementation commit: `7e56d19 refactor: extract layer panel component`.
+
+### Post-Extraction Dogfood Baseline
+
+- Added `docs/dogfood-2026-05-30.md`.
+- Re-ran `npm run smoke:bitmap` after the extraction and documentation refresh.
+- Result: passed.
+- Covered automated paths include script card Markdown sync/import, external root image warning/import, Delete/Save-to-Trash source removal, LayerPanel drawer interactions, Layer Lock blocking, bitmap Select move/scale, keyboard shortcut persistence, Photoshop TIFF round trip, Save conflict protection, animation mode, Add Shot, reopen, and layer asset consistency.
+- This is still an automated synthetic-folder pass. Real production-folder dogfood remains needed for perceived Save speed, Finder Trash recovery, Finder/Bridge focus behavior, high-resolution Select scaling feel, mixed-aspect animation review, multi-select dragging, and double-click dialogue editing.
+
 ## Verification Run For Handoff
 
 Commands run in `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers` on 2026-05-30:
@@ -120,6 +137,29 @@ npm run smoke:bitmap
 # passed
 ```
 
+Verification run after `7e56d19` LayerPanel extraction:
+
+```bash
+npm run typecheck
+# passed
+
+npm run test
+# passed: 17 test files, 154 tests
+
+npm run build
+# passed; Vite reported the existing chunk-size warning only
+
+npm run smoke:bitmap
+# passed
+```
+
+Additional automated dogfood baseline after the documentation refresh:
+
+```bash
+npm run smoke:bitmap
+# passed
+```
+
 For the long-path Import fix, a manual Electron/CDP dogfood repro also passed: a deeply nested folder under `/Users/xiali/Documents/Codex/2026-05-30/storyboard-workbench-users-xiali-documents-codex-3/work/swb-dogfood-long-fixed/project` imported successfully, root PNGs became TIFFs, and preview filenames were 64-character SHA-256 names.
 
 `npm run smoke:bitmap` now covers script card/Markdown sync, external Markdown import, external root image import warning, Delete/Undo/Save-to-Trash, textarea Delete safety, Photoshop layered TIFF lock import, Save safety, Photoshop round trip, layer drawer behavior, dialogue row clamp, animation mode, Add Shot, reopen, and legacy migration.
@@ -131,6 +171,8 @@ The smoke intentionally triggers a Save temporary rename conflict and logs `Temp
 Latest implementation commits before this documentation handoff:
 
 ```text
+7e56d19 refactor: extract layer panel component
+13155a6 docs: record layer panel extraction audit
 e61b232 refactor: centralize preview cache paths
 2f2f52a fix: shorten preview cache filenames
 3820ac9 交接存档：完善脚本面板、导入提醒和删除流程
@@ -142,15 +184,16 @@ Documentation changes recorded in this handoff:
 context-handoff.md
 todo.md
 docs/layer-panel-extraction-audit-2026-05-30.md
+docs/dogfood-2026-05-30.md
 ```
 
 ## Next Handoff Target
 
 Recommended next steps:
 
-1. Extract `LayerPanel` into `src/renderer/LayerPanel.tsx` as a dedicated behavior-preserving move, following `docs/layer-panel-extraction-audit-2026-05-30.md`.
-2. Run `npm run test`, `npm run typecheck`, `npm run build`, and `npm run smoke:bitmap` after the extraction.
-3. Continue real-folder dogfood for Save speed, Delete-to-Trash recovery, external image Import warning, script editing, bitmap Select scaling, multi-select dragging, and double-click dialogue editing.
+1. Continue real-folder dogfood for Save speed, Delete-to-Trash recovery, external image Import warning, script editing, bitmap Select scaling, multi-select dragging, and double-click dialogue editing.
+2. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
+3. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
 
 ## Known Remaining Work
 
