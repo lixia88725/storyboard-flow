@@ -5,8 +5,9 @@
 ## Current Workspace
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
-- Branch: `bitmap-layer-refactor`
-- Latest committed baseline: `5cbedf9 refactor: clarify save and active layer targets`
+- Branch: `photoshop-layered-tiff-export`
+- Latest committed baseline before this session: `f3f7587`
+- Previous committed baseline: `5cbedf9 refactor: clarify save and active layer targets`
 - Previous committed baseline: `40873ea fix: stabilize bitmap layers and animation mode`
 - Earlier handoff baseline: `4744696 交接存档：记录快捷键和动画模式小修`
 - Previous handoff baseline: `58f24b9 交接存档：记录 bitmap 图层交互与选区 V1`
@@ -26,9 +27,20 @@
 - `Image` behaves like a normal layer in the UI: selectable, drawable, erasable, clearable, reorderable, and deletable when another layer remains.
 - Legacy `sketchLayers` and `imageLayerEdits` remain migration inputs only. New renderer editing no longer depends on the old stroke model.
 - Keyboard shortcuts are configurable from the gear button at the top of the tool rail and are persisted in the local Electron `userData` settings file.
+- Photoshop layered TIFF export is now a separate explicit export path, not part of `Save`: `Export TIFF` writes one Photoshop-readable layered TIFF per shot under `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`.
 
 ## Completed This Session
 
+- Photoshop layered TIFF export:
+  - Created branch `photoshop-layered-tiff-export`.
+  - Added `scripts/photoshop-layered-tiff-export.py`, a manifest-driven production helper based on the validated spike.
+  - Added Electron export planning/orchestration in `electron/main/photoshopTiffExport.ts`.
+  - Added `workspace:exportPhotoshopTiffs` IPC and preload APIs.
+  - Added a top-toolbar `Export TIFF` action that exports the current whole scene, one TIFF per shot, without changing `Save`.
+  - Export output goes to `Photoshop TIFF Export/YYYYMMDDTHHMMSS/` under the current scene folder.
+  - Development dependency path defaults to `/private/tmp/psdtags-spike-deps` unless `SWB_PYTHON_DEPS_DIR` is set.
+  - Extended `npm run smoke:bitmap` to click `Export TIFF`, verify three exported TIFFs, and read back layer names through `psdtags`.
+  - Live Photoshop 2026 verification opened an exported TIFF and reported `layers=2;names=Paint 1,背景;width=320;height=180;mode=DocumentMode.RGB`.
 - Save rename safety:
   - Extracted the Electron two-stage rename executor into `electron/main/fileRenames.ts`.
   - Added rollback for execution failures after preflight, so files already moved to temporary or final names are restored to their original paths when possible.
@@ -98,7 +110,7 @@ Fresh verification before this handoff update:
 
 ```bash
 npm run test
-# passed: 11 test files, 107 tests
+# passed: 12 test files, 110 tests
 
 npm run typecheck
 # passed
@@ -111,20 +123,27 @@ Latest Electron smoke from this session:
 
 ```bash
 npm run smoke:bitmap
-# passed; launches Electron via local CDP
+# passed; launches Electron via local CDP and verifies Photoshop TIFF export with psdtags readback
+```
+
+Additional manual/live validation:
+
+```text
+Photoshop 2026 opened /private/tmp/swb-photoshop-export-validation/Photoshop TIFF Export/20260529T171628/0010-shot.tiff
+Result: layers=2; names=Paint 1,背景; width=320; height=180; mode=DocumentMode.RGB
 ```
 
 The smoke intentionally triggers a Save temporary rename conflict and logs `Temporary rename file already exists`; this is expected inside the conflict-safety test when the command exits 0.
 
 ## Current Git State
 
-The refactor pass was committed as:
+The previous refactor pass was committed as:
 
 ```bash
 5cbedf9 refactor: clarify save and active layer targets
 ```
 
-The worktree was clean immediately after that commit.
+Current session changes are not yet committed.
 
 ## Next Handoff Target
 
@@ -136,7 +155,8 @@ Recommended next steps:
 4. Manually verify multi-select shot dragging and double-click dialogue editing, because those dnd-kit / text-editing flows are still best checked in the app.
 5. If the next session starts implementation work, a good small feature is making layer lock behavior truly enforce drawing/editing restrictions before adding larger Photoshop interoperability work.
 6. If drawer drag is revisited, start with a tiny visual mock/prototype first. Do not re-add pointer-drag drawer code directly into production UI without a clearer occlusion/animation model.
-7. PSD-first Photoshop interoperability remains a future spike, separate from the main Save path.
+7. Replace the temporary Python dependency path for Photoshop TIFF export with a packaged or installer-managed dependency story before treating the feature as distribution-ready.
+8. PSD-first Photoshop interoperability remains a future spike, separate from the main Save path.
 
 ## Known Remaining Work
 
@@ -145,5 +165,7 @@ Recommended next steps:
 - Layer `locked` exists in metadata/UI but still needs a product pass to define and enforce which operations are blocked.
 - Pointer-drag open/close for the layer drawer was removed; future rework needs a better interaction design first.
 - PSD-first spike and compatibility matrix are not implemented.
+- Photoshop layered TIFF export currently relies on Python deps available via `SWB_PYTHON_DEPS_DIR` or `/private/tmp/psdtags-spike-deps`; packaging is not solved.
+- Photoshop layered TIFF import is not implemented.
 - Windows Photoshop compatibility has not been tested.
 - Current build still emits the Vite chunk-size warning.

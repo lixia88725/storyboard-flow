@@ -16,6 +16,8 @@
 - [ ] Add PSD import layer parsing once the spike proves the library path.
 - [ ] Add PSD export round-trip smoke: import PSD, edit/add/reorder layers, Save/Export PSD, reopen in Photoshop and SWB.
 - [ ] Verify Photoshop PSD compatibility on Windows, not only macOS.
+- [ ] Replace the temporary `/private/tmp/psdtags-spike-deps` development dependency path with a packaged or installer-managed Python dependency story for Photoshop TIFF export.
+- [ ] Decide whether Photoshop TIFF export should preserve hidden layer visibility exactly, or export only visible layers in a future compatibility pass.
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Add validation or cleanup for missing Recent folder paths.
 - [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
@@ -89,6 +91,9 @@
 - [x] Image layer delete now behaves like normal layer delete when another layer remains; smoke verifies metadata removal, PNG asset deletion, Save output, and reopen persistence.
 - [x] Photoshop layered TIFF spike generated a Photoshop 2026-readable layered TIFF with `psdtags + tifffile`.
 - [x] Photoshop 2026 verification confirmed the layered TIFF opens with two layers; sharp/libvips standard multi-page TIFF opened as one background layer.
+- [x] Added explicit SWB -> Photoshop layered TIFF export for the whole current scene, with one TIFF per shot.
+- [x] Electron smoke verifies Photoshop TIFF export through the UI and reads back layer names with `psdtags`.
+- [x] Photoshop 2026 verification confirmed an exported SWB layered TIFF opens with editable layers.
 - [x] Added bitmap Select tool V1 with lasso and rectangle selection, active-layer move, corner scale, transient marching-ants UI, and undo snapshots.
 - [x] Added geometry/unit coverage for bitmap selection bounds, hit testing, scaling, row drag intent, opacity mapping, row placement, and blend menu direction.
 - [x] Added live eraser bitmap preview during pointer movement.

@@ -12,9 +12,11 @@ import {
   type AppliedFileRenamePlan
 } from "./fileRenames.js";
 import { flattenBitmapLayerBuffersToTiff, type BitmapLayerComposite } from "./bitmapLayers.js";
+import { exportPhotoshopLayeredTiffs } from "./photoshopTiffExport.js";
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
+const defaultPhotoshopTiffPythonDepsDir = "/private/tmp/psdtags-spike-deps";
 const blankShotPresets = {
   "16:9": { width: 1920, height: 1080 },
   "2.39:1": { width: 2581, height: 1080 },
@@ -274,6 +276,18 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle("workspace:save", async (_event, payload: ProjectPayload) => {
     return saveWorkspace(payload);
+  });
+
+  ipcMain.handle("workspace:exportPhotoshopTiffs", async (_event, payload: ProjectPayload) => {
+    await ensureProjectLayerAssets(payload.project, payload.folderPath);
+    return exportPhotoshopLayeredTiffs(payload.project, payload.folderPath, {
+      scriptPath: path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-export.py"),
+      env: {
+        ...process.env,
+        SWB_PYTHON_DEPS_DIR:
+          process.env.SWB_PYTHON_DEPS_DIR ?? defaultPhotoshopTiffPythonDepsDir
+      }
+    });
   });
 
   ipcMain.handle("workspace:importSwbFormat", async (_event, payload: ProjectPayload) => {

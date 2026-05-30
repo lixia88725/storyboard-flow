@@ -4,6 +4,7 @@ const api = {
   openFolderByPath: (folderPath) => ipcRenderer.invoke("workspace:openFolderByPath", folderPath),
   autosaveWorkspace: (payload) => ipcRenderer.invoke("workspace:autosave", payload),
   saveWorkspace: (payload) => ipcRenderer.invoke("workspace:save", payload),
+  exportPhotoshopTiffs: (payload) => ipcRenderer.invoke("workspace:exportPhotoshopTiffs", payload),
   importSwbFormat: (payload) => ipcRenderer.invoke("workspace:importSwbFormat", payload),
   writeLayerPng: (payload) => ipcRenderer.invoke("layers:writePng", payload),
   readLayerPng: (payload) => ipcRenderer.invoke("layers:readPng", payload),

@@ -150,7 +150,7 @@ Reason: 抽屉拖动需要更明确的遮挡和动画模型，否则容易出现
 
 ## Photoshop Interop Stays Separate From Internal Working Data
 
-SWB 内部工作格式继续使用 `.storyboard-workbench/layers/*.png` 加 `storyboard.project.json`。Photoshop 互操作优先作为显式 PSD/export 工作流探索，不直接替代内部 autosave 数据模型。
+SWB 内部工作格式继续使用 `.storyboard-workbench/layers/*.png` 加 `storyboard.project.json`。Photoshop 互操作作为显式 import/export 工作流，不直接替代内部 autosave 数据模型。当前已产品化的是 SWB -> Photoshop layered TIFF export：每个 shot 输出一个 Photoshop-readable layered TIFF 到 `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`，不改变 `Save`。
 
 Reason: Photoshop PSD/TIFF 图层格式适合作为交换格式，但不适合作为 V1 的内部事务日志。PNG layer assets + JSON 更容易做 autosave、undo/redo、迁移和安全恢复。
 
@@ -160,7 +160,7 @@ Reason: Photoshop PSD/TIFF 图层格式适合作为交换格式，但不适合�
 
 Reason: 迁移必须保护旧项目可见结果，同时避免新代码继续扩展两套绘图主数据。
 
-Non-goal: bitmap layer 重构不代表 Photoshop 图层 round-trip。Photoshop layered TIFF 已被 spike 证明可行，但尚未产品化；PSD-first 仍是待验证方向。
+Non-goal: bitmap layer 重构不代表 Photoshop 图层 round-trip。Photoshop layered TIFF export 已经产品化为显式导出路径；Photoshop import、PSD-first 和把 layered TIFF 作为 Save 主路径仍是待验证方向。
 
 ## V1 Avoids Heavy Features
 

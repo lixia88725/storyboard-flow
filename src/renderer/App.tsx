@@ -1189,6 +1189,37 @@ export const App = () => {
     setStatus("Saved and synced file names");
   };
 
+  const handleExportPhotoshopTiffs = async () => {
+    if (!window.storyboard) {
+      setStatus("Cannot export Photoshop TIFFs: Electron preload API is unavailable");
+      return;
+    }
+
+    if (!folderPath || !metadataPath) {
+      setStatus("Open a folder before exporting Photoshop TIFFs");
+      return;
+    }
+
+    await persistWorkspace(project);
+    const result = await withStatus(
+      "Photoshop TIFF export failed",
+      () =>
+        window.storyboard.exportPhotoshopTiffs({
+          project: { ...project, updatedAt: new Date().toISOString() },
+          folderPath,
+          metadataPath
+        }),
+      setStatus
+    );
+
+    if (!result) {
+      return;
+    }
+
+    setWorkspaceSaveState("saved");
+    setStatus(`Exported ${result.exportedFiles.length} Photoshop TIFFs to ${result.exportFolderPath}`);
+  };
+
   const handleAddShot = async () => {
     if (!window.storyboard) {
       setStatus("Cannot add shot: Electron preload API is unavailable");
@@ -1632,6 +1663,14 @@ export const App = () => {
               </div>
             ) : null}
           </div>
+          <button
+            type="button"
+            className="export-photoshop-button"
+            onClick={() => void handleExportPhotoshopTiffs()}
+            title="Export one Photoshop-readable layered TIFF per storyboard shot"
+          >
+            Export TIFF
+          </button>
         </div>
       </header>
 

@@ -6,6 +6,22 @@ The spike proved that Storyboard Workbench can generate a TIFF that Photoshop
 2026 opens as a layered document, but not by using sharp/libvips multi-page TIFF
 alone.
 
+## Productized Export Status
+
+The spike path is now connected to a dedicated Storyboard Workbench export
+command. `Export TIFF` writes one Photoshop-readable layered TIFF per shot into
+`Photoshop TIFF Export/YYYYMMDDTHHMMSS/`. This remains separate from `Save`.
+
+The export smoke verifies the generated TIFFs with `psdtags` readback. A live
+Photoshop 2026 check on `/private/tmp/swb-photoshop-export-validation/.../0010-shot.tiff`
+reported:
+
+- `layers=2`
+- `names=Paint 1,背景`
+- `width=320`
+- `height=180`
+- `mode=DocumentMode.RGB`
+
 ## Evidence
 
 - Script: `scripts/photoshop-layered-tiff-spike.py`

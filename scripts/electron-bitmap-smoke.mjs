@@ -10,6 +10,7 @@ const smokeRoot = path.join("/private/tmp", `swb-bitmap-smoke-${Date.now()}`);
 const legacyRoot = path.join("/private/tmp", `swb-legacy-smoke-${Date.now()}`);
 const port = String(9300 + Math.floor(Math.random() * 400));
 const electronBin = path.join(repoRoot, "node_modules", ".bin", "electron");
+const photoshopPythonDepsDir = process.env.SWB_PYTHON_DEPS_DIR ?? "/private/tmp/psdtags-spike-deps";
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -58,6 +59,64 @@ const readProjectMetadata = async (folderPath) =>
 
 const findTiffFiles = async (folderPath) =>
   (await readdir(folderPath)).filter((fileName) => /\.(tif|tiff)$/i.test(fileName));
+
+const findPhotoshopExportFiles = async (folderPath) => {
+  const exportRoot = path.join(folderPath, "Photoshop TIFF Export");
+  const batches = await readdir(exportRoot).catch(() => []);
+  const files = [];
+
+  for (const batch of batches) {
+    const batchPath = path.join(exportRoot, batch);
+    const fileNames = await readdir(batchPath).catch(() => []);
+    for (const fileName of fileNames) {
+      if (/\.(tif|tiff)$/i.test(fileName)) {
+        files.push(path.join(batchPath, fileName));
+      }
+    }
+  }
+
+  return files.sort();
+};
+
+const readPhotoshopLayerNames = (filePath) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(
+      "python3",
+      [
+        "-c",
+        [
+          "import json, sys",
+          "from psdtags import TiffImageSourceData",
+          "data = TiffImageSourceData.fromtiff(sys.argv[1])",
+          "print(json.dumps([layer.name for layer in data.layers]))"
+        ].join("; "),
+        filePath
+      ],
+      {
+        env: {
+          ...process.env,
+          PYTHONPATH: photoshopPythonDepsDir
+        }
+      }
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`psdtags readback failed: ${stderr || stdout}`));
+        return;
+      }
+
+      resolve(JSON.parse(stdout));
+    });
+  });
 
 const fileExists = async (filePath) =>
   stat(filePath)
@@ -473,7 +532,8 @@ try {
     cwd: repoRoot,
     env: {
       ...process.env,
-      SWB_USER_DATA_DIR: electronUserDataRoot
+      SWB_USER_DATA_DIR: electronUserDataRoot,
+      SWB_PYTHON_DEPS_DIR: photoshopPythonDepsDir
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -1450,6 +1510,26 @@ try {
   }
 
   await evaluate(`
+    (() => {
+      const exportButton = Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent.trim() === "Export TIFF");
+      exportButton.click();
+      return true;
+    })()
+  `);
+  const photoshopExportFiles = await waitFor(async () => {
+    const files = await findPhotoshopExportFiles(smokeRoot);
+    return files.length === 3 ? files : undefined;
+  }, "Photoshop layered TIFF export files", 20000);
+  const photoshopLayerNames = await readPhotoshopLayerNames(photoshopExportFiles[0]);
+  if (
+    photoshopLayerNames.length < 3 ||
+    !photoshopLayerNames.includes("Image")
+  ) {
+    throw new Error(`Photoshop TIFF readback did not preserve layers: ${JSON.stringify(photoshopLayerNames)}`);
+  }
+
+  await evaluate(`
     (async () => {
       const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const imageRow = Array.from(document.querySelectorAll(".layer-row"))
@@ -1787,6 +1867,8 @@ try {
         paintOrderBeforeDrag,
         paintOrderAfterDrag,
         paintOrderAfterBottomBlankDrag,
+        photoshopExportFiles,
+        photoshopLayerNames,
         saveConflictBlocked,
         firstSavedTopLeftRgb,
         archivedShotAHash,

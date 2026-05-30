@@ -17,6 +17,10 @@ declare global {
       saveWorkspace: (
         payload: WorkspacePayload & { renamePlan?: RenamePlanItem[] }
       ) => Promise<WorkspacePayload>;
+      exportPhotoshopTiffs: (payload: WorkspacePayload) => Promise<{
+        exportFolderPath: string;
+        exportedFiles: string[];
+      }>;
       importSwbFormat: (payload: ImportSwbFormatPayload) => Promise<FolderScanPayload>;
       writeLayerPng: (payload: {
         folderPath: string;

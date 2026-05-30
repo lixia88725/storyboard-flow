@@ -23,6 +23,11 @@ const api = {
     ipcRenderer.invoke("workspace:autosave", payload) as Promise<ProjectPayload>,
   saveWorkspace: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:save", payload) as Promise<ProjectPayload>,
+  exportPhotoshopTiffs: (payload: ProjectPayload) =>
+    ipcRenderer.invoke("workspace:exportPhotoshopTiffs", payload) as Promise<{
+      exportFolderPath: string;
+      exportedFiles: string[];
+    }>,
   importSwbFormat: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:importSwbFormat", payload),
   writeLayerPng: (payload: WriteLayerAssetPayload) =>
