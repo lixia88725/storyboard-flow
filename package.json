@@ -10,6 +10,7 @@
     "build:electron": "tsc -p tsconfig.electron.json",
     "setup:photoshop-tiff-deps": "python3 -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt",
     "smoke:bitmap": "node scripts/electron-bitmap-smoke.mjs",
+    "check:preload": "node scripts/check-preload-sync.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"

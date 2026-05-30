@@ -81,6 +81,8 @@ import {
   restoreLayerAssetSnapshots,
   type LayerAssetSnapshot
 } from "./bitmapLayerHistory";
+import { BitmapLayerThumbnail } from "./BitmapLayerThumbnail";
+import { DialoguePreview, ShotStackPreview } from "./DragPreviews";
 import {
   defaultKeyboardShortcuts,
   duplicateShortcutValues,
@@ -91,7 +93,11 @@ import {
   type KeyboardShortcuts,
   type ShortcutAction
 } from "./keyboardShortcuts";
+import { BrushIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
+import { SelectionMarquee } from "./SelectionMarquee";
+import { BrushSwatchPicker, SketchSettingSlider } from "./SketchSettingsControls";
+import { Timeline } from "./Timeline";
 import {
   bitmapSelectionBounds,
   bitmapSelectionHandleRadiusForStage,
@@ -2090,15 +2096,6 @@ const shotIdsInSelectionBox = (box: SelectionBox): string[] => {
     .filter((shotId): shotId is string => Boolean(shotId));
 };
 
-const SelectionMarquee = ({ box }: { box: SelectionBox }) => {
-  const left = Math.min(box.startX, box.currentX);
-  const top = Math.min(box.startY, box.currentY);
-  const width = Math.abs(box.currentX - box.startX);
-  const height = Math.abs(box.currentY - box.startY);
-
-  return <div className="selection-marquee" style={{ left, top, width, height }} />;
-};
-
 const withStatus = async <T,>(
   label: string,
   action: () => Promise<T>,
@@ -2111,125 +2108,6 @@ const withStatus = async <T,>(
     setStatus(`${label}: ${message}`);
     return undefined;
   }
-};
-
-const GearIcon = () => (
-  <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
-    <path d="M13.5 5h5l.8 3.2 2.7 1.1 2.8-1.7 3.5 3.5-1.7 2.8 1.1 2.7 3.3.9v5l-3.3.8-1.1 2.7 1.7 2.8-3.5 3.5-2.8-1.7-2.7 1.1-.8 3.3h-5l-.8-3.3-2.7-1.1-2.8 1.7-3.5-3.5 1.7-2.8-1.1-2.7-3.3-.8v-5l3.3-.9 1.1-2.7-1.7-2.8 3.5-3.5 2.8 1.7 2.7-1.1z" />
-    <circle cx="16" cy="18" r="4.2" />
-  </svg>
-);
-
-const BrushIcon = () => (
-  <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
-    <path d="M20.5 5.5 26.5 11.5 14 24 8 18z" />
-    <path d="M7.5 18.5c-2.5 2-2.5 5.5-1 7 1.5-2 4.5-1.5 6.5-4z" />
-  </svg>
-);
-
-const EraserIcon = () => (
-  <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
-    <path d="M9 20 19 10c1.4-1.4 3.5-1.4 4.9 0l2.1 2.1c1.4 1.4 1.4 3.5 0 4.9l-9 9H8l-2-2z" />
-    <path d="M14 15 21 22" />
-    <path d="M16 26h10" />
-  </svg>
-);
-
-const SelectIcon = () => (
-  <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
-    <path d="M10.5 8.5c-3.1 1.5-4.8 4-4.1 6.5 1 3.9 7 5.7 13.5 4.1 4.9-1.2 7.9-3.6 7.5-6.1-.4-2.6-4.5-3.9-9.2-2.9-3.4.7-5.7 2.2-5.4 3.6.3 1.3 2.9 1.8 5.9 1.1" />
-    <path d="M19.2 19.2 14.5 27l-2.1-8.6" />
-    <path d="M14.5 27 9.7 23.6" />
-  </svg>
-);
-
-const ClearIcon = () => (
-  <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
-    <path d="M9 10h14" />
-    <path d="M12 10l1 16h6l1-16" />
-    <path d="M13 10l1-4h4l1 4" />
-    <path d="M15 14v8" />
-    <path d="M18 14v8" />
-  </svg>
-);
-
-type SketchSettingSliderProps = {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  suffix: string;
-  onChange: (value: number) => void;
-};
-
-const SketchSettingSlider = ({
-  label,
-  value,
-  min,
-  max,
-  step,
-  suffix,
-  onChange
-}: SketchSettingSliderProps) => (
-  <label className="sketch-setting">
-    <span>{label}</span>
-    <strong>
-      {value}
-      {suffix}
-    </strong>
-    <input
-      aria-label={label}
-      type="range"
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      onChange={(event) => onChange(Number(event.target.value))}
-    />
-  </label>
-);
-
-const BrushSwatchPicker = ({
-  swatches,
-  activeColor,
-  onPickColor,
-  onChangeSwatch
-}: {
-  swatches: string[];
-  activeColor: string;
-  onPickColor: (color: string) => void;
-  onChangeSwatch: (index: number, color: string) => void;
-}) => {
-  const colorInputs = useRef<Array<HTMLInputElement | null>>([]);
-
-  return (
-    <div className="brush-swatch-picker" aria-label="Brush swatches">
-      {swatches.map((color, index) => (
-        <button
-          key={index}
-          type="button"
-          className={color.toLowerCase() === activeColor.toLowerCase() ? "is-selected" : ""}
-          style={{ backgroundColor: color }}
-          aria-label={`Brush swatch ${index + 1}`}
-          title="Click to pick, double-click to edit"
-          onClick={() => onPickColor(color)}
-          onDoubleClick={() => colorInputs.current[index]?.click()}
-        >
-          <input
-            ref={(element) => {
-              colorInputs.current[index] = element;
-            }}
-            aria-label={`Brush swatch ${index + 1} color`}
-            type="color"
-            value={color}
-            onClick={(event) => event.stopPropagation()}
-            onChange={(event) => onChangeSwatch(index, event.target.value)}
-          />
-        </button>
-      ))}
-    </div>
-  );
 };
 
 type LayerPanelProps = {
@@ -2648,60 +2526,6 @@ const LayerPanel = ({
         aria-label="Toggle shot layers"
         aria-expanded={isOpen}
       />
-    </div>
-  );
-};
-
-const BitmapLayerThumbnail = ({
-  layer,
-  shot,
-  folderPath,
-  revision
-}: {
-  layer: BitmapLayer;
-  shot: Shot;
-  folderPath?: string;
-  revision: number;
-}) => {
-  const fallbackImageSrc =
-    layer.kind === "image" && !layer.cleared
-      ? window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath)
-      : undefined;
-  const [thumbnailSrc, setThumbnailSrc] = useState<string | undefined>(fallbackImageSrc);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadThumbnail = async () => {
-      if (layer.cleared) {
-        setThumbnailSrc(undefined);
-        return;
-      }
-
-      const layerDataUrl = folderPath
-        ? await window.storyboard
-            .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
-            .catch(() => undefined)
-        : undefined;
-
-      if (!cancelled) {
-        setThumbnailSrc(layerDataUrl ?? fallbackImageSrc);
-      }
-    };
-
-    void loadThumbnail();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [fallbackImageSrc, folderPath, layer.bitmapPath, layer.cleared, revision]);
-
-  return (
-    <div
-      className={`layer-thumb ${layer.kind === "image" ? "layer-thumb-image" : ""}`}
-      aria-hidden="true"
-    >
-      {thumbnailSrc ? <img src={thumbnailSrc} alt="" draggable={false} /> : null}
     </div>
   );
 };
@@ -3130,68 +2954,6 @@ const DialogueCard = ({ dialogue, isEditing, onChange, onBlur }: DialogueCardPro
         onChange={(event) => onChange(clampDialogueText(event.target.value))}
         onBlur={onBlur}
       />
-    </div>
-  );
-};
-
-const DialoguePreview = ({ dialogue }: { dialogue: Dialogue }) => {
-  return <div className="dialogue-preview">{dialogue.text || "Empty dialogue"}</div>;
-};
-
-const Timeline = ({
-  shots,
-  selectedShotIds,
-  onSelect
-}: {
-  shots: Shot[];
-  selectedShotIds: string[];
-  onSelect: (shotId: string) => void;
-}) => {
-  return (
-    <aside className="timeline" aria-label="Timeline">
-      {shots.map((shot, index) => (
-        <button
-          type="button"
-          key={shot.id}
-          className={`timeline-shot ${selectedShotIds.includes(shot.id) ? "is-selected" : ""}`}
-          onClick={() => onSelect(shot.id)}
-          title={shot.fileName}
-        >
-          <img
-            src={window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath)}
-            alt=""
-            draggable={false}
-          />
-          <span>{String(index + 1).padStart(3, "0")}</span>
-        </button>
-      ))}
-    </aside>
-  );
-};
-
-const ShotStackPreview = ({ shots }: { shots: Shot[] }) => {
-  const visibleShots = shots.slice(0, 4);
-
-  return (
-    <div className="shot-stack-preview">
-      {visibleShots.map((shot, index) => (
-        <div
-          key={shot.id}
-          className="shot-stack-card"
-          style={{
-            transform: `translate(${index * 10}px, ${index * 8}px) rotate(${index * 1.5 - 2}deg)`,
-            zIndex: visibleShots.length - index
-          }}
-        >
-          <img
-            src={window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath)}
-            alt=""
-            draggable={false}
-          />
-          <span>{shot.fileName}</span>
-        </div>
-      ))}
-      {shots.length > 1 ? <strong>{shots.length}</strong> : null}
     </div>
   );
 };

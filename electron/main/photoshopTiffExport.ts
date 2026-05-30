@@ -1,21 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-
-type BitmapLayer = {
-  id: string;
-  kind: "image" | "paint";
-  name: string;
-  visible: boolean;
-  locked: boolean;
-  opacity: number;
-  blendMode: "normal" | "multiply" | "screen";
-  order: number;
-  bitmapPath: string;
-  width: number;
-  height: number;
-  cleared?: boolean;
-};
+import { bitmapLayersForShot, type ElectronBitmapLayer } from "./bitmapLayerOrdering.js";
 
 type Project = {
   name: string;
@@ -24,7 +10,7 @@ type Project = {
     imagePath: string;
     fileName: string;
     order: number;
-    layers?: BitmapLayer[];
+    layers?: ElectronBitmapLayer[];
     swb?: {
       canvasWidth: number;
       canvasHeight: number;
@@ -279,29 +265,6 @@ const buildPhotoshopTiffManifestForShot = (
       background: layerIndex === 0 && layer.kind === "image"
     }))
   };
-};
-
-const bitmapLayersForShot = (shot: Project["shots"][number]): BitmapLayer[] => {
-  return [...(shot.layers ?? [])]
-    .sort((a, b) => {
-      if (a.kind === "image" && b.kind !== "image") {
-        return -1;
-      }
-
-      if (a.kind !== "image" && b.kind === "image") {
-        return 1;
-      }
-
-      return a.order - b.order;
-    })
-    .map((layer, order) => ({
-      ...layer,
-      order,
-      visible: layer.visible ?? true,
-      locked: layer.locked ?? false,
-      opacity: layer.opacity ?? 1,
-      blendMode: layer.blendMode ?? "normal"
-    }));
 };
 
 const resolveLayerAssetPath = (folderPath: string, bitmapPath: string): string => {

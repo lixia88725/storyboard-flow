@@ -1,8 +1,67 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { applyBitmapLayerOpacity, flattenBitmapLayerBuffersToTiff, shouldEnsureLayerAssetsForShot } from "./bitmapLayers.js";
+import { bitmapLayersForShot } from "./bitmapLayerOrdering.js";
 
 describe("applyBitmapLayerOpacity", () => {
+  it("normalizes bitmap layers for Electron save and export paths", () => {
+    const layers = bitmapLayersForShot({
+      layers: [
+        {
+          id: "paint-top",
+          kind: "paint",
+          name: "Top",
+          visible: undefined,
+          locked: undefined,
+          opacity: undefined,
+          blendMode: undefined,
+          order: 2,
+          bitmapPath: ".storyboard-workbench/layers/shot-a/paint-top.png",
+          width: 320,
+          height: 180
+        },
+        {
+          id: "layer-image",
+          kind: "image",
+          name: "Image",
+          visible: false,
+          locked: true,
+          opacity: 0.5,
+          blendMode: "multiply",
+          order: 99,
+          bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png",
+          width: 320,
+          height: 180
+        },
+        {
+          id: "paint-bottom",
+          kind: "paint",
+          name: "Bottom",
+          visible: true,
+          locked: false,
+          opacity: 0.75,
+          blendMode: "screen",
+          order: 1,
+          bitmapPath: ".storyboard-workbench/layers/shot-a/paint-bottom.png",
+          width: 320,
+          height: 180
+        }
+      ]
+    });
+
+    expect(layers.map((layer) => [layer.id, layer.order])).toEqual([
+      ["layer-image", 0],
+      ["paint-bottom", 1],
+      ["paint-top", 2]
+    ]);
+    expect(layers[2]).toMatchObject({
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: "normal"
+    });
+  });
+
   it("skips external shot layer assets only when external shots are excluded", () => {
     expect(shouldEnsureLayerAssetsForShot({ swb: { status: "owned" } })).toBe(true);
     expect(shouldEnsureLayerAssetsForShot({ swb: { status: "non-swb" } })).toBe(true);

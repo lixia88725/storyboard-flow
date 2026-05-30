@@ -6,7 +6,7 @@
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `bitmap-layer-refactor`
-- Latest implementation commit before this handoff update: `d1fb9ce feat: optimize tiff save and enforce layer locks`
+- Latest implementation commit before this handoff update: `f8d18ed 交接存档：记录Save优化、依赖路径和图层锁定`
 - Continue in this bitmap worktree unless explicitly asked to merge or switch.
 
 ## Current Product State
@@ -26,43 +26,44 @@
 
 ## Completed In This Session
 
-### Save Performance
+### Audit And Cleanup Docs
 
-- Layered TIFF Save no longer writes each Photoshop TIFF twice.
-- Electron now passes SWB metadata into the Photoshop TIFF manifest before the final write.
-- `scripts/photoshop-layered-tiff-export.py` now:
-  - Builds the final white-composited TIFF image.
-  - Computes the SWB `baseFingerprint` from that final composite.
-  - Embeds SWB XMP into TIFF tag `700`.
-  - Preserves Photoshop layer records in tag `37724`.
-- Existing rollback-safe temp/backup replacement remains unchanged.
+- Added `docs/audit-2026-05-30.md` as the current codebase audit snapshot.
+- Added `docs/superpowers/plans/2026-05-30-audit-cleanup.md` as the executed cleanup plan.
+- Consolidated development guidance into `README.md` and `AGENTS.md` instead of keeping a separate `DEVELOPMENT.md`.
+- `README.md` now includes a developer map and the `check:preload` script.
+- `AGENTS.md` now includes the development map, change routing, and the verification rules for preload/build/smoke changes.
 
-### Photoshop TIFF Python Dependencies
+### Electron Save/Export Cleanup
 
-- Added `electron/main/photoshopTiffDeps.ts`.
-- Photoshop TIFF helpers now resolve Python deps in this order:
-  1. `SWB_PYTHON_DEPS_DIR`
-  2. Packaged resources: `python-deps/photoshop-tiff`
-  3. Local dev vendor path: `vendor/python/photoshop-tiff`
-  4. Legacy fallback: `/private/tmp/psdtags-spike-deps`
-- Added `vendor/python/photoshop-tiff/requirements.txt`.
-- Added `npm run setup:photoshop-tiff-deps`.
-- `.gitignore` ignores installed vendor packages while keeping `requirements.txt`.
+- Added `electron/main/bitmapLayerOrdering.ts`.
+- Electron Save and Photoshop TIFF export now share the same bitmap layer filtering and sorting helper.
+- Added unit coverage for the shared bitmap layer ordering behavior.
+- This is a small drift-reduction refactor only; it does not change Save semantics or move work outside the Save boundary.
 
-### Bitmap Layer Lock
+### Preload Contract Check
 
-- Layer Lock is now enforced for bitmap edits.
-- Locked layers can still be selected and shown/hidden.
-- Locked layers cannot be drawn on, erased, Select-transformed, cleared, deleted, renamed, reordered, or have opacity/blend mode changed.
-- Layer panel now has a lock/unlock control per row.
-- Locked layer row editing controls are disabled in the UI.
-- Smoke verifies that locking a layer blocks opacity edits and disables blend/delete controls.
+- Added `electron/preload/preloadSync.test.ts`.
+- Added `scripts/check-preload-sync.mjs`.
+- Added `npm run check:preload`.
+- The check verifies that the CommonJS preload bridge still exposes the expected API surface from the TypeScript preload source.
 
-### Docs
+### Renderer Extraction
 
-- Updated `README.md` with Layer Lock behavior and Photoshop TIFF dependency resolution.
-- Updated `todo.md` to mark completed work and replace old dependency/performance/lock TODOs with the next packaging task.
-- Updated `decisions.md` with new decisions for single-write layered TIFF Save, dependency resolution order, and Layer Lock behavior.
+- Extracted low-risk stateless renderer pieces from `src/renderer/App.tsx`:
+  - `src/renderer/icons.tsx`
+  - `src/renderer/Timeline.tsx`
+  - `src/renderer/BitmapLayerThumbnail.tsx`
+  - `src/renderer/DragPreviews.tsx`
+  - `src/renderer/SelectionMarquee.tsx`
+  - `src/renderer/SketchSettingsControls.tsx`
+- Kept higher-risk pieces in `App.tsx`, including `LayerPanel`, `SketchPad`, bitmap selection overlay, and shot/dialogue cards.
+- Recommendation: continue extraction only in separate planned passes with smoke coverage, starting with `LayerPanel` before considering `SketchPad`.
+
+### Minor Maintainability Notes
+
+- Added section comments in `scripts/electron-bitmap-smoke.mjs` so future smoke edits are easier to place.
+- Clarified the dark theme override comment in `src/renderer/styles.css`.
 
 ## Verification Run For Handoff
 
@@ -70,60 +71,65 @@ Commands run in `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-c
 
 ```bash
 npm run test
-# passed: 14 test files, 138 tests
+# passed: 15 test files, 140 tests
 
 npm run typecheck
 # passed
 
 npm run build
 # passed; Vite reported the existing chunk-size warning only
-```
 
-Additional verification from implementation before this handoff:
+npm run check:preload
+# passed
 
-```bash
 npm run smoke:bitmap
-# passed; launches Electron via local CDP and verifies Photoshop TIFF export/import,
-# Save/Import progress, layer drawer wheel behavior, visibility drag,
-# layer lock blocking, Save safety, reopen, and legacy migration.
+# passed; includes Photoshop TIFF export/import, Save/Import progress,
+# layer drawer behavior, layer lock blocking, Save safety, reopen,
+# selection/eraser/shortcut checks, and legacy migration.
 ```
 
 The smoke intentionally triggers a Save temporary rename conflict and logs `Temporary rename file already exists`; this is expected when the command exits `0`.
 
 ## Git Diff Summary For This Session
 
-Compared with `697ed36 docs: refresh layered tiff handoff`:
+Compared with `f8d18ed 交接存档：记录Save优化、依赖路径和图层锁定` before this handoff/doc update:
 
 ```text
-17 files changed, 465 insertions(+), 51 deletions(-)
+Pending commit includes audit docs, README/AGENTS cleanup, Electron helper/test changes,
+preload sync checking, smoke comments, and renderer component extraction.
 ```
 
 Files changed:
 
 ```text
-M  .gitignore
+M  AGENTS.md
 M  README.md
+M  electron/main/bitmapLayers.test.ts
 M  context-handoff.md
 M  electron/main/main.ts
-A  electron/main/photoshopTiffDeps.test.ts
-A  electron/main/photoshopTiffDeps.ts
-M  electron/main/photoshopTiffExport.test.ts
 M  electron/main/photoshopTiffExport.ts
 M  package.json
 M  scripts/electron-bitmap-smoke.mjs
-M  scripts/photoshop-layered-tiff-export.py
 M  src/renderer/App.tsx
 M  src/renderer/styles.css
-M  src/shared/projectOps.test.ts
-M  src/shared/projectOps.ts
 M  todo.md
-A  vendor/python/photoshop-tiff/requirements.txt
+A  docs/audit-2026-05-30.md
+A  docs/superpowers/plans/2026-05-30-audit-cleanup.md
+A  electron/main/bitmapLayerOrdering.ts
+A  electron/preload/preloadSync.test.ts
+A  scripts/check-preload-sync.mjs
+A  src/renderer/BitmapLayerThumbnail.tsx
+A  src/renderer/DragPreviews.tsx
+A  src/renderer/SelectionMarquee.tsx
+A  src/renderer/SketchSettingsControls.tsx
+A  src/renderer/Timeline.tsx
+A  src/renderer/icons.tsx
 ```
 
 ## Current Git State
 
-- Implementation commit already exists: `d1fb9ce feat: optimize tiff save and enforce layer locks`.
-- This handoff/doc update is pending commit until step 4 is complete.
+- Implementation/handoff baseline before this pass: `f8d18ed 交接存档：记录Save优化、依赖路径和图层锁定`.
+- This audit/cleanup/refactor pass is pending commit until the current handoff update is committed.
 
 ## Next Handoff Target
 
@@ -131,10 +137,13 @@ Recommended next steps:
 
 1. Manually dogfood Save speed on a real multi-shot, multi-layer storyboard folder.
 2. Manually dogfood Layer Lock in the app, especially lock/unlock, visibility toggles, delete disabled state, and drawing prevention.
-3. Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
-4. Manually verify bitmap Select lasso/rectangle scaling on real high-resolution storyboard images.
-5. Manually review mixed-aspect animation mode and multi-select shot dragging.
-6. PSD-first Photoshop interoperability remains a future spike.
+3. Treat the current cleanup as the baseline for future feature work.
+4. If continuing `App.tsx` extraction, do `LayerPanel` as its own planned pass with smoke verification.
+5. Extract `SketchPad` only under a dedicated plan because it owns drawing, selection, pointer handling, and layer PNG writes.
+6. Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
+7. Manually verify bitmap Select lasso/rectangle scaling on real high-resolution storyboard images.
+8. Manually review mixed-aspect animation mode and multi-select shot dragging.
+9. PSD-first Photoshop interoperability remains a future spike.
 
 ## Known Remaining Work
 
@@ -144,3 +153,4 @@ Recommended next steps:
 - PSD-first spike and compatibility matrix are not implemented.
 - Windows Photoshop compatibility has not been tested.
 - Current build still emits the Vite chunk-size warning.
+- `App.tsx` is smaller after low-risk extraction, but `LayerPanel` and `SketchPad` remain intentionally unextracted until separate planned passes.

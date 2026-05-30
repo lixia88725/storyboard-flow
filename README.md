@@ -10,8 +10,22 @@ npm run test
 npm run typecheck
 npm run build
 npm run smoke:bitmap
+npm run check:preload
 npm run dev
 ```
+
+## Developer Map
+
+如果是接手开发，先读 `AGENTS.md`、`decisions.md`、`context-handoff.md` 和 `todo.md`。常用入口：
+
+- `src/shared/projectOps.ts`：项目数据、排序、重命名计划、bitmap layer metadata 等纯逻辑。改项目行为时优先在这里补单测。
+- `electron/main/main.ts`：Electron IPC、文件扫描、Import、Save 编排、TIFF metadata 和 bitmap asset 初始化。
+- `electron/main/bitmapLayerOrdering.ts`：Electron Save / Photoshop export 共用的 bitmap layer 排序和默认值规则。
+- `electron/main/photoshopTiffExport.ts` / `electron/main/photoshopTiffImport.ts`：Photoshop layered TIFF 交换路径。
+- `electron/preload/preload.ts` 和 `electron/preload/preload.cjs`：renderer-safe API。改其中一个后跑 `npm run check:preload`。
+- `src/renderer/App.tsx`：主 UI 状态、工具栏、图层面板、shot card 和 drawing wiring。它是协作热点，优先做小步改动。
+- `src/renderer/sketchGeometry.ts`、`activeTargets.ts`、`keyboardShortcuts.ts`、`animationViewport.ts`：renderer 纯逻辑 helper，适合先补单测再接入 UI。
+- `scripts/electron-bitmap-smoke.mjs`：端到端 Electron/CDP smoke，覆盖 Save safety、bitmap drawing、layer panel、Photoshop round trip、animation 和 legacy migration。
 
 ## Workflow
 

@@ -18,6 +18,7 @@ import {
   shouldEnsureLayerAssetsForShot,
   type BitmapLayerComposite
 } from "./bitmapLayers.js";
+import { bitmapLayersForShot } from "./bitmapLayerOrdering.js";
 import {
   exportPhotoshopLayeredTiffs,
   writePhotoshopLayeredTiffsForInPlaceSave
@@ -1104,29 +1105,6 @@ const swbMetadataForShot = (
             strokeCount: layer.strokes.length
           }))
   };
-};
-
-const bitmapLayersForShot = (shot: Project["shots"][number]) => {
-  return [...(shot.layers ?? [])]
-    .sort((a, b) => {
-      if (a.kind === "image" && b.kind !== "image") {
-        return -1;
-      }
-
-      if (a.kind !== "image" && b.kind === "image") {
-        return 1;
-      }
-
-      return a.order - b.order;
-    })
-    .map((layer, order) => ({
-      ...layer,
-      order,
-      visible: layer.visible ?? true,
-      locked: layer.locked ?? false,
-      opacity: layer.opacity ?? 1,
-      blendMode: layer.blendMode ?? "normal"
-    }));
 };
 
 const clearSavedImageLayerEdits = (project: Project): Project => ({

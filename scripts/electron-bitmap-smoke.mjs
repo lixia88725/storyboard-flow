@@ -14,6 +14,7 @@ const port = String(9300 + Math.floor(Math.random() * 400));
 const electronBin = path.join(repoRoot, "node_modules", ".bin", "electron");
 const photoshopPythonDepsDir = process.env.SWB_PYTHON_DEPS_DIR ?? "/private/tmp/psdtags-spike-deps";
 
+// Shared smoke helpers.
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const waitFor = async (fn, label, timeoutMs = 10000) => {
@@ -444,6 +445,7 @@ const dragPolyline = async (send, points) => {
 let electronProcess;
 
 try {
+  // Fixture setup.
   await mkdir(smokeRoot, { recursive: true });
   const originalShotAPath = path.join(smokeRoot, "shot_a.png");
   const originalShotBPath = path.join(smokeRoot, "shot_b.png");
@@ -575,6 +577,7 @@ try {
     }
   });
 
+  // Scenario: open a normal image folder and verify basic rendering.
   const openFolder = async (folderPath = smokeRoot) => {
     await waitFor(
       () =>
@@ -628,6 +631,7 @@ try {
 
   await openFolder();
 
+  // Scenario: drawing, erasing, undo/redo, layer drawer, and shortcuts.
   const exportTiffButtonVisible = await evaluate(`
     Array.from(document.querySelectorAll("button"))
       .some((button) => button.textContent.trim() === "Export TIFF")
@@ -1757,6 +1761,7 @@ try {
     throw new Error("Drawing on the selected shot changed a neighboring shot layer");
   }
 
+  // Scenario: Photoshop layered TIFF export/import round trip.
   await exportPhotoshopTiffsViaDebugApi(smokeRoot);
   const photoshopExportFiles = await waitFor(async () => {
     const files = await findPhotoshopExportFiles(smokeRoot);
@@ -1876,6 +1881,7 @@ try {
 
   await openFolder(smokeRoot);
 
+  // Scenario: Save safety, layered TIFF Save, reopen, animation, and legacy migration.
   await evaluate(`
     (async () => {
       const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

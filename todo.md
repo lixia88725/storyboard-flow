@@ -21,11 +21,13 @@
 - [ ] Add validation or cleanup for missing Recent folder paths.
 - [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
 - [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
+- [ ] Extract `LayerPanel` from `App.tsx` in a dedicated pass with smoke verification.
 
 ## P2
 
 - [ ] Consider a dedicated select/hand/draw tool mode if drawing, selecting, and dragging conflict in real use.
 - [ ] Review whether `electron/preload/preload.cjs` should continue to be manually maintained or generated from TypeScript.
+- [ ] Extract `SketchPad` from `App.tsx` only under a dedicated plan because it owns drawing, selection, pointer handling, and layer PNG writes.
 - [ ] Consider opacity controls for Onion Skin if fixed red/green ghost strength feels too strong or too weak.
 - [ ] Consider adding a visible cursor affordance for bitmap Select scale handles if users still miss corner scaling after hit target enlargement.
 - [ ] Consider code splitting or manual chunks if the existing Vite chunk-size warning becomes noisy or affects startup.
@@ -139,6 +141,11 @@
 - [x] Fixed animation-mode left/right shortcuts when focus is on the Zoom range input.
 - [x] Enlarged bitmap Select corner hit targets in screen space so high-resolution lasso/rectangle selections can be scaled reliably.
 - [x] Expanded `npm run smoke:bitmap` to cover isolated shortcut settings persistence, blank-board wheel zoom, dialogue row clamp, and real CDP left/right animation navigation.
+- [x] Added a current audit snapshot and executed cleanup plan under `docs/`.
+- [x] Consolidated development guidance into `README.md` and `AGENTS.md` with a developer map, change routing, and preload/build/smoke verification notes.
+- [x] Added shared Electron bitmap layer ordering so Save and Photoshop TIFF export use the same filtering/sorting rules.
+- [x] Added `npm run check:preload` plus unit coverage to keep the CommonJS preload bridge in sync with the TypeScript preload API surface.
+- [x] Extracted low-risk stateless renderer components from `App.tsx`: icons, timeline, bitmap layer thumbnails, drag previews, selection marquee, and sketch settings controls.
 
 ## Out Of Scope For Current MVP
 

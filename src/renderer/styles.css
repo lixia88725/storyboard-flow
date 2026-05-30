@@ -1626,7 +1626,7 @@ button.layer-blend-dot:disabled {
   white-space: nowrap;
 }
 
-/* Dark workbench theme */
+/* Dark workbench theme overrides. Keep base layout rules above this section. */
 :root {
   color: #eee6d4;
   background: #181713;

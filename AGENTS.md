@@ -31,6 +31,7 @@ npm run dev
 npm run test
 npm run typecheck
 npm run build
+npm run check:preload
 npm run smoke:bitmap
 ```
 
@@ -41,6 +42,27 @@ npm run smoke:bitmap
 - Keep Electron filesystem work in `electron/main/main.ts`.
 - Expose renderer-safe APIs through `electron/preload/preload.ts` and keep `electron/preload/preload.cjs` in sync.
 - Keep renderer UI state and interactions in `src/renderer/App.tsx`.
+
+## Development Map
+
+- Project data behavior: start in `src/shared/projectOps.ts`, then update `src/shared/projectOps.test.ts`.
+- Renderer pure behavior: use focused helpers in `src/renderer/sketchGeometry.ts`, `src/renderer/activeTargets.ts`, `src/renderer/keyboardShortcuts.ts`, `src/renderer/animationViewport.ts`, or `src/renderer/onionSkin.ts` before wiring behavior into `App.tsx`.
+- Renderer UI wiring: `src/renderer/App.tsx` is the current integration point for toolbar state, shot cards, layer panel, drawing, selection, shortcuts, animation, and autosave. Keep edits narrow because this file is a collaboration hotspot.
+- Electron Save/Import/filesystem behavior: start in `electron/main/main.ts`, but avoid changing `saveWorkspace` ordering unless the task explicitly targets Save.
+- Electron bitmap layer ordering/defaulting: use `electron/main/bitmapLayerOrdering.ts` so Save and Photoshop export stay aligned.
+- Safe file rename and temp replacement behavior: use `electron/main/fileRenames.ts` and its tests.
+- Photoshop layered TIFF exchange: use `electron/main/photoshopTiffExport.ts`, `electron/main/photoshopTiffImport.ts`, and the Python scripts in `scripts/`.
+- Renderer-safe API surface: update both `electron/preload/preload.ts` and `electron/preload/preload.cjs`, then run `npm run check:preload`.
+- End-to-end coverage: add to `scripts/electron-bitmap-smoke.mjs` when behavior crosses renderer + Electron + filesystem boundaries.
+
+## Change Routing
+
+- Changing storyboard ordering, dialogue movement, rename plans, bitmap layer metadata, lock rules, or SWB import status: update `src/shared/projectOps.ts` first.
+- Changing drawing, erasing, Select transform, layer thumbnails, or live preview behavior: prefer a renderer helper test first, then wire through `SketchPad` in `App.tsx`.
+- Changing Save, Import, Archive, TIFF metadata, or working TIFF pixels: treat it as high risk, keep the patch small, and run `npm run build` before `npm run smoke:bitmap`.
+- Changing preload APIs: update TypeScript and CommonJS preload files together and run `npm run check:preload`.
+- Changing visual styling only: keep the change in `src/renderer/styles.css`; do not modify project data or Electron code.
+- Changing smoke coverage: preserve existing scenarios and only add focused helpers or assertions for the new behavior.
 
 ## Code Standards
 
@@ -69,6 +91,10 @@ npm run test
 npm run typecheck
 npm run build
 ```
+
+Run `npm run check:preload` whenever preload files change.
+
+For renderer or Electron changes that affect built output, run `npm run build` before `npm run smoke:bitmap`; the smoke uses `dist` and `dist-electron`.
 
 For UI interaction changes, also perform a manual or automated app smoke test when feasible. The canonical smoke areas for this app are Save rename safety, Save TIFF baking, Image layer drawing/erasing/delete/reorder, layer panel operations, bitmap Select move/scale, live eraser preview, layer thumbnails, layer row opacity/reorder gestures, configurable keyboard shortcuts, multi-select shot dragging, double-click dialogue editing, zoomed sketch drawing, Add Shot aspect presets, timeline navigation when animation mode is active, mixed-aspect animation centering, Onion Skin, and tool shortcuts.
 
