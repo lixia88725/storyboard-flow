@@ -17,7 +17,7 @@
 - [ ] Add PSD export round-trip smoke: import PSD, edit/add/reorder layers, Save/Export PSD, reopen in Photoshop and SWB.
 - [ ] Verify Photoshop PSD compatibility on Windows, not only macOS.
 - [ ] Replace the temporary `/private/tmp/psdtags-spike-deps` development dependency path with a packaged or installer-managed Python dependency story for Photoshop TIFF import/export.
-- [ ] Decide whether Photoshop TIFF export should preserve hidden layer visibility exactly, or export only visible layers in a future compatibility pass.
+- [ ] Optimize layered TIFF Save performance; current implementation writes Photoshop TIFFs twice so it can compute SWB XMP/fingerprints without stripping layer data.
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Add validation or cleanup for missing Recent folder paths.
 - [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
@@ -100,6 +100,11 @@
 - [x] Electron smoke verifies Save-produced working TIFFs contain Photoshop layer records via `psdtags`.
 - [x] Fixed Import for standalone Save-produced layered TIFF snapshots with SWB XMP so Photoshop layers are ingested instead of being skipped as already-owned.
 - [x] Fixed layered TIFF writer crash on non-MacRoman Photoshop layer names during Import/Save.
+- [x] Photoshop TIFF import skips hidden/effectively hidden group contents and empty raster layers so imported SWB layers match the visible Photoshop result.
+- [x] Photoshop TIFF import preserves Unicode layer names and selects the topmost imported layer by default.
+- [x] Save and Import show thin progress feedback while layered TIFF work is running.
+- [x] Save writes layered TIFFs concurrently with a limited worker count.
+- [x] Import skips redundant full-source TIFF conversion when Photoshop layers were already extracted.
 - [x] Added bitmap Select tool V1 with lasso and rectangle selection, active-layer move, corner scale, transient marching-ants UI, and undo snapshots.
 - [x] Added geometry/unit coverage for bitmap selection bounds, hit testing, scaling, row drag intent, opacity mapping, row placement, and blend menu direction.
 - [x] Added live eraser bitmap preview during pointer movement.

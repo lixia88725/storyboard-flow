@@ -6,7 +6,11 @@
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `bitmap-layer-refactor`
-- Latest committed baseline in this session: `0cd5b5f test: align smoke with deferred layer assets`
+- Latest committed baseline in this session: `dba8333 fix: activate top imported layer`
+- Previous committed baseline: `8a0757b perf: skip redundant tiff conversion on import`
+- Previous committed baseline: `a088fb7 perf: save layered tiffs concurrently`
+- Previous committed baseline: `c105d21 feat: show save import progress`
+- Previous committed baseline: `0cd5b5f test: align smoke with deferred layer assets`
 - Previous committed baseline: `5cbedf9 refactor: clarify save and active layer targets`
 - Previous committed baseline: `40873ea fix: stabilize bitmap layers and animation mode`
 - Earlier handoff baseline: `4744696 交接存档：记录快捷键和动画模式小修`
@@ -28,6 +32,8 @@
 - Legacy `sketchLayers` and `imageLayerEdits` remain migration inputs only. New renderer editing no longer depends on the old stroke model.
 - Keyboard shortcuts are configurable from the gear button at the top of the tool rail and are persisted in the local Electron `userData` settings file.
 - Photoshop layered TIFF is now part of `Save` for multi-layer shots. The main UI hides `Export TIFF`; the underlying export API remains available for smoke and developer debugging, writing one Photoshop-readable layered TIFF per shot under `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`. Existing `Import` ingests Photoshop layered TIFF raster layers into SWB-owned bitmap layer PNG assets and archives the source TIFF.
+- Import and Save show thin top progress feedback while long-running layered TIFF work is in progress.
+- Layered TIFF Import skips hidden/effectively hidden Photoshop group contents and empty raster layers, preserves Unicode layer names, and selects the topmost imported layer so users can draw immediately after import.
 
 ## Completed This Session
 
@@ -49,11 +55,16 @@
   - Added `swb.sourceKind: "photoshop-layered-tiff"` for imported Photoshop layered TIFF shots.
   - Autosave no longer materializes layer PNG assets for external non-owned shots, preventing provisional `layer-image.png` conflicts before explicit Import. Explicit Export/Save still ensure layer assets.
   - Extended `npm run smoke:bitmap` to verify SWB export -> Photoshop layered TIFF -> SWB import round trip, matching layer count, layer PNG assets, archived source TIFF, and `sourceKind`.
+  - Import skips Photoshop layers that are hidden, inside effectively hidden folder groups, or empty; imported layers are visible SWB bitmap layers matching the visible Photoshop result.
+  - Import preserves Unicode layer names and selects the topmost imported layer by default.
+  - Import skips redundant full-source TIFF conversion when Photoshop layer extraction already succeeded, reducing layered TIFF import time.
 - Save writes Photoshop layered TIFFs:
   - Multi bitmap layer shots now save in-place as Photoshop-readable layered TIFFs; single-layer shots keep the ordinary TIFF path.
   - The writer now supports optional XMP tag `700`, so Save can keep SWB metadata without running sharp over the finished layered TIFF and stripping Photoshop layer data.
   - Layered Save writes to `.storyboard-workbench/save-tmp/<stamp>/`, then replaces working TIFFs through rollback-safe backups in `.storyboard-workbench/save-backup/<stamp>/`.
   - The main TIFF composite is flattened over white to preserve existing Save output expectations when the Image layer is deleted or transparent.
+  - Save writes layered TIFF jobs with limited concurrency.
+  - Save and Import both show thin progress feedback in the renderer so users can see long-running work is still active.
   - `npm run smoke:bitmap` now verifies the saved current `_0010.tiff` has Photoshop layer names via `psdtags`.
   - Fixed standalone Save-produced layered TIFF reopening/import: multi-layer SWB XMP TIFF snapshots are no longer misclassified as already-owned when there is no local project/layer asset state, so Import can ingest Photoshop layers and archive the source.
   - Fixed Import rollback on real Photoshop files with non-MacRoman layer names: the layered TIFF writer now uses a MacRoman-safe fallback for the legacy Pascal layer name while preserving the real Unicode name in `UNICODE_LAYER_NAME`.
@@ -126,7 +137,7 @@ Fresh verification before this handoff update:
 
 ```bash
 npm run test
-# passed: 13 test files, 120 tests
+# passed: 13 test files, 131 tests
 
 npm run typecheck
 # passed
@@ -139,7 +150,7 @@ Latest Electron smoke from this session:
 
 ```bash
 npm run smoke:bitmap
-# passed; launches Electron via local CDP and verifies Photoshop TIFF export/import round trip
+# passed; launches Electron via local CDP and verifies Photoshop TIFF export/import round trip, Save/Import progress feedback, layer drawer wheel behavior, visibility drag, and topmost imported layer selection
 ```
 
 Additional manual/live validation:
@@ -156,14 +167,14 @@ The smoke intentionally triggers a Save temporary rename conflict and logs `Temp
 Recent Photoshop layered TIFF import commits include:
 
 ```bash
-cf8bfd7 feat: extract photoshop tiff layers for import
-4bdd17e feat: plan photoshop tiff import assets
-8a36ebc feat: import photoshop layered tiffs into swb layers
-c5849fc fix: skip layer assets for external shots
-0cd5b5f test: align smoke with deferred layer assets
+dba8333 fix: activate top imported layer
+8a0757b perf: skip redundant tiff conversion on import
+a088fb7 perf: save layered tiffs concurrently
+c105d21 feat: show save import progress
+e97745a fix: support unicode names in layered tiff writer
 ```
 
-Current session documentation changes are pending commit until the final docs update is complete.
+Current session documentation cleanup is pending commit.
 
 ## Next Handoff Target
 
@@ -176,7 +187,8 @@ Recommended next steps:
 5. If the next session starts implementation work, a good small feature is making layer lock behavior truly enforce drawing/editing restrictions before adding larger Photoshop interoperability work.
 6. If drawer drag is revisited, start with a tiny visual mock/prototype first. Do not re-add pointer-drag drawer code directly into production UI without a clearer occlusion/animation model.
 7. Replace the temporary Python dependency path for Photoshop TIFF Save/import/export with a packaged or installer-managed dependency story before treating the feature as distribution-ready.
-8. PSD-first Photoshop interoperability remains a future spike.
+8. Optimize layered TIFF Save performance; the current implementation writes Photoshop TIFFs twice so it can compute SWB XMP/fingerprints without stripping Photoshop layer records.
+9. PSD-first Photoshop interoperability remains a future spike.
 
 ## Known Remaining Work
 
@@ -187,5 +199,6 @@ Recommended next steps:
 - PSD-first spike and compatibility matrix are not implemented.
 - Photoshop layered TIFF Save/import/export currently relies on Python deps available via `SWB_PYTHON_DEPS_DIR` or `/private/tmp/psdtags-spike-deps`; packaging is not solved.
 - Photoshop layered TIFF import supports raster layer ingestion for V1; full Photoshop feature round-trip is not implemented.
+- Layered TIFF Save is correct but still slower than ideal because it performs a first TIFF write for metadata/fingerprint calculation and a second final write with XMP.
 - Windows Photoshop compatibility has not been tested.
 - Current build still emits the Vite chunk-size warning.
