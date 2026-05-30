@@ -1736,6 +1736,7 @@ try {
   const photoshopImportedShot = photoshopImportedProject.shots?.[0];
   const photoshopImportedLayers = photoshopImportedShot?.layers ?? [];
   const photoshopImportedLayerNames = photoshopImportedShot?.layers?.map((layer) => layer.name) ?? [];
+  const photoshopImportedTopLayerId = [...photoshopImportedLayers].sort((a, b) => b.order - a.order)[0]?.id;
   const expectedImportedPaintLayerNames = photoshopLayerNames.filter((name) => name !== "Image");
   if (
     photoshopImportedProject.shots?.length !== 1 ||
@@ -1752,6 +1753,15 @@ try {
         layerCount: photoshopImportedLayers.length,
         maxExpectedLayerCount: photoshopLayerNames.length,
         expectedImportedPaintLayerNames
+      })}`
+    );
+  }
+  if (photoshopImportedShot.activeLayerId !== photoshopImportedTopLayerId) {
+    throw new Error(
+      `Photoshop TIFF round-trip import did not activate the top layer: ${JSON.stringify({
+        activeLayerId: photoshopImportedShot.activeLayerId,
+        topLayerId: photoshopImportedTopLayerId,
+        layers: photoshopImportedLayers.map((layer) => ({ id: layer.id, order: layer.order }))
       })}`
     );
   }
@@ -2194,6 +2204,7 @@ try {
           folderPath: photoshopImportRoot,
           sourceArchivedPath: photoshopImportSourceArchivedPath,
           layerNames: photoshopImportedLayerNames,
+          activeLayerId: photoshopImportedShot.activeLayerId,
           layerAssetChecks: photoshopImportedLayerAssetChecks,
           sourceKind: photoshopImportedShot.swb.sourceKind
         },

@@ -8,6 +8,7 @@ import {
   importedLayerToBitmapLayer,
   isPhotoshopTiffNoLayersError,
   isLikelyTiffPath,
+  topmostImportedLayerId,
   writeSwbImportWorkingTiff
 } from "./photoshopTiffImport.js";
 
@@ -165,6 +166,7 @@ describe("photoshopTiffImport", () => {
       "/tmp/extracted/0001-Paint.png",
       "/tmp/extracted/0002-Top.png"
     ]);
+    expect(topmostImportedLayerId(plan.layers)).toBe("layer-0002");
   });
 
   it("rejects generated move destinations outside the temp layer root", () => {

@@ -153,6 +153,10 @@ export const buildPhotoshopTiffImportAssetPlan = (
   };
 };
 
+export const topmostImportedLayerId = (layers: BitmapLayer[]): string | undefined => {
+  return [...layers].sort((a, b) => b.order - a.order)[0]?.id;
+};
+
 export const runPhotoshopTiffImporter = (
   pythonPath: string,
   scriptPath: string,

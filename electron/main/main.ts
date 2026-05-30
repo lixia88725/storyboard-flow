@@ -28,6 +28,7 @@ import {
   isPhotoshopTiffNoLayersError,
   isLikelyTiffPath,
   runPhotoshopTiffImporter,
+  topmostImportedLayerId,
   writeSwbImportWorkingTiff,
   type ImportedPhotoshopTiffManifest
 } from "./photoshopTiffImport.js";
@@ -891,7 +892,7 @@ const importProjectToSwbFormat = async (
         layers: item.importedLayers ?? shot.layers,
         sketchLayers: item.importedLayers ? [] : emptyDefaultSketchLayers(shot) ? [] : shot.sketchLayers,
         activeLayerTarget: "image",
-        ...(item.importedLayers ? { activeLayerId: "layer-image" } : {}),
+        ...(item.importedLayers ? { activeLayerId: topmostImportedLayerId(item.importedLayers) } : {}),
         importWarnings: item.importWarnings.length > 0 ? item.importWarnings : shot.importWarnings,
         swb: {
           version: swbFormatVersion,
