@@ -14,7 +14,7 @@
 ## P1
 
 - [ ] Dogfood bitmap Select tool V1 on real storyboard files; note lasso/rectangle move and scale UX issues before adding more features.
-- [ ] Extract `LayerPanel` from `App.tsx` in a dedicated pass with smoke verification.
+- [ ] Extract `LayerPanel` from `App.tsx` into `src/renderer/LayerPanel.tsx` in a dedicated pass with smoke verification. Follow `docs/layer-panel-extraction-audit-2026-05-30.md`; keep `SketchPad` untouched.
 - [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
 - [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
 - [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
@@ -60,6 +60,8 @@
 - [x] Delete/Backspace removes selected storyboards in-app, supports Undo, records pending deleted files, and moves root image files to system Trash on Save.
 - [x] Focus-time external image detection now lights Import warning for newly added root images without decoding every existing image.
 - [x] Script card, layer drawer handle, shot spacing, and dialogue row UI were polished with smoke coverage.
+- [x] Long nested project paths no longer break TIFF preview generation during Import; preview cache filenames now use stable SHA-256 names.
+- [x] LayerPanel extraction boundary audited in `docs/layer-panel-extraction-audit-2026-05-30.md`.
 
 ## Out Of Scope For Current MVP
 

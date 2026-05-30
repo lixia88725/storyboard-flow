@@ -6,8 +6,11 @@
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `bitmap-layer-refactor`
-- Previous handoff commit before this work: `e942e5f 交接存档：记录audit cleanup和接手边界`
-- This handoff records the current uncommitted implementation before the final commit.
+- Previous handoff commit before this continuation: `3820ac9 交接存档：完善脚本面板、导入提醒和删除流程`
+- Latest continuation commits:
+  - `2f2f52a fix: shorten preview cache filenames`
+  - `e61b232 refactor: centralize preview cache paths`
+- This handoff records the continuation through the long-path Import fix and the LayerPanel extraction audit.
 
 ## Current Product State
 
@@ -75,13 +78,30 @@
 - Dialogue row styling was aligned with the shot header; one-line dialogue height is compact and grows for multiline text.
 - Dialogue drag grip now matches the quieter dotted handle style.
 
+### Long Path Import Fix
+
+- Dogfood found a high-severity Import failure for deeply nested normal user folders.
+- Root cause: TIFF preview cache filenames were generated from the full absolute image path encoded as hex, which could exceed macOS single-filename limits.
+- Added `electron/main/previewPaths.ts`.
+- Preview cache image names now use a stable SHA-256 hash plus `.png`.
+- Moved `previewRootForFolder()` into the same preview path helper module so `main.ts` no longer owns that cache path detail.
+- Covered by `electron/main/previewPaths.test.ts`.
+
+### LayerPanel Extraction Audit
+
+- Added `docs/layer-panel-extraction-audit-2026-05-30.md`.
+- Key finding: `LayerPanel` already exists as an internal `App.tsx` component; the next safe step is moving it to `src/renderer/LayerPanel.tsx`, not redesigning it.
+- Keep `isLayerPanelOpen` in top-level `App`, `isLayerPanelRendered` in `ShotCard`, and project mutation/history handlers outside the extracted component.
+- Move only local panel UI state, gesture handlers, menu state, props, and `blendModeLabel`.
+- Do not extract `SketchPad` in the same pass.
+
 ## Verification Run For Handoff
 
 Commands run in `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers` on 2026-05-30:
 
 ```bash
 npm run test
-# passed: 16 test files, 151 tests
+# passed: 17 test files, 154 tests
 
 npm run typecheck
 # passed
@@ -100,58 +120,37 @@ npm run smoke:bitmap
 # passed
 ```
 
+For the long-path Import fix, a manual Electron/CDP dogfood repro also passed: a deeply nested folder under `/Users/xiali/Documents/Codex/2026-05-30/storyboard-workbench-users-xiali-documents-codex-3/work/swb-dogfood-long-fixed/project` imported successfully, root PNGs became TIFFs, and preview filenames were 64-character SHA-256 names.
+
 `npm run smoke:bitmap` now covers script card/Markdown sync, external Markdown import, external root image import warning, Delete/Undo/Save-to-Trash, textarea Delete safety, Photoshop layered TIFF lock import, Save safety, Photoshop round trip, layer drawer behavior, dialogue row clamp, animation mode, Add Shot, reopen, and legacy migration.
 
 The smoke intentionally triggers a Save temporary rename conflict and logs `Temporary rename file already exists`; this is expected when the command exits `0`.
 
-## Git Diff Summary For This Session
+## Current Git State
 
-Current implementation changes before handoff-doc edits:
+Latest implementation commits before this documentation handoff:
 
 ```text
-13 tracked files changed, 1383 insertions(+), 169 deletions(-)
-2 new untracked files:
-  electron/main/storyboardScript.ts
-  electron/main/storyboardScript.test.ts
+e61b232 refactor: centralize preview cache paths
+2f2f52a fix: shorten preview cache filenames
+3820ac9 交接存档：完善脚本面板、导入提醒和删除流程
 ```
 
-Tracked files changed:
+Documentation changes recorded in this handoff:
 
 ```text
-M  electron/main/main.ts
-M  electron/main/photoshopTiffImport.test.ts
-M  electron/main/photoshopTiffImport.ts
-M  electron/preload/preload.cjs
-M  electron/preload/preload.ts
-M  scripts/electron-bitmap-smoke.mjs
-M  scripts/photoshop-layered-tiff-import.py
-M  src/renderer/App.tsx
-M  src/renderer/global.d.ts
-M  src/renderer/styles.css
-M  src/shared/projectOps.test.ts
-M  src/shared/projectOps.ts
-M  src/shared/types.ts
-```
-
-Docs updated for handoff after this diff summary:
-
-```text
-M  context-handoff.md
-M  todo.md
-M  decisions.md
-M  AGENTS.md
-M  README.md
+context-handoff.md
+todo.md
+docs/layer-panel-extraction-audit-2026-05-30.md
 ```
 
 ## Next Handoff Target
 
 Recommended next steps:
 
-1. Dogfood the script back side and `storyboard-script.md` workflow on a real storyboard folder, including external MD reorder and blank-entry behavior.
-2. Dogfood Delete-to-Trash on real folders, including multi-select delete, Undo, Save, and Finder Trash recovery.
-3. Dogfood external root-image additions from Finder/Bridge and confirm the yellow Import warning appears at the right time.
-4. Dogfood Save speed on a real multi-shot, multi-layer project after dirty-shot narrowing.
-5. Continue UI polish only in small passes. If refactoring, extract `LayerPanel` before considering `SketchPad`.
+1. Extract `LayerPanel` into `src/renderer/LayerPanel.tsx` as a dedicated behavior-preserving move, following `docs/layer-panel-extraction-audit-2026-05-30.md`.
+2. Run `npm run test`, `npm run typecheck`, `npm run build`, and `npm run smoke:bitmap` after the extraction.
+3. Continue real-folder dogfood for Save speed, Delete-to-Trash recovery, external image Import warning, script editing, bitmap Select scaling, multi-select dragging, and double-click dialogue editing.
 
 ## Known Remaining Work
 
