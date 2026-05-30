@@ -112,6 +112,18 @@
 - Covered automated paths include script card Markdown sync/import, external root image warning/import, Delete/Save-to-Trash source removal, LayerPanel drawer interactions, Layer Lock blocking, bitmap Select move/scale, keyboard shortcut persistence, Photoshop TIFF round trip, Save conflict protection, animation mode, Add Shot, reopen, and layer asset consistency.
 - This is still an automated synthetic-folder pass. Real production-folder dogfood remains needed for perceived Save speed, Finder Trash recovery, Finder/Bridge focus behavior, high-resolution Select scaling feel, mixed-aspect animation review, multi-select dragging, and double-click dialogue editing.
 
+### TEST2 Real-Folder Dogfood
+
+- Real dogfood folder: `/Users/xiali/Pictures/TEST2`.
+- Initial state: 302 root TIFF files, about 3.3GB, no `.storyboard-workbench/` metadata.
+- First open initially stalled after generating 296/302 preview PNGs and never wrote project metadata within the dogfood timeout.
+- Root cause: six real TIFFs contain large custom tag data that libvips rejects under default `sharp` source read limits during preview/raw pixel reads.
+- Fix: user source image reads now use `sharpSourceOptions = { unlimited: true }` in Electron main and Photoshop TIFF import fallback working-TIFF creation.
+- After the fix, `TEST2` opened, generated 302/302 previews, imported 302/302 shots as `owned`, archived 302 original TIFFs, and created 2060 internal layer PNGs.
+- Script card edit wrote `TEST2 dogfood script line` to the first shot and `storyboard-script.md`.
+- First shot LayerPanel opened with 7 imported Photoshop raster layers and preserved Chinese layer names.
+- Remaining open issue: after importing this 302-shot / 2060-layer project, restarting and reopening `TEST2` made CDP/UI automation stop responding before Save could be completed. Investigate large-project render/reopen responsiveness before retesting Save speed.
+
 ## Verification Run For Handoff
 
 Commands run in `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers` on 2026-05-30:
@@ -160,6 +172,19 @@ npm run smoke:bitmap
 # passed
 ```
 
+Verification after the TEST2 TIFF source-read fix:
+
+```bash
+npm run test
+# passed: 17 test files, 154 tests
+
+npm run build
+# passed; Vite reported the existing chunk-size warning only
+
+npm run smoke:bitmap
+# passed
+```
+
 For the long-path Import fix, a manual Electron/CDP dogfood repro also passed: a deeply nested folder under `/Users/xiali/Documents/Codex/2026-05-30/storyboard-workbench-users-xiali-documents-codex-3/work/swb-dogfood-long-fixed/project` imported successfully, root PNGs became TIFFs, and preview filenames were 64-character SHA-256 names.
 
 `npm run smoke:bitmap` now covers script card/Markdown sync, external Markdown import, external root image import warning, Delete/Undo/Save-to-Trash, textarea Delete safety, Photoshop layered TIFF lock import, Save safety, Photoshop round trip, layer drawer behavior, dialogue row clamp, animation mode, Add Shot, reopen, and legacy migration.
@@ -197,6 +222,7 @@ Recommended next steps:
 
 ## Known Remaining Work
 
+- Large imported project reopen/render responsiveness is now the top real-dogfood issue. `TEST2` is the current repro: 302 owned shots, 302 previews, 2060 layer PNGs.
 - Real dogfood is still needed for Save speed, Layer Lock feel, script card editing, Delete-to-Trash recovery, external image Import warning, bitmap Select high-resolution scaling, mixed-aspect animation, multi-select dragging, and double-click dialogue editing.
 - Delete currently leaves internal `.storyboard-workbench/layers/<shotId>/...` assets behind; orphan cleanup should be a separate conservative task.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.

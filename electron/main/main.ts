@@ -55,6 +55,7 @@ import {
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
+const sharpSourceOptions = { unlimited: true } as const;
 const blankShotPresets = {
   "16:9": { width: 1920, height: 1080 },
   "2.39:1": { width: 2581, height: 1080 },
@@ -711,7 +712,7 @@ const createImageBitmapLayerPng = async (
             background: { r: 0, g: 0, b: 0, alpha: 0 }
           }
         })
-      : sharp(shot.imagePath).rotate().resize({
+      : sharp(shot.imagePath, sharpSourceOptions).rotate().resize({
           width: Math.max(1, Math.round(width)),
           height: Math.max(1, Math.round(height)),
           fit: "fill"
@@ -1278,7 +1279,7 @@ const writeSwbMetadataToTiffs = async (
 
     const bakedPath = await bakeShotToWorkingTiff(shot, folderPath);
     const imagePath = bakedPath ?? shot.imagePath;
-    const metadata = await sharp(imagePath).metadata();
+    const metadata = await sharp(imagePath, sharpSourceOptions).metadata();
     const fingerprint = await pixelFingerprint(imagePath);
     const canvasWidth = shot.swb?.canvasWidth || metadata.width || 0;
     const canvasHeight = shot.swb?.canvasHeight || metadata.height || 0;
@@ -1289,7 +1290,7 @@ const writeSwbMetadataToTiffs = async (
       `.storyboard-metadata-${shot.id}${path.extname(imagePath)}`
     );
     try {
-      await sharp(imagePath).withXmp(swbMetadataXmp(swbMetadata)).tiff().toFile(tempPath);
+      await sharp(imagePath, sharpSourceOptions).withXmp(swbMetadataXmp(swbMetadata)).tiff().toFile(tempPath);
       await replaceFileWithTemp(tempPath, shot.imagePath, { rename, unlink });
     } finally {
       await unlink(tempPath).catch(() => undefined);
@@ -1517,7 +1518,7 @@ const bakeSketchOverlayToTiff = async (
     return undefined;
   }
 
-  const imageMetadata = await sharp(shot.imagePath).metadata();
+  const imageMetadata = await sharp(shot.imagePath, sharpSourceOptions).metadata();
   const width = imageMetadata.width;
   const height = imageMetadata.height;
 
@@ -1535,7 +1536,7 @@ const bakeSketchOverlayToTiff = async (
             background: { r: 255, g: 255, b: 255, alpha: 1 }
           }
         })
-      : sharp(shot.imagePath);
+      : sharp(shot.imagePath, sharpSourceOptions);
 
   if (visibleImageEdits.length > 0) {
     let imageEditOverlay = await sharp({
@@ -1636,7 +1637,7 @@ const bakeBitmapLayersToTiff = async (
     return undefined;
   }
 
-  const imageMetadata = await sharp(shot.imagePath).metadata();
+  const imageMetadata = await sharp(shot.imagePath, sharpSourceOptions).metadata();
   const width = shot.swb?.canvasWidth || imageMetadata.width;
   const height = shot.swb?.canvasHeight || imageMetadata.height;
 
@@ -1782,7 +1783,7 @@ const createImageRecords = async (
         extension === ".tif" || extension === ".tiff"
           ? await createPreview(imagePath, previewRoot)
           : undefined;
-      const metadata = await sharp(imagePath).metadata();
+      const metadata = await sharp(imagePath, sharpSourceOptions).metadata();
       const swbMetadata =
         extension === ".tif" || extension === ".tiff"
           ? await readSwbMetadata(imagePath)
@@ -1806,7 +1807,7 @@ const createPreview = async (imagePath: string, previewRoot: string): Promise<st
 
   await mkdir(previewRoot, { recursive: true });
 
-  await sharp(imagePath)
+  await sharp(imagePath, sharpSourceOptions)
     .rotate()
     .resize({ width: 1800, height: 1200, fit: "inside", withoutEnlargement: true })
     .png()
@@ -1816,7 +1817,7 @@ const createPreview = async (imagePath: string, previewRoot: string): Promise<st
 };
 
 const pixelFingerprint = async (imagePath: string): Promise<string> => {
-  const { data, info } = await sharp(imagePath)
+  const { data, info } = await sharp(imagePath, sharpSourceOptions)
     .rotate()
     .ensureAlpha()
     .raw()
@@ -1828,7 +1829,7 @@ const pixelFingerprint = async (imagePath: string): Promise<string> => {
 };
 
 const readSwbMetadata = async (imagePath: string): Promise<SwbImageMetadata | undefined> => {
-  const metadata = await sharp(imagePath).metadata();
+  const metadata = await sharp(imagePath, sharpSourceOptions).metadata();
   const xmp = metadata.xmpAsString;
   if (!xmp) {
     return undefined;

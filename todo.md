@@ -2,6 +2,7 @@
 
 ## P0
 
+- [ ] Investigate large imported project reopen/render responsiveness using `/Users/xiali/Pictures/TEST2` as the repro: 302 shots, 2060 layers, CDP/UI became unresponsive before Save could be completed.
 - [ ] Manually dogfood configurable keyboard shortcuts in the app, especially recording `Escape`, duplicate shortcut errors, and persistence across restart.
 - [ ] Manually dogfood bitmap Select lasso/rectangle corner scaling on high-resolution real storyboard images.
 - [ ] Manually review mixed-aspect animation mode with the dark matte/stable frame and decide whether the visual treatment needs refinement.
@@ -64,6 +65,7 @@
 - [x] LayerPanel extraction boundary audited in `docs/layer-panel-extraction-audit-2026-05-30.md`.
 - [x] `LayerPanel` was extracted from `App.tsx` into `src/renderer/LayerPanel.tsx` as a behavior-preserving move, with test/typecheck/build/smoke verification.
 - [x] Post-extraction automated dogfood baseline recorded in `docs/dogfood-2026-05-30.md`; no new functional failures found in the smoke-covered paths.
+- [x] Real-folder `TEST2` dogfood found and fixed preview/import failures for TIFFs with large custom tag data by using `sharp` source reads with `unlimited: true`.
 
 ## Out Of Scope For Current MVP
 

@@ -41,6 +41,7 @@ export type PhotoshopTiffImportAssetPlan = {
 };
 
 export const photoshopTiffNoLayersMarker = "SWB_PHOTOSHOP_TIFF_NO_LAYERS";
+const sharpSourceOptions = { unlimited: true } as const;
 
 export const isLikelyTiffPath = (filePath: string): boolean => {
   const extension = path.extname(filePath).toLowerCase();
@@ -61,7 +62,7 @@ export const writeSwbImportWorkingTiff = async ({
   usePlaceholder: boolean;
 }): Promise<void> => {
   if (!usePlaceholder) {
-    await sharp(sourcePath).rotate().tiff().toFile(outputPath);
+    await sharp(sourcePath, sharpSourceOptions).rotate().tiff().toFile(outputPath);
     return;
   }
 
