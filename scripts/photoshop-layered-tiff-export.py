@@ -96,6 +96,11 @@ def flatten_over_white(image: numpy.ndarray) -> numpy.ndarray:
     return numpy.concatenate([rgb, opaque_alpha], axis=-1)
 
 
+def macroman_safe_name(name: str) -> str:
+    safe = name.encode("macroman", errors="replace").decode("macroman")
+    return safe if safe.strip("?") else "Layer"
+
+
 def layer_record(layer: dict[str, Any], image: numpy.ndarray, *, background: bool) -> PsdLayer:
     channels = []
 
@@ -136,7 +141,7 @@ def layer_record(layer: dict[str, Any], image: numpy.ndarray, *, background: boo
 
     name = str(layer["name"])
     return PsdLayer(
-        name=name,
+        name=macroman_safe_name(name),
         rectangle=full_canvas_rectangle(image),
         channels=channels,
         mask=PsdLayerMask(),

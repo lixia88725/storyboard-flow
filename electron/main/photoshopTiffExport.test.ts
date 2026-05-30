@@ -438,4 +438,65 @@ describe("buildPhotoshopTiffExportPlan", () => {
       await rm(folderPath, { recursive: true, force: true });
     }
   });
+
+  it("writes Photoshop TIFF layers with non-MacRoman Unicode names", async () => {
+    const depsDir = "/private/tmp/psdtags-spike-deps";
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-unicode-"));
+
+    try {
+      const layerPath = path.join(folderPath, "layer.png");
+      const outputPath = path.join(folderPath, "out.tiff");
+      const manifestPath = path.join(folderPath, "manifest.json");
+      const scriptPath = path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py");
+
+      await sharp({
+        create: {
+          width: 2,
+          height: 2,
+          channels: 4,
+          background: { r: 0, g: 255, b: 0, alpha: 1 }
+        }
+      })
+        .png()
+        .toFile(layerPath);
+      await writeFile(
+        manifestPath,
+        `${JSON.stringify(
+          {
+            outputPath,
+            width: 2,
+            height: 2,
+            documentName: "unicode-layer-name-test",
+            layers: [
+              {
+                name: "鑳",
+                path: layerPath,
+                opacity: 1,
+                blendMode: "normal",
+                visible: true,
+                background: true
+              }
+            ]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      await execFileAsync("python3", [scriptPath, manifestPath], {
+        env: { ...process.env, SWB_PYTHON_DEPS_DIR: depsDir }
+      });
+
+      const { stdout } = await execFileAsync("python3", [
+        "-c",
+        "import sys; sys.path.insert(0, sys.argv[2]); from psdtags import TiffImageSourceData; print(len(TiffImageSourceData.fromtiff(sys.argv[1]).layers))",
+        outputPath,
+        depsDir
+      ]);
+      expect(stdout.trim()).toBe("1");
+    } finally {
+      await rm(folderPath, { recursive: true, force: true });
+    }
+  });
 });

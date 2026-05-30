@@ -56,6 +56,7 @@
   - The main TIFF composite is flattened over white to preserve existing Save output expectations when the Image layer is deleted or transparent.
   - `npm run smoke:bitmap` now verifies the saved current `_0010.tiff` has Photoshop layer names via `psdtags`.
   - Fixed standalone Save-produced layered TIFF reopening/import: multi-layer SWB XMP TIFF snapshots are no longer misclassified as already-owned when there is no local project/layer asset state, so Import can ingest Photoshop layers and archive the source.
+  - Fixed Import rollback on real Photoshop files with non-MacRoman layer names: the layered TIFF writer now uses a MacRoman-safe fallback for the legacy Pascal layer name while preserving the real Unicode name in `UNICODE_LAYER_NAME`.
 - Save rename safety:
   - Extracted the Electron two-stage rename executor into `electron/main/fileRenames.ts`.
   - Added rollback for execution failures after preflight, so files already moved to temporary or final names are restored to their original paths when possible.

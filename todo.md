@@ -99,6 +99,7 @@
 - [x] Save writes multi bitmap layer shots back to the current scene as Photoshop-readable layered TIFFs, while single-layer shots remain ordinary TIFFs.
 - [x] Electron smoke verifies Save-produced working TIFFs contain Photoshop layer records via `psdtags`.
 - [x] Fixed Import for standalone Save-produced layered TIFF snapshots with SWB XMP so Photoshop layers are ingested instead of being skipped as already-owned.
+- [x] Fixed layered TIFF writer crash on non-MacRoman Photoshop layer names during Import/Save.
 - [x] Added bitmap Select tool V1 with lasso and rectangle selection, active-layer move, corner scale, transient marching-ants UI, and undo snapshots.
 - [x] Added geometry/unit coverage for bitmap selection bounds, hit testing, scaling, row drag intent, opacity mapping, row placement, and blend menu direction.
 - [x] Added live eraser bitmap preview during pointer movement.
