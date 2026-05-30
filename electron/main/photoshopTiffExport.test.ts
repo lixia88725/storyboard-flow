@@ -1,5 +1,12 @@
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildPhotoshopTiffExportPlan, buildPhotoshopTiffInPlaceSavePlan } from "./photoshopTiffExport.js";
+import {
+  buildPhotoshopTiffExportPlan,
+  buildPhotoshopTiffInPlaceSavePlan,
+  writePhotoshopLayeredTiffsForInPlaceSave
+} from "./photoshopTiffExport.js";
 
 const layer = (patch: Partial<Parameters<typeof buildPhotoshopTiffExportPlan>[0]["shots"][number]["layers"][number]>) => ({
   id: "layer-image",
@@ -180,5 +187,62 @@ describe("buildPhotoshopTiffExportPlan", () => {
     expect(plan.jobs[0].finalPath).toBe("/scene/a.tiff");
     expect(plan.jobs[0].manifest.outputPath).toBe("/scene/.storyboard-workbench/save-tmp/save-123/a.tiff");
     expect(plan.jobs[0].manifest.documentName).toBe("a");
+  });
+
+  it("writes in-place Photoshop TIFF save outputs to temp files without replacing originals", async () => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-save-"));
+
+    try {
+      const originalPath = path.join(folderPath, "a.tiff");
+      const fakeWriterPath = path.join(folderPath, "fake-writer.mjs");
+      const layerPath = path.join(folderPath, ".storyboard-workbench/layers/shot-a/layer-image.png");
+
+      await writeFile(originalPath, "original", "utf8");
+      await mkdir(path.dirname(layerPath), { recursive: true });
+      await writeFile(layerPath, "fake-png", "utf8");
+      await writeFile(
+        fakeWriterPath,
+        [
+          "import { readFile, writeFile } from 'node:fs/promises';",
+          "const manifest = JSON.parse(await readFile(process.argv[2], 'utf8'));",
+          "await writeFile(manifest.outputPath, `layered:${manifest.documentName}`, 'utf8');"
+        ].join("\n"),
+        "utf8"
+      );
+
+      const result = await writePhotoshopLayeredTiffsForInPlaceSave(
+        {
+          name: "Demo",
+          shots: [
+            {
+              id: "shot-a",
+              imagePath: originalPath,
+              fileName: "a.tiff",
+              order: 0,
+              swb: { canvasWidth: 320, canvasHeight: 180 },
+              layers: [layer({ bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png" })]
+            }
+          ]
+        },
+        folderPath,
+        {
+          scriptPath: fakeWriterPath,
+          pythonPath: process.execPath,
+          saveStamp: "save-123"
+        }
+      );
+
+      expect(result.replacements).toEqual([
+        {
+          fromPath: path.join(folderPath, ".storyboard-workbench/save-tmp/save-123/a.tiff"),
+          toPath: originalPath
+        }
+      ]);
+      await expect(readFile(originalPath, "utf8")).resolves.toBe("original");
+      await expect(readFile(result.replacements[0].fromPath, "utf8")).resolves.toBe("layered:a");
+      await expect(stat(path.join(folderPath, ".storyboard-workbench/save-tmp/save-123/.manifests/shot-a.json"))).resolves.toBeDefined();
+    } finally {
+      await rm(folderPath, { recursive: true, force: true });
+    }
   });
 });

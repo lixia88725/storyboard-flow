@@ -66,6 +66,11 @@ export type PhotoshopTiffExportResult = {
   exportedFiles: string[];
 };
 
+export type PhotoshopTiffInPlaceSaveResult = {
+  tempFolderPath: string;
+  replacements: Array<{ fromPath: string; toPath: string }>;
+};
+
 export type PhotoshopTiffInPlaceSaveJob = PhotoshopTiffExportJob & {
   finalPath: string;
 };
@@ -152,6 +157,31 @@ export const exportPhotoshopLayeredTiffs = async (
   return {
     exportFolderPath: plan.exportFolderPath,
     exportedFiles: plan.jobs.map((job) => job.outputPath)
+  };
+};
+
+export const writePhotoshopLayeredTiffsForInPlaceSave = async (
+  project: Project,
+  folderPath: string,
+  options: {
+    scriptPath: string;
+    saveStamp: string;
+    pythonPath?: string;
+    env?: NodeJS.ProcessEnv;
+  }
+): Promise<PhotoshopTiffInPlaceSaveResult> => {
+  const plan = buildPhotoshopTiffInPlaceSavePlan(project, folderPath, options.saveStamp);
+  await mkdir(plan.manifestFolderPath, { recursive: true });
+
+  for (const job of plan.jobs) {
+    const manifestPath = path.join(plan.manifestFolderPath, `${job.shotId}.json`);
+    await writeFile(manifestPath, `${JSON.stringify(job.manifest, null, 2)}\n`, "utf8");
+    await runPythonExporter(options.pythonPath ?? "python3", options.scriptPath, manifestPath, options.env);
+  }
+
+  return {
+    tempFolderPath: plan.tempFolderPath,
+    replacements: plan.jobs.map((job) => ({ fromPath: job.outputPath, toPath: job.finalPath }))
   };
 };
 

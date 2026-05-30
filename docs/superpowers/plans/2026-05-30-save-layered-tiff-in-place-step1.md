@@ -123,3 +123,29 @@ Expected: both pass.
 git add electron/main/photoshopTiffExport.ts electron/main/photoshopTiffExport.test.ts docs/superpowers/plans/2026-05-30-save-layered-tiff-in-place-step1.md
 git commit -m "feat: plan in-place photoshop tiff saves"
 ```
+
+### Task 2: Write In-Place Photoshop TIFF Temp Outputs
+
+**Files:**
+- Modify: `electron/main/photoshopTiffExport.ts`
+- Test: `electron/main/photoshopTiffExport.test.ts`
+
+- [x] **Step 1: Write the failing test**
+
+Added a test that runs a fake writer through `process.execPath`, writes the layered TIFF output into `.storyboard-workbench/save-tmp/<stamp>/`, and verifies the original shot TIFF still contains its original content.
+
+- [x] **Step 2: Run test to verify it fails**
+
+Run: `npm run test -- electron/main/photoshopTiffExport.test.ts`
+
+Observed: FAIL with `writePhotoshopLayeredTiffsForInPlaceSave is not a function`.
+
+- [x] **Step 3: Write minimal implementation**
+
+Added `writePhotoshopLayeredTiffsForInPlaceSave`, which builds the in-place plan, writes manifest files, invokes the existing exporter runner, and returns `replacements` without applying them.
+
+- [x] **Step 4: Run test to verify it passes**
+
+Run: `npm run test -- electron/main/photoshopTiffExport.test.ts`
+
+Observed: PASS.
