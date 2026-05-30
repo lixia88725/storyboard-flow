@@ -43,6 +43,7 @@ import {
   type ImportedPhotoshopTiffManifest
 } from "./photoshopTiffImport.js";
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
+import { previewPathForImage } from "./previewPaths.js";
 import {
   applyStoryboardScriptImportPlan,
   parseStoryboardScriptMarkdown,
@@ -1805,8 +1806,7 @@ const createImageRecords = async (
 };
 
 const createPreview = async (imagePath: string, previewRoot: string): Promise<string> => {
-  const previewName = `${Buffer.from(imagePath).toString("hex")}.png`;
-  const previewPath = path.join(previewRoot, previewName);
+  const previewPath = previewPathForImage(imagePath, previewRoot);
 
   await mkdir(previewRoot, { recursive: true });
 
