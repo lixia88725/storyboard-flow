@@ -149,3 +149,33 @@ Added `writePhotoshopLayeredTiffsForInPlaceSave`, which builds the in-place plan
 Run: `npm run test -- electron/main/photoshopTiffExport.test.ts`
 
 Observed: PASS.
+
+### Task 3: Add Rollback-Safe File Replacement
+
+**Files:**
+- Modify: `electron/main/fileRenames.ts`
+- Test: `electron/main/fileRenames.test.ts`
+
+- [x] **Step 1: Write the failing test**
+
+Added a test where replacement of the second TIFF fails after the first TIFF has already been replaced. The expected behavior is that both original TIFF paths are restored.
+
+- [x] **Step 2: Run test to verify it fails**
+
+Run: `npm run test -- electron/main/fileRenames.test.ts`
+
+Observed: FAIL with `applyFileReplacements is not a function`.
+
+- [x] **Step 3: Write minimal implementation**
+
+Added `applyFileReplacements`, which moves each target file to a backup path before moving the temp file into the target path. Rollback deletes the new target when present and restores the backup.
+
+- [x] **Step 4: Run test to verify it passes**
+
+Run: `npm run test -- electron/main/fileRenames.test.ts`
+
+Observed: PASS.
+
+- [x] **Step 5: Cover explicit rollback after successful replacement**
+
+Added a test that applies a replacement, verifies the target contains the new content, calls `rollback()`, and verifies the target contains the original content again.

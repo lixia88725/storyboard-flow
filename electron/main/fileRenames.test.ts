@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyFileMoves, applyFileRenamePlan, replaceFileWithTemp } from "./fileRenames.js";
+import { applyFileMoves, applyFileRenamePlan, applyFileReplacements, replaceFileWithTemp } from "./fileRenames.js";
 
 describe("applyFileRenamePlan", () => {
   it("returns applied renames that can restore final paths", async () => {
@@ -144,5 +144,94 @@ describe("replaceFileWithTemp", () => {
     expect(existingPaths.has("/scene/.storyboard-metadata-shot.tiff")).toBe(false);
     expect(existingPaths.has("/scene/shot.tiff")).toBe(true);
     expect(unlink).toHaveBeenCalledWith("/scene/.storyboard-metadata-shot.tiff");
+  });
+});
+
+describe("applyFileReplacements", () => {
+  it("returns applied replacements that can restore originals", async () => {
+    const existingPaths = new Map([
+      ["/scene/a.tiff", "original-a"],
+      ["/tmp/a.tiff", "new-a"]
+    ]);
+    const rename = vi.fn(async (fromPath: string, toPath: string) => {
+      const value = existingPaths.get(fromPath);
+      if (value === undefined) {
+        throw new Error(`missing ${fromPath}`);
+      }
+      existingPaths.delete(fromPath);
+      existingPaths.set(toPath, value);
+    });
+    const mkdir = vi.fn(async () => undefined);
+    const unlink = vi.fn(async (filePath: string) => {
+      existingPaths.delete(filePath);
+    });
+
+    const applied = await applyFileReplacements(
+      [
+        {
+          tempPath: "/tmp/a.tiff",
+          targetPath: "/scene/a.tiff",
+          backupPath: "/scene/.storyboard-workbench/save-backup/save-123/a.tiff"
+        }
+      ],
+      { mkdir, rename, unlink }
+    );
+
+    expect(existingPaths.get("/scene/a.tiff")).toBe("new-a");
+
+    await applied.rollback();
+
+    expect(existingPaths.get("/scene/a.tiff")).toBe("original-a");
+    expect(existingPaths.has("/scene/.storyboard-workbench/save-backup/save-123/a.tiff")).toBe(false);
+    expect(unlink).toHaveBeenCalledWith("/scene/a.tiff");
+  });
+
+  it("rolls back original files when a later replacement fails", async () => {
+    const existingPaths = new Map([
+      ["/scene/a.tiff", "original-a"],
+      ["/scene/b.tiff", "original-b"],
+      ["/tmp/a.tiff", "new-a"],
+      ["/tmp/b.tiff", "new-b"]
+    ]);
+    const rename = vi.fn(async (fromPath: string, toPath: string) => {
+      if (fromPath === "/tmp/b.tiff" && toPath === "/scene/b.tiff") {
+        throw new Error("replace failed");
+      }
+
+      const value = existingPaths.get(fromPath);
+      if (value === undefined) {
+        throw new Error(`missing ${fromPath}`);
+      }
+      existingPaths.delete(fromPath);
+      existingPaths.set(toPath, value);
+    });
+    const mkdir = vi.fn(async () => undefined);
+    const unlink = vi.fn(async (filePath: string) => {
+      existingPaths.delete(filePath);
+    });
+
+    await expect(
+      applyFileReplacements(
+        [
+          {
+            tempPath: "/tmp/a.tiff",
+            targetPath: "/scene/a.tiff",
+            backupPath: "/scene/.storyboard-workbench/save-backup/save-123/a.tiff"
+          },
+          {
+            tempPath: "/tmp/b.tiff",
+            targetPath: "/scene/b.tiff",
+            backupPath: "/scene/.storyboard-workbench/save-backup/save-123/b.tiff"
+          }
+        ],
+        { mkdir, rename, unlink }
+      )
+    ).rejects.toThrow("replace failed");
+
+    expect(existingPaths.get("/scene/a.tiff")).toBe("original-a");
+    expect(existingPaths.get("/scene/b.tiff")).toBe("original-b");
+    expect(existingPaths.has("/scene/.storyboard-workbench/save-backup/save-123/a.tiff")).toBe(false);
+    expect(existingPaths.has("/scene/.storyboard-workbench/save-backup/save-123/b.tiff")).toBe(false);
+    expect(unlink).toHaveBeenCalledWith("/scene/a.tiff");
   });
 });

@@ -14,6 +14,7 @@ export type FileMoveOps = {
 };
 
 export type TempReplaceOps = {
+  mkdir?: (directoryPath: string) => Promise<void>;
   rename: (fromPath: string, toPath: string) => Promise<void>;
   unlink: (filePath: string) => Promise<void>;
 };
@@ -68,6 +69,21 @@ export type AppliedFileMoves = {
   rollback: () => Promise<void>;
 };
 
+export type FileReplacementItem = {
+  tempPath: string;
+  targetPath: string;
+  backupPath: string;
+};
+
+type AppliedReplacement = {
+  item: FileReplacementItem;
+  stage: "backup" | "target";
+};
+
+export type AppliedFileReplacements = {
+  rollback: () => Promise<void>;
+};
+
 export const applyFileMoves = async (
   moves: FileMoveItem[],
   ops: FileMoveOps
@@ -96,6 +112,43 @@ const rollbackAppliedMoves = async (
 ): Promise<void> => {
   for (const item of [...applied].reverse()) {
     await ops.rename(item.toPath, item.fromPath).catch(() => undefined);
+  }
+};
+
+export const applyFileReplacements = async (
+  replacements: FileReplacementItem[],
+  ops: Required<TempReplaceOps>
+): Promise<AppliedFileReplacements> => {
+  const applied: AppliedReplacement[] = [];
+
+  try {
+    for (const item of replacements) {
+      await ops.mkdir(path.dirname(item.backupPath));
+      await ops.rename(item.targetPath, item.backupPath);
+      applied.push({ item, stage: "backup" });
+      await ops.rename(item.tempPath, item.targetPath);
+      applied[applied.length - 1].stage = "target";
+    }
+  } catch (error) {
+    await rollbackAppliedReplacements(applied, ops);
+    throw error;
+  }
+
+  return {
+    rollback: () => rollbackAppliedReplacements(applied, ops)
+  };
+};
+
+const rollbackAppliedReplacements = async (
+  applied: AppliedReplacement[],
+  ops: Required<TempReplaceOps>
+): Promise<void> => {
+  for (const entry of [...applied].reverse()) {
+    if (entry.stage === "target") {
+      await ops.unlink(entry.item.targetPath).catch(() => undefined);
+    }
+
+    await ops.rename(entry.item.backupPath, entry.item.targetPath).catch(() => undefined);
   }
 };
 
