@@ -154,6 +154,12 @@ SWB 内部工作格式继续使用 `.storyboard-workbench/layers/*.png` 加 `sto
 
 Reason: Photoshop PSD/TIFF 图层格式适合作为交换格式，但不适合作为 V1 的内部事务日志。PNG layer assets + JSON 更容易做 autosave、undo/redo、迁移和安全恢复。
 
+## Save And Export Share Bitmap Layer Ordering
+
+Electron Save and Photoshop TIFF export must use the same bitmap layer filtering, sorting, and defaulting helper.
+
+Reason: Save and export both serialize SWB bitmap layers into external TIFF outputs. Keeping layer eligibility and order in one helper reduces drift without changing the Save boundary or treating Photoshop TIFF as the internal working format.
+
 ## Layered TIFF Save Writes Once
 
 多图层 TIFF 的 Save 只写一次最终 Photoshop-readable TIFF。Electron 把 SWB metadata 传给 Python writer；Python writer 在生成最终 composite 后计算 `baseFingerprint`，再把 SWB XMP 和 Photoshop layer records 一起写入最终 TIFF。
