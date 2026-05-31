@@ -100,6 +100,7 @@ import { SelectionMarquee } from "./SelectionMarquee";
 import { BrushSwatchPicker, SketchSettingSlider } from "./SketchSettingsControls";
 import { LayerPanel } from "./LayerPanel";
 import { Timeline } from "./Timeline";
+import { formatSaveFailureStatus } from "./saveErrors";
 import {
   bitmapSelectionBounds,
   bitmapSelectionHandleRadiusForStage,
@@ -1401,16 +1402,19 @@ export const App = () => {
           allowDefaultNamingFields: missingNamingFields.length > 0
         });
         const renamedProject = applyRenamePlan(projectToSave, renamePlan);
-        return await withStatus("Save failed", () =>
-          window.storyboard.saveWorkspace({
+        try {
+          return await window.storyboard.saveWorkspace({
             project: { ...renamedProject, updatedAt: new Date().toISOString() },
             folderPath,
             metadataPath,
             renamePlan,
             dirtyShotIds: [...dirtyShotIdsRef.current]
-          }),
-          setStatus
-        );
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setStatus(formatSaveFailureStatus(message));
+          return undefined;
+        }
       } finally {
         setWorkspaceTask(undefined);
       }

@@ -4,7 +4,6 @@
 
 - [ ] Manually dogfood Adobe Bridge-specific handoff if Bridge scripting/frontmost automation can be made reliable. Finder-specific focus handoff has passed.
 - [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
-- [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
 - [ ] Add conservative orphan cleanup for `.storyboard-workbench/layers/<deletedShotId>/...` after Delete-to-Trash behavior is proven in real use.
@@ -65,6 +64,7 @@
 - [x] Real-folder `TEST2` actual Finder focus handoff dogfood passed: a root PNG added outside SWB lit the Import warning after Finder -> Electron focus return, Import archived the PNG, created an owned TIFF, and left all 304 shots owned. Adobe Bridge-specific activation was not completed.
 - [x] Missing Recent folder paths are cleaned up after an attempted open: the app removes the stale path from `recent-folders.json`, keeps valid Recent entries, and still reports the open error.
 - [x] Autosave failures now show a persistent right-bottom warning with the error message; users can dismiss it, and the next successful autosave clears it automatically.
+- [x] Save temporary-rename conflicts now show a clearer recovery message telling users to move or delete `.storyboard-renaming-*` files before retrying Save, while preserving the exact conflict path in details.
 
 ## Out Of Scope For Current MVP
 

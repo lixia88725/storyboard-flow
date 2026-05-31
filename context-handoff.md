@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, and persistent autosave failure UI.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, and clearer Save conflict guidance.
 
 ## Current Product State
 
@@ -137,6 +137,7 @@
 - Actual Finder focus handoff dogfood passed with `TEST2_finder_handoff_dogfood_1780195495081.png`: Finder became frontmost on the TEST2 folder, returning to Electron fired a document focus event, Import warning appeared in 1352 ms, Import archived the PNG to `Archive/20260531T024815/`, created `TEST2_finder_handoff_dogfood_1780195495081.tiff`, cleared the warning, and left TEST2 with 304 owned shots. Adobe Bridge 2026 activation failed via AppleScript in this automation run, so Bridge-specific handoff is not claimed as passed.
 - Recent-folder cleanup now removes a stale path only after the user attempts to open it and the folder no longer exists. The app keeps other Recent entries, updates `recent-folders.json`, and still reports the open error. Helper behavior is covered by `electron/main/recentFolders.test.ts`, and a temporary Electron IPC check verified the real preload/main path.
 - Autosave failures now render a persistent right-bottom warning above the existing status control. The warning keeps the latest autosave error visible, can be dismissed manually, and clears automatically on the next successful autosave. State behavior lives in `src/renderer/autosaveError.ts`, with coverage in `src/renderer/autosaveError.test.ts`.
+- Save temporary-rename conflicts now show a user-actionable recovery message instead of only the raw preflight error. The renderer keeps the exact `.storyboard-renaming-*` conflict path in the details. The formatter lives in `src/renderer/saveErrors.ts`, and `npm run smoke:bitmap` now asserts the Save conflict status text.
 
 ## Verification Run For Handoff
 
@@ -228,6 +229,25 @@ npm run smoke:bitmap
 
 npm run test
 # passed: 20 test files, 161 tests
+```
+
+Verification after Save conflict guidance:
+
+```bash
+npm run test -- src/renderer/saveErrors.test.ts
+# passed: 1 test file, 2 tests
+
+npm run typecheck
+# passed
+
+npm run build
+# passed; Vite reported the existing chunk-size warning only
+
+npm run smoke:bitmap
+# passed; includes saveConflictStatus: true
+
+npm run test
+# passed: 21 test files, 163 tests
 ```
 
 Verification after the TEST2 TIFF source-read fix:

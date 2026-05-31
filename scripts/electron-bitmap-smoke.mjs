@@ -2198,6 +2198,22 @@ try {
   if (!saveConflictBlocked) {
     throw new Error("Save was not blocked by the temporary rename conflict");
   }
+  const saveConflictStatus = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const statusButton = document.querySelector('button[aria-label="Workspace status"]');
+          if (statusButton.getAttribute("aria-expanded") !== "true") {
+            statusButton.click();
+          }
+          const text = document.querySelector(".status-panel")?.textContent ?? "";
+          return text.includes("Save stopped because a temporary rename file already exists") &&
+            text.includes("Move or delete the .storyboard-renaming-* file") &&
+            text.includes(${JSON.stringify(temporaryConflictPath)});
+        })()
+      `),
+    "Save conflict status explains recovery action"
+  );
 
   await unlink(temporaryConflictPath);
 
@@ -2562,6 +2578,7 @@ try {
           sourceKind: photoshopImportedShot.swb.sourceKind
         },
         saveConflictBlocked,
+        saveConflictStatus,
         saveProgressShown,
         firstSavedTopLeftRgb,
         savedPhotoshopLayerNames,
