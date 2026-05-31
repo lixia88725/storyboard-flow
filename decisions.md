@@ -80,6 +80,12 @@ Reason: 用户想在当前工作区内创建新分镜图，而非导入外部图
 
 Reason: 这些行为在 React UI 状态之外更易测试、更安全演进。
 
+## Renderer Components Have Explicit Ownership Boundaries
+
+`App.tsx` owns top-level project state, Save/Import/autosave wiring, global selection, shortcuts, menus, and history. `ShotCard.tsx` owns per-card presentation, dialogue cards, script back faces, lazy media placeholders, and card-local composition of `SketchPad` and `LayerPanel`. `SketchPad.tsx` owns bitmap stage behavior. `LayerPanel.tsx` owns the per-shot layer drawer.
+
+Reason: The renderer was becoming too large for smooth collaboration. Keeping Save/Import/history in `App.tsx` while moving card, canvas, and layer drawer presentation into focused components reduces merge conflicts and lowers the risk of UI work accidentally touching filesystem boundaries.
+
 ## Multi-Select Reordering Has Explicit Placement
 
 Shot 成组拖拽排序需要显式表达 `before` / `after` 目标位置。

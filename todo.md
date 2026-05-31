@@ -76,6 +76,7 @@ No active P1 items.
 - [x] `SketchPad` was extracted from `App.tsx` into `src/renderer/SketchPad.tsx` under the dedicated plan, with shared canvas helpers in `src/renderer/sketchRendering.ts` and test/typecheck/build/smoke verification.
 - [x] Package resources packager audit recorded in `docs/package-resources-packager-audit-2026-05-31.md`; resource staging and runtime lookup are verified, but full installer integration is deferred until a packager is chosen.
 - [x] `ShotCard` was extracted from `App.tsx` into `src/renderer/ShotCard.tsx` as a behavior-preserving move; `src/renderer/storyboardDnd.ts` now shares shot/dialogue/drop-zone drag data types, with typecheck/build/smoke/test verification.
+- [x] Final handoff verification passed after the ShotCard extraction: `npm run test`, `npm run typecheck`, and `npm run build`.
 
 ## Out Of Scope For Current MVP
 

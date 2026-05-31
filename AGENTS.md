@@ -41,7 +41,7 @@ npm run smoke:bitmap
 - Add or update Vitest coverage in `src/shared/projectOps.test.ts` when changing project data behavior.
 - Keep Electron filesystem work in `electron/main/main.ts`.
 - Expose renderer-safe APIs through `electron/preload/preload.ts` and keep `electron/preload/preload.cjs` in sync.
-- Keep top-level renderer UI state, Save/Import/autosave wiring, and project history in `src/renderer/App.tsx`.
+- Keep top-level renderer UI state, Save/Import/autosave wiring, and project history in `src/renderer/App.tsx`; keep per-card presentation in `src/renderer/ShotCard.tsx`.
 
 ## Development Map
 
