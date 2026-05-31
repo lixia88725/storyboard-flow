@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-electron/
+dist-resources/
 .storyboard-previews/
 .DS_Store
 src/.DS_Store

@@ -3,7 +3,6 @@
 ## P1
 
 - [ ] Manually dogfood Adobe Bridge-specific handoff if Bridge scripting/frontmost automation can be made reliable. Finder-specific focus handoff has passed.
-- [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
 - [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
 
 ## P2
@@ -67,6 +66,7 @@
 - [x] Save now conservatively removes `.storyboard-workbench/layers/<deletedShotId>/...` directories only after the corresponding pending deleted storyboard has successfully cleared during Save; Delete and Undo still keep layer directories in place.
 - [x] Dense board marquee selection audit recorded in `docs/dense-marquee-audit-2026-05-31.md`: background-origin marquee works, card-origin marquee does not start, and edge dragging does not auto-scroll.
 - [x] Storyboard marquee now edge-scrolls while dragging from outside shot cards, uses document-coordinate hit testing so selected rows are preserved during scroll, and smoke covers dense-board card-origin non-start plus edge-scroll selection.
+- [x] Package resource preparation now copies populated `vendor/python/photoshop-tiff` deps into `dist-resources/python-deps/photoshop-tiff`; future installer/electron packager config must include `dist-resources` at the packaged app resources root.
 
 ## Out Of Scope For Current MVP
 

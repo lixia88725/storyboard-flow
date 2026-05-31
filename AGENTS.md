@@ -96,6 +96,8 @@ npm run build
 
 Run `npm run check:preload` whenever preload files change.
 
+Run `npm run prepare:package-resources` whenever packaging resources change. It requires populated `vendor/python/photoshop-tiff` from `npm run setup:photoshop-tiff-deps`.
+
 For renderer or Electron changes that affect built output, run `npm run build` before `npm run smoke:bitmap`; the smoke uses `dist` and `dist-electron`.
 
 For UI interaction changes, also perform a manual or automated app smoke test when feasible. The canonical smoke areas for this app are Save rename safety, Save TIFF baking, Image layer drawing/erasing/delete/reorder, storyboard Delete-to-Trash, layer panel operations, script card editing and Markdown Import, external root image Import warning, bitmap Select move/scale, live eraser preview, layer thumbnails, layer row opacity/reorder gestures, configurable keyboard shortcuts, multi-select shot dragging, double-click dialogue editing, zoomed sketch drawing, Add Shot aspect presets, timeline navigation when animation mode is active, mixed-aspect animation centering, Onion Skin, and tool shortcuts.

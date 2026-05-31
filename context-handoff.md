@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, and marquee edge auto-scroll.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, and Photoshop TIFF package resource preparation.
 
 ## Current Product State
 
@@ -141,6 +141,7 @@
 - Deleted-shot internal layer directories are now cleaned only after the corresponding pending deleted storyboard clears during Save. Delete and Undo still preserve `.storyboard-workbench/layers/<shotId>/...`; Save removes the exact cleared shot id directory after root image deletion is handled. The helper lives in `electron/main/deletedShotLayers.ts`, and `npm run smoke:bitmap` now asserts the layer directory exists before Save/after Undo and is gone after Save.
 - Dense marquee selection audit used a 48-shot temporary Electron fixture. At 100% zoom the board had 2 columns; at 50% zoom it had 5 columns. Background-origin marquee selected visible cards, card-origin drag did not start a new marquee, and dragging to the viewport bottom did not auto-scroll. Results are recorded in `docs/dense-marquee-audit-2026-05-31.md`.
 - Storyboard marquee now edge-scrolls while dragging from outside shot cards. Card interiors intentionally do not start marquee selection. Hit testing uses document coordinates so rows already crossed by the marquee remain selected after the viewport scrolls. The pure helper lives in `src/renderer/storyboardMarquee.ts`, with tests in `src/renderer/storyboardMarquee.test.ts`; `npm run smoke:bitmap` includes a 24-shot dense fixture that asserts card-origin drags do not start marquee and outside-card edge drags scroll/select across rows.
+- Package resource preparation now has an explicit `npm run prepare:package-resources` step. It compiles Electron helpers, verifies populated `vendor/python/photoshop-tiff` deps exist, and copies them to `dist-resources/python-deps/photoshop-tiff`. `dist-resources/` is ignored by git and must be included at the packaged app resources root by any future installer/electron packager config.
 
 ## Verification Run For Handoff
 
@@ -298,6 +299,22 @@ npm run test
 # passed: 23 test files, 167 tests
 ```
 
+Verification after Photoshop TIFF package resource preparation:
+
+```bash
+npm run test -- electron/main/packageResources.test.ts electron/main/photoshopTiffDeps.test.ts
+# passed: 2 test files, 6 tests
+
+npm run typecheck
+# passed
+
+npm run setup:photoshop-tiff-deps
+# passed with escalated network access; populated git-ignored vendor/python/photoshop-tiff
+
+npm run prepare:package-resources
+# passed; copied vendor/python/photoshop-tiff to dist-resources/python-deps/photoshop-tiff
+```
+
 Verification after the TEST2 TIFF source-read fix:
 
 ```bash
@@ -362,7 +379,7 @@ Recommended next steps:
 ## Known Remaining Work
 
 - Adobe Bridge-specific handoff remains unverified; actual Finder focus handoff passed.
-- Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
+- Full installer/electron packager integration is still not present. The repo now prepares `dist-resources`, but a future packager config must include that directory at the packaged app resources root.
 - Dense-board marquee selection intentionally starts outside shot cards only; edge-scroll is implemented, but clearer outside-card affordance may still be worth considering after real use.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.
 - PSD-first spike and compatibility matrix are not implemented.
