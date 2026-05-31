@@ -4,7 +4,8 @@
 
 - [ ] Manually dogfood Adobe Bridge-specific handoff if Bridge scripting/frontmost automation can be made reliable. Finder-specific focus handoff has passed.
 - [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
-- [ ] Improve marquee selection so it is usable when the board is dense.
+- [ ] Improve marquee selection so dense boards can start marquee from safe card regions, not only background.
+- [ ] Add marquee edge auto-scroll so users can select across rows beyond the current viewport.
 - [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
 
 ## P2
@@ -65,6 +66,7 @@
 - [x] Autosave failures now show a persistent right-bottom warning with the error message; users can dismiss it, and the next successful autosave clears it automatically.
 - [x] Save temporary-rename conflicts now show a clearer recovery message telling users to move or delete `.storyboard-renaming-*` files before retrying Save, while preserving the exact conflict path in details.
 - [x] Save now conservatively removes `.storyboard-workbench/layers/<deletedShotId>/...` directories only after the corresponding pending deleted storyboard has successfully cleared during Save; Delete and Undo still keep layer directories in place.
+- [x] Dense board marquee selection audit recorded in `docs/dense-marquee-audit-2026-05-31.md`: background-origin marquee works, card-origin marquee does not start, and edge dragging does not auto-scroll.
 
 ## Out Of Scope For Current MVP
 

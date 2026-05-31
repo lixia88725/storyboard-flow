@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, and conservative deleted-shot layer cleanup.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, and dense-board marquee selection audit.
 
 ## Current Product State
 
@@ -139,6 +139,7 @@
 - Autosave failures now render a persistent right-bottom warning above the existing status control. The warning keeps the latest autosave error visible, can be dismissed manually, and clears automatically on the next successful autosave. State behavior lives in `src/renderer/autosaveError.ts`, with coverage in `src/renderer/autosaveError.test.ts`.
 - Save temporary-rename conflicts now show a user-actionable recovery message instead of only the raw preflight error. The renderer keeps the exact `.storyboard-renaming-*` conflict path in the details. The formatter lives in `src/renderer/saveErrors.ts`, and `npm run smoke:bitmap` now asserts the Save conflict status text.
 - Deleted-shot internal layer directories are now cleaned only after the corresponding pending deleted storyboard clears during Save. Delete and Undo still preserve `.storyboard-workbench/layers/<shotId>/...`; Save removes the exact cleared shot id directory after root image deletion is handled. The helper lives in `electron/main/deletedShotLayers.ts`, and `npm run smoke:bitmap` now asserts the layer directory exists before Save/after Undo and is gone after Save.
+- Dense marquee selection audit used a 48-shot temporary Electron fixture. At 100% zoom the board had 2 columns; at 50% zoom it had 5 columns. Background-origin marquee selected visible cards, card-origin drag did not start a new marquee, and dragging to the viewport bottom did not auto-scroll. Results are recorded in `docs/dense-marquee-audit-2026-05-31.md`.
 
 ## Verification Run For Handoff
 
@@ -270,6 +271,13 @@ npm run test
 # passed: 22 test files, 165 tests
 ```
 
+Read-only dense marquee audit:
+
+```bash
+node /private/tmp/swb-dense-marquee-audit.mjs
+# passed; recorded card-origin marquee limitation and lack of edge auto-scroll
+```
+
 Verification after the TEST2 TIFF source-read fix:
 
 ```bash
@@ -327,13 +335,15 @@ docs/dogfood-2026-05-30.md
 Recommended next steps:
 
 1. Continue only targeted dogfood for remaining real-app edges, especially Adobe Bridge-specific handoff if reliable automation or manual access is available.
-2. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
-3. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
+2. Fix dense-board marquee in two small steps: first allow safe card-region marquee starts, then add edge auto-scroll.
+3. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
+4. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
 
 ## Known Remaining Work
 
 - Adobe Bridge-specific handoff remains unverified; actual Finder focus handoff passed.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
+- Dense-board marquee selection currently starts from background only and does not edge-scroll during drag.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.
 - PSD-first spike and compatibility matrix are not implemented.
 - Windows Photoshop compatibility has not been tested.
