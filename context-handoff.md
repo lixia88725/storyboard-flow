@@ -12,7 +12,8 @@
   - `e61b232 refactor: centralize preview cache paths`
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
-- This handoff records the continuation through the long-path Import fix and the behavior-preserving LayerPanel extraction.
+  - `39e5174 docs: record shortcut dogfood`
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, and the TEST2 real-folder dogfood sequence through actual Finder focus handoff.
 
 ## Current Product State
 
@@ -133,6 +134,7 @@
 - Multi-select shot dragging and double-click dialogue editing dogfood passed: shots 002/003 moved together after shot 005, then were dragged back before shot 004 to restore the original first-six order. Shot 002 now has one persisted dialogue, `TEST2 dialogue dogfood line`. The reorder used dnd-kit PointerSensor events; the multi-select state was created by dispatched meta-click events.
 - Mixed-aspect Animation mode dogfood passed after adding one `2.39:1` blank shot through the Add Shot preset menu and saving it. TEST2 now has 303 shots: 302 at 1920x1080 plus one 2581x1080 shot, `TEST2_scene_stb_artist_v001_0020.tiff`. Animation mode measured 16:9 stages at ratio 1.778 and the 2.39:1 stage at ratio 2.388 inside the same stable frame, timeline stayed visible, Onion Skin worked, and left/right navigation moved across mixed aspect shots. Onion Skin is functional but visually strong on TEST2 drawings.
 - Shortcut recording dogfood passed with a temporary Electron `SWB_USER_DATA_DIR`: duplicate Escape assignment was blocked without writing settings, Clear Layer could be cleared with Backspace, Brush could record Escape, Escape capture did not close the shortcut menu, the saved `keyboard-shortcuts.json` persisted across restart, and Escape activated Brush after restart.
+- Actual Finder focus handoff dogfood passed with `TEST2_finder_handoff_dogfood_1780195495081.png`: Finder became frontmost on the TEST2 folder, returning to Electron fired a document focus event, Import warning appeared in 1352 ms, Import archived the PNG to `Archive/20260531T024815/`, created `TEST2_finder_handoff_dogfood_1780195495081.tiff`, cleared the warning, and left TEST2 with 304 owned shots. Adobe Bridge 2026 activation failed via AppleScript in this automation run, so Bridge-specific handoff is not claimed as passed.
 
 ## Verification Run For Handoff
 
@@ -206,6 +208,18 @@ The smoke intentionally triggers a Save temporary rename conflict and logs `Temp
 Latest implementation commits before this documentation handoff:
 
 ```text
+39e5174 docs: record shortcut dogfood
+14ef021 docs: record TEST2 animation dogfood
+e8134f0 docs: record TEST2 dragging dialogue dogfood
+876acb1 docs: record TEST2 select dogfood
+0a03248 docs: record TEST2 external import dogfood
+667b1c1 docs: record TEST2 delete-to-trash dogfood
+99ff1b2 fix: import same-length storyboard scripts positionally
+c1ece86 docs: record TEST2 layer lock dogfood
+8c95044 fix: clean successful save artifacts
+ca7a3a9 docs: record TEST2 save dogfood
+bb08639 perf: defer offscreen shot media rendering
+7de13c0 fix: allow large TIFF source reads
 7e56d19 refactor: extract layer panel component
 13155a6 docs: record layer panel extraction audit
 e61b232 refactor: centralize preview cache paths
@@ -226,13 +240,13 @@ docs/dogfood-2026-05-30.md
 
 Recommended next steps:
 
-1. Continue real-folder dogfood for Save speed and actual Finder/Bridge app handoff.
+1. Continue only targeted dogfood for remaining real-app edges, especially Adobe Bridge-specific handoff if reliable automation or manual access is available.
 2. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
 3. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
 
 ## Known Remaining Work
 
-- Real dogfood is still needed for actual Finder/Bridge app handoff.
+- Adobe Bridge-specific handoff remains unverified; actual Finder focus handoff passed.
 - Delete currently leaves internal `.storyboard-workbench/layers/<shotId>/...` assets behind; orphan cleanup should be a separate conservative task.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.

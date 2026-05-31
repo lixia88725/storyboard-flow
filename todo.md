@@ -1,13 +1,8 @@
 # TODO
 
-## P0
-
-- [ ] Manually dogfood actual Finder/Bridge focus handoff for externally added images.
-
 ## P1
 
-- [ ] Dogfood bitmap Select tool V1 on real storyboard files; note lasso/rectangle move and scale UX issues before adding more features.
-- [ ] Run real-folder P0 dogfood using `docs/dogfood-2026-05-30.md` as the automated baseline, especially Save speed, Finder/Bridge app handoff, high-resolution Select scaling, mixed-aspect animation review, multi-select dragging, and double-click dialogue editing.
+- [ ] Manually dogfood Adobe Bridge-specific handoff if Bridge scripting/frontmost automation can be made reliable. Finder-specific focus handoff has passed.
 - [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
 - [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
 - [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
@@ -69,6 +64,7 @@
 - [x] Real-folder `TEST2` multi-select shot dragging and double-click dialogue editing dogfood passed: shots 002/003 moved as a group, restored to original order, and shot 002 persisted `TEST2 dialogue dogfood line`.
 - [x] Real-folder `TEST2` mixed-aspect Animation mode dogfood passed after adding one 2.39:1 shot: stable frame, timeline, Onion Skin, and left/right navigation worked across 16:9 and 2.39:1 shots.
 - [x] Shortcut recording dogfood passed with temporary Electron userData: duplicate Escape was blocked, Clear Layer could be cleared, Brush could record Escape, Escape capture did not close the menu, and settings persisted across restart.
+- [x] Real-folder `TEST2` actual Finder focus handoff dogfood passed: a root PNG added outside SWB lit the Import warning after Finder -> Electron focus return, Import archived the PNG, created an owned TIFF, and left all 304 shots owned. Adobe Bridge-specific activation was not completed.
 
 ## Out Of Scope For Current MVP
 
