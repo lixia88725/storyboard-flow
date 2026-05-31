@@ -11,10 +11,10 @@
   - `d14fd32 refactor: extract sketch pad component`
   - `da55b2b refactor: extract sketch rendering helpers`
   - `e582bce docs: refresh handoff and sketchpad plan`
+  - `49c74f1 docs: audit vite chunk warning`
   - `04452dd feat: edge scroll storyboard marquee`
   - `1c05739 chore: prepare package python resources`
-  - `762bbc4 docs: record Bridge focus dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the behavior-preserving SketchPad extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, outside-card marquee affordance audit, and Vite chunk warning audit.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the behavior-preserving SketchPad extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, package resources packager audit, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, outside-card marquee affordance audit, and Vite chunk warning audit.
 
 ## Current Product State
 
@@ -144,6 +144,7 @@
 - Dense marquee selection audit used a 48-shot temporary Electron fixture. At 100% zoom the board had 2 columns; at 50% zoom it had 5 columns. Background-origin marquee selected visible cards, card-origin drag did not start a new marquee, and dragging to the viewport bottom did not auto-scroll. Results are recorded in `docs/dense-marquee-audit-2026-05-31.md`.
 - Storyboard marquee now edge-scrolls while dragging from outside shot cards. Card interiors intentionally do not start marquee selection. Hit testing uses document coordinates so rows already crossed by the marquee remain selected after the viewport scrolls. The pure helper lives in `src/renderer/storyboardMarquee.ts`, with tests in `src/renderer/storyboardMarquee.test.ts`; `npm run smoke:bitmap` includes a 24-shot dense fixture that asserts card-origin drags do not start marquee and outside-card edge drags scroll/select across rows.
 - Package resource preparation now has an explicit `npm run prepare:package-resources` step. It compiles Electron helpers, verifies populated `vendor/python/photoshop-tiff` deps exist, and copies them to `dist-resources/python-deps/photoshop-tiff`. `dist-resources/` is ignored by git and must be included at the packaged app resources root by any future installer/electron packager config.
+- Package resources packager audit is recorded in `docs/package-resources-packager-audit-2026-05-31.md`. The repo does not currently have electron-builder, electron-forge, electron-packager, or an installer script. Resource staging and runtime lookup are ready; full integration should wait until a packager is chosen, then copy `dist-resources` contents to the packaged app resources root so runtime sees `process.resourcesPath/python-deps/photoshop-tiff`.
 - Layer drawer pointer-drag open/close was evaluated with an isolated prototype at `docs/prototypes/layer-drawer-pointer-drag-2026-05-31.html`; findings are recorded in `docs/layer-drawer-pointer-drag-prototype-2026-05-31.md`. Recommendation: do not implement pointer-drag now. Keep click-toggle because it has a simpler user model; if the handle remains too hidden, consider hover/cursor affordance or a slightly larger click target first.
 - Preload sync audit is recorded in `docs/preload-sync-audit-2026-05-31.md`. Recommendation: keep manually maintained `electron/preload/preload.cjs` for now, but strengthen the gate. `scripts/check-preload-sync.mjs` now exports parser helpers, only runs as a CLI when invoked directly, and compares exposed API method parameter names/counts in addition to API keys and IPC channels.
 - Interaction mode audit is recorded in `docs/interaction-mode-audit-2026-05-31.md`. Recommendation: do not add a global Select / Hand / Draw mode now. Current interaction ownership is region-based: image stage edits pixels, board background marquee-selects storyboards, shot header reorders shots, dialogue grip drags dialogue, and LayerPanel owns layer gestures.
@@ -409,6 +410,16 @@ npm run build
 
 npm run smoke:bitmap
 # passed; expected Temporary rename file already exists log appeared during Save conflict protection
+```
+
+Verification after package resources packager audit:
+
+```bash
+npm run prepare:package-resources
+# passed; copied vendor/python/photoshop-tiff to dist-resources/python-deps/photoshop-tiff
+
+npm run test -- electron/main/packageResources.test.ts electron/main/photoshopTiffDeps.test.ts
+# passed: 2 test files, 6 tests
 ```
 
 Verification after the TEST2 TIFF source-read fix:

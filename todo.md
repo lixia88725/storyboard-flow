@@ -74,6 +74,7 @@ No active P1 items.
 - [x] Vite chunk warning audit recorded in `docs/vite-chunk-warning-audit-2026-05-31.md`; recommendation is not to add manual chunks or raise the warning limit without measured startup pain.
 - [x] Dedicated `SketchPad` extraction plan recorded in `docs/superpowers/plans/2026-05-31-sketchpad-extraction.md`; implementation remains deferred until the plan can be executed and verified as its own refactor.
 - [x] `SketchPad` was extracted from `App.tsx` into `src/renderer/SketchPad.tsx` under the dedicated plan, with shared canvas helpers in `src/renderer/sketchRendering.ts` and test/typecheck/build/smoke verification.
+- [x] Package resources packager audit recorded in `docs/package-resources-packager-audit-2026-05-31.md`; resource staging and runtime lookup are verified, but full installer integration is deferred until a packager is chosen.
 
 ## Out Of Scope For Current MVP
 
