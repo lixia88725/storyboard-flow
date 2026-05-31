@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, and outside-card marquee affordance audit.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, outside-card marquee affordance audit, and Vite chunk warning audit.
 
 ## Current Product State
 
@@ -150,6 +150,7 @@
 - Bitmap Select handle affordance audit is recorded in `docs/bitmap-select-handle-affordance-audit-2026-05-31.md`. Recommendation: do not add a CSS-only cursor now because the visible SVG overlay has `pointer-events: none`; revisit a true stage-level cursor only if real users still miss corner scaling after the enlarged hit target.
 - Layer drawer handle affordance audit is recorded in `docs/layer-drawer-handle-affordance-audit-2026-05-31.md`. Recommendation: do not widen, iconize, or otherwise emphasize the handle now. The handle is already a real button with pointer cursor, hover, accessible label, and smoke-covered placement; revisit a slightly wider click target only if users still miss it.
 - Outside-card marquee affordance audit is recorded in `docs/outside-card-marquee-affordance-audit-2026-05-31.md`. Recommendation: do not add persistent instruction text, stronger board-background styling, or card-internal start zones now. Edge-scroll fixed the concrete dense-board failure, and the start rule remains outside shot cards only.
+- Vite chunk warning audit is recorded in `docs/vite-chunk-warning-audit-2026-05-31.md`. Fresh `npm run build` passed with one renderer JS chunk at `649.71 kB` minified / `199.62 kB` gzip. Recommendation: do not add manual chunks or raise `chunkSizeWarningLimit` now; revisit only with measured startup pain, a clear optional UI boundary, or substantial bundle growth.
 
 ## Verification Run For Handoff
 
@@ -438,6 +439,7 @@ Recommended next steps:
 7. Revisit bitmap Select stage-level cursor affordance only if users still miss corner scaling; do not add CSS-only cursor styling to the non-interactive SVG overlay.
 8. Revisit layer drawer handle width only if users still miss opening layers; keep the current quiet handle otherwise.
 9. Revisit outside-card marquee affordance only if real dense-board use still shows missed selections; do not add card-internal start zones.
+10. Revisit renderer code splitting only with measured startup pain, a clear optional UI boundary, or substantial renderer bundle growth.
 
 ## Known Remaining Work
 
@@ -446,4 +448,4 @@ Recommended next steps:
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.
 - PSD-first spike and compatibility matrix are not implemented.
 - Windows Photoshop compatibility has not been tested.
-- Current build still emits the Vite chunk-size warning.
+- Current build still emits the Vite chunk-size warning by design; latest measured renderer JS is `649.71 kB` minified / `199.62 kB` gzip, and manual chunks are deferred until there is measured startup pain or a clear optional split boundary.

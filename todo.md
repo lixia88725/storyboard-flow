@@ -10,7 +10,7 @@ No active P1 items.
 - [ ] Revisit outside-card marquee affordance only if dense boards still feel hard to select after edge auto-scroll.
 - [ ] Revisit a slightly wider layer drawer click target only if users still miss the current handle.
 - [ ] Revisit a true stage-level bitmap Select cursor affordance only if users still miss corner scaling after hit target enlargement.
-- [ ] Consider code splitting or manual chunks if the existing Vite chunk-size warning becomes noisy or affects startup.
+- [ ] Revisit code splitting only after measured startup pain, a clear optional UI boundary, or substantial renderer bundle growth.
 
 ## PSD / Photoshop Future
 
@@ -72,6 +72,7 @@ No active P1 items.
 - [x] Bitmap Select handle affordance audit recorded in `docs/bitmap-select-handle-affordance-audit-2026-05-31.md`; recommendation is not to add a CSS-only cursor now because the visible SVG overlay is not the pointer target.
 - [x] Layer drawer handle affordance audit recorded in `docs/layer-drawer-handle-affordance-audit-2026-05-31.md`; recommendation is not to widen or iconize the handle until repeated user misses justify it.
 - [x] Outside-card marquee affordance audit recorded in `docs/outside-card-marquee-affordance-audit-2026-05-31.md`; recommendation is not to add persistent text, stronger background styling, or card-internal start zones now.
+- [x] Vite chunk warning audit recorded in `docs/vite-chunk-warning-audit-2026-05-31.md`; recommendation is not to add manual chunks or raise the warning limit without measured startup pain.
 
 ## Out Of Scope For Current MVP
 
