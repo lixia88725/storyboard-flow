@@ -24,8 +24,10 @@ npm run dev
 - `electron/main/storyboardScript.ts`：`storyboard-script.md` 的序列化、解析和 Import 计划 helper。
 - `electron/main/photoshopTiffExport.ts` / `electron/main/photoshopTiffImport.ts`：Photoshop layered TIFF 交换路径。
 - `electron/preload/preload.ts` 和 `electron/preload/preload.cjs`：renderer-safe API。改其中一个后跑 `npm run check:preload`。
-- `src/renderer/App.tsx`：主 UI 状态、工具栏、图层面板、shot card 和 drawing wiring。它是协作热点，优先做小步改动。
-- `src/renderer/sketchGeometry.ts`、`activeTargets.ts`、`keyboardShortcuts.ts`、`animationViewport.ts`：renderer 纯逻辑 helper，适合先补单测再接入 UI。
+- `src/renderer/App.tsx`：主 UI 状态、工具栏、shot card、Save/Import/autosave wiring 和项目历史。它仍是协作热点，优先做小步改动。
+- `src/renderer/SketchPad.tsx`：bitmap drawing、eraser live preview、bitmap Select transform、Onion Skin overlay 和 Konva stage wiring。改这里先跑 renderer tests，再跑 build/smoke。
+- `src/renderer/LayerPanel.tsx`：per-shot layer drawer UI、layer row gestures、visibility sweep、opacity/reorder controls。
+- `src/renderer/sketchRendering.ts`、`sketchGeometry.ts`、`activeTargets.ts`、`keyboardShortcuts.ts`、`animationViewport.ts`：renderer helper，适合先补单测再接入 UI。
 - `scripts/electron-bitmap-smoke.mjs`：端到端 Electron/CDP smoke，覆盖 Save safety、bitmap drawing、layer panel、Photoshop round trip、animation 和 legacy migration。
 
 ## Workflow

@@ -6,7 +6,6 @@ No active P1 items.
 
 ## P2
 
-- [ ] Extract `SketchPad` from `App.tsx` only by following `docs/superpowers/plans/2026-05-31-sketchpad-extraction.md`.
 - [ ] Revisit outside-card marquee affordance only if dense boards still feel hard to select after edge auto-scroll.
 - [ ] Revisit a slightly wider layer drawer click target only if users still miss the current handle.
 - [ ] Revisit a true stage-level bitmap Select cursor affordance only if users still miss corner scaling after hit target enlargement.
@@ -74,6 +73,7 @@ No active P1 items.
 - [x] Outside-card marquee affordance audit recorded in `docs/outside-card-marquee-affordance-audit-2026-05-31.md`; recommendation is not to add persistent text, stronger background styling, or card-internal start zones now.
 - [x] Vite chunk warning audit recorded in `docs/vite-chunk-warning-audit-2026-05-31.md`; recommendation is not to add manual chunks or raise the warning limit without measured startup pain.
 - [x] Dedicated `SketchPad` extraction plan recorded in `docs/superpowers/plans/2026-05-31-sketchpad-extraction.md`; implementation remains deferred until the plan can be executed and verified as its own refactor.
+- [x] `SketchPad` was extracted from `App.tsx` into `src/renderer/SketchPad.tsx` under the dedicated plan, with shared canvas helpers in `src/renderer/sketchRendering.ts` and test/typecheck/build/smoke verification.
 
 ## Out Of Scope For Current MVP
 

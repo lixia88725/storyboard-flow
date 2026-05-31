@@ -8,13 +8,13 @@
 - Branch: `bitmap-layer-refactor`
 - Previous handoff commit before this continuation: `3820ac9 交接存档：完善脚本面板、导入提醒和删除流程`
 - Latest continuation commits:
-  - `docs: refresh handoff and sketchpad plan` (this handoff commit)
+  - `d14fd32 refactor: extract sketch pad component`
+  - `da55b2b refactor: extract sketch rendering helpers`
+  - `e582bce docs: refresh handoff and sketchpad plan`
   - `04452dd feat: edge scroll storyboard marquee`
   - `1c05739 chore: prepare package python resources`
   - `762bbc4 docs: record Bridge focus dogfood`
-  - `a676d09 test: strengthen preload sync check`
-  - `49c74f1 docs: audit vite chunk warning`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, outside-card marquee affordance audit, Vite chunk warning audit, and the dedicated `SketchPad` extraction plan.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the behavior-preserving SketchPad extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, outside-card marquee affordance audit, and Vite chunk warning audit.
 
 ## Current Product State
 
@@ -152,7 +152,7 @@
 - Layer drawer handle affordance audit is recorded in `docs/layer-drawer-handle-affordance-audit-2026-05-31.md`. Recommendation: do not widen, iconize, or otherwise emphasize the handle now. The handle is already a real button with pointer cursor, hover, accessible label, and smoke-covered placement; revisit a slightly wider click target only if users still miss it.
 - Outside-card marquee affordance audit is recorded in `docs/outside-card-marquee-affordance-audit-2026-05-31.md`. Recommendation: do not add persistent instruction text, stronger board-background styling, or card-internal start zones now. Edge-scroll fixed the concrete dense-board failure, and the start rule remains outside shot cards only.
 - Vite chunk warning audit is recorded in `docs/vite-chunk-warning-audit-2026-05-31.md`. Fresh `npm run build` passed with one renderer JS chunk at `649.71 kB` minified / `199.62 kB` gzip. Recommendation: do not add manual chunks or raise `chunkSizeWarningLimit` now; revisit only with measured startup pain, a clear optional UI boundary, or substantial bundle growth.
-- Dedicated `SketchPad` extraction plan is recorded in `docs/superpowers/plans/2026-05-31-sketchpad-extraction.md`. Recommendation: do not extract `SketchPad` opportunistically. Execute the plan as its own behavior-preserving refactor because it owns drawing, selection, pointer handling, Onion Skin overlay, live bitmap canvases, and layer PNG writes.
+- `SketchPad` extraction is recorded in `docs/superpowers/plans/2026-05-31-sketchpad-extraction.md` and implemented as a behavior-preserving move into `src/renderer/SketchPad.tsx`. Save, Import, autosave, dirty shot tracking, bitmap layer writes, and project history remain owned by `App.tsx`. Shared sketch rendering helpers now live in `src/renderer/sketchRendering.ts`.
 
 ## Verification Run For Handoff
 
@@ -395,6 +395,22 @@ npm run smoke:bitmap
 # passed; denseMarqueeChecks reported scrollY 181, selectedCount 20, marqueeVisible true
 ```
 
+Verification after `SketchPad` extraction:
+
+```bash
+npm run test -- src/renderer/sketchGeometry.test.ts src/renderer/onionSkin.test.ts
+# passed: 2 test files, 20 tests
+
+npm run typecheck
+# passed
+
+npm run build
+# passed; Vite reported the existing chunk-size warning only
+
+npm run smoke:bitmap
+# passed; expected Temporary rename file already exists log appeared during Save conflict protection
+```
+
 Verification after the TEST2 TIFF source-read fix:
 
 ```bash
@@ -452,14 +468,13 @@ Recommended next steps:
 1. Keep storyboard marquee start outside shot cards to reduce user mental load; revisit outside-card affordance only if dense boards still feel hard after edge auto-scroll.
 2. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
 3. Defer layer drawer pointer-drag open/close unless real user demand appears; if users still miss the current handle, prefer a slightly wider click target before adding drag or an icon.
-4. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
+4. Keep `SketchPad` behavior changes separate from project-state work; it now owns pixel-stage UI in `src/renderer/SketchPad.tsx`, while Save/Import/history stay in `App.tsx`.
 5. Revisit a dedicated global Select / Hand / Draw mode only if real dogfood finds repeated conflicts that cannot be solved by clearer gesture start regions.
 6. Revisit Onion Skin opacity controls only if repeated user feedback shows the fixed red/green `0.28` ghosts are distracting or too subtle.
 7. Revisit bitmap Select stage-level cursor affordance only if users still miss corner scaling; do not add CSS-only cursor styling to the non-interactive SVG overlay.
 8. Revisit layer drawer handle width only if users still miss opening layers; keep the current quiet handle otherwise.
 9. Revisit outside-card marquee affordance only if real dense-board use still shows missed selections; do not add card-internal start zones.
 10. Revisit renderer code splitting only with measured startup pain, a clear optional UI boundary, or substantial renderer bundle growth.
-11. Execute `docs/superpowers/plans/2026-05-31-sketchpad-extraction.md` only as a dedicated refactor with full renderer/Electron verification.
 
 ## Known Remaining Work
 
