@@ -783,6 +783,15 @@ try {
   await openFolder(deleteRoot);
   const deleteInitialProject = await readProjectMetadata(deleteRoot);
   const deleteTargetPath = deleteInitialProject.shots[1].imagePath;
+  const deleteTargetLayerDir = path.join(
+    deleteRoot,
+    ".storyboard-workbench",
+    "layers",
+    deleteInitialProject.shots[1].id
+  );
+  await mkdir(deleteTargetLayerDir, { recursive: true });
+  await writeFile(path.join(deleteTargetLayerDir, "orphan-candidate.png"), "orphan candidate");
+  const deleteLayerDirExistsBeforeDelete = await fileExists(deleteTargetLayerDir);
   await evaluate(`
     (() => {
       document.querySelectorAll("[data-shot-id]")[1].click();
@@ -799,6 +808,10 @@ try {
   if (!(await fileExists(deleteTargetPath))) {
     throw new Error("Delete moved the storyboard file before Save");
   }
+  const deleteLayerDirExistsBeforeSave = await fileExists(deleteTargetLayerDir);
+  if (!deleteLayerDirExistsBeforeSave) {
+    throw new Error("Delete removed the storyboard layer directory before Save");
+  }
 
   await dispatchKeyZ(send, 4);
   await waitFor(async () => {
@@ -809,6 +822,10 @@ try {
   }, "Delete undo restored project");
   if (!(await fileExists(deleteTargetPath))) {
     throw new Error("Undo delete did not keep the storyboard file in place");
+  }
+  const deleteLayerDirExistsAfterUndo = await fileExists(deleteTargetLayerDir);
+  if (!deleteLayerDirExistsAfterUndo) {
+    throw new Error("Undo delete did not keep the storyboard layer directory in place");
   }
 
   await evaluate(`
@@ -836,7 +853,8 @@ try {
     const project = await readProjectMetadata(deleteRoot);
     return project.shots?.length === 2 &&
       !project.pendingDeletedShots?.length &&
-      !(await fileExists(deleteTargetPath))
+      !(await fileExists(deleteTargetPath)) &&
+      !(await fileExists(deleteTargetLayerDir))
       ? project
       : undefined;
   }, "Save moved deleted storyboard file to Trash", 20000);
@@ -2525,6 +2543,10 @@ try {
           pendingIds: deletePendingProject.pendingDeletedShots.map((shot) => shot.id),
           savedShotCount: deleteSavedProject.shots.length,
           deletedFileStillExists: await fileExists(deleteTargetPath),
+          layerDirExistsBeforeDelete: deleteLayerDirExistsBeforeDelete,
+          layerDirExistsBeforeSave: deleteLayerDirExistsBeforeSave,
+          layerDirExistsAfterUndo: deleteLayerDirExistsAfterUndo,
+          layerDirExistsAfterSave: await fileExists(deleteTargetLayerDir),
           deleteInScriptTextareaKeptCards
         },
         erasedHash,

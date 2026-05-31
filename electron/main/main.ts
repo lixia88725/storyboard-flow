@@ -46,6 +46,7 @@ import {
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
 import { addRecentFolderPath, normalizeRecentFolders, removeRecentFolderPath } from "./recentFolders.js";
+import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
 import {
   applyStoryboardScriptImportPlan,
   parseStoryboardScriptMarkdown,
@@ -547,10 +548,16 @@ const saveWorkspace = async (
     throw new Error("Save did not produce a project");
   }
 
+  const pendingBeforeTrash = savedProject.pendingDeletedShots ?? [];
   const trashResult = await trashPendingDeletedShotFiles(savedProject);
   if (trashResult.project !== savedProject) {
     await writeProjectFiles(payload.metadataPath, payload.folderPath, trashResult.project);
   }
+  await cleanupDeletedShotLayerDirectories({
+    folderPath: payload.folderPath,
+    previousPendingDeletedShots: pendingBeforeTrash,
+    nextPendingDeletedShots: trashResult.project.pendingDeletedShots ?? []
+  });
   if (trashResult.error) {
     throw trashResult.error;
   }

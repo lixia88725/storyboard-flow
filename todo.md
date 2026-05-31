@@ -6,7 +6,6 @@
 - [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
-- [ ] Add conservative orphan cleanup for `.storyboard-workbench/layers/<deletedShotId>/...` after Delete-to-Trash behavior is proven in real use.
 
 ## P2
 
@@ -65,6 +64,7 @@
 - [x] Missing Recent folder paths are cleaned up after an attempted open: the app removes the stale path from `recent-folders.json`, keeps valid Recent entries, and still reports the open error.
 - [x] Autosave failures now show a persistent right-bottom warning with the error message; users can dismiss it, and the next successful autosave clears it automatically.
 - [x] Save temporary-rename conflicts now show a clearer recovery message telling users to move or delete `.storyboard-renaming-*` files before retrying Save, while preserving the exact conflict path in details.
+- [x] Save now conservatively removes `.storyboard-workbench/layers/<deletedShotId>/...` directories only after the corresponding pending deleted storyboard has successfully cleared during Save; Delete and Undo still keep layer directories in place.
 
 ## Out Of Scope For Current MVP
 

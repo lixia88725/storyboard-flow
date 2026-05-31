@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, and clearer Save conflict guidance.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, and conservative deleted-shot layer cleanup.
 
 ## Current Product State
 
@@ -138,6 +138,7 @@
 - Recent-folder cleanup now removes a stale path only after the user attempts to open it and the folder no longer exists. The app keeps other Recent entries, updates `recent-folders.json`, and still reports the open error. Helper behavior is covered by `electron/main/recentFolders.test.ts`, and a temporary Electron IPC check verified the real preload/main path.
 - Autosave failures now render a persistent right-bottom warning above the existing status control. The warning keeps the latest autosave error visible, can be dismissed manually, and clears automatically on the next successful autosave. State behavior lives in `src/renderer/autosaveError.ts`, with coverage in `src/renderer/autosaveError.test.ts`.
 - Save temporary-rename conflicts now show a user-actionable recovery message instead of only the raw preflight error. The renderer keeps the exact `.storyboard-renaming-*` conflict path in the details. The formatter lives in `src/renderer/saveErrors.ts`, and `npm run smoke:bitmap` now asserts the Save conflict status text.
+- Deleted-shot internal layer directories are now cleaned only after the corresponding pending deleted storyboard clears during Save. Delete and Undo still preserve `.storyboard-workbench/layers/<shotId>/...`; Save removes the exact cleared shot id directory after root image deletion is handled. The helper lives in `electron/main/deletedShotLayers.ts`, and `npm run smoke:bitmap` now asserts the layer directory exists before Save/after Undo and is gone after Save.
 
 ## Verification Run For Handoff
 
@@ -250,6 +251,25 @@ npm run test
 # passed: 21 test files, 163 tests
 ```
 
+Verification after deleted-shot layer cleanup:
+
+```bash
+npm run test -- electron/main/deletedShotLayers.test.ts
+# passed: 1 test file, 2 tests
+
+npm run typecheck
+# passed
+
+npm run build
+# passed; Vite reported the existing chunk-size warning only
+
+npm run smoke:bitmap
+# passed; deleteShotChecks layerDirExistsAfterSave was false
+
+npm run test
+# passed: 22 test files, 165 tests
+```
+
 Verification after the TEST2 TIFF source-read fix:
 
 ```bash
@@ -313,7 +333,6 @@ Recommended next steps:
 ## Known Remaining Work
 
 - Adobe Bridge-specific handoff remains unverified; actual Finder focus handoff passed.
-- Delete currently leaves internal `.storyboard-workbench/layers/<shotId>/...` assets behind; orphan cleanup should be a separate conservative task.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.
 - PSD-first spike and compatibility matrix are not implemented.
