@@ -8,13 +8,13 @@
 - Branch: `bitmap-layer-refactor`
 - Previous handoff commit before this continuation: `3820ac9 交接存档：完善脚本面板、导入提醒和删除流程`
 - Latest continuation commits:
+  - `ce00116 docs: audit package resources integration`
+  - `45df50d docs: record sketch pad extraction`
   - `d14fd32 refactor: extract sketch pad component`
   - `da55b2b refactor: extract sketch rendering helpers`
   - `e582bce docs: refresh handoff and sketchpad plan`
   - `49c74f1 docs: audit vite chunk warning`
-  - `04452dd feat: edge scroll storyboard marquee`
-  - `1c05739 chore: prepare package python resources`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the behavior-preserving SketchPad extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, package resources packager audit, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, outside-card marquee affordance audit, and Vite chunk warning audit.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the behavior-preserving SketchPad extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, package resources packager audit, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, outside-card marquee affordance audit, Vite chunk warning audit, and final handoff verification.
 
 ## Current Product State
 
@@ -422,6 +422,22 @@ npm run test -- electron/main/packageResources.test.ts electron/main/photoshopTi
 # passed: 2 test files, 6 tests
 ```
 
+Final handoff verification after `ce00116`:
+
+```bash
+npm run test
+# passed: 24 test files, 170 tests
+
+npm run typecheck
+# passed
+
+npm run build
+# passed; Vite reported the existing chunk-size warning only
+
+npm run smoke:bitmap
+# passed; expected Temporary rename file already exists log appeared during Save conflict protection
+```
+
 Verification after the TEST2 TIFF source-read fix:
 
 ```bash
@@ -443,9 +459,14 @@ The smoke intentionally triggers a Save temporary rename conflict and logs `Temp
 
 ## Current Git State
 
-Latest commits before this documentation handoff:
+Latest commits before this final handoff:
 
 ```text
+ce00116 docs: audit package resources integration
+45df50d docs: record sketch pad extraction
+d14fd32 refactor: extract sketch pad component
+da55b2b refactor: extract sketch rendering helpers
+e582bce docs: refresh handoff and sketchpad plan
 49c74f1 docs: audit vite chunk warning
 8001dec docs: audit marquee affordance
 de57b6f docs: audit layer drawer handle
@@ -468,8 +489,6 @@ Documentation changes recorded in this handoff:
 
 ```text
 context-handoff.md
-todo.md
-docs/superpowers/plans/2026-05-31-sketchpad-extraction.md
 ```
 
 ## Next Handoff Target
