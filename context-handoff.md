@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, and preload sync audit.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, and interaction mode audit.
 
 ## Current Product State
 
@@ -145,6 +145,7 @@
 - Package resource preparation now has an explicit `npm run prepare:package-resources` step. It compiles Electron helpers, verifies populated `vendor/python/photoshop-tiff` deps exist, and copies them to `dist-resources/python-deps/photoshop-tiff`. `dist-resources/` is ignored by git and must be included at the packaged app resources root by any future installer/electron packager config.
 - Layer drawer pointer-drag open/close was evaluated with an isolated prototype at `docs/prototypes/layer-drawer-pointer-drag-2026-05-31.html`; findings are recorded in `docs/layer-drawer-pointer-drag-prototype-2026-05-31.md`. Recommendation: do not implement pointer-drag now. Keep click-toggle because it has a simpler user model; if the handle remains too hidden, consider hover/cursor affordance or a slightly larger click target first.
 - Preload sync audit is recorded in `docs/preload-sync-audit-2026-05-31.md`. Recommendation: keep manually maintained `electron/preload/preload.cjs` for now, but strengthen the gate. `scripts/check-preload-sync.mjs` now exports parser helpers, only runs as a CLI when invoked directly, and compares exposed API method parameter names/counts in addition to API keys and IPC channels.
+- Interaction mode audit is recorded in `docs/interaction-mode-audit-2026-05-31.md`. Recommendation: do not add a global Select / Hand / Draw mode now. Current interaction ownership is region-based: image stage edits pixels, board background marquee-selects storyboards, shot header reorders shots, dialogue grip drags dialogue, and LayerPanel owns layer gestures.
 
 ## Verification Run For Handoff
 
@@ -354,6 +355,13 @@ npm run test
 # passed: 24 test files, 170 tests
 ```
 
+Verification after interaction mode audit:
+
+```bash
+git diff --check
+# passed
+```
+
 Verification after the TEST2 TIFF source-read fix:
 
 ```bash
@@ -414,6 +422,7 @@ Recommended next steps:
 2. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
 3. Defer layer drawer pointer-drag open/close unless real user demand appears; prefer lighter handle affordance improvements first.
 4. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
+5. Revisit a dedicated global Select / Hand / Draw mode only if real dogfood finds repeated conflicts that cannot be solved by clearer gesture start regions.
 
 ## Known Remaining Work
 
