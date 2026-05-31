@@ -9,6 +9,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const smokeRoot = path.join("/private/tmp", `swb-bitmap-smoke-${Date.now()}`);
 const scriptRoot = path.join("/private/tmp", `swb-script-smoke-${Date.now()}`);
 const deleteRoot = path.join("/private/tmp", `swb-delete-smoke-${Date.now()}`);
+const denseMarqueeRoot = path.join("/private/tmp", `swb-dense-marquee-smoke-${Date.now()}`);
 const legacyRoot = path.join("/private/tmp", `swb-legacy-smoke-${Date.now()}`);
 const photoshopImportRoot = path.join("/private/tmp", `swb-photoshop-import-${Date.now()}`);
 const savedLayeredImportRoot = path.join("/private/tmp", `swb-saved-layered-import-${Date.now()}`);
@@ -451,6 +452,7 @@ try {
   await mkdir(smokeRoot, { recursive: true });
   await mkdir(scriptRoot, { recursive: true });
   await mkdir(deleteRoot, { recursive: true });
+  await mkdir(denseMarqueeRoot, { recursive: true });
   const originalShotAPath = path.join(smokeRoot, "shot_a.png");
   const originalShotBPath = path.join(smokeRoot, "shot_b.png");
   const originalShotCPath = path.join(smokeRoot, "shot_c.png");
@@ -500,6 +502,18 @@ try {
   await copyFile(originalShotAPath, deleteShotAPath);
   await copyFile(originalShotBPath, deleteShotBPath);
   await copyFile(originalShotCPath, deleteShotCPath);
+  for (let index = 0; index < 24; index += 1) {
+    await sharp({
+      create: {
+        width: 320,
+        height: 180,
+        channels: 4,
+        background: index % 2 === 0 ? "#eef2ff" : "#fff4d6"
+      }
+    })
+      .png()
+      .toFile(path.join(denseMarqueeRoot, `dense_${String(index + 1).padStart(2, "0")}.png`));
+  }
   const originalShotAHash = await hashFile(originalShotAPath);
 
   await mkdir(path.join(legacyRoot, ".storyboard-workbench"), { recursive: true });
@@ -858,6 +872,85 @@ try {
       ? project
       : undefined;
   }, "Save moved deleted storyboard file to Trash", 20000);
+
+  // Scenario: dense-board marquee stays outside cards and edge-scrolls during drag.
+  await openFolder(denseMarqueeRoot);
+  await evaluate(`
+    (() => {
+      const input = document.querySelector('input[type="range"]');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      setter.call(input, "50");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      window.scrollTo(0, 0);
+      return true;
+    })()
+  `);
+  await delay(200);
+  const denseMarqueeStart = await evaluate(`
+    (() => {
+      const cards = Array.from(document.querySelectorAll("[data-shot-id]"));
+      const first = cards[0].getBoundingClientRect();
+      const visibleCards = cards.filter((card) => {
+        const rect = card.getBoundingClientRect();
+        return rect.top < window.innerHeight && rect.bottom > 0;
+      });
+      const lastVisible = visibleCards.at(-1).getBoundingClientRect();
+      return {
+        cardX: Math.round(first.left + first.width / 2),
+        cardY: Math.round(first.top + 16),
+        outsideX: Math.round(first.left - 8),
+        outsideY: Math.round(first.top + 16),
+        endX: Math.round(lastVisible.right),
+        endY: window.innerHeight - 12
+      };
+    })()
+  `);
+  await dragStroke(
+    send,
+    denseMarqueeStart.cardX,
+    denseMarqueeStart.cardY,
+    denseMarqueeStart.endX,
+    denseMarqueeStart.endY
+  );
+  const denseCardOriginSelectedCount = await evaluate(`
+    Number(document.querySelector("footer span:last-child")?.textContent?.match(/\\d+/)?.[0] ?? 0)
+  `);
+  if (denseCardOriginSelectedCount > 1) {
+    throw new Error(`Card-origin marquee selected shots unexpectedly: ${denseCardOriginSelectedCount}`);
+  }
+  await dragWithoutRelease(
+    send,
+    denseMarqueeStart.outsideX,
+    denseMarqueeStart.outsideY,
+    denseMarqueeStart.endX,
+    denseMarqueeStart.endY
+  );
+  await delay(500);
+  const denseMarqueeDuringDrag = await evaluate(`
+    ({
+      scrollY: window.scrollY,
+      selectedCount: Number(document.querySelector("footer span:last-child")?.textContent?.match(/\\d+/)?.[0] ?? 0),
+      marqueeVisible: Boolean(document.querySelector(".selection-marquee"))
+    })
+  `);
+  await releaseMouse(send, denseMarqueeStart.endX, denseMarqueeStart.endY);
+  if (
+    denseMarqueeDuringDrag.scrollY <= 0 ||
+    denseMarqueeDuringDrag.selectedCount < 6 ||
+    !denseMarqueeDuringDrag.marqueeVisible
+  ) {
+    throw new Error(`Dense marquee edge-scroll failed: ${JSON.stringify(denseMarqueeDuringDrag)}`);
+  }
+  await evaluate(`
+    (() => {
+      const input = document.querySelector('input[type="range"]');
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      setter.call(input, "100");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      window.scrollTo(0, 0);
+      return true;
+    })()
+  `);
 
   await openFolder();
 
@@ -2549,6 +2642,7 @@ try {
           layerDirExistsAfterSave: await fileExists(deleteTargetLayerDir),
           deleteInScriptTextareaKeptCards
         },
+        denseMarqueeChecks: denseMarqueeDuringDrag,
         erasedHash,
         undoEraseHash,
         clearedHash,

@@ -102,6 +102,13 @@ import { LayerPanel } from "./LayerPanel";
 import { Timeline } from "./Timeline";
 import { formatSaveFailureStatus } from "./saveErrors";
 import {
+  createMarqueeBox,
+  marqueeEdgeScrollDelta,
+  shotIdsInMarqueeBox,
+  updateMarqueeBox,
+  type MarqueeBox
+} from "./storyboardMarquee";
+import {
   bitmapSelectionBounds,
   bitmapSelectionHandleRadiusForStage,
   bitmapSelectionHitTarget,
@@ -164,7 +171,6 @@ type WorkspaceTask = {
   current: number;
   total: number;
 };
-type SelectionBox = { startX: number; startY: number; currentX: number; currentY: number };
 type SketchSettingsMenu = { tool: SketchTool; x: number; y: number };
 type BitmapSelection = {
   mode: BitmapSelectionMode;
@@ -314,11 +320,11 @@ export const App = () => {
   const [autosaveError, setAutosaveError] = useState<AutosaveErrorNotice | undefined>();
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<UndoEntry[]>([]);
-  const [selectionBox, setSelectionBox] = useState<SelectionBox | undefined>();
+  const [selectionBox, setSelectionBox] = useState<MarqueeBox | undefined>();
   const [status, setStatus] = useState(
     window.storyboard ? "Ready" : "Electron preload API is unavailable"
   );
-  const selectionBoxRef = useRef<SelectionBox | undefined>(undefined);
+  const selectionBoxRef = useRef<MarqueeBox | undefined>(undefined);
   const projectRef = useRef(project);
   const folderPathRef = useRef(folderPath);
   const metadataPathRef = useRef(metadataPath);
@@ -1605,28 +1611,52 @@ export const App = () => {
       return;
     }
 
-    const nextBox = {
-      startX: event.clientX,
-      startY: event.clientY,
-      currentX: event.clientX,
-      currentY: event.clientY
-    };
+    const nextBox = createMarqueeBox({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      scrollX: window.scrollX,
+      scrollY: window.scrollY
+    });
     setSelectionBox(nextBox);
     setSelectedShotIds([]);
+    let latestPointer = { clientX: event.clientX, clientY: event.clientY };
+    let scrollFrame: number | undefined;
 
-    const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
-      const movedBox = {
-        ...nextBox,
-        currentX: moveEvent.clientX,
-        currentY: moveEvent.clientY
-      };
+    const updateMarqueeSelection = () => {
+      const scrollDelta = marqueeEdgeScrollDelta({
+        pointerY: latestPointer.clientY,
+        viewportHeight: window.innerHeight
+      });
+      if (scrollDelta !== 0) {
+        window.scrollBy({ top: scrollDelta, left: 0, behavior: "auto" });
+      }
+
+      const movedBox = updateMarqueeBox(nextBox, {
+        clientX: latestPointer.clientX,
+        clientY: latestPointer.clientY,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY
+      });
       selectionBoxRef.current = movedBox;
       setSelectionBox(movedBox);
       setSelectedShotIds(shotIdsInSelectionBox(movedBox));
+
+      scrollFrame =
+        scrollDelta === 0 ? undefined : window.requestAnimationFrame(updateMarqueeSelection);
+    };
+
+    const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
+      latestPointer = { clientX: moveEvent.clientX, clientY: moveEvent.clientY };
+      if (scrollFrame === undefined) {
+        updateMarqueeSelection();
+      }
     };
 
     const handlePointerUp = () => {
       setSelectionBox(undefined);
+      if (scrollFrame !== undefined) {
+        window.cancelAnimationFrame(scrollFrame);
+      }
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
@@ -2365,19 +2395,26 @@ const inferShotPlacement = (
   return targetIndex > Math.max(...movingIndexes) ? "after" : "before";
 };
 
-const shotIdsInSelectionBox = (box: SelectionBox): string[] => {
-  const left = Math.min(box.startX, box.currentX);
-  const right = Math.max(box.startX, box.currentX);
-  const top = Math.min(box.startY, box.currentY);
-  const bottom = Math.max(box.startY, box.currentY);
-
-  return Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id]"))
-    .filter((element) => {
+const shotIdsInSelectionBox = (box: MarqueeBox): string[] => {
+  const shots = Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id]"))
+    .map((element) => {
       const rect = element.getBoundingClientRect();
-      return rect.left < right && rect.right > left && rect.top < bottom && rect.bottom > top;
+      const shotId = element.dataset.shotId;
+      return shotId
+        ? {
+            shotId,
+            rect: {
+              left: rect.left + window.scrollX,
+              right: rect.right + window.scrollX,
+              top: rect.top + window.scrollY,
+              bottom: rect.bottom + window.scrollY
+            }
+          }
+        : undefined;
     })
-    .map((element) => element.dataset.shotId)
-    .filter((shotId): shotId is string => Boolean(shotId));
+    .filter((shot): shot is NonNullable<typeof shot> => Boolean(shot));
+
+  return shotIdsInMarqueeBox(box, shots);
 };
 
 const withStatus = async <T,>(

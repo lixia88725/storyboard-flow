@@ -60,10 +60,10 @@ Impact:
 1. Keep marquee start outside shot cards.
    - Do not start marquee from card interiors, including seemingly empty card padding.
    - If dense boards still feel hard to use, improve outside-card affordance or spacing instead of adding partial card-internal start zones.
-2. Add viewport-edge auto-scroll while marquee is active.
+2. Add viewport-edge auto-scroll while marquee is active. Completed in follow-up implementation.
    - Scroll when the pointer is near top or bottom of the viewport.
    - Keep selection bounds in document coordinates or update the current viewport math so offscreen crossing remains predictable.
-3. Add smoke coverage for dense marquee behavior.
+3. Add smoke coverage for dense marquee behavior. Completed for card-origin non-start and outside-card edge-scroll selection.
    - Keep a generated dense fixture.
    - Assert card-origin drags do not start marquee.
    - Assert edge drag scrolls and selects across rows.

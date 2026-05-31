@@ -4,13 +4,12 @@
 
 - [ ] Manually dogfood Adobe Bridge-specific handoff if Bridge scripting/frontmost automation can be made reliable. Finder-specific focus handoff has passed.
 - [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
-- [ ] Keep storyboard marquee selection outside shot cards, and improve dense-board usability through clearer outside-card space/affordance if needed.
-- [ ] Add marquee edge auto-scroll so users can select across rows beyond the current viewport.
 - [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
 
 ## P2
 
 - [ ] Extract `SketchPad` from `App.tsx` only under a dedicated plan because it owns drawing, selection, pointer handling, and layer PNG writes.
+- [ ] Consider clearer outside-card marquee affordance if dense boards still feel hard to select after edge auto-scroll.
 - [ ] Review whether `electron/preload/preload.cjs` should continue to be manually maintained or generated from TypeScript.
 - [ ] Consider a dedicated select/hand/draw tool mode if drawing, selecting, and dragging conflict in real use.
 - [ ] Consider opacity controls for Onion Skin if fixed red/green ghost strength feels too strong or too weak.
@@ -67,6 +66,7 @@
 - [x] Save temporary-rename conflicts now show a clearer recovery message telling users to move or delete `.storyboard-renaming-*` files before retrying Save, while preserving the exact conflict path in details.
 - [x] Save now conservatively removes `.storyboard-workbench/layers/<deletedShotId>/...` directories only after the corresponding pending deleted storyboard has successfully cleared during Save; Delete and Undo still keep layer directories in place.
 - [x] Dense board marquee selection audit recorded in `docs/dense-marquee-audit-2026-05-31.md`: background-origin marquee works, card-origin marquee does not start, and edge dragging does not auto-scroll.
+- [x] Storyboard marquee now edge-scrolls while dragging from outside shot cards, uses document-coordinate hit testing so selected rows are preserved during scroll, and smoke covers dense-board card-origin non-start plus edge-scroll selection.
 
 ## Out Of Scope For Current MVP
 

@@ -1,11 +1,6 @@
-type SelectionBox = {
-  startX: number;
-  startY: number;
-  currentX: number;
-  currentY: number;
-};
+import type { MarqueeBox } from "./storyboardMarquee";
 
-export const SelectionMarquee = ({ box }: { box: SelectionBox }) => {
+export const SelectionMarquee = ({ box }: { box: MarqueeBox }) => {
   const left = Math.min(box.startX, box.currentX);
   const top = Math.min(box.startY, box.currentY);
   const width = Math.abs(box.currentX - box.startX);

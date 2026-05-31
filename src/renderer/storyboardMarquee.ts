@@ -1,0 +1,78 @@
+export type MarqueeBox = {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+  startScrollX: number;
+  startScrollY: number;
+  currentScrollX: number;
+  currentScrollY: number;
+};
+
+type MarqueePoint = {
+  clientX: number;
+  clientY: number;
+  scrollX: number;
+  scrollY: number;
+};
+
+type MarqueeShotRect = {
+  shotId: string;
+  rect: {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  };
+};
+
+const edgeThresholdPx = 64;
+const edgeScrollStepPx = 32;
+
+export const createMarqueeBox = (point: MarqueePoint): MarqueeBox => ({
+  startX: point.clientX,
+  startY: point.clientY,
+  currentX: point.clientX,
+  currentY: point.clientY,
+  startScrollX: point.scrollX,
+  startScrollY: point.scrollY,
+  currentScrollX: point.scrollX,
+  currentScrollY: point.scrollY
+});
+
+export const updateMarqueeBox = (box: MarqueeBox, point: MarqueePoint): MarqueeBox => ({
+  ...box,
+  currentX: point.clientX,
+  currentY: point.clientY,
+  currentScrollX: point.scrollX,
+  currentScrollY: point.scrollY
+});
+
+export const marqueeEdgeScrollDelta = ({
+  pointerY,
+  viewportHeight
+}: {
+  pointerY: number;
+  viewportHeight: number;
+}) => {
+  if (pointerY < edgeThresholdPx) {
+    return -edgeScrollStepPx;
+  }
+
+  if (pointerY > viewportHeight - edgeThresholdPx) {
+    return edgeScrollStepPx;
+  }
+
+  return 0;
+};
+
+export const shotIdsInMarqueeBox = (box: MarqueeBox, shots: MarqueeShotRect[]) => {
+  const left = Math.min(box.startX + box.startScrollX, box.currentX + box.currentScrollX);
+  const right = Math.max(box.startX + box.startScrollX, box.currentX + box.currentScrollX);
+  const top = Math.min(box.startY + box.startScrollY, box.currentY + box.currentScrollY);
+  const bottom = Math.max(box.startY + box.startScrollY, box.currentY + box.currentScrollY);
+
+  return shots
+    .filter(({ rect }) => rect.left < right && rect.right > left && rect.top < bottom && rect.bottom > top)
+    .map(({ shotId }) => shotId);
+};
