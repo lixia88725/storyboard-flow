@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, and layer drawer handle affordance audit.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, and outside-card marquee affordance audit.
 
 ## Current Product State
 
@@ -149,6 +149,7 @@
 - Onion Skin opacity audit is recorded in `docs/onion-skin-opacity-audit-2026-05-31.md`. Recommendation: do not add opacity controls now. Keep the current Animation-mode checkbox-only UI and fixed `0.28` ghost opacity because it is covered by smoke and the TEST2 "visually strong" note is qualitative rather than repeated user failure.
 - Bitmap Select handle affordance audit is recorded in `docs/bitmap-select-handle-affordance-audit-2026-05-31.md`. Recommendation: do not add a CSS-only cursor now because the visible SVG overlay has `pointer-events: none`; revisit a true stage-level cursor only if real users still miss corner scaling after the enlarged hit target.
 - Layer drawer handle affordance audit is recorded in `docs/layer-drawer-handle-affordance-audit-2026-05-31.md`. Recommendation: do not widen, iconize, or otherwise emphasize the handle now. The handle is already a real button with pointer cursor, hover, accessible label, and smoke-covered placement; revisit a slightly wider click target only if users still miss it.
+- Outside-card marquee affordance audit is recorded in `docs/outside-card-marquee-affordance-audit-2026-05-31.md`. Recommendation: do not add persistent instruction text, stronger board-background styling, or card-internal start zones now. Edge-scroll fixed the concrete dense-board failure, and the start rule remains outside shot cards only.
 
 ## Verification Run For Handoff
 
@@ -428,7 +429,7 @@ docs/dogfood-2026-05-30.md
 
 Recommended next steps:
 
-1. Keep storyboard marquee start outside shot cards to reduce user mental load; consider clearer outside-card affordance only if dense boards still feel hard after edge auto-scroll.
+1. Keep storyboard marquee start outside shot cards to reduce user mental load; revisit outside-card affordance only if dense boards still feel hard after edge auto-scroll.
 2. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
 3. Defer layer drawer pointer-drag open/close unless real user demand appears; if users still miss the current handle, prefer a slightly wider click target before adding drag or an icon.
 4. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
@@ -436,11 +437,12 @@ Recommended next steps:
 6. Revisit Onion Skin opacity controls only if repeated user feedback shows the fixed red/green `0.28` ghosts are distracting or too subtle.
 7. Revisit bitmap Select stage-level cursor affordance only if users still miss corner scaling; do not add CSS-only cursor styling to the non-interactive SVG overlay.
 8. Revisit layer drawer handle width only if users still miss opening layers; keep the current quiet handle otherwise.
+9. Revisit outside-card marquee affordance only if real dense-board use still shows missed selections; do not add card-internal start zones.
 
 ## Known Remaining Work
 
 - Full installer/electron packager integration is still not present. The repo now prepares `dist-resources`, but a future packager config must include that directory at the packaged app resources root.
-- Dense-board marquee selection intentionally starts outside shot cards only; edge-scroll is implemented, but clearer outside-card affordance may still be worth considering after real use.
+- Dense-board marquee selection intentionally starts outside shot cards only; edge-scroll is implemented, and outside-card affordance should be revisited only after real missed-selection feedback.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.
 - PSD-first spike and compatibility matrix are not implemented.
 - Windows Photoshop compatibility has not been tested.
