@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, and Photoshop TIFF package resource preparation.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, and layer drawer pointer-drag prototype review.
 
 ## Current Product State
 
@@ -142,6 +142,7 @@
 - Dense marquee selection audit used a 48-shot temporary Electron fixture. At 100% zoom the board had 2 columns; at 50% zoom it had 5 columns. Background-origin marquee selected visible cards, card-origin drag did not start a new marquee, and dragging to the viewport bottom did not auto-scroll. Results are recorded in `docs/dense-marquee-audit-2026-05-31.md`.
 - Storyboard marquee now edge-scrolls while dragging from outside shot cards. Card interiors intentionally do not start marquee selection. Hit testing uses document coordinates so rows already crossed by the marquee remain selected after the viewport scrolls. The pure helper lives in `src/renderer/storyboardMarquee.ts`, with tests in `src/renderer/storyboardMarquee.test.ts`; `npm run smoke:bitmap` includes a 24-shot dense fixture that asserts card-origin drags do not start marquee and outside-card edge drags scroll/select across rows.
 - Package resource preparation now has an explicit `npm run prepare:package-resources` step. It compiles Electron helpers, verifies populated `vendor/python/photoshop-tiff` deps exist, and copies them to `dist-resources/python-deps/photoshop-tiff`. `dist-resources/` is ignored by git and must be included at the packaged app resources root by any future installer/electron packager config.
+- Layer drawer pointer-drag open/close was evaluated with an isolated prototype at `docs/prototypes/layer-drawer-pointer-drag-2026-05-31.html`; findings are recorded in `docs/layer-drawer-pointer-drag-prototype-2026-05-31.md`. Recommendation: do not implement pointer-drag now. Keep click-toggle because it has a simpler user model; if the handle remains too hidden, consider hover/cursor affordance or a slightly larger click target first.
 
 ## Verification Run For Handoff
 
@@ -315,6 +316,16 @@ npm run prepare:package-resources
 # passed; copied vendor/python/photoshop-tiff to dist-resources/python-deps/photoshop-tiff
 ```
 
+Verification after layer drawer pointer-drag prototype:
+
+```bash
+git diff --check
+# passed
+
+node --input-type=module -e 'import { readFileSync } from "node:fs"; const html=readFileSync("docs/prototypes/layer-drawer-pointer-drag-2026-05-31.html","utf8"); const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]); for (const script of scripts) new Function(script); console.log("scripts parsed: " + scripts.length);'
+# passed: scripts parsed: 1
+```
+
 Verification after the TEST2 TIFF source-read fix:
 
 ```bash
@@ -374,7 +385,8 @@ Recommended next steps:
 1. Continue only targeted dogfood for remaining real-app edges, especially Adobe Bridge-specific handoff if reliable automation or manual access is available.
 2. Keep storyboard marquee start outside shot cards to reduce user mental load; consider clearer outside-card affordance only if dense boards still feel hard after edge auto-scroll.
 3. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
-4. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
+4. Defer layer drawer pointer-drag open/close unless real user demand appears; prefer lighter handle affordance improvements first.
+5. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
 
 ## Known Remaining Work
 
