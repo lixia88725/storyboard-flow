@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, and the TEST2 real-folder dogfood sequence through actual Finder focus handoff.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, and Recent-folder cleanup after failed opens.
 
 ## Current Product State
 
@@ -135,6 +135,7 @@
 - Mixed-aspect Animation mode dogfood passed after adding one `2.39:1` blank shot through the Add Shot preset menu and saving it. TEST2 now has 303 shots: 302 at 1920x1080 plus one 2581x1080 shot, `TEST2_scene_stb_artist_v001_0020.tiff`. Animation mode measured 16:9 stages at ratio 1.778 and the 2.39:1 stage at ratio 2.388 inside the same stable frame, timeline stayed visible, Onion Skin worked, and left/right navigation moved across mixed aspect shots. Onion Skin is functional but visually strong on TEST2 drawings.
 - Shortcut recording dogfood passed with a temporary Electron `SWB_USER_DATA_DIR`: duplicate Escape assignment was blocked without writing settings, Clear Layer could be cleared with Backspace, Brush could record Escape, Escape capture did not close the shortcut menu, the saved `keyboard-shortcuts.json` persisted across restart, and Escape activated Brush after restart.
 - Actual Finder focus handoff dogfood passed with `TEST2_finder_handoff_dogfood_1780195495081.png`: Finder became frontmost on the TEST2 folder, returning to Electron fired a document focus event, Import warning appeared in 1352 ms, Import archived the PNG to `Archive/20260531T024815/`, created `TEST2_finder_handoff_dogfood_1780195495081.tiff`, cleared the warning, and left TEST2 with 304 owned shots. Adobe Bridge 2026 activation failed via AppleScript in this automation run, so Bridge-specific handoff is not claimed as passed.
+- Recent-folder cleanup now removes a stale path only after the user attempts to open it and the folder no longer exists. The app keeps other Recent entries, updates `recent-folders.json`, and still reports the open error. Helper behavior is covered by `electron/main/recentFolders.test.ts`, and a temporary Electron IPC check verified the real preload/main path.
 
 ## Verification Run For Handoff
 
@@ -182,6 +183,28 @@ Additional automated dogfood baseline after the documentation refresh:
 ```bash
 npm run smoke:bitmap
 # passed
+```
+
+Verification after Recent-folder cleanup:
+
+```bash
+npm run test -- electron/main/recentFolders.test.ts
+# passed: 1 test file, 3 tests
+
+npm run typecheck
+# passed
+
+npm run build
+# passed; Vite reported the existing chunk-size warning only
+
+node /private/tmp/swb-recent-missing-check.mjs
+# passed: missing Recent path was removed from recent-folders.json, valid entry remained
+
+npm run smoke:bitmap
+# passed
+
+npm run test
+# passed: 19 test files, 160 tests
 ```
 
 Verification after the TEST2 TIFF source-read fix:

@@ -45,6 +45,7 @@ import {
 } from "./photoshopTiffImport.js";
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
+import { addRecentFolderPath, normalizeRecentFolders, removeRecentFolderPath } from "./recentFolders.js";
 import {
   applyStoryboardScriptImportPlan,
   parseStoryboardScriptMarkdown,
@@ -330,6 +331,11 @@ app.on("window-all-closed", () => {
 
 const registerIpcHandlers = () => {
   ipcMain.handle("workspace:openFolderByPath", async (_event, folderPath: string) => {
+    if (!(await pathExists(folderPath))) {
+      await removeRecentFolder(folderPath);
+      throw new Error(`Folder does not exist: ${folderPath}`);
+    }
+
     const scan = await scanFolder(folderPath);
     await addRecentFolder(scan.folderPath);
     return scan;
@@ -896,7 +902,10 @@ const readRecentFolders = async (): Promise<string[]> => {
     const contents = await readFile(recentFoldersPath(), "utf8");
     const parsed = JSON.parse(contents);
     return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string").slice(0, maxRecentFolders)
+      ? normalizeRecentFolders(
+          parsed.filter((item): item is string => typeof item === "string"),
+          maxRecentFolders
+        )
       : [];
   } catch (error) {
     const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
@@ -917,11 +926,16 @@ const writeRecentFolders = async (folders: string[]): Promise<void> => {
 
 const addRecentFolder = async (folderPath: string): Promise<void> => {
   const existing = await readRecentFolders();
-  const next = [folderPath, ...existing.filter((item) => item !== folderPath)].slice(
-    0,
-    maxRecentFolders
-  );
+  const next = addRecentFolderPath(existing, folderPath, maxRecentFolders);
   await writeRecentFolders(next);
+};
+
+const removeRecentFolder = async (folderPath: string): Promise<void> => {
+  const existing = await readRecentFolders();
+  const next = removeRecentFolderPath(existing, folderPath);
+  if (next.length !== existing.length) {
+    await writeRecentFolders(next);
+  }
 };
 
 const updateRecentFoldersMenu = async (): Promise<void> => {
