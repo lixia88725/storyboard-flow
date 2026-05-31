@@ -34,10 +34,11 @@ Starting the same drag from board background selected `4` shots.
 
 At 50% zoom, the board became dense with 5 columns. Dragging from inside the first card across six visible cards left selection unchanged at `6 selected` from the prior operation and did not show a marquee. This means dense-card drag does not reliably start a new selection.
 
-Impact:
+Product decision:
 
-- In dense boards, most visible space is card surface, not background.
-- Users naturally drag over cards to select a region, so the current gesture is hard to discover.
+- Keep storyboard marquee selection outside shot cards only.
+- This keeps the user model simple: card interiors are for card-specific actions, and outside-card space is for board-level marquee selection.
+- Do not add partial "safe regions" inside shot cards unless this decision changes.
 
 ### Finding 2: Dragging to the viewport bottom does not auto-scroll
 
@@ -56,15 +57,15 @@ Impact:
 
 ## Recommended Next Steps
 
-1. Allow marquee to start from safe card regions that are not interactive controls.
-   - Do not start marquee from inputs, textareas, layer panel, menus, buttons, canvas drawing areas, dialogue grips, or dnd-kit drag handles.
-   - A conservative first version can require a modifier key or start from card padding/header if normal card drag conflicts are unclear.
+1. Keep marquee start outside shot cards.
+   - Do not start marquee from card interiors, including seemingly empty card padding.
+   - If dense boards still feel hard to use, improve outside-card affordance or spacing instead of adding partial card-internal start zones.
 2. Add viewport-edge auto-scroll while marquee is active.
    - Scroll when the pointer is near top or bottom of the viewport.
    - Keep selection bounds in document coordinates or update the current viewport math so offscreen crossing remains predictable.
 3. Add smoke coverage for dense marquee behavior.
    - Keep a generated dense fixture.
-   - Assert card-origin marquee starts only from allowed regions.
+   - Assert card-origin drags do not start marquee.
    - Assert edge drag scrolls and selects across rows.
 
 ## Non-Goals

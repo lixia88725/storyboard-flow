@@ -335,7 +335,7 @@ docs/dogfood-2026-05-30.md
 Recommended next steps:
 
 1. Continue only targeted dogfood for remaining real-app edges, especially Adobe Bridge-specific handoff if reliable automation or manual access is available.
-2. Fix dense-board marquee in two small steps: first allow safe card-region marquee starts, then add edge auto-scroll.
+2. Keep storyboard marquee start outside shot cards to reduce user mental load; improve dense-board marquee through edge auto-scroll and outside-card affordance if needed.
 3. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
 4. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
 
@@ -343,7 +343,7 @@ Recommended next steps:
 
 - Adobe Bridge-specific handoff remains unverified; actual Finder focus handoff passed.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
-- Dense-board marquee selection currently starts from background only and does not edge-scroll during drag.
+- Dense-board marquee selection intentionally starts outside shot cards only, and currently does not edge-scroll during drag.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.
 - PSD-first spike and compatibility matrix are not implemented.
 - Windows Photoshop compatibility has not been tested.

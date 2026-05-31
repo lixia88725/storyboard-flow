@@ -4,7 +4,7 @@
 
 - [ ] Manually dogfood Adobe Bridge-specific handoff if Bridge scripting/frontmost automation can be made reliable. Finder-specific focus handoff has passed.
 - [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
-- [ ] Improve marquee selection so dense boards can start marquee from safe card regions, not only background.
+- [ ] Keep storyboard marquee selection outside shot cards, and improve dense-board usability through clearer outside-card space/affordance if needed.
 - [ ] Add marquee edge auto-scroll so users can select across rows beyond the current viewport.
 - [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
 
