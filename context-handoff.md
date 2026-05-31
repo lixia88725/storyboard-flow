@@ -8,12 +8,13 @@
 - Branch: `bitmap-layer-refactor`
 - Previous handoff commit before this continuation: `3820ac9 交接存档：完善脚本面板、导入提醒和删除流程`
 - Latest continuation commits:
-  - `2f2f52a fix: shorten preview cache filenames`
-  - `e61b232 refactor: centralize preview cache paths`
-  - `13155a6 docs: record layer panel extraction audit`
-  - `7e56d19 refactor: extract layer panel component`
-  - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, outside-card marquee affordance audit, and Vite chunk warning audit.
+  - `docs: refresh handoff and sketchpad plan` (this handoff commit)
+  - `04452dd feat: edge scroll storyboard marquee`
+  - `1c05739 chore: prepare package python resources`
+  - `762bbc4 docs: record Bridge focus dogfood`
+  - `a676d09 test: strengthen preload sync check`
+  - `49c74f1 docs: audit vite chunk warning`
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, Onion Skin opacity audit, bitmap Select handle affordance audit, layer drawer handle affordance audit, outside-card marquee affordance audit, Vite chunk warning audit, and the dedicated `SketchPad` extraction plan.
 
 ## Current Product State
 
@@ -151,6 +152,7 @@
 - Layer drawer handle affordance audit is recorded in `docs/layer-drawer-handle-affordance-audit-2026-05-31.md`. Recommendation: do not widen, iconize, or otherwise emphasize the handle now. The handle is already a real button with pointer cursor, hover, accessible label, and smoke-covered placement; revisit a slightly wider click target only if users still miss it.
 - Outside-card marquee affordance audit is recorded in `docs/outside-card-marquee-affordance-audit-2026-05-31.md`. Recommendation: do not add persistent instruction text, stronger board-background styling, or card-internal start zones now. Edge-scroll fixed the concrete dense-board failure, and the start rule remains outside shot cards only.
 - Vite chunk warning audit is recorded in `docs/vite-chunk-warning-audit-2026-05-31.md`. Fresh `npm run build` passed with one renderer JS chunk at `649.71 kB` minified / `199.62 kB` gzip. Recommendation: do not add manual chunks or raise `chunkSizeWarningLimit` now; revisit only with measured startup pain, a clear optional UI boundary, or substantial bundle growth.
+- Dedicated `SketchPad` extraction plan is recorded in `docs/superpowers/plans/2026-05-31-sketchpad-extraction.md`. Recommendation: do not extract `SketchPad` opportunistically. Execute the plan as its own behavior-preserving refactor because it owns drawing, selection, pointer handling, Onion Skin overlay, live bitmap canvases, and layer PNG writes.
 
 ## Verification Run For Handoff
 
@@ -374,6 +376,25 @@ git diff --check
 # passed
 ```
 
+Verification after `SketchPad` extraction plan and handoff refresh:
+
+```bash
+git diff --check
+# passed
+
+npm run test
+# passed: 24 test files, 170 tests
+
+npm run typecheck
+# passed
+
+npm run build
+# passed; Vite reported the existing chunk-size warning only
+
+npm run smoke:bitmap
+# passed; denseMarqueeChecks reported scrollY 181, selectedCount 20, marqueeVisible true
+```
+
 Verification after the TEST2 TIFF source-read fix:
 
 ```bash
@@ -395,26 +416,25 @@ The smoke intentionally triggers a Save temporary rename conflict and logs `Temp
 
 ## Current Git State
 
-Latest implementation commits before this documentation handoff:
+Latest commits before this documentation handoff:
 
 ```text
-39e5174 docs: record shortcut dogfood
-14ef021 docs: record TEST2 animation dogfood
-e8134f0 docs: record TEST2 dragging dialogue dogfood
-876acb1 docs: record TEST2 select dogfood
-0a03248 docs: record TEST2 external import dogfood
-667b1c1 docs: record TEST2 delete-to-trash dogfood
-99ff1b2 fix: import same-length storyboard scripts positionally
-c1ece86 docs: record TEST2 layer lock dogfood
-8c95044 fix: clean successful save artifacts
-ca7a3a9 docs: record TEST2 save dogfood
-bb08639 perf: defer offscreen shot media rendering
-7de13c0 fix: allow large TIFF source reads
-7e56d19 refactor: extract layer panel component
-13155a6 docs: record layer panel extraction audit
-e61b232 refactor: centralize preview cache paths
-2f2f52a fix: shorten preview cache filenames
-3820ac9 交接存档：完善脚本面板、导入提醒和删除流程
+49c74f1 docs: audit vite chunk warning
+8001dec docs: audit marquee affordance
+de57b6f docs: audit layer drawer handle
+04d05a3 docs: audit bitmap select handles
+00894b5 docs: audit onion skin opacity
+8abb8ab docs: audit interaction mode boundaries
+a676d09 test: strengthen preload sync check
+762bbc4 docs: record Bridge focus dogfood
+97b7f05 docs: prototype layer drawer drag
+1c05739 chore: prepare package python resources
+04452dd feat: edge scroll storyboard marquee
+7013487 docs: clarify marquee start decision
+4035885 docs: record dense marquee audit
+ee3e5c6 fix: clean deleted shot layer assets
+72140bf feat: clarify save conflict guidance
+8419b49 feat: show persistent autosave failures
 ```
 
 Documentation changes recorded in this handoff:
@@ -422,8 +442,7 @@ Documentation changes recorded in this handoff:
 ```text
 context-handoff.md
 todo.md
-docs/layer-panel-extraction-audit-2026-05-30.md
-docs/dogfood-2026-05-30.md
+docs/superpowers/plans/2026-05-31-sketchpad-extraction.md
 ```
 
 ## Next Handoff Target
@@ -440,6 +459,7 @@ Recommended next steps:
 8. Revisit layer drawer handle width only if users still miss opening layers; keep the current quiet handle otherwise.
 9. Revisit outside-card marquee affordance only if real dense-board use still shows missed selections; do not add card-internal start zones.
 10. Revisit renderer code splitting only with measured startup pain, a clear optional UI boundary, or substantial renderer bundle growth.
+11. Execute `docs/superpowers/plans/2026-05-31-sketchpad-extraction.md` only as a dedicated refactor with full renderer/Electron verification.
 
 ## Known Remaining Work
 
