@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, and interaction mode audit.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, preload sync audit, interaction mode audit, and Onion Skin opacity audit.
 
 ## Current Product State
 
@@ -146,6 +146,7 @@
 - Layer drawer pointer-drag open/close was evaluated with an isolated prototype at `docs/prototypes/layer-drawer-pointer-drag-2026-05-31.html`; findings are recorded in `docs/layer-drawer-pointer-drag-prototype-2026-05-31.md`. Recommendation: do not implement pointer-drag now. Keep click-toggle because it has a simpler user model; if the handle remains too hidden, consider hover/cursor affordance or a slightly larger click target first.
 - Preload sync audit is recorded in `docs/preload-sync-audit-2026-05-31.md`. Recommendation: keep manually maintained `electron/preload/preload.cjs` for now, but strengthen the gate. `scripts/check-preload-sync.mjs` now exports parser helpers, only runs as a CLI when invoked directly, and compares exposed API method parameter names/counts in addition to API keys and IPC channels.
 - Interaction mode audit is recorded in `docs/interaction-mode-audit-2026-05-31.md`. Recommendation: do not add a global Select / Hand / Draw mode now. Current interaction ownership is region-based: image stage edits pixels, board background marquee-selects storyboards, shot header reorders shots, dialogue grip drags dialogue, and LayerPanel owns layer gestures.
+- Onion Skin opacity audit is recorded in `docs/onion-skin-opacity-audit-2026-05-31.md`. Recommendation: do not add opacity controls now. Keep the current Animation-mode checkbox-only UI and fixed `0.28` ghost opacity because it is covered by smoke and the TEST2 "visually strong" note is qualitative rather than repeated user failure.
 
 ## Verification Run For Handoff
 
@@ -362,6 +363,13 @@ git diff --check
 # passed
 ```
 
+Verification after Onion Skin opacity audit:
+
+```bash
+git diff --check
+# passed
+```
+
 Verification after the TEST2 TIFF source-read fix:
 
 ```bash
@@ -423,6 +431,7 @@ Recommended next steps:
 3. Defer layer drawer pointer-drag open/close unless real user demand appears; prefer lighter handle affordance improvements first.
 4. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
 5. Revisit a dedicated global Select / Hand / Draw mode only if real dogfood finds repeated conflicts that cannot be solved by clearer gesture start regions.
+6. Revisit Onion Skin opacity controls only if repeated user feedback shows the fixed red/green `0.28` ghosts are distracting or too subtle.
 
 ## Known Remaining Work
 
