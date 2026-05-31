@@ -9,7 +9,6 @@ No active P1 items.
 - [ ] Extract `SketchPad` from `App.tsx` only under a dedicated plan because it owns drawing, selection, pointer handling, and layer PNG writes.
 - [ ] Consider clearer outside-card marquee affordance if dense boards still feel hard to select after edge auto-scroll.
 - [ ] Consider a clearer layer drawer hover/cursor affordance or slightly larger click target if users still miss the current handle.
-- [ ] Review whether `electron/preload/preload.cjs` should continue to be manually maintained or generated from TypeScript.
 - [ ] Consider a dedicated select/hand/draw tool mode if drawing, selecting, and dragging conflict in real use.
 - [ ] Consider opacity controls for Onion Skin if fixed red/green ghost strength feels too strong or too weak.
 - [ ] Consider adding a visible cursor affordance for bitmap Select scale handles if users still miss corner scaling after hit target enlargement.
@@ -69,6 +68,7 @@ No active P1 items.
 - [x] Package resource preparation now copies populated `vendor/python/photoshop-tiff` deps into `dist-resources/python-deps/photoshop-tiff`; future installer/electron packager config must include `dist-resources` at the packaged app resources root.
 - [x] Layer drawer pointer-drag open/close was prototyped in `docs/prototypes/layer-drawer-pointer-drag-2026-05-31.html`; recommendation is not to implement drag now because click-toggle has lower mental load.
 - [x] Real-folder `TEST2` Adobe Bridge focus handoff dogfood passed: Bridge 2026 became frontmost, returning to Electron lit Import warning, Import archived the external PNG, created an owned TIFF, and left TEST2 with 305 shots.
+- [x] Preload sync audit concluded `electron/preload/preload.cjs` can remain manually maintained for now; `check:preload` now also compares exposed API method parameter names/counts.
 
 ## Out Of Scope For Current MVP
 

@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, and layer drawer pointer-drag prototype review.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, layer drawer pointer-drag prototype review, and preload sync audit.
 
 ## Current Product State
 
@@ -144,6 +144,7 @@
 - Storyboard marquee now edge-scrolls while dragging from outside shot cards. Card interiors intentionally do not start marquee selection. Hit testing uses document coordinates so rows already crossed by the marquee remain selected after the viewport scrolls. The pure helper lives in `src/renderer/storyboardMarquee.ts`, with tests in `src/renderer/storyboardMarquee.test.ts`; `npm run smoke:bitmap` includes a 24-shot dense fixture that asserts card-origin drags do not start marquee and outside-card edge drags scroll/select across rows.
 - Package resource preparation now has an explicit `npm run prepare:package-resources` step. It compiles Electron helpers, verifies populated `vendor/python/photoshop-tiff` deps exist, and copies them to `dist-resources/python-deps/photoshop-tiff`. `dist-resources/` is ignored by git and must be included at the packaged app resources root by any future installer/electron packager config.
 - Layer drawer pointer-drag open/close was evaluated with an isolated prototype at `docs/prototypes/layer-drawer-pointer-drag-2026-05-31.html`; findings are recorded in `docs/layer-drawer-pointer-drag-prototype-2026-05-31.md`. Recommendation: do not implement pointer-drag now. Keep click-toggle because it has a simpler user model; if the handle remains too hidden, consider hover/cursor affordance or a slightly larger click target first.
+- Preload sync audit is recorded in `docs/preload-sync-audit-2026-05-31.md`. Recommendation: keep manually maintained `electron/preload/preload.cjs` for now, but strengthen the gate. `scripts/check-preload-sync.mjs` now exports parser helpers, only runs as a CLI when invoked directly, and compares exposed API method parameter names/counts in addition to API keys and IPC channels.
 
 ## Verification Run For Handoff
 
@@ -335,6 +336,22 @@ osascript -e 'tell application "Adobe Bridge 2026" to activate' -e 'delay 2' -e 
 
 node --input-type=module -e '...Bridge TEST2 focus handoff dogfood...'
 # passed: Bridge frontmost Adobe Bridge 2026, Electron frontmost Electron, TEST2 304 -> 305 shots, PNG archived, owned TIFF created
+```
+
+Verification after preload sync audit:
+
+```bash
+npm run test -- electron/preload/preloadSync.test.ts
+# passed: 1 test file, 2 tests
+
+npm run check:preload
+# passed
+
+npm run typecheck
+# passed
+
+npm run test
+# passed: 24 test files, 170 tests
 ```
 
 Verification after the TEST2 TIFF source-read fix:
