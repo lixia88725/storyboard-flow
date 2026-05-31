@@ -2,7 +2,7 @@
 
 ## P1
 
-- [ ] Manually dogfood Adobe Bridge-specific handoff if Bridge scripting/frontmost automation can be made reliable. Finder-specific focus handoff has passed.
+No active P1 items.
 
 ## P2
 
@@ -68,6 +68,7 @@
 - [x] Storyboard marquee now edge-scrolls while dragging from outside shot cards, uses document-coordinate hit testing so selected rows are preserved during scroll, and smoke covers dense-board card-origin non-start plus edge-scroll selection.
 - [x] Package resource preparation now copies populated `vendor/python/photoshop-tiff` deps into `dist-resources/python-deps/photoshop-tiff`; future installer/electron packager config must include `dist-resources` at the packaged app resources root.
 - [x] Layer drawer pointer-drag open/close was prototyped in `docs/prototypes/layer-drawer-pointer-drag-2026-05-31.html`; recommendation is not to implement drag now because click-toggle has lower mental load.
+- [x] Real-folder `TEST2` Adobe Bridge focus handoff dogfood passed: Bridge 2026 became frontmost, returning to Electron lit Import warning, Import archived the external PNG, created an owned TIFF, and left TEST2 with 305 shots.
 
 ## Out Of Scope For Current MVP
 

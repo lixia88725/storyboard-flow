@@ -13,7 +13,7 @@
   - `13155a6 docs: record layer panel extraction audit`
   - `7e56d19 refactor: extract layer panel component`
   - `39e5174 docs: record shortcut dogfood`
-- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, and layer drawer pointer-drag prototype review.
+- This handoff records the continuation through the long-path Import fix, the behavior-preserving LayerPanel extraction, the TEST2 real-folder dogfood sequence through actual Finder and Adobe Bridge focus handoff, Recent-folder cleanup after failed opens, persistent autosave failure UI, clearer Save conflict guidance, conservative deleted-shot layer cleanup, dense-board marquee selection audit, marquee edge auto-scroll, Photoshop TIFF package resource preparation, and layer drawer pointer-drag prototype review.
 
 ## Current Product State
 
@@ -135,6 +135,7 @@
 - Mixed-aspect Animation mode dogfood passed after adding one `2.39:1` blank shot through the Add Shot preset menu and saving it. TEST2 now has 303 shots: 302 at 1920x1080 plus one 2581x1080 shot, `TEST2_scene_stb_artist_v001_0020.tiff`. Animation mode measured 16:9 stages at ratio 1.778 and the 2.39:1 stage at ratio 2.388 inside the same stable frame, timeline stayed visible, Onion Skin worked, and left/right navigation moved across mixed aspect shots. Onion Skin is functional but visually strong on TEST2 drawings.
 - Shortcut recording dogfood passed with a temporary Electron `SWB_USER_DATA_DIR`: duplicate Escape assignment was blocked without writing settings, Clear Layer could be cleared with Backspace, Brush could record Escape, Escape capture did not close the shortcut menu, the saved `keyboard-shortcuts.json` persisted across restart, and Escape activated Brush after restart.
 - Actual Finder focus handoff dogfood passed with `TEST2_finder_handoff_dogfood_1780195495081.png`: Finder became frontmost on the TEST2 folder, returning to Electron fired a document focus event, Import warning appeared in 1352 ms, Import archived the PNG to `Archive/20260531T024815/`, created `TEST2_finder_handoff_dogfood_1780195495081.tiff`, cleared the warning, and left TEST2 with 304 owned shots. Adobe Bridge 2026 activation failed via AppleScript in this automation run, so Bridge-specific handoff is not claimed as passed.
+- Actual Adobe Bridge focus handoff dogfood passed with `TEST2_bridge_handoff_dogfood_1780199835574.png`: Adobe Bridge 2026 became frontmost on TEST2, returning to Electron made Electron frontmost, Import warning appeared and Import was enabled, Import archived the PNG to `Archive/20260531T035729/`, created `TEST2_bridge_handoff_dogfood_1780199835574.tiff`, cleared the warning, and left TEST2 with 305 owned shots. The PNG was created programmatically while Bridge was frontmost, so this validates Bridge -> Electron focus handoff rather than manual Bridge drag/drop.
 - Recent-folder cleanup now removes a stale path only after the user attempts to open it and the folder no longer exists. The app keeps other Recent entries, updates `recent-folders.json`, and still reports the open error. Helper behavior is covered by `electron/main/recentFolders.test.ts`, and a temporary Electron IPC check verified the real preload/main path.
 - Autosave failures now render a persistent right-bottom warning above the existing status control. The warning keeps the latest autosave error visible, can be dismissed manually, and clears automatically on the next successful autosave. State behavior lives in `src/renderer/autosaveError.ts`, with coverage in `src/renderer/autosaveError.test.ts`.
 - Save temporary-rename conflicts now show a user-actionable recovery message instead of only the raw preflight error. The renderer keeps the exact `.storyboard-renaming-*` conflict path in the details. The formatter lives in `src/renderer/saveErrors.ts`, and `npm run smoke:bitmap` now asserts the Save conflict status text.
@@ -326,6 +327,16 @@ node --input-type=module -e 'import { readFileSync } from "node:fs"; const html=
 # passed: scripts parsed: 1
 ```
 
+Verification after Adobe Bridge focus handoff dogfood:
+
+```bash
+osascript -e 'tell application "Adobe Bridge 2026" to activate' -e 'delay 2' -e 'tell application "System Events" to get name of first application process whose frontmost is true'
+# passed: Adobe Bridge 2026
+
+node --input-type=module -e '...Bridge TEST2 focus handoff dogfood...'
+# passed: Bridge frontmost Adobe Bridge 2026, Electron frontmost Electron, TEST2 304 -> 305 shots, PNG archived, owned TIFF created
+```
+
 Verification after the TEST2 TIFF source-read fix:
 
 ```bash
@@ -382,15 +393,13 @@ docs/dogfood-2026-05-30.md
 
 Recommended next steps:
 
-1. Continue only targeted dogfood for remaining real-app edges, especially Adobe Bridge-specific handoff if reliable automation or manual access is available.
-2. Keep storyboard marquee start outside shot cards to reduce user mental load; consider clearer outside-card affordance only if dense boards still feel hard after edge auto-scroll.
-3. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
-4. Defer layer drawer pointer-drag open/close unless real user demand appears; prefer lighter handle affordance improvements first.
-5. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
+1. Keep storyboard marquee start outside shot cards to reduce user mental load; consider clearer outside-card affordance only if dense boards still feel hard after edge auto-scroll.
+2. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
+3. Defer layer drawer pointer-drag open/close unless real user demand appears; prefer lighter handle affordance improvements first.
+4. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
 
 ## Known Remaining Work
 
-- Adobe Bridge-specific handoff remains unverified; actual Finder focus handoff passed.
 - Full installer/electron packager integration is still not present. The repo now prepares `dist-resources`, but a future packager config must include that directory at the packaged app resources root.
 - Dense-board marquee selection intentionally starts outside shot cards only; edge-scroll is implemented, but clearer outside-card affordance may still be worth considering after real use.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.
