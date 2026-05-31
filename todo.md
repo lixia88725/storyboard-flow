@@ -4,7 +4,6 @@
 
 - [ ] Manually dogfood Adobe Bridge-specific handoff if Bridge scripting/frontmost automation can be made reliable. Finder-specific focus handoff has passed.
 - [ ] Add installer packaging that copies populated `python-deps/photoshop-tiff` resources into the packaged app.
-- [ ] Add UI feedback for autosave failures that persists long enough for users to notice.
 - [ ] Add clearer Save conflict resolution UI beyond the current preflight error message.
 - [ ] Improve marquee selection so it is usable when the board is dense.
 - [ ] Revisit layer drawer pointer-drag open/close only after a small visual mock/prototype proves the occlusion and animation model.
@@ -65,6 +64,7 @@
 - [x] Shortcut recording dogfood passed with temporary Electron userData: duplicate Escape was blocked, Clear Layer could be cleared, Brush could record Escape, Escape capture did not close the menu, and settings persisted across restart.
 - [x] Real-folder `TEST2` actual Finder focus handoff dogfood passed: a root PNG added outside SWB lit the Import warning after Finder -> Electron focus return, Import archived the PNG, created an owned TIFF, and left all 304 shots owned. Adobe Bridge-specific activation was not completed.
 - [x] Missing Recent folder paths are cleaned up after an attempted open: the app removes the stale path from `recent-folders.json`, keeps valid Recent entries, and still reports the open error.
+- [x] Autosave failures now show a persistent right-bottom warning with the error message; users can dismiss it, and the next successful autosave clears it automatically.
 
 ## Out Of Scope For Current MVP
 

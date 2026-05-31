@@ -77,6 +77,7 @@ import {
   primaryShotFromSelection,
   primaryShotOrFirst
 } from "./activeTargets";
+import { autosaveErrorReducer, type AutosaveErrorNotice } from "./autosaveError";
 import {
   readLayerAssetSnapshots,
   restoreLayerAssetSnapshots,
@@ -309,6 +310,7 @@ export const App = () => {
   const [keyboardShortcuts, setKeyboardShortcuts] = useState<KeyboardShortcuts>(defaultKeyboardShortcuts);
   const [capturingShortcutAction, setCapturingShortcutAction] = useState<ShortcutAction | undefined>();
   const [shortcutError, setShortcutError] = useState("");
+  const [autosaveError, setAutosaveError] = useState<AutosaveErrorNotice | undefined>();
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<UndoEntry[]>([]);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | undefined>();
@@ -630,8 +632,10 @@ export const App = () => {
     setWorkspaceSaveState("saving");
     const timer = window.setTimeout(() => {
       void persistWorkspace(projectToSave, activeFolderPath, activeMetadataPath).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
         setWorkspaceSaveState("error");
-        setStatus(`Autosave failed: ${error instanceof Error ? error.message : String(error)}`);
+        setAutosaveError((current) => autosaveErrorReducer(current, { type: "failed", message }));
+        setStatus(`Autosave failed: ${message}`);
       });
     }, autosaveDelayMs);
 
@@ -1081,6 +1085,7 @@ export const App = () => {
     scriptImportCheckIdRef.current += 1;
     setScriptImportNeeded(false);
     setWorkspaceSaveState("saved");
+    setAutosaveError((current) => autosaveErrorReducer(current, { type: "saved" }));
   };
 
   const checkStoryboardScriptImportState = async (
@@ -2269,6 +2274,20 @@ export const App = () => {
         </section>
       ) : null}
       <div className="status-popover">
+        {autosaveError ? (
+          <div className="autosave-error-notice" role="alert">
+            <span>{autosaveError.message}</span>
+            <button
+              type="button"
+              aria-label="Dismiss autosave error"
+              onClick={() =>
+                setAutosaveError((current) => autosaveErrorReducer(current, { type: "dismissed" }))
+              }
+            >
+              x
+            </button>
+          </div>
+        ) : null}
         {isStatusPanelOpen ? (
           <div className="status-panel" aria-label="Workspace status">
             <span>{status}</span>

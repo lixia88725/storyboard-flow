@@ -1711,6 +1711,38 @@ button.layer-blend-dot:disabled {
   color: #9d5b41;
 }
 
+.autosave-error-notice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  width: min(420px, calc(100vw - 44px));
+  border: 1px solid #8f4f38;
+  background: #fff6ee;
+  color: #6e2f1b;
+  border-radius: 6px;
+  padding: 10px 10px 10px 12px;
+  box-shadow: 0 8px 0 rgba(39, 35, 29, 0.14);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.autosave-error-notice span {
+  overflow-wrap: anywhere;
+}
+
+.autosave-error-notice button {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  padding: 0;
+  border-color: #b98270;
+  background: #fffdf7;
+  color: #7c3b27;
+  box-shadow: none;
+  line-height: 1;
+}
+
 .status-panel {
   display: grid;
   gap: 7px;
@@ -1933,4 +1965,16 @@ button.primary {
 .status-toggle.needs-attention {
   border-color: #9c6c58;
   color: #c18b73;
+}
+
+.autosave-error-notice {
+  border-color: #8c4e3a;
+  background: #312018;
+  color: #f4c0a6;
+}
+
+.autosave-error-notice button {
+  border-color: #8c4e3a;
+  background: #241a15;
+  color: #f4c0a6;
 }
