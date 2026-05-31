@@ -2,7 +2,6 @@
 
 ## P0
 
-- [ ] Manually dogfood configurable keyboard shortcuts in the app, especially recording `Escape`, duplicate shortcut errors, and persistence across restart.
 - [ ] Manually dogfood actual Finder/Bridge focus handoff for externally added images.
 
 ## P1
@@ -69,6 +68,7 @@
 - [x] Real-folder `TEST2` bitmap Select dogfood passed on a 1920x1080 non-locked paint layer: lasso move and rectangle corner scale changed the layer PNG, Save wrote the dirty shot TIFF, and project/root counts stayed stable.
 - [x] Real-folder `TEST2` multi-select shot dragging and double-click dialogue editing dogfood passed: shots 002/003 moved as a group, restored to original order, and shot 002 persisted `TEST2 dialogue dogfood line`.
 - [x] Real-folder `TEST2` mixed-aspect Animation mode dogfood passed after adding one 2.39:1 shot: stable frame, timeline, Onion Skin, and left/right navigation worked across 16:9 and 2.39:1 shots.
+- [x] Shortcut recording dogfood passed with temporary Electron userData: duplicate Escape was blocked, Clear Layer could be cleared, Brush could record Escape, Escape capture did not close the menu, and settings persisted across restart.
 
 ## Out Of Scope For Current MVP
 

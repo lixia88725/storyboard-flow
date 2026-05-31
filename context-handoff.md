@@ -132,6 +132,7 @@
 - Bitmap Select high-resolution dogfood passed on shot 2, `TEST2_scene_stb_artist_v001_0020.tiff`, layer `layer-0004` / `图层 5`: lasso move and rectangle corner scale both changed the 1920x1080 layer PNG, Save wrote the dirty TIFF in 1274 ms, project/root TIFF counts stayed 302, and the old deleted shot id did not return. After Save, the prior external-import dogfood shot was correctly renamed to the ordered file name `TEST2_scene_stb_artist_v001_3020.tiff` as a different shot id.
 - Multi-select shot dragging and double-click dialogue editing dogfood passed: shots 002/003 moved together after shot 005, then were dragged back before shot 004 to restore the original first-six order. Shot 002 now has one persisted dialogue, `TEST2 dialogue dogfood line`. The reorder used dnd-kit PointerSensor events; the multi-select state was created by dispatched meta-click events.
 - Mixed-aspect Animation mode dogfood passed after adding one `2.39:1` blank shot through the Add Shot preset menu and saving it. TEST2 now has 303 shots: 302 at 1920x1080 plus one 2581x1080 shot, `TEST2_scene_stb_artist_v001_0020.tiff`. Animation mode measured 16:9 stages at ratio 1.778 and the 2.39:1 stage at ratio 2.388 inside the same stable frame, timeline stayed visible, Onion Skin worked, and left/right navigation moved across mixed aspect shots. Onion Skin is functional but visually strong on TEST2 drawings.
+- Shortcut recording dogfood passed with a temporary Electron `SWB_USER_DATA_DIR`: duplicate Escape assignment was blocked without writing settings, Clear Layer could be cleared with Backspace, Brush could record Escape, Escape capture did not close the shortcut menu, the saved `keyboard-shortcuts.json` persisted across restart, and Escape activated Brush after restart.
 
 ## Verification Run For Handoff
 
@@ -225,13 +226,13 @@ docs/dogfood-2026-05-30.md
 
 Recommended next steps:
 
-1. Continue real-folder dogfood for Save speed, actual Finder/Bridge app handoff, and shortcut recording/persistence.
+1. Continue real-folder dogfood for Save speed and actual Finder/Bridge app handoff.
 2. Fix only concrete dogfood findings in small, behavior-focused patches with focused verification.
 3. Defer `SketchPad` extraction unless there is a dedicated plan, because it owns drawing, selection, pointer handling, and layer PNG writes.
 
 ## Known Remaining Work
 
-- Real dogfood is still needed for actual Finder/Bridge app handoff and shortcut recording/persistence.
+- Real dogfood is still needed for actual Finder/Bridge app handoff.
 - Delete currently leaves internal `.storyboard-workbench/layers/<shotId>/...` assets behind; orphan cleanup should be a separate conservative task.
 - Photoshop TIFF Python deps can resolve from env/resources/vendor/fallback, but installer packaging still needs to copy populated deps into app resources.
 - Photoshop layered TIFF import/export is raster-layer exchange; full Photoshop feature round-trip is not implemented.
