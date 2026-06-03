@@ -37,3 +37,10 @@ export const ClearIcon = () => (
     <path d="M18 14v8" />
   </svg>
 );
+
+export const SidePanelIcon = () => (
+  <svg className="tool-icon" viewBox="0 0 32 32" aria-hidden="true">
+    <rect x="5" y="6" width="22" height="20" rx="2" />
+    <path d="M20 6v20" />
+  </svg>
+);

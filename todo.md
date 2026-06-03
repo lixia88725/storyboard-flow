@@ -6,6 +6,9 @@ No active P1 items.
 
 ## P2
 
+- [ ] Manual dogfood newest Option/Alt copy paths: copy one shot, copy one layer into the same drawer at a chosen position, copy one layer into another shot, and copy one dialogue item.
+- [ ] Manual dogfood Photoshop external edit sync: clean SWB auto-import path, dirty SWB conflict-copy path, and incompatible TIFF manual Import path.
+- [ ] Manual dogfood large folder close flow on `/Users/xiali/Pictures/TEST2`: loading progress appears quickly, Save and Close exits, and Save error dialog only appears for real failures.
 - [ ] Revisit outside-card marquee affordance only if dense boards still feel hard to select after edge auto-scroll.
 - [ ] Revisit a slightly wider layer drawer click target only if users still miss the current handle.
 - [ ] Revisit a true stage-level bitmap Select cursor affordance only if users still miss corner scaling after hit target enlargement.
@@ -77,6 +80,17 @@ No active P1 items.
 - [x] Package resources packager audit recorded in `docs/package-resources-packager-audit-2026-05-31.md`; resource staging and runtime lookup are verified, but full installer integration is deferred until a packager is chosen.
 - [x] `ShotCard` was extracted from `App.tsx` into `src/renderer/ShotCard.tsx` as a behavior-preserving move; `src/renderer/storyboardDnd.ts` now shares shot/dialogue/drop-zone drag data types, with typecheck/build/smoke/test verification.
 - [x] Final handoff verification passed after the ShotCard extraction: `npm run test`, `npm run typecheck`, and `npm run build`.
+- [x] Markdown numbered-list script bootstrap creates a new SWB project in an empty target folder, writes shot `scriptText`, and generates `storyboard-script.md`.
+- [x] Right-side parked shot shelf stores `project.parkedShots`, excludes parked shots from Save/script mirror/Timeline, and opens from the toolbar sidebar button.
+- [x] Layer Merge now supports single-layer merge-down, multi-selected layer merge, Merge visible with locked source preservation, and `Cmd/Ctrl+E` routing through the same contextual action.
+- [x] Layer multi-select supports Shift-click, group reorder, group opacity changes, locked-layer skip behavior, and consistent selected-row left bars.
+- [x] Option/Alt copy supports single storyboard, layer, and dialogue copy flows, with stable shot drag previews and copied-shot PNG preview generation.
+- [x] Fast brush/eraser strokes are serialized through a bitmap layer write queue so stale async writes do not erase newer strokes.
+- [x] Delete/Backspace now follows the last selected object type: clicked layer deletes active unlocked layer, clicked storyboard deletes selected storyboard(s).
+- [x] Save progress now reports actual changed TIFF writes, Save errors show a development dialog, and Close has a Save and Close path.
+- [x] Compatible Photoshop edits to known SWB TIFFs can auto-import when clean, while dirty SWB conflicts require Import and preserve Photoshop output as a copied shot.
+- [x] Large-folder opening shows loading progress and can render existing SWB project JSON state before slower background checks finish.
+- [x] Dialogue entry, shot card bars, lasso-only Select UI, layer drawer shadow/scrollbar, Save menu z-index, and sidebar toolbar layout received focused UI polish.
 
 ## Out Of Scope For Current MVP
 

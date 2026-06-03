@@ -1,6 +1,6 @@
 export type SketchTool = "brush" | "eraser" | "select";
 export type StrokeTool = "brush" | "eraser";
-export type BitmapSelectionMode = "lasso" | "rectangle";
+export type BitmapSelectionMode = "lasso";
 export type SketchBlendMode = "normal" | "multiply" | "screen";
 export type BitmapBlendMode = "normal" | "multiply" | "screen";
 
@@ -94,6 +94,7 @@ export type Project = {
   name: string;
   naming?: ProjectNaming;
   shots: Shot[];
+  parkedShots?: Shot[];
   dialogues: Dialogue[];
   pendingDeletedShots?: PendingDeletedShot[];
   createdAt: string;

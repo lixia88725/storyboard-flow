@@ -33,6 +33,17 @@ type ClientRectLike = {
   width: number;
   height: number;
 };
+type ClientPointLike = {
+  clientX: number;
+  clientY: number;
+};
+type PointerStartLike = {
+  button?: number;
+  isPrimary?: boolean;
+};
+type PointerIdentityLike = {
+  pointerId?: number;
+};
 
 export const sketchPointFromClientPoint = (
   clientX: number,
@@ -43,6 +54,23 @@ export const sketchPointFromClientPoint = (
   const x = ((clientX - rect.left) / rect.width) * canvasSize.width;
   const y = ((clientY - rect.top) / rect.height) * canvasSize.height;
   return { x, y };
+};
+
+export const sketchPointsFromClientPoints = (
+  points: ClientPointLike[],
+  rect: ClientRectLike,
+  canvasSize: CanvasSize = sketchCanvasSize
+): Point[] => points.map((point) => sketchPointFromClientPoint(point.clientX, point.clientY, rect, canvasSize));
+
+export const shouldStartSketchPointer = (event: PointerStartLike): boolean => {
+  return (event.button === undefined || event.button === 0) && event.isPrimary !== false;
+};
+
+export const shouldHandleSketchPointer = (
+  event: PointerIdentityLike,
+  activePointerId: number | undefined
+): boolean => {
+  return activePointerId === undefined || event.pointerId === activePointerId;
 };
 
 export const shouldAppendStrokePoint = (
@@ -60,6 +88,10 @@ export const shouldAppendStrokePoint = (
   const dx = point.x - lastX;
   const dy = point.y - lastY;
   return dx * dx + dy * dy >= minDistance * minDistance;
+};
+
+export const shouldCommitStroke = (stroke: StrokeLike): boolean => {
+  return stroke.points.length >= 2;
 };
 
 export const latestStrokeSegment = (
@@ -132,6 +164,10 @@ export const blendMenuDirectionFromRects = (
 
 export const shouldRenderLiveStroke = (stroke: { tool?: "brush" | "eraser" }): boolean => {
   return stroke.tool !== "eraser";
+};
+
+export const shouldKeepCommittedStrokePreview = (stroke: { tool?: "brush" | "eraser" }): boolean => {
+  return stroke.tool === "brush";
 };
 
 export const liveStrokePreviewOpacity = (

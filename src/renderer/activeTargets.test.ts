@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BitmapLayer, Shot } from "../shared/types";
 import {
   activeVisibleBitmapLayerForShot,
+  editableBitmapLayerForShot,
   primaryShotFromSelection,
   primaryShotOrFirst
 } from "./activeTargets";
@@ -66,5 +67,12 @@ describe("active targets", () => {
     const layers = [bitmapLayer("hidden-bottom", 0, false), bitmapLayer("hidden-top", 1, false)];
 
     expect(activeVisibleBitmapLayerForShot(shot("shot-a", layers, "hidden-bottom"))).toBeUndefined();
+  });
+
+  it("uses the topmost visible unlocked bitmap layer for drawing when active is locked", () => {
+    const lockedTop = { ...bitmapLayer("locked-top", 2), locked: true };
+    const layers = [bitmapLayer("bottom", 0), bitmapLayer("editable", 1), lockedTop];
+
+    expect(editableBitmapLayerForShot(shot("shot-a", layers, "locked-top"))?.id).toBe("editable");
   });
 });

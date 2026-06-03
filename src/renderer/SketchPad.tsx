@@ -17,9 +17,13 @@ import {
   liveStrokePreviewOpacity,
   scaleBitmapSelectionBounds,
   shouldAppendStrokePoint,
+  shouldCommitStroke,
+  shouldHandleSketchPointer,
+  shouldKeepCommittedStrokePreview,
   shouldRenderLiveStroke,
+  shouldStartSketchPointer,
   sketchCanvasSize,
-  sketchPointFromClientPoint,
+  sketchPointsFromClientPoints,
   type Bounds,
   type CanvasSize,
   type Point,
@@ -31,6 +35,7 @@ import {
   drawImageUrl,
   drawStrokePathOnCanvas
 } from "./sketchRendering";
+import { editableBitmapLayerForShot } from "./activeTargets";
 
 type BitmapSelection = {
   mode: BitmapSelectionMode;
@@ -53,6 +58,10 @@ type PreparedBitmapTransform = {
   selection: BitmapSelection;
   sourceCanvas: HTMLCanvasElement;
   patchCanvas: HTMLCanvasElement;
+};
+type PendingCommittedStroke = {
+  layerId: string;
+  stroke: SketchStroke;
 };
 const blurActiveFormControl = () => {
   const activeElement = document.activeElement;
@@ -119,15 +128,7 @@ const BitmapSelectionOverlay = ({
 };
 
 const buildOverlaySelection = (draft: BitmapSelectionDraft): BitmapSelection | undefined => {
-  const points =
-    draft.mode === "rectangle" && draft.points.length >= 2
-      ? [
-          draft.points[0],
-          { x: draft.points[1].x, y: draft.points[0].y },
-          draft.points[1],
-          { x: draft.points[0].x, y: draft.points[1].y }
-        ]
-      : draft.points;
+  const points = draft.points;
   const bounds = bitmapSelectionBounds(points);
   return bounds ? { mode: draft.mode, points, bounds } : undefined;
 };
@@ -136,7 +137,6 @@ export type SketchPadProps = {
   shot: Shot;
   folderPath?: string;
   tool: SketchTool;
-  selectionMode: BitmapSelectionMode;
   brushColor: string;
   brushOpacity: number;
   brushSize: number;
@@ -147,7 +147,8 @@ export type SketchPadProps = {
   onStroke: (
     layerId: string,
     stroke: SketchStroke,
-    renderedDataUrl?: string
+    renderedDataUrl?: string,
+    pendingStrokes?: SketchStroke[]
   ) => Promise<string | undefined>;
   onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
   onFocusShot: () => void;
@@ -157,7 +158,6 @@ export const SketchPad = ({
   shot,
   folderPath,
   tool,
-  selectionMode,
   brushColor,
   brushOpacity,
   brushSize,
@@ -171,15 +171,19 @@ export const SketchPad = ({
 }: SketchPadProps) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [draftStroke, setDraftStroke] = useState<SketchStroke | undefined>();
+  const [pendingCommittedStrokes, setPendingCommittedStrokes] = useState<PendingCommittedStroke[]>([]);
   const [stageSize, setStageSize] = useState(sketchCanvasSize);
   const imageStageRef = useRef<HTMLDivElement | null>(null);
   const isDrawingRef = useRef(false);
   const draftStrokeRef = useRef<SketchStroke | undefined>(undefined);
   const draftStrokeRenderFrameRef = useRef<number | undefined>(undefined);
   const pendingDraftStrokeRef = useRef<SketchStroke | undefined>(undefined);
+  const pendingCommittedStrokesRef = useRef<PendingCommittedStroke[]>([]);
   const liveBitmapCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
   const liveBitmapLayerIdRef = useRef<string | undefined>(undefined);
   const liveBitmapEditRunRef = useRef(0);
+  const committingStrokeIdsRef = useRef<Set<string>>(new Set());
+  const activePointerIdRef = useRef<number | undefined>(undefined);
   const transformPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const bitmapSelectionRef = useRef<BitmapSelection | undefined>(undefined);
   const selectionDraftRef = useRef<BitmapSelectionDraft | undefined>(undefined);
@@ -195,7 +199,9 @@ export const SketchPad = ({
       [...bitmapLayers].reverse().find((layer) => layer.visible),
     [bitmapLayers, shot.activeLayerId]
   );
-  const activeDrawingLayerId = activeLayer?.id ?? imageBitmapLayerId;
+  const editableLayer = useMemo(() => editableBitmapLayerForShot(shot), [shot]);
+  const activeDrawingLayer = tool === "select" ? activeLayer : editableLayer;
+  const activeDrawingLayerId = activeDrawingLayer?.id ?? imageBitmapLayerId;
   const [layerDataUrls, setLayerDataUrls] = useState<Record<string, string>>({});
   const [liveBitmapLayerId, setLiveBitmapLayerId] = useState<string | undefined>();
   const [bitmapSelection, setBitmapSelection] = useState<BitmapSelection | undefined>();
@@ -218,7 +224,7 @@ export const SketchPad = ({
 
   useEffect(() => {
     clearBitmapSelectionState();
-  }, [activeDrawingLayerId, selectionMode, shot.id]);
+  }, [activeDrawingLayerId, shot.id]);
 
   useEffect(() => {
     if (tool !== "select") {
@@ -295,39 +301,67 @@ export const SketchPad = ({
       return;
     }
 
-    const finishGlobalStroke = () => {
+    const finishGlobalStroke = (event: globalThis.PointerEvent) => {
+      if (!shouldHandleSketchPointer(event, activePointerIdRef.current)) {
+        return;
+      }
+
       if (tool === "select") {
         void finishBitmapSelection();
         updateDrawingState(false);
+        activePointerIdRef.current = undefined;
         return;
       }
 
       const currentStroke = draftStrokeRef.current;
-      if (currentStroke && currentStroke.points.length >= 4) {
+      if (currentStroke && shouldCommitStroke(currentStroke)) {
         void commitStroke(activeDrawingLayerId, currentStroke);
       } else {
         clearDraftStroke();
       }
 
       updateDrawingState(false);
+      activePointerIdRef.current = undefined;
     };
 
-    window.addEventListener("mouseup", finishGlobalStroke, { once: true });
-    window.addEventListener("touchend", finishGlobalStroke, { once: true });
+    window.addEventListener("pointerup", finishGlobalStroke, { once: true });
+    window.addEventListener("pointercancel", finishGlobalStroke, { once: true });
+    window.addEventListener("pointermove", extendGlobalStroke);
 
     return () => {
-      window.removeEventListener("mouseup", finishGlobalStroke);
-      window.removeEventListener("touchend", finishGlobalStroke);
+      window.removeEventListener("pointerup", finishGlobalStroke);
+      window.removeEventListener("pointercancel", finishGlobalStroke);
+      window.removeEventListener("pointermove", extendGlobalStroke);
     };
   }, [activeDrawingLayerId, isDrawing, onStroke, tool, selectionDraft, transformDraft, bitmapSelection]);
 
   const commitStroke = async (layerId: string, stroke: SketchStroke) => {
+    if (committingStrokeIdsRef.current.has(stroke.id)) {
+      return;
+    }
+
+    committingStrokeIdsRef.current.add(stroke.id);
+    if (shouldKeepCommittedStrokePreview(stroke)) {
+      if (!pendingCommittedStrokesRef.current.some((item) => item.stroke.id === stroke.id)) {
+        pendingCommittedStrokesRef.current = [...pendingCommittedStrokesRef.current, { layerId, stroke }];
+        setPendingCommittedStrokes(pendingCommittedStrokesRef.current);
+      }
+      if (draftStrokeRef.current?.id === stroke.id) {
+        clearDraftStroke();
+      }
+    }
     try {
       const renderedDataUrl =
         stroke.tool === "eraser" && liveBitmapLayerIdRef.current === layerId
           ? liveBitmapCanvasRefs.current[layerId]?.toDataURL("image/png")
           : undefined;
-      const dataUrl = await onStroke(layerId, stroke, renderedDataUrl);
+      const pendingStrokesForLayer =
+        stroke.tool === "brush"
+          ? pendingCommittedStrokesRef.current
+              .filter((item) => item.layerId === layerId && item.stroke.id !== stroke.id)
+              .map((item) => item.stroke)
+          : [];
+      const dataUrl = await onStroke(layerId, stroke, renderedDataUrl, pendingStrokesForLayer);
       if (dataUrl) {
         setLayerDataUrls((current) => ({ ...current, [layerId]: dataUrl }));
       }
@@ -336,6 +370,11 @@ export const SketchPad = ({
         clearDraftStroke();
       }
       clearLiveBitmapEdit();
+      committingStrokeIdsRef.current.delete(stroke.id);
+      pendingCommittedStrokesRef.current = pendingCommittedStrokesRef.current.filter(
+        (item) => item.stroke.id !== stroke.id
+      );
+      setPendingCommittedStrokes(pendingCommittedStrokesRef.current);
     }
   };
 
@@ -429,18 +468,22 @@ export const SketchPad = ({
     setLiveBitmapLayerId(layer.id);
 
     const currentStroke = draftStrokeRef.current;
-    if (currentStroke?.tool === "eraser" && currentStroke.points.length >= 4) {
+    if (currentStroke?.tool === "eraser" && shouldCommitStroke(currentStroke)) {
       drawStrokePathOnCanvas(context, currentStroke);
     }
   };
 
   const drawLiveBitmapSegment = (stroke: SketchStroke) => {
-    if (stroke.tool !== "eraser" || !activeLayer || liveBitmapLayerIdRef.current !== activeLayer.id) {
+    if (
+      stroke.tool !== "eraser" ||
+      !activeDrawingLayer ||
+      liveBitmapLayerIdRef.current !== activeDrawingLayer.id
+    ) {
       return;
     }
 
     const segment = latestStrokeSegment(stroke);
-    const canvas = liveBitmapCanvasRefs.current[activeLayer.id];
+    const canvas = liveBitmapCanvasRefs.current[activeDrawingLayer.id];
     const context = canvas?.getContext("2d");
 
     if (!segment || !context) {
@@ -457,15 +500,7 @@ export const SketchPad = ({
   };
 
   const buildBitmapSelection = (draft: BitmapSelectionDraft): BitmapSelection | undefined => {
-    const points =
-      draft.mode === "rectangle" && draft.points.length >= 2
-        ? [
-            draft.points[0],
-            { x: draft.points[1].x, y: draft.points[0].y },
-            draft.points[1],
-            { x: draft.points[0].x, y: draft.points[1].y }
-          ]
-        : draft.points;
+    const points = draft.points;
     const bounds = bitmapSelectionBounds(points);
 
     if (!bounds || bounds.width < 2 || bounds.height < 2) {
@@ -629,39 +664,69 @@ export const SketchPad = ({
     });
   };
 
-  const getSketchPoint = (event: {
-    evt?: globalThis.MouseEvent | globalThis.TouchEvent;
+  const getSketchPoints = (event: {
+    evt?: globalThis.PointerEvent;
     target: { getStage: () => { container: () => HTMLDivElement } | null };
   }) => {
     const stage = event.target.getStage();
-    const rect = stage?.container().getBoundingClientRect();
+    const container = stage?.container();
+    const rect = container?.getBoundingClientRect();
 
     if (!rect) {
-      return undefined;
+      return [];
     }
 
     const pointerEvent = event.evt;
-    const point =
-      pointerEvent instanceof TouchEvent
-        ? pointerEvent.touches[0] ?? pointerEvent.changedTouches[0]
-        : pointerEvent;
-
-    if (!point) {
-      return undefined;
+    if (!pointerEvent) {
+      return [];
     }
 
-    return sketchPointFromClientPoint(point.clientX, point.clientY, rect, canvasSize);
+    const coalescedEvents =
+      typeof pointerEvent.getCoalescedEvents === "function"
+        ? pointerEvent.getCoalescedEvents()
+        : [];
+    const points = coalescedEvents.length > 0 ? [...coalescedEvents, pointerEvent] : [pointerEvent];
+    return sketchPointsFromClientPoints(points, rect, canvasSize);
+  };
+
+  const getSketchPointsFromPointerEvent = (pointerEvent: globalThis.PointerEvent) => {
+    const rect = imageStageRef.current?.getBoundingClientRect();
+
+    if (!rect) {
+      return [];
+    }
+
+    const coalescedEvents =
+      typeof pointerEvent.getCoalescedEvents === "function"
+        ? pointerEvent.getCoalescedEvents()
+        : [];
+    const points = coalescedEvents.length > 0 ? [...coalescedEvents, pointerEvent] : [pointerEvent];
+    return sketchPointsFromClientPoints(points, rect, canvasSize);
   };
 
   const beginStroke = (event: {
-    evt?: globalThis.MouseEvent | globalThis.TouchEvent;
+    evt?: globalThis.PointerEvent;
     target: { getStage: () => { container: () => HTMLDivElement } | null };
   }) => {
     blurActiveFormControl();
     onFocusShot();
     event.evt?.preventDefault();
     event.evt?.stopPropagation();
-    const position = getSketchPoint(event);
+    const stage = event.target.getStage();
+    const pointerEvent = event.evt;
+    if (!pointerEvent || !shouldStartSketchPointer(pointerEvent)) {
+      return;
+    }
+
+    activePointerIdRef.current = pointerEvent.pointerId;
+    if (stage && pointerEvent && pointerEvent.pointerId !== undefined) {
+      try {
+        stage.container().setPointerCapture?.(pointerEvent.pointerId);
+      } catch {
+        // Some embedded WebViews can reject capture during synthetic pointer transitions.
+      }
+    }
+    const position = getSketchPoints(event)[0];
 
     if (!position) {
       return;
@@ -675,7 +740,7 @@ export const SketchPad = ({
       return;
     }
 
-    if (!activeLayer || activeLayer.locked) {
+    if (!activeDrawingLayer) {
       return;
     }
 
@@ -694,8 +759,8 @@ export const SketchPad = ({
     draftStrokeRef.current = nextStroke;
     if (shouldRenderLiveStroke(nextStroke)) {
       setDraftStroke(nextStroke);
-    } else if (tool === "eraser" && activeLayer) {
-      void prepareLiveBitmapEdit(activeLayer);
+    } else if (tool === "eraser") {
+      void prepareLiveBitmapEdit(activeDrawingLayer);
     }
   };
 
@@ -734,35 +799,70 @@ export const SketchPad = ({
       updateBitmapSelectionState(undefined);
     }
 
-    const nextDraft = { mode: selectionMode, points: [position] };
+    const nextDraft = { mode: "lasso" as const, points: [position] };
     updateSelectionDraftState(nextDraft);
     updateTransformDraftState(undefined);
     updateDrawingState(true);
   };
 
   const extendStroke = (event: {
-    evt?: globalThis.MouseEvent | globalThis.TouchEvent;
+    evt?: globalThis.PointerEvent;
     target: { getStage: () => { container: () => HTMLDivElement } | null };
   }) => {
     event.evt?.preventDefault();
     event.evt?.stopPropagation();
 
+    if (event.evt && !shouldHandleSketchPointer(event.evt, activePointerIdRef.current)) {
+      return;
+    }
+
     if (!isDrawingRef.current || (tool !== "select" && !draftStrokeRef.current)) {
       return;
     }
 
-    const position = getSketchPoint(event);
+    const positions = getSketchPoints(event);
 
-    if (!position) {
+    if (positions.length === 0) {
       return;
     }
 
     if (tool === "select") {
-      extendBitmapSelection(position);
+      extendBitmapSelection(positions[positions.length - 1]);
       return;
     }
 
-    const currentStroke = draftStrokeRef.current;
+    extendBitmapStroke(positions);
+  };
+
+  const extendGlobalStroke = (event: globalThis.PointerEvent) => {
+    if (!shouldHandleSketchPointer(event, activePointerIdRef.current)) {
+      return;
+    }
+
+    if (!isDrawingRef.current || (tool !== "select" && !draftStrokeRef.current)) {
+      return;
+    }
+
+    const positions = getSketchPointsFromPointerEvent(event);
+
+    if (positions.length === 0) {
+      return;
+    }
+
+    if (tool === "select") {
+      extendBitmapSelection(positions[positions.length - 1]);
+      return;
+    }
+
+    extendBitmapStroke(positions);
+  };
+
+  const extendBitmapStroke = (positions: Point[]) => {
+    if (positions.length === 0) {
+      return;
+    }
+
+    let currentStroke = draftStrokeRef.current;
     if (!currentStroke) {
       return;
     }
@@ -771,13 +871,22 @@ export const SketchPad = ({
     const canvasScale = canvasSize.width / sketchCanvasSize.width;
     const minPointDistance =
       currentStroke.tool === "eraser" ? Math.max(3, toolSize * canvasScale * 0.25) : 1;
-    if (!shouldAppendStrokePoint(currentStroke, position, minPointDistance)) {
+    const nextPoints = [...currentStroke.points];
+    for (const position of positions) {
+      if (!shouldAppendStrokePoint({ ...currentStroke, points: nextPoints }, position, minPointDistance)) {
+        continue;
+      }
+
+      nextPoints.push(position.x, position.y);
+    }
+
+    if (nextPoints.length === currentStroke.points.length) {
       return;
     }
 
     const nextStroke = {
       ...currentStroke,
-      points: [...currentStroke.points, position.x, position.y]
+      points: nextPoints
     };
     draftStrokeRef.current = nextStroke;
     if (shouldRenderLiveStroke(nextStroke)) {
@@ -815,28 +924,31 @@ export const SketchPad = ({
       return;
     }
 
-    const nextDraft =
-      currentDraft.mode === "rectangle"
-        ? { ...currentDraft, points: [currentDraft.points[0], position] }
-        : { ...currentDraft, points: [...currentDraft.points, position] };
+    const nextDraft = { ...currentDraft, points: [...currentDraft.points, position] };
     updateSelectionDraftState(nextDraft);
   };
 
-  const finishStroke = () => {
+  const finishStroke = (event?: { evt?: globalThis.PointerEvent }) => {
+    if (event?.evt && !shouldHandleSketchPointer(event.evt, activePointerIdRef.current)) {
+      return;
+    }
+
     if (tool === "select") {
       void finishBitmapSelection();
       updateDrawingState(false);
+      activePointerIdRef.current = undefined;
       return;
     }
 
     const currentStroke = draftStrokeRef.current;
-    if (currentStroke && currentStroke.points.length >= 4) {
+    if (currentStroke && shouldCommitStroke(currentStroke)) {
       void commitStroke(activeDrawingLayerId, currentStroke);
     } else {
       clearDraftStroke();
     }
 
     updateDrawingState(false);
+    activePointerIdRef.current = undefined;
   };
 
   const finishBitmapSelection = async () => {
@@ -922,33 +1034,39 @@ export const SketchPad = ({
           className="stage-overlay"
           width={stageSize.width}
           height={stageSize.height}
-          onMouseDown={beginStroke}
-          onMouseMove={extendStroke}
-          onMouseUp={finishStroke}
-          onTouchStart={beginStroke}
-          onTouchMove={extendStroke}
-          onTouchEnd={finishStroke}
+          onPointerDown={beginStroke}
+          onPointerMove={extendStroke}
+          onPointerUp={finishStroke}
+          onPointerCancel={finishStroke}
+          onLostPointerCapture={finishStroke}
         >
-          {draftStroke ? (
+          {pendingCommittedStrokes.length > 0 || draftStroke ? (
             <Layer
               scaleX={stageSize.width / canvasSize.width}
               scaleY={stageSize.height / canvasSize.height}
             >
-              {[draftStroke].map((stroke) => (
-                <Line
-                  key={stroke.id}
-                  points={stroke.points}
-                  stroke={stroke.color}
-                  opacity={liveStrokePreviewOpacity(stroke, activeLayer?.opacity)}
-                  strokeWidth={stroke.size}
-                  tension={0.35}
-                  lineCap="round"
-                  lineJoin="round"
-                  globalCompositeOperation={
-                    stroke.tool === "eraser" ? "destination-out" : "source-over"
-                  }
-                />
-              ))}
+              {[
+                ...pendingCommittedStrokes,
+                ...(draftStroke && activeDrawingLayer
+                  ? [{ layerId: activeDrawingLayer.id, stroke: draftStroke }]
+                  : [])
+              ].map(({ layerId, stroke }) => {
+                const previewLayer = bitmapLayers.find((layer) => layer.id === layerId) ?? activeDrawingLayer;
+                return (
+                  <Line
+                    key={stroke.id}
+                    points={stroke.points}
+                    stroke={stroke.color}
+                    opacity={liveStrokePreviewOpacity(stroke, previewLayer?.opacity)}
+                    strokeWidth={stroke.size}
+                    lineCap="round"
+                    lineJoin="round"
+                    globalCompositeOperation={
+                      stroke.tool === "eraser" ? "destination-out" : "source-over"
+                    }
+                  />
+                );
+              })}
             </Layer>
           ) : null}
         </Stage>

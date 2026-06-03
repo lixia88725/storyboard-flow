@@ -6,9 +6,9 @@
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `bitmap-layer-refactor`
-- Previous major handoff baseline: `3820ac9 交接存档：完善脚本面板、导入提醒和删除流程`
-- Latest handoff commit before this file update: `d50fe78 docs: record shot card extraction`
-- Current goal of this handoff: make the repo easy for another session or AI agent to continue from a clean, verified state.
+- Current handoff date: 2026-06-03
+- Previous handoff baseline: `d50fe78 docs: record shot card extraction`
+- Current goal of this handoff: preserve the latest feature work, validation results, and next-step map so another session or AI agent can continue without rediscovering context.
 
 ## Current Product State
 
@@ -18,53 +18,68 @@
 - Editable bitmap layer pixels live in `.storyboard-workbench/layers/{shotId}/{layerId}.png`.
 - Root working TIFFs remain the visible delivery files.
 - `Save` is still the only boundary that synchronizes real file names and writes working TIFF pixels.
-- `Import` ingests non-SWB root images, Photoshop layered TIFF raster layers, and explicit external `storyboard-script.md` edits.
+- `Import` ingests non-SWB root images, external `storyboard-script.md` edits, incompatible external image changes, and explicit conflict cases.
+- Compatible SWB TIFF edits from Photoshop can auto-import after Photoshop saves the TIFF, if the related shot has no local unsaved SWB edits.
 - `Archive/` is only for preserving non-SWB originals during Import.
-- User-deleted storyboard source files are moved to system Trash on Save, not Archive.
+- User-deleted storyboard source files move to system Trash on Save, not Archive.
 - `storyboard-script.md` is a human-editable mirror of JSON, not the primary data source.
 
 ## What This Session Finished
 
-### Maintenance And Dogfood Closure
+### Script Bootstrap And Project Creation
 
-- Continued the maintenance/health pass from the earlier session.
-- Kept changes small and behavior-preserving.
-- Confirmed the branch is ready to pause maintenance work and move attention back to feature development or UI polish.
+- Added first-pass Markdown storyboard bootstrap: numbered-list `.md` files can create a new SWB project in an empty folder.
+- Generated shots receive the parsed item text as `scriptText`.
+- The new project writes `.storyboard-workbench/storyboard.project.json` and root `storyboard-script.md`, then opens automatically.
+- Existing Save / Import semantics were kept: no AI, no generated images, no append-to-existing-project flow.
 
-### SketchPad Extraction
+### Parking Sidebar
 
-- Extracted sketch rendering helpers into `src/renderer/sketchRendering.ts`.
-- Extracted bitmap stage UI into `src/renderer/SketchPad.tsx`.
-- `SketchPad` now owns drawing, erasing, Select transforms, Onion Skin overlay, live bitmap canvases, and Konva stage wiring.
-- `App.tsx` still owns Save, Import, autosave, dirty shot tracking, project history, and global UI state.
-- Relevant commits:
-  - `da55b2b refactor: extract sketch rendering helpers`
-  - `d14fd32 refactor: extract sketch pad component`
-  - `45df50d docs: record sketch pad extraction`
-  - `3c97e39 交接存档：完成 SketchPad 抽取和维护收口`
+- Added `project.parkedShots` for a right-side pending area.
+- Main workspace renders only `project.shots`; parked shots stay in project JSON but do not enter Save output, filename sync, Timeline, or `storyboard-script.md`.
+- Sidebar is opened and closed from the top-right sidebar button. Earlier edge-hover auto-open was removed because it conflicted with shot reorder intent.
+- Parked shots can be restored into the main workspace by drag/drop.
 
-### Package Resources Audit
+### Layer Merge And Multi-Select
 
-- Verified `npm run prepare:package-resources` prepares Photoshop TIFF Python deps under `dist-resources/python-deps/photoshop-tiff`.
-- Verified package resource tests.
-- Did not add electron-builder / forge / installer config because the project has not chosen a packager.
-- Future packaged layout must place `python-deps/photoshop-tiff` at the packaged app resources root.
-- Relevant commit: `ce00116 docs: audit package resources integration`.
+- Added Merge down / Merge visible workflows and then unified the drawer button label to `Merge`.
+- `Cmd+E` on macOS and `Ctrl+E` on Windows/Linux now trigger the same Merge action as the button:
+  - one selected layer: merge active layer down into the next visible layer.
+  - multiple selected layers: merge selected visible/unlocked layers into the lowest selected layer.
+- Merge visible now includes locked visible layers in the baked result, but preserves locked layer metadata/assets by hiding those locked source layers instead of deleting them.
+- Added Shift-click layer multi-select, group reorder, group opacity drag, and consistent selected-row visuals.
 
-### ShotCard Extraction
+### Option / Alt Copy Interactions
 
-- Extracted per-card presentation from `App.tsx` into `src/renderer/ShotCard.tsx`.
-- Added `src/renderer/storyboardDnd.ts` for shared shot/dialogue/drop-zone drag data types.
-- `ShotCard.tsx` now owns:
-  - storyboard card presentation
-  - card-local deferred media placeholder
-  - dialogue card UI
-  - script back face textarea
-  - per-card composition of `SketchPad` and `LayerPanel`
-- `App.tsx` went from 2755 lines to 2418 lines after this extraction.
-- Relevant commits:
-  - `714316c refactor: extract shot card component`
-  - `d50fe78 docs: record shot card extraction`
+- Added Option/Alt drag copy for a single storyboard, layer, or dialogue item.
+- Shot copy duplicates project metadata and assets, creates a PNG preview for the copy, and waits for Save to synchronize final names.
+- Layer copy can target another shot or a specific insertion point in an open layer drawer.
+- Dialogue copy keeps the original dialogue and appends a copy to the target shot.
+- Shot drag preview now uses stable drag-start shot ids and PNG previews, with image-error fallback to avoid broken browser image icons.
+
+### Drawing Stability And UI Polish
+
+- Added a renderer bitmap layer write queue so fast brush strokes and eraser writes do not overwrite newer strokes with stale async layer writes.
+- Simplified Select to lasso-only in the UI flow; the Rectangle choice UI was removed.
+- Dialogue entry is single-click, with a cleaner transparent textarea and proportional dialogue-zone sizing.
+- Shot card top and bottom bars were aligned visually and rounded.
+- Layer drawer visuals were refined: selected-row bar, drawer shadow layering, and transparent scrollbar track.
+- Delete/Backspace now deletes the last selected object: a clicked layer deletes the active layer, while a clicked storyboard deletes the selected storyboard(s).
+
+### Save, Import, External Editing, And Close Flow
+
+- Save progress now reports the actual changed TIFF write count instead of the whole project shot count.
+- Added a Save error dialog for development/debug iteration.
+- Close prompt now includes Save and Close, Close Without Saving, and Cancel.
+- Fixed Save-and-Close close-loop behavior on larger projects by separating the save operation from the close confirmation state.
+- External Photoshop edit detection now checks known SWB TIFF paths, uses JSON base fingerprints as the owned baseline, and avoids locking the app for internal autosave/dirty state.
+- Compatible external TIFF edits auto-import when there is no local dirty conflict. Dirty SWB + external Photoshop conflict stays locked until Import, then imports the Photoshop version as a copy.
+- Large folder opening now reports loading progress and can show existing SWB project JSON state before slower background checks finish.
+
+### Photoshop TIFF Export Robustness
+
+- Photoshop layered TIFF export now resizes copied layer PNGs to the manifest canvas size before writing, so copied layers from different shot sizes do not fail export.
+- Python dependency resolution continues to prefer stable local/vendor/package resource paths over the old temp fallback.
 
 ## Current Renderer Ownership Map
 
@@ -72,25 +87,30 @@
   - Top-level project state
   - toolbar state
   - Save / Import / autosave wiring
-  - global selection state
+  - external change refresh
+  - global selection and delete target state
   - undo / redo project history
   - global keyboard shortcuts and menus
+  - parking sidebar orchestration
 - `src/renderer/ShotCard.tsx`
   - one storyboard card's presentation
-  - dialogue cards
+  - dialogue cards and dialogue drag handles
   - script back face
   - lazy card media placeholder
   - card-local `SketchPad` / `LayerPanel` composition
 - `src/renderer/SketchPad.tsx`
   - bitmap drawing and erasing UI
-  - Select lasso / rectangle transforms
+  - lasso Select transforms
   - Onion Skin overlay
   - Konva stage wiring
 - `src/renderer/LayerPanel.tsx`
   - per-shot layer drawer UI
-  - layer row gestures
+  - layer row selection and gestures
   - visibility sweep
   - opacity / blend mode / reorder controls
+  - Merge / Merge visible / layer add-delete controls
+- `src/renderer/ParkingShelf.tsx`
+  - right-side parked shot shelf UI
 
 ## Verification
 
@@ -98,18 +118,21 @@ Fresh verification for this handoff:
 
 ```bash
 npm run test
-# passed: 24 test files, 170 tests
+# passed: 35 test files, 241 tests
 
 npm run typecheck
 # passed
 
+npm run check:preload
+# passed
+
 npm run build
 # passed
-# Vite still reports the existing chunk-size warning:
-# dist/assets/index-Bb0X8jov.js 649.86 kB, gzip 200.26 kB
+# Vite still reports the existing non-blocking chunk-size warning:
+# dist/assets/index-RjhoD930.js 681.34 kB, gzip 208.69 kB
 ```
 
-Verification from the ShotCard extraction commit:
+Recent end-to-end smoke from this session:
 
 ```bash
 npm run smoke:bitmap
@@ -118,42 +141,36 @@ npm run smoke:bitmap
 # Temporary rename file already exists
 ```
 
-The Vite chunk-size warning is an existing, documented non-blocking warning. The latest audit recommendation remains: do not add manual chunks or raise the warning limit without measured startup pain, a clear optional UI boundary, or substantial renderer bundle growth.
+There is no `lint` script in `package.json`.
 
-## Current Git State Before This Handoff Update
+## Current Git State Before This Handoff Commit
 
-`git diff --stat` and `git diff --name-status` were empty before rewriting this handoff, because the latest code and documentation work had already been committed.
+This session has broad uncommitted feature work plus this documentation refresh. `git diff --stat` should be rerun immediately before commit for the exact final count because untracked test/helper files are not included in normal `git diff --stat`.
 
-Latest commits before this handoff update:
+High-level changed areas:
 
-```text
-d50fe78 docs: record shot card extraction
-714316c refactor: extract shot card component
-3c97e39 交接存档：完成 SketchPad 抽取和维护收口
-ce00116 docs: audit package resources integration
-45df50d docs: record sketch pad extraction
-d14fd32 refactor: extract sketch pad component
-da55b2b refactor: extract sketch rendering helpers
-e582bce docs: refresh handoff and sketchpad plan
-```
+- Electron Save / Import / external change / close prompt helpers and tests.
+- Preload API surface and preload sync.
+- Renderer App, ShotCard, SketchPad, LayerPanel, ParkingShelf, drag previews, delete target, bitmap write queue, and styling.
+- Shared project operations and project type metadata.
+- Electron bitmap smoke coverage and Photoshop TIFF export script.
+- Handoff/progress/decision docs.
 
 ## Next Recommended Work
 
-Maintenance refactor work can pause here. The branch is cleanly organized enough for the next session to return to product work.
+Start with manual dogfood of the newest interaction edges:
 
-Good next targets:
+1. Open `/Users/xiali/Pictures/test`, draw several fast strokes, Save, close, reopen.
+2. Option/Alt copy one shot, one layer into the same drawer at a chosen position, one layer into another shot, and one dialogue item.
+3. Shift-select several layers, run `Merge`, then undo/redo and Save.
+4. Open a larger folder such as `/Users/xiali/Pictures/TEST2`, confirm loading progress appears quickly and Save and Close exits.
+5. Photoshop-save an owned SWB layered TIFF, confirm compatible changes auto-import when SWB is clean and create a copy when SWB has dirty local edits.
 
-1. Feature development or UI polish based on real user workflow pain.
-2. If continuing UI polish, keep it focused and avoid changing Save / Import / autosave boundaries.
-3. If changing card UI, start in `src/renderer/ShotCard.tsx`.
-4. If changing drawing, Select, Onion Skin, or canvas behavior, start in `src/renderer/SketchPad.tsx`.
-5. If changing filesystem, Save, Import, Archive, TIFF metadata, or working TIFF pixels, treat it as high risk and verify with `npm run build` then `npm run smoke:bitmap`.
+Good code follow-ups:
 
-Deferred larger choices:
-
-- Full installer/electron packager integration: choose packager first, then include prepared `dist-resources` at the packaged app resources root.
-- PSD-first workflow: still needs a separate spike and compatibility matrix.
-- Renderer code splitting: only revisit with measured startup pain or a clear optional UI boundary.
+- Keep reducing `App.tsx` only when a feature naturally exposes a boundary. Do not split just to split.
+- If shot copy DnD still feels visually different from normal move, simplify toward one shared layout strategy before adding more animation code.
+- If Save error dialog text becomes too raw for artists, wrap the same details in clearer recovery copy.
 
 ## Known Remaining Work
 

@@ -3,6 +3,7 @@ export type ShortcutAction =
   | "eraser"
   | "select"
   | "clearLayer"
+  | "mergeDown"
   | "save"
   | "addShot"
   | "onionSkin"
@@ -13,11 +14,30 @@ export type ShortcutAction =
 
 export type KeyboardShortcuts = Record<ShortcutAction, string>;
 
-export const defaultKeyboardShortcuts: KeyboardShortcuts = {
+type ShortcutPlatform = "darwin" | "win32" | "linux" | string;
+
+const detectedPlatform = (): ShortcutPlatform => {
+  const platform = globalThis.navigator?.platform.toLowerCase() ?? "";
+  if (platform.includes("mac")) {
+    return "darwin";
+  }
+  if (platform.includes("win")) {
+    return "win32";
+  }
+  if (platform.includes("linux")) {
+    return "linux";
+  }
+  return "darwin";
+};
+
+export const defaultKeyboardShortcutsForPlatform = (
+  platform: ShortcutPlatform = detectedPlatform()
+): KeyboardShortcuts => ({
   brush: "B",
   eraser: "E",
   select: "V",
   clearLayer: "Escape",
+  mergeDown: platform === "darwin" ? "Cmd+E" : "Ctrl+E",
   save: "Cmd+S",
   addShot: "A",
   onionSkin: "O",
@@ -25,7 +45,9 @@ export const defaultKeyboardShortcuts: KeyboardShortcuts = {
   nextShot: "ArrowRight",
   undo: "Cmd+Z",
   redo: "Shift+Cmd+Z"
-};
+});
+
+export const defaultKeyboardShortcuts: KeyboardShortcuts = defaultKeyboardShortcutsForPlatform();
 
 export const shortcutActions = Object.keys(defaultKeyboardShortcuts) as ShortcutAction[];
 
@@ -99,9 +121,23 @@ export const normalizeKeyboardShortcuts = (shortcuts: unknown): KeyboardShortcut
   );
 };
 
-export const keyboardEventMatchesShortcut = (event: KeyboardEvent, shortcut: string): boolean => {
+export const keyboardEventMatchesShortcut = (event: KeyboardEvent, shortcut: string | undefined): boolean => {
+  if (typeof shortcut !== "string") {
+    return false;
+  }
+
   const normalized = normalizeShortcutValue(shortcut);
   return normalized !== "" && formatShortcutFromKeyboardEvent(event) === normalized;
+};
+
+export const historyActionFromKeyboardEvent = (
+  event: KeyboardEvent
+): "undo" | "redo" | undefined => {
+  if (event.key.toLowerCase() !== "z" || (!event.metaKey && !event.ctrlKey) || event.altKey) {
+    return undefined;
+  }
+
+  return event.shiftKey ? "redo" : "undo";
 };
 
 export const duplicateShortcutValues = (shortcuts: KeyboardShortcuts): string[] => {

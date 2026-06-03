@@ -10,8 +10,13 @@ import {
   layerDropPlacementFromClientY,
   liveStrokePreviewOpacity,
   latestStrokeSegment,
+  shouldCommitStroke,
+  shouldKeepCommittedStrokePreview,
   shouldRenderLiveStroke,
   shouldAppendStrokePoint,
+  shouldHandleSketchPointer,
+  shouldStartSketchPointer,
+  sketchPointsFromClientPoints,
   sketchPointFromClientPoint
 } from "./sketchGeometry";
 
@@ -69,6 +74,45 @@ describe("sketch geometry", () => {
     });
   });
 
+  it("maps coalesced pointer coordinates to image canvas coordinates", () => {
+    const rect = {
+      left: 10,
+      top: 20,
+      width: 100,
+      height: 50
+    };
+
+    expect(
+      sketchPointsFromClientPoints(
+        [
+          { clientX: 10, clientY: 20 },
+          { clientX: 60, clientY: 45 },
+          { clientX: 110, clientY: 70 }
+        ],
+        rect,
+        { width: 200, height: 100 }
+      )
+    ).toEqual([
+      { x: 0, y: 0 },
+      { x: 100, y: 50 },
+      { x: 200, y: 100 }
+    ]);
+  });
+
+  it("starts strokes from primary pointer input when the button is left or omitted", () => {
+    expect(shouldStartSketchPointer({ button: 0, isPrimary: true })).toBe(true);
+    expect(shouldStartSketchPointer({ isPrimary: true })).toBe(true);
+    expect(shouldStartSketchPointer({})).toBe(true);
+    expect(shouldStartSketchPointer({ button: 1, isPrimary: true })).toBe(false);
+    expect(shouldStartSketchPointer({ button: 0, isPrimary: false })).toBe(false);
+  });
+
+  it("continues and finishes only the active sketch pointer", () => {
+    expect(shouldHandleSketchPointer({ pointerId: 7 }, 7)).toBe(true);
+    expect(shouldHandleSketchPointer({ pointerId: 8 }, 7)).toBe(false);
+    expect(shouldHandleSketchPointer({ pointerId: 8 }, undefined)).toBe(true);
+  });
+
   it("skips dense stroke points until the pointer moves far enough", () => {
     const stroke = {
       id: "stroke-1",
@@ -117,9 +161,20 @@ describe("sketch geometry", () => {
     expect(latestStrokeSegment({ points: [10, 10] })).toBeUndefined();
   });
 
+  it("commits both single-point dabs and moved strokes", () => {
+    expect(shouldCommitStroke({ points: [10, 10] })).toBe(true);
+    expect(shouldCommitStroke({ points: [10, 10, 20, 20] })).toBe(true);
+    expect(shouldCommitStroke({ points: [] })).toBe(false);
+  });
+
   it("does not render live eraser strokes", () => {
     expect(shouldRenderLiveStroke({ tool: "brush" })).toBe(true);
     expect(shouldRenderLiveStroke({ tool: "eraser" })).toBe(false);
+  });
+
+  it("keeps brush strokes visible while their bitmap write is pending", () => {
+    expect(shouldKeepCommittedStrokePreview({ tool: "brush" })).toBe(true);
+    expect(shouldKeepCommittedStrokePreview({ tool: "eraser" })).toBe(false);
   });
 
   it("matches live brush preview opacity to the active bitmap layer opacity", () => {
@@ -129,7 +184,7 @@ describe("sketch geometry", () => {
     expect(liveStrokePreviewOpacity({ tool: "eraser", opacity: 0.5 }, 0.35)).toBe(0.5);
   });
 
-  it("builds bitmap selection bounds from rectangle and lasso points", () => {
+  it("builds bitmap selection bounds from lasso points", () => {
     expect(
       bitmapSelectionBounds([
         { x: 40, y: 25 },

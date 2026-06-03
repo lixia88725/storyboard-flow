@@ -41,16 +41,18 @@ npm run smoke:bitmap
 - Add or update Vitest coverage in `src/shared/projectOps.test.ts` when changing project data behavior.
 - Keep Electron filesystem work in `electron/main/main.ts`.
 - Expose renderer-safe APIs through `electron/preload/preload.ts` and keep `electron/preload/preload.cjs` in sync.
-- Keep top-level renderer UI state, Save/Import/autosave wiring, and project history in `src/renderer/App.tsx`; keep per-card presentation in `src/renderer/ShotCard.tsx`.
+- Keep top-level renderer UI state, Save/Import/autosave wiring, external change refresh, delete target, parking orchestration, and project history in `src/renderer/App.tsx`; keep per-card presentation in `src/renderer/ShotCard.tsx`.
 
 ## Development Map
 
 - Project data behavior: start in `src/shared/projectOps.ts`, then update `src/shared/projectOps.test.ts`.
-- Renderer pure behavior: use focused helpers in `src/renderer/sketchGeometry.ts`, `src/renderer/sketchRendering.ts`, `src/renderer/activeTargets.ts`, `src/renderer/keyboardShortcuts.ts`, `src/renderer/animationViewport.ts`, or `src/renderer/onionSkin.ts` before wiring behavior into UI components.
-- Renderer UI wiring: `src/renderer/App.tsx` is the current integration point for toolbar state, shortcuts, animation, Save, Import, autosave, selection state, and project history. `src/renderer/ShotCard.tsx` owns per-card presentation, dialogue cards, script back faces, lazy media placeholders, and the card-local composition of `SketchPad` and `LayerPanel`. `src/renderer/SketchPad.tsx` owns bitmap drawing, erasing, Select transforms, Onion Skin overlay, live bitmap canvases, and Konva stage wiring. Keep edits narrow because these files are collaboration hotspots.
-- Electron Save/Import/filesystem behavior: start in `electron/main/main.ts`, but avoid changing `saveWorkspace` ordering unless the task explicitly targets Save.
+- Renderer pure behavior: use focused helpers in `src/renderer/sketchGeometry.ts`, `src/renderer/sketchRendering.ts`, `src/renderer/activeTargets.ts`, `src/renderer/keyboardShortcuts.ts`, `src/renderer/animationViewport.ts`, `src/renderer/onionSkin.ts`, `src/renderer/deleteTarget.ts`, `src/renderer/bitmapLayerWriteQueue.ts`, or `src/renderer/storyboardDnd.ts` before wiring behavior into UI components.
+- Renderer UI wiring: `src/renderer/App.tsx` is the current integration point for toolbar state, shortcuts, animation, Save, Import, autosave, external change refresh, delete target, parking orchestration, selection state, and project history. `src/renderer/ShotCard.tsx` owns per-card presentation, dialogue cards, script back faces, lazy media placeholders, and the card-local composition of `SketchPad` and `LayerPanel`. `src/renderer/SketchPad.tsx` owns bitmap drawing, erasing, lasso Select transforms, Onion Skin overlay, live bitmap canvases, and Konva stage wiring. `src/renderer/LayerPanel.tsx` owns layer selection, visibility sweep, opacity/reorder gestures, Merge controls, and row UI. `src/renderer/ParkingShelf.tsx` owns the right pending shelf UI. Keep edits narrow because these files are collaboration hotspots.
+- Electron Save/Import/filesystem behavior: start in `electron/main/main.ts`, but prefer existing focused helpers such as `externalChanges.ts`, `saveProgress.ts`, `closePrompt.ts`, `previewCache.ts`, `storyboardScriptProject.ts`, and `workspaceTemporaryPaths.ts` when the task is isolated. Avoid changing `saveWorkspace` ordering unless the task explicitly targets Save.
 - Electron bitmap layer ordering/defaulting: use `electron/main/bitmapLayerOrdering.ts` so Save and Photoshop export stay aligned.
 - Storyboard script Markdown behavior: use `electron/main/storyboardScript.ts` and its tests so the production parser/serializer/import planner stays covered.
+- Markdown project bootstrap behavior: use `electron/main/storyboardScriptProject.ts` and its tests.
+- External change behavior: use `electron/main/externalChanges.ts` and its tests; compatible TIFF auto-import must not treat stale TIFF XMP as newer than JSON baseline.
 - Safe file rename and temp replacement behavior: use `electron/main/fileRenames.ts` and its tests.
 - Photoshop layered TIFF exchange: use `electron/main/photoshopTiffExport.ts`, `electron/main/photoshopTiffImport.ts`, and the Python scripts in `scripts/`.
 - Renderer-safe API surface: update both `electron/preload/preload.ts` and `electron/preload/preload.cjs`, then run `npm run check:preload`.
@@ -60,6 +62,9 @@ npm run smoke:bitmap
 
 - Changing storyboard ordering, dialogue movement, rename plans, bitmap layer metadata, lock rules, or SWB import status: update `src/shared/projectOps.ts` first.
 - Changing drawing, erasing, Select transform, Onion Skin overlay, or live preview behavior: prefer a renderer helper test first, then wire through `src/renderer/SketchPad.tsx`.
+- Changing layer multi-select, Merge, visibility sweep, row drag, or opacity gestures: start in `src/shared/projectOps.ts` for project state and `src/renderer/LayerPanel.tsx` for UI.
+- Changing Option/Alt copy or storyboard drag preview behavior: keep the copy/move semantics explicit in `src/renderer/App.tsx`, `src/renderer/DragPreviews.tsx`, and `src/renderer/storyboardDnd.ts`; do not let copy gestures silently follow multi-selection.
+- Changing parked shot behavior: preserve the rule that parked shots remain in JSON but do not participate in Save output, filename sync, Timeline, or `storyboard-script.md`.
 - Changing Save, Import, Archive, TIFF metadata, or working TIFF pixels: treat it as high risk, keep the patch small, and run `npm run build` before `npm run smoke:bitmap`.
 - Changing preload APIs: update TypeScript and CommonJS preload files together and run `npm run check:preload`.
 - Changing visual styling only: keep the change in `src/renderer/styles.css`; do not modify project data or Electron code.

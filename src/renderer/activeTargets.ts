@@ -18,3 +18,11 @@ export const activeVisibleBitmapLayerForShot = (shot: Shot): BitmapLayer | undef
   const activeLayer = layers.find((layer) => layer.id === shot.activeLayerId && layer.visible);
   return activeLayer ?? [...layers].reverse().find((layer) => layer.visible);
 };
+
+export const editableBitmapLayerForShot = (shot: Shot): BitmapLayer | undefined => {
+  const layers = bitmapLayersForShot(shot);
+  const activeLayer = layers.find(
+    (layer) => layer.id === shot.activeLayerId && layer.visible && !layer.locked
+  );
+  return activeLayer ?? [...layers].reverse().find((layer) => layer.visible && !layer.locked);
+};

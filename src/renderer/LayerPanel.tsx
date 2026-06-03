@@ -1,4 +1,6 @@
 import {
+  useEffect,
+  useRef,
   useState,
   type CSSProperties,
   type MouseEvent,
@@ -21,12 +23,15 @@ import {
 
 type LayerRowGesture = {
   layerId: string;
+  layerIds: string[];
+  movableLayerIds: string[];
   startX: number;
   startY: number;
   intent?: LayerRowDragIntent;
+  initialOpacities: Record<string, number>;
 };
 type LayerRowGestureVisual = {
-  layerId: string;
+  layerIds: string[];
   intent: LayerRowDragIntent;
   deltaY: number;
 };
@@ -34,6 +39,12 @@ type BlendMenuState = {
   layerId: string;
   direction: "down" | "up";
 };
+
+export const copyLayerTargetShotIdFromCandidates = (
+  candidateShotIds: Array<string | undefined>,
+  sourceShotId: string
+): string | undefined =>
+  candidateShotIds.find((shotId): shotId is string => Boolean(shotId && shotId !== sourceShotId));
 
 export type LayerPanelProps = {
   shot?: Shot;
@@ -44,6 +55,8 @@ export type LayerPanelProps = {
   onToggle: () => void;
   onAddLayer: (shotId: string) => void;
   onRemoveLayer: (shotId: string, layerId: string) => void;
+  onMergeLayers: (shotId: string, layerId: string, selectedLayerIds: string[]) => void;
+  onMergeVisibleLayers: (shotId: string) => void;
   onClearLayer: (shotId: string, layerId: string) => void;
   onSelectLayer: (shotId: string, layerId: string) => void;
   onUpdateLayer: (
@@ -57,6 +70,26 @@ export type LayerPanelProps = {
     targetLayerId: string,
     placement: "before" | "after"
   ) => void;
+  onMoveLayerGroup: (
+    shotId: string,
+    layerIds: string[],
+    targetLayerId: string,
+    placement: "before" | "after"
+  ) => void;
+  onSelectedLayerIdsChange: (shotId: string, layerIds: string[]) => void;
+  onCopyLayerToShot: (
+    shotId: string,
+    layerId: string,
+    targetShotId: string,
+    targetLayerId?: string,
+    placement?: "before" | "after"
+  ) => void;
+  onUpdateLayerGroupOpacity: (
+    shotId: string,
+    layerIds: string[],
+    deltaOpacity: number,
+    initialOpacityByLayerId: Record<string, number>
+  ) => void;
 };
 
 export const LayerPanel = ({
@@ -68,17 +101,60 @@ export const LayerPanel = ({
   onToggle,
   onAddLayer,
   onRemoveLayer,
+  onMergeLayers,
+  onMergeVisibleLayers,
   onClearLayer,
   onSelectLayer,
   onUpdateLayer,
-  onMoveLayer
+  onMoveLayer,
+  onMoveLayerGroup,
+  onSelectedLayerIdsChange,
+  onCopyLayerToShot,
+  onUpdateLayerGroupOpacity
 }: LayerPanelProps) => {
   const layers = shot ? bitmapLayersForShot(shot) : [];
   const displayLayers = [...layers].reverse();
   const activeLayer = shot ? activeVisibleBitmapLayerForShot(shot) : undefined;
   const activeLayerId = activeLayer?.id;
+  const activeLayerIndex = activeLayer
+    ? layers.findIndex((layer) => layer.id === activeLayer.id)
+    : -1;
+  const mergeTargetLayer =
+    activeLayerIndex > 0
+      ? [...layers.slice(0, activeLayerIndex)].reverse().find((layer) => layer.visible)
+      : undefined;
+  const visibleLayers = layers.filter((layer) => layer.visible);
   const [openBlendMenu, setOpenBlendMenu] = useState<BlendMenuState | undefined>();
   const [rowGestureVisual, setRowGestureVisual] = useState<LayerRowGestureVisual | undefined>();
+  const [copyDragLayerId, setCopyDragLayerId] = useState<string | undefined>();
+  const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
+  const suppressNextRowClickRef = useRef(false);
+  const layerIdsKey = layers.map((layer) => layer.id).join("|");
+  const selectedMergeLayers = layers.filter((layer) => selectedLayerIds.includes(layer.id));
+  const isMultiLayerMerge =
+    selectedMergeLayers.length >= 2 &&
+    selectedMergeLayers.every((layer) => layer.visible && !layer.locked);
+
+  useEffect(() => {
+    if (!shot || !isOpen) {
+      setSelectedLayerIds([]);
+      return;
+    }
+
+    const existingLayerIds = new Set(layers.map((layer) => layer.id));
+    setSelectedLayerIds((current) => {
+      const next = current.filter((layerId) => existingLayerIds.has(layerId));
+      return next.length === current.length ? current : next;
+    });
+  }, [shot?.id, isOpen, layerIdsKey, layers]);
+
+  useEffect(() => {
+    if (!shot || !isOpen) {
+      return;
+    }
+
+    onSelectedLayerIdsChange(shot.id, selectedLayerIds);
+  }, [isOpen, onSelectedLayerIdsChange, selectedLayerIds, shot?.id]);
 
   const interactiveLayerRowTarget = (target: EventTarget | null) => {
     return target instanceof HTMLElement
@@ -86,13 +162,13 @@ export const LayerPanel = ({
       : null;
   };
 
-  const layerRowFromPoint = (clientX: number, clientY: number, excludedLayerId?: string) => {
+  const layerRowFromPoint = (clientX: number, clientY: number, excludedLayerIds: Set<string>) => {
     const directRow = document
       .elementsFromPoint(clientX, clientY)
       .find((element): element is HTMLElement =>
         element instanceof HTMLElement &&
         element.classList.contains("layer-row") &&
-        element.dataset.layerId !== excludedLayerId
+        !excludedLayerIds.has(element.dataset.layerId ?? "")
       );
     if (directRow) {
       return directRow;
@@ -108,25 +184,84 @@ export const LayerPanel = ({
     }
 
     const rows = Array.from(layerList.querySelectorAll<HTMLElement>(".layer-row")).filter(
-      (row) => row.dataset.layerId !== excludedLayerId
+      (row) => !excludedLayerIds.has(row.dataset.layerId ?? "")
     );
     return clientY < (rows[0]?.getBoundingClientRect().top ?? 0) ? rows[0] : rows.at(-1);
   };
 
   const beginLayerRowGesture = (event: PointerEvent<HTMLDivElement>, layer: BitmapLayer) => {
-    if (!shot || layer.locked || event.button !== 0 || interactiveLayerRowTarget(event.target)) {
+    if (shot && event.altKey && event.button === 0 && !interactiveLayerRowTarget(event.target)) {
+      event.stopPropagation();
+      event.preventDefault();
+      setCopyDragLayerId(layer.id);
+
+      const handlePointerUp = (upEvent: globalThis.PointerEvent) => {
+        window.removeEventListener("pointerup", handlePointerUp);
+        window.removeEventListener("pointercancel", handlePointerUp);
+        setCopyDragLayerId(undefined);
+
+        const targetLayerRow = layerRowFromPoint(upEvent.clientX, upEvent.clientY, new Set());
+        const targetLayerId = targetLayerRow?.dataset.layerId;
+        if (targetLayerId) {
+          const targetRect = targetLayerRow.getBoundingClientRect();
+          onCopyLayerToShot(
+            shot.id,
+            layer.id,
+            shot.id,
+            targetLayerId,
+            layerDropPlacementFromClientY(upEvent.clientY, targetRect.top, targetRect.height)
+          );
+          return;
+        }
+
+        const targetShotId = copyLayerTargetShotIdFromCandidates(
+          document
+            .elementsFromPoint(upEvent.clientX, upEvent.clientY)
+            .map((element) =>
+              element instanceof HTMLElement
+                ? element.closest<HTMLElement>("[data-shot-id]")?.dataset.shotId
+                : undefined
+            ),
+          shot.id
+        );
+        if (targetShotId) {
+          onCopyLayerToShot(shot.id, layer.id, targetShotId);
+        }
+      };
+
+      window.addEventListener("pointerup", handlePointerUp, { once: true });
+      window.addEventListener("pointercancel", handlePointerUp, { once: true });
+      return;
+    }
+
+    if (!shot || layer.locked || event.shiftKey || event.button !== 0 || interactiveLayerRowTarget(event.target)) {
       return;
     }
 
     event.stopPropagation();
-    onSelectLayer(shot.id, layer.id);
+    const gestureLayerIds = selectedLayerIds.includes(layer.id) ? selectedLayerIds : [layer.id];
+    const movableLayerIds = layers
+      .filter((item) => gestureLayerIds.includes(item.id) && !item.locked)
+      .map((item) => item.id);
+
+    if (!selectedLayerIds.includes(layer.id)) {
+      setSelectedLayerIds([layer.id]);
+      onSelectLayer(shot.id, layer.id);
+    }
     setOpenBlendMenu(undefined);
     const initialTarget = event.target;
 
     const gesture: LayerRowGesture = {
       layerId: layer.id,
+      layerIds: gestureLayerIds,
+      movableLayerIds,
       startX: event.clientX,
-      startY: event.clientY
+      startY: event.clientY,
+      initialOpacities: Object.fromEntries(
+        layers
+          .filter((item) => movableLayerIds.includes(item.id))
+          .map((item) => [item.id, item.opacity ?? 1])
+      )
     };
 
     const updateOpacity = (clientX: number) => {
@@ -136,11 +271,20 @@ export const LayerPanel = ({
       }
 
       const rect = row.getBoundingClientRect();
-      onUpdateLayer(
-        shot.id,
-        gesture.layerId,
-        { opacity: layerOpacityFromClientX(clientX, rect.left, rect.width) }
-      );
+      if (gesture.movableLayerIds.length > 1) {
+        onUpdateLayerGroupOpacity(
+          shot.id,
+          gesture.movableLayerIds,
+          (clientX - gesture.startX) / rect.width,
+          gesture.initialOpacities
+        );
+      } else {
+        onUpdateLayer(
+          shot.id,
+          gesture.layerId,
+          { opacity: layerOpacityFromClientX(clientX, rect.left, rect.width) }
+        );
+      }
     };
 
     const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
@@ -158,7 +302,11 @@ export const LayerPanel = ({
           initialTarget.blur();
         }
         gesture.intent = intent;
-        setRowGestureVisual({ layerId: gesture.layerId, intent, deltaY: intent === "reorder" ? deltaY : 0 });
+        setRowGestureVisual({
+          layerIds: gesture.movableLayerIds,
+          intent,
+          deltaY: intent === "reorder" ? deltaY : 0
+        });
       }
 
       if (gesture.intent === "opacity") {
@@ -166,7 +314,7 @@ export const LayerPanel = ({
         updateOpacity(moveEvent.clientX);
       } else if (gesture.intent === "reorder") {
         moveEvent.preventDefault();
-        setRowGestureVisual({ layerId: gesture.layerId, intent: "reorder", deltaY });
+        setRowGestureVisual({ layerIds: gesture.movableLayerIds, intent: "reorder", deltaY });
       }
     };
 
@@ -178,18 +326,24 @@ export const LayerPanel = ({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
       setRowGestureVisual(undefined);
+      suppressNextRowClickRef.current = Boolean(gesture.intent);
+      if (gesture.intent) {
+        window.setTimeout(() => {
+          suppressNextRowClickRef.current = false;
+        }, 0);
+      }
 
       if (gesture.intent === "reorder") {
-        const targetRow = layerRowFromPoint(upEvent.clientX, upEvent.clientY, gesture.layerId);
+        const targetRow = layerRowFromPoint(upEvent.clientX, upEvent.clientY, new Set(gesture.movableLayerIds));
         const targetLayerId = targetRow?.dataset.layerId;
         if (targetRow && targetLayerId && targetLayerId !== gesture.layerId) {
           const rect = targetRow.getBoundingClientRect();
-          onMoveLayer(
-            shot.id,
-            gesture.layerId,
-            targetLayerId,
-            layerDropPlacementFromClientY(upEvent.clientY, rect.top, rect.height)
-          );
+          const placement = layerDropPlacementFromClientY(upEvent.clientY, rect.top, rect.height);
+          if (gesture.movableLayerIds.length > 1) {
+            onMoveLayerGroup(shot.id, gesture.movableLayerIds, targetLayerId, placement);
+          } else {
+            onMoveLayer(shot.id, gesture.layerId, targetLayerId, placement);
+          }
         }
       }
     };
@@ -199,7 +353,49 @@ export const LayerPanel = ({
     window.addEventListener("pointercancel", handlePointerUp, { once: true });
   };
 
-  const beginLayerVisibilityDrag = (event: MouseEvent<HTMLButtonElement>, layer: BitmapLayer) => {
+  const handleLayerRowClick = (event: MouseEvent<HTMLDivElement>, layer: BitmapLayer) => {
+    if (!shot) {
+      return;
+    }
+
+    if (suppressNextRowClickRef.current) {
+      suppressNextRowClickRef.current = false;
+      return;
+    }
+
+    if (!event.shiftKey) {
+      setSelectedLayerIds([layer.id]);
+      onSelectLayer(shot.id, layer.id);
+      return;
+    }
+
+    setOpenBlendMenu(undefined);
+    setSelectedLayerIds((current) => {
+      if (!current.includes(layer.id)) {
+        onSelectLayer(shot.id, layer.id);
+        return [...current, layer.id];
+      }
+
+      if (current.length <= 1) {
+        onSelectLayer(shot.id, layer.id);
+        return current;
+      }
+
+      const next = current.filter((layerId) => layerId !== layer.id);
+      if (layer.id === activeLayerId) {
+        const nextActiveLayer = displayLayers.find((item) => next.includes(item.id) && item.visible);
+        if (nextActiveLayer) {
+          onSelectLayer(shot.id, nextActiveLayer.id);
+        }
+      }
+      return next;
+    });
+  };
+
+  const beginLayerVisibilityDrag = (
+    event: MouseEvent<HTMLButtonElement> | PointerEvent<HTMLButtonElement>,
+    layer: BitmapLayer
+  ) => {
     if (!shot || event.button > 0) {
       return;
     }
@@ -235,7 +431,7 @@ export const LayerPanel = ({
       return button?.dataset.layerId;
     };
 
-    const handleMouseMove = (moveEvent: globalThis.MouseEvent) => {
+    const handleMouseMove = (moveEvent: globalThis.MouseEvent | globalThis.PointerEvent) => {
       moveEvent.preventDefault();
       const layerId = layerIdFromPoint(moveEvent.clientX, moveEvent.clientY);
       if (layerId) {
@@ -243,15 +439,19 @@ export const LayerPanel = ({
       }
     };
 
-    const handleMouseUp = (upEvent: globalThis.MouseEvent) => {
+    const handleMouseUp = (upEvent: globalThis.MouseEvent | globalThis.PointerEvent) => {
       upEvent.preventDefault();
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("pointermove", handleMouseMove);
+      window.removeEventListener("pointerup", handleMouseUp);
     };
 
     applyToLayer(layer.id);
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp, { once: true });
+    window.addEventListener("pointermove", handleMouseMove);
+    window.addEventListener("pointerup", handleMouseUp, { once: true });
   };
 
   return (
@@ -274,12 +474,17 @@ export const LayerPanel = ({
               {displayLayers.map((layer) => {
                 const layerBlendMode = layer.blendMode ?? "normal";
                 const rowVisual =
-                  rowGestureVisual?.layerId === layer.id ? rowGestureVisual : undefined;
+                  rowGestureVisual?.layerIds.includes(layer.id) ? rowGestureVisual : undefined;
+                const isSelectedLayer = selectedLayerIds.includes(layer.id);
                 return (
                   <div
                     key={layer.id}
                     data-layer-id={layer.id}
                     className={`layer-row ${rowVisual ? `is-${rowVisual.intent}-dragging is-dragging-layer` : ""} ${
+                      copyDragLayerId === layer.id ? "is-copy-dragging" : ""
+                    } ${
+                      isSelectedLayer ? "is-selected" : ""
+                    } ${
                       layer.id === activeLayerId ? "is-active" : ""
                     } ${
                       layer.visible ? "" : "is-hidden"
@@ -293,7 +498,7 @@ export const LayerPanel = ({
                           ? `translateY(${rowVisual.deltaY}px)`
                           : undefined
                     } as CSSProperties}
-                    onClick={() => onSelectLayer(shot.id, layer.id)}
+                    onClick={(event) => handleLayerRowClick(event, layer)}
                     onPointerDown={(event) => beginLayerRowGesture(event, layer)}
                   >
                     <button
@@ -301,9 +506,16 @@ export const LayerPanel = ({
                       className="layer-select"
                       data-layer-id={layer.id}
                       draggable={false}
-                      title={layer.visible ? "Hide layer" : "Show layer"}
-                      aria-label={layer.visible ? "Hide layer" : "Show layer"}
-                      onMouseDown={(event) => beginLayerVisibilityDrag(event, layer)}
+	                      title={layer.visible ? "Hide layer" : "Show layer"}
+	                      aria-label={layer.visible ? "Hide layer" : "Show layer"}
+	                      onPointerDown={(event) => {
+	                        event.stopPropagation();
+	                        beginLayerVisibilityDrag(event, layer);
+	                      }}
+	                      onMouseDown={(event) => {
+	                        event.stopPropagation();
+	                        beginLayerVisibilityDrag(event, layer);
+	                      }}
                       onClick={(event) => {
                         event.stopPropagation();
                         if (event.detail === 0) {
@@ -414,32 +626,68 @@ export const LayerPanel = ({
             <p className="layer-empty">Select a shot to edit layers.</p>
           )}
           <div className="layer-panel-footer">
-            <button
-              type="button"
-              onClick={() => {
-                if (shot) {
-                  onAddLayer(shot.id);
+            <div className="layer-panel-footer-group">
+              <button
+                type="button"
+                onClick={() => {
+                  if (shot) {
+                    onMergeVisibleLayers(shot.id);
+                  }
+                }}
+                disabled={!shot || visibleLayers.length < 2}
+                title="Merge visible layers"
+                aria-label="Merge visible layers"
+              >
+                V
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (shot && activeLayer) {
+                    onMergeLayers(shot.id, activeLayer.id, selectedLayerIds);
+                  }
+                }}
+                disabled={
+                  !shot ||
+                  !activeLayer ||
+                  (selectedMergeLayers.length >= 2
+                    ? !isMultiLayerMerge
+                    : !mergeTargetLayer || activeLayer.locked || mergeTargetLayer.locked)
                 }
-              }}
-              disabled={!shot}
-              title="Add layer"
-              aria-label="Add layer"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (shot && activeLayer) {
-                  onRemoveLayer(shot.id, activeLayer.id);
-                }
-              }}
-              disabled={!shot || !activeLayer || activeLayer.locked || layers.length <= 1}
-              title="Delete current layer"
-              aria-label="Delete current layer"
-            >
-              -
-            </button>
+                title="Merge"
+                aria-label="Merge"
+              >
+                M
+              </button>
+            </div>
+            <div className="layer-panel-footer-group">
+              <button
+                type="button"
+                onClick={() => {
+                  if (shot) {
+                    onAddLayer(shot.id);
+                  }
+                }}
+                disabled={!shot}
+                title="Add layer"
+                aria-label="Add layer"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (shot && activeLayer) {
+                    onRemoveLayer(shot.id, activeLayer.id);
+                  }
+                }}
+                disabled={!shot || !activeLayer || activeLayer.locked || layers.length <= 1}
+                title="Delete current layer"
+                aria-label="Delete current layer"
+              >
+                -
+              </button>
+            </div>
           </div>
         </section>
       ) : null}

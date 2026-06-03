@@ -6,6 +6,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent
 } from "@dnd-kit/core";
 import { rectSortingStrategy, SortableContext } from "@dnd-kit/sortable";
@@ -16,6 +17,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type PointerEvent
@@ -24,7 +26,6 @@ import {
   addBitmapLayer,
   addDialogue,
   addGeneratedShot,
-  addImportedImages,
   applyRenamePlan,
   createProject,
   createRenamePlan,
@@ -32,18 +33,29 @@ import {
   defaultSaveNaming,
   bitmapLayersForShot,
   clearBitmapLayer,
+  copyBitmapLayerToShot,
+  copyDialogueToShot,
   deleteShots,
   deleteBitmapLayer,
+  duplicateShotAfter,
+  ensureBitmapLayerMetadata,
   getNextStoryboardIndex,
   imageBitmapLayerId,
   markBitmapLayerPainted,
+  mergeBitmapLayerDown,
+  mergeExternalImageChanges,
+  mergeSelectedBitmapLayers,
+  mergeVisibleBitmapLayers,
   mergeFolderImages,
   moveDialogueToShot,
   moveBitmapLayer,
+  moveBitmapLayerGroup,
   projectAcceptedExternalEdits,
   projectHasSwbWarning,
   projectNeedsSwbImport,
+  parkShotGroup,
   removeDialogue,
+  restoreParkedShotGroup,
   reorderShotGroup,
   reorderShots,
   selectBitmapLayer,
@@ -51,10 +63,11 @@ import {
   type ShotPlacement,
   updateDialogueText,
   updateBitmapLayer,
+  updateBitmapLayerGroupOpacity,
+  bitmapLayerPath,
 } from "../shared/projectOps";
 import type {
   BitmapLayer,
-  BitmapSelectionMode,
   Dialogue,
   FolderScanPayload,
   Project,
@@ -76,20 +89,27 @@ import {
   restoreLayerAssetSnapshots,
   type LayerAssetSnapshot
 } from "./bitmapLayerHistory";
+import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import { DialoguePreview, ShotStackPreview } from "./DragPreviews";
+import {
+  resolveDeleteTarget,
+  type DeleteTarget
+} from "./deleteTarget";
 import {
   defaultKeyboardShortcuts,
   duplicateShortcutValues,
   formatShortcutFromKeyboardEvent,
+  historyActionFromKeyboardEvent,
   keyboardEventMatchesShortcut,
   normalizeKeyboardShortcuts,
   shortcutActions,
   type KeyboardShortcuts,
   type ShortcutAction
 } from "./keyboardShortcuts";
-import { BrushIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon } from "./icons";
+import { BrushIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { SelectionMarquee } from "./SelectionMarquee";
+import { ParkingShelf } from "./ParkingShelf";
 import { BrushSwatchPicker, SketchSettingSlider } from "./SketchSettingsControls";
 import { ShotCard, type CardFace } from "./ShotCard";
 import { Timeline } from "./Timeline";
@@ -104,10 +124,14 @@ import {
 import {
   canvasSizeForShot,
   drawImageUrl,
-  drawStrokePathOnCanvas
+  drawStrokePathOnCanvas,
+  shouldDrawStrokeToBitmapLayer
 } from "./sketchRendering";
 import { sketchCanvasSize } from "./sketchGeometry";
-import type { DragData } from "./storyboardDnd";
+import {
+  dragPreviewShotIds as chooseDragPreviewShotIds,
+  type DragData
+} from "./storyboardDnd";
 import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
 
 const defaultBrushColor = "#f05a28";
@@ -143,10 +167,16 @@ const projectChangedDuringLoad = (before: Project, after: Project): boolean => {
   });
 };
 
+const ensureProjectBitmapMetadata = (project: Project): Project => ({
+  ...project,
+  shots: project.shots.map((shot) => ensureBitmapLayerMetadata(shot)),
+  parkedShots: project.parkedShots?.map((shot) => ensureBitmapLayerMetadata(shot))
+});
+
 type WorkspaceSaveState = "saved" | "saving" | "error";
 type FileNameSyncState = "synced" | "unsynced";
 type WorkspaceTask = {
-  kind: "save" | "import";
+  kind: "save" | "import" | "open";
   label: string;
   current: number;
   total: number;
@@ -159,12 +189,33 @@ type UndoEntry = {
   layerAssets?: LayerAssetSnapshot[];
 };
 type ProjectUpdate = Project | ((currentProject: Project) => Project);
+type StoryboardScriptImportDraft = {
+  sourceMarkdownPath: string;
+  fileName: string;
+  entryCount: number;
+  targetFolderPath: string;
+};
+type CopyDragState =
+  | { type: "shot"; shotId: string }
+  | { type: "dialogue"; dialogueId: string; shotId: string }
+  | { type: "layer"; shotId: string; layerId: string };
+type SelectedBitmapLayerIds = { shotId: string; layerIds: string[] };
+
+const sameLayerSelection = (
+  current: SelectedBitmapLayerIds | undefined,
+  shotId: string,
+  layerIds: string[]
+) =>
+  current?.shotId === shotId &&
+  current.layerIds.length === layerIds.length &&
+  current.layerIds.every((layerId, index) => layerId === layerIds[index]);
 
 const shortcutLabels: Array<{ action: ShortcutAction; label: string }> = [
   { action: "brush", label: "Brush" },
   { action: "eraser", label: "Eraser" },
   { action: "select", label: "Select" },
   { action: "clearLayer", label: "Clear layer" },
+  { action: "mergeDown", label: "Merge" },
   { action: "save", label: "Save" },
   { action: "addShot", label: "Add Shot" },
   { action: "onionSkin", label: "Onion Skin" },
@@ -219,6 +270,18 @@ const blurActiveFormControl = () => {
   }
 };
 
+const visibleLayerBelow = (
+  layers: BitmapLayer[],
+  sourceLayerId: string
+): BitmapLayer | undefined => {
+  const sourceIndex = layers.findIndex((layer) => layer.id === sourceLayerId);
+  if (sourceIndex <= 0) {
+    return undefined;
+  }
+
+  return [...layers.slice(0, sourceIndex)].reverse().find((layer) => layer.visible);
+};
+
 const shouldIgnoreWorkbenchWheel = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   Boolean(
@@ -227,6 +290,24 @@ const shouldIgnoreWorkbenchWheel = (target: EventTarget | null) =>
     )
   );
 
+const markdownPathFromDrop = (event: ReactDragEvent): string | undefined => {
+  const files = Array.from(event.dataTransfer.files);
+  if (files.length !== 1) {
+    return undefined;
+  }
+
+  const file = files[0] as File & { path?: string };
+  if (!file.name.toLowerCase().endsWith(".md")) {
+    return undefined;
+  }
+
+  return window.storyboard?.filePathForDroppedFile(file) || file.path;
+};
+
+const isCopyModifierEvent = (event: Event): boolean => {
+  return "altKey" in event && Boolean(event.altKey);
+};
+
 export const App = () => {
   const [project, setProject] = useState<Project>(() => createProject("Untitled Storyboard"));
   const [folderPath, setFolderPath] = useState<string | undefined>();
@@ -234,6 +315,9 @@ export const App = () => {
   const [metadataPath, setMetadataPath] = useState<string | undefined>();
   const [activeDialogue, setActiveDialogue] = useState<Dialogue | undefined>();
   const [activeShotIds, setActiveShotIds] = useState<string[]>([]);
+  const [dragPreviewShotIds, setDragPreviewShotIds] = useState<string[]>([]);
+  const [copyShotDropTargetId, setCopyShotDropTargetId] = useState<string | undefined>();
+  const [activeParkedShotIds, setActiveParkedShotIds] = useState<string[]>([]);
   const [selectedShotIds, setSelectedShotIds] = useState<string[]>([]);
   const [activeSketchTool, setActiveSketchTool] = useState<SketchTool>("brush");
   const [brushColor, setBrushColor] = useState(defaultBrushColor);
@@ -242,7 +326,6 @@ export const App = () => {
   const [brushSize, setBrushSize] = useState(defaultBrushSize);
   const [eraserSize, setEraserSize] = useState(defaultEraserSize);
   const [eraserOpacity, setEraserOpacity] = useState(1);
-  const [selectionMode, setSelectionMode] = useState<BitmapSelectionMode>("lasso");
   const [workspaceSaveState, setWorkspaceSaveState] = useState<WorkspaceSaveState>("saved");
   const [workspaceTask, setWorkspaceTask] = useState<WorkspaceTask | undefined>();
   const [fileNameSyncState, setFileNameSyncState] = useState<FileNameSyncState>("synced");
@@ -263,15 +346,23 @@ export const App = () => {
   const [isLayerPanelOpen, setIsLayerPanelOpen] = useState(false);
   const [isShortcutMenuOpen, setIsShortcutMenuOpen] = useState(false);
   const [isImportHelpOpen, setIsImportHelpOpen] = useState(false);
+  const [isImportNudging, setIsImportNudging] = useState(false);
   const [cardFace, setCardFace] = useState<CardFace>("image");
   const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
   const [keyboardShortcuts, setKeyboardShortcuts] = useState<KeyboardShortcuts>(defaultKeyboardShortcuts);
   const [capturingShortcutAction, setCapturingShortcutAction] = useState<ShortcutAction | undefined>();
   const [shortcutError, setShortcutError] = useState("");
   const [autosaveError, setAutosaveError] = useState<AutosaveErrorNotice | undefined>();
+  const [saveErrorDialog, setSaveErrorDialog] = useState<string | undefined>();
+  const [storyboardScriptImportDraft, setStoryboardScriptImportDraft] =
+    useState<StoryboardScriptImportDraft | undefined>();
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<UndoEntry[]>([]);
   const [selectionBox, setSelectionBox] = useState<MarqueeBox | undefined>();
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>({ type: "shot" });
+  const [selectedBitmapLayerIds, setSelectedBitmapLayerIds] = useState<SelectedBitmapLayerIds | undefined>();
+  const [isParkingShelfOpen, setIsParkingShelfOpen] = useState(false);
+  const [copyDrag, setCopyDrag] = useState<CopyDragState | undefined>();
   const [status, setStatus] = useState(
     window.storyboard ? "Ready" : "Electron preload API is unavailable"
   );
@@ -281,10 +372,15 @@ export const App = () => {
   const metadataPathRef = useRef(metadataPath);
   const scriptImportCheckIdRef = useRef(0);
   const dirtyShotIdsRef = useRef<Set<string>>(new Set());
+  const selectedBitmapLayerIdsRef = useRef<SelectedBitmapLayerIds | undefined>(undefined);
+  const copyDragRef = useRef<CopyDragState | undefined>(undefined);
+  const lastPointerPositionRef = useRef<{ x: number; y: number } | undefined>(undefined);
+  const workspaceSaveStateRef = useRef<WorkspaceSaveState>(workspaceSaveState);
   const fileNameSyncStateRef = useRef<FileNameSyncState>(fileNameSyncState);
   const selectedShotIdsRef = useRef<string[]>([]);
   const undoStackRef = useRef<UndoEntry[]>([]);
   const redoStackRef = useRef<UndoEntry[]>([]);
+  const bitmapLayerWriteQueueRef = useRef(createBitmapLayerWriteQueue());
   const saveMenuRef = useRef<HTMLDivElement | null>(null);
   const recentMenuRef = useRef<HTMLDivElement | null>(null);
   const addShotMenuRef = useRef<HTMLDivElement | null>(null);
@@ -293,15 +389,21 @@ export const App = () => {
   const appShellRef = useRef<HTMLElement | null>(null);
   const boardGridRef = useRef<HTMLElement | null>(null);
   const orderedShots = useMemo(() => sortedShots(project.shots), [project.shots]);
+  const parkedShots = useMemo(() => sortedShots(project.parkedShots ?? []), [project.parkedShots]);
   const needsImageImport = useMemo(() => projectNeedsSwbImport(project), [project]);
   const needsSwbImport = needsImageImport || scriptImportNeeded;
   const hasSwbWarning = useMemo(() => projectHasSwbWarning(project), [project]) || scriptImportNeeded;
   const isWorkspaceTaskRunning = Boolean(workspaceTask);
+  const isImportLocked = needsImageImport && !isWorkspaceTaskRunning;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const primarySelectedShotId = selectedShotIds[0];
   const primarySelectedShot = useMemo(
     () => primaryShotFromSelection(orderedShots, selectedShotIds),
     [orderedShots, selectedShotIds]
+  );
+  const shotById = useMemo(
+    () => new Map(orderedShots.map((shot) => [shot.id, shot])),
+    [orderedShots]
   );
   const renderedShotEntries = useMemo(() => {
     if (!isAnimationMode) {
@@ -349,6 +451,16 @@ export const App = () => {
   }, [selectedShotIds]);
 
   useEffect(() => {
+    selectedBitmapLayerIdsRef.current = selectedBitmapLayerIds;
+  }, [selectedBitmapLayerIds]);
+
+  const handleSelectedBitmapLayerIdsChange = useCallback((shotId: string, layerIds: string[]) => {
+    setSelectedBitmapLayerIds((current) =>
+      sameLayerSelection(current, shotId, layerIds) ? current : { shotId, layerIds }
+    );
+  }, []);
+
+  useEffect(() => {
     folderPathRef.current = folderPath;
   }, [folderPath]);
 
@@ -368,9 +480,25 @@ export const App = () => {
     redoStackRef.current = redoStack;
   }, [redoStack]);
 
+  const setUndoStackSynced = (update: UndoEntry[] | ((current: UndoEntry[]) => UndoEntry[])) => {
+    const next = typeof update === "function" ? update(undoStackRef.current) : update;
+    undoStackRef.current = next;
+    setUndoStack(next);
+  };
+
+  const setRedoStackSynced = (update: UndoEntry[] | ((current: UndoEntry[]) => UndoEntry[])) => {
+    const next = typeof update === "function" ? update(redoStackRef.current) : update;
+    redoStackRef.current = next;
+    setRedoStack(next);
+  };
+
   useEffect(() => {
     fileNameSyncStateRef.current = fileNameSyncState;
   }, [fileNameSyncState]);
+
+  useEffect(() => {
+    workspaceSaveStateRef.current = workspaceSaveState;
+  }, [workspaceSaveState]);
 
   useEffect(() => {
     let isMounted = true;
@@ -393,11 +521,28 @@ export const App = () => {
   }, []);
 
   useEffect(() => {
+    const handlePointerMove = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
+      lastPointerPositionRef.current = { x: event.clientX, y: event.clientY };
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("mousemove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerMove);
+    window.addEventListener("mouseup", handlePointerMove);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("mousemove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerMove);
+      window.removeEventListener("mouseup", handlePointerMove);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isShortcutMenuOpen) {
       return;
     }
 
-    const handlePointerDown = (event: globalThis.PointerEvent) => {
+    const handlePointerDown = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
       if (!shortcutMenuRef.current?.contains(event.target as Node)) {
         setIsShortcutMenuOpen(false);
         setShortcutError("");
@@ -429,7 +574,7 @@ export const App = () => {
       return;
     }
 
-    const handlePointerDown = (event: globalThis.PointerEvent) => {
+    const handlePointerDown = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
       if (!saveMenuRef.current?.contains(event.target as Node)) {
         setIsSaveMenuOpen(false);
       }
@@ -455,7 +600,7 @@ export const App = () => {
       return;
     }
 
-    const handlePointerDown = (event: globalThis.PointerEvent) => {
+    const handlePointerDown = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
       if (!recentMenuRef.current?.contains(event.target as Node)) {
         setIsRecentMenuOpen(false);
       }
@@ -567,7 +712,12 @@ export const App = () => {
     const removeTaskProgressListener = window.storyboard.onWorkspaceTaskProgress((progress) => {
       setWorkspaceTask((task) =>
         task && task.kind === progress.kind
-          ? { ...task, current: progress.current, total: progress.total }
+          ? {
+              ...task,
+              label: progress.label ?? (progress.kind === "save" ? "Writing changed TIFFs..." : task.label),
+              current: progress.current,
+              total: progress.total
+            }
           : task
       );
     });
@@ -608,6 +758,55 @@ export const App = () => {
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, [metadataPath]);
+
+  useEffect(() => {
+    if (!window.storyboard || !folderPath) {
+      return;
+    }
+
+    let stopWatching: (() => void) | undefined;
+    let debounceId: number | undefined;
+    let cancelled = false;
+
+    void window.storyboard
+      .watchWorkspaceFolder(folderPath, () => {
+        if (debounceId !== undefined) {
+          window.clearTimeout(debounceId);
+        }
+        debounceId = window.setTimeout(() => {
+          void refreshExternalImportState();
+        }, 500);
+      })
+      .then((stop) => {
+        if (cancelled) {
+          stop();
+          return;
+        }
+        stopWatching = stop;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      if (debounceId !== undefined) {
+        window.clearTimeout(debounceId);
+      }
+      stopWatching?.();
+    };
+  }, [folderPath]);
+
+  useEffect(() => {
+    if (!window.storyboard) {
+      return;
+    }
+
+    void window.storyboard.updateCloseGuard({
+      hasUnsavedChanges:
+        dirtyShotIdsRef.current.size > 0 ||
+        workspaceSaveState !== "saved" ||
+        fileNameSyncState !== "synced"
+    });
+  }, [fileNameSyncState, project, workspaceSaveState]);
 
   useEffect(() => {
     selectionBoxRef.current = selectionBox;
@@ -713,9 +912,10 @@ export const App = () => {
       }
 
       const key = event.key.toLowerCase();
-      const shortcutAction = shortcutActions.find((action) =>
+      const configuredShortcutAction = shortcutActions.find((action) =>
         keyboardEventMatchesShortcut(event, keyboardShortcuts[action])
       );
+      const shortcutAction = configuredShortcutAction ?? historyActionFromKeyboardEvent(event);
       const allowsRangeTarget =
         isAnimationMode &&
         isRangeInputTarget(target) &&
@@ -732,7 +932,7 @@ export const App = () => {
         !event.altKey
       ) {
         event.preventDefault();
-        handleDeleteSelectedShots();
+        void handleDeleteKeyPress();
         return;
       }
 
@@ -780,6 +980,20 @@ export const App = () => {
 
           if (activeShot && activeLayer) {
             void handleClearBitmapLayer(activeShot.id, activeLayer.id);
+          }
+          return;
+        }
+
+        if (shortcutAction === "mergeDown") {
+          const activeShot = primaryShotOrFirst(orderedShots, selectedShotIdsRef.current);
+          const activeLayer = activeShot ? activeVisibleBitmapLayerForShot(activeShot) : undefined;
+
+          if (activeShot && activeLayer) {
+            const selectedLayerIds =
+              selectedBitmapLayerIdsRef.current?.shotId === activeShot.id
+                ? selectedBitmapLayerIdsRef.current.layerIds
+                : [];
+            void handleMergeBitmapLayers(activeShot.id, activeLayer.id, selectedLayerIds);
           }
           return;
         }
@@ -857,7 +1071,7 @@ export const App = () => {
       typeof projectUpdate === "function" ? projectUpdate(projectRef.current) : projectUpdate;
 
     if (recordUndo) {
-      setUndoStack((current) =>
+      setUndoStackSynced((current) =>
         appendHistoryEntry(current, {
           project: projectRef.current,
           selectedShotIds: selectedShotIdsRef.current,
@@ -865,15 +1079,18 @@ export const App = () => {
         })
       );
     }
-    setRedoStack([]);
+    setRedoStackSynced([]);
     const acceptedExternalEdits = projectAcceptedExternalEdits(nextProject);
 
+    projectRef.current = nextProject;
     setProject(nextProject);
     setWorkspaceSaveState("saving");
     if (markFileNamesUnsynced) {
       setFileNameSyncState("unsynced");
     }
     setAutosaveRevision((revision) => revision + 1);
+    scriptImportCheckIdRef.current += 1;
+    setScriptImportNeeded(false);
   };
 
   const markShotsDirty = (shotIds: string[]) => {
@@ -906,11 +1123,35 @@ export const App = () => {
     const nextSelectedShot = remaining[Math.min(firstDeletedIndex, remaining.length - 1)];
     updateProject((projectToUpdate) => deleteShots(projectToUpdate, selectedIds));
     setSelectedShotIds(nextSelectedShot ? [nextSelectedShot.id] : []);
+    setDeleteTarget({ type: "shot" });
     setStatus(
       selectedIds.length === 1
         ? "Storyboard deleted; Save will move its file to Trash"
         : `${selectedIds.length} storyboards deleted; Save will move their files to Trash`
     );
+  };
+
+  const handleDeleteKeyPress = async () => {
+    const resolvedTarget = resolveDeleteTarget(projectRef.current, deleteTarget);
+
+    if (resolvedTarget.type === "layer") {
+      await handleRemoveBitmapLayer(resolvedTarget.shotId, resolvedTarget.layerId);
+      const nextShot = projectRef.current.shots.find((shot) => shot.id === resolvedTarget.shotId);
+      const nextLayer = nextShot ? activeVisibleBitmapLayerForShot(nextShot) : undefined;
+      setDeleteTarget(
+        nextShot && nextLayer
+          ? { type: "layer", shotId: nextShot.id, layerId: nextLayer.id }
+          : { type: "shot" }
+      );
+      return;
+    }
+
+    if (resolvedTarget.type === "locked-layer") {
+      setStatus("Cannot delete a locked layer");
+      return;
+    }
+
+    handleDeleteSelectedShots();
   };
 
   const createHistoryEntry = async (bitmapPaths: string[] = []): Promise<UndoEntry> => {
@@ -929,8 +1170,8 @@ export const App = () => {
   };
 
   const recordUndoEntry = (entry: UndoEntry) => {
-    setUndoStack((current) => appendHistoryEntry(current, entry));
-    setRedoStack([]);
+    setUndoStackSynced((current) => appendHistoryEntry(current, entry));
+    setRedoStackSynced([]);
   };
 
   async function restoreHistoryLayerAssets(entry: UndoEntry) {
@@ -951,11 +1192,12 @@ export const App = () => {
 
     try {
       const affectedPaths = previous.layerAssets?.map((snapshot) => snapshot.bitmapPath) ?? [];
+      await bitmapLayerWriteQueueRef.current.drain();
       const redoEntry = await createHistoryEntry(affectedPaths);
       await restoreHistoryLayerAssets(previous);
 
-      setRedoStack((current) => appendHistoryEntry(current, redoEntry));
-      setUndoStack((current) => current.slice(0, -1));
+      setRedoStackSynced((current) => appendHistoryEntry(current, redoEntry));
+      setUndoStackSynced((current) => current.slice(0, -1));
       setProject(previous.project);
       projectRef.current = previous.project;
       setSelectedShotIds(previous.selectedShotIds);
@@ -963,6 +1205,8 @@ export const App = () => {
       setWorkspaceSaveState("saving");
       markAllShotsDirty();
       setAutosaveRevision((revision) => revision + 1);
+      scriptImportCheckIdRef.current += 1;
+      setScriptImportNeeded(false);
       setStatus("Undid last change");
     } catch (error) {
       setStatus(`Undo failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -978,11 +1222,12 @@ export const App = () => {
 
     try {
       const affectedPaths = next.layerAssets?.map((snapshot) => snapshot.bitmapPath) ?? [];
+      await bitmapLayerWriteQueueRef.current.drain();
       const undoEntry = await createHistoryEntry(affectedPaths);
       await restoreHistoryLayerAssets(next);
 
-      setUndoStack((current) => appendHistoryEntry(current, undoEntry));
-      setRedoStack((current) => current.slice(0, -1));
+      setUndoStackSynced((current) => appendHistoryEntry(current, undoEntry));
+      setRedoStackSynced((current) => current.slice(0, -1));
       setProject(next.project);
       projectRef.current = next.project;
       setSelectedShotIds(next.selectedShotIds);
@@ -990,6 +1235,8 @@ export const App = () => {
       setWorkspaceSaveState("saving");
       markAllShotsDirty();
       setAutosaveRevision((revision) => revision + 1);
+      scriptImportCheckIdRef.current += 1;
+      setScriptImportNeeded(false);
       setStatus("Redid last change");
     } catch (error) {
       setStatus(`Redo failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -1069,6 +1316,12 @@ export const App = () => {
     if (!window.storyboard || !folderPathRef.current || !metadataPathRef.current) {
       return;
     }
+    if (workspaceSaveStateRef.current === "saving") {
+      return;
+    }
+    if (dirtyShotIdsRef.current.size > 0) {
+      return;
+    }
 
     const checkId = (scriptImportCheckIdRef.current += 1);
     const projectToCheck = projectRef.current;
@@ -1092,19 +1345,62 @@ export const App = () => {
       folderPathRef.current === nextFolderPath &&
       metadataPathRef.current === nextMetadataPath
     ) {
-      const nextProject = addImportedImages(projectToCheck, result.images);
+      const nextProject = mergeExternalImageChanges(projectToCheck, result.images);
+      if (
+        nextProject !== projectToCheck &&
+        hasOnlyCompatibleExternalEdits(nextProject) &&
+        !hasDirtyCompatibleExternalEdit(nextProject, dirtyShotIdsRef.current)
+      ) {
+        const imported = await withStatus(
+          "Import external Photoshop edits failed",
+          () =>
+            window.storyboard.importSwbFormat({
+              project: nextProject,
+              folderPath: nextFolderPath,
+              metadataPath: nextMetadataPath,
+              blankShotPreset,
+              dirtyShotIds: []
+            }),
+          setStatus
+        );
+        if (
+          imported &&
+          checkId === scriptImportCheckIdRef.current &&
+          folderPathRef.current === nextFolderPath &&
+          metadataPathRef.current === nextMetadataPath
+        ) {
+          await loadFolderScan(imported, "Imported external Photoshop edits", false, true);
+          return;
+        }
+      }
       if (nextProject !== projectToCheck) {
         setProject(nextProject);
+        if (projectNeedsSwbImport(projectToCheck) && !projectNeedsSwbImport(nextProject)) {
+          void persistWorkspace(nextProject, nextFolderPath, nextMetadataPath).catch((error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            setWorkspaceSaveState("error");
+            setAutosaveError((current) => autosaveErrorReducer(current, { type: "failed", message }));
+            setStatus(`Autosave failed: ${message}`);
+          });
+        }
       }
       setScriptImportNeeded(result.scriptImportNeeded);
     }
+  };
+
+  const nudgeImportRequired = () => {
+    setIsImportHelpOpen(true);
+    setIsImportNudging(true);
+    setStatus("Import external changes before editing");
+    window.setTimeout(() => setIsImportNudging(false), 520);
   };
 
   const handleBitmapStroke = async (
     shot: Shot,
     layerId: string,
     stroke: SketchStroke,
-    renderedDataUrl?: string
+    renderedDataUrl?: string,
+    pendingStrokes: SketchStroke[] = []
   ) => {
     if (!window.storyboard || !folderPath) {
       return;
@@ -1115,29 +1411,45 @@ export const App = () => {
       return;
     }
 
-    const undoEntry = await createHistoryEntry([layer.bitmapPath]);
-    let dataUrl = renderedDataUrl;
+    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
+      const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
+      const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
+      if (!currentLayer || currentLayer.locked) {
+        return undefined;
+      }
 
-    if (!dataUrl) {
-      const blankDataUrl = await createTransparentLayerDataUrl(layer.width, layer.height);
-      const sourceDataUrl = layer.cleared
-        ? blankDataUrl
-        : (await window.storyboard
-            .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
-            .catch(() => undefined)) ??
-          (layer.kind === "image" ? window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath) : blankDataUrl);
-      dataUrl = await drawStrokeOnBitmapLayer(sourceDataUrl, layer, stroke);
-    }
+      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
+      let dataUrl = renderedDataUrl;
 
-    await window.storyboard.writeLayerPng({
-      folderPath,
-      bitmapPath: layer.bitmapPath,
-      dataUrl
+      if (!dataUrl) {
+        const blankDataUrl = await createTransparentLayerDataUrl(currentLayer.width, currentLayer.height);
+        const layerDataUrl = await window.storyboard
+          .readLayerPng({ folderPath, bitmapPath: currentLayer.bitmapPath })
+          .catch(() => undefined);
+        const sourceDataUrl =
+          layerDataUrl ??
+          (currentLayer.cleared
+            ? blankDataUrl
+            : currentLayer.kind === "image"
+              ? window.storyboard.assetUrl(currentShot.previewPath ?? currentShot.imagePath)
+              : blankDataUrl);
+        dataUrl = await drawStrokeOnBitmapLayer(sourceDataUrl, currentLayer, stroke, pendingStrokes);
+      }
+
+      await window.storyboard.writeLayerPng({
+        folderPath,
+        bitmapPath: currentLayer.bitmapPath,
+        dataUrl
+      });
+      markShotsDirty([currentShot.id]);
+      recordUndoEntry(undoEntry);
+      updateProject(
+        (currentProject) => markBitmapLayerPainted(currentProject, currentShot.id, currentLayer.id),
+        false,
+        false
+      );
+      return dataUrl;
     });
-    markShotsDirty([shot.id]);
-    recordUndoEntry(undoEntry);
-    updateProject((currentProject) => markBitmapLayerPainted(currentProject, shot.id, layer.id), false, false);
-    return dataUrl;
   };
 
   const handleBitmapSelectionTransform = async (shot: Shot, layerId: string, dataUrl: string) => {
@@ -1150,16 +1462,28 @@ export const App = () => {
       return;
     }
 
-    const undoEntry = await createHistoryEntry([layer.bitmapPath]);
-    await window.storyboard.writeLayerPng({
-      folderPath,
-      bitmapPath: layer.bitmapPath,
-      dataUrl
+    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
+      const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
+      const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
+      if (!currentLayer || currentLayer.locked) {
+        return undefined;
+      }
+
+      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
+      await window.storyboard.writeLayerPng({
+        folderPath,
+        bitmapPath: currentLayer.bitmapPath,
+        dataUrl
+      });
+      markShotsDirty([currentShot.id]);
+      recordUndoEntry(undoEntry);
+      updateProject(
+        (currentProject) => markBitmapLayerPainted(currentProject, currentShot.id, currentLayer.id),
+        false,
+        false
+      );
+      return dataUrl;
     });
-    markShotsDirty([shot.id]);
-    recordUndoEntry(undoEntry);
-    updateProject((currentProject) => markBitmapLayerPainted(currentProject, shot.id, layer.id), false, false);
-    return dataUrl;
   };
 
   const handleClearBitmapLayer = async (shotId: string, layerId: string) => {
@@ -1170,15 +1494,23 @@ export const App = () => {
       return;
     }
 
-    const undoEntry = await createHistoryEntry([layer.bitmapPath]);
-    await window.storyboard.writeLayerPng({
-      folderPath,
-      bitmapPath: layer.bitmapPath,
-      dataUrl: await createTransparentLayerDataUrl(layer.width, layer.height)
+    await bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
+      const currentShot = projectRef.current.shots.find((item) => item.id === shotId);
+      const currentLayer = currentShot ? bitmapLayersForShot(currentShot).find((item) => item.id === layerId) : undefined;
+      if (!currentLayer || currentLayer.locked) {
+        return;
+      }
+
+      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
+      await window.storyboard.writeLayerPng({
+        folderPath,
+        bitmapPath: currentLayer.bitmapPath,
+        dataUrl: await createTransparentLayerDataUrl(currentLayer.width, currentLayer.height)
+      });
+      markShotsDirty([shotId]);
+      recordUndoEntry(undoEntry);
+      updateProject((currentProject) => clearBitmapLayer(currentProject, shotId, layerId), false, false);
     });
-    markShotsDirty([shotId]);
-    recordUndoEntry(undoEntry);
-    updateProject((currentProject) => clearBitmapLayer(currentProject, shotId, layerId), false, false);
   };
 
   const handleRemoveBitmapLayer = async (shotId: string, layerId: string) => {
@@ -1197,6 +1529,167 @@ export const App = () => {
     markShotsDirty([shotId]);
     recordUndoEntry(undoEntry);
     updateProject((currentProject) => deleteBitmapLayer(currentProject, shotId, layerId), false, false);
+  };
+
+  const handleMergeBitmapLayerDown = async (shotId: string, layerId: string) => {
+    const shot = projectRef.current.shots.find((item) => item.id === shotId);
+    const layers = shot ? bitmapLayersForShot(shot) : [];
+    const sourceLayer = layers.find((item) => item.id === layerId && item.visible);
+    const targetLayer = sourceLayer ? visibleLayerBelow(layers, sourceLayer.id) : undefined;
+
+    if (!window.storyboard || !folderPath || !shot || !sourceLayer) {
+      return;
+    }
+
+    if (!targetLayer) {
+      setStatus("No visible layer below to merge into");
+      return;
+    }
+
+    if (sourceLayer.locked || targetLayer.locked) {
+      setStatus("Unlock both layers before merging down");
+      return;
+    }
+
+    try {
+      const undoEntry = await createHistoryEntry([targetLayer.bitmapPath, sourceLayer.bitmapPath]);
+      await window.storyboard.mergeLayerDown({
+        folderPath,
+        sourceBitmapPath: sourceLayer.bitmapPath,
+        targetBitmapPath: targetLayer.bitmapPath,
+        width: targetLayer.width,
+        height: targetLayer.height,
+        sourceOpacity: sourceLayer.opacity,
+        sourceBlendMode: sourceLayer.blendMode,
+        targetOpacity: targetLayer.opacity,
+        targetBlendMode: targetLayer.blendMode
+      });
+      markShotsDirty([shotId]);
+      recordUndoEntry(undoEntry);
+      updateProject(
+        (currentProject) =>
+          mergeBitmapLayerDown(currentProject, shotId, sourceLayer.id, targetLayer.id),
+        false,
+        false
+      );
+      setStatus(`Merged "${sourceLayer.name}" down into "${targetLayer.name}"`);
+    } catch (error) {
+      setStatus(`Merge down failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const handleMergeBitmapLayers = async (
+    shotId: string,
+    layerId: string,
+    selectedLayerIds: string[]
+  ) => {
+    const shot = projectRef.current.shots.find((item) => item.id === shotId);
+    const layers = shot ? bitmapLayersForShot(shot) : [];
+    const selectedLayers = layers.filter((layer) => selectedLayerIds.includes(layer.id));
+
+    if (selectedLayers.length < 2) {
+      await handleMergeBitmapLayerDown(shotId, layerId);
+      return;
+    }
+
+    if (!window.storyboard || !folderPath || !shot) {
+      return;
+    }
+
+    if (selectedLayers.some((layer) => layer.locked)) {
+      setStatus("Unlock selected layers before merging");
+      return;
+    }
+
+    if (selectedLayers.some((layer) => !layer.visible)) {
+      setStatus("Show selected layers before merging");
+      return;
+    }
+
+    const targetLayer = selectedLayers[0];
+    const sourceLayers = selectedLayers.slice(1);
+
+    try {
+      const undoEntry = await createHistoryEntry(selectedLayers.map((layer) => layer.bitmapPath));
+      await window.storyboard.mergeVisibleLayers({
+        folderPath,
+        targetBitmapPath: targetLayer.bitmapPath,
+        width: targetLayer.width,
+        height: targetLayer.height,
+        layers: selectedLayers.map((layer) => ({
+          bitmapPath: layer.bitmapPath,
+          opacity: layer.opacity,
+          blendMode: layer.blendMode
+        })),
+        deleteBitmapPaths: sourceLayers.map((layer) => layer.bitmapPath)
+      });
+      markShotsDirty([shotId]);
+      recordUndoEntry(undoEntry);
+      updateProject(
+        (currentProject) =>
+          mergeSelectedBitmapLayers(currentProject, shotId, selectedLayers.map((layer) => layer.id)),
+        false,
+        false
+      );
+      setStatus(`Merged ${selectedLayers.length} selected layers`);
+    } catch (error) {
+      setStatus(`Merge failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const handleMergeVisibleBitmapLayers = async (shotId: string) => {
+    const shot = projectRef.current.shots.find((item) => item.id === shotId);
+    const layers = shot ? bitmapLayersForShot(shot) : [];
+    const visibleLayers = layers.filter((layer) => layer.visible);
+    const targetLayer = visibleLayers[0];
+
+    if (!window.storyboard || !folderPath || !shot || !targetLayer) {
+      return;
+    }
+
+    if (visibleLayers.length < 2) {
+      setStatus("Need at least two visible layers to merge");
+      return;
+    }
+
+    const nextProject = mergeVisibleBitmapLayers(projectRef.current, shotId);
+    const nextShot = nextProject.shots.find((item) => item.id === shotId);
+    const existingLayerIds = new Set(layers.map((layer) => layer.id));
+    const mergedLayer = nextShot
+      ? bitmapLayersForShot(nextShot).find((layer) => !existingLayerIds.has(layer.id))
+      : undefined;
+
+    if (!mergedLayer) {
+      setStatus("Could not create merged layer");
+      return;
+    }
+
+    try {
+      const undoEntry = await createHistoryEntry([
+        ...visibleLayers.map((layer) => layer.bitmapPath),
+        mergedLayer.bitmapPath
+      ]);
+      await window.storyboard.mergeVisibleLayers({
+        folderPath,
+        targetBitmapPath: mergedLayer.bitmapPath,
+        width: mergedLayer.width,
+        height: mergedLayer.height,
+        layers: visibleLayers.map((layer) => ({
+          bitmapPath: layer.bitmapPath,
+          opacity: layer.opacity,
+          blendMode: layer.blendMode
+        })),
+        deleteBitmapPaths: visibleLayers
+          .filter((layer) => !layer.locked)
+          .map((layer) => layer.bitmapPath)
+      });
+      markShotsDirty([shotId]);
+      recordUndoEntry(undoEntry);
+      updateProject(nextProject, false, false);
+      setStatus("Merged visible layers");
+    } catch (error) {
+      setStatus(`Merge visible failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   const handleAddBitmapLayer = async (shotId: string) => {
@@ -1239,8 +1732,31 @@ export const App = () => {
       }
     };
     const nextProject = scan.preserveProjectWithoutImageMerge
-      ? projectWithDefaults
+      ? ensureProjectBitmapMetadata(projectWithDefaults)
       : mergeFolderImages(projectWithDefaults, scan.images);
+    if (
+      resetDirtyShots &&
+      !dirty &&
+      window.storyboard &&
+      hasOnlyCompatibleExternalEdits(nextProject)
+    ) {
+      const imported = await withStatus(
+        "Import external Photoshop edits failed",
+        () =>
+          window.storyboard.importSwbFormat({
+            project: nextProject,
+            folderPath: scan.folderPath,
+            metadataPath: scan.metadataPath,
+            blankShotPreset,
+            dirtyShotIds: []
+          }),
+        setStatus
+      );
+      if (imported) {
+        await loadFolderScan(imported, "Imported external Photoshop edits", false, true);
+        return;
+      }
+    }
     const acceptedExternalEdits = projectAcceptedExternalEdits(nextProject);
     const loadedProjectChanged = projectChangedDuringLoad(projectWithDefaults, nextProject);
     let nextScriptImportNeeded = Boolean(scan.scriptImportNeeded);
@@ -1252,8 +1768,8 @@ export const App = () => {
     setWorkspaceSaveState(dirty || acceptedExternalEdits || loadedProjectChanged ? "saving" : "saved");
     setFileNameSyncState("synced");
     setStatus(acceptedExternalEdits ? "External TIFF edits accepted as new base" : nextStatus);
-    setUndoStack([]);
-    setRedoStack([]);
+    setUndoStackSynced([]);
+    setRedoStackSynced([]);
     setSelectedShotIds(nextProject.shots[0] ? [nextProject.shots[0].id] : []);
     if (resetDirtyShots) {
       dirtyShotIdsRef.current = new Set();
@@ -1265,6 +1781,22 @@ export const App = () => {
     }
     if (checkId === scriptImportCheckIdRef.current) {
       setScriptImportNeeded(nextScriptImportNeeded);
+    }
+
+    if (
+      scan.preserveProjectWithoutImageMerge &&
+      loadedProjectChanged &&
+      !dirty &&
+      !acceptedExternalEdits &&
+      !nextScriptImportNeeded
+    ) {
+      void persistWorkspace(nextProject, scan.folderPath, scan.metadataPath).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setWorkspaceSaveState("error");
+        setAutosaveError((current) => autosaveErrorReducer(current, { type: "failed", message }));
+        setStatus(`Autosave failed: ${message}`);
+      });
+      return;
     }
 
     if ((dirty || acceptedExternalEdits || loadedProjectChanged) && !nextScriptImportNeeded) {
@@ -1285,6 +1817,13 @@ export const App = () => {
       return;
     }
 
+    setWorkspaceTask({
+      kind: "open",
+      label: "Loading folder...",
+      current: 0,
+      total: 0
+    });
+
     const result = await withStatus(
       "Open folder failed",
       () => window.storyboard.openFolderByPath(trimmedPath),
@@ -1292,28 +1831,166 @@ export const App = () => {
     );
 
     if (!result) {
+      setWorkspaceTask(undefined);
       return;
     }
 
     await loadFolderScan(result, "Folder opened", !result.project);
+    if (result.project) {
+      setWorkspaceTask({
+        kind: "open",
+        label: "Checking external changes...",
+        current: 0,
+        total: 0
+      });
+      window.setTimeout(() => {
+        void refreshExternalImportState().finally(() => {
+          setWorkspaceTask((task) => (task?.kind === "open" ? undefined : task));
+        });
+      }, 0);
+    } else {
+      setWorkspaceTask(undefined);
+    }
     void window.storyboard.getRecentFolders().then(setRecentFolders).catch(() => undefined);
   };
 
-  const handleSaveProject = async () => {
-    if (!window.storyboard) {
-      setStatus("Cannot save: Electron preload API is unavailable");
+  const handleStoryboardScriptDragOver = (event: ReactDragEvent<HTMLElement>) => {
+    if (Array.from(event.dataTransfer.items).some((item) => item.kind === "file")) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    }
+  };
+
+  const handleStoryboardScriptDrop = async (event: ReactDragEvent<HTMLElement>) => {
+    const sourceMarkdownPath = markdownPathFromDrop(event);
+    if (!sourceMarkdownPath) {
+      if (event.dataTransfer.files.length > 0) {
+        event.preventDefault();
+        setStatus("Drop a single local .md storyboard script file");
+      }
       return;
     }
 
-    if (!folderPath || !metadataPath) {
-      setStatus("Open a folder or add shots before saving");
+    event.preventDefault();
+    if (!window.storyboard) {
+      setStatus("Cannot import script: Electron preload API is unavailable");
       return;
+    }
+
+    const result = await withStatus(
+      "Storyboard script inspect failed",
+      () => window.storyboard.inspectStoryboardScript(sourceMarkdownPath),
+      setStatus
+    );
+    if (!result) {
+      return;
+    }
+    if (result.entryCount === 0) {
+      setStatus("No numbered storyboard script entries found");
+      return;
+    }
+
+    setStoryboardScriptImportDraft({
+      sourceMarkdownPath,
+      fileName: result.fileName,
+      entryCount: result.entryCount,
+      targetFolderPath: ""
+    });
+  };
+
+  const handleSelectStoryboardScriptTargetFolder = async () => {
+    if (!window.storyboard) {
+      setStatus("Cannot choose folder: Electron preload API is unavailable");
+      return;
+    }
+
+    const selectedFolder = await withStatus(
+      "Choose folder failed",
+      () => window.storyboard.selectFolder(),
+      setStatus
+    );
+    if (!selectedFolder) {
+      return;
+    }
+
+    setStoryboardScriptImportDraft((draft) =>
+      draft ? { ...draft, targetFolderPath: selectedFolder } : draft
+    );
+  };
+
+  const handleCreateProjectFromStoryboardScript = async () => {
+    if (!window.storyboard || !storyboardScriptImportDraft) {
+      return;
+    }
+
+    const targetFolderPath = storyboardScriptImportDraft.targetFolderPath.trim();
+    if (!targetFolderPath) {
+      setStatus("Choose an empty target folder first");
+      return;
+    }
+
+    setWorkspaceTask({
+      kind: "import",
+      label: "Creating storyboard from script...",
+      current: storyboardScriptImportDraft.entryCount,
+      total: storyboardScriptImportDraft.entryCount
+    });
+
+    const result = await (async () => {
+      try {
+        return await withStatus(
+          "Create storyboard from script failed",
+          () =>
+            window.storyboard.createFromStoryboardScript({
+              sourceMarkdownPath: storyboardScriptImportDraft.sourceMarkdownPath,
+              targetFolderPath,
+              blankShotPreset
+            }),
+          setStatus
+        );
+      } finally {
+        setWorkspaceTask(undefined);
+      }
+    })();
+
+    if (!result) {
+      return;
+    }
+
+    setStoryboardScriptImportDraft(undefined);
+    await loadFolderScan(result, "Created storyboard from script");
+    void window.storyboard.getRecentFolders().then(setRecentFolders).catch(() => undefined);
+  };
+
+  const handleSaveProject = async (): Promise<boolean> => {
+    if (!window.storyboard) {
+      const message = "Cannot save: Electron preload API is unavailable";
+      setStatus(message);
+      setSaveErrorDialog(message);
+      return false;
+    }
+
+    if (!folderPath || !metadataPath) {
+      const message = "Open a folder or add shots before saving";
+      setStatus(message);
+      setSaveErrorDialog(message);
+      return false;
+    }
+
+    if (needsSwbImport) {
+      const message = "Import external changes before saving";
+      setStatus(message);
+      setSaveErrorDialog(message);
+      nudgeImportRequired();
+      return false;
     }
 
     const trimmedProjectName = project.name.trim();
     if (!trimmedProjectName) {
-      setStatus("Project name is required before Save can rename image files");
-      return;
+      const message = "Project name is required before Save can rename image files";
+      setStatus(message);
+      setSaveErrorDialog(message);
+      return false;
     }
 
     const missingNamingFields = [
@@ -1329,7 +2006,7 @@ export const App = () => {
 
       if (!shouldContinue) {
         setStatus("Save cancelled; file names unchanged");
-        return;
+        return false;
       }
     }
 
@@ -1347,51 +2024,64 @@ export const App = () => {
 
     setWorkspaceTask({
       kind: "save",
-      label: "Saving layered TIFFs...",
+      label: "Preparing save...",
       current: 0,
-      total: projectToSave.shots.length
+      total: 0
     });
 
-    const result = await (async () => {
-      try {
-        await persistWorkspace(projectToSave);
-        const renamePlan = createRenamePlan(projectToSave, {
-          allowDefaultNamingFields: missingNamingFields.length > 0
-        });
-        const renamedProject = applyRenamePlan(projectToSave, renamePlan);
-        try {
-          return await window.storyboard.saveWorkspace({
-            project: { ...renamedProject, updatedAt: new Date().toISOString() },
-            folderPath,
-            metadataPath,
-            renamePlan,
-            dirtyShotIds: [...dirtyShotIdsRef.current]
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          setStatus(formatSaveFailureStatus(message));
-          return undefined;
-        }
-      } finally {
-        setWorkspaceTask(undefined);
-      }
-    })();
+    try {
+      await persistWorkspace(projectToSave);
+      const renamePlan = createRenamePlan(projectToSave, {
+        allowDefaultNamingFields: missingNamingFields.length > 0
+      });
+      const renamedProject = applyRenamePlan(projectToSave, renamePlan);
+      const result = await window.storyboard.saveWorkspace({
+        project: { ...renamedProject, updatedAt: new Date().toISOString() },
+        folderPath,
+        metadataPath,
+        renamePlan,
+        dirtyShotIds: [...dirtyShotIdsRef.current]
+      });
 
-    if (!result) {
+      setProject(result.project);
+      setFolderPath(result.folderPath);
+      setFolderInputValue(result.folderPath);
+      setMetadataPath(result.metadataPath);
+      setWorkspaceSaveState("saved");
+      setFileNameSyncState("synced");
+      dirtyShotIdsRef.current = new Set();
+      workspaceSaveStateRef.current = "saved";
+      fileNameSyncStateRef.current = "synced";
+      setUndoStackSynced([]);
+      setRedoStackSynced([]);
+      setStatus("Saved and synced file names");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const saveFailureStatus = formatSaveFailureStatus(message);
+      setStatus(saveFailureStatus);
+      setSaveErrorDialog(saveFailureStatus);
+      return false;
+    } finally {
+      setWorkspaceTask(undefined);
+    }
+  };
+
+  useEffect(() => {
+    if (!window.storyboard) {
       return;
     }
 
-    setProject(result.project);
-    setFolderPath(result.folderPath);
-    setFolderInputValue(result.folderPath);
-    setMetadataPath(result.metadataPath);
-    setWorkspaceSaveState("saved");
-    setFileNameSyncState("synced");
-    dirtyShotIdsRef.current = new Set();
-    setUndoStack([]);
-    setRedoStack([]);
-    setStatus("Saved and synced file names");
-  };
+    return window.storyboard.onSaveAndCloseRequested(({ requestId }) => {
+      void (async () => {
+        const saved = await handleSaveProject();
+        await window.storyboard.finishSaveAndClose({ requestId, saved });
+        if (!saved) {
+          setStatus("Save and Close cancelled because Save did not complete");
+        }
+      })();
+    });
+  }, [handleSaveProject]);
 
   const handleAddShot = async () => {
     if (!window.storyboard) {
@@ -1446,7 +2136,8 @@ export const App = () => {
       label: needsImageImport ? "Importing workspace changes..." : "Importing storyboard script...",
       current: 0,
       total: needsImageImport
-        ? project.shots.filter((shot) => shot.swb?.status !== "owned").length || project.shots.length
+        ? [...project.shots, ...(project.parkedShots ?? [])].filter((shot) => shot.swb?.status !== "owned").length ||
+          project.shots.length
         : 1
     });
 
@@ -1459,7 +2150,8 @@ export const App = () => {
               project,
               folderPath,
               metadataPath,
-              blankShotPreset
+              blankShotPreset,
+              dirtyShotIds: [...dirtyShotIdsRef.current]
             }),
           setStatus
         );
@@ -1488,18 +2180,163 @@ export const App = () => {
     setEditingDialogueId(dialogueId);
   };
 
+  const handleCopyShot = async (sourceShotId: string, targetShotId?: string) => {
+    if (!window.storyboard || !folderPath) {
+      setStatus("Cannot copy storyboard: Electron preload API is unavailable");
+      return;
+    }
+
+    const currentProject = projectRef.current;
+    const sourceShot = currentProject.shots.find((shot) => shot.id === sourceShotId);
+    if (!sourceShot) {
+      return;
+    }
+
+    const copiedShotId = crypto.randomUUID();
+    const sourceLayers = bitmapLayersForShot(sourceShot);
+    const layerCopies = sourceLayers.map((layer) => ({
+      sourceBitmapPath: layer.bitmapPath,
+      targetBitmapPath: bitmapLayerPath(copiedShotId, layer.id)
+    }));
+    const copiedAssets = await withStatus(
+      "Copy storyboard failed",
+      () =>
+        window.storyboard.copyShotAssets({
+          folderPath,
+          sourceImagePath: sourceShot.imagePath,
+          fileName: sourceShot.fileName,
+          layerCopies
+        }),
+      setStatus
+    );
+
+    if (!copiedAssets) {
+      return;
+    }
+
+    const nextProject = duplicateShotAfter(currentProject, sourceShotId, targetShotId, {
+      shotId: copiedShotId,
+      imagePath: copiedAssets.imagePath,
+      fileName: copiedAssets.fileName,
+      previewPath: copiedAssets.previewPath
+    });
+    updateProject(nextProject);
+    markShotsDirty([copiedShotId]);
+    setSelectedShotIds([copiedShotId]);
+    setDeleteTarget({ type: "shot" });
+    setStatus("Storyboard copied");
+  };
+
+  const handleCopyDialogue = (dialogueId: string, targetShotId: string) => {
+    const dialogue = projectRef.current.dialogues.find((item) => item.id === dialogueId);
+    if (!dialogue) {
+      return;
+    }
+
+    const copiedDialogueId = crypto.randomUUID();
+    updateProject((currentProject) =>
+      copyDialogueToShot(currentProject, dialogueId, targetShotId, copiedDialogueId)
+    );
+    setEditingDialogueId(copiedDialogueId);
+    setStatus("Dialogue copied");
+  };
+
+  const handleCopyBitmapLayerToShot = async (
+    sourceShotId: string,
+    layerId: string,
+    targetShotId: string,
+    placementLayerId?: string,
+    placement?: "before" | "after"
+  ) => {
+    if (!window.storyboard || !folderPath) {
+      setStatus("Cannot copy layer: Electron preload API is unavailable");
+      return;
+    }
+
+    const sourceShot = projectRef.current.shots.find((shot) => shot.id === sourceShotId);
+    const sourceLayer = sourceShot
+      ? bitmapLayersForShot(sourceShot).find((layer) => layer.id === layerId)
+      : undefined;
+    const targetShot = projectRef.current.shots.find((shot) => shot.id === targetShotId);
+    if (!sourceLayer || !targetShot) {
+      return;
+    }
+
+    const copiedLayerId = `layer-${crypto.randomUUID()}`;
+    const targetBitmapPath = bitmapLayerPath(targetShotId, copiedLayerId);
+    const undoEntry = await createHistoryEntry([targetBitmapPath]);
+    const copied = await withStatus(
+      "Copy layer failed",
+      () =>
+        window.storyboard.copyLayerPng({
+          folderPath,
+          sourceBitmapPath: sourceLayer.bitmapPath,
+          targetBitmapPath
+        }),
+      setStatus
+    );
+
+    if (!copied) {
+      return;
+    }
+
+    recordUndoEntry(undoEntry);
+    markShotsDirty([targetShotId]);
+    updateProject(
+      (currentProject) =>
+        copyBitmapLayerToShot(
+          currentProject,
+          sourceShotId,
+          layerId,
+          targetShotId,
+          copiedLayerId,
+          placementLayerId,
+          placement
+        ),
+      false
+    );
+    setSelectedShotIds([targetShotId]);
+    setDeleteTarget({ type: "layer", shotId: targetShotId, layerId: copiedLayerId });
+    setStatus(`Copied layer "${sourceLayer.name}"`);
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     const data = event.active.data.current as DragData | undefined;
+    const isCopyDrag = isCopyModifierEvent(event.activatorEvent);
+
+    if (isCopyDrag && (data?.type === "shot" || data?.type === "dialogue")) {
+      setCopyDrag(data);
+      copyDragRef.current = data;
+      setStatus(data.type === "shot" ? "Copy storyboard" : "Copy dialogue");
+    } else {
+      setCopyDrag(undefined);
+      copyDragRef.current = undefined;
+    }
 
     if (data?.type === "shot") {
-      const movingShotIds = selectedShotIdsRef.current.includes(data.shotId)
+      const movingShotIds = isCopyDrag
+        ? [data.shotId]
+        : selectedShotIdsRef.current.includes(data.shotId)
         ? selectedShotIdsRef.current
         : [data.shotId];
       setActiveShotIds(movingShotIds);
+      setDragPreviewShotIds(
+        chooseDragPreviewShotIds({
+          activeShotId: data.shotId,
+          selectedShotIds: selectedShotIdsRef.current,
+          orderedShotIds: orderedShots.map((shot) => shot.id),
+          isCopyDrag
+        })
+      );
 
       if (!selectedShotIdsRef.current.includes(data.shotId)) {
         setSelectedShotIds([data.shotId]);
       }
+    }
+
+    if (data?.type === "parked-shot") {
+      setActiveParkedShotIds([data.shotId]);
+      setIsParkingShelfOpen(true);
     }
 
     if (data?.type === "dialogue") {
@@ -1507,14 +2344,102 @@ export const App = () => {
     }
   };
 
+  const handleDragCancel = () => {
+    setActiveDialogue(undefined);
+    setActiveShotIds([]);
+    setDragPreviewShotIds([]);
+    setCopyShotDropTargetId(undefined);
+    setActiveParkedShotIds([]);
+    setCopyDrag(undefined);
+    copyDragRef.current = undefined;
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    const activeData = event.active.data.current as DragData | undefined;
+    const overData = event.over?.data.current as DragData | undefined;
+    const activeCopyDrag = copyDragRef.current;
+
+    if (activeCopyDrag?.type !== "shot" || activeData?.type !== "shot") {
+      if (copyShotDropTargetId !== undefined) {
+        setCopyShotDropTargetId(undefined);
+      }
+      return;
+    }
+
+    const targetShotId =
+      overData?.type === "shot" || overData?.type === "drop-zone" ? overData.shotId : undefined;
+    setCopyShotDropTargetId(targetShotId);
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveDialogue(undefined);
     setActiveShotIds([]);
+    setDragPreviewShotIds([]);
+    setActiveParkedShotIds([]);
 
     const activeData = event.active.data.current as DragData | undefined;
     const overData = event.over?.data.current as DragData | undefined;
+    const activeCopyDrag = copyDragRef.current;
+    const copyTargetShotId = copyShotDropTargetId;
+    setCopyShotDropTargetId(undefined);
+    setCopyDrag(undefined);
+    copyDragRef.current = undefined;
 
-    if (!activeData || !overData) {
+    if (!activeData) {
+      return;
+    }
+
+    if (activeCopyDrag?.type === "shot" && activeData.type === "shot") {
+      const targetShotId =
+        overData?.type === "shot" || overData?.type === "drop-zone"
+          ? overData.shotId
+          : copyTargetShotId;
+      void handleCopyShot(activeData.shotId, targetShotId);
+      return;
+    }
+
+    if (
+      activeCopyDrag?.type === "dialogue" &&
+      activeData.type === "dialogue" &&
+      (overData?.type === "shot" || overData?.type === "drop-zone")
+    ) {
+      handleCopyDialogue(activeData.dialogueId, overData.shotId);
+      return;
+    }
+
+    if (
+      activeData.type === "shot" &&
+      dragEndInsideSelector(event, ".parking-shelf.is-open", lastPointerPositionRef.current)
+    ) {
+      const movingShotIds = selectedShotIdsRef.current.includes(activeData.shotId)
+        ? selectedShotIdsRef.current
+        : [activeData.shotId];
+      const nextProject = parkShotGroup(projectRef.current, movingShotIds);
+      updateProject(nextProject);
+      const nextSelectedShot = sortedShots(nextProject.shots)[0];
+      setSelectedShotIds(nextSelectedShot ? [nextSelectedShot.id] : []);
+      setDeleteTarget({ type: "shot" });
+      setStatus(`${movingShotIds.length} storyboard${movingShotIds.length === 1 ? "" : "s"} moved to pending`);
+      return;
+    }
+
+    if (!overData) {
+      return;
+    }
+
+    if (
+      activeData.type === "shot" &&
+      (overData.type === "parking-zone" || overData.type === "parked-shot")
+    ) {
+      const movingShotIds = selectedShotIdsRef.current.includes(activeData.shotId)
+        ? selectedShotIdsRef.current
+        : [activeData.shotId];
+      const nextProject = parkShotGroup(projectRef.current, movingShotIds);
+      updateProject(nextProject);
+      const nextSelectedShot = sortedShots(nextProject.shots)[0];
+      setSelectedShotIds(nextSelectedShot ? [nextSelectedShot.id] : []);
+      setDeleteTarget({ type: "shot" });
+      setStatus(`${movingShotIds.length} storyboard${movingShotIds.length === 1 ? "" : "s"} moved to pending`);
       return;
     }
 
@@ -1523,15 +2448,26 @@ export const App = () => {
         ? selectedShotIdsRef.current
         : [activeData.shotId];
       const targetShotId = overData.shotId;
-      const placement = inferShotPlacement(project, movingShotIds, targetShotId, activeData.shotId);
+      const currentProject = projectRef.current;
+      const placement = inferShotPlacement(currentProject, movingShotIds, targetShotId, activeData.shotId);
       const nextProject =
         movingShotIds.length > 1
-          ? reorderShotGroup(project, movingShotIds, targetShotId, placement)
-          : reorderShots(project, activeData.shotId, targetShotId, placement);
+          ? reorderShotGroup(currentProject, movingShotIds, targetShotId, placement)
+          : reorderShots(currentProject, activeData.shotId, targetShotId, placement);
       updateProject(nextProject);
     }
 
-    if (activeData.type === "dialogue") {
+    if (activeData.type === "parked-shot" && (overData.type === "shot" || overData.type === "drop-zone")) {
+      const targetShotId = overData.shotId;
+      const placement = inferDropPlacementFromDragEnd(event);
+      const nextProject = restoreParkedShotGroup(projectRef.current, [activeData.shotId], targetShotId, placement);
+      updateProject(nextProject);
+      setSelectedShotIds([activeData.shotId]);
+      setDeleteTarget({ type: "shot" });
+      setStatus("Storyboard restored from pending");
+    }
+
+    if (activeData.type === "dialogue" && (overData.type === "shot" || overData.type === "drop-zone")) {
       const targetShotId = overData.type === "drop-zone" ? overData.shotId : overData.shotId;
 
       if (targetShotId && targetShotId !== activeData.shotId) {
@@ -1546,6 +2482,9 @@ export const App = () => {
     if (!isKeyboardEditableTarget(event.target)) {
       blurActiveFormControl();
     }
+
+    setDeleteTarget({ type: "shot" });
+    setSelectedBitmapLayerIds(undefined);
 
     if (event.shiftKey || event.metaKey) {
       setSelectedShotIds((current) =>
@@ -1569,6 +2508,7 @@ export const App = () => {
       scrollY: window.scrollY
     });
     setSelectionBox(nextBox);
+    setDeleteTarget({ type: "shot" });
     setSelectedShotIds([]);
     let latestPointer = { clientX: event.clientX, clientY: event.clientY };
     let scrollFrame: number | undefined;
@@ -1626,6 +2566,11 @@ export const App = () => {
     }
 
     event.preventDefault();
+    if (activeSketchTool === "select") {
+      setSketchSettingsMenu(undefined);
+      return;
+    }
+
     const menuWidth = 236;
     const menuHeight = 136;
     const margin = 12;
@@ -1718,13 +2663,20 @@ export const App = () => {
   return (
     <main
       ref={appShellRef}
-      className={`app-shell ${isAnimationMode ? "is-animation-mode" : ""}`}
+      className={[
+        "app-shell",
+        isAnimationMode ? "is-animation-mode" : "",
+        isParkingShelfOpen ? "has-parking-shelf-open" : ""
+      ].filter(Boolean).join(" ")}
       onContextMenu={openSketchSettingsMenu}
+      onDragOver={handleStoryboardScriptDragOver}
+      onDrop={(event) => void handleStoryboardScriptDrop(event)}
     >
       <header className="topbar">
         <div className="import-control" ref={importHelpRef}>
           <button
             type="button"
+            className={isImportNudging ? "import-button is-nudging" : "import-button"}
             onClick={() => void handleImportSwbFormat()}
             disabled={!needsSwbImport || isWorkspaceTaskRunning}
             title="Import image or storyboard-script.md changes into Storyboard Workbench"
@@ -1734,7 +2686,7 @@ export const App = () => {
           {hasSwbWarning ? (
             <button
               type="button"
-              className="import-warning"
+              className={isImportNudging ? "import-warning is-nudging" : "import-warning"}
               aria-label="Import explanation"
               aria-expanded={isImportHelpOpen}
               onClick={() => setIsImportHelpOpen((isOpen) => !isOpen)}
@@ -1763,6 +2715,71 @@ export const App = () => {
               </p>
             </div>
           ) : null}
+          <div className="save-menu-container" ref={saveMenuRef}>
+            <div className="save-split-button">
+              <button
+                type="button"
+                className="primary save-main-button"
+                disabled={isWorkspaceTaskRunning || isImportLocked}
+                onClick={() => {
+                  setIsSaveMenuOpen(false);
+                  void handleSaveProject();
+                }}
+              >
+                {workspaceTask?.kind === "save" ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                className="primary save-menu-toggle"
+                aria-label="Save naming options"
+                aria-expanded={isSaveMenuOpen}
+                disabled={isWorkspaceTaskRunning || isImportLocked}
+                onClick={() => setIsSaveMenuOpen((isOpen) => !isOpen)}
+              >
+                <span className="save-caret" aria-hidden="true" />
+              </button>
+            </div>
+            {isSaveMenuOpen ? (
+              <div className="save-menu" aria-label="Save naming options">
+                <label className="save-menu-field">
+                  <span>Project</span>
+                  <input
+                    aria-label="Project name"
+                    value={project.name}
+                    onChange={(event) => updateProjectName(event.target.value)}
+                    placeholder="Untitled Storyboard"
+                  />
+                </label>
+                <label className="save-menu-field">
+                  <span>Scene</span>
+                  <input
+                    aria-label="Scene code"
+                    value={project.naming?.sceneCode ?? ""}
+                    onChange={(event) => updateProjectNaming("sceneCode", event.target.value)}
+                    placeholder="scene"
+                  />
+                </label>
+                <label className="save-menu-field">
+                  <span>Artist</span>
+                  <input
+                    aria-label="Artist name"
+                    value={project.naming?.artistName ?? ""}
+                    onChange={(event) => updateProjectNaming("artistName", event.target.value)}
+                    placeholder="artist"
+                  />
+                </label>
+                <label className="save-menu-field">
+                  <span>Version</span>
+                  <input
+                    aria-label="Version"
+                    value={project.naming?.version ?? ""}
+                    onChange={(event) => updateProjectNaming("version", event.target.value)}
+                    placeholder="v001"
+                  />
+                </label>
+              </div>
+            ) : null}
+          </div>
         </div>
         <div className="address-bar-container" ref={recentMenuRef}>
           <div className="address-bar">
@@ -1816,7 +2833,12 @@ export const App = () => {
               <button
                 type="button"
                 className="add-shot-main-button"
+                disabled={isImportLocked}
                 onClick={() => {
+                  if (isImportLocked) {
+                    nudgeImportRequired();
+                    return;
+                  }
                   setIsAddShotMenuOpen(false);
                   void handleAddShot();
                 }}
@@ -1828,6 +2850,7 @@ export const App = () => {
                 className="add-shot-menu-toggle"
                 aria-label="Add shot aspect ratio"
                 aria-expanded={isAddShotMenuOpen}
+                disabled={isImportLocked}
                 onClick={() => setIsAddShotMenuOpen((isOpen) => !isOpen)}
               >
                 <span className="add-shot-caret" aria-hidden="true" />
@@ -1852,71 +2875,16 @@ export const App = () => {
               </div>
             ) : null}
           </div>
-          <div className="save-menu-container" ref={saveMenuRef}>
-            <div className="save-split-button">
-              <button
-                type="button"
-                className="primary save-main-button"
-                disabled={isWorkspaceTaskRunning}
-                onClick={() => {
-                  setIsSaveMenuOpen(false);
-                  void handleSaveProject();
-                }}
-              >
-                {workspaceTask?.kind === "save" ? "Saving..." : "Save"}
-              </button>
-              <button
-                type="button"
-                className="primary save-menu-toggle"
-                aria-label="Save naming options"
-                aria-expanded={isSaveMenuOpen}
-                disabled={isWorkspaceTaskRunning}
-                onClick={() => setIsSaveMenuOpen((isOpen) => !isOpen)}
-              >
-                <span className="save-caret" aria-hidden="true" />
-              </button>
-            </div>
-            {isSaveMenuOpen ? (
-              <div className="save-menu" aria-label="Save naming options">
-                <label className="save-menu-field">
-                  <span>Project</span>
-                  <input
-                    aria-label="Project name"
-                    value={project.name}
-                    onChange={(event) => updateProjectName(event.target.value)}
-                    placeholder="Untitled Storyboard"
-                  />
-                </label>
-                <label className="save-menu-field">
-                  <span>Scene</span>
-                  <input
-                    aria-label="Scene code"
-                    value={project.naming?.sceneCode ?? ""}
-                    onChange={(event) => updateProjectNaming("sceneCode", event.target.value)}
-                    placeholder="scene"
-                  />
-                </label>
-                <label className="save-menu-field">
-                  <span>Artist</span>
-                  <input
-                    aria-label="Artist name"
-                    value={project.naming?.artistName ?? ""}
-                    onChange={(event) => updateProjectNaming("artistName", event.target.value)}
-                    placeholder="artist"
-                  />
-                </label>
-                <label className="save-menu-field">
-                  <span>Version</span>
-                  <input
-                    aria-label="Version"
-                    value={project.naming?.version ?? ""}
-                    onChange={(event) => updateProjectNaming("version", event.target.value)}
-                    placeholder="v001"
-                  />
-                </label>
-              </div>
-            ) : null}
-          </div>
+          <button
+            type="button"
+            className={`pending-shelf-toggle ${isParkingShelfOpen ? "selected" : ""}`}
+            aria-label="Toggle pending sidebar"
+            aria-expanded={isParkingShelfOpen}
+            title="Pending sidebar"
+            onClick={() => setIsParkingShelfOpen((isOpen) => !isOpen)}
+          >
+            <SidePanelIcon />
+          </button>
         </div>
       </header>
 
@@ -1925,12 +2893,88 @@ export const App = () => {
           <div className="workspace-task-progress-copy">
             <span>{workspaceTask.label}</span>
             <span>
-              {workspaceTask.current} / {workspaceTask.total} shots
+              {workspaceTask.current} / {workspaceTask.total}{" "}
+              {workspaceTask.kind === "open" ? "images" : "shots"}
             </span>
           </div>
           <div className="workspace-task-progress-track" aria-hidden="true">
             <div className="workspace-task-progress-line" />
           </div>
+        </div>
+      ) : null}
+
+      {saveErrorDialog ? (
+        <div className="save-error-modal-backdrop" role="presentation">
+          <section
+            className="save-error-modal"
+            role="alertdialog"
+            aria-label="Save failed"
+            aria-modal="true"
+          >
+            <header>
+              <strong>Save failed</strong>
+            </header>
+            <p>{saveErrorDialog}</p>
+            <div className="save-error-actions">
+              <button
+                type="button"
+                className="primary"
+                autoFocus
+                onClick={() => setSaveErrorDialog(undefined)}
+              >
+                OK
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {storyboardScriptImportDraft ? (
+        <div className="script-import-modal-backdrop" role="presentation">
+          <section
+            className="script-import-modal"
+            role="dialog"
+            aria-label="Create storyboard from Markdown"
+          >
+            <header>
+              <strong>导入文字分镜脚本？</strong>
+              <button
+                type="button"
+                aria-label="Cancel storyboard script import"
+                onClick={() => setStoryboardScriptImportDraft(undefined)}
+              >
+                x
+              </button>
+            </header>
+            <p>
+              {storyboardScriptImportDraft.fileName} 里有 {storyboardScriptImportDraft.entryCount} 个镜头条目。
+            </p>
+            <label className="script-import-target">
+              <span>目标文件夹</span>
+              <input
+                aria-label="Storyboard script target folder"
+                value={storyboardScriptImportDraft.targetFolderPath}
+                readOnly
+                placeholder="选择一个空文件夹"
+              />
+            </label>
+            <div className="script-import-actions">
+              <button
+                type="button"
+                onClick={() => void handleSelectStoryboardScriptTargetFolder()}
+              >
+                Choose Folder
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={!storyboardScriptImportDraft.targetFolderPath || isWorkspaceTaskRunning}
+                onClick={() => void handleCreateProjectFromStoryboardScript()}
+              >
+                Create Storyboard
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
 
@@ -2101,39 +3145,21 @@ export const App = () => {
                   onChange={(value) => setEraserOpacity(value / 100)}
                 />
               </>
-            ) : (
-              <div className="selection-mode-menu" aria-label="Selection mode">
-                <button
-                  type="button"
-                  className={selectionMode === "lasso" ? "is-selected" : ""}
-                  onClick={() => {
-                    setSelectionMode("lasso");
-                    setSketchSettingsMenu(undefined);
-                  }}
-                >
-                  Lasso
-                </button>
-                <button
-                  type="button"
-                  className={selectionMode === "rectangle" ? "is-selected" : ""}
-                  onClick={() => {
-                    setSelectionMode("rectangle");
-                    setSketchSettingsMenu(undefined);
-                  }}
-                >
-                  Rectangle
-                </button>
-              </div>
-            )}
+            ) : null}
           </div>
         ) : null}
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
         >
-          <SortableContext items={renderedShotEntries.map(({ shot }) => shot.id)} strategy={rectSortingStrategy}>
+          <SortableContext
+            items={renderedShotEntries.map(({ shot }) => shot.id)}
+            strategy={rectSortingStrategy}
+          >
             <section
               ref={boardGridRef}
               className="board-grid"
@@ -2158,8 +3184,8 @@ export const App = () => {
                   isSelected={selectedShotIds.length > 1 && selectedShotIds.includes(shot.id)}
                   isPrimarySelected={shot.id === primarySelectedShotId}
                   isAnimationFocused={isAnimationMode && shot.id === primarySelectedShotId}
+                  isCopyDraggingSource={copyDrag?.type === "shot" && copyDrag.shotId === shot.id}
                   activeSketchTool={activeSketchTool}
-                  selectionMode={selectionMode}
                   brushColor={brushColor}
                   brushOpacity={brushOpacity}
                   brushSize={brushSize}
@@ -2176,79 +3202,153 @@ export const App = () => {
                       ? onionSkinNeighbors.next
                       : undefined
                   }
-                  editingDialogueId={editingDialogueId}
-                  onSelect={(event) => handleShotSelect(shot.id, event)}
-                  onFocusShot={() => setSelectedShotIds([shot.id])}
-                  isLayerPanelOpen={isLayerPanelOpen && shot.id === primarySelectedShotId}
-                  thumbnailRevision={autosaveRevision}
-                  onToggleLayerPanel={() => {
+                    editingDialogueId={editingDialogueId}
+                    onSelect={(event) => handleShotSelect(shot.id, event)}
+                  onFocusShot={() => {
                     setSelectedShotIds([shot.id]);
-                    setIsLayerPanelOpen((isOpen) => (shot.id === primarySelectedShotId ? !isOpen : true));
+                    setDeleteTarget({ type: "shot" });
+                    setSelectedBitmapLayerIds(undefined);
                   }}
-                  onAddLayer={(shotId) => void handleAddBitmapLayer(shotId)}
-                  onRemoveLayer={(shotId, layerId) =>
-                    void handleRemoveBitmapLayer(shotId, layerId)
-                  }
-                  onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
-                  onSelectLayer={(shotId, layerId) =>
-                    updateProject((currentProject) => selectBitmapLayer(currentProject, shotId, layerId), false, false)
-                  }
-                  onUpdateLayer={(shotId, layerId, patch) => {
-                    markShotsDirty([shotId]);
-                    updateProject(
-                      (currentProject) => updateBitmapLayer(currentProject, shotId, layerId, patch),
-                      false
-                    );
-                  }}
-                  onMoveLayer={(shotId, layerId, targetLayerId, placement) => {
-                    markShotsDirty([shotId]);
-                    updateProject(
-                      (currentProject) =>
-                        moveBitmapLayer(currentProject, shotId, layerId, targetLayerId, placement),
-                      false
-                    );
-                  }}
-                  onCreateDialogue={handleCreateDialogue}
-                  onDialogueText={(dialogueId, text) =>
-                    updateProject((currentProject) =>
-                      updateDialogueText(currentProject, dialogueId, text)
-                    )
-                  }
-                  onDialogueBlur={(dialogue) => {
-                    if (!dialogue.text.trim()) {
-                      updateProject((currentProject) =>
-                        removeDialogue(currentProject, dialogue.id)
-                      );
+                    isLayerPanelOpen={isLayerPanelOpen && shot.id === primarySelectedShotId}
+                    thumbnailRevision={autosaveRevision}
+                    onToggleLayerPanel={() => {
+                      setSelectedShotIds([shot.id]);
+                      setDeleteTarget({ type: "shot" });
+                      setSelectedBitmapLayerIds(undefined);
+                      setIsLayerPanelOpen((isOpen) => (shot.id === primarySelectedShotId ? !isOpen : true));
+                    }}
+                    onAddLayer={(shotId) => void handleAddBitmapLayer(shotId)}
+                    onRemoveLayer={(shotId, layerId) =>
+                      void handleRemoveBitmapLayer(shotId, layerId)
                     }
-                    setEditingDialogueId(undefined);
-                  }}
-                  onScriptText={(shotId, scriptText) => handleShotScriptText(shotId, scriptText)}
-                  onSketchStroke={(layerId, stroke) => handleBitmapStroke(shot, layerId, stroke)}
-                  onSelectionTransform={(layerId, dataUrl) =>
-                    handleBitmapSelectionTransform(shot, layerId, dataUrl)
-                  }
-                />
+                    onMergeLayers={(shotId, layerId, selectedLayerIds) =>
+                      void handleMergeBitmapLayers(shotId, layerId, selectedLayerIds)
+                    }
+                    onMergeVisibleLayers={(shotId) => void handleMergeVisibleBitmapLayers(shotId)}
+                    onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
+                    onSelectLayer={(shotId, layerId) => {
+                      setDeleteTarget({ type: "layer", shotId, layerId });
+                      updateProject((currentProject) => selectBitmapLayer(currentProject, shotId, layerId), false, false);
+                    }}
+                    onUpdateLayer={(shotId, layerId, patch) => {
+                      markShotsDirty([shotId]);
+                      updateProject(
+                        (currentProject) => updateBitmapLayer(currentProject, shotId, layerId, patch),
+                        false
+                      );
+                    }}
+                    onMoveLayer={(shotId, layerId, targetLayerId, placement) => {
+                      markShotsDirty([shotId]);
+                      updateProject(
+                        (currentProject) =>
+                          moveBitmapLayer(currentProject, shotId, layerId, targetLayerId, placement),
+                        false
+                      );
+                    }}
+                    onMoveLayerGroup={(shotId, layerIds, targetLayerId, placement) => {
+                      markShotsDirty([shotId]);
+                      updateProject(
+                        (currentProject) =>
+                          moveBitmapLayerGroup(currentProject, shotId, layerIds, targetLayerId, placement),
+                        false
+                      );
+                    }}
+                    onSelectedLayerIdsChange={handleSelectedBitmapLayerIdsChange}
+                    onCopyLayerToShot={(shotId, layerId, targetShotId, targetLayerId, placement) =>
+                      void handleCopyBitmapLayerToShot(shotId, layerId, targetShotId, targetLayerId, placement)
+                    }
+                    onUpdateLayerGroupOpacity={(shotId, layerIds, deltaOpacity, initialOpacityByLayerId) => {
+                      markShotsDirty([shotId]);
+                      updateProject(
+                        (currentProject) =>
+                          updateBitmapLayerGroupOpacity(
+                            currentProject,
+                            shotId,
+                            layerIds,
+                            deltaOpacity,
+                            initialOpacityByLayerId
+                          ),
+                        false
+                      );
+                    }}
+                    onCreateDialogue={handleCreateDialogue}
+                    onDialogueText={(dialogueId, text) =>
+                      updateProject((currentProject) =>
+                        updateDialogueText(currentProject, dialogueId, text)
+                      )
+                    }
+                    onDialogueBlur={(dialogue) => {
+                      if (!dialogue.text.trim()) {
+                        updateProject((currentProject) =>
+                          removeDialogue(currentProject, dialogue.id)
+                        );
+                      }
+                      setEditingDialogueId(undefined);
+                    }}
+                    onScriptText={(shotId, scriptText) => handleShotScriptText(shotId, scriptText)}
+                    onSketchStroke={(layerId, stroke, renderedDataUrl, pendingStrokes) =>
+                      handleBitmapStroke(shot, layerId, stroke, renderedDataUrl, pendingStrokes)
+                    }
+                    onSelectionTransform={(layerId, dataUrl) =>
+                      handleBitmapSelectionTransform(shot, layerId, dataUrl)
+                    }
+                  />
               ))}
               {selectionBox ? <SelectionMarquee box={selectionBox} /> : null}
             </section>
           </SortableContext>
+          <SortableContext items={parkedShots.map((shot) => `parked-${shot.id}`)} strategy={rectSortingStrategy}>
+            <ParkingShelf
+              shots={parkedShots}
+              isOpen={isParkingShelfOpen}
+            />
+          </SortableContext>
 
           <DragOverlay>
+            {copyDrag && copyDrag.type !== "shot" ? (
+              <div className="copy-drag-badge">
+                {copyDrag.type === "dialogue" ? "Copy dialogue" : "Copy layer"}
+              </div>
+            ) : null}
             {activeDialogue ? <DialoguePreview dialogue={activeDialogue} /> : null}
-            {!activeDialogue && activeShotIds.length > 0 ? (
+            {!activeDialogue && dragPreviewShotIds.length > 0 ? (
               <ShotStackPreview
-                shots={orderedShots.filter((shot) => activeShotIds.includes(shot.id))}
+                shots={dragPreviewShotIds
+                  .map((shotId) => shotById.get(shotId))
+                  .filter((shot): shot is Shot => Boolean(shot))}
+                folderPath={folderPath}
+                variant={copyDrag?.type === "shot" ? "copy" : "move"}
+              />
+            ) : null}
+            {!activeDialogue && dragPreviewShotIds.length === 0 && activeParkedShotIds.length > 0 ? (
+              <ShotStackPreview
+                shots={parkedShots.filter((shot) => activeParkedShotIds.includes(shot.id))}
+                folderPath={folderPath}
               />
             ) : null}
           </DragOverlay>
         </DndContext>
+        {isImportLocked ? (
+          <button
+            type="button"
+            className="workspace-import-lock"
+            onClick={nudgeImportRequired}
+            aria-label="Import external changes before editing"
+          >
+            <span>Import external changes before editing</span>
+          </button>
+        ) : null}
       </div>
 
       {isAnimationMode && orderedShots.length > 0 ? (
         <Timeline
           shots={orderedShots}
           selectedShotIds={selectedShotIds}
-          onSelect={(shotId) => setSelectedShotIds([shotId])}
+          onSelect={(shotId) => {
+            setSelectedShotIds([shotId]);
+            setDeleteTarget({ type: "shot" });
+            setSelectedBitmapLayerIds(undefined);
+          }}
         />
       ) : null}
 
@@ -2277,6 +3377,7 @@ export const App = () => {
           <div className="status-panel" aria-label="Workspace status">
             <span>{status}</span>
             <span>{project.shots.length} shots</span>
+            <span>{parkedShots.length} pending</span>
             <span>Workspace {workspaceSaveState}</span>
             <span>File names {fileNameSyncState}</span>
             <span>{needsSwbImport ? "SWB import needed" : hasSwbWarning ? "SWB warning" : "SWB ready"}</span>
@@ -2346,6 +3447,81 @@ const inferShotPlacement = (
   return targetIndex > Math.max(...movingIndexes) ? "after" : "before";
 };
 
+const inferDropPlacementFromDragEnd = (event: DragEndEvent): ShotPlacement => {
+  const activeRect = event.active.rect.current.translated ?? event.active.rect.current.initial;
+  const overRect = event.over?.rect;
+
+  if (!activeRect || !overRect) {
+    return "after";
+  }
+
+  const activeCenterY = activeRect.top + activeRect.height / 2;
+  const overCenterY = overRect.top + overRect.height / 2;
+  return activeCenterY > overCenterY ? "after" : "before";
+};
+
+const dragEndInsideSelector = (
+  event: DragEndEvent,
+  selector: string,
+  pointerPosition?: { x: number; y: number }
+): boolean => {
+  const activeRect = event.active.rect.current.translated ?? event.active.rect.current.initial;
+  const target = document.querySelector<HTMLElement>(selector);
+  if ((!activeRect && !pointerPosition) || !target) {
+    return false;
+  }
+
+  const targetRect = target.getBoundingClientRect();
+  if (pointerPosition) {
+    const pointedElement = document.elementFromPoint(pointerPosition.x, pointerPosition.y);
+    if (pointedElement instanceof HTMLElement && pointedElement.closest(selector)) {
+      return true;
+    }
+  }
+
+  if (
+    activeRect &&
+    activeRect.right >= targetRect.left &&
+    activeRect.left <= targetRect.right &&
+    activeRect.bottom >= targetRect.top &&
+    activeRect.top <= targetRect.bottom
+  ) {
+    return true;
+  }
+
+  const point = pointerPosition ?? {
+    x: activeRect!.left + activeRect!.width / 2,
+    y: activeRect!.top + activeRect!.height / 2
+  };
+  return (
+    point.x >= targetRect.left &&
+    point.x <= targetRect.right &&
+    point.y >= targetRect.top &&
+    point.y <= targetRect.bottom
+  );
+};
+
+const hasOnlyCompatibleExternalEdits = (project: Project): boolean => {
+  let hasCompatibleEdit = false;
+  for (const shot of [...project.shots, ...(project.parkedShots ?? [])]) {
+    if (shot.swb?.status === "compatible-external-edit") {
+      hasCompatibleEdit = true;
+      continue;
+    }
+
+    if (shot.swb?.status === "non-swb" || shot.swb?.status === "incompatible-external-edit") {
+      return false;
+    }
+  }
+
+  return hasCompatibleEdit;
+};
+
+const hasDirtyCompatibleExternalEdit = (project: Project, dirtyShotIds: Set<string>): boolean =>
+  [...project.shots, ...(project.parkedShots ?? [])].some(
+    (shot) => shot.swb?.status === "compatible-external-edit" && dirtyShotIds.has(shot.id)
+  );
+
 const shotIdsInSelectionBox = (box: MarqueeBox): string[] => {
   const shots = Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id]"))
     .map((element) => {
@@ -2392,7 +3568,8 @@ const createTransparentLayerDataUrl = async (width: number, height: number): Pro
 const drawStrokeOnBitmapLayer = async (
   sourceUrl: string,
   layer: BitmapLayer,
-  stroke: SketchStroke
+  stroke: SketchStroke,
+  pendingStrokes: SketchStroke[] = []
 ): Promise<string> => {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(layer.width));
@@ -2405,8 +3582,10 @@ const drawStrokeOnBitmapLayer = async (
 
   await drawImageUrl(context, sourceUrl, canvas.width, canvas.height);
 
-  if (stroke.points.length >= 4) {
-    drawStrokePathOnCanvas(context, stroke);
+  for (const pendingStroke of [...pendingStrokes, stroke]) {
+    if (shouldDrawStrokeToBitmapLayer(pendingStroke)) {
+      drawStrokePathOnCanvas(context, pendingStroke);
+    }
   }
 
   return canvas.toDataURL("image/png");

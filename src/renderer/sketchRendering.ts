@@ -38,6 +38,14 @@ export const drawStrokePathOnCanvas = (
   context.lineJoin = "round";
   context.beginPath();
 
+  if (!segment && stroke.points.length === 2) {
+    context.fillStyle = stroke.color;
+    context.arc(stroke.points[0], stroke.points[1], stroke.size / 2, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+    return;
+  }
+
   if (segment) {
     context.moveTo(segment[0], segment[1]);
     context.lineTo(segment[2], segment[3]);
@@ -51,6 +59,9 @@ export const drawStrokePathOnCanvas = (
   context.stroke();
   context.restore();
 };
+
+export const shouldDrawStrokeToBitmapLayer = (stroke: Pick<SketchStroke, "points">): boolean =>
+  stroke.points.length >= 2;
 
 export const drawImageUrl = (
   context: CanvasRenderingContext2D,

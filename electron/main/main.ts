@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   net,
@@ -8,7 +9,8 @@ import {
   shell,
   type IpcMainInvokeEvent
 } from "electron";
-import { mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { watch, type FSWatcher } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -23,7 +25,10 @@ import {
   type AppliedFileReplacements
 } from "./fileRenames.js";
 import {
+  copyBitmapLayerFile,
+  flattenBitmapLayerBuffersToPng,
   flattenBitmapLayerBuffersToTiff,
+  mergeBitmapLayerFilesToPng,
   shouldEnsureLayerAssetsForShot,
   type BitmapLayerComposite
 } from "./bitmapLayers.js";
@@ -47,6 +52,8 @@ import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
 import { addRecentFolderPath, normalizeRecentFolders, removeRecentFolderPath } from "./recentFolders.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
+import { countSaveProgressShots, saveProgressShotIds } from "./saveProgress.js";
+import { previewIsFresh } from "./previewCache.js";
 import {
   applyStoryboardScriptImportPlan,
   parseStoryboardScriptMarkdown,
@@ -55,6 +62,19 @@ import {
   storyboardScriptFileName,
   storyboardScriptNeedsImport
 } from "./storyboardScript.js";
+import {
+  createProjectFromStoryboardScriptMarkdown,
+  inspectStoryboardScriptMarkdownFile
+} from "./storyboardScriptProject.js";
+import { knownImageHasExternalChange } from "./externalChanges.js";
+import {
+  shouldCloseAfterUnsavedChangesPrompt,
+  shouldSaveBeforeClose
+} from "./closePrompt.js";
+import {
+  isWorkspaceTemporaryImagePath,
+  workspaceCopyTemporaryFileName
+} from "./workspaceTemporaryPaths.js";
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
@@ -66,7 +86,8 @@ const blankShotPresets = {
 } as const;
 type BlankShotPreset = keyof typeof blankShotPresets;
 type WorkspaceTaskProgress = {
-  kind: "save" | "import";
+  kind: "save" | "import" | "open";
+  label?: string;
   current: number;
   total: number;
 };
@@ -150,6 +171,7 @@ type Project = {
     };
     importWarnings?: string[];
   }>;
+  parkedShots?: Project["shots"];
   dialogues: Array<{
     id: string;
     shotId: string;
@@ -177,6 +199,53 @@ type LayerAssetPayload = {
 
 type WriteLayerAssetPayload = LayerAssetPayload & {
   dataUrl: string;
+};
+
+type CreateProjectFromStoryboardScriptPayload = {
+  sourceMarkdownPath: string;
+  targetFolderPath: string;
+  blankShotPreset: BlankShotPreset;
+};
+
+type MergeLayerDownPayload = {
+  folderPath: string;
+  sourceBitmapPath: string;
+  targetBitmapPath: string;
+  width: number;
+  height: number;
+  sourceOpacity: number;
+  sourceBlendMode: "normal" | "multiply" | "screen";
+  targetOpacity: number;
+  targetBlendMode: "normal" | "multiply" | "screen";
+};
+
+type MergeVisibleLayersPayload = {
+  folderPath: string;
+  targetBitmapPath: string;
+  width: number;
+  height: number;
+  layers: Array<{
+    bitmapPath: string;
+    opacity: number;
+    blendMode: "normal" | "multiply" | "screen";
+  }>;
+  deleteBitmapPaths: string[];
+};
+
+type CopyLayerPngPayload = {
+  folderPath: string;
+  sourceBitmapPath: string;
+  targetBitmapPath: string;
+};
+
+type CopyShotAssetsPayload = {
+  folderPath: string;
+  sourceImagePath: string;
+  fileName: string;
+  layerCopies: Array<{
+    sourceBitmapPath: string;
+    targetBitmapPath: string;
+  }>;
 };
 
 type KeyboardShortcuts = Record<string, string>;
@@ -243,6 +312,7 @@ type RenamePlanItem = {
 type SwbImportResult = {
   project: Project;
   importedShotIds: string[];
+  tiffWriteShotIds: string[];
   rollback: () => Promise<void>;
 };
 
@@ -250,6 +320,11 @@ type StoryboardScriptImportResult = {
   project: Project;
   rollback: () => Promise<void>;
 };
+
+const workspaceWatchers = new Map<number, FSWatcher>();
+let nextWorkspaceWatcherId = 1;
+const saveAndCloseRequests = new Map<string, BrowserWindow>();
+const closeGuardWebContentsIds = new Set<number>();
 
 const supportedExtensions = new Set([".png", ".jpg", ".jpeg", ".tif", ".tiff"]);
 let mainWindow: BrowserWindow | undefined;
@@ -294,6 +369,37 @@ const createWindow = async () => {
     console.error(`[preload-error] ${preloadPath}: ${error.message}`);
   });
 
+  mainWindow.on("close", (event) => {
+    const owner = mainWindow;
+    if (!owner || !closeGuardWebContentsIds.has(owner.webContents.id)) {
+      return;
+    }
+
+    event.preventDefault();
+    const options: Electron.MessageBoxSyncOptions = {
+      type: "warning",
+      buttons: ["Save and Close", "Close Without Saving", "Cancel"],
+      defaultId: 0,
+      cancelId: 2,
+      message: "Close without saving?",
+      detail: "Storyboard Workbench has unsaved changes. Save before closing to sync your edits back to the folder."
+    };
+    const buttonIndex = owner
+      ? dialog.showMessageBoxSync(owner, options)
+      : dialog.showMessageBoxSync(options);
+
+    if (shouldSaveBeforeClose(buttonIndex)) {
+      const requestId = randomUUID();
+      saveAndCloseRequests.set(requestId, owner);
+      owner.webContents.send("app:saveAndClose", { requestId });
+      return;
+    }
+
+    if (shouldCloseAfterUnsavedChangesPrompt(buttonIndex)) {
+      owner.destroy();
+    }
+  });
+
   if (process.env.VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
@@ -325,21 +431,69 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  for (const watcher of workspaceWatchers.values()) {
+    watcher.close();
+  }
+  workspaceWatchers.clear();
   if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
 const registerIpcHandlers = () => {
-  ipcMain.handle("workspace:openFolderByPath", async (_event, folderPath: string) => {
+  ipcMain.handle("workspace:openFolderByPath", async (event, folderPath: string) => {
     if (!(await pathExists(folderPath))) {
       await removeRecentFolder(folderPath);
       throw new Error(`Folder does not exist: ${folderPath}`);
     }
 
-    const scan = await scanFolder(folderPath);
+    const scan = await scanFolder(folderPath, workspaceTaskProgressReporter(event, "open"));
     await addRecentFolder(scan.folderPath);
     return scan;
+  });
+
+  ipcMain.handle("dialog:selectFolder", async (event) => {
+    const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const options: Electron.OpenDialogOptions = {
+      properties: ["openDirectory", "createDirectory"]
+    };
+    const result = owner
+      ? await dialog.showOpenDialog(owner, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? undefined : result.filePaths[0];
+  });
+
+  ipcMain.handle("workspace:inspectStoryboardScript", async (_event, sourceMarkdownPath: string) => {
+    return inspectStoryboardScriptMarkdownFile(sourceMarkdownPath);
+  });
+
+  ipcMain.handle(
+    "workspace:createFromStoryboardScript",
+    async (_event, payload: CreateProjectFromStoryboardScriptPayload) => {
+      const scan = await createProjectFromStoryboardScriptMarkdown(payload);
+      await addRecentFolder(scan.folderPath);
+      return scan;
+    }
+  );
+
+  ipcMain.handle(
+    "app:finishSaveAndClose",
+    (_event, payload: { requestId: string; saved: boolean }) => {
+      const windowToClose = saveAndCloseRequests.get(payload.requestId);
+      saveAndCloseRequests.delete(payload.requestId);
+      if (payload.saved) {
+        windowToClose?.destroy();
+      }
+    }
+  );
+
+  ipcMain.handle("app:updateCloseGuard", (event, payload: { hasUnsavedChanges: boolean }) => {
+    if (payload.hasUnsavedChanges) {
+      closeGuardWebContentsIds.add(event.sender.id);
+      return;
+    }
+
+    closeGuardWebContentsIds.delete(event.sender.id);
   });
 
   ipcMain.handle("workspace:autosave", async (_event, payload: ProjectPayload) => {
@@ -390,11 +544,15 @@ const registerIpcHandlers = () => {
       swbImport = await importProjectToSwbFormat(
         scriptImport.project,
         payload.folderPath,
-        workspaceTaskProgressReporter(event, "import")
+        workspaceTaskProgressReporter(event, "import"),
+        { dirtyShotIds: new Set(payload.dirtyShotIds ?? []) }
       );
-      await writeSwbMetadataToTiffs(swbImport.project, payload.folderPath, undefined, {
-        shotIds: new Set(swbImport.importedShotIds)
-      });
+      await writeSwbMetadataToTiffs(
+        swbImport.project,
+        payload.folderPath,
+        undefined,
+        { shotIds: new Set(swbImport.tiffWriteShotIds) }
+      );
       const importedProject = await createProjectPreviewsForShots(
         swbImport.project,
         payload.folderPath,
@@ -423,20 +581,72 @@ const registerIpcHandlers = () => {
     };
   });
 
-  ipcMain.handle("workspace:checkExternalChanges", async (_event, payload: ProjectPayload) => {
+  ipcMain.handle("workspace:checkExternalChanges", async (event, payload: ProjectPayload) => {
+    const reportProgress = workspaceTaskProgressReporter(event, "open");
     const previewRoot = previewRootForFolder(payload.folderPath);
+    reportProgress({ kind: "open", label: "Scanning folder...", current: 0, total: 0 });
     const imagePaths = await collectImagePaths([payload.folderPath]);
-    const existingPaths = new Set(payload.project.shots.map((shot) => shot.imagePath));
+    reportProgress({
+      kind: "open",
+      label: "Checking external changes...",
+      current: 0,
+      total: imagePaths.length
+    });
+    const parkedShots =
+      "parkedShots" in payload.project
+        ? (payload.project.parkedShots as Project["shots"] | undefined)
+        : undefined;
+    const existingPaths = new Set([
+      ...payload.project.shots.map((shot) => shot.imagePath),
+      ...(parkedShots ?? []).map((shot) => shot.imagePath)
+    ]);
     const pendingDeletedPaths = new Set(
       (payload.project.pendingDeletedShots ?? []).map((shot) => shot.imagePath)
     );
     const newImagePaths = imagePaths.filter(
       (imagePath) => !existingPaths.has(imagePath) && !pendingDeletedPaths.has(imagePath)
     );
+    const knownChangedImagePaths = await changedKnownImagePaths(
+      payload.project,
+      imagePaths,
+      pendingDeletedPaths,
+      reportProgress
+    );
     return {
-      images: await createImageRecords(newImagePaths, previewRoot),
+      images: await createImageRecords([...newImagePaths, ...knownChangedImagePaths], previewRoot, {
+        onProgress: reportProgress,
+        label: "Preparing previews..."
+      }),
       scriptImportNeeded: await ensureStoryboardScriptMarkdown(payload.folderPath, payload.project)
     };
+  });
+
+  ipcMain.handle("workspace:startFolderWatch", (event, folderPath: string) => {
+    const watcherId = nextWorkspaceWatcherId++;
+    const sender = event.sender;
+    const watcher = watch(folderPath, { persistent: false }, (_eventType, fileName) => {
+      const changedName = fileName?.toString() ?? "";
+      if (
+        !changedName ||
+        changedName.includes(path.sep) ||
+        isWorkspaceTemporaryImagePath(changedName) ||
+        (!isLikelyTiffPath(changedName) && changedName !== storyboardScriptFileName)
+      ) {
+        return;
+      }
+
+      sender.send("workspace:folderChanged", { folderPath, fileName: changedName });
+    });
+    workspaceWatchers.set(watcherId, watcher);
+    watcher.on("error", () => {
+      workspaceWatchers.delete(watcherId);
+    });
+    return watcherId;
+  });
+
+  ipcMain.handle("workspace:stopFolderWatch", (_event, watcherId: number) => {
+    workspaceWatchers.get(watcherId)?.close();
+    workspaceWatchers.delete(watcherId);
   });
 
   ipcMain.handle("layers:writePng", async (_event, payload: WriteLayerAssetPayload) => {
@@ -465,6 +675,128 @@ const registerIpcHandlers = () => {
       }
     });
     return payload;
+  });
+
+  ipcMain.handle("layers:copyPng", async (_event, payload: CopyLayerPngPayload) => {
+    const sourcePath = resolveLayerAssetPath(payload.folderPath, payload.sourceBitmapPath);
+    const targetPath = resolveLayerAssetPath(payload.folderPath, payload.targetBitmapPath);
+    await copyBitmapLayerFile(sourcePath, targetPath);
+    return { ...payload, targetFilePath: targetPath };
+  });
+
+  ipcMain.handle("workspace:copyShotAssets", async (_event, payload: CopyShotAssetsPayload) => {
+    assertPathInsideFolder(payload.folderPath, payload.sourceImagePath);
+    const targetImagePath = await uniquePath(
+      path.dirname(payload.sourceImagePath),
+      `copy-${payload.fileName}`
+    );
+    const temporaryImagePath = await uniquePath(
+      path.dirname(payload.sourceImagePath),
+      workspaceCopyTemporaryFileName(payload.fileName, randomUUID())
+    );
+    assertPathInsideFolder(payload.folderPath, targetImagePath);
+    assertPathInsideFolder(payload.folderPath, temporaryImagePath);
+    const copiedLayerPaths: string[] = [];
+    try {
+      await copyFile(payload.sourceImagePath, temporaryImagePath);
+      for (const item of payload.layerCopies) {
+        const targetPath = resolveLayerAssetPath(payload.folderPath, item.targetBitmapPath);
+        await copyBitmapLayerFile(
+          resolveLayerAssetPath(payload.folderPath, item.sourceBitmapPath),
+          targetPath
+        );
+        copiedLayerPaths.push(targetPath);
+      }
+      await rename(temporaryImagePath, targetImagePath);
+      const previewPath = await createPreview(targetImagePath, previewRootForFolder(payload.folderPath));
+      assertPathInsideFolder(payload.folderPath, previewPath);
+      copiedLayerPaths.push(previewPath);
+      return {
+        ...payload,
+        imagePath: targetImagePath,
+        fileName: path.basename(targetImagePath),
+        previewPath
+      };
+    } catch (error) {
+      await unlink(targetImagePath).catch(() => undefined);
+      await unlink(temporaryImagePath).catch(() => undefined);
+      await Promise.all(copiedLayerPaths.map((filePath) => unlink(filePath).catch(() => undefined)));
+      throw error;
+    }
+  });
+
+  ipcMain.handle("layers:mergeDown", async (_event, payload: MergeLayerDownPayload) => {
+    const sourcePath = resolveLayerAssetPath(payload.folderPath, payload.sourceBitmapPath);
+    const targetPath = resolveLayerAssetPath(payload.folderPath, payload.targetBitmapPath);
+
+    if (!(await pathExists(sourcePath))) {
+      throw new Error(`Layer asset missing: ${payload.sourceBitmapPath}`);
+    }
+
+    if (!(await pathExists(targetPath))) {
+      throw new Error(`Layer asset missing: ${payload.targetBitmapPath}`);
+    }
+
+    const width = Math.max(1, Math.round(payload.width));
+    const height = Math.max(1, Math.round(payload.height));
+    const targetInput = await sharp(targetPath)
+      .resize({ width, height, fit: "fill" })
+      .ensureAlpha()
+      .png()
+      .toBuffer();
+    const sourceInput = await sharp(sourcePath)
+      .resize({ width, height, fit: "fill" })
+      .ensureAlpha()
+      .png()
+      .toBuffer();
+    const mergedPng = await flattenBitmapLayerBuffersToPng(width, height, [
+      {
+        input: targetInput,
+        opacity: payload.targetOpacity,
+        blend: sharpBlendMode(payload.targetBlendMode)
+      },
+      {
+        input: sourceInput,
+        opacity: payload.sourceOpacity,
+        blend: sharpBlendMode(payload.sourceBlendMode)
+      }
+    ]);
+
+    await writeFile(targetPath, mergedPng);
+    await unlink(sourcePath);
+    return { ...payload, targetFilePath: targetPath };
+  });
+
+  ipcMain.handle("layers:mergeVisible", async (_event, payload: MergeVisibleLayersPayload) => {
+    const targetPath = resolveLayerAssetPath(payload.folderPath, payload.targetBitmapPath);
+
+    if (payload.layers.length < 2) {
+      throw new Error("At least two visible layers are required to merge");
+    }
+
+    await mergeBitmapLayerFilesToPng(
+      payload.width,
+      payload.height,
+      await Promise.all(
+        payload.layers.map(async (layer) => {
+          const filePath = resolveLayerAssetPath(payload.folderPath, layer.bitmapPath);
+          if (!(await pathExists(filePath))) {
+            throw new Error(`Layer asset missing: ${layer.bitmapPath}`);
+          }
+
+          return {
+            filePath,
+            opacity: layer.opacity,
+            blend: sharpBlendMode(layer.blendMode)
+          };
+        })
+      ),
+      targetPath,
+      payload.deleteBitmapPaths.map((bitmapPath) =>
+        resolveLayerAssetPath(payload.folderPath, bitmapPath)
+      )
+    );
+    return { ...payload, targetFilePath: targetPath };
   });
 
   ipcMain.handle(
@@ -502,18 +834,23 @@ const saveWorkspace = async (
   onProgress?: WorkspaceTaskProgressReporter
 ): Promise<ProjectPayload> => {
   let appliedRenamePlan: AppliedFileRenamePlan | undefined;
+  let stagedPendingDeletedFiles: AppliedFileMoves | undefined;
   let swbImport: SwbImportResult | undefined;
   let appliedTiffReplacements: AppliedFileReplacements | undefined;
   let savedProject: Project | undefined;
+  let projectToSave = payload.project;
   let savedShots = 0;
-  const totalShots = payload.project.shots.length;
+  let totalShots = payload.project.shots.length;
   const reportShotSaved = () => {
     savedShots = Math.min(totalShots, savedShots + 1);
     onProgress?.({ kind: "save", current: savedShots, total: totalShots });
   };
 
   try {
-    onProgress?.({ kind: "save", current: 0, total: totalShots });
+    const stagedPending = await stagePendingDeletedShotFiles(payload.project, payload.folderPath);
+    stagedPendingDeletedFiles = stagedPending.appliedMoves;
+    projectToSave = stagedPending.project;
+
     if (payload.renamePlan && payload.renamePlan.length > 0) {
       await assertRenamePlanSafe(payload.renamePlan);
       appliedRenamePlan = await applyFileRenamePlan(payload.renamePlan, {
@@ -522,18 +859,24 @@ const saveWorkspace = async (
       });
     }
 
-    swbImport = await importProjectToSwbFormat(payload.project, payload.folderPath);
+    swbImport = await importProjectToSwbFormat(projectToSave, payload.folderPath);
     const swbProject = swbImport.project;
-    const saveShotIds = new Set([...(payload.dirtyShotIds ?? []), ...swbImport.importedShotIds]);
+    const saveShotIds = saveProgressShotIds(payload.dirtyShotIds, swbImport.tiffWriteShotIds);
+    totalShots = countSaveProgressShots(swbProject, saveShotIds);
+    savedShots = 0;
+    onProgress?.({ kind: "save", current: 0, total: totalShots });
     appliedTiffReplacements = await writeSwbMetadataToTiffs(
       swbProject,
       payload.folderPath,
       reportShotSaved,
-      { shotIds: payload.dirtyShotIds ? saveShotIds : undefined }
+      { shotIds: saveShotIds }
     );
-    savedProject = clearSavedImageLayerEdits(
-      swbProject,
-      payload.dirtyShotIds ? { shotIds: saveShotIds } : undefined
+    savedProject = await syncSavedSwbBaseFingerprints(
+      clearSavedImageLayerEdits(
+        swbProject,
+        saveShotIds ? { shotIds: saveShotIds } : undefined
+      ),
+      saveShotIds
     );
     await writeProjectFiles(payload.metadataPath, payload.folderPath, savedProject);
     await appliedTiffReplacements?.commit();
@@ -541,6 +884,7 @@ const saveWorkspace = async (
     await appliedTiffReplacements?.rollback();
     await swbImport?.rollback();
     await appliedRenamePlan?.rollback();
+    await stagedPendingDeletedFiles?.rollback();
     throw error;
   }
 
@@ -563,6 +907,50 @@ const saveWorkspace = async (
   }
 
   return { ...payload, project: trashResult.project };
+};
+
+const stagePendingDeletedShotFiles = async (
+  project: Project,
+  folderPath: string
+): Promise<{ project: Project; appliedMoves?: AppliedFileMoves }> => {
+  const pending = project.pendingDeletedShots ?? [];
+
+  if (pending.length === 0) {
+    return { project };
+  }
+
+  const tempRoot = path.join(folderPath, ".storyboard-workbench", "delete-tmp", archiveStamp());
+  const stagedShots: PendingDeletedShot[] = [];
+  const moves = [];
+
+  for (const shot of pending) {
+    if (!(await pathExists(shot.imagePath))) {
+      stagedShots.push(shot);
+      continue;
+    }
+
+    const extension = path.extname(shot.imagePath);
+    const tempPath = await uniquePath(tempRoot, `${shot.id}${extension || ".tiff"}`);
+    moves.push({ fromPath: shot.imagePath, toPath: tempPath });
+    stagedShots.push({ ...shot, imagePath: tempPath });
+  }
+
+  if (moves.length === 0) {
+    return { project };
+  }
+
+  const appliedMoves = await applyFileMoves(moves, {
+    mkdir: ensureDirectory,
+    rename
+  });
+
+  return {
+    project: {
+      ...project,
+      pendingDeletedShots: stagedShots
+    },
+    appliedMoves
+  };
 };
 
 const trashPendingDeletedShotFiles = async (
@@ -660,6 +1048,17 @@ const resolveLayerAssetPath = (folderPath: string, bitmapPath: string): string =
   }
 
   return path.join(folderPath, normalized);
+};
+
+const assertPathInsideFolder = (folderPath: string, filePath: string): void => {
+  const relativePath = path.relative(folderPath, filePath);
+  if (
+    !relativePath ||
+    relativePath.startsWith("..") ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error(`Path must stay inside workspace folder: ${filePath}`);
+  }
 };
 
 const pngBufferFromDataUrl = (dataUrl: string): Buffer => {
@@ -839,8 +1238,11 @@ const storyboardScriptPathForFolder = (folderPath: string): string =>
   path.join(folderPath, storyboardScriptFileName);
 
 const projectNeedsSwbImport = (project: Project): boolean => {
-  return project.shots.some(
-    (shot) => shot.swb?.status === "non-swb" || shot.swb?.status === "incompatible-external-edit"
+  return [...project.shots, ...(project.parkedShots ?? [])].some(
+    (shot) =>
+      shot.swb?.status === "non-swb" ||
+      shot.swb?.status === "compatible-external-edit" ||
+      shot.swb?.status === "incompatible-external-edit"
   );
 };
 
@@ -978,23 +1380,27 @@ const updateRecentFoldersMenu = async (): Promise<void> => {
 const importProjectToSwbFormat = async (
   project: Project,
   folderPath: string,
-  onProgress?: WorkspaceTaskProgressReporter
+  onProgress?: WorkspaceTaskProgressReporter,
+  options: { dirtyShotIds?: Set<string> } = {}
 ): Promise<SwbImportResult> => {
   const archiveRoot = path.join(folderPath, "Archive", archiveStamp());
   const tempRoot = path.join(folderPath, ".storyboard-workbench", "import-tmp", archiveStamp());
   const photoshopLayerRoot = path.join(tempRoot, "photoshop-layers");
   const finalLayerRoot = path.join(folderPath, ".storyboard-workbench", "layers");
-  const importableShots = project.shots.filter((shot) => shot.swb?.status !== "owned");
+  const importableShots = [...project.shots, ...(project.parkedShots ?? [])].filter(
+    (shot) => shot.swb?.status !== "owned"
+  );
   let importedShots = 0;
   const reportShotImported = () => {
     importedShots = Math.min(importableShots.length, importedShots + 1);
     onProgress?.({ kind: "import", current: importedShots, total: importableShots.length });
   };
 
-    if (importableShots.length === 0) {
+  if (importableShots.length === 0) {
     return {
       project,
       importedShotIds: [],
+      tiffWriteShotIds: [],
       rollback: async () => undefined
     };
   }
@@ -1004,17 +1410,27 @@ const importProjectToSwbFormat = async (
 
   const prepared = await Promise.all(
     importableShots.map(async (shot) => {
+      const compatibleExternalEdit = shot.swb?.status === "compatible-external-edit";
+      const duplicateExternalEdit = compatibleExternalEdit && options.dirtyShotIds?.has(shot.id) === true;
+      const importShotId = duplicateExternalEdit ? randomUUID() : shot.id;
       const extension = path.extname(shot.imagePath).toLowerCase();
       const baseName = path.basename(shot.imagePath, extension);
-      const targetPath = await uniquePath(path.dirname(shot.imagePath), `${baseName}.tiff`);
-      const archivePath = await uniquePath(archiveRoot, path.basename(shot.imagePath));
-      const tempPath = path.join(tempRoot, `${shot.id}.tiff`);
+      const targetPath = compatibleExternalEdit && !duplicateExternalEdit
+        ? shot.imagePath
+        : await uniquePath(
+            path.dirname(shot.imagePath),
+            `${baseName}${duplicateExternalEdit ? "-photoshop" : ""}.tiff`
+          );
+      const archivePath = compatibleExternalEdit
+        ? undefined
+        : await uniquePath(archiveRoot, path.basename(shot.imagePath));
+      const tempPath = path.join(tempRoot, `${importShotId}.tiff`);
       let importedLayers: NonNullable<Project["shots"][number]["layers"]> | undefined;
       let importedLayerMoves: Array<{ fromPath: string; toPath: string }> = [];
       let importedCanvasSize: { width: number; height: number } | undefined;
       let importWarnings: string[] = [];
 
-      if (await pathExists(targetPath)) {
+      if (!compatibleExternalEdit && (await pathExists(targetPath))) {
         throw new Error(`SWB import target already exists: ${targetPath}`);
       }
 
@@ -1035,7 +1451,7 @@ const importProjectToSwbFormat = async (
             }
           );
           const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as ImportedPhotoshopTiffManifest;
-          const layerPlan = buildPhotoshopTiffImportAssetPlan(manifest, shot.id, finalLayerRoot, extractedDir);
+          const layerPlan = buildPhotoshopTiffImportAssetPlan(manifest, importShotId, finalLayerRoot, extractedDir);
           importedLayers = layerPlan.layers;
           importedLayerMoves = layerPlan.moves;
           importedCanvasSize = { width: manifest.width, height: manifest.height };
@@ -1047,17 +1463,25 @@ const importProjectToSwbFormat = async (
         }
       }
 
-      await writeSwbImportWorkingTiff({
-        sourcePath: shot.imagePath,
-        outputPath: tempPath,
-        usePlaceholder: Boolean(importedLayers)
-      });
-      const fingerprint = await pixelFingerprint(tempPath);
-      const metadata = await sharp(tempPath).metadata();
+      if (!compatibleExternalEdit || duplicateExternalEdit) {
+        await writeSwbImportWorkingTiff({
+          sourcePath: shot.imagePath,
+          outputPath: tempPath,
+          usePlaceholder: Boolean(importedLayers)
+        });
+      }
+      const fingerprint = await pixelFingerprint(compatibleExternalEdit && !duplicateExternalEdit ? shot.imagePath : tempPath);
+      const metadata = await sharp(
+        compatibleExternalEdit && !duplicateExternalEdit ? shot.imagePath : tempPath,
+        sharpSourceOptions
+      ).metadata();
       reportShotImported();
 
       return {
         shot,
+        importShotId,
+        compatibleExternalEdit,
+        duplicateExternalEdit,
         targetPath,
         archivePath,
         tempPath,
@@ -1074,7 +1498,9 @@ const importProjectToSwbFormat = async (
   let archivedOriginals: AppliedFileMoves | undefined;
   let importedTargets: AppliedFileMoves | undefined;
   let importedLayerTargets: AppliedFileMoves | undefined;
+  let replacedLayerTargets: AppliedFileReplacements | undefined;
   const rollbackImportMoves = async () => {
+    await replacedLayerTargets?.rollback();
     await importedLayerTargets?.rollback();
     await importedTargets?.rollback();
     await archivedOriginals?.rollback();
@@ -1086,15 +1512,40 @@ const importProjectToSwbFormat = async (
       mkdir: ensureDirectory,
       rename
     };
-    archivedOriginals = await applyFileMoves(
-      prepared.map((item) => ({ fromPath: item.shot.imagePath, toPath: item.archivePath })),
-      moveOps
-    );
-    importedTargets = await applyFileMoves(
-      prepared.map((item) => ({ fromPath: item.tempPath, toPath: item.targetPath })),
-      moveOps
-    );
-    const layerMoves = prepared.flatMap((item) => item.importedLayerMoves);
+    const archiveMoves = prepared
+      .filter((item) => item.archivePath)
+      .map((item) => ({ fromPath: item.shot.imagePath, toPath: item.archivePath! }));
+    if (archiveMoves.length > 0) {
+      archivedOriginals = await applyFileMoves(archiveMoves, moveOps);
+    }
+    const targetMoves = prepared
+      .filter((item) => !item.compatibleExternalEdit || item.duplicateExternalEdit)
+      .map((item) => ({ fromPath: item.tempPath, toPath: item.targetPath }));
+    if (targetMoves.length > 0) {
+      importedTargets = await applyFileMoves(targetMoves, moveOps);
+    }
+    const replaceLayerMoves = [];
+    const createLayerMoves = [];
+    for (const item of prepared) {
+      for (const move of item.importedLayerMoves) {
+        if (item.compatibleExternalEdit && !item.duplicateExternalEdit && (await pathExists(move.toPath))) {
+          replaceLayerMoves.push(move);
+        } else {
+          createLayerMoves.push(move);
+        }
+      }
+    }
+    if (replaceLayerMoves.length > 0) {
+      replacedLayerTargets = await applyFileReplacements(
+        replaceLayerMoves.map((move) => ({
+          tempPath: move.fromPath,
+          targetPath: move.toPath,
+          backupPath: path.join(tempRoot, "layer-backup", path.basename(path.dirname(move.toPath)), path.basename(move.toPath))
+        })),
+        { mkdir: ensureDirectory, rename, unlink }
+      );
+    }
+    const layerMoves = createLayerMoves;
     if (layerMoves.length > 0) {
       await ensureLayerMoveDestinationsAvailable(layerMoves, pathExists);
       importedLayerTargets = await applyFileMoves(layerMoves, moveOps);
@@ -1104,43 +1555,75 @@ const importProjectToSwbFormat = async (
     throw error;
   }
 
-  const nextProject: Project = {
-    ...project,
-    shots: project.shots.map((shot) => {
+  const applyPreparedImports = (shots: Project["shots"]): Project["shots"] =>
+    shots.flatMap((shot): Project["shots"] => {
       const item = prepared.find((candidate) => candidate.shot.id === shot.id);
       if (!item) {
-        return shot;
+        return [shot];
       }
 
-      return {
+      const updatedShot: Project["shots"][number] = {
         ...shot,
         imagePath: item.targetPath,
         previewPath: undefined,
         fileName: path.basename(item.targetPath),
-        sourceFileName: shot.fileName,
+        sourceFileName: item.compatibleExternalEdit ? shot.sourceFileName : shot.fileName,
         layers: item.importedLayers ?? shot.layers,
         sketchLayers: item.importedLayers ? [] : emptyDefaultSketchLayers(shot) ? [] : shot.sketchLayers,
-        activeLayerTarget: "image",
+        activeLayerTarget: "image" as const,
         ...(item.importedLayers ? { activeLayerId: topmostImportedLayerId(item.importedLayers) } : {}),
         importWarnings: item.importWarnings.length > 0 ? item.importWarnings : shot.importWarnings,
         swb: {
           version: swbFormatVersion,
-          status: "owned",
+          status: "owned" as const,
           canvasWidth: item.width,
           canvasHeight: item.height,
           baseFingerprint: item.fingerprint,
-          sourcePath: shot.imagePath,
-          archivePath: item.archivePath,
-          sourceKind: item.importedLayers ? "photoshop-layered-tiff" : undefined
+          sourcePath: item.compatibleExternalEdit ? shot.swb?.sourcePath : shot.imagePath,
+          archivePath: item.compatibleExternalEdit ? shot.swb?.archivePath : item.archivePath,
+          sourceKind: item.importedLayers ? "photoshop-layered-tiff" as const : undefined
         }
       };
-    }),
+      if (!item.duplicateExternalEdit) {
+        return [updatedShot];
+      }
+
+      return [
+        {
+          ...shot,
+          swb: shot.swb
+            ? {
+                ...shot.swb,
+                status: "owned" as const,
+                baseFingerprint: item.fingerprint,
+                statusMessage: undefined
+              }
+            : shot.swb
+        },
+        {
+          ...updatedShot,
+          id: item.importShotId,
+          sourceFileName: shot.fileName,
+          scriptText: shot.scriptText
+        }
+      ];
+    });
+
+  const nextProject: Project = {
+    ...project,
+    shots: applyPreparedImports(project.shots).map((shot, order) => ({ ...shot, order })),
+    parkedShots: project.parkedShots
+      ? applyPreparedImports(project.parkedShots).map((shot, order) => ({ ...shot, order }))
+      : undefined,
     updatedAt: new Date().toISOString()
   };
 
   return {
     project: nextProject,
-    importedShotIds: prepared.map((item) => item.shot.id),
+    importedShotIds: prepared.map((item) => item.importShotId),
+    tiffWriteShotIds: prepared
+      .filter((item) => !item.compatibleExternalEdit || item.duplicateExternalEdit)
+      .map((item) => item.importShotId),
     rollback: rollbackImportMoves
   };
 };
@@ -1514,6 +1997,32 @@ const clearSavedImageLayerEdits = (
   updatedAt: new Date().toISOString()
 });
 
+const syncSavedSwbBaseFingerprints = async (
+  project: Project,
+  shotIds?: Set<string>
+): Promise<Project> => {
+  const shots = await Promise.all(
+    project.shots.map(async (shot) => {
+      if ((shotIds && !shotIds.has(shot.id)) || !shouldWriteSwbMetadata(shot) || !shot.swb) {
+        return shot;
+      }
+
+      return {
+        ...shot,
+        swb: {
+          ...shot.swb,
+          baseFingerprint: await pixelFingerprint(shot.imagePath)
+        }
+      };
+    })
+  );
+
+  return {
+    ...project,
+    shots
+  };
+};
+
 const shouldBakeShotImageEdits = (shot: Project["shots"][number]): boolean => {
   const extension = path.extname(shot.imagePath).toLowerCase();
   return (
@@ -1742,20 +2251,90 @@ const createBlankShot = async (
   throw new Error("Could not create a unique blank shot filename");
 };
 
-const scanFolder = async (folderPath: string): Promise<FolderScanPayload> => {
+const scanFolder = async (
+  folderPath: string,
+  onProgress?: WorkspaceTaskProgressReporter
+): Promise<FolderScanPayload> => {
   const metadataPath = metadataPathForFolder(folderPath);
   const previewRoot = previewRootForFolder(folderPath);
-  const imagePaths = await collectImagePaths([folderPath]);
   const project = await readProject(metadataPath);
+
+  if (project) {
+    onProgress?.({ kind: "open", label: "Loading storyboard...", current: 0, total: 0 });
+    return {
+      folderPath,
+      folderName: path.basename(folderPath),
+      metadataPath,
+      project,
+      images: [],
+      scriptImportNeeded: await ensureStoryboardScriptMarkdown(folderPath, project),
+      preserveProjectWithoutImageMerge: true
+    };
+  }
+
+  onProgress?.({ kind: "open", label: "Scanning folder...", current: 0, total: 0 });
+  const imagePaths = await collectImagePaths([folderPath]);
+  onProgress?.({
+    kind: "open",
+    label: "Preparing previews...",
+    current: 0,
+    total: imagePaths.length
+  });
 
   return {
     folderPath,
     folderName: path.basename(folderPath),
     metadataPath,
     project,
-    images: await createImageRecords(imagePaths, previewRoot),
+    images: await createImageRecords(imagePaths, previewRoot, {
+      onProgress,
+      label: "Preparing previews..."
+    }),
     scriptImportNeeded: await ensureStoryboardScriptMarkdown(folderPath, project)
   };
+};
+
+const changedKnownImagePaths = async (
+  project: Project,
+  imagePaths: string[],
+  pendingDeletedPaths: Set<string>,
+  onProgress?: WorkspaceTaskProgressReporter
+): Promise<string[]> => {
+  const pathByShot = new Map(
+    [...project.shots, ...(project.parkedShots ?? [])]
+      .filter((shot) => isLikelyTiffPath(shot.imagePath) && !pendingDeletedPaths.has(shot.imagePath))
+      .map((shot) => [shot.imagePath, shot])
+  );
+  const knownImagePaths = imagePaths.filter((imagePath) => pathByShot.has(imagePath));
+  const changed: string[] = [];
+
+  let checked = 0;
+  await Promise.all(
+    knownImagePaths.map(async (imagePath) => {
+      const shot = pathByShot.get(imagePath);
+      try {
+        if (!shot?.swb || shot.swb.status === "non-swb") {
+          return;
+        }
+
+        const fingerprint = await pixelFingerprint(imagePath);
+        const metadata = await readSwbMetadata(imagePath);
+        if (knownImageHasExternalChange(shot, fingerprint, metadata)) {
+          changed.push(imagePath);
+        }
+      } finally {
+        checked += 1;
+        onProgress?.({
+          kind: "open",
+          label: "Checking external changes...",
+          current: checked,
+          total: knownImagePaths.length
+        });
+      }
+    })
+  );
+
+  return changed;
 };
 
 const collectImagePaths = async (filePaths: string[]): Promise<string[]> => {
@@ -1767,15 +2346,20 @@ const collectImagePaths = async (filePaths: string[]): Promise<string[]> => {
         const entries = await readdir(filePath);
         return entries
           .map((entry) => path.join(filePath, entry))
-          .filter((entryPath) => supportedExtensions.has(path.extname(entryPath).toLowerCase()));
+          .filter((entryPath) => supportedExtensions.has(path.extname(entryPath).toLowerCase()))
+          .filter((entryPath) => !isWorkspaceTemporaryImagePath(entryPath));
       }
 
-      return supportedExtensions.has(path.extname(filePath).toLowerCase()) ? [filePath] : [];
+      return supportedExtensions.has(path.extname(filePath).toLowerCase()) &&
+        !isWorkspaceTemporaryImagePath(filePath)
+        ? [filePath]
+        : [];
     })
   );
 
   return [...new Set(collected.flat())].sort((a, b) => a.localeCompare(b));
 };
+
 
 const metadataPathForFolder = (folderPath: string): string => {
   return path.join(folderPath, ".storyboard-workbench", "storyboard.project.json");
@@ -1797,10 +2381,18 @@ const readProject = async (metadataPath: string): Promise<Project | undefined> =
 
 const createImageRecords = async (
   imagePaths: string[],
-  previewRoot: string
+  previewRoot: string,
+  options: {
+    onProgress?: WorkspaceTaskProgressReporter;
+    label?: string;
+    concurrency?: number;
+  } = {}
 ): Promise<ImportedImage[]> => {
-  return Promise.all(
-    imagePaths.map(async (imagePath) => {
+  let completed = 0;
+  return mapWithConcurrency(
+    imagePaths,
+    options.concurrency ?? 6,
+    async (imagePath) => {
       const extension = path.extname(imagePath).toLowerCase();
       const previewPath =
         extension === ".tif" || extension === ".tiff"
@@ -1821,14 +2413,54 @@ const createImageRecords = async (
         fingerprint: await pixelFingerprint(imagePath),
         swbMetadata
       };
+    },
+    () => {
+      completed += 1;
+      options.onProgress?.({
+        kind: "open",
+        label: options.label,
+        current: completed,
+        total: imagePaths.length
+      });
+    }
+  );
+};
+
+const mapWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  run: (item: T) => Promise<R>,
+  onItemComplete?: () => void
+): Promise<R[]> => {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, Math.floor(concurrency)), items.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        try {
+          results[index] = await run(items[index]);
+        } finally {
+          onItemComplete?.();
+        }
+      }
     })
   );
+
+  return results;
 };
 
 const createPreview = async (imagePath: string, previewRoot: string): Promise<string> => {
   const previewPath = previewPathForImage(imagePath, previewRoot);
 
   await mkdir(previewRoot, { recursive: true });
+
+  if (await previewIsFresh(imagePath, previewPath)) {
+    return previewPath;
+  }
 
   await sharp(imagePath, sharpSourceOptions)
     .rotate()

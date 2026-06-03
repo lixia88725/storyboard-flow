@@ -11,7 +11,6 @@ import {
 import { dialoguesForShot } from "../shared/projectOps";
 import type {
   BitmapLayer,
-  BitmapSelectionMode,
   Dialogue,
   Project,
   Shot,
@@ -40,8 +39,8 @@ export type ShotCardProps = {
   isSelected: boolean;
   isPrimarySelected: boolean;
   isAnimationFocused: boolean;
+  isCopyDraggingSource: boolean;
   activeSketchTool: SketchTool;
-  selectionMode: BitmapSelectionMode;
   brushColor: string;
   brushOpacity: number;
   brushSize: number;
@@ -58,6 +57,8 @@ export type ShotCardProps = {
   onToggleLayerPanel: () => void;
   onAddLayer: (shotId: string) => void;
   onRemoveLayer: (shotId: string, layerId: string) => void;
+  onMergeLayers: (shotId: string, layerId: string, selectedLayerIds: string[]) => void;
+  onMergeVisibleLayers: (shotId: string) => void;
   onClearLayer: (shotId: string, layerId: string) => void;
   onSelectLayer: (shotId: string, layerId: string) => void;
   onUpdateLayer: (
@@ -71,6 +72,26 @@ export type ShotCardProps = {
     targetLayerId: string,
     placement: "before" | "after"
   ) => void;
+  onMoveLayerGroup: (
+    shotId: string,
+    layerIds: string[],
+    targetLayerId: string,
+    placement: "before" | "after"
+  ) => void;
+  onSelectedLayerIdsChange: (shotId: string, layerIds: string[]) => void;
+  onCopyLayerToShot: (
+    shotId: string,
+    layerId: string,
+    targetShotId: string,
+    targetLayerId?: string,
+    placement?: "before" | "after"
+  ) => void;
+  onUpdateLayerGroupOpacity: (
+    shotId: string,
+    layerIds: string[],
+    deltaOpacity: number,
+    initialOpacityByLayerId: Record<string, number>
+  ) => void;
   onCreateDialogue: (shotId: string) => void;
   onDialogueText: (dialogueId: string, text: string) => void;
   onDialogueBlur: (dialogue: Dialogue) => void;
@@ -78,7 +99,8 @@ export type ShotCardProps = {
   onSketchStroke: (
     layerId: string,
     stroke: SketchStroke,
-    renderedDataUrl?: string
+    renderedDataUrl?: string,
+    pendingStrokes?: SketchStroke[]
   ) => Promise<string | undefined>;
   onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
 };
@@ -91,8 +113,8 @@ export const ShotCard = ({
   isSelected,
   isPrimarySelected,
   isAnimationFocused,
+  isCopyDraggingSource,
   activeSketchTool,
-  selectionMode,
   brushColor,
   brushOpacity,
   brushSize,
@@ -109,10 +131,16 @@ export const ShotCard = ({
   onToggleLayerPanel,
   onAddLayer,
   onRemoveLayer,
+  onMergeLayers,
+  onMergeVisibleLayers,
   onClearLayer,
   onSelectLayer,
   onUpdateLayer,
   onMoveLayer,
+  onMoveLayerGroup,
+  onSelectedLayerIdsChange,
+  onCopyLayerToShot,
+  onUpdateLayerGroupOpacity,
   onCreateDialogue,
   onDialogueText,
   onDialogueBlur,
@@ -134,10 +162,12 @@ export const ShotCard = ({
   const dialogues = dialoguesForShot(project, shot.id);
   const isLayerPanelVisible = isLayerPanelOpen || isLayerPanelRendered;
   const shouldRenderMedia = isNearViewport || isPrimarySelected || isAnimationFocused || isLayerPanelVisible;
-  const style = {
-    transform: CSS.Transform.toString(sortable.transform),
-    transition: sortable.transition
-  };
+  const style = isCopyDraggingSource && sortable.isDragging
+    ? { transition: sortable.transition }
+    : {
+        transform: CSS.Transform.toString(sortable.transform),
+        transition: sortable.transition
+      };
   const setCardNodeRef = useCallback(
     (element: HTMLElement | null) => {
       cardRef.current = element;
@@ -161,7 +191,9 @@ export const ShotCard = ({
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        setIsNearViewport(entry.isIntersecting);
+        if (entry.isIntersecting) {
+          setIsNearViewport(true);
+        }
       },
       { rootMargin: "1200px 0px" }
     );
@@ -187,7 +219,9 @@ export const ShotCard = ({
         isSelected ? "is-selected" : ""
       } ${isAnimationFocused ? "is-animation-focus" : ""} ${
         isLayerPanelVisible ? "has-layer-panel-open" : ""
-      } ${cardFace === "script" ? "is-script-face" : ""}`}
+      } ${isCopyDraggingSource ? "is-copy-dragging-source" : ""} ${
+        cardFace === "script" ? "is-script-face" : ""
+      }`}
       style={style}
       data-shot-id={shot.id}
       onClick={onSelect}
@@ -212,7 +246,6 @@ export const ShotCard = ({
                   shot={shot}
                   folderPath={folderPath}
                   tool={activeSketchTool}
-                  selectionMode={selectionMode}
                   brushColor={brushColor}
                   brushOpacity={brushOpacity}
                   brushSize={brushSize}
@@ -233,10 +266,16 @@ export const ShotCard = ({
                   onToggle={onToggleLayerPanel}
                   onAddLayer={onAddLayer}
                   onRemoveLayer={onRemoveLayer}
+                  onMergeLayers={onMergeLayers}
+                  onMergeVisibleLayers={onMergeVisibleLayers}
                   onClearLayer={onClearLayer}
                   onSelectLayer={onSelectLayer}
                   onUpdateLayer={onUpdateLayer}
                   onMoveLayer={onMoveLayer}
+                  onMoveLayerGroup={onMoveLayerGroup}
+                  onSelectedLayerIdsChange={onSelectedLayerIdsChange}
+                  onCopyLayerToShot={onCopyLayerToShot}
+                  onUpdateLayerGroupOpacity={onUpdateLayerGroupOpacity}
                 />
               </>
             ) : (
@@ -247,7 +286,7 @@ export const ShotCard = ({
           <div
             ref={dropZone.setNodeRef}
             className={`dialogue-zone ${dropZone.isOver ? "is-over" : ""}`}
-            onDoubleClick={(event) => {
+            onClick={(event) => {
               if ((event.target as HTMLElement).closest(".dialogue-card")) {
                 return;
               }
@@ -255,7 +294,7 @@ export const ShotCard = ({
             }}
           >
             {dialogues.length === 0 ? (
-              <p className="drop-hint">Double-click to type dialogue</p>
+              <p className="drop-hint">Click to type dialogue</p>
             ) : null}
             {dialogues.map((dialogue) => (
               <DialogueCard

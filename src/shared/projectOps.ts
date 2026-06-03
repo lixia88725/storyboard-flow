@@ -111,7 +111,10 @@ export const dialoguesForShot = (project: Project, shotId: string): Dialogue[] =
 };
 
 export const addImportedImages = (project: Project, images: ImportedImage[]): Project => {
-  const existingPaths = new Set(project.shots.map((shot) => shot.imagePath));
+  const existingPaths = new Set([
+    ...project.shots.map((shot) => shot.imagePath),
+    ...(project.parkedShots ?? []).map((shot) => shot.imagePath)
+  ]);
   const pendingDeletedPaths = new Set(
     (project.pendingDeletedShots ?? []).map((shot) => shot.imagePath)
   );
@@ -174,11 +177,85 @@ export const addGeneratedShot = (
   };
 };
 
-export const mergeFolderImages = (project: Project, images: ImportedImage[]): Project => {
+export const mergeExternalImageChanges = (project: Project, images: ImportedImage[]): Project => {
+  if (images.length === 0) {
+    return project;
+  }
+
+  const imageByPath = new Map(images.map((image) => [image.imagePath, image]));
+  const existingPaths = new Set([
+    ...project.shots.map((shot) => shot.imagePath),
+    ...(project.parkedShots ?? []).map((shot) => shot.imagePath)
+  ]);
   const pendingDeletedPaths = new Set(
     (project.pendingDeletedShots ?? []).map((shot) => shot.imagePath)
   );
-  const mergeImages = images.filter((image) => !pendingDeletedPaths.has(image.imagePath));
+  let didChange = false;
+  const shots = project.shots.map((shot) => {
+    const scanned = imageByPath.get(shot.imagePath);
+    if (!scanned) {
+      return shot;
+    }
+
+    const nextShot = ensureBitmapLayerMetadata(
+      {
+        ...shot,
+        previewPath: scanned.previewPath ?? shot.previewPath,
+        fileName: scanned.fileName ?? shot.fileName,
+        sketchLayers: sketchLayersForShot(shot),
+        swb: mergedSwbState(shot, scanned)
+      },
+      scanned
+    );
+    didChange = didChange || nextShot !== shot || nextShot.swb !== shot.swb;
+    return nextShot;
+  });
+  const parkedShots = (project.parkedShots ?? []).map((shot) => {
+    const scanned = imageByPath.get(shot.imagePath);
+    if (!scanned) {
+      return shot;
+    }
+
+    didChange = true;
+    return ensureBitmapLayerMetadata(
+      {
+        ...shot,
+        previewPath: scanned.previewPath ?? shot.previewPath,
+        fileName: scanned.fileName ?? shot.fileName,
+        swb: mergedSwbState(shot, scanned)
+      },
+      scanned
+    );
+  });
+  const newShots = images
+    .filter((image) => !existingPaths.has(image.imagePath) && !pendingDeletedPaths.has(image.imagePath))
+    .map((image, index) =>
+      createShotFromImportedImage(image, project.shots.length + index, {
+        sourceFileName: undefined,
+        includeDefaultSketchLayer: false
+      })
+    );
+
+  if (!didChange && newShots.length === 0) {
+    return project;
+  }
+
+  return normalizeShotOrder({
+    ...project,
+    shots: [...shots, ...newShots],
+    parkedShots: project.parkedShots ? parkedShots : undefined,
+    updatedAt: now()
+  });
+};
+
+export const mergeFolderImages = (project: Project, images: ImportedImage[]): Project => {
+  const parkedPaths = new Set((project.parkedShots ?? []).map((shot) => shot.imagePath));
+  const pendingDeletedPaths = new Set(
+    (project.pendingDeletedShots ?? []).map((shot) => shot.imagePath)
+  );
+  const mergeImages = images.filter(
+    (image) => !pendingDeletedPaths.has(image.imagePath) && !parkedPaths.has(image.imagePath)
+  );
   const scannedPaths = new Set(mergeImages.map((image) => image.imagePath));
   const imageByPath = new Map(mergeImages.map((image) => [image.imagePath, image]));
   const keptShots = sortedShots(project.shots)
@@ -333,6 +410,153 @@ export const reorderShotGroup = (
   };
 };
 
+export const parkShotGroup = (
+  project: Project,
+  shotIds: string[]
+): Project => {
+  const selected = new Set(shotIds);
+
+  if (selected.size === 0) {
+    return project;
+  }
+
+  const ordered = sortedShots(project.shots);
+  const moving = ordered.filter((shot) => selected.has(shot.id));
+
+  if (moving.length === 0) {
+    return project;
+  }
+
+  const remaining = ordered.filter((shot) => !selected.has(shot.id));
+  const parkedShots = [...(project.parkedShots ?? []), ...moving].map((shot, order) => ({ ...shot, order }));
+
+  return {
+    ...project,
+    shots: remaining.map((shot, order) => ({ ...shot, order })),
+    parkedShots,
+    updatedAt: now()
+  };
+};
+
+export const restoreParkedShotGroup = (
+  project: Project,
+  parkedShotIds: string[],
+  targetShotId: string,
+  placement: ShotPlacement = "before"
+): Project => {
+  const selected = new Set(parkedShotIds);
+
+  if (selected.size === 0) {
+    return project;
+  }
+
+  const parked = sortedShots(project.parkedShots ?? []);
+  const moving = parked.filter((shot) => selected.has(shot.id));
+
+  if (moving.length === 0) {
+    return project;
+  }
+
+  const ordered = sortedShots(project.shots);
+  const targetIndex = ordered.findIndex((shot) => shot.id === targetShotId);
+
+  if (targetIndex === -1) {
+    return project;
+  }
+
+  const insertIndex = placement === "after" ? targetIndex + 1 : targetIndex;
+  const nextShots = [
+    ...ordered.slice(0, insertIndex),
+    ...moving,
+    ...ordered.slice(insertIndex)
+  ].map((shot, order) => ({ ...shot, order }));
+  const nextParkedShots = parked
+    .filter((shot) => !selected.has(shot.id))
+    .map((shot, order) => ({ ...shot, order }));
+
+  return {
+    ...project,
+    shots: nextShots,
+    parkedShots: nextParkedShots.length > 0 ? nextParkedShots : undefined,
+    updatedAt: now()
+  };
+};
+
+export const duplicateShotAfter = (
+  project: Project,
+  sourceShotId: string,
+  targetShotId: string | undefined,
+  options: {
+    shotId: string;
+    imagePath: string;
+    fileName: string;
+    previewPath?: string;
+  }
+): Project => {
+  const ordered = sortedShots(project.shots);
+  const sourceShot = ordered.find((shot) => shot.id === sourceShotId);
+
+  if (!sourceShot) {
+    return project;
+  }
+
+  const targetIndex = targetShotId
+    ? ordered.findIndex((shot) => shot.id === targetShotId)
+    : -1;
+  const insertIndex = targetIndex === -1 ? ordered.length : targetIndex + 1;
+  const layerIdMap = new Map<string, string>();
+  const layers = bitmapLayersForShot(sourceShot).map((layer) => {
+    const layerId = layer.id;
+    layerIdMap.set(layer.id, layerId);
+    return {
+      ...layer,
+      id: layerId,
+      bitmapPath: bitmapLayerPath(options.shotId, layerId)
+    };
+  });
+  const duplicatedShot: Shot = {
+    ...sourceShot,
+    id: options.shotId,
+    imagePath: options.imagePath,
+    previewPath: options.previewPath,
+    fileName: options.fileName,
+    sourceFileName: options.fileName,
+    order: insertIndex,
+    layers,
+    activeLayerId: sourceShot.activeLayerId
+      ? layerIdMap.get(sourceShot.activeLayerId) ?? sourceShot.activeLayerId
+      : sourceShot.activeLayerId,
+    swb: sourceShot.swb
+      ? {
+          ...sourceShot.swb,
+          status: "owned" as const,
+          sourcePath: sourceShot.swb.sourcePath,
+          archivePath: sourceShot.swb.archivePath,
+          statusMessage: undefined,
+          acceptedExternalEditAt: undefined
+        }
+      : sourceShot.swb
+  };
+  const copiedDialogues = dialoguesForShot(project, sourceShot.id).map((dialogue, index) => ({
+    ...dialogue,
+    id: crypto.randomUUID(),
+    shotId: options.shotId,
+    order: index
+  }));
+  const nextShots = [
+    ...ordered.slice(0, insertIndex),
+    duplicatedShot,
+    ...ordered.slice(insertIndex)
+  ].map((shot, order) => ({ ...shot, order }));
+
+  return normalizeDialogueOrder({
+    ...project,
+    shots: nextShots,
+    dialogues: [...project.dialogues, ...copiedDialogues],
+    updatedAt: now()
+  });
+};
+
 export const addDialogue = (
   project: Project,
   shotId: string,
@@ -396,6 +620,34 @@ export const moveDialogueToShot = (
     dialogues: movedDialogues,
     updatedAt: now()
   });
+};
+
+export const copyDialogueToShot = (
+  project: Project,
+  dialogueId: string,
+  targetShotId: string,
+  id: string = crypto.randomUUID()
+): Project => {
+  const dialogue = project.dialogues.find((item) => item.id === dialogueId);
+  const targetShot = project.shots.find((shot) => shot.id === targetShotId);
+
+  if (!dialogue || !targetShot) {
+    return project;
+  }
+
+  return {
+    ...project,
+    dialogues: [
+      ...project.dialogues,
+      {
+        ...dialogue,
+        id,
+        shotId: targetShotId,
+        order: dialoguesForShot(project, targetShotId).length
+      }
+    ],
+    updatedAt: now()
+  };
 };
 
 export const updateSketch = (
@@ -797,6 +1049,47 @@ export const addBitmapLayer = (
   });
 };
 
+export const copyBitmapLayerToShot = (
+  project: Project,
+  sourceShotId: string,
+  sourceLayerId: string,
+  targetShotId: string,
+  targetLayerId: string,
+  placementTargetLayerId?: string,
+  placement: "before" | "after" = "after"
+): Project => {
+  const sourceShot = project.shots.find((shot) => shot.id === sourceShotId);
+  const targetShot = project.shots.find((shot) => shot.id === targetShotId);
+  const sourceLayer = sourceShot
+    ? bitmapLayersForShot(sourceShot).find((layer) => layer.id === sourceLayerId)
+    : undefined;
+
+  if (!sourceShot || !targetShot || !sourceLayer) {
+    return project;
+  }
+
+  return updateBitmapLayers(project, targetShotId, (_shot, layers) => {
+    const copiedLayer = {
+      ...sourceLayer,
+      id: targetLayerId,
+      order: layers.length,
+      bitmapPath: bitmapLayerPath(targetShotId, targetLayerId)
+    };
+    const targetIndex = placementTargetLayerId
+      ? layers.findIndex((layer) => layer.id === placementTargetLayerId)
+      : -1;
+    const insertIndex =
+      targetIndex === -1 ? layers.length : placement === "before" ? targetIndex : targetIndex + 1;
+    const nextLayers = [...layers];
+    nextLayers.splice(insertIndex, 0, copiedLayer);
+
+    return {
+      layers: nextLayers,
+      activeLayerId: targetLayerId
+    };
+  });
+};
+
 const nextBitmapLayerId = (shotId: string, layers: BitmapLayer[]): string => {
   const existingIds = new Set(layers.map((layer) => layer.id));
   let index = layers.length;
@@ -888,6 +1181,80 @@ export const moveBitmapLayer = (
   });
 };
 
+export const moveBitmapLayerGroup = (
+  project: Project,
+  shotId: string,
+  layerIds: string[],
+  targetLayerId: string,
+  placement: "before" | "after" = "before"
+): Project => {
+  const shot = project.shots.find((item) => item.id === shotId);
+  const layers = shot ? bitmapLayersForShot(shot) : [];
+  const selectedLayerIds = new Set(layerIds);
+  const movingLayerIds = new Set(
+    layers
+      .filter((layer) => selectedLayerIds.has(layer.id) && !layer.locked)
+      .map((layer) => layer.id)
+  );
+
+  if (
+    !shot ||
+    movingLayerIds.size === 0 ||
+    movingLayerIds.has(targetLayerId) ||
+    !layers.some((layer) => layer.id === targetLayerId)
+  ) {
+    return project;
+  }
+
+  return updateBitmapLayers(project, shotId, (currentShot, currentLayers) => {
+    const movingLayers = currentLayers.filter((layer) => movingLayerIds.has(layer.id));
+    const remainingLayers = currentLayers.filter((layer) => !movingLayerIds.has(layer.id));
+    const targetIndex = remainingLayers.findIndex((layer) => layer.id === targetLayerId);
+    const insertIndex =
+      targetIndex === -1
+        ? remainingLayers.length
+        : placement === "after"
+          ? targetIndex + 1
+          : targetIndex;
+    const nextLayers = [...remainingLayers];
+    nextLayers.splice(insertIndex, 0, ...movingLayers);
+    const activeLayerId =
+      currentShot.activeLayerId && selectedLayerIds.has(currentShot.activeLayerId) && !movingLayerIds.has(currentShot.activeLayerId)
+        ? movingLayers.at(-1)?.id
+        : currentShot.activeLayerId ?? movingLayers.at(-1)?.id;
+
+    return {
+      layers: nextLayers,
+      activeLayerId
+    };
+  });
+};
+
+export const updateBitmapLayerGroupOpacity = (
+  project: Project,
+  shotId: string,
+  layerIds: string[],
+  deltaOpacity: number,
+  initialOpacityByLayerId?: Record<string, number>
+): Project => {
+  const selectedLayerIds = new Set(layerIds);
+
+  return updateBitmapLayers(project, shotId, (shot, layers) => ({
+    layers: layers.map((layer) => {
+      if (!selectedLayerIds.has(layer.id) || layer.locked) {
+        return layer;
+      }
+
+      const initialOpacity = initialOpacityByLayerId?.[layer.id] ?? layer.opacity ?? 1;
+      return {
+        ...layer,
+        opacity: Math.round(Math.min(1, Math.max(0, initialOpacity + deltaOpacity)) * 1000) / 1000
+      };
+    }),
+    activeLayerId: shot.activeLayerId ?? layers[0]?.id
+  }));
+};
+
 export const deleteBitmapLayer = (
   project: Project,
   shotId: string,
@@ -909,6 +1276,144 @@ export const deleteBitmapLayer = (
 
     return { layers: nextLayers, activeLayerId };
   });
+};
+
+export const mergeBitmapLayerDown = (
+  project: Project,
+  shotId: string,
+  sourceLayerId: string,
+  targetLayerId: string
+): Project => {
+  if (sourceLayerId === targetLayerId) {
+    return project;
+  }
+
+  const shot = project.shots.find((item) => item.id === shotId);
+  const layers = shot ? bitmapLayersForShot(shot) : [];
+  const sourceLayer = layers.find((layer) => layer.id === sourceLayerId);
+  const targetLayer = layers.find((layer) => layer.id === targetLayerId);
+  const sourceIndex = layers.findIndex((layer) => layer.id === sourceLayerId);
+  const targetIndex = layers.findIndex((layer) => layer.id === targetLayerId);
+
+  if (
+    !sourceLayer ||
+    !targetLayer ||
+    !sourceLayer.visible ||
+    !targetLayer.visible ||
+    sourceLayer.locked ||
+    targetLayer.locked ||
+    sourceIndex <= targetIndex
+  ) {
+    return project;
+  }
+
+  return updateBitmapLayers(project, shotId, (shot, layers) => {
+    return {
+      layers: layers
+        .filter((layer) => layer.id !== sourceLayerId)
+        .map((layer) =>
+          layer.id === targetLayerId
+            ? {
+                ...layer,
+                visible: true,
+                opacity: 1,
+                blendMode: "normal"
+              }
+            : layer
+        ),
+      activeLayerId: targetLayerId
+    };
+  });
+};
+
+export const mergeSelectedBitmapLayers = (
+  project: Project,
+  shotId: string,
+  layerIds: string[]
+): Project => {
+  const shot = project.shots.find((item) => item.id === shotId);
+  const layers = shot ? bitmapLayersForShot(shot) : [];
+  const selectedLayerIds = new Set(layerIds);
+  const selectedLayers = layers.filter((layer) => selectedLayerIds.has(layer.id));
+
+  if (
+    !shot ||
+    selectedLayers.length < 2 ||
+    selectedLayers.some((layer) => !layer.visible || layer.locked)
+  ) {
+    return project;
+  }
+
+  const targetLayer = selectedLayers[0];
+  const deleteLayerIds = new Set(selectedLayers.slice(1).map((layer) => layer.id));
+
+  return updateBitmapLayers(project, shotId, () => ({
+    layers: layers
+      .filter((layer) => !deleteLayerIds.has(layer.id))
+      .map((layer) =>
+        layer.id === targetLayer.id
+          ? {
+              ...layer,
+              visible: true,
+              opacity: 1,
+              blendMode: "normal"
+            }
+          : layer
+      ),
+    activeLayerId: targetLayer.id
+  }));
+};
+
+export const mergeVisibleBitmapLayers = (
+  project: Project,
+  shotId: string
+): Project => {
+  const shot = project.shots.find((item) => item.id === shotId);
+  const layers = shot ? bitmapLayersForShot(shot) : [];
+  const visibleLayers = layers.filter((layer) => layer.visible);
+
+  if (
+    !shot ||
+    visibleLayers.length < 2
+  ) {
+    return project;
+  }
+
+  const mergedLayerId = nextBitmapLayerId(shot.id, layers);
+  const canvasWidth = Math.max(...visibleLayers.map((layer) => layer.width), 1);
+  const canvasHeight = Math.max(...visibleLayers.map((layer) => layer.height), 1);
+  const visibleLayerIds = new Set(visibleLayers.map((layer) => layer.id));
+  const lockedVisibleLayerIds = new Set(
+    visibleLayers.filter((layer) => layer.locked).map((layer) => layer.id)
+  );
+  const mergedLayer: BitmapLayer = {
+    id: mergedLayerId,
+    kind: "paint",
+    name: "Merged",
+    visible: true,
+    locked: false,
+    opacity: 1,
+    blendMode: "normal",
+    order: layers.length,
+    bitmapPath: bitmapLayerPath(shot.id, mergedLayerId),
+    width: canvasWidth,
+    height: canvasHeight
+  };
+
+  return updateBitmapLayers(project, shotId, () => ({
+    layers: layers
+      .filter((layer) => !visibleLayerIds.has(layer.id) || lockedVisibleLayerIds.has(layer.id))
+      .map((layer) =>
+        lockedVisibleLayerIds.has(layer.id)
+          ? {
+              ...layer,
+              visible: false
+            }
+          : layer
+      )
+      .concat(mergedLayer),
+    activeLayerId: mergedLayer.id
+  }));
 };
 
 export const clearBitmapLayer = (
@@ -972,15 +1477,25 @@ export const createRenamePlan = (
   options: RenamePlanOptions = {}
 ): RenamePlanItem[] => {
   const namingPrefix = saveFilePrefix(project, options);
+  const reservedPaths = new Set((project.parkedShots ?? []).map((shot) => shot.imagePath));
+  let sequence = 0;
 
   return sortedShots(project.shots).map((shot, index) => {
-    const finalFileName = orderedFileName(namingPrefix, shot.fileName, index);
     const directory = dirname(shot.imagePath);
+    let finalFileName = orderedFileName(namingPrefix, shot.fileName, sequence);
+    let finalPath = joinPath(directory, finalFileName);
+    while (reservedPaths.has(finalPath)) {
+      sequence += 1;
+      finalFileName = orderedFileName(namingPrefix, shot.fileName, sequence);
+      finalPath = joinPath(directory, finalFileName);
+    }
+    sequence += 1;
+
     return {
       shotId: shot.id,
       fromPath: shot.imagePath,
       temporaryPath: joinPath(directory, `.storyboard-renaming-${shot.id}${extension(shot.fileName)}`),
-      finalPath: joinPath(directory, finalFileName),
+      finalPath,
       finalFileName
     };
   });
@@ -1143,20 +1658,27 @@ const updateShotLayers = (
 };
 
 export const projectNeedsSwbImport = (project: Project): boolean => {
-  return project.shots.some(
-    (shot) => shot.swb?.status === "non-swb" || shot.swb?.status === "incompatible-external-edit"
+  return [...project.shots, ...(project.parkedShots ?? [])].some(
+    (shot) =>
+      shot.swb?.status === "non-swb" ||
+      shot.swb?.status === "compatible-external-edit" ||
+      shot.swb?.status === "incompatible-external-edit"
   );
 };
 
 export const projectHasSwbWarning = (project: Project): boolean => {
-  return project.shots.some(
+  return [...project.shots, ...(project.parkedShots ?? [])].some(
     (shot) =>
-      shot.swb?.status === "non-swb" || shot.swb?.status === "incompatible-external-edit"
+      shot.swb?.status === "non-swb" ||
+      shot.swb?.status === "compatible-external-edit" ||
+      shot.swb?.status === "incompatible-external-edit"
   );
 };
 
 export const projectAcceptedExternalEdits = (project: Project): boolean => {
-  return project.shots.some((shot) => Boolean(shot.swb?.acceptedExternalEditAt));
+  return [...project.shots, ...(project.parkedShots ?? [])].some((shot) =>
+    Boolean(shot.swb?.acceptedExternalEditAt)
+  );
 };
 
 export const validateRenamePlan = (
@@ -1305,10 +1827,27 @@ const mergedSwbState = (shot: Shot, image: ImportedImage): ShotSwbState => {
   }
 
   if (!metadata) {
+    if (image.fingerprint && existing.baseFingerprint && image.fingerprint === existing.baseFingerprint) {
+      return {
+        ...existing,
+        status: "owned",
+        statusMessage: undefined
+      };
+    }
+
     return {
       ...existing,
       status: "incompatible-external-edit",
       statusMessage: "SWB metadata is missing from this TIFF"
+    };
+  }
+
+  if (image.fingerprint && existing.baseFingerprint && image.fingerprint === existing.baseFingerprint) {
+    return {
+      ...existing,
+      status: "owned",
+      baseFingerprint: image.fingerprint,
+      statusMessage: undefined
     };
   }
 
@@ -1331,20 +1870,19 @@ const mergedSwbState = (shot: Shot, image: ImportedImage): ShotSwbState => {
     };
   }
 
-  if (image.fingerprint && existing.baseFingerprint && image.fingerprint !== existing.baseFingerprint) {
+  const savedFingerprint = existing.baseFingerprint ?? metadata.baseFingerprint;
+  if (image.fingerprint && savedFingerprint && image.fingerprint !== savedFingerprint) {
     return {
       ...existing,
-      status: "owned",
-      baseFingerprint: image.fingerprint,
-      acceptedExternalEditAt: now(),
-      statusMessage: "External TIFF edits accepted as the new base image"
+      status: "compatible-external-edit",
+      statusMessage: "Import external Photoshop edits into Storyboard Workbench"
     };
   }
 
   return {
     ...existing,
     status: "owned",
-    baseFingerprint: image.fingerprint ?? existing.baseFingerprint,
+    baseFingerprint: image.fingerprint ?? savedFingerprint ?? existing.baseFingerprint,
     statusMessage: undefined
   };
 };

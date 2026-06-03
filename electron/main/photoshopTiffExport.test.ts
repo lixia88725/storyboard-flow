@@ -13,6 +13,7 @@ import {
 } from "./photoshopTiffExport.js";
 
 const execFileAsync = promisify(execFile);
+const photoshopTiffDepsDir = path.join(process.cwd(), "vendor/python/photoshop-tiff");
 
 const layer = (patch: Partial<Parameters<typeof buildPhotoshopTiffExportPlan>[0]["shots"][number]["layers"][number]>) => ({
   id: "layer-image",
@@ -431,7 +432,7 @@ describe("buildPhotoshopTiffExportPlan", () => {
   });
 
   it("writes optional XMP into Photoshop layered TIFFs without dropping layer data", async () => {
-    const depsDir = "/private/tmp/psdtags-spike-deps";
+    const depsDir = photoshopTiffDepsDir;
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-xmp-"));
 
     try {
@@ -506,7 +507,7 @@ describe("buildPhotoshopTiffExportPlan", () => {
   });
 
   it("writes SWB metadata XMP with a computed composite fingerprint", async () => {
-    const depsDir = "/private/tmp/psdtags-spike-deps";
+    const depsDir = photoshopTiffDepsDir;
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-swb-metadata-"));
 
     try {
@@ -592,7 +593,7 @@ describe("buildPhotoshopTiffExportPlan", () => {
   });
 
   it("writes the main Photoshop TIFF composite over a white canvas", async () => {
-    const depsDir = "/private/tmp/psdtags-spike-deps";
+    const depsDir = photoshopTiffDepsDir;
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-white-"));
 
     try {
@@ -655,7 +656,7 @@ describe("buildPhotoshopTiffExportPlan", () => {
   });
 
   it("writes Photoshop TIFF layers with non-MacRoman Unicode names", async () => {
-    const depsDir = "/private/tmp/psdtags-spike-deps";
+    const depsDir = photoshopTiffDepsDir;
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-unicode-"));
 
     try {

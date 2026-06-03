@@ -11,26 +11,38 @@ import {
   createImageBitmapLayer,
   clearSketch,
   createRenamePlan,
+  copyBitmapLayerToShot,
+  copyDialogueToShot,
   deleteShots,
   deleteBitmapLayer,
+  duplicateShotAfter,
   flattenSketchLayers,
   getNextStoryboardIndex,
   markBitmapLayerPainted,
+  mergeBitmapLayerDown,
+  mergeSelectedBitmapLayers,
+  mergeExternalImageChanges,
+  mergeVisibleBitmapLayers,
   moveBitmapLayer,
+  moveBitmapLayerGroup,
+  parkShotGroup,
   removeSketchLayer,
   reorderSketchLayer,
   moveSketchLayer,
   selectBitmapLayer,
   selectSketchLayer,
   updateBitmapLayer,
+  updateBitmapLayerGroupOpacity,
   updateSketchLayer,
   updateShotBaseVisibility,
   validateRenamePlan,
   mergeFolderImages,
   moveDialogueToShot,
   projectAcceptedExternalEdits,
+  projectHasSwbWarning,
   projectNeedsSwbImport,
   removeDialogue,
+  restoreParkedShotGroup,
   reorderShots,
   reorderShotGroup,
   sketchLayersForShot,
@@ -205,6 +217,83 @@ describe("project operations", () => {
     expect(shot.activeLayerId).toBe("layer-shot-a-2");
   });
 
+  it("copies a bitmap layer to another shot with a new layer path and preserved properties", () => {
+    const sourceLayer = {
+      id: "paint-source",
+      kind: "paint" as const,
+      name: "Shadow Pass",
+      visible: true,
+      locked: true,
+      opacity: 0.42,
+      blendMode: "multiply" as const,
+      order: 1,
+      bitmapPath: ".storyboard-workbench/layers/shot-a/paint-source.png",
+      width: 800,
+      height: 450
+    };
+    const project: Project = {
+      ...makeBitmapProject(),
+      shots: [
+        {
+          ...makeBitmapProject().shots[0],
+          layers: [makeBitmapProject().shots[0].layers![0], sourceLayer]
+        },
+        {
+          id: "shot-b",
+          imagePath: "/tmp/b.tif",
+          fileName: "b.tif",
+          order: 1,
+          activeLayerId: "layer-image",
+          layers: [createImageBitmapLayer("shot-b", 1920, 1080)]
+        }
+      ]
+    };
+
+    const updated = copyBitmapLayerToShot(project, "shot-a", "paint-source", "shot-b", "paint-copy");
+    const targetLayers = bitmapLayersForShot(updated.shots[1]);
+
+    expect(targetLayers.map((layer) => layer.id)).toEqual(["layer-image", "paint-copy"]);
+    expect(targetLayers[1]).toMatchObject({
+      kind: "paint",
+      name: "Shadow Pass",
+      visible: true,
+      locked: true,
+      opacity: 0.42,
+      blendMode: "multiply",
+      bitmapPath: ".storyboard-workbench/layers/shot-b/paint-copy.png",
+      width: 800,
+      height: 450
+    });
+    expect(updated.shots[1].activeLayerId).toBe("paint-copy");
+  });
+
+  it("copies a bitmap layer into the same shot at a target layer position", () => {
+    const project = addBitmapLayer(makeBitmapProject(), "shot-a", {
+      id: "paint-top",
+      name: "Top Paint",
+      width: 1920,
+      height: 1080
+    });
+
+    const updated = copyBitmapLayerToShot(
+      project,
+      "shot-a",
+      "paint-top",
+      "shot-a",
+      "paint-copy",
+      "layer-image",
+      "after"
+    );
+    const layers = bitmapLayersForShot(updated.shots[0]);
+
+    expect(layers.map((layer) => layer.id)).toEqual(["layer-image", "paint-copy", "paint-top"]);
+    expect(layers[1]).toMatchObject({
+      name: "Top Paint",
+      bitmapPath: ".storyboard-workbench/layers/shot-a/paint-copy.png"
+    });
+    expect(updated.shots[0].activeLayerId).toBe("paint-copy");
+  });
+
   it("deduplicates bitmap layers that point at the same layer asset", () => {
     const project = addBitmapLayer(makeBitmapProject(), "shot-a", {
       id: "layer-shot-a-1",
@@ -220,6 +309,93 @@ describe("project operations", () => {
     });
 
     expect(layers.map((layer) => layer.id)).toEqual(["layer-image", "layer-shot-a-1"]);
+  });
+
+  it("duplicates one storyboard after the drop target and copies its dialogue", () => {
+    const project: Project = {
+      ...makeBitmapProject(),
+      shots: [
+        {
+          ...makeBitmapProject().shots[0],
+          scriptText: "Shot A script",
+          swb: {
+            version: 1,
+            status: "compatible-external-edit",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "old",
+            statusMessage: "Import needed"
+          }
+        },
+        {
+          id: "shot-b",
+          imagePath: "/tmp/b.tif",
+          fileName: "b.tif",
+          order: 1,
+          layers: [createImageBitmapLayer("shot-b", 1920, 1080)]
+        }
+      ],
+      dialogues: [
+        {
+          id: "dialogue-a",
+          shotId: "shot-a",
+          text: "Keep this line",
+          order: 0
+        }
+      ]
+    };
+
+    const updated = duplicateShotAfter(project, "shot-a", "shot-b", {
+      shotId: "shot-copy",
+      imagePath: "/tmp/a-copy.tif",
+      fileName: "a-copy.tif",
+      previewPath: "/tmp/a-copy-preview.png"
+    });
+
+    expect(updated.shots.map((shot) => shot.id)).toEqual(["shot-a", "shot-b", "shot-copy"]);
+    const copiedShot = updated.shots[2];
+    expect(copiedShot).toMatchObject({
+      id: "shot-copy",
+      imagePath: "/tmp/a-copy.tif",
+      previewPath: "/tmp/a-copy-preview.png",
+      fileName: "a-copy.tif",
+      scriptText: "Shot A script",
+      swb: {
+        status: "owned",
+        statusMessage: undefined
+      }
+    });
+    expect(bitmapLayersForShot(copiedShot).map((layer) => layer.bitmapPath)).toEqual([
+      ".storyboard-workbench/layers/shot-copy/layer-image.png"
+    ]);
+    expect(updated.dialogues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          shotId: "shot-copy",
+          text: "Keep this line",
+          order: 0
+        })
+      ])
+    );
+  });
+
+  it("copies dialogue to the target shot without moving the original", () => {
+    const updated = copyDialogueToShot(makeProject(), "dialogue-1", "shot-b", "dialogue-copy");
+
+    expect(updated.dialogues).toEqual([
+      {
+        id: "dialogue-1",
+        shotId: "shot-a",
+        text: "First line",
+        order: 0
+      },
+      {
+        id: "dialogue-copy",
+        shotId: "shot-b",
+        text: "First line",
+        order: 0
+      }
+    ]);
   });
 
   it("restores Image metadata from scanned SWB TIFF metadata when duplicate paint layers corrupted it", () => {
@@ -334,6 +510,230 @@ describe("project operations", () => {
     expect(deleted.shots[0].activeLayerId).toBe("layer-image");
   });
 
+  it("merges the active bitmap layer into the next visible layer below it", () => {
+    const project = {
+      ...makeBitmapProject(),
+      shots: [
+        {
+          ...makeBitmapProject().shots[0],
+          activeLayerId: "paint-top",
+          layers: [
+            createImageBitmapLayer("shot-a", 1920, 1080),
+            {
+              id: "paint-bottom",
+              kind: "paint" as const,
+              name: "Bottom",
+              visible: true,
+              locked: false,
+              opacity: 0.35,
+              blendMode: "multiply" as const,
+              order: 1,
+              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-bottom.png",
+              width: 1920,
+              height: 1080
+            },
+            {
+              id: "paint-hidden",
+              kind: "paint" as const,
+              name: "Hidden",
+              visible: false,
+              locked: false,
+              opacity: 1,
+              blendMode: "normal" as const,
+              order: 2,
+              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-hidden.png",
+              width: 1920,
+              height: 1080
+            },
+            {
+              id: "paint-top",
+              kind: "paint" as const,
+              name: "Top",
+              visible: true,
+              locked: false,
+              opacity: 0.5,
+              blendMode: "screen" as const,
+              order: 3,
+              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-top.png",
+              width: 1920,
+              height: 1080
+            }
+          ]
+        }
+      ]
+    };
+
+    const merged = mergeBitmapLayerDown(project, "shot-a", "paint-top", "paint-bottom");
+    const layers = bitmapLayersForShot(merged.shots[0]);
+
+    expect(layers.map((layer) => [layer.id, layer.order])).toEqual([
+      ["layer-image", 0],
+      ["paint-bottom", 1],
+      ["paint-hidden", 2]
+    ]);
+    expect(layers[1]).toMatchObject({
+      opacity: 1,
+      blendMode: "normal",
+      visible: true
+    });
+    expect(merged.shots[0].activeLayerId).toBe("paint-bottom");
+  });
+
+  it("does not merge bitmap layers when either layer is locked", () => {
+    const project = addBitmapLayer(addBitmapLayer(makeBitmapProject(), "shot-a", {
+      id: "paint-bottom",
+      width: 1920,
+      height: 1080
+    }), "shot-a", {
+      id: "paint-top",
+      width: 1920,
+      height: 1080
+    });
+    const lockedTop = updateBitmapLayer(project, "shot-a", "paint-top", { locked: true });
+    const lockedBottom = updateBitmapLayer(project, "shot-a", "paint-bottom", { locked: true });
+
+    expect(mergeBitmapLayerDown(lockedTop, "shot-a", "paint-top", "paint-bottom")).toBe(lockedTop);
+    expect(mergeBitmapLayerDown(lockedBottom, "shot-a", "paint-top", "paint-bottom")).toBe(lockedBottom);
+  });
+
+  it("merges selected bitmap layers into the bottom selected layer", () => {
+    const project = addBitmapLayer(addBitmapLayer(addBitmapLayer(makeBitmapProject(), "shot-a", {
+      id: "paint-bottom",
+      width: 1920,
+      height: 1080
+    }), "shot-a", {
+      id: "paint-middle",
+      width: 1920,
+      height: 1080
+    }), "shot-a", {
+      id: "paint-top",
+      width: 1920,
+      height: 1080
+    });
+    const withLayerState = updateBitmapLayer(
+      updateBitmapLayer(project, "shot-a", "paint-bottom", { opacity: 0.5, blendMode: "multiply" }),
+      "shot-a",
+      "paint-top",
+      { opacity: 0.4, blendMode: "screen" }
+    );
+
+    const merged = mergeSelectedBitmapLayers(withLayerState, "shot-a", [
+      "paint-top",
+      "paint-bottom"
+    ]);
+    const layers = bitmapLayersForShot(merged.shots[0]);
+
+    expect(layers.map((layer) => [layer.id, layer.order])).toEqual([
+      ["layer-image", 0],
+      ["paint-bottom", 1],
+      ["paint-middle", 2]
+    ]);
+    expect(layers[1]).toMatchObject({
+      id: "paint-bottom",
+      visible: true,
+      opacity: 1,
+      blendMode: "normal"
+    });
+    expect(merged.shots[0].activeLayerId).toBe("paint-bottom");
+  });
+
+  it("does not merge selected bitmap layers when any selected layer is locked or hidden", () => {
+    const project = addBitmapLayer(addBitmapLayer(makeBitmapProject(), "shot-a", {
+      id: "paint-bottom",
+      width: 1920,
+      height: 1080
+    }), "shot-a", {
+      id: "paint-top",
+      width: 1920,
+      height: 1080
+    });
+    const locked = updateBitmapLayer(project, "shot-a", "paint-top", { locked: true });
+    const hidden = updateBitmapLayer(project, "shot-a", "paint-top", { visible: false });
+
+    expect(mergeSelectedBitmapLayers(locked, "shot-a", ["paint-bottom", "paint-top"])).toBe(locked);
+    expect(mergeSelectedBitmapLayers(hidden, "shot-a", ["paint-bottom", "paint-top"])).toBe(hidden);
+    expect(mergeSelectedBitmapLayers(project, "shot-a", ["paint-top"])).toBe(project);
+  });
+
+  it("merges all visible bitmap layers into the bottom visible layer and keeps hidden layers", () => {
+    const project = addBitmapLayer(addBitmapLayer(addBitmapLayer(makeBitmapProject(), "shot-a", {
+      id: "paint-bottom",
+      width: 1920,
+      height: 1080
+    }), "shot-a", {
+      id: "paint-hidden",
+      width: 1920,
+      height: 1080
+    }), "shot-a", {
+      id: "paint-top",
+      width: 1920,
+      height: 1080
+    });
+    const withLayerState = updateBitmapLayer(
+      updateBitmapLayer(
+        updateBitmapLayer(project, "shot-a", "layer-image", { opacity: 0.4, blendMode: "multiply" }),
+        "shot-a",
+        "paint-hidden",
+        { visible: false }
+      ),
+      "shot-a",
+      "paint-top",
+      { opacity: 0.5, blendMode: "screen" }
+    );
+
+    const merged = mergeVisibleBitmapLayers(withLayerState, "shot-a");
+    const layers = bitmapLayersForShot(merged.shots[0]);
+
+    expect(layers.map((layer) => [layer.id, layer.order])).toEqual([
+      ["paint-hidden", 0],
+      ["layer-shot-a-4", 1]
+    ]);
+    expect(layers[0]).toMatchObject({
+      id: "paint-hidden",
+      visible: false
+    });
+    expect(layers[1]).toMatchObject({
+      id: "layer-shot-a-4",
+      kind: "paint",
+      name: "Merged",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      blendMode: "normal",
+      bitmapPath: ".storyboard-workbench/layers/shot-a/layer-shot-a-4.png"
+    });
+    expect(merged.shots[0].activeLayerId).toBe("layer-shot-a-4");
+  });
+
+  it("merges locked visible bitmap layers while keeping them hidden", () => {
+    const project = addBitmapLayer(makeBitmapProject(), "shot-a", {
+      id: "paint-top",
+      width: 1920,
+      height: 1080
+    });
+    const locked = updateBitmapLayer(project, "shot-a", "paint-top", { locked: true });
+
+    const merged = mergeVisibleBitmapLayers(locked, "shot-a");
+    const layers = bitmapLayersForShot(merged.shots[0]);
+
+    expect(layers.map((layer) => [layer.id, layer.visible, layer.locked])).toEqual([
+      ["paint-top", false, true],
+      ["layer-shot-a-2", true, false]
+    ]);
+    expect(layers[1]).toMatchObject({
+      name: "Merged",
+      opacity: 1,
+      blendMode: "normal"
+    });
+    expect(merged.shots[0].activeLayerId).toBe("layer-shot-a-2");
+  });
+
+  it("does not merge visible bitmap layers when fewer than two layers are visible", () => {
+    const project = updateBitmapLayer(makeBitmapProject(), "shot-a", "layer-image", { visible: false });
+
+    expect(mergeVisibleBitmapLayers(project, "shot-a")).toBe(project);
+  });
+
   it("moves the Image bitmap layer like an ordinary layer", () => {
     const project = addBitmapLayer(makeBitmapProject(), "shot-a", {
       id: "paint-1",
@@ -352,6 +752,144 @@ describe("project operations", () => {
     expect(bitmapLayersForShot(movedBelow.shots[0]).map((layer) => [layer.id, layer.order])).toEqual([
       ["layer-image", 0],
       ["paint-1", 1]
+    ]);
+  });
+
+  it("moves an unlocked bitmap layer group as a block while leaving locked selected layers in place", () => {
+    const project = {
+      ...makeBitmapProject(),
+      shots: [
+        {
+          ...makeBitmapProject().shots[0],
+          activeLayerId: "paint-locked",
+          layers: [
+            createImageBitmapLayer("shot-a", 1920, 1080),
+            {
+              id: "paint-a",
+              kind: "paint" as const,
+              name: "A",
+              visible: true,
+              locked: false,
+              opacity: 1,
+              blendMode: "normal" as const,
+              order: 1,
+              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-a.png",
+              width: 1920,
+              height: 1080
+            },
+            {
+              id: "paint-locked",
+              kind: "paint" as const,
+              name: "Locked",
+              visible: true,
+              locked: true,
+              opacity: 0.5,
+              blendMode: "normal" as const,
+              order: 2,
+              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-locked.png",
+              width: 1920,
+              height: 1080
+            },
+            {
+              id: "paint-b",
+              kind: "paint" as const,
+              name: "B",
+              visible: true,
+              locked: false,
+              opacity: 1,
+              blendMode: "normal" as const,
+              order: 3,
+              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-b.png",
+              width: 1920,
+              height: 1080
+            },
+            {
+              id: "paint-target",
+              kind: "paint" as const,
+              name: "Target",
+              visible: true,
+              locked: false,
+              opacity: 1,
+              blendMode: "normal" as const,
+              order: 4,
+              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-target.png",
+              width: 1920,
+              height: 1080
+            }
+          ]
+        }
+      ]
+    };
+
+    const moved = moveBitmapLayerGroup(
+      project,
+      "shot-a",
+      ["paint-a", "paint-locked", "paint-b"],
+      "layer-image",
+      "before"
+    );
+
+    expect(bitmapLayersForShot(moved.shots[0]).map((layer) => [layer.id, layer.order])).toEqual([
+      ["paint-a", 0],
+      ["paint-b", 1],
+      ["layer-image", 2],
+      ["paint-locked", 3],
+      ["paint-target", 4]
+    ]);
+    expect(moved.shots[0].activeLayerId).toBe("paint-b");
+    expect(moveBitmapLayerGroup(project, "shot-a", ["paint-a", "paint-b"], "paint-a", "after")).toBe(project);
+  });
+
+  it("adjusts bitmap layer group opacity by delta while skipping locked and unselected layers", () => {
+    const project = {
+      ...makeBitmapProject(),
+      shots: [
+        {
+          ...makeBitmapProject().shots[0],
+          layers: [
+            { ...createImageBitmapLayer("shot-a", 1920, 1080), opacity: 0.2 },
+            {
+              id: "paint-a",
+              kind: "paint" as const,
+              name: "A",
+              visible: true,
+              locked: false,
+              opacity: 0.65,
+              blendMode: "normal" as const,
+              order: 1,
+              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-a.png",
+              width: 1920,
+              height: 1080
+            },
+            {
+              id: "paint-locked",
+              kind: "paint" as const,
+              name: "Locked",
+              visible: true,
+              locked: true,
+              opacity: 0.5,
+              blendMode: "normal" as const,
+              order: 2,
+              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-locked.png",
+              width: 1920,
+              height: 1080
+            }
+          ]
+        }
+      ]
+    };
+
+    const updated = updateBitmapLayerGroupOpacity(
+      project,
+      "shot-a",
+      ["layer-image", "paint-a", "paint-locked"],
+      0.4
+    );
+
+    expect(bitmapLayersForShot(updated.shots[0]).map((layer) => [layer.id, layer.opacity])).toEqual([
+      ["layer-image", 0.6],
+      ["paint-a", 1],
+      ["paint-locked", 0.5]
     ]);
   });
 
@@ -492,6 +1030,62 @@ describe("project operations", () => {
       ["shot-a", 2],
       ["shot-b", 3]
     ]);
+  });
+
+  it("parks selected storyboards without deleting files or dialogues", () => {
+    const project = {
+      ...addDialogue(makeProject(), "shot-b", "Second line", "dialogue-2"),
+      pendingDeletedShots: [{ id: "deleted", imagePath: "/tmp/deleted.png", fileName: "deleted.png" }]
+    };
+
+    const updated = parkShotGroup(project, ["shot-b", "shot-c"]);
+
+    expect(updated.shots.map((shot) => [shot.id, shot.order])).toEqual([
+      ["shot-a", 0]
+    ]);
+    expect(updated.parkedShots?.map((shot) => [shot.id, shot.order])).toEqual([
+      ["shot-b", 0],
+      ["shot-c", 1]
+    ]);
+    expect(updated.dialogues.filter((dialogue) => dialogue.shotId === "shot-b")).toHaveLength(1);
+    expect(updated.pendingDeletedShots).toEqual(project.pendingDeletedShots);
+  });
+
+  it("restores parked storyboards into the main shot order", () => {
+    const parked = parkShotGroup(addDialogue(makeProject(), "shot-b", "Second line", "dialogue-2"), ["shot-b", "shot-c"]);
+
+    const restored = restoreParkedShotGroup(parked, ["shot-b", "shot-c"], "shot-a", "after");
+
+    expect(restored.shots.map((shot) => [shot.id, shot.order])).toEqual([
+      ["shot-a", 0],
+      ["shot-b", 1],
+      ["shot-c", 2]
+    ]);
+    expect(restored.parkedShots).toBeUndefined();
+    expect(restored.dialogues.filter((dialogue) => dialogue.shotId === "shot-b")).toHaveLength(1);
+  });
+
+  it("does not import parked storyboard files as new folder images", () => {
+    const parked = parkShotGroup(makeProject(), ["shot-b"]);
+    const updated = mergeFolderImages(parked, [
+      {
+        imagePath: "/tmp/b.png",
+        fileName: "b.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "parked-pixels"
+      },
+      {
+        imagePath: "/tmp/new.png",
+        fileName: "new.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "new-pixels"
+      }
+    ]);
+
+    expect(updated.shots.map((shot) => shot.imagePath)).toEqual(["/tmp/new.png"]);
+    expect(updated.parkedShots?.map((shot) => shot.id)).toEqual(["shot-b"]);
   });
 
   it("deletes selected shots, records pending deleted files, and removes their dialogues", () => {
@@ -1096,7 +1690,7 @@ describe("project operations", () => {
     ]);
   });
 
-  it("accepts compatible external TIFF edits as a new base", () => {
+  it("marks compatible external TIFF edits as needing import", () => {
     const project: Project = {
       ...makeProject(),
       shots: [
@@ -1136,10 +1730,325 @@ describe("project operations", () => {
     ]);
 
     expect(updated.shots[0].swb).toMatchObject({
-      status: "owned",
-      baseFingerprint: "new-pixels"
+      status: "compatible-external-edit",
+      baseFingerprint: "old-pixels"
     });
-    expect(projectAcceptedExternalEdits(updated)).toBe(true);
+    expect(projectNeedsSwbImport(updated)).toBe(true);
+    expect(projectAcceptedExternalEdits(updated)).toBe(false);
+  });
+
+  it("merges external image changes without dropping unscanned shots", () => {
+    const project: Project = {
+      ...makeProject(),
+      shots: [
+        {
+          ...makeProject().shots[0],
+          swb: {
+            version: 1,
+            status: "owned",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "old-pixels"
+          }
+        },
+        ...makeProject().shots.slice(1)
+      ]
+    };
+    const updated = mergeExternalImageChanges(project, [
+      {
+        imagePath: "/tmp/a.png",
+        fileName: "a.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "new-pixels",
+        swbMetadata: {
+          app: "Storyboard Workbench",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "shot-a",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          baseFingerprint: "old-pixels",
+          updatedAt: "2026-05-25T00:00:00.000Z",
+          layers: []
+        }
+      }
+    ]);
+
+    expect(updated.shots).toHaveLength(project.shots.length);
+    expect(updated.shots[0].swb?.status).toBe("compatible-external-edit");
+  });
+
+  it("keeps parked external edits importable instead of hiding the warning state", () => {
+    const project: Project = {
+      ...makeProject(),
+      parkedShots: [
+        {
+          ...makeProject().shots[1],
+          id: "shot-parked",
+          imagePath: "/tmp/parked.tiff",
+          fileName: "parked.tiff",
+          order: 0,
+          swb: {
+            version: 1,
+            status: "owned",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "old-pixels"
+          }
+        }
+      ]
+    };
+
+    const updated = mergeExternalImageChanges(project, [
+      {
+        imagePath: "/tmp/parked.tiff",
+        fileName: "parked.tiff",
+        width: 1920,
+        height: 1080,
+        fingerprint: "new-pixels",
+        swbMetadata: {
+          app: "Storyboard Workbench",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "shot-parked",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          baseFingerprint: "old-pixels",
+          updatedAt: "2026-05-25T00:00:00.000Z",
+          layers: []
+        }
+      }
+    ]);
+
+    expect(updated.parkedShots?.[0].swb?.status).toBe("compatible-external-edit");
+    expect(projectNeedsSwbImport(updated)).toBe(true);
+    expect(projectHasSwbWarning(updated)).toBe(true);
+  });
+
+  it("does not let TIFF metadata override the project fingerprint baseline", () => {
+    const project: Project = {
+      ...makeProject(),
+      shots: [
+        {
+          ...makeProject().shots[0],
+          swb: {
+            version: 1,
+            status: "owned",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "old-json-pixels"
+          }
+        }
+      ],
+      dialogues: []
+    };
+
+    const updated = mergeFolderImages(project, [
+      {
+        imagePath: "/tmp/a.png",
+        fileName: "a.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "saved-tiff-pixels",
+        swbMetadata: {
+          app: "Storyboard Workbench",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "shot-a",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          baseFingerprint: "saved-tiff-pixels",
+          updatedAt: "2026-05-25T00:00:00.000Z",
+          layers: []
+        }
+      }
+    ]);
+
+    expect(updated.shots[0].swb).toMatchObject({
+      status: "compatible-external-edit",
+      baseFingerprint: "old-json-pixels"
+    });
+    expect(projectNeedsSwbImport(updated)).toBe(true);
+  });
+
+  it("keeps owned status when project fingerprint is newer than stale TIFF metadata", () => {
+    const project: Project = {
+      ...makeProject(),
+      shots: [
+        {
+          ...makeProject().shots[0],
+          swb: {
+            version: 1,
+            status: "owned",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "imported-pixels"
+          }
+        }
+      ],
+      dialogues: []
+    };
+
+    const updated = mergeExternalImageChanges(project, [
+      {
+        imagePath: "/tmp/a.png",
+        fileName: "a.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "imported-pixels",
+        swbMetadata: {
+          app: "Storyboard Workbench",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "shot-a",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          baseFingerprint: "old-xmp-pixels",
+          updatedAt: "2026-05-25T00:00:00.000Z",
+          layers: []
+        }
+      }
+    ]);
+
+    expect(updated.shots[0].swb).toMatchObject({
+      status: "owned",
+      baseFingerprint: "imported-pixels"
+    });
+    expect(projectNeedsSwbImport(updated)).toBe(false);
+    expect(projectHasSwbWarning(updated)).toBe(false);
+  });
+
+  it("repairs copied SWB TIFFs whose embedded shot id still points at the source shot", () => {
+    const project: Project = {
+      ...makeProject(),
+      shots: [
+        {
+          ...makeProject().shots[0],
+          id: "shot-copy",
+          swb: {
+            version: 1,
+            status: "incompatible-external-edit",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "copied-pixels",
+            statusMessage: "SWB shot id in TIFF does not match project metadata"
+          }
+        }
+      ],
+      dialogues: []
+    };
+
+    const updated = mergeExternalImageChanges(project, [
+      {
+        imagePath: "/tmp/a.png",
+        fileName: "a.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "copied-pixels",
+        swbMetadata: {
+          app: "Storyboard Workbench",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "source-shot",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          baseFingerprint: "copied-pixels",
+          updatedAt: "2026-05-25T00:00:00.000Z",
+          layers: []
+        }
+      }
+    ]);
+
+    expect(updated.shots[0].swb).toMatchObject({
+      status: "owned",
+      baseFingerprint: "copied-pixels",
+      statusMessage: undefined
+    });
+    expect(projectNeedsSwbImport(updated)).toBe(false);
+    expect(projectHasSwbWarning(updated)).toBe(false);
+  });
+
+  it("keeps parked shots owned when project fingerprint is newer than stale TIFF metadata", () => {
+    const project: Project = {
+      ...makeProject(),
+      parkedShots: [
+        {
+          ...makeProject().shots[1],
+          id: "shot-parked",
+          imagePath: "/tmp/parked.tiff",
+          fileName: "parked.tiff",
+          order: 0,
+          swb: {
+            version: 1,
+            status: "owned",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "imported-pixels"
+          }
+        }
+      ]
+    };
+
+    const updated = mergeExternalImageChanges(project, [
+      {
+        imagePath: "/tmp/parked.tiff",
+        fileName: "parked.tiff",
+        width: 1920,
+        height: 1080,
+        fingerprint: "imported-pixels",
+        swbMetadata: {
+          app: "Storyboard Workbench",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "shot-parked",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          baseFingerprint: "old-xmp-pixels",
+          updatedAt: "2026-05-25T00:00:00.000Z",
+          layers: []
+        }
+      }
+    ]);
+
+    expect(updated.parkedShots?.[0].swb).toMatchObject({
+      status: "owned",
+      baseFingerprint: "imported-pixels"
+    });
+    expect(projectNeedsSwbImport(updated)).toBe(false);
+    expect(projectHasSwbWarning(updated)).toBe(false);
+  });
+
+  it("keeps owned status when SWB metadata is missing but pixels match the project baseline", () => {
+    const project: Project = {
+      ...makeProject(),
+      shots: [
+        {
+          ...makeProject().shots[0],
+          swb: {
+            version: 1,
+            status: "owned",
+            canvasWidth: 1920,
+            canvasHeight: 1080,
+            baseFingerprint: "same-pixels"
+          }
+        }
+      ],
+      dialogues: []
+    };
+
+    const updated = mergeFolderImages(project, [
+      {
+        imagePath: "/tmp/a.png",
+        fileName: "a.png",
+        width: 1920,
+        height: 1080,
+        fingerprint: "same-pixels"
+      }
+    ]);
+
+    expect(updated.shots[0].swb?.status).toBe("owned");
+    expect(projectNeedsSwbImport(updated)).toBe(false);
   });
 
   it("marks changed TIFF dimensions as incompatible external edits", () => {
@@ -1346,5 +2255,39 @@ describe("project operations", () => {
 
     expect(result.ok).toBe(true);
     expect(result.issues).toEqual([]);
+  });
+
+  it("skips file names reserved by parked shots", () => {
+    const project: Project = {
+      ...makeProject(),
+      name: "Board",
+      shots: Array.from({ length: 3 }, (_, index) => ({
+        id: `shot-${index}`,
+        imagePath: `/tmp/current-${index}.png`,
+        fileName: `current-${index}.png`,
+        sourceFileName: `current-${index}.png`,
+        order: index,
+        sketchLayers: []
+      })),
+      parkedShots: [
+        {
+          id: "parked-shot",
+          imagePath: "/tmp/Board_stb_0020.png",
+          fileName: "Board_stb_0020.png",
+          sourceFileName: "Board_stb_0020.png",
+          order: 0,
+          sketchLayers: []
+        }
+      ],
+      dialogues: []
+    };
+
+    const plan = createRenamePlan(project);
+
+    expect(plan.map((item) => item.finalFileName)).toEqual([
+      "Board_stb_0010.png",
+      "Board_stb_0030.png",
+      "Board_stb_0040.png"
+    ]);
   });
 });

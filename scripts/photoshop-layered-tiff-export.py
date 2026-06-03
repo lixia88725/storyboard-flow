@@ -64,14 +64,13 @@ def read_rgba_png(file_path: Path, width: int, height: int) -> numpy.ndarray:
     elif image.shape[2] > 4:
         image = image[..., :4]
 
-    if image.shape[0] != height or image.shape[1] != width:
-        raise ValueError(
-            f"Layer dimensions must match canvas: {file_path} is "
-            f"{image.shape[1]}x{image.shape[0]}, expected {width}x{height}"
-        )
-
     if image.dtype != numpy.uint8:
         image = image.astype(numpy.uint8)
+
+    if image.shape[0] != height or image.shape[1] != width:
+        y_index = numpy.linspace(0, image.shape[0] - 1, height).round().astype(numpy.intp)
+        x_index = numpy.linspace(0, image.shape[1] - 1, width).round().astype(numpy.intp)
+        image = image[y_index[:, None], x_index]
 
     return image
 

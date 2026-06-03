@@ -71,10 +71,33 @@ describe("storyboardScript", () => {
     );
   });
 
+  it("does not serialize parked shot script text into the root markdown mirror", () => {
+    const project = {
+      ...projectWithScripts(),
+      parkedShots: [
+        {
+          id: "shot-parked",
+          imagePath: "/tmp/parked.tiff",
+          fileName: "parked.tiff",
+          order: 0,
+          scriptText: "Parked text"
+        }
+      ]
+    };
+
+    expect(serializeStoryboardScriptMarkdown(project)).toBe("1. Opening shot\n2. \n3. Line one\n   Line two\n");
+  });
+
   it("parses numbered markdown entries with empty and indented continuation lines", () => {
     expect(
       parseStoryboardScriptMarkdown("1. First line  \n   second line\n\n2.\n\n10. Tenth\n    aligned\n")
     ).toEqual(["First line\nsecond line", "", "Tenth\naligned"]);
+  });
+
+  it("ignores non-numbered prose before and between storyboard script entries", () => {
+    expect(
+      parseStoryboardScriptMarkdown("# Beat sheet\n\nNotes before\n1. First shot\nrandom prose\n2. Second shot\n   continuation\n")
+    ).toEqual(["First shot", "Second shot\ncontinuation"]);
   });
 
   it("detects when markdown entries differ from project script text", () => {

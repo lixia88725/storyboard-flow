@@ -68,6 +68,18 @@ Reason: 用户需要可逆的安全网；工作区 TIFF 可以被 SWB Save 更�
 
 Reason: Photoshop 或其他工具可作为外部像素编辑器使用；轻度兼容编辑不应打断用户。
 
+## External TIFF Sync Uses JSON Baseline First
+
+已知 SWB TIFF 路径可以参与外部编辑检测，但 owned 项目的像素变化比较优先使用 `storyboard.project.json` 中的 `shot.swb.baseFingerprint`。TIFF XMP 仍用于检查 shot id、画布尺寸和 SWB 兼容性，但 Import 后的旧 XMP `baseFingerprint` 不应覆盖 JSON 基线。
+
+Reason: Import 可更新内部 layer PNG 和 JSON，但不写 root TIFF。若下一次检测继续相信旧 XMP，就会把同一次 Photoshop 修改反复判成外部修改，导致 Import 锁定无法闭环。
+
+## Compatible External Edits May Auto-Import
+
+当已知 SWB TIFF 有兼容外部编辑，且对应 shot 没有 SWB 本地未保存改动时，SWB 可以自动把 TIFF 抽回内部 layer PNG 并更新 JSON。如果同一 shot 同时有本地 dirty 改动，则不能静默覆盖；用户手动 Import 后，外部版本作为副本 shot 导入。
+
+Reason: Photoshop 保存后的兼容修改应接近实时进入 SWB；但 SWB 和 Photoshop 同时编辑时必须保留双方版本。
+
 ## Add Shot Creates A Blank TIFF
 
 `Add Shot` 在当前场景文件夹创建白色 TIFF，支持 `16:9`、`2.39:1`、`1.43:1 IMAX` 预设。
@@ -172,6 +184,36 @@ Each shot may store `scriptText` in project JSON. The root `storyboard-script.md
 
 Reason: JSON remains the transactional app source of truth, while the Markdown file gives users a simple text workflow in tools like Obsidian or Typora. Explicit Import prevents silent external text changes from reordering or creating shots without user intent.
 
+## Markdown Storyboard Bootstrap Creates A New Project Only
+
+拖入或选择 numbered-list Markdown script 可以在空目标文件夹里创建一个新的 SWB project。每个 ordered-list item 生成一个 blank shot，item 正文写入该 shot 的 `scriptText`。
+
+Reason: 这是从文字分镜到 storyboard 结构的最小可用桥梁。它避免追加、覆盖、合并等高风险选择，也为未来 AI 只输出同类 Markdown 留出清晰边界。
+
+## Parked Shots Are Project State, Not Save Output
+
+`project.parkedShots` 保存右侧待定区的完整 shot 数据。Parked shots 保留 image/layer assets 并写入 JSON，但不参与 root TIFF Save 输出、文件名同步、Timeline 或 `storyboard-script.md`，直到它们被恢复回 `project.shots`。
+
+Reason: 待定区是创作过程中的临时搁置区，应保留内容但不改变主工作区顺序和交付文件夹输出。
+
+## Option / Alt Drag Means Copy, Not Multi-Select
+
+Option/Alt drag 只复制拖拽开始时点击的单个对象：一个 storyboard、一个 layer 或一个 dialogue item。它不跟随 storyboard 或 layer 多选。
+
+Reason: 复制手势必须可预测，避免意外批量复制。多选仍主要服务于移动、排序和批量图层编辑。
+
+## Delete Targets The Last Selected Object Type
+
+Delete/Backspace 作用于 renderer 中最后被选中的对象类型：点击图层行后删除当前 active unlocked layer；点击 storyboard card 后删除当前选中的 storyboard group。
+
+Reason: 用户会期待 Delete 删除“刚刚选中的东西”。该状态只存在 renderer，不把瞬时 UI focus 写入项目 JSON。
+
+## Merge Button Is Contextual
+
+图层抽屉的 `Merge` 按钮和 `Cmd/Ctrl+E` 使用同一个动作。单选图层时执行 active layer 向下合并；多选两层及以上时，把选中的 visible/unlocked layers 合并到选中组最下面的图层。Merge visible 可以把 locked visible layers 烘焙进新 merged layer，但保留这些 locked source layers 并自动隐藏。
+
+Reason: 同一个命令应匹配当前图层选择状态，而不是让用户记两套合并入口。保留 locked source layers 可以让 Merge visible 有用，同时不删除受保护内容。
+
 ## Import Also Handles External Root Images
 
 When the app window regains focus, Electron may scan the current root folder for newly added supported image files. It only builds image records for paths that are not already in `project.shots` and not pending deletion. Newly detected images become `non-swb` shots and require explicit `Import`.
@@ -214,10 +256,10 @@ Reason: 迁移必须保护旧项目可见结果，同时避免新代码继续扩
 
 Reason: `storyboard-script.md` 是用户可编辑的文字镜像。用户修改某个编号下的文字时，预期是更新对应 shot 的脚本文字，而不是因为文字变成新内容就生成新的 storyboard。
 
-Non-goal: bitmap layer 重构不代表完整 Photoshop 图层 round-trip。Photoshop layered TIFF import/export 已经产品化为 raster layer 交换路径；PSD-first、复杂 Photoshop 图层完整保真和文件监听同步仍是待验证方向。
+Non-goal: bitmap layer 重构不代表完整 Photoshop 图层 round-trip。Photoshop layered TIFF import/export 已经产品化为 raster layer 交换路径；PSD-first 和复杂 Photoshop 图层完整保真仍是待验证方向。
 
 ## V1 Avoids Heavy Features
 
-V1 刻意不包含 AI 字段、导出、SQLite、Photoshop 集成、文件监听、云同步和复杂绘图工具。
+V1 刻意不包含 AI 字段、PDF/image-sequence export、SQLite、云同步、PSD-first 工作流和复杂绘图工具。
 
 Reason: 产品目标是一个可用的最小分镜排列工具，后续可扩展。

@@ -20,6 +20,7 @@ npm run dev
 
 - `src/shared/projectOps.ts`：项目数据、排序、重命名计划、bitmap layer metadata 等纯逻辑。改项目行为时优先在这里补单测。
 - `electron/main/main.ts`：Electron IPC、文件扫描、Import、Save 编排、TIFF metadata 和 bitmap asset 初始化。
+- `electron/main/externalChanges.ts`、`saveProgress.ts`、`closePrompt.ts`、`previewCache.ts`、`storyboardScriptProject.ts`：外部编辑检测、Save 进度、关闭确认、预览缓存和 Markdown 创建项目 helper。
 - `electron/main/bitmapLayerOrdering.ts`：Electron Save / Photoshop export 共用的 bitmap layer 排序和默认值规则。
 - `electron/main/storyboardScript.ts`：`storyboard-script.md` 的序列化、解析和 Import 计划 helper。
 - `electron/main/photoshopTiffExport.ts` / `electron/main/photoshopTiffImport.ts`：Photoshop layered TIFF 交换路径。
@@ -28,6 +29,7 @@ npm run dev
 - `src/renderer/ShotCard.tsx`：每张 storyboard card 的展示、台词卡、script 背面、懒渲染占位，以及卡片内组合 `SketchPad` / `LayerPanel`。
 - `src/renderer/SketchPad.tsx`：bitmap drawing、eraser live preview、bitmap Select transform、Onion Skin overlay 和 Konva stage wiring。改这里先跑 renderer tests，再跑 build/smoke。
 - `src/renderer/LayerPanel.tsx`：per-shot layer drawer UI、layer row gestures、visibility sweep、opacity/reorder controls。
+- `src/renderer/ParkingShelf.tsx`、`deleteTarget.ts`、`bitmapLayerWriteQueue.ts`、`storyboardDnd.ts`：待定区、Delete 目标、bitmap 写队列和拖拽 helper。
 - `src/renderer/sketchRendering.ts`、`sketchGeometry.ts`、`activeTargets.ts`、`keyboardShortcuts.ts`、`animationViewport.ts`：renderer helper，适合先补单测再接入 UI。
 - `scripts/electron-bitmap-smoke.mjs`：端到端 Electron/CDP smoke，覆盖 Save safety、bitmap drawing、layer panel、Photoshop round trip、animation 和 legacy migration。
 
@@ -37,6 +39,8 @@ npm run dev
 - 顶部地址栏输入或选择最近文件夹后，应用扫描 `.png`、`.jpg`、`.jpeg`、`.tif`、`.tiff`。
 - 内部状态自动保存到当前文件夹的 `.storyboard-workbench/storyboard.project.json`。
 - 分镜脚本文字同步到根目录 `storyboard-script.md`；软件内编辑会自动写入，外部修改需要点击 `Import` 导入。
+- numbered-list Markdown 文件可创建新的 SWB project：每个列表项变成一张 blank shot，正文写入该 shot 的 `scriptText`。
+- 右侧待定区保存 `parkedShots`，只保存在 JSON 中；待定 shot 不参与 Save 输出、文件名同步、Timeline 或 `storyboard-script.md`。
 - `Save` 是唯一会同步真实文件名和写工作 TIFF 像素的操作。
 - 选中 storyboard 后按 Delete/Backspace 会先在软件内移除卡片；点击 `Save` 后对应根目录图片进入系统垃圾箱，不进入 `Archive`。
 
@@ -68,7 +72,11 @@ npm run dev
 - 新增图层进入 undo 时会记录新增 layer PNG 的空快照；如果 autosave 已创建内部 PNG，Undo 会删除该 orphan asset，Redo 会恢复它。
 - Save 时由 Electron 写入工作 TIFF：单层内容走 sharp 单层 TIFF；多 bitmap layer shot 走 Photoshop-readable layered TIFF，包含图层顺序、名称、显隐、opacity 和 blend mode。
 
-图层面板是每张 storyboard 右侧的 click-toggle 抽屉，支持新增、删除、重命名、显隐、lock、opacity、blend mode 和拖动排序。图层行纵向拖动用于排序，横向拖动用于调整 opacity；顶部独立 opacity slider 已移除。隐藏图层不会成为 active 绘制目标。锁定图层仍可选择和显隐，但不能绘制、擦除、选区变换、清空、删除、重命名、调整 opacity / blend mode 或排序。`Image` 层在 UI 中可像普通图层一样选中、绘制、擦除、重排；如果当前 shot 有多个图层，选中 `Image` 后点击 `Delete current layer` 会移除 Image layer 和内部 PNG asset。每个 shot 至少保留一个图层，所以只剩一个 `Image` 层时删除按钮会禁用。
+图层面板是每张 storyboard 右侧的 click-toggle 抽屉，支持新增、删除、重命名、显隐、lock、opacity、blend mode、Merge 和拖动排序。图层行纵向拖动用于排序，横向拖动用于调整 opacity；Shift-click 可多选图层并批量排序/调整 opacity，锁定层可被选中但不会参与批量修改。隐藏图层不会成为 active 绘制目标。锁定图层仍可选择和显隐，但不能绘制、擦除、选区变换、清空、删除、重命名、调整 opacity / blend mode 或排序。`Image` 层在 UI 中可像普通图层一样选中、绘制、擦除、重排；如果当前 shot 有多个图层，选中 `Image` 后点击 `Delete current layer` 会移除 Image layer 和内部 PNG asset。每个 shot 至少保留一个图层，所以只剩一个 `Image` 层时删除按钮会禁用。
+
+`Merge` 是上下文动作：单选时合并 active layer 到下方可见层；多选两层及以上时合并选中 visible/unlocked layers 到选中组最下面的图层。`Cmd+E` / `Ctrl+E` 走同一套逻辑。`Merge visible` 会把 locked visible layers 烘焙进新 merged layer，但保留并隐藏这些 locked source layers。
+
+Option/Alt drag 是复制手势：可复制单张 storyboard、单个 layer 或单条 dialogue。普通拖拽继续用于移动/排序；复制不跟随多选。
 
 工具栏顶部的齿轮按钮可配置本机快捷键，覆盖 Brush、Eraser、Select、Clear layer、Save、Add Shot、Onion Skin、左右切帧、Undo 和 Redo。快捷键设置写入 Electron `userData`，不是项目文件的一部分。`Escape` 默认用于 Clear layer；当菜单打开时，`Escape` 优先关闭菜单。
 
@@ -80,7 +88,7 @@ npm run dev
 
 现有 `Import` 操作也会检测 Photoshop layered TIFF，并把 raster Photoshop layers 转换成 SWB-owned bitmap layers。源 TIFF 会移动到 `Archive/YYYY-MM-DD-HHMMSS/`，SWB 继续使用 `.storyboard-workbench/layers/*.png` 和 `storyboard.project.json` 作为内部工作数据。
 
-如果用户在 Finder/Bridge 中向当前根目录新增图片，应用窗口重新获得焦点后会把新增路径追加为待 Import 的 `non-swb` shot，并点亮 Import 旁的黄色感叹号。该检测只处理新增图片，不重新解码所有已知图片，也不会把 pending deleted 的图片重新加回项目。
+如果用户在 Finder/Bridge 中向当前根目录新增图片，应用窗口重新获得焦点后会把新增路径追加为待 Import 的 `non-swb` shot，并点亮 Import 旁的黄色感叹号。已知 SWB TIFF 路径也会参与外部编辑检测：兼容的 Photoshop 保存结果在 SWB 没有本地 dirty 冲突时可自动导入；如果同一 shot 在 SWB 里也有未 Save 改动，则保持锁定并要求用户点 Import，Import 后把 Photoshop 版本作为副本 shot 导入。
 
 当前 Photoshop TIFF import/export 路径依赖 Python `psdtags + tifffile + imagecodecs + numpy`。依赖目录解析顺序是：`SWB_PYTHON_DEPS_DIR`、打包资源目录 `python-deps/photoshop-tiff`、开发目录 `vendor/python/photoshop-tiff`，最后才 fallback 到旧 spike 目录 `/private/tmp/psdtags-spike-deps`。开发环境可运行 `npm run setup:photoshop-tiff-deps` 安装到 `vendor/python/photoshop-tiff`。打包前运行 `npm run prepare:package-resources` 会把已安装的 `vendor/python/photoshop-tiff` 复制到 `dist-resources/python-deps/photoshop-tiff`；后续 installer/electron packager 配置必须把 `dist-resources` 内容放进 packaged app 的 resources 根目录，这样运行时的 `process.resourcesPath/python-deps/photoshop-tiff` 才能命中。`npm run smoke:bitmap` 会导出一组 Photoshop TIFF，用 `psdtags` 读回 layer names，并把其中一个导出的 layered TIFF 作为外部文件重新 Import，验证导入后的 SWB shot 有匹配数量的 bitmap layers、layer PNG assets 和 `swb.sourceKind: "photoshop-layered-tiff"`。
 
