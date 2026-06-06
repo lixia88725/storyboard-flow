@@ -7,7 +7,7 @@
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `main`
 - Current handoff date: 2026-06-06
-- Previous handoff baseline: `7f5a348 Rename app to Storyboard Flow`
+- Previous handoff baseline: `0eb44c0 Document Storyboard Flow naming boundary`
 - Current goal of this handoff: preserve the latest feature work, validation results, and next-step map so another session or AI agent can continue without rediscovering context.
 
 ## Current Product State
@@ -119,7 +119,7 @@ Fresh verification for this handoff:
 
 ```bash
 npm run test
-# passed: 35 test files, 241 tests
+# passed: 40 test files, 304 tests
 
 npm run typecheck
 # passed
@@ -130,55 +130,53 @@ npm run check:preload
 npm run build
 # passed
 # Vite still reports the existing non-blocking chunk-size warning:
-# dist/assets/index-RjhoD930.js 681.34 kB, gzip 208.69 kB
-```
-
-Recent end-to-end smoke from this session:
-
-```bash
-npm run smoke:bitmap
-# passed
-# Expected Save conflict protection log appeared:
-# Temporary rename file already exists
+# dist/assets/index-DO1Roag-.js 711.48 kB, gzip 217.19 kB
 ```
 
 There is no `lint` script in `package.json`.
 
 ## Current Git State Before This Handoff Commit
 
-This session has broad uncommitted feature work plus this documentation refresh. `git diff --stat` should be rerun immediately before commit for the exact final count because untracked test/helper files are not included in normal `git diff --stat`.
+Before the final handoff commit, the working tree had only documentation changes:
 
-High-level changed areas:
+```bash
+git diff --stat
+# context-handoff.md and todo.md only
+```
 
-- Electron Save / Import / external change / close prompt helpers and tests.
-- Preload API surface and preload sync.
-- Renderer App, ShotCard, SketchPad, LayerPanel, ParkingShelf, drag previews, delete target, bitmap write queue, and styling.
-- Shared project operations and project type metadata.
-- Electron bitmap smoke coverage and Photoshop TIFF export script.
-- Handoff/progress/decision docs.
+The project is on `main` tracking `origin/main`. The GitHub repository is `https://github.com/lixia88725/storyboard-flow`.
 
 ## Next Recommended Work
 
-Start with manual dogfood of the newest interaction edges:
+Start a fresh session for a release-and-team-handoff audit before first external user testing and team split-up. Suggested prompt:
 
-1. Open `/Users/xiali/Pictures/test`, draw several fast strokes, Save, close, reopen.
-2. Confirm Option/Alt dragging a shot, layer, and dialogue behaves like ordinary move/sort and does not create copies.
-3. Copy/paste one storyboard with `Cmd/Ctrl+C` and `Cmd/Ctrl+V`; the copy should appear after the current storyboard with a short rightward slide-out animation.
-4. Copy/paste one layer with `Cmd/Ctrl+C` and `Cmd/Ctrl+V`; the copy should appear below the current layer with a short downward slide-out animation.
-5. Shift-select several layers, run `Merge`, then undo/redo and Save.
-6. Open a larger folder such as `/Users/xiali/Pictures/TEST2`, confirm loading progress appears quickly and Save and Close exits.
-7. Watch for repeated user need around Photoshop edits to non Image/base layers while SWB has local dirty layers; current V1 preserves SWB layer PNGs and treats Photoshop as an external/root TIFF ownership update.
+```text
+请接手 Storyboard Flow 项目，做一次发布前 + 团队接手前的系统 audit。
 
-Good code follow-ups:
+工作目录：
+/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers
 
-- Keep reducing `App.tsx` only when a feature naturally exposes a boundary. Do not split just to split.
-- Do not reintroduce Option/Alt drag copy without a fresh product decision.
-- If Save error dialog text becomes too raw for artists, wrap the same details in clearer recovery copy.
+分支：
+main
+
+请先阅读：
+1. AGENTS.md
+2. decisions.md
+3. context-handoff.md
+4. todo.md
+5. README.md
+
+目标：
+只做 audit，不要先改代码。系统检查第一批用户测试前的稳定性风险、核心用户体验风险、团队分工开发风险、技术债/测试覆盖风险、交付/打包风险。
+
+输出：
+生成 docs/audit-2026-06-06-release-and-team-handoff.md，按 P0 / P1 / P2 / 明确不做 / 推荐下一步执行顺序组织。
+```
 
 ## Known Remaining Work
 
-- No active P1 items.
-- Current P2 items are in `todo.md`.
+- Active P1: release-and-team-handoff audit; see `todo.md`.
+- Current P2 and PSD future items are in `todo.md`.
 - Full installer/electron packager integration is not implemented.
 - PSD-first import/export is not implemented.
 - Windows Photoshop compatibility has not been tested.
