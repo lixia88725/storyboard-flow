@@ -2,6 +2,12 @@
 
 Storyboard Flow 是一个本地优先的故事板工作台。V1 聚焦：打开一个本地图像文件夹、排序 storyboard、移动台词、绘制修改、管理轻量图层，并在需要时把软件内顺序和画面同步回真实 TIFF。
 
+## Naming And Compatibility
+
+`Storyboard Flow` 是当前产品名，UI、README、GitHub 和新用户可见文案都应使用这个名字。
+
+`.storyboard-workbench/`、`SWB`、`swb-*` 和 `storyboard-workbench.local` 仍是当前内部格式和兼容层名称。它们暂时不改名，因为旧项目、旧 TIFF metadata、Photoshop round trip、smoke tests 和环境变量仍依赖这些标识。新写入的 TIFF metadata 使用 `app: "Storyboard Flow"`；读取逻辑继续兼容旧的 `app: "Storyboard Workbench"`。
+
 ## Scripts
 
 ```bash

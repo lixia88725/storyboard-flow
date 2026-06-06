@@ -2,6 +2,14 @@
 
 架构决策记录。AGENTS.md 引用此文件，不再重复这些规则。
 
+## Product Name Is Storyboard Flow
+
+`Storyboard Flow` 是唯一产品名。UI、README、GitHub 文案、窗口标题、新用户可见状态文案和新写入的 TIFF metadata 都应使用 `Storyboard Flow`。
+
+`Storyboard Workbench` 是旧产品名，只保留为 legacy metadata 兼容值。`.storyboard-workbench/`、`SWB`、`swb-*`、`SWB_PYTHON_DEPS_DIR` 和 `storyboard-workbench.local` 暂时保留为内部格式/命名空间/环境变量名称。
+
+Reason: 产品命名需要统一，避免用户和 AI agent 混乱；但内部格式名已经写入旧项目、TIFF XMP、测试和 Photoshop 交换路径。彻底迁移内部格式应作为单独任务处理，包含旧项目读取、首次保存迁移、XMP 兼容和 smoke 覆盖。
+
 ## Folder Is The Project Boundary
 
 一个场景 = 一个本地图片文件夹。

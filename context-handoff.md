@@ -5,9 +5,9 @@
 ## Current Workspace
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
-- Branch: `bitmap-layer-refactor`
-- Current handoff date: 2026-06-03
-- Previous handoff baseline: `d50fe78 docs: record shot card extraction`
+- Branch: `main`
+- Current handoff date: 2026-06-06
+- Previous handoff baseline: `7f5a348 Rename app to Storyboard Flow`
 - Current goal of this handoff: preserve the latest feature work, validation results, and next-step map so another session or AI agent can continue without rediscovering context.
 
 ## Current Product State
@@ -16,6 +16,7 @@
 - One local image folder is one scene.
 - Main project data lives in `.storyboard-workbench/storyboard.project.json`.
 - Editable bitmap layer pixels live in `.storyboard-workbench/layers/{shotId}/{layerId}.png`.
+- Product naming boundary: `Storyboard Flow` is the only product/user-facing name. `Storyboard Workbench` may appear only as a legacy metadata compatibility value. `.storyboard-workbench`, `SWB`, `swb-*`, and `storyboard-workbench.local` remain internal compatibility names until a separate format migration is planned.
 - Root working TIFFs remain the visible delivery files.
 - `Save` is still the only boundary that synchronizes real file names and writes working TIFF pixels.
 - `Import` ingests non-SWB root images, external `storyboard-script.md` edits, incompatible external image changes, and explicit conflict cases.

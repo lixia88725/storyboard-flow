@@ -4,6 +4,13 @@
 
 Storyboard Flow is a local-first Electron desktop app for arranging storyboard images, moving dialogue between shots, drawing edits, and managing lightweight storyboard layers.
 
+## Naming Boundary
+
+- The product name is `Storyboard Flow`. Use this name in UI copy, README/product docs, GitHub-facing text, window titles, and new user-visible messages.
+- `Storyboard Workbench` is a legacy name. Do not use it for new product-facing text.
+- `.storyboard-workbench`, `SWB`, `swb-*`, and `storyboard-workbench.local` are legacy/internal compatibility names for the current disk format, metadata namespace, tests, and environment variables. Keep them unless a separate format-migration plan explicitly changes them.
+- New TIFF metadata should write `app: "Storyboard Flow"`, but readers must continue accepting old `app: "Storyboard Workbench"` metadata so existing projects keep opening.
+
 ## Context
 
 新 session 开始时请先阅读以下文档：
