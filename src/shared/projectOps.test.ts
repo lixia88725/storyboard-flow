@@ -379,6 +379,19 @@ describe("project operations", () => {
     );
   });
 
+  it("duplicates one storyboard before the insertion target when requested", () => {
+    const project = makeProject();
+
+    const updated = duplicateShotAfter(project, "shot-c", "shot-b", {
+      shotId: "shot-copy",
+      imagePath: "/tmp/c-copy.png",
+      fileName: "c-copy.png",
+      placement: "before"
+    });
+
+    expect(updated.shots.map((shot) => shot.id)).toEqual(["shot-a", "shot-copy", "shot-b", "shot-c"]);
+  });
+
   it("copies dialogue to the target shot without moving the original", () => {
     const updated = copyDialogueToShot(makeProject(), "dialogue-1", "shot-b", "dialogue-copy");
 
@@ -982,6 +995,18 @@ describe("project operations", () => {
     expect(project.shots.map((shot) => shot.id)).toEqual(["shot-a", "shot-b", "shot-c"]);
   });
 
+  it("moves a shot forward before a later target", () => {
+    const project = makeProject();
+
+    const updated = reorderShots(project, "shot-a", "shot-c", "before");
+
+    expect(updated.shots.map((shot) => [shot.id, shot.order])).toEqual([
+      ["shot-b", 0],
+      ["shot-a", 1],
+      ["shot-c", 2]
+    ]);
+  });
+
   it("moves selected shots as a group while preserving their internal order", () => {
     const project: Project = {
       ...makeProject(),
@@ -1049,6 +1074,28 @@ describe("project operations", () => {
     ]);
     expect(updated.dialogues.filter((dialogue) => dialogue.shotId === "shot-b")).toHaveLength(1);
     expect(updated.pendingDeletedShots).toEqual(project.pendingDeletedShots);
+  });
+
+  it("parks selected storyboards at a requested pending position", () => {
+    const project = parkShotGroup(makeProject(), ["shot-c"]);
+
+    const before = parkShotGroup(project, ["shot-a"], {
+      targetParkedShotId: "shot-c",
+      placement: "before"
+    });
+    expect(before.parkedShots?.map((shot) => [shot.id, shot.order])).toEqual([
+      ["shot-a", 0],
+      ["shot-c", 1]
+    ]);
+
+    const after = parkShotGroup(project, ["shot-a"], {
+      targetParkedShotId: "shot-c",
+      placement: "after"
+    });
+    expect(after.parkedShots?.map((shot) => [shot.id, shot.order])).toEqual([
+      ["shot-c", 0],
+      ["shot-a", 1]
+    ]);
   });
 
   it("restores parked storyboards into the main shot order", () => {
@@ -2113,6 +2160,47 @@ describe("project operations", () => {
       ["new_shot.tiff", 1],
       ["b.png", 2],
       ["c.png", 3]
+    ]);
+  });
+
+  it("defaults generated blank shots to a white Image layer with a selected transparent Drawing layer", () => {
+    const updated = addGeneratedShot(createEmptyProject(), {
+      imagePath: "/tmp/new_shot.tiff",
+      fileName: "new_shot.tiff",
+      width: 1920,
+      height: 1080,
+      fingerprint: "blank-white"
+    });
+    const shot = updated.shots[0];
+
+    expect(shot.activeLayerId).toBe("layer-drawing");
+    expect(bitmapLayersForShot(shot)).toEqual([
+      {
+        id: "layer-image",
+        kind: "image",
+        name: "Image",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal",
+        order: 0,
+        bitmapPath: `.storyboard-workbench/layers/${shot.id}/layer-image.png`,
+        width: 1920,
+        height: 1080
+      },
+      {
+        id: "layer-drawing",
+        kind: "paint",
+        name: "Drawing",
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal",
+        order: 1,
+        bitmapPath: `.storyboard-workbench/layers/${shot.id}/layer-drawing.png`,
+        width: 1920,
+        height: 1080
+      }
     ]);
   });
 

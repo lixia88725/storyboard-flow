@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { atomicWriteTextFile } from "./fileRenames.js";
 import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
 import {
   parseStoryboardScriptMarkdown,
@@ -268,8 +269,14 @@ const createShotFromImage = (
 
 const writeProjectFiles = async (folderPath: string, project: Project): Promise<void> => {
   const metadataPath = metadataPathForFolder(folderPath);
-  await mkdir(path.dirname(metadataPath), { recursive: true });
-  await writeFile(metadataPath, `${JSON.stringify(project, null, 2)}\n`, "utf8");
+  await atomicWriteTextFile(metadataPath, `${JSON.stringify(project, null, 2)}\n`, {
+    mkdir: async (directoryPath) => {
+      await mkdir(directoryPath, { recursive: true });
+    },
+    writeFile,
+    rename,
+    unlink
+  });
   await writeFile(path.join(folderPath, storyboardScriptFileName), serializeStoryboardScriptMarkdown(project), "utf8");
 };
 

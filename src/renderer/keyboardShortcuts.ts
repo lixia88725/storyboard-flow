@@ -7,6 +7,10 @@ export type ShortcutAction =
   | "save"
   | "addShot"
   | "onionSkin"
+  | "decreaseBrushSize"
+  | "increaseBrushSize"
+  | "decreaseBrushOpacity"
+  | "increaseBrushOpacity"
   | "previousShot"
   | "nextShot"
   | "undo"
@@ -32,24 +36,52 @@ const detectedPlatform = (): ShortcutPlatform => {
 
 export const defaultKeyboardShortcutsForPlatform = (
   platform: ShortcutPlatform = detectedPlatform()
-): KeyboardShortcuts => ({
-  brush: "B",
-  eraser: "E",
-  select: "V",
-  clearLayer: "Escape",
-  mergeDown: platform === "darwin" ? "Cmd+E" : "Ctrl+E",
-  save: "Cmd+S",
-  addShot: "A",
-  onionSkin: "O",
-  previousShot: "ArrowLeft",
-  nextShot: "ArrowRight",
-  undo: "Cmd+Z",
-  redo: "Shift+Cmd+Z"
-});
+): KeyboardShortcuts => {
+  const primaryModifier = platform === "darwin" ? "Cmd" : "Ctrl";
+
+  return {
+    brush: "B",
+    eraser: "E",
+    select: "V",
+    clearLayer: "Escape",
+    mergeDown: `${primaryModifier}+E`,
+    save: `${primaryModifier}+S`,
+    addShot: "A",
+    onionSkin: "O",
+    decreaseBrushSize: "1",
+    increaseBrushSize: "2",
+    decreaseBrushOpacity: "3",
+    increaseBrushOpacity: "4",
+    previousShot: "ArrowLeft",
+    nextShot: "ArrowRight",
+    undo: `${primaryModifier}+Z`,
+    redo: `Shift+${primaryModifier}+Z`
+  };
+};
 
 export const defaultKeyboardShortcuts: KeyboardShortcuts = defaultKeyboardShortcutsForPlatform();
 
 export const shortcutActions = Object.keys(defaultKeyboardShortcuts) as ShortcutAction[];
+
+export const adjustSketchShortcutValue = (
+  value: number,
+  direction: "decrease" | "increase",
+  amount: number,
+  min: number,
+  max: number
+): number => {
+  const isUnitValue = max <= 1;
+  const rawValue = isUnitValue
+    ? direction === "decrease"
+      ? value - amount
+      : value + amount
+    : direction === "decrease"
+      ? Math.floor(value * (1 - amount))
+      : Math.ceil(value * (1 + amount));
+  const precision = isUnitValue ? 100 : 1;
+  const roundedValue = Math.round(rawValue * precision) / precision;
+  return Math.min(max, Math.max(min, roundedValue));
+};
 
 const keyLabel = (key: string): string => {
   if (key.length === 1) {
@@ -103,24 +135,6 @@ export const normalizeShortcutValue = (shortcut: string): string => {
     .join("+");
 };
 
-export const normalizeKeyboardShortcuts = (shortcuts: unknown): KeyboardShortcuts => {
-  if (!shortcuts || typeof shortcuts !== "object") {
-    return defaultKeyboardShortcuts;
-  }
-
-  const input = shortcuts as Record<string, unknown>;
-  return shortcutActions.reduce<KeyboardShortcuts>(
-    (next, action) => ({
-      ...next,
-      [action]:
-        typeof input[action] === "string"
-          ? normalizeShortcutValue(input[action])
-          : defaultKeyboardShortcuts[action]
-    }),
-    { ...defaultKeyboardShortcuts }
-  );
-};
-
 export const keyboardEventMatchesShortcut = (event: KeyboardEvent, shortcut: string | undefined): boolean => {
   if (typeof shortcut !== "string") {
     return false;
@@ -140,20 +154,19 @@ export const historyActionFromKeyboardEvent = (
   return event.shiftKey ? "redo" : "undo";
 };
 
-export const duplicateShortcutValues = (shortcuts: KeyboardShortcuts): string[] => {
-  const counts = new Map<string, number>();
-
-  for (const shortcut of Object.values(shortcuts)) {
-    const normalized = normalizeShortcutValue(shortcut);
-    if (!normalized) {
-      continue;
-    }
-
-    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+export const clipboardActionFromKeyboardEvent = (
+  event: KeyboardEvent
+): "copy" | "paste" | undefined => {
+  if ((!event.metaKey && !event.ctrlKey) || event.altKey || event.shiftKey) {
+    return undefined;
   }
 
-  return Array.from(counts.entries())
-    .filter(([, count]) => count > 1)
-    .map(([shortcut]) => shortcut)
-    .sort();
+  const key = event.key.toLowerCase();
+  if (key === "c") {
+    return "copy";
+  }
+  if (key === "v") {
+    return "paste";
+  }
+  return undefined;
 };

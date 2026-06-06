@@ -6,6 +6,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragMoveEvent,
   type DragOverEvent,
   type DragStartEvent
 } from "@dnd-kit/core";
@@ -13,12 +14,12 @@ import { rectSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
   type DragEvent as ReactDragEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type PointerEvent
 } from "react";
@@ -34,7 +35,6 @@ import {
   bitmapLayersForShot,
   clearBitmapLayer,
   copyBitmapLayerToShot,
-  copyDialogueToShot,
   deleteShots,
   deleteBitmapLayer,
   duplicateShotAfter,
@@ -66,6 +66,7 @@ import {
   updateBitmapLayerGroupOpacity,
   bitmapLayerPath,
 } from "../shared/projectOps";
+import { generatedShotTransparentLayerAssets } from "../shared/generatedShotAssets";
 import type {
   BitmapLayer,
   Dialogue,
@@ -75,11 +76,22 @@ import type {
   Shot,
   BlankShotPreset,
   SketchStroke,
-  SketchTool
+  SketchTool,
+  StrokeTool
 } from "../shared/types";
-import { getAnimationViewport, getStableBoardTop, maxStoryboardZoom } from "./animationViewport";
+import {
+  getAnimationViewport,
+  getStableBoardTop,
+  getZoomPreviewState,
+  maxStoryboardZoom,
+  nextWheelStoryboardZoom,
+  normalizeStoryboardZoom,
+  sameAnimationViewport,
+  type ZoomPreviewState
+} from "./animationViewport";
 import {
   activeVisibleBitmapLayerForShot,
+  canFillBitmapLayer,
   primaryShotFromSelection,
   primaryShotOrFirst
 } from "./activeTargets";
@@ -95,49 +107,83 @@ import {
   resolveDeleteTarget,
   type DeleteTarget
 } from "./deleteTarget";
+import { nextRangeSelection, type RangeSelectionMode } from "./rangeSelection";
 import {
+  adjustSketchShortcutValue,
   defaultKeyboardShortcuts,
-  duplicateShortcutValues,
-  formatShortcutFromKeyboardEvent,
+  clipboardActionFromKeyboardEvent,
   historyActionFromKeyboardEvent,
   keyboardEventMatchesShortcut,
-  normalizeKeyboardShortcuts,
   shortcutActions,
-  type KeyboardShortcuts,
   type ShortcutAction
 } from "./keyboardShortcuts";
-import { BrushIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon } from "./icons";
+import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
-import { BrushSwatchPicker, SketchSettingSlider } from "./SketchSettingsControls";
+import { RadialToolMenu } from "./RadialToolMenu";
 import { ShotCard, type CardFace } from "./ShotCard";
 import { Timeline } from "./Timeline";
 import { formatSaveFailureStatus } from "./saveErrors";
 import {
   createMarqueeBox,
+  marqueeViewportRect,
   marqueeEdgeScrollDelta,
+  sameMarqueeSelection,
   shotIdsInMarqueeBox,
   updateMarqueeBox,
-  type MarqueeBox
+  type MarqueeBox,
+  type MarqueeShotRect
 } from "./storyboardMarquee";
 import {
   canvasSizeForShot,
   drawImageUrl,
+  fillImageDataAtPoint,
+  hexToRgba,
   drawStrokePathOnCanvas,
   shouldDrawStrokeToBitmapLayer
 } from "./sketchRendering";
 import { sketchCanvasSize } from "./sketchGeometry";
 import {
+  captureParkingDragRects,
+  captureStoryboardDragRects,
   dragPreviewShotIds as chooseDragPreviewShotIds,
+  parkingInsertionIndicatorFromCachedRect,
+  parkingInsertionTargetFromPointer,
+  shouldShowStoryboardInsertionIndicator,
+  storyboardInsertionIndicatorFromCachedRect,
+  storyboardInsertionTargetFromPointer,
+  storyboardSortableItemIds as realStoryboardSortableItemIds,
+  type ParkingDragRectCache,
+  type ParkingInsertionIndicator,
+  type StoryboardDragRectCache,
+  type StoryboardInsertionIndicator,
+  type StoryboardInsertionTarget,
   type DragData
 } from "./storyboardDnd";
 import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
+import {
+  applyRadialPresetSlot,
+  defaultToolRadialMenuConfig,
+  normalizeToolRadialMenuConfig,
+  radialCanvasContextMenuAction,
+  type RadialDragKind,
+  type RadialPresetSlot,
+  type RadialToolSlot,
+  type ToolRadialMenuConfig
+} from "./toolRadialMenu";
 
 const defaultBrushColor = "#f05a28";
-const defaultBrushSwatches = ["#f05a28", "#1f6f62", "#2d6cdf", "#f3c14b", "#211f1a"];
 const defaultBrushSize = 4;
 const defaultEraserSize = 18;
+const minBrushSize = 1;
+const maxBrushSize = 28;
+const minEraserSize = 4;
+const maxEraserSize = 64;
+const minSketchOpacity = 0.2;
+const maxSketchOpacity = 1;
+const minSketchSoftness = 0;
+const maxSketchSoftness = 1;
 const maxUndoHistory = 60;
 const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: string }> = [
   { id: "16:9", label: "16:9", detail: "1920 x 1080" },
@@ -181,7 +227,7 @@ type WorkspaceTask = {
   current: number;
   total: number;
 };
-type SketchSettingsMenu = { tool: SketchTool; x: number; y: number };
+type RadialToolMenuState = { tool: StrokeTool; x: number; y: number };
 type UndoEntry = {
   project: Project;
   selectedShotIds: string[];
@@ -195,11 +241,17 @@ type StoryboardScriptImportDraft = {
   entryCount: number;
   targetFolderPath: string;
 };
-type CopyDragState =
-  | { type: "shot"; shotId: string }
-  | { type: "dialogue"; dialogueId: string; shotId: string }
-  | { type: "layer"; shotId: string; layerId: string };
 type SelectedBitmapLayerIds = { shotId: string; layerIds: string[] };
+type ClipboardSelection =
+  | { type: "shot"; shotId: string }
+  | { type: "layer"; shotId: string; layerId: string };
+type PasteAnimationKind = "shot" | "layer";
+type PasteAnimationState = {
+  kind: PasteAnimationKind;
+  sourceId: string;
+  pastedId: string;
+  beforeRects: Map<string, DOMRect>;
+};
 
 const sameLayerSelection = (
   current: SelectedBitmapLayerIds | undefined,
@@ -219,6 +271,10 @@ const shortcutLabels: Array<{ action: ShortcutAction; label: string }> = [
   { action: "save", label: "Save" },
   { action: "addShot", label: "Add Shot" },
   { action: "onionSkin", label: "Onion Skin" },
+  { action: "decreaseBrushSize", label: "Brush size -10%" },
+  { action: "increaseBrushSize", label: "Brush size +10%" },
+  { action: "decreaseBrushOpacity", label: "Opacity -25%" },
+  { action: "increaseBrushOpacity", label: "Opacity +25%" },
   { action: "previousShot", label: "Previous shot" },
   { action: "nextShot", label: "Next shot" },
   { action: "undo", label: "Undo" },
@@ -254,7 +310,7 @@ const isRangeInputTarget = (target: EventTarget | null): boolean => {
 const hasOpenShortcutBlockingMenu = (): boolean =>
   Boolean(
     document.querySelector(
-      ".shortcut-menu, .save-menu, .recent-menu, .add-shot-menu, .sketch-settings-menu"
+      ".shortcut-menu, .save-menu, .recent-menu, .add-shot-menu, .radial-tool-menu"
     )
   );
 
@@ -286,7 +342,7 @@ const shouldIgnoreWorkbenchWheel = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   Boolean(
     target.closest(
-      "input, textarea, select, .recent-menu, .add-shot-menu, .save-menu, .sketch-settings-menu, .shortcut-menu, .layer-panel"
+      "input, textarea, select, .recent-menu, .add-shot-menu, .save-menu, .shortcut-menu, .radial-tool-menu, .layer-panel"
     )
   );
 
@@ -304,33 +360,37 @@ const markdownPathFromDrop = (event: ReactDragEvent): string | undefined => {
   return window.storyboard?.filePathForDroppedFile(file) || file.path;
 };
 
-const isCopyModifierEvent = (event: Event): boolean => {
-  return "altKey" in event && Boolean(event.altKey);
-};
-
 export const App = () => {
   const [project, setProject] = useState<Project>(() => createProject("Untitled Storyboard"));
   const [folderPath, setFolderPath] = useState<string | undefined>();
   const [folderInputValue, setFolderInputValue] = useState("");
   const [metadataPath, setMetadataPath] = useState<string | undefined>();
   const [activeDialogue, setActiveDialogue] = useState<Dialogue | undefined>();
+  const [activeDragType, setActiveDragType] = useState<DragData["type"] | undefined>();
   const [activeShotIds, setActiveShotIds] = useState<string[]>([]);
   const [dragPreviewShotIds, setDragPreviewShotIds] = useState<string[]>([]);
-  const [copyShotDropTargetId, setCopyShotDropTargetId] = useState<string | undefined>();
+  const [storyboardInsertionIndicator, setStoryboardInsertionIndicator] =
+    useState<StoryboardInsertionIndicator | undefined>();
+  const [parkingInsertionIndicator, setParkingInsertionIndicator] =
+    useState<ParkingInsertionIndicator | undefined>();
   const [activeParkedShotIds, setActiveParkedShotIds] = useState<string[]>([]);
   const [selectedShotIds, setSelectedShotIds] = useState<string[]>([]);
   const [activeSketchTool, setActiveSketchTool] = useState<SketchTool>("brush");
   const [brushColor, setBrushColor] = useState(defaultBrushColor);
-  const [brushSwatches, setBrushSwatches] = useState(defaultBrushSwatches);
   const [brushOpacity, setBrushOpacity] = useState(1);
   const [brushSize, setBrushSize] = useState(defaultBrushSize);
+  const [brushSoftness, setBrushSoftness] = useState(0);
   const [eraserSize, setEraserSize] = useState(defaultEraserSize);
   const [eraserOpacity, setEraserOpacity] = useState(1);
+  const [eraserSoftness, setEraserSoftness] = useState(0);
+  const [toolRadialMenuConfig, setToolRadialMenuConfig] =
+    useState<ToolRadialMenuConfig>(() => defaultToolRadialMenuConfig());
   const [workspaceSaveState, setWorkspaceSaveState] = useState<WorkspaceSaveState>("saved");
   const [workspaceTask, setWorkspaceTask] = useState<WorkspaceTask | undefined>();
   const [fileNameSyncState, setFileNameSyncState] = useState<FileNameSyncState>("synced");
   const [recentFolders, setRecentFolders] = useState<string[]>([]);
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [isZoomScrubbing, setIsZoomScrubbing] = useState(false);
   const [isAnimationMode, setIsAnimationMode] = useState(false);
   const [isOnionSkinEnabled, setIsOnionSkinEnabled] = useState(false);
   const [animationImageSize, setAnimationImageSize] = useState({ width: 430, height: 271 });
@@ -341,7 +401,7 @@ export const App = () => {
   const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false);
   const [isAddShotMenuOpen, setIsAddShotMenuOpen] = useState(false);
   const [blankShotPreset, setBlankShotPreset] = useState<BlankShotPreset>("16:9");
-  const [sketchSettingsMenu, setSketchSettingsMenu] = useState<SketchSettingsMenu | undefined>();
+  const [radialToolMenu, setRadialToolMenu] = useState<RadialToolMenuState | undefined>();
   const [isStatusPanelOpen, setIsStatusPanelOpen] = useState(false);
   const [isLayerPanelOpen, setIsLayerPanelOpen] = useState(false);
   const [isShortcutMenuOpen, setIsShortcutMenuOpen] = useState(false);
@@ -349,9 +409,6 @@ export const App = () => {
   const [isImportNudging, setIsImportNudging] = useState(false);
   const [cardFace, setCardFace] = useState<CardFace>("image");
   const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
-  const [keyboardShortcuts, setKeyboardShortcuts] = useState<KeyboardShortcuts>(defaultKeyboardShortcuts);
-  const [capturingShortcutAction, setCapturingShortcutAction] = useState<ShortcutAction | undefined>();
-  const [shortcutError, setShortcutError] = useState("");
   const [autosaveError, setAutosaveError] = useState<AutosaveErrorNotice | undefined>();
   const [saveErrorDialog, setSaveErrorDialog] = useState<string | undefined>();
   const [storyboardScriptImportDraft, setStoryboardScriptImportDraft] =
@@ -362,19 +419,60 @@ export const App = () => {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>({ type: "shot" });
   const [selectedBitmapLayerIds, setSelectedBitmapLayerIds] = useState<SelectedBitmapLayerIds | undefined>();
   const [isParkingShelfOpen, setIsParkingShelfOpen] = useState(false);
-  const [copyDrag, setCopyDrag] = useState<CopyDragState | undefined>();
+  const [clipboardSelection, setClipboardSelection] = useState<ClipboardSelection | undefined>();
   const [status, setStatus] = useState(
     window.storyboard ? "Ready" : "Electron preload API is unavailable"
   );
   const selectionBoxRef = useRef<MarqueeBox | undefined>(undefined);
+  const selectionMarqueeRef = useRef<HTMLDivElement | null>(null);
   const projectRef = useRef(project);
   const folderPathRef = useRef(folderPath);
   const metadataPathRef = useRef(metadataPath);
   const scriptImportCheckIdRef = useRef(0);
   const dirtyShotIdsRef = useRef<Set<string>>(new Set());
   const selectedBitmapLayerIdsRef = useRef<SelectedBitmapLayerIds | undefined>(undefined);
-  const copyDragRef = useRef<CopyDragState | undefined>(undefined);
+  const deleteTargetRef = useRef<DeleteTarget>(deleteTarget);
+  const clipboardSelectionRef = useRef<ClipboardSelection | undefined>(undefined);
+  const pasteAnimationRef = useRef<PasteAnimationState | undefined>(undefined);
+  const pasteAnimationFrameRef = useRef<number | undefined>(undefined);
+  const pasteAnimationCleanupTimeoutRef = useRef<number | undefined>(undefined);
+  const zoomLevelRef = useRef(zoomLevel);
+  const pendingZoomLevelRef = useRef<number | undefined>(undefined);
+  const zoomFrameRef = useRef<number | undefined>(undefined);
+  const zoomInputRef = useRef<HTMLInputElement | null>(null);
+  const zoomValueLabelRef = useRef<HTMLSpanElement | null>(null);
+  const pendingZoomPreviewLevelRef = useRef<number | undefined>(undefined);
+  const zoomPreviewFrameRef = useRef<number | undefined>(undefined);
+  const zoomPreviewStateRef = useRef<ZoomPreviewState | undefined>(undefined);
+  const isZoomScrubbingRef = useRef(isZoomScrubbing);
+  const isAnimationModeRef = useRef(isAnimationMode);
   const lastPointerPositionRef = useRef<{ x: number; y: number } | undefined>(undefined);
+  const storyboardInsertionTargetRef = useRef<StoryboardInsertionTarget | undefined>(undefined);
+  const storyboardInsertionIndicatorRef = useRef<StoryboardInsertionIndicator | undefined>(undefined);
+  const storyboardDragRectCacheRef = useRef<StoryboardDragRectCache | undefined>(undefined);
+  const storyboardDragRectCacheScrollRef = useRef<{ x: number; y: number } | undefined>(undefined);
+  const storyboardInsertionFrameRef = useRef<number | undefined>(undefined);
+  const pendingStoryboardInsertionDragRef = useRef<
+    | {
+        pointer: { x: number; y: number };
+        movingShotIds: string[];
+      }
+    | undefined
+  >(undefined);
+  const parkingListRef = useRef<HTMLDivElement | null>(null);
+  const parkingInsertionTargetRef = useRef<StoryboardInsertionTarget | undefined>(undefined);
+  const parkingInsertionIndicatorRef = useRef<ParkingInsertionIndicator | undefined>(undefined);
+  const parkingDragRectCacheRef = useRef<ParkingDragRectCache | undefined>(undefined);
+  const parkingDragRectCacheScrollRef = useRef<{ x: number; y: number } | undefined>(undefined);
+  const parkingInsertionFrameRef = useRef<number | undefined>(undefined);
+  const pendingParkingInsertionDragRef = useRef<
+    | {
+        pointer: { x: number; y: number };
+        movingShotIds: string[];
+      }
+    | undefined
+  >(undefined);
+  const shotSelectionAnchorIdRef = useRef<string | undefined>(undefined);
   const workspaceSaveStateRef = useRef<WorkspaceSaveState>(workspaceSaveState);
   const fileNameSyncStateRef = useRef<FileNameSyncState>(fileNameSyncState);
   const selectedShotIdsRef = useRef<string[]>([]);
@@ -417,10 +515,244 @@ export const App = () => {
 
     return [{ shot: activeShot, index: orderedShots.findIndex((shot) => shot.id === activeShot.id) }];
   }, [isAnimationMode, orderedShots, primarySelectedShot]);
+  const storyboardSortableItemIds = useMemo(
+    () => realStoryboardSortableItemIds(renderedShotEntries.map(({ shot }) => shot.id)),
+    [renderedShotEntries]
+  );
   const onionSkinNeighbors = useMemo(
     () => getOnionSkinNeighbors(orderedShots, primarySelectedShotId, isAnimationMode && isOnionSkinEnabled),
     [isAnimationMode, isOnionSkinEnabled, orderedShots, primarySelectedShotId]
   );
+
+  useLayoutEffect(() => {
+    const animation = pasteAnimationRef.current;
+    if (!animation) {
+      return;
+    }
+
+    pasteAnimationRef.current = undefined;
+    applyPasteAnimation(animation, pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef);
+  }, [project]);
+
+  useEffect(
+    () => () => clearPasteAnimation(pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef),
+    []
+  );
+
+  const syncZoomControlDisplay = useCallback((zoom: number) => {
+    const normalizedZoom = normalizeStoryboardZoom(zoom);
+    const zoomValue = String(normalizedZoom);
+    if (zoomInputRef.current && zoomInputRef.current.value !== zoomValue) {
+      zoomInputRef.current.value = zoomValue;
+    }
+    if (zoomValueLabelRef.current) {
+      zoomValueLabelRef.current.textContent = `${normalizedZoom}%`;
+    }
+  }, []);
+
+  const applyZoomPreviewCssVariables = useCallback((preview: ZoomPreviewState) => {
+    const board = boardGridRef.current;
+    if (!board) {
+      return;
+    }
+
+    board.style.setProperty("--shot-scale", preview.cssVariables.shotScale);
+    board.style.setProperty("--animation-image-width", preview.cssVariables.animationImageWidth);
+    board.style.setProperty("--animation-image-height", preview.cssVariables.animationImageHeight);
+    board.style.setProperty("--animation-frame-width", preview.cssVariables.animationFrameWidth);
+    board.style.setProperty("--animation-frame-height", preview.cssVariables.animationFrameHeight);
+  }, []);
+
+  const buildZoomPreviewState = useCallback(
+    (zoom: number): ZoomPreviewState | undefined => {
+      const board = boardGridRef.current;
+      const firstShot = board?.querySelector<HTMLElement>("[data-shot-id]");
+      if (!board || !firstShot) {
+        return undefined;
+      }
+
+      const boardRect = board.getBoundingClientRect();
+      const viewportShot = primarySelectedShot ?? orderedShots[0];
+      return getZoomPreviewState({
+        boardWidth: boardRect.width,
+        boardTop: getStableBoardTop(boardRect.top, window.scrollY),
+        viewportHeight: window.innerHeight,
+        reservedBottom: animationReservedBottom,
+        margin: animationViewportMargin,
+        zoomLevel: zoom,
+        maxZoomLevel: maxStoryboardZoom,
+        isAnimationMode: isAnimationModeRef.current,
+        imageAspectRatio: viewportShot ? aspectRatioForShot(viewportShot) : 420 / 265
+      });
+    },
+    [orderedShots, primarySelectedShot]
+  );
+
+  const applyZoomPreviewState = useCallback(
+    (preview: ZoomPreviewState) => {
+      zoomPreviewStateRef.current = preview;
+      zoomLevelRef.current = preview.zoomLevel;
+      applyZoomPreviewCssVariables(preview);
+      syncZoomControlDisplay(preview.zoomLevel);
+
+      if (preview.viewport.isAnimationMode !== isAnimationModeRef.current) {
+        isAnimationModeRef.current = preview.viewport.isAnimationMode;
+        setIsAnimationMode(preview.viewport.isAnimationMode);
+      }
+    },
+    [applyZoomPreviewCssVariables, syncZoomControlDisplay]
+  );
+
+  useEffect(() => {
+    zoomLevelRef.current = zoomLevel;
+    if (!isZoomScrubbingRef.current) {
+      zoomPreviewStateRef.current = undefined;
+      syncZoomControlDisplay(zoomLevel);
+    }
+  }, [syncZoomControlDisplay, zoomLevel]);
+
+  useEffect(() => {
+    isZoomScrubbingRef.current = isZoomScrubbing;
+  }, [isZoomScrubbing]);
+
+  useEffect(() => {
+    isAnimationModeRef.current = isAnimationMode;
+  }, [isAnimationMode]);
+
+  const commitZoomLevel = useCallback((zoom: number) => {
+    const nextZoom = normalizeStoryboardZoom(zoom);
+    zoomLevelRef.current = nextZoom;
+    setZoomLevel((currentZoom) => (currentZoom === nextZoom ? currentZoom : nextZoom));
+  }, []);
+
+  const scheduleZoomLevel = useCallback(
+    (zoom: number) => {
+      pendingZoomLevelRef.current = normalizeStoryboardZoom(zoom);
+      if (zoomFrameRef.current !== undefined) {
+        return;
+      }
+
+      zoomFrameRef.current = window.requestAnimationFrame(() => {
+        zoomFrameRef.current = undefined;
+        const nextZoom = pendingZoomLevelRef.current;
+        pendingZoomLevelRef.current = undefined;
+        if (nextZoom !== undefined) {
+          commitZoomLevel(nextZoom);
+        }
+      });
+    },
+    [commitZoomLevel]
+  );
+
+  const scheduleZoomPreviewLevel = useCallback(
+    (zoom: number) => {
+      pendingZoomPreviewLevelRef.current = normalizeStoryboardZoom(zoom);
+      if (zoomPreviewFrameRef.current !== undefined) {
+        return;
+      }
+
+      zoomPreviewFrameRef.current = window.requestAnimationFrame(() => {
+        zoomPreviewFrameRef.current = undefined;
+        const nextZoom = pendingZoomPreviewLevelRef.current;
+        pendingZoomPreviewLevelRef.current = undefined;
+        if (nextZoom === undefined) {
+          return;
+        }
+
+        const preview = buildZoomPreviewState(nextZoom);
+        if (preview) {
+          applyZoomPreviewState(preview);
+        } else {
+          syncZoomControlDisplay(nextZoom);
+        }
+      });
+    },
+    [applyZoomPreviewState, buildZoomPreviewState, syncZoomControlDisplay]
+  );
+
+  const flushScheduledZoomLevel = useCallback(() => {
+    if (zoomFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(zoomFrameRef.current);
+      zoomFrameRef.current = undefined;
+    }
+
+    const nextZoom = pendingZoomLevelRef.current;
+    pendingZoomLevelRef.current = undefined;
+    if (nextZoom !== undefined) {
+      commitZoomLevel(nextZoom);
+    }
+  }, [commitZoomLevel]);
+
+  const flushZoomPreviewLevel = useCallback(() => {
+    if (zoomPreviewFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(zoomPreviewFrameRef.current);
+      zoomPreviewFrameRef.current = undefined;
+    }
+
+    const nextZoom =
+      pendingZoomPreviewLevelRef.current ??
+      zoomPreviewStateRef.current?.zoomLevel ??
+      zoomLevelRef.current;
+    pendingZoomPreviewLevelRef.current = undefined;
+    const preview = buildZoomPreviewState(nextZoom);
+    if (!preview) {
+      commitZoomLevel(nextZoom);
+      syncZoomControlDisplay(nextZoom);
+      return;
+    }
+
+    applyZoomPreviewState(preview);
+    isAnimationModeRef.current = preview.viewport.isAnimationMode;
+    setIsAnimationMode(preview.viewport.isAnimationMode);
+    setAnimationImageSize({ width: preview.viewport.imageWidth, height: preview.viewport.imageHeight });
+    setAnimationFrameSize({ width: preview.viewport.frameWidth, height: preview.viewport.frameHeight });
+    commitZoomLevel(preview.zoomLevel);
+  }, [applyZoomPreviewState, buildZoomPreviewState, commitZoomLevel, syncZoomControlDisplay]);
+
+  const beginZoomScrubbing = useCallback(() => {
+    flushScheduledZoomLevel();
+    isZoomScrubbingRef.current = true;
+    const preview = buildZoomPreviewState(zoomLevelRef.current);
+    if (preview) {
+      applyZoomPreviewState(preview);
+    }
+    setIsZoomScrubbing(true);
+  }, [applyZoomPreviewState, buildZoomPreviewState, flushScheduledZoomLevel]);
+
+  const endZoomScrubbing = useCallback(() => {
+    if (!isZoomScrubbingRef.current) {
+      return;
+    }
+
+    flushZoomPreviewLevel();
+    isZoomScrubbingRef.current = false;
+    setIsZoomScrubbing(false);
+  }, [flushZoomPreviewLevel]);
+
+  useEffect(
+    () => () => {
+      if (zoomFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(zoomFrameRef.current);
+      }
+      if (zoomPreviewFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(zoomPreviewFrameRef.current);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!isZoomScrubbing) {
+      return;
+    }
+
+    window.addEventListener("pointerup", endZoomScrubbing, { once: true });
+    window.addEventListener("pointercancel", endZoomScrubbing, { once: true });
+    return () => {
+      window.removeEventListener("pointerup", endZoomScrubbing);
+      window.removeEventListener("pointercancel", endZoomScrubbing);
+    };
+  }, [endZoomScrubbing, isZoomScrubbing]);
 
   useEffect(() => {
     const element = appShellRef.current;
@@ -435,16 +767,14 @@ export const App = () => {
 
       event.preventDefault();
       event.stopPropagation();
-      setZoomLevel((current) => {
-        const direction = event.deltaY < 0 ? 1 : -1;
-        const nextZoom = Math.round(current / 5) * 5 + direction * 5;
-        return Math.min(maxStoryboardZoom, Math.max(25, nextZoom));
-      });
+      scheduleZoomLevel(
+        nextWheelStoryboardZoom(pendingZoomLevelRef.current ?? zoomLevelRef.current, event.deltaY)
+      );
     };
 
     element.addEventListener("wheel", handleWheel, { passive: false });
     return () => element.removeEventListener("wheel", handleWheel);
-  }, []);
+  }, [scheduleZoomLevel]);
 
   useEffect(() => {
     selectedShotIdsRef.current = selectedShotIds;
@@ -453,6 +783,46 @@ export const App = () => {
   useEffect(() => {
     selectedBitmapLayerIdsRef.current = selectedBitmapLayerIds;
   }, [selectedBitmapLayerIds]);
+
+  useEffect(() => {
+    deleteTargetRef.current = deleteTarget;
+  }, [deleteTarget]);
+
+  useEffect(() => {
+    clipboardSelectionRef.current = clipboardSelection;
+  }, [clipboardSelection]);
+
+  const selectSingleShot = (shotId: string | undefined) => {
+    shotSelectionAnchorIdRef.current = shotId;
+    const nextShotIds = shotId ? [shotId] : [];
+    selectedShotIdsRef.current = nextShotIds;
+    setSelectedShotIds(nextShotIds);
+  };
+
+  const clearSelectedShots = () => {
+    shotSelectionAnchorIdRef.current = undefined;
+    selectedShotIdsRef.current = [];
+    setSelectedShotIds([]);
+  };
+
+  const selectShotsByIds = (shotIds: string[]) => {
+    shotSelectionAnchorIdRef.current = shotIds.at(-1);
+    selectedShotIdsRef.current = shotIds;
+    setSelectedShotIds(shotIds);
+  };
+
+  const selectShotWithMode = (shotId: string, mode: RangeSelectionMode) => {
+    const selection = nextRangeSelection({
+      orderedIds: orderedShots.map((shot) => shot.id),
+      selectedIds: selectedShotIdsRef.current,
+      clickedId: shotId,
+      anchorId: shotSelectionAnchorIdRef.current,
+      mode
+    });
+    shotSelectionAnchorIdRef.current = selection.anchorId;
+    selectedShotIdsRef.current = selection.selectedIds;
+    setSelectedShotIds(selection.selectedIds);
+  };
 
   const handleSelectedBitmapLayerIdsChange = useCallback((shotId: string, layerIds: string[]) => {
     setSelectedBitmapLayerIds((current) =>
@@ -501,26 +871,6 @@ export const App = () => {
   }, [workspaceSaveState]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    window.storyboard
-      .getKeyboardShortcuts()
-      .then((shortcuts) => {
-        if (isMounted) {
-          setKeyboardShortcuts(normalizeKeyboardShortcuts(shortcuts));
-        }
-      })
-      .catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        setStatus(`Keyboard shortcuts unavailable: ${message}`);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
     const handlePointerMove = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
       lastPointerPositionRef.current = { x: event.clientX, y: event.clientY };
     };
@@ -545,18 +895,12 @@ export const App = () => {
     const handlePointerDown = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
       if (!shortcutMenuRef.current?.contains(event.target as Node)) {
         setIsShortcutMenuOpen(false);
-        setShortcutError("");
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (capturingShortcutAction) {
-        return;
-      }
-
       if (event.key === "Escape") {
         setIsShortcutMenuOpen(false);
-        setShortcutError("");
       }
     };
 
@@ -567,7 +911,7 @@ export const App = () => {
       window.removeEventListener("pointerdown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [capturingShortcutAction, isShortcutMenuOpen]);
+  }, [isShortcutMenuOpen]);
 
   useEffect(() => {
     if (!isSaveMenuOpen) {
@@ -674,28 +1018,15 @@ export const App = () => {
   }, [isImportHelpOpen]);
 
   useEffect(() => {
-    if (!sketchSettingsMenu) {
+    if (!window.storyboard?.getToolRadialMenu) {
       return;
     }
 
-    const handlePointerDown = () => {
-      setSketchSettingsMenu(undefined);
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setSketchSettingsMenu(undefined);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [sketchSettingsMenu]);
+    void window.storyboard
+      .getToolRadialMenu()
+      .then((config) => setToolRadialMenuConfig(normalizeToolRadialMenuConfig(config)))
+      .catch(() => setToolRadialMenuConfig(defaultToolRadialMenuConfig()));
+  }, []);
 
   useEffect(() => {
     if (!window.storyboard) {
@@ -812,6 +1143,12 @@ export const App = () => {
     selectionBoxRef.current = selectionBox;
   }, [selectionBox]);
 
+  useLayoutEffect(() => {
+    if (selectionBox) {
+      applySelectionMarqueeStyle(selectionMarqueeRef.current, selectionBox);
+    }
+  }, [selectionBox]);
+
   const measureGridColumns = useCallback(() => {
     const firstRowTop = Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id]"))
       .map((element) => Math.round(element.getBoundingClientRect().top))
@@ -830,6 +1167,10 @@ export const App = () => {
   }, []);
 
   const measureAnimationMode = useCallback(() => {
+    if (isZoomScrubbing) {
+      return;
+    }
+
     const board = boardGridRef.current;
     const firstShot = board?.querySelector<HTMLElement>("[data-shot-id]");
 
@@ -851,10 +1192,21 @@ export const App = () => {
       isAnimationMode,
       imageAspectRatio: viewportShot ? aspectRatioForShot(viewportShot) : 420 / 265
     });
+    const currentViewport = {
+      isAnimationMode,
+      imageWidth: animationImageSize.width,
+      imageHeight: animationImageSize.height,
+      frameWidth: animationFrameSize.width,
+      frameHeight: animationFrameSize.height
+    };
+    if (sameAnimationViewport(viewport, currentViewport)) {
+      return;
+    }
+
     setIsAnimationMode(viewport.isAnimationMode);
     setAnimationImageSize({ width: viewport.imageWidth, height: viewport.imageHeight });
     setAnimationFrameSize({ width: viewport.frameWidth, height: viewport.frameHeight });
-  }, [isAnimationMode, orderedShots, primarySelectedShot, zoomLevel]);
+  }, [animationFrameSize, animationImageSize, isAnimationMode, isZoomScrubbing, orderedShots, primarySelectedShot, zoomLevel]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(measureAnimationMode);
@@ -867,7 +1219,7 @@ export const App = () => {
   }, [measureAnimationMode, orderedShots.length, zoomLevel]);
 
   useEffect(() => {
-    if (!isAnimationMode || !selectedShotIds[0]) {
+    if (!isAnimationMode || isZoomScrubbing || !selectedShotIds[0]) {
       return;
     }
 
@@ -894,7 +1246,7 @@ export const App = () => {
     if (delta !== 0) {
       window.scrollBy({ top: delta, behavior: "instant" });
     }
-  }, [animationImageSize.height, animationImageSize.width, isAnimationMode, selectedShotIds]);
+  }, [animationImageSize.height, animationImageSize.width, isAnimationMode, isZoomScrubbing, selectedShotIds]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -905,7 +1257,6 @@ export const App = () => {
         isRecentMenuOpen ||
         isAddShotMenuOpen ||
         isImportHelpOpen ||
-        Boolean(sketchSettingsMenu) ||
         hasOpenShortcutBlockingMenu();
       if (isMenuOpen) {
         return;
@@ -913,7 +1264,7 @@ export const App = () => {
 
       const key = event.key.toLowerCase();
       const configuredShortcutAction = shortcutActions.find((action) =>
-        keyboardEventMatchesShortcut(event, keyboardShortcuts[action])
+        keyboardEventMatchesShortcut(event, defaultKeyboardShortcuts[action])
       );
       const shortcutAction = configuredShortcutAction ?? historyActionFromKeyboardEvent(event);
       const allowsRangeTarget =
@@ -922,6 +1273,17 @@ export const App = () => {
         (shortcutAction === "previousShot" || shortcutAction === "nextShot");
 
       if (isKeyboardEditableTarget(target) && !allowsRangeTarget) {
+        return;
+      }
+
+      const clipboardAction = clipboardActionFromKeyboardEvent(event);
+      if (clipboardAction) {
+        event.preventDefault();
+        if (clipboardAction === "copy") {
+          handleCopySelection();
+        } else {
+          void handlePasteSelection();
+        }
         return;
       }
 
@@ -939,6 +1301,8 @@ export const App = () => {
       const moveSelection = (direction: "left" | "right" | "up" | "down") => {
         setSelectedShotIds((current) => {
           if (orderedShots.length === 0) {
+            shotSelectionAnchorIdRef.current = undefined;
+            selectedShotIdsRef.current = [];
             return [];
           }
 
@@ -952,7 +1316,10 @@ export const App = () => {
             direction,
             isAnimationMode
           );
-          return [orderedShots[nextIndex].id];
+          const nextShotId = orderedShots[nextIndex].id;
+          shotSelectionAnchorIdRef.current = nextShotId;
+          selectedShotIdsRef.current = [nextShotId];
+          return [nextShotId];
         });
       };
 
@@ -1017,6 +1384,34 @@ export const App = () => {
           return;
         }
 
+        if (shortcutAction === "decreaseBrushSize" || shortcutAction === "increaseBrushSize") {
+          const direction = shortcutAction === "decreaseBrushSize" ? "decrease" : "increase";
+          if (activeSketchTool === "brush") {
+            setBrushSize((size) =>
+              adjustSketchShortcutValue(size, direction, 0.1, minBrushSize, maxBrushSize)
+            );
+          } else if (activeSketchTool === "eraser") {
+            setEraserSize((size) =>
+              adjustSketchShortcutValue(size, direction, 0.1, minEraserSize, maxEraserSize)
+            );
+          }
+          return;
+        }
+
+        if (shortcutAction === "decreaseBrushOpacity" || shortcutAction === "increaseBrushOpacity") {
+          const direction = shortcutAction === "decreaseBrushOpacity" ? "decrease" : "increase";
+          if (activeSketchTool === "brush") {
+            setBrushOpacity((opacity) =>
+              adjustSketchShortcutValue(opacity, direction, 0.25, minSketchOpacity, maxSketchOpacity)
+            );
+          } else if (activeSketchTool === "eraser") {
+            setEraserOpacity((opacity) =>
+              adjustSketchShortcutValue(opacity, direction, 0.25, minSketchOpacity, maxSketchOpacity)
+            );
+          }
+          return;
+        }
+
         if (shortcutAction === "previousShot") {
           moveSelection("left");
           return;
@@ -1055,11 +1450,10 @@ export const App = () => {
     isRecentMenuOpen,
     isSaveMenuOpen,
     isShortcutMenuOpen,
-    keyboardShortcuts,
     measureGridColumns,
     orderedShots,
-    primarySelectedShot,
-    sketchSettingsMenu
+    activeSketchTool,
+    primarySelectedShot
   ]);
 
   const updateProject = (
@@ -1122,7 +1516,7 @@ export const App = () => {
 
     const nextSelectedShot = remaining[Math.min(firstDeletedIndex, remaining.length - 1)];
     updateProject((projectToUpdate) => deleteShots(projectToUpdate, selectedIds));
-    setSelectedShotIds(nextSelectedShot ? [nextSelectedShot.id] : []);
+    selectSingleShot(nextSelectedShot?.id);
     setDeleteTarget({ type: "shot" });
     setStatus(
       selectedIds.length === 1
@@ -1200,7 +1594,7 @@ export const App = () => {
       setUndoStackSynced((current) => current.slice(0, -1));
       setProject(previous.project);
       projectRef.current = previous.project;
-      setSelectedShotIds(previous.selectedShotIds);
+      selectShotsByIds(previous.selectedShotIds);
       setFileNameSyncState(previous.fileNameSyncState);
       setWorkspaceSaveState("saving");
       markAllShotsDirty();
@@ -1230,7 +1624,7 @@ export const App = () => {
       setRedoStackSynced((current) => current.slice(0, -1));
       setProject(next.project);
       projectRef.current = next.project;
-      setSelectedShotIds(next.selectedShotIds);
+      selectShotsByIds(next.selectedShotIds);
       setFileNameSyncState(next.fileNameSyncState);
       setWorkspaceSaveState("saving");
       markAllShotsDirty();
@@ -1319,9 +1713,6 @@ export const App = () => {
     if (workspaceSaveStateRef.current === "saving") {
       return;
     }
-    if (dirtyShotIdsRef.current.size > 0) {
-      return;
-    }
 
     const checkId = (scriptImportCheckIdRef.current += 1);
     const projectToCheck = projectRef.current;
@@ -1348,8 +1739,7 @@ export const App = () => {
       const nextProject = mergeExternalImageChanges(projectToCheck, result.images);
       if (
         nextProject !== projectToCheck &&
-        hasOnlyCompatibleExternalEdits(nextProject) &&
-        !hasDirtyCompatibleExternalEdit(nextProject, dirtyShotIdsRef.current)
+        hasOnlyCompatibleExternalEdits(nextProject)
       ) {
         const imported = await withStatus(
           "Import external Photoshop edits failed",
@@ -1359,7 +1749,8 @@ export const App = () => {
               folderPath: nextFolderPath,
               metadataPath: nextMetadataPath,
               blankShotPreset,
-              dirtyShotIds: []
+              dirtyShotIds: [...dirtyShotIdsRef.current],
+              preserveDirtyShotLayers: true
             }),
           setStatus
         );
@@ -1470,6 +1861,58 @@ export const App = () => {
       }
 
       const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
+      await window.storyboard.writeLayerPng({
+        folderPath,
+        bitmapPath: currentLayer.bitmapPath,
+        dataUrl
+      });
+      markShotsDirty([currentShot.id]);
+      recordUndoEntry(undoEntry);
+      updateProject(
+        (currentProject) => markBitmapLayerPainted(currentProject, currentShot.id, currentLayer.id),
+        false,
+        false
+      );
+      return dataUrl;
+    });
+  };
+
+  const handleBitmapFill = async (
+    shot: Shot,
+    layerId: string,
+    point: { x: number; y: number },
+    color: string
+  ) => {
+    if (!window.storyboard || !folderPath) {
+      return;
+    }
+
+    const layer = bitmapLayersForShot(shot).find((item) => item.id === layerId);
+    if (!canFillBitmapLayer(layer)) {
+      return;
+    }
+
+    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
+      const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
+      const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
+      if (!canFillBitmapLayer(currentLayer)) {
+        return undefined;
+      }
+
+      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
+      const blankDataUrl = await createTransparentLayerDataUrl(currentLayer.width, currentLayer.height);
+      const layerDataUrl = await window.storyboard
+        .readLayerPng({ folderPath, bitmapPath: currentLayer.bitmapPath })
+        .catch(() => undefined);
+      const sourceDataUrl =
+        layerDataUrl ??
+        (currentLayer.cleared
+          ? blankDataUrl
+          : currentLayer.kind === "image"
+            ? window.storyboard.assetUrl(currentShot.previewPath ?? currentShot.imagePath)
+            : blankDataUrl);
+      const dataUrl = await fillBitmapLayerAtPoint(sourceDataUrl, currentLayer, point, color);
+
       await window.storyboard.writeLayerPng({
         folderPath,
         bitmapPath: currentLayer.bitmapPath,
@@ -1720,7 +2163,7 @@ export const App = () => {
     nextStatus: string,
     dirty = false,
     resetDirtyShots = true
-  ) => {
+  ): Promise<Project | undefined> => {
     const checkId = (scriptImportCheckIdRef.current += 1);
     const baseProject = scan.project ?? createProject(scan.folderName || "Untitled Storyboard");
     const projectWithDefaults = {
@@ -1748,19 +2191,22 @@ export const App = () => {
             folderPath: scan.folderPath,
             metadataPath: scan.metadataPath,
             blankShotPreset,
-            dirtyShotIds: []
+            dirtyShotIds: [...dirtyShotIdsRef.current],
+            preserveDirtyShotLayers: true
           }),
         setStatus
       );
       if (imported) {
-        await loadFolderScan(imported, "Imported external Photoshop edits", false, true);
-        return;
+        return loadFolderScan(imported, "Imported external Photoshop edits", false, true);
       }
     }
     const acceptedExternalEdits = projectAcceptedExternalEdits(nextProject);
     const loadedProjectChanged = projectChangedDuringLoad(projectWithDefaults, nextProject);
     let nextScriptImportNeeded = Boolean(scan.scriptImportNeeded);
 
+    projectRef.current = nextProject;
+    folderPathRef.current = scan.folderPath;
+    metadataPathRef.current = scan.metadataPath;
     setProject(nextProject);
     setFolderPath(scan.folderPath);
     setFolderInputValue(scan.folderPath);
@@ -1770,7 +2216,7 @@ export const App = () => {
     setStatus(acceptedExternalEdits ? "External TIFF edits accepted as new base" : nextStatus);
     setUndoStackSynced([]);
     setRedoStackSynced([]);
-    setSelectedShotIds(nextProject.shots[0] ? [nextProject.shots[0].id] : []);
+    selectSingleShot(nextProject.shots[0]?.id);
     if (resetDirtyShots) {
       dirtyShotIdsRef.current = new Set();
     }
@@ -1796,12 +2242,13 @@ export const App = () => {
         setAutosaveError((current) => autosaveErrorReducer(current, { type: "failed", message }));
         setStatus(`Autosave failed: ${message}`);
       });
-      return;
+      return nextProject;
     }
 
     if ((dirty || acceptedExternalEdits || loadedProjectChanged) && !nextScriptImportNeeded) {
       setAutosaveRevision((revision) => revision + 1);
     }
+    return nextProject;
   };
 
   const handleOpenFolderByPath = async (pathOverride?: string) => {
@@ -2089,14 +2536,50 @@ export const App = () => {
       return;
     }
 
-    if (!folderPath || !metadataPath) {
-      setStatus("Open a folder path before adding a shot");
-      return;
+    let targetFolderPath = folderPath;
+    let baseProject = projectRef.current;
+    let insertAfterShotId = primarySelectedShotId;
+
+    if (!targetFolderPath || !metadataPath) {
+      setStatus("Choose a folder for the first shot");
+      const selectedFolder = await withStatus(
+        "Choose folder failed",
+        () => window.storyboard.selectFolder(),
+        setStatus
+      );
+      if (!selectedFolder) {
+        setStatus("Add shot cancelled");
+        return;
+      }
+
+      setWorkspaceTask({
+        kind: "open",
+        label: "Loading folder...",
+        current: 0,
+        total: 0
+      });
+
+      const scan = await withStatus(
+        "Open folder failed",
+        () => window.storyboard.openFolderByPath(selectedFolder),
+        setStatus
+      );
+
+      setWorkspaceTask(undefined);
+      if (!scan) {
+        return;
+      }
+
+      const loadedProject = await loadFolderScan(scan, "Folder opened", !scan.project);
+      targetFolderPath = scan.folderPath;
+      baseProject = loadedProject ?? projectRef.current;
+      insertAfterShotId = baseProject.shots[0]?.id;
+      void window.storyboard.getRecentFolders().then(setRecentFolders).catch(() => undefined);
     }
 
     const image = await withStatus(
       "Add shot failed",
-      () => window.storyboard.createBlankShot(folderPath, { preset: blankShotPreset }),
+      () => window.storyboard.createBlankShot(targetFolderPath, { preset: blankShotPreset }),
       setStatus
     );
 
@@ -2104,13 +2587,37 @@ export const App = () => {
       return;
     }
 
-    const nextProject = addGeneratedShot(project, image, primarySelectedShotId);
-    updateProject(nextProject, true, false);
+    const nextProject = addGeneratedShot(baseProject, image, insertAfterShotId);
     const nextShotId = nextProject.shots.find((shot) => shot.imagePath === image.imagePath)?.id;
+    const nextShot = nextShotId ? nextProject.shots.find((shot) => shot.id === nextShotId) : undefined;
+    if (nextShot) {
+      const didCreateLayerAssets = await withStatus(
+        "Add shot layer failed",
+        async () => {
+          await Promise.all(
+            generatedShotTransparentLayerAssets(nextShot).map(async (layer) => {
+              const dataUrl = await createTransparentLayerDataUrl(layer.width, layer.height);
+              await window.storyboard.writeLayerPng({
+                folderPath: targetFolderPath,
+                bitmapPath: layer.bitmapPath,
+                dataUrl
+              });
+            })
+          );
+          return true;
+        },
+        setStatus
+      );
+      if (!didCreateLayerAssets) {
+        return;
+      }
+    }
+
+    updateProject(nextProject, true, false);
     if (nextShotId) {
       markShotsDirty([nextShotId]);
     }
-    setSelectedShotIds(nextShotId ? [nextShotId] : []);
+    selectSingleShot(nextShotId);
     setStatus(`Added ${blankShotPreset} shot: ${image.fileName}`);
   };
 
@@ -2180,26 +2687,76 @@ export const App = () => {
     setEditingDialogueId(dialogueId);
   };
 
-  const handleCopyShot = async (sourceShotId: string, targetShotId?: string) => {
+  const handleCopySelection = () => {
+    const currentProject = projectRef.current;
+    const resolvedTarget = resolveDeleteTarget(currentProject, deleteTargetRef.current);
+
+    if (resolvedTarget.type === "layer" || resolvedTarget.type === "locked-layer") {
+      const shot = currentProject.shots.find((item) => item.id === resolvedTarget.shotId);
+      const layer = shot
+        ? bitmapLayersForShot(shot).find((item) => item.id === resolvedTarget.layerId)
+        : undefined;
+      if (!shot || !layer) {
+        setStatus("No layer selected to copy");
+        return;
+      }
+
+      const nextClipboard: ClipboardSelection = { type: "layer", shotId: shot.id, layerId: layer.id };
+      clipboardSelectionRef.current = nextClipboard;
+      setClipboardSelection(nextClipboard);
+      setStatus(`Layer "${layer.name}" copied`);
+      return;
+    }
+
+    const shot = primaryShotOrFirst(sortedShots(currentProject.shots), selectedShotIdsRef.current);
+    if (!shot) {
+      setStatus("No storyboard selected to copy");
+      return;
+    }
+
+    const nextClipboard: ClipboardSelection = { type: "shot", shotId: shot.id };
+    clipboardSelectionRef.current = nextClipboard;
+    setClipboardSelection(nextClipboard);
+    setStatus("Storyboard copied");
+  };
+
+  const handlePasteSelection = async () => {
+    const clipboard = clipboardSelectionRef.current;
+    if (!clipboard) {
+      setStatus("Nothing to paste");
+      return;
+    }
+
+    if (clipboard.type === "shot") {
+      await pasteCopiedShot(clipboard.shotId);
+      return;
+    }
+
+    await pasteCopiedLayer(clipboard.shotId, clipboard.layerId);
+  };
+
+  const pasteCopiedShot = async (sourceShotId: string) => {
     if (!window.storyboard || !folderPath) {
-      setStatus("Cannot copy storyboard: Electron preload API is unavailable");
+      setStatus("Cannot paste storyboard: Electron preload API is unavailable");
       return;
     }
 
     const currentProject = projectRef.current;
     const sourceShot = currentProject.shots.find((shot) => shot.id === sourceShotId);
-    if (!sourceShot) {
+    const targetShot = primaryShotOrFirst(sortedShots(currentProject.shots), selectedShotIdsRef.current);
+    if (!sourceShot || !targetShot) {
+      setStatus("Cannot paste storyboard: copied or target storyboard is missing");
       return;
     }
 
-    const copiedShotId = crypto.randomUUID();
+    const pastedShotId = crypto.randomUUID();
     const sourceLayers = bitmapLayersForShot(sourceShot);
     const layerCopies = sourceLayers.map((layer) => ({
       sourceBitmapPath: layer.bitmapPath,
-      targetBitmapPath: bitmapLayerPath(copiedShotId, layer.id)
+      targetBitmapPath: bitmapLayerPath(pastedShotId, layer.id)
     }));
     const copiedAssets = await withStatus(
-      "Copy storyboard failed",
+      "Paste storyboard failed",
       () =>
         window.storyboard.copyShotAssets({
           folderPath,
@@ -2214,59 +2771,59 @@ export const App = () => {
       return;
     }
 
-    const nextProject = duplicateShotAfter(currentProject, sourceShotId, targetShotId, {
-      shotId: copiedShotId,
+    clearPasteAnimation(pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef);
+    pasteAnimationRef.current = {
+      kind: "shot",
+      sourceId: sourceShot.id,
+      pastedId: pastedShotId,
+      beforeRects: measurePasteAnimationRects("shot")
+    };
+    const nextProject = duplicateShotAfter(currentProject, sourceShotId, targetShot.id, {
+      shotId: pastedShotId,
       imagePath: copiedAssets.imagePath,
       fileName: copiedAssets.fileName,
-      previewPath: copiedAssets.previewPath
+      previewPath: copiedAssets.previewPath,
+      placement: "after"
     });
     updateProject(nextProject);
-    markShotsDirty([copiedShotId]);
-    setSelectedShotIds([copiedShotId]);
+    markShotsDirty([pastedShotId]);
+    selectSingleShot(pastedShotId);
+    setSelectedBitmapLayerIds(undefined);
     setDeleteTarget({ type: "shot" });
-    setStatus("Storyboard copied");
+    setStatus("Storyboard pasted");
   };
 
-  const handleCopyDialogue = (dialogueId: string, targetShotId: string) => {
-    const dialogue = projectRef.current.dialogues.find((item) => item.id === dialogueId);
-    if (!dialogue) {
-      return;
-    }
-
-    const copiedDialogueId = crypto.randomUUID();
-    updateProject((currentProject) =>
-      copyDialogueToShot(currentProject, dialogueId, targetShotId, copiedDialogueId)
-    );
-    setEditingDialogueId(copiedDialogueId);
-    setStatus("Dialogue copied");
-  };
-
-  const handleCopyBitmapLayerToShot = async (
-    sourceShotId: string,
-    layerId: string,
-    targetShotId: string,
-    placementLayerId?: string,
-    placement?: "before" | "after"
-  ) => {
+  const pasteCopiedLayer = async (sourceShotId: string, sourceLayerId: string) => {
     if (!window.storyboard || !folderPath) {
-      setStatus("Cannot copy layer: Electron preload API is unavailable");
+      setStatus("Cannot paste layer: Electron preload API is unavailable");
       return;
     }
 
-    const sourceShot = projectRef.current.shots.find((shot) => shot.id === sourceShotId);
+    const currentProject = projectRef.current;
+    const sourceShot = currentProject.shots.find((shot) => shot.id === sourceShotId);
     const sourceLayer = sourceShot
-      ? bitmapLayersForShot(sourceShot).find((layer) => layer.id === layerId)
+      ? bitmapLayersForShot(sourceShot).find((layer) => layer.id === sourceLayerId)
       : undefined;
-    const targetShot = projectRef.current.shots.find((shot) => shot.id === targetShotId);
-    if (!sourceLayer || !targetShot) {
+    const resolvedTarget = resolveDeleteTarget(currentProject, deleteTargetRef.current);
+    if (resolvedTarget.type !== "layer" && resolvedTarget.type !== "locked-layer") {
+      setStatus("Select a layer before pasting a layer");
       return;
     }
 
-    const copiedLayerId = `layer-${crypto.randomUUID()}`;
-    const targetBitmapPath = bitmapLayerPath(targetShotId, copiedLayerId);
+    const targetShot = currentProject.shots.find((shot) => shot.id === resolvedTarget.shotId);
+    const targetLayer = targetShot
+      ? bitmapLayersForShot(targetShot).find((layer) => layer.id === resolvedTarget.layerId)
+      : undefined;
+    if (!sourceLayer || !targetShot || !targetLayer) {
+      setStatus("Cannot paste layer: copied or target layer is missing");
+      return;
+    }
+
+    const pastedLayerId = `layer-${crypto.randomUUID()}`;
+    const targetBitmapPath = bitmapLayerPath(targetShot.id, pastedLayerId);
     const undoEntry = await createHistoryEntry([targetBitmapPath]);
     const copied = await withStatus(
-      "Copy layer failed",
+      "Paste layer failed",
       () =>
         window.storyboard.copyLayerPng({
           folderPath,
@@ -2280,43 +2837,221 @@ export const App = () => {
       return;
     }
 
+    clearPasteAnimation(pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef);
+    pasteAnimationRef.current = {
+      kind: "layer",
+      sourceId: sourceLayer.id,
+      pastedId: pastedLayerId,
+      beforeRects: measurePasteAnimationRects("layer")
+    };
     recordUndoEntry(undoEntry);
-    markShotsDirty([targetShotId]);
+    markShotsDirty([targetShot.id]);
     updateProject(
-      (currentProject) =>
+      (projectToUpdate) =>
         copyBitmapLayerToShot(
-          currentProject,
+          projectToUpdate,
           sourceShotId,
-          layerId,
-          targetShotId,
-          copiedLayerId,
-          placementLayerId,
-          placement
+          sourceLayerId,
+          targetShot.id,
+          pastedLayerId,
+          targetLayer.id,
+          "before"
         ),
+      false,
       false
     );
-    setSelectedShotIds([targetShotId]);
-    setDeleteTarget({ type: "layer", shotId: targetShotId, layerId: copiedLayerId });
-    setStatus(`Copied layer "${sourceLayer.name}"`);
+    selectSingleShot(targetShot.id);
+    setSelectedBitmapLayerIds({ shotId: targetShot.id, layerIds: [pastedLayerId] });
+    setDeleteTarget({ type: "layer", shotId: targetShot.id, layerId: pastedLayerId });
+    setStatus(`Layer "${sourceLayer.name}" pasted`);
+  };
+
+  const currentStoryboardDragRectCache = (): StoryboardDragRectCache | undefined => {
+    const scroll = { x: window.scrollX, y: window.scrollY };
+    const cachedScroll = storyboardDragRectCacheScrollRef.current;
+    if (
+      !storyboardDragRectCacheRef.current ||
+      !cachedScroll ||
+      cachedScroll.x !== scroll.x ||
+      cachedScroll.y !== scroll.y
+    ) {
+      storyboardDragRectCacheRef.current = captureStoryboardDragRects(boardGridRef.current);
+      storyboardDragRectCacheScrollRef.current = scroll;
+    }
+
+    return storyboardDragRectCacheRef.current;
+  };
+
+  const currentParkingDragRectCache = (): ParkingDragRectCache | undefined => {
+    const scroll = { x: window.scrollX, y: window.scrollY };
+    const cachedScroll = parkingDragRectCacheScrollRef.current;
+    if (
+      !parkingDragRectCacheRef.current ||
+      !cachedScroll ||
+      cachedScroll.x !== scroll.x ||
+      cachedScroll.y !== scroll.y
+    ) {
+      parkingDragRectCacheRef.current = captureParkingDragRects(parkingListRef.current);
+      parkingDragRectCacheScrollRef.current = scroll;
+    }
+
+    return parkingDragRectCacheRef.current;
+  };
+
+  const setNextStoryboardInsertionTarget = (
+    nextTarget: StoryboardInsertionTarget | undefined,
+    rectCache: StoryboardDragRectCache | undefined
+  ) => {
+    const currentTarget = storyboardInsertionTargetRef.current;
+    const nextIndicator = nextTarget && rectCache
+      ? storyboardInsertionIndicatorFromCachedRect(nextTarget, rectCache)
+      : undefined;
+    if (
+      currentTarget?.targetShotId === nextTarget?.targetShotId &&
+      currentTarget?.placement === nextTarget?.placement &&
+      sameStoryboardInsertionIndicator(storyboardInsertionIndicatorRef.current, nextIndicator)
+    ) {
+      return;
+    }
+
+    storyboardInsertionTargetRef.current = nextTarget;
+    storyboardInsertionIndicatorRef.current = nextIndicator;
+    setStoryboardInsertionIndicator(nextIndicator);
+  };
+
+  const clearStoryboardInsertionTarget = () => {
+    storyboardInsertionTargetRef.current = undefined;
+    storyboardInsertionIndicatorRef.current = undefined;
+    setStoryboardInsertionIndicator(undefined);
+  };
+
+  const setNextParkingInsertionTarget = (
+    nextTarget: StoryboardInsertionTarget | undefined,
+    rectCache: ParkingDragRectCache | undefined
+  ) => {
+    const currentTarget = parkingInsertionTargetRef.current;
+    const nextIndicator = nextTarget && rectCache
+      ? parkingInsertionIndicatorFromCachedRect(nextTarget, rectCache)
+      : undefined;
+    if (
+      currentTarget?.targetShotId === nextTarget?.targetShotId &&
+      currentTarget?.placement === nextTarget?.placement &&
+      sameParkingInsertionIndicator(parkingInsertionIndicatorRef.current, nextIndicator)
+    ) {
+      return;
+    }
+
+    parkingInsertionTargetRef.current = nextTarget;
+    parkingInsertionIndicatorRef.current = nextIndicator;
+    setParkingInsertionIndicator(nextIndicator);
+  };
+
+  const clearParkingInsertionTarget = () => {
+    parkingInsertionTargetRef.current = undefined;
+    parkingInsertionIndicatorRef.current = undefined;
+    setParkingInsertionIndicator(undefined);
+  };
+
+  const applyQueuedStoryboardInsertionTarget = () => {
+    const pending = pendingStoryboardInsertionDragRef.current;
+    pendingStoryboardInsertionDragRef.current = undefined;
+
+    if (!pending) {
+      clearStoryboardInsertionTarget();
+      return;
+    }
+
+    const rectCache = currentStoryboardDragRectCache();
+    if (!rectCache) {
+      clearStoryboardInsertionTarget();
+      return;
+    }
+
+    const insertionTarget = storyboardInsertionTargetFromPointer({
+      shotRects: rectCache.shots,
+      pointer: pending.pointer,
+      movingShotIds: pending.movingShotIds
+    });
+    setNextStoryboardInsertionTarget(insertionTarget, rectCache);
+  };
+
+  const applyQueuedParkingInsertionTarget = () => {
+    const pending = pendingParkingInsertionDragRef.current;
+    pendingParkingInsertionDragRef.current = undefined;
+
+    if (!pending) {
+      clearParkingInsertionTarget();
+      return;
+    }
+
+    const rectCache = currentParkingDragRectCache();
+    if (!rectCache) {
+      clearParkingInsertionTarget();
+      return;
+    }
+
+    const insertionTarget = parkingInsertionTargetFromPointer({
+      shotRects: rectCache.shots,
+      pointer: pending.pointer,
+      movingShotIds: pending.movingShotIds
+    });
+    setNextParkingInsertionTarget(insertionTarget, rectCache);
+  };
+
+  const cancelQueuedStoryboardInsertionTarget = () => {
+    if (storyboardInsertionFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(storyboardInsertionFrameRef.current);
+      storyboardInsertionFrameRef.current = undefined;
+    }
+    pendingStoryboardInsertionDragRef.current = undefined;
+  };
+
+  const cancelQueuedParkingInsertionTarget = () => {
+    if (parkingInsertionFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(parkingInsertionFrameRef.current);
+      parkingInsertionFrameRef.current = undefined;
+    }
+    pendingParkingInsertionDragRef.current = undefined;
+  };
+
+  const flushQueuedStoryboardInsertionTarget = () => {
+    if (storyboardInsertionFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(storyboardInsertionFrameRef.current);
+      storyboardInsertionFrameRef.current = undefined;
+    }
+    applyQueuedStoryboardInsertionTarget();
+  };
+
+  const flushQueuedParkingInsertionTarget = () => {
+    if (parkingInsertionFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(parkingInsertionFrameRef.current);
+      parkingInsertionFrameRef.current = undefined;
+    }
+    applyQueuedParkingInsertionTarget();
+  };
+
+  const resetStoryboardInsertionDragState = () => {
+    cancelQueuedStoryboardInsertionTarget();
+    storyboardDragRectCacheRef.current = undefined;
+    storyboardDragRectCacheScrollRef.current = undefined;
+    clearStoryboardInsertionTarget();
+  };
+
+  const resetParkingInsertionDragState = () => {
+    cancelQueuedParkingInsertionTarget();
+    parkingDragRectCacheRef.current = undefined;
+    parkingDragRectCacheScrollRef.current = undefined;
+    clearParkingInsertionTarget();
   };
 
   const handleDragStart = (event: DragStartEvent) => {
+    resetStoryboardInsertionDragState();
+    resetParkingInsertionDragState();
     const data = event.active.data.current as DragData | undefined;
-    const isCopyDrag = isCopyModifierEvent(event.activatorEvent);
-
-    if (isCopyDrag && (data?.type === "shot" || data?.type === "dialogue")) {
-      setCopyDrag(data);
-      copyDragRef.current = data;
-      setStatus(data.type === "shot" ? "Copy storyboard" : "Copy dialogue");
-    } else {
-      setCopyDrag(undefined);
-      copyDragRef.current = undefined;
-    }
+    setActiveDragType(data?.type);
 
     if (data?.type === "shot") {
-      const movingShotIds = isCopyDrag
-        ? [data.shotId]
-        : selectedShotIdsRef.current.includes(data.shotId)
+      const movingShotIds = selectedShotIdsRef.current.includes(data.shotId)
         ? selectedShotIdsRef.current
         : [data.shotId];
       setActiveShotIds(movingShotIds);
@@ -2324,13 +3059,12 @@ export const App = () => {
         chooseDragPreviewShotIds({
           activeShotId: data.shotId,
           selectedShotIds: selectedShotIdsRef.current,
-          orderedShotIds: orderedShots.map((shot) => shot.id),
-          isCopyDrag
+          orderedShotIds: orderedShots.map((shot) => shot.id)
         })
       );
 
       if (!selectedShotIdsRef.current.includes(data.shotId)) {
-        setSelectedShotIds([data.shotId]);
+        selectSingleShot(data.shotId);
       }
     }
 
@@ -2344,66 +3078,121 @@ export const App = () => {
     }
   };
 
-  const handleDragCancel = () => {
-    setActiveDialogue(undefined);
-    setActiveShotIds([]);
-    setDragPreviewShotIds([]);
-    setCopyShotDropTargetId(undefined);
-    setActiveParkedShotIds([]);
-    setCopyDrag(undefined);
-    copyDragRef.current = undefined;
+  const queueStoryboardInsertionTargetFromDrag = (event: DragMoveEvent | DragOverEvent | DragEndEvent) => {
+    const activeData = event.active.data.current as DragData | undefined;
+    if ((activeData?.type !== "shot" && activeData?.type !== "parked-shot") || isAnimationModeRef.current) {
+      resetStoryboardInsertionDragState();
+      return;
+    }
+
+    const pointer =
+      lastPointerPositionRef.current ??
+      pointerFromActiveDragRect(event.active.rect.current.translated ?? event.active.rect.current.initial);
+    if (!pointer) {
+      clearStoryboardInsertionTarget();
+      return;
+    }
+
+    if (activeData.type === "parked-shot" && !isPointerInsideElement(boardGridRef.current, pointer)) {
+      clearStoryboardInsertionTarget();
+      return;
+    }
+
+    if (activeData.type === "shot" && isPointerInsideElement(parkingListRef.current, pointer)) {
+      clearStoryboardInsertionTarget();
+      return;
+    }
+
+    const movingShotIds =
+      activeData.type === "shot"
+        ? selectedShotIdsRef.current.includes(activeData.shotId)
+          ? selectedShotIdsRef.current
+          : [activeData.shotId]
+        : [];
+    pendingStoryboardInsertionDragRef.current = {
+      pointer,
+      movingShotIds
+    };
+
+    if (storyboardInsertionFrameRef.current !== undefined) {
+      return;
+    }
+
+    storyboardInsertionFrameRef.current = window.requestAnimationFrame(() => {
+      storyboardInsertionFrameRef.current = undefined;
+      applyQueuedStoryboardInsertionTarget();
+    });
+  };
+
+  const queueParkingInsertionTargetFromDrag = (event: DragMoveEvent | DragOverEvent | DragEndEvent) => {
+    const activeData = event.active.data.current as DragData | undefined;
+    if (activeData?.type !== "shot") {
+      resetParkingInsertionDragState();
+      return;
+    }
+
+    const pointer =
+      lastPointerPositionRef.current ??
+      pointerFromActiveDragRect(event.active.rect.current.translated ?? event.active.rect.current.initial);
+    if (!pointer || !isPointerInsideElement(parkingListRef.current, pointer)) {
+      clearParkingInsertionTarget();
+      return;
+    }
+
+    pendingParkingInsertionDragRef.current = {
+      pointer,
+      movingShotIds: []
+    };
+
+    if (parkingInsertionFrameRef.current !== undefined) {
+      return;
+    }
+
+    parkingInsertionFrameRef.current = window.requestAnimationFrame(() => {
+      parkingInsertionFrameRef.current = undefined;
+      applyQueuedParkingInsertionTarget();
+    });
+  };
+
+  const handleDragMove = (event: DragMoveEvent) => {
+    queueStoryboardInsertionTargetFromDrag(event);
+    queueParkingInsertionTargetFromDrag(event);
   };
 
   const handleDragOver = (event: DragOverEvent) => {
-    const activeData = event.active.data.current as DragData | undefined;
-    const overData = event.over?.data.current as DragData | undefined;
-    const activeCopyDrag = copyDragRef.current;
-
-    if (activeCopyDrag?.type !== "shot" || activeData?.type !== "shot") {
-      if (copyShotDropTargetId !== undefined) {
-        setCopyShotDropTargetId(undefined);
-      }
-      return;
-    }
-
-    const targetShotId =
-      overData?.type === "shot" || overData?.type === "drop-zone" ? overData.shotId : undefined;
-    setCopyShotDropTargetId(targetShotId);
+    queueStoryboardInsertionTargetFromDrag(event);
+    queueParkingInsertionTargetFromDrag(event);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragCancel = () => {
+    setActiveDragType(undefined);
     setActiveDialogue(undefined);
     setActiveShotIds([]);
     setDragPreviewShotIds([]);
     setActiveParkedShotIds([]);
+    resetStoryboardInsertionDragState();
+    resetParkingInsertionDragState();
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    queueStoryboardInsertionTargetFromDrag(event);
+    queueParkingInsertionTargetFromDrag(event);
+    flushQueuedStoryboardInsertionTarget();
+    flushQueuedParkingInsertionTarget();
+    const dragEndStoryboardInsertionTarget = storyboardInsertionTargetRef.current;
+    const dragEndParkingInsertionTarget = parkingInsertionTargetRef.current;
+    setActiveDragType(undefined);
+    setActiveDialogue(undefined);
+    setActiveShotIds([]);
+    setDragPreviewShotIds([]);
+    setActiveParkedShotIds([]);
+    resetStoryboardInsertionDragState();
+    resetParkingInsertionDragState();
 
     const activeData = event.active.data.current as DragData | undefined;
     const overData = event.over?.data.current as DragData | undefined;
-    const activeCopyDrag = copyDragRef.current;
-    const copyTargetShotId = copyShotDropTargetId;
-    setCopyShotDropTargetId(undefined);
-    setCopyDrag(undefined);
-    copyDragRef.current = undefined;
 
     if (!activeData) {
-      return;
-    }
-
-    if (activeCopyDrag?.type === "shot" && activeData.type === "shot") {
-      const targetShotId =
-        overData?.type === "shot" || overData?.type === "drop-zone"
-          ? overData.shotId
-          : copyTargetShotId;
-      void handleCopyShot(activeData.shotId, targetShotId);
-      return;
-    }
-
-    if (
-      activeCopyDrag?.type === "dialogue" &&
-      activeData.type === "dialogue" &&
-      (overData?.type === "shot" || overData?.type === "drop-zone")
-    ) {
-      handleCopyDialogue(activeData.dialogueId, overData.shotId);
       return;
     }
 
@@ -2414,60 +3203,106 @@ export const App = () => {
       const movingShotIds = selectedShotIdsRef.current.includes(activeData.shotId)
         ? selectedShotIdsRef.current
         : [activeData.shotId];
-      const nextProject = parkShotGroup(projectRef.current, movingShotIds);
+      const nextProject = parkShotGroup(
+        projectRef.current,
+        movingShotIds,
+        dragEndParkingInsertionTarget
+          ? {
+              targetParkedShotId: dragEndParkingInsertionTarget.targetShotId,
+              placement: dragEndParkingInsertionTarget.placement
+            }
+          : undefined
+      );
       updateProject(nextProject);
       const nextSelectedShot = sortedShots(nextProject.shots)[0];
-      setSelectedShotIds(nextSelectedShot ? [nextSelectedShot.id] : []);
+      selectSingleShot(nextSelectedShot?.id);
       setDeleteTarget({ type: "shot" });
       setStatus(`${movingShotIds.length} storyboard${movingShotIds.length === 1 ? "" : "s"} moved to pending`);
       return;
     }
 
-    if (!overData) {
+    if (!overData && !dragEndStoryboardInsertionTarget) {
       return;
     }
 
     if (
       activeData.type === "shot" &&
-      (overData.type === "parking-zone" || overData.type === "parked-shot")
+      (overData?.type === "parking-zone" || overData?.type === "parked-shot")
     ) {
       const movingShotIds = selectedShotIdsRef.current.includes(activeData.shotId)
         ? selectedShotIdsRef.current
         : [activeData.shotId];
-      const nextProject = parkShotGroup(projectRef.current, movingShotIds);
+      const nextProject = parkShotGroup(
+        projectRef.current,
+        movingShotIds,
+        dragEndParkingInsertionTarget
+          ? {
+              targetParkedShotId: dragEndParkingInsertionTarget.targetShotId,
+              placement: dragEndParkingInsertionTarget.placement
+            }
+          : undefined
+      );
       updateProject(nextProject);
       const nextSelectedShot = sortedShots(nextProject.shots)[0];
-      setSelectedShotIds(nextSelectedShot ? [nextSelectedShot.id] : []);
+      selectSingleShot(nextSelectedShot?.id);
       setDeleteTarget({ type: "shot" });
       setStatus(`${movingShotIds.length} storyboard${movingShotIds.length === 1 ? "" : "s"} moved to pending`);
       return;
     }
 
-    if (activeData.type === "shot" && (overData.type === "shot" || overData.type === "drop-zone")) {
+    if (
+      activeData.type === "shot" &&
+      (dragEndStoryboardInsertionTarget || overData?.type === "shot")
+    ) {
       const movingShotIds = selectedShotIdsRef.current.includes(activeData.shotId)
         ? selectedShotIdsRef.current
         : [activeData.shotId];
-      const targetShotId = overData.shotId;
+      const fallbackTargetShotId = overData?.type === "shot" ? overData.shotId : undefined;
+      const targetShotId = dragEndStoryboardInsertionTarget?.targetShotId ?? fallbackTargetShotId;
+      if (!targetShotId) {
+        return;
+      }
       const currentProject = projectRef.current;
-      const placement = inferShotPlacement(currentProject, movingShotIds, targetShotId, activeData.shotId);
+      const placement =
+        dragEndStoryboardInsertionTarget?.placement ??
+        inferShotPlacement(currentProject, movingShotIds, targetShotId, activeData.shotId);
       const nextProject =
         movingShotIds.length > 1
           ? reorderShotGroup(currentProject, movingShotIds, targetShotId, placement)
           : reorderShots(currentProject, activeData.shotId, targetShotId, placement);
+      if (nextProject === currentProject) {
+        return;
+      }
+
+      clearPasteAnimation(pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef);
+      pasteAnimationRef.current = {
+        kind: "shot",
+        sourceId: "",
+        pastedId: "",
+        beforeRects: measurePasteAnimationRects("shot")
+      };
       updateProject(nextProject);
     }
 
-    if (activeData.type === "parked-shot" && (overData.type === "shot" || overData.type === "drop-zone")) {
-      const targetShotId = overData.shotId;
-      const placement = inferDropPlacementFromDragEnd(event);
+    if (
+      activeData.type === "parked-shot" &&
+      (dragEndStoryboardInsertionTarget || overData?.type === "shot" || overData?.type === "drop-zone")
+    ) {
+      const fallbackTargetShotId =
+        overData?.type === "shot" || overData?.type === "drop-zone" ? overData.shotId : undefined;
+      const targetShotId = dragEndStoryboardInsertionTarget?.targetShotId ?? fallbackTargetShotId;
+      if (!targetShotId) {
+        return;
+      }
+      const placement = dragEndStoryboardInsertionTarget?.placement ?? inferDropPlacementFromDragEnd(event);
       const nextProject = restoreParkedShotGroup(projectRef.current, [activeData.shotId], targetShotId, placement);
       updateProject(nextProject);
-      setSelectedShotIds([activeData.shotId]);
+      selectSingleShot(activeData.shotId);
       setDeleteTarget({ type: "shot" });
       setStatus("Storyboard restored from pending");
     }
 
-    if (activeData.type === "dialogue" && (overData.type === "shot" || overData.type === "drop-zone")) {
+    if (activeData.type === "dialogue" && (overData?.type === "shot" || overData?.type === "drop-zone")) {
       const targetShotId = overData.type === "drop-zone" ? overData.shotId : overData.shotId;
 
       if (targetShotId && targetShotId !== activeData.shotId) {
@@ -2486,14 +3321,17 @@ export const App = () => {
     setDeleteTarget({ type: "shot" });
     setSelectedBitmapLayerIds(undefined);
 
-    if (event.shiftKey || event.metaKey) {
-      setSelectedShotIds((current) =>
-        current.includes(shotId) ? current.filter((id) => id !== shotId) : [...current, shotId]
-      );
+    if (event.shiftKey) {
+      selectShotWithMode(shotId, "range");
       return;
     }
 
-    setSelectedShotIds([shotId]);
+    if (event.metaKey || event.ctrlKey) {
+      selectShotWithMode(shotId, "toggle");
+      return;
+    }
+
+    selectShotWithMode(shotId, "single");
   };
 
   const handleSelectionPointerDown = (event: PointerEvent<HTMLElement>) => {
@@ -2501,6 +3339,7 @@ export const App = () => {
       return;
     }
 
+    const marqueeShotRects = storyboardMarqueeShotRectsFromDom(event.currentTarget);
     const nextBox = createMarqueeBox({
       clientX: event.clientX,
       clientY: event.clientY,
@@ -2508,12 +3347,13 @@ export const App = () => {
       scrollY: window.scrollY
     });
     setSelectionBox(nextBox);
+    selectionBoxRef.current = nextBox;
     setDeleteTarget({ type: "shot" });
-    setSelectedShotIds([]);
+    clearSelectedShots();
     let latestPointer = { clientX: event.clientX, clientY: event.clientY };
-    let scrollFrame: number | undefined;
+    let marqueeFrame: number | undefined;
 
-    const updateMarqueeSelection = () => {
+    function updateMarqueeSelection(continueAutoScroll: boolean) {
       const scrollDelta = marqueeEdgeScrollDelta({
         pointerY: latestPointer.clientY,
         viewportHeight: window.innerHeight
@@ -2529,136 +3369,154 @@ export const App = () => {
         scrollY: window.scrollY
       });
       selectionBoxRef.current = movedBox;
-      setSelectionBox(movedBox);
-      setSelectedShotIds(shotIdsInSelectionBox(movedBox));
+      applySelectionMarqueeStyle(selectionMarqueeRef.current, movedBox);
 
-      scrollFrame =
-        scrollDelta === 0 ? undefined : window.requestAnimationFrame(updateMarqueeSelection);
-    };
+      const nextShotIds = shotIdsInMarqueeBox(movedBox, marqueeShotRects);
+      if (!sameMarqueeSelection(selectedShotIdsRef.current, nextShotIds)) {
+        selectShotsByIds(nextShotIds);
+      }
+
+      if (scrollDelta !== 0 && continueAutoScroll) {
+        scheduleMarqueeUpdate();
+      }
+    }
+
+    function scheduleMarqueeUpdate() {
+      if (marqueeFrame !== undefined) {
+        return;
+      }
+
+      marqueeFrame = window.requestAnimationFrame(() => {
+        marqueeFrame = undefined;
+        updateMarqueeSelection(true);
+      });
+    }
 
     const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
       latestPointer = { clientX: moveEvent.clientX, clientY: moveEvent.clientY };
-      if (scrollFrame === undefined) {
-        updateMarqueeSelection();
-      }
+      scheduleMarqueeUpdate();
     };
 
     const handlePointerUp = () => {
-      setSelectionBox(undefined);
-      if (scrollFrame !== undefined) {
-        window.cancelAnimationFrame(scrollFrame);
+      if (marqueeFrame !== undefined) {
+        window.cancelAnimationFrame(marqueeFrame);
+        marqueeFrame = undefined;
       }
+      updateMarqueeSelection(false);
+      selectionBoxRef.current = undefined;
+      setSelectionBox(undefined);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp, { once: true });
+    scheduleMarqueeUpdate();
   };
 
-  const openSketchSettingsMenu = (event: MouseEvent<HTMLElement>) => {
+  const persistToolRadialMenuConfig = (nextConfig: ToolRadialMenuConfig) => {
+    const normalized = normalizeToolRadialMenuConfig(nextConfig);
+    setToolRadialMenuConfig(normalized);
+    void window.storyboard?.setToolRadialMenu?.(normalized).catch(() => {
+      setStatus("Could not save radial shortcut settings");
+    });
+  };
+
+  const openSketchCanvasContextMenu = (event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
-    if (
-      !target.closest(".image-stage") ||
-      target.closest("input, textarea, select, .save-menu, .sketch-settings-menu")
-    ) {
+    if (target.closest("input, textarea, select, .save-menu")) {
+      return;
+    }
+
+    const action = radialCanvasContextMenuAction({
+      isCanvasTarget: Boolean(target.closest(".image-stage")),
+      isInsideRadialMenu: Boolean(target.closest(".radial-tool-menu")),
+      hasOpenRadialMenu: Boolean(radialToolMenu),
+      activeTool: activeSketchTool
+    });
+
+    if (action === "ignore") {
       return;
     }
 
     event.preventDefault();
-    if (activeSketchTool === "select") {
-      setSketchSettingsMenu(undefined);
+    if (action === "close") {
+      setRadialToolMenu(undefined);
       return;
     }
 
-    const menuWidth = 236;
-    const menuHeight = 136;
-    const margin = 12;
-    setSketchSettingsMenu({
+    if (activeSketchTool !== "brush" && activeSketchTool !== "eraser") {
+      return;
+    }
+
+    setRadialToolMenu({
       tool: activeSketchTool,
-      x: Math.min(event.clientX, window.innerWidth - menuWidth - margin),
-      y: Math.min(event.clientY, window.innerHeight - menuHeight - margin)
+      x: event.clientX,
+      y: event.clientY
     });
   };
 
-  const handleShortcutCapture = async (action: ShortcutAction, event: ReactKeyboardEvent<HTMLInputElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const nextShortcut = event.key === "Backspace" || event.key === "Delete"
-      ? ""
-      : formatShortcutFromKeyboardEvent(event.nativeEvent);
-    if (nextShortcut === "" && event.key !== "Backspace" && event.key !== "Delete") {
+  const boardZoomCssVariables = zoomPreviewStateRef.current?.cssVariables;
+  const showStoryboardInsertionIndicator = shouldShowStoryboardInsertionIndicator({
+    activeShotCount: activeShotIds.length + activeParkedShotIds.length,
+    hasIndicator: Boolean(storyboardInsertionIndicator)
+  });
+  const currentSketchToolSettings = {
+    tool: activeSketchTool,
+    brushColor,
+    brushSize,
+    brushOpacity,
+    brushSoftness,
+    eraserSize,
+    eraserOpacity,
+    eraserSoftness
+  };
+  const applySketchToolSettings = (settings: typeof currentSketchToolSettings) => {
+    setActiveSketchTool(settings.tool);
+    setBrushColor(settings.brushColor);
+    setBrushSize(settings.brushSize);
+    setBrushOpacity(settings.brushOpacity);
+    setBrushSoftness(settings.brushSoftness);
+    setEraserSize(settings.eraserSize);
+    setEraserOpacity(settings.eraserOpacity);
+    setEraserSoftness(settings.eraserSoftness);
+  };
+  const applyRadialPreset = (slot: RadialPresetSlot) => {
+    applySketchToolSettings(applyRadialPresetSlot(currentSketchToolSettings, slot));
+    setRadialToolMenu(undefined);
+  };
+  const adjustRadialToolValue = (kind: RadialDragKind, value: number) => {
+    if (activeSketchTool === "brush") {
+      if (kind === "size") {
+        setBrushSize(value);
+      } else if (kind === "opacity") {
+        setBrushOpacity(value);
+      } else {
+        setBrushSoftness(value);
+      }
       return;
     }
 
-    const nextShortcuts = normalizeKeyboardShortcuts({
-      ...keyboardShortcuts,
-      [action]: nextShortcut
-    });
-    const duplicates = duplicateShortcutValues(nextShortcuts);
-    if (duplicates.length > 0) {
-      setShortcutError(`${duplicates.join(", ")} is already assigned`);
-      return;
-    }
-
-    setShortcutError("");
-    setKeyboardShortcuts(nextShortcuts);
-    const saved = await withStatus(
-      "Keyboard shortcut save failed",
-      () => window.storyboard.setKeyboardShortcuts(nextShortcuts),
-      setStatus
-    );
-    if (saved) {
-      setKeyboardShortcuts(normalizeKeyboardShortcuts(saved));
+    if (activeSketchTool === "eraser") {
+      if (kind === "size") {
+        setEraserSize(value);
+      } else if (kind === "opacity") {
+        setEraserOpacity(value);
+      } else {
+        setEraserSoftness(value);
+      }
     }
   };
-
-  const handleNativeShortcutCapture = async (action: ShortcutAction, event: KeyboardEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    const nextShortcut = event.key === "Backspace" || event.key === "Delete"
-      ? ""
-      : formatShortcutFromKeyboardEvent(event);
-    if (nextShortcut === "" && event.key !== "Backspace" && event.key !== "Delete") {
-      return;
-    }
-
-    const nextShortcuts = normalizeKeyboardShortcuts({
-      ...keyboardShortcuts,
-      [action]: nextShortcut
+  const updateRadialSlot = (tool: StrokeTool, index: number, slot: RadialToolSlot) => {
+    persistToolRadialMenuConfig({
+      ...toolRadialMenuConfig,
+      [tool]: {
+        slots: toolRadialMenuConfig[tool].slots.map((currentSlot, slotIndex) =>
+          slotIndex === index ? slot : currentSlot
+        )
+      }
     });
-    const duplicates = duplicateShortcutValues(nextShortcuts);
-    if (duplicates.length > 0) {
-      setShortcutError(`${duplicates.join(", ")} is already assigned`);
-      return;
-    }
-
-    setShortcutError("");
-    setKeyboardShortcuts(nextShortcuts);
-    const saved = await withStatus(
-      "Keyboard shortcut save failed",
-      () => window.storyboard.setKeyboardShortcuts(nextShortcuts),
-      setStatus
-    );
-    if (saved) {
-      setKeyboardShortcuts(normalizeKeyboardShortcuts(saved));
-    }
   };
-
-  useEffect(() => {
-    if (!capturingShortcutAction) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      void handleNativeShortcutCapture(capturingShortcutAction, event);
-    };
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [capturingShortcutAction, keyboardShortcuts]);
 
   return (
     <main
@@ -2668,7 +3526,7 @@ export const App = () => {
         isAnimationMode ? "is-animation-mode" : "",
         isParkingShelfOpen ? "has-parking-shelf-open" : ""
       ].filter(Boolean).join(" ")}
-      onContextMenu={openSketchSettingsMenu}
+      onContextMenu={openSketchCanvasContextMenu}
       onDragOver={handleStoryboardScriptDragOver}
       onDrop={(event) => void handleStoryboardScriptDrop(event)}
     >
@@ -2987,16 +3845,13 @@ export const App = () => {
             title={cardFace === "image" ? "Show script side" : "Show image side"}
             aria-label={cardFace === "image" ? "Show script side" : "Show image side"}
           >
-            {cardFace === "image" ? "文" : "图"}
+            <CardFaceIcon />
           </button>
           <div className="shortcut-menu-container" ref={shortcutMenuRef}>
             <button
               type="button"
               className={isShortcutMenuOpen ? "selected" : ""}
-              onClick={() => {
-                setIsShortcutMenuOpen((isOpen) => !isOpen);
-                setShortcutError("");
-              }}
+              onClick={() => setIsShortcutMenuOpen((isOpen) => !isOpen)}
               title="Keyboard shortcuts"
               aria-label="Keyboard shortcuts"
               aria-expanded={isShortcutMenuOpen}
@@ -3007,35 +3862,27 @@ export const App = () => {
               <div className="shortcut-menu" aria-label="Keyboard shortcuts">
                 <div className="shortcut-menu-head">
                   <strong>Shortcuts</strong>
-                  <span>Press a key combo. Backspace/Delete clears.</span>
+                  <span>Fixed shortcuts for the current build.</span>
                 </div>
                 <div className="shortcut-list">
                   {shortcutLabels.map(({ action, label }) => (
-                    <label key={action} className="shortcut-field">
+                    <div key={action} className="shortcut-field">
                       <span>{label}</span>
-                      <input
-                        className="shortcut-key-input"
-                        value={keyboardShortcuts[action]}
-                        readOnly
-                        onKeyDown={(event) => void handleShortcutCapture(action, event)}
-                        onFocus={(event) => {
-                          setCapturingShortcutAction(action);
-                          event.currentTarget.select();
-                        }}
-                        onBlur={() => setCapturingShortcutAction(undefined)}
-                        aria-label={`${label} shortcut`}
-                      />
-                    </label>
+                      <kbd className="shortcut-key-display">{defaultKeyboardShortcuts[action]}</kbd>
+                    </div>
                   ))}
                 </div>
-                {shortcutError ? <p className="shortcut-error">{shortcutError}</p> : null}
               </div>
             ) : null}
           </div>
           <button
             type="button"
             className={activeSketchTool === "brush" ? "selected" : ""}
-            onClick={() => setActiveSketchTool("brush")}
+            onClick={() => {
+              setActiveSketchTool("brush");
+              setRadialToolMenu(undefined);
+            }}
+            onContextMenu={(event) => event.preventDefault()}
             title="Brush"
             aria-label="Brush"
           >
@@ -3044,7 +3891,11 @@ export const App = () => {
           <button
             type="button"
             className={activeSketchTool === "eraser" ? "selected" : ""}
-            onClick={() => setActiveSketchTool("eraser")}
+            onClick={() => {
+              setActiveSketchTool("eraser");
+              setRadialToolMenu(undefined);
+            }}
+            onContextMenu={(event) => event.preventDefault()}
             title="Eraser"
             aria-label="Eraser"
           >
@@ -3053,7 +3904,10 @@ export const App = () => {
           <button
             type="button"
             className={activeSketchTool === "select" ? "selected" : ""}
-            onClick={() => setActiveSketchTool("select")}
+            onClick={() => {
+              setActiveSketchTool("select");
+              setRadialToolMenu(undefined);
+            }}
             title="Select"
             aria-label="Select"
           >
@@ -3076,7 +3930,15 @@ export const App = () => {
           >
             <ClearIcon />
           </button>
-          <label className="color-control" title="Brush color">
+          <label
+            className="color-control"
+            title="Brush color"
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "copy";
+              event.dataTransfer.setData("application/x-storyboard-fill-color", brushColor);
+            }}
+          >
             <input
               aria-label="Brush color"
               type="color"
@@ -3085,79 +3947,30 @@ export const App = () => {
             />
           </label>
         </aside>
-        {sketchSettingsMenu ? (
-          <div
-            className="sketch-settings-menu"
-            style={{ left: sketchSettingsMenu.x, top: sketchSettingsMenu.y }}
-            onPointerDown={(event) => event.stopPropagation()}
-            onContextMenu={(event) => event.preventDefault()}
-          >
-            {sketchSettingsMenu.tool === "brush" ? (
-              <>
-                <BrushSwatchPicker
-                  swatches={brushSwatches}
-                  activeColor={brushColor}
-                  onPickColor={setBrushColor}
-                  onChangeSwatch={(index, color) => {
-                    setBrushSwatches((current) =>
-                      current.map((swatch, swatchIndex) => (swatchIndex === index ? color : swatch))
-                    );
-                    setBrushColor(color);
-                  }}
-                />
-                <SketchSettingSlider
-                  label="Brush size"
-                  value={brushSize}
-                  min={1}
-                  max={28}
-                  step={1}
-                  suffix="px"
-                  onChange={setBrushSize}
-                />
-                <SketchSettingSlider
-                  label="Brush opacity"
-                  value={Math.round(brushOpacity * 100)}
-                  min={20}
-                  max={100}
-                  step={5}
-                  suffix="%"
-                  onChange={(value) => setBrushOpacity(value / 100)}
-                />
-              </>
-            ) : sketchSettingsMenu.tool === "eraser" ? (
-              <>
-                <SketchSettingSlider
-                  label="Eraser size"
-                  value={eraserSize}
-                  min={4}
-                  max={64}
-                  step={1}
-                  suffix="px"
-                  onChange={setEraserSize}
-                />
-                <SketchSettingSlider
-                  label="Eraser opacity"
-                  value={Math.round(eraserOpacity * 100)}
-                  min={20}
-                  max={100}
-                  step={5}
-                  suffix="%"
-                  onChange={(value) => setEraserOpacity(value / 100)}
-                />
-              </>
-            ) : null}
-          </div>
+        {radialToolMenu ? (
+          <RadialToolMenu
+            menu={toolRadialMenuConfig[radialToolMenu.tool]}
+            tool={radialToolMenu.tool}
+            x={radialToolMenu.x}
+            y={radialToolMenu.y}
+            settings={currentSketchToolSettings}
+            onApplyPreset={applyRadialPreset}
+            onAdjust={adjustRadialToolValue}
+            onUpdateSlot={(index, slot) => updateRadialSlot(radialToolMenu.tool, index, slot)}
+            onClose={() => setRadialToolMenu(undefined)}
+          />
         ) : null}
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragStart={handleDragStart}
+          onDragMove={handleDragMove}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
           <SortableContext
-            items={renderedShotEntries.map(({ shot }) => shot.id)}
+            items={storyboardSortableItemIds}
             strategy={rectSortingStrategy}
           >
             <section
@@ -3165,32 +3978,43 @@ export const App = () => {
               className="board-grid"
               style={
                 {
-                  "--shot-scale": zoomLevel / 100,
-                  "--animation-image-width": `${animationImageSize.width}px`,
-                  "--animation-image-height": `${animationImageSize.height}px`,
-                  "--animation-frame-width": `${animationFrameSize.width}px`,
-                  "--animation-frame-height": `${animationFrameSize.height}px`
+                  "--shot-scale": boardZoomCssVariables?.shotScale ?? zoomLevel / 100,
+                  "--animation-image-width":
+                    boardZoomCssVariables?.animationImageWidth ?? `${animationImageSize.width}px`,
+                  "--animation-image-height":
+                    boardZoomCssVariables?.animationImageHeight ?? `${animationImageSize.height}px`,
+                  "--animation-frame-width":
+                    boardZoomCssVariables?.animationFrameWidth ?? `${animationFrameSize.width}px`,
+                  "--animation-frame-height":
+                    boardZoomCssVariables?.animationFrameHeight ?? `${animationFrameSize.height}px`
                 } as CSSProperties
               }
               onPointerDown={handleSelectionPointerDown}
             >
-              {renderedShotEntries.map(({ shot, index }) => (
-                <ShotCard
-                  key={shot.id}
-                  shot={shot}
-                  index={index}
+              {renderedShotEntries.map((entry) => {
+                const { shot, index } = entry;
+                return (
+                  <ShotCard
+                    key={shot.id}
+                    shot={shot}
+                    index={index}
                   project={project}
                   folderPath={folderPath}
                   isSelected={selectedShotIds.length > 1 && selectedShotIds.includes(shot.id)}
                   isPrimarySelected={shot.id === primarySelectedShotId}
                   isAnimationFocused={isAnimationMode && shot.id === primarySelectedShotId}
-                  isCopyDraggingSource={copyDrag?.type === "shot" && copyDrag.shotId === shot.id}
+                  isZoomScrubbing={isZoomScrubbing}
+                  disableSortableTransform={activeShotIds.length > 0}
+                  keepDraggingSourceVisible={activeShotIds.includes(shot.id)}
+                  activeDragType={activeDragType}
                   activeSketchTool={activeSketchTool}
                   brushColor={brushColor}
                   brushOpacity={brushOpacity}
                   brushSize={brushSize}
+                  brushSoftness={brushSoftness}
                   eraserOpacity={eraserOpacity}
                   eraserSize={eraserSize}
+                  eraserSoftness={eraserSoftness}
                   cardFace={cardFace}
                   onionSkinPreviousShot={
                     isAnimationMode && shot.id === primarySelectedShotId
@@ -3205,14 +4029,14 @@ export const App = () => {
                     editingDialogueId={editingDialogueId}
                     onSelect={(event) => handleShotSelect(shot.id, event)}
                   onFocusShot={() => {
-                    setSelectedShotIds([shot.id]);
+                    selectSingleShot(shot.id);
                     setDeleteTarget({ type: "shot" });
                     setSelectedBitmapLayerIds(undefined);
                   }}
                     isLayerPanelOpen={isLayerPanelOpen && shot.id === primarySelectedShotId}
                     thumbnailRevision={autosaveRevision}
                     onToggleLayerPanel={() => {
-                      setSelectedShotIds([shot.id]);
+                      selectSingleShot(shot.id);
                       setDeleteTarget({ type: "shot" });
                       setSelectedBitmapLayerIds(undefined);
                       setIsLayerPanelOpen((isOpen) => (shot.id === primarySelectedShotId ? !isOpen : true));
@@ -3227,6 +4051,7 @@ export const App = () => {
                     onMergeVisibleLayers={(shotId) => void handleMergeVisibleBitmapLayers(shotId)}
                     onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
                     onSelectLayer={(shotId, layerId) => {
+                      shotSelectionAnchorIdRef.current = undefined;
                       setDeleteTarget({ type: "layer", shotId, layerId });
                       updateProject((currentProject) => selectBitmapLayer(currentProject, shotId, layerId), false, false);
                     }}
@@ -3254,9 +4079,6 @@ export const App = () => {
                       );
                     }}
                     onSelectedLayerIdsChange={handleSelectedBitmapLayerIdsChange}
-                    onCopyLayerToShot={(shotId, layerId, targetShotId, targetLayerId, placement) =>
-                      void handleCopyBitmapLayerToShot(shotId, layerId, targetShotId, targetLayerId, placement)
-                    }
                     onUpdateLayerGroupOpacity={(shotId, layerIds, deltaOpacity, initialOpacityByLayerId) => {
                       markShotsDirty([shotId]);
                       updateProject(
@@ -3292,24 +4114,37 @@ export const App = () => {
                     onSelectionTransform={(layerId, dataUrl) =>
                       handleBitmapSelectionTransform(shot, layerId, dataUrl)
                     }
+                    onFill={(layerId, point, color) =>
+                      handleBitmapFill(shot, layerId, point, color)
+                    }
+                    onSketchBeginInteraction={() => setRadialToolMenu(undefined)}
                   />
-              ))}
-              {selectionBox ? <SelectionMarquee box={selectionBox} /> : null}
+                );
+              })}
+              {showStoryboardInsertionIndicator && storyboardInsertionIndicator ? (
+                <div
+                  className="storyboard-insertion-indicator"
+                  aria-hidden="true"
+                  style={{
+                    left: storyboardInsertionIndicator.left,
+                    top: storyboardInsertionIndicator.top,
+                    height: storyboardInsertionIndicator.height
+                  }}
+                />
+              ) : null}
+              {selectionBox ? <SelectionMarquee ref={selectionMarqueeRef} /> : null}
             </section>
           </SortableContext>
           <SortableContext items={parkedShots.map((shot) => `parked-${shot.id}`)} strategy={rectSortingStrategy}>
             <ParkingShelf
               shots={parkedShots}
               isOpen={isParkingShelfOpen}
+              insertionIndicator={activeShotIds.length > 0 ? parkingInsertionIndicator : undefined}
+              listRef={parkingListRef}
             />
           </SortableContext>
 
           <DragOverlay>
-            {copyDrag && copyDrag.type !== "shot" ? (
-              <div className="copy-drag-badge">
-                {copyDrag.type === "dialogue" ? "Copy dialogue" : "Copy layer"}
-              </div>
-            ) : null}
             {activeDialogue ? <DialoguePreview dialogue={activeDialogue} /> : null}
             {!activeDialogue && dragPreviewShotIds.length > 0 ? (
               <ShotStackPreview
@@ -3317,13 +4152,14 @@ export const App = () => {
                   .map((shotId) => shotById.get(shotId))
                   .filter((shot): shot is Shot => Boolean(shot))}
                 folderPath={folderPath}
-                variant={copyDrag?.type === "shot" ? "copy" : "move"}
+                variant="thumbnail"
               />
             ) : null}
             {!activeDialogue && dragPreviewShotIds.length === 0 && activeParkedShotIds.length > 0 ? (
               <ShotStackPreview
                 shots={parkedShots.filter((shot) => activeParkedShotIds.includes(shot.id))}
                 folderPath={folderPath}
+                variant="thumbnail"
               />
             ) : null}
           </DragOverlay>
@@ -3345,7 +4181,7 @@ export const App = () => {
           shots={orderedShots}
           selectedShotIds={selectedShotIds}
           onSelect={(shotId) => {
-            setSelectedShotIds([shotId]);
+            selectSingleShot(shotId);
             setDeleteTarget({ type: "shot" });
             setSelectedBitmapLayerIds(undefined);
           }}
@@ -3402,15 +4238,27 @@ export const App = () => {
         <label>
           Zoom
           <input
+            ref={zoomInputRef}
             type="range"
             min="25"
             max={maxStoryboardZoom}
             step="5"
-            value={zoomLevel}
-            onChange={(event) => setZoomLevel(Number(event.target.value))}
+            defaultValue={zoomLevel}
+            onPointerDown={beginZoomScrubbing}
+            onPointerUp={endZoomScrubbing}
+            onLostPointerCapture={endZoomScrubbing}
+            onBlur={endZoomScrubbing}
+            onChange={(event) => {
+              const nextZoom = Number(event.target.value);
+              if (isZoomScrubbingRef.current) {
+                scheduleZoomPreviewLevel(nextZoom);
+              } else {
+                scheduleZoomLevel(nextZoom);
+              }
+            }}
           />
         </label>
-        <span>{zoomLevel}%</span>
+        <span ref={zoomValueLabelRef}>{zoomLevel}%</span>
         {isAnimationMode ? (
           <label className="onion-skin-toggle">
             <input
@@ -3447,6 +4295,86 @@ const inferShotPlacement = (
   return targetIndex > Math.max(...movingIndexes) ? "after" : "before";
 };
 
+const pointerFromActiveDragRect = (
+  rect: { left: number; top: number; width: number; height: number } | null | undefined
+): { x: number; y: number } | undefined => {
+  if (!rect) {
+    return undefined;
+  }
+
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2
+  };
+};
+
+const storyboardMarqueeShotRectsFromDom = (board: HTMLElement | null): MarqueeShotRect[] => {
+  if (!board) {
+    return [];
+  }
+
+  return Array.from(board.querySelectorAll<HTMLElement>("[data-shot-id]"))
+    .map((element) => {
+      const shotId = element.dataset.shotId;
+      if (!shotId) {
+        return undefined;
+      }
+
+      const rect = element.getBoundingClientRect();
+      return {
+        shotId,
+        rect: {
+          left: rect.left + window.scrollX,
+          right: rect.right + window.scrollX,
+          top: rect.top + window.scrollY,
+          bottom: rect.bottom + window.scrollY
+        }
+      };
+    })
+    .filter((shotRect): shotRect is MarqueeShotRect => Boolean(shotRect));
+};
+
+const applySelectionMarqueeStyle = (element: HTMLDivElement | null, box: MarqueeBox) => {
+  if (!element) {
+    return;
+  }
+
+  const rect = marqueeViewportRect(box);
+  element.style.left = `${rect.left}px`;
+  element.style.top = `${rect.top}px`;
+  element.style.width = `${rect.width}px`;
+  element.style.height = `${rect.height}px`;
+};
+
+const sameStoryboardInsertionIndicator = (
+  current: StoryboardInsertionIndicator | undefined,
+  next: StoryboardInsertionIndicator | undefined
+): boolean =>
+  current?.targetShotId === next?.targetShotId &&
+  current?.placement === next?.placement &&
+  current?.left === next?.left &&
+  current?.top === next?.top &&
+  current?.height === next?.height;
+
+const sameParkingInsertionIndicator = (
+  current: ParkingInsertionIndicator | undefined,
+  next: ParkingInsertionIndicator | undefined
+): boolean =>
+  current?.targetShotId === next?.targetShotId &&
+  current?.placement === next?.placement &&
+  current?.left === next?.left &&
+  current?.top === next?.top &&
+  current?.width === next?.width;
+
+const isPointerInsideElement = (element: HTMLElement | null, pointer: { x: number; y: number }): boolean => {
+  if (!element) {
+    return false;
+  }
+
+  const rect = element.getBoundingClientRect();
+  return pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom;
+};
+
 const inferDropPlacementFromDragEnd = (event: DragEndEvent): ShotPlacement => {
   const activeRect = event.active.rect.current.translated ?? event.active.rect.current.initial;
   const overRect = event.over?.rect;
@@ -3458,6 +4386,103 @@ const inferDropPlacementFromDragEnd = (event: DragEndEvent): ShotPlacement => {
   const activeCenterY = activeRect.top + activeRect.height / 2;
   const overCenterY = overRect.top + overRect.height / 2;
   return activeCenterY > overCenterY ? "after" : "before";
+};
+
+const pasteAnimationTransition = "transform 190ms cubic-bezier(0.2, 0.8, 0.2, 1)";
+const pasteAnimationCleanupMs = 240;
+
+const pasteAnimationSelector = (kind: PasteAnimationKind): string =>
+  kind === "shot" ? "[data-shot-id]" : "[data-layer-id]";
+
+const pasteAnimationIdForElement = (element: HTMLElement, kind: PasteAnimationKind): string | undefined =>
+  kind === "shot" ? element.dataset.shotId : element.dataset.layerId;
+
+const measurePasteAnimationRects = (kind: PasteAnimationKind): Map<string, DOMRect> => {
+  const rects = new Map<string, DOMRect>();
+  for (const element of Array.from(document.querySelectorAll<HTMLElement>(pasteAnimationSelector(kind)))) {
+    const id = pasteAnimationIdForElement(element, kind);
+    if (id) {
+      rects.set(id, element.getBoundingClientRect());
+    }
+  }
+  return rects;
+};
+
+const resetPasteAnimationStyles = () => {
+  for (const element of Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id], [data-layer-id]"))) {
+    element.style.removeProperty("transform");
+    element.style.removeProperty("transition");
+    element.style.removeProperty("will-change");
+  }
+};
+
+const clearPasteAnimation = (
+  frameRef: { current: number | undefined },
+  timeoutRef: { current: number | undefined }
+) => {
+  if (frameRef.current !== undefined) {
+    window.cancelAnimationFrame(frameRef.current);
+    frameRef.current = undefined;
+  }
+
+  if (timeoutRef.current !== undefined) {
+    window.clearTimeout(timeoutRef.current);
+    timeoutRef.current = undefined;
+  }
+
+  resetPasteAnimationStyles();
+};
+
+const applyPasteAnimation = (
+  animation: PasteAnimationState,
+  frameRef: { current: number | undefined },
+  timeoutRef: { current: number | undefined }
+) => {
+  clearPasteAnimation(frameRef, timeoutRef);
+
+  const sourceRect = animation.beforeRects.get(animation.sourceId);
+  const movedElements: HTMLElement[] = [];
+  for (const element of Array.from(document.querySelectorAll<HTMLElement>(pasteAnimationSelector(animation.kind)))) {
+    const id = pasteAnimationIdForElement(element, animation.kind);
+    const fromRect =
+      id === animation.pastedId && sourceRect ? sourceRect : id ? animation.beforeRects.get(id) : undefined;
+    if (!fromRect) {
+      continue;
+    }
+
+    const afterRect = element.getBoundingClientRect();
+    const deltaX = fromRect.left - afterRect.left;
+    const deltaY = fromRect.top - afterRect.top;
+    if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) {
+      continue;
+    }
+
+    element.style.transition = "none";
+    element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    element.style.willChange = "transform";
+    movedElements.push(element);
+  }
+
+  if (movedElements.length === 0) {
+    return;
+  }
+
+  frameRef.current = window.requestAnimationFrame(() => {
+    frameRef.current = undefined;
+    for (const element of movedElements) {
+      element.style.transition = pasteAnimationTransition;
+      element.style.transform = "";
+    }
+
+    timeoutRef.current = window.setTimeout(() => {
+      timeoutRef.current = undefined;
+      for (const element of movedElements) {
+        element.style.removeProperty("transform");
+        element.style.removeProperty("transition");
+        element.style.removeProperty("will-change");
+      }
+    }, pasteAnimationCleanupMs);
+  });
 };
 
 const dragEndInsideSelector = (
@@ -3517,33 +4542,6 @@ const hasOnlyCompatibleExternalEdits = (project: Project): boolean => {
   return hasCompatibleEdit;
 };
 
-const hasDirtyCompatibleExternalEdit = (project: Project, dirtyShotIds: Set<string>): boolean =>
-  [...project.shots, ...(project.parkedShots ?? [])].some(
-    (shot) => shot.swb?.status === "compatible-external-edit" && dirtyShotIds.has(shot.id)
-  );
-
-const shotIdsInSelectionBox = (box: MarqueeBox): string[] => {
-  const shots = Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id]"))
-    .map((element) => {
-      const rect = element.getBoundingClientRect();
-      const shotId = element.dataset.shotId;
-      return shotId
-        ? {
-            shotId,
-            rect: {
-              left: rect.left + window.scrollX,
-              right: rect.right + window.scrollX,
-              top: rect.top + window.scrollY,
-              bottom: rect.bottom + window.scrollY
-            }
-          }
-        : undefined;
-    })
-    .filter((shot): shot is NonNullable<typeof shot> => Boolean(shot));
-
-  return shotIdsInMarqueeBox(box, shots);
-};
-
 const withStatus = async <T,>(
   label: string,
   action: () => Promise<T>,
@@ -3588,6 +4586,28 @@ const drawStrokeOnBitmapLayer = async (
     }
   }
 
+  return canvas.toDataURL("image/png");
+};
+
+const fillBitmapLayerAtPoint = async (
+  sourceUrl: string,
+  layer: BitmapLayer,
+  point: { x: number; y: number },
+  color: string
+): Promise<string> => {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(layer.width));
+  canvas.height = Math.max(1, Math.round(layer.height));
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    return sourceUrl;
+  }
+
+  await drawImageUrl(context, sourceUrl, canvas.width, canvas.height);
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  fillImageDataAtPoint(imageData, point, hexToRgba(color));
+  context.putImageData(imageData, 0, 0);
   return canvas.toDataURL("image/png");
 };
 

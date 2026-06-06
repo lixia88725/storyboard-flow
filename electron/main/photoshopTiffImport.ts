@@ -40,6 +40,24 @@ export type PhotoshopTiffImportAssetPlan = {
   moves: Array<{ fromPath: string; toPath: string }>;
 };
 
+export type CompatibleExternalEditImportMode = "replace" | "preserve-dirty-layers" | "duplicate";
+
+export const compatibleExternalEditImportMode = ({
+  compatibleExternalEdit,
+  dirtyShot,
+  preserveDirtyShotLayers
+}: {
+  compatibleExternalEdit: boolean;
+  dirtyShot: boolean;
+  preserveDirtyShotLayers: boolean;
+}): CompatibleExternalEditImportMode => {
+  if (!compatibleExternalEdit || !dirtyShot) {
+    return "replace";
+  }
+
+  return preserveDirtyShotLayers ? "preserve-dirty-layers" : "duplicate";
+};
+
 export const photoshopTiffNoLayersMarker = "SWB_PHOTOSHOP_TIFF_NO_LAYERS";
 const sharpSourceOptions = { unlimited: true } as const;
 
@@ -153,6 +171,17 @@ export const buildPhotoshopTiffImportAssetPlan = (
       };
     })
   };
+};
+
+export const importedLayerMovesForImportMode = (
+  moves: PhotoshopTiffImportAssetPlan["moves"],
+  mode: CompatibleExternalEditImportMode
+): PhotoshopTiffImportAssetPlan["moves"] => {
+  if (mode !== "preserve-dirty-layers") {
+    return moves;
+  }
+
+  return moves.filter((move) => path.basename(move.toPath) === "layer-image.png");
 };
 
 export const topmostImportedLayerId = (layers: BitmapLayer[]): string | undefined => {

@@ -24,6 +24,89 @@ export const canvasSizeForShot = (shot: Shot): CanvasSize => {
   return width && height ? { width, height } : sketchCanvasSize;
 };
 
+export type RgbaColor = readonly [number, number, number, number];
+
+export const hexToRgba = (hexColor: string): RgbaColor => {
+  const normalized = hexColor.trim().replace(/^#/, "");
+  const expanded =
+    normalized.length === 3
+      ? normalized.split("").map((part) => `${part}${part}`).join("")
+      : normalized;
+  const value = Number.parseInt(expanded, 16);
+
+  if (!Number.isFinite(value) || expanded.length !== 6) {
+    return [0, 0, 0, 255];
+  }
+
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255, 255];
+};
+
+const samePixelColor = (
+  data: Uint8ClampedArray,
+  offset: number,
+  target: RgbaColor
+): boolean =>
+  data[offset] === target[0] &&
+  data[offset + 1] === target[1] &&
+  data[offset + 2] === target[2] &&
+  data[offset + 3] === target[3];
+
+export const fillImageDataAtPoint = (
+  imageData: ImageData,
+  point: { x: number; y: number },
+  fillColor: RgbaColor
+): void => {
+  const width = imageData.width;
+  const height = imageData.height;
+  const startX = Math.min(width - 1, Math.max(0, Math.floor(point.x)));
+  const startY = Math.min(height - 1, Math.max(0, Math.floor(point.y)));
+  const startOffset = (startY * width + startX) * 4;
+  const data = imageData.data;
+  const target: RgbaColor = [
+    data[startOffset],
+    data[startOffset + 1],
+    data[startOffset + 2],
+    data[startOffset + 3]
+  ];
+
+  if (samePixelColor(data, startOffset, fillColor)) {
+    return;
+  }
+
+  const stack: Array<[number, number]> = [[startX, startY]];
+  const visited = new Uint8Array(width * height);
+
+  while (stack.length > 0) {
+    const next = stack.pop();
+    if (!next) {
+      continue;
+    }
+
+    const [x, y] = next;
+    if (x < 0 || y < 0 || x >= width || y >= height) {
+      continue;
+    }
+
+    const index = y * width + x;
+    if (visited[index]) {
+      continue;
+    }
+    visited[index] = 1;
+
+    const offset = index * 4;
+    if (!samePixelColor(data, offset, target)) {
+      continue;
+    }
+
+    data[offset] = fillColor[0];
+    data[offset + 1] = fillColor[1];
+    data[offset + 2] = fillColor[2];
+    data[offset + 3] = fillColor[3];
+
+    stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+  }
+};
+
 export const drawStrokePathOnCanvas = (
   context: CanvasRenderingContext2D,
   stroke: SketchStroke,
@@ -36,6 +119,8 @@ export const drawStrokePathOnCanvas = (
   context.lineWidth = stroke.size;
   context.lineCap = "round";
   context.lineJoin = "round";
+  context.shadowBlur = Math.max(0, stroke.size * (stroke.softness ?? 0));
+  context.shadowColor = stroke.color;
   context.beginPath();
 
   if (!segment && stroke.points.length === 2) {

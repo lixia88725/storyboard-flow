@@ -1459,37 +1459,29 @@ try {
           if (!document.querySelector(".shortcut-menu")) {
             document.querySelector('button[aria-label="Keyboard shortcuts"]')?.click();
           }
-          return Boolean(document.querySelector('input[aria-label="Brush shortcut"]'));
+          const shortcuts = Array.from(document.querySelectorAll(".shortcut-field")).map((field) => ({
+            label: field.querySelector("span")?.textContent,
+            value: field.querySelector("kbd")?.textContent
+          }));
+          return {
+            hasMenu: Boolean(document.querySelector(".shortcut-menu")),
+            inputCount: document.querySelectorAll(".shortcut-menu input").length,
+            hasSettingsApi:
+              "getKeyboardShortcuts" in window.storyboard || "setKeyboardShortcuts" in window.storyboard,
+            brush: shortcuts.find((shortcut) => shortcut.label === "Brush")?.value,
+            clearLayer: shortcuts.find((shortcut) => shortcut.label === "Clear layer")?.value
+          };
         })()
       `);
-      if (!opened) {
+      if (!opened?.hasMenu || opened.inputCount !== 0 || opened.hasSettingsApi) {
         return undefined;
       }
-      await evaluate(`
-        window.storyboard.setKeyboardShortcuts({
-          brush: "P",
-          eraser: "E",
-          select: "V",
-          clearLayer: "Escape",
-          save: "Cmd+S",
-          addShot: "A",
-          onionSkin: "O",
-          previousShot: "ArrowLeft",
-          nextShot: "ArrowRight",
-          undo: "Cmd+Z",
-          redo: "Shift+Cmd+Z"
-        })
-      `);
-      const settings = await waitFor(async () => {
-        const contents = await readFile(path.join(electronUserDataRoot, "keyboard-shortcuts.json"), "utf8")
-          .catch(() => undefined);
-        if (!contents) {
-          return undefined;
-        }
-        const parsed = JSON.parse(contents);
-        return parsed.brush === "P" && parsed.clearLayer === "Escape" ? parsed : undefined;
-      }, "keyboard shortcut settings file");
-      const readback = await evaluate(`window.storyboard.getKeyboardShortcuts()`);
+      const settingsFileExists = Boolean(
+        await readFile(path.join(electronUserDataRoot, "keyboard-shortcuts.json"), "utf8").catch(() => undefined)
+      );
+      if (settingsFileExists || opened.brush !== "B" || opened.clearLayer !== "Escape") {
+        return undefined;
+      }
       await evaluate(`
         (() => {
           document.activeElement?.blur();
@@ -1500,14 +1492,15 @@ try {
         })()
       `);
       return {
-        menuOpened: opened,
-        savedBrush: settings.brush,
-        savedClearLayer: settings.clearLayer,
-        readbackBrush: readback.brush,
-        readbackClearLayer: readback.clearLayer
+        menuOpened: opened.hasMenu,
+        inputCount: opened.inputCount,
+        hasSettingsApi: opened.hasSettingsApi,
+        brush: opened.brush,
+        clearLayer: opened.clearLayer,
+        settingsFileExists
       };
     },
-    "keyboard shortcut editor"
+    "keyboard shortcut list"
   );
 
   await evaluate(`
@@ -1667,44 +1660,6 @@ try {
     throw new Error(`Dialogue row clamp failed: ${JSON.stringify(dialogueRowChecks)}`);
   }
 
-  const optionDialogueCopyDrag = await evaluate(`
-    (() => {
-      const shots = Array.from(document.querySelectorAll("[data-shot-id]"));
-      const grip = shots[0]?.querySelector(".dialogue-grip")?.getBoundingClientRect();
-      const target = shots[1]?.querySelector(".dialogue-zone")?.getBoundingClientRect();
-      if (!grip || !target) {
-        return undefined;
-      }
-      return {
-        startX: Math.round(grip.left + grip.width / 2),
-        startY: Math.round(grip.top + grip.height / 2),
-        endX: Math.round(target.left + target.width / 2),
-        endY: Math.round(target.top + target.height / 2)
-      };
-    })()
-  `);
-  if (!optionDialogueCopyDrag) {
-    throw new Error("Could not locate dialogue copy drag handles");
-  }
-  await dragStroke(
-    send,
-    optionDialogueCopyDrag.startX,
-    optionDialogueCopyDrag.startY,
-    optionDialogueCopyDrag.endX,
-    optionDialogueCopyDrag.endY,
-    1
-  );
-  const optionDialogueCopyChecks = await waitFor(async () => {
-    const project = await readProjectMetadata(smokeRoot);
-    const sourceDialogue = project.dialogues?.find((dialogue) => dialogue.shotId === project.shots[0].id);
-    const copiedDialogue = project.dialogues?.find(
-      (dialogue) => dialogue.shotId === project.shots[1].id && dialogue.text === sourceDialogue?.text
-    );
-    return sourceDialogue && copiedDialogue
-      ? { sourceKept: true, copiedToSecondShot: true }
-      : undefined;
-  }, "Option drag copies dialogue");
-
   const imageOnlyDeleteDisabled = await evaluate(`
     document.querySelector('button[aria-label="Delete current layer"]').disabled
   `);
@@ -1851,47 +1806,6 @@ try {
       `),
     "paint layer thumbnail image"
   );
-
-  const optionLayerCopyDrag = await evaluate(`
-    (() => {
-      const shots = Array.from(document.querySelectorAll("[data-shot-id]"));
-      const row = document.querySelector('[data-layer-id="${paintLayer.id}"]')?.getBoundingClientRect();
-      const target = shots[2]?.querySelector(".image-stage")?.getBoundingClientRect();
-      if (!row || !target) {
-        return undefined;
-      }
-      return {
-        startX: Math.round(row.left + row.width / 2),
-        startY: Math.round(row.top + row.height / 2),
-        endX: Math.round(target.left + target.width / 2),
-        endY: Math.round(target.top + target.height / 2)
-      };
-    })()
-  `);
-  if (!optionLayerCopyDrag) {
-    throw new Error("Could not locate layer copy drag handles");
-  }
-  await dragStroke(
-    send,
-    optionLayerCopyDrag.startX,
-    optionLayerCopyDrag.startY,
-    optionLayerCopyDrag.endX,
-    optionLayerCopyDrag.endY,
-    1
-  );
-  const optionLayerCopyChecks = await waitFor(async () => {
-    const project = await readProjectMetadata(smokeRoot);
-    const copiedLayer = project.shots?.[2]?.layers?.find(
-      (layer) => layer.name === paintLayer.name && layer.id !== paintLayer.id
-    );
-    if (!copiedLayer) {
-      return undefined;
-    }
-    const copiedHash = await layerAssetState(resolveLayerPath(smokeRoot, copiedLayer.bitmapPath));
-    return copiedHash === paintDrawnHash
-      ? { copiedToThirdShot: true, copiedLayerId: copiedLayer.id }
-      : undefined;
-  }, "Option drag copies layer to another storyboard");
 
   await evaluate(`
     (() => {

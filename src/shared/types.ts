@@ -10,6 +10,7 @@ export type SketchStroke = {
   color: string;
   opacity?: number;
   size: number;
+  softness?: number;
   points: number[];
 };
 
@@ -159,6 +160,7 @@ export type WorkspacePayload = {
   metadataPath: string;
   blankShotPreset?: BlankShotPreset;
   dirtyShotIds?: string[];
+  preserveDirtyShotLayers?: boolean;
 };
 
 export type ImportSwbFormatPayload = WorkspacePayload;

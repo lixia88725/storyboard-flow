@@ -7,7 +7,6 @@ import type {
   RenamePlanItem,
   WorkspacePayload
 } from "../shared/types";
-import type { KeyboardShortcuts } from "./keyboardShortcuts";
 
 type WorkspaceTaskProgress = {
   kind: "save" | "import" | "open";
@@ -138,8 +137,8 @@ declare global {
       }>;
       createBlankShot: (folderPath: string, options: BlankShotOptions) => Promise<ImportedImage>;
       getRecentFolders: () => Promise<string[]>;
-      getKeyboardShortcuts: () => Promise<Partial<KeyboardShortcuts>>;
-      setKeyboardShortcuts: (shortcuts: KeyboardShortcuts) => Promise<Partial<KeyboardShortcuts>>;
+      getToolRadialMenu: () => Promise<unknown>;
+      setToolRadialMenu: (config: unknown) => Promise<unknown>;
       onOpenRecentFolder: (callback: (folderPath: string) => void) => () => void;
       onRecentFoldersChanged: (callback: (folders: string[]) => void) => () => void;
       onWorkspaceTaskProgress: (callback: (progress: WorkspaceTaskProgress) => void) => () => void;

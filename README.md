@@ -76,11 +76,11 @@ npm run dev
 
 `Merge` 是上下文动作：单选时合并 active layer 到下方可见层；多选两层及以上时合并选中 visible/unlocked layers 到选中组最下面的图层。`Cmd+E` / `Ctrl+E` 走同一套逻辑。`Merge visible` 会把 locked visible layers 烘焙进新 merged layer，但保留并隐藏这些 locked source layers。
 
-Option/Alt drag 是复制手势：可复制单张 storyboard、单个 layer 或单条 dialogue。普通拖拽继续用于移动/排序；复制不跟随多选。
+Option/Alt drag 不再作为复制手势；按住 Option/Alt 拖动 storyboard、layer 或 dialogue 时仍按普通移动/排序处理。复制使用 `Cmd+C` / `Ctrl+C` 和 `Cmd+V` / `Ctrl+V`：选中 storyboard 时粘贴到当前 storyboard 后方，并从源 storyboard 向右滑出；选中 layer 时粘贴到当前 layer 下方，并从源 layer 向下滑出。
 
-工具栏顶部的齿轮按钮可配置本机快捷键，覆盖 Brush、Eraser、Select、Clear layer、Save、Add Shot、Onion Skin、左右切帧、Undo 和 Redo。快捷键设置写入 Electron `userData`，不是项目文件的一部分。`Escape` 默认用于 Clear layer；当菜单打开时，`Escape` 优先关闭菜单。
+工具栏顶部的齿轮按钮显示当前固定快捷键清单，覆盖 Brush、Eraser、Select、Clear layer、Save、Add Shot、Onion Skin、左右切帧、Undo 和 Redo。快捷键暂不开放用户自定义，也不写入 Electron `userData`。`Escape` 默认用于 Clear layer；当菜单打开时，`Escape` 优先关闭菜单。
 
-`npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、拖动排序、图层缩略图、Select 移动/缩放、Add Shot、Save safety、Save 写入 Photoshop-readable layered TIFF、快捷键持久化、混合画幅动画模式、Onion Skin 和重开恢复；它也覆盖旧 stroke 项目的 bitmap migration、Photoshop layered TIFF export/import round trip，并检查内部 layer PNG 没有 metadata 未引用的 orphan asset。
+`npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、拖动排序、图层缩略图、Select 移动/缩放、Add Shot、Save safety、Save 写入 Photoshop-readable layered TIFF、固定快捷键清单、混合画幅动画模式、Onion Skin 和重开恢复；它也覆盖旧 stroke 项目的 bitmap migration、Photoshop layered TIFF export/import round trip，并检查内部 layer PNG 没有 metadata 未引用的 orphan asset。
 
 ## Photoshop Layered TIFF Export
 
@@ -88,7 +88,7 @@ Option/Alt drag 是复制手势：可复制单张 storyboard、单个 layer 或�
 
 现有 `Import` 操作也会检测 Photoshop layered TIFF，并把 raster Photoshop layers 转换成 SWB-owned bitmap layers。源 TIFF 会移动到 `Archive/YYYY-MM-DD-HHMMSS/`，SWB 继续使用 `.storyboard-workbench/layers/*.png` 和 `storyboard.project.json` 作为内部工作数据。
 
-如果用户在 Finder/Bridge 中向当前根目录新增图片，应用窗口重新获得焦点后会把新增路径追加为待 Import 的 `non-swb` shot，并点亮 Import 旁的黄色感叹号。已知 SWB TIFF 路径也会参与外部编辑检测：兼容的 Photoshop 保存结果在 SWB 没有本地 dirty 冲突时可自动导入；如果同一 shot 在 SWB 里也有未 Save 改动，则保持锁定并要求用户点 Import，Import 后把 Photoshop 版本作为副本 shot 导入。
+如果用户在 Finder/Bridge 中向当前根目录新增图片，应用窗口重新获得焦点后会把新增路径追加为待 Import 的 `non-swb` shot，并点亮 Import 旁的黄色感叹号。已知 SWB TIFF 路径也会参与外部编辑检测：兼容的 Photoshop 保存结果可自动导入；如果同一 shot 在 SWB 里也有未 Save 的本地 layer 改动，自动导入只更新 root TIFF ownership 状态 / `baseFingerprint` 并保留现有 SWB layer metadata 和本地 layer PNG。用户手动点击 Import 时，dirty Photoshop 版本仍可作为副本 shot 导入。
 
 当前 Photoshop TIFF import/export 路径依赖 Python `psdtags + tifffile + imagecodecs + numpy`。依赖目录解析顺序是：`SWB_PYTHON_DEPS_DIR`、打包资源目录 `python-deps/photoshop-tiff`、开发目录 `vendor/python/photoshop-tiff`，最后才 fallback 到旧 spike 目录 `/private/tmp/psdtags-spike-deps`。开发环境可运行 `npm run setup:photoshop-tiff-deps` 安装到 `vendor/python/photoshop-tiff`。打包前运行 `npm run prepare:package-resources` 会把已安装的 `vendor/python/photoshop-tiff` 复制到 `dist-resources/python-deps/photoshop-tiff`；后续 installer/electron packager 配置必须把 `dist-resources` 内容放进 packaged app 的 resources 根目录，这样运行时的 `process.resourcesPath/python-deps/photoshop-tiff` 才能命中。`npm run smoke:bitmap` 会导出一组 Photoshop TIFF，用 `psdtags` 读回 layer names，并把其中一个导出的 layered TIFF 作为外部文件重新 Import，验证导入后的 SWB shot 有匹配数量的 bitmap layers、layer PNG assets 和 `swb.sourceKind: "photoshop-layered-tiff"`。
 

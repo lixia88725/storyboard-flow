@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BitmapLayer, Shot } from "../shared/types";
 import {
   activeVisibleBitmapLayerForShot,
+  canFillBitmapLayer,
   editableBitmapLayerForShot,
   primaryShotFromSelection,
   primaryShotOrFirst
@@ -74,5 +75,20 @@ describe("active targets", () => {
     const layers = [bitmapLayer("bottom", 0), bitmapLayer("editable", 1), lockedTop];
 
     expect(editableBitmapLayerForShot(shot("shot-a", layers, "locked-top"))?.id).toBe("editable");
+  });
+
+  it("allows color fill on unlocked paint and Image bitmap layers", () => {
+    const imageLayer: BitmapLayer = {
+      ...bitmapLayer("layer-image", 0),
+      kind: "image",
+      name: "Image"
+    };
+    const paintLayer = bitmapLayer("paint", 1);
+
+    expect(canFillBitmapLayer(imageLayer)).toBe(true);
+    expect(canFillBitmapLayer(paintLayer)).toBe(true);
+    expect(canFillBitmapLayer({ ...imageLayer, locked: true })).toBe(false);
+    expect(canFillBitmapLayer({ ...imageLayer, visible: false })).toBe(false);
+    expect(canFillBitmapLayer(undefined)).toBe(false);
   });
 });

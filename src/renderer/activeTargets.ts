@@ -26,3 +26,6 @@ export const editableBitmapLayerForShot = (shot: Shot): BitmapLayer | undefined 
   );
   return activeLayer ?? [...layers].reverse().find((layer) => layer.visible && !layer.locked);
 };
+
+export const canFillBitmapLayer = (layer: BitmapLayer | undefined): layer is BitmapLayer =>
+  Boolean(layer && layer.visible && !layer.locked && (layer.kind === "paint" || layer.kind === "image"));

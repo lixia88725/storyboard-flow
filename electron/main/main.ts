@@ -19,6 +19,7 @@ import {
   applyFileMoves,
   applyFileRenamePlan,
   applyFileReplacements,
+  atomicWriteTextFile,
   replaceFileWithTemp,
   type AppliedFileMoves,
   type AppliedFileRenamePlan,
@@ -40,7 +41,9 @@ import {
 import { withSuccessfulSaveArtifactCleanup } from "./saveArtifacts.js";
 import {
   buildPhotoshopTiffImportAssetPlan,
+  compatibleExternalEditImportMode,
   ensureLayerMoveDestinationsAvailable,
+  importedLayerMovesForImportMode,
   isPhotoshopTiffNoLayersError,
   isLikelyTiffPath,
   runPhotoshopTiffImporter,
@@ -190,6 +193,7 @@ type ProjectPayload = {
   renamePlan?: RenamePlanItem[];
   blankShotPreset?: BlankShotPreset;
   dirtyShotIds?: string[];
+  preserveDirtyShotLayers?: boolean;
 };
 
 type LayerAssetPayload = {
@@ -247,8 +251,6 @@ type CopyShotAssetsPayload = {
     targetBitmapPath: string;
   }>;
 };
-
-type KeyboardShortcuts = Record<string, string>;
 
 type ImportedImage = {
   imagePath: string;
@@ -545,7 +547,10 @@ const registerIpcHandlers = () => {
         scriptImport.project,
         payload.folderPath,
         workspaceTaskProgressReporter(event, "import"),
-        { dirtyShotIds: new Set(payload.dirtyShotIds ?? []) }
+        {
+          dirtyShotIds: new Set(payload.dirtyShotIds ?? []),
+          preserveDirtyShotLayers: payload.preserveDirtyShotLayers
+        }
       );
       await writeSwbMetadataToTiffs(
         swbImport.project,
@@ -813,14 +818,14 @@ const registerIpcHandlers = () => {
     return readRecentFolders();
   });
 
-  ipcMain.handle("settings:getKeyboardShortcuts", async () => {
-    return readKeyboardShortcuts();
+  ipcMain.handle("settings:getToolRadialMenu", async () => {
+    return readToolRadialMenu();
   });
 
-  ipcMain.handle("settings:setKeyboardShortcuts", async (_event, shortcuts: KeyboardShortcuts) => {
-    await writeKeyboardShortcuts(shortcuts);
-    return shortcuts;
+  ipcMain.handle("settings:setToolRadialMenu", async (_event, config: unknown) => {
+    return writeToolRadialMenu(config);
   });
+
 };
 
 const workspaceTaskProgressReporter =
@@ -1221,8 +1226,14 @@ const createTransparentLayerPng = async (
 };
 
 const writeProjectMetadata = async (metadataPath: string, project: Project): Promise<void> => {
-  await mkdir(path.dirname(metadataPath), { recursive: true });
-  await writeFile(metadataPath, `${JSON.stringify(project, null, 2)}\n`, "utf8");
+  await atomicWriteTextFile(metadataPath, `${JSON.stringify(project, null, 2)}\n`, {
+    mkdir: async (directoryPath) => {
+      await mkdir(directoryPath, { recursive: true });
+    },
+    writeFile,
+    rename,
+    unlink
+  });
 };
 
 const writeProjectFiles = async (
@@ -1276,34 +1287,27 @@ const recentFoldersPath = (): string => {
   return path.join(app.getPath("userData"), "recent-folders.json");
 };
 
-const keyboardShortcutsPath = (): string => {
-  return path.join(app.getPath("userData"), "keyboard-shortcuts.json");
+const toolRadialMenuPath = (): string => {
+  return path.join(app.getPath("userData"), "tool-radial-menu.json");
 };
 
-const readKeyboardShortcuts = async (): Promise<KeyboardShortcuts> => {
+const readToolRadialMenu = async (): Promise<unknown> => {
   try {
-    const contents = await readFile(keyboardShortcutsPath(), "utf8");
-    const parsed = JSON.parse(contents);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return {};
-    }
-
-    return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string")
-    );
+    return JSON.parse(await readFile(toolRadialMenuPath(), "utf8"));
   } catch (error) {
     const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
     if (code === "ENOENT") {
-      return {};
+      return undefined;
     }
 
     throw error;
   }
 };
 
-const writeKeyboardShortcuts = async (shortcuts: KeyboardShortcuts): Promise<void> => {
-  await mkdir(path.dirname(keyboardShortcutsPath()), { recursive: true });
-  await writeFile(keyboardShortcutsPath(), `${JSON.stringify(shortcuts, null, 2)}\n`, "utf8");
+const writeToolRadialMenu = async (config: unknown): Promise<unknown> => {
+  await mkdir(path.dirname(toolRadialMenuPath()), { recursive: true });
+  await writeFile(toolRadialMenuPath(), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  return config;
 };
 
 const readRecentFolders = async (): Promise<string[]> => {
@@ -1381,7 +1385,7 @@ const importProjectToSwbFormat = async (
   project: Project,
   folderPath: string,
   onProgress?: WorkspaceTaskProgressReporter,
-  options: { dirtyShotIds?: Set<string> } = {}
+  options: { dirtyShotIds?: Set<string>; preserveDirtyShotLayers?: boolean } = {}
 ): Promise<SwbImportResult> => {
   const archiveRoot = path.join(folderPath, "Archive", archiveStamp());
   const tempRoot = path.join(folderPath, ".storyboard-workbench", "import-tmp", archiveStamp());
@@ -1411,7 +1415,14 @@ const importProjectToSwbFormat = async (
   const prepared = await Promise.all(
     importableShots.map(async (shot) => {
       const compatibleExternalEdit = shot.swb?.status === "compatible-external-edit";
-      const duplicateExternalEdit = compatibleExternalEdit && options.dirtyShotIds?.has(shot.id) === true;
+      const dirtyCompatibleExternalEdit = compatibleExternalEdit && options.dirtyShotIds?.has(shot.id) === true;
+      const importMode = compatibleExternalEditImportMode({
+        compatibleExternalEdit,
+        dirtyShot: dirtyCompatibleExternalEdit,
+        preserveDirtyShotLayers: options.preserveDirtyShotLayers === true
+      });
+      const preserveDirtyLayers = importMode === "preserve-dirty-layers";
+      const duplicateExternalEdit = importMode === "duplicate";
       const importShotId = duplicateExternalEdit ? randomUUID() : shot.id;
       const extension = path.extname(shot.imagePath).toLowerCase();
       const baseName = path.basename(shot.imagePath, extension);
@@ -1452,8 +1463,8 @@ const importProjectToSwbFormat = async (
           );
           const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as ImportedPhotoshopTiffManifest;
           const layerPlan = buildPhotoshopTiffImportAssetPlan(manifest, importShotId, finalLayerRoot, extractedDir);
-          importedLayers = layerPlan.layers;
-          importedLayerMoves = layerPlan.moves;
+          importedLayers = preserveDirtyLayers ? undefined : layerPlan.layers;
+          importedLayerMoves = importedLayerMovesForImportMode(layerPlan.moves, importMode);
           importedCanvasSize = { width: manifest.width, height: manifest.height };
           importWarnings = manifest.warnings;
         } catch (error) {
@@ -1565,7 +1576,7 @@ const importProjectToSwbFormat = async (
       const updatedShot: Project["shots"][number] = {
         ...shot,
         imagePath: item.targetPath,
-        previewPath: undefined,
+        previewPath: item.compatibleExternalEdit ? shot.previewPath : undefined,
         fileName: path.basename(item.targetPath),
         sourceFileName: item.compatibleExternalEdit ? shot.sourceFileName : shot.fileName,
         layers: item.importedLayers ?? shot.layers,
@@ -1581,7 +1592,7 @@ const importProjectToSwbFormat = async (
           baseFingerprint: item.fingerprint,
           sourcePath: item.compatibleExternalEdit ? shot.swb?.sourcePath : shot.imagePath,
           archivePath: item.compatibleExternalEdit ? shot.swb?.archivePath : item.archivePath,
-          sourceKind: item.importedLayers ? "photoshop-layered-tiff" as const : undefined
+          sourceKind: item.importedLayers ? "photoshop-layered-tiff" as const : shot.swb?.sourceKind
         }
       };
       if (!item.duplicateExternalEdit) {

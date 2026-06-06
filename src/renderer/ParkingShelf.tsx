@@ -1,17 +1,22 @@
 import { useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import type { Ref } from "react";
 import type { Shot } from "../shared/types";
-import type { DragData } from "./storyboardDnd";
+import type { DragData, ParkingInsertionIndicator } from "./storyboardDnd";
 
 type ParkingShelfProps = {
   shots: Shot[];
   isOpen: boolean;
+  insertionIndicator?: ParkingInsertionIndicator;
+  listRef?: Ref<HTMLDivElement>;
 };
 
 export const ParkingShelf = ({
   shots,
-  isOpen
+  isOpen,
+  insertionIndicator,
+  listRef
 }: ParkingShelfProps) => {
   const panelDroppable = useDroppable({
     id: "parking-zone",
@@ -30,7 +35,18 @@ export const ParkingShelf = ({
           <span>Pending</span>
           <strong>{shots.length}</strong>
         </header>
-        <div className="parking-list">
+        <div ref={listRef} className="parking-list">
+          {insertionIndicator ? (
+            <div
+              className="parking-insertion-indicator"
+              aria-hidden="true"
+              style={{
+                left: insertionIndicator.left,
+                top: insertionIndicator.top,
+                width: insertionIndicator.width
+              }}
+            />
+          ) : null}
           {shots.length === 0 ? (
             <p>Drop shots here</p>
           ) : (

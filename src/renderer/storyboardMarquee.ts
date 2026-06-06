@@ -16,7 +16,7 @@ type MarqueePoint = {
   scrollY: number;
 };
 
-type MarqueeShotRect = {
+export type MarqueeShotRect = {
   shotId: string;
   rect: {
     left: number;
@@ -48,6 +48,20 @@ export const updateMarqueeBox = (box: MarqueeBox, point: MarqueePoint): MarqueeB
   currentScrollY: point.scrollY
 });
 
+export const marqueeViewportRect = (box: MarqueeBox) => {
+  const left = Math.min(box.startX + box.startScrollX, box.currentX + box.currentScrollX);
+  const right = Math.max(box.startX + box.startScrollX, box.currentX + box.currentScrollX);
+  const top = Math.min(box.startY + box.startScrollY, box.currentY + box.currentScrollY);
+  const bottom = Math.max(box.startY + box.startScrollY, box.currentY + box.currentScrollY);
+
+  return {
+    left: left - box.currentScrollX,
+    top: top - box.currentScrollY,
+    width: right - left,
+    height: bottom - top
+  };
+};
+
 export const marqueeEdgeScrollDelta = ({
   pointerY,
   viewportHeight
@@ -76,3 +90,6 @@ export const shotIdsInMarqueeBox = (box: MarqueeBox, shots: MarqueeShotRect[]) =
     .filter(({ rect }) => rect.left < right && rect.right > left && rect.top < bottom && rect.bottom > top)
     .map(({ shotId }) => shotId);
 };
+
+export const sameMarqueeSelection = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((id, index) => id === b[index]);

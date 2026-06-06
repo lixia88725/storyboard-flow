@@ -19,7 +19,7 @@
 - Root working TIFFs remain the visible delivery files.
 - `Save` is still the only boundary that synchronizes real file names and writes working TIFF pixels.
 - `Import` ingests non-SWB root images, external `storyboard-script.md` edits, incompatible external image changes, and explicit conflict cases.
-- Compatible SWB TIFF edits from Photoshop can auto-import after Photoshop saves the TIFF, if the related shot has no local unsaved SWB edits.
+- Compatible SWB TIFF edits from Photoshop can auto-import after Photoshop saves the TIFF. If the same shot has local unsaved SWB layer edits, auto-import updates root TIFF ownership state / `baseFingerprint` while preserving the existing SWB layer metadata and local layer PNGs.
 - `Archive/` is only for preserving non-SWB originals during Import.
 - User-deleted storyboard source files move to system Trash on Save, not Archive.
 - `storyboard-script.md` is a human-editable mirror of JSON, not the primary data source.
@@ -49,13 +49,13 @@
 - Merge visible now includes locked visible layers in the baked result, but preserves locked layer metadata/assets by hiding those locked source layers instead of deleting them.
 - Added Shift-click layer multi-select, group reorder, group opacity drag, and consistent selected-row visuals.
 
-### Option / Alt Copy Interactions
+### Drag And Copy Interactions
 
-- Added Option/Alt drag copy for a single storyboard, layer, or dialogue item.
-- Shot copy duplicates project metadata and assets, creates a PNG preview for the copy, and waits for Save to synchronize final names.
-- Layer copy can target another shot or a specific insertion point in an open layer drawer.
-- Dialogue copy keeps the original dialogue and appends a copy to the target shot.
-- Shot drag preview now uses stable drag-start shot ids and PNG previews, with image-error fallback to avoid broken browser image icons.
+- Option/Alt drag copy for storyboard, layer, and dialogue is retired.
+- Holding Option/Alt while dragging now follows the same move/sort path as ordinary drag.
+- `Cmd+C` / `Ctrl+C` and `Cmd+V` / `Ctrl+V` now copy/paste storyboard and layer selections.
+- Storyboard paste inserts the copied storyboard after the current storyboard and uses a small slide-out animation from the source storyboard.
+- Layer paste inserts the copied layer below the current layer and uses a small slide-out animation from the source layer.
 
 ### Drawing Stability And UI Polish
 
@@ -73,7 +73,7 @@
 - Close prompt now includes Save and Close, Close Without Saving, and Cancel.
 - Fixed Save-and-Close close-loop behavior on larger projects by separating the save operation from the close confirmation state.
 - External Photoshop edit detection now checks known SWB TIFF paths, uses JSON base fingerprints as the owned baseline, and avoids locking the app for internal autosave/dirty state.
-- Compatible external TIFF edits auto-import when there is no local dirty conflict. Dirty SWB + external Photoshop conflict stays locked until Import, then imports the Photoshop version as a copy.
+- Compatible external TIFF edits auto-import. Dirty SWB + external Photoshop edits now keep the same shot live by updating root TIFF ownership state / `baseFingerprint` while preserving local SWB layer metadata and layer PNGs; manual Import can still bring the Photoshop version in as a copy.
 - Large folder opening now reports loading progress and can show existing SWB project JSON state before slower background checks finish.
 
 ### Photoshop TIFF Export Robustness
@@ -161,15 +161,17 @@ High-level changed areas:
 Start with manual dogfood of the newest interaction edges:
 
 1. Open `/Users/xiali/Pictures/test`, draw several fast strokes, Save, close, reopen.
-2. Option/Alt copy one shot, one layer into the same drawer at a chosen position, one layer into another shot, and one dialogue item.
-3. Shift-select several layers, run `Merge`, then undo/redo and Save.
-4. Open a larger folder such as `/Users/xiali/Pictures/TEST2`, confirm loading progress appears quickly and Save and Close exits.
-5. Photoshop-save an owned SWB layered TIFF, confirm compatible changes auto-import when SWB is clean and create a copy when SWB has dirty local edits.
+2. Confirm Option/Alt dragging a shot, layer, and dialogue behaves like ordinary move/sort and does not create copies.
+3. Copy/paste one storyboard with `Cmd/Ctrl+C` and `Cmd/Ctrl+V`; the copy should appear after the current storyboard with a short rightward slide-out animation.
+4. Copy/paste one layer with `Cmd/Ctrl+C` and `Cmd/Ctrl+V`; the copy should appear below the current layer with a short downward slide-out animation.
+5. Shift-select several layers, run `Merge`, then undo/redo and Save.
+6. Open a larger folder such as `/Users/xiali/Pictures/TEST2`, confirm loading progress appears quickly and Save and Close exits.
+7. Watch for repeated user need around Photoshop edits to non Image/base layers while SWB has local dirty layers; current V1 preserves SWB layer PNGs and treats Photoshop as an external/root TIFF ownership update.
 
 Good code follow-ups:
 
 - Keep reducing `App.tsx` only when a feature naturally exposes a boundary. Do not split just to split.
-- If shot copy DnD still feels visually different from normal move, simplify toward one shared layout strategy before adding more animation code.
+- Do not reintroduce Option/Alt drag copy without a fresh product decision.
 - If Save error dialog text becomes too raw for artists, wrap the same details in clearer recovery copy.
 
 ## Known Remaining Work

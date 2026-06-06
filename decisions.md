@@ -76,9 +76,9 @@ Reason: Import 可更新内部 layer PNG 和 JSON，但不写 root TIFF。若下
 
 ## Compatible External Edits May Auto-Import
 
-当已知 SWB TIFF 有兼容外部编辑，且对应 shot 没有 SWB 本地未保存改动时，SWB 可以自动把 TIFF 抽回内部 layer PNG 并更新 JSON。如果同一 shot 同时有本地 dirty 改动，则不能静默覆盖；用户手动 Import 后，外部版本作为副本 shot 导入。
+当已知 SWB TIFF 有兼容外部编辑时，SWB 可以自动吸收 Photoshop 保存结果。同一 shot 同时有 SWB 本地 dirty layer 改动时，自动吸收只更新 root TIFF ownership 状态和 `baseFingerprint`，保留现有 SWB layer metadata 与本地 layer PNG；用户手动 Import 仍可把 Photoshop 版本作为副本 shot 导入。
 
-Reason: Photoshop 保存后的兼容修改应接近实时进入 SWB；但 SWB 和 Photoshop 同时编辑时必须保留双方版本。
+Reason: Photoshop 保存后的兼容修改应接近实时进入 SWB；但 SWB 本地绘画 layer 不应被外部 Photoshop 保存静默覆盖。V1 先把 dirty 场景定义为 “Photoshop 更新外部/root TIFF 状态，SWB layer PNG 继续保留”，复杂 Photoshop layer 冲突留给 PSD-first / layer round-trip 方向。
 
 ## Add Shot Creates A Blank TIFF
 
@@ -154,11 +154,11 @@ Selection transform hit testing converts a visible screen-space handle target in
 
 Reason: storyboard images can be much larger than their displayed size. A fixed canvas-space radius makes corner scale handles effectively unclickable on high-resolution images.
 
-## Keyboard Shortcuts Are Local User Settings
+## Keyboard Shortcuts Are Fixed For Now
 
-快捷键配置通过 Electron IPC 读写到本机 `app.getPath("userData")/keyboard-shortcuts.json`。项目文件不保存快捷键配置；`SWB_USER_DATA_DIR` 只用于 smoke 隔离测试环境。
+快捷键由 SWB 当前版本固定指定，工具栏齿轮只显示可用快捷键清单，不提供录制、清空或保存自定义快捷键的入口。Renderer 直接使用 `defaultKeyboardShortcuts`；Electron 不再暴露 `settings:getKeyboardShortcuts` / `settings:setKeyboardShortcuts`，也不读写 `keyboard-shortcuts.json`。
 
-Reason: 快捷键是用户个人偏好，不属于 storyboard 项目内容，也不应随项目文件在团队间传播。
+Reason: 发布前先保持快捷键行为一致，避免部分动作开放自定义、部分动作必须固定造成混乱。发布后根据用户反馈再决定哪些快捷键可以配置，哪些必须保持固定。
 
 ## Layer Drawer Opens By Click, Not Pointer Drag
 
@@ -196,11 +196,17 @@ Reason: 这是从文字分镜到 storyboard 结构的最小可用桥梁。它避
 
 Reason: 待定区是创作过程中的临时搁置区，应保留内容但不改变主工作区顺序和交付文件夹输出。
 
-## Option / Alt Drag Means Copy, Not Multi-Select
+## Option / Alt Drag Copy Is Retired
 
-Option/Alt drag 只复制拖拽开始时点击的单个对象：一个 storyboard、一个 layer 或一个 dialogue item。它不跟随 storyboard 或 layer 多选。
+Option/Alt drag 不再复制 storyboard、layer 或 dialogue item。按住 Option/Alt 拖动时仍走普通移动/排序逻辑。
 
-Reason: 复制手势必须可预测，避免意外批量复制。多选仍主要服务于移动、排序和批量图层编辑。
+Reason: copy-on-drag 的 storyboard 占位动画与源卡保留语义成本过高。复制入口改为后续 Command/Ctrl+C 和 Command/Ctrl+V，保持拖拽交互单一。
+
+## Keyboard Copy / Paste
+
+`Cmd+C` / `Ctrl+C` 和 `Cmd+V` / `Ctrl+V` 是复制入口。选中 storyboard 时，粘贴会复制该 storyboard 并插到当前 storyboard 后方。选中 layer 时，粘贴会复制该 layer 并插到当前 layer 下方。
+
+Reason: 复制应是明确的离散命令，而不是拖拽过程中的隐藏模式。键盘复制粘贴复用现有资源复制 helper，并保持 Save 仍是最终 TIFF/文件名同步边界。
 
 ## Delete Targets The Last Selected Object Type
 

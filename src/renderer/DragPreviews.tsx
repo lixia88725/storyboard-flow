@@ -7,23 +7,36 @@ export const DialoguePreview = ({ dialogue }: { dialogue: Dialogue }) => {
   return <div className="dialogue-preview">{dialogue.text || "Empty dialogue"}</div>;
 };
 
+export const shotPreviewAssetPath = ({
+  previewPath,
+  imagePath
+}: Pick<Shot, "previewPath" | "imagePath">): string => previewPath ?? imagePath;
+
+type ShotStackPreviewVariant = "composite" | "thumbnail";
+
 export const ShotStackPreview = ({
   shots,
   folderPath,
-  variant = "move"
+  variant = "composite"
 }: {
   shots: Shot[];
   folderPath?: string;
-  variant?: "move" | "copy";
+  variant?: ShotStackPreviewVariant;
 }) => {
   const visibleShots = shots.slice(0, 4);
   const [failedImageIds, setFailedImageIds] = useState<Set<string>>(() => new Set());
 
   return (
-    <div className={`shot-stack-preview ${variant === "copy" ? "is-copy-preview" : ""}`}>
+    <div className="shot-stack-preview">
       {visibleShots.map((shot, index) => {
-        const assetPath = shot.previewPath ?? shot.imagePath;
+        const assetPath = shotPreviewAssetPath(shot);
         const didFail = failedImageIds.has(shot.id);
+        const onFail = () =>
+          setFailedImageIds((current) => {
+            const next = new Set(current);
+            next.add(shot.id);
+            return next;
+          });
 
         return (
           <div
@@ -34,19 +47,17 @@ export const ShotStackPreview = ({
               zIndex: visibleShots.length - index
             }}
           >
-            <ShotCompositePreview
-              shot={shot}
-              folderPath={folderPath}
-              fallbackAssetPath={assetPath}
-              didFail={didFail}
-              onFail={() =>
-                setFailedImageIds((current) => {
-                  const next = new Set(current);
-                  next.add(shot.id);
-                  return next;
-                })
-              }
-            />
+            {variant === "thumbnail" ? (
+              <ShotThumbnailPreview fallbackAssetPath={assetPath} didFail={didFail} onFail={onFail} />
+            ) : (
+              <ShotCompositePreview
+                shot={shot}
+                folderPath={folderPath}
+                fallbackAssetPath={assetPath}
+                didFail={didFail}
+                onFail={onFail}
+              />
+            )}
             <span>{shot.fileName}</span>
           </div>
         );
@@ -54,6 +65,22 @@ export const ShotStackPreview = ({
       {shots.length > 1 ? <strong>{shots.length}</strong> : null}
     </div>
   );
+};
+
+const ShotThumbnailPreview = ({
+  fallbackAssetPath,
+  didFail,
+  onFail
+}: {
+  fallbackAssetPath: string;
+  didFail: boolean;
+  onFail: () => void;
+}) => {
+  if (didFail) {
+    return <div className="shot-stack-card-placeholder" aria-hidden="true" />;
+  }
+
+  return <img src={window.storyboard.assetUrl(fallbackAssetPath)} alt="" draggable={false} onError={onFail} />;
 };
 
 const ShotCompositePreview = ({

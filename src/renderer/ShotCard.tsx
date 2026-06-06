@@ -20,7 +20,7 @@ import type {
 import { LayerPanel } from "./LayerPanel";
 import { SketchPad } from "./SketchPad";
 import { canvasSizeForShot } from "./sketchRendering";
-import type { DragData } from "./storyboardDnd";
+import { isDialogueDropZoneHighlighted, type DragData } from "./storyboardDnd";
 
 export type CardFace = "image" | "script";
 
@@ -39,13 +39,18 @@ export type ShotCardProps = {
   isSelected: boolean;
   isPrimarySelected: boolean;
   isAnimationFocused: boolean;
-  isCopyDraggingSource: boolean;
+  isZoomScrubbing: boolean;
+  disableSortableTransform: boolean;
+  keepDraggingSourceVisible: boolean;
+  activeDragType?: DragData["type"];
   activeSketchTool: SketchTool;
   brushColor: string;
   brushOpacity: number;
   brushSize: number;
+  brushSoftness: number;
   eraserOpacity: number;
   eraserSize: number;
+  eraserSoftness: number;
   cardFace: CardFace;
   onionSkinPreviousShot?: Shot;
   onionSkinNextShot?: Shot;
@@ -79,13 +84,6 @@ export type ShotCardProps = {
     placement: "before" | "after"
   ) => void;
   onSelectedLayerIdsChange: (shotId: string, layerIds: string[]) => void;
-  onCopyLayerToShot: (
-    shotId: string,
-    layerId: string,
-    targetShotId: string,
-    targetLayerId?: string,
-    placement?: "before" | "after"
-  ) => void;
   onUpdateLayerGroupOpacity: (
     shotId: string,
     layerIds: string[],
@@ -103,6 +101,8 @@ export type ShotCardProps = {
     pendingStrokes?: SketchStroke[]
   ) => Promise<string | undefined>;
   onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onFill: (layerId: string, point: { x: number; y: number }, color: string) => Promise<string | undefined>;
+  onSketchBeginInteraction?: () => void;
 };
 
 export const ShotCard = ({
@@ -113,13 +113,18 @@ export const ShotCard = ({
   isSelected,
   isPrimarySelected,
   isAnimationFocused,
-  isCopyDraggingSource,
+  isZoomScrubbing,
+  disableSortableTransform,
+  keepDraggingSourceVisible,
+  activeDragType,
   activeSketchTool,
   brushColor,
   brushOpacity,
   brushSize,
+  brushSoftness,
   eraserOpacity,
   eraserSize,
+  eraserSoftness,
   cardFace,
   onionSkinPreviousShot,
   onionSkinNextShot,
@@ -139,14 +144,15 @@ export const ShotCard = ({
   onMoveLayer,
   onMoveLayerGroup,
   onSelectedLayerIdsChange,
-  onCopyLayerToShot,
   onUpdateLayerGroupOpacity,
   onCreateDialogue,
   onDialogueText,
   onDialogueBlur,
   onScriptText,
   onSketchStroke,
-  onSelectionTransform
+  onSelectionTransform,
+  onFill,
+  onSketchBeginInteraction
 }: ShotCardProps) => {
   const cardRef = useRef<HTMLElement | null>(null);
   const [isNearViewport, setIsNearViewport] = useState(index < 12);
@@ -160,14 +166,16 @@ export const ShotCard = ({
     data: { type: "drop-zone", shotId: shot.id } satisfies DragData
   });
   const dialogues = dialoguesForShot(project, shot.id);
+  const isDialogueDropZoneOver = isDialogueDropZoneHighlighted({
+    isOver: dropZone.isOver,
+    activeDragType
+  });
   const isLayerPanelVisible = isLayerPanelOpen || isLayerPanelRendered;
   const shouldRenderMedia = isNearViewport || isPrimarySelected || isAnimationFocused || isLayerPanelVisible;
-  const style = isCopyDraggingSource && sortable.isDragging
-    ? { transition: sortable.transition }
-    : {
-        transform: CSS.Transform.toString(sortable.transform),
-        transition: sortable.transition
-      };
+  const style = {
+    transform: disableSortableTransform ? undefined : CSS.Transform.toString(sortable.transform),
+    transition: disableSortableTransform ? undefined : sortable.transition
+  };
   const setCardNodeRef = useCallback(
     (element: HTMLElement | null) => {
       cardRef.current = element;
@@ -219,7 +227,7 @@ export const ShotCard = ({
         isSelected ? "is-selected" : ""
       } ${isAnimationFocused ? "is-animation-focus" : ""} ${
         isLayerPanelVisible ? "has-layer-panel-open" : ""
-      } ${isCopyDraggingSource ? "is-copy-dragging-source" : ""} ${
+      } ${keepDraggingSourceVisible ? "keep-dragging-source-visible" : ""} ${
         cardFace === "script" ? "is-script-face" : ""
       }`}
       style={style}
@@ -249,13 +257,18 @@ export const ShotCard = ({
                   brushColor={brushColor}
                   brushOpacity={brushOpacity}
                   brushSize={brushSize}
+                  brushSoftness={brushSoftness}
                   eraserOpacity={eraserOpacity}
                   eraserSize={eraserSize}
+                  eraserSoftness={eraserSoftness}
                   onionSkinPreviousShot={onionSkinPreviousShot}
                   onionSkinNextShot={onionSkinNextShot}
+                  isZoomScrubbing={isZoomScrubbing}
                   onStroke={onSketchStroke}
                   onSelectionTransform={onSelectionTransform}
+                  onFill={onFill}
                   onFocusShot={onFocusShot}
+                  onBeginInteraction={onSketchBeginInteraction}
                 />
                 <LayerPanel
                   shot={shot}
@@ -274,7 +287,6 @@ export const ShotCard = ({
                   onMoveLayer={onMoveLayer}
                   onMoveLayerGroup={onMoveLayerGroup}
                   onSelectedLayerIdsChange={onSelectedLayerIdsChange}
-                  onCopyLayerToShot={onCopyLayerToShot}
                   onUpdateLayerGroupOpacity={onUpdateLayerGroupOpacity}
                 />
               </>
@@ -285,7 +297,7 @@ export const ShotCard = ({
 
           <div
             ref={dropZone.setNodeRef}
-            className={`dialogue-zone ${dropZone.isOver ? "is-over" : ""}`}
+            className={`dialogue-zone ${isDialogueDropZoneOver ? "is-over" : ""}`}
             onClick={(event) => {
               if ((event.target as HTMLElement).closest(".dialogue-card")) {
                 return;

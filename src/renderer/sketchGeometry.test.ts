@@ -10,11 +10,13 @@ import {
   layerDropPlacementFromClientY,
   liveStrokePreviewOpacity,
   latestStrokeSegment,
+  strokeSegmentsFromPointOffset,
   shouldCommitStroke,
   shouldKeepCommittedStrokePreview,
   shouldRenderLiveStroke,
   shouldAppendStrokePoint,
   shouldHandleSketchPointer,
+  shouldCloseRadialMenuForSketchPointer,
   shouldStartSketchPointer,
   sketchPointsFromClientPoints,
   sketchPointFromClientPoint
@@ -107,6 +109,12 @@ describe("sketch geometry", () => {
     expect(shouldStartSketchPointer({ button: 0, isPrimary: false })).toBe(false);
   });
 
+  it("closes radial menu only for pointer input that starts a sketch interaction", () => {
+    expect(shouldCloseRadialMenuForSketchPointer({ button: 0, isPrimary: true })).toBe(true);
+    expect(shouldCloseRadialMenuForSketchPointer({ button: 2, isPrimary: true })).toBe(false);
+    expect(shouldCloseRadialMenuForSketchPointer({ button: 0, isPrimary: false })).toBe(false);
+  });
+
   it("continues and finishes only the active sketch pointer", () => {
     expect(shouldHandleSketchPointer({ pointerId: 7 }, 7)).toBe(true);
     expect(shouldHandleSketchPointer({ pointerId: 8 }, 7)).toBe(false);
@@ -159,6 +167,14 @@ describe("sketch geometry", () => {
       15, 12, 20, 16
     ]);
     expect(latestStrokeSegment({ points: [10, 10] })).toBeUndefined();
+  });
+
+  it("returns every new stroke segment after a prior point offset", () => {
+    expect(strokeSegmentsFromPointOffset({ points: [10, 10, 15, 12, 20, 16, 28, 22] }, 1)).toEqual([
+      [10, 10, 15, 12],
+      [15, 12, 20, 16],
+      [20, 16, 28, 22]
+    ]);
   });
 
   it("commits both single-point dabs and moved strokes", () => {

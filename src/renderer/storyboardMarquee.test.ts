@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   createMarqueeBox,
+  marqueeViewportRect,
   marqueeEdgeScrollDelta,
+  sameMarqueeSelection,
   shotIdsInMarqueeBox,
   updateMarqueeBox
 } from "./storyboardMarquee";
@@ -38,5 +40,28 @@ describe("storyboard marquee helpers", () => {
         }
       ])
     ).toEqual(["shot-above-original-viewport", "shot-after-scroll"]);
+  });
+
+  it("keeps the fixed marquee rectangle aligned with document coordinates after scrolling", () => {
+    const started = createMarqueeBox({ clientX: 100, clientY: 100, scrollX: 0, scrollY: 0 });
+    const moved = updateMarqueeBox(started, {
+      clientX: 320,
+      clientY: 760,
+      scrollX: 0,
+      scrollY: 520
+    });
+
+    expect(marqueeViewportRect(moved)).toEqual({
+      left: 100,
+      top: -420,
+      width: 220,
+      height: 1180
+    });
+  });
+
+  it("compares marquee selections by ordered ids", () => {
+    expect(sameMarqueeSelection(["shot-a", "shot-b"], ["shot-a", "shot-b"])).toBe(true);
+    expect(sameMarqueeSelection(["shot-a", "shot-b"], ["shot-b", "shot-a"])).toBe(false);
+    expect(sameMarqueeSelection(["shot-a"], ["shot-a", "shot-b"])).toBe(false);
   });
 });

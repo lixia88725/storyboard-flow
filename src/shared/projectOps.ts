@@ -149,6 +149,9 @@ export const addGeneratedShot = (
     : -1;
   const insertIndex = selectedIndex === -1 ? ordered.length : selectedIndex + 1;
   const shotId = crypto.randomUUID();
+  const width = image.width ?? 1920;
+  const height = image.height ?? 1080;
+  const drawingLayerId = "layer-drawing";
   const newShot: Shot = {
     id: shotId,
     imagePath: image.imagePath,
@@ -158,13 +161,28 @@ export const addGeneratedShot = (
     order: insertIndex,
     sketchLayers: [createDefaultSketchLayer([])],
     activeLayerTarget: "image",
-    activeLayerId: imageBitmapLayerId,
-    layers: [createImageBitmapLayer(shotId, image.width ?? 1920, image.height ?? 1080)],
+    activeLayerId: drawingLayerId,
+    layers: [
+      createImageBitmapLayer(shotId, width, height),
+      {
+        id: drawingLayerId,
+        kind: "paint",
+        name: defaultSketchLayerName,
+        visible: true,
+        locked: false,
+        opacity: 1,
+        blendMode: "normal",
+        order: 1,
+        bitmapPath: bitmapLayerPath(shotId, drawingLayerId),
+        width,
+        height
+      }
+    ],
     swb: {
       version: swbFormatVersion,
       status: "owned",
-      canvasWidth: image.width ?? 1920,
-      canvasHeight: image.height ?? 1080,
+      canvasWidth: width,
+      canvasHeight: height,
       baseFingerprint: image.fingerprint
     }
   };
@@ -360,8 +378,15 @@ export const reorderShots = (
   }
 
   const [moved] = ordered.splice(fromIndex, 1);
-  const adjustedToIndex = placement === "after" && toIndex > fromIndex ? toIndex : toIndex + 1;
-  ordered.splice(placement === "after" ? adjustedToIndex : toIndex, 0, moved);
+  const insertIndex =
+    placement === "after"
+      ? toIndex > fromIndex
+        ? toIndex
+        : toIndex + 1
+      : toIndex > fromIndex
+        ? toIndex - 1
+        : toIndex;
+  ordered.splice(insertIndex, 0, moved);
 
   return {
     ...project,
@@ -412,7 +437,11 @@ export const reorderShotGroup = (
 
 export const parkShotGroup = (
   project: Project,
-  shotIds: string[]
+  shotIds: string[],
+  options?: {
+    targetParkedShotId?: string;
+    placement?: ShotPlacement;
+  }
 ): Project => {
   const selected = new Set(shotIds);
 
@@ -428,7 +457,17 @@ export const parkShotGroup = (
   }
 
   const remaining = ordered.filter((shot) => !selected.has(shot.id));
-  const parkedShots = [...(project.parkedShots ?? []), ...moving].map((shot, order) => ({ ...shot, order }));
+  const parked = sortedShots(project.parkedShots ?? []);
+  const targetIndex = options?.targetParkedShotId
+    ? parked.findIndex((shot) => shot.id === options.targetParkedShotId)
+    : -1;
+  const insertIndex =
+    targetIndex === -1 ? parked.length : options?.placement === "after" ? targetIndex + 1 : targetIndex;
+  const parkedShots = [
+    ...parked.slice(0, insertIndex),
+    ...moving,
+    ...parked.slice(insertIndex)
+  ].map((shot, order) => ({ ...shot, order }));
 
   return {
     ...project,
@@ -491,6 +530,7 @@ export const duplicateShotAfter = (
     imagePath: string;
     fileName: string;
     previewPath?: string;
+    placement?: ShotPlacement;
   }
 ): Project => {
   const ordered = sortedShots(project.shots);
@@ -503,7 +543,13 @@ export const duplicateShotAfter = (
   const targetIndex = targetShotId
     ? ordered.findIndex((shot) => shot.id === targetShotId)
     : -1;
-  const insertIndex = targetIndex === -1 ? ordered.length : targetIndex + 1;
+  const placement = options.placement ?? "after";
+  const insertIndex =
+    targetIndex === -1
+      ? ordered.length
+      : placement === "before"
+      ? targetIndex
+      : targetIndex + 1;
   const layerIdMap = new Map<string, string>();
   const layers = bitmapLayersForShot(sourceShot).map((layer) => {
     const layerId = layer.id;

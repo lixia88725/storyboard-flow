@@ -33,8 +33,8 @@ const api = {
   createBlankShot: (folderPath, options) =>
     ipcRenderer.invoke("images:createBlankShot", folderPath, options),
   getRecentFolders: () => ipcRenderer.invoke("recent:getFolders"),
-  getKeyboardShortcuts: () => ipcRenderer.invoke("settings:getKeyboardShortcuts"),
-  setKeyboardShortcuts: (shortcuts) => ipcRenderer.invoke("settings:setKeyboardShortcuts", shortcuts),
+  getToolRadialMenu: () => ipcRenderer.invoke("settings:getToolRadialMenu"),
+  setToolRadialMenu: (config) => ipcRenderer.invoke("settings:setToolRadialMenu", config),
   onOpenRecentFolder: (callback) => {
     const listener = (_event, folderPath) => callback(folderPath);
     ipcRenderer.on("recent:openFolder", listener);

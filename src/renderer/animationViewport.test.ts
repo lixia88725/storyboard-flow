@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { getAnimationViewport, getStableBoardTop } from "./animationViewport";
+import {
+  getAnimationViewport,
+  getZoomPreviewState,
+  getStableBoardTop,
+  maxStoryboardZoom,
+  nextWheelStoryboardZoom,
+  normalizeStoryboardZoom,
+  sameAnimationViewport
+} from "./animationViewport";
 
 describe("animation viewport", () => {
   it("fits the image into the visible board area when animation mode starts", () => {
@@ -197,5 +205,81 @@ describe("animation viewport", () => {
     expect(viewport.isAnimationMode).toBe(true);
     expect(viewport.imageWidth).toBe(1200);
     expect(viewport.imageHeight).toBe(Math.round(1200 / (2581 / 1080)));
+  });
+
+  it("normalizes storyboard zoom to the supported stepped range", () => {
+    expect(normalizeStoryboardZoom(27)).toBe(25);
+    expect(normalizeStoryboardZoom(28)).toBe(30);
+    expect(normalizeStoryboardZoom(4)).toBe(25);
+    expect(normalizeStoryboardZoom(maxStoryboardZoom + 20)).toBe(maxStoryboardZoom);
+  });
+
+  it("steps wheel zoom from the current zoom level", () => {
+    expect(nextWheelStoryboardZoom(100, -1)).toBe(105);
+    expect(nextWheelStoryboardZoom(100, 1)).toBe(95);
+    expect(nextWheelStoryboardZoom(25, 1)).toBe(25);
+    expect(nextWheelStoryboardZoom(maxStoryboardZoom, -1)).toBe(maxStoryboardZoom);
+  });
+
+  it("compares animation viewport state before updating React state", () => {
+    const viewport = {
+      isAnimationMode: true,
+      imageWidth: 1200,
+      imageHeight: 760,
+      frameWidth: 1200,
+      frameHeight: 760
+    };
+
+    expect(sameAnimationViewport(viewport, { ...viewport })).toBe(true);
+    expect(sameAnimationViewport(viewport, { ...viewport, imageHeight: 761 })).toBe(false);
+  });
+
+  it("builds a stepped zoom preview state with CSS variables matching storyboard layout", () => {
+    const preview = getZoomPreviewState({
+      boardWidth: 1200,
+      boardTop: 120,
+      viewportHeight: 900,
+      reservedBottom: 180,
+      margin: 14,
+      zoomLevel: 128,
+      isAnimationMode: false,
+      imageAspectRatio: 420 / 265
+    });
+
+    expect(preview.zoomLevel).toBe(130);
+    expect(preview.cssVariables).toEqual({
+      shotScale: "1.3",
+      animationImageWidth: "559px",
+      animationImageHeight: "353px",
+      animationFrameWidth: "1200px",
+      animationFrameHeight: "586px"
+    });
+  });
+
+  it("builds an animation zoom preview from the same viewport math as final state", () => {
+    const preview = getZoomPreviewState({
+      boardWidth: 1200,
+      boardTop: 120,
+      viewportHeight: 900,
+      reservedBottom: 180,
+      margin: 14,
+      zoomLevel: 250,
+      isAnimationMode: true,
+      imageAspectRatio: 420 / 265
+    });
+    const finalViewport = getAnimationViewport({
+      boardWidth: 1200,
+      boardTop: 120,
+      viewportHeight: 900,
+      reservedBottom: 180,
+      margin: 14,
+      zoomLevel: preview.zoomLevel,
+      isAnimationMode: true,
+      imageAspectRatio: 420 / 265
+    });
+
+    expect(preview.viewport).toEqual(finalViewport);
+    expect(preview.cssVariables.animationImageWidth).toBe(`${finalViewport.imageWidth}px`);
+    expect(preview.cssVariables.animationImageHeight).toBe(`${finalViewport.imageHeight}px`);
   });
 });

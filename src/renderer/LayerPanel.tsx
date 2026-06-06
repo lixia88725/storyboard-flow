@@ -20,6 +20,7 @@ import {
   layerRowDragIntentFromDelta,
   type LayerRowDragIntent
 } from "./sketchGeometry";
+import { nextRangeSelection, type RangeSelectionMode } from "./rangeSelection";
 
 type LayerRowGesture = {
   layerId: string;
@@ -39,12 +40,6 @@ type BlendMenuState = {
   layerId: string;
   direction: "down" | "up";
 };
-
-export const copyLayerTargetShotIdFromCandidates = (
-  candidateShotIds: Array<string | undefined>,
-  sourceShotId: string
-): string | undefined =>
-  candidateShotIds.find((shotId): shotId is string => Boolean(shotId && shotId !== sourceShotId));
 
 export type LayerPanelProps = {
   shot?: Shot;
@@ -77,13 +72,6 @@ export type LayerPanelProps = {
     placement: "before" | "after"
   ) => void;
   onSelectedLayerIdsChange: (shotId: string, layerIds: string[]) => void;
-  onCopyLayerToShot: (
-    shotId: string,
-    layerId: string,
-    targetShotId: string,
-    targetLayerId?: string,
-    placement?: "before" | "after"
-  ) => void;
   onUpdateLayerGroupOpacity: (
     shotId: string,
     layerIds: string[],
@@ -109,7 +97,6 @@ export const LayerPanel = ({
   onMoveLayer,
   onMoveLayerGroup,
   onSelectedLayerIdsChange,
-  onCopyLayerToShot,
   onUpdateLayerGroupOpacity
 }: LayerPanelProps) => {
   const layers = shot ? bitmapLayersForShot(shot) : [];
@@ -126,9 +113,9 @@ export const LayerPanel = ({
   const visibleLayers = layers.filter((layer) => layer.visible);
   const [openBlendMenu, setOpenBlendMenu] = useState<BlendMenuState | undefined>();
   const [rowGestureVisual, setRowGestureVisual] = useState<LayerRowGestureVisual | undefined>();
-  const [copyDragLayerId, setCopyDragLayerId] = useState<string | undefined>();
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const suppressNextRowClickRef = useRef(false);
+  const layerSelectionAnchorIdRef = useRef<string | undefined>(undefined);
   const layerIdsKey = layers.map((layer) => layer.id).join("|");
   const selectedMergeLayers = layers.filter((layer) => selectedLayerIds.includes(layer.id));
   const isMultiLayerMerge =
@@ -137,6 +124,7 @@ export const LayerPanel = ({
 
   useEffect(() => {
     if (!shot || !isOpen) {
+      layerSelectionAnchorIdRef.current = undefined;
       setSelectedLayerIds([]);
       return;
     }
@@ -144,6 +132,9 @@ export const LayerPanel = ({
     const existingLayerIds = new Set(layers.map((layer) => layer.id));
     setSelectedLayerIds((current) => {
       const next = current.filter((layerId) => existingLayerIds.has(layerId));
+      if (layerSelectionAnchorIdRef.current && !existingLayerIds.has(layerSelectionAnchorIdRef.current)) {
+        layerSelectionAnchorIdRef.current = next.at(-1);
+      }
       return next.length === current.length ? current : next;
     });
   }, [shot?.id, isOpen, layerIdsKey, layers]);
@@ -190,51 +181,15 @@ export const LayerPanel = ({
   };
 
   const beginLayerRowGesture = (event: PointerEvent<HTMLDivElement>, layer: BitmapLayer) => {
-    if (shot && event.altKey && event.button === 0 && !interactiveLayerRowTarget(event.target)) {
-      event.stopPropagation();
-      event.preventDefault();
-      setCopyDragLayerId(layer.id);
-
-      const handlePointerUp = (upEvent: globalThis.PointerEvent) => {
-        window.removeEventListener("pointerup", handlePointerUp);
-        window.removeEventListener("pointercancel", handlePointerUp);
-        setCopyDragLayerId(undefined);
-
-        const targetLayerRow = layerRowFromPoint(upEvent.clientX, upEvent.clientY, new Set());
-        const targetLayerId = targetLayerRow?.dataset.layerId;
-        if (targetLayerId) {
-          const targetRect = targetLayerRow.getBoundingClientRect();
-          onCopyLayerToShot(
-            shot.id,
-            layer.id,
-            shot.id,
-            targetLayerId,
-            layerDropPlacementFromClientY(upEvent.clientY, targetRect.top, targetRect.height)
-          );
-          return;
-        }
-
-        const targetShotId = copyLayerTargetShotIdFromCandidates(
-          document
-            .elementsFromPoint(upEvent.clientX, upEvent.clientY)
-            .map((element) =>
-              element instanceof HTMLElement
-                ? element.closest<HTMLElement>("[data-shot-id]")?.dataset.shotId
-                : undefined
-            ),
-          shot.id
-        );
-        if (targetShotId) {
-          onCopyLayerToShot(shot.id, layer.id, targetShotId);
-        }
-      };
-
-      window.addEventListener("pointerup", handlePointerUp, { once: true });
-      window.addEventListener("pointercancel", handlePointerUp, { once: true });
-      return;
-    }
-
-    if (!shot || layer.locked || event.shiftKey || event.button !== 0 || interactiveLayerRowTarget(event.target)) {
+    if (
+      !shot ||
+      layer.locked ||
+      event.shiftKey ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.button !== 0 ||
+      interactiveLayerRowTarget(event.target)
+    ) {
       return;
     }
 
@@ -245,6 +200,7 @@ export const LayerPanel = ({
       .map((item) => item.id);
 
     if (!selectedLayerIds.includes(layer.id)) {
+      layerSelectionAnchorIdRef.current = layer.id;
       setSelectedLayerIds([layer.id]);
       onSelectLayer(shot.id, layer.id);
     }
@@ -363,32 +319,28 @@ export const LayerPanel = ({
       return;
     }
 
-    if (!event.shiftKey) {
-      setSelectedLayerIds([layer.id]);
-      onSelectLayer(shot.id, layer.id);
-      return;
-    }
-
     setOpenBlendMenu(undefined);
+    const mode: RangeSelectionMode = event.shiftKey
+      ? "range"
+      : event.metaKey || event.ctrlKey
+        ? "toggle"
+        : "single";
+    const orderedLayerIds = displayLayers.map((item) => item.id);
     setSelectedLayerIds((current) => {
-      if (!current.includes(layer.id)) {
-        onSelectLayer(shot.id, layer.id);
-        return [...current, layer.id];
-      }
-
-      if (current.length <= 1) {
-        onSelectLayer(shot.id, layer.id);
-        return current;
-      }
-
-      const next = current.filter((layerId) => layerId !== layer.id);
-      if (layer.id === activeLayerId) {
-        const nextActiveLayer = displayLayers.find((item) => next.includes(item.id) && item.visible);
-        if (nextActiveLayer) {
-          onSelectLayer(shot.id, nextActiveLayer.id);
-        }
-      }
-      return next;
+      const selection = nextRangeSelection({
+        orderedIds: orderedLayerIds,
+        selectedIds: current,
+        clickedId: layer.id,
+        anchorId: layerSelectionAnchorIdRef.current,
+        mode
+      });
+      layerSelectionAnchorIdRef.current = selection.anchorId;
+      const activeSelectionLayer =
+        selection.selectedIds.includes(layer.id)
+          ? layer
+          : displayLayers.find((item) => selection.selectedIds.includes(item.id) && item.visible) ?? layer;
+      onSelectLayer(shot.id, activeSelectionLayer.id);
+      return selection.selectedIds;
     });
   };
 
@@ -481,8 +433,6 @@ export const LayerPanel = ({
                     key={layer.id}
                     data-layer-id={layer.id}
                     className={`layer-row ${rowVisual ? `is-${rowVisual.intent}-dragging is-dragging-layer` : ""} ${
-                      copyDragLayerId === layer.id ? "is-copy-dragging" : ""
-                    } ${
                       isSelectedLayer ? "is-selected" : ""
                     } ${
                       layer.id === activeLayerId ? "is-active" : ""

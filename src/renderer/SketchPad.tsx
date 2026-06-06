@@ -1,4 +1,13 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent as ReactDragEvent
+} from "react";
 import { Layer, Line, Stage } from "react-konva";
 import { bitmapLayersForShot, imageBitmapLayerId } from "../shared/projectOps";
 import type {
@@ -13,17 +22,19 @@ import {
   bitmapSelectionBounds,
   bitmapSelectionHandleRadiusForStage,
   bitmapSelectionHitTarget,
-  latestStrokeSegment,
   liveStrokePreviewOpacity,
   scaleBitmapSelectionBounds,
   shouldAppendStrokePoint,
+  shouldCloseRadialMenuForSketchPointer,
   shouldCommitStroke,
   shouldHandleSketchPointer,
   shouldKeepCommittedStrokePreview,
   shouldRenderLiveStroke,
   shouldStartSketchPointer,
   sketchCanvasSize,
+  sketchPointFromClientPoint,
   sketchPointsFromClientPoints,
+  strokeSegmentsFromPointOffset,
   type Bounds,
   type CanvasSize,
   type Point,
@@ -35,7 +46,8 @@ import {
   drawImageUrl,
   drawStrokePathOnCanvas
 } from "./sketchRendering";
-import { editableBitmapLayerForShot } from "./activeTargets";
+import { nextStageResizeDecision, sameStageSize } from "./stageResize";
+import { canFillBitmapLayer, editableBitmapLayerForShot } from "./activeTargets";
 
 type BitmapSelection = {
   mode: BitmapSelectionMode;
@@ -140,10 +152,13 @@ export type SketchPadProps = {
   brushColor: string;
   brushOpacity: number;
   brushSize: number;
+  brushSoftness: number;
   eraserOpacity: number;
   eraserSize: number;
+  eraserSoftness: number;
   onionSkinPreviousShot?: Shot;
   onionSkinNextShot?: Shot;
+  isZoomScrubbing: boolean;
   onStroke: (
     layerId: string,
     stroke: SketchStroke,
@@ -151,7 +166,9 @@ export type SketchPadProps = {
     pendingStrokes?: SketchStroke[]
   ) => Promise<string | undefined>;
   onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onFill: (layerId: string, point: Point, color: string) => Promise<string | undefined>;
   onFocusShot: () => void;
+  onBeginInteraction?: () => void;
 };
 
 export const SketchPad = ({
@@ -161,19 +178,27 @@ export const SketchPad = ({
   brushColor,
   brushOpacity,
   brushSize,
+  brushSoftness,
   eraserOpacity,
   eraserSize,
+  eraserSoftness,
   onionSkinPreviousShot,
   onionSkinNextShot,
+  isZoomScrubbing,
   onStroke,
   onSelectionTransform,
-  onFocusShot
+  onFill,
+  onFocusShot,
+  onBeginInteraction
 }: SketchPadProps) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [draftStroke, setDraftStroke] = useState<SketchStroke | undefined>();
   const [pendingCommittedStrokes, setPendingCommittedStrokes] = useState<PendingCommittedStroke[]>([]);
   const [stageSize, setStageSize] = useState(sketchCanvasSize);
   const imageStageRef = useRef<HTMLDivElement | null>(null);
+  const stageSizeRef = useRef(sketchCanvasSize);
+  const pendingStageSizeRef = useRef<CanvasSize | undefined>(undefined);
+  const stageSizeFrameRef = useRef<number | undefined>(undefined);
   const isDrawingRef = useRef(false);
   const draftStrokeRef = useRef<SketchStroke | undefined>(undefined);
   const draftStrokeRenderFrameRef = useRef<number | undefined>(undefined);
@@ -208,6 +233,15 @@ export const SketchPad = ({
   const [selectionDraft, setSelectionDraft] = useState<BitmapSelectionDraft | undefined>();
   const [transformDraft, setTransformDraft] = useState<BitmapTransformDraft | undefined>();
   const [isTransformPreviewReady, setIsTransformPreviewReady] = useState(false);
+
+  const setStageSizeSynced = useCallback((size: CanvasSize) => {
+    if (sameStageSize(stageSizeRef.current, size)) {
+      return;
+    }
+
+    stageSizeRef.current = size;
+    setStageSize(size);
+  }, []);
 
   useEffect(() => {
     draftStrokeRef.current = draftStroke;
@@ -283,18 +317,54 @@ export const SketchPad = ({
     }
 
     const updateStageSize = () => {
-      const rect = element.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        setStageSize({ width: rect.width, height: rect.height });
+      if (stageSizeFrameRef.current !== undefined) {
+        return;
       }
+
+      stageSizeFrameRef.current = window.requestAnimationFrame(() => {
+        stageSizeFrameRef.current = undefined;
+        const rect = element.getBoundingClientRect();
+        const decision = nextStageResizeDecision({
+          currentSize: stageSizeRef.current,
+          measuredSize: { width: rect.width, height: rect.height },
+          shouldDefer: isZoomScrubbing
+        });
+
+        if (decision.type === "apply") {
+          pendingStageSizeRef.current = undefined;
+          setStageSizeSynced(decision.size);
+        } else if (decision.type === "defer") {
+          pendingStageSizeRef.current = decision.size;
+        }
+      });
     };
 
     updateStageSize();
     const resizeObserver = new ResizeObserver(updateStageSize);
     resizeObserver.observe(element);
 
-    return () => resizeObserver.disconnect();
-  }, []);
+    return () => {
+      resizeObserver.disconnect();
+      if (stageSizeFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(stageSizeFrameRef.current);
+        stageSizeFrameRef.current = undefined;
+      }
+    };
+  }, [isZoomScrubbing, setStageSizeSynced]);
+
+  useEffect(() => {
+    if (isZoomScrubbing) {
+      return;
+    }
+
+    const pendingSize = pendingStageSizeRef.current;
+    if (!pendingSize) {
+      return;
+    }
+
+    pendingStageSizeRef.current = undefined;
+    setStageSizeSynced(pendingSize);
+  }, [isZoomScrubbing, setStageSizeSynced]);
 
   useEffect(() => {
     if (!isDrawing) {
@@ -473,7 +543,7 @@ export const SketchPad = ({
     }
   };
 
-  const drawLiveBitmapSegment = (stroke: SketchStroke) => {
+  const drawLiveBitmapSegments = (stroke: SketchStroke, previousPointOffset: number) => {
     if (
       stroke.tool !== "eraser" ||
       !activeDrawingLayer ||
@@ -482,15 +552,17 @@ export const SketchPad = ({
       return;
     }
 
-    const segment = latestStrokeSegment(stroke);
+    const segments = strokeSegmentsFromPointOffset(stroke, previousPointOffset);
     const canvas = liveBitmapCanvasRefs.current[activeDrawingLayer.id];
     const context = canvas?.getContext("2d");
 
-    if (!segment || !context) {
+    if (segments.length === 0 || !context) {
       return;
     }
 
-    drawStrokePathOnCanvas(context, stroke, segment);
+    for (const segment of segments) {
+      drawStrokePathOnCanvas(context, stroke, segment);
+    }
   };
 
   const clearLiveBitmapEdit = () => {
@@ -732,6 +804,10 @@ export const SketchPad = ({
       return;
     }
 
+    if (shouldCloseRadialMenuForSketchPointer(pointerEvent)) {
+      onBeginInteraction?.();
+    }
+
     if (tool === "select") {
       if (!activeLayer || activeLayer.locked) {
         return;
@@ -754,6 +830,7 @@ export const SketchPad = ({
       color: tool === "eraser" ? "#ffffff" : brushColor,
       opacity: tool === "eraser" ? eraserOpacity : brushOpacity,
       size: toolSize * canvasScale,
+      softness: tool === "eraser" ? eraserSoftness : brushSoftness,
       points: [position.x, position.y]
     };
     draftStrokeRef.current = nextStroke;
@@ -867,6 +944,7 @@ export const SketchPad = ({
       return;
     }
 
+    const previousPointOffset = currentStroke.points.length / 2;
     const toolSize = currentStroke.tool === "eraser" ? eraserSize : brushSize;
     const canvasScale = canvasSize.width / sketchCanvasSize.width;
     const minPointDistance =
@@ -892,7 +970,7 @@ export const SketchPad = ({
     if (shouldRenderLiveStroke(nextStroke)) {
       scheduleDraftStrokeRender(nextStroke);
     } else {
-      drawLiveBitmapSegment(nextStroke);
+      drawLiveBitmapSegments(nextStroke, previousPointOffset);
     }
   };
 
@@ -967,6 +1045,50 @@ export const SketchPad = ({
     }
   };
 
+  const fillDragDataType = "application/x-storyboard-fill-color";
+  const fillColorFromDrag = (event: ReactDragEvent<HTMLElement>): string | undefined => {
+    const color = event.dataTransfer.getData(fillDragDataType);
+    return /^#[0-9a-f]{6}$/i.test(color) ? color : undefined;
+  };
+
+  const hasFillDragData = (event: ReactDragEvent<HTMLElement>): boolean =>
+    Array.from(event.dataTransfer.types).includes(fillDragDataType);
+
+  const canFillActiveLayer = () => canFillBitmapLayer(activeDrawingLayer);
+
+  const handleFillDragOver = (event: ReactDragEvent<HTMLElement>) => {
+    if (!hasFillDragData(event) || !canFillActiveLayer()) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleFillDrop = (event: ReactDragEvent<HTMLElement>) => {
+    const color = fillColorFromDrag(event);
+    if (!color || !activeDrawingLayer || !canFillActiveLayer()) {
+      return;
+    }
+
+    const rect = imageStageRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    blurActiveFormControl();
+    onFocusShot();
+
+    const point = sketchPointFromClientPoint(event.clientX, event.clientY, rect, canvasSize);
+    void onFill(activeDrawingLayer.id, point, color).then((dataUrl) => {
+      if (dataUrl) {
+        setLayerDataUrls((current) => ({ ...current, [activeDrawingLayer.id]: dataUrl }));
+      }
+    });
+  };
+
   return (
     <div
       className="sketch-panel"
@@ -980,6 +1102,8 @@ export const SketchPad = ({
         className="image-stage"
         ref={imageStageRef}
         style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}
+        onDragOver={handleFillDragOver}
+        onDrop={handleFillDrop}
       >
         {bitmapLayers.length === 0 ? <img src={imageSrc} alt={shot.fileName} draggable={false} /> : null}
         {bitmapLayers
@@ -1061,6 +1185,8 @@ export const SketchPad = ({
                     strokeWidth={stroke.size}
                     lineCap="round"
                     lineJoin="round"
+                    shadowBlur={Math.max(0, stroke.size * (stroke.softness ?? 0))}
+                    shadowColor={stroke.color}
                     globalCompositeOperation={
                       stroke.tool === "eraser" ? "destination-out" : "source-over"
                     }

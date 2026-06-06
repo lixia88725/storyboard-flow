@@ -1,4 +1,5 @@
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 export type RenamePlanItem = {
   shotId: string;
@@ -17,6 +18,14 @@ export type TempReplaceOps = {
   mkdir?: (directoryPath: string) => Promise<void>;
   rename: (fromPath: string, toPath: string) => Promise<void>;
   unlink: (filePath: string) => Promise<void>;
+};
+
+export type AtomicTextWriteOps = {
+  mkdir: (directoryPath: string) => Promise<void>;
+  writeFile: (filePath: string, content: string, encoding: "utf8") => Promise<void>;
+  rename: (fromPath: string, toPath: string) => Promise<void>;
+  unlink: (filePath: string) => Promise<void>;
+  tempPath?: string;
 };
 
 export type FileMoveItem = {
@@ -169,6 +178,24 @@ export const replaceFileWithTemp = async (
   ops: TempReplaceOps
 ): Promise<void> => {
   try {
+    await ops.rename(tempPath, targetPath);
+  } catch (error) {
+    await ops.unlink(tempPath).catch(() => undefined);
+    throw error;
+  }
+};
+
+export const atomicWriteTextFile = async (
+  targetPath: string,
+  content: string,
+  ops: AtomicTextWriteOps
+): Promise<void> => {
+  await ops.mkdir(path.dirname(targetPath));
+  const tempPath =
+    ops.tempPath ?? path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.${randomUUID()}.tmp`);
+
+  try {
+    await ops.writeFile(tempPath, content, "utf8");
     await ops.rename(tempPath, targetPath);
   } catch (error) {
     await ops.unlink(tempPath).catch(() => undefined);

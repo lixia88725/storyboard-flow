@@ -6,9 +6,10 @@ No active P1 items.
 
 ## P2
 
-- [ ] Manual dogfood newest Option/Alt copy paths: copy one shot, copy one layer into the same drawer at a chosen position, copy one layer into another shot, and copy one dialogue item.
-- [ ] Manual dogfood Photoshop external edit sync: clean SWB auto-import path, dirty SWB conflict-copy path, and incompatible TIFF manual Import path.
+- [ ] Manual dogfood retired Option/Alt drag copy paths: Option/Alt dragging storyboard, layer, and dialogue should behave like normal move/sort and must not create copies.
+- [ ] Manual dogfood keyboard copy/paste: copy/paste one storyboard with `Cmd/Ctrl+C` and `Cmd/Ctrl+V`, then copy/paste one layer below the current layer; confirm both paste actions show the short slide-out animation.
 - [ ] Manual dogfood large folder close flow on `/Users/xiali/Pictures/TEST2`: loading progress appears quickly, Save and Close exits, and Save error dialog only appears for real failures.
+- [ ] Revisit Photoshop dirty conflict UI only if users need non Image/base Photoshop layer edits to merge with simultaneous SWB local layer edits.
 - [ ] Revisit outside-card marquee affordance only if dense boards still feel hard to select after edge auto-scroll.
 - [ ] Revisit a slightly wider layer drawer click target only if users still miss the current handle.
 - [ ] Revisit a true stage-level bitmap Select cursor affordance only if users still miss corner scaling after hit target enlargement.
@@ -32,8 +33,8 @@ No active P1 items.
 - [x] Bitmap Select V1 with lasso/rectangle selection, active-layer move, corner scale, transient selection UI, expanded high-resolution corner hit targets, and geometry/unit coverage.
 - [x] Layer drawer MVP with click-toggle per-shot panel, thumbnails, blend mode dots, opacity drag, row reorder drag, lock controls, and smoke coverage.
 - [x] Animation mode with real aspect ratio display, stable dark frame, timeline, left/right navigation, mixed-aspect support, and Onion Skin preview.
-- [x] UI polish for dark workbench theme, sticky top/tool rails, compact shot/dialogue headers, wheel zoom, status button, shortcut editor, and lower-contrast dialogue affordances.
-- [x] Repeatable `npm run smoke:bitmap` covering renderer + Electron + filesystem paths: drawing, erasing, layer operations, Save safety, Photoshop TIFF round trip, shortcut persistence, animation, Onion Skin, Add Shot, reopen, and legacy migration.
+- [x] UI polish for dark workbench theme, sticky top/tool rails, compact shot/dialogue headers, wheel zoom, status button, fixed shortcut list, and lower-contrast dialogue affordances.
+- [x] Repeatable `npm run smoke:bitmap` covering renderer + Electron + filesystem paths: drawing, erasing, layer operations, Save safety, Photoshop TIFF round trip, fixed shortcut list, animation, Onion Skin, Add Shot, reopen, and legacy migration.
 - [x] Audit/cleanup pass added `docs/audit-2026-05-30.md`, `docs/superpowers/plans/2026-05-30-audit-cleanup.md`, README/AGENTS developer maps, shared Electron bitmap layer ordering, preload sync checking, and low-risk `App.tsx` component extraction.
 - [x] Photoshop layered TIFF import now inherits Photoshop lock/protection signals into SWB bitmap layer `locked` state.
 - [x] Storyboard script back side added with global `文 / 图` toggle, per-shot `scriptText`, root `storyboard-script.md` mirror, and explicit Import of external MD changes.
@@ -57,7 +58,7 @@ No active P1 items.
 - [x] Real-folder `TEST2` bitmap Select dogfood passed on a 1920x1080 non-locked paint layer: lasso move and rectangle corner scale changed the layer PNG, Save wrote the dirty shot TIFF, and project/root counts stayed stable.
 - [x] Real-folder `TEST2` multi-select shot dragging and double-click dialogue editing dogfood passed: shots 002/003 moved as a group, restored to original order, and shot 002 persisted `TEST2 dialogue dogfood line`.
 - [x] Real-folder `TEST2` mixed-aspect Animation mode dogfood passed after adding one 2.39:1 shot: stable frame, timeline, Onion Skin, and left/right navigation worked across 16:9 and 2.39:1 shots.
-- [x] Shortcut recording dogfood passed with temporary Electron userData: duplicate Escape was blocked, Clear Layer could be cleared, Brush could record Escape, Escape capture did not close the menu, and settings persisted across restart.
+- [x] Shortcut recording was removed before release; the toolbar gear now shows a fixed read-only shortcut list and no longer writes `keyboard-shortcuts.json`.
 - [x] Real-folder `TEST2` actual Finder focus handoff dogfood passed: a root PNG added outside SWB lit the Import warning after Finder -> Electron focus return, Import archived the PNG, created an owned TIFF, and left all 304 shots owned. Adobe Bridge-specific activation was not completed.
 - [x] Missing Recent folder paths are cleaned up after an attempted open: the app removes the stale path from `recent-folders.json`, keeps valid Recent entries, and still reports the open error.
 - [x] Autosave failures now show a persistent right-bottom warning with the error message; users can dismiss it, and the next successful autosave clears it automatically.
@@ -84,11 +85,12 @@ No active P1 items.
 - [x] Right-side parked shot shelf stores `project.parkedShots`, excludes parked shots from Save/script mirror/Timeline, and opens from the toolbar sidebar button.
 - [x] Layer Merge now supports single-layer merge-down, multi-selected layer merge, Merge visible with locked source preservation, and `Cmd/Ctrl+E` routing through the same contextual action.
 - [x] Layer multi-select supports Shift-click, group reorder, group opacity changes, locked-layer skip behavior, and consistent selected-row left bars.
-- [x] Option/Alt copy supports single storyboard, layer, and dialogue copy flows, with stable shot drag previews and copied-shot PNG preview generation.
+- [x] Option/Alt drag copy was retired for storyboard, layer, and dialogue; normal drag remains move/sort, and future copy/paste should use Command/Ctrl+C and Command/Ctrl+V.
+- [x] Keyboard copy/paste supports storyboard copy after the current storyboard and layer copy below the current layer, with a short paste slide-out animation.
 - [x] Fast brush/eraser strokes are serialized through a bitmap layer write queue so stale async writes do not erase newer strokes.
 - [x] Delete/Backspace now follows the last selected object type: clicked layer deletes active unlocked layer, clicked storyboard deletes selected storyboard(s).
 - [x] Save progress now reports actual changed TIFF writes, Save errors show a development dialog, and Close has a Save and Close path.
-- [x] Compatible Photoshop edits to known SWB TIFFs can auto-import when clean, while dirty SWB conflicts require Import and preserve Photoshop output as a copied shot.
+- [x] Compatible Photoshop edits to known SWB TIFFs can auto-import; dirty SWB shots preserve local SWB layer metadata and layer PNGs while Photoshop updates root TIFF ownership state / `baseFingerprint`, and manual Import can still bring the Photoshop version in as a copied shot.
 - [x] Large-folder opening shows loading progress and can render existing SWB project JSON state before slower background checks finish.
 - [x] Dialogue entry, shot card bars, lasso-only Select UI, layer drawer shadow/scrollbar, Save menu z-index, and sidebar toolbar layout received focused UI polish.
 

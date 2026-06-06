@@ -66,6 +66,9 @@ export const shouldStartSketchPointer = (event: PointerStartLike): boolean => {
   return (event.button === undefined || event.button === 0) && event.isPrimary !== false;
 };
 
+export const shouldCloseRadialMenuForSketchPointer = (event: PointerStartLike): boolean =>
+  shouldStartSketchPointer(event);
+
 export const shouldHandleSketchPointer = (
   event: PointerIdentityLike,
   activePointerId: number | undefined
@@ -108,6 +111,28 @@ export const latestStrokeSegment = (
     stroke.points[startIndex + 2],
     stroke.points[startIndex + 3]
   ];
+};
+
+export const strokeSegmentsFromPointOffset = (
+  stroke: StrokeLike,
+  pointOffset: number
+): Array<readonly [number, number, number, number]> => {
+  const pointCount = Math.floor(stroke.points.length / 2);
+  const startPointOffset = Math.max(1, pointOffset);
+  const segments: Array<readonly [number, number, number, number]> = [];
+
+  for (let pointIndex = startPointOffset; pointIndex < pointCount; pointIndex += 1) {
+    const previousOffset = (pointIndex - 1) * 2;
+    const currentOffset = pointIndex * 2;
+    segments.push([
+      stroke.points[previousOffset],
+      stroke.points[previousOffset + 1],
+      stroke.points[currentOffset],
+      stroke.points[currentOffset + 1]
+    ]);
+  }
+
+  return segments;
 };
 
 export const layerDropPlacementFromClientY = (

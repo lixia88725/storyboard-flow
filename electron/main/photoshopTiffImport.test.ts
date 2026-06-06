@@ -4,8 +4,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildPhotoshopTiffImportAssetPlan,
+  compatibleExternalEditImportMode,
   ensureLayerMoveDestinationsAvailable,
   importedLayerToBitmapLayer,
+  importedLayerMovesForImportMode,
   isPhotoshopTiffNoLayersError,
   isLikelyTiffPath,
   topmostImportedLayerId,
@@ -84,6 +86,43 @@ describe("photoshopTiffImport", () => {
       ["layer-image", "image", "Image", false, 0],
       ["layer-0001", "paint", "Paint", true, 1]
     ]);
+  });
+
+  it("preserves dirty layers only for compatible auto-import with the explicit preserve option", () => {
+    expect(
+      compatibleExternalEditImportMode({
+        compatibleExternalEdit: true,
+        dirtyShot: true,
+        preserveDirtyShotLayers: true
+      })
+    ).toBe("preserve-dirty-layers");
+  });
+
+  it("keeps the imported Image asset move when preserving dirty SWB layers", () => {
+    const moves = [
+      {
+        fromPath: "/tmp/extracted/0000-Image.png",
+        toPath: "/scene/.storyboard-workbench/import-tmp/stamp/layers/shot-a/layer-image.png"
+      },
+      {
+        fromPath: "/tmp/extracted/0001-Paint.png",
+        toPath: "/scene/.storyboard-workbench/import-tmp/stamp/layers/shot-a/layer-0001.png"
+      }
+    ];
+
+    expect(importedLayerMovesForImportMode(moves, "preserve-dirty-layers")).toEqual([moves[0]]);
+    expect(importedLayerMovesForImportMode(moves, "replace")).toEqual(moves);
+    expect(importedLayerMovesForImportMode(moves, "duplicate")).toEqual(moves);
+  });
+
+  it("duplicates dirty compatible external edits when the preserve option is not enabled", () => {
+    expect(
+      compatibleExternalEditImportMode({
+        compatibleExternalEdit: true,
+        dirtyShot: true,
+        preserveDirtyShotLayers: false
+      })
+    ).toBe("duplicate");
   });
 
   it("maps imported Photoshop layer metadata into SWB bitmap layers", () => {

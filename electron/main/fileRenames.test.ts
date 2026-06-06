@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyFileMoves, applyFileRenamePlan, applyFileReplacements, replaceFileWithTemp } from "./fileRenames.js";
+import {
+  applyFileMoves,
+  applyFileRenamePlan,
+  applyFileReplacements,
+  atomicWriteTextFile,
+  replaceFileWithTemp
+} from "./fileRenames.js";
 
 describe("applyFileRenamePlan", () => {
   it("returns applied renames that can restore final paths", async () => {
@@ -144,6 +150,93 @@ describe("replaceFileWithTemp", () => {
     expect(existingPaths.has("/scene/.storyboard-metadata-shot.tiff")).toBe(false);
     expect(existingPaths.has("/scene/shot.tiff")).toBe(true);
     expect(unlink).toHaveBeenCalledWith("/scene/.storyboard-metadata-shot.tiff");
+  });
+});
+
+describe("atomicWriteTextFile", () => {
+  it("writes text to a temp file before replacing the target", async () => {
+    const writes = new Map<string, string>();
+    const mkdir = vi.fn(async () => undefined);
+    const writeFile = vi.fn(async (filePath: string, content: string) => {
+      writes.set(filePath, content);
+    });
+    const rename = vi.fn(async (fromPath: string, toPath: string) => {
+      const content = writes.get(fromPath);
+      if (content === undefined) {
+        throw new Error(`missing ${fromPath}`);
+      }
+      writes.delete(fromPath);
+      writes.set(toPath, content);
+    });
+    const unlink = vi.fn(async (filePath: string) => {
+      writes.delete(filePath);
+    });
+
+    await atomicWriteTextFile("/scene/.storyboard-workbench/storyboard.project.json", "new metadata", {
+      mkdir,
+      writeFile,
+      rename,
+      unlink,
+      tempPath: "/scene/.storyboard-workbench/.storyboard.project.json.tmp"
+    });
+
+    expect(mkdir).toHaveBeenCalledWith("/scene/.storyboard-workbench");
+    expect(writeFile).toHaveBeenCalledWith(
+      "/scene/.storyboard-workbench/.storyboard.project.json.tmp",
+      "new metadata",
+      "utf8"
+    );
+    expect(rename).toHaveBeenCalledWith(
+      "/scene/.storyboard-workbench/.storyboard.project.json.tmp",
+      "/scene/.storyboard-workbench/storyboard.project.json"
+    );
+    expect(writes.get("/scene/.storyboard-workbench/storyboard.project.json")).toBe("new metadata");
+  });
+
+  it("deletes the temp file when replacement fails", async () => {
+    const writes = new Map<string, string>();
+    const unlink = vi.fn(async (filePath: string) => {
+      writes.delete(filePath);
+    });
+
+    await expect(
+      atomicWriteTextFile("/scene/storyboard.project.json", "new metadata", {
+        mkdir: vi.fn(async () => undefined),
+        writeFile: vi.fn(async (filePath: string, content: string) => {
+          writes.set(filePath, content);
+        }),
+        rename: vi.fn(async () => {
+          throw new Error("rename failed");
+        }),
+        unlink,
+        tempPath: "/scene/.storyboard.project.json.tmp"
+      })
+    ).rejects.toThrow("rename failed");
+
+    expect(unlink).toHaveBeenCalledWith("/scene/.storyboard.project.json.tmp");
+    expect(writes.has("/scene/.storyboard.project.json.tmp")).toBe(false);
+  });
+
+  it("deletes the temp file when writing fails", async () => {
+    const writes = new Map([["/scene/.storyboard.project.json.tmp", "partial"]]);
+    const unlink = vi.fn(async (filePath: string) => {
+      writes.delete(filePath);
+    });
+
+    await expect(
+      atomicWriteTextFile("/scene/storyboard.project.json", "new metadata", {
+        mkdir: vi.fn(async () => undefined),
+        writeFile: vi.fn(async () => {
+          throw new Error("write failed");
+        }),
+        rename: vi.fn(async () => undefined),
+        unlink,
+        tempPath: "/scene/.storyboard.project.json.tmp"
+      })
+    ).rejects.toThrow("write failed");
+
+    expect(unlink).toHaveBeenCalledWith("/scene/.storyboard.project.json.tmp");
+    expect(writes.has("/scene/.storyboard.project.json.tmp")).toBe(false);
   });
 });
 

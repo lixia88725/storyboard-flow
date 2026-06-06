@@ -1,10 +1,5 @@
-import type { MarqueeBox } from "./storyboardMarquee";
+import { forwardRef } from "react";
 
-export const SelectionMarquee = ({ box }: { box: MarqueeBox }) => {
-  const left = Math.min(box.startX, box.currentX);
-  const top = Math.min(box.startY, box.currentY);
-  const width = Math.abs(box.currentX - box.startX);
-  const height = Math.abs(box.currentY - box.startY);
-
-  return <div className="selection-marquee" style={{ left, top, width, height }} />;
-};
+export const SelectionMarquee = forwardRef<HTMLDivElement>(function SelectionMarquee(_, ref) {
+  return <div ref={ref} className="selection-marquee" />;
+});
