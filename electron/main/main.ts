@@ -6,7 +6,6 @@ import {
   Menu,
   net,
   protocol,
-  shell,
   type IpcMainInvokeEvent
 } from "electron";
 import { copyFile, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
@@ -55,6 +54,10 @@ import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
 import { addRecentFolderPath, normalizeRecentFolders, removeRecentFolderPath } from "./recentFolders.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
+import {
+  stagePendingDeletedShotFiles,
+  trashPendingDeletedShotFiles
+} from "./deletedShotFiles.js";
 import { countSaveProgressShots, saveProgressShotIds } from "./saveProgress.js";
 import { previewIsFresh } from "./previewCache.js";
 import {
@@ -914,92 +917,6 @@ const saveWorkspace = async (
   }
 
   return { ...payload, project: trashResult.project };
-};
-
-const stagePendingDeletedShotFiles = async (
-  project: Project,
-  folderPath: string
-): Promise<{ project: Project; appliedMoves?: AppliedFileMoves }> => {
-  const pending = project.pendingDeletedShots ?? [];
-
-  if (pending.length === 0) {
-    return { project };
-  }
-
-  const tempRoot = path.join(folderPath, ".storyboard-workbench", "delete-tmp", archiveStamp());
-  const stagedShots: PendingDeletedShot[] = [];
-  const moves = [];
-
-  for (const shot of pending) {
-    if (!(await pathExists(shot.imagePath))) {
-      stagedShots.push(shot);
-      continue;
-    }
-
-    const extension = path.extname(shot.imagePath);
-    const tempPath = await uniquePath(tempRoot, `${shot.id}${extension || ".tiff"}`);
-    moves.push({ fromPath: shot.imagePath, toPath: tempPath });
-    stagedShots.push({ ...shot, imagePath: tempPath });
-  }
-
-  if (moves.length === 0) {
-    return { project };
-  }
-
-  const appliedMoves = await applyFileMoves(moves, {
-    mkdir: ensureDirectory,
-    rename
-  });
-
-  return {
-    project: {
-      ...project,
-      pendingDeletedShots: stagedShots
-    },
-    appliedMoves
-  };
-};
-
-const trashPendingDeletedShotFiles = async (
-  project: Project
-): Promise<{ project: Project; error?: Error }> => {
-  const pending = project.pendingDeletedShots ?? [];
-
-  if (pending.length === 0) {
-    return { project };
-  }
-
-  const remaining: PendingDeletedShot[] = [];
-  const failed: PendingDeletedShot[] = [];
-
-  for (const shot of pending) {
-    if (!(await pathExists(shot.imagePath))) {
-      continue;
-    }
-
-    try {
-      await shell.trashItem(shot.imagePath);
-    } catch {
-      remaining.push(shot);
-      failed.push(shot);
-    }
-  }
-
-  const nextProject: Project = {
-    ...project,
-    pendingDeletedShots: remaining.length > 0 ? remaining : undefined,
-    updatedAt: new Date().toISOString()
-  };
-
-  if (failed.length === 0) {
-    return { project: nextProject };
-  }
-
-  const fileList = failed.map((shot) => shot.fileName).join(", ");
-  return {
-    project: nextProject,
-    error: new Error(`Could not move deleted storyboard files to Trash: ${fileList}`)
-  };
 };
 
 const assertRenamePlanSafe = async (renamePlan: RenamePlanItem[]): Promise<void> => {
