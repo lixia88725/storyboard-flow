@@ -85,6 +85,8 @@ const api = {
   }) => ipcRenderer.invoke("workspace:createFromStoryboardScript", payload),
   autosaveWorkspace: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:autosave", payload) as Promise<ProjectPayload>,
+  ensureLayerAssets: (payload: ProjectPayload) =>
+    ipcRenderer.invoke("workspace:ensureLayerAssets", payload) as Promise<ProjectPayload>,
   saveWorkspace: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:save", payload) as Promise<ProjectPayload>,
   exportPhotoshopTiffs: (payload: ProjectPayload) =>

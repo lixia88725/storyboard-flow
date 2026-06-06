@@ -31,6 +31,7 @@ declare global {
         blankShotPreset?: BlankShotOptions["preset"];
       }) => Promise<FolderScanPayload>;
       autosaveWorkspace: (payload: WorkspacePayload) => Promise<WorkspacePayload>;
+      ensureLayerAssets: (payload: WorkspacePayload) => Promise<WorkspacePayload>;
       saveWorkspace: (
         payload: WorkspacePayload & { renamePlan?: RenamePlanItem[] }
       ) => Promise<WorkspacePayload>;

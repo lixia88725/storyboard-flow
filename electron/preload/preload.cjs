@@ -9,6 +9,7 @@ const api = {
   createFromStoryboardScript: (payload) =>
     ipcRenderer.invoke("workspace:createFromStoryboardScript", payload),
   autosaveWorkspace: (payload) => ipcRenderer.invoke("workspace:autosave", payload),
+  ensureLayerAssets: (payload) => ipcRenderer.invoke("workspace:ensureLayerAssets", payload),
   saveWorkspace: (payload) => ipcRenderer.invoke("workspace:save", payload),
   exportPhotoshopTiffs: (payload) => ipcRenderer.invoke("workspace:exportPhotoshopTiffs", payload),
   importSwbFormat: (payload) => ipcRenderer.invoke("workspace:importSwbFormat", payload),

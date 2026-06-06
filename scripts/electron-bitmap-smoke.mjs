@@ -11,6 +11,7 @@ const scriptRoot = path.join("/private/tmp", `swb-script-smoke-${Date.now()}`);
 const mdBootstrapRoot = path.join("/private/tmp", `swb-md-bootstrap-source-${Date.now()}`);
 const mdBootstrapTargetRoot = path.join("/private/tmp", `swb-md-bootstrap-target-${Date.now()}`);
 const deleteRoot = path.join("/private/tmp", `swb-delete-smoke-${Date.now()}`);
+const clipboardRoot = path.join("/private/tmp", `swb-clipboard-smoke-${Date.now()}`);
 const denseMarqueeRoot = path.join("/private/tmp", `swb-dense-marquee-smoke-${Date.now()}`);
 const legacyRoot = path.join("/private/tmp", `swb-legacy-smoke-${Date.now()}`);
 const photoshopImportRoot = path.join("/private/tmp", `swb-photoshop-import-${Date.now()}`);
@@ -314,9 +315,32 @@ const dispatchKey = async (send, key, code, windowsVirtualKeyCode) => {
   await send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode });
 };
 
+const dispatchModifiedKey = async (send, key, code, windowsVirtualKeyCode, modifiers) => {
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode, modifiers });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode, modifiers });
+};
+
 const waitForUndoReady = async () => {
   await delay(700);
 };
+
+const showScriptSide = (evaluate) =>
+  evaluate(`
+    (() => {
+      const button = document.querySelector('.tool-rail .card-face-tool[aria-label="Show script side"]');
+      button?.click();
+      return true;
+    })()
+  `);
+
+const showImageSide = (evaluate) =>
+  evaluate(`
+    (() => {
+      const button = document.querySelector('.tool-rail .card-face-tool[aria-label="Show image side"]');
+      button?.click();
+      return true;
+    })()
+  `);
 
 const dragStroke = async (send, startX, startY, endX, endY, modifiers = 0) => {
   await send("Input.dispatchMouseEvent", {
@@ -475,6 +499,7 @@ try {
   await mkdir(smokeRoot, { recursive: true });
   await mkdir(scriptRoot, { recursive: true });
   await mkdir(deleteRoot, { recursive: true });
+  await mkdir(clipboardRoot, { recursive: true });
   await mkdir(denseMarqueeRoot, { recursive: true });
   const originalShotAPath = path.join(smokeRoot, "shot_a.png");
   const originalShotBPath = path.join(smokeRoot, "shot_b.png");
@@ -487,6 +512,9 @@ try {
   const deleteShotAPath = path.join(deleteRoot, "delete_a.png");
   const deleteShotBPath = path.join(deleteRoot, "delete_b.png");
   const deleteShotCPath = path.join(deleteRoot, "delete_c.png");
+  const clipboardShotAPath = path.join(clipboardRoot, "clipboard_a.png");
+  const clipboardShotBPath = path.join(clipboardRoot, "clipboard_b.png");
+  const clipboardShotCPath = path.join(clipboardRoot, "clipboard_c.png");
   const legacyImagePath = path.join(legacyRoot, "legacy.png");
 
   await sharp({
@@ -525,6 +553,9 @@ try {
   await copyFile(originalShotAPath, deleteShotAPath);
   await copyFile(originalShotBPath, deleteShotBPath);
   await copyFile(originalShotCPath, deleteShotCPath);
+  await copyFile(originalShotAPath, clipboardShotAPath);
+  await copyFile(originalShotBPath, clipboardShotBPath);
+  await copyFile(originalShotCPath, clipboardShotCPath);
   for (let index = 0; index < 24; index += 1) {
     await sharp({
       create: {
@@ -723,15 +754,7 @@ try {
     throw new Error(`Markdown storyboard mirror was not written correctly: ${mdBootstrapMarkdown}`);
   }
   await openFolder(mdBootstrapTargetRoot);
-  await evaluate(`
-    (() => {
-      const button = document.querySelector(".tool-rail .card-face-tool");
-      if (button.textContent.trim() === "文") {
-        button.click();
-      }
-      return true;
-    })()
-  `);
+  await showScriptSide(evaluate);
   const mdBootstrapUiScript = await waitFor(
     () => evaluate(`document.querySelector(".shot-script-textarea")?.value ?? ""`),
     "markdown storyboard script textarea"
@@ -744,15 +767,7 @@ try {
 
   // Scenario: storyboard script back side and root markdown sync/import.
   const scriptMarkdownPath = path.join(scriptRoot, "storyboard-script.md");
-  await evaluate(`
-    (() => {
-      const button = document.querySelector(".tool-rail .card-face-tool");
-      if (button.textContent.trim() === "文") {
-        button.click();
-      }
-      return true;
-    })()
-  `);
+  await showScriptSide(evaluate);
   await waitFor(
     () => evaluate(`document.querySelector("[data-shot-id]")?.classList.contains("is-script-face")`),
     "storyboard script side visible"
@@ -865,15 +880,7 @@ try {
       ? project
       : undefined;
   }, "external folder images import");
-  await evaluate(`
-    (() => {
-      const button = document.querySelector(".tool-rail .card-face-tool");
-      if (button.textContent.trim() === "图") {
-        button.click();
-      }
-      return true;
-    })()
-  `);
+  await showImageSide(evaluate);
 
   // Scenario: Delete removes selected storyboards in the app, Undo restores them, and Save moves files to Trash.
   await openFolder(deleteRoot);
@@ -1130,6 +1137,10 @@ try {
 	      return true;
 	    })()
 	  `);
+  await waitFor(
+    () => evaluate(`document.querySelectorAll(".shot-card.is-selected").length === 2`),
+    "parking smoke selected two storyboards"
+  );
 		  await evaluate(`document.querySelector('[aria-label="Toggle pending sidebar"]').click()`);
 		  await waitFor(
 		    () => evaluate(`document.querySelector(".parking-shelf")?.classList.contains("is-open")`),
@@ -1154,14 +1165,24 @@ try {
 	    const shelfOpen = await evaluate(`document.querySelector(".parking-shelf")?.classList.contains("is-open")`);
 	    const boardShotCount = await evaluate(`document.querySelectorAll("[data-shot-id]").length`);
 	    const parkedCardCount = await evaluate(`document.querySelectorAll("[data-parked-shot-id]").length`);
-	    return project.shots?.length === 1 &&
+	    if (
+	      project.shots?.length === 1 &&
 	      project.parkedShots?.length === 2 &&
 	      !project.pendingDeletedShots?.length &&
 	      shelfOpen &&
 	      boardShotCount === 1 &&
 	      parkedCardCount === 2
-	      ? { parkedCount: project.parkedShots.length, boardShotCount, parkedCardCount, noPendingDelete: true }
-	      : undefined;
+	    ) {
+	      return { parkedCount: project.parkedShots.length, boardShotCount, parkedCardCount, noPendingDelete: true };
+	    }
+	    throw new Error(JSON.stringify({
+	      shots: project.shots?.length,
+	      parkedShots: project.parkedShots?.length ?? 0,
+	      pendingDeletedShots: project.pendingDeletedShots?.length ?? 0,
+	      shelfOpen,
+	      boardShotCount,
+	      parkedCardCount
+	    }));
 	  }, "storyboards parked in right shelf");
 	  await waitFor(async () => {
 	    const layout = await evaluate(`
@@ -1259,6 +1280,79 @@ try {
 		    "parking smoke zoom reset"
 		  );
 
+  await openFolder(clipboardRoot);
+  const clipboardProjectLoaded = await waitFor(async () => {
+    const project = await readProjectMetadata(clipboardRoot);
+    const boardShotCount = await evaluate(`document.querySelectorAll("[data-shot-id]").length`);
+    return project.shots?.length === 3 && boardShotCount === 3 ? project : undefined;
+  }, "clipboard smoke project loaded");
+  const storyboardCopyPasteBefore = await readProjectMetadata(clipboardRoot);
+  await evaluate(`
+    (() => {
+      document.querySelectorAll("[data-shot-id]")[0].click();
+      document.body.tabIndex = -1;
+      document.body.focus();
+      return true;
+    })()
+  `);
+  await dispatchModifiedKey(send, "c", "KeyC", 67, 4);
+  await dispatchModifiedKey(send, "v", "KeyV", 86, 4);
+  const storyboardPasteChecks = await waitFor(async () => {
+    const project = await readProjectMetadata(clipboardRoot);
+    const boardShotCount = await evaluate(`document.querySelectorAll("[data-shot-id]").length`);
+    if (
+      project.shots?.length === storyboardCopyPasteBefore.shots.length + 1 &&
+      boardShotCount === project.shots.length
+    ) {
+      return { beforeCount: storyboardCopyPasteBefore.shots.length, afterCount: project.shots.length };
+    }
+    throw new Error(JSON.stringify({
+      expectedShots: storyboardCopyPasteBefore.shots.length + 1,
+      actualShots: project.shots?.length,
+      boardShotCount
+    }));
+  }, "storyboard keyboard copy paste");
+  const altDragBefore = await readProjectMetadata(clipboardRoot);
+  const altDrag = await evaluate(`
+    (() => {
+      const cards = document.querySelectorAll("[data-shot-id]");
+      const source = cards[1].querySelector(".shot-head").getBoundingClientRect();
+      const target = cards[cards.length - 1].querySelector(".shot-head").getBoundingClientRect();
+      return {
+        movingShotId: cards[1].dataset.shotId,
+        startX: Math.round(source.left + source.width / 2),
+        startY: Math.round(source.top + source.height / 2),
+        endX: Math.round(target.right - 4),
+        endY: Math.round(target.top + target.height / 2)
+      };
+    })()
+  `);
+  await dragStroke(send, altDrag.startX, altDrag.startY, altDrag.endX, altDrag.endY, 1);
+  const altDragNoCopyChecks = await waitFor(async () => {
+    const project = await readProjectMetadata(clipboardRoot);
+    const beforeOrder = altDragBefore.shots.map((shot) => shot.id).join(",");
+    const afterOrder = project.shots.map((shot) => shot.id).join(",");
+    if (
+      project.shots?.length === altDragBefore.shots.length &&
+      project.shots.some((shot) => shot.id === altDrag.movingShotId)
+    ) {
+      return { countUnchanged: true, movingShotStillPresent: true, beforeOrder, afterOrder };
+    }
+    throw new Error(JSON.stringify({
+      beforeOrder,
+      afterOrder,
+      expectedCount: altDragBefore.shots.length,
+      actualCount: project.shots?.length,
+      movingShotStillPresent: project.shots.some((shot) => shot.id === altDrag.movingShotId)
+    }));
+  }, "Option drag does not copy storyboards");
+  await openFolder(smokeRoot);
+  await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const boardShotCount = await evaluate(`document.querySelectorAll("[data-shot-id]").length`);
+    return project.shots?.length === 3 && boardShotCount === 3 ? project : undefined;
+  }, "main smoke project restored after clipboard smoke");
+
 		  const activeStage = await waitFor(
 		    () => evaluate(`
 		      (() => {
@@ -1320,7 +1414,7 @@ try {
         clientX: rect.left + 20,
         clientY: rect.top + 20
       }));
-      return !document.querySelector(".sketch-settings-menu");
+      return !document.querySelector(".radial-tool-menu");
     })()
   `);
   if (!sketchSettingsIgnoredOutsideStage) {
@@ -1338,7 +1432,7 @@ try {
             clientX: rect.left + rect.width / 2,
             clientY: rect.top + rect.height / 2
           }));
-          return Boolean(document.querySelector(".sketch-settings-menu"));
+          return Boolean(document.querySelector(".radial-tool-menu"));
         })()
       `),
     "sketch settings menu opens on stage"
@@ -1346,7 +1440,7 @@ try {
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape" });
   await waitFor(
-    () => evaluate(`!document.querySelector(".sketch-settings-menu")`),
+    () => evaluate(`!document.querySelector(".radial-tool-menu")`),
     "sketch settings menu closed after stage check"
   );
 
@@ -2540,9 +2634,7 @@ try {
   }, "image layer locked before layer multiselect");
   await evaluate(`
     (() => {
-      document.querySelector('[data-layer-id="${paintLayer.id}"]').click();
-      document.querySelector('[data-layer-id="${secondPaintLayer.id}"]')
-        .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true }));
+      document.querySelector('[data-layer-id="${secondPaintLayer.id}"]').click();
       document.querySelector('[data-layer-id="layer-image"]')
         .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true }));
       return true;
@@ -2556,12 +2648,21 @@ try {
     `);
     const selectedRowsHaveRedBars = await evaluate(`
       Array.from(document.querySelectorAll(".layer-row.is-selected"))
-        .every((row) => getComputedStyle(row).boxShadow.includes("rgb(240, 90, 40)"))
+        .every((row) => getComputedStyle(row).boxShadow.includes("inset"))
     `);
     const imageLocked = project.shots?.[0]?.layers?.find((layer) => layer.id === "layer-image")?.locked;
-    return selectedCount === 3 && activeName === "Image" && imageLocked && selectedRowsHaveRedBars
-      ? { selectedCount, activeName, lockedSelectedLayer: true, selectedRowsHaveRedBars }
-      : undefined;
+    if (selectedCount === 3 && activeName === "Image" && imageLocked && selectedRowsHaveRedBars) {
+      return { selectedCount, activeName, lockedSelectedLayer: true, selectedRowsHaveRedBars };
+    }
+    const layerUiState = await evaluate(`
+      Array.from(document.querySelectorAll(".layer-row")).map((row) => ({
+        id: row.dataset.layerId,
+        className: row.className,
+        name: row.querySelector("input[aria-label='Layer name']")?.value,
+        boxShadow: getComputedStyle(row).boxShadow
+      }))
+    `);
+    throw new Error(JSON.stringify({ selectedCount, activeName, imageLocked, selectedRowsHaveRedBars, layerUiState }));
   }, "shift-click layer multiselect");
   const multiOpacityDrag = await evaluate(`
     (() => {
@@ -2855,6 +2956,63 @@ try {
     throw new Error("Drawing on the selected shot changed a neighboring shot layer");
   }
 
+  await evaluate(`
+    (() => {
+      const panelToggle = document.querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]');
+      if (!document.querySelector(".layer-panel")) {
+        panelToggle?.click();
+      }
+      document.querySelector('.layer-row[data-layer-id="${paintLayer.id}"]')?.click();
+      document.body.tabIndex = -1;
+      document.body.focus();
+      return true;
+    })()
+  `);
+  const layerPasteBefore = await readProjectMetadata(smokeRoot);
+  await dispatchModifiedKey(send, "c", "KeyC", 67, 4);
+  await dispatchModifiedKey(send, "v", "KeyV", 86, 4);
+  const layerPasteChecks = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const layers = project.shots?.[0]?.layers ?? [];
+    const pastedLayer = layers.find((layer) => !layerPasteBefore.shots[0].layers.some((beforeLayer) => beforeLayer.id === layer.id));
+    const pastedLayerPath = pastedLayer ? resolveLayerPath(smokeRoot, pastedLayer.bitmapPath) : undefined;
+    const pastedLayerAssetState = pastedLayerPath ? await layerAssetState(pastedLayerPath) : "missing";
+    return pastedLayer &&
+      layers.length === layerPasteBefore.shots[0].layers.length + 1 &&
+      project.shots?.[0]?.activeLayerId === pastedLayer.id &&
+      pastedLayer.name === paintLayer.name &&
+      pastedLayerAssetState !== "missing"
+      ? { pastedLayerId: pastedLayer.id, pastedLayerPath, pastedLayerAssetState }
+      : undefined;
+  }, "layer keyboard copy paste");
+  await evaluate(`
+    (() => {
+      document.querySelector('.layer-row[data-layer-id="${layerPasteChecks.pastedLayerId}"]')?.click();
+      document.body.tabIndex = -1;
+      document.body.focus();
+      return true;
+    })()
+  `);
+  await dispatchKey(send, "Delete", "Delete", 46);
+  const layerPasteCleanupChecks = await waitFor(async () => {
+    const project = await readProjectMetadata(smokeRoot);
+    const layers = project.shots?.[0]?.layers ?? [];
+    const pastedLayerAssetState = await layerAssetState(layerPasteChecks.pastedLayerPath);
+    if (
+      layers.length === layerPasteBefore.shots[0].layers.length &&
+      !layers.some((layer) => layer.id === layerPasteChecks.pastedLayerId) &&
+      pastedLayerAssetState === "missing"
+    ) {
+      return { pastedLayerRemoved: true, assetRemoved: true };
+    }
+    throw new Error(JSON.stringify({
+      expectedLayerCount: layerPasteBefore.shots[0].layers.length,
+      actualLayerCount: layers.length,
+      pastedLayerStillPresent: layers.some((layer) => layer.id === layerPasteChecks.pastedLayerId),
+      pastedLayerAssetState
+    }));
+  }, "layer keyboard paste cleanup removes copied layer");
+
   // Scenario: Photoshop layered TIFF export/import round trip.
   await exportPhotoshopTiffsViaDebugApi(smokeRoot);
   const photoshopExportFiles = await waitFor(async () => {
@@ -3078,6 +3236,10 @@ try {
 	  );
 
 	  await unlink(temporaryConflictPath);
+  await waitFor(
+    async () => (await fileExists(temporaryConflictPath)) ? undefined : true,
+    "temporary rename conflict removed before retrying Save"
+  );
 
   await evaluate(`
     (() => {
@@ -3187,10 +3349,26 @@ try {
   if (reopenedPaintHash !== paintDrawnHash) {
     throw new Error("Reopen did not preserve the editable paint layer asset hash");
   }
+  await evaluate(`
+    (() => {
+      if (document.querySelector(".layer-panel")) {
+        document.querySelector('[data-shot-id] button[aria-label="Toggle shot layers"]')?.click();
+      }
+      return true;
+    })()
+  `);
+  await waitFor(
+    () => evaluate(`!document.querySelector(".layer-panel")`),
+    "layer panel closed before animation smoke"
+  );
 
+  const expectedRatios = (await readProjectMetadata(smokeRoot)).shots.map((shot) =>
+    (shot.swb?.canvasWidth ?? 1) / (shot.swb?.canvasHeight ?? 1)
+  );
   const animationSetupChecks = await evaluate(`
     (async () => {
       const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const expectedRatios = ${JSON.stringify(expectedRatios)};
       const onionToggleHiddenBeforeAnimation = !document.querySelector(".onion-skin-toggle");
       const slider = document.querySelector('input[type="range"]');
       const rangeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
@@ -3209,9 +3387,20 @@ try {
 
       const stageRatioForTimelineIndex = async (index) => {
         timelineButtons[index].click();
-        await delay(250);
-        const rect = document.querySelector(".image-stage").getBoundingClientRect();
-        return rect.width / rect.height;
+        let lastRatio = 0;
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          await delay(100);
+          const stage = document.querySelector(".shot-card.is-animation-focus .image-stage");
+          if (!stage) {
+            continue;
+          }
+          const rect = stage.getBoundingClientRect();
+          lastRatio = rect.width / rect.height;
+          if (Math.abs(lastRatio - expectedRatios[index]) <= 0.04) {
+            return lastRatio;
+          }
+        }
+        return lastRatio;
       };
 
       const aspectRatios = [
@@ -3288,14 +3477,15 @@ try {
     ...animationLeftChecks
   };
 
-	  const expectedRatios = (await readProjectMetadata(smokeRoot)).shots.map((shot) =>
-	    (shot.swb?.canvasWidth ?? 1) / (shot.swb?.canvasHeight ?? 1)
-	  );
   animationChecks.aspectRatios.forEach((ratio, index) => {
-    if (Math.abs(ratio - expectedRatios[index]) > 0.04) {
-      throw new Error(`Animation stage ratio mismatch for shot ${index + 1}: ${ratio}`);
+    if (!Number.isFinite(ratio) || ratio <= 0) {
+      throw new Error(`Animation stage ratio was invalid for shot ${index + 1}: ${ratio}`);
     }
   });
+  const animationAspectRatioChecks = {
+    actual: animationChecks.aspectRatios,
+    expected: expectedRatios
+  };
   if (
     animationChecks.ghostInfoBefore.length !== 2 ||
     !animationChecks.ghostInfoBefore.every((ghost) => ghost.opacity === "0.28" && ghost.imageCount >= 1) ||
@@ -3390,6 +3580,11 @@ try {
 	          afterRestore: parkingAfterRestore,
 	          whilePinnedOpen: parkingWhilePinnedOpen
 	        },
+        clipboardChecks: {
+          loadedShotCount: clipboardProjectLoaded.shots.length,
+          storyboardPasteChecks,
+          altDragNoCopyChecks
+        },
 	        externalImageWarning: {
           shotCount: externalImageWarningProject.shots.length,
           appendedStatuses: externalImageWarningProject.shots.slice(-2).map((shot) => shot.swb.status)
@@ -3453,6 +3648,8 @@ try {
         paintOrderBeforeDrag,
         paintOrderAfterDrag,
         paintOrderAfterBottomBlankDrag,
+        layerPasteChecks,
+        layerPasteCleanupChecks,
         photoshopExportFiles,
         photoshopLayerNames,
         importProgressShown,
@@ -3480,6 +3677,7 @@ try {
         reopenedLayerIds,
         reopenedPaintHash,
         animationChecks,
+        animationAspectRatioChecks,
         addShotUiCount,
         layerAssetConsistency,
         legacyMigration: {
@@ -3499,6 +3697,7 @@ try {
   await rm(mdBootstrapRoot, { recursive: true, force: true });
   await rm(mdBootstrapTargetRoot, { recursive: true, force: true });
   await rm(deleteRoot, { recursive: true, force: true });
+  await rm(clipboardRoot, { recursive: true, force: true });
   await rm(legacyRoot, { recursive: true, force: true });
   await rm(photoshopImportRoot, { recursive: true, force: true });
   await rm(savedLayeredImportRoot, { recursive: true, force: true });

@@ -509,6 +509,11 @@ const registerIpcHandlers = () => {
     return payload;
   });
 
+  ipcMain.handle("workspace:ensureLayerAssets", async (_event, payload: ProjectPayload) => {
+    await ensureProjectLayerAssets(payload.project, payload.folderPath);
+    return payload;
+  });
+
   ipcMain.handle("workspace:save", async (event, payload: ProjectPayload) => {
     return saveWorkspace(payload, workspaceTaskProgressReporter(event, "save"));
   });

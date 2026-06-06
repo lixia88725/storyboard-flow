@@ -2728,8 +2728,12 @@ export const App = () => {
   };
 
   const pasteCopiedShot = async (sourceShotId: string) => {
-    if (!window.storyboard || !folderPath) {
+    if (!window.storyboard) {
       setStatus("Cannot paste storyboard: Electron preload API is unavailable");
+      return;
+    }
+    if (!folderPath || !metadataPath) {
+      setStatus("Cannot paste storyboard: workspace is not loaded");
       return;
     }
 
@@ -2743,6 +2747,21 @@ export const App = () => {
 
     const pastedShotId = crypto.randomUUID();
     const copyPlan = shotAssetCopyPlan(sourceShot, pastedShotId);
+    const ensuredLayerAssets = await withStatus(
+      "Paste storyboard failed",
+      () =>
+        window.storyboard.ensureLayerAssets({
+          project: currentProject,
+          folderPath,
+          metadataPath
+        }),
+      setStatus
+    );
+
+    if (!ensuredLayerAssets) {
+      return;
+    }
+
     const copiedAssets = await withStatus(
       "Paste storyboard failed",
       () =>
