@@ -4,7 +4,7 @@ Date: 2026-05-31
 
 ## Goal
 
-Decide whether Storyboard Workbench needs a dedicated global Select / Hand / Draw mode.
+Decide whether Storyboard Flow needs a dedicated global Select / Hand / Draw mode.
 
 This audit is behavior-preserving. It documents the current interaction ownership model and does not change product code.
 

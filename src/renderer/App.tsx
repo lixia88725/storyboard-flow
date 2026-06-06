@@ -2633,7 +2633,7 @@ export const App = () => {
     }
 
     if (!needsSwbImport) {
-      setStatus("All images are already in Storyboard Workbench Format");
+      setStatus("All images are already in Storyboard Flow Format");
       return;
     }
 
@@ -2674,7 +2674,7 @@ export const App = () => {
     await loadFolderScan(
       result,
       needsImageImport
-        ? "Imported images into Storyboard Workbench Format"
+        ? "Imported images into Storyboard Flow Format"
         : "Imported storyboard script changes",
       false,
       false
@@ -3537,7 +3537,7 @@ export const App = () => {
             className={isImportNudging ? "import-button is-nudging" : "import-button"}
             onClick={() => void handleImportSwbFormat()}
             disabled={!needsSwbImport || isWorkspaceTaskRunning}
-            title="Import image or storyboard-script.md changes into Storyboard Workbench"
+            title="Import image or storyboard-script.md changes into Storyboard Flow"
           >
             {workspaceTask?.kind === "import" ? "Importing..." : "Import"}
           </button>
@@ -3557,10 +3557,10 @@ export const App = () => {
               <strong>为什么需要 Import？</strong>
               <p>
                 Import 会把外部 TIFF 和 storyboard-script.md 的变化导入 Storyboard
-                Workbench。在你点击 Import 之前，软件内的编辑仍然是当前工作状态。
+                Flow。在你点击 Import 之前，软件内的编辑仍然是当前工作状态。
               </p>
               <p>
-                原始 TIFF 会先移动到 Archive，然后 Storyboard Workbench 接管工作文件。
+                原始 TIFF 会先移动到 Archive，然后 Storyboard Flow 接管工作文件。
                 能匹配上的镜头顺序、台词、分镜脚本文字和支持的位图图层会尽量继承。
               </p>
               <p>

@@ -1830,7 +1830,7 @@ const swbStateForImportedImage = (image: ImportedImage): ShotSwbState => {
       canvasWidth: image.swbMetadata?.canvasWidth ?? image.width ?? 0,
       canvasHeight: image.swbMetadata?.canvasHeight ?? image.height ?? 0,
       baseFingerprint: image.fingerprint,
-      statusMessage: "Import to convert this Photoshop layered TIFF into Storyboard Workbench Format"
+      statusMessage: "Import to convert this Photoshop layered TIFF into Storyboard Flow Format"
     };
   }
 
@@ -1852,7 +1852,7 @@ const swbStateForImportedImage = (image: ImportedImage): ShotSwbState => {
     canvasWidth: image.width ?? 0,
     canvasHeight: image.height ?? 0,
     baseFingerprint: image.fingerprint,
-    statusMessage: "Import to convert this image into Storyboard Workbench Format"
+    statusMessage: "Import to convert this image into Storyboard Flow Format"
   };
 };
 
@@ -1912,7 +1912,7 @@ const mergedSwbState = (shot: Shot, image: ImportedImage): ShotSwbState => {
     return {
       ...existing,
       status: "incompatible-external-edit",
-      statusMessage: "TIFF dimensions changed outside Storyboard Workbench"
+      statusMessage: "TIFF dimensions changed outside Storyboard Flow"
     };
   }
 
@@ -1921,7 +1921,7 @@ const mergedSwbState = (shot: Shot, image: ImportedImage): ShotSwbState => {
     return {
       ...existing,
       status: "compatible-external-edit",
-      statusMessage: "Import external Photoshop edits into Storyboard Workbench"
+      statusMessage: "Import external Photoshop edits into Storyboard Flow"
     };
   }
 

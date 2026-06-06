@@ -263,7 +263,7 @@ type ImportedImage = {
 };
 
 type SwbImageMetadata = {
-  app: "Storyboard Workbench";
+  app: "Storyboard Flow" | "Storyboard Workbench";
   format: "swb-tiff";
   version: number;
   projectId?: string;
@@ -347,13 +347,15 @@ if (process.env.SWB_USER_DATA_DIR) {
   app.setPath("userData", process.env.SWB_USER_DATA_DIR);
 }
 
+app.setName("Storyboard Flow");
+
 const createWindow = async () => {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 960,
     minWidth: 1100,
     minHeight: 720,
-    title: "Storyboard Workbench",
+    title: "Storyboard Flow",
     backgroundColor: "#f3f0e8",
     webPreferences: {
       preload: path.join(app.getAppPath(), "electron/preload/preload.cjs"),
@@ -384,7 +386,7 @@ const createWindow = async () => {
       defaultId: 0,
       cancelId: 2,
       message: "Close without saving?",
-      detail: "Storyboard Workbench has unsaved changes. Save before closing to sync your edits back to the folder."
+      detail: "Storyboard Flow has unsaved changes. Save before closing to sync your edits back to the folder."
     };
     const buttonIndex = owner
       ? dialog.showMessageBoxSync(owner, options)
@@ -1944,7 +1946,7 @@ const swbMetadataForShot = (
   const sketchLayers = sketchLayersForShot(shot);
 
   return {
-    app: "Storyboard Workbench",
+    app: "Storyboard Flow",
     format: "swb-tiff",
     version: swbFormatVersion,
     projectId,
@@ -2510,7 +2512,7 @@ const readSwbMetadata = async (imagePath: string): Promise<SwbImageMetadata | un
     const parsed = JSON.parse(Buffer.from(match[1], "base64").toString("utf8"));
     if (
       parsed &&
-      parsed.app === "Storyboard Workbench" &&
+      (parsed.app === "Storyboard Flow" || parsed.app === "Storyboard Workbench") &&
       parsed.format === "swb-tiff" &&
       typeof parsed.shotId === "string"
     ) {

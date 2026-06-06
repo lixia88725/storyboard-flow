@@ -125,7 +125,7 @@ export type BlankShotOptions = {
 };
 
 export type SwbImageMetadata = {
-  app: "Storyboard Workbench";
+  app: "Storyboard Flow" | "Storyboard Workbench";
   format: "swb-tiff";
   version: number;
   projectId?: string;

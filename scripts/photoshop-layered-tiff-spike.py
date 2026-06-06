@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate a minimal Photoshop-readable layered TIFF spike.
 
-This is intentionally not wired into Storyboard Workbench Save. It answers one
+This is intentionally not wired into Storyboard Flow Save. It answers one
 question: can we write a TIFF that Photoshop opens as multiple layers?
 """
 

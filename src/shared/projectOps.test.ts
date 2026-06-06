@@ -1668,7 +1668,7 @@ describe("project operations", () => {
 
     expect(updated.shots[0].swb).toMatchObject({
       status: "non-swb",
-      statusMessage: "Import to convert this Photoshop layered TIFF into Storyboard Workbench Format"
+      statusMessage: "Import to convert this Photoshop layered TIFF into Storyboard Flow Format"
     });
     expect(projectNeedsSwbImport(updated)).toBe(true);
   });

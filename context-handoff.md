@@ -12,7 +12,7 @@
 
 ## Current Product State
 
-- Storyboard Workbench is a local Electron + React + TypeScript + Vite app.
+- Storyboard Flow is a local Electron + React + TypeScript + Vite app.
 - One local image folder is one scene.
 - Main project data lives in `.storyboard-workbench/storyboard.project.json`.
 - Editable bitmap layer pixels live in `.storyboard-workbench/layers/{shotId}/{layerId}.png`.

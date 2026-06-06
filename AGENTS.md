@@ -2,7 +2,7 @@
 
 ## Project
 
-Storyboard Workbench MVP is a local-first Electron desktop app for arranging storyboard images, moving dialogue between shots, drawing edits, and managing lightweight storyboard layers.
+Storyboard Flow is a local-first Electron desktop app for arranging storyboard images, moving dialogue between shots, drawing edits, and managing lightweight storyboard layers.
 
 ## Context
 

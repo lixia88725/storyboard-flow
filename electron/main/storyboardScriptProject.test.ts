@@ -49,7 +49,7 @@ describe("createProjectFromStoryboardScriptMarkdown", () => {
     ).rejects.toThrow("Choose an empty folder");
   });
 
-  it("rejects target folders that already contain Storyboard Workbench metadata", async () => {
+  it("rejects target folders that already contain Storyboard Flow metadata", async () => {
     const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "swb-md-source-")), "script.md");
     const targetFolder = await mkdtemp(path.join(os.tmpdir(), "swb-md-project-swb-"));
     await writeFile(sourcePath, "1. Shot\n", "utf8");

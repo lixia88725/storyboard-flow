@@ -4,7 +4,7 @@ Date: 2026-05-31
 
 ## Goal
 
-Decide whether Storyboard Workbench can wire Photoshop TIFF Python dependencies into a packaged app now.
+Decide whether Storyboard Flow can wire Photoshop TIFF Python dependencies into a packaged app now.
 
 This audit does not add a packager, installer, or distribution workflow. It verifies the existing package resource preparation path and records the missing integration point.
 

@@ -2,13 +2,13 @@
 
 ## Result
 
-The spike proved that Storyboard Workbench can generate a TIFF that Photoshop
+The spike proved that Storyboard Flow can generate a TIFF that Photoshop
 2026 opens as a layered document, but not by using sharp/libvips multi-page TIFF
 alone.
 
 ## Productized Save/Export Status
 
-The spike path is now connected to Storyboard Workbench Save and a dedicated
+The spike path is now connected to Storyboard Flow Save and a dedicated
 export command. `Save` writes multi bitmap layer shots in-place as
 Photoshop-readable layered TIFFs, while single-layer shots remain ordinary TIFFs.
 The main UI hides `Export TIFF`; the underlying export API still writes one
@@ -83,4 +83,4 @@ not the autosave transaction log.
 - RGB 8-bit only.
 - Normal blend mode only.
 - No layer groups, masks, text layers, smart objects, adjustment layers, or PSB.
-- No integration with Storyboard Workbench project data yet.
+- No integration with Storyboard Flow project data yet.

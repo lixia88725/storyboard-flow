@@ -244,7 +244,7 @@ const connectToStoryboardPage = async () => {
   const page = await waitFor(async () => {
     const response = await fetch(`http://127.0.0.1:${port}/json/list`);
     const pages = await response.json();
-    return pages.find((item) => item.title === "Storyboard Workbench" && item.webSocketDebuggerUrl);
+    return pages.find((item) => item.title === "Storyboard Flow" && item.webSocketDebuggerUrl);
   }, "Electron CDP page");
 
   let nextId = 1;

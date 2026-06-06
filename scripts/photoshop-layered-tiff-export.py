@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write a Photoshop-readable layered TIFF from a Storyboard Workbench manifest."""
+"""Write a Photoshop-readable layered TIFF from a Storyboard Flow manifest."""
 
 from __future__ import annotations
 
@@ -195,7 +195,7 @@ def write_layered_tiff(manifest_path: Path) -> None:
         loaded_layers.append((layer, image, index == 0 and bool(layer.get("background", False))))
 
     image_source_data = TiffImageSourceData(
-        name=str(manifest.get("documentName", "Storyboard Workbench")),
+        name=str(manifest.get("documentName", "Storyboard Flow")),
         psdformat=PsdFormat.LE32BIT,
         layers=PsdLayers(
             key=PsdKey.LAYER,
