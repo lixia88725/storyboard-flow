@@ -3,14 +3,20 @@ import {
   captureParkingDragRects,
   captureStoryboardDragRects,
   dragPreviewShotIds,
+  inferShotPlacement,
+  isPointerInsideRect,
   isDialogueDropZoneHighlighted,
   parkingInsertionIndicatorFromCachedRect,
   parkingInsertionTargetFromPointer,
+  pointerFromActiveDragRect,
+  sameParkingInsertionIndicator,
+  sameStoryboardInsertionIndicator,
   shouldShowStoryboardInsertionIndicator,
   storyboardInsertionIndicatorFromCachedRect,
   storyboardSortableItemIds,
   storyboardInsertionTargetFromPointer
 } from "./storyboardDnd";
+import { createProject } from "../shared/projectOps";
 
 describe("storyboard drag preview", () => {
   it("uses only the active shot when it is not selected", () => {
@@ -104,6 +110,52 @@ describe("storyboard insertion target", () => {
         movingShotIds: ["shot-1", "shot-2"]
       })
     ).toEqual({ targetShotId: "shot-3", placement: "before" });
+  });
+});
+
+describe("storyboard drag helpers", () => {
+  const project = {
+    ...createProject(),
+    shots: [
+      { id: "a", order: 0, fileName: "a.tiff", imagePath: "/scene/a.tiff" },
+      { id: "b", order: 1, fileName: "b.tiff", imagePath: "/scene/b.tiff" },
+      { id: "c", order: 2, fileName: "c.tiff", imagePath: "/scene/c.tiff" }
+    ]
+  };
+
+  it("infers placement around a moved storyboard group", () => {
+    expect(inferShotPlacement(project, ["a"], "c", "a")).toBe("after");
+    expect(inferShotPlacement(project, ["c"], "a", "c")).toBe("before");
+    expect(inferShotPlacement(project, ["missing"], "a", "missing")).toBe("before");
+  });
+
+  it("uses the center point of an active drag rect", () => {
+    expect(pointerFromActiveDragRect({ left: 10, top: 20, width: 30, height: 40 })).toEqual({
+      x: 25,
+      y: 40
+    });
+    expect(pointerFromActiveDragRect(undefined)).toBeUndefined();
+  });
+
+  it("compares insertion indicators by placement and geometry", () => {
+    expect(
+      sameStoryboardInsertionIndicator(
+        { targetShotId: "a", placement: "before", left: 1, top: 2, height: 3 },
+        { targetShotId: "a", placement: "before", left: 1, top: 2, height: 3 }
+      )
+    ).toBe(true);
+    expect(
+      sameParkingInsertionIndicator(
+        { targetShotId: "a", placement: "after", left: 1, top: 2, width: 3 },
+        { targetShotId: "a", placement: "after", left: 1, top: 9, width: 3 }
+      )
+    ).toBe(false);
+  });
+
+  it("checks whether a pointer is inside a rect", () => {
+    expect(isPointerInsideRect({ left: 0, top: 0, right: 10, bottom: 10 }, { x: 5, y: 5 })).toBe(true);
+    expect(isPointerInsideRect({ left: 0, top: 0, right: 10, bottom: 10 }, { x: 11, y: 5 })).toBe(false);
+    expect(isPointerInsideRect(undefined, { x: 5, y: 5 })).toBe(false);
   });
 });
 

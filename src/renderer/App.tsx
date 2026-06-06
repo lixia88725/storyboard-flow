@@ -102,6 +102,12 @@ import {
   type LayerAssetSnapshot
 } from "./bitmapLayerHistory";
 import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
+import {
+  copySelectionFromProject,
+  layerPasteTargetFromProject,
+  shotAssetCopyPlan,
+  type ClipboardSelection
+} from "./clipboardSelection";
 import { DialoguePreview, ShotStackPreview } from "./DragPreviews";
 import {
   resolveDeleteTarget,
@@ -148,8 +154,13 @@ import {
   captureParkingDragRects,
   captureStoryboardDragRects,
   dragPreviewShotIds as chooseDragPreviewShotIds,
+  inferShotPlacement,
+  isPointerInsideRect,
   parkingInsertionIndicatorFromCachedRect,
   parkingInsertionTargetFromPointer,
+  pointerFromActiveDragRect,
+  sameParkingInsertionIndicator,
+  sameStoryboardInsertionIndicator,
   shouldShowStoryboardInsertionIndicator,
   storyboardInsertionIndicatorFromCachedRect,
   storyboardInsertionTargetFromPointer,
@@ -242,9 +253,6 @@ type StoryboardScriptImportDraft = {
   targetFolderPath: string;
 };
 type SelectedBitmapLayerIds = { shotId: string; layerIds: string[] };
-type ClipboardSelection =
-  | { type: "shot"; shotId: string }
-  | { type: "layer"; shotId: string; layerId: string };
 type PasteAnimationKind = "shot" | "layer";
 type PasteAnimationState = {
   kind: PasteAnimationKind;
@@ -2689,35 +2697,19 @@ export const App = () => {
 
   const handleCopySelection = () => {
     const currentProject = projectRef.current;
-    const resolvedTarget = resolveDeleteTarget(currentProject, deleteTargetRef.current);
-
-    if (resolvedTarget.type === "layer" || resolvedTarget.type === "locked-layer") {
-      const shot = currentProject.shots.find((item) => item.id === resolvedTarget.shotId);
-      const layer = shot
-        ? bitmapLayersForShot(shot).find((item) => item.id === resolvedTarget.layerId)
-        : undefined;
-      if (!shot || !layer) {
-        setStatus("No layer selected to copy");
-        return;
-      }
-
-      const nextClipboard: ClipboardSelection = { type: "layer", shotId: shot.id, layerId: layer.id };
-      clipboardSelectionRef.current = nextClipboard;
-      setClipboardSelection(nextClipboard);
-      setStatus(`Layer "${layer.name}" copied`);
+    const result = copySelectionFromProject(
+      currentProject,
+      deleteTargetRef.current,
+      selectedShotIdsRef.current
+    );
+    if (!result.ok) {
+      setStatus(result.status);
       return;
     }
 
-    const shot = primaryShotOrFirst(sortedShots(currentProject.shots), selectedShotIdsRef.current);
-    if (!shot) {
-      setStatus("No storyboard selected to copy");
-      return;
-    }
-
-    const nextClipboard: ClipboardSelection = { type: "shot", shotId: shot.id };
-    clipboardSelectionRef.current = nextClipboard;
-    setClipboardSelection(nextClipboard);
-    setStatus("Storyboard copied");
+    clipboardSelectionRef.current = result.clipboard;
+    setClipboardSelection(result.clipboard);
+    setStatus(result.status);
   };
 
   const handlePasteSelection = async () => {
@@ -2750,11 +2742,7 @@ export const App = () => {
     }
 
     const pastedShotId = crypto.randomUUID();
-    const sourceLayers = bitmapLayersForShot(sourceShot);
-    const layerCopies = sourceLayers.map((layer) => ({
-      sourceBitmapPath: layer.bitmapPath,
-      targetBitmapPath: bitmapLayerPath(pastedShotId, layer.id)
-    }));
+    const copyPlan = shotAssetCopyPlan(sourceShot, pastedShotId);
     const copiedAssets = await withStatus(
       "Paste storyboard failed",
       () =>
@@ -2762,7 +2750,7 @@ export const App = () => {
           folderPath,
           sourceImagePath: sourceShot.imagePath,
           fileName: sourceShot.fileName,
-          layerCopies
+          layerCopies: copyPlan.layerCopies
         }),
       setStatus
     );
@@ -2800,24 +2788,17 @@ export const App = () => {
     }
 
     const currentProject = projectRef.current;
-    const sourceShot = currentProject.shots.find((shot) => shot.id === sourceShotId);
-    const sourceLayer = sourceShot
-      ? bitmapLayersForShot(sourceShot).find((layer) => layer.id === sourceLayerId)
-      : undefined;
-    const resolvedTarget = resolveDeleteTarget(currentProject, deleteTargetRef.current);
-    if (resolvedTarget.type !== "layer" && resolvedTarget.type !== "locked-layer") {
-      setStatus("Select a layer before pasting a layer");
+    const pasteTarget = layerPasteTargetFromProject(
+      currentProject,
+      deleteTargetRef.current,
+      sourceShotId,
+      sourceLayerId
+    );
+    if (!pasteTarget.ok) {
+      setStatus(pasteTarget.status);
       return;
     }
-
-    const targetShot = currentProject.shots.find((shot) => shot.id === resolvedTarget.shotId);
-    const targetLayer = targetShot
-      ? bitmapLayersForShot(targetShot).find((layer) => layer.id === resolvedTarget.layerId)
-      : undefined;
-    if (!sourceLayer || !targetShot || !targetLayer) {
-      setStatus("Cannot paste layer: copied or target layer is missing");
-      return;
-    }
+    const { sourceLayer, targetShot, targetLayer } = pasteTarget;
 
     const pastedLayerId = `layer-${crypto.randomUUID()}`;
     const targetBitmapPath = bitmapLayerPath(targetShot.id, pastedLayerId);
@@ -4275,39 +4256,6 @@ export const App = () => {
   );
 };
 
-const inferShotPlacement = (
-  project: Project,
-  movingShotIds: string[],
-  targetShotId: string,
-  fallbackShotId: string
-): ShotPlacement => {
-  const ordered = sortedShots(project.shots);
-  const targetIndex = ordered.findIndex((shot) => shot.id === targetShotId);
-  const activeIndex = ordered.findIndex((shot) => shot.id === fallbackShotId);
-  const movingIndexes = movingShotIds
-    .map((shotId) => ordered.findIndex((shot) => shot.id === shotId))
-    .filter((index) => index !== -1);
-
-  if (targetIndex === -1 || activeIndex === -1 || movingIndexes.length === 0) {
-    return "before";
-  }
-
-  return targetIndex > Math.max(...movingIndexes) ? "after" : "before";
-};
-
-const pointerFromActiveDragRect = (
-  rect: { left: number; top: number; width: number; height: number } | null | undefined
-): { x: number; y: number } | undefined => {
-  if (!rect) {
-    return undefined;
-  }
-
-  return {
-    x: rect.left + rect.width / 2,
-    y: rect.top + rect.height / 2
-  };
-};
-
 const storyboardMarqueeShotRectsFromDom = (board: HTMLElement | null): MarqueeShotRect[] => {
   if (!board) {
     return [];
@@ -4346,33 +4294,13 @@ const applySelectionMarqueeStyle = (element: HTMLDivElement | null, box: Marquee
   element.style.height = `${rect.height}px`;
 };
 
-const sameStoryboardInsertionIndicator = (
-  current: StoryboardInsertionIndicator | undefined,
-  next: StoryboardInsertionIndicator | undefined
-): boolean =>
-  current?.targetShotId === next?.targetShotId &&
-  current?.placement === next?.placement &&
-  current?.left === next?.left &&
-  current?.top === next?.top &&
-  current?.height === next?.height;
-
-const sameParkingInsertionIndicator = (
-  current: ParkingInsertionIndicator | undefined,
-  next: ParkingInsertionIndicator | undefined
-): boolean =>
-  current?.targetShotId === next?.targetShotId &&
-  current?.placement === next?.placement &&
-  current?.left === next?.left &&
-  current?.top === next?.top &&
-  current?.width === next?.width;
-
 const isPointerInsideElement = (element: HTMLElement | null, pointer: { x: number; y: number }): boolean => {
   if (!element) {
     return false;
   }
 
   const rect = element.getBoundingClientRect();
-  return pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom;
+  return isPointerInsideRect(rect, pointer);
 };
 
 const inferDropPlacementFromDragEnd = (event: DragEndEvent): ShotPlacement => {

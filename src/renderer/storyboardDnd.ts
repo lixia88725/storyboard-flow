@@ -1,3 +1,6 @@
+import { sortedShots, type ShotPlacement } from "../shared/projectOps";
+import type { Project } from "../shared/types";
+
 export type DragData =
   | { type: "shot"; shotId: string }
   | { type: "dialogue"; dialogueId: string; shotId: string }
@@ -284,4 +287,68 @@ export const parkingInsertionTargetFromPointer = ({
   }
 
   return { targetShotId: candidates[candidates.length - 1].shotId, placement: "after" };
+};
+
+export const inferShotPlacement = (
+  project: Project,
+  movingShotIds: string[],
+  targetShotId: string,
+  fallbackShotId: string
+): ShotPlacement => {
+  const ordered = sortedShots(project.shots);
+  const targetIndex = ordered.findIndex((shot) => shot.id === targetShotId);
+  const activeIndex = ordered.findIndex((shot) => shot.id === fallbackShotId);
+  const movingIndexes = movingShotIds
+    .map((shotId) => ordered.findIndex((shot) => shot.id === shotId))
+    .filter((index) => index !== -1);
+
+  if (targetIndex === -1 || activeIndex === -1 || movingIndexes.length === 0) {
+    return "before";
+  }
+
+  return targetIndex > Math.max(...movingIndexes) ? "after" : "before";
+};
+
+export const pointerFromActiveDragRect = (
+  rect: { left: number; top: number; width: number; height: number } | null | undefined
+): { x: number; y: number } | undefined => {
+  if (!rect) {
+    return undefined;
+  }
+
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2
+  };
+};
+
+export const sameStoryboardInsertionIndicator = (
+  current: StoryboardInsertionIndicator | undefined,
+  next: StoryboardInsertionIndicator | undefined
+): boolean =>
+  current?.targetShotId === next?.targetShotId &&
+  current?.placement === next?.placement &&
+  current?.left === next?.left &&
+  current?.top === next?.top &&
+  current?.height === next?.height;
+
+export const sameParkingInsertionIndicator = (
+  current: ParkingInsertionIndicator | undefined,
+  next: ParkingInsertionIndicator | undefined
+): boolean =>
+  current?.targetShotId === next?.targetShotId &&
+  current?.placement === next?.placement &&
+  current?.left === next?.left &&
+  current?.top === next?.top &&
+  current?.width === next?.width;
+
+export const isPointerInsideRect = (
+  rect: { left: number; right: number; top: number; bottom: number } | undefined,
+  pointer: { x: number; y: number }
+): boolean => {
+  if (!rect) {
+    return false;
+  }
+
+  return pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom;
 };
