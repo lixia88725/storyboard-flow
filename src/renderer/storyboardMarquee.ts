@@ -93,3 +93,17 @@ export const shotIdsInMarqueeBox = (box: MarqueeBox, shots: MarqueeShotRect[]) =
 
 export const sameMarqueeSelection = (a: string[], b: string[]) =>
   a.length === b.length && a.every((id, index) => id === b[index]);
+
+export const marqueeDisplayedSelectionIds = (shotIds: string[]) => (shotIds.length > 1 ? shotIds : []);
+
+export const marqueeSelectionClassChanges = (previousShotIds: string[], nextShotIds: string[]) => {
+  const previousDisplayedShotIds = marqueeDisplayedSelectionIds(previousShotIds);
+  const nextDisplayedShotIds = marqueeDisplayedSelectionIds(nextShotIds);
+  const nextDisplayedShotIdSet = new Set(nextDisplayedShotIds);
+  const previousDisplayedShotIdSet = new Set(previousDisplayedShotIds);
+
+  return {
+    add: nextDisplayedShotIds.filter((shotId) => !previousDisplayedShotIdSet.has(shotId)),
+    remove: previousDisplayedShotIds.filter((shotId) => !nextDisplayedShotIdSet.has(shotId))
+  };
+};

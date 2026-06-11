@@ -826,6 +826,12 @@ try {
     !importHelpText.includes("点击 Import")) {
     throw new Error(`Import help popover copy was incomplete: ${importHelpText}`);
   }
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape" });
+  await waitFor(
+    () => evaluate(`!document.querySelector(".import-help-popover")`),
+    "import help popover closed"
+  );
   await evaluate(`document.querySelector(".import-control button").click()`);
   const scriptImportedProject = await waitFor(async () => {
     const project = await readProjectMetadata(scriptRoot);
@@ -1518,6 +1524,18 @@ try {
   await waitFor(
     () => evaluate(`document.querySelector(".bottom-bar span")?.textContent === "100%"`),
     "blank board wheel zoom reset"
+  );
+  rect = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const stage = document.querySelector(".image-stage")?.getBoundingClientRect();
+          return stage
+            ? { x: stage.x, y: stage.y, width: stage.width, height: stage.height }
+            : undefined;
+        })()
+      `),
+    "stage rect before drawing"
   );
   const startX = Math.round(rect.x + rect.width * 0.35);
   const startY = Math.round(rect.y + rect.height * 0.45);
@@ -3506,8 +3524,7 @@ try {
     (async () => {
       const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const beforeTimelineCount = document.querySelectorAll(".timeline-shot").length;
-      const addShotButton = Array.from(document.querySelectorAll("button"))
-        .find((button) => button.textContent.trim() === "Add Shot");
+      const addShotButton = document.querySelector(".add-shot-main-button");
       addShotButton.click();
 
       for (let index = 0; index < 30 && document.querySelectorAll(".timeline-shot").length !== beforeTimelineCount + 1; index += 1) {

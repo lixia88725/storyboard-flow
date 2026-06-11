@@ -54,11 +54,14 @@ export type SketchToolSettings = {
 
 export type RadialDragListenerTarget = {
   addEventListener: (
-    type: "pointermove" | "pointerup",
+    type: "pointermove" | "pointerup" | "pointercancel" | "mouseup",
     listener: EventListener,
     options?: AddEventListenerOptions
   ) => void;
-  removeEventListener: (type: "pointermove" | "pointerup", listener: EventListener) => void;
+  removeEventListener: (
+    type: "pointermove" | "pointerup" | "pointercancel" | "mouseup",
+    listener: EventListener
+  ) => void;
 };
 
 const radialSlotCount = 8;
@@ -336,10 +339,14 @@ export const registerRadialDragListeners = (
     cleanedUp = true;
     target.removeEventListener("pointermove", handlePointerMove);
     target.removeEventListener("pointerup", handlePointerUp);
+    target.removeEventListener("pointercancel", handlePointerUp);
+    target.removeEventListener("mouseup", handlePointerUp);
   };
 
   target.addEventListener("pointermove", handlePointerMove);
   target.addEventListener("pointerup", handlePointerUp, { once: true });
+  target.addEventListener("pointercancel", handlePointerUp, { once: true });
+  target.addEventListener("mouseup", handlePointerUp, { once: true });
   return cleanup;
 };
 

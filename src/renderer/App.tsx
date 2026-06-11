@@ -123,7 +123,7 @@ import {
   shortcutActions,
   type ShortcutAction
 } from "./keyboardShortcuts";
-import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon } from "./icons";
+import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon, SwatchIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
@@ -133,6 +133,7 @@ import { Timeline } from "./Timeline";
 import { formatSaveFailureStatus } from "./saveErrors";
 import {
   createMarqueeBox,
+  marqueeSelectionClassChanges,
   marqueeViewportRect,
   marqueeEdgeScrollDelta,
   sameMarqueeSelection,
@@ -423,7 +424,6 @@ export const App = () => {
     useState<StoryboardScriptImportDraft | undefined>();
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<UndoEntry[]>([]);
-  const [selectionBox, setSelectionBox] = useState<MarqueeBox | undefined>();
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>({ type: "shot" });
   const [selectedBitmapLayerIds, setSelectedBitmapLayerIds] = useState<SelectedBitmapLayerIds | undefined>();
   const [isParkingShelfOpen, setIsParkingShelfOpen] = useState(false);
@@ -431,7 +431,6 @@ export const App = () => {
   const [status, setStatus] = useState(
     window.storyboard ? "Ready" : "Electron preload API is unavailable"
   );
-  const selectionBoxRef = useRef<MarqueeBox | undefined>(undefined);
   const selectionMarqueeRef = useRef<HTMLDivElement | null>(null);
   const projectRef = useRef(project);
   const folderPathRef = useRef(folderPath);
@@ -449,6 +448,7 @@ export const App = () => {
   const zoomFrameRef = useRef<number | undefined>(undefined);
   const zoomInputRef = useRef<HTMLInputElement | null>(null);
   const zoomValueLabelRef = useRef<HTMLSpanElement | null>(null);
+  const selectedShotCountLabelRef = useRef<HTMLSpanElement | null>(null);
   const pendingZoomPreviewLevelRef = useRef<number | undefined>(undefined);
   const zoomPreviewFrameRef = useRef<number | undefined>(undefined);
   const zoomPreviewStateRef = useRef<ZoomPreviewState | undefined>(undefined);
@@ -1146,16 +1146,6 @@ export const App = () => {
         fileNameSyncState !== "synced"
     });
   }, [fileNameSyncState, project, workspaceSaveState]);
-
-  useEffect(() => {
-    selectionBoxRef.current = selectionBox;
-  }, [selectionBox]);
-
-  useLayoutEffect(() => {
-    if (selectionBox) {
-      applySelectionMarqueeStyle(selectionMarqueeRef.current, selectionBox);
-    }
-  }, [selectionBox]);
 
   const measureGridColumns = useCallback(() => {
     const firstRowTop = Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id]"))
@@ -3339,17 +3329,25 @@ export const App = () => {
       return;
     }
 
-    const marqueeShotRects = storyboardMarqueeShotRectsFromDom(event.currentTarget);
+    const board = event.currentTarget;
+    const marqueeShotRects = storyboardMarqueeShotRectsFromDom(board);
+    const marqueeShotElements = storyboardMarqueeShotElementsFromDom(board);
+    const initialSelectedShotIds = selectedShotIdsRef.current;
+    const shouldCommitShotDeleteTarget = deleteTargetRef.current.type !== "shot";
+    let marqueeSelectedShotIds: string[] = [];
     const nextBox = createMarqueeBox({
       clientX: event.clientX,
       clientY: event.clientY,
       scrollX: window.scrollX,
       scrollY: window.scrollY
     });
-    setSelectionBox(nextBox);
-    selectionBoxRef.current = nextBox;
-    setDeleteTarget({ type: "shot" });
-    clearSelectedShots();
+    board.classList.add("is-marquee-selecting");
+    showSelectionMarquee(selectionMarqueeRef.current, nextBox);
+    shotSelectionAnchorIdRef.current = undefined;
+    selectedShotIdsRef.current = [];
+    deleteTargetRef.current = { type: "shot" };
+    applyMarqueeShotSelection(marqueeShotElements, initialSelectedShotIds, marqueeSelectedShotIds);
+    applySelectedShotCountLabel(selectedShotCountLabelRef.current, marqueeSelectedShotIds.length);
     let latestPointer = { clientX: event.clientX, clientY: event.clientY };
     let marqueeFrame: number | undefined;
 
@@ -3368,12 +3366,15 @@ export const App = () => {
         scrollX: window.scrollX,
         scrollY: window.scrollY
       });
-      selectionBoxRef.current = movedBox;
       applySelectionMarqueeStyle(selectionMarqueeRef.current, movedBox);
 
       const nextShotIds = shotIdsInMarqueeBox(movedBox, marqueeShotRects);
-      if (!sameMarqueeSelection(selectedShotIdsRef.current, nextShotIds)) {
-        selectShotsByIds(nextShotIds);
+      if (!sameMarqueeSelection(marqueeSelectedShotIds, nextShotIds)) {
+        applyMarqueeShotSelection(marqueeShotElements, marqueeSelectedShotIds, nextShotIds);
+        marqueeSelectedShotIds = nextShotIds;
+        selectedShotIdsRef.current = nextShotIds;
+        shotSelectionAnchorIdRef.current = nextShotIds.at(-1);
+        applySelectedShotCountLabel(selectedShotCountLabelRef.current, nextShotIds.length);
       }
 
       if (scrollDelta !== 0 && continueAutoScroll) {
@@ -3403,14 +3404,20 @@ export const App = () => {
         marqueeFrame = undefined;
       }
       updateMarqueeSelection(false);
-      selectionBoxRef.current = undefined;
-      setSelectionBox(undefined);
+      selectShotsByIds(marqueeSelectedShotIds);
+      if (shouldCommitShotDeleteTarget) {
+        setDeleteTarget({ type: "shot" });
+      }
+      hideSelectionMarquee(selectionMarqueeRef.current);
+      board.classList.remove("is-marquee-selecting");
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", handlePointerUp, { once: true });
     scheduleMarqueeUpdate();
   };
 
@@ -3442,6 +3449,11 @@ export const App = () => {
     event.preventDefault();
     if (action === "close") {
       setRadialToolMenu(undefined);
+      return;
+    }
+
+    if (needsSwbImport) {
+      setStatus("Import external changes before editing");
       return;
     }
 
@@ -3577,7 +3589,7 @@ export const App = () => {
             <div className="save-split-button">
               <button
                 type="button"
-                className="primary save-main-button"
+                className="save-main-button"
                 disabled={isWorkspaceTaskRunning || isImportLocked}
                 onClick={() => {
                   setIsSaveMenuOpen(false);
@@ -3588,7 +3600,7 @@ export const App = () => {
               </button>
               <button
                 type="button"
-                className="primary save-menu-toggle"
+                className="save-menu-toggle"
                 aria-label="Save naming options"
                 aria-expanded={isSaveMenuOpen}
                 disabled={isWorkspaceTaskRunning || isImportLocked}
@@ -3701,7 +3713,7 @@ export const App = () => {
                   void handleAddShot();
                 }}
               >
-                Add Shot
+                Add
               </button>
               <button
                 type="button"
@@ -3933,6 +3945,7 @@ export const App = () => {
           <label
             className="color-control"
             title="Brush color"
+            style={{ "--brush-swatch-color": brushColor } as CSSProperties}
             draggable
             onDragStart={(event) => {
               event.dataTransfer.effectAllowed = "copy";
@@ -3945,6 +3958,7 @@ export const App = () => {
               value={brushColor}
               onChange={(event) => setBrushColor(event.target.value)}
             />
+            <SwatchIcon />
           </label>
         </aside>
         {radialToolMenu ? (
@@ -4132,7 +4146,7 @@ export const App = () => {
                   }}
                 />
               ) : null}
-              {selectionBox ? <SelectionMarquee ref={selectionMarqueeRef} /> : null}
+              <SelectionMarquee ref={selectionMarqueeRef} />
             </section>
           </SortableContext>
           <SortableContext items={parkedShots.map((shot) => `parked-${shot.id}`)} strategy={rectSortingStrategy}>
@@ -4269,7 +4283,7 @@ export const App = () => {
             Onion Skin
           </label>
         ) : null}
-        <span>{selectedShotIds.length} selected</span>
+        <span ref={selectedShotCountLabelRef}>{selectedShotIds.length} selected</span>
       </footer>
     </main>
   );
@@ -4301,6 +4315,44 @@ const storyboardMarqueeShotRectsFromDom = (board: HTMLElement | null): MarqueeSh
     .filter((shotRect): shotRect is MarqueeShotRect => Boolean(shotRect));
 };
 
+const storyboardMarqueeShotElementsFromDom = (board: HTMLElement | null): Map<string, HTMLElement> => {
+  if (!board) {
+    return new Map();
+  }
+
+  return Array.from(board.querySelectorAll<HTMLElement>("[data-shot-id]")).reduce(
+    (elements, element) => {
+      const shotId = element.dataset.shotId;
+      if (shotId) {
+        elements.set(shotId, element);
+      }
+      return elements;
+    },
+    new Map<string, HTMLElement>()
+  );
+};
+
+const applyMarqueeShotSelection = (
+  elements: ReadonlyMap<string, HTMLElement>,
+  previousShotIds: string[],
+  nextShotIds: string[]
+) => {
+  const changes = marqueeSelectionClassChanges(previousShotIds, nextShotIds);
+
+  changes.remove.forEach((shotId) => {
+    elements.get(shotId)?.classList.remove("is-selected");
+  });
+  changes.add.forEach((shotId) => {
+    elements.get(shotId)?.classList.add("is-selected");
+  });
+};
+
+const applySelectedShotCountLabel = (element: HTMLSpanElement | null, selectedCount: number) => {
+  if (element) {
+    element.textContent = `${selectedCount} selected`;
+  }
+};
+
 const applySelectionMarqueeStyle = (element: HTMLDivElement | null, box: MarqueeBox) => {
   if (!element) {
     return;
@@ -4311,6 +4363,27 @@ const applySelectionMarqueeStyle = (element: HTMLDivElement | null, box: Marquee
   element.style.top = `${rect.top}px`;
   element.style.width = `${rect.width}px`;
   element.style.height = `${rect.height}px`;
+};
+
+const showSelectionMarquee = (element: HTMLDivElement | null, box: MarqueeBox) => {
+  if (!element) {
+    return;
+  }
+
+  applySelectionMarqueeStyle(element, box);
+  element.classList.add("is-active");
+};
+
+const hideSelectionMarquee = (element: HTMLDivElement | null) => {
+  if (!element) {
+    return;
+  }
+
+  element.classList.remove("is-active");
+  element.style.removeProperty("left");
+  element.style.removeProperty("top");
+  element.style.removeProperty("width");
+  element.style.removeProperty("height");
 };
 
 const isPointerInsideElement = (element: HTMLElement | null, pointer: { x: number; y: number }): boolean => {

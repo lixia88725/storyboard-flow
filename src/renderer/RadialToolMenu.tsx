@@ -160,6 +160,7 @@ export const RadialToolMenu = ({
   onClose
 }: RadialToolMenuProps) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const onCloseRef = useRef(onClose);
   const clickTimerRef = useRef<number | undefined>(undefined);
   const activeDragCleanupRef = useRef<(() => void) | undefined>(undefined);
   const [editingSlotIndex, setEditingSlotIndex] = useState<number | undefined>();
@@ -168,17 +169,21 @@ export const RadialToolMenu = ({
   >();
 
   useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
     const handlePointerDown = (event: globalThis.PointerEvent) => {
       if (
         !menuRef.current?.contains(event.target as Node) &&
         shouldCloseRadialMenuFromOutsidePointerDown(event)
       ) {
-        onClose();
+        onCloseRef.current();
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        onClose();
+        onCloseRef.current();
       }
     };
 
@@ -194,7 +199,7 @@ export const RadialToolMenu = ({
       activeDragCleanupRef.current?.();
       activeDragCleanupRef.current = undefined;
     };
-  }, [onClose]);
+  }, []);
 
   const editorSlot = editingSlotIndex === undefined ? undefined : menu.slots[editingSlotIndex];
   const menuStyle = useMemo(

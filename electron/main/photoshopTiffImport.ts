@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
 import path from "node:path";
 import sharp from "sharp";
+import { runPythonScript } from "./pythonRuntime.js";
 
 type BitmapLayer = {
   id: string;
@@ -189,25 +189,18 @@ export const topmostImportedLayerId = (layers: BitmapLayer[]): string | undefine
 };
 
 export const runPhotoshopTiffImporter = (
-  pythonPath: string,
+  pythonPath: string | undefined,
   scriptPath: string,
   sourcePath: string,
   outputDir: string,
   manifestPath: string,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    execFile(pythonPath, [scriptPath, sourcePath, outputDir, manifestPath], { env }, (error, stdout, stderr) => {
-      if (!error) {
-        resolve();
-        return;
-      }
-
-      reject(
-        new Error(
-          `Photoshop TIFF import failed: ${error.message}\n${stdout.trim()}\n${stderr.trim()}`.trim()
-        )
-      );
-    });
+  return runPythonScript({
+    pythonPath,
+    scriptPath,
+    scriptArgs: [sourcePath, outputDir, manifestPath],
+    env,
+    errorPrefix: "Photoshop TIFF import failed"
   });
 };

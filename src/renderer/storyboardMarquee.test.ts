@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   createMarqueeBox,
   marqueeViewportRect,
+  marqueeDisplayedSelectionIds,
+  marqueeSelectionClassChanges,
   marqueeEdgeScrollDelta,
   sameMarqueeSelection,
   shotIdsInMarqueeBox,
@@ -63,5 +65,26 @@ describe("storyboard marquee helpers", () => {
     expect(sameMarqueeSelection(["shot-a", "shot-b"], ["shot-a", "shot-b"])).toBe(true);
     expect(sameMarqueeSelection(["shot-a", "shot-b"], ["shot-b", "shot-a"])).toBe(false);
     expect(sameMarqueeSelection(["shot-a"], ["shot-a", "shot-b"])).toBe(false);
+  });
+
+  it("matches storyboard card selection styling for marquee selections", () => {
+    expect(marqueeDisplayedSelectionIds([])).toEqual([]);
+    expect(marqueeDisplayedSelectionIds(["shot-a"])).toEqual([]);
+    expect(marqueeDisplayedSelectionIds(["shot-a", "shot-b"])).toEqual(["shot-a", "shot-b"]);
+  });
+
+  it("returns only the storyboard card selection classes that changed", () => {
+    expect(marqueeSelectionClassChanges(["shot-a", "shot-b"], ["shot-b", "shot-c"])).toEqual({
+      add: ["shot-c"],
+      remove: ["shot-a"]
+    });
+    expect(marqueeSelectionClassChanges(["shot-a"], ["shot-a", "shot-b"])).toEqual({
+      add: ["shot-a", "shot-b"],
+      remove: []
+    });
+    expect(marqueeSelectionClassChanges(["shot-a", "shot-b"], ["shot-c"])).toEqual({
+      add: [],
+      remove: ["shot-a", "shot-b"]
+    });
   });
 });

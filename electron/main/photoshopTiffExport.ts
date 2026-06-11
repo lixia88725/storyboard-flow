@@ -1,7 +1,7 @@
-import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { bitmapLayersForShot, type ElectronBitmapLayer } from "./bitmapLayerOrdering.js";
+import { runPythonScript } from "./pythonRuntime.js";
 
 type Project = {
   name: string;
@@ -140,7 +140,7 @@ export const exportPhotoshopLayeredTiffs = async (
   for (const job of plan.jobs) {
     const manifestPath = path.join(plan.manifestFolderPath, `${job.shotId}.json`);
     await writeFile(manifestPath, `${JSON.stringify(job.manifest, null, 2)}\n`, "utf8");
-    await runPythonExporter(options.pythonPath ?? "python3", options.scriptPath, manifestPath, options.env);
+    await runPythonExporter(options.pythonPath, options.scriptPath, manifestPath, options.env);
   }
 
   return {
@@ -172,7 +172,7 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
     const swbMetadata = options.swbMetadataByShotId?.[job.shotId];
     const manifest = { ...job.manifest, ...(xmp ? { xmp } : {}), ...(swbMetadata ? { swbMetadata } : {}) };
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    await runPythonExporter(options.pythonPath ?? "python3", options.scriptPath, manifestPath, options.env);
+    await runPythonExporter(options.pythonPath, options.scriptPath, manifestPath, options.env);
     options.onJobWritten?.();
   });
 
@@ -201,24 +201,17 @@ const runWithConcurrency = async <T>(
 };
 
 const runPythonExporter = (
-  pythonPath: string,
+  pythonPath: string | undefined,
   scriptPath: string,
   manifestPath: string,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    execFile(pythonPath, [scriptPath, manifestPath], { env }, (error, stdout, stderr) => {
-      if (!error) {
-        resolve();
-        return;
-      }
-
-      reject(
-        new Error(
-          `Photoshop TIFF export failed: ${error.message}\n${stdout.trim()}\n${stderr.trim()}`.trim()
-        )
-      );
-    });
+  return runPythonScript({
+    pythonPath,
+    scriptPath,
+    scriptArgs: [manifestPath],
+    env,
+    errorPrefix: "Photoshop TIFF export failed"
   });
 };
 

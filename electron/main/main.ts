@@ -1375,7 +1375,7 @@ const importProjectToSwbFormat = async (
 
         try {
           await runPhotoshopTiffImporter(
-            "python3",
+            undefined,
             path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-import.py"),
             shot.imagePath,
             extractedDir,

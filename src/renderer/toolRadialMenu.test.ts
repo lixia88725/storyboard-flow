@@ -263,10 +263,14 @@ describe("toolRadialMenu", () => {
 
     expect(listeners.get("pointermove")?.size).toBe(1);
     expect(listeners.get("pointerup")?.size).toBe(1);
+    expect(listeners.get("pointercancel")?.size).toBe(1);
+    expect(listeners.get("mouseup")?.size).toBe(1);
 
     cleanup();
 
     expect(listeners.get("pointermove")?.size).toBe(0);
     expect(listeners.get("pointerup")?.size).toBe(0);
+    expect(listeners.get("pointercancel")?.size).toBe(0);
+    expect(listeners.get("mouseup")?.size).toBe(0);
   });
 });

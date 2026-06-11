@@ -1,4 +1,8 @@
 :root {
+  --topbar-height: 38px;
+  --topbar-control-height: 28px;
+  --bottom-bar-height: 36px;
+  --status-toggle-size: 20px;
   color: #211f1a;
   background: #f2efe7;
   font-family:
@@ -59,7 +63,7 @@ button.primary {
 
 .app-shell {
   padding: 22px;
-  padding-bottom: 76px;
+  padding-bottom: calc(var(--bottom-bar-height) + 28px);
 }
 
 .app-shell.is-animation-mode {
@@ -71,19 +75,20 @@ button.primary {
   top: 0;
   z-index: 40;
   display: grid;
-  grid-template-columns: minmax(230px, 0.7fr) minmax(420px, 720px) minmax(150px, 1fr);
+  grid-template-columns: minmax(230px, 1fr) minmax(420px, 720px) minmax(230px, 1fr);
   align-items: center;
   gap: 18px;
   margin-top: -22px;
-  padding-top: 8px;
+  padding-top: 4px;
   border-bottom: 2px solid #26231d;
-  padding-bottom: 6px;
+  padding-bottom: 4px;
   background: #f2efe7;
+  font-size: 13px;
 }
 
 .workspace-task-progress {
   position: sticky;
-  top: 52px;
+  top: var(--topbar-height);
   z-index: 39;
   display: grid;
   gap: 5px;
@@ -144,7 +149,7 @@ button.primary {
 .path-form input {
   width: 100%;
   min-width: 0;
-  height: 30px;
+  height: var(--topbar-control-height);
   border: 1px solid #27231d;
   border-right-width: 0;
   background: #fffdf7;
@@ -160,6 +165,20 @@ button.primary {
   align-items: center;
   gap: 6px;
   justify-self: start;
+}
+
+.import-control > button,
+.save-split-button > button,
+.add-shot-split-button > button {
+  display: grid;
+  align-items: center;
+  height: var(--topbar-control-height);
+}
+
+.import-control > button,
+.save-main-button,
+.add-shot-main-button {
+  padding: 3px 12px;
 }
 
 .import-control button:disabled {
@@ -182,7 +201,7 @@ button.primary {
 .address-recent-toggle {
   display: grid;
   place-items: center;
-  height: 30px;
+  height: var(--topbar-control-height);
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
   padding: 0;
@@ -242,14 +261,12 @@ button.primary {
 
 .add-shot-split-button {
   display: grid;
-  grid-template-columns: auto 32px;
+  grid-template-columns: auto 30px;
 }
 
 .add-shot-main-button {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
-  padding-top: 4px;
-  padding-bottom: 4px;
 }
 
 .add-shot-menu-toggle {
@@ -467,14 +484,12 @@ button.primary {
 
 .save-split-button {
   display: grid;
-  grid-template-columns: auto 32px;
+  grid-template-columns: auto 30px;
 }
 
 .save-main-button {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
-  padding-top: 4px;
-  padding-bottom: 4px;
 }
 
 .save-menu-toggle {
@@ -489,8 +504,8 @@ button.primary {
 .pending-shelf-toggle {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: var(--topbar-control-height);
+  height: var(--topbar-control-height);
   padding: 0;
 }
 
@@ -608,11 +623,11 @@ button.primary {
 }
 
 .tool-icon {
-  width: 25px;
-  height: 25px;
+  width: 24px;
+  height: 24px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.15;
+  stroke-width: 1.75;
   stroke-linecap: round;
   stroke-linejoin: round;
   overflow: visible;
@@ -688,15 +703,28 @@ button.primary {
   background: #fffaf0;
   border-radius: 4px;
   box-shadow: 0 1px 0 #27231d;
+  position: relative;
 }
 
 .color-control input {
-  width: 30px;
-  height: 30px;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
+  opacity: 0;
+}
+
+.swatch-icon {
+  pointer-events: none;
+}
+
+.swatch-icon-fill {
+  fill: var(--brush-swatch-color, #f05a28);
+  stroke: none;
 }
 
 .radial-tool-layer {
@@ -1987,9 +2015,9 @@ button.layer-blend-dot:disabled {
 
 .parking-shelf {
   position: fixed;
-  top: 62px;
+  top: var(--topbar-height);
   right: 0;
-  bottom: 48px;
+  bottom: var(--bottom-bar-height);
   z-index: 32;
   width: 252px;
   pointer-events: none;
@@ -2098,23 +2126,38 @@ button.layer-blend-dot:disabled {
 }
 
 .empty-state {
-  margin: 70px auto 0;
-  max-width: 680px;
+  position: fixed;
+  inset: var(--topbar-height) 0 var(--bottom-bar-height);
+  z-index: 1;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0 22px;
+  max-width: none;
   text-align: center;
-  color: #4c463d;
+  color: #6f675d;
+  pointer-events: none;
 }
 
 .empty-state h2 {
+  justify-self: center;
+  max-width: 680px;
+  margin: 0;
+  color: #7d766d;
   font-size: 30px;
-  margin: 0 0 10px;
 }
 
 .empty-state p {
+  justify-self: center;
+  max-width: 760px;
   margin: 0;
+  color: #706a62;
   font-size: 16px;
 }
 
 .selection-marquee {
+  display: none;
   position: fixed;
   z-index: 30;
   pointer-events: none;
@@ -2122,24 +2165,50 @@ button.layer-blend-dot:disabled {
   background: rgba(31, 111, 98, 0.14);
 }
 
+.selection-marquee.is-active {
+  display: block;
+}
+
 .timeline {
   position: fixed;
-  left: 70px;
-  right: 18px;
-  bottom: 54px;
+  left: 0;
+  right: 0;
+  bottom: var(--bottom-bar-height);
   z-index: 18;
   display: flex;
   gap: 8px;
   overflow-x: auto;
   padding: 8px;
   border: 2px solid #25221d;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
   background: rgba(255, 250, 240, 0.97);
   box-shadow: 0 -4px 0 rgba(37, 34, 29, 0.12);
   scrollbar-width: none;
+  animation: timeline-slide-up 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 .timeline::-webkit-scrollbar {
   display: none;
+}
+
+@keyframes timeline-slide-up {
+  from {
+    opacity: 0.85;
+    transform: translateY(100%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline {
+    animation: none;
+  }
 }
 
 .timeline-shot {
@@ -2190,8 +2259,8 @@ button.layer-blend-dot:disabled {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 48px;
-  padding: 8px 22px;
+  min-height: var(--bottom-bar-height);
+  padding: 5px 22px;
   border-top: 2px solid #25221d;
   background: rgba(255, 250, 240, 0.96);
   color: #4c463d;
@@ -2202,7 +2271,7 @@ button.layer-blend-dot:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-weight: 800;
+  font-weight: 400;
 }
 
 .bottom-bar input[type="range"] {
@@ -2224,7 +2293,7 @@ button.layer-blend-dot:disabled {
 .status-popover {
   position: fixed;
   right: 22px;
-  bottom: 8px;
+  bottom: calc((var(--bottom-bar-height) - var(--status-toggle-size)) / 2);
   z-index: 35;
   display: grid;
   justify-items: end;
@@ -2232,14 +2301,14 @@ button.layer-blend-dot:disabled {
 }
 
 .status-toggle {
-  width: 30px;
-  height: 30px;
+  width: var(--status-toggle-size);
+  height: var(--status-toggle-size);
   border-radius: 50%;
   padding: 0;
   background: rgba(255, 250, 240, 0.72);
   color: #6f6a62;
   border-color: #9a958d;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 900;
   line-height: 1;
   box-shadow: none;
@@ -2322,34 +2391,28 @@ button.layer-blend-dot:disabled {
   --slate-accent: #ff642d;
   --slate-accent-soft: rgba(255, 100, 45, 0.24);
   --slate-accent-ink: #151719;
+  --slate-tool-icon: color-mix(in srgb, var(--slate-muted), var(--slate-bg) 26%);
+  --slate-tool-icon-selected: color-mix(in srgb, #fff7ed, var(--slate-accent) 34%);
   --slate-good: #50bfa5;
   --slate-warn: #f2bc5b;
   --slate-danger: #f08a68;
-  --slate-radius: 8px;
-  --slate-shadow-card: 0 14px 32px rgba(0, 0, 0, 0.28);
-  --slate-shadow-panel: 0 18px 48px rgba(0, 0, 0, 0.38);
+  --slate-radius: 6px;
+  --slate-shadow-card: 0 1px 0 rgba(0, 0, 0, 0.28);
+  --slate-shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.24);
   color: var(--slate-ink);
   background: var(--slate-bg);
 }
 
 body {
-  background:
-    linear-gradient(90deg, rgba(243, 239, 228, 0.028) 1px, transparent 1px),
-    linear-gradient(rgba(243, 239, 228, 0.028) 1px, transparent 1px),
-    radial-gradient(circle at 16% 0%, rgba(255, 255, 255, 0.055), transparent 28%),
-    linear-gradient(145deg, #151719 0%, #1b1e21 54%, #111315 100%);
+  background: #151719;
 }
 
 button,
 .color-control {
   border-color: var(--slate-line);
-  background:
-    linear-gradient(180deg, var(--slate-panel-glow), transparent),
-    linear-gradient(#30363c, #252a2f);
+  background: #252a2f;
   color: var(--slate-ink);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.065),
-    0 1px 0 rgba(0, 0, 0, 0.52);
+  box-shadow: none;
   transition:
     background 120ms ease,
     border-color 120ms ease,
@@ -2359,9 +2422,7 @@ button,
 
 button:hover {
   border-color: var(--slate-line-strong);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.075), transparent),
-    linear-gradient(#3a4148, #2b3137);
+  background: #2b3036;
 }
 
 button:focus-visible,
@@ -2372,11 +2433,9 @@ button:focus-visible,
 
 button.primary {
   border-color: color-mix(in srgb, var(--slate-accent), black 36%);
-  background: linear-gradient(#ff7440, var(--slate-accent));
+  background: var(--slate-accent);
   color: var(--slate-accent-ink);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 1px 0 rgba(0, 0, 0, 0.56);
+  box-shadow: none;
 }
 
 button:disabled {
@@ -2455,9 +2514,7 @@ button:disabled {
   border-color: var(--slate-line);
   background: var(--slate-panel);
   color: var(--slate-text);
-  box-shadow:
-    var(--slate-shadow-panel),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: var(--slate-shadow-panel);
 }
 
 .script-import-modal-backdrop,
@@ -2532,34 +2589,31 @@ button:disabled {
 .tool-rail button,
 .tool-rail .color-control {
   border-color: color-mix(in srgb, var(--slate-line), white 8%);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent),
-    #252b30;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.07),
-    0 8px 18px rgba(0, 0, 0, 0.22);
+  background: #252b30;
+  box-shadow: none;
+}
+
+.tool-rail button .tool-icon,
+.tool-rail .color-control .tool-icon {
+  color: var(--slate-tool-icon);
 }
 
 .tool-rail button:hover,
 .tool-rail .color-control:hover {
   border-color: color-mix(in srgb, var(--slate-line-strong), white 8%);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.09), transparent),
-    #2d343b;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.09),
-    0 10px 22px rgba(0, 0, 0, 0.26);
+  background: #2d343b;
+  box-shadow: none;
 }
 
 .tool-rail button.selected {
   border-color: color-mix(in srgb, var(--slate-accent), black 34%);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent),
-    var(--slate-accent);
-  color: var(--slate-accent-ink);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    0 10px 24px rgba(255, 100, 45, 0.25);
+  background: var(--slate-accent);
+  color: #fff7ed;
+  box-shadow: none;
+}
+
+.tool-rail button.selected .tool-icon {
+  color: var(--slate-tool-icon-selected);
 }
 
 .tool-rail .color-control input {
@@ -2572,13 +2626,9 @@ button:disabled {
 
 .shot-card {
   border: 1px solid var(--slate-line);
-  background:
-    linear-gradient(180deg, var(--slate-panel-glow), transparent 38%),
-    var(--slate-panel);
-  border-radius: 10px;
-  box-shadow:
-    var(--slate-shadow-card),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: var(--slate-panel);
+  border-radius: var(--slate-radius);
+  box-shadow: var(--slate-shadow-card);
   transition:
     border-color 140ms ease,
     box-shadow 140ms ease,
@@ -2587,24 +2637,25 @@ button:disabled {
 
 .shot-card:hover {
   border-color: color-mix(in srgb, var(--slate-line-strong), white 8%);
-  box-shadow:
-    0 16px 36px rgba(0, 0, 0, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.32);
 }
 
 .shot-card.is-selected {
   outline: 0;
   border-color: var(--slate-accent);
-  box-shadow:
-    0 0 0 3px rgba(255, 100, 45, 0.38),
-    0 18px 40px rgba(0, 0, 0, 0.38),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.42);
+}
+
+.board-grid.is-marquee-selecting .shot-card {
+  transition: none;
+}
+
+.board-grid.is-marquee-selecting .shot-card.is-selected {
+  box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.42);
 }
 
 .shot-card.has-layer-panel-open {
-  box-shadow:
-    0 0 0 2px rgba(255, 100, 45, 0.22),
-    0 24px 48px rgba(0, 0, 0, 0.42);
+  box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.22);
 }
 
 .shot-face-back {
@@ -2719,14 +2770,10 @@ button:disabled {
 
 .layer-panel {
   border-color: var(--slate-line);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 42%),
-    #202429;
+  background: #202429;
   color: var(--slate-text);
-  border-radius: 9px;
-  box-shadow:
-    0 22px 48px rgba(0, 0, 0, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border-radius: var(--slate-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
 }
 
 .shot-image-shell.has-layer-panel .layer-panel {
@@ -2893,7 +2940,15 @@ button:disabled {
 }
 
 .empty-state {
-  color: var(--slate-muted);
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 60%);
+}
+
+.empty-state h2 {
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 64%);
+}
+
+.empty-state p {
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 72%);
 }
 
 .timeline {
