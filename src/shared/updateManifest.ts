@@ -14,6 +14,16 @@ export type AvailableUpdate = {
   downloadUrl: string;
 };
 
+export const cacheBustedUpdateManifestUrl = (url: string, cacheKey: string | number): string => {
+  try {
+    const nextUrl = new URL(url);
+    nextUrl.searchParams.set("_", String(cacheKey));
+    return nextUrl.toString();
+  } catch {
+    return url;
+  }
+};
+
 export const isVersionGreater = (candidate: string, current: string): boolean => {
   const candidateParts = parseVersion(candidate);
   const currentParts = parseVersion(current);

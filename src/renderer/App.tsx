@@ -68,7 +68,9 @@ import {
 } from "../shared/projectOps";
 import { generatedShotTransparentLayerAssets } from "../shared/generatedShotAssets";
 import {
+  cacheBustedUpdateManifestUrl,
   findAvailableUpdate,
+  isVersionGreater,
   parseUpdateManifest,
   type AvailableUpdate
 } from "../shared/updateManifest";
@@ -568,7 +570,8 @@ export const App = () => {
     setUpdateNotice({ status: "checking" });
     try {
       const appInfo = await window.storyboard.getAppInfo();
-      const response = await fetch(appInfo.updateManifestUrl, { cache: "no-store" });
+      const manifestUrl = cacheBustedUpdateManifestUrl(appInfo.updateManifestUrl, Date.now());
+      const response = await fetch(manifestUrl, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`Update check failed with status ${response.status}`);
       }
@@ -578,12 +581,22 @@ export const App = () => {
         throw new Error("Update manifest is invalid.");
       }
 
-      const update = findAvailableUpdate({
+      const platformUpdate = findAvailableUpdate({
         currentVersion: appInfo.version,
         platform: appInfo.platform,
         arch: appInfo.arch,
         manifest
       });
+      const update =
+        platformUpdate ??
+        (isVersionGreater(manifest.latest, appInfo.version)
+          ? {
+              version: manifest.latest,
+              notes: `No direct ${appInfo.platform}/${appInfo.arch} package is listed. Open the release page to choose manually.`,
+              releaseUrl: manifest.releaseUrl,
+              downloadUrl: manifest.releaseUrl
+            }
+          : undefined);
       setUpdateNotice(update ? { status: "available", update } : { status: "current" });
       if (!update && notifyWhenCurrent) {
         setStatus(`Storyboard Flow ${appInfo.version} is up to date`);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cacheBustedUpdateManifestUrl,
   currentPlatformDownloadKey,
   findAvailableUpdate,
   isVersionGreater,
@@ -7,6 +8,17 @@ import {
 } from "./updateManifest";
 
 describe("updateManifest", () => {
+  it("adds a cache-busting query to manifest URLs", () => {
+    expect(
+      cacheBustedUpdateManifestUrl(
+        "https://raw.githubusercontent.com/lixia88725/storyboard-flow-releases/main/update.json",
+        123
+      )
+    ).toBe("https://raw.githubusercontent.com/lixia88725/storyboard-flow-releases/main/update.json?_=123");
+
+    expect(cacheBustedUpdateManifestUrl("not a url", 123)).toBe("not a url");
+  });
+
   it("detects a newer semantic version", () => {
     expect(isVersionGreater("0.1.1", "0.1.0")).toBe(true);
     expect(isVersionGreater("0.2.0", "0.1.9")).toBe(true);
