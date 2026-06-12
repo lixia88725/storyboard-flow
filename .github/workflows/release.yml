@@ -121,7 +121,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release-zips
-          find artifacts -type f -name "*.zip" -exec cp {} release-zips/ \;
+          find artifacts -type f -name "Storyboard-Flow-*.zip" -exec cp {} release-zips/ \;
           ls -lh release-zips
           test -f release-zips/Storyboard-Flow-Windows-x64.zip
       - name: Resolve release metadata
@@ -183,4 +183,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add update.json
           git commit -m "Update Storyboard Flow $STORYBOARD_FLOW_VERSION manifest" || exit 0
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${RELEASE_REPO}.git"
           git push
