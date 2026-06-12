@@ -20,6 +20,12 @@ npm run check:preload
 npm run dev
 ```
 
+## Release Automation
+
+`main` 分支已经接入 GitHub Actions 发布流程。`git push origin main` 会自动运行验证、构建 Windows portable zip 和 macOS Apple Silicon `.app` zip，把产物发布到公开仓库 `lixia88725/storyboard-flow-releases`，并更新该仓库的 `update.json`。源代码仓库仍是 `lixia88725/storyboard-flow`。
+
+当前软件内更新不是静默自动安装：打包版 Storyboard Flow 会检查 `update.json`，有新版本时在右下角状态/信息面板提示，用户点击 `Download` 后手动下载替换。Windows 当前分发的是便携文件夹 zip；macOS 当前分发的是未 notarize 的 Apple Silicon `.app` zip。
+
 ## Developer Map
 
 如果是接手开发，先读 `AGENTS.md`、`decisions.md`、`context-handoff.md` 和 `todo.md`。常用入口：

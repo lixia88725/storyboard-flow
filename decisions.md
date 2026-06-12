@@ -10,6 +10,12 @@
 
 Reason: 产品命名需要统一，避免用户和 AI agent 混乱；但内部格式名已经写入旧项目、TIFF XMP、测试和 Photoshop 交换路径。彻底迁移内部格式应作为单独任务处理，包含旧项目读取、首次保存迁移、XMP 兼容和 smoke 覆盖。
 
+## Tester Releases Use GitHub Release Plus Update Notice
+
+当前测试期发布方式是：源代码仓库 `lixia88725/storyboard-flow` 的 `main` 被 push 后，由 GitHub Actions 构建 Windows portable zip 和 macOS Apple Silicon `.app` zip，并发布到公开 release 仓库 `lixia88725/storyboard-flow-releases`。应用读取 release 仓库的 `update.json`，在有新版本时显示软件内更新提示，但不静默下载安装。
+
+Reason: 早期测试需要快速分发和收集反馈，优先减少人工打包/传文件成本；但正式安装器、静默更新、macOS notarization、Windows code signing 都会增加发布复杂度。当前策略把“发现新版本”和“下载安装”分开，适合朋友/同事小范围测试。
+
 ## Folder Is The Project Boundary
 
 一个场景 = 一个本地图片文件夹。
