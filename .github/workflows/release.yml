@@ -17,14 +17,19 @@ env:
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - run: npm ci
+      - name: Install macOS Photoshop TIFF Python deps
+        run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
       - run: npm run test
       - run: npm run typecheck
 
