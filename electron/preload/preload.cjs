@@ -58,6 +58,8 @@ const api = {
   },
   finishSaveAndClose: (payload) => ipcRenderer.invoke("app:finishSaveAndClose", payload),
   updateCloseGuard: (payload) => ipcRenderer.invoke("app:updateCloseGuard", payload),
+  getAppInfo: () => ipcRenderer.invoke("app:getInfo"),
+  openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
   assetUrl: (filePath) => `storyboard-img://asset?path=${encodeURIComponent(filePath)}`
 };
 

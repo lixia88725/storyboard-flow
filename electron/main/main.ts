@@ -6,6 +6,7 @@ import {
   Menu,
   net,
   protocol,
+  shell,
   type IpcMainInvokeEvent
 } from "electron";
 import { copyFile, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
@@ -501,6 +502,22 @@ const registerIpcHandlers = () => {
     }
 
     closeGuardWebContentsIds.delete(event.sender.id);
+  });
+
+  ipcMain.handle("app:getInfo", () => ({
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    updateManifestUrl:
+      process.env.STORYBOARD_FLOW_UPDATE_MANIFEST_URL ??
+      "https://raw.githubusercontent.com/lixia88725/storyboard-flow-releases/main/update.json"
+  }));
+
+  ipcMain.handle("app:openExternal", async (_event, url: string) => {
+    if (!/^https:\/\//iu.test(url)) {
+      throw new Error("Only HTTPS URLs can be opened externally.");
+    }
+    await shell.openExternal(url);
   });
 
   ipcMain.handle("workspace:autosave", async (_event, payload: ProjectPayload) => {

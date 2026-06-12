@@ -164,6 +164,15 @@ const api = {
     ipcRenderer.invoke("app:finishSaveAndClose", payload) as Promise<void>,
   updateCloseGuard: (payload: { hasUnsavedChanges: boolean }) =>
     ipcRenderer.invoke("app:updateCloseGuard", payload) as Promise<void>,
+  getAppInfo: () =>
+    ipcRenderer.invoke("app:getInfo") as Promise<{
+      version: string;
+      platform: NodeJS.Platform;
+      arch: NodeJS.Architecture;
+      updateManifestUrl: string;
+    }>,
+  openExternal: (url: string) =>
+    ipcRenderer.invoke("app:openExternal", url) as Promise<void>,
   assetUrl: (filePath: string) => `storyboard-img://asset?path=${encodeURIComponent(filePath)}`
 };
 

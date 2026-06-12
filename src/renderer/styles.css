@@ -2400,6 +2400,41 @@ button.layer-blend-dot:disabled {
   white-space: nowrap;
 }
 
+.update-notice {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 7px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #b8795d;
+  border-radius: 5px;
+  background: #fff6ee;
+  color: #6e2f1b;
+}
+
+.update-notice span,
+.update-notice small {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
+.update-notice small {
+  color: #7e7468;
+}
+
+.update-notice button,
+.status-panel-action {
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 5px;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.status-panel-action {
+  justify-self: start;
+}
+
 /* Production Slate theme overrides. Keep base layout rules above this section. */
 :root {
   --slate-bg: #151719;
@@ -3038,4 +3073,21 @@ button:disabled {
   border-color: color-mix(in srgb, var(--slate-danger), black 28%);
   background: #251717;
   color: #ffd1bf;
+}
+
+.update-notice {
+  border-color: color-mix(in srgb, var(--slate-warn), black 36%);
+  background: #2d2824;
+  color: var(--slate-text);
+}
+
+.update-notice small {
+  color: var(--slate-muted);
+}
+
+.update-notice button,
+.status-panel-action {
+  border-color: var(--slate-line);
+  background: #252a2f;
+  color: var(--slate-text);
 }

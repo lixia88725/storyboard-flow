@@ -146,6 +146,13 @@ declare global {
       onSaveAndCloseRequested: (callback: (request: { requestId: string }) => void) => () => void;
       finishSaveAndClose: (payload: { requestId: string; saved: boolean }) => Promise<void>;
       updateCloseGuard: (payload: { hasUnsavedChanges: boolean }) => Promise<void>;
+      getAppInfo: () => Promise<{
+        version: string;
+        platform: NodeJS.Platform;
+        arch: NodeJS.Architecture;
+        updateManifestUrl: string;
+      }>;
+      openExternal: (url: string) => Promise<void>;
       assetUrl: (filePath: string) => string;
     };
   }

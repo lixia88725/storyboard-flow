@@ -1,10 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootPackageJson = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8"));
+const packageVersion = process.env.STORYBOARD_FLOW_VERSION ?? rootPackageJson.version;
+const macArch = process.env.STORYBOARD_FLOW_MAC_ARCH ?? process.arch;
 const outputRoot =
   process.env.STORYBOARD_FLOW_PACKAGE_DIR ??
   path.resolve(repoRoot, "../../..", "storyboard-flow-packages");
@@ -14,6 +17,8 @@ const appName = "Storyboard Flow";
 const appDir = path.join(packageRoot, `${appName}.app`);
 const appResources = path.join(appDir, "Contents", "Resources");
 const packagedAppRoot = path.join(appResources, "app");
+const sharpRuntimePackage = `sharp-darwin-${macArch}`;
+const sharpLibvipsPackage = `sharp-libvips-darwin-${macArch}`;
 
 const requiredSourcePaths = [
   path.join(repoRoot, "dist", "index.html"),
@@ -22,8 +27,8 @@ const requiredSourcePaths = [
   path.join(repoRoot, "dist-resources", "python-deps", "photoshop-tiff"),
   path.join(repoRoot, "node_modules", "electron", "dist", "Electron.app"),
   path.join(repoRoot, "node_modules", "sharp"),
-  path.join(repoRoot, "node_modules", "@img", "sharp-darwin-arm64"),
-  path.join(repoRoot, "node_modules", "@img", "sharp-libvips-darwin-arm64"),
+  path.join(repoRoot, "node_modules", "@img", sharpRuntimePackage),
+  path.join(repoRoot, "node_modules", "@img", sharpLibvipsPackage),
   path.join(repoRoot, "node_modules", "@img", "colour"),
   path.join(repoRoot, "node_modules", "detect-libc"),
   path.join(repoRoot, "node_modules", "semver")
@@ -35,14 +40,12 @@ const requiredPackagedPaths = [
   path.join(packagedAppRoot, "dist-electron", "main", "main.js"),
   path.join(packagedAppRoot, "electron", "preload", "preload.cjs"),
   path.join(packagedAppRoot, "node_modules", "sharp"),
-  path.join(packagedAppRoot, "node_modules", "@img", "sharp-darwin-arm64", "lib", "sharp-darwin-arm64.node"),
+  path.join(packagedAppRoot, "node_modules", "@img", sharpRuntimePackage),
   path.join(
     packagedAppRoot,
     "node_modules",
     "@img",
-    "sharp-libvips-darwin-arm64",
-    "lib",
-    "libvips-cpp.8.17.3.dylib"
+    sharpLibvipsPackage
   ),
   path.join(appResources, "python-deps", "photoshop-tiff")
 ];
@@ -90,9 +93,9 @@ run("/usr/libexec/PlistBuddy", [
   "-c",
   "Set :CFBundleName Storyboard Flow",
   "-c",
-  "Set :CFBundleShortVersionString 0.1.0",
+  `Set :CFBundleShortVersionString ${packageVersion}`,
   "-c",
-  "Set :CFBundleVersion 0.1.0",
+  `Set :CFBundleVersion ${packageVersion}`,
   path.join(appDir, "Contents", "Info.plist")
 ]);
 
@@ -119,8 +122,8 @@ await cp(
 await cp(path.join(repoRoot, "dist-resources"), appResources, { recursive: true });
 
 await copyNodeModule("sharp");
-await copyNodeModule("@img", "sharp-darwin-arm64");
-await copyNodeModule("@img", "sharp-libvips-darwin-arm64");
+await copyNodeModule("@img", sharpRuntimePackage);
+await copyNodeModule("@img", sharpLibvipsPackage);
 await copyNodeModule("@img", "colour");
 await copyNodeModule("detect-libc");
 await copyNodeModule("semver");
@@ -131,7 +134,7 @@ await writeFile(
     {
       name: "storyboard-flow",
       productName: "Storyboard Flow",
-      version: "0.1.0",
+      version: packageVersion,
       private: true,
       type: "module",
       main: "dist-electron/main/main.js",
@@ -156,7 +159,7 @@ if (existsSync(wrongPythonDepsPath)) {
 
 run("codesign", ["--force", "--deep", "--sign", "-", appDir]);
 
-const zipPath = path.join(packageRoot, `${appName}-macOS-arm64.zip`);
+const zipPath = path.join(packageRoot, `Storyboard-Flow-macOS-${macArch}.zip`);
 run("ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", appDir, zipPath]);
 
 console.log(`Packaged ${appDir}`);

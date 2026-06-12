@@ -67,6 +67,11 @@ import {
   bitmapLayerPath,
 } from "../shared/projectOps";
 import { generatedShotTransparentLayerAssets } from "../shared/generatedShotAssets";
+import {
+  findAvailableUpdate,
+  parseUpdateManifest,
+  type AvailableUpdate
+} from "../shared/updateManifest";
 import type {
   BitmapLayer,
   Dialogue,
@@ -233,6 +238,10 @@ const ensureProjectBitmapMetadata = (project: Project): Project => ({
 });
 
 type WorkspaceSaveState = "saved" | "saving" | "error";
+type UpdateNoticeState =
+  | { status: "idle" | "checking" | "current" | "dismissed" }
+  | { status: "available"; update: AvailableUpdate }
+  | { status: "error"; message: string };
 type FileNameSyncState = "synced" | "unsynced";
 type WorkspaceTask = {
   kind: "save" | "import" | "open";
@@ -423,6 +432,7 @@ export const App = () => {
   const [saveErrorDialog, setSaveErrorDialog] = useState<string | undefined>();
   const [storyboardScriptImportDraft, setStoryboardScriptImportDraft] =
     useState<StoryboardScriptImportDraft | undefined>();
+  const [updateNotice, setUpdateNotice] = useState<UpdateNoticeState>({ status: "idle" });
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<UndoEntry[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>({ type: "shot" });
@@ -548,6 +558,53 @@ export const App = () => {
     () => () => clearPasteAnimation(pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef),
     []
   );
+
+  const checkForUpdates = useCallback(async (notifyWhenCurrent = false) => {
+    if (!window.storyboard?.getAppInfo) {
+      return;
+    }
+
+    setUpdateNotice({ status: "checking" });
+    try {
+      const appInfo = await window.storyboard.getAppInfo();
+      const response = await fetch(appInfo.updateManifestUrl, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Update check failed with status ${response.status}`);
+      }
+
+      const manifest = parseUpdateManifest(await response.json());
+      if (!manifest) {
+        throw new Error("Update manifest is invalid.");
+      }
+
+      const update = findAvailableUpdate({
+        currentVersion: appInfo.version,
+        platform: appInfo.platform,
+        arch: appInfo.arch,
+        manifest
+      });
+      setUpdateNotice(update ? { status: "available", update } : { status: "current" });
+      if (!update && notifyWhenCurrent) {
+        setStatus(`Storyboard Flow ${appInfo.version} is up to date`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setUpdateNotice({ status: "error", message });
+      if (notifyWhenCurrent) {
+        setStatus(`Update check failed: ${message}`);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkForUpdates(false);
+  }, [checkForUpdates]);
+
+  const openUpdateDownload = (update: AvailableUpdate) => {
+    void window.storyboard?.openExternal(update.downloadUrl).catch((error) => {
+      setStatus(`Could not open update download: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  };
 
   const syncZoomControlDisplay = useCallback((zoom: number) => {
     const normalizedZoom = normalizeStoryboardZoom(zoom);
@@ -4267,17 +4324,35 @@ export const App = () => {
         {isStatusPanelOpen ? (
           <div className="status-panel" aria-label="Workspace status">
             <span>{status}</span>
+            {updateNotice.status === "available" ? (
+              <div className="update-notice" role="status">
+                <span>Storyboard Flow {updateNotice.update.version} is available.</span>
+                {updateNotice.update.notes ? <small>{updateNotice.update.notes}</small> : null}
+                <button type="button" onClick={() => openUpdateDownload(updateNotice.update)}>
+                  Download
+                </button>
+                <button type="button" onClick={() => setUpdateNotice({ status: "dismissed" })}>
+                  Later
+                </button>
+              </div>
+            ) : null}
             <span>{project.shots.length} shots</span>
             <span>{parkedShots.length} pending</span>
             <span>Workspace {workspaceSaveState}</span>
             <span>File names {fileNameSyncState}</span>
             <span>{needsSwbImport ? "SWB import needed" : hasSwbWarning ? "SWB warning" : "SWB ready"}</span>
+            <button type="button" className="status-panel-action" onClick={() => void checkForUpdates(true)}>
+              {updateNotice.status === "checking" ? "Checking..." : "Check for updates"}
+            </button>
           </div>
         ) : null}
         <button
           type="button"
           className={`status-toggle ${
-            workspaceSaveState === "error" || fileNameSyncState === "unsynced" || hasSwbWarning
+            workspaceSaveState === "error" ||
+            fileNameSyncState === "unsynced" ||
+            hasSwbWarning ||
+            updateNotice.status === "available"
               ? "needs-attention"
               : ""
           }`}
