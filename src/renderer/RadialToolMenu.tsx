@@ -26,6 +26,7 @@ type RadialToolMenuProps = {
   tool: StrokeTool;
   x: number;
   y: number;
+  isClosing?: boolean;
   settings: SketchToolSettings;
   onApplyPreset: (slot: RadialPresetSlot) => void;
   onAdjust: (kind: RadialDragKind, value: number) => void;
@@ -35,7 +36,7 @@ type RadialToolMenuProps = {
 
 const radialSize = 218;
 const radialItemSize = 44;
-const radialRadius = 86;
+const radialRadius = 72;
 
 const dragKindForSlot = (slot: RadialToolSlot): RadialDragKind | undefined => {
   if (slot.type === "size-drag") {
@@ -153,6 +154,7 @@ export const RadialToolMenu = ({
   tool,
   x,
   y,
+  isClosing = false,
   settings,
   onApplyPreset,
   onAdjust,
@@ -278,7 +280,11 @@ export const RadialToolMenu = ({
 
   return (
     <div className="radial-tool-layer" onContextMenu={(event) => event.preventDefault()}>
-      <div ref={menuRef} className="radial-tool-menu" style={menuStyle}>
+      <div
+        ref={menuRef}
+        className={`radial-tool-menu ${isClosing ? "is-closing" : ""}`}
+        style={menuStyle}
+      >
         <button
           type="button"
           className="radial-tool-center"

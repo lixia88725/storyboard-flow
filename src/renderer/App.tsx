@@ -205,6 +205,7 @@ const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: stri
 const autosaveDelayMs = 600;
 const animationReservedBottom = 180;
 const animationViewportMargin = 14;
+const radialToolMenuCloseAnimationMs = 140;
 
 const projectChangedDuringLoad = (before: Project, after: Project): boolean => {
   if (before.shots.length !== after.shots.length) {
@@ -239,7 +240,7 @@ type WorkspaceTask = {
   current: number;
   total: number;
 };
-type RadialToolMenuState = { tool: StrokeTool; x: number; y: number };
+type RadialToolMenuState = { tool: StrokeTool; x: number; y: number; isClosing?: boolean };
 type UndoEntry = {
   project: Project;
   selectedShotIds: string[];
@@ -449,6 +450,7 @@ export const App = () => {
   const zoomInputRef = useRef<HTMLInputElement | null>(null);
   const zoomValueLabelRef = useRef<HTMLSpanElement | null>(null);
   const selectedShotCountLabelRef = useRef<HTMLSpanElement | null>(null);
+  const radialToolMenuCloseTimeoutRef = useRef<number | undefined>(undefined);
   const pendingZoomPreviewLevelRef = useRef<number | undefined>(undefined);
   const zoomPreviewFrameRef = useRef<number | undefined>(undefined);
   const zoomPreviewStateRef = useRef<ZoomPreviewState | undefined>(undefined);
@@ -3429,6 +3431,44 @@ export const App = () => {
     });
   };
 
+  const clearRadialToolMenuCloseTimeout = useCallback(() => {
+    if (radialToolMenuCloseTimeoutRef.current !== undefined) {
+      window.clearTimeout(radialToolMenuCloseTimeoutRef.current);
+      radialToolMenuCloseTimeoutRef.current = undefined;
+    }
+  }, []);
+
+  const openRadialToolMenu = useCallback(
+    (nextMenu: Omit<RadialToolMenuState, "isClosing">) => {
+      clearRadialToolMenuCloseTimeout();
+      setRadialToolMenu({ ...nextMenu, isClosing: false });
+    },
+    [clearRadialToolMenuCloseTimeout]
+  );
+
+  const closeRadialToolMenu = useCallback(() => {
+    clearRadialToolMenuCloseTimeout();
+
+    const shouldReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (shouldReduceMotion) {
+      setRadialToolMenu(undefined);
+      return;
+    }
+
+    setRadialToolMenu((current) => {
+      if (!current) {
+        return undefined;
+      }
+      return { ...current, isClosing: true };
+    });
+    radialToolMenuCloseTimeoutRef.current = window.setTimeout(() => {
+      radialToolMenuCloseTimeoutRef.current = undefined;
+      setRadialToolMenu(undefined);
+    }, radialToolMenuCloseAnimationMs);
+  }, [clearRadialToolMenuCloseTimeout]);
+
+  useEffect(() => clearRadialToolMenuCloseTimeout, [clearRadialToolMenuCloseTimeout]);
+
   const openSketchCanvasContextMenu = (event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
     if (target.closest("input, textarea, select, .save-menu")) {
@@ -3438,7 +3478,7 @@ export const App = () => {
     const action = radialCanvasContextMenuAction({
       isCanvasTarget: Boolean(target.closest(".image-stage")),
       isInsideRadialMenu: Boolean(target.closest(".radial-tool-menu")),
-      hasOpenRadialMenu: Boolean(radialToolMenu),
+      hasOpenRadialMenu: Boolean(radialToolMenu && !radialToolMenu.isClosing),
       activeTool: activeSketchTool
     });
 
@@ -3448,7 +3488,7 @@ export const App = () => {
 
     event.preventDefault();
     if (action === "close") {
-      setRadialToolMenu(undefined);
+      closeRadialToolMenu();
       return;
     }
 
@@ -3461,7 +3501,7 @@ export const App = () => {
       return;
     }
 
-    setRadialToolMenu({
+    openRadialToolMenu({
       tool: activeSketchTool,
       x: event.clientX,
       y: event.clientY
@@ -3495,7 +3535,7 @@ export const App = () => {
   };
   const applyRadialPreset = (slot: RadialPresetSlot) => {
     applySketchToolSettings(applyRadialPresetSlot(currentSketchToolSettings, slot));
-    setRadialToolMenu(undefined);
+    closeRadialToolMenu();
   };
   const adjustRadialToolValue = (kind: RadialDragKind, value: number) => {
     if (activeSketchTool === "brush") {
@@ -3892,7 +3932,7 @@ export const App = () => {
             className={activeSketchTool === "brush" ? "selected" : ""}
             onClick={() => {
               setActiveSketchTool("brush");
-              setRadialToolMenu(undefined);
+              closeRadialToolMenu();
             }}
             onContextMenu={(event) => event.preventDefault()}
             title="Brush"
@@ -3905,7 +3945,7 @@ export const App = () => {
             className={activeSketchTool === "eraser" ? "selected" : ""}
             onClick={() => {
               setActiveSketchTool("eraser");
-              setRadialToolMenu(undefined);
+              closeRadialToolMenu();
             }}
             onContextMenu={(event) => event.preventDefault()}
             title="Eraser"
@@ -3918,7 +3958,7 @@ export const App = () => {
             className={activeSketchTool === "select" ? "selected" : ""}
             onClick={() => {
               setActiveSketchTool("select");
-              setRadialToolMenu(undefined);
+              closeRadialToolMenu();
             }}
             title="Select"
             aria-label="Select"
@@ -3967,11 +4007,12 @@ export const App = () => {
             tool={radialToolMenu.tool}
             x={radialToolMenu.x}
             y={radialToolMenu.y}
+            isClosing={radialToolMenu.isClosing === true}
             settings={currentSketchToolSettings}
             onApplyPreset={applyRadialPreset}
             onAdjust={adjustRadialToolValue}
             onUpdateSlot={(index, slot) => updateRadialSlot(radialToolMenu.tool, index, slot)}
-            onClose={() => setRadialToolMenu(undefined)}
+            onClose={closeRadialToolMenu}
           />
         ) : null}
         <DndContext
@@ -4131,7 +4172,7 @@ export const App = () => {
                     onFill={(layerId, point, color) =>
                       handleBitmapFill(shot, layerId, point, color)
                     }
-                    onSketchBeginInteraction={() => setRadialToolMenu(undefined)}
+                    onSketchBeginInteraction={closeRadialToolMenu}
                   />
                 );
               })}
