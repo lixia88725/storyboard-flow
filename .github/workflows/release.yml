@@ -117,6 +117,13 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - name: Collect release zips
+        shell: bash
+        run: |
+          mkdir -p release-zips
+          find artifacts -type f -name "*.zip" -exec cp {} release-zips/ \;
+          ls -lh release-zips
+          test -f release-zips/Storyboard-Flow-Windows-x64.zip
       - name: Resolve release metadata
         shell: bash
         run: |
@@ -132,7 +139,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
         run: |
           gh release delete "$STORYBOARD_FLOW_TAG" --repo "$RELEASE_REPO" --yes --cleanup-tag || true
-          gh release create "$STORYBOARD_FLOW_TAG" artifacts/*.zip \
+          gh release create "$STORYBOARD_FLOW_TAG" release-zips/*.zip \
             --repo "$RELEASE_REPO" \
             --title "Storyboard Flow $STORYBOARD_FLOW_VERSION" \
             --notes "Storyboard Flow $STORYBOARD_FLOW_VERSION"
@@ -147,10 +154,10 @@ jobs:
           macos_arm64_url=""
           macos_x64_url=""
 
-          if [[ -f artifacts/Storyboard-Flow-macOS-arm64.zip ]]; then
+          if [[ -f release-zips/Storyboard-Flow-macOS-arm64.zip ]]; then
             macos_arm64_url="$asset_base/Storyboard-Flow-macOS-arm64.zip"
           fi
-          if [[ -f artifacts/Storyboard-Flow-macOS-x64.zip ]]; then
+          if [[ -f release-zips/Storyboard-Flow-macOS-x64.zip ]]; then
             macos_x64_url="$asset_base/Storyboard-Flow-macOS-x64.zip"
           fi
           export release_url windows_url macos_arm64_url macos_x64_url
