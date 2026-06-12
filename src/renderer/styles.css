@@ -2188,10 +2188,13 @@ button.layer-blend-dot:disabled {
 .selection-marquee {
   display: none;
   position: fixed;
+  left: 0;
+  top: 0;
   z-index: 30;
   pointer-events: none;
   border: 1px solid #1f6f62;
   background: rgba(31, 111, 98, 0.14);
+  will-change: transform, width, height;
 }
 
 .selection-marquee.is-active {
@@ -2710,12 +2713,23 @@ button:disabled {
   box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.42);
 }
 
+.shot-card.is-marquee-selected::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 2px solid rgba(255, 100, 45, 0.72);
+  border-radius: calc(var(--slate-radius) + 3px);
+  pointer-events: none;
+  z-index: 4;
+}
+
 .board-grid.is-marquee-selecting .shot-card {
   transition: none;
 }
 
 .board-grid.is-marquee-selecting .shot-card.is-selected {
-  box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.42);
+  border-color: var(--slate-line);
+  box-shadow: var(--slate-shadow-card);
 }
 
 .shot-card.has-layer-panel-open {

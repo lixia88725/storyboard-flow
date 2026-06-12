@@ -138,6 +138,7 @@ import { Timeline } from "./Timeline";
 import { formatSaveFailureStatus } from "./saveErrors";
 import {
   createMarqueeBox,
+  marqueeDisplayedSelectionIds,
   marqueeSelectionClassChanges,
   marqueeViewportRect,
   marqueeEdgeScrollDelta,
@@ -3405,7 +3406,8 @@ export const App = () => {
     shotSelectionAnchorIdRef.current = undefined;
     selectedShotIdsRef.current = [];
     deleteTargetRef.current = { type: "shot" };
-    applyMarqueeShotSelection(marqueeShotElements, initialSelectedShotIds, marqueeSelectedShotIds);
+    clearCommittedMarqueeShotSelection(marqueeShotElements, initialSelectedShotIds);
+    applyMarqueeShotSelection(marqueeShotElements, [], marqueeSelectedShotIds);
     applySelectedShotCountLabel(selectedShotCountLabelRef.current, marqueeSelectedShotIds.length);
     let latestPointer = { clientX: event.clientX, clientY: event.clientY };
     let marqueeFrame: number | undefined;
@@ -3469,6 +3471,9 @@ export const App = () => {
       }
       hideSelectionMarquee(selectionMarqueeRef.current);
       board.classList.remove("is-marquee-selecting");
+      window.requestAnimationFrame(() => {
+        applyMarqueeShotSelection(marqueeShotElements, marqueeSelectedShotIds, []);
+      });
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
@@ -4456,10 +4461,19 @@ const applyMarqueeShotSelection = (
   const changes = marqueeSelectionClassChanges(previousShotIds, nextShotIds);
 
   changes.remove.forEach((shotId) => {
-    elements.get(shotId)?.classList.remove("is-selected");
+    elements.get(shotId)?.classList.remove("is-marquee-selected");
   });
   changes.add.forEach((shotId) => {
-    elements.get(shotId)?.classList.add("is-selected");
+    elements.get(shotId)?.classList.add("is-marquee-selected");
+  });
+};
+
+const clearCommittedMarqueeShotSelection = (
+  elements: ReadonlyMap<string, HTMLElement>,
+  selectedShotIds: string[]
+) => {
+  marqueeDisplayedSelectionIds(selectedShotIds).forEach((shotId) => {
+    elements.get(shotId)?.classList.remove("is-selected");
   });
 };
 
@@ -4475,8 +4489,7 @@ const applySelectionMarqueeStyle = (element: HTMLDivElement | null, box: Marquee
   }
 
   const rect = marqueeViewportRect(box);
-  element.style.left = `${rect.left}px`;
-  element.style.top = `${rect.top}px`;
+  element.style.transform = `translate3d(${rect.left}px, ${rect.top}px, 0)`;
   element.style.width = `${rect.width}px`;
   element.style.height = `${rect.height}px`;
 };
@@ -4496,8 +4509,7 @@ const hideSelectionMarquee = (element: HTMLDivElement | null) => {
   }
 
   element.classList.remove("is-active");
-  element.style.removeProperty("left");
-  element.style.removeProperty("top");
+  element.style.removeProperty("transform");
   element.style.removeProperty("width");
   element.style.removeProperty("height");
 };

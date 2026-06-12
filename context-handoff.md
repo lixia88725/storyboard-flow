@@ -6,7 +6,7 @@
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `main`
-- Current handoff date: 2026-06-06
+- Current handoff date: 2026-06-12
 - Previous handoff baseline: `0eb44c0 Document Storyboard Flow naming boundary`
 - Current goal of this handoff: preserve the latest feature work, validation results, and next-step map so another session or AI agent can continue without rediscovering context.
 
@@ -24,6 +24,20 @@
 - `Archive/` is only for preserving non-SWB originals during Import.
 - User-deleted storyboard source files move to system Trash on Save, not Archive.
 - `storyboard-script.md` is a human-editable mirror of JSON, not the primary data source.
+
+## Release And Update Automation
+
+- Source repository: `https://github.com/lixia88725/storyboard-flow`.
+- Public release repository: `https://github.com/lixia88725/storyboard-flow-releases`.
+- GitHub Actions workflow: `.github/workflows/release.yml`.
+- Required source-repo secret: `RELEASE_REPO_TOKEN`; it must have permission to create releases and push `update.json` in `lixia88725/storyboard-flow-releases`.
+- Trigger: every `git push origin main` automatically runs tests, builds the Windows portable package, builds the macOS Apple Silicon package, publishes a GitHub Release, and updates the public `update.json` manifest.
+- Version rule for push-triggered releases: `package.json` major/minor plus GitHub run number, e.g. `0.1.6`. Manual `workflow_dispatch` and `v*.*.*` tag releases are still supported.
+- Current update manifest URL: `https://raw.githubusercontent.com/lixia88725/storyboard-flow-releases/main/update.json`.
+- Current app update behavior: Storyboard Flow checks the manifest and shows an in-app update notice when `update.json.latest` is newer than the running packaged app version.
+- Windows package: `Storyboard-Flow-Windows-x64.zip` is a portable folder distribution. It includes the Electron runtime, app files, Windows Python runtime, and Photoshop TIFF Python dependencies; users can replace/overwrite the old folder with the new extracted folder.
+- macOS package: `Storyboard-Flow-macOS-arm64.zip` contains an Apple Silicon `.app`. It is ad-hoc signed but not Apple-notarized, so first launch may show macOS security prompts. Intel macOS builds are not currently published.
+- Not implemented: silent self-updating, installer-based updates, macOS notarization, code-signed Windows installer, Intel macOS package, or automatic release notes beyond the generated version label.
 
 ## What This Session Finished
 
