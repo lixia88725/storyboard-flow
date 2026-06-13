@@ -1,11 +1,13 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
   net,
   protocol,
+  safeStorage,
   shell,
   type IpcMainInvokeEvent
 } from "electron";
@@ -82,6 +84,28 @@ import {
   isWorkspaceTemporaryImagePath,
   workspaceCopyTemporaryFileName
 } from "./workspaceTemporaryPaths.js";
+import { applyAiCandidateAsLayer, discardAiCandidate } from "./ai/candidates.js";
+import { generateAiCandidate, type AiImageProviderName } from "./ai/generate.js";
+import { createOpenAiImageProvider } from "./ai/openAiImageProvider.js";
+import { buildAiRequestPreview } from "./ai/requestPreview.js";
+import { createSeedreamImageProvider } from "./ai/seedreamImageProvider.js";
+import {
+  deleteAiResourceFile,
+  importAiResourceFiles,
+  listAiResources,
+  writeAiResourceMetadata
+} from "./ai/resources.js";
+import type { AiResourceMetadata } from "./ai/context.js";
+import {
+  clearOpenAiApiKey,
+  clearSeedreamApiKey,
+  readAiCredentialStatus,
+  readOpenAiApiKey,
+  readSeedreamApiKey,
+  writeOpenAiApiKey,
+  writeSeedreamApiKey,
+  type AiCredentialStore
+} from "./ai/credentials.js";
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
@@ -113,6 +137,9 @@ type Project = {
     sceneCode: string;
     artistName: string;
     version: string;
+  };
+  ai?: {
+    projectContext?: string;
   };
   shots: Array<{
     id: string;
@@ -198,6 +225,26 @@ type ProjectPayload = {
   blankShotPreset?: BlankShotPreset;
   dirtyShotIds?: string[];
   preserveDirtyShotLayers?: boolean;
+};
+
+type AiGenerateCandidatePayload = {
+  folderPath: string;
+  project: Project;
+  shotId: string;
+  selectedShotContext?: string;
+  selectedResourceIds?: string[];
+  generationSettings?: {
+    provider?: AiImageProviderName;
+    model?: string;
+  };
+};
+
+type AiRequestPreviewPayload = AiGenerateCandidatePayload;
+
+type AiApplyCandidatePayload = {
+  folderPath: string;
+  project: Project;
+  candidateId: string;
 };
 
 type LayerAssetPayload = {
@@ -853,6 +900,71 @@ const registerIpcHandlers = () => {
     return writeToolRadialMenu(config);
   });
 
+  ipcMain.handle("ai:getSettings", async () => {
+    return readAiCredentialStatus(aiCredentialStore());
+  });
+
+  ipcMain.handle("ai:saveOpenAiApiKey", async (_event, apiKey: string) => {
+    return writeOpenAiApiKey(aiCredentialStore(), apiKey);
+  });
+
+  ipcMain.handle("ai:clearOpenAiApiKey", async () => {
+    return clearOpenAiApiKey(aiCredentialStore());
+  });
+
+  ipcMain.handle("ai:saveSeedreamApiKey", async (_event, apiKey: string) => {
+    return writeSeedreamApiKey(aiCredentialStore(), apiKey);
+  });
+
+  ipcMain.handle("ai:clearSeedreamApiKey", async () => {
+    return clearSeedreamApiKey(aiCredentialStore());
+  });
+
+  ipcMain.handle("ai:listResources", async (_event, folderPath: string) => {
+    return listAiResources(folderPath);
+  });
+
+  ipcMain.handle("ai:importResources", async (_event, folderPath: string, sourceFilePaths: string[]) => {
+    return importAiResourceFiles(folderPath, sourceFilePaths);
+  });
+
+  ipcMain.handle("ai:deleteResource", async (_event, folderPath: string, fileName: string) => {
+    return deleteAiResourceFile(folderPath, fileName);
+  });
+
+  ipcMain.handle("ai:updateResourceMetadata", async (_event, folderPath: string, metadata: AiResourceMetadata) => {
+    return writeAiResourceMetadata(folderPath, metadata);
+  });
+
+  ipcMain.handle("ai:generateCandidate", async (_event, payload: AiGenerateCandidatePayload) => {
+    const providerName = payload.generationSettings?.provider ?? "openai";
+    const apiKey =
+      providerName === "seedream"
+        ? await readSeedreamApiKey(aiCredentialStore())
+        : await readOpenAiApiKey(aiCredentialStore());
+    return generateAiCandidate({
+      ...payload,
+      provider:
+        providerName === "seedream"
+          ? createSeedreamImageProvider({ apiKey })
+          : createOpenAiImageProvider({ apiKey })
+    });
+  });
+
+  ipcMain.handle("ai:copyRequestPreview", async (_event, payload: AiRequestPreviewPayload) => {
+    const text = await buildAiRequestPreview(payload);
+    clipboard.writeText(text);
+    return { text };
+  });
+
+  ipcMain.handle("ai:discardCandidate", async (_event, folderPath: string, candidateId: string) => {
+    await discardAiCandidate(folderPath, candidateId);
+  });
+
+  ipcMain.handle("ai:applyCandidate", async (_event, payload: AiApplyCandidatePayload) => {
+    return applyAiCandidateAsLayer(payload);
+  });
+
 };
 
 const workspaceTaskProgressReporter =
@@ -1250,6 +1362,11 @@ const writeToolRadialMenu = async (config: unknown): Promise<unknown> => {
   await writeFile(toolRadialMenuPath(), `${JSON.stringify(config, null, 2)}\n`, "utf8");
   return config;
 };
+
+const aiCredentialStore = (): AiCredentialStore => ({
+  userDataPath: app.getPath("userData"),
+  crypto: safeStorage
+});
 
 const readRecentFolders = async (): Promise<string[]> => {
   try {

@@ -1,5 +1,6 @@
 import type {
   BlankShotOptions,
+  BitmapLayer,
   FolderScanPayload,
   ImportSwbFormatPayload,
   ImportedImage,
@@ -140,6 +141,106 @@ declare global {
       getRecentFolders: () => Promise<string[]>;
       getToolRadialMenu: () => Promise<unknown>;
       setToolRadialMenu: (config: unknown) => Promise<unknown>;
+      ai: {
+        getSettings: () => Promise<{
+          hasOpenAiApiKey: boolean;
+          hasSeedreamApiKey: boolean;
+        }>;
+        saveOpenAiApiKey: (apiKey: string) => Promise<{
+          hasOpenAiApiKey: boolean;
+          hasSeedreamApiKey: boolean;
+        }>;
+        clearOpenAiApiKey: () => Promise<{
+          hasOpenAiApiKey: boolean;
+          hasSeedreamApiKey: boolean;
+        }>;
+        saveSeedreamApiKey: (apiKey: string) => Promise<{
+          hasOpenAiApiKey: boolean;
+          hasSeedreamApiKey: boolean;
+        }>;
+        clearSeedreamApiKey: () => Promise<{
+          hasOpenAiApiKey: boolean;
+          hasSeedreamApiKey: boolean;
+        }>;
+        listResources: (folderPath: string) => Promise<{
+          resourcesFolderPath: string;
+          metadataPath: string;
+          resources: Array<{
+            id: string;
+            fileName: string;
+            filePath: string;
+            role: string;
+            note: string;
+          }>;
+        }>;
+        importResources: (folderPath: string, sourceFilePaths: string[]) => Promise<{
+          resourcesFolderPath: string;
+          metadataPath: string;
+          importedFileNames: string[];
+          resources: Array<{
+            id: string;
+            fileName: string;
+            filePath: string;
+            role: string;
+            note: string;
+          }>;
+        }>;
+        deleteResource: (folderPath: string, fileName: string) => Promise<{
+          resourcesFolderPath: string;
+          metadataPath: string;
+          resources: Array<{
+            id: string;
+            fileName: string;
+            filePath: string;
+            role: string;
+            note: string;
+          }>;
+        }>;
+        updateResourceMetadata: (
+          folderPath: string,
+          metadata: {
+            version: 1;
+            resources: Array<{ fileName: string; role: string; note: string }>;
+          }
+        ) => Promise<unknown>;
+        generateCandidate: (payload: {
+          folderPath: string;
+          project: Project;
+          shotId: string;
+          selectedShotContext?: string;
+          selectedResourceIds?: string[];
+          generationSettings?: {
+            provider?: "openai" | "seedream";
+            model?: string;
+          };
+        }) => Promise<{
+          id: string;
+          shotId: string;
+          bitmapPath: string;
+          filePath: string;
+          width: number;
+          height: number;
+          prompt: string;
+          createdAt: string;
+        }>;
+        copyRequestPreview: (payload: {
+          folderPath: string;
+          project: Project;
+          shotId: string;
+          selectedShotContext?: string;
+          selectedResourceIds?: string[];
+          generationSettings?: {
+            provider?: "openai" | "seedream";
+            model?: string;
+          };
+        }) => Promise<{ text: string }>;
+        discardCandidate: (folderPath: string, candidateId: string) => Promise<void>;
+        applyCandidate: (payload: {
+          folderPath: string;
+          project: Project;
+          candidateId: string;
+        }) => Promise<{ project: Project; layer: BitmapLayer }>;
+      };
       onOpenRecentFolder: (callback: (folderPath: string) => void) => () => void;
       onRecentFoldersChanged: (callback: (folders: string[]) => void) => () => void;
       onWorkspaceTaskProgress: (callback: (progress: WorkspaceTaskProgress) => void) => () => void;

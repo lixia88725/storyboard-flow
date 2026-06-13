@@ -36,6 +36,24 @@ const api = {
   getRecentFolders: () => ipcRenderer.invoke("recent:getFolders"),
   getToolRadialMenu: () => ipcRenderer.invoke("settings:getToolRadialMenu"),
   setToolRadialMenu: (config) => ipcRenderer.invoke("settings:setToolRadialMenu", config),
+  ai: {
+    getSettings: () => ipcRenderer.invoke("ai:getSettings"),
+    saveOpenAiApiKey: (apiKey) => ipcRenderer.invoke("ai:saveOpenAiApiKey", apiKey),
+    clearOpenAiApiKey: () => ipcRenderer.invoke("ai:clearOpenAiApiKey"),
+    saveSeedreamApiKey: (apiKey) => ipcRenderer.invoke("ai:saveSeedreamApiKey", apiKey),
+    clearSeedreamApiKey: () => ipcRenderer.invoke("ai:clearSeedreamApiKey"),
+    listResources: (folderPath) => ipcRenderer.invoke("ai:listResources", folderPath),
+    importResources: (folderPath, sourceFilePaths) =>
+      ipcRenderer.invoke("ai:importResources", folderPath, sourceFilePaths),
+    deleteResource: (folderPath, fileName) => ipcRenderer.invoke("ai:deleteResource", folderPath, fileName),
+    updateResourceMetadata: (folderPath, metadata) =>
+      ipcRenderer.invoke("ai:updateResourceMetadata", folderPath, metadata),
+    generateCandidate: (payload) => ipcRenderer.invoke("ai:generateCandidate", payload),
+    copyRequestPreview: (payload) => ipcRenderer.invoke("ai:copyRequestPreview", payload),
+    discardCandidate: (folderPath, candidateId) =>
+      ipcRenderer.invoke("ai:discardCandidate", folderPath, candidateId),
+    applyCandidate: (payload) => ipcRenderer.invoke("ai:applyCandidate", payload)
+  },
   onOpenRecentFolder: (callback) => {
     const listener = (_event, folderPath) => callback(folderPath);
     ipcRenderer.on("recent:openFolder", listener);

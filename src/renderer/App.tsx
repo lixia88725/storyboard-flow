@@ -134,6 +134,8 @@ import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, S
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
+import { AiDraftPanel } from "./ai/AiDraftPanel";
+import { toggleAiSidebar, togglePendingSidebar } from "./ai/sidebarState";
 import { RadialToolMenu } from "./RadialToolMenu";
 import { ShotCard, type CardFace } from "./ShotCard";
 import { Timeline } from "./Timeline";
@@ -182,6 +184,7 @@ import {
   type DragData
 } from "./storyboardDnd";
 import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
+import { shouldIgnoreWorkbenchWheelTarget } from "./workbenchWheel";
 import {
   applyRadialPresetSlot,
   defaultToolRadialMenuConfig,
@@ -360,14 +363,6 @@ const visibleLayerBelow = (
   return [...layers.slice(0, sourceIndex)].reverse().find((layer) => layer.visible);
 };
 
-const shouldIgnoreWorkbenchWheel = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  Boolean(
-    target.closest(
-      "input, textarea, select, .recent-menu, .add-shot-menu, .save-menu, .shortcut-menu, .radial-tool-menu, .layer-panel"
-    )
-  );
-
 const markdownPathFromDrop = (event: ReactDragEvent): string | undefined => {
   const files = Array.from(event.dataTransfer.files);
   if (files.length !== 1) {
@@ -441,6 +436,7 @@ export const App = () => {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>({ type: "shot" });
   const [selectedBitmapLayerIds, setSelectedBitmapLayerIds] = useState<SelectedBitmapLayerIds | undefined>();
   const [isParkingShelfOpen, setIsParkingShelfOpen] = useState(false);
+  const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
   const [clipboardSelection, setClipboardSelection] = useState<ClipboardSelection | undefined>();
   const [status, setStatus] = useState(
     window.storyboard ? "Ready" : "Electron preload API is unavailable"
@@ -842,7 +838,7 @@ export const App = () => {
     }
 
     const handleWheel = (event: globalThis.WheelEvent) => {
-      if (shouldIgnoreWorkbenchWheel(event.target)) {
+      if (shouldIgnoreWorkbenchWheelTarget(event.target)) {
         return;
       }
 
@@ -3644,6 +3640,45 @@ export const App = () => {
       }
     });
   };
+  const handleAiProjectChange = (nextProject: Project, nextStatus: string) => {
+    const currentProject = projectRef.current;
+    const changedLayerShotIds = nextProject.shots
+      .filter((nextShot) => {
+        const currentShot = currentProject.shots.find((shot) => shot.id === nextShot.id);
+        return (
+          currentShot?.activeLayerId !== nextShot.activeLayerId ||
+          JSON.stringify(currentShot?.layers ?? []) !== JSON.stringify(nextShot.layers ?? [])
+        );
+      })
+      .map((shot) => shot.id);
+    markShotsDirty(changedLayerShotIds);
+    setProject(nextProject);
+    projectRef.current = nextProject;
+    setWorkspaceSaveState("saving");
+    setAutosaveRevision((revision) => revision + 1);
+    setStatus(nextStatus);
+  };
+  const handleToggleAiPanel = () => {
+    if (!folderPath) {
+      setStatus("Open a folder before using AI Draft");
+      return;
+    }
+    const nextState = toggleAiSidebar({
+      isAiOpen: isAiPanelOpen,
+      isPendingOpen: isParkingShelfOpen
+    });
+    setIsAiPanelOpen(nextState.isAiOpen);
+    setIsParkingShelfOpen(nextState.isPendingOpen);
+  };
+  const handleTogglePendingShelf = () => {
+    const nextState = togglePendingSidebar({
+      isAiOpen: isAiPanelOpen,
+      isPendingOpen: isParkingShelfOpen
+    });
+    setIsAiPanelOpen(nextState.isAiOpen);
+    setIsParkingShelfOpen(nextState.isPendingOpen);
+  };
+  const isAiPanelVisible = Boolean(folderPath && isAiPanelOpen);
 
   return (
     <main
@@ -3651,7 +3686,8 @@ export const App = () => {
       className={[
         "app-shell",
         isAnimationMode ? "is-animation-mode" : "",
-        isParkingShelfOpen ? "has-parking-shelf-open" : ""
+        isParkingShelfOpen ? "has-parking-shelf-open" : "",
+        isAiPanelVisible ? "has-ai-panel-open" : ""
       ].filter(Boolean).join(" ")}
       onContextMenu={openSketchCanvasContextMenu}
       onDragOver={handleStoryboardScriptDragOver}
@@ -3813,6 +3849,16 @@ export const App = () => {
           ) : null}
         </div>
         <div className="toolbar">
+          <button
+            type="button"
+            className={`ai-panel-toggle ${isAiPanelVisible ? "selected" : ""}`}
+            aria-label="Toggle AI Draft panel"
+            aria-expanded={isAiPanelVisible}
+            title="AI Draft"
+            onClick={handleToggleAiPanel}
+          >
+            AI
+          </button>
           <div className="add-shot-menu-container" ref={addShotMenuRef}>
             <div className="add-shot-split-button">
               <button
@@ -3866,7 +3912,7 @@ export const App = () => {
             aria-label="Toggle pending sidebar"
             aria-expanded={isParkingShelfOpen}
             title="Pending sidebar"
-            onClick={() => setIsParkingShelfOpen((isOpen) => !isOpen)}
+            onClick={handleTogglePendingShelf}
           >
             <SidePanelIcon />
           </button>
@@ -4305,6 +4351,16 @@ export const App = () => {
           </button>
         ) : null}
       </div>
+
+      {folderPath ? (
+        <AiDraftPanel
+          isOpen={isAiPanelVisible}
+          folderPath={folderPath}
+          project={project}
+          selectedShotIds={selectedShotIds}
+          onProjectChange={handleAiProjectChange}
+        />
+      ) : null}
 
       {isAnimationMode && orderedShots.length > 0 ? (
         <Timeline

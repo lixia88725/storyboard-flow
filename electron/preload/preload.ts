@@ -67,6 +67,42 @@ type WorkspaceTaskProgress = {
   total: number;
 };
 
+type AiResourceMetadata = {
+  version: 1;
+  resources: Array<{
+    fileName: string;
+    role: string;
+    note: string;
+  }>;
+};
+
+type AiCredentialStatus = {
+  hasOpenAiApiKey: boolean;
+  hasSeedreamApiKey: boolean;
+};
+
+type AiProviderName = "openai" | "seedream";
+
+type AiGenerateCandidatePayload = {
+  folderPath: string;
+  project: unknown;
+  shotId: string;
+  selectedShotContext?: string;
+  selectedResourceIds?: string[];
+  generationSettings?: {
+    provider?: AiProviderName;
+    model?: string;
+  };
+};
+
+type AiRequestPreviewPayload = AiGenerateCandidatePayload;
+
+type AiApplyCandidatePayload = {
+  folderPath: string;
+  project: unknown;
+  candidateId: string;
+};
+
 const api = {
   openFolderByPath: (folderPath: string) =>
     ipcRenderer.invoke("workspace:openFolderByPath", folderPath),
@@ -138,6 +174,34 @@ const api = {
   getToolRadialMenu: () => ipcRenderer.invoke("settings:getToolRadialMenu") as Promise<unknown>,
   setToolRadialMenu: (config: unknown) =>
     ipcRenderer.invoke("settings:setToolRadialMenu", config) as Promise<unknown>,
+  ai: {
+    getSettings: () =>
+      ipcRenderer.invoke("ai:getSettings") as Promise<AiCredentialStatus>,
+    saveOpenAiApiKey: (apiKey: string) =>
+      ipcRenderer.invoke("ai:saveOpenAiApiKey", apiKey) as Promise<AiCredentialStatus>,
+    clearOpenAiApiKey: () =>
+      ipcRenderer.invoke("ai:clearOpenAiApiKey") as Promise<AiCredentialStatus>,
+    saveSeedreamApiKey: (apiKey: string) =>
+      ipcRenderer.invoke("ai:saveSeedreamApiKey", apiKey) as Promise<AiCredentialStatus>,
+    clearSeedreamApiKey: () =>
+      ipcRenderer.invoke("ai:clearSeedreamApiKey") as Promise<AiCredentialStatus>,
+    listResources: (folderPath: string) =>
+      ipcRenderer.invoke("ai:listResources", folderPath) as Promise<unknown>,
+    importResources: (folderPath: string, sourceFilePaths: string[]) =>
+      ipcRenderer.invoke("ai:importResources", folderPath, sourceFilePaths) as Promise<unknown>,
+    deleteResource: (folderPath: string, fileName: string) =>
+      ipcRenderer.invoke("ai:deleteResource", folderPath, fileName) as Promise<unknown>,
+    updateResourceMetadata: (folderPath: string, metadata: AiResourceMetadata) =>
+      ipcRenderer.invoke("ai:updateResourceMetadata", folderPath, metadata) as Promise<unknown>,
+    generateCandidate: (payload: AiGenerateCandidatePayload) =>
+      ipcRenderer.invoke("ai:generateCandidate", payload) as Promise<unknown>,
+    copyRequestPreview: (payload: AiRequestPreviewPayload) =>
+      ipcRenderer.invoke("ai:copyRequestPreview", payload) as Promise<{ text: string }>,
+    discardCandidate: (folderPath: string, candidateId: string) =>
+      ipcRenderer.invoke("ai:discardCandidate", folderPath, candidateId) as Promise<void>,
+    applyCandidate: (payload: AiApplyCandidatePayload) =>
+      ipcRenderer.invoke("ai:applyCandidate", payload) as Promise<unknown>
+  },
   onOpenRecentFolder: (callback: (folderPath: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, folderPath: string) => callback(folderPath);
     ipcRenderer.on("recent:openFolder", listener);

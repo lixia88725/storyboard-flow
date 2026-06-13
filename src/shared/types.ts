@@ -94,12 +94,17 @@ export type Project = {
   id: string;
   name: string;
   naming?: ProjectNaming;
+  ai?: ProjectAiState;
   shots: Shot[];
   parkedShots?: Shot[];
   dialogues: Dialogue[];
   pendingDeletedShots?: PendingDeletedShot[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type ProjectAiState = {
+  projectContext?: string;
 };
 
 export type ProjectNaming = {

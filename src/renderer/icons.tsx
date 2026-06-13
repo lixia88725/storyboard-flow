@@ -1,4 +1,4 @@
-import { Brush, Eraser, Images, Keyboard, LassoSelect, SquareX } from "lucide-react";
+import { Brush, Copy, Eraser, Images, Keyboard, LassoSelect, Settings, SquareX, X } from "lucide-react";
 
 const lucideIconProps = {
   className: "tool-icon",
@@ -10,6 +10,10 @@ export const CardFaceIcon = () => <Images {...lucideIconProps} />;
 
 export const GearIcon = () => <Keyboard {...lucideIconProps} />;
 
+export const SettingsIcon = () => <Settings {...lucideIconProps} />;
+
+export const CopyIcon = () => <Copy {...lucideIconProps} />;
+
 export const BrushIcon = () => <Brush {...lucideIconProps} />;
 
 export const EraserIcon = () => <Eraser {...lucideIconProps} />;
@@ -17,6 +21,8 @@ export const EraserIcon = () => <Eraser {...lucideIconProps} />;
 export const SelectIcon = () => <LassoSelect {...lucideIconProps} />;
 
 export const ClearIcon = () => <SquareX {...lucideIconProps} />;
+
+export const CloseIcon = () => <X {...lucideIconProps} />;
 
 export const SwatchIcon = () => (
   <svg className="tool-icon swatch-icon" viewBox="0 0 24 24" aria-hidden="true">
