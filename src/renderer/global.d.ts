@@ -223,12 +223,42 @@ declare global {
           prompt: string;
           createdAt: string;
         }>;
+        generateBatchCandidates: (payload: {
+          folderPath: string;
+          project: Project;
+          shotIds: string[];
+          selectedResourceIds?: string[];
+          resourceAssignments?: Record<string, string[]>;
+          generationSettings?: {
+            provider?: "openai" | "seedream";
+            model?: string;
+          };
+        }) => Promise<{
+          groups: Array<{
+            index: number;
+            shotIds: string[];
+            candidateIds: string[];
+            error?: string;
+          }>;
+          candidates: Array<{
+            id: string;
+            shotId: string;
+            bitmapPath: string;
+            filePath: string;
+            width: number;
+            height: number;
+            prompt: string;
+            createdAt: string;
+          }>;
+        }>;
         copyRequestPreview: (payload: {
           folderPath: string;
           project: Project;
-          shotId: string;
+          shotId?: string;
+          shotIds?: string[];
           selectedShotContext?: string;
           selectedResourceIds?: string[];
+          resourceAssignments?: Record<string, string[]>;
           generationSettings?: {
             provider?: "openai" | "seedream";
             model?: string;

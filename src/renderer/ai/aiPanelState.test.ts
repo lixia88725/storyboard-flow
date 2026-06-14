@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Project } from "../../shared/types";
 import {
+  aiResourceIdsAvailableForShot,
   aiPanelSelectionState,
+  aiShotNumberLabel,
+  canCleanAiResourceExclusions,
   canCopyAiRequestPreview,
+  cleanAiResourceExclusionsProject,
+  nextAiResourceAvailabilityProject,
   nextAiEditableDialogueProject,
   nextAiEditableScriptProject,
   visibleAiStatusMessage
@@ -34,7 +39,11 @@ const project = {
 describe("AI panel state", () => {
   it("requires exactly one selected storyboard", () => {
     expect(aiPanelSelectionState(project, [])).toMatchObject({ kind: "empty" });
-    expect(aiPanelSelectionState(project, ["shot-1", "shot-2"])).toMatchObject({ kind: "multi" });
+    expect(aiPanelSelectionState(project, ["shot-2", "shot-1"])).toMatchObject({
+      kind: "multi",
+      count: 2,
+      shots: [project.shots[0], project.shots[1]]
+    });
   });
 
   it("summarizes selected shot script and dialogue", () => {
@@ -83,7 +92,8 @@ describe("AI panel state", () => {
 
   it("enables request preview copying only for a ready single-shot selection", () => {
     expect(canCopyAiRequestPreview({ kind: "empty" })).toBe(false);
-    expect(canCopyAiRequestPreview({ kind: "multi", count: 2 })).toBe(false);
+    expect(canCopyAiRequestPreview({ kind: "multi", count: 2, shots: [project.shots[0], project.shots[1]] })).toBe(true);
+    expect(canCopyAiRequestPreview({ kind: "multi", count: 2, shots: [] })).toBe(false);
     expect(canCopyAiRequestPreview({ kind: "missing" })).toBe(false);
     expect(
       canCopyAiRequestPreview({
@@ -93,5 +103,77 @@ describe("AI panel state", () => {
         dialogueText: "What was that?"
       })
     ).toBe(true);
+  });
+
+  it("formats assignment rows with the visible storyboard number", () => {
+    expect(aiShotNumberLabel(project, "shot-1")).toBe("001");
+    expect(aiShotNumberLabel(project, "shot-2")).toBe("002");
+    expect(aiShotNumberLabel(project, "missing")).toBe("???");
+  });
+
+  it("waits for AI Resources to load before cleaning saved exclusions", () => {
+    expect(canCleanAiResourceExclusions({ isOpen: true, hasLoadedResources: false })).toBe(false);
+    expect(canCleanAiResourceExclusions({ isOpen: false, hasLoadedResources: true })).toBe(false);
+    expect(canCleanAiResourceExclusions({ isOpen: true, hasLoadedResources: true })).toBe(true);
+  });
+
+  it("treats all AI resources as available to a shot when no exclusion is saved", () => {
+    expect(aiResourceIdsAvailableForShot(project, "shot-1", ["hero.png", "room.png"])).toEqual([
+      "hero.png",
+      "room.png"
+    ]);
+  });
+
+  it("persists per-shot AI resource exclusions in project AI metadata", () => {
+    const unavailable = nextAiResourceAvailabilityProject(
+      project,
+      "shot-1",
+      "hero.png",
+      false,
+      "2026-06-12T01:00:00.000Z"
+    );
+
+    expect(unavailable.ai?.shotResourceExclusions).toEqual({ "shot-1": ["hero.png"] });
+    expect(unavailable.updatedAt).toBe("2026-06-12T01:00:00.000Z");
+    expect(aiResourceIdsAvailableForShot(unavailable, "shot-1", ["hero.png", "room.png"])).toEqual(["room.png"]);
+    expect(aiResourceIdsAvailableForShot(unavailable, "shot-2", ["hero.png", "room.png"])).toEqual([
+      "hero.png",
+      "room.png"
+    ]);
+
+    const available = nextAiResourceAvailabilityProject(
+      unavailable,
+      "shot-1",
+      "hero.png",
+      true,
+      "2026-06-12T02:00:00.000Z"
+    );
+
+    expect(available.ai?.shotResourceExclusions).toBeUndefined();
+    expect(available.updatedAt).toBe("2026-06-12T02:00:00.000Z");
+  });
+
+  it("cleans stale shot and resource exclusions from project AI metadata", () => {
+    const dirtyProject: Project = {
+      ...project,
+      ai: {
+        projectContext: "Keep it noir.",
+        shotResourceExclusions: {
+          "shot-1": ["hero.png", "missing.png", "hero.png"],
+          "missing-shot": ["hero.png"],
+          "shot-2": ["missing.png"]
+        }
+      }
+    };
+
+    expect(cleanAiResourceExclusionsProject(dirtyProject, ["hero.png"], "2026-06-12T03:00:00.000Z")).toMatchObject({
+      ai: {
+        projectContext: "Keep it noir.",
+        shotResourceExclusions: {
+          "shot-1": ["hero.png"]
+        }
+      },
+      updatedAt: "2026-06-12T03:00:00.000Z"
+    });
   });
 });

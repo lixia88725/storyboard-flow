@@ -49,6 +49,7 @@ const api = {
     updateResourceMetadata: (folderPath, metadata) =>
       ipcRenderer.invoke("ai:updateResourceMetadata", folderPath, metadata),
     generateCandidate: (payload) => ipcRenderer.invoke("ai:generateCandidate", payload),
+    generateBatchCandidates: (payload) => ipcRenderer.invoke("ai:generateBatchCandidates", payload),
     copyRequestPreview: (payload) => ipcRenderer.invoke("ai:copyRequestPreview", payload),
     discardCandidate: (folderPath, candidateId) =>
       ipcRenderer.invoke("ai:discardCandidate", folderPath, candidateId),

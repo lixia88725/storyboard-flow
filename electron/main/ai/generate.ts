@@ -33,7 +33,7 @@ const sharpBlendMode = (blendMode: BitmapBlendMode): BitmapLayerComposite["blend
 const resolveProjectPath = (folderPath: string, filePath: string): string =>
   path.isAbsolute(filePath) ? filePath : path.join(folderPath, filePath);
 
-const shotCanvasSize = (shot: Shot): { width: number; height: number } => ({
+export const shotCanvasSize = (shot: Shot): { width: number; height: number } => ({
   width: Math.max(1, Math.round(shot.swb?.canvasWidth ?? shot.layers?.[0]?.width ?? 1024)),
   height: Math.max(1, Math.round(shot.swb?.canvasHeight ?? shot.layers?.[0]?.height ?? 1024))
 });
@@ -43,7 +43,7 @@ const bitmapLayersForShot = (shot: Shot): BitmapLayer[] =>
     .filter((layer) => !layer.cleared)
     .sort((a, b) => a.order - b.order);
 
-const readShotReferencePng = async (folderPath: string, shot: Shot): Promise<Buffer> => {
+export const readShotReferencePng = async (folderPath: string, shot: Shot): Promise<Buffer> => {
   const { width, height } = shotCanvasSize(shot);
   const layers = bitmapLayersForShot(shot).filter((layer) => layer.visible);
   const composites: BitmapLayerComposite[] = [];

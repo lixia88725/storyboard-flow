@@ -105,6 +105,7 @@ export type Project = {
 
 export type ProjectAiState = {
   projectContext?: string;
+  shotResourceExclusions?: Record<string, string[]>;
 };
 
 export type ProjectNaming = {

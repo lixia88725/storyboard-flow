@@ -17,6 +17,13 @@ const project = {
       fileName: "shot-1.tiff",
       order: 0,
       scriptText: "A detective enters the room."
+    },
+    {
+      id: "shot-2",
+      imagePath: "/project/shot-2.tiff",
+      fileName: "shot-2.tiff",
+      order: 1,
+      scriptText: "The detective sees the suspect."
     }
   ],
   dialogues: [{ id: "dialogue-1", shotId: "shot-1", text: "Stay quiet.", order: 0 }],
@@ -56,6 +63,46 @@ describe("AI request preview", () => {
     expect(preview).toContain("Image inputs:");
     expect(preview).toContain("1. selected-storyboard.png");
     expect(preview).toContain("2. hero.png - Character reference - Use the face.");
+    expect(preview).not.toContain("Do not send this one.");
+    expect(preview).not.toContain(folderPath);
+    expect(preview).not.toContain("API key");
+  });
+
+  it("copies a batch request preview with grouping and per-shot resource rules", async () => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-ai-preview-batch-"));
+    await mkdir(path.join(folderPath, "AI Resources"));
+    await writeFile(path.join(folderPath, "AI Resources/hero.png"), "hero image");
+    await writeFile(path.join(folderPath, "AI Resources/room.png"), "room image");
+    await writeFile(path.join(folderPath, "AI Resources/unused.png"), "unused image");
+    await writeAiResourceMetadata(folderPath, {
+      version: 1,
+      resources: [
+        { fileName: "hero.png", role: "Character reference", note: "Use the face." },
+        { fileName: "room.png", role: "Scene reference", note: "Use the room." },
+        { fileName: "unused.png", role: "Prop reference", note: "Do not send this one." }
+      ]
+    });
+
+    const preview = await buildAiRequestPreview({
+      folderPath,
+      project,
+      shotIds: ["shot-1", "shot-2"],
+      selectedResourceIds: ["hero.png", "room.png"],
+      resourceAssignments: { "shot-1": ["hero.png", "room.png"], "shot-2": ["hero.png"] },
+      generationSettings: { provider: "openai", model: "gpt-image-2" }
+    });
+
+    expect(preview).toContain("Batch: 2 shots -> 1 generation: 2");
+    expect(preview).toContain("Group 1 (2 panels):");
+    expect(preview).toContain("Panel 1: shot-1.tiff");
+    expect(preview).toContain("Panel 1 may use these AI Resources: Character reference hero.png, Scene reference room.png.");
+    expect(preview).toContain("Panel 2: shot-2.tiff");
+    expect(preview).toContain("Panel 2 may use these AI Resources: Character reference hero.png.");
+    expect(preview).not.toContain("Auto from batch pool");
+    expect(preview).toContain("Image inputs per generation:");
+    expect(preview).toContain("selected-storyboards-contact-sheet.png");
+    expect(preview).toContain("hero.png - Character reference - Use the face.");
+    expect(preview).toContain("room.png - Scene reference - Use the room.");
     expect(preview).not.toContain("Do not send this one.");
     expect(preview).not.toContain(folderPath);
     expect(preview).not.toContain("API key");

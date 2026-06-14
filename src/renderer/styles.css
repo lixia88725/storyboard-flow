@@ -602,6 +602,14 @@ button.primary {
   white-space: nowrap;
 }
 
+.ai-draft-panel-header small {
+  overflow: hidden;
+  color: var(--ai-panel-placeholder);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ai-settings-toggle {
   display: grid;
   place-items: center;
@@ -781,6 +789,12 @@ button.primary {
   font-size: 12px;
 }
 
+.ai-section-note {
+  margin: -2px 0 0;
+  color: var(--ai-panel-muted);
+  font-size: 12px;
+}
+
 .ai-resources-section {
   margin: 0 -4px;
   padding-right: 4px;
@@ -872,20 +886,137 @@ button.primary {
   white-space: nowrap;
 }
 
-.ai-resource-card select {
+.ai-resource-details {
   width: calc(100% - 24px);
   margin-left: 24px;
+  overflow: hidden;
+  border: 1px solid var(--ai-panel-control-border);
+  border-radius: 4px;
+  background: var(--ai-panel-raised-bg);
+}
+
+.ai-resource-details select {
+  width: 100%;
   height: 30px;
+  border: 0;
+  border-bottom: 1px solid rgba(89, 99, 111, 0.38);
+  border-radius: 0;
+  background: transparent;
   padding: 0 8px;
   color-scheme: dark;
 }
 
-.ai-resource-card textarea {
-  width: calc(100% - 24px);
-  margin-left: 24px;
+.ai-resource-details textarea {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   min-height: 54px;
   padding: 7px;
   resize: vertical;
+}
+
+.ai-resource-assignment {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0 14px;
+  border-bottom: 1px solid var(--ai-panel-border);
+}
+
+.ai-assignment-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ai-panel-text);
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.ai-assignment-toggle-icon {
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 6px solid var(--ai-panel-muted);
+}
+
+.ai-assignment-toggle-icon.is-open {
+  border-top: 6px solid var(--ai-panel-muted);
+  border-right: 5px solid transparent;
+  border-left: 5px solid transparent;
+  border-bottom: 0;
+}
+
+.ai-assignment-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-assignment-card {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--ai-panel-border);
+}
+
+.ai-assignment-card-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.ai-assignment-card-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-assignment-card-header span:last-child {
+  color: var(--ai-panel-muted);
+  text-align: right;
+}
+
+.ai-assignment-card-header span:first-child {
+  min-width: 26px;
+  color: var(--ai-panel-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-assignment-resources {
+  display: grid;
+  gap: 6px;
+}
+
+.ai-assignment-resources label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  color: var(--ai-panel-muted);
+  font-size: 12px;
+}
+
+.ai-assignment-resources input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.ai-assignment-resources span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ai-candidate-preview {
@@ -895,6 +1026,32 @@ button.primary {
   background: var(--ai-panel-raised-bg);
 }
 
+.ai-batch-candidate-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ai-batch-candidate-list img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--ai-panel-border);
+  border-radius: 4px;
+  background: var(--ai-panel-raised-bg);
+  object-fit: cover;
+}
+
+.ai-batch-errors {
+  display: grid;
+  gap: 4px;
+  color: var(--ai-panel-muted);
+  font-size: 12px;
+}
+
+.ai-batch-errors p {
+  margin: 0;
+}
+
 .ai-actions {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -902,13 +1059,16 @@ button.primary {
 }
 
 .ai-actions button {
-  min-height: 32px;
+  height: 32px;
   border: 1px solid var(--ai-panel-border-strong);
   border-radius: 4px;
   background: var(--ai-panel-raised-bg);
   color: var(--ai-panel-text);
   box-shadow: 0 1px 0 var(--ai-panel-border-strong);
+  font-size: 12px;
   font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .ai-actions button:disabled {

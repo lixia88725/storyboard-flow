@@ -85,7 +85,9 @@ import {
   workspaceCopyTemporaryFileName
 } from "./workspaceTemporaryPaths.js";
 import { applyAiCandidateAsLayer, discardAiCandidate } from "./ai/candidates.js";
+import type { AiBatchResourceAssignments } from "./ai/batch.js";
 import { generateAiCandidate, type AiImageProviderName } from "./ai/generate.js";
+import { generateAiBatchCandidates } from "./ai/generateBatch.js";
 import { createOpenAiImageProvider } from "./ai/openAiImageProvider.js";
 import { buildAiRequestPreview } from "./ai/requestPreview.js";
 import { createSeedreamImageProvider } from "./ai/seedreamImageProvider.js";
@@ -239,7 +241,19 @@ type AiGenerateCandidatePayload = {
   };
 };
 
-type AiRequestPreviewPayload = AiGenerateCandidatePayload;
+type AiGenerateBatchCandidatesPayload = {
+  folderPath: string;
+  project: Project;
+  shotIds: string[];
+  selectedResourceIds?: string[];
+  resourceAssignments?: AiBatchResourceAssignments;
+  generationSettings?: {
+    provider?: AiImageProviderName;
+    model?: string;
+  };
+};
+
+type AiRequestPreviewPayload = AiGenerateCandidatePayload | AiGenerateBatchCandidatesPayload;
 
 type AiApplyCandidatePayload = {
   folderPath: string;
@@ -943,6 +957,21 @@ const registerIpcHandlers = () => {
         ? await readSeedreamApiKey(aiCredentialStore())
         : await readOpenAiApiKey(aiCredentialStore());
     return generateAiCandidate({
+      ...payload,
+      provider:
+        providerName === "seedream"
+          ? createSeedreamImageProvider({ apiKey })
+          : createOpenAiImageProvider({ apiKey })
+    });
+  });
+
+  ipcMain.handle("ai:generateBatchCandidates", async (_event, payload: AiGenerateBatchCandidatesPayload) => {
+    const providerName = payload.generationSettings?.provider ?? "openai";
+    const apiKey =
+      providerName === "seedream"
+        ? await readSeedreamApiKey(aiCredentialStore())
+        : await readOpenAiApiKey(aiCredentialStore());
+    return generateAiBatchCandidates({
       ...payload,
       provider:
         providerName === "seedream"

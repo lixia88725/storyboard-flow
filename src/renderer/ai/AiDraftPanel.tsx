@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DragEvent } from "react";
 import type { Project } from "../../shared/types";
+import { groupAiBatchShotIds, summarizeAiBatchGroups } from "../../shared/ai/batch";
 import { CloseIcon, CopyIcon, SettingsIcon } from "../icons";
 import {
+  aiResourceIdsAvailableForShot,
   aiPanelSelectionState,
+  aiShotNumberLabel,
+  canCleanAiResourceExclusions,
   canCopyAiRequestPreview,
+  cleanAiResourceExclusionsProject,
   nextAiEditableDialogueProject,
   nextAiEditableScriptProject,
+  nextAiResourceAvailabilityProject,
   visibleAiStatusMessage
 } from "./aiPanelState";
 import {
@@ -35,6 +41,13 @@ type AiCandidate = {
   prompt: string;
 };
 
+type AiBatchGroupResult = {
+  index: number;
+  shotIds: string[];
+  candidateIds: string[];
+  error?: string;
+};
+
 type AiDraftPanelProps = {
   isOpen: boolean;
   folderPath: string;
@@ -51,6 +64,8 @@ const referenceRoles = [
   "Prop reference"
 ];
 
+const uniqueResourceIds = (resourceIds: string[]): string[] => [...new Set(resourceIds)];
+
 export const AiDraftPanel = ({
   isOpen,
   folderPath,
@@ -63,8 +78,9 @@ export const AiDraftPanel = ({
     [project, selectedShotIds]
   );
   const [resources, setResources] = useState<AiResource[]>([]);
-  const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([]);
   const [candidate, setCandidate] = useState<AiCandidate | undefined>();
+  const [batchCandidates, setBatchCandidates] = useState<AiCandidate[]>([]);
+  const [batchGroups, setBatchGroups] = useState<AiBatchGroupResult[]>([]);
   const [status, setStatus] = useState("Ready");
   const [isGenerating, setIsGenerating] = useState(false);
   const [providerName, setProviderName] = useState<AiProviderName>("openai");
@@ -76,27 +92,89 @@ export const AiDraftPanel = ({
     hasOpenAiApiKey: false,
     hasSeedreamApiKey: false
   });
+  const [hasLoadedResources, setHasLoadedResources] = useState(false);
   const [isResourceDropActive, setIsResourceDropActive] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAssignmentOpen, setIsAssignmentOpen] = useState(false);
   const currentModel = providerName === "seedream" ? seedreamModel : openAiModel;
   const providerSettings = visibleAiProviderSettings(providerName);
   const visibleStatus = visibleAiStatusMessage(status);
   const canCopyRequestPreview = canCopyAiRequestPreview(selection);
+  const batchShotIds = selection.kind === "multi" ? selection.shots.map((shot) => shot.id) : [];
+  const projectShotKey = project.shots.map((shot) => shot.id).join("|");
+  const plannedBatchGroups = useMemo(
+    () => (selection.kind === "multi" ? groupAiBatchShotIds(project, batchShotIds) : []),
+    [batchShotIds.join("|"), project, selection.kind]
+  );
+  const batchSummary =
+    selection.kind === "multi" ? summarizeAiBatchGroups(selection.shots.length, plannedBatchGroups) : "";
+  const resourceIds = useMemo(() => resources.map((resource) => resource.id), [resources]);
+  const activeResourceIds =
+    selection.kind === "ready" ? aiResourceIdsAvailableForShot(project, selection.shot.id, resourceIds) : [];
+  const batchResourceAssignments = useMemo(
+    () =>
+      selection.kind === "multi"
+        ? Object.fromEntries(
+            selection.shots.map((shot) => [
+              shot.id,
+              aiResourceIdsAvailableForShot(project, shot.id, resourceIds)
+            ])
+          )
+        : {},
+    [project, resourceIds, selection]
+  );
+  const batchSelectedResourceIds = useMemo(
+    () => uniqueResourceIds(Object.values(batchResourceAssignments).flat()),
+    [batchResourceAssignments]
+  );
+  const isAiContentVisible = selection.kind === "ready" || selection.kind === "multi";
+  const canGenerateForSelection =
+    canRequestAiGeneration({ ...apiKeyStatus, provider: providerName, isGenerating }) &&
+    (selection.kind === "ready" || (selection.kind === "multi" && selection.shots.length > 0));
+  const hasActiveCandidate =
+    selection.kind === "multi" ? batchCandidates.length > 0 : Boolean(candidate);
+
+  useEffect(() => {
+    setCandidate(undefined);
+    setBatchCandidates([]);
+    setBatchGroups([]);
+    setStatus("Ready");
+  }, [folderPath, selectedShotIds.join("|")]);
+
+  useEffect(() => {
+    if (selection.kind === "multi") {
+      setIsAssignmentOpen(true);
+    }
+  }, [selectedShotIds.join("|"), selection.kind]);
+
+  useEffect(() => {
+    if (!canCleanAiResourceExclusions({ isOpen, hasLoadedResources })) {
+      return;
+    }
+    const cleanedProject = cleanAiResourceExclusionsProject(project, resourceIds);
+    if (cleanedProject !== project) {
+      onProjectChange(cleanedProject, "AI resource assignments updated");
+    }
+  }, [hasLoadedResources, isOpen, project, projectShotKey, resourceIds]);
 
   useEffect(() => {
     if (!isOpen) {
+      setHasLoadedResources(false);
       return;
     }
     let cancelled = false;
+    setHasLoadedResources(false);
     window.storyboard.ai
       .listResources(folderPath)
       .then((result) => {
         if (!cancelled) {
           setResources(result.resources);
+          setHasLoadedResources(true);
         }
       })
       .catch((error) => {
         if (!cancelled) {
+          setHasLoadedResources(false);
           setStatus(`Could not load AI Resources: ${error instanceof Error ? error.message : String(error)}`);
         }
       });
@@ -213,7 +291,10 @@ export const AiDraftPanel = ({
     try {
       const result = await window.storyboard.ai.deleteResource(folderPath, resource.fileName);
       setResources(result.resources);
-      setSelectedResourceIds((current) => current.filter((id) => id !== resource.id));
+      const cleanedProject = cleanAiResourceExclusionsProject(project, result.resources.map((item) => item.id));
+      if (cleanedProject !== project) {
+        onProjectChange(cleanedProject, `Deleted AI resource: ${resource.fileName}`);
+      }
       setStatus(`Deleted AI resource: ${resource.fileName}`);
     } catch (error) {
       setStatus(`Could not delete AI resource: ${error instanceof Error ? error.message : String(error)}`);
@@ -221,14 +302,58 @@ export const AiDraftPanel = ({
   };
 
   const toggleResource = (resourceId: string) => {
-    setSelectedResourceIds((current) =>
-      current.includes(resourceId)
-        ? current.filter((id) => id !== resourceId)
-        : [...current, resourceId]
+    if (selection.kind !== "ready") {
+      return;
+    }
+    const isAvailable = activeResourceIds.includes(resourceId);
+    onProjectChange(
+      nextAiResourceAvailabilityProject(project, selection.shot.id, resourceId, !isAvailable),
+      "AI resource assignment updated"
+    );
+  };
+
+  const toggleAssignmentResource = (shotId: string, resourceId: string) => {
+    const availableResourceIds = aiResourceIdsAvailableForShot(project, shotId, resourceIds);
+    const isAvailable = availableResourceIds.includes(resourceId);
+    onProjectChange(
+      nextAiResourceAvailabilityProject(project, shotId, resourceId, !isAvailable),
+      "AI resource assignment updated"
     );
   };
 
   const generate = async () => {
+    if (selection.kind === "multi") {
+      if (selection.shots.length === 0) {
+        return;
+      }
+      setIsGenerating(true);
+      setStatus("Generating AI batch candidates...");
+      try {
+        const result = await window.storyboard.ai.generateBatchCandidates({
+          folderPath,
+          project,
+          shotIds: batchShotIds,
+          selectedResourceIds: batchSelectedResourceIds,
+          resourceAssignments: batchResourceAssignments,
+          generationSettings: { provider: providerName, model: currentModel }
+        });
+        setBatchCandidates(result.candidates);
+        setBatchGroups(result.groups);
+        setCandidate(undefined);
+        const failedGroups = result.groups.filter((group) => group.error);
+        setStatus(
+          failedGroups.length > 0
+            ? `${result.candidates.length} AI batch candidates ready; ${failedGroups.length} group${failedGroups.length === 1 ? "" : "s"} failed: ${failedGroups.map((group) => `#${group.index + 1}`).join(", ")}`
+            : `${result.candidates.length} AI batch candidates ready`
+        );
+      } catch (error) {
+        setStatus(`AI batch generation failed: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
+
     if (selection.kind !== "ready") {
       return;
     }
@@ -239,7 +364,7 @@ export const AiDraftPanel = ({
         folderPath,
         project,
         shotId: selection.shot.id,
-        selectedResourceIds,
+        selectedResourceIds: activeResourceIds,
         generationSettings: { provider: providerName, model: currentModel }
       });
       setCandidate(nextCandidate);
@@ -252,6 +377,26 @@ export const AiDraftPanel = ({
   };
 
   const copyRequestPreview = async () => {
+    if (selection.kind === "multi") {
+      if (selection.shots.length === 0) {
+        return;
+      }
+      try {
+        await window.storyboard.ai.copyRequestPreview({
+          folderPath,
+          project,
+          shotIds: batchShotIds,
+          selectedResourceIds: batchSelectedResourceIds,
+          resourceAssignments: batchResourceAssignments,
+          generationSettings: { provider: providerName, model: currentModel }
+        });
+        setStatus("AI request preview copied");
+      } catch (error) {
+        setStatus(`Could not copy AI request preview: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      return;
+    }
+
     if (selection.kind !== "ready") {
       return;
     }
@@ -260,7 +405,7 @@ export const AiDraftPanel = ({
         folderPath,
         project,
         shotId: selection.shot.id,
-        selectedResourceIds,
+        selectedResourceIds: activeResourceIds,
         generationSettings: { provider: providerName, model: currentModel }
       });
       setStatus("AI request preview copied");
@@ -320,6 +465,14 @@ export const AiDraftPanel = ({
   };
 
   const discardCandidate = async () => {
+    if (selection.kind === "multi") {
+      await Promise.all(batchCandidates.map((item) => window.storyboard.ai.discardCandidate(folderPath, item.id).catch(() => undefined)));
+      setBatchCandidates([]);
+      setBatchGroups([]);
+      setStatus("AI batch candidates discarded");
+      return;
+    }
+
     if (!candidate) {
       return;
     }
@@ -329,6 +482,30 @@ export const AiDraftPanel = ({
   };
 
   const applyCandidate = async () => {
+    if (selection.kind === "multi") {
+      if (batchCandidates.length === 0) {
+        return;
+      }
+      try {
+        let nextProject = project;
+        for (const item of batchCandidates) {
+          const result = await window.storyboard.ai.applyCandidate({
+            folderPath,
+            project: nextProject,
+            candidateId: item.id
+          });
+          nextProject = result.project;
+        }
+        onProjectChange(nextProject, `${batchCandidates.length} AI Draft layers added`);
+        setBatchCandidates([]);
+        setBatchGroups([]);
+        setStatus(`${batchCandidates.length} AI Draft layers added`);
+      } catch (error) {
+        setStatus(`Could not apply AI batch candidates: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      return;
+    }
+
     if (!candidate) {
       return;
     }
@@ -350,7 +527,14 @@ export const AiDraftPanel = ({
     <aside className={`ai-draft-panel ${isOpen ? "is-open" : ""}`} aria-label="AI Draft panel">
       <header className="ai-draft-panel-header">
         <div>
-          <span>{selection.kind === "ready" ? selection.shot.fileName : "Select one storyboard"}</span>
+          <span>
+            {selection.kind === "ready"
+              ? selection.shot.fileName
+              : selection.kind === "multi"
+                ? `${selection.shots.length} selected shots`
+                : "Select one storyboard"}
+          </span>
+          {selection.kind === "multi" ? <small>{batchSummary}</small> : null}
         </div>
         <button
           type="button"
@@ -365,17 +549,6 @@ export const AiDraftPanel = ({
       </header>
 
       <div className="ai-draft-panel-content">
-        {selection.kind === "ready" ? (
-          <section className="ai-panel-section">
-            <h3>Project Additional Context</h3>
-            <textarea
-              value={project.ai?.projectContext ?? ""}
-              onChange={(event) => updateProjectContext(event.target.value)}
-              placeholder="Style, story rules, recurring character notes..."
-            />
-          </section>
-        ) : null}
-
         {isSettingsOpen ? (
           <section className="ai-panel-section ai-settings-panel">
             <h3>General Settings</h3>
@@ -482,114 +655,204 @@ export const AiDraftPanel = ({
         ) : null}
 
         {selection.kind === "empty" ? <p className="ai-empty-state">Select one storyboard to generate an AI draft.</p> : null}
-        {selection.kind === "multi" ? <p className="ai-empty-state">AI Draft MVP supports one selected storyboard at a time.</p> : null}
+        {selection.kind === "multi" && selection.shots.length === 0 ? (
+          <p className="ai-empty-state">The selected storyboards could not be found.</p>
+        ) : null}
         {selection.kind === "missing" ? <p className="ai-empty-state">The selected storyboard could not be found.</p> : null}
 
-        {selection.kind === "ready" ? (
-          <>
-            <section className="ai-panel-section">
-              <label className="ai-shot-edit-field">
-                <span>Script</span>
-                <textarea
-                  value={selection.scriptText}
-                  onChange={(event) => updateShotScript(selection.shot.id, event.target.value)}
-                  placeholder="No script text"
-                />
-              </label>
-              <label className="ai-shot-edit-field">
-                <span>Dialogue</span>
-                <textarea
-                  value={selection.dialogueText}
-                  onChange={(event) => updateShotDialogue(selection.shot.id, event.target.value)}
-                  placeholder="No dialogue"
-                />
-              </label>
-            </section>
+        {isAiContentVisible ? (
+          <section className="ai-panel-section">
+            <h3>Project Additional Context</h3>
+            <textarea
+              value={project.ai?.projectContext ?? ""}
+              onChange={(event) => updateProjectContext(event.target.value)}
+              placeholder="Style, story rules, recurring character notes..."
+            />
+          </section>
+        ) : null}
 
-            <section
-              className={`ai-panel-section ai-resources-section ${isResourceDropActive ? "is-drop-active" : ""}`}
-              onDragEnter={(event) => {
-                if (event.dataTransfer.types.includes("Files")) {
-                  event.preventDefault();
-                  setIsResourceDropActive(true);
-                }
-              }}
-              onDragOver={(event) => {
-                if (event.dataTransfer.types.includes("Files")) {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "copy";
-                  setIsResourceDropActive(true);
-                }
-              }}
-              onDragLeave={() => setIsResourceDropActive(false)}
-              onDrop={(event) => void importDroppedResources(event)}
-            >
-              <h3>AI Resources</h3>
-              {resources.length === 0 ? (
-                <p className="ai-empty-state">Drop reference images here to add them to AI Resources.</p>
-              ) : (
-                <div className="ai-resource-list">
-                  {resources.map((resource) => (
-                    <article key={resource.id} className="ai-resource-card">
-                      <button
-                        type="button"
-                        className="ai-resource-delete"
-                        aria-label={`Delete ${resource.fileName}`}
-                        title="Delete resource"
-                        onClick={() => void deleteResource(resource)}
-                      >
-                        <CloseIcon />
-                      </button>
-                      <label className="ai-resource-select">
-                        <input
-                          type="checkbox"
-                          checked={selectedResourceIds.includes(resource.id)}
-                          onChange={() => toggleResource(resource.id)}
-                        />
-                        <img src={window.storyboard.assetUrl(resource.filePath)} alt="" />
-                        <span>{resource.fileName}</span>
-                      </label>
-                      <select
-                        value={resource.role}
-                        onChange={(event) => updateResource(resource.fileName, { role: event.target.value })}
-                      >
-                        {referenceRoles.map((role) => (
-                          <option key={role} value={role}>
-                            {role}
-                          </option>
-                        ))}
-                      </select>
-                      <textarea
-                        value={resource.note}
-                        onChange={(event) => updateResource(resource.fileName, { note: event.target.value })}
-                        placeholder="How should the model use this image?"
-                      />
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
+        {selection.kind === "ready" ? (
+          <section className="ai-panel-section">
+            <label className="ai-shot-edit-field">
+              <span>Script</span>
+              <textarea
+                value={selection.scriptText}
+                onChange={(event) => updateShotScript(selection.shot.id, event.target.value)}
+                placeholder="No script text"
+              />
+            </label>
+            <label className="ai-shot-edit-field">
+              <span>Dialogue</span>
+              <textarea
+                value={selection.dialogueText}
+                onChange={(event) => updateShotDialogue(selection.shot.id, event.target.value)}
+                placeholder="No dialogue"
+              />
+            </label>
+          </section>
+        ) : null}
+
+        {isAiContentVisible ? (
+          <>
+            {selection.kind === "ready" ? (
+              <section
+                className={`ai-panel-section ai-resources-section ${isResourceDropActive ? "is-drop-active" : ""}`}
+                onDragEnter={(event) => {
+                  if (event.dataTransfer.types.includes("Files")) {
+                    event.preventDefault();
+                    setIsResourceDropActive(true);
+                  }
+                }}
+                onDragOver={(event) => {
+                  if (event.dataTransfer.types.includes("Files")) {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "copy";
+                    setIsResourceDropActive(true);
+                  }
+                }}
+                onDragLeave={() => setIsResourceDropActive(false)}
+                onDrop={(event) => void importDroppedResources(event)}
+              >
+                <h3>AI Resources</h3>
+                {resources.length === 0 ? (
+                  <p className="ai-empty-state">Drop reference images here to add them to AI Resources.</p>
+                ) : (
+                  <div className="ai-resource-list">
+                    {resources.map((resource) => (
+                      <article key={resource.id} className="ai-resource-card">
+                        <button
+                          type="button"
+                          className="ai-resource-delete"
+                          aria-label={`Delete ${resource.fileName}`}
+                          title="Delete resource"
+                          onClick={() => void deleteResource(resource)}
+                        >
+                          <CloseIcon />
+                        </button>
+                        <label className="ai-resource-select">
+                          <input
+                            type="checkbox"
+                            checked={activeResourceIds.includes(resource.id)}
+                            onChange={() => toggleResource(resource.id)}
+                          />
+                          <img src={window.storyboard.assetUrl(resource.filePath)} alt="" />
+                          <span>{resource.fileName}</span>
+                        </label>
+                        <div className="ai-resource-details">
+                          <select
+                            value={resource.role}
+                            onChange={(event) => updateResource(resource.fileName, { role: event.target.value })}
+                          >
+                            {referenceRoles.map((role) => (
+                              <option key={role} value={role}>
+                                {role}
+                              </option>
+                            ))}
+                          </select>
+                          <textarea
+                            value={resource.note}
+                            onChange={(event) => updateResource(resource.fileName, { note: event.target.value })}
+                            placeholder="How should the model use this image?"
+                          />
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ) : null}
+
+            {selection.kind === "multi" ? (
+              <section className="ai-resource-assignment">
+                  <button
+                    type="button"
+                    className="ai-assignment-toggle"
+                    aria-expanded={isAssignmentOpen}
+                    onClick={() => setIsAssignmentOpen((isOpen) => !isOpen)}
+                  >
+                    <span>Shot Resource Assignment</span>
+                    <span
+                      className={`ai-assignment-toggle-icon ${isAssignmentOpen ? "is-open" : ""}`}
+                      aria-hidden="true"
+                    />
+                  </button>
+                  {isAssignmentOpen ? (
+                    <div className="ai-assignment-list">
+                      {selection.shots.map((shot) => {
+                        const availableResourceIds = aiResourceIdsAvailableForShot(project, shot.id, resourceIds);
+                        return (
+                          <article key={shot.id} className="ai-assignment-card">
+                            <div className="ai-assignment-card-header">
+                              <span>{aiShotNumberLabel(project, shot.id)}</span>
+                              <span>
+                                {availableResourceIds.length} / {resources.length} references
+                              </span>
+                            </div>
+                            {resources.length > 0 ? (
+                              <div className="ai-assignment-resources">
+                                {resources.map((resource) => (
+                                  <label key={resource.id}>
+                                    <input
+                                      type="checkbox"
+                                      checked={availableResourceIds.includes(resource.id)}
+                                      onChange={() => toggleAssignmentResource(shot.id, resource.id)}
+                                    />
+                                    <span>{resource.fileName}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="ai-empty-state">
+                                Drop reference images into AI Resources from a single shot.
+                              </p>
+                            )}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+              </section>
+            ) : null}
 
             <section className="ai-panel-section">
               <h3>Candidate</h3>
-              {candidate ? (
+              {selection.kind === "ready" && candidate ? (
                 <img className="ai-candidate-preview" src={window.storyboard.assetUrl(candidate.filePath)} alt="" />
+              ) : selection.kind === "multi" && batchCandidates.length > 0 ? (
+                <div className="ai-batch-candidate-list">
+                  {batchCandidates.map((item) => (
+                    <img key={item.id} src={window.storyboard.assetUrl(item.filePath)} alt="" />
+                  ))}
+                </div>
               ) : (
-                <p className="ai-empty-state">Generate one candidate, then apply it as a new AI Draft layer.</p>
+                <p className="ai-empty-state">
+                  {selection.kind === "multi"
+                    ? "Generate batch candidates, then apply them as new AI Draft layers."
+                    : "Generate one candidate, then apply it as a new AI Draft layer."}
+                </p>
               )}
+              {batchGroups.some((group) => group.error) ? (
+                <div className="ai-batch-errors">
+                  {batchGroups
+                    .filter((group) => group.error)
+                    .map((group) => (
+                      <p key={group.index}>Group {group.index + 1} failed: {group.error}</p>
+                    ))}
+                </div>
+              ) : null}
               <div className="ai-actions">
                 <button
                   type="button"
                   onClick={() => void generate()}
-                  disabled={!canRequestAiGeneration({ ...apiKeyStatus, provider: providerName, isGenerating })}
+                  disabled={!canGenerateForSelection}
                 >
-                  {candidate ? "Retry" : "Generate"}
+                  {hasActiveCandidate ? "Retry" : "Generate"}
                 </button>
-                <button type="button" onClick={() => void applyCandidate()} disabled={!candidate}>
-                  Apply
+                <button type="button" onClick={() => void applyCandidate()} disabled={!hasActiveCandidate}>
+                  {selection.kind === "multi" ? "Apply All" : "Apply"}
                 </button>
-                <button type="button" onClick={() => void discardCandidate()} disabled={!candidate}>
-                  Discard
+                <button type="button" onClick={() => void discardCandidate()} disabled={!hasActiveCandidate}>
+                  {selection.kind === "multi" ? "Discard All" : "Discard"}
                 </button>
               </div>
             </section>

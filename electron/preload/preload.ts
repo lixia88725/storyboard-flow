@@ -95,7 +95,19 @@ type AiGenerateCandidatePayload = {
   };
 };
 
-type AiRequestPreviewPayload = AiGenerateCandidatePayload;
+type AiGenerateBatchCandidatesPayload = {
+  folderPath: string;
+  project: unknown;
+  shotIds: string[];
+  selectedResourceIds?: string[];
+  resourceAssignments?: Record<string, string[]>;
+  generationSettings?: {
+    provider?: AiProviderName;
+    model?: string;
+  };
+};
+
+type AiRequestPreviewPayload = AiGenerateCandidatePayload | AiGenerateBatchCandidatesPayload;
 
 type AiApplyCandidatePayload = {
   folderPath: string;
@@ -195,6 +207,8 @@ const api = {
       ipcRenderer.invoke("ai:updateResourceMetadata", folderPath, metadata) as Promise<unknown>,
     generateCandidate: (payload: AiGenerateCandidatePayload) =>
       ipcRenderer.invoke("ai:generateCandidate", payload) as Promise<unknown>,
+    generateBatchCandidates: (payload: AiGenerateBatchCandidatesPayload) =>
+      ipcRenderer.invoke("ai:generateBatchCandidates", payload) as Promise<unknown>,
     copyRequestPreview: (payload: AiRequestPreviewPayload) =>
       ipcRenderer.invoke("ai:copyRequestPreview", payload) as Promise<{ text: string }>,
     discardCandidate: (folderPath: string, candidateId: string) =>
