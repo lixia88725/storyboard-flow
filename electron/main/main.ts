@@ -88,9 +88,17 @@ import { applyAiCandidateAsLayer, discardAiCandidate } from "./ai/candidates.js"
 import type { AiBatchResourceAssignments } from "./ai/batch.js";
 import { generateAiCandidate, type AiImageProviderName } from "./ai/generate.js";
 import { generateAiBatchCandidates } from "./ai/generateBatch.js";
+import { createComfyUiImageProvider } from "./ai/comfyUiImageProvider.js";
+import { validateComfyUiServerUrl, validateComfyUiWorkflow } from "./ai/comfyUiWorkflow.js";
 import { createOpenAiImageProvider } from "./ai/openAiImageProvider.js";
 import { buildAiRequestPreview } from "./ai/requestPreview.js";
 import { createSeedreamImageProvider } from "./ai/seedreamImageProvider.js";
+import {
+  readAiSettings,
+  writeComfyUiSettings,
+  type AiSettingsStore,
+  type ComfyUiSettings
+} from "./ai/settings.js";
 import {
   deleteAiResourceFile,
   importAiResourceFiles,
@@ -254,6 +262,8 @@ type AiGenerateBatchCandidatesPayload = {
 };
 
 type AiRequestPreviewPayload = AiGenerateCandidatePayload | AiGenerateBatchCandidatesPayload;
+
+type AiComfyUiSettingsPayload = ComfyUiSettings;
 
 type AiApplyCandidatePayload = {
   folderPath: string;
@@ -915,23 +925,42 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("ai:getSettings", async () => {
-    return readAiCredentialStatus(aiCredentialStore());
+    return readAiSettingsForRenderer();
   });
 
   ipcMain.handle("ai:saveOpenAiApiKey", async (_event, apiKey: string) => {
-    return writeOpenAiApiKey(aiCredentialStore(), apiKey);
+    await writeOpenAiApiKey(aiCredentialStore(), apiKey);
+    return readAiSettingsForRenderer();
   });
 
   ipcMain.handle("ai:clearOpenAiApiKey", async () => {
-    return clearOpenAiApiKey(aiCredentialStore());
+    await clearOpenAiApiKey(aiCredentialStore());
+    return readAiSettingsForRenderer();
   });
 
   ipcMain.handle("ai:saveSeedreamApiKey", async (_event, apiKey: string) => {
-    return writeSeedreamApiKey(aiCredentialStore(), apiKey);
+    await writeSeedreamApiKey(aiCredentialStore(), apiKey);
+    return readAiSettingsForRenderer();
   });
 
   ipcMain.handle("ai:clearSeedreamApiKey", async () => {
-    return clearSeedreamApiKey(aiCredentialStore());
+    await clearSeedreamApiKey(aiCredentialStore());
+    return readAiSettingsForRenderer();
+  });
+
+  ipcMain.handle("ai:saveComfyUiSettings", async (_event, settings: AiComfyUiSettingsPayload) => {
+    await writeComfyUiSettings(aiSettingsStore(), settings);
+    return readAiSettingsForRenderer();
+  });
+
+  ipcMain.handle("ai:testComfyUiConnection", async (_event, serverUrl: string) => {
+    const normalizedServerUrl = validateComfyUiServerUrl(serverUrl);
+    const response = await fetch(`${normalizedServerUrl}/system_stats`);
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(text.trim() || `ComfyUI connection failed with ${response.status}`);
+    }
+    return { ok: true, message: "ComfyUI connection ready" };
   });
 
   ipcMain.handle("ai:listResources", async (_event, folderPath: string) => {
@@ -952,36 +981,27 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle("ai:generateCandidate", async (_event, payload: AiGenerateCandidatePayload) => {
     const providerName = payload.generationSettings?.provider ?? "openai";
-    const apiKey =
-      providerName === "seedream"
-        ? await readSeedreamApiKey(aiCredentialStore())
-        : await readOpenAiApiKey(aiCredentialStore());
     return generateAiCandidate({
       ...payload,
-      provider:
-        providerName === "seedream"
-          ? createSeedreamImageProvider({ apiKey })
-          : createOpenAiImageProvider({ apiKey })
+      provider: await createAiImageProvider(providerName)
     });
   });
 
   ipcMain.handle("ai:generateBatchCandidates", async (_event, payload: AiGenerateBatchCandidatesPayload) => {
     const providerName = payload.generationSettings?.provider ?? "openai";
-    const apiKey =
-      providerName === "seedream"
-        ? await readSeedreamApiKey(aiCredentialStore())
-        : await readOpenAiApiKey(aiCredentialStore());
     return generateAiBatchCandidates({
       ...payload,
-      provider:
-        providerName === "seedream"
-          ? createSeedreamImageProvider({ apiKey })
-          : createOpenAiImageProvider({ apiKey })
+      provider: await createAiImageProvider(providerName)
     });
   });
 
   ipcMain.handle("ai:copyRequestPreview", async (_event, payload: AiRequestPreviewPayload) => {
-    const text = await buildAiRequestPreview(payload);
+    const providerName = payload.generationSettings?.provider ?? "openai";
+    const settings = providerName === "comfyui" ? await readAiSettings(aiSettingsStore()) : undefined;
+    const text = await buildAiRequestPreview({
+      ...payload,
+      comfyUiSettings: settings?.comfyUi
+    });
     clipboard.writeText(text);
     return { text };
   });
@@ -1396,6 +1416,33 @@ const aiCredentialStore = (): AiCredentialStore => ({
   userDataPath: app.getPath("userData"),
   crypto: safeStorage
 });
+
+const aiSettingsStore = (): AiSettingsStore => ({
+  userDataPath: app.getPath("userData")
+});
+
+const readAiSettingsForRenderer = async () => {
+  const [credentials, settings] = await Promise.all([
+    readAiCredentialStatus(aiCredentialStore()),
+    readAiSettings(aiSettingsStore())
+  ]);
+  return {
+    ...credentials,
+    ...settings,
+    hasValidComfyUiSettings: validateComfyUiWorkflow(settings.comfyUi.workflowJson, 1).ok
+  };
+};
+
+const createAiImageProvider = async (providerName: AiImageProviderName) => {
+  if (providerName === "comfyui") {
+    const settings = await readAiSettings(aiSettingsStore());
+    return createComfyUiImageProvider({ settings: settings.comfyUi });
+  }
+  if (providerName === "seedream") {
+    return createSeedreamImageProvider({ apiKey: await readSeedreamApiKey(aiCredentialStore()) });
+  }
+  return createOpenAiImageProvider({ apiKey: await readOpenAiApiKey(aiCredentialStore()) });
+};
 
 const readRecentFolders = async (): Promise<string[]> => {
   try {

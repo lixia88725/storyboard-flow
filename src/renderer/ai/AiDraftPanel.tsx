@@ -19,6 +19,7 @@ import {
   aiProviderApiKeyStatusLabel,
   type AiProviderName,
   canRequestAiGeneration,
+  comfyUiWorkflowDraftStatus,
   nextAiSettingsPanelOpen,
   nextAiApiKeyDraftAfterSave,
   nextAiApiKeyDraftForStatus,
@@ -64,6 +65,17 @@ const referenceRoles = [
   "Prop reference"
 ];
 
+type AiSettingsStatus = {
+  hasOpenAiApiKey: boolean;
+  hasSeedreamApiKey: boolean;
+  hasValidComfyUiSettings: boolean;
+  comfyUi: {
+    serverUrl: string;
+    workflowJson: string;
+    timeoutMs: number;
+  };
+};
+
 const uniqueResourceIds = (resourceIds: string[]): string[] => [...new Set(resourceIds)];
 
 export const AiDraftPanel = ({
@@ -88,16 +100,26 @@ export const AiDraftPanel = ({
   const [seedreamModel, setSeedreamModel] = useState("doubao-seedream-5.0-lite");
   const [openAiApiKeyDraft, setOpenAiApiKeyDraft] = useState("");
   const [seedreamApiKeyDraft, setSeedreamApiKeyDraft] = useState("");
+  const [comfyUiServerUrl, setComfyUiServerUrl] = useState("http://127.0.0.1:8188");
+  const [comfyUiWorkflowJson, setComfyUiWorkflowJson] = useState("");
+  const [comfyUiTimeoutMs, setComfyUiTimeoutMs] = useState(120000);
+  const [comfyUiConnectionStatus, setComfyUiConnectionStatus] = useState("");
   const [apiKeyStatus, setApiKeyStatus] = useState({
     hasOpenAiApiKey: false,
-    hasSeedreamApiKey: false
+    hasSeedreamApiKey: false,
+    hasValidComfyUiSettings: false
   });
   const [hasLoadedResources, setHasLoadedResources] = useState(false);
   const [isResourceDropActive, setIsResourceDropActive] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAssignmentOpen, setIsAssignmentOpen] = useState(false);
   const currentModel = providerName === "seedream" ? seedreamModel : openAiModel;
+  const currentGenerationSettings =
+    providerName === "comfyui"
+      ? { provider: providerName }
+      : { provider: providerName, model: currentModel };
   const providerSettings = visibleAiProviderSettings(providerName);
+  const comfyUiDraftStatus = comfyUiWorkflowDraftStatus(comfyUiWorkflowJson);
   const visibleStatus = visibleAiStatusMessage(status);
   const canCopyRequestPreview = canCopyAiRequestPreview(selection);
   const batchShotIds = selection.kind === "multi" ? selection.shots.map((shot) => shot.id) : [];
@@ -183,6 +205,17 @@ export const AiDraftPanel = ({
     };
   }, [folderPath, isOpen]);
 
+  const updateLocalAiSettings = (result: AiSettingsStatus) => {
+    setApiKeyStatus({
+      hasOpenAiApiKey: result.hasOpenAiApiKey,
+      hasSeedreamApiKey: result.hasSeedreamApiKey,
+      hasValidComfyUiSettings: result.hasValidComfyUiSettings
+    });
+    setComfyUiServerUrl(result.comfyUi.serverUrl);
+    setComfyUiWorkflowJson(result.comfyUi.workflowJson);
+    setComfyUiTimeoutMs(result.comfyUi.timeoutMs);
+  };
+
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -192,7 +225,7 @@ export const AiDraftPanel = ({
       .getSettings()
       .then((result) => {
         if (!cancelled) {
-          setApiKeyStatus(result);
+          updateLocalAiSettings(result);
           setOpenAiApiKeyDraft((currentDraft) =>
             nextAiApiKeyDraftForStatus({
               currentDraft,
@@ -335,7 +368,7 @@ export const AiDraftPanel = ({
           shotIds: batchShotIds,
           selectedResourceIds: batchSelectedResourceIds,
           resourceAssignments: batchResourceAssignments,
-          generationSettings: { provider: providerName, model: currentModel }
+          generationSettings: currentGenerationSettings
         });
         setBatchCandidates(result.candidates);
         setBatchGroups(result.groups);
@@ -365,7 +398,7 @@ export const AiDraftPanel = ({
         project,
         shotId: selection.shot.id,
         selectedResourceIds: activeResourceIds,
-        generationSettings: { provider: providerName, model: currentModel }
+        generationSettings: currentGenerationSettings
       });
       setCandidate(nextCandidate);
       setStatus("AI candidate ready");
@@ -388,7 +421,7 @@ export const AiDraftPanel = ({
           shotIds: batchShotIds,
           selectedResourceIds: batchSelectedResourceIds,
           resourceAssignments: batchResourceAssignments,
-          generationSettings: { provider: providerName, model: currentModel }
+          generationSettings: currentGenerationSettings
         });
         setStatus("AI request preview copied");
       } catch (error) {
@@ -406,7 +439,7 @@ export const AiDraftPanel = ({
         project,
         shotId: selection.shot.id,
         selectedResourceIds: activeResourceIds,
-        generationSettings: { provider: providerName, model: currentModel }
+        generationSettings: currentGenerationSettings
       });
       setStatus("AI request preview copied");
     } catch (error) {
@@ -420,7 +453,7 @@ export const AiDraftPanel = ({
     }
     try {
       const nextStatus = await window.storyboard.ai.saveOpenAiApiKey(openAiApiKeyDraft);
-      setApiKeyStatus(nextStatus);
+      updateLocalAiSettings(nextStatus);
       setOpenAiApiKeyDraft(nextAiApiKeyDraftAfterSave());
       setStatus("OpenAI API key saved");
     } catch (error) {
@@ -431,7 +464,7 @@ export const AiDraftPanel = ({
   const clearOpenAiApiKey = async () => {
     try {
       const nextStatus = await window.storyboard.ai.clearOpenAiApiKey();
-      setApiKeyStatus(nextStatus);
+      updateLocalAiSettings(nextStatus);
       setOpenAiApiKeyDraft("");
       setStatus("OpenAI API key cleared");
     } catch (error) {
@@ -445,7 +478,7 @@ export const AiDraftPanel = ({
     }
     try {
       const nextStatus = await window.storyboard.ai.saveSeedreamApiKey(seedreamApiKeyDraft);
-      setApiKeyStatus(nextStatus);
+      updateLocalAiSettings(nextStatus);
       setSeedreamApiKeyDraft(nextAiApiKeyDraftAfterSave());
       setStatus("Seedream API key saved");
     } catch (error) {
@@ -456,11 +489,42 @@ export const AiDraftPanel = ({
   const clearSeedreamApiKey = async () => {
     try {
       const nextStatus = await window.storyboard.ai.clearSeedreamApiKey();
-      setApiKeyStatus(nextStatus);
+      updateLocalAiSettings(nextStatus);
       setSeedreamApiKeyDraft("");
       setStatus("Seedream API key cleared");
     } catch (error) {
       setStatus(`Could not clear Seedream API key: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const saveComfyUiSettings = async () => {
+    try {
+      const nextStatus = await window.storyboard.ai.saveComfyUiSettings({
+        serverUrl: comfyUiServerUrl,
+        workflowJson: comfyUiWorkflowJson,
+        timeoutMs: comfyUiTimeoutMs
+      });
+      updateLocalAiSettings(nextStatus);
+      setStatus(
+        nextStatus.hasValidComfyUiSettings
+          ? "ComfyUI settings saved"
+          : "ComfyUI settings saved; workflow placeholders are incomplete"
+      );
+    } catch (error) {
+      setStatus(`Could not save ComfyUI settings: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const testComfyUiConnection = async () => {
+    setComfyUiConnectionStatus("");
+    try {
+      const result = await window.storyboard.ai.testComfyUiConnection(comfyUiServerUrl);
+      setComfyUiConnectionStatus(result.message);
+      setStatus(result.message);
+    } catch (error) {
+      const message = `ComfyUI connection failed: ${error instanceof Error ? error.message : String(error)}`;
+      setComfyUiConnectionStatus(message);
+      setStatus(message);
     }
   };
 
@@ -561,6 +625,7 @@ export const AiDraftPanel = ({
                 >
                   <option value="openai">OpenAI</option>
                   <option value="seedream">Seedream</option>
+                  <option value="comfyui">ComfyUI</option>
                 </select>
               </label>
               {providerSettings.showOpenAi ? (
@@ -637,19 +702,70 @@ export const AiDraftPanel = ({
                   </div>
                 </>
               ) : null}
-              <label className="ai-setting-row">
-                <span>{providerName === "seedream" ? "Seedream Model / Endpoint ID" : "OpenAI Model"}</span>
-                <input
-                  type="text"
-                  value={currentModel}
-                  onChange={(event) =>
-                    providerName === "seedream"
-                      ? setSeedreamModel(event.target.value)
-                      : setOpenAiModel(event.target.value)
-                  }
-                  spellCheck={false}
-                />
-              </label>
+              {providerSettings.showComfyUi ? (
+                <>
+                  <label className="ai-setting-row">
+                    <span>ComfyUI Server URL</span>
+                    <input
+                      type="text"
+                      value={comfyUiServerUrl}
+                      onChange={(event) => setComfyUiServerUrl(event.target.value)}
+                      placeholder="http://127.0.0.1:8188"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label className="ai-setting-row">
+                    <span>Timeout (ms)</span>
+                    <input
+                      type="number"
+                      min={1000}
+                      step={1000}
+                      value={comfyUiTimeoutMs}
+                      onChange={(event) =>
+                        setComfyUiTimeoutMs(Math.max(1000, Math.round(Number(event.target.value) || 1000)))
+                      }
+                    />
+                  </label>
+                  <label className="ai-setting-row ai-setting-row-tall">
+                    <span>API Workflow JSON</span>
+                    <textarea
+                      value={comfyUiWorkflowJson}
+                      onChange={(event) => setComfyUiWorkflowJson(event.target.value)}
+                      placeholder="Paste ComfyUI API workflow JSON with __SBF_PROMPT__ and __SBF_IMAGE_1__"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <div className="ai-settings-actions">
+                    <span className="ai-setting-status">
+                      {comfyUiConnectionStatus || aiProviderApiKeyStatusLabel("comfyui", apiKeyStatus)}
+                    </span>
+                    <button type="button" onClick={() => void testComfyUiConnection()}>
+                      Test Connection
+                    </button>
+                    <button type="button" onClick={() => void saveComfyUiSettings()}>
+                      Save Settings
+                    </button>
+                  </div>
+                  <p className={`ai-setting-note ${comfyUiDraftStatus.ok ? "is-ready" : ""}`}>
+                    {comfyUiDraftStatus.message}
+                  </p>
+                </>
+              ) : null}
+              {providerSettings.showModel ? (
+                <label className="ai-setting-row">
+                  <span>{providerName === "seedream" ? "Seedream Model / Endpoint ID" : "OpenAI Model"}</span>
+                  <input
+                    type="text"
+                    value={currentModel}
+                    onChange={(event) =>
+                      providerName === "seedream"
+                        ? setSeedreamModel(event.target.value)
+                        : setOpenAiModel(event.target.value)
+                    }
+                    spellCheck={false}
+                  />
+                </label>
+              ) : null}
             </div>
           </section>
         ) : null}

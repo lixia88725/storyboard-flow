@@ -54,7 +54,10 @@ const contactSheetPanelSize = (shot: Shot): { width: number; height: number } =>
   };
 };
 
-const createInputContactSheet = async (folderPath: string, shots: Shot[]): Promise<Buffer> => {
+const createInputContactSheet = async (
+  folderPath: string,
+  shots: Shot[]
+): Promise<{ buffer: Buffer; width: number; height: number }> => {
   const layout = aiBatchPanelLayout(shots.length);
   const panelSize = contactSheetPanelSize(shots[0]);
   const width = panelSize.width * layout.columns;
@@ -75,7 +78,7 @@ const createInputContactSheet = async (folderPath: string, shots: Shot[]): Promi
     })
   );
 
-  return sharp({
+  const buffer = await sharp({
     create: {
       width,
       height,
@@ -86,6 +89,7 @@ const createInputContactSheet = async (folderPath: string, shots: Shot[]): Promi
     .composite(composites)
     .png()
     .toBuffer();
+  return { buffer, width, height };
 };
 
 const cropPanel = async (imageBuffer: Buffer, rect: AiBatchPanelRect): Promise<Buffer> => {
@@ -203,7 +207,9 @@ const generateAiBatchGroup = async ({
     const generatedSheet = await provider.generate({
       prompt,
       model,
-      images: [{ name: "selected-storyboards-contact-sheet.png", buffer: contactSheet }, ...referenceImages]
+      width: contactSheet.width,
+      height: contactSheet.height,
+      images: [{ name: "selected-storyboards-contact-sheet.png", buffer: contactSheet.buffer }, ...referenceImages]
     });
     const layout = aiBatchPanelLayout(shots.length);
     const candidates = await Promise.all(

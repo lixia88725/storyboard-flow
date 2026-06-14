@@ -7,6 +7,8 @@ export type AiImageProviderRequest = {
   prompt: string;
   images: AiProviderImageInput[];
   model?: string;
+  width?: number;
+  height?: number;
 };
 
 export type AiImageProvider = {

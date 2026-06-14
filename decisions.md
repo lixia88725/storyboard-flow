@@ -246,6 +246,36 @@ Pressing Delete/Backspace removes selected shots from the app state and records 
 
 Reason: Users expect manual storyboard deletion to behave like Finder/Bridge deletion, where the system Trash is recoverable. Mixing intentional deletes into `Archive` would pollute the Import backup area.
 
+## AI Draft Is Candidate-First And Additive
+
+AI image generation is an internal feature module, not a full external plugin system. Generation creates candidates first; Apply adds a visible top bitmap layer named `AI Draft`. It does not replace base art, does not synchronize real file names, and does not write final working TIFF pixels. `Save` remains the only final TIFF write boundary.
+
+Reason: AI output should be reviewable and reversible like an extra draft layer. Keeping it out of Save / Import / TIFF naming rules reduces the risk that generation experiments corrupt delivery files.
+
+## AI Provider Settings Are Local GUI Settings
+
+OpenAI and Seedream credentials are configured through the app GUI and stored as local app-level credentials/settings. They are not read from user-facing environment variable fallbacks and are not written into `storyboard.project.json`, `.storyboard-workbench/`, AI resource metadata, or candidate metadata. ComfyUI stores local server/workflow settings at app level and does not store secrets in the project.
+
+Reason: The target users are artists who expect GUI setup. Keeping credentials out of project data makes shared project folders safer.
+
+## AI Resources Are A Project Reference Library
+
+`AI Resources/` is a visible project folder for reference images. Each resource can have sidecar role/note metadata. Resources are available to every shot by default. `project.ai.shotResourceExclusions` records only per-shot resources the user has manually disallowed.
+
+Reason: Most references are reusable across a scene, so default-on is simpler. Recording only exclusions keeps the project metadata small while preserving user intent when a specific shot should not use a reference.
+
+## Batch AI Generation Uses Fixed Contact-Sheet Templates
+
+Batch AI generation groups selected shots in current storyboard order. Full groups use a 4-up 2x2 contact sheet; the final remainder uses 1-up, 2-up horizontal, or 3-up horizontal templates. Provider output is cropped back by fixed ratios into per-shot candidates.
+
+Reason: The first batch version should be predictable and testable. Fixed templates avoid brittle computer-vision panel detection and keep provider differences isolated behind the existing candidate flow.
+
+## ComfyUI Provider Uses User-Run Local API Workflows
+
+The ComfyUI provider only connects to a user-run local ComfyUI server. It accepts API-format workflow JSON exported from ComfyUI, validates required placeholders, uploads input images, queues `/prompt`, waits on `/ws`, reads `/history`, downloads `/view`, and returns an image buffer to the same candidate pipeline as other providers. It does not install, start, update, or manage ComfyUI or models.
+
+Reason: Local generation can reduce API cost, but managing a full ComfyUI installation is a separate product surface. The MVP should only bridge to workflows users have already made work inside ComfyUI.
+
 ## Layered TIFF Save Writes Once
 
 多图层 TIFF 的 Save 只写一次最终 Photoshop-readable TIFF。Electron 把 SWB metadata 传给 Python writer；Python writer 在生成最终 composite 后计算 `baseFingerprint`，再把 SWB XMP 和 Photoshop layer records 一起写入最终 TIFF。
@@ -278,8 +308,8 @@ Reason: `storyboard-script.md` 是用户可编辑的文字镜像。用户修改�
 
 Non-goal: bitmap layer 重构不代表完整 Photoshop 图层 round-trip。Photoshop layered TIFF import/export 已经产品化为 raster layer 交换路径；PSD-first 和复杂 Photoshop 图层完整保真仍是待验证方向。
 
-## V1 Avoids Heavy Features
+## Current Scope Avoids Heavy Non-Core Features
 
-V1 刻意不包含 AI 字段、PDF/image-sequence export、SQLite、云同步、PSD-first 工作流和复杂绘图工具。
+当前 scope 刻意不包含 PDF/image-sequence export、SQLite、云同步、PSD-first 工作流和复杂绘图工具。AI Draft 已进入 MVP，但仍必须保持 candidate-first、local-first、Save 边界不变。
 
 Reason: 产品目标是一个可用的最小分镜排列工具，后续可扩展。

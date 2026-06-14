@@ -42,6 +42,8 @@ const api = {
     clearOpenAiApiKey: () => ipcRenderer.invoke("ai:clearOpenAiApiKey"),
     saveSeedreamApiKey: (apiKey) => ipcRenderer.invoke("ai:saveSeedreamApiKey", apiKey),
     clearSeedreamApiKey: () => ipcRenderer.invoke("ai:clearSeedreamApiKey"),
+    saveComfyUiSettings: (settings) => ipcRenderer.invoke("ai:saveComfyUiSettings", settings),
+    testComfyUiConnection: (serverUrl) => ipcRenderer.invoke("ai:testComfyUiConnection", serverUrl),
     listResources: (folderPath) => ipcRenderer.invoke("ai:listResources", folderPath),
     importResources: (folderPath, sourceFilePaths) =>
       ipcRenderer.invoke("ai:importResources", folderPath, sourceFilePaths),

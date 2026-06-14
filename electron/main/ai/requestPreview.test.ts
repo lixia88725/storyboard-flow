@@ -107,4 +107,44 @@ describe("AI request preview", () => {
     expect(preview).not.toContain(folderPath);
     expect(preview).not.toContain("API key");
   });
+
+  it("copies a ComfyUI request preview without exposing workflow JSON", async () => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-ai-preview-comfyui-"));
+    await mkdir(path.join(folderPath, "AI Resources"));
+    await writeFile(path.join(folderPath, "AI Resources/hero.png"), "hero image");
+    await writeAiResourceMetadata(folderPath, {
+      version: 1,
+      resources: [{ fileName: "hero.png", role: "Character reference", note: "Use the face." }]
+    });
+
+    const preview = await buildAiRequestPreview({
+      folderPath,
+      project,
+      shotId: "shot-1",
+      selectedResourceIds: ["hero.png"],
+      generationSettings: { provider: "comfyui" },
+      comfyUiSettings: {
+        serverUrl: "http://127.0.0.1:8188",
+        timeoutMs: 120000,
+        workflowJson: JSON.stringify({
+          "1": { class_type: "LoadImage", inputs: { image: "__SBF_IMAGE_1__" } },
+          "2": { class_type: "CLIPTextEncode", inputs: { text: "__SBF_PROMPT__" } },
+          "3": { class_type: "SaveImage", inputs: { filename_prefix: "__SBF_FILENAME_PREFIX__" } }
+        })
+      }
+    });
+
+    expect(preview).toContain("Provider: comfyui");
+    expect(preview).toContain("ComfyUI server: http://127.0.0.1:8188");
+    expect(preview).toContain("ComfyUI workflow image placeholders: 1");
+    expect(preview).toContain("ComfyUI workflow status: Workflow has 1 image placeholder but generation needs 2 images");
+    expect(preview).toContain("Prompt:");
+    expect(preview).toContain("Image inputs:");
+    expect(preview).toContain("1. selected-storyboard.png");
+    expect(preview).toContain("2. hero.png - Character reference - Use the face.");
+    expect(preview).not.toContain("LoadImage");
+    expect(preview).not.toContain("__SBF_PROMPT__");
+    expect(preview).not.toContain(folderPath);
+    expect(preview).not.toContain("API key");
+  });
 });

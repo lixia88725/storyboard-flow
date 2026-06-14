@@ -64,16 +64,19 @@ export const marqueeViewportRect = (box: MarqueeBox) => {
 
 export const marqueeEdgeScrollDelta = ({
   pointerY,
+  viewportTop = 0,
   viewportHeight
 }: {
   pointerY: number;
+  viewportTop?: number;
   viewportHeight: number;
 }) => {
-  if (pointerY < edgeThresholdPx) {
+  const pointerViewportY = pointerY - viewportTop;
+  if (pointerViewportY < edgeThresholdPx) {
     return -edgeScrollStepPx;
   }
 
-  if (pointerY > viewportHeight - edgeThresholdPx) {
+  if (pointerViewportY > viewportHeight - edgeThresholdPx) {
     return edgeScrollStepPx;
   }
 

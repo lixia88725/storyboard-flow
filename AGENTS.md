@@ -54,8 +54,9 @@ npm run smoke:bitmap
 
 - Project data behavior: start in `src/shared/projectOps.ts`, then update `src/shared/projectOps.test.ts`.
 - Renderer pure behavior: use focused helpers in `src/renderer/sketchGeometry.ts`, `src/renderer/sketchRendering.ts`, `src/renderer/activeTargets.ts`, `src/renderer/keyboardShortcuts.ts`, `src/renderer/animationViewport.ts`, `src/renderer/onionSkin.ts`, `src/renderer/deleteTarget.ts`, `src/renderer/bitmapLayerWriteQueue.ts`, or `src/renderer/storyboardDnd.ts` before wiring behavior into UI components.
-- Renderer UI wiring: `src/renderer/App.tsx` is the current integration point for toolbar state, shortcuts, animation, Save, Import, autosave, external change refresh, delete target, parking orchestration, selection state, and project history. `src/renderer/ShotCard.tsx` owns per-card presentation, dialogue cards, script back faces, lazy media placeholders, and the card-local composition of `SketchPad` and `LayerPanel`. `src/renderer/SketchPad.tsx` owns bitmap drawing, erasing, lasso Select transforms, Onion Skin overlay, live bitmap canvases, and Konva stage wiring. `src/renderer/LayerPanel.tsx` owns layer selection, visibility sweep, opacity/reorder gestures, Merge controls, and row UI. `src/renderer/ParkingShelf.tsx` owns the right pending shelf UI. Keep edits narrow because these files are collaboration hotspots.
+- Renderer UI wiring: `src/renderer/App.tsx` is the current integration point for toolbar state, shortcuts, animation, Save, Import, autosave, external change refresh, delete target, parking orchestration, AI panel orchestration, selection state, and project history. `src/renderer/ai/AiDraftPanel.tsx` owns AI Draft side panel presentation, provider settings UI, candidate controls, and AI resource assignment UI. `src/renderer/ShotCard.tsx` owns per-card presentation, dialogue cards, script back faces, lazy media placeholders, and the card-local composition of `SketchPad` and `LayerPanel`. `src/renderer/SketchPad.tsx` owns bitmap drawing, erasing, lasso Select transforms, Onion Skin overlay, live bitmap canvases, and Konva stage wiring. `src/renderer/LayerPanel.tsx` owns layer selection, visibility sweep, opacity/reorder gestures, Merge controls, and row UI. `src/renderer/ParkingShelf.tsx` owns the right pending shelf UI. Keep edits narrow because these files are collaboration hotspots.
 - Electron Save/Import/filesystem behavior: start in `electron/main/main.ts`, but prefer existing focused helpers such as `externalChanges.ts`, `saveProgress.ts`, `closePrompt.ts`, `previewCache.ts`, `storyboardScriptProject.ts`, and `workspaceTemporaryPaths.ts` when the task is isolated. Avoid changing `saveWorkspace` ordering unless the task explicitly targets Save.
+- AI behavior: keep provider adapters, settings, prompt/request preview logic, candidate generation, batch generation, and ComfyUI workflow handling under `electron/main/ai/*`; keep renderer AI panel presentation under `src/renderer/ai/*`. AI output must remain candidate-first and additive unless a separate product decision changes it.
 - Electron bitmap layer ordering/defaulting: use `electron/main/bitmapLayerOrdering.ts` so Save and Photoshop export stay aligned.
 - Storyboard script Markdown behavior: use `electron/main/storyboardScript.ts` and its tests so the production parser/serializer/import planner stays covered.
 - Markdown project bootstrap behavior: use `electron/main/storyboardScriptProject.ts` and its tests.
@@ -75,6 +76,7 @@ npm run smoke:bitmap
 - Changing Save, Import, Archive, TIFF metadata, or working TIFF pixels: treat it as high risk, keep the patch small, and run `npm run build` before `npm run smoke:bitmap`.
 - Changing preload APIs: update TypeScript and CommonJS preload files together and run `npm run check:preload`.
 - Changing visual styling only: keep the change in `src/renderer/styles.css`; do not modify project data or Electron code.
+- Changing AI provider/settings/generation behavior: keep project files free of API keys, preserve candidate-first Apply, and avoid changing Save / Import / TIFF / `.storyboard-workbench` format boundaries unless explicitly requested.
 - Changing smoke coverage: preserve existing scenarios and only add focused helpers or assertions for the new behavior.
 
 ## Code Standards
@@ -83,7 +85,8 @@ npm run smoke:bitmap
 - Preserve user files unless an explicit user action requires changing them.
 - Use two-stage renaming when changing image filenames in a folder.
 - Keep V1 data structures understandable and local-first: `Project`, `Shot`, `Dialogue`, `BitmapLayer`, legacy migration stroke fields, SWB metadata, and naming metadata.
-- Avoid adding AI, export, database, cloud, Photoshop layer round-trip, or file watching code unless specifically requested.
+- Avoid adding export, database, cloud, Photoshop layer round-trip, or file watching code unless specifically requested.
+- AI provider or AI UI work must stay inside the existing internal AI module boundaries unless the user explicitly approves a larger architecture change.
 - Treat `Save` as the only operation that may synchronize real image filenames or write working TIFF pixels.
 - Treat storyboard deletion as pending app state until `Save`; deleted root image files move to the system Trash, not `Archive`.
 
@@ -92,7 +95,7 @@ npm run smoke:bitmap
 - Do not modify business code when the user asks only for documentation.
 - Do not auto-rename image files during autosave.
 - Do not treat `.storyboard-workbench/` cache files as user image shots.
-- Do not add SQLite, AI prompt fields, PDF export, cloud sync, or Photoshop integration to V1 without a new explicit plan.
+- Do not add SQLite, PDF export, cloud sync, or Photoshop integration to V1 without a new explicit plan.
 - Do not attempt Photoshop layer round-trip or Photoshop-compatible multi-layer TIFF writing without a separate explicit plan.
 - Do not use destructive file commands without explicit approval.
 

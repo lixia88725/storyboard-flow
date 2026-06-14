@@ -36,8 +36,10 @@ npm run dev
 - `electron/main/bitmapLayerOrdering.ts`：Electron Save / Photoshop export 共用的 bitmap layer 排序和默认值规则。
 - `electron/main/storyboardScript.ts`：`storyboard-script.md` 的序列化、解析和 Import 计划 helper。
 - `electron/main/photoshopTiffExport.ts` / `electron/main/photoshopTiffImport.ts`：Photoshop layered TIFF 交换路径。
+- `electron/main/ai/*`：AI provider adapters, GUI-only settings, prompt/request preview logic, candidate generation, batch generation, and ComfyUI workflow handling.
 - `electron/preload/preload.ts` 和 `electron/preload/preload.cjs`：renderer-safe API。改其中一个后跑 `npm run check:preload`。
 - `src/renderer/App.tsx`：主 UI 状态、工具栏、Save/Import/autosave wiring、全局选择状态和项目历史。它仍是协作热点，优先做小步改动。
+- `src/renderer/ai/AiDraftPanel.tsx`：AI Draft side panel UI, provider settings UI, single-shot / batch candidate controls, and AI resource assignment UI.
 - `src/renderer/ShotCard.tsx`：每张 storyboard card 的展示、台词卡、script 背面、懒渲染占位，以及卡片内组合 `SketchPad` / `LayerPanel`。
 - `src/renderer/SketchPad.tsx`：bitmap drawing、eraser live preview、bitmap Select transform、Onion Skin overlay 和 Konva stage wiring。改这里先跑 renderer tests，再跑 build/smoke。
 - `src/renderer/LayerPanel.tsx`：per-shot layer drawer UI、layer row gestures、visibility sweep、opacity/reorder controls。
@@ -114,6 +116,14 @@ Option/Alt drag 不再作为复制手势；按住 Option/Alt 拖动 storyboard�
 
 下一阶段讨论方向是 PSD-first Photoshop interoperability：先验证 PSD raster layer import/export，再决定是否作为显式 Photoshop 交换工作流产品化。当前 PSD 支持尚未实现。
 
+## AI Draft
+
+AI Draft is an experimental candidate-first image generation flow. It supports GUI-only local provider settings for OpenAI, Seedream, and local ComfyUI. Generated results are stored as candidates first; Apply adds a visible top bitmap layer named `AI Draft`. It does not replace base art and does not change the Save / Import / TIFF filename boundary.
+
+`AI Resources/` is a visible project folder for reference images. Resource role/note metadata is stored beside the resources, and per-shot availability is stored in project AI metadata as exclusions. Single-shot mode edits resource role/note and shot availability. Multi-shot mode uses fixed 4-up / remainder contact sheets, then crops provider output back into one candidate per selected shot.
+
+ComfyUI support expects the user to run local ComfyUI and provide an API-format workflow exported from ComfyUI. Storyboard Flow validates placeholders, submits the workflow to the local server, and reuses the normal candidate/apply path. It does not install or manage ComfyUI.
+
 ## Storyboard And Animation Mode
 
 - `Add Shot` 可创建白底 TIFF，支持 `16:9`、`2.39:1`、`1.43:1 IMAX`。
@@ -128,7 +138,6 @@ Option/Alt drag 不再作为复制手势；按住 Option/Alt 拖动 storyboard�
 
 ## MVP Non-Goals
 
-- AI prompt fields or AI export.
 - PDF or image sequence export.
 - SQLite migration.
 - Cloud sync or collaboration.

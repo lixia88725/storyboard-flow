@@ -7,6 +7,7 @@ import {
   nextAiApiKeyDraftAfterSave,
   nextAiApiKeyDraftForStatus,
   isAiApiKeyDraftSaveable,
+  comfyUiWorkflowDraftStatus,
   visibleAiProviderSettings
 } from "./aiSettingsState";
 
@@ -70,9 +71,28 @@ describe("AI settings state", () => {
         provider: "seedream",
         hasOpenAiApiKey: true,
         hasSeedreamApiKey: true,
+        hasValidComfyUiSettings: false,
         isGenerating: true
       })
     ).toBe(false);
+    expect(
+      canRequestAiGeneration({
+        provider: "comfyui",
+        hasOpenAiApiKey: false,
+        hasSeedreamApiKey: false,
+        hasValidComfyUiSettings: false,
+        isGenerating: false
+      })
+    ).toBe(false);
+    expect(
+      canRequestAiGeneration({
+        provider: "comfyui",
+        hasOpenAiApiKey: false,
+        hasSeedreamApiKey: false,
+        hasValidComfyUiSettings: true,
+        isGenerating: false
+      })
+    ).toBe(true);
   });
 
   it("keeps a masked key draft visible after saving or loading saved status", () => {
@@ -99,11 +119,33 @@ describe("AI settings state", () => {
   it("shows settings only for the selected provider", () => {
     expect(visibleAiProviderSettings("openai")).toEqual({
       showOpenAi: true,
-      showSeedream: false
+      showSeedream: false,
+      showComfyUi: false,
+      showModel: true
     });
     expect(visibleAiProviderSettings("seedream")).toEqual({
       showOpenAi: false,
-      showSeedream: true
+      showSeedream: true,
+      showComfyUi: false,
+      showModel: true
+    });
+    expect(visibleAiProviderSettings("comfyui")).toEqual({
+      showOpenAi: false,
+      showSeedream: false,
+      showComfyUi: true,
+      showModel: false
+    });
+  });
+
+  it("uses the same ComfyUI image placeholder continuity rule as generation", () => {
+    const workflowJson = JSON.stringify({
+      "1": { class_type: "LoadImage", inputs: { image: "__SBF_IMAGE_1__ and __SBF_IMAGE_3__" } },
+      "2": { class_type: "CLIPTextEncode", inputs: { text: "__SBF_PROMPT__" } }
+    });
+
+    expect(comfyUiWorkflowDraftStatus(workflowJson)).toEqual({
+      ok: false,
+      message: "Workflow image placeholders must be continuous from __SBF_IMAGE_1__"
     });
   });
 });

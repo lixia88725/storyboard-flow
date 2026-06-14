@@ -8,7 +8,7 @@ import { writeAiCandidate, type AiCandidateMetadata } from "./candidates.js";
 import { createOpenAiImageProvider, type AiImageProvider } from "./openAiImageProvider.js";
 import { listAiResources } from "./resources.js";
 
-export type AiImageProviderName = "openai" | "seedream";
+export type AiImageProviderName = "openai" | "seedream" | "comfyui";
 
 export type GenerateAiCandidateInput = {
   folderPath: string;
@@ -111,12 +111,14 @@ export const generateAiCandidate = async ({
         buffer: await readFile(resource.filePath)
       }))
   );
+  const { width, height } = shotCanvasSize(shot);
   const result = await provider.generate({
     prompt,
     model: generationSettings?.model,
+    width,
+    height,
     images: [{ name: "selected-storyboard.png", buffer: shotImage }, ...referenceImages]
   });
-  const { width, height } = shotCanvasSize(shot);
   return writeAiCandidate({
     folderPath,
     shotId: shot.id,

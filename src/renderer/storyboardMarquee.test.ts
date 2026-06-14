@@ -17,6 +17,12 @@ describe("storyboard marquee helpers", () => {
     expect(marqueeEdgeScrollDelta({ pointerY: 780, viewportHeight: 800 })).toBe(32);
   });
 
+  it("scrolls against the storyboard scroll viewport instead of the whole window", () => {
+    expect(marqueeEdgeScrollDelta({ pointerY: 145, viewportTop: 120, viewportHeight: 500 })).toBe(-32);
+    expect(marqueeEdgeScrollDelta({ pointerY: 400, viewportTop: 120, viewportHeight: 500 })).toBe(0);
+    expect(marqueeEdgeScrollDelta({ pointerY: 595, viewportTop: 120, viewportHeight: 500 })).toBe(32);
+  });
+
   it("keeps marquee hit testing in document coordinates after scrolling", () => {
     const started = createMarqueeBox({ clientX: 100, clientY: 100, scrollX: 0, scrollY: 0 });
     const moved = updateMarqueeBox(started, {

@@ -504,6 +504,7 @@ export const App = () => {
   const shortcutMenuRef = useRef<HTMLDivElement | null>(null);
   const importHelpRef = useRef<HTMLDivElement | null>(null);
   const appShellRef = useRef<HTMLElement | null>(null);
+  const workspaceBoardScrollRef = useRef<HTMLDivElement | null>(null);
   const boardGridRef = useRef<HTMLElement | null>(null);
   const orderedShots = useMemo(() => sortedShots(project.shots), [project.shots]);
   const parkedShots = useMemo(() => sortedShots(project.parkedShots ?? []), [project.parkedShots]);
@@ -640,6 +641,26 @@ export const App = () => {
     board.style.setProperty("--animation-frame-height", preview.cssVariables.animationFrameHeight);
   }, []);
 
+  const currentBoardScroll = () => {
+    const scrollContainer = workspaceBoardScrollRef.current;
+    return scrollContainer
+      ? { x: scrollContainer.scrollLeft, y: scrollContainer.scrollTop }
+      : { x: window.scrollX, y: window.scrollY };
+  };
+
+  const currentBoardViewportHeight = () =>
+    workspaceBoardScrollRef.current?.clientHeight ?? window.innerHeight;
+
+  const scrollBoardBy = (options: ScrollToOptions) => {
+    const scrollContainer = workspaceBoardScrollRef.current;
+    if (scrollContainer) {
+      scrollContainer.scrollBy(options);
+      return;
+    }
+
+    window.scrollBy(options);
+  };
+
   const buildZoomPreviewState = useCallback(
     (zoom: number): ZoomPreviewState | undefined => {
       const board = boardGridRef.current;
@@ -649,11 +670,12 @@ export const App = () => {
       }
 
       const boardRect = board.getBoundingClientRect();
+      const boardScroll = currentBoardScroll();
       const viewportShot = primarySelectedShot ?? orderedShots[0];
       return getZoomPreviewState({
         boardWidth: boardRect.width,
-        boardTop: getStableBoardTop(boardRect.top, window.scrollY),
-        viewportHeight: window.innerHeight,
+        boardTop: getStableBoardTop(boardRect.top, boardScroll.y),
+        viewportHeight: currentBoardViewportHeight(),
         reservedBottom: animationReservedBottom,
         margin: animationViewportMargin,
         zoomLevel: zoom,
@@ -1247,11 +1269,12 @@ export const App = () => {
     }
 
     const boardRect = board.getBoundingClientRect();
+    const boardScroll = currentBoardScroll();
     const viewportShot = primarySelectedShot ?? orderedShots[0];
     const viewport = getAnimationViewport({
       boardWidth: boardRect.width,
-      boardTop: getStableBoardTop(boardRect.top, window.scrollY),
-      viewportHeight: window.innerHeight,
+      boardTop: getStableBoardTop(boardRect.top, boardScroll.y),
+      viewportHeight: currentBoardViewportHeight(),
       reservedBottom: animationReservedBottom,
       margin: animationViewportMargin,
       zoomLevel,
@@ -1304,14 +1327,14 @@ export const App = () => {
     const delta = scrollDeltaToCenterInReservedViewport(
       element.getBoundingClientRect(),
       {
-        height: window.innerHeight,
+        height: currentBoardViewportHeight(),
         reservedBottom,
         margin: animationViewportMargin
       }
     );
 
     if (delta !== 0) {
-      window.scrollBy({ top: delta, behavior: "instant" });
+      scrollBoardBy({ top: delta, behavior: "instant" });
     }
   }, [animationImageSize.height, animationImageSize.width, isAnimationMode, isZoomScrubbing, selectedShotIds]);
 
@@ -2926,7 +2949,7 @@ export const App = () => {
   };
 
   const currentStoryboardDragRectCache = (): StoryboardDragRectCache | undefined => {
-    const scroll = { x: window.scrollX, y: window.scrollY };
+    const scroll = currentBoardScroll();
     const cachedScroll = storyboardDragRectCacheScrollRef.current;
     if (
       !storyboardDragRectCacheRef.current ||
@@ -2942,7 +2965,7 @@ export const App = () => {
   };
 
   const currentParkingDragRectCache = (): ParkingDragRectCache | undefined => {
-    const scroll = { x: window.scrollX, y: window.scrollY };
+    const scroll = currentBoardScroll();
     const cachedScroll = parkingDragRectCacheScrollRef.current;
     if (
       !parkingDragRectCacheRef.current ||
@@ -3399,16 +3422,17 @@ export const App = () => {
     }
 
     const board = event.currentTarget;
-    const marqueeShotRects = storyboardMarqueeShotRectsFromDom(board);
+    const marqueeShotRects = storyboardMarqueeShotRectsFromDom(board, currentBoardScroll());
     const marqueeShotElements = storyboardMarqueeShotElementsFromDom(board);
     const initialSelectedShotIds = selectedShotIdsRef.current;
     const shouldCommitShotDeleteTarget = deleteTargetRef.current.type !== "shot";
     let marqueeSelectedShotIds: string[] = [];
+    const initialBoardScroll = currentBoardScroll();
     const nextBox = createMarqueeBox({
       clientX: event.clientX,
       clientY: event.clientY,
-      scrollX: window.scrollX,
-      scrollY: window.scrollY
+      scrollX: initialBoardScroll.x,
+      scrollY: initialBoardScroll.y
     });
     board.classList.add("is-marquee-selecting");
     showSelectionMarquee(selectionMarqueeRef.current, nextBox);
@@ -3422,19 +3446,22 @@ export const App = () => {
     let marqueeFrame: number | undefined;
 
     function updateMarqueeSelection(continueAutoScroll: boolean) {
+      const scrollViewportRect = workspaceBoardScrollRef.current?.getBoundingClientRect();
       const scrollDelta = marqueeEdgeScrollDelta({
         pointerY: latestPointer.clientY,
-        viewportHeight: window.innerHeight
+        viewportTop: scrollViewportRect?.top ?? 0,
+        viewportHeight: scrollViewportRect?.height ?? window.innerHeight
       });
       if (scrollDelta !== 0) {
-        window.scrollBy({ top: scrollDelta, left: 0, behavior: "auto" });
+        scrollBoardBy({ top: scrollDelta, left: 0, behavior: "auto" });
       }
 
+      const boardScroll = currentBoardScroll();
       const movedBox = updateMarqueeBox(nextBox, {
         clientX: latestPointer.clientX,
         clientY: latestPointer.clientY,
-        scrollX: window.scrollX,
-        scrollY: window.scrollY
+        scrollX: boardScroll.x,
+        scrollY: boardScroll.y
       });
       applySelectionMarqueeStyle(selectionMarqueeRef.current, movedBox);
 
@@ -4145,172 +4172,174 @@ export const App = () => {
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          <SortableContext
-            items={storyboardSortableItemIds}
-            strategy={rectSortingStrategy}
-          >
-            <section
-              ref={boardGridRef}
-              className="board-grid"
-              style={
-                {
-                  "--shot-scale": boardZoomCssVariables?.shotScale ?? zoomLevel / 100,
-                  "--animation-image-width":
-                    boardZoomCssVariables?.animationImageWidth ?? `${animationImageSize.width}px`,
-                  "--animation-image-height":
-                    boardZoomCssVariables?.animationImageHeight ?? `${animationImageSize.height}px`,
-                  "--animation-frame-width":
-                    boardZoomCssVariables?.animationFrameWidth ?? `${animationFrameSize.width}px`,
-                  "--animation-frame-height":
-                    boardZoomCssVariables?.animationFrameHeight ?? `${animationFrameSize.height}px`
-                } as CSSProperties
-              }
-              onPointerDown={handleSelectionPointerDown}
+          <div className="workspace-board-scroll" ref={workspaceBoardScrollRef}>
+            <SortableContext
+              items={storyboardSortableItemIds}
+              strategy={rectSortingStrategy}
             >
-              {renderedShotEntries.map((entry) => {
-                const { shot, index } = entry;
-                return (
-                  <ShotCard
-                    key={shot.id}
-                    shot={shot}
-                    index={index}
-                  project={project}
-                  folderPath={folderPath}
-                  isSelected={selectedShotIds.length > 1 && selectedShotIds.includes(shot.id)}
-                  isPrimarySelected={shot.id === primarySelectedShotId}
-                  isAnimationFocused={isAnimationMode && shot.id === primarySelectedShotId}
-                  isZoomScrubbing={isZoomScrubbing}
-                  disableSortableTransform={activeShotIds.length > 0}
-                  keepDraggingSourceVisible={activeShotIds.includes(shot.id)}
-                  activeDragType={activeDragType}
-                  activeSketchTool={activeSketchTool}
-                  brushColor={brushColor}
-                  brushOpacity={brushOpacity}
-                  brushSize={brushSize}
-                  brushSoftness={brushSoftness}
-                  eraserOpacity={eraserOpacity}
-                  eraserSize={eraserSize}
-                  eraserSoftness={eraserSoftness}
-                  cardFace={cardFace}
-                  onionSkinPreviousShot={
-                    isAnimationMode && shot.id === primarySelectedShotId
-                      ? onionSkinNeighbors.previous
-                      : undefined
-                  }
-                  onionSkinNextShot={
-                    isAnimationMode && shot.id === primarySelectedShotId
-                      ? onionSkinNeighbors.next
-                      : undefined
-                  }
-                    editingDialogueId={editingDialogueId}
-                    onSelect={(event) => handleShotSelect(shot.id, event)}
-                  onFocusShot={() => {
-                    selectSingleShot(shot.id);
-                    setDeleteTarget({ type: "shot" });
-                    setSelectedBitmapLayerIds(undefined);
-                  }}
-                    isLayerPanelOpen={isLayerPanelOpen && shot.id === primarySelectedShotId}
-                    thumbnailRevision={autosaveRevision}
-                    onToggleLayerPanel={() => {
+              <section
+                ref={boardGridRef}
+                className="board-grid"
+                style={
+                  {
+                    "--shot-scale": boardZoomCssVariables?.shotScale ?? zoomLevel / 100,
+                    "--animation-image-width":
+                      boardZoomCssVariables?.animationImageWidth ?? `${animationImageSize.width}px`,
+                    "--animation-image-height":
+                      boardZoomCssVariables?.animationImageHeight ?? `${animationImageSize.height}px`,
+                    "--animation-frame-width":
+                      boardZoomCssVariables?.animationFrameWidth ?? `${animationFrameSize.width}px`,
+                    "--animation-frame-height":
+                      boardZoomCssVariables?.animationFrameHeight ?? `${animationFrameSize.height}px`
+                  } as CSSProperties
+                }
+                onPointerDown={handleSelectionPointerDown}
+              >
+                {renderedShotEntries.map((entry) => {
+                  const { shot, index } = entry;
+                  return (
+                    <ShotCard
+                      key={shot.id}
+                      shot={shot}
+                      index={index}
+                    project={project}
+                    folderPath={folderPath}
+                    isSelected={selectedShotIds.length > 1 && selectedShotIds.includes(shot.id)}
+                    isPrimarySelected={shot.id === primarySelectedShotId}
+                    isAnimationFocused={isAnimationMode && shot.id === primarySelectedShotId}
+                    isZoomScrubbing={isZoomScrubbing}
+                    disableSortableTransform={activeShotIds.length > 0}
+                    keepDraggingSourceVisible={activeShotIds.includes(shot.id)}
+                    activeDragType={activeDragType}
+                    activeSketchTool={activeSketchTool}
+                    brushColor={brushColor}
+                    brushOpacity={brushOpacity}
+                    brushSize={brushSize}
+                    brushSoftness={brushSoftness}
+                    eraserOpacity={eraserOpacity}
+                    eraserSize={eraserSize}
+                    eraserSoftness={eraserSoftness}
+                    cardFace={cardFace}
+                    onionSkinPreviousShot={
+                      isAnimationMode && shot.id === primarySelectedShotId
+                        ? onionSkinNeighbors.previous
+                        : undefined
+                    }
+                    onionSkinNextShot={
+                      isAnimationMode && shot.id === primarySelectedShotId
+                        ? onionSkinNeighbors.next
+                        : undefined
+                    }
+                      editingDialogueId={editingDialogueId}
+                      onSelect={(event) => handleShotSelect(shot.id, event)}
+                    onFocusShot={() => {
                       selectSingleShot(shot.id);
                       setDeleteTarget({ type: "shot" });
                       setSelectedBitmapLayerIds(undefined);
-                      setIsLayerPanelOpen((isOpen) => (shot.id === primarySelectedShotId ? !isOpen : true));
                     }}
-                    onAddLayer={(shotId) => void handleAddBitmapLayer(shotId)}
-                    onRemoveLayer={(shotId, layerId) =>
-                      void handleRemoveBitmapLayer(shotId, layerId)
-                    }
-                    onMergeLayers={(shotId, layerId, selectedLayerIds) =>
-                      void handleMergeBitmapLayers(shotId, layerId, selectedLayerIds)
-                    }
-                    onMergeVisibleLayers={(shotId) => void handleMergeVisibleBitmapLayers(shotId)}
-                    onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
-                    onSelectLayer={(shotId, layerId) => {
-                      shotSelectionAnchorIdRef.current = undefined;
-                      setDeleteTarget({ type: "layer", shotId, layerId });
-                      updateProject((currentProject) => selectBitmapLayer(currentProject, shotId, layerId), false, false);
-                    }}
-                    onUpdateLayer={(shotId, layerId, patch) => {
-                      markShotsDirty([shotId]);
-                      updateProject(
-                        (currentProject) => updateBitmapLayer(currentProject, shotId, layerId, patch),
-                        false
-                      );
-                    }}
-                    onMoveLayer={(shotId, layerId, targetLayerId, placement) => {
-                      markShotsDirty([shotId]);
-                      updateProject(
-                        (currentProject) =>
-                          moveBitmapLayer(currentProject, shotId, layerId, targetLayerId, placement),
-                        false
-                      );
-                    }}
-                    onMoveLayerGroup={(shotId, layerIds, targetLayerId, placement) => {
-                      markShotsDirty([shotId]);
-                      updateProject(
-                        (currentProject) =>
-                          moveBitmapLayerGroup(currentProject, shotId, layerIds, targetLayerId, placement),
-                        false
-                      );
-                    }}
-                    onSelectedLayerIdsChange={handleSelectedBitmapLayerIdsChange}
-                    onUpdateLayerGroupOpacity={(shotId, layerIds, deltaOpacity, initialOpacityByLayerId) => {
-                      markShotsDirty([shotId]);
-                      updateProject(
-                        (currentProject) =>
-                          updateBitmapLayerGroupOpacity(
-                            currentProject,
-                            shotId,
-                            layerIds,
-                            deltaOpacity,
-                            initialOpacityByLayerId
-                          ),
-                        false
-                      );
-                    }}
-                    onCreateDialogue={handleCreateDialogue}
-                    onDialogueText={(dialogueId, text) =>
-                      updateProject((currentProject) =>
-                        updateDialogueText(currentProject, dialogueId, text)
-                      )
-                    }
-                    onDialogueBlur={(dialogue) => {
-                      if (!dialogue.text.trim()) {
-                        updateProject((currentProject) =>
-                          removeDialogue(currentProject, dialogue.id)
-                        );
+                      isLayerPanelOpen={isLayerPanelOpen && shot.id === primarySelectedShotId}
+                      thumbnailRevision={autosaveRevision}
+                      onToggleLayerPanel={() => {
+                        selectSingleShot(shot.id);
+                        setDeleteTarget({ type: "shot" });
+                        setSelectedBitmapLayerIds(undefined);
+                        setIsLayerPanelOpen((isOpen) => (shot.id === primarySelectedShotId ? !isOpen : true));
+                      }}
+                      onAddLayer={(shotId) => void handleAddBitmapLayer(shotId)}
+                      onRemoveLayer={(shotId, layerId) =>
+                        void handleRemoveBitmapLayer(shotId, layerId)
                       }
-                      setEditingDialogueId(undefined);
+                      onMergeLayers={(shotId, layerId, selectedLayerIds) =>
+                        void handleMergeBitmapLayers(shotId, layerId, selectedLayerIds)
+                      }
+                      onMergeVisibleLayers={(shotId) => void handleMergeVisibleBitmapLayers(shotId)}
+                      onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
+                      onSelectLayer={(shotId, layerId) => {
+                        shotSelectionAnchorIdRef.current = undefined;
+                        setDeleteTarget({ type: "layer", shotId, layerId });
+                        updateProject((currentProject) => selectBitmapLayer(currentProject, shotId, layerId), false, false);
+                      }}
+                      onUpdateLayer={(shotId, layerId, patch) => {
+                        markShotsDirty([shotId]);
+                        updateProject(
+                          (currentProject) => updateBitmapLayer(currentProject, shotId, layerId, patch),
+                          false
+                        );
+                      }}
+                      onMoveLayer={(shotId, layerId, targetLayerId, placement) => {
+                        markShotsDirty([shotId]);
+                        updateProject(
+                          (currentProject) =>
+                            moveBitmapLayer(currentProject, shotId, layerId, targetLayerId, placement),
+                          false
+                        );
+                      }}
+                      onMoveLayerGroup={(shotId, layerIds, targetLayerId, placement) => {
+                        markShotsDirty([shotId]);
+                        updateProject(
+                          (currentProject) =>
+                            moveBitmapLayerGroup(currentProject, shotId, layerIds, targetLayerId, placement),
+                          false
+                        );
+                      }}
+                      onSelectedLayerIdsChange={handleSelectedBitmapLayerIdsChange}
+                      onUpdateLayerGroupOpacity={(shotId, layerIds, deltaOpacity, initialOpacityByLayerId) => {
+                        markShotsDirty([shotId]);
+                        updateProject(
+                          (currentProject) =>
+                            updateBitmapLayerGroupOpacity(
+                              currentProject,
+                              shotId,
+                              layerIds,
+                              deltaOpacity,
+                              initialOpacityByLayerId
+                            ),
+                          false
+                        );
+                      }}
+                      onCreateDialogue={handleCreateDialogue}
+                      onDialogueText={(dialogueId, text) =>
+                        updateProject((currentProject) =>
+                          updateDialogueText(currentProject, dialogueId, text)
+                        )
+                      }
+                      onDialogueBlur={(dialogue) => {
+                        if (!dialogue.text.trim()) {
+                          updateProject((currentProject) =>
+                            removeDialogue(currentProject, dialogue.id)
+                          );
+                        }
+                        setEditingDialogueId(undefined);
+                      }}
+                      onScriptText={(shotId, scriptText) => handleShotScriptText(shotId, scriptText)}
+                      onSketchStroke={(layerId, stroke, renderedDataUrl, pendingStrokes) =>
+                        handleBitmapStroke(shot, layerId, stroke, renderedDataUrl, pendingStrokes)
+                      }
+                      onSelectionTransform={(layerId, dataUrl) =>
+                        handleBitmapSelectionTransform(shot, layerId, dataUrl)
+                      }
+                      onFill={(layerId, point, color) =>
+                        handleBitmapFill(shot, layerId, point, color)
+                      }
+                      onSketchBeginInteraction={closeRadialToolMenu}
+                    />
+                  );
+                })}
+                {showStoryboardInsertionIndicator && storyboardInsertionIndicator ? (
+                  <div
+                    className="storyboard-insertion-indicator"
+                    aria-hidden="true"
+                    style={{
+                      left: storyboardInsertionIndicator.left,
+                      top: storyboardInsertionIndicator.top,
+                      height: storyboardInsertionIndicator.height
                     }}
-                    onScriptText={(shotId, scriptText) => handleShotScriptText(shotId, scriptText)}
-                    onSketchStroke={(layerId, stroke, renderedDataUrl, pendingStrokes) =>
-                      handleBitmapStroke(shot, layerId, stroke, renderedDataUrl, pendingStrokes)
-                    }
-                    onSelectionTransform={(layerId, dataUrl) =>
-                      handleBitmapSelectionTransform(shot, layerId, dataUrl)
-                    }
-                    onFill={(layerId, point, color) =>
-                      handleBitmapFill(shot, layerId, point, color)
-                    }
-                    onSketchBeginInteraction={closeRadialToolMenu}
                   />
-                );
-              })}
-              {showStoryboardInsertionIndicator && storyboardInsertionIndicator ? (
-                <div
-                  className="storyboard-insertion-indicator"
-                  aria-hidden="true"
-                  style={{
-                    left: storyboardInsertionIndicator.left,
-                    top: storyboardInsertionIndicator.top,
-                    height: storyboardInsertionIndicator.height
-                  }}
-                />
-              ) : null}
-              <SelectionMarquee ref={selectionMarqueeRef} />
-            </section>
-          </SortableContext>
+                ) : null}
+                <SelectionMarquee ref={selectionMarqueeRef} />
+              </section>
+            </SortableContext>
+          </div>
           <SortableContext items={parkedShots.map((shot) => `parked-${shot.id}`)} strategy={rectSortingStrategy}>
             <ParkingShelf
               shots={parkedShots}
@@ -4479,7 +4508,10 @@ export const App = () => {
   );
 };
 
-const storyboardMarqueeShotRectsFromDom = (board: HTMLElement | null): MarqueeShotRect[] => {
+const storyboardMarqueeShotRectsFromDom = (
+  board: HTMLElement | null,
+  scroll: { x: number; y: number } = { x: window.scrollX, y: window.scrollY }
+): MarqueeShotRect[] => {
   if (!board) {
     return [];
   }
@@ -4495,10 +4527,10 @@ const storyboardMarqueeShotRectsFromDom = (board: HTMLElement | null): MarqueeSh
       return {
         shotId,
         rect: {
-          left: rect.left + window.scrollX,
-          right: rect.right + window.scrollX,
-          top: rect.top + window.scrollY,
-          bottom: rect.bottom + window.scrollY
+          left: rect.left + scroll.x,
+          right: rect.right + scroll.x,
+          top: rect.top + scroll.y,
+          bottom: rect.bottom + scroll.y
         }
       };
     })

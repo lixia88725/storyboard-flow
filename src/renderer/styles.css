@@ -19,10 +19,16 @@
   box-sizing: border-box;
 }
 
+html,
+#root {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
   min-width: 1000px;
   min-height: 100vh;
+  overflow: hidden;
   background:
     linear-gradient(90deg, rgba(29, 28, 24, 0.04) 1px, transparent 1px),
     linear-gradient(rgba(29, 28, 24, 0.04) 1px, transparent 1px),
@@ -71,7 +77,9 @@ button.primary {
 }
 
 .app-shell {
-  padding: 22px;
+  height: 100vh;
+  overflow: hidden;
+  padding: 0 22px 22px;
   padding-bottom: calc(var(--bottom-bar-height) + 28px);
 }
 
@@ -87,7 +95,6 @@ button.primary {
   grid-template-columns: minmax(230px, 1fr) minmax(420px, 720px) minmax(230px, 1fr);
   align-items: center;
   gap: 18px;
-  margin-top: -22px;
   padding-top: 4px;
   border-bottom: 2px solid #26231d;
   padding-bottom: 4px;
@@ -547,6 +554,7 @@ button.primary {
   --ai-panel-text: #f2f3f4;
   --ai-panel-muted: #aeb7c2;
   --ai-panel-placeholder: #8f9aa6;
+  --ai-panel-body-font-size: 13px;
   position: fixed;
   top: var(--topbar-height);
   right: 0;
@@ -667,13 +675,20 @@ button.primary {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 0 14px;
+  padding: 10px 0 22px;
   border-bottom: 1px solid var(--ai-panel-border);
+  font-size: var(--ai-panel-body-font-size);
+}
+
+.ai-panel-section + .ai-panel-section,
+.ai-resource-assignment + .ai-panel-section,
+.ai-panel-section + .ai-resource-assignment {
+  padding-top: 6px;
 }
 
 .ai-panel-section h3 {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--ai-panel-body-font-size);
   font-weight: 700;
 }
 
@@ -707,13 +722,32 @@ button.primary {
   display: grid;
   gap: 6px;
   color: var(--ai-panel-muted);
-  font-size: 12px;
+  font-size: var(--ai-panel-body-font-size);
 }
 
 .ai-setting-row input,
 .ai-setting-row select {
   height: 30px;
   padding: 0 8px;
+}
+
+.ai-setting-row textarea {
+  min-height: 148px;
+  padding: 8px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.ai-setting-note {
+  margin: -2px 0 0;
+  color: var(--ai-panel-muted);
+  font-size: 11px;
+}
+
+.ai-setting-note.is-ready {
+  color: var(--ai-panel-text);
 }
 
 .ai-settings-panel {
@@ -779,7 +813,7 @@ button.primary {
 }
 
 .ai-shot-edit-field span {
-  font-size: 12px;
+  font-size: var(--ai-panel-body-font-size);
   font-weight: 700;
 }
 
@@ -862,7 +896,7 @@ button.primary {
   align-items: start;
   gap: 8px;
   padding-right: 24px;
-  font-size: 12px;
+  font-size: var(--ai-panel-body-font-size);
 }
 
 .ai-resource-select input {
@@ -920,8 +954,9 @@ button.primary {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 10px 0 14px;
+  padding: 10px 0 22px;
   border-bottom: 1px solid var(--ai-panel-border);
+  font-size: var(--ai-panel-body-font-size);
 }
 
 .ai-assignment-toggle {
@@ -935,7 +970,7 @@ button.primary {
   padding: 0;
   cursor: pointer;
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--ai-panel-body-font-size);
   font-weight: 700;
   text-align: left;
 }
@@ -972,7 +1007,7 @@ button.primary {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--ai-panel-body-font-size);
 }
 
 .ai-assignment-card-header span {
@@ -1004,7 +1039,7 @@ button.primary {
   gap: 8px;
   align-items: center;
   color: var(--ai-panel-muted);
-  font-size: 12px;
+  font-size: var(--ai-panel-body-font-size);
 }
 
 .ai-assignment-resources input {
@@ -1168,9 +1203,56 @@ button.primary {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+  height: calc(100vh - var(--topbar-height) - var(--bottom-bar-height));
+  min-height: 0;
+  margin-right: -22px;
   position: relative;
   transition: margin-right 140ms ease;
+}
+
+.workspace-board-scroll {
+  grid-column: 2;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-color: rgba(216, 210, 197, 0.42) transparent;
+  scrollbar-width: thin;
+}
+
+.workspace-board-scroll::-webkit-scrollbar,
+.ai-draft-panel-content::-webkit-scrollbar {
+  width: 10px;
+}
+
+.workspace-board-scroll::-webkit-scrollbar-track,
+.ai-draft-panel-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.workspace-board-scroll::-webkit-scrollbar-track-piece,
+.workspace-board-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.workspace-board-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+
+.workspace-board-scroll::-webkit-scrollbar-thumb,
+.ai-draft-panel-content::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: rgba(216, 210, 197, 0.42);
+  background-clip: content-box;
+  box-shadow: none;
+}
+
+.workspace-board-scroll::-webkit-scrollbar-thumb:hover,
+.ai-draft-panel-content::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(216, 210, 197, 0.62);
 }
 
 .workspace-import-lock {
@@ -1193,11 +1275,11 @@ button.primary {
 }
 
 .app-shell.has-parking-shelf-open .workspace-layout {
-  margin-right: 252px;
+  margin-right: calc(252px - 22px);
 }
 
 .app-shell.has-ai-panel-open .workspace-layout {
-  margin-right: var(--ai-panel-width);
+  margin-right: calc(var(--ai-panel-width) - 22px);
 }
 
 .tool-rail {
@@ -1205,6 +1287,8 @@ button.primary {
   top: 60px;
   z-index: 25;
   display: grid;
+  align-self: start;
+  align-content: start;
   gap: 8px;
   padding-top: 18px;
 }
@@ -2168,6 +2252,8 @@ button.layer-blend-dot:disabled {
   align-content: start;
   justify-content: center;
   padding-top: 18px;
+  padding-right: 14px;
+  padding-bottom: 56px;
   min-height: 420px;
 }
 
@@ -3248,7 +3334,7 @@ button:disabled {
 }
 
 .tool-rail {
-  padding: 16px 0 0;
+  padding: 0;
   border: 0;
   background: transparent;
   box-shadow: none;

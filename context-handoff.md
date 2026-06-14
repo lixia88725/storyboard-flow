@@ -6,9 +6,9 @@
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `main`
-- Current handoff date: 2026-06-12
-- Previous shipped baseline before this docs-only handoff: `90fca49 optimize storyboard marquee selection`
-- Current goal of this handoff: preserve the latest release automation, marquee performance work, validation results, and next-step map so another session or AI agent can continue without rediscovering context.
+- Current handoff date: 2026-06-14
+- Baseline before this uncommitted session: `0e4ec2b feat: add batch AI draft generation`
+- Current goal of this handoff: preserve the latest AI provider/UI work, verification results, and next-session architecture direction so another session or AI agent can continue without rediscovering context.
 
 ## Current Product State
 
@@ -32,35 +32,46 @@
 - GitHub Actions workflow: `.github/workflows/release.yml`.
 - Required source-repo secret: `RELEASE_REPO_TOKEN`; it must have permission to create releases and push `update.json` in `lixia88725/storyboard-flow-releases`.
 - Trigger: every `git push origin main` automatically runs tests, builds the Windows portable package, builds the macOS Apple Silicon package, publishes a GitHub Release, and updates the public `update.json` manifest.
-- Version rule for push-triggered releases: `package.json` major/minor plus GitHub run number, e.g. `0.1.6`. Manual `workflow_dispatch` and `v*.*.*` tag releases are still supported.
 - Current update manifest URL: `https://raw.githubusercontent.com/lixia88725/storyboard-flow-releases/main/update.json`.
 - Current app update behavior: Storyboard Flow checks the manifest and shows an in-app update notice when `update.json.latest` is newer than the running packaged app version.
-- Windows package: `Storyboard-Flow-Windows-x64.zip` is a portable folder distribution. It includes the Electron runtime, app files, Windows Python runtime, and Photoshop TIFF Python dependencies; users can replace/overwrite the old folder with the new extracted folder.
-- macOS package: `Storyboard-Flow-macOS-arm64.zip` contains an Apple Silicon `.app`. It is ad-hoc signed but not Apple-notarized, so first launch may show macOS security prompts. Intel macOS builds are not currently published.
+- Windows package: `Storyboard-Flow-Windows-x64.zip` is a portable folder distribution.
+- macOS package: `Storyboard-Flow-macOS-arm64.zip` contains an Apple Silicon `.app`. It is ad-hoc signed but not Apple-notarized, so first launch may show macOS security prompts.
 - Not implemented: silent self-updating, installer-based updates, macOS notarization, code-signed Windows installer, Intel macOS package, or automatic release notes beyond the generated version label.
 
 ## Recent Session Summary
 
-### Release Automation
+### AI Draft Feature
 
-- GitHub Actions now acts as the tester release pipeline. A `git push origin main` triggers tests, builds Windows portable and macOS Apple Silicon packages, publishes a GitHub Release to `lixia88725/storyboard-flow-releases`, and updates `update.json`.
-- The app has an in-app update notice path. When a packaged app sees a newer `update.json.latest`, the bottom-right status/info panel can show the available version with `Download` and `Later`.
-- Windows distribution is currently a portable zip; macOS distribution is an ad-hoc signed Apple Silicon `.app` zip.
+- AI Draft is now an internal feature module, not an external plugin system.
+- Apply remains candidate-first and additive: generation creates candidate files; Apply adds a visible top bitmap layer named `AI Draft`; it does not replace base art.
+- OpenAI and Seedream API keys are GUI-only local app credentials. They are not stored in project files, `.storyboard-workbench`, AI resource metadata, or candidate metadata.
+- ComfyUI is available as a local-only provider. The app connects to a user-run local ComfyUI server, validates an API-format workflow with placeholders, uploads inputs, queues `/prompt`, waits through `/ws`, reads `/history`, downloads `/view`, then reuses the existing candidate flow.
+- AI request preview copy is available for debugging. It copies provider/model/server summary, prompt text, image input summaries, resource role/note, and batch grouping; it does not copy API keys, image binaries, or absolute local paths.
 
-### Marquee Selection Performance
+### AI Resources And Batch Generation
 
-- Latest shipped code: `90fca49 optimize storyboard marquee selection`.
-- Storyboard multi-card marquee now uses a temporary `.is-marquee-selected` DOM class while dragging, then commits real `selectedShotIds` once on pointer up.
-- Dragging no longer toggles `.shot-card.is-selected` across many cards every frame; this reduces selected-card repaint cost while preserving final selection semantics.
-- The selection rectangle now updates position via `translate3d(...)` instead of `left/top`, keeping the existing `requestAnimationFrame` throttling and hit-test rules.
-- Measured scenario: 60 shots, 50% zoom, background drag with edge-scroll. After the change, dragging used 60 `.is-marquee-selected` elements and 0 `.is-selected` elements; after mouseup, `.is-marquee-selected` cleared and 60 `.is-selected` elements were committed.
+- `AI Resources/` is a visible project folder for reference images.
+- Each AI resource can have sidecar metadata: role and note.
+- Project AI metadata can store `shotResourceExclusions`, meaning a resource is available to all shots by default, and a shot only records resources the user manually excluded.
+- Single-shot AI panel keeps resource role/note editing and per-shot allow/disallow checkboxes.
+- Multi-shot AI panel shows batch grouping and per-shot resource assignment. It no longer uses a separate batch resource pool.
+- Batch generation groups selected shots in project storyboard order: 4-up contact sheets first, then 1/2/3-up remainder templates.
+- Batch provider output is cropped by fixed templates back into one candidate per shot.
 
-### UI Polish Already Landed
+### UI And Interaction Work
 
-- Toolbar labels and icon contrast were flattened toward the current Codex-style UI direction.
-- Import / Save / Add controls were aligned to the slimmer top bar.
-- Animation timeline now sits against the window edges and follows the active shot as selection advances.
-- Radial tool menu now has no large gray backing disk, has open/close scale animation, a tighter radius, and a smaller center close button.
+- AI Draft panel now uses the same dark/cool visual family as the pending sidebar.
+- AI panel opens as a right-side sidebar and does not cover storyboard cards. AI and Pending are mutually exclusive.
+- General Settings moved behind the small gear button and shows only the active provider's settings.
+- Text input focus rings were removed for text editing fields, while button/tool focus styles are preserved.
+- AI panel scroll handles wheel events inside the panel instead of zooming the storyboard canvas.
+- Storyboard canvas scrollbar was moved into the board area and styled toward the same flat scrollbar language as the AI panel.
+- Left tool palette spacing and top toolbar layout were tightened after scrollbar layout changes.
+
+### Review Fixes Already Applied
+
+- Marquee autoscroll now uses the storyboard scroll viewport geometry instead of `window.innerHeight`, so scrolling remains correct when AI/Pending sidebars are open.
+- ComfyUI draft workflow status now uses the shared workflow placeholder helper, so the renderer preview can report non-contiguous image placeholders consistently with main-process validation.
 
 ## Current Renderer Ownership Map
 
@@ -72,7 +83,14 @@
   - global selection and delete target state
   - undo / redo project history
   - global keyboard shortcuts and menus
-  - parking sidebar orchestration
+  - parking sidebar and AI panel orchestration
+- `src/renderer/ai/AiDraftPanel.tsx`
+  - AI panel presentation
+  - provider settings UI
+  - AI resource selection/notes UI
+  - single-shot and batch candidate controls
+- `electron/main/ai/*`
+  - AI provider adapters, settings, prompt/request preview logic, candidate generation, and ComfyUI workflow handling
 - `src/renderer/ShotCard.tsx`
   - one storyboard card's presentation
   - dialogue cards and dialogue drag handles
@@ -99,7 +117,7 @@ Fresh verification for this handoff:
 
 ```bash
 npm run test
-# passed: 45 test files, 333 tests
+# passed: 62 test files, 390 tests
 
 npm run typecheck
 # passed
@@ -107,25 +125,34 @@ npm run typecheck
 npm run build
 # passed
 # Vite still reports the existing non-blocking chunk-size warning:
-# dist/assets/index-DdfCM3Go.js 721.41 kB, gzip 221.26 kB
+# dist/assets/index-DXXX94Zv.js 745.37 kB, gzip 227.56 kB
 ```
 
-There is no `lint` script in `package.json`.
+There is no `lint` script in `package.json`, so lint was skipped.
 
 ## Current Git State Before This Handoff Commit
 
-Before this docs-only handoff update, the working tree was clean:
+Before the documentation handoff update, code changes were already present in the working tree:
 
 ```bash
 git diff --stat
-# no output
+# 16 changed tracked files, 755 insertions, 281 deletions
 ```
 
-This handoff commit should include only documentation changes. The project is on `main` tracking `origin/main`. The GitHub repository is `https://github.com/lixia88725/storyboard-flow`.
+Untracked AI files were also present:
+
+- `electron/main/ai/comfyUiImageProvider.test.ts`
+- `electron/main/ai/comfyUiImageProvider.ts`
+- `electron/main/ai/comfyUiWorkflow.test.ts`
+- `electron/main/ai/comfyUiWorkflow.ts`
+- `electron/main/ai/settings.test.ts`
+- `electron/main/ai/settings.ts`
+
+This handoff commit should include the existing code changes plus these documentation updates. The project is on `main` tracking `origin/main`. Do not push unless the user explicitly asks; pushing `main` triggers GitHub Actions automatic release.
 
 ## Next Recommended Work
 
-Start the next session from manual tester readiness and feedback loops rather than another broad audit. Suggested prompt:
+Start the next session with an architecture handoff/audit before more feature work. Suggested prompt:
 
 ```text
 请接手 Storyboard Flow 项目，先不要改代码。
@@ -144,20 +171,25 @@ main
 5. README.md
 
 目标：
-确认最新 main 和 GitHub Actions 发布状态，检查 release repo 的最新 Release / update.json 是否与本地最新提交匹配，然后根据用户反馈继续做小步 UI 或稳定性修复。
+做一次架构梳理，重点看 App.tsx、styles.css、electron/main/main.ts、AI 模块、preload API 和 storyboard canvas/side panel 的边界。目标不是立刻大改，而是提出一个可分阶段执行的高内聚低耦合计划，方便后续用 git worktree 分工。
 
-重点：
+边界：
 1. 不要碰 Save / Import / TIFF / .storyboard-workbench 格式，除非用户明确要求。
-2. 如果要发布，记住 push main 会自动触发 release。
-3. 优先手动 dogfood Windows portable save、macOS first launch、软件内 update notice、60+ shots 框选丝滑度。
+2. 不要自动 push。
+3. 先输出 audit 结果和拆分建议，等用户确认后再实施。
 ```
 
 ## Known Remaining Work
 
-- Active manual dogfood list is in `todo.md`.
+- Manual dogfood ComfyUI provider with a real local workflow.
+- Manual dogfood OpenAI / Seedream GUI-only settings and error states.
+- Manual dogfood single-shot AI Draft generation, Apply, Discard, and request preview.
+- Manual dogfood batch 4-up generation, crop-back, Apply All, Discard All, and per-shot resource assignment.
+- Manual dogfood storyboard canvas scrollbar on macOS and Windows, with AI/Pending open and closed.
+- Current build still emits the documented Vite chunk-size warning.
+- Architecture audit is recommended before the next large AI/UI iteration.
 - Silent self-update / installer update is not implemented; current update path is in-app notice plus manual download.
 - macOS notarization and Windows code-signed installer are not implemented.
 - Intel macOS builds are not currently published.
 - PSD-first import/export is not implemented.
 - Windows Photoshop compatibility has not been tested.
-- Current build still emits the documented Vite chunk-size warning.

@@ -16,6 +16,21 @@ type WorkspaceTaskProgress = {
   total: number;
 };
 
+type AiProviderName = "openai" | "seedream" | "comfyui";
+
+type ComfyUiSettings = {
+  serverUrl: string;
+  workflowJson: string;
+  timeoutMs: number;
+};
+
+type AiSettingsStatus = {
+  hasOpenAiApiKey: boolean;
+  hasSeedreamApiKey: boolean;
+  hasValidComfyUiSettings: boolean;
+  comfyUi: ComfyUiSettings;
+};
+
 declare global {
   interface Window {
     storyboard: {
@@ -142,26 +157,13 @@ declare global {
       getToolRadialMenu: () => Promise<unknown>;
       setToolRadialMenu: (config: unknown) => Promise<unknown>;
       ai: {
-        getSettings: () => Promise<{
-          hasOpenAiApiKey: boolean;
-          hasSeedreamApiKey: boolean;
-        }>;
-        saveOpenAiApiKey: (apiKey: string) => Promise<{
-          hasOpenAiApiKey: boolean;
-          hasSeedreamApiKey: boolean;
-        }>;
-        clearOpenAiApiKey: () => Promise<{
-          hasOpenAiApiKey: boolean;
-          hasSeedreamApiKey: boolean;
-        }>;
-        saveSeedreamApiKey: (apiKey: string) => Promise<{
-          hasOpenAiApiKey: boolean;
-          hasSeedreamApiKey: boolean;
-        }>;
-        clearSeedreamApiKey: () => Promise<{
-          hasOpenAiApiKey: boolean;
-          hasSeedreamApiKey: boolean;
-        }>;
+        getSettings: () => Promise<AiSettingsStatus>;
+        saveOpenAiApiKey: (apiKey: string) => Promise<AiSettingsStatus>;
+        clearOpenAiApiKey: () => Promise<AiSettingsStatus>;
+        saveSeedreamApiKey: (apiKey: string) => Promise<AiSettingsStatus>;
+        clearSeedreamApiKey: () => Promise<AiSettingsStatus>;
+        saveComfyUiSettings: (settings: ComfyUiSettings) => Promise<AiSettingsStatus>;
+        testComfyUiConnection: (serverUrl: string) => Promise<{ ok: boolean; message: string }>;
         listResources: (folderPath: string) => Promise<{
           resourcesFolderPath: string;
           metadataPath: string;
@@ -210,7 +212,7 @@ declare global {
           selectedShotContext?: string;
           selectedResourceIds?: string[];
           generationSettings?: {
-            provider?: "openai" | "seedream";
+            provider?: AiProviderName;
             model?: string;
           };
         }) => Promise<{
@@ -230,7 +232,7 @@ declare global {
           selectedResourceIds?: string[];
           resourceAssignments?: Record<string, string[]>;
           generationSettings?: {
-            provider?: "openai" | "seedream";
+            provider?: AiProviderName;
             model?: string;
           };
         }) => Promise<{
@@ -260,7 +262,7 @@ declare global {
           selectedResourceIds?: string[];
           resourceAssignments?: Record<string, string[]>;
           generationSettings?: {
-            provider?: "openai" | "seedream";
+            provider?: AiProviderName;
             model?: string;
           };
         }) => Promise<{ text: string }>;

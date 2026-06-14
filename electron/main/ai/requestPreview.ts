@@ -9,6 +9,8 @@ import {
   summarizeAiBatchGroups,
   type AiBatchResourceAssignments
 } from "./batch.js";
+import { validateComfyUiWorkflow } from "./comfyUiWorkflow.js";
+import type { ComfyUiSettings } from "./settings.js";
 
 export type AiRequestPreviewInput = {
   folderPath: string;
@@ -22,11 +24,40 @@ export type AiRequestPreviewInput = {
     provider?: AiImageProviderName;
     model?: string;
   };
+  comfyUiSettings?: ComfyUiSettings;
 };
 
 const imageInputLine = (index: number, fileName: string, role?: string, note?: string): string => {
   const details = [role, note?.trim()].filter((item): item is string => Boolean(item));
   return `${index}. ${fileName}${details.length > 0 ? ` - ${details.join(" - ")}` : ""}`;
+};
+
+const providerPreviewLines = ({
+  provider,
+  model,
+  comfyUiSettings,
+  imageCount
+}: {
+  provider: AiImageProviderName;
+  model: string;
+  comfyUiSettings?: ComfyUiSettings;
+  imageCount: number;
+}): string[] => {
+  if (provider !== "comfyui") {
+    return [`Provider: ${provider}`, `Model: ${model}`];
+  }
+
+  if (!comfyUiSettings) {
+    return ["Provider: comfyui", "ComfyUI settings: not loaded"];
+  }
+
+  const validation = validateComfyUiWorkflow(comfyUiSettings.workflowJson, imageCount);
+  return [
+    "Provider: comfyui",
+    `ComfyUI server: ${comfyUiSettings.serverUrl}`,
+    `ComfyUI workflow image placeholders: ${validation.imagePlaceholderCount}`,
+    `ComfyUI workflow status: ${validation.ok ? "ready" : validation.errors.join("; ")}`
+  ];
 };
 
 export const buildAiRequestPreview = async ({
@@ -37,7 +68,8 @@ export const buildAiRequestPreview = async ({
   selectedShotContext,
   selectedResourceIds = [],
   resourceAssignments = {},
-  generationSettings
+  generationSettings,
+  comfyUiSettings
 }: AiRequestPreviewInput): Promise<string> => {
   const resources = await listAiResources(folderPath);
   const selected = new Set(selectedResourceIds);
@@ -50,7 +82,7 @@ export const buildAiRequestPreview = async ({
       note: resource.note
     }));
   const provider = generationSettings?.provider ?? "openai";
-  const model = generationSettings?.model?.trim() || "(provider default)";
+  const model = provider === "comfyui" ? "(ComfyUI workflow)" : generationSettings?.model?.trim() || "(provider default)";
   const batchShotIds = shotIds ?? [];
 
   if (batchShotIds.length > 1) {
@@ -81,11 +113,11 @@ export const buildAiRequestPreview = async ({
       ];
       return { prompt, imageInputs };
     });
+    const maxImageCount = Math.max(1, ...groupPreviews.map((preview) => preview.imageInputs.length));
     return [
       "AI request preview",
       "",
-      `Provider: ${provider}`,
-      `Model: ${model}`,
+      ...providerPreviewLines({ provider, model, comfyUiSettings, imageCount: maxImageCount }),
       `Batch: ${summarizeAiBatchGroups(batchShotIds.length, groups)}`,
       "",
       "Prompt:",
@@ -119,8 +151,7 @@ export const buildAiRequestPreview = async ({
   return [
     "AI request preview",
     "",
-    `Provider: ${provider}`,
-    `Model: ${model}`,
+    ...providerPreviewLines({ provider, model, comfyUiSettings, imageCount: imageInputs.length }),
     "",
     "Prompt:",
     prompt,

@@ -79,9 +79,15 @@ type AiResourceMetadata = {
 type AiCredentialStatus = {
   hasOpenAiApiKey: boolean;
   hasSeedreamApiKey: boolean;
+  hasValidComfyUiSettings: boolean;
+  comfyUi: {
+    serverUrl: string;
+    workflowJson: string;
+    timeoutMs: number;
+  };
 };
 
-type AiProviderName = "openai" | "seedream";
+type AiProviderName = "openai" | "seedream" | "comfyui";
 
 type AiGenerateCandidatePayload = {
   folderPath: string;
@@ -197,6 +203,10 @@ const api = {
       ipcRenderer.invoke("ai:saveSeedreamApiKey", apiKey) as Promise<AiCredentialStatus>,
     clearSeedreamApiKey: () =>
       ipcRenderer.invoke("ai:clearSeedreamApiKey") as Promise<AiCredentialStatus>,
+    saveComfyUiSettings: (settings: { serverUrl: string; workflowJson: string; timeoutMs: number }) =>
+      ipcRenderer.invoke("ai:saveComfyUiSettings", settings) as Promise<AiCredentialStatus>,
+    testComfyUiConnection: (serverUrl: string) =>
+      ipcRenderer.invoke("ai:testComfyUiConnection", serverUrl) as Promise<{ ok: boolean; message: string }>,
     listResources: (folderPath: string) =>
       ipcRenderer.invoke("ai:listResources", folderPath) as Promise<unknown>,
     importResources: (folderPath: string, sourceFilePaths: string[]) =>
