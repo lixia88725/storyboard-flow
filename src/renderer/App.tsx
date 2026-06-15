@@ -202,6 +202,7 @@ import { useWorkspaceExternalRefreshController } from "./workspaceExternalRefres
 import { useWorkspaceMenuController } from "./workspaceMenuController";
 import { useWorkspaceAutosaveController } from "./workspaceAutosaveController";
 import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsController";
+import { useLayerPanelController } from "./layerPanelController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -356,7 +357,6 @@ export const App = () => {
   const [blankShotPreset, setBlankShotPreset] = useState<BlankShotPreset>("16:9");
   const [radialToolMenu, setRadialToolMenu] = useState<RadialToolMenuState | undefined>();
   const [isStatusPanelOpen, setIsStatusPanelOpen] = useState(false);
-  const [isLayerPanelOpen, setIsLayerPanelOpen] = useState(false);
   const [isImportNudging, setIsImportNudging] = useState(false);
   const [cardFace, setCardFace] = useState<CardFace>("image");
   const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
@@ -739,6 +739,10 @@ export const App = () => {
     selectedShotIdsRef.current = shotIds;
     setSelectedShotIds(shotIds);
   };
+
+  const { layerPanelPropsForShot } = useLayerPanelController({
+    primarySelectedShotId, selectSingleShot, setDeleteTarget, setSelectedBitmapLayerIds
+  });
 
   const selectShotWithMode = (shotId: string, mode: RangeSelectionMode) => {
     const selection = nextRangeSelection({
@@ -3369,14 +3373,8 @@ export const App = () => {
                       setDeleteTarget({ type: "shot" });
                       setSelectedBitmapLayerIds(undefined);
                     }}
-                      isLayerPanelOpen={isLayerPanelOpen && shot.id === primarySelectedShotId}
+                      {...layerPanelPropsForShot(shot.id)}
                       thumbnailRevision={autosaveRevision}
-                      onToggleLayerPanel={() => {
-                        selectSingleShot(shot.id);
-                        setDeleteTarget({ type: "shot" });
-                        setSelectedBitmapLayerIds(undefined);
-                        setIsLayerPanelOpen((isOpen) => (shot.id === primarySelectedShotId ? !isOpen : true));
-                      }}
                       onAddLayer={(shotId) => void handleAddBitmapLayer(shotId)}
                       onRemoveLayer={(shotId, layerId) =>
                         void handleRemoveBitmapLayer(shotId, layerId)
