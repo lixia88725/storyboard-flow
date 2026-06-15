@@ -6,6 +6,7 @@ import { registerLayerIpcHandlers } from "./layerHandlers";
 import { registerRecentIpcHandlers } from "./recentHandlers";
 import { registerSettingsIpcHandlers } from "./settingsHandlers";
 import { registerWorkspaceAssetIpcHandlers } from "./workspaceAssetHandlers";
+import { registerWorkspaceOpenIpcHandlers } from "./workspaceOpenHandlers";
 import { registerWorkspaceScriptIpcHandlers } from "./workspaceScriptHandlers";
 import { registerWorkspaceWatchIpcHandlers } from "./workspaceWatchHandlers";
 
@@ -154,6 +155,42 @@ describe("domain IPC handlers", () => {
       payload: { folderPath: "/project" }
     });
     expect(copyShotAssets).toHaveBeenCalledWith({ folderPath: "/project" });
+  });
+
+  it("registers workspace open IPC channel and handles missing and existing folders", async () => {
+    const { ipcMain, handlers } = fakeIpcMain();
+    const pathExists = vi.fn(async (folderPath: string) => folderPath === "/existing");
+    const removeRecentFolder = vi.fn();
+    const createProgressReporter = vi.fn((sender, mode) => ({ sender, mode }));
+    const scanFolder = vi.fn(async (folderPath, progress) => ({
+      folderPath: `${folderPath}/canonical`,
+      progress
+    }));
+    const addRecentFolder = vi.fn();
+
+    registerWorkspaceOpenIpcHandlers(ipcMain, {
+      pathExists,
+      removeRecentFolder,
+      createProgressReporter,
+      scanFolder,
+      addRecentFolder
+    });
+
+    expect([...handlers.keys()]).toEqual(["workspace:openFolderByPath"]);
+    await expect(
+      handlers.get("workspace:openFolderByPath")?.({ sender: "sender" }, "/missing")
+    ).rejects.toThrow("Folder does not exist: /missing");
+    expect(removeRecentFolder).toHaveBeenCalledWith("/missing");
+
+    await expect(
+      handlers.get("workspace:openFolderByPath")?.({ sender: "sender" }, "/existing")
+    ).resolves.toEqual({
+      folderPath: "/existing/canonical",
+      progress: { sender: "sender", mode: "open" }
+    });
+    expect(createProgressReporter).toHaveBeenCalledWith("sender", "open");
+    expect(scanFolder).toHaveBeenCalledWith("/existing", { sender: "sender", mode: "open" });
+    expect(addRecentFolder).toHaveBeenCalledWith("/existing/canonical");
   });
 
   it("registers workspace script IPC channels and delegates to supplied handlers", async () => {

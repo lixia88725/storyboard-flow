@@ -142,6 +142,7 @@ import { registerLayerIpcHandlers } from "./ipc/layerHandlers.js";
 import { registerRecentIpcHandlers } from "./ipc/recentHandlers.js";
 import { registerSettingsIpcHandlers } from "./ipc/settingsHandlers.js";
 import { registerWorkspaceAssetIpcHandlers } from "./ipc/workspaceAssetHandlers.js";
+import { registerWorkspaceOpenIpcHandlers } from "./ipc/workspaceOpenHandlers.js";
 import { registerWorkspaceScriptIpcHandlers } from "./ipc/workspaceScriptHandlers.js";
 import { registerWorkspaceWatchIpcHandlers } from "./ipc/workspaceWatchHandlers.js";
 import {
@@ -475,15 +476,12 @@ app.on("window-all-closed", () => {
 });
 
 const registerIpcHandlers = () => {
-  ipcMain.handle("workspace:openFolderByPath", async (event, folderPath: string) => {
-    if (!(await pathExists(folderPath))) {
-      await removeRecentFolder(folderPath);
-      throw new Error(`Folder does not exist: ${folderPath}`);
-    }
-
-    const scan = await scanFolder(folderPath, createWorkspaceTaskProgressReporter(event.sender, "open"));
-    await addRecentFolder(scan.folderPath);
-    return scan;
+  registerWorkspaceOpenIpcHandlers(ipcMain, {
+    pathExists,
+    removeRecentFolder,
+    createProgressReporter: createWorkspaceTaskProgressReporter,
+    scanFolder,
+    addRecentFolder
   });
 
   registerAppIpcHandlers(ipcMain, {
