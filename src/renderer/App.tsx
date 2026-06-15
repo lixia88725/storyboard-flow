@@ -203,6 +203,7 @@ import { useZoomInteractionController } from "./zoomInteractionController";
 import { nextKeyboardShotSelection, useGlobalKeyboardController } from "./globalKeyboardController";
 import { useRecentFoldersController } from "./recentFoldersController";
 import { useToolRadialSettingsController } from "./toolRadialSettingsController";
+import { useWorkspaceTaskProgressController } from "./workspaceTaskProgressController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -794,29 +795,7 @@ export const App = () => {
   };
 
   usePointerPositionController(lastPointerPositionRef);
-
-  useEffect(() => {
-    if (!window.storyboard) {
-      return;
-    }
-
-    const removeTaskProgressListener = window.storyboard.onWorkspaceTaskProgress((progress) => {
-      setWorkspaceTask((task) =>
-        task && task.kind === progress.kind
-          ? {
-              ...task,
-              label: progress.label ?? (progress.kind === "save" ? "Writing changed TIFFs..." : task.label),
-              current: progress.current,
-              total: progress.total
-            }
-          : task
-      );
-    });
-
-    return () => {
-      removeTaskProgressListener();
-    };
-  }, []);
+  useWorkspaceTaskProgressController(setWorkspaceTask);
 
   useEffect(() => {
     const activeFolderPath = folderPathRef.current;
