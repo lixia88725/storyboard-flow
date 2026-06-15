@@ -52,11 +52,7 @@ import {
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewRootForFolder } from "./previewPaths.js";
 import { createPreview } from "./previewService.js";
-import {
-  buildRecentFoldersMenuTemplate,
-  createRecentFoldersChangeNotifier,
-  createRecentFoldersController
-} from "./recentFolders.js";
+import { createRecentFoldersRuntime } from "./recentFoldersRuntime.js";
 import { assertPathInsideFolder, ensureDirectory, pathExists } from "./pathSafety.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
 import {
@@ -362,9 +358,6 @@ const closeGuardWebContentsIds = new Set<number>();
 const workspaceFolderWatchService = createWorkspaceFolderWatchService();
 
 let mainWindow: BrowserWindow | undefined;
-const maxRecentFolders = 10;
-const recentFoldersCorruptReason = "recent-folders-corrupt";
-const recentFoldersChangeNotifier = createRecentFoldersChangeNotifier(() => mainWindow?.webContents);
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -595,7 +588,7 @@ const registerIpcHandlers = () => {
   registerRecentIpcHandlers(ipcMain, {
     getFolders: async () => {
       const folders = await readRecentFolders();
-      recentFoldersChangeNotifier.flush();
+      recentFoldersRuntime.flushChangedFolders();
       return folders;
     }
   });
@@ -977,43 +970,34 @@ const aiSettingsStore = (): AiSettingsStore => ({
   userDataPath: app.getPath("userData")
 });
 
-const recentFoldersController = createRecentFoldersController({
-  maxRecentFolders,
-  userDataPath,
+const recentFoldersRuntime = createRecentFoldersRuntime({
+  buildApplicationMenu: (template) => Menu.buildFromTemplate(template as Electron.MenuItemConstructorOptions[]),
+  corruptReason: "recent-folders-corrupt",
+  getSender: () => mainWindow?.webContents,
+  isDarwin: process.platform === "darwin",
+  maxRecentFolders: 10,
+  onOpenFolder: (folderPath) => {
+    mainWindow?.webContents.send("recent:openFolder", folderPath);
+  },
   readWithRecovery: readRecentFoldersWithRecovery,
-  writeFolders: writeRecentFoldersToUserData,
-  updateMenu: () => updateRecentFoldersMenu(),
-  notifyChanged: (folders, reason) => recentFoldersChangeNotifier.notify(folders, reason),
-  corruptReason: recentFoldersCorruptReason
+  setApplicationMenu: (menu) => Menu.setApplicationMenu(menu),
+  userDataPath,
+  writeFolders: writeRecentFoldersToUserData
 });
 
 const readRecentFolders = async (): Promise<string[]> => {
-  return recentFoldersController.read();
-};
-
-const writeRecentFolders = async (folders: string[]): Promise<void> => {
-  await recentFoldersController.write(folders);
+  return recentFoldersRuntime.read();
 };
 
 const addRecentFolder = async (folderPath: string): Promise<void> => {
-  await recentFoldersController.add(folderPath);
+  await recentFoldersRuntime.add(folderPath);
 };
 
 const removeRecentFolder = async (folderPath: string): Promise<void> => {
-  await recentFoldersController.remove(folderPath);
+  await recentFoldersRuntime.remove(folderPath);
 };
 
-async function updateRecentFoldersMenu(): Promise<void> {
-  const recentFolders = await readRecentFolders();
-  const template: Electron.MenuItemConstructorOptions[] = buildRecentFoldersMenuTemplate(recentFolders, {
-    isDarwin: process.platform === "darwin",
-    onOpenFolder: (folderPath) => {
-      mainWindow?.webContents.send("recent:openFolder", folderPath);
-    }
-  }) as Electron.MenuItemConstructorOptions[];
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-}
+const updateRecentFoldersMenu = recentFoldersRuntime.updateMenu;
 
 const importProjectToSwbFormat = async (
   project: Project,
