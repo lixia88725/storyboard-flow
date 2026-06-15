@@ -143,6 +143,7 @@ import { registerRecentIpcHandlers } from "./ipc/recentHandlers.js";
 import { registerSettingsIpcHandlers } from "./ipc/settingsHandlers.js";
 import { registerWorkspaceAssetIpcHandlers } from "./ipc/workspaceAssetHandlers.js";
 import { registerWorkspaceOpenIpcHandlers } from "./ipc/workspaceOpenHandlers.js";
+import { registerWorkspacePersistenceIpcHandlers } from "./ipc/workspacePersistenceHandlers.js";
 import { registerWorkspaceScriptIpcHandlers } from "./ipc/workspaceScriptHandlers.js";
 import { registerWorkspaceWatchIpcHandlers } from "./ipc/workspaceWatchHandlers.js";
 import {
@@ -508,15 +509,9 @@ const registerIpcHandlers = () => {
     ensureStoryboardScriptMarkdown
   });
 
-  ipcMain.handle("workspace:autosave", async (_event, payload: ProjectPayload) => {
-    await ensureProjectLayerAssets(payload.project, payload.folderPath, { includeExternalShots: false });
-    await writeProjectFiles(payload.metadataPath, payload.folderPath, payload.project);
-    return payload;
-  });
-
-  ipcMain.handle("workspace:ensureLayerAssets", async (_event, payload: ProjectPayload) => {
-    await ensureProjectLayerAssets(payload.project, payload.folderPath);
-    return payload;
+  registerWorkspacePersistenceIpcHandlers<ProjectPayload>(ipcMain, {
+    ensureProjectLayerAssets,
+    writeProjectFiles
   });
 
   ipcMain.handle("workspace:save", async (event, payload: ProjectPayload) => {

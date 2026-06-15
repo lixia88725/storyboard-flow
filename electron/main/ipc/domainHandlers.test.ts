@@ -7,6 +7,7 @@ import { registerRecentIpcHandlers } from "./recentHandlers";
 import { registerSettingsIpcHandlers } from "./settingsHandlers";
 import { registerWorkspaceAssetIpcHandlers } from "./workspaceAssetHandlers";
 import { registerWorkspaceOpenIpcHandlers } from "./workspaceOpenHandlers";
+import { registerWorkspacePersistenceIpcHandlers } from "./workspacePersistenceHandlers";
 import { registerWorkspaceScriptIpcHandlers } from "./workspaceScriptHandlers";
 import { registerWorkspaceWatchIpcHandlers } from "./workspaceWatchHandlers";
 
@@ -191,6 +192,40 @@ describe("domain IPC handlers", () => {
     expect(createProgressReporter).toHaveBeenCalledWith("sender", "open");
     expect(scanFolder).toHaveBeenCalledWith("/existing", { sender: "sender", mode: "open" });
     expect(addRecentFolder).toHaveBeenCalledWith("/existing/canonical");
+  });
+
+  it("registers workspace persistence IPC channels and preserves autosave asset options", async () => {
+    const { ipcMain, handlers } = fakeIpcMain();
+    const ensureProjectLayerAssets = vi.fn();
+    const writeProjectFiles = vi.fn();
+    const payload = {
+      folderPath: "/project",
+      metadataPath: "/project/.storyboard-workbench/storyboard.project.json",
+      project: { shots: [] }
+    };
+
+    registerWorkspacePersistenceIpcHandlers(ipcMain, {
+      ensureProjectLayerAssets,
+      writeProjectFiles
+    });
+
+    expect([...handlers.keys()].sort()).toEqual([
+      "workspace:autosave",
+      "workspace:ensureLayerAssets"
+    ]);
+    await expect(handlers.get("workspace:autosave")?.({}, payload)).resolves.toBe(payload);
+    expect(ensureProjectLayerAssets).toHaveBeenCalledWith(payload.project, payload.folderPath, {
+      includeExternalShots: false
+    });
+    expect(writeProjectFiles).toHaveBeenCalledWith(
+      payload.metadataPath,
+      payload.folderPath,
+      payload.project
+    );
+
+    ensureProjectLayerAssets.mockClear();
+    await expect(handlers.get("workspace:ensureLayerAssets")?.({}, payload)).resolves.toBe(payload);
+    expect(ensureProjectLayerAssets).toHaveBeenCalledWith(payload.project, payload.folderPath);
   });
 
   it("registers workspace script IPC channels and delegates to supplied handlers", async () => {
