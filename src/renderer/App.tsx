@@ -177,6 +177,7 @@ import { shouldIgnoreWorkbenchWheelTarget } from "./workbenchWheel";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
+import { usePopoverController } from "./popoverController";
 import {
   applyRadialPresetSlot,
   defaultToolRadialMenuConfig,
@@ -409,14 +410,30 @@ export const App = () => {
   } = useBoardViewState();
   const [isOnionSkinEnabled, setIsOnionSkinEnabled] = useState(false);
   const [editingDialogueId, setEditingDialogueId] = useState<string | undefined>();
-  const [isSaveMenuOpen, setIsSaveMenuOpen] = useState(false);
-  const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false);
-  const [isAddShotMenuOpen, setIsAddShotMenuOpen] = useState(false);
+  const {
+    isOpen: isSaveMenuOpen,
+    setIsOpen: setIsSaveMenuOpen,
+    ref: saveMenuRef
+  } = usePopoverController<HTMLDivElement>();
+  const {
+    isOpen: isRecentMenuOpen,
+    setIsOpen: setIsRecentMenuOpen,
+    ref: recentMenuRef
+  } = usePopoverController<HTMLDivElement>();
+  const {
+    isOpen: isAddShotMenuOpen,
+    setIsOpen: setIsAddShotMenuOpen,
+    ref: addShotMenuRef
+  } = usePopoverController<HTMLDivElement>();
   const [blankShotPreset, setBlankShotPreset] = useState<BlankShotPreset>("16:9");
   const [radialToolMenu, setRadialToolMenu] = useState<RadialToolMenuState | undefined>();
   const [isStatusPanelOpen, setIsStatusPanelOpen] = useState(false);
   const [isLayerPanelOpen, setIsLayerPanelOpen] = useState(false);
-  const [isImportHelpOpen, setIsImportHelpOpen] = useState(false);
+  const {
+    isOpen: isImportHelpOpen,
+    setIsOpen: setIsImportHelpOpen,
+    ref: importHelpRef
+  } = usePopoverController<HTMLDivElement>();
   const [isImportNudging, setIsImportNudging] = useState(false);
   const [cardFace, setCardFace] = useState<CardFace>("image");
   const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
@@ -494,10 +511,6 @@ export const App = () => {
   const undoStackRef = useRef<UndoEntry[]>([]);
   const redoStackRef = useRef<UndoEntry[]>([]);
   const bitmapLayerWriteQueueRef = useRef(createBitmapLayerWriteQueue());
-  const saveMenuRef = useRef<HTMLDivElement | null>(null);
-  const recentMenuRef = useRef<HTMLDivElement | null>(null);
-  const addShotMenuRef = useRef<HTMLDivElement | null>(null);
-  const importHelpRef = useRef<HTMLDivElement | null>(null);
   const appShellRef = useRef<HTMLElement | null>(null);
   const workspaceBoardScrollRef = useRef<HTMLDivElement | null>(null);
   const boardGridRef = useRef<HTMLElement | null>(null);
@@ -881,110 +894,6 @@ export const App = () => {
       window.removeEventListener("mouseup", handlePointerMove);
     };
   }, []);
-
-  useEffect(() => {
-    if (!isSaveMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
-      if (!saveMenuRef.current?.contains(event.target as Node)) {
-        setIsSaveMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsSaveMenuOpen(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isSaveMenuOpen]);
-
-  useEffect(() => {
-    if (!isRecentMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
-      if (!recentMenuRef.current?.contains(event.target as Node)) {
-        setIsRecentMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsRecentMenuOpen(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isRecentMenuOpen]);
-
-  useEffect(() => {
-    if (!isAddShotMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: globalThis.PointerEvent) => {
-      if (!addShotMenuRef.current?.contains(event.target as Node)) {
-        setIsAddShotMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsAddShotMenuOpen(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isAddShotMenuOpen]);
-
-  useEffect(() => {
-    if (!isImportHelpOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: globalThis.PointerEvent) => {
-      if (!importHelpRef.current?.contains(event.target as Node)) {
-        setIsImportHelpOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsImportHelpOpen(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isImportHelpOpen]);
 
   useEffect(() => {
     if (!window.storyboard?.getToolRadialMenu) {
