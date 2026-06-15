@@ -301,6 +301,12 @@ Reason: The target users are artists who expect GUI setup. Keeping credentials o
 
 Reason: Most references are reusable across a scene, so default-on is simpler. Recording only exclusions keeps the project metadata small while preserving user intent when a specific shot should not use a reference.
 
+## AI Panel Uses Controller And Client Boundaries
+
+`AiDraftPanel.tsx` is the AI side panel composition and presentation surface. Provider settings, resource management, single-candidate flow, batch-candidate flow, and the renderer-safe AI API adapter live in focused renderer modules: `useAiDraftController.ts`, `useAiResourcesController.ts`, `useAiCandidateController.ts`, `useAiBatchGenerationController.ts`, and `aiClient.ts`.
+
+Reason: AI work now has enough internal separation for provider, resource, candidate, and UI work to happen in separate slices. Further splitting should follow real pain points, not line count alone. The panel may keep small UI dispatch helpers such as single-vs-batch button routing, while direct `window.storyboard.ai` calls should stay behind `aiClient.ts`.
+
 ## Batch AI Generation Uses Fixed Contact-Sheet Templates
 
 Batch AI generation groups selected shots in current storyboard order. Full groups use a 4-up 2x2 contact sheet; the final remainder uses 1-up, 2-up horizontal, or 3-up horizontal templates. Provider output is cropped back by fixed ratios into per-shot candidates.

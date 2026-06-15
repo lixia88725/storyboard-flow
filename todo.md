@@ -12,7 +12,7 @@
 
 ## P2
 
-- [ ] Continue architecture audit follow-through before the next large AI/UI iteration: remaining high-value slices are CSS override cleanup and carefully chosen renderer/UI orchestration work. AI resources/candidate/batch controllers and low-risk Electron read-side services now have focused boundaries; keep future slices narrow and avoid Save / Import / TIFF / `.storyboard-workbench` changes unless separately planned.
+- [ ] Continue architecture audit follow-through before the next large AI/UI iteration: remaining high-value slices are CSS override cleanup and carefully chosen renderer/UI orchestration work. AI settings/resources/candidate/batch controllers, `aiClient`, and low-risk Electron read-side services now have focused boundaries; keep future slices narrow and avoid Save / Import / TIFF / `.storyboard-workbench` changes unless separately planned.
 - [ ] Revisit Vite renderer chunk size after the architecture audit identifies a clean lazy-loading boundary; current build warning is non-blocking.
 - [ ] Manual dogfood retired Option/Alt drag copy paths: Option/Alt dragging storyboard, layer, and dialogue should behave like normal move/sort and must not create copies.
 - [ ] Manual dogfood keyboard copy/paste: copy/paste one storyboard with `Cmd/Ctrl+C` and `Cmd/Ctrl+V`, then copy/paste one layer below the current layer; confirm both paste actions show the short slide-out animation.
@@ -36,6 +36,7 @@
 - [x] GitHub Actions now publishes tester releases automatically from `main` to `lixia88725/storyboard-flow-releases`, including Windows portable zip, macOS Apple Silicon zip, and `update.json`.
 - [x] Storyboard marquee drag preview now uses lightweight temporary DOM selection and transform-positioned marquee box; final selection state still commits on pointer up.
 - [x] AI Draft MVP now supports GUI-only provider settings, OpenAI / Seedream / local ComfyUI providers, request preview copy, single-shot candidates, batch 4-up candidates, and per-shot AI resource availability.
+- [x] AI renderer logic now has controller/client boundaries for provider settings, resources, single-candidate flow, batch flow, and renderer API access; `AiDraftPanel.tsx` remains the UI composition surface.
 - [x] Major extraction boundaries are in place for `ShotCard`, `SketchPad`, `LayerPanel`, shared project operations, Electron Save/Import helpers, and preload sync checks.
 - [x] Architecture worktree slicing was validated with separate local renderer-controller and CSS-slice worktrees; remaining cross-slice risk is shell class naming between renderer controllers and CSS modules.
 - [x] Electron main read-side services were split out for folder scan, image records, known-image external change detection, and project metadata reading; Save / Import / TIFF orchestration remains protected in `main.ts`.
