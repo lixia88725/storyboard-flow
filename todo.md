@@ -12,7 +12,7 @@
 
 ## P2
 
-- [ ] Architecture audit for high cohesion / low coupling before the next large AI/UI iteration: map `App.tsx`, `styles.css`, `electron/main/main.ts`, AI modules, preload APIs, and side-panel/storyboard canvas boundaries into worktree-friendly slices.
+- [ ] Continue architecture audit follow-through before the next large AI/UI iteration: remaining high-value slices are AI resources/candidate/batch controllers, low-risk Electron main services, and CSS override cleanup. Worktree simulation has validated the current renderer-vs-CSS split; keep future slices narrow and avoid Save / Import / TIFF / `.storyboard-workbench` changes unless separately planned.
 - [ ] Revisit Vite renderer chunk size after the architecture audit identifies a clean lazy-loading boundary; current build warning is non-blocking.
 - [ ] Manual dogfood retired Option/Alt drag copy paths: Option/Alt dragging storyboard, layer, and dialogue should behave like normal move/sort and must not create copies.
 - [ ] Manual dogfood keyboard copy/paste: copy/paste one storyboard with `Cmd/Ctrl+C` and `Cmd/Ctrl+V`, then copy/paste one layer below the current layer; confirm both paste actions show the short slide-out animation.
@@ -37,6 +37,7 @@
 - [x] Storyboard marquee drag preview now uses lightweight temporary DOM selection and transform-positioned marquee box; final selection state still commits on pointer up.
 - [x] AI Draft MVP now supports GUI-only provider settings, OpenAI / Seedream / local ComfyUI providers, request preview copy, single-shot candidates, batch 4-up candidates, and per-shot AI resource availability.
 - [x] Major extraction boundaries are in place for `ShotCard`, `SketchPad`, `LayerPanel`, shared project operations, Electron Save/Import helpers, and preload sync checks.
+- [x] Architecture worktree slicing was validated with separate local renderer-controller and CSS-slice worktrees; remaining cross-slice risk is shell class naming between renderer controllers and CSS modules.
 - [x] Product naming is now `Storyboard Flow`; `Storyboard Workbench` remains only as a legacy metadata compatibility value. `.storyboard-workbench`, `SWB`, `swb-*`, and `storyboard-workbench.local` remain internal compatibility names until a separate format migration.
 - [x] Detailed older milestone history was intentionally pruned from this file during the 2026-06-06 handoff cleanup. Use Git history and archived docs under `docs/` for the full dated record.
 

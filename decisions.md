@@ -124,6 +124,14 @@ Future architecture work should split into slice-owned git worktrees instead of 
 
 Each worktree should own one slice and avoid opportunistic edits outside that slice. Changes to Save / Import / TIFF / `.storyboard-workbench` behavior require a separate explicit plan and should not be bundled with renderer UI, CSS, or AI controller cleanup.
 
+2026-06-15 worktree simulation:
+
+- Created two local worktrees from the same `main` baseline: `sim/renderer-controller-slice` and `sim/css-slice`.
+- Renderer controller work can stay limited to `src/renderer/App.tsx` plus focused controller/test files such as `src/renderer/rightSidebarController.ts`.
+- CSS work can stay limited to `src/renderer/styles.css` and `src/renderer/styles/*`, with `src/renderer/styles.css` kept as the import-order manifest.
+- The main remaining cross-slice seam is shell class naming: renderer controller slices may add class names such as `has-ai-panel-open`, while CSS slices style those classes. Add or rename shell classes deliberately and document them in the owning controller test before a CSS slice consumes them.
+- Do not let a CSS slice make opportunistic TypeScript behavior edits, and do not let a renderer controller slice clean up theme overrides.
+
 Reason: The highest-conflict files are still shared coordination points. Slice-owned worktrees reduce merge conflicts and keep architectural cleanup from accidentally crossing protected product/data boundaries.
 
 ## Multi-Select Reordering Has Explicit Placement
