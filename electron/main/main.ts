@@ -99,6 +99,10 @@ import {
   type CopyShotAssetsPayload
 } from "./copyShotAssetsService.js";
 import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
+import {
+  createWorkspaceTaskProgressReporter,
+  type WorkspaceTaskProgressReporter
+} from "./workspaceTaskProgress.js";
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { applyAiCandidateAsLayer, discardAiCandidate } from "./ai/candidates.js";
 import { generateAiCandidate } from "./ai/generate.js";
@@ -166,13 +170,6 @@ const blankShotPresets = {
   "1.43:1": { width: 1544, height: 1080 }
 } as const;
 type BlankShotPreset = keyof typeof blankShotPresets;
-type WorkspaceTaskProgress = {
-  kind: "save" | "import" | "open";
-  label?: string;
-  current: number;
-  total: number;
-};
-type WorkspaceTaskProgressReporter = (progress: WorkspaceTaskProgress) => void;
 
 type PendingDeletedShot = {
   id: string;
@@ -479,7 +476,7 @@ const registerIpcHandlers = () => {
       throw new Error(`Folder does not exist: ${folderPath}`);
     }
 
-    const scan = await scanFolder(folderPath, workspaceTaskProgressReporter(event, "open"));
+    const scan = await scanFolder(folderPath, createWorkspaceTaskProgressReporter(event.sender, "open"));
     await addRecentFolder(scan.folderPath);
     return scan;
   });
@@ -526,7 +523,7 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("workspace:save", async (event, payload: ProjectPayload) => {
-    return saveWorkspace(payload, workspaceTaskProgressReporter(event, "save"));
+    return saveWorkspace(payload, createWorkspaceTaskProgressReporter(event.sender, "save"));
   });
 
   ipcMain.handle("workspace:exportPhotoshopTiffs", async (_event, payload: ProjectPayload) => {
@@ -567,7 +564,7 @@ const registerIpcHandlers = () => {
       swbImport = await importProjectToSwbFormat(
         scriptImport.project,
         payload.folderPath,
-        workspaceTaskProgressReporter(event, "import"),
+        createWorkspaceTaskProgressReporter(event.sender, "import"),
         {
           dirtyShotIds: new Set(payload.dirtyShotIds ?? []),
           preserveDirtyShotLayers: payload.preserveDirtyShotLayers
@@ -608,7 +605,7 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("workspace:checkExternalChanges", async (event, payload: ProjectPayload) => {
-    const reportProgress = workspaceTaskProgressReporter(event, "open");
+    const reportProgress = createWorkspaceTaskProgressReporter(event.sender, "open");
     const previewRoot = previewRootForFolder(payload.folderPath);
     reportProgress({ kind: "open", label: "Scanning folder...", current: 0, total: 0 });
     const imagePaths = await collectImagePaths([payload.folderPath]);
@@ -752,12 +749,6 @@ const selectFolderForEvent = async (event: IpcMainInvokeEvent): Promise<string |
     showOpenDialog: dialog.showOpenDialog.bind(dialog)
   });
 };
-
-const workspaceTaskProgressReporter =
-  (event: IpcMainInvokeEvent, kind: WorkspaceTaskProgress["kind"]): WorkspaceTaskProgressReporter =>
-  (progress) => {
-    event.sender.send("workspace:taskProgress", { ...progress, kind });
-  };
 
 const saveWorkspace = async (
   payload: ProjectPayload,
