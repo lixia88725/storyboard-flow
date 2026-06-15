@@ -98,6 +98,7 @@ import {
   copyShotAssets,
   type CopyShotAssetsPayload
 } from "./copyShotAssetsService.js";
+import { checkExternalChanges } from "./checkExternalChangesService.js";
 import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
 import {
   createWorkspaceTaskProgressReporter,
@@ -609,42 +610,14 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle("workspace:checkExternalChanges", async (event, payload: ProjectPayload) => {
     const reportProgress = createWorkspaceTaskProgressReporter(event.sender, "open");
-    const previewRoot = previewRootForFolder(payload.folderPath);
-    reportProgress({ kind: "open", label: "Scanning folder...", current: 0, total: 0 });
-    const imagePaths = await collectImagePaths([payload.folderPath]);
-    reportProgress({
-      kind: "open",
-      label: "Checking external changes...",
-      current: 0,
-      total: imagePaths.length
-    });
-    const parkedShots =
-      "parkedShots" in payload.project
-        ? (payload.project.parkedShots as Project["shots"] | undefined)
-        : undefined;
-    const existingPaths = new Set([
-      ...payload.project.shots.map((shot) => shot.imagePath),
-      ...(parkedShots ?? []).map((shot) => shot.imagePath)
-    ]);
-    const pendingDeletedPaths = new Set(
-      (payload.project.pendingDeletedShots ?? []).map((shot) => shot.imagePath)
-    );
-    const newImagePaths = imagePaths.filter(
-      (imagePath) => !existingPaths.has(imagePath) && !pendingDeletedPaths.has(imagePath)
-    );
-    const knownChangedImagePaths = await changedKnownImagePaths(
-      payload.project,
-      imagePaths,
-      pendingDeletedPaths,
+    return checkExternalChanges(payload, {
+      changedKnownImagePaths,
+      collectImagePaths,
+      createImageRecords,
+      ensureStoryboardScriptMarkdown,
+      previewRootForFolder,
       reportProgress
-    );
-    return {
-      images: await createImageRecords([...newImagePaths, ...knownChangedImagePaths], previewRoot, {
-        onProgress: reportProgress,
-        label: "Preparing previews..."
-      }),
-      scriptImportNeeded: await ensureStoryboardScriptMarkdown(payload.folderPath, payload.project)
-    };
+    });
   });
 
   registerWorkspaceWatchIpcHandlers(ipcMain, {
