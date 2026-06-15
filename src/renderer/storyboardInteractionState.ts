@@ -4,6 +4,15 @@ import type { DragData, ParkingInsertionIndicator, StoryboardInsertionIndicator 
 
 export type SelectedBitmapLayerIds = { shotId: string; layerIds: string[] };
 
+export const sameLayerSelection = (
+  current: SelectedBitmapLayerIds | undefined,
+  shotId: string,
+  layerIds: string[]
+): boolean =>
+  current?.shotId === shotId &&
+  current.layerIds.length === layerIds.length &&
+  current.layerIds.every((layerId, index) => layerId === layerIds[index]);
+
 export type StoryboardInteractionState = {
   activeDragType: DragData["type"] | undefined;
   activeShotIds: string[];

@@ -170,7 +170,7 @@ import {
   type StoryboardInsertionTarget,
   type DragData
 } from "./storyboardDnd";
-import { useStoryboardInteractionState, type SelectedBitmapLayerIds } from "./storyboardInteractionState";
+import { sameLayerSelection, useStoryboardInteractionState } from "./storyboardInteractionState";
 import { useShortcutMenuController } from "./shortcutMenuController";
 import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
 import { shouldIgnoreWorkbenchWheelTarget } from "./workbenchWheel";
@@ -246,15 +246,6 @@ type PasteAnimationState = {
   pastedId: string;
   beforeRects: Map<string, DOMRect>;
 };
-
-const sameLayerSelection = (
-  current: SelectedBitmapLayerIds | undefined,
-  shotId: string,
-  layerIds: string[]
-) =>
-  current?.shotId === shotId &&
-  current.layerIds.length === layerIds.length &&
-  current.layerIds.every((layerId, index) => layerId === layerIds[index]);
 
 const hasOpenShortcutBlockingMenu = (): boolean =>
   Boolean(
