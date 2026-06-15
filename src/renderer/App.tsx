@@ -187,6 +187,13 @@ import {
   type RadialToolSlot,
   type ToolRadialMenuConfig
 } from "./toolRadialMenu";
+import {
+  closeRadialToolMenuState,
+  nextRadialSlotConfig,
+  openRadialToolMenuState,
+  updateRadialDragSettings,
+  type RadialToolMenuState
+} from "./radialToolMenuController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -235,7 +242,6 @@ const ensureProjectBitmapMetadata = (project: Project): Project => ({
   parkedShots: project.parkedShots?.map((shot) => ensureBitmapLayerMetadata(shot))
 });
 
-type RadialToolMenuState = { tool: StrokeTool; x: number; y: number; isClosing?: boolean };
 type UndoEntry = {
   project: Project;
   selectedShotIds: string[];
@@ -3196,7 +3202,7 @@ export const App = () => {
   const openRadialToolMenu = useCallback(
     (nextMenu: Omit<RadialToolMenuState, "isClosing">) => {
       clearRadialToolMenuCloseTimeout();
-      setRadialToolMenu({ ...nextMenu, isClosing: false });
+      setRadialToolMenu(openRadialToolMenuState(nextMenu));
     },
     [clearRadialToolMenuCloseTimeout]
   );
@@ -3210,12 +3216,7 @@ export const App = () => {
       return;
     }
 
-    setRadialToolMenu((current) => {
-      if (!current) {
-        return undefined;
-      }
-      return { ...current, isClosing: true };
-    });
+    setRadialToolMenu((current) => closeRadialToolMenuState(current, false));
     radialToolMenuCloseTimeoutRef.current = window.setTimeout(() => {
       radialToolMenuCloseTimeoutRef.current = undefined;
       setRadialToolMenu(undefined);
@@ -3293,36 +3294,10 @@ export const App = () => {
     closeRadialToolMenu();
   };
   const adjustRadialToolValue = (kind: RadialDragKind, value: number) => {
-    if (activeSketchTool === "brush") {
-      if (kind === "size") {
-        setBrushSize(value);
-      } else if (kind === "opacity") {
-        setBrushOpacity(value);
-      } else {
-        setBrushSoftness(value);
-      }
-      return;
-    }
-
-    if (activeSketchTool === "eraser") {
-      if (kind === "size") {
-        setEraserSize(value);
-      } else if (kind === "opacity") {
-        setEraserOpacity(value);
-      } else {
-        setEraserSoftness(value);
-      }
-    }
+    applySketchToolSettings(updateRadialDragSettings(currentSketchToolSettings, kind, value));
   };
   const updateRadialSlot = (tool: StrokeTool, index: number, slot: RadialToolSlot) => {
-    persistToolRadialMenuConfig({
-      ...toolRadialMenuConfig,
-      [tool]: {
-        slots: toolRadialMenuConfig[tool].slots.map((currentSlot, slotIndex) =>
-          slotIndex === index ? slot : currentSlot
-        )
-      }
-    });
+    persistToolRadialMenuConfig(nextRadialSlotConfig(toolRadialMenuConfig, tool, index, slot));
   };
   const handleAiProjectChange = (nextProject: Project, nextStatus: string) => {
     const currentProject = projectRef.current;
