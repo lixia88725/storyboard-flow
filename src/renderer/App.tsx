@@ -178,6 +178,7 @@ import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
 import { usePopoverController } from "./popoverController";
+import { statusPanelToggleClassName, swbStatusLabel, updateCheckButtonLabel } from "./statusPanelController";
 import {
   applyRadialPresetSlot,
   defaultToolRadialMenuConfig,
@@ -3972,22 +3973,20 @@ export const App = () => {
             <span>{parkedShots.length} pending</span>
             <span>Workspace {workspaceSaveState}</span>
             <span>File names {fileNameSyncState}</span>
-            <span>{needsSwbImport ? "SWB import needed" : hasSwbWarning ? "SWB warning" : "SWB ready"}</span>
+            <span>{swbStatusLabel({ needsSwbImport, hasSwbWarning })}</span>
             <button type="button" className="status-panel-action" onClick={() => void checkForUpdates(true)}>
-              {updateNotice.status === "checking" ? "Checking..." : "Check for updates"}
+              {updateCheckButtonLabel(updateNotice.status)}
             </button>
           </div>
         ) : null}
         <button
           type="button"
-          className={`status-toggle ${
-            workspaceSaveState === "error" ||
-            fileNameSyncState === "unsynced" ||
-            hasSwbWarning ||
-            updateNotice.status === "available"
-              ? "needs-attention"
-              : ""
-          }`}
+          className={statusPanelToggleClassName({
+            workspaceSaveState,
+            fileNameSyncState,
+            hasSwbWarning,
+            updateNoticeStatus: updateNotice.status
+          })}
           aria-label="Workspace status"
           aria-expanded={isStatusPanelOpen}
           onClick={() => setIsStatusPanelOpen((isOpen) => !isOpen)}
