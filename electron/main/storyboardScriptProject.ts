@@ -1,10 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { atomicWriteTextFile } from "./fileRenames.js";
 import { previewRootForFolder } from "./previewPaths.js";
 import { createPreview } from "./previewService.js";
+import { pixelFingerprint } from "./imageFingerprintService.js";
 import {
   parseStoryboardScriptMarkdown,
   serializeStoryboardScriptMarkdown,
@@ -198,18 +199,6 @@ const createImageRecord = async (
     height: metadata.height,
     fingerprint: await pixelFingerprint(imagePath)
   };
-};
-
-const pixelFingerprint = async (imagePath: string): Promise<string> => {
-  const { data, info } = await sharp(imagePath, sharpSourceOptions)
-    .rotate()
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  const hash = createHash("sha256");
-  hash.update(`${info.width}x${info.height}:${info.channels}:`);
-  hash.update(data);
-  return hash.digest("hex");
 };
 
 const createShotFromImage = (

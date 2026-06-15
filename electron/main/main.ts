@@ -12,7 +12,7 @@ import {
   type IpcMainInvokeEvent
 } from "electron";
 import { copyFile, mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import sharp from "sharp";
@@ -108,6 +108,7 @@ import {
   type WorkspaceTaskProgressReporter
 } from "./workspaceTaskProgress.js";
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
+import { pixelFingerprint } from "./imageFingerprintService.js";
 import { applyAiCandidateAsLayer, discardAiCandidate } from "./ai/candidates.js";
 import { generateAiCandidate } from "./ai/generate.js";
 import { generateAiBatchCandidates } from "./ai/generateBatch.js";
@@ -1955,18 +1956,6 @@ const createImageRecords = async (
     label: options.label,
     concurrency: options.concurrency
   });
-};
-
-const pixelFingerprint = async (imagePath: string): Promise<string> => {
-  const { data, info } = await sharp(imagePath, sharpSourceOptions)
-    .rotate()
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  const hash = createHash("sha256");
-  hash.update(`${info.width}x${info.height}:${info.channels}:`);
-  hash.update(data);
-  return hash.digest("hex");
 };
 
 const readSwbMetadata = async (imagePath: string): Promise<SwbImageMetadata | undefined> => {
