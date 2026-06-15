@@ -1,4 +1,5 @@
 import type { IpcMainInvokeEvent } from "electron";
+import { pathToFileURL } from "node:url";
 
 type DestroyableWindow = {
   destroy: () => void;
@@ -53,6 +54,20 @@ export const openExternalUrl = async (
     throw new Error("Only HTTPS URLs can be opened externally.");
   }
   await openExternal(url);
+};
+
+export const respondToStoryboardImageRequest = async (
+  requestUrl: string,
+  fetchFileUrl: (url: string) => Promise<Response>
+): Promise<Response> => {
+  const parsedUrl = new URL(requestUrl);
+  const filePath = parsedUrl.searchParams.get("path");
+
+  if (!filePath) {
+    return new Response("Missing path", { status: 400 });
+  }
+
+  return fetchFileUrl(pathToFileURL(filePath).toString());
 };
 
 export type FolderDialogOptions = {

@@ -14,7 +14,6 @@ import {
 import { copyFile, mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import sharp from "sharp";
 import {
   applyFileMoves,
@@ -85,6 +84,7 @@ import {
   finishSaveAndClose as finishSaveAndCloseRequest,
   getAppInfoForRenderer,
   openExternalUrl,
+  respondToStoryboardImageRequest,
   selectFolderPath,
   updateCloseGuard as updateCloseGuardForWebContents
 } from "./appShellService.js";
@@ -446,14 +446,7 @@ const createWindow = async () => {
 
 app.whenReady().then(async () => {
   protocol.handle("storyboard-img", (request) => {
-    const requestUrl = new URL(request.url);
-    const filePath = requestUrl.searchParams.get("path");
-
-    if (!filePath) {
-      return new Response("Missing path", { status: 400 });
-    }
-
-    return net.fetch(pathToFileURL(filePath).toString());
+    return respondToStoryboardImageRequest(request.url, (url) => net.fetch(url));
   });
 
   registerIpcHandlers();

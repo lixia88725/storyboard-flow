@@ -3,6 +3,7 @@ import {
   finishSaveAndClose,
   getAppInfoForRenderer,
   openExternalUrl,
+  respondToStoryboardImageRequest,
   selectFolderPath,
   updateCloseGuard
 } from "./appShellService.js";
@@ -63,6 +64,28 @@ describe("appShellService", () => {
       "Only HTTPS URLs can be opened externally."
     );
     expect(openExternal).toHaveBeenCalledOnce();
+  });
+
+  it("rejects storyboard image requests without a file path", async () => {
+    const fetchFileUrl = vi.fn(async () => new Response("ignored"));
+
+    const response = await respondToStoryboardImageRequest("storyboard-img://image", fetchFileUrl);
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe("Missing path");
+    expect(fetchFileUrl).not.toHaveBeenCalled();
+  });
+
+  it("fetches storyboard image requests through a file URL", async () => {
+    const fetchFileUrl = vi.fn(async () => new Response("ok"));
+
+    const response = await respondToStoryboardImageRequest(
+      "storyboard-img://image?path=%2Ftmp%2FStoryboard%20Flow%2Fshot%201.png",
+      fetchFileUrl
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchFileUrl).toHaveBeenCalledWith("file:///tmp/Storyboard%20Flow/shot%201.png");
   });
 
   it("selects a folder without an owner window", async () => {
