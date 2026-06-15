@@ -18,7 +18,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type DragEvent as ReactDragEvent,
   type MouseEvent,
   type PointerEvent
@@ -71,13 +70,7 @@ import type {
   SketchTool,
   StrokeTool
 } from "../shared/types";
-import {
-  getStableBoardTop,
-  getZoomPreviewState,
-  maxStoryboardZoom,
-  normalizeStoryboardZoom,
-  type ZoomPreviewState
-} from "./animationViewport";
+import { maxStoryboardZoom } from "./animationViewport";
 import {
   activeVisibleBitmapLayerForShot,
   canFillBitmapLayer,
@@ -113,11 +106,7 @@ import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
 import { AiDraftPanel } from "./ai/AiDraftPanel";
 import { useBoardViewState } from "./boardViewState";
-import {
-  boardViewportHeight,
-  currentBoardScroll as readCurrentBoardScroll,
-  scrollBoardBy as scrollBoardContainerBy
-} from "./boardViewport";
+import { useStoryboardZoomController } from "./storyboardZoomController";
 import { RadialToolMenu } from "./RadialToolMenu";
 import { ShotCard, type CardFace } from "./ShotCard";
 import { StatusPopover } from "./StatusPopover";
@@ -143,7 +132,6 @@ import {
   storyboardMarqueeShotRectsFromDom
 } from "./storyboardMarqueeDom";
 import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
-import { aspectRatioForShot } from "./sketchRendering";
 import {
   createTransparentLayerDataUrl,
   drawStrokeOnBitmapLayer,
@@ -177,11 +165,7 @@ import { hasOpenShortcutBlockingMenu } from "./shortcutMenuController";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
-import {
-  animationReservedBottom,
-  animationViewportMargin,
-  useAnimationModeLayoutController
-} from "./animationModeLayoutController";
+import { useAnimationModeLayoutController } from "./animationModeLayoutController";
 import {
   applyPasteAnimation,
   clearPasteAnimation,
@@ -201,7 +185,6 @@ import {
   useRadialToolMenuController
 } from "./radialToolMenuController";
 import { usePointerPositionController } from "./pointerPositionController";
-import { useZoomInteractionController } from "./zoomInteractionController";
 import { useRecentFoldersController } from "./recentFoldersController";
 import { useToolRadialSettingsController } from "./toolRadialSettingsController";
 import { useWorkspaceTaskProgressController } from "./workspaceTaskProgressController";
@@ -368,14 +351,7 @@ export const App = () => {
   const pasteAnimationRef = useRef<PasteAnimationState | undefined>(undefined);
   const pasteAnimationFrameRef = useRef<number | undefined>(undefined);
   const pasteAnimationCleanupTimeoutRef = useRef<number | undefined>(undefined);
-  const pendingZoomLevelRef = useRef<number | undefined>(undefined);
-  const zoomFrameRef = useRef<number | undefined>(undefined);
-  const zoomInputRef = useRef<HTMLInputElement | null>(null);
-  const zoomValueLabelRef = useRef<HTMLSpanElement | null>(null);
   const selectedShotCountLabelRef = useRef<HTMLSpanElement | null>(null);
-  const pendingZoomPreviewLevelRef = useRef<number | undefined>(undefined);
-  const zoomPreviewFrameRef = useRef<number | undefined>(undefined);
-  const zoomPreviewStateRef = useRef<ZoomPreviewState | undefined>(undefined);
   const lastPointerPositionRef = useRef<{ x: number; y: number } | undefined>(undefined);
   const storyboardInsertionTargetRef = useRef<StoryboardInsertionTarget | undefined>(undefined);
   const storyboardInsertionIndicatorRef = useRef<StoryboardInsertionIndicator | undefined>(undefined);
@@ -406,8 +382,6 @@ export const App = () => {
   const redoStackRef = useRef<UndoEntry[]>([]);
   const bitmapLayerWriteQueueRef = useRef(createBitmapLayerWriteQueue());
   const appShellRef = useRef<HTMLElement | null>(null);
-  const workspaceBoardScrollRef = useRef<HTMLDivElement | null>(null);
-  const boardGridRef = useRef<HTMLElement | null>(null);
   const orderedShots = useMemo(() => sortedShots(project.shots), [project.shots]);
   const parkedShots = useMemo(() => sortedShots(project.parkedShots ?? []), [project.parkedShots]);
   const needsImageImport = useMemo(() => projectNeedsSwbImport(project), [project]);
@@ -470,211 +444,32 @@ export const App = () => {
     []
   );
 
-  const syncZoomControlDisplay = useCallback((zoom: number) => {
-    const normalizedZoom = normalizeStoryboardZoom(zoom);
-    const zoomValue = String(normalizedZoom);
-    if (zoomInputRef.current && zoomInputRef.current.value !== zoomValue) {
-      zoomInputRef.current.value = zoomValue;
-    }
-    if (zoomValueLabelRef.current) {
-      zoomValueLabelRef.current.textContent = `${normalizedZoom}%`;
-    }
-  }, []);
-
-  const applyZoomPreviewCssVariables = useCallback((preview: ZoomPreviewState) => {
-    const board = boardGridRef.current;
-    if (!board) {
-      return;
-    }
-
-    board.style.setProperty("--shot-scale", preview.cssVariables.shotScale);
-    board.style.setProperty("--animation-image-width", preview.cssVariables.animationImageWidth);
-    board.style.setProperty("--animation-image-height", preview.cssVariables.animationImageHeight);
-    board.style.setProperty("--animation-frame-width", preview.cssVariables.animationFrameWidth);
-    board.style.setProperty("--animation-frame-height", preview.cssVariables.animationFrameHeight);
-  }, []);
-
-  const currentBoardScroll = () => readCurrentBoardScroll(workspaceBoardScrollRef.current);
-  const currentBoardViewportHeight = () => boardViewportHeight(workspaceBoardScrollRef.current);
-  const scrollBoardBy = (options: ScrollToOptions) =>
-    scrollBoardContainerBy(workspaceBoardScrollRef.current, options);
-
-  const buildZoomPreviewState = useCallback(
-    (zoom: number): ZoomPreviewState | undefined => {
-      const board = boardGridRef.current;
-      const firstShot = board?.querySelector<HTMLElement>("[data-shot-id]");
-      if (!board || !firstShot) {
-        return undefined;
-      }
-
-      const boardRect = board.getBoundingClientRect();
-      const boardScroll = currentBoardScroll();
-      const viewportShot = primarySelectedShot ?? orderedShots[0];
-      return getZoomPreviewState({
-        boardWidth: boardRect.width,
-        boardTop: getStableBoardTop(boardRect.top, boardScroll.y),
-        viewportHeight: currentBoardViewportHeight(),
-        reservedBottom: animationReservedBottom,
-        margin: animationViewportMargin,
-        zoomLevel: zoom,
-        maxZoomLevel: maxStoryboardZoom,
-        isAnimationMode: isAnimationModeRef.current,
-        imageAspectRatio: viewportShot ? aspectRatioForShot(viewportShot) : 420 / 265
-      });
-    },
-    [orderedShots, primarySelectedShot]
-  );
-
-  const applyZoomPreviewState = useCallback(
-    (preview: ZoomPreviewState) => {
-      zoomPreviewStateRef.current = preview;
-      zoomLevelRef.current = preview.zoomLevel;
-      applyZoomPreviewCssVariables(preview);
-      syncZoomControlDisplay(preview.zoomLevel);
-
-      if (preview.viewport.isAnimationMode !== isAnimationModeRef.current) {
-        isAnimationModeRef.current = preview.viewport.isAnimationMode;
-        setIsAnimationMode(preview.viewport.isAnimationMode);
-      }
-    },
-    [applyZoomPreviewCssVariables, syncZoomControlDisplay]
-  );
-
-  useEffect(() => {
-    if (!isZoomScrubbingRef.current) {
-      zoomPreviewStateRef.current = undefined;
-      syncZoomControlDisplay(zoomLevel);
-    }
-  }, [syncZoomControlDisplay, zoomLevel]);
-
-  const commitZoomLevel = useCallback((zoom: number) => {
-    const nextZoom = normalizeStoryboardZoom(zoom);
-    zoomLevelRef.current = nextZoom;
-    setZoomLevel((currentZoom) => (currentZoom === nextZoom ? currentZoom : nextZoom));
-  }, []);
-
-  const scheduleZoomLevel = useCallback(
-    (zoom: number) => {
-      pendingZoomLevelRef.current = normalizeStoryboardZoom(zoom);
-      if (zoomFrameRef.current !== undefined) {
-        return;
-      }
-
-      zoomFrameRef.current = window.requestAnimationFrame(() => {
-        zoomFrameRef.current = undefined;
-        const nextZoom = pendingZoomLevelRef.current;
-        pendingZoomLevelRef.current = undefined;
-        if (nextZoom !== undefined) {
-          commitZoomLevel(nextZoom);
-        }
-      });
-    },
-    [commitZoomLevel]
-  );
-
-  const scheduleZoomPreviewLevel = useCallback(
-    (zoom: number) => {
-      pendingZoomPreviewLevelRef.current = normalizeStoryboardZoom(zoom);
-      if (zoomPreviewFrameRef.current !== undefined) {
-        return;
-      }
-
-      zoomPreviewFrameRef.current = window.requestAnimationFrame(() => {
-        zoomPreviewFrameRef.current = undefined;
-        const nextZoom = pendingZoomPreviewLevelRef.current;
-        pendingZoomPreviewLevelRef.current = undefined;
-        if (nextZoom === undefined) {
-          return;
-        }
-
-        const preview = buildZoomPreviewState(nextZoom);
-        if (preview) {
-          applyZoomPreviewState(preview);
-        } else {
-          syncZoomControlDisplay(nextZoom);
-        }
-      });
-    },
-    [applyZoomPreviewState, buildZoomPreviewState, syncZoomControlDisplay]
-  );
-
-  const flushScheduledZoomLevel = useCallback(() => {
-    if (zoomFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(zoomFrameRef.current);
-      zoomFrameRef.current = undefined;
-    }
-
-    const nextZoom = pendingZoomLevelRef.current;
-    pendingZoomLevelRef.current = undefined;
-    if (nextZoom !== undefined) {
-      commitZoomLevel(nextZoom);
-    }
-  }, [commitZoomLevel]);
-
-  const flushZoomPreviewLevel = useCallback(() => {
-    if (zoomPreviewFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(zoomPreviewFrameRef.current);
-      zoomPreviewFrameRef.current = undefined;
-    }
-
-    const nextZoom =
-      pendingZoomPreviewLevelRef.current ??
-      zoomPreviewStateRef.current?.zoomLevel ??
-      zoomLevelRef.current;
-    pendingZoomPreviewLevelRef.current = undefined;
-    const preview = buildZoomPreviewState(nextZoom);
-    if (!preview) {
-      commitZoomLevel(nextZoom);
-      syncZoomControlDisplay(nextZoom);
-      return;
-    }
-
-    applyZoomPreviewState(preview);
-    isAnimationModeRef.current = preview.viewport.isAnimationMode;
-    setIsAnimationMode(preview.viewport.isAnimationMode);
-    setAnimationImageSize({ width: preview.viewport.imageWidth, height: preview.viewport.imageHeight });
-    setAnimationFrameSize({ width: preview.viewport.frameWidth, height: preview.viewport.frameHeight });
-    commitZoomLevel(preview.zoomLevel);
-  }, [applyZoomPreviewState, buildZoomPreviewState, commitZoomLevel, syncZoomControlDisplay]);
-
-  const beginZoomScrubbing = useCallback(() => {
-    flushScheduledZoomLevel();
-    isZoomScrubbingRef.current = true;
-    const preview = buildZoomPreviewState(zoomLevelRef.current);
-    if (preview) {
-      applyZoomPreviewState(preview);
-    }
-    setIsZoomScrubbing(true);
-  }, [applyZoomPreviewState, buildZoomPreviewState, flushScheduledZoomLevel]);
-
-  const endZoomScrubbing = useCallback(() => {
-    if (!isZoomScrubbingRef.current) {
-      return;
-    }
-
-    flushZoomPreviewLevel();
-    isZoomScrubbingRef.current = false;
-    setIsZoomScrubbing(false);
-  }, [flushZoomPreviewLevel]);
-
-  useEffect(
-    () => () => {
-      if (zoomFrameRef.current !== undefined) {
-        window.cancelAnimationFrame(zoomFrameRef.current);
-      }
-      if (zoomPreviewFrameRef.current !== undefined) {
-        window.cancelAnimationFrame(zoomPreviewFrameRef.current);
-      }
-    },
-    []
-  );
-
-  useZoomInteractionController({
-    appShellRef,
+  const {
+    beginZoomScrubbing,
+    boardGridRef,
+    boardZoomStyle,
+    currentBoardScroll,
     endZoomScrubbing,
+    handleZoomInputChange,
+    scrollBoardBy,
+    workspaceBoardScrollRef,
+    zoomInputRef,
+    zoomValueLabelRef
+  } = useStoryboardZoomController({
+    animationFrameSize,
+    animationImageSize,
+    appShellRef,
+    isAnimationModeRef,
     isZoomScrubbing,
-    pendingZoomLevelRef,
-    scheduleZoomLevel,
+    isZoomScrubbingRef,
+    orderedShots,
+    primarySelectedShot,
+    setAnimationFrameSize,
+    setAnimationImageSize,
+    setIsAnimationMode,
+    setIsZoomScrubbing,
+    setZoomLevel,
+    zoomLevel,
     zoomLevelRef
   });
 
@@ -2556,7 +2351,6 @@ export const App = () => {
     scheduleMarqueeUpdate();
   };
 
-  const boardZoomCssVariables = zoomPreviewStateRef.current?.cssVariables;
   const showStoryboardInsertionIndicator = shouldShowStoryboardInsertionIndicator({
     activeShotCount: activeShotIds.length + activeParkedShotIds.length,
     hasIndicator: Boolean(storyboardInsertionIndicator)
@@ -2724,19 +2518,7 @@ export const App = () => {
               <section
                 ref={boardGridRef}
                 className="board-grid"
-                style={
-                  {
-                    "--shot-scale": boardZoomCssVariables?.shotScale ?? zoomLevel / 100,
-                    "--animation-image-width":
-                      boardZoomCssVariables?.animationImageWidth ?? `${animationImageSize.width}px`,
-                    "--animation-image-height":
-                      boardZoomCssVariables?.animationImageHeight ?? `${animationImageSize.height}px`,
-                    "--animation-frame-width":
-                      boardZoomCssVariables?.animationFrameWidth ?? `${animationFrameSize.width}px`,
-                    "--animation-frame-height":
-                      boardZoomCssVariables?.animationFrameHeight ?? `${animationFrameSize.height}px`
-                  } as CSSProperties
-                }
+                style={boardZoomStyle}
                 onPointerDown={handleSelectionPointerDown}
               >
                 {renderedShotEntries.map((entry) => {
@@ -2977,12 +2759,7 @@ export const App = () => {
             onLostPointerCapture={endZoomScrubbing}
             onBlur={endZoomScrubbing}
             onChange={(event) => {
-              const nextZoom = Number(event.target.value);
-              if (isZoomScrubbingRef.current) {
-                scheduleZoomPreviewLevel(nextZoom);
-              } else {
-                scheduleZoomLevel(nextZoom);
-              }
+              handleZoomInputChange(Number(event.target.value));
             }}
           />
         </label>
