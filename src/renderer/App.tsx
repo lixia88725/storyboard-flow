@@ -153,7 +153,6 @@ import {
   dragPreviewShotIds as chooseDragPreviewShotIds,
   inferDropPlacementFromDragEnd,
   inferShotPlacement,
-  isPointerInsideRect,
   parkingInsertionIndicatorFromCachedRect,
   parkingInsertionTargetFromPointer,
   pointerFromActiveDragRect,
@@ -170,6 +169,7 @@ import {
   type StoryboardInsertionTarget,
   type DragData
 } from "./storyboardDnd";
+import { dragEndInsideSelector, isPointerInsideElement } from "./dragHitTesting";
 import { sameLayerSelection, useStoryboardInteractionState } from "./storyboardInteractionState";
 import { hasOpenShortcutBlockingMenu, useShortcutMenuController } from "./shortcutMenuController";
 import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
@@ -3583,56 +3583,6 @@ export const App = () => {
         <span ref={selectedShotCountLabelRef}>{selectedShotIds.length} selected</span>
       </footer>
     </main>
-  );
-};
-
-const isPointerInsideElement = (element: HTMLElement | null, pointer: { x: number; y: number }): boolean => {
-  if (!element) {
-    return false;
-  }
-
-  const rect = element.getBoundingClientRect();
-  return isPointerInsideRect(rect, pointer);
-};
-
-const dragEndInsideSelector = (
-  event: DragEndEvent,
-  selector: string,
-  pointerPosition?: { x: number; y: number }
-): boolean => {
-  const activeRect = event.active.rect.current.translated ?? event.active.rect.current.initial;
-  const target = document.querySelector<HTMLElement>(selector);
-  if ((!activeRect && !pointerPosition) || !target) {
-    return false;
-  }
-
-  const targetRect = target.getBoundingClientRect();
-  if (pointerPosition) {
-    const pointedElement = document.elementFromPoint(pointerPosition.x, pointerPosition.y);
-    if (pointedElement instanceof HTMLElement && pointedElement.closest(selector)) {
-      return true;
-    }
-  }
-
-  if (
-    activeRect &&
-    activeRect.right >= targetRect.left &&
-    activeRect.left <= targetRect.right &&
-    activeRect.bottom >= targetRect.top &&
-    activeRect.top <= targetRect.bottom
-  ) {
-    return true;
-  }
-
-  const point = pointerPosition ?? {
-    x: activeRect!.left + activeRect!.width / 2,
-    y: activeRect!.top + activeRect!.height / 2
-  };
-  return (
-    point.x >= targetRect.left &&
-    point.x <= targetRect.right &&
-    point.y >= targetRect.top &&
-    point.y <= targetRect.bottom
   );
 };
 
