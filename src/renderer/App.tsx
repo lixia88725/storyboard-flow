@@ -146,7 +146,7 @@ import {
   storyboardMarqueeShotRectsFromDom
 } from "./storyboardMarqueeDom";
 import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
-import { canvasSizeForShot } from "./sketchRendering";
+import { aspectRatioForShot } from "./sketchRendering";
 import {
   createTransparentLayerDataUrl,
   drawStrokeOnBitmapLayer,
@@ -3551,9 +3551,4 @@ export const App = () => {
       </footer>
     </main>
   );
-};
-
-const aspectRatioForShot = (shot: Shot): number => {
-  const canvasSize = canvasSizeForShot(shot);
-  return canvasSize.width / canvasSize.height;
 };

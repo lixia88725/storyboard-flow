@@ -24,6 +24,11 @@ export const canvasSizeForShot = (shot: Shot): CanvasSize => {
   return width && height ? { width, height } : sketchCanvasSize;
 };
 
+export const aspectRatioForShot = (shot: Shot): number => {
+  const canvasSize = canvasSizeForShot(shot);
+  return canvasSize.width / canvasSize.height;
+};
+
 export type RgbaColor = readonly [number, number, number, number];
 
 export const hexToRgba = (hexColor: string): RgbaColor => {

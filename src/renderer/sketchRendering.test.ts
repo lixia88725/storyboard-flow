@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  aspectRatioForShot,
   drawStrokePathOnCanvas,
   fillImageDataAtPoint,
   hexToRgba,
   shouldDrawStrokeToBitmapLayer
 } from "./sketchRendering";
-import type { SketchStroke } from "../shared/types";
+import type { Shot, SketchStroke } from "../shared/types";
 
 const testImageData = (width: number, height: number, values?: number[]): ImageData =>
   ({
@@ -15,6 +16,21 @@ const testImageData = (width: number, height: number, values?: number[]): ImageD
   }) as ImageData;
 
 describe("sketch rendering", () => {
+  it("calculates the shot aspect ratio from SWB canvas metadata", () => {
+    const shot = {
+      swb: {
+        canvasWidth: 1920,
+        canvasHeight: 1080
+      }
+    } as Shot;
+
+    expect(aspectRatioForShot(shot)).toBeCloseTo(16 / 9);
+  });
+
+  it("falls back to the default sketch canvas aspect ratio", () => {
+    expect(aspectRatioForShot({} as Shot)).toBeCloseTo(420 / 265);
+  });
+
   it("draws a single-point stroke as a round dab", () => {
     const calls: string[] = [];
     const context = {
