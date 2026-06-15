@@ -105,6 +105,7 @@ import {
   resolveDeleteTarget,
   type DeleteTarget
 } from "./deleteTarget";
+import { createDirtyShotTracker } from "./dirtyShotTracker";
 import {
   defaultKeyboardShortcuts,
   isKeyboardEditableTarget
@@ -769,6 +770,12 @@ export const App = () => {
     refreshKey: project,
     workspaceSaveState
   });
+  const {
+    dirtyShotIds,
+    markAllShotsDirty,
+    markShotsDirty,
+    resetDirtyShots: resetTrackedDirtyShots
+  } = createDirtyShotTracker({ dirtyShotIdsRef, projectRef });
 
   const measureGridColumns = useCallback(() => {
     const firstRowTop = Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id]"))
@@ -899,16 +906,6 @@ export const App = () => {
     setAutosaveRevision((revision) => revision + 1);
     scriptImportCheckIdRef.current += 1;
     setScriptImportNeeded(false);
-  };
-
-  const markShotsDirty = (shotIds: string[]) => {
-    for (const shotId of shotIds) {
-      dirtyShotIdsRef.current.add(shotId);
-    }
-  };
-
-  const markAllShotsDirty = () => {
-    markShotsDirty(projectRef.current.shots.map((shot) => shot.id));
   };
 
   const handleDeleteSelectedShots = () => {
@@ -1192,7 +1189,7 @@ export const App = () => {
               folderPath: nextFolderPath,
               metadataPath: nextMetadataPath,
               blankShotPreset,
-              dirtyShotIds: [...dirtyShotIdsRef.current],
+              dirtyShotIds: dirtyShotIds(),
               preserveDirtyShotLayers: true
             }),
           setStatus
@@ -1411,7 +1408,7 @@ export const App = () => {
             folderPath: scan.folderPath,
             metadataPath: scan.metadataPath,
             blankShotPreset,
-            dirtyShotIds: [...dirtyShotIdsRef.current],
+            dirtyShotIds: dirtyShotIds(),
             preserveDirtyShotLayers: true
           }),
         setStatus
@@ -1438,7 +1435,7 @@ export const App = () => {
     setRedoStackSynced([]);
     selectSingleShot(nextProject.shots[0]?.id);
     if (resetDirtyShots) {
-      dirtyShotIdsRef.current = new Set();
+      resetTrackedDirtyShots();
     }
 
     if (!nextScriptImportNeeded && window.storyboard) {
@@ -1708,7 +1705,7 @@ export const App = () => {
         folderPath,
         metadataPath,
         renamePlan,
-        dirtyShotIds: [...dirtyShotIdsRef.current]
+        dirtyShotIds: dirtyShotIds()
       });
 
       setProject(result.project);
@@ -1717,7 +1714,7 @@ export const App = () => {
       setMetadataPath(result.metadataPath);
       setWorkspaceSaveState("saved");
       setFileNameSyncState("synced");
-      dirtyShotIdsRef.current = new Set();
+      resetTrackedDirtyShots();
       workspaceSaveStateRef.current = "saved";
       fileNameSyncStateRef.current = "synced";
       setUndoStackSynced([]);
@@ -1879,7 +1876,7 @@ export const App = () => {
               folderPath,
               metadataPath,
               blankShotPreset,
-              dirtyShotIds: [...dirtyShotIdsRef.current]
+              dirtyShotIds: dirtyShotIds()
             }),
           setStatus
         );
