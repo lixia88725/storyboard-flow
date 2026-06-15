@@ -162,6 +162,15 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 - `git merge-tree --write-tree sim/current-renderer-radial sim/current-electron-blank-shot` completed with exit code 0, confirming these slices can merge without file conflicts.
 - Rule adjustment: renderer menu/controller cleanup and Electron service extraction can proceed in separate worktrees when each slice avoids opportunistic edits outside its ownership area.
 
+2026-06-16 slice follow-through:
+
+- CSS cleanup ran as a sequence of CSS-only worktrees that absorbed Production Slate override files into their owning modules: pending shelf, board overlays, timeline/status, toolbar, shot card, and layer panel. Each slice avoided TypeScript and behavior edits, which kept visual cleanup separate from renderer/controller work.
+- Renderer zoom orchestration ran in `sim/app-zoom-controller` and changed only `src/renderer/App.tsx`, `src/renderer/storyboardZoomController.ts`, and `src/renderer/storyboardZoomController.test.ts`.
+- `App.tsx` dropped from 3004 to 2781 lines after moving zoom slider RAF scheduling, live preview CSS variables, board scroll helpers, and wheel zoom wiring into `useStoryboardZoomController`.
+- The zoom slice cherry-picked cleanly after the CSS slices because it did not touch `src/renderer/styles/` and the CSS slices did not touch renderer behavior files.
+- Rule adjustment: CSS theme cleanup can continue independently from renderer hook extraction as long as CSS slices treat `styles.css` as the import-order manifest and renderer slices treat shell/board class names as API-like names.
+- Remaining renderer risk is now concentrated in DND/marquee, Save/Import wiring, history, and layer action orchestration. Prefer one controller at a time, with focused tests, before considering any broader `App.tsx` movement.
+
 Reason: The highest-conflict files are still shared coordination points. Slice-owned worktrees reduce merge conflicts and keep architectural cleanup from accidentally crossing protected product/data boundaries.
 
 ## Multi-Select Reordering Has Explicit Placement

@@ -12,7 +12,7 @@
 
 ## P2
 
-- [ ] Continue architecture audit follow-through before the next large AI/UI iteration: remaining high-value slices are CSS override cleanup and carefully chosen renderer/UI orchestration work. AI settings/resources/candidate/batch controllers, `aiClient`, autosave persistence, and low-risk Electron read-side/settings services now have focused boundaries; keep future slices narrow and avoid Save / Import / TIFF / `.storyboard-workbench` changes unless separately planned.
+- [ ] Continue architecture audit follow-through before the next large AI/UI iteration: CSS Production Slate override cleanup and storyboard zoom orchestration now have focused boundaries; remaining high-value slices are carefully chosen renderer DND/marquee/history/layer-action orchestration, Electron low-risk service extraction, and AI controller hardening only where real coupling remains. Keep future slices narrow and avoid Save / Import / TIFF / `.storyboard-workbench` changes unless separately planned.
 - [ ] Revisit Vite renderer chunk size after the architecture audit identifies a clean lazy-loading boundary; current build warning is non-blocking.
 - [ ] Manual dogfood retired Option/Alt drag copy paths: Option/Alt dragging storyboard, layer, and dialogue should behave like normal move/sort and must not create copies.
 - [ ] Manual dogfood keyboard copy/paste: copy/paste one storyboard with `Cmd/Ctrl+C` and `Cmd/Ctrl+V`, then copy/paste one layer below the current layer; confirm both paste actions show the short slide-out animation.
@@ -40,6 +40,7 @@
 - [x] Major extraction boundaries are in place for `ShotCard`, `SketchPad`, `LayerPanel`, shared project operations, Electron Save/Import helpers, and preload sync checks.
 - [x] Architecture worktree slicing was validated with separate local renderer-controller and CSS-slice worktrees; remaining cross-slice risk is shell class naming between renderer controllers and CSS modules.
 - [x] Architecture worktree slicing was further validated with separate Electron user-data runtime and renderer autosave persistence slices; both stayed inside their file boundaries and cherry-picked back to `main` without conflicts.
+- [x] Architecture worktree slicing was validated again with CSS-only Production Slate override absorption and a separate renderer zoom controller slice; CSS files and renderer hook files stayed independent and cherry-picked back to `main` without conflicts.
 - [x] Electron main read-side services were split out for folder scan, image records, known-image external change detection, and project metadata reading; Save / Import / TIFF orchestration remains protected in `main.ts`.
 - [x] Electron settings/AI user-data glue now lives in `userDataRuntime.ts`; autosave metadata persistence side effects now live in `workspaceAutosaveController.ts`.
 - [x] Product naming is now `Storyboard Flow`; `Storyboard Workbench` remains only as a legacy metadata compatibility value. `.storyboard-workbench`, `SWB`, `swb-*`, and `storyboard-workbench.local` remain internal compatibility names until a separate format migration.
