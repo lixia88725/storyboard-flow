@@ -126,6 +126,7 @@ import {
 } from "./boardViewport";
 import { RadialToolMenu } from "./RadialToolMenu";
 import { ShotCard, type CardFace } from "./ShotCard";
+import { StatusPopover } from "./StatusPopover";
 import { Timeline } from "./Timeline";
 import { formatSaveFailureStatus } from "./saveErrors";
 import {
@@ -187,7 +188,6 @@ import {
   measurePasteAnimationRects,
   type PasteAnimationState
 } from "./pasteAnimationController";
-import { statusPanelToggleClassName, swbStatusLabel, updateCheckButtonLabel } from "./statusPanelController";
 import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, projectChangedDuringLoad, shouldAutosaveAfterLoad, shouldPersistLoadedProject } from "./workspacePersistenceController";
 import {
   applyRadialPresetSlot,
@@ -3387,62 +3387,23 @@ export const App = () => {
           <p>V1 keeps the workflow narrow: order shots, move dialogue, and draw rough notes.</p>
         </section>
       ) : null}
-      <div className="status-popover">
-        {autosaveError ? (
-          <div className="autosave-error-notice" role="alert">
-            <span>{autosaveError.message}</span>
-            <button
-              type="button"
-              aria-label="Dismiss autosave error"
-              onClick={() =>
-                setAutosaveError((current) => autosaveErrorReducer(current, { type: "dismissed" }))
-              }
-            >
-              x
-            </button>
-          </div>
-        ) : null}
-        {isStatusPanelOpen ? (
-          <div className="status-panel" aria-label="Workspace status">
-            <span>{status}</span>
-            {updateNotice.status === "available" ? (
-              <div className="update-notice" role="status">
-                <span>Storyboard Flow {updateNotice.update.version} is available.</span>
-                {updateNotice.update.notes ? <small>{updateNotice.update.notes}</small> : null}
-                <button type="button" onClick={() => openUpdateDownload(updateNotice.update)}>
-                  Download
-                </button>
-                <button type="button" onClick={() => setUpdateNotice({ status: "dismissed" })}>
-                  Later
-                </button>
-              </div>
-            ) : null}
-            <span>{project.shots.length} shots</span>
-            <span>{parkedShots.length} pending</span>
-            <span>Workspace {workspaceSaveState}</span>
-            <span>File names {fileNameSyncState}</span>
-            <span>{swbStatusLabel({ needsSwbImport, hasSwbWarning })}</span>
-            <button type="button" className="status-panel-action" onClick={() => void checkForUpdates(true)}>
-              {updateCheckButtonLabel(updateNotice.status)}
-            </button>
-          </div>
-        ) : null}
-        <button
-          type="button"
-          className={statusPanelToggleClassName({
-            workspaceSaveState,
-            fileNameSyncState,
-            hasSwbWarning,
-            updateNoticeStatus: updateNotice.status
-          })}
-          aria-label="Workspace status"
-          aria-expanded={isStatusPanelOpen}
-          onClick={() => setIsStatusPanelOpen((isOpen) => !isOpen)}
-          title="Workspace status"
-        >
-          i
-        </button>
-      </div>
+      <StatusPopover
+        autosaveError={autosaveError}
+        checkForUpdates={checkForUpdates}
+        fileNameSyncState={fileNameSyncState}
+        hasSwbWarning={hasSwbWarning}
+        isStatusPanelOpen={isStatusPanelOpen}
+        needsSwbImport={needsSwbImport}
+        openUpdateDownload={openUpdateDownload}
+        parkedShotCount={parkedShots.length}
+        setAutosaveError={setAutosaveError}
+        setIsStatusPanelOpen={setIsStatusPanelOpen}
+        setUpdateNotice={setUpdateNotice}
+        shotCount={project.shots.length}
+        status={status}
+        updateNotice={updateNotice}
+        workspaceSaveState={workspaceSaveState}
+      />
       <footer className="bottom-bar">
         <label>
           Zoom
