@@ -142,6 +142,7 @@ import { registerLayerIpcHandlers } from "./ipc/layerHandlers.js";
 import { registerRecentIpcHandlers } from "./ipc/recentHandlers.js";
 import { registerSettingsIpcHandlers } from "./ipc/settingsHandlers.js";
 import { registerWorkspaceAssetIpcHandlers } from "./ipc/workspaceAssetHandlers.js";
+import { registerWorkspaceExternalChangesIpcHandlers } from "./ipc/workspaceExternalChangesHandlers.js";
 import { registerWorkspaceOpenIpcHandlers } from "./ipc/workspaceOpenHandlers.js";
 import { registerWorkspacePersistenceIpcHandlers } from "./ipc/workspacePersistenceHandlers.js";
 import { registerWorkspaceScriptIpcHandlers } from "./ipc/workspaceScriptHandlers.js";
@@ -590,16 +591,18 @@ const registerIpcHandlers = () => {
     }
   });
 
-  ipcMain.handle("workspace:checkExternalChanges", async (event, payload: ProjectPayload) => {
-    const reportProgress = createWorkspaceTaskProgressReporter(event.sender, "open");
-    return checkExternalChanges(payload, {
-      changedKnownImagePaths,
-      collectImagePaths,
-      createImageRecords,
-      ensureStoryboardScriptMarkdown,
-      previewRootForFolder,
-      reportProgress
-    });
+  registerWorkspaceExternalChangesIpcHandlers(ipcMain, {
+    createProgressReporter: createWorkspaceTaskProgressReporter,
+    checkExternalChanges: (payload: ProjectPayload, { reportProgress }) => {
+      return checkExternalChanges(payload, {
+        changedKnownImagePaths,
+        collectImagePaths,
+        createImageRecords,
+        ensureStoryboardScriptMarkdown,
+        previewRootForFolder,
+        reportProgress
+      });
+    }
   });
 
   registerWorkspaceWatchIpcHandlers(ipcMain, {

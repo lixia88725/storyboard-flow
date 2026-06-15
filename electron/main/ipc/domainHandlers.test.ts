@@ -6,6 +6,7 @@ import { registerLayerIpcHandlers } from "./layerHandlers";
 import { registerRecentIpcHandlers } from "./recentHandlers";
 import { registerSettingsIpcHandlers } from "./settingsHandlers";
 import { registerWorkspaceAssetIpcHandlers } from "./workspaceAssetHandlers";
+import { registerWorkspaceExternalChangesIpcHandlers } from "./workspaceExternalChangesHandlers";
 import { registerWorkspaceOpenIpcHandlers } from "./workspaceOpenHandlers";
 import { registerWorkspacePersistenceIpcHandlers } from "./workspacePersistenceHandlers";
 import { registerWorkspaceScriptIpcHandlers } from "./workspaceScriptHandlers";
@@ -226,6 +227,39 @@ describe("domain IPC handlers", () => {
     ensureProjectLayerAssets.mockClear();
     await expect(handlers.get("workspace:ensureLayerAssets")?.({}, payload)).resolves.toBe(payload);
     expect(ensureProjectLayerAssets).toHaveBeenCalledWith(payload.project, payload.folderPath);
+  });
+
+  it("registers workspace external changes IPC channel with open progress", async () => {
+    const { ipcMain, handlers } = fakeIpcMain();
+    const createProgressReporter = vi.fn((sender, mode) => ({ sender, mode }));
+    const checkExternalChanges = vi.fn(async (payload, options) => ({
+      payload,
+      options
+    }));
+    const payload = {
+      folderPath: "/project",
+      metadataPath: "/project/.storyboard-workbench/storyboard.project.json",
+      project: { shots: [{ imagePath: "/project/shot-001.tiff" }] }
+    };
+
+    registerWorkspaceExternalChangesIpcHandlers(ipcMain, {
+      createProgressReporter,
+      checkExternalChanges
+    });
+
+    expect([...handlers.keys()]).toEqual(["workspace:checkExternalChanges"]);
+    await expect(
+      handlers.get("workspace:checkExternalChanges")?.({ sender: "sender" }, payload)
+    ).resolves.toEqual({
+      payload,
+      options: {
+        reportProgress: { sender: "sender", mode: "open" }
+      }
+    });
+    expect(createProgressReporter).toHaveBeenCalledWith("sender", "open");
+    expect(checkExternalChanges).toHaveBeenCalledWith(payload, {
+      reportProgress: { sender: "sender", mode: "open" }
+    });
   });
 
   it("registers workspace script IPC channels and delegates to supplied handlers", async () => {
