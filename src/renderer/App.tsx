@@ -107,7 +107,6 @@ import {
 import { createDirtyShotTracker } from "./dirtyShotTracker";
 import { blurActiveFormControl } from "./formFocus";
 import { isKeyboardEditableTarget } from "./keyboardShortcuts";
-import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, SelectIcon, SwatchIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { appendHistoryEntry, useSyncedHistoryStackController } from "./historyStackController";
 import { ensureProjectBitmapMetadata } from "./projectBitmapMetadata";
@@ -123,9 +122,9 @@ import {
 } from "./boardViewport";
 import { RadialToolMenu } from "./RadialToolMenu";
 import { ShotCard, type CardFace } from "./ShotCard";
-import { ShortcutMenuButton } from "./ShortcutMenuButton";
 import { StatusPopover } from "./StatusPopover";
 import { Timeline } from "./Timeline";
+import { ToolRail } from "./ToolRail";
 import { Topbar } from "./Topbar";
 import { formatSaveFailureStatus } from "./saveErrors";
 import {
@@ -2663,6 +2662,18 @@ export const App = () => {
   const updateRadialSlot = (tool: StrokeTool, index: number, slot: RadialToolSlot) => {
     persistToolRadialMenuConfig(nextRadialSlotConfig(toolRadialMenuConfig, tool, index, slot));
   };
+  const handleClearCurrentLayerFromToolRail = useCallback(() => {
+    if (!primarySelectedShot) {
+      setStatus("Select a shot before clearing a layer");
+      return;
+    }
+
+    const activeLayer = activeVisibleBitmapLayerForShot(primarySelectedShot);
+    if (activeLayer) {
+      void handleClearBitmapLayer(primarySelectedShot.id, activeLayer.id);
+    }
+  }, [handleClearBitmapLayer, primarySelectedShot, setStatus]);
+
   const handleAiProjectChange = (nextProject: Project, nextStatus: string) => {
     const currentProject = projectRef.current;
     const changedLayerShotIds = nextProject.shots
@@ -2743,91 +2754,16 @@ export const App = () => {
       />
 
       <div className="workspace-layout">
-        <aside className="tool-rail" aria-label="Sketch tools">
-          <button
-            type="button"
-            className={`card-face-tool ${cardFace === "script" ? "selected" : ""}`}
-            onClick={() => setCardFace((face) => (face === "image" ? "script" : "image"))}
-            title={cardFace === "image" ? "Show script side" : "Show image side"}
-            aria-label={cardFace === "image" ? "Show script side" : "Show image side"}
-          >
-            <CardFaceIcon />
-          </button>
-          <ShortcutMenuButton />
-          <button
-            type="button"
-            className={activeSketchTool === "brush" ? "selected" : ""}
-            onClick={() => {
-              setActiveSketchTool("brush");
-              closeRadialToolMenu();
-            }}
-            onContextMenu={(event) => event.preventDefault()}
-            title="Brush"
-            aria-label="Brush"
-          >
-            <BrushIcon />
-          </button>
-          <button
-            type="button"
-            className={activeSketchTool === "eraser" ? "selected" : ""}
-            onClick={() => {
-              setActiveSketchTool("eraser");
-              closeRadialToolMenu();
-            }}
-            onContextMenu={(event) => event.preventDefault()}
-            title="Eraser"
-            aria-label="Eraser"
-          >
-            <EraserIcon />
-          </button>
-          <button
-            type="button"
-            className={activeSketchTool === "select" ? "selected" : ""}
-            onClick={() => {
-              setActiveSketchTool("select");
-              closeRadialToolMenu();
-            }}
-            title="Select"
-            aria-label="Select"
-          >
-            <SelectIcon />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (!primarySelectedShot) {
-                setStatus("Select a shot before clearing a layer");
-                return;
-              }
-              const activeLayer = activeVisibleBitmapLayerForShot(primarySelectedShot);
-              if (activeLayer) {
-                void handleClearBitmapLayer(primarySelectedShot.id, activeLayer.id);
-              }
-            }}
-            title="Clear current layer"
-            aria-label="Clear current layer"
-          >
-            <ClearIcon />
-          </button>
-          <label
-            className="color-control"
-            title="Brush color"
-            style={{ "--brush-swatch-color": brushColor } as CSSProperties}
-            draggable
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = "copy";
-              event.dataTransfer.setData("application/x-storyboard-fill-color", brushColor);
-            }}
-          >
-            <input
-              aria-label="Brush color"
-              type="color"
-              value={brushColor}
-              onChange={(event) => setBrushColor(event.target.value)}
-            />
-            <SwatchIcon />
-          </label>
-        </aside>
+        <ToolRail
+          activeSketchTool={activeSketchTool}
+          brushColor={brushColor}
+          cardFace={cardFace}
+          closeRadialToolMenu={closeRadialToolMenu}
+          onClearCurrentLayer={handleClearCurrentLayerFromToolRail}
+          setActiveSketchTool={setActiveSketchTool}
+          setBrushColor={setBrushColor}
+          setCardFace={setCardFace}
+        />
         {radialToolMenu ? (
           <RadialToolMenu
             menu={toolRadialMenuConfig[radialToolMenu.tool]}
