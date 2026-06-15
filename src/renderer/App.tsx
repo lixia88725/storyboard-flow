@@ -179,6 +179,7 @@ import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceL
 import { useUpdateNoticeController } from "./updateNoticeController";
 import { usePopoverController } from "./popoverController";
 import { statusPanelToggleClassName, swbStatusLabel, updateCheckButtonLabel } from "./statusPanelController";
+import { hasUnsavedWorkspaceChanges, shouldAutosaveAfterLoad, shouldPersistLoadedProject, shouldRunAutosave } from "./workspacePersistenceController";
 import {
   applyRadialPresetSlot,
   defaultToolRadialMenuConfig,
@@ -920,7 +921,7 @@ export const App = () => {
   useEffect(() => {
     const activeFolderPath = folderPathRef.current;
     const activeMetadataPath = metadataPathRef.current;
-    if (autosaveRevision === 0 || !activeFolderPath || !activeMetadataPath || !window.storyboard) {
+    if (!shouldRunAutosave(autosaveRevision, activeFolderPath, activeMetadataPath, Boolean(window.storyboard))) {
       return;
     }
 
@@ -989,10 +990,7 @@ export const App = () => {
     }
 
     void window.storyboard.updateCloseGuard({
-      hasUnsavedChanges:
-        dirtyShotIdsRef.current.size > 0 ||
-        workspaceSaveState !== "saved" ||
-        fileNameSyncState !== "synced"
+      hasUnsavedChanges: hasUnsavedWorkspaceChanges(dirtyShotIdsRef.current.size, workspaceSaveState, fileNameSyncState)
     });
   }, [fileNameSyncState, project, workspaceSaveState]);
 
@@ -1858,13 +1856,7 @@ export const App = () => {
       setScriptImportNeeded(nextScriptImportNeeded);
     }
 
-    if (
-      scan.preserveProjectWithoutImageMerge &&
-      loadedProjectChanged &&
-      !dirty &&
-      !acceptedExternalEdits &&
-      !nextScriptImportNeeded
-    ) {
+    if (shouldPersistLoadedProject(scan.preserveProjectWithoutImageMerge, loadedProjectChanged, dirty, acceptedExternalEdits, nextScriptImportNeeded)) {
       void persistWorkspace(nextProject, scan.folderPath, scan.metadataPath).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         setWorkspaceSaveState("error");
@@ -1874,7 +1866,7 @@ export const App = () => {
       return nextProject;
     }
 
-    if ((dirty || acceptedExternalEdits || loadedProjectChanged) && !nextScriptImportNeeded) {
+    if (shouldAutosaveAfterLoad(dirty, acceptedExternalEdits, loadedProjectChanged, nextScriptImportNeeded)) {
       setAutosaveRevision((revision) => revision + 1);
     }
     return nextProject;
