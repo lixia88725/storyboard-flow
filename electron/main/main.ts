@@ -100,6 +100,7 @@ import { checkExternalChanges } from "./checkExternalChangesService.js";
 import { scanWorkspaceFolder } from "./folderScanService.js";
 import { createImageRecords as createImportedImageRecords } from "./imageRecordsService.js";
 import { changedKnownImagePaths as findChangedKnownImagePaths } from "./knownImageChangesService.js";
+import { readProjectMetadata } from "./projectMetadataService.js";
 import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
 import {
   createWorkspaceTaskProgressReporter,
@@ -1973,17 +1974,7 @@ const changedKnownImagePaths = async (
 };
 
 const readProject = async (metadataPath: string): Promise<Project | undefined> => {
-  try {
-    const contents = await readFile(metadataPath, "utf8");
-    return JSON.parse(contents) as Project;
-  } catch (error) {
-    const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
-    if (code === "ENOENT") {
-      return undefined;
-    }
-
-    throw error;
-  }
+  return readProjectMetadata<Project>(metadataPath, { readFile });
 };
 
 const createImageRecords = async (
