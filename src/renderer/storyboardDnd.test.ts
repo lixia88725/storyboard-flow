@@ -3,6 +3,7 @@ import {
   captureParkingDragRects,
   captureStoryboardDragRects,
   dragPreviewShotIds,
+  inferDropPlacementFromDragEnd,
   inferShotPlacement,
   isPointerInsideRect,
   isDialogueDropZoneHighlighted,
@@ -135,6 +136,26 @@ describe("storyboard drag helpers", () => {
       y: 40
     });
     expect(pointerFromActiveDragRect(undefined)).toBeUndefined();
+  });
+
+  it("infers drop placement from active and target drag rect centers", () => {
+    const event = (activeTop: number | undefined, overTop: number | undefined) =>
+      ({
+        active: {
+          rect: {
+            current: {
+              translated: activeTop === undefined ? undefined : { top: activeTop, height: 20 },
+              initial: undefined
+            }
+          }
+        },
+        over: overTop === undefined ? undefined : { rect: { top: overTop, height: 20 } }
+      }) as Parameters<typeof inferDropPlacementFromDragEnd>[0];
+
+    expect(inferDropPlacementFromDragEnd(event(40, 10))).toBe("after");
+    expect(inferDropPlacementFromDragEnd(event(0, 40))).toBe("before");
+    expect(inferDropPlacementFromDragEnd(event(undefined, 40))).toBe("after");
+    expect(inferDropPlacementFromDragEnd(event(40, undefined))).toBe("after");
   });
 
   it("compares insertion indicators by placement and geometry", () => {

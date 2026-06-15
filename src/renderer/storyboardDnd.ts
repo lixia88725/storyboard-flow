@@ -322,6 +322,33 @@ export const pointerFromActiveDragRect = (
   };
 };
 
+export type DropPlacementDragEndEvent = {
+  active: {
+    rect: {
+      current: {
+        translated?: { top: number; height: number } | null;
+        initial?: { top: number; height: number } | null;
+      };
+    };
+  };
+  over?: {
+    rect: { top: number; height: number };
+  } | null;
+};
+
+export const inferDropPlacementFromDragEnd = (event: DropPlacementDragEndEvent): ShotPlacement => {
+  const activeRect = event.active.rect.current.translated ?? event.active.rect.current.initial;
+  const overRect = event.over?.rect;
+
+  if (!activeRect || !overRect) {
+    return "after";
+  }
+
+  const activeCenterY = activeRect.top + activeRect.height / 2;
+  const overCenterY = overRect.top + overRect.height / 2;
+  return activeCenterY > overCenterY ? "after" : "before";
+};
+
 export const sameStoryboardInsertionIndicator = (
   current: StoryboardInsertionIndicator | undefined,
   next: StoryboardInsertionIndicator | undefined

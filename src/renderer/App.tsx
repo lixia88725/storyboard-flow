@@ -152,6 +152,7 @@ import {
   captureParkingDragRects,
   captureStoryboardDragRects,
   dragPreviewShotIds as chooseDragPreviewShotIds,
+  inferDropPlacementFromDragEnd,
   inferShotPlacement,
   isPointerInsideRect,
   parkingInsertionIndicatorFromCachedRect,
@@ -4071,19 +4072,6 @@ const isPointerInsideElement = (element: HTMLElement | null, pointer: { x: numbe
 
   const rect = element.getBoundingClientRect();
   return isPointerInsideRect(rect, pointer);
-};
-
-const inferDropPlacementFromDragEnd = (event: DragEndEvent): ShotPlacement => {
-  const activeRect = event.active.rect.current.translated ?? event.active.rect.current.initial;
-  const overRect = event.over?.rect;
-
-  if (!activeRect || !overRect) {
-    return "after";
-  }
-
-  const activeCenterY = activeRect.top + activeRect.height / 2;
-  const overCenterY = overRect.top + overRect.height / 2;
-  return activeCenterY > overCenterY ? "after" : "before";
 };
 
 const dragEndInsideSelector = (
