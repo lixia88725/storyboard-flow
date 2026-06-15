@@ -58,7 +58,6 @@ import {
   createRecentFoldersChangeNotifier,
   createRecentFoldersController
 } from "./recentFolders.js";
-import { mapWithConcurrency } from "./mapWithConcurrency.js";
 import { assertPathInsideFolder, ensureDirectory, pathExists } from "./pathSafety.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
 import {
@@ -99,6 +98,7 @@ import {
 } from "./copyShotAssetsService.js";
 import { checkExternalChanges } from "./checkExternalChangesService.js";
 import { scanWorkspaceFolder } from "./folderScanService.js";
+import { createImageRecords as createImportedImageRecords } from "./imageRecordsService.js";
 import { changedKnownImagePaths as findChangedKnownImagePaths } from "./knownImageChangesService.js";
 import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
 import {
@@ -1995,42 +1995,15 @@ const createImageRecords = async (
     concurrency?: number;
   } = {}
 ): Promise<ImportedImage[]> => {
-  let completed = 0;
-  return mapWithConcurrency(
-    imagePaths,
-    options.concurrency ?? 6,
-    async (imagePath) => {
-      const extension = path.extname(imagePath).toLowerCase();
-      const previewPath =
-        extension === ".tif" || extension === ".tiff"
-          ? await createPreview(imagePath, previewRoot)
-          : undefined;
-      const metadata = await sharp(imagePath, sharpSourceOptions).metadata();
-      const swbMetadata =
-        extension === ".tif" || extension === ".tiff"
-          ? await readSwbMetadata(imagePath)
-          : undefined;
-
-      return {
-        imagePath,
-        previewPath,
-        fileName: path.basename(imagePath),
-        width: metadata.width,
-        height: metadata.height,
-        fingerprint: await pixelFingerprint(imagePath),
-        swbMetadata
-      };
-    },
-    () => {
-      completed += 1;
-      options.onProgress?.({
-        kind: "open",
-        label: options.label,
-        current: completed,
-        total: imagePaths.length
-      });
-    }
-  );
+  return createImportedImageRecords(imagePaths, previewRoot, {
+    createPreview,
+    onProgress: options.onProgress,
+    pixelFingerprint,
+    readImageMetadata: async (imagePath) => sharp(imagePath, sharpSourceOptions).metadata(),
+    readSwbMetadata,
+    label: options.label,
+    concurrency: options.concurrency
+  });
 };
 
 const pixelFingerprint = async (imagePath: string): Promise<string> => {
