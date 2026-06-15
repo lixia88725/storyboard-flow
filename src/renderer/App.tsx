@@ -171,6 +171,7 @@ import {
   type DragData
 } from "./storyboardDnd";
 import { useStoryboardInteractionState, type SelectedBitmapLayerIds } from "./storyboardInteractionState";
+import { useShortcutMenuController } from "./shortcutMenuController";
 import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
 import { shouldIgnoreWorkbenchWheelTarget } from "./workbenchWheel";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
@@ -264,25 +265,6 @@ const sameLayerSelection = (
   current?.shotId === shotId &&
   current.layerIds.length === layerIds.length &&
   current.layerIds.every((layerId, index) => layerId === layerIds[index]);
-
-const shortcutLabels: Array<{ action: ShortcutAction; label: string }> = [
-  { action: "brush", label: "Brush" },
-  { action: "eraser", label: "Eraser" },
-  { action: "select", label: "Select" },
-  { action: "clearLayer", label: "Clear layer" },
-  { action: "mergeDown", label: "Merge" },
-  { action: "save", label: "Save" },
-  { action: "addShot", label: "Add Shot" },
-  { action: "onionSkin", label: "Onion Skin" },
-  { action: "decreaseBrushSize", label: "Brush size -10%" },
-  { action: "increaseBrushSize", label: "Brush size +10%" },
-  { action: "decreaseBrushOpacity", label: "Opacity -25%" },
-  { action: "increaseBrushOpacity", label: "Opacity +25%" },
-  { action: "previousShot", label: "Previous shot" },
-  { action: "nextShot", label: "Next shot" },
-  { action: "undo", label: "Undo" },
-  { action: "redo", label: "Redo" }
-];
 
 const isKeyboardEditableTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) {
@@ -428,7 +410,6 @@ export const App = () => {
   const [radialToolMenu, setRadialToolMenu] = useState<RadialToolMenuState | undefined>();
   const [isStatusPanelOpen, setIsStatusPanelOpen] = useState(false);
   const [isLayerPanelOpen, setIsLayerPanelOpen] = useState(false);
-  const [isShortcutMenuOpen, setIsShortcutMenuOpen] = useState(false);
   const [isImportHelpOpen, setIsImportHelpOpen] = useState(false);
   const [isImportNudging, setIsImportNudging] = useState(false);
   const [cardFace, setCardFace] = useState<CardFace>("image");
@@ -456,6 +437,12 @@ export const App = () => {
     checkForUpdates,
     openUpdateDownload
   } = useUpdateNoticeController({ setStatus });
+  const {
+    isShortcutMenuOpen,
+    setIsShortcutMenuOpen,
+    shortcutMenuRef,
+    shortcutMenuItems
+  } = useShortcutMenuController();
   const selectionMarqueeRef = useRef<HTMLDivElement | null>(null);
   const scriptImportCheckIdRef = useRef(0);
   const dirtyShotIdsRef = useRef<Set<string>>(new Set());
@@ -504,7 +491,6 @@ export const App = () => {
   const saveMenuRef = useRef<HTMLDivElement | null>(null);
   const recentMenuRef = useRef<HTMLDivElement | null>(null);
   const addShotMenuRef = useRef<HTMLDivElement | null>(null);
-  const shortcutMenuRef = useRef<HTMLDivElement | null>(null);
   const importHelpRef = useRef<HTMLDivElement | null>(null);
   const appShellRef = useRef<HTMLElement | null>(null);
   const workspaceBoardScrollRef = useRef<HTMLDivElement | null>(null);
@@ -889,32 +875,6 @@ export const App = () => {
       window.removeEventListener("mouseup", handlePointerMove);
     };
   }, []);
-
-  useEffect(() => {
-    if (!isShortcutMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
-      if (!shortcutMenuRef.current?.contains(event.target as Node)) {
-        setIsShortcutMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsShortcutMenuOpen(false);
-      }
-    };
-
-    window.addEventListener("pointerdown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isShortcutMenuOpen]);
 
   useEffect(() => {
     if (!isSaveMenuOpen) {
@@ -3750,7 +3710,7 @@ export const App = () => {
                   <span>Fixed shortcuts for the current build.</span>
                 </div>
                 <div className="shortcut-list">
-                  {shortcutLabels.map(({ action, label }) => (
+                  {shortcutMenuItems.map(({ action, label }) => (
                     <div key={action} className="shortcut-field">
                       <span>{label}</span>
                       <kbd className="shortcut-key-display">{defaultKeyboardShortcuts[action]}</kbd>
