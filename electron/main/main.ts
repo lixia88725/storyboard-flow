@@ -136,6 +136,7 @@ import {
 import { createAiMainHandlers } from "./ai/mainHandlers.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
 import { registerAppIpcHandlers } from "./ipc/appHandlers.js";
+import { registerImageIpcHandlers } from "./ipc/imageHandlers.js";
 import { registerLayerIpcHandlers } from "./ipc/layerHandlers.js";
 import { registerRecentIpcHandlers } from "./ipc/recentHandlers.js";
 import { registerSettingsIpcHandlers } from "./ipc/settingsHandlers.js";
@@ -680,15 +681,14 @@ const registerIpcHandlers = () => {
       })
   });
 
-  ipcMain.handle(
-    "images:createBlankShot",
-    async (_event, folderPath: string, options?: { preset?: BlankShotPreset }) => {
+  registerImageIpcHandlers(ipcMain, {
+    createBlankShot: async (folderPath, options?: { preset?: BlankShotPreset }) => {
       const imagePath = await createBlankShot(folderPath, options?.preset ?? "16:9");
       const previewRoot = previewRootForFolder(folderPath);
       const [image] = await createImageRecords([imagePath], previewRoot);
       return image;
     }
-  );
+  });
 
   registerRecentIpcHandlers(ipcMain, {
     getFolders: async () => {

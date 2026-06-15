@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { registerAppIpcHandlers } from "./appHandlers";
 import { registerAiIpcHandlers } from "./aiHandlers";
+import { registerImageIpcHandlers } from "./imageHandlers";
 import { registerLayerIpcHandlers } from "./layerHandlers";
 import { registerRecentIpcHandlers } from "./recentHandlers";
 import { registerSettingsIpcHandlers } from "./settingsHandlers";
@@ -152,5 +153,23 @@ describe("domain IPC handlers", () => {
       payload: { folderPath: "/project" }
     });
     expect(copyShotAssets).toHaveBeenCalledWith({ folderPath: "/project" });
+  });
+
+  it("registers image IPC channels and delegates to supplied handlers", async () => {
+    const { ipcMain, handlers } = fakeIpcMain();
+    const createBlankShot = vi.fn(async (folderPath, options) => ({ folderPath, options }));
+
+    registerImageIpcHandlers(ipcMain, {
+      createBlankShot
+    });
+
+    expect([...handlers.keys()].sort()).toEqual(["images:createBlankShot"]);
+    await expect(
+      handlers.get("images:createBlankShot")?.({}, "/project", { preset: "2.39:1" })
+    ).resolves.toEqual({
+      folderPath: "/project",
+      options: { preset: "2.39:1" }
+    });
+    expect(createBlankShot).toHaveBeenCalledWith("/project", { preset: "2.39:1" });
   });
 });
