@@ -334,7 +334,6 @@ export const App = () => {
     setIsSaveMenuOpen
   } = useWorkspaceMenuController();
   const [blankShotPreset, setBlankShotPreset] = useState<BlankShotPreset>("16:9");
-  const [isStatusPanelOpen, setIsStatusPanelOpen] = useState(false);
   const [isImportNudging, setIsImportNudging] = useState(false);
   const [cardFace, setCardFace] = useState<CardFace>("image");
   const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
@@ -3392,12 +3391,10 @@ export const App = () => {
         checkForUpdates={checkForUpdates}
         fileNameSyncState={fileNameSyncState}
         hasSwbWarning={hasSwbWarning}
-        isStatusPanelOpen={isStatusPanelOpen}
         needsSwbImport={needsSwbImport}
         openUpdateDownload={openUpdateDownload}
         parkedShotCount={parkedShots.length}
         setAutosaveError={setAutosaveError}
-        setIsStatusPanelOpen={setIsStatusPanelOpen}
         setUpdateNotice={setUpdateNotice}
         shotCount={project.shots.length}
         status={status}
