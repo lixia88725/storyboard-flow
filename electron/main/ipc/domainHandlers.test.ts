@@ -4,6 +4,7 @@ import { registerAiIpcHandlers } from "./aiHandlers";
 import { registerLayerIpcHandlers } from "./layerHandlers";
 import { registerRecentIpcHandlers } from "./recentHandlers";
 import { registerSettingsIpcHandlers } from "./settingsHandlers";
+import { registerWorkspaceAssetIpcHandlers } from "./workspaceAssetHandlers";
 import { registerWorkspaceWatchIpcHandlers } from "./workspaceWatchHandlers";
 
 const fakeIpcMain = () => {
@@ -134,5 +135,22 @@ describe("domain IPC handlers", () => {
     expect(startFolderWatch).toHaveBeenCalledWith({ sender: "sender" }, "/folder");
     expect(stopFolderWatch).toHaveBeenCalledWith(42);
     expect(stopResult).toBeUndefined();
+  });
+
+  it("registers workspace asset IPC channels and delegates to supplied handlers", async () => {
+    const { ipcMain, handlers } = fakeIpcMain();
+    const copyShotAssets = vi.fn(async (payload) => ({ payload }));
+
+    registerWorkspaceAssetIpcHandlers(ipcMain, {
+      copyShotAssets
+    });
+
+    expect([...handlers.keys()].sort()).toEqual(["workspace:copyShotAssets"]);
+    await expect(
+      handlers.get("workspace:copyShotAssets")?.({}, { folderPath: "/project" })
+    ).resolves.toEqual({
+      payload: { folderPath: "/project" }
+    });
+    expect(copyShotAssets).toHaveBeenCalledWith({ folderPath: "/project" });
   });
 });

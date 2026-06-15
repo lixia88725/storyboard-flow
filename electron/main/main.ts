@@ -139,6 +139,7 @@ import { registerAppIpcHandlers } from "./ipc/appHandlers.js";
 import { registerLayerIpcHandlers } from "./ipc/layerHandlers.js";
 import { registerRecentIpcHandlers } from "./ipc/recentHandlers.js";
 import { registerSettingsIpcHandlers } from "./ipc/settingsHandlers.js";
+import { registerWorkspaceAssetIpcHandlers } from "./ipc/workspaceAssetHandlers.js";
 import { registerWorkspaceWatchIpcHandlers } from "./ipc/workspaceWatchHandlers.js";
 import {
   copyLayerPng,
@@ -662,20 +663,21 @@ const registerIpcHandlers = () => {
     mergeVisible: (payload) => mergeVisibleLayers(payload as MergeVisibleLayersPayload)
   });
 
-  ipcMain.handle("workspace:copyShotAssets", async (_event, payload: CopyShotAssetsPayload) => {
-    return copyShotAssets(payload, {
-      assertPathInsideFolder,
-      copyBitmapLayerFile,
-      copyFile,
-      createId: randomUUID,
-      createPreview,
-      previewRootForFolder,
-      rename,
-      resolveLayerAssetPath,
-      unlink,
-      uniquePath,
-      workspaceCopyTemporaryFileName
-    });
+  registerWorkspaceAssetIpcHandlers(ipcMain, {
+    copyShotAssets: (payload) =>
+      copyShotAssets(payload as CopyShotAssetsPayload, {
+        assertPathInsideFolder,
+        copyBitmapLayerFile,
+        copyFile,
+        createId: randomUUID,
+        createPreview,
+        previewRootForFolder,
+        rename,
+        resolveLayerAssetPath,
+        unlink,
+        uniquePath,
+        workspaceCopyTemporaryFileName
+      })
   });
 
   ipcMain.handle(
