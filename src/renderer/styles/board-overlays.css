@@ -9,7 +9,7 @@
   padding: 0 22px;
   max-width: none;
   text-align: center;
-  color: #6f675d;
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 60%);
   pointer-events: none;
 }
 
@@ -17,7 +17,7 @@
   justify-self: center;
   max-width: 680px;
   margin: 0;
-  color: #7d766d;
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 64%);
   font-size: 30px;
 }
 
@@ -25,8 +25,16 @@
   justify-self: center;
   max-width: 760px;
   margin: 0;
-  color: #706a62;
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 72%);
   font-size: 16px;
+}
+
+.storyboard-insertion-indicator {
+  background: var(--slate-accent);
+  box-shadow:
+    0 0 0 2px rgba(21, 23, 25, 0.96),
+    0 8px 24px rgba(255, 100, 45, 0.34),
+    0 10px 30px rgba(0, 0, 0, 0.38);
 }
 
 .selection-marquee {
@@ -36,12 +44,11 @@
   top: 0;
   z-index: 30;
   pointer-events: none;
-  border: 1px solid #1f6f62;
-  background: rgba(31, 111, 98, 0.14);
+  border: 1px solid var(--slate-good);
+  background: rgba(80, 191, 165, 0.14);
   will-change: transform, width, height;
 }
 
 .selection-marquee.is-active {
   display: block;
 }
-
