@@ -72,12 +72,10 @@ import type {
   StrokeTool
 } from "../shared/types";
 import {
-  getAnimationViewport,
   getStableBoardTop,
   getZoomPreviewState,
   maxStoryboardZoom,
   normalizeStoryboardZoom,
-  sameAnimationViewport,
   type ZoomPreviewState
 } from "./animationViewport";
 import {
@@ -176,10 +174,14 @@ import {
 import { dragEndInsideSelector, isPointerInsideElement } from "./dragHitTesting";
 import { sameLayerSelection, useStoryboardInteractionState } from "./storyboardInteractionState";
 import { hasOpenShortcutBlockingMenu } from "./shortcutMenuController";
-import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
+import {
+  animationReservedBottom,
+  animationViewportMargin,
+  useAnimationModeLayoutController
+} from "./animationModeLayoutController";
 import {
   applyPasteAnimation,
   clearPasteAnimation,
@@ -225,8 +227,6 @@ const defaultEraserSize = 18;
 const minSketchSoftness = 0;
 const maxSketchSoftness = 1;
 const maxUndoHistory = 60;
-const animationReservedBottom = 180;
-const animationViewportMargin = 14;
 
 type UndoEntry = {
   project: Project;
@@ -733,88 +733,21 @@ export const App = () => {
 
   const measureGridColumns = useCallback(measureStoryboardGridColumnsFromDom, []);
 
-  const measureAnimationMode = useCallback(() => {
-    if (isZoomScrubbing) {
-      return;
-    }
-
-    const board = boardGridRef.current;
-    const firstShot = board?.querySelector<HTMLElement>("[data-shot-id]");
-
-    if (!board || !firstShot) {
-      setIsAnimationMode(false);
-      return;
-    }
-
-    const boardRect = board.getBoundingClientRect();
-    const boardScroll = currentBoardScroll();
-    const viewportShot = primarySelectedShot ?? orderedShots[0];
-    const viewport = getAnimationViewport({
-      boardWidth: boardRect.width,
-      boardTop: getStableBoardTop(boardRect.top, boardScroll.y),
-      viewportHeight: currentBoardViewportHeight(),
-      reservedBottom: animationReservedBottom,
-      margin: animationViewportMargin,
-      zoomLevel,
-      maxZoomLevel: maxStoryboardZoom,
-      isAnimationMode,
-      imageAspectRatio: viewportShot ? aspectRatioForShot(viewportShot) : 420 / 265
-    });
-    const currentViewport = {
-      isAnimationMode,
-      imageWidth: animationImageSize.width,
-      imageHeight: animationImageSize.height,
-      frameWidth: animationFrameSize.width,
-      frameHeight: animationFrameSize.height
-    };
-    if (sameAnimationViewport(viewport, currentViewport)) {
-      return;
-    }
-
-    setIsAnimationMode(viewport.isAnimationMode);
-    setAnimationImageSize({ width: viewport.imageWidth, height: viewport.imageHeight });
-    setAnimationFrameSize({ width: viewport.frameWidth, height: viewport.frameHeight });
-  }, [animationFrameSize, animationImageSize, isAnimationMode, isZoomScrubbing, orderedShots, primarySelectedShot, zoomLevel]);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(measureAnimationMode);
-    window.addEventListener("resize", measureAnimationMode);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", measureAnimationMode);
-    };
-  }, [measureAnimationMode, orderedShots.length, zoomLevel]);
-
-  useEffect(() => {
-    if (!isAnimationMode || isZoomScrubbing || !selectedShotIds[0]) {
-      return;
-    }
-
-    const element = document
-      .querySelector<HTMLElement>(`[data-shot-id="${selectedShotIds[0]}"]`)
-      ?.querySelector<HTMLElement>(".image-stage");
-    if (!element) {
-      return;
-    }
-
-    const timeline = document.querySelector<HTMLElement>(".timeline");
-    const reservedBottom = timeline
-      ? window.innerHeight - timeline.getBoundingClientRect().top
-      : animationReservedBottom;
-    const delta = scrollDeltaToCenterInReservedViewport(
-      element.getBoundingClientRect(),
-      {
-        height: currentBoardViewportHeight(),
-        reservedBottom,
-        margin: animationViewportMargin
-      }
-    );
-
-    if (delta !== 0) {
-      scrollBoardBy({ top: delta, behavior: "instant" });
-    }
-  }, [animationImageSize.height, animationImageSize.width, isAnimationMode, isZoomScrubbing, selectedShotIds]);
+  useAnimationModeLayoutController({
+    animationFrameSize,
+    animationImageSize,
+    boardGridRef,
+    isAnimationMode,
+    isZoomScrubbing,
+    orderedShots,
+    primarySelectedShot,
+    selectedShotIds,
+    setAnimationFrameSize,
+    setAnimationImageSize,
+    setIsAnimationMode,
+    workspaceBoardScrollRef,
+    zoomLevel
+  });
 
   const updateProject = (
     projectUpdate: ProjectUpdate,
