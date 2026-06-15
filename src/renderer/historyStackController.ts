@@ -8,6 +8,11 @@ export const applyHistoryStackUpdate = <T>(
   update: HistoryStackUpdate<T>
 ): T[] => (typeof update === "function" ? update(current) : update);
 
+export const appendHistoryEntry = <T>(entries: T[], entry: T, maxEntries: number) => [
+  ...entries.slice(Math.max(0, entries.length - maxEntries + 1)),
+  entry
+];
+
 export const createSyncedHistoryStackSetter =
   <T>(stackRef: MutableRefObject<T[]>, setStack: StateSetter<T>) =>
   (update: HistoryStackUpdate<T>) => {

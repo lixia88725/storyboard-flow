@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createSyncedHistoryStackSetter } from "./historyStackController";
+import { appendHistoryEntry, createSyncedHistoryStackSetter } from "./historyStackController";
 
 describe("historyStackController", () => {
   it("applies functional updates from the ref value and writes the same stack to ref and state", () => {
@@ -22,5 +22,9 @@ describe("historyStackController", () => {
 
     expect(stackRef.current).toEqual([]);
     expect(setStack).toHaveBeenCalledWith([]);
+  });
+
+  it("appends entries while keeping the latest entries within the limit", () => {
+    expect(appendHistoryEntry(["first", "second"], "third", 2)).toEqual(["second", "third"]);
   });
 });

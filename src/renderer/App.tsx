@@ -112,7 +112,7 @@ import {
 } from "./keyboardShortcuts";
 import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon, SwatchIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
-import { useSyncedHistoryStackController } from "./historyStackController";
+import { appendHistoryEntry, useSyncedHistoryStackController } from "./historyStackController";
 import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
 import { AiDraftPanel } from "./ai/AiDraftPanel";
@@ -247,11 +247,6 @@ type StoryboardScriptImportDraft = {
   entryCount: number;
   targetFolderPath: string;
 };
-const appendHistoryEntry = (entries: UndoEntry[], entry: UndoEntry) => [
-  ...entries.slice(Math.max(0, entries.length - maxUndoHistory + 1)),
-  entry
-];
-
 const blurActiveFormControl = () => {
   const activeElement = document.activeElement;
   if (activeElement instanceof HTMLElement && activeElement.matches("input, textarea, select")) {
@@ -879,11 +874,15 @@ export const App = () => {
 
     if (recordUndo) {
       setUndoStackSynced((current) =>
-        appendHistoryEntry(current, {
-          project: projectRef.current,
-          selectedShotIds: selectedShotIdsRef.current,
-          fileNameSyncState: fileNameSyncStateRef.current
-        })
+        appendHistoryEntry(
+          current,
+          {
+            project: projectRef.current,
+            selectedShotIds: selectedShotIdsRef.current,
+            fileNameSyncState: fileNameSyncStateRef.current
+          },
+          maxUndoHistory
+        )
       );
     }
     setRedoStackSynced([]);
@@ -967,7 +966,7 @@ export const App = () => {
   };
 
   const recordUndoEntry = (entry: UndoEntry) => {
-    setUndoStackSynced((current) => appendHistoryEntry(current, entry));
+    setUndoStackSynced((current) => appendHistoryEntry(current, entry, maxUndoHistory));
     setRedoStackSynced([]);
   };
 
@@ -1011,7 +1010,7 @@ export const App = () => {
       const redoEntry = await createHistoryEntry(affectedPaths);
       await restoreHistoryLayerAssets(previous);
 
-      setRedoStackSynced((current) => appendHistoryEntry(current, redoEntry));
+      setRedoStackSynced((current) => appendHistoryEntry(current, redoEntry, maxUndoHistory));
       setUndoStackSynced((current) => current.slice(0, -1));
       setProject(previous.project);
       projectRef.current = previous.project;
@@ -1041,7 +1040,7 @@ export const App = () => {
       const undoEntry = await createHistoryEntry(affectedPaths);
       await restoreHistoryLayerAssets(next);
 
-      setUndoStackSynced((current) => appendHistoryEntry(current, undoEntry));
+      setUndoStackSynced((current) => appendHistoryEntry(current, undoEntry, maxUndoHistory));
       setRedoStackSynced((current) => current.slice(0, -1));
       setProject(next.project);
       projectRef.current = next.project;
