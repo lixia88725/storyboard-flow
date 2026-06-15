@@ -114,6 +114,7 @@ import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, S
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { appendHistoryEntry, useSyncedHistoryStackController } from "./historyStackController";
 import { ensureProjectBitmapMetadata } from "./projectBitmapMetadata";
+import { markdownPathFromDroppedFiles } from "./markdownDrop";
 import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
 import { AiDraftPanel } from "./ai/AiDraftPanel";
@@ -246,20 +247,6 @@ type StoryboardScriptImportDraft = {
   fileName: string;
   entryCount: number;
   targetFolderPath: string;
-};
-
-const markdownPathFromDrop = (event: ReactDragEvent): string | undefined => {
-  const files = Array.from(event.dataTransfer.files);
-  if (files.length !== 1) {
-    return undefined;
-  }
-
-  const file = files[0] as File & { path?: string };
-  if (!file.name.toLowerCase().endsWith(".md")) {
-    return undefined;
-  }
-
-  return window.storyboard?.filePathForDroppedFile(file) || file.path;
 };
 
 export const App = () => {
@@ -1497,7 +1484,10 @@ export const App = () => {
   };
 
   const handleStoryboardScriptDrop = async (event: ReactDragEvent<HTMLElement>) => {
-    const sourceMarkdownPath = markdownPathFromDrop(event);
+    const sourceMarkdownPath = markdownPathFromDroppedFiles(
+      event.dataTransfer.files,
+      window.storyboard?.filePathForDroppedFile
+    );
     if (!sourceMarkdownPath) {
       if (event.dataTransfer.files.length > 0) {
         event.preventDefault();
