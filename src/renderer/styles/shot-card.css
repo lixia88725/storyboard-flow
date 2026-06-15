@@ -4,7 +4,7 @@
   position: relative;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(0, var(--shot-card-width)));
-  gap: 18px 16px;
+  gap: 20px 18px;
   align-items: start;
   align-content: start;
   justify-content: center;
@@ -28,14 +28,23 @@
 
 .shot-card {
   position: relative;
-  border: 2px solid #25221d;
-  border-radius: 8px;
-  background: #fffaf0;
-  box-shadow: 5px 5px 0 rgba(37, 34, 29, 0.16);
+  border: 1px solid var(--slate-line);
+  border-radius: var(--slate-radius);
+  background: var(--slate-panel);
+  box-shadow: var(--slate-shadow-card);
   width: var(--shot-card-width);
   max-width: var(--shot-card-width);
   min-width: 0;
   font-size: calc(14px * var(--shot-scale));
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.shot-card:hover {
+  border-color: color-mix(in srgb, var(--slate-line-strong), white 8%);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.32);
 }
 
 .shot-card.is-dragging {
@@ -69,8 +78,32 @@
 }
 
 .shot-card.is-selected {
-  outline: 4px solid #f05a28;
-  outline-offset: 3px;
+  outline: 0;
+  border-color: var(--slate-accent);
+  box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.42);
+}
+
+.shot-card.is-marquee-selected::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  z-index: 4;
+  border: 2px solid rgba(255, 100, 45, 0.72);
+  border-radius: calc(var(--slate-radius) + 3px);
+  pointer-events: none;
+}
+
+.board-grid.is-marquee-selecting .shot-card {
+  transition: none;
+}
+
+.board-grid.is-marquee-selecting .shot-card.is-selected {
+  border-color: var(--slate-line);
+  box-shadow: var(--slate-shadow-card);
+}
+
+.shot-card.has-layer-panel-open {
+  box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.22);
 }
 
 .shot-flip-shell {
@@ -79,6 +112,12 @@
   max-width: 100%;
   transform-style: preserve-3d;
   transition: transform 180ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-flip-shell {
+    transition: none;
+  }
 }
 
 .shot-card.is-script-face .shot-flip-shell {
@@ -97,7 +136,7 @@
   inset: 0;
   min-height: 100%;
   transform: rotateY(180deg);
-  background: #fffaf0;
+  background: var(--slate-panel);
   overflow: hidden;
 }
 
@@ -133,11 +172,14 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.36em;
   align-items: center;
-  min-height: 2em;
+  min-height: 2.08em;
   padding: 0.28em 0.5em;
-  border-bottom: 1px solid #25221d;
+  border-bottom: 1px solid #171b1f;
   border-radius: 6px 6px 0 0;
-  background: #e7ddc6;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), transparent),
+    var(--slate-panel-2);
+  color: var(--slate-ink);
   cursor: grab;
   user-select: none;
 }
@@ -163,8 +205,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.86em;
-  font-weight: 700;
-  letter-spacing: 0;
+  font-weight: 850;
+  letter-spacing: 0.04em;
 }
 
 .shot-head-grip {
@@ -174,7 +216,7 @@
   background-image: radial-gradient(currentColor 0.085em, transparent 0.085em);
   background-position: 0 0;
   background-size: 0.43em 0.43em;
-  color: #91887a;
+  color: var(--slate-muted);
   transition: opacity 120ms ease;
 }
 
@@ -187,7 +229,8 @@
   min-width: 0;
   max-width: 100%;
   padding: 0;
-  border-bottom: 2px solid #25221d;
+  border-bottom: 2px solid #171b1f;
+  background: var(--slate-canvas);
 }
 
 .app-shell.is-animation-mode .sketch-panel {
@@ -197,7 +240,7 @@
   width: var(--animation-frame-width);
   height: var(--animation-frame-height);
   overflow: hidden;
-  background: #10100d;
+  background: var(--slate-canvas);
 }
 
 .image-stage {
@@ -219,6 +262,9 @@
     -8px 0;
   background-size: 16px 16px;
   isolation: isolate;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
 }
 
 .app-shell.is-animation-mode .image-stage {
@@ -382,7 +428,7 @@
   border: 0;
   background:
     radial-gradient(currentColor 0.085em, transparent 0.085em) 0 0 / 0.43em 0.43em;
-  color: #91887a;
+  color: var(--slate-muted);
   box-shadow: none;
   font-size: 1em;
   line-height: 1;
@@ -440,7 +486,7 @@
   display: block;
   width: 100%;
   height: 105px;
-  background: #191713;
+  background: var(--slate-canvas);
 }
 
 .shot-stack-card img {
@@ -462,7 +508,7 @@
 .shot-stack-card-placeholder {
   width: 100%;
   height: 105px;
-  background: #191713;
+  background: var(--slate-canvas);
 }
 
 .shot-stack-card span {
@@ -490,4 +536,3 @@
   color: #fffaf0;
   box-shadow: 2px 3px 0 rgba(37, 34, 29, 0.2);
 }
-

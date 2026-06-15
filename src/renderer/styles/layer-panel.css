@@ -2,7 +2,8 @@
   position: relative;
   min-width: 0;
   max-width: 100%;
-  border-bottom: 2px solid #25221d;
+  border-bottom: 2px solid #171b1f;
+  background: var(--slate-canvas);
 }
 
 .shot-image-shell .sketch-panel {
@@ -561,4 +562,3 @@ button.layer-blend-dot:disabled {
   color: #b8ad9d;
   font-size: 0.86em;
 }
-
