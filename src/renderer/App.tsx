@@ -106,11 +106,8 @@ import {
 } from "./deleteTarget";
 import { createDirtyShotTracker } from "./dirtyShotTracker";
 import { blurActiveFormControl } from "./formFocus";
-import {
-  defaultKeyboardShortcuts,
-  isKeyboardEditableTarget
-} from "./keyboardShortcuts";
-import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon, SwatchIcon } from "./icons";
+import { isKeyboardEditableTarget } from "./keyboardShortcuts";
+import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, SelectIcon, SidePanelIcon, SwatchIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { appendHistoryEntry, useSyncedHistoryStackController } from "./historyStackController";
 import { ensureProjectBitmapMetadata } from "./projectBitmapMetadata";
@@ -126,6 +123,7 @@ import {
 } from "./boardViewport";
 import { RadialToolMenu } from "./RadialToolMenu";
 import { ShotCard, type CardFace } from "./ShotCard";
+import { ShortcutMenuButton } from "./ShortcutMenuButton";
 import { StatusPopover } from "./StatusPopover";
 import { Timeline } from "./Timeline";
 import { formatSaveFailureStatus } from "./saveErrors";
@@ -177,7 +175,7 @@ import {
 } from "./storyboardDnd";
 import { dragEndInsideSelector, isPointerInsideElement } from "./dragHitTesting";
 import { sameLayerSelection, useStoryboardInteractionState } from "./storyboardInteractionState";
-import { hasOpenShortcutBlockingMenu, useShortcutMenuController } from "./shortcutMenuController";
+import { hasOpenShortcutBlockingMenu } from "./shortcutMenuController";
 import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
@@ -369,12 +367,6 @@ export const App = () => {
     checkForUpdates,
     openUpdateDownload
   } = useUpdateNoticeController({ setStatus });
-  const {
-    isShortcutMenuOpen,
-    setIsShortcutMenuOpen,
-    shortcutMenuRef,
-    shortcutMenuItems
-  } = useShortcutMenuController();
   const selectionMarqueeRef = useRef<HTMLDivElement | null>(null);
   const scriptImportCheckIdRef = useRef(0);
   const dirtyShotIdsRef = useRef<Set<string>>(new Set());
@@ -1904,7 +1896,6 @@ export const App = () => {
     isImportHelpOpen,
     isRecentMenuOpen,
     isSaveMenuOpen,
-    isShortcutMenuOpen,
     orderedShots,
     selectedBitmapLayerIdsRef,
     selectedShotIdsRef,
@@ -3030,34 +3021,7 @@ export const App = () => {
           >
             <CardFaceIcon />
           </button>
-          <div className="shortcut-menu-container" ref={shortcutMenuRef}>
-            <button
-              type="button"
-              className={isShortcutMenuOpen ? "selected" : ""}
-              onClick={() => setIsShortcutMenuOpen((isOpen) => !isOpen)}
-              title="Keyboard shortcuts"
-              aria-label="Keyboard shortcuts"
-              aria-expanded={isShortcutMenuOpen}
-            >
-              <GearIcon />
-            </button>
-            {isShortcutMenuOpen ? (
-              <div className="shortcut-menu" aria-label="Keyboard shortcuts">
-                <div className="shortcut-menu-head">
-                  <strong>Shortcuts</strong>
-                  <span>Fixed shortcuts for the current build.</span>
-                </div>
-                <div className="shortcut-list">
-                  {shortcutMenuItems.map(({ action, label }) => (
-                    <div key={action} className="shortcut-field">
-                      <span>{label}</span>
-                      <kbd className="shortcut-key-display">{defaultKeyboardShortcuts[action]}</kbd>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
+          <ShortcutMenuButton />
           <button
             type="button"
             className={activeSketchTool === "brush" ? "selected" : ""}

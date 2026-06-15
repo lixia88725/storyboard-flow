@@ -35,7 +35,6 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
     isImportHelpOpen: false,
     isRecentMenuOpen: false,
     isSaveMenuOpen: false,
-    isShortcutMenuOpen: false,
     orderedShots: [shot("shot-1", 0), shot("shot-2", 1), shot("shot-3", 2)],
     selectedBitmapLayerIdsRef: { current: undefined },
     selectedShotIdsRef,
@@ -73,6 +72,18 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
 describe("appKeyboardShortcutsController", () => {
   it("ignores shortcuts when a blocking menu is open", () => {
     const { handler, options } = createHarness({ isSaveMenuOpen: true });
+    const event = keyboardEvent("b");
+
+    handler(event);
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(options.setActiveSketchTool).not.toHaveBeenCalled();
+  });
+
+  it("ignores shortcuts when a DOM blocking menu is open", () => {
+    const { handler, options } = createHarness({
+      hasOpenShortcutBlockingMenu: vi.fn(() => true)
+    });
     const event = keyboardEvent("b");
 
     handler(event);

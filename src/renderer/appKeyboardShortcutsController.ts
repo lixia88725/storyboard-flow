@@ -32,7 +32,6 @@ export type AppKeyboardShortcutsControllerOptions = {
   isImportHelpOpen: boolean;
   isRecentMenuOpen: boolean;
   isSaveMenuOpen: boolean;
-  isShortcutMenuOpen: boolean;
   orderedShots: Shot[];
   selectedBitmapLayerIdsRef: MutableRefObject<SelectedBitmapLayerIds | undefined>;
   selectedShotIdsRef: MutableRefObject<string[]>;
@@ -78,7 +77,6 @@ export const createAppKeyboardKeyDownHandler = ({
   isImportHelpOpen,
   isRecentMenuOpen,
   isSaveMenuOpen,
-  isShortcutMenuOpen,
   orderedShots,
   selectedBitmapLayerIdsRef,
   selectedShotIdsRef,
@@ -121,7 +119,6 @@ export const createAppKeyboardKeyDownHandler = ({
   return (event: KeyboardEvent) => {
     const target = event.target;
     const isMenuOpen =
-      isShortcutMenuOpen ||
       hasOpenWorkspaceMenu({
         isAddShotMenuOpen,
         isImportHelpOpen,
@@ -282,7 +279,6 @@ export const useAppKeyboardShortcutsController = (
       options.isImportHelpOpen,
       options.isRecentMenuOpen,
       options.isSaveMenuOpen,
-      options.isShortcutMenuOpen,
       options.orderedShots,
       options.measureGridColumns,
       options.handleAddShot,
