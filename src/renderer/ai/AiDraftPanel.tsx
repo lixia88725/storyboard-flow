@@ -1,18 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DragEvent } from "react";
 import type { Project } from "../../shared/types";
 import { groupAiBatchShotIds, summarizeAiBatchGroups } from "../../shared/ai/batch";
 import { CloseIcon, CopyIcon, SettingsIcon } from "../icons";
 import {
-  aiResourceIdsAvailableForShot,
   aiPanelSelectionState,
   aiShotNumberLabel,
-  canCleanAiResourceExclusions,
   canCopyAiRequestPreview,
-  cleanAiResourceExclusionsProject,
   nextAiEditableDialogueProject,
   nextAiEditableScriptProject,
-  nextAiResourceAvailabilityProject,
   visibleAiStatusMessage
 } from "./aiPanelState";
 import {
@@ -24,14 +19,7 @@ import {
 } from "./aiSettingsState";
 import { windowAiClient, type AiDraftClient } from "./aiClient";
 import { useAiDraftController } from "./useAiDraftController";
-
-type AiResource = {
-  id: string;
-  fileName: string;
-  filePath: string;
-  role: string;
-  note: string;
-};
+import { useAiResourcesController } from "./useAiResourcesController";
 
 type AiCandidate = {
   id: string;
@@ -64,8 +52,6 @@ const referenceRoles = [
   "Prop reference"
 ];
 
-const uniqueResourceIds = (resourceIds: string[]): string[] => [...new Set(resourceIds)];
-
 export const AiDraftPanel = ({
   isOpen,
   folderPath,
@@ -79,16 +65,12 @@ export const AiDraftPanel = ({
     () => aiPanelSelectionState(project, selectedShotIds),
     [project, selectedShotIds]
   );
-  const [resources, setResources] = useState<AiResource[]>([]);
   const [candidate, setCandidate] = useState<AiCandidate | undefined>();
   const [batchCandidates, setBatchCandidates] = useState<AiCandidate[]>([]);
   const [batchGroups, setBatchGroups] = useState<AiBatchGroupResult[]>([]);
   const [status, setStatus] = useState("Ready");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [hasLoadedResources, setHasLoadedResources] = useState(false);
-  const [isResourceDropActive, setIsResourceDropActive] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isAssignmentOpen, setIsAssignmentOpen] = useState(false);
   const {
     providerName,
     setProviderName,
@@ -117,35 +99,38 @@ export const AiDraftPanel = ({
     saveComfyUiSettings,
     testComfyUiConnection
   } = useAiDraftController({ aiClient, isOpen, setStatus });
+  const {
+    activeResourceIds,
+    batchResourceAssignments,
+    batchSelectedResourceIds,
+    deleteResource,
+    importDroppedResources,
+    isAssignmentOpen,
+    isResourceDropActive,
+    resources,
+    setIsAssignmentOpen,
+    setIsResourceDropActive,
+    toggleAssignmentResource,
+    toggleResource,
+    updateResource
+  } = useAiResourcesController({
+    aiClient,
+    folderPath,
+    isOpen,
+    project,
+    selection,
+    onProjectChange,
+    setStatus
+  });
   const visibleStatus = visibleAiStatusMessage(status);
   const canCopyRequestPreview = canCopyAiRequestPreview(selection);
   const batchShotIds = selection.kind === "multi" ? selection.shots.map((shot) => shot.id) : [];
-  const projectShotKey = project.shots.map((shot) => shot.id).join("|");
   const plannedBatchGroups = useMemo(
     () => (selection.kind === "multi" ? groupAiBatchShotIds(project, batchShotIds) : []),
     [batchShotIds.join("|"), project, selection.kind]
   );
   const batchSummary =
     selection.kind === "multi" ? summarizeAiBatchGroups(selection.shots.length, plannedBatchGroups) : "";
-  const resourceIds = useMemo(() => resources.map((resource) => resource.id), [resources]);
-  const activeResourceIds =
-    selection.kind === "ready" ? aiResourceIdsAvailableForShot(project, selection.shot.id, resourceIds) : [];
-  const batchResourceAssignments = useMemo(
-    () =>
-      selection.kind === "multi"
-        ? Object.fromEntries(
-            selection.shots.map((shot) => [
-              shot.id,
-              aiResourceIdsAvailableForShot(project, shot.id, resourceIds)
-            ])
-          )
-        : {},
-    [project, resourceIds, selection]
-  );
-  const batchSelectedResourceIds = useMemo(
-    () => uniqueResourceIds(Object.values(batchResourceAssignments).flat()),
-    [batchResourceAssignments]
-  );
   const isAiContentVisible = selection.kind === "ready" || selection.kind === "multi";
   const canGenerateForSelection =
     canRequestAiGeneration({ ...apiKeyStatus, provider: providerName, isGenerating }) &&
@@ -159,48 +144,6 @@ export const AiDraftPanel = ({
     setBatchGroups([]);
     setStatus("Ready");
   }, [folderPath, selectedShotIds.join("|")]);
-
-  useEffect(() => {
-    if (selection.kind === "multi") {
-      setIsAssignmentOpen(true);
-    }
-  }, [selectedShotIds.join("|"), selection.kind]);
-
-  useEffect(() => {
-    if (!canCleanAiResourceExclusions({ isOpen, hasLoadedResources })) {
-      return;
-    }
-    const cleanedProject = cleanAiResourceExclusionsProject(project, resourceIds);
-    if (cleanedProject !== project) {
-      onProjectChange(cleanedProject, "AI resource assignments updated");
-    }
-  }, [hasLoadedResources, isOpen, project, projectShotKey, resourceIds]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setHasLoadedResources(false);
-      return;
-    }
-    let cancelled = false;
-    setHasLoadedResources(false);
-    aiClient
-      .listResources(folderPath)
-      .then((result) => {
-        if (!cancelled) {
-          setResources(result.resources);
-          setHasLoadedResources(true);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setHasLoadedResources(false);
-          setStatus(`Could not load AI Resources: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [aiClient, folderPath, isOpen]);
 
   const updateProjectContext = (projectContext: string) => {
     onProjectChange(
@@ -226,83 +169,6 @@ export const AiDraftPanel = ({
     onProjectChange(
       nextAiEditableDialogueProject(project, shotId, dialogueText),
       "AI shot dialogue updated"
-    );
-  };
-
-  const updateResource = (fileName: string, patch: Partial<Pick<AiResource, "role" | "note">>) => {
-    const nextResources = resources.map((resource) =>
-      resource.fileName === fileName ? { ...resource, ...patch } : resource
-    );
-    setResources(nextResources);
-    void aiClient
-      .updateResourceMetadata(folderPath, {
-        version: 1,
-        resources: nextResources.map((resource) => ({
-          fileName: resource.fileName,
-          role: resource.role,
-          note: resource.note
-        }))
-      })
-      .catch((error) => {
-        setStatus(`Could not save AI resource notes: ${error instanceof Error ? error.message : String(error)}`);
-      });
-  };
-
-  const importDroppedResources = async (event: DragEvent<HTMLElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setIsResourceDropActive(false);
-    const sourceFilePaths = Array.from(event.dataTransfer.files)
-      .map((file) => aiClient.filePathForDroppedFile(file))
-      .filter((filePath) => filePath.trim() !== "");
-    if (sourceFilePaths.length === 0) {
-      return;
-    }
-
-    try {
-      const result = await aiClient.importResources(folderPath, sourceFilePaths);
-      setResources(result.resources);
-      setStatus(
-        result.importedFileNames.length > 0
-          ? `Imported ${result.importedFileNames.length} AI resource${result.importedFileNames.length === 1 ? "" : "s"}`
-          : "No supported image files were dropped"
-      );
-    } catch (error) {
-      setStatus(`Could not import AI Resources: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  const deleteResource = async (resource: AiResource) => {
-    try {
-      const result = await aiClient.deleteResource(folderPath, resource.fileName);
-      setResources(result.resources);
-      const cleanedProject = cleanAiResourceExclusionsProject(project, result.resources.map((item) => item.id));
-      if (cleanedProject !== project) {
-        onProjectChange(cleanedProject, `Deleted AI resource: ${resource.fileName}`);
-      }
-      setStatus(`Deleted AI resource: ${resource.fileName}`);
-    } catch (error) {
-      setStatus(`Could not delete AI resource: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  const toggleResource = (resourceId: string) => {
-    if (selection.kind !== "ready") {
-      return;
-    }
-    const isAvailable = activeResourceIds.includes(resourceId);
-    onProjectChange(
-      nextAiResourceAvailabilityProject(project, selection.shot.id, resourceId, !isAvailable),
-      "AI resource assignment updated"
-    );
-  };
-
-  const toggleAssignmentResource = (shotId: string, resourceId: string) => {
-    const availableResourceIds = aiResourceIdsAvailableForShot(project, shotId, resourceIds);
-    const isAvailable = availableResourceIds.includes(resourceId);
-    onProjectChange(
-      nextAiResourceAvailabilityProject(project, shotId, resourceId, !isAvailable),
-      "AI resource assignment updated"
     );
   };
 
@@ -766,7 +632,7 @@ export const AiDraftPanel = ({
                   {isAssignmentOpen ? (
                     <div className="ai-assignment-list">
                       {selection.shots.map((shot) => {
-                        const availableResourceIds = aiResourceIdsAvailableForShot(project, shot.id, resourceIds);
+                        const availableResourceIds = batchResourceAssignments[shot.id] ?? [];
                         return (
                           <article key={shot.id} className="ai-assignment-card">
                             <div className="ai-assignment-card-header">
