@@ -205,6 +205,7 @@ import { useRecentFoldersController } from "./recentFoldersController";
 import { useToolRadialSettingsController } from "./toolRadialSettingsController";
 import { useWorkspaceTaskProgressController } from "./workspaceTaskProgressController";
 import { useWorkspaceCloseGuardController } from "./workspaceCloseGuardController";
+import { useWorkspaceExternalRefreshController } from "./workspaceExternalRefreshController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -818,51 +819,6 @@ export const App = () => {
 
     return () => window.clearTimeout(timer);
   }, [autosaveRevision]);
-
-  useEffect(() => {
-    const handleFocus = () => {
-      void refreshExternalImportState();
-    };
-
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [metadataPath]);
-
-  useEffect(() => {
-    if (!window.storyboard || !folderPath) {
-      return;
-    }
-
-    let stopWatching: (() => void) | undefined;
-    let debounceId: number | undefined;
-    let cancelled = false;
-
-    void window.storyboard
-      .watchWorkspaceFolder(folderPath, () => {
-        if (debounceId !== undefined) {
-          window.clearTimeout(debounceId);
-        }
-        debounceId = window.setTimeout(() => {
-          void refreshExternalImportState();
-        }, 500);
-      })
-      .then((stop) => {
-        if (cancelled) {
-          stop();
-          return;
-        }
-        stopWatching = stop;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-      if (debounceId !== undefined) {
-        window.clearTimeout(debounceId);
-      }
-      stopWatching?.();
-    };
-  }, [folderPath]);
 
   useWorkspaceCloseGuardController({
     dirtyShotIdsRef,
@@ -1501,6 +1457,12 @@ export const App = () => {
       setScriptImportNeeded(result.scriptImportNeeded);
     }
   };
+
+  useWorkspaceExternalRefreshController({
+    folderPath,
+    focusRefreshKey: metadataPath,
+    refreshExternalImportState
+  });
 
   const nudgeImportRequired = () => {
     setIsImportHelpOpen(true);
