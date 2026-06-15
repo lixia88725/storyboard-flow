@@ -1,0 +1,24 @@
+.storyboard-insertion-indicator {
+  background: var(--slate-accent);
+  box-shadow:
+    0 0 0 2px rgba(21, 23, 25, 0.96),
+    0 8px 24px rgba(255, 100, 45, 0.34),
+    0 10px 30px rgba(0, 0, 0, 0.38);
+}
+
+.selection-marquee {
+  border-color: var(--slate-good);
+  background: rgba(80, 191, 165, 0.14);
+}
+
+.empty-state {
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 60%);
+}
+
+.empty-state h2 {
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 64%);
+}
+
+.empty-state p {
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 72%);
+}
