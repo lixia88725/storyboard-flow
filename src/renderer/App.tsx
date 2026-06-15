@@ -105,7 +105,6 @@ import {
   resolveDeleteTarget,
   type DeleteTarget
 } from "./deleteTarget";
-import { nextRangeSelection, type RangeSelectionMode } from "./rangeSelection";
 import {
   defaultKeyboardShortcuts,
   isKeyboardEditableTarget
@@ -203,6 +202,7 @@ import { useWorkspaceAutosaveController } from "./workspaceAutosaveController";
 import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsController";
 import { useLayerPanelController } from "./layerPanelController";
 import { useRightSidebarController } from "./rightSidebarController";
+import { createShotSelectionController } from "./shotSelectionController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -726,41 +726,21 @@ export const App = () => {
     clipboardSelectionRef.current = clipboardSelection;
   }, [clipboardSelection]);
 
-  const selectSingleShot = (shotId: string | undefined) => {
-    shotSelectionAnchorIdRef.current = shotId;
-    const nextShotIds = shotId ? [shotId] : [];
-    selectedShotIdsRef.current = nextShotIds;
-    setSelectedShotIds(nextShotIds);
-  };
-
-  const clearSelectedShots = () => {
-    shotSelectionAnchorIdRef.current = undefined;
-    selectedShotIdsRef.current = [];
-    setSelectedShotIds([]);
-  };
-
-  const selectShotsByIds = (shotIds: string[]) => {
-    shotSelectionAnchorIdRef.current = shotIds.at(-1);
-    selectedShotIdsRef.current = shotIds;
-    setSelectedShotIds(shotIds);
-  };
+  const {
+    clearSelectedShots,
+    selectSingleShot,
+    selectShotsByIds,
+    selectShotWithMode
+  } = createShotSelectionController({
+    orderedShotIds: orderedShots.map((shot) => shot.id),
+    selectedShotIdsRef,
+    shotSelectionAnchorIdRef,
+    setSelectedShotIds
+  });
 
   const { layerPanelPropsForShot } = useLayerPanelController({
     primarySelectedShotId, selectSingleShot, setDeleteTarget, setSelectedBitmapLayerIds
   });
-
-  const selectShotWithMode = (shotId: string, mode: RangeSelectionMode) => {
-    const selection = nextRangeSelection({
-      orderedIds: orderedShots.map((shot) => shot.id),
-      selectedIds: selectedShotIdsRef.current,
-      clickedId: shotId,
-      anchorId: shotSelectionAnchorIdRef.current,
-      mode
-    });
-    shotSelectionAnchorIdRef.current = selection.anchorId;
-    selectedShotIdsRef.current = selection.selectedIds;
-    setSelectedShotIds(selection.selectedIds);
-  };
 
   const handleSelectedBitmapLayerIdsChange = useCallback((shotId: string, layerIds: string[]) => {
     setSelectedBitmapLayerIds((current) =>
