@@ -20,14 +20,14 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
-  border-left: 2px solid #25221d;
-  background: #211f1a;
-  color: #fffaf0;
-  box-shadow: -5px 0 0 rgba(37, 34, 29, 0.16);
+  border-left: 2px solid var(--slate-line);
+  background: var(--slate-panel);
+  color: var(--slate-text);
+  box-shadow: -18px 0 36px rgba(0, 0, 0, 0.34);
 }
 
 .parking-shelf.is-over .parking-panel {
-  outline: 3px solid #f05a28;
+  outline: 3px solid var(--slate-accent);
   outline-offset: -5px;
 }
 
@@ -36,7 +36,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  border-bottom: 1px solid #4c463d;
+  border-bottom: 1px solid var(--slate-line);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0;
@@ -48,7 +48,7 @@
   place-items: center;
   min-width: 24px;
   height: 24px;
-  border: 1px solid #d8d0c3;
+  border: 1px solid var(--slate-line-strong);
   border-radius: 999px;
   font-size: 12px;
 }
@@ -77,8 +77,8 @@
 .parking-list p {
   margin: 0;
   padding: 18px 8px;
-  border: 1px dashed #7c7162;
-  color: #cfc5b6;
+  border: 1px dashed var(--slate-line-strong);
+  color: var(--slate-muted);
   font-size: 12px;
   text-align: center;
 }
@@ -109,4 +109,3 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
