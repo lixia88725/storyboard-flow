@@ -70,3 +70,36 @@ export const buildRecentFoldersMenuTemplate = (
     { role: "windowMenu" }
   ];
 };
+
+export type RecentFoldersChangedSender = {
+  send: (channel: "recent:foldersChanged", folders: string[], reason?: string) => void;
+};
+
+export const createRecentFoldersChangeNotifier = (
+  getSender: () => RecentFoldersChangedSender | undefined
+) => {
+  let pending: { folders: string[]; reason: string } | undefined;
+
+  const notify = (folders: string[], reason?: string): void => {
+    const sender = getSender();
+    if (!sender) {
+      if (reason) {
+        pending = { folders, reason };
+      }
+      return;
+    }
+    sender.send("recent:foldersChanged", folders, reason);
+  };
+
+  const flush = (): void => {
+    const sender = getSender();
+    if (!sender || !pending) {
+      return;
+    }
+    const nextPending = pending;
+    pending = undefined;
+    sender.send("recent:foldersChanged", nextPending.folders, nextPending.reason);
+  };
+
+  return { notify, flush };
+};

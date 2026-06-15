@@ -53,7 +53,12 @@ import {
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewRootForFolder } from "./previewPaths.js";
 import { createPreview } from "./previewService.js";
-import { addRecentFolderPath, buildRecentFoldersMenuTemplate, removeRecentFolderPath } from "./recentFolders.js";
+import {
+  addRecentFolderPath,
+  buildRecentFoldersMenuTemplate,
+  createRecentFoldersChangeNotifier,
+  removeRecentFolderPath
+} from "./recentFolders.js";
 import { mapWithConcurrency } from "./mapWithConcurrency.js";
 import { assertPathInsideFolder, ensureDirectory, pathExists } from "./pathSafety.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
@@ -398,9 +403,7 @@ const workspaceFolderWatchService = createWorkspaceFolderWatchService();
 let mainWindow: BrowserWindow | undefined;
 const maxRecentFolders = 10;
 const recentFoldersCorruptReason = "recent-folders-corrupt";
-let pendingRecentFoldersChanged:
-  | { folders: string[]; reason: typeof recentFoldersCorruptReason }
-  | undefined;
+const recentFoldersChangeNotifier = createRecentFoldersChangeNotifier(() => mainWindow?.webContents);
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -757,7 +760,7 @@ const registerIpcHandlers = () => {
   registerRecentIpcHandlers(ipcMain, {
     getFolders: async () => {
       const folders = await readRecentFolders();
-      flushPendingRecentFoldersChanged();
+      recentFoldersChangeNotifier.flush();
       return folders;
     }
   });
@@ -1202,7 +1205,7 @@ const readRecentFolders = async (): Promise<string[]> => {
   const result = await readRecentFoldersWithRecovery(userDataPath(), maxRecentFolders);
   if (result.recoveredFromCorruptFile) {
     await updateRecentFoldersMenu();
-    notifyRecentFoldersChanged(result.folders, recentFoldersCorruptReason);
+    recentFoldersChangeNotifier.notify(result.folders, recentFoldersCorruptReason);
   }
   return result.folders;
 };
@@ -1210,29 +1213,7 @@ const readRecentFolders = async (): Promise<string[]> => {
 const writeRecentFolders = async (folders: string[]): Promise<void> => {
   const nextFolders = await writeRecentFoldersToUserData(userDataPath(), folders, maxRecentFolders);
   await updateRecentFoldersMenu();
-  notifyRecentFoldersChanged(nextFolders);
-};
-
-const notifyRecentFoldersChanged = (
-  folders: string[],
-  reason?: typeof recentFoldersCorruptReason
-): void => {
-  if (!mainWindow) {
-    if (reason) {
-      pendingRecentFoldersChanged = { folders, reason };
-    }
-    return;
-  }
-  mainWindow.webContents.send("recent:foldersChanged", folders, reason);
-};
-
-const flushPendingRecentFoldersChanged = (): void => {
-  if (!mainWindow || !pendingRecentFoldersChanged) {
-    return;
-  }
-  const pending = pendingRecentFoldersChanged;
-  pendingRecentFoldersChanged = undefined;
-  mainWindow.webContents.send("recent:foldersChanged", pending.folders, pending.reason);
+  recentFoldersChangeNotifier.notify(nextFolders);
 };
 
 const addRecentFolder = async (folderPath: string): Promise<void> => {

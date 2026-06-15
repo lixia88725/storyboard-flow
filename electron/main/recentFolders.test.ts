@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addRecentFolderPath,
   buildRecentFoldersMenuTemplate,
+  createRecentFoldersChangeNotifier,
   normalizeRecentFolders,
   removeRecentFolderPath
 } from "./recentFolders.js";
@@ -55,5 +56,38 @@ describe("recent folder helpers", () => {
 
     expect(template[0].label).toBe("File");
     expect(template[0].submenu?.[0].submenu).toEqual([{ label: "No Recent Folders", enabled: false }]);
+  });
+
+  it("sends recent folder changes when a window is available", () => {
+    const sent: unknown[][] = [];
+    const notifier = createRecentFoldersChangeNotifier(() => ({
+      send: (...args: unknown[]) => sent.push(args)
+    }));
+
+    notifier.notify(["/tmp/scene-a"]);
+
+    expect(sent).toEqual([["recent:foldersChanged", ["/tmp/scene-a"], undefined]]);
+  });
+
+  it("stores corrupt recovery changes until a window is available", () => {
+    const sent: unknown[][] = [];
+    let hasWindow = false;
+    const notifier = createRecentFoldersChangeNotifier(() =>
+      hasWindow
+        ? {
+            send: (...args: unknown[]) => sent.push(args)
+          }
+        : undefined
+    );
+
+    notifier.notify(["/tmp/recovered"], "recent-folders-corrupt");
+    notifier.flush();
+    expect(sent).toEqual([]);
+
+    hasWindow = true;
+    notifier.flush();
+    expect(sent).toEqual([["recent:foldersChanged", ["/tmp/recovered"], "recent-folders-corrupt"]]);
+    notifier.flush();
+    expect(sent).toHaveLength(1);
   });
 });
