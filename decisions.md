@@ -132,6 +132,12 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 - The main remaining cross-slice seam is shell class naming: renderer controller slices may add class names such as `has-ai-panel-open`, while CSS slices style those classes. Add or rename shell classes deliberately and document them in the owning controller test before a CSS slice consumes them.
 - Do not let a CSS slice make opportunistic TypeScript behavior edits, and do not let a renderer controller slice clean up theme overrides.
 
+2026-06-15 Electron main service follow-through:
+
+- Folder open / refresh read-side logic now has focused service boundaries: `folderScanService.ts`, `imageRecordsService.ts`, `knownImageChangesService.ts`, and `projectMetadataService.ts`.
+- Future Electron main service work should prefer read-side or settings/recent/AI glue slices. Do not move `saveWorkspace`, `importProjectToSwbFormat`, `writeSwbMetadataToTiffs`, or Photoshop TIFF writer orchestration without a dedicated Save/Import/TIFF migration plan.
+- `main.ts` should remain the composition layer for protected Save/Import/TIFF flows and IPC registration, not a dumping ground for new isolated filesystem helpers.
+
 Reason: The highest-conflict files are still shared coordination points. Slice-owned worktrees reduce merge conflicts and keep architectural cleanup from accidentally crossing protected product/data boundaries.
 
 ## Multi-Select Reordering Has Explicit Placement

@@ -31,8 +31,9 @@ npm run dev
 如果是接手开发，先读 `AGENTS.md`、`decisions.md`、`context-handoff.md` 和 `todo.md`。常用入口：
 
 - `src/shared/projectOps.ts`：项目数据、排序、重命名计划、bitmap layer metadata 等纯逻辑。改项目行为时优先在这里补单测。
-- `electron/main/main.ts`：Electron IPC、文件扫描、Import、Save 编排、TIFF metadata 和 bitmap asset 初始化。
-- `electron/main/externalChanges.ts`、`saveProgress.ts`、`closePrompt.ts`、`previewCache.ts`、`storyboardScriptProject.ts`：外部编辑检测、Save 进度、关闭确认、预览缓存和 Markdown 创建项目 helper。
+- `electron/main/main.ts`：Electron app/IPC composition、Import / Save 编排、TIFF metadata 写入和 bitmap asset 初始化。
+- `electron/main/folderScanService.ts`、`imageRecordsService.ts`、`knownImageChangesService.ts`、`projectMetadataService.ts`：打开文件夹、创建图片记录、已知图片外部变更检测和项目 metadata 读取等低风险读侧服务。
+- `electron/main/externalChanges.ts`、`saveProgress.ts`、`closePrompt.ts`、`previewCache.ts`、`storyboardScriptProject.ts`：外部编辑判断、Save 进度、关闭确认、预览缓存和 Markdown 创建项目 helper。
 - `electron/main/bitmapLayerOrdering.ts`：Electron Save / Photoshop export 共用的 bitmap layer 排序和默认值规则。
 - `electron/main/storyboardScript.ts`：`storyboard-script.md` 的序列化、解析和 Import 计划 helper。
 - `electron/main/photoshopTiffExport.ts` / `electron/main/photoshopTiffImport.ts`：Photoshop layered TIFF 交换路径。
