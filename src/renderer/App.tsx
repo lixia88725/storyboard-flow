@@ -186,13 +186,10 @@ import { statusPanelToggleClassName, swbStatusLabel, updateCheckButtonLabel } fr
 import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, projectChangedDuringLoad, shouldAutosaveAfterLoad, shouldPersistLoadedProject, shouldRunAutosave } from "./workspacePersistenceController";
 import {
   applyRadialPresetSlot,
-  defaultToolRadialMenuConfig,
-  normalizeToolRadialMenuConfig,
   radialCanvasContextMenuAction,
   type RadialDragKind,
   type RadialPresetSlot,
-  type RadialToolSlot,
-  type ToolRadialMenuConfig
+  type RadialToolSlot
 } from "./toolRadialMenu";
 import {
   closeRadialToolMenuState,
@@ -205,6 +202,7 @@ import { usePointerPositionController } from "./pointerPositionController";
 import { useZoomInteractionController } from "./zoomInteractionController";
 import { nextKeyboardShotSelection, useGlobalKeyboardController } from "./globalKeyboardController";
 import { useRecentFoldersController } from "./recentFoldersController";
+import { useToolRadialSettingsController } from "./toolRadialSettingsController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -332,8 +330,6 @@ export const App = () => {
   const [eraserSize, setEraserSize] = useState(defaultEraserSize);
   const [eraserOpacity, setEraserOpacity] = useState(1);
   const [eraserSoftness, setEraserSoftness] = useState(0);
-  const [toolRadialMenuConfig, setToolRadialMenuConfig] =
-    useState<ToolRadialMenuConfig>(() => defaultToolRadialMenuConfig());
   const {
     zoomLevel,
     setZoomLevel,
@@ -395,6 +391,10 @@ export const App = () => {
   const [status, setStatus] = useState(
     window.storyboard ? "Ready" : "Electron preload API is unavailable"
   );
+  const {
+    toolRadialMenuConfig,
+    persistToolRadialMenuConfig
+  } = useToolRadialSettingsController({ setStatus });
   const {
     updateNotice,
     setUpdateNotice,
@@ -794,17 +794,6 @@ export const App = () => {
   };
 
   usePointerPositionController(lastPointerPositionRef);
-
-  useEffect(() => {
-    if (!window.storyboard?.getToolRadialMenu) {
-      return;
-    }
-
-    void window.storyboard
-      .getToolRadialMenu()
-      .then((config) => setToolRadialMenuConfig(normalizeToolRadialMenuConfig(config)))
-      .catch(() => setToolRadialMenuConfig(defaultToolRadialMenuConfig()));
-  }, []);
 
   useEffect(() => {
     if (!window.storyboard) {
@@ -2958,14 +2947,6 @@ export const App = () => {
     window.addEventListener("pointerup", handlePointerUp, { once: true });
     window.addEventListener("pointercancel", handlePointerUp, { once: true });
     scheduleMarqueeUpdate();
-  };
-
-  const persistToolRadialMenuConfig = (nextConfig: ToolRadialMenuConfig) => {
-    const normalized = normalizeToolRadialMenuConfig(nextConfig);
-    setToolRadialMenuConfig(normalized);
-    void window.storyboard?.setToolRadialMenu?.(normalized).catch(() => {
-      setStatus("Could not save radial shortcut settings");
-    });
   };
 
   const clearRadialToolMenuCloseTimeout = useCallback(() => {
