@@ -171,7 +171,7 @@ import {
   type DragData
 } from "./storyboardDnd";
 import { sameLayerSelection, useStoryboardInteractionState } from "./storyboardInteractionState";
-import { useShortcutMenuController } from "./shortcutMenuController";
+import { hasOpenShortcutBlockingMenu, useShortcutMenuController } from "./shortcutMenuController";
 import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
 import { shouldIgnoreWorkbenchWheelTarget } from "./workbenchWheel";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
@@ -246,13 +246,6 @@ type PasteAnimationState = {
   pastedId: string;
   beforeRects: Map<string, DOMRect>;
 };
-
-const hasOpenShortcutBlockingMenu = (): boolean =>
-  Boolean(
-    document.querySelector(
-      ".shortcut-menu, .save-menu, .recent-menu, .add-shot-menu, .radial-tool-menu"
-    )
-  );
 
 const appendHistoryEntry = (entries: UndoEntry[], entry: UndoEntry) => [
   ...entries.slice(Math.max(0, entries.length - maxUndoHistory + 1)),

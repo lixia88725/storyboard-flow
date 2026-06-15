@@ -20,6 +20,17 @@ export const shortcutMenuItems: Array<{ action: ShortcutAction; label: string }>
   { action: "redo", label: "Redo" }
 ];
 
+type ShortcutBlockingMenuRoot = Pick<Document, "querySelector">;
+
+export const hasOpenShortcutBlockingMenu = (
+  root: ShortcutBlockingMenuRoot = document
+): boolean =>
+  Boolean(
+    root.querySelector(
+      ".shortcut-menu, .save-menu, .recent-menu, .add-shot-menu, .radial-tool-menu"
+    )
+  );
+
 export const useShortcutMenuController = () => {
   const [isShortcutMenuOpen, setIsShortcutMenuOpen] = useState(false);
   const shortcutMenuRef = useRef<HTMLDivElement | null>(null);

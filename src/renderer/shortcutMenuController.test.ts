@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shortcutMenuItems } from "./shortcutMenuController";
+import { hasOpenShortcutBlockingMenu, shortcutMenuItems } from "./shortcutMenuController";
 
 describe("shortcutMenuController", () => {
   it("shows the fixed keyboard shortcut menu entries in toolbar order", () => {
@@ -21,5 +21,17 @@ describe("shortcutMenuController", () => {
       ["undo", "Undo"],
       ["redo", "Redo"]
     ]);
+  });
+
+  it("blocks global shortcuts when any shortcut-blocking menu is open", () => {
+    const matches = new Set([".save-menu"]);
+    const root = {
+      querySelector: (selector: string) =>
+        selector.split(", ").some((part) => matches.has(part)) ? {} : null
+    };
+
+    expect(hasOpenShortcutBlockingMenu(root)).toBe(true);
+    matches.clear();
+    expect(hasOpenShortcutBlockingMenu(root)).toBe(false);
   });
 });
