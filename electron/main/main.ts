@@ -78,7 +78,6 @@ import {
   createProjectFromStoryboardScriptMarkdown,
   inspectStoryboardScriptMarkdownFile
 } from "./storyboardScriptProject.js";
-import { knownImageHasExternalChange } from "./externalChanges.js";
 import {
   shouldCloseAfterUnsavedChangesPrompt,
   shouldSaveBeforeClose
@@ -100,6 +99,7 @@ import {
 } from "./copyShotAssetsService.js";
 import { checkExternalChanges } from "./checkExternalChangesService.js";
 import { scanWorkspaceFolder } from "./folderScanService.js";
+import { changedKnownImagePaths as findChangedKnownImagePaths } from "./knownImageChangesService.js";
 import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
 import {
   createWorkspaceTaskProgressReporter,
@@ -1965,41 +1965,11 @@ const changedKnownImagePaths = async (
   pendingDeletedPaths: Set<string>,
   onProgress?: WorkspaceTaskProgressReporter
 ): Promise<string[]> => {
-  const pathByShot = new Map(
-    [...project.shots, ...(project.parkedShots ?? [])]
-      .filter((shot) => isLikelyTiffPath(shot.imagePath) && !pendingDeletedPaths.has(shot.imagePath))
-      .map((shot) => [shot.imagePath, shot])
-  );
-  const knownImagePaths = imagePaths.filter((imagePath) => pathByShot.has(imagePath));
-  const changed: string[] = [];
-
-  let checked = 0;
-  await Promise.all(
-    knownImagePaths.map(async (imagePath) => {
-      const shot = pathByShot.get(imagePath);
-      try {
-        if (!shot?.swb || shot.swb.status === "non-swb") {
-          return;
-        }
-
-        const fingerprint = await pixelFingerprint(imagePath);
-        const metadata = await readSwbMetadata(imagePath);
-        if (knownImageHasExternalChange(shot, fingerprint, metadata)) {
-          changed.push(imagePath);
-        }
-      } finally {
-        checked += 1;
-        onProgress?.({
-          kind: "open",
-          label: "Checking external changes...",
-          current: checked,
-          total: knownImagePaths.length
-        });
-      }
-    })
-  );
-
-  return changed;
+  return findChangedKnownImagePaths(project, imagePaths, pendingDeletedPaths, {
+    pixelFingerprint,
+    readSwbMetadata,
+    onProgress
+  });
 };
 
 const readProject = async (metadataPath: string): Promise<Project | undefined> => {
