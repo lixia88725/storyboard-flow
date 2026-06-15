@@ -204,6 +204,7 @@ import {
 import { usePointerPositionController } from "./pointerPositionController";
 import { useZoomInteractionController } from "./zoomInteractionController";
 import { nextKeyboardShotSelection, useGlobalKeyboardController } from "./globalKeyboardController";
+import { useRecentFoldersController } from "./recentFoldersController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -810,17 +811,6 @@ export const App = () => {
       return;
     }
 
-    const removeOpenListener = window.storyboard.onOpenRecentFolder((nextFolderPath) => {
-      setFolderInputValue(nextFolderPath);
-      void handleOpenFolderByPath(nextFolderPath);
-    });
-    const removeChangedListener = window.storyboard.onRecentFoldersChanged((folders, reason) => {
-      setRecentFolders(folders);
-      if (reason === "recent-folders-corrupt") {
-        setStatus("Recent folders were reset because recent-folders.json was corrupted");
-      }
-    });
-    void window.storyboard.getRecentFolders().then(setRecentFolders).catch(() => undefined);
     const removeTaskProgressListener = window.storyboard.onWorkspaceTaskProgress((progress) => {
       setWorkspaceTask((task) =>
         task && task.kind === progress.kind
@@ -835,8 +825,6 @@ export const App = () => {
     });
 
     return () => {
-      removeOpenListener();
-      removeChangedListener();
       removeTaskProgressListener();
     };
   }, []);
@@ -1834,6 +1822,13 @@ export const App = () => {
     }
     void window.storyboard.getRecentFolders().then(setRecentFolders).catch(() => undefined);
   };
+
+  useRecentFoldersController({
+    openFolder: handleOpenFolderByPath,
+    setFolderInputValue,
+    setRecentFolders,
+    setStatus
+  });
 
   const handleStoryboardScriptDragOver = (event: ReactDragEvent<HTMLElement>) => {
     if (Array.from(event.dataTransfer.items).some((item) => item.kind === "file")) {
