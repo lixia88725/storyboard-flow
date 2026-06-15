@@ -4,6 +4,14 @@ import { autosaveErrorReducer, type AutosaveErrorNotice } from "./autosaveError"
 import { shouldRunAutosave } from "./workspacePersistenceController";
 import type { WorkspaceSaveState } from "./workspaceLifecycleState";
 
+type WorkspaceAutosaveApi = {
+  autosaveWorkspace: (payload: {
+    folderPath: string;
+    metadataPath: string;
+    project: Project;
+  }) => Promise<unknown>;
+};
+
 type AutosaveTimers = {
   setTimeout: (callback: () => void, delayMs: number) => number;
   clearTimeout: (timeoutId: number) => void;
@@ -27,6 +35,42 @@ type WorkspaceAutosaveInput = {
 };
 
 export const autosaveDelayMs = 600;
+
+export const persistWorkspaceProject = async ({
+  activeFolderPath,
+  activeMetadataPath,
+  api,
+  now = () => new Date(),
+  projectToSave,
+  scriptImportCheckIdRef,
+  setAutosaveError,
+  setScriptImportNeeded,
+  setWorkspaceSaveState
+}: {
+  activeFolderPath: string | undefined;
+  activeMetadataPath: string | undefined;
+  api: WorkspaceAutosaveApi | undefined;
+  now?: () => Date;
+  projectToSave: Project;
+  scriptImportCheckIdRef: { current: number };
+  setAutosaveError: Dispatch<SetStateAction<AutosaveErrorNotice | undefined>>;
+  setScriptImportNeeded: (needed: boolean) => void;
+  setWorkspaceSaveState: Dispatch<SetStateAction<WorkspaceSaveState>>;
+}): Promise<void> => {
+  if (!api || !activeFolderPath || !activeMetadataPath) {
+    return;
+  }
+
+  await api.autosaveWorkspace({
+    project: { ...projectToSave, updatedAt: now().toISOString() },
+    folderPath: activeFolderPath,
+    metadataPath: activeMetadataPath
+  });
+  scriptImportCheckIdRef.current += 1;
+  setScriptImportNeeded(false);
+  setWorkspaceSaveState("saved");
+  setAutosaveError((current) => autosaveErrorReducer(current, { type: "saved" }));
+};
 
 export const registerWorkspaceAutosave = ({
   autosaveRevision,

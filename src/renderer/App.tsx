@@ -208,7 +208,7 @@ import { useWorkspaceTaskProgressController } from "./workspaceTaskProgressContr
 import { useWorkspaceCloseGuardController } from "./workspaceCloseGuardController";
 import { useWorkspaceExternalRefreshController } from "./workspaceExternalRefreshController";
 import { useWorkspaceMenuController } from "./workspaceMenuController";
-import { useWorkspaceAutosaveController } from "./workspaceAutosaveController";
+import { persistWorkspaceProject, useWorkspaceAutosaveController } from "./workspaceAutosaveController";
 import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsController";
 import { useLayerPanelController } from "./layerPanelController";
 import { useRightSidebarController } from "./rightSidebarController";
@@ -976,21 +976,17 @@ export const App = () => {
     projectToSave: Project,
     activeFolderPath = folderPath,
     activeMetadataPath = metadataPath
-  ) => {
-    if (!window.storyboard || !activeFolderPath || !activeMetadataPath) {
-      return;
-    }
-
-    await window.storyboard.autosaveWorkspace({
-      project: { ...projectToSave, updatedAt: new Date().toISOString() },
-      folderPath: activeFolderPath,
-      metadataPath: activeMetadataPath
+  ) =>
+    persistWorkspaceProject({
+      activeFolderPath,
+      activeMetadataPath,
+      api: window.storyboard,
+      projectToSave,
+      scriptImportCheckIdRef,
+      setAutosaveError,
+      setScriptImportNeeded,
+      setWorkspaceSaveState
     });
-    scriptImportCheckIdRef.current += 1;
-    setScriptImportNeeded(false);
-    setWorkspaceSaveState("saved");
-    setAutosaveError((current) => autosaveErrorReducer(current, { type: "saved" }));
-  };
 
   useWorkspaceAutosaveController({
     autosaveRevision,
