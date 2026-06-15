@@ -204,6 +204,7 @@ import { nextKeyboardShotSelection, useGlobalKeyboardController } from "./global
 import { useRecentFoldersController } from "./recentFoldersController";
 import { useToolRadialSettingsController } from "./toolRadialSettingsController";
 import { useWorkspaceTaskProgressController } from "./workspaceTaskProgressController";
+import { useWorkspaceCloseGuardController } from "./workspaceCloseGuardController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -863,15 +864,12 @@ export const App = () => {
     };
   }, [folderPath]);
 
-  useEffect(() => {
-    if (!window.storyboard) {
-      return;
-    }
-
-    void window.storyboard.updateCloseGuard({
-      hasUnsavedChanges: hasUnsavedWorkspaceChanges(dirtyShotIdsRef.current.size, workspaceSaveState, fileNameSyncState)
-    });
-  }, [fileNameSyncState, project, workspaceSaveState]);
+  useWorkspaceCloseGuardController({
+    dirtyShotIdsRef,
+    fileNameSyncState,
+    refreshKey: project,
+    workspaceSaveState
+  });
 
   const measureGridColumns = useCallback(() => {
     const firstRowTop = Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id]"))
