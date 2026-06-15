@@ -77,10 +77,6 @@ import {
   inspectStoryboardScriptMarkdownFile
 } from "./storyboardScriptProject.js";
 import {
-  shouldCloseAfterUnsavedChangesPrompt,
-  shouldSaveBeforeClose
-} from "./closePrompt.js";
-import {
   finishSaveAndClose as finishSaveAndCloseRequest,
   getAppInfoForRenderer,
   openExternalUrl,
@@ -88,6 +84,11 @@ import {
   selectFolderPath,
   updateCloseGuard as updateCloseGuardForWebContents
 } from "./appShellService.js";
+import {
+  attachStoryboardWindowHandlers,
+  loadStoryboardWindowEntry,
+  storyboardWindowOptions
+} from "./appWindowService.js";
 import {
   isWorkspaceTemporaryImagePath,
   workspaceCopyTemporaryFileName
@@ -383,65 +384,18 @@ if (process.env.SWB_USER_DATA_DIR) {
 app.setName("Storyboard Flow");
 
 const createWindow = async () => {
-  mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 960,
-    minWidth: 1100,
-    minHeight: 720,
-    title: "Storyboard Flow",
-    backgroundColor: "#f3f0e8",
-    webPreferences: {
-      preload: path.join(app.getAppPath(), "electron/preload/preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false
-    }
+  mainWindow = new BrowserWindow(storyboardWindowOptions(app.getAppPath()));
+  attachStoryboardWindowHandlers(mainWindow, {
+    closeGuardWebContentsIds,
+    createRequestId: randomUUID,
+    saveAndCloseRequests,
+    showMessageBoxSync: (owner, options) => dialog.showMessageBoxSync(owner, options)
   });
 
-  mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
-    console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`);
+  await loadStoryboardWindowEntry(mainWindow, {
+    appPath: app.getAppPath(),
+    devServerUrl: process.env.VITE_DEV_SERVER_URL
   });
-
-  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
-    console.error(`[preload-error] ${preloadPath}: ${error.message}`);
-  });
-
-  mainWindow.on("close", (event) => {
-    const owner = mainWindow;
-    if (!owner || !closeGuardWebContentsIds.has(owner.webContents.id)) {
-      return;
-    }
-
-    event.preventDefault();
-    const options: Electron.MessageBoxSyncOptions = {
-      type: "warning",
-      buttons: ["Save and Close", "Close Without Saving", "Cancel"],
-      defaultId: 0,
-      cancelId: 2,
-      message: "Close without saving?",
-      detail: "Storyboard Flow has unsaved changes. Save before closing to sync your edits back to the folder."
-    };
-    const buttonIndex = owner
-      ? dialog.showMessageBoxSync(owner, options)
-      : dialog.showMessageBoxSync(options);
-
-    if (shouldSaveBeforeClose(buttonIndex)) {
-      const requestId = randomUUID();
-      saveAndCloseRequests.set(requestId, owner);
-      owner.webContents.send("app:saveAndClose", { requestId });
-      return;
-    }
-
-    if (shouldCloseAfterUnsavedChangesPrompt(buttonIndex)) {
-      owner.destroy();
-    }
-  });
-
-  if (process.env.VITE_DEV_SERVER_URL) {
-    await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    await mainWindow.loadFile(path.join(app.getAppPath(), "dist/index.html"));
-  }
 };
 
 app.whenReady().then(async () => {
