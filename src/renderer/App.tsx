@@ -211,6 +211,7 @@ import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsControl
 import { useLayerPanelController } from "./layerPanelController";
 import { useRightSidebarController } from "./rightSidebarController";
 import { createShotSelectionController } from "./shotSelectionController";
+import { withStatus } from "./statusAction";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -3584,20 +3585,6 @@ export const App = () => {
       </footer>
     </main>
   );
-};
-
-const withStatus = async <T,>(
-  label: string,
-  action: () => Promise<T>,
-  setStatus: (status: string) => void
-): Promise<T | undefined> => {
-  try {
-    return await action();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setStatus(`${label}: ${message}`);
-    return undefined;
-  }
 };
 
 const createTransparentLayerDataUrl = async (width: number, height: number): Promise<string> => {
