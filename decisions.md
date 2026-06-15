@@ -135,8 +135,17 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 2026-06-15 Electron main service follow-through:
 
 - Folder open / refresh read-side logic now has focused service boundaries: `folderScanService.ts`, `imageRecordsService.ts`, `knownImageChangesService.ts`, and `projectMetadataService.ts`.
+- Blank shot TIFF creation is isolated in `blankShotService.ts`; `main.ts` should call it through the image IPC composition path instead of re-owning preset size and unique filename logic.
 - Future Electron main service work should prefer read-side or settings/recent/AI glue slices. Do not move `saveWorkspace`, `importProjectToSwbFormat`, `writeSwbMetadataToTiffs`, or Photoshop TIFF writer orchestration without a dedicated Save/Import/TIFF migration plan.
 - `main.ts` should remain the composition layer for protected Save/Import/TIFF flows and IPC registration, not a dumping ground for new isolated filesystem helpers.
+
+2026-06-15 current worktree simulation:
+
+- Created two current local worktrees from the same CSS baseline `dce395b`: `sim/current-renderer-radial` and `sim/current-electron-blank-shot`.
+- Renderer menu orchestration slice changed only `src/renderer/App.tsx` and `src/renderer/radialToolMenuController.ts`.
+- Electron low-risk service slice changed only `electron/main/main.ts`, `electron/main/blankShotService.ts`, and `electron/main/blankShotService.test.ts`.
+- `git merge-tree --write-tree sim/current-renderer-radial sim/current-electron-blank-shot` completed with exit code 0, confirming these slices can merge without file conflicts.
+- Rule adjustment: renderer menu/controller cleanup and Electron service extraction can proceed in separate worktrees when each slice avoids opportunistic edits outside its ownership area.
 
 Reason: The highest-conflict files are still shared coordination points. Slice-owned worktrees reduce merge conflicts and keep architectural cleanup from accidentally crossing protected product/data boundaries.
 
