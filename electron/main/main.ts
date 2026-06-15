@@ -51,7 +51,8 @@ import {
   type ImportedPhotoshopTiffManifest
 } from "./photoshopTiffImport.js";
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
-import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
+import { previewRootForFolder } from "./previewPaths.js";
+import { createPreview } from "./previewService.js";
 import { addRecentFolderPath, removeRecentFolderPath } from "./recentFolders.js";
 import { mapWithConcurrency } from "./mapWithConcurrency.js";
 import { assertPathInsideFolder, ensureDirectory, pathExists } from "./pathSafety.js";
@@ -61,7 +62,6 @@ import {
   trashPendingDeletedShotFiles
 } from "./deletedShotFiles.js";
 import { countSaveProgressShots, saveProgressShotIds } from "./saveProgress.js";
-import { previewIsFresh } from "./previewCache.js";
 import {
   applyStoryboardScriptImportPlan,
   parseStoryboardScriptMarkdown,
@@ -2297,24 +2297,6 @@ const createImageRecords = async (
       });
     }
   );
-};
-
-const createPreview = async (imagePath: string, previewRoot: string): Promise<string> => {
-  const previewPath = previewPathForImage(imagePath, previewRoot);
-
-  await mkdir(previewRoot, { recursive: true });
-
-  if (await previewIsFresh(imagePath, previewPath)) {
-    return previewPath;
-  }
-
-  await sharp(imagePath, sharpSourceOptions)
-    .rotate()
-    .resize({ width: 1800, height: 1200, fit: "inside", withoutEnlargement: true })
-    .png()
-    .toFile(previewPath);
-
-  return previewPath;
 };
 
 const pixelFingerprint = async (imagePath: string): Promise<string> => {

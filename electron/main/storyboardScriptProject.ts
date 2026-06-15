@@ -3,7 +3,8 @@ import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:
 import path from "node:path";
 import sharp from "sharp";
 import { atomicWriteTextFile } from "./fileRenames.js";
-import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
+import { previewRootForFolder } from "./previewPaths.js";
+import { createPreview } from "./previewService.js";
 import {
   parseStoryboardScriptMarkdown,
   serializeStoryboardScriptMarkdown,
@@ -197,17 +198,6 @@ const createImageRecord = async (
     height: metadata.height,
     fingerprint: await pixelFingerprint(imagePath)
   };
-};
-
-const createPreview = async (imagePath: string, previewRoot: string): Promise<string> => {
-  const previewPath = previewPathForImage(imagePath, previewRoot);
-  await mkdir(previewRoot, { recursive: true });
-  await sharp(imagePath, sharpSourceOptions)
-    .rotate()
-    .resize({ width: 1800, height: 1200, fit: "inside", withoutEnlargement: true })
-    .png()
-    .toFile(previewPath);
-  return previewPath;
 };
 
 const pixelFingerprint = async (imagePath: string): Promise<string> => {
