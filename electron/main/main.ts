@@ -54,6 +54,7 @@ import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
 import { addRecentFolderPath, removeRecentFolderPath } from "./recentFolders.js";
 import { mapWithConcurrency } from "./mapWithConcurrency.js";
+import { assertPathInsideFolder, ensureDirectory, pathExists } from "./pathSafety.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
 import {
   stagePendingDeletedShotFiles,
@@ -947,35 +948,6 @@ const assertRenamePlanSafe = async (renamePlan: RenamePlanItem[]): Promise<void>
     ) {
       throw new Error(`Target file already exists: ${item.finalPath}`);
     }
-  }
-};
-
-const pathExists = async (filePath: string): Promise<boolean> => {
-  try {
-    await stat(filePath);
-    return true;
-  } catch (error) {
-    const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
-    if (code === "ENOENT") {
-      return false;
-    }
-
-    throw error;
-  }
-};
-
-const ensureDirectory = async (directoryPath: string): Promise<void> => {
-  await mkdir(directoryPath, { recursive: true });
-};
-
-const assertPathInsideFolder = (folderPath: string, filePath: string): void => {
-  const relativePath = path.relative(folderPath, filePath);
-  if (
-    !relativePath ||
-    relativePath.startsWith("..") ||
-    path.isAbsolute(relativePath)
-  ) {
-    throw new Error(`Path must stay inside workspace folder: ${filePath}`);
   }
 };
 
