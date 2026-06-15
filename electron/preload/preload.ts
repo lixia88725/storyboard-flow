@@ -231,8 +231,9 @@ const api = {
     ipcRenderer.on("recent:openFolder", listener);
     return () => ipcRenderer.removeListener("recent:openFolder", listener);
   },
-  onRecentFoldersChanged: (callback: (folders: string[]) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, folders: string[]) => callback(folders);
+  onRecentFoldersChanged: (callback: (folders: string[], reason?: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, folders: string[], reason?: string) =>
+      callback(folders, reason);
     ipcRenderer.on("recent:foldersChanged", listener);
     return () => ipcRenderer.removeListener("recent:foldersChanged", listener);
   },

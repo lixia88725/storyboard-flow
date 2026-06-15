@@ -274,7 +274,9 @@ declare global {
         }) => Promise<{ project: Project; layer: BitmapLayer }>;
       };
       onOpenRecentFolder: (callback: (folderPath: string) => void) => () => void;
-      onRecentFoldersChanged: (callback: (folders: string[]) => void) => () => void;
+      onRecentFoldersChanged: (
+        callback: (folders: string[], reason?: string) => void
+      ) => () => void;
       onWorkspaceTaskProgress: (callback: (progress: WorkspaceTaskProgress) => void) => () => void;
       onSaveAndCloseRequested: (callback: (request: { requestId: string }) => void) => () => void;
       finishSaveAndClose: (payload: { requestId: string; saved: boolean }) => Promise<void>;

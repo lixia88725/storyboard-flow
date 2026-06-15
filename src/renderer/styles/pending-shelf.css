@@ -1,0 +1,112 @@
+.parking-shelf {
+  position: fixed;
+  top: var(--topbar-height);
+  right: 0;
+  bottom: var(--bottom-bar-height);
+  z-index: 32;
+  width: 252px;
+  pointer-events: none;
+  transform: translateX(100%);
+  transition: transform 140ms ease;
+}
+
+.parking-shelf.is-open,
+.parking-shelf.is-over {
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.parking-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  border-left: 2px solid #25221d;
+  background: #211f1a;
+  color: #fffaf0;
+  box-shadow: -5px 0 0 rgba(37, 34, 29, 0.16);
+}
+
+.parking-shelf.is-over .parking-panel {
+  outline: 3px solid #f05a28;
+  outline-offset: -5px;
+}
+
+.parking-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #4c463d;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.parking-panel header strong {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  border: 1px solid #d8d0c3;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.parking-list {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.parking-insertion-indicator {
+  position: absolute;
+  z-index: 3;
+  height: 6px;
+  border-radius: 999px;
+  background: #f05a28;
+  box-shadow:
+    0 0 0 2px #fffaf0,
+    0 4px 14px rgba(240, 90, 40, 0.38);
+  pointer-events: none;
+}
+
+.parking-list p {
+  margin: 0;
+  padding: 18px 8px;
+  border: 1px dashed #7c7162;
+  color: #cfc5b6;
+  font-size: 12px;
+  text-align: center;
+}
+
+.parked-shot-card {
+  overflow: hidden;
+  border: 2px solid #25221d;
+  background: #fffaf0;
+  color: #211f1a;
+  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.28);
+  cursor: grab;
+}
+
+.parked-shot-card img {
+  display: block;
+  width: 100%;
+  height: 86px;
+  object-fit: cover;
+  background: #191713;
+}
+
+.parked-shot-card span {
+  display: block;
+  overflow: hidden;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+

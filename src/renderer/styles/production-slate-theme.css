@@ -1,0 +1,381 @@
+/* Production Slate theme overrides. Keep base layout rules above this section. */
+:root {
+  --slate-bg: #151719;
+  --slate-bg-2: #1a1d20;
+  --slate-chrome: #22262a;
+  --slate-panel: #24282d;
+  --slate-panel-2: #2d3339;
+  --slate-panel-3: #343b42;
+  --slate-panel-glow: rgba(243, 239, 228, 0.055);
+  --slate-line: #3c444c;
+  --slate-line-strong: #535c66;
+  --slate-ink: #f3efe4;
+  --slate-text: #d8d2c5;
+  --slate-muted: #9ca4ad;
+  --slate-dim: #737d86;
+  --slate-input: #171a1d;
+  --slate-canvas: #0e1012;
+  --slate-accent: #ff642d;
+  --slate-accent-soft: rgba(255, 100, 45, 0.24);
+  --slate-accent-ink: #151719;
+  --slate-tool-icon: color-mix(in srgb, var(--slate-muted), var(--slate-bg) 26%);
+  --slate-tool-icon-selected: color-mix(in srgb, #fff7ed, var(--slate-accent) 34%);
+  --slate-good: #50bfa5;
+  --slate-warn: #f2bc5b;
+  --slate-danger: #f08a68;
+  --slate-radius: 6px;
+  --slate-shadow-card: 0 1px 0 rgba(0, 0, 0, 0.28);
+  --slate-shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.24);
+  color: var(--slate-ink);
+  background: var(--slate-bg);
+}
+
+body {
+  background: #151719;
+}
+
+button,
+.color-control {
+  border-color: var(--slate-line);
+  background: #252a2f;
+  color: var(--slate-ink);
+  box-shadow: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease;
+}
+
+button:hover {
+  border-color: var(--slate-line-strong);
+  background: #2b3036;
+}
+
+button:focus-visible,
+.color-control:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--slate-accent), white 8%);
+  outline-offset: 2px;
+}
+
+button.primary {
+  border-color: color-mix(in srgb, var(--slate-accent), black 36%);
+  background: var(--slate-accent);
+  color: var(--slate-accent-ink);
+  box-shadow: none;
+}
+
+button:disabled {
+  opacity: 0.44;
+}
+
+.app-shell {
+  background: transparent;
+}
+
+.path-form input,
+.save-menu-field input,
+.shot-script-textarea,
+.layer-panel-controls select,
+.layer-panel-controls input {
+  border-color: #101316;
+  background: var(--slate-input);
+  color: var(--slate-ink);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.42),
+    0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.dialogue-card textarea {
+  background: transparent;
+  color: var(--slate-ink);
+  box-shadow: none;
+}
+
+.path-form input::placeholder,
+.save-menu-field input::placeholder,
+.dialogue-card textarea::placeholder,
+.shot-script-textarea::placeholder {
+  color: var(--slate-dim);
+}
+
+.recent-menu,
+.add-shot-menu,
+.save-menu,
+.shortcut-menu,
+.import-help-popover,
+.status-panel,
+.script-import-modal,
+.save-error-modal {
+  border-color: var(--slate-line);
+  background: var(--slate-panel);
+  color: var(--slate-text);
+  box-shadow: var(--slate-shadow-panel);
+}
+
+.script-import-modal-backdrop,
+.save-error-modal-backdrop {
+  background: rgba(6, 8, 10, 0.7);
+  backdrop-filter: blur(6px);
+}
+
+.recent-menu button,
+.add-shot-menu button {
+  color: var(--slate-text);
+}
+
+.recent-menu button:hover,
+.add-shot-menu button:hover,
+.add-shot-menu button.is-selected,
+.selection-mode-menu button.is-selected {
+  background: var(--slate-accent);
+  color: var(--slate-accent-ink);
+  border-color: color-mix(in srgb, var(--slate-accent), black 34%);
+}
+
+.shortcut-menu-head span,
+.shortcut-field,
+.add-shot-menu small,
+.save-menu-field,
+.status-panel,
+.empty-state,
+.bottom-bar {
+  color: var(--slate-muted);
+}
+
+.shortcut-key-display {
+  color: var(--slate-ink);
+}
+
+.import-warning {
+  border-color: color-mix(in srgb, var(--slate-warn), black 42%);
+  background: rgba(242, 188, 91, 0.14);
+  color: var(--slate-warn);
+}
+
+.import-help-popover strong,
+.shortcut-menu-head strong,
+.save-error-modal header {
+  color: var(--slate-ink);
+}
+
+.workspace-import-lock {
+  background: rgba(8, 10, 12, 0.66);
+  color: var(--slate-ink);
+  backdrop-filter: blur(4px);
+}
+
+.workspace-import-lock span {
+  border-color: var(--slate-line-strong);
+  background: rgba(34, 38, 42, 0.96);
+}
+
+.tool-rail {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.tool-rail button,
+.color-control {
+  border-radius: var(--slate-radius);
+}
+
+.tool-rail button,
+.tool-rail .color-control {
+  border-color: color-mix(in srgb, var(--slate-line), white 8%);
+  background: #252b30;
+  box-shadow: none;
+}
+
+.tool-rail button .tool-icon,
+.tool-rail .color-control .tool-icon {
+  color: var(--slate-tool-icon);
+}
+
+.tool-rail button:hover,
+.tool-rail .color-control:hover {
+  border-color: color-mix(in srgb, var(--slate-line-strong), white 8%);
+  background: #2d343b;
+  box-shadow: none;
+}
+
+.tool-rail button.selected {
+  border-color: color-mix(in srgb, var(--slate-accent), black 34%);
+  background: var(--slate-accent);
+  color: #fff7ed;
+  box-shadow: none;
+}
+
+.tool-rail button.selected .tool-icon {
+  color: var(--slate-tool-icon-selected);
+}
+
+.tool-rail .color-control input {
+  border-radius: 4px;
+}
+
+.dialogue-zone {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+    #1f2428;
+  color: var(--slate-text);
+}
+
+.dialogue-zone.is-over {
+  background: rgba(80, 191, 165, 0.16);
+  outline-color: var(--slate-good);
+}
+
+.drop-hint {
+  color: var(--slate-dim);
+  opacity: 0.58;
+}
+
+.dialogue-grip {
+  background:
+    radial-gradient(currentColor 1.2px, transparent 1.2px) 0 0 / 6px 6px;
+}
+
+.dialogue-preview,
+.shot-stack-card,
+.parked-shot-card {
+  border-color: var(--slate-line);
+  background: var(--slate-panel);
+  color: var(--slate-text);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.32);
+}
+
+.shot-stack-preview strong {
+  border-color: #111417;
+  background: var(--slate-accent);
+  color: var(--slate-accent-ink);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.34);
+}
+
+.storyboard-insertion-indicator {
+  background: var(--slate-accent);
+  box-shadow:
+    0 0 0 2px rgba(21, 23, 25, 0.96),
+    0 8px 24px rgba(255, 100, 45, 0.34),
+    0 10px 30px rgba(0, 0, 0, 0.38);
+}
+
+.selection-marquee {
+  border-color: var(--slate-good);
+  background: rgba(80, 191, 165, 0.14);
+}
+
+.parking-panel {
+  border-left-color: var(--slate-line);
+  background: var(--slate-panel);
+  color: var(--slate-text);
+  box-shadow: -18px 0 36px rgba(0, 0, 0, 0.34);
+}
+
+.parking-shelf.is-over .parking-panel {
+  outline-color: var(--slate-accent);
+}
+
+.parking-panel header {
+  border-bottom-color: var(--slate-line);
+}
+
+.parking-panel header strong {
+  border-color: var(--slate-line-strong);
+}
+
+.parking-list p {
+  border-color: var(--slate-line-strong);
+  color: var(--slate-muted);
+}
+
+.empty-state {
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 60%);
+}
+
+.empty-state h2 {
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 64%);
+}
+
+.empty-state p {
+  color: color-mix(in srgb, var(--slate-dim), var(--slate-bg) 72%);
+}
+
+.timeline {
+  border-color: var(--slate-line);
+  background: rgba(31, 35, 39, 0.96);
+  box-shadow:
+    0 -12px 34px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.timeline-shot {
+  background: var(--slate-canvas);
+  border-radius: 5px;
+}
+
+.timeline-shot:hover {
+  border-color: color-mix(in srgb, var(--slate-accent), white 20%);
+}
+
+.timeline-shot.is-selected {
+  border-color: var(--slate-accent);
+}
+
+.timeline-shot span {
+  background: rgba(8, 10, 12, 0.74);
+  color: var(--slate-ink);
+}
+
+.bottom-bar {
+  border-top: 1px solid var(--slate-line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+    rgba(31, 35, 39, 0.97);
+  box-shadow:
+    0 -12px 32px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.status-toggle {
+  border-color: var(--slate-line);
+  background: #252a2f;
+  color: var(--slate-muted);
+}
+
+.status-toggle.needs-attention {
+  border-color: color-mix(in srgb, var(--slate-warn), black 36%);
+  color: var(--slate-warn);
+}
+
+.autosave-error-notice {
+  border-color: color-mix(in srgb, var(--slate-danger), black 32%);
+  background: #351f1b;
+  color: #ffd1bf;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+}
+
+.autosave-error-notice button {
+  border-color: color-mix(in srgb, var(--slate-danger), black 28%);
+  background: #251717;
+  color: #ffd1bf;
+}
+
+.update-notice {
+  border-color: color-mix(in srgb, var(--slate-warn), black 36%);
+  background: #2d2824;
+  color: var(--slate-text);
+}
+
+.update-notice small {
+  color: var(--slate-muted);
+}
+
+.update-notice button,
+.status-panel-action {
+  border-color: var(--slate-line);
+  background: #252a2f;
+  color: var(--slate-text);
+}

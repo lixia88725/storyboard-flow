@@ -1,0 +1,47 @@
+.empty-state {
+  position: fixed;
+  inset: var(--topbar-height) 0 var(--bottom-bar-height);
+  z-index: 1;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0 22px;
+  max-width: none;
+  text-align: center;
+  color: #6f675d;
+  pointer-events: none;
+}
+
+.empty-state h2 {
+  justify-self: center;
+  max-width: 680px;
+  margin: 0;
+  color: #7d766d;
+  font-size: 30px;
+}
+
+.empty-state p {
+  justify-self: center;
+  max-width: 760px;
+  margin: 0;
+  color: #706a62;
+  font-size: 16px;
+}
+
+.selection-marquee {
+  display: none;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  pointer-events: none;
+  border: 1px solid #1f6f62;
+  background: rgba(31, 111, 98, 0.14);
+  will-change: transform, width, height;
+}
+
+.selection-marquee.is-active {
+  display: block;
+}
+

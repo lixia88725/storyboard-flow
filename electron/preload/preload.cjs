@@ -63,7 +63,7 @@ const api = {
     return () => ipcRenderer.removeListener("recent:openFolder", listener);
   },
   onRecentFoldersChanged: (callback) => {
-    const listener = (_event, folders) => callback(folders);
+    const listener = (_event, folders, reason) => callback(folders, reason);
     ipcRenderer.on("recent:foldersChanged", listener);
     return () => ipcRenderer.removeListener("recent:foldersChanged", listener);
   },

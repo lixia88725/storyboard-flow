@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tsPath = path.join(repoRoot, "electron/preload/preload.ts");
 const cjsPath = path.join(repoRoot, "electron/preload/preload.cjs");
+const globalTypesPath = path.join(repoRoot, "src/renderer/global.d.ts");
 
 export const apiBlock = (source) => {
   const start = source.indexOf("const api = {");
@@ -22,7 +23,7 @@ export const apiKeys = (source) =>
 export const apiSignatures = (source) => {
   const block = apiBlock(source);
   const signatures = [];
-  const methodPattern = /^  ([A-Za-z][A-Za-z0-9_]*):\s*\(/gm;
+  const methodPattern = /^  ([A-Za-z][A-Za-z0-9_]*):\s*(?:async\s*)?\(/gm;
   let match;
 
   while ((match = methodPattern.exec(block))) {
@@ -44,20 +45,162 @@ export const ipcChannels = (source) =>
     )
   ).sort();
 
-export const assertSame = (label, left, right) => {
+const objectBlockAfter = (source, needle) => {
+  const start = source.indexOf(needle);
+  if (start === -1) {
+    throw new Error(`Could not find object block for ${needle}`);
+  }
+  const openIndex = source.indexOf("{", start);
+  if (openIndex === -1) {
+    throw new Error(`Could not find opening brace for ${needle}`);
+  }
+  const closeIndex = matchingBraceIndex(source, openIndex);
+  return source.slice(openIndex + 1, closeIndex);
+};
+
+const topLevelPropertyKeys = (block) => {
+  const keys = [];
+  let braceDepth = 0;
+  let parenDepth = 0;
+
+  for (const line of block.split("\n")) {
+    if (braceDepth === 0 && parenDepth === 0) {
+      const match = /^\s*([A-Za-z][A-Za-z0-9_]*)\??:/.exec(line);
+      if (match) {
+        keys.push(match[1]);
+      }
+    }
+    const delta = nestingDelta(line);
+    braceDepth += delta.brace;
+    parenDepth += delta.paren;
+  }
+
+  return keys.sort();
+};
+
+const topLevelFunctionTypeSignatures = (block) => {
+  const signatures = [];
+  let braceDepth = 0;
+  let parenDepth = 0;
+  let offset = 0;
+
+  for (const line of block.split("\n")) {
+    if (braceDepth === 0 && parenDepth === 0) {
+      const match = /^\s*([A-Za-z][A-Za-z0-9_]*)\??:\s*\(/.exec(line);
+      if (match) {
+        const paramsStart = offset + line.indexOf("(");
+        const paramsEnd = matchingParenIndex(block, paramsStart);
+        signatures.push([match[1], parameterNames(block.slice(paramsStart + 1, paramsEnd))]);
+      }
+    }
+
+    const delta = nestingDelta(line);
+    braceDepth += delta.brace;
+    parenDepth += delta.paren;
+    offset += line.length + 1;
+  }
+
+  return signatures.sort(([left], [right]) => left.localeCompare(right));
+};
+
+const topLevelObjectFunctionSignatures = (block) => {
+  const signatures = [];
+  let braceDepth = 0;
+  let parenDepth = 0;
+  let offset = 0;
+
+  for (const line of block.split("\n")) {
+    if (braceDepth === 0 && parenDepth === 0) {
+      const match = /^\s*([A-Za-z][A-Za-z0-9_]*)\??:\s*(?:async\s*)?\(/.exec(line);
+      if (match) {
+        const paramsStart = offset + line.indexOf("(");
+        const paramsEnd = matchingParenIndex(block, paramsStart);
+        signatures.push([match[1], parameterNames(block.slice(paramsStart + 1, paramsEnd))]);
+      }
+    }
+
+    const delta = nestingDelta(line);
+    braceDepth += delta.brace;
+    parenDepth += delta.paren;
+    offset += line.length + 1;
+  }
+
+  return signatures.sort(([left], [right]) => left.localeCompare(right));
+};
+
+const nestingDelta = (line) => {
+  const delta = { brace: 0, paren: 0 };
+  for (const char of line) {
+    if (char === "{") delta.brace += 1;
+    if (char === "}") delta.brace -= 1;
+    if (char === "(") delta.paren += 1;
+    if (char === ")") delta.paren -= 1;
+  }
+  return delta;
+};
+
+export const nestedApiKeys = (source, key) => topLevelPropertyKeys(objectBlockAfter(apiBlock(source), `${key}:`));
+
+export const nestedApiSignatures = (source, key) =>
+  topLevelObjectFunctionSignatures(objectBlockAfter(apiBlock(source), `${key}:`));
+
+export const globalStoryboardApiKeys = (source) =>
+  topLevelPropertyKeys(objectBlockAfter(source, "storyboard:"));
+
+export const globalStoryboardNestedApiKeys = (source, key) =>
+  topLevelPropertyKeys(objectBlockAfter(objectBlockAfter(source, "storyboard:"), `${key}:`));
+
+export const globalStoryboardNestedApiSignatures = (source, key) =>
+  topLevelFunctionTypeSignatures(objectBlockAfter(objectBlockAfter(source, "storyboard:"), `${key}:`));
+
+export const globalStoryboardApiSignatures = (source) =>
+  topLevelFunctionTypeSignatures(objectBlockAfter(source, "storyboard:"));
+
+export const assertSame = (label, left, right, leftSource = "preload.ts", rightSource = "preload.cjs") => {
   const leftJson = JSON.stringify(left);
   const rightJson = JSON.stringify(right);
   if (leftJson !== rightJson) {
     throw new Error(
-      `${label} drifted between preload.ts and preload.cjs\npreload.ts: ${leftJson}\npreload.cjs: ${rightJson}`
+      `${label} drifted between ${leftSource} and ${rightSource}\n${leftSource}: ${leftJson}\n${rightSource}: ${rightJson}`
     );
   }
 };
 
-export const checkPreloadSync = ({ tsSource, cjsSource }) => {
+export const checkPreloadSync = ({ tsSource, cjsSource, globalSource }) => {
   assertSame("API keys", apiKeys(tsSource), apiKeys(cjsSource));
   assertSame("API signatures", apiSignatures(tsSource), apiSignatures(cjsSource));
   assertSame("IPC channels", ipcChannels(tsSource), ipcChannels(cjsSource));
+
+  if (globalSource) {
+    assertSame(
+      "global.d.ts API keys",
+      apiKeys(tsSource),
+      globalStoryboardApiKeys(globalSource),
+      "preload.ts",
+      "global.d.ts"
+    );
+    assertSame(
+      "global.d.ts API signatures",
+      apiSignatures(tsSource),
+      globalStoryboardApiSignatures(globalSource),
+      "preload.ts",
+      "global.d.ts"
+    );
+    assertSame(
+      "global.d.ts ai API keys",
+      nestedApiKeys(tsSource, "ai"),
+      globalStoryboardNestedApiKeys(globalSource, "ai"),
+      "preload.ts",
+      "global.d.ts"
+    );
+    assertSame(
+      "global.d.ts ai API signatures",
+      nestedApiSignatures(tsSource, "ai"),
+      globalStoryboardNestedApiSignatures(globalSource, "ai"),
+      "preload.ts",
+      "global.d.ts"
+    );
+  }
 };
 
 const matchingParenIndex = (source, openIndex) => {
@@ -76,6 +219,24 @@ const matchingParenIndex = (source, openIndex) => {
   }
 
   throw new Error("Could not parse preload api method parameters");
+};
+
+const matchingBraceIndex = (source, openIndex) => {
+  let depth = 0;
+
+  for (let index = openIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+
+  throw new Error("Could not parse object block braces");
 };
 
 const parameterNames = (paramsSource) =>
@@ -111,12 +272,13 @@ const splitTopLevelParams = (paramsSource) => {
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const [tsSource, cjsSource] = await Promise.all([
+  const [tsSource, cjsSource, globalSource] = await Promise.all([
     readFile(tsPath, "utf8"),
-    readFile(cjsPath, "utf8")
+    readFile(cjsPath, "utf8"),
+    readFile(globalTypesPath, "utf8")
   ]);
 
-  checkPreloadSync({ tsSource, cjsSource });
+  checkPreloadSync({ tsSource, cjsSource, globalSource });
 
   console.log("preload APIs are in sync");
 }

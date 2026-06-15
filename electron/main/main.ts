@@ -29,9 +29,7 @@ import {
 } from "./fileRenames.js";
 import {
   copyBitmapLayerFile,
-  flattenBitmapLayerBuffersToPng,
   flattenBitmapLayerBuffersToTiff,
-  mergeBitmapLayerFilesToPng,
   shouldEnsureLayerAssetsForShot,
   type BitmapLayerComposite
 } from "./bitmapLayers.js";
@@ -55,7 +53,7 @@ import {
 } from "./photoshopTiffImport.js";
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
-import { addRecentFolderPath, normalizeRecentFolders, removeRecentFolderPath } from "./recentFolders.js";
+import { addRecentFolderPath, removeRecentFolderPath } from "./recentFolders.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
 import {
   stagePendingDeletedShotFiles,
@@ -116,6 +114,31 @@ import {
   writeSeedreamApiKey,
   type AiCredentialStore
 } from "./ai/credentials.js";
+import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
+import { registerLayerIpcHandlers } from "./ipc/layerHandlers.js";
+import { registerRecentIpcHandlers } from "./ipc/recentHandlers.js";
+import { registerSettingsIpcHandlers } from "./ipc/settingsHandlers.js";
+import {
+  copyLayerPng,
+  deleteLayerPng,
+  mergeLayerDown,
+  mergeVisibleLayers,
+  readLayerPng,
+  resolveLayerAssetPath,
+  sharpBlendMode,
+  writeLayerPng,
+  type CopyLayerPngPayload,
+  type LayerAssetPayload,
+  type MergeLayerDownPayload,
+  type MergeVisibleLayersPayload,
+  type WriteLayerAssetPayload
+} from "./layerAssetService.js";
+import {
+  readRecentFoldersWithRecovery,
+  readToolRadialMenu as readToolRadialMenuFromUserData,
+  writeRecentFolders as writeRecentFoldersToUserData,
+  writeToolRadialMenu as writeToolRadialMenuToUserData
+} from "./userSettingsService.js";
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
@@ -271,50 +294,10 @@ type AiApplyCandidatePayload = {
   candidateId: string;
 };
 
-type LayerAssetPayload = {
-  folderPath: string;
-  bitmapPath: string;
-};
-
-type WriteLayerAssetPayload = LayerAssetPayload & {
-  dataUrl: string;
-};
-
 type CreateProjectFromStoryboardScriptPayload = {
   sourceMarkdownPath: string;
   targetFolderPath: string;
   blankShotPreset: BlankShotPreset;
-};
-
-type MergeLayerDownPayload = {
-  folderPath: string;
-  sourceBitmapPath: string;
-  targetBitmapPath: string;
-  width: number;
-  height: number;
-  sourceOpacity: number;
-  sourceBlendMode: "normal" | "multiply" | "screen";
-  targetOpacity: number;
-  targetBlendMode: "normal" | "multiply" | "screen";
-};
-
-type MergeVisibleLayersPayload = {
-  folderPath: string;
-  targetBitmapPath: string;
-  width: number;
-  height: number;
-  layers: Array<{
-    bitmapPath: string;
-    opacity: number;
-    blendMode: "normal" | "multiply" | "screen";
-  }>;
-  deleteBitmapPaths: string[];
-};
-
-type CopyLayerPngPayload = {
-  folderPath: string;
-  sourceBitmapPath: string;
-  targetBitmapPath: string;
 };
 
 type CopyShotAssetsPayload = {
@@ -406,6 +389,10 @@ const closeGuardWebContentsIds = new Set<number>();
 const supportedExtensions = new Set([".png", ".jpg", ".jpeg", ".tif", ".tiff"]);
 let mainWindow: BrowserWindow | undefined;
 const maxRecentFolders = 10;
+const recentFoldersCorruptReason = "recent-folders-corrupt";
+let pendingRecentFoldersChanged:
+  | { folders: string[]; reason: typeof recentFoldersCorruptReason }
+  | undefined;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -752,39 +739,13 @@ const registerIpcHandlers = () => {
     workspaceWatchers.delete(watcherId);
   });
 
-  ipcMain.handle("layers:writePng", async (_event, payload: WriteLayerAssetPayload) => {
-    const filePath = resolveLayerAssetPath(payload.folderPath, payload.bitmapPath);
-    const pngBuffer = pngBufferFromDataUrl(payload.dataUrl);
-    await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, pngBuffer);
-    return { ...payload, filePath };
-  });
-
-  ipcMain.handle("layers:readPng", async (_event, payload: LayerAssetPayload) => {
-    const filePath = resolveLayerAssetPath(payload.folderPath, payload.bitmapPath);
-    if (!(await pathExists(filePath))) {
-      return undefined;
-    }
-
-    const pngBuffer = await readFile(filePath);
-    return `data:image/png;base64,${pngBuffer.toString("base64")}`;
-  });
-
-  ipcMain.handle("layers:deletePng", async (_event, payload: LayerAssetPayload) => {
-    const filePath = resolveLayerAssetPath(payload.folderPath, payload.bitmapPath);
-    await unlink(filePath).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== "ENOENT") {
-        throw error;
-      }
-    });
-    return payload;
-  });
-
-  ipcMain.handle("layers:copyPng", async (_event, payload: CopyLayerPngPayload) => {
-    const sourcePath = resolveLayerAssetPath(payload.folderPath, payload.sourceBitmapPath);
-    const targetPath = resolveLayerAssetPath(payload.folderPath, payload.targetBitmapPath);
-    await copyBitmapLayerFile(sourcePath, targetPath);
-    return { ...payload, targetFilePath: targetPath };
+  registerLayerIpcHandlers(ipcMain, {
+    writePng: (payload) => writeLayerPng(payload as WriteLayerAssetPayload),
+    readPng: (payload) => readLayerPng(payload as LayerAssetPayload),
+    deletePng: (payload) => deleteLayerPng(payload as LayerAssetPayload),
+    copyPng: (payload) => copyLayerPng(payload as CopyLayerPngPayload),
+    mergeDown: (payload) => mergeLayerDown(payload as MergeLayerDownPayload),
+    mergeVisible: (payload) => mergeVisibleLayers(payload as MergeVisibleLayersPayload)
   });
 
   ipcMain.handle("workspace:copyShotAssets", async (_event, payload: CopyShotAssetsPayload) => {
@@ -828,80 +789,6 @@ const registerIpcHandlers = () => {
     }
   });
 
-  ipcMain.handle("layers:mergeDown", async (_event, payload: MergeLayerDownPayload) => {
-    const sourcePath = resolveLayerAssetPath(payload.folderPath, payload.sourceBitmapPath);
-    const targetPath = resolveLayerAssetPath(payload.folderPath, payload.targetBitmapPath);
-
-    if (!(await pathExists(sourcePath))) {
-      throw new Error(`Layer asset missing: ${payload.sourceBitmapPath}`);
-    }
-
-    if (!(await pathExists(targetPath))) {
-      throw new Error(`Layer asset missing: ${payload.targetBitmapPath}`);
-    }
-
-    const width = Math.max(1, Math.round(payload.width));
-    const height = Math.max(1, Math.round(payload.height));
-    const targetInput = await sharp(targetPath)
-      .resize({ width, height, fit: "fill" })
-      .ensureAlpha()
-      .png()
-      .toBuffer();
-    const sourceInput = await sharp(sourcePath)
-      .resize({ width, height, fit: "fill" })
-      .ensureAlpha()
-      .png()
-      .toBuffer();
-    const mergedPng = await flattenBitmapLayerBuffersToPng(width, height, [
-      {
-        input: targetInput,
-        opacity: payload.targetOpacity,
-        blend: sharpBlendMode(payload.targetBlendMode)
-      },
-      {
-        input: sourceInput,
-        opacity: payload.sourceOpacity,
-        blend: sharpBlendMode(payload.sourceBlendMode)
-      }
-    ]);
-
-    await writeFile(targetPath, mergedPng);
-    await unlink(sourcePath);
-    return { ...payload, targetFilePath: targetPath };
-  });
-
-  ipcMain.handle("layers:mergeVisible", async (_event, payload: MergeVisibleLayersPayload) => {
-    const targetPath = resolveLayerAssetPath(payload.folderPath, payload.targetBitmapPath);
-
-    if (payload.layers.length < 2) {
-      throw new Error("At least two visible layers are required to merge");
-    }
-
-    await mergeBitmapLayerFilesToPng(
-      payload.width,
-      payload.height,
-      await Promise.all(
-        payload.layers.map(async (layer) => {
-          const filePath = resolveLayerAssetPath(payload.folderPath, layer.bitmapPath);
-          if (!(await pathExists(filePath))) {
-            throw new Error(`Layer asset missing: ${layer.bitmapPath}`);
-          }
-
-          return {
-            filePath,
-            opacity: layer.opacity,
-            blend: sharpBlendMode(layer.blendMode)
-          };
-        })
-      ),
-      targetPath,
-      payload.deleteBitmapPaths.map((bitmapPath) =>
-        resolveLayerAssetPath(payload.folderPath, bitmapPath)
-      )
-    );
-    return { ...payload, targetFilePath: targetPath };
-  });
-
   ipcMain.handle(
     "images:createBlankShot",
     async (_event, folderPath: string, options?: { preset?: BlankShotPreset }) => {
@@ -912,106 +799,84 @@ const registerIpcHandlers = () => {
     }
   );
 
-  ipcMain.handle("recent:getFolders", async () => {
-    return readRecentFolders();
-  });
-
-  ipcMain.handle("settings:getToolRadialMenu", async () => {
-    return readToolRadialMenu();
-  });
-
-  ipcMain.handle("settings:setToolRadialMenu", async (_event, config: unknown) => {
-    return writeToolRadialMenu(config);
-  });
-
-  ipcMain.handle("ai:getSettings", async () => {
-    return readAiSettingsForRenderer();
-  });
-
-  ipcMain.handle("ai:saveOpenAiApiKey", async (_event, apiKey: string) => {
-    await writeOpenAiApiKey(aiCredentialStore(), apiKey);
-    return readAiSettingsForRenderer();
-  });
-
-  ipcMain.handle("ai:clearOpenAiApiKey", async () => {
-    await clearOpenAiApiKey(aiCredentialStore());
-    return readAiSettingsForRenderer();
-  });
-
-  ipcMain.handle("ai:saveSeedreamApiKey", async (_event, apiKey: string) => {
-    await writeSeedreamApiKey(aiCredentialStore(), apiKey);
-    return readAiSettingsForRenderer();
-  });
-
-  ipcMain.handle("ai:clearSeedreamApiKey", async () => {
-    await clearSeedreamApiKey(aiCredentialStore());
-    return readAiSettingsForRenderer();
-  });
-
-  ipcMain.handle("ai:saveComfyUiSettings", async (_event, settings: AiComfyUiSettingsPayload) => {
-    await writeComfyUiSettings(aiSettingsStore(), settings);
-    return readAiSettingsForRenderer();
-  });
-
-  ipcMain.handle("ai:testComfyUiConnection", async (_event, serverUrl: string) => {
-    const normalizedServerUrl = validateComfyUiServerUrl(serverUrl);
-    const response = await fetch(`${normalizedServerUrl}/system_stats`);
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(text.trim() || `ComfyUI connection failed with ${response.status}`);
+  registerRecentIpcHandlers(ipcMain, {
+    getFolders: async () => {
+      const folders = await readRecentFolders();
+      flushPendingRecentFoldersChanged();
+      return folders;
     }
-    return { ok: true, message: "ComfyUI connection ready" };
   });
 
-  ipcMain.handle("ai:listResources", async (_event, folderPath: string) => {
-    return listAiResources(folderPath);
+  registerSettingsIpcHandlers(ipcMain, {
+    getToolRadialMenu: readToolRadialMenu,
+    setToolRadialMenu: writeToolRadialMenu
   });
 
-  ipcMain.handle("ai:importResources", async (_event, folderPath: string, sourceFilePaths: string[]) => {
-    return importAiResourceFiles(folderPath, sourceFilePaths);
-  });
-
-  ipcMain.handle("ai:deleteResource", async (_event, folderPath: string, fileName: string) => {
-    return deleteAiResourceFile(folderPath, fileName);
-  });
-
-  ipcMain.handle("ai:updateResourceMetadata", async (_event, folderPath: string, metadata: AiResourceMetadata) => {
-    return writeAiResourceMetadata(folderPath, metadata);
-  });
-
-  ipcMain.handle("ai:generateCandidate", async (_event, payload: AiGenerateCandidatePayload) => {
-    const providerName = payload.generationSettings?.provider ?? "openai";
-    return generateAiCandidate({
-      ...payload,
-      provider: await createAiImageProvider(providerName)
-    });
-  });
-
-  ipcMain.handle("ai:generateBatchCandidates", async (_event, payload: AiGenerateBatchCandidatesPayload) => {
-    const providerName = payload.generationSettings?.provider ?? "openai";
-    return generateAiBatchCandidates({
-      ...payload,
-      provider: await createAiImageProvider(providerName)
-    });
-  });
-
-  ipcMain.handle("ai:copyRequestPreview", async (_event, payload: AiRequestPreviewPayload) => {
-    const providerName = payload.generationSettings?.provider ?? "openai";
-    const settings = providerName === "comfyui" ? await readAiSettings(aiSettingsStore()) : undefined;
-    const text = await buildAiRequestPreview({
-      ...payload,
-      comfyUiSettings: settings?.comfyUi
-    });
-    clipboard.writeText(text);
-    return { text };
-  });
-
-  ipcMain.handle("ai:discardCandidate", async (_event, folderPath: string, candidateId: string) => {
-    await discardAiCandidate(folderPath, candidateId);
-  });
-
-  ipcMain.handle("ai:applyCandidate", async (_event, payload: AiApplyCandidatePayload) => {
-    return applyAiCandidateAsLayer(payload);
+  registerAiIpcHandlers(ipcMain, {
+    getSettings: readAiSettingsForRenderer,
+    saveOpenAiApiKey: async (apiKey) => {
+      await writeOpenAiApiKey(aiCredentialStore(), apiKey);
+      return readAiSettingsForRenderer();
+    },
+    clearOpenAiApiKey: async () => {
+      await clearOpenAiApiKey(aiCredentialStore());
+      return readAiSettingsForRenderer();
+    },
+    saveSeedreamApiKey: async (apiKey) => {
+      await writeSeedreamApiKey(aiCredentialStore(), apiKey);
+      return readAiSettingsForRenderer();
+    },
+    clearSeedreamApiKey: async () => {
+      await clearSeedreamApiKey(aiCredentialStore());
+      return readAiSettingsForRenderer();
+    },
+    saveComfyUiSettings: async (settings) => {
+      await writeComfyUiSettings(aiSettingsStore(), settings as AiComfyUiSettingsPayload);
+      return readAiSettingsForRenderer();
+    },
+    testComfyUiConnection: async (serverUrl) => {
+      const normalizedServerUrl = validateComfyUiServerUrl(serverUrl);
+      const response = await fetch(`${normalizedServerUrl}/system_stats`);
+      if (!response.ok) {
+        const text = await response.text().catch(() => "");
+        throw new Error(text.trim() || `ComfyUI connection failed with ${response.status}`);
+      }
+      return { ok: true, message: "ComfyUI connection ready" };
+    },
+    listResources: listAiResources,
+    importResources: importAiResourceFiles,
+    deleteResource: deleteAiResourceFile,
+    updateResourceMetadata: (folderPath, metadata) =>
+      writeAiResourceMetadata(folderPath, metadata as AiResourceMetadata),
+    generateCandidate: async (payload) => {
+      const typedPayload = payload as AiGenerateCandidatePayload;
+      const providerName = typedPayload.generationSettings?.provider ?? "openai";
+      return generateAiCandidate({
+        ...typedPayload,
+        provider: await createAiImageProvider(providerName)
+      });
+    },
+    generateBatchCandidates: async (payload) => {
+      const typedPayload = payload as AiGenerateBatchCandidatesPayload;
+      const providerName = typedPayload.generationSettings?.provider ?? "openai";
+      return generateAiBatchCandidates({
+        ...typedPayload,
+        provider: await createAiImageProvider(providerName)
+      });
+    },
+    copyRequestPreview: async (payload) => {
+      const typedPayload = payload as AiRequestPreviewPayload;
+      const providerName = typedPayload.generationSettings?.provider ?? "openai";
+      const settings = providerName === "comfyui" ? await readAiSettings(aiSettingsStore()) : undefined;
+      const text = await buildAiRequestPreview({
+        ...typedPayload,
+        comfyUiSettings: settings?.comfyUi
+      });
+      clipboard.writeText(text);
+      return { text };
+    },
+    discardCandidate: discardAiCandidate,
+    applyCandidate: (payload) => applyAiCandidateAsLayer(payload as AiApplyCandidatePayload)
   });
 
 };
@@ -1138,25 +1003,6 @@ const ensureDirectory = async (directoryPath: string): Promise<void> => {
   await mkdir(directoryPath, { recursive: true });
 };
 
-const resolveLayerAssetPath = (folderPath: string, bitmapPath: string): string => {
-  if (path.isAbsolute(bitmapPath)) {
-    throw new Error("Layer bitmap path must be relative");
-  }
-
-  const normalized = path.normalize(bitmapPath);
-  const expectedPrefix = path.join(".storyboard-workbench", "layers");
-
-  if (
-    normalized === expectedPrefix ||
-    !normalized.startsWith(`${expectedPrefix}${path.sep}`) ||
-    normalized.split(path.sep).includes("..")
-  ) {
-    throw new Error(`Layer bitmap path must stay under ${expectedPrefix}`);
-  }
-
-  return path.join(folderPath, normalized);
-};
-
 const assertPathInsideFolder = (folderPath: string, filePath: string): void => {
   const relativePath = path.relative(folderPath, filePath);
   if (
@@ -1166,16 +1012,6 @@ const assertPathInsideFolder = (folderPath: string, filePath: string): void => {
   ) {
     throw new Error(`Path must stay inside workspace folder: ${filePath}`);
   }
-};
-
-const pngBufferFromDataUrl = (dataUrl: string): Buffer => {
-  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/u.exec(dataUrl);
-
-  if (!match) {
-    throw new Error("Layer asset must be a PNG data URL");
-  }
-
-  return Buffer.from(match[1], "base64");
 };
 
 const ensureProjectLayerAssets = async (
@@ -1385,32 +1221,13 @@ const ensureStoryboardScriptMarkdown = async (
   }
 };
 
-const recentFoldersPath = (): string => {
-  return path.join(app.getPath("userData"), "recent-folders.json");
-};
+const userDataPath = (): string => app.getPath("userData");
 
-const toolRadialMenuPath = (): string => {
-  return path.join(app.getPath("userData"), "tool-radial-menu.json");
-};
+const readToolRadialMenu = async (): Promise<unknown> =>
+  readToolRadialMenuFromUserData(userDataPath());
 
-const readToolRadialMenu = async (): Promise<unknown> => {
-  try {
-    return JSON.parse(await readFile(toolRadialMenuPath(), "utf8"));
-  } catch (error) {
-    const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
-    if (code === "ENOENT") {
-      return undefined;
-    }
-
-    throw error;
-  }
-};
-
-const writeToolRadialMenu = async (config: unknown): Promise<unknown> => {
-  await mkdir(path.dirname(toolRadialMenuPath()), { recursive: true });
-  await writeFile(toolRadialMenuPath(), `${JSON.stringify(config, null, 2)}\n`, "utf8");
-  return config;
-};
+const writeToolRadialMenu = async (config: unknown): Promise<unknown> =>
+  writeToolRadialMenuToUserData(userDataPath(), config);
 
 const aiCredentialStore = (): AiCredentialStore => ({
   userDataPath: app.getPath("userData"),
@@ -1445,30 +1262,40 @@ const createAiImageProvider = async (providerName: AiImageProviderName) => {
 };
 
 const readRecentFolders = async (): Promise<string[]> => {
-  try {
-    const contents = await readFile(recentFoldersPath(), "utf8");
-    const parsed = JSON.parse(contents);
-    return Array.isArray(parsed)
-      ? normalizeRecentFolders(
-          parsed.filter((item): item is string => typeof item === "string"),
-          maxRecentFolders
-        )
-      : [];
-  } catch (error) {
-    const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
-    if (code === "ENOENT") {
-      return [];
-    }
-
-    throw error;
+  const result = await readRecentFoldersWithRecovery(userDataPath(), maxRecentFolders);
+  if (result.recoveredFromCorruptFile) {
+    await updateRecentFoldersMenu();
+    notifyRecentFoldersChanged(result.folders, recentFoldersCorruptReason);
   }
+  return result.folders;
 };
 
 const writeRecentFolders = async (folders: string[]): Promise<void> => {
-  await mkdir(path.dirname(recentFoldersPath()), { recursive: true });
-  await writeFile(recentFoldersPath(), `${JSON.stringify(folders.slice(0, maxRecentFolders), null, 2)}\n`, "utf8");
+  const nextFolders = await writeRecentFoldersToUserData(userDataPath(), folders, maxRecentFolders);
   await updateRecentFoldersMenu();
-  mainWindow?.webContents.send("recent:foldersChanged", folders.slice(0, maxRecentFolders));
+  notifyRecentFoldersChanged(nextFolders);
+};
+
+const notifyRecentFoldersChanged = (
+  folders: string[],
+  reason?: typeof recentFoldersCorruptReason
+): void => {
+  if (!mainWindow) {
+    if (reason) {
+      pendingRecentFoldersChanged = { folders, reason };
+    }
+    return;
+  }
+  mainWindow.webContents.send("recent:foldersChanged", folders, reason);
+};
+
+const flushPendingRecentFoldersChanged = (): void => {
+  if (!mainWindow || !pendingRecentFoldersChanged) {
+    return;
+  }
+  const pending = pendingRecentFoldersChanged;
+  pendingRecentFoldersChanged = undefined;
+  mainWindow.webContents.send("recent:foldersChanged", pending.folders, pending.reason);
 };
 
 const addRecentFolder = async (folderPath: string): Promise<void> => {
@@ -2352,14 +2179,6 @@ const bakeBitmapLayersToTiff = async (
   );
   await writeFile(tempPath, await flattenBitmapLayerBuffersToTiff(width, height, composites));
   return tempPath;
-};
-
-const sharpBlendMode = (blendMode: string | undefined): "over" | "multiply" | "screen" => {
-  if (blendMode === "multiply" || blendMode === "screen") {
-    return blendMode;
-  }
-
-  return "over";
 };
 
 const createBlankShot = async (

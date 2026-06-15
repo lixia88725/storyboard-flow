@@ -1,0 +1,97 @@
+.board-grid {
+  gap: 20px 18px;
+}
+
+.shot-card {
+  border: 1px solid var(--slate-line);
+  background: var(--slate-panel);
+  border-radius: var(--slate-radius);
+  box-shadow: var(--slate-shadow-card);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.shot-card:hover {
+  border-color: color-mix(in srgb, var(--slate-line-strong), white 8%);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.32);
+}
+
+.shot-card.is-selected {
+  outline: 0;
+  border-color: var(--slate-accent);
+  box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.42);
+}
+
+.shot-card.is-marquee-selected::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 2px solid rgba(255, 100, 45, 0.72);
+  border-radius: calc(var(--slate-radius) + 3px);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.board-grid.is-marquee-selecting .shot-card {
+  transition: none;
+}
+
+.board-grid.is-marquee-selecting .shot-card.is-selected {
+  border-color: var(--slate-line);
+  box-shadow: var(--slate-shadow-card);
+}
+
+.shot-card.has-layer-panel-open {
+  box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.22);
+}
+
+.shot-face-back {
+  background: var(--slate-panel);
+}
+
+.shot-head {
+  min-height: 2.08em;
+  border-bottom: 1px solid #171b1f;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), transparent),
+    var(--slate-panel-2);
+  color: var(--slate-ink);
+}
+
+.shot-index {
+  font-weight: 850;
+  letter-spacing: 0.04em;
+}
+
+.shot-head-grip,
+.dialogue-grip {
+  color: var(--slate-muted);
+}
+
+.shot-image-shell,
+.sketch-panel {
+  border-bottom-color: #171b1f;
+  background: var(--slate-canvas);
+}
+
+.image-stage {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.app-shell.is-animation-mode .sketch-panel,
+.shot-stack-card img,
+.shot-stack-card-composite,
+.shot-stack-card-placeholder,
+.parked-shot-card img {
+  background: var(--slate-canvas);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-flip-shell {
+    transition: none;
+  }
+}

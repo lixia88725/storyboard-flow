@@ -1,0 +1,47 @@
+.save-caret {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+}
+
+.save-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 80;
+  display: grid;
+  gap: 10px;
+  width: 260px;
+  max-width: calc(100vw - 24px);
+  border: 1px solid #27231d;
+  background: #fffdf7;
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 8px 0 rgba(39, 35, 29, 0.14);
+}
+
+.save-menu-field {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #5f584f;
+}
+
+.save-menu-field input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #27231d;
+  background: #fffaf0;
+  color: #211f1a;
+  border-radius: 4px;
+  padding: 7px 8px;
+  box-shadow: 0 1px 0 #27231d;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+}
+

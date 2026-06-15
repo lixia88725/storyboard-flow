@@ -19,13 +19,11 @@ import {
   aiProviderApiKeyStatusLabel,
   type AiProviderName,
   canRequestAiGeneration,
-  comfyUiWorkflowDraftStatus,
   nextAiSettingsPanelOpen,
-  nextAiApiKeyDraftAfterSave,
-  nextAiApiKeyDraftForStatus,
-  isAiApiKeyDraftSaveable,
-  visibleAiProviderSettings
+  isAiApiKeyDraftSaveable
 } from "./aiSettingsState";
+import { windowAiClient, type AiDraftClient } from "./aiClient";
+import { useAiDraftController } from "./useAiDraftController";
 
 type AiResource = {
   id: string;
@@ -55,6 +53,7 @@ type AiDraftPanelProps = {
   project: Project;
   selectedShotIds: string[];
   onProjectChange: (project: Project, status: string) => void;
+  client?: AiDraftClient;
 };
 
 const referenceRoles = [
@@ -65,17 +64,6 @@ const referenceRoles = [
   "Prop reference"
 ];
 
-type AiSettingsStatus = {
-  hasOpenAiApiKey: boolean;
-  hasSeedreamApiKey: boolean;
-  hasValidComfyUiSettings: boolean;
-  comfyUi: {
-    serverUrl: string;
-    workflowJson: string;
-    timeoutMs: number;
-  };
-};
-
 const uniqueResourceIds = (resourceIds: string[]): string[] => [...new Set(resourceIds)];
 
 export const AiDraftPanel = ({
@@ -83,8 +71,10 @@ export const AiDraftPanel = ({
   folderPath,
   project,
   selectedShotIds,
-  onProjectChange
+  onProjectChange,
+  client
 }: AiDraftPanelProps) => {
+  const aiClient = useMemo(() => client ?? windowAiClient(), [client]);
   const selection = useMemo(
     () => aiPanelSelectionState(project, selectedShotIds),
     [project, selectedShotIds]
@@ -95,31 +85,38 @@ export const AiDraftPanel = ({
   const [batchGroups, setBatchGroups] = useState<AiBatchGroupResult[]>([]);
   const [status, setStatus] = useState("Ready");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [providerName, setProviderName] = useState<AiProviderName>("openai");
-  const [openAiModel, setOpenAiModel] = useState("gpt-image-2");
-  const [seedreamModel, setSeedreamModel] = useState("doubao-seedream-5.0-lite");
-  const [openAiApiKeyDraft, setOpenAiApiKeyDraft] = useState("");
-  const [seedreamApiKeyDraft, setSeedreamApiKeyDraft] = useState("");
-  const [comfyUiServerUrl, setComfyUiServerUrl] = useState("http://127.0.0.1:8188");
-  const [comfyUiWorkflowJson, setComfyUiWorkflowJson] = useState("");
-  const [comfyUiTimeoutMs, setComfyUiTimeoutMs] = useState(120000);
-  const [comfyUiConnectionStatus, setComfyUiConnectionStatus] = useState("");
-  const [apiKeyStatus, setApiKeyStatus] = useState({
-    hasOpenAiApiKey: false,
-    hasSeedreamApiKey: false,
-    hasValidComfyUiSettings: false
-  });
   const [hasLoadedResources, setHasLoadedResources] = useState(false);
   const [isResourceDropActive, setIsResourceDropActive] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAssignmentOpen, setIsAssignmentOpen] = useState(false);
-  const currentModel = providerName === "seedream" ? seedreamModel : openAiModel;
-  const currentGenerationSettings =
-    providerName === "comfyui"
-      ? { provider: providerName }
-      : { provider: providerName, model: currentModel };
-  const providerSettings = visibleAiProviderSettings(providerName);
-  const comfyUiDraftStatus = comfyUiWorkflowDraftStatus(comfyUiWorkflowJson);
+  const {
+    providerName,
+    setProviderName,
+    setOpenAiModel,
+    setSeedreamModel,
+    openAiApiKeyDraft,
+    setOpenAiApiKeyDraft,
+    seedreamApiKeyDraft,
+    setSeedreamApiKeyDraft,
+    comfyUiServerUrl,
+    setComfyUiServerUrl,
+    comfyUiWorkflowJson,
+    setComfyUiWorkflowJson,
+    comfyUiTimeoutMs,
+    setComfyUiTimeoutMs,
+    comfyUiConnectionStatus,
+    apiKeyStatus,
+    currentModel,
+    currentGenerationSettings,
+    providerSettings,
+    comfyUiDraftStatus,
+    saveOpenAiApiKey,
+    clearOpenAiApiKey,
+    saveSeedreamApiKey,
+    clearSeedreamApiKey,
+    saveComfyUiSettings,
+    testComfyUiConnection
+  } = useAiDraftController({ aiClient, isOpen, setStatus });
   const visibleStatus = visibleAiStatusMessage(status);
   const canCopyRequestPreview = canCopyAiRequestPreview(selection);
   const batchShotIds = selection.kind === "multi" ? selection.shots.map((shot) => shot.id) : [];
@@ -186,7 +183,7 @@ export const AiDraftPanel = ({
     }
     let cancelled = false;
     setHasLoadedResources(false);
-    window.storyboard.ai
+    aiClient
       .listResources(folderPath)
       .then((result) => {
         if (!cancelled) {
@@ -203,52 +200,7 @@ export const AiDraftPanel = ({
     return () => {
       cancelled = true;
     };
-  }, [folderPath, isOpen]);
-
-  const updateLocalAiSettings = (result: AiSettingsStatus) => {
-    setApiKeyStatus({
-      hasOpenAiApiKey: result.hasOpenAiApiKey,
-      hasSeedreamApiKey: result.hasSeedreamApiKey,
-      hasValidComfyUiSettings: result.hasValidComfyUiSettings
-    });
-    setComfyUiServerUrl(result.comfyUi.serverUrl);
-    setComfyUiWorkflowJson(result.comfyUi.workflowJson);
-    setComfyUiTimeoutMs(result.comfyUi.timeoutMs);
-  };
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-    let cancelled = false;
-    window.storyboard.ai
-      .getSettings()
-      .then((result) => {
-        if (!cancelled) {
-          updateLocalAiSettings(result);
-          setOpenAiApiKeyDraft((currentDraft) =>
-            nextAiApiKeyDraftForStatus({
-              currentDraft,
-              hasSavedKey: result.hasOpenAiApiKey
-            })
-          );
-          setSeedreamApiKeyDraft((currentDraft) =>
-            nextAiApiKeyDraftForStatus({
-              currentDraft,
-              hasSavedKey: result.hasSeedreamApiKey
-            })
-          );
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setStatus(`Could not load AI settings: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen]);
+  }, [aiClient, folderPath, isOpen]);
 
   const updateProjectContext = (projectContext: string) => {
     onProjectChange(
@@ -282,7 +234,7 @@ export const AiDraftPanel = ({
       resource.fileName === fileName ? { ...resource, ...patch } : resource
     );
     setResources(nextResources);
-    void window.storyboard.ai
+    void aiClient
       .updateResourceMetadata(folderPath, {
         version: 1,
         resources: nextResources.map((resource) => ({
@@ -301,14 +253,14 @@ export const AiDraftPanel = ({
     event.stopPropagation();
     setIsResourceDropActive(false);
     const sourceFilePaths = Array.from(event.dataTransfer.files)
-      .map((file) => window.storyboard.filePathForDroppedFile(file))
+      .map((file) => aiClient.filePathForDroppedFile(file))
       .filter((filePath) => filePath.trim() !== "");
     if (sourceFilePaths.length === 0) {
       return;
     }
 
     try {
-      const result = await window.storyboard.ai.importResources(folderPath, sourceFilePaths);
+      const result = await aiClient.importResources(folderPath, sourceFilePaths);
       setResources(result.resources);
       setStatus(
         result.importedFileNames.length > 0
@@ -322,7 +274,7 @@ export const AiDraftPanel = ({
 
   const deleteResource = async (resource: AiResource) => {
     try {
-      const result = await window.storyboard.ai.deleteResource(folderPath, resource.fileName);
+      const result = await aiClient.deleteResource(folderPath, resource.fileName);
       setResources(result.resources);
       const cleanedProject = cleanAiResourceExclusionsProject(project, result.resources.map((item) => item.id));
       if (cleanedProject !== project) {
@@ -362,7 +314,7 @@ export const AiDraftPanel = ({
       setIsGenerating(true);
       setStatus("Generating AI batch candidates...");
       try {
-        const result = await window.storyboard.ai.generateBatchCandidates({
+        const result = await aiClient.generateBatchCandidates({
           folderPath,
           project,
           shotIds: batchShotIds,
@@ -393,7 +345,7 @@ export const AiDraftPanel = ({
     setIsGenerating(true);
     setStatus("Generating AI candidate...");
     try {
-      const nextCandidate = await window.storyboard.ai.generateCandidate({
+      const nextCandidate = await aiClient.generateCandidate({
         folderPath,
         project,
         shotId: selection.shot.id,
@@ -415,7 +367,7 @@ export const AiDraftPanel = ({
         return;
       }
       try {
-        await window.storyboard.ai.copyRequestPreview({
+        await aiClient.copyRequestPreview({
           folderPath,
           project,
           shotIds: batchShotIds,
@@ -434,7 +386,7 @@ export const AiDraftPanel = ({
       return;
     }
     try {
-      await window.storyboard.ai.copyRequestPreview({
+      await aiClient.copyRequestPreview({
         folderPath,
         project,
         shotId: selection.shot.id,
@@ -447,90 +399,9 @@ export const AiDraftPanel = ({
     }
   };
 
-  const saveOpenAiApiKey = async () => {
-    if (!isAiApiKeyDraftSaveable(openAiApiKeyDraft)) {
-      return;
-    }
-    try {
-      const nextStatus = await window.storyboard.ai.saveOpenAiApiKey(openAiApiKeyDraft);
-      updateLocalAiSettings(nextStatus);
-      setOpenAiApiKeyDraft(nextAiApiKeyDraftAfterSave());
-      setStatus("OpenAI API key saved");
-    } catch (error) {
-      setStatus(`Could not save OpenAI API key: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  const clearOpenAiApiKey = async () => {
-    try {
-      const nextStatus = await window.storyboard.ai.clearOpenAiApiKey();
-      updateLocalAiSettings(nextStatus);
-      setOpenAiApiKeyDraft("");
-      setStatus("OpenAI API key cleared");
-    } catch (error) {
-      setStatus(`Could not clear OpenAI API key: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  const saveSeedreamApiKey = async () => {
-    if (!isAiApiKeyDraftSaveable(seedreamApiKeyDraft)) {
-      return;
-    }
-    try {
-      const nextStatus = await window.storyboard.ai.saveSeedreamApiKey(seedreamApiKeyDraft);
-      updateLocalAiSettings(nextStatus);
-      setSeedreamApiKeyDraft(nextAiApiKeyDraftAfterSave());
-      setStatus("Seedream API key saved");
-    } catch (error) {
-      setStatus(`Could not save Seedream API key: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  const clearSeedreamApiKey = async () => {
-    try {
-      const nextStatus = await window.storyboard.ai.clearSeedreamApiKey();
-      updateLocalAiSettings(nextStatus);
-      setSeedreamApiKeyDraft("");
-      setStatus("Seedream API key cleared");
-    } catch (error) {
-      setStatus(`Could not clear Seedream API key: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  const saveComfyUiSettings = async () => {
-    try {
-      const nextStatus = await window.storyboard.ai.saveComfyUiSettings({
-        serverUrl: comfyUiServerUrl,
-        workflowJson: comfyUiWorkflowJson,
-        timeoutMs: comfyUiTimeoutMs
-      });
-      updateLocalAiSettings(nextStatus);
-      setStatus(
-        nextStatus.hasValidComfyUiSettings
-          ? "ComfyUI settings saved"
-          : "ComfyUI settings saved; workflow placeholders are incomplete"
-      );
-    } catch (error) {
-      setStatus(`Could not save ComfyUI settings: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  const testComfyUiConnection = async () => {
-    setComfyUiConnectionStatus("");
-    try {
-      const result = await window.storyboard.ai.testComfyUiConnection(comfyUiServerUrl);
-      setComfyUiConnectionStatus(result.message);
-      setStatus(result.message);
-    } catch (error) {
-      const message = `ComfyUI connection failed: ${error instanceof Error ? error.message : String(error)}`;
-      setComfyUiConnectionStatus(message);
-      setStatus(message);
-    }
-  };
-
   const discardCandidate = async () => {
     if (selection.kind === "multi") {
-      await Promise.all(batchCandidates.map((item) => window.storyboard.ai.discardCandidate(folderPath, item.id).catch(() => undefined)));
+      await Promise.all(batchCandidates.map((item) => aiClient.discardCandidate(folderPath, item.id).catch(() => undefined)));
       setBatchCandidates([]);
       setBatchGroups([]);
       setStatus("AI batch candidates discarded");
@@ -540,7 +411,7 @@ export const AiDraftPanel = ({
     if (!candidate) {
       return;
     }
-    await window.storyboard.ai.discardCandidate(folderPath, candidate.id).catch(() => undefined);
+    await aiClient.discardCandidate(folderPath, candidate.id).catch(() => undefined);
     setCandidate(undefined);
     setStatus("AI candidate discarded");
   };
@@ -553,7 +424,7 @@ export const AiDraftPanel = ({
       try {
         let nextProject = project;
         for (const item of batchCandidates) {
-          const result = await window.storyboard.ai.applyCandidate({
+          const result = await aiClient.applyCandidate({
             folderPath,
             project: nextProject,
             candidateId: item.id
@@ -574,7 +445,7 @@ export const AiDraftPanel = ({
       return;
     }
     try {
-      const result = await window.storyboard.ai.applyCandidate({
+      const result = await aiClient.applyCandidate({
         folderPath,
         project,
         candidateId: candidate.id
@@ -851,7 +722,7 @@ export const AiDraftPanel = ({
                             checked={activeResourceIds.includes(resource.id)}
                             onChange={() => toggleResource(resource.id)}
                           />
-                          <img src={window.storyboard.assetUrl(resource.filePath)} alt="" />
+                          <img src={aiClient.assetUrl(resource.filePath)} alt="" />
                           <span>{resource.fileName}</span>
                         </label>
                         <div className="ai-resource-details">
@@ -933,11 +804,11 @@ export const AiDraftPanel = ({
             <section className="ai-panel-section">
               <h3>Candidate</h3>
               {selection.kind === "ready" && candidate ? (
-                <img className="ai-candidate-preview" src={window.storyboard.assetUrl(candidate.filePath)} alt="" />
+                <img className="ai-candidate-preview" src={aiClient.assetUrl(candidate.filePath)} alt="" />
               ) : selection.kind === "multi" && batchCandidates.length > 0 ? (
                 <div className="ai-batch-candidate-list">
                   {batchCandidates.map((item) => (
-                    <img key={item.id} src={window.storyboard.assetUrl(item.filePath)} alt="" />
+                    <img key={item.id} src={aiClient.assetUrl(item.filePath)} alt="" />
                   ))}
                 </div>
               ) : (

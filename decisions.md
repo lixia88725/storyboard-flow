@@ -112,6 +112,20 @@ Reason: 这些行为在 React UI 状态之外更易测试、更安全演进。
 
 Reason: The renderer was becoming too large for smooth collaboration. Keeping Save/Import/history in `App.tsx` while moving card, canvas, and layer drawer presentation into focused components reduces merge conflicts and lowers the risk of UI work accidentally touching filesystem boundaries.
 
+## Parallel Work Uses Slice-Owned Worktrees
+
+Future architecture work should split into slice-owned git worktrees instead of multiple people or agents editing the same aggregation files at the same time:
+
+- App orchestration hooks: `src/renderer/App.tsx` and focused renderer hook files.
+- Electron main services: `electron/main/main.ts`, `electron/main/ipc/`, and small main-side services.
+- Preload contract: `electron/preload/`, `src/renderer/global.d.ts`, and `scripts/check-preload-sync.mjs`.
+- CSS theme cleanup: `src/renderer/styles.css` and `src/renderer/styles/`.
+- AI controller/client: `src/renderer/ai/`, `electron/main/ai*.ts`, and AI provider modules.
+
+Each worktree should own one slice and avoid opportunistic edits outside that slice. Changes to Save / Import / TIFF / `.storyboard-workbench` behavior require a separate explicit plan and should not be bundled with renderer UI, CSS, or AI controller cleanup.
+
+Reason: The highest-conflict files are still shared coordination points. Slice-owned worktrees reduce merge conflicts and keep architectural cleanup from accidentally crossing protected product/data boundaries.
+
 ## Multi-Select Reordering Has Explicit Placement
 
 Shot 成组拖拽排序需要显式表达 `before` / `after` 目标位置。

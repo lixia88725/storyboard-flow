@@ -1000,7 +1000,12 @@ try {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
       setter.call(input, "50");
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      window.scrollTo(0, 0);
+      const boardScroll = document.querySelector(".workspace-board-scroll");
+      if (boardScroll) {
+        boardScroll.scrollTo(0, 0);
+      } else {
+        window.scrollTo(0, 0);
+      }
       return true;
     })()
   `);
@@ -1047,7 +1052,7 @@ try {
   await delay(500);
   const denseMarqueeDuringDrag = await evaluate(`
     ({
-      scrollY: window.scrollY,
+      scrollY: document.querySelector(".workspace-board-scroll")?.scrollTop ?? window.scrollY,
       selectedCount: Number(document.querySelector("footer span:last-child")?.textContent?.match(/\\d+/)?.[0] ?? 0),
       marqueeVisible: Boolean(document.querySelector(".selection-marquee"))
     })
@@ -1066,12 +1071,17 @@ try {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
       setter.call(input, "100");
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      window.scrollTo(0, 0);
+      const boardScroll = document.querySelector(".workspace-board-scroll");
+      if (boardScroll) {
+        boardScroll.scrollTo(0, 0);
+      } else {
+        window.scrollTo(0, 0);
+      }
       return true;
     })()
   `);
 
-	  await openFolder();
+  await openFolder();
   await waitFor(
     () => evaluate(`!document.querySelector(".import-control button")?.disabled`),
     "main smoke import button enabled"
