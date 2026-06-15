@@ -107,7 +107,7 @@ import {
 import { createDirtyShotTracker } from "./dirtyShotTracker";
 import { blurActiveFormControl } from "./formFocus";
 import { isKeyboardEditableTarget } from "./keyboardShortcuts";
-import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, SelectIcon, SidePanelIcon, SwatchIcon } from "./icons";
+import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, SelectIcon, SwatchIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { appendHistoryEntry, useSyncedHistoryStackController } from "./historyStackController";
 import { ensureProjectBitmapMetadata } from "./projectBitmapMetadata";
@@ -126,6 +126,7 @@ import { ShotCard, type CardFace } from "./ShotCard";
 import { ShortcutMenuButton } from "./ShortcutMenuButton";
 import { StatusPopover } from "./StatusPopover";
 import { Timeline } from "./Timeline";
+import { Topbar } from "./Topbar";
 import { formatSaveFailureStatus } from "./saveErrors";
 import {
   createMarqueeBox,
@@ -219,11 +220,6 @@ const defaultEraserSize = 18;
 const minSketchSoftness = 0;
 const maxSketchSoftness = 1;
 const maxUndoHistory = 60;
-const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: string }> = [
-  { id: "16:9", label: "16:9", detail: "1920 x 1080" },
-  { id: "2.39:1", label: "2.39:1", detail: "2581 x 1080" },
-  { id: "1.43:1", label: "1.43:1 IMAX", detail: "1544 x 1080" }
-];
 const animationReservedBottom = 180;
 const animationViewportMargin = 14;
 
@@ -2694,231 +2690,43 @@ export const App = () => {
       onDragOver={handleStoryboardScriptDragOver}
       onDrop={(event) => void handleStoryboardScriptDrop(event)}
     >
-      <header className="topbar">
-        <div className="import-control" ref={importHelpRef}>
-          <button
-            type="button"
-            className={isImportNudging ? "import-button is-nudging" : "import-button"}
-            onClick={() => void handleImportSwbFormat()}
-            disabled={!needsSwbImport || isWorkspaceTaskRunning}
-            title="Import image or storyboard-script.md changes into Storyboard Flow"
-          >
-            {workspaceTask?.kind === "import" ? "Importing..." : "Import"}
-          </button>
-          {hasSwbWarning ? (
-            <button
-              type="button"
-              className={isImportNudging ? "import-warning is-nudging" : "import-warning"}
-              aria-label="Import explanation"
-              aria-expanded={isImportHelpOpen}
-              onClick={() => setIsImportHelpOpen((isOpen) => !isOpen)}
-            >
-              !
-            </button>
-          ) : null}
-          {isImportHelpOpen ? (
-            <div className="import-help-popover" role="dialog" aria-label="Import explanation">
-              <strong>为什么需要 Import？</strong>
-              <p>
-                Import 会把外部 TIFF 和 storyboard-script.md 的变化导入 Storyboard
-                Flow。在你点击 Import 之前，软件内的编辑仍然是当前工作状态。
-              </p>
-              <p>
-                原始 TIFF 会先移动到 Archive，然后 Storyboard Flow 接管工作文件。
-                能匹配上的镜头顺序、台词、分镜脚本文字和支持的位图图层会尽量继承。
-              </p>
-              <p>
-                Photoshop-only 信息不会作为内部工作格式。Save 会从
-                .storyboard-workbench/layers 下的 PNG 数据重建工作 TIFF。
-              </p>
-              <p>
-                storyboard-script.md 是根目录下的文字镜像。软件内编辑会自动写入；
-                外部修改这个 MD 文档后，需要点击 Import 才会导入软件。
-              </p>
-            </div>
-          ) : null}
-          <div className="save-menu-container" ref={saveMenuRef}>
-            <div className="save-split-button">
-              <button
-                type="button"
-                className="save-main-button"
-                disabled={isWorkspaceTaskRunning || isImportLocked}
-                onClick={() => {
-                  setIsSaveMenuOpen(false);
-                  void handleSaveProject();
-                }}
-              >
-                {workspaceTask?.kind === "save" ? "Saving..." : "Save"}
-              </button>
-              <button
-                type="button"
-                className="save-menu-toggle"
-                aria-label="Save naming options"
-                aria-expanded={isSaveMenuOpen}
-                disabled={isWorkspaceTaskRunning || isImportLocked}
-                onClick={() => setIsSaveMenuOpen((isOpen) => !isOpen)}
-              >
-                <span className="save-caret" aria-hidden="true" />
-              </button>
-            </div>
-            {isSaveMenuOpen ? (
-              <div className="save-menu" aria-label="Save naming options">
-                <label className="save-menu-field">
-                  <span>Project</span>
-                  <input
-                    aria-label="Project name"
-                    value={project.name}
-                    onChange={(event) => updateProjectName(event.target.value)}
-                    placeholder="Untitled Storyboard"
-                  />
-                </label>
-                <label className="save-menu-field">
-                  <span>Scene</span>
-                  <input
-                    aria-label="Scene code"
-                    value={project.naming?.sceneCode ?? ""}
-                    onChange={(event) => updateProjectNaming("sceneCode", event.target.value)}
-                    placeholder="scene"
-                  />
-                </label>
-                <label className="save-menu-field">
-                  <span>Artist</span>
-                  <input
-                    aria-label="Artist name"
-                    value={project.naming?.artistName ?? ""}
-                    onChange={(event) => updateProjectNaming("artistName", event.target.value)}
-                    placeholder="artist"
-                  />
-                </label>
-                <label className="save-menu-field">
-                  <span>Version</span>
-                  <input
-                    aria-label="Version"
-                    value={project.naming?.version ?? ""}
-                    onChange={(event) => updateProjectNaming("version", event.target.value)}
-                    placeholder="v001"
-                  />
-                </label>
-              </div>
-            ) : null}
-          </div>
-        </div>
-        <div className="address-bar-container" ref={recentMenuRef}>
-          <div className="address-bar">
-            <form
-              className="path-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setIsRecentMenuOpen(false);
-                void handleOpenFolderByPath();
-              }}
-            >
-              <input
-                aria-label="Folder path"
-                value={folderInputValue}
-                onChange={(event) => setFolderInputValue(event.target.value)}
-                placeholder="/Users/name/Pictures/scene"
-              />
-            </form>
-            <button
-              type="button"
-              className="address-recent-toggle"
-              aria-label="Recent folders"
-              aria-expanded={isRecentMenuOpen}
-              disabled={recentFolders.length === 0}
-              onClick={() => setIsRecentMenuOpen((isOpen) => !isOpen)}
-            >
-              <span className="address-caret" aria-hidden="true" />
-            </button>
-          </div>
-          {isRecentMenuOpen ? (
-            <div className="recent-menu" aria-label="Recent folders">
-              {recentFolders.map((recentFolder) => (
-                <button
-                  key={recentFolder}
-                  type="button"
-                  onClick={() => {
-                    setIsRecentMenuOpen(false);
-                    setFolderInputValue(recentFolder);
-                    void handleOpenFolderByPath(recentFolder);
-                  }}
-                >
-                  {recentFolder}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <div className="toolbar">
-          <button
-            type="button"
-            className={`ai-panel-toggle ${isAiPanelVisible ? "selected" : ""}`}
-            aria-label="Toggle AI Draft panel"
-            aria-expanded={isAiPanelVisible}
-            title="AI Draft"
-            onClick={handleToggleAiPanel}
-          >
-            AI
-          </button>
-          <div className="add-shot-menu-container" ref={addShotMenuRef}>
-            <div className="add-shot-split-button">
-              <button
-                type="button"
-                className="add-shot-main-button"
-                disabled={isImportLocked}
-                onClick={() => {
-                  if (isImportLocked) {
-                    nudgeImportRequired();
-                    return;
-                  }
-                  setIsAddShotMenuOpen(false);
-                  void handleAddShot();
-                }}
-              >
-                Add
-              </button>
-              <button
-                type="button"
-                className="add-shot-menu-toggle"
-                aria-label="Add shot aspect ratio"
-                aria-expanded={isAddShotMenuOpen}
-                disabled={isImportLocked}
-                onClick={() => setIsAddShotMenuOpen((isOpen) => !isOpen)}
-              >
-                <span className="add-shot-caret" aria-hidden="true" />
-              </button>
-            </div>
-            {isAddShotMenuOpen ? (
-              <div className="add-shot-menu" aria-label="Add shot aspect ratio">
-                {blankShotPresets.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    className={preset.id === blankShotPreset ? "is-selected" : ""}
-                    onClick={() => {
-                      setBlankShotPreset(preset.id);
-                      setIsAddShotMenuOpen(false);
-                    }}
-                  >
-                    <span>{preset.label}</span>
-                    <small>{preset.detail}</small>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            className={`pending-shelf-toggle ${isParkingShelfOpen ? "selected" : ""}`}
-            aria-label="Toggle pending sidebar"
-            aria-expanded={isParkingShelfOpen}
-            title="Pending sidebar"
-            onClick={handleTogglePendingShelf}
-          >
-            <SidePanelIcon />
-          </button>
-        </div>
-      </header>
+      <Topbar
+        addShotMenuRef={addShotMenuRef}
+        blankShotPreset={blankShotPreset}
+        folderInputValue={folderInputValue}
+        handleAddShot={handleAddShot}
+        handleImportSwbFormat={handleImportSwbFormat}
+        handleOpenFolderByPath={handleOpenFolderByPath}
+        handleSaveProject={handleSaveProject}
+        handleToggleAiPanel={handleToggleAiPanel}
+        handleTogglePendingShelf={handleTogglePendingShelf}
+        hasSwbWarning={hasSwbWarning}
+        importHelpRef={importHelpRef}
+        isAddShotMenuOpen={isAddShotMenuOpen}
+        isAiPanelVisible={isAiPanelVisible}
+        isImportHelpOpen={isImportHelpOpen}
+        isImportLocked={isImportLocked}
+        isImportNudging={isImportNudging}
+        isParkingShelfOpen={isParkingShelfOpen}
+        isRecentMenuOpen={isRecentMenuOpen}
+        isSaveMenuOpen={isSaveMenuOpen}
+        isWorkspaceTaskRunning={isWorkspaceTaskRunning}
+        needsSwbImport={needsSwbImport}
+        nudgeImportRequired={nudgeImportRequired}
+        project={project}
+        recentFolders={recentFolders}
+        recentMenuRef={recentMenuRef}
+        saveMenuRef={saveMenuRef}
+        setBlankShotPreset={setBlankShotPreset}
+        setFolderInputValue={setFolderInputValue}
+        setIsAddShotMenuOpen={setIsAddShotMenuOpen}
+        setIsImportHelpOpen={setIsImportHelpOpen}
+        setIsRecentMenuOpen={setIsRecentMenuOpen}
+        setIsSaveMenuOpen={setIsSaveMenuOpen}
+        updateProjectName={updateProjectName}
+        updateProjectNaming={updateProjectNaming}
+        workspaceTask={workspaceTask}
+      />
 
       {workspaceTask ? (
         <div className="workspace-task-progress" role="status" aria-live="polite">
