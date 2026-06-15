@@ -107,13 +107,8 @@ import {
 } from "./deleteTarget";
 import { nextRangeSelection, type RangeSelectionMode } from "./rangeSelection";
 import {
-  adjustSketchShortcutValue,
   defaultKeyboardShortcuts,
-  clipboardActionFromKeyboardEvent,
-  isKeyboardEditableTarget,
-  shortcutActionFromKeyboardEvent,
-  shouldIgnoreShortcutForTarget,
-  type ShortcutAction
+  isKeyboardEditableTarget
 } from "./keyboardShortcuts";
 import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon, SwatchIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
@@ -199,24 +194,18 @@ import {
 } from "./radialToolMenuController";
 import { usePointerPositionController } from "./pointerPositionController";
 import { useZoomInteractionController } from "./zoomInteractionController";
-import { nextKeyboardShotSelection, useGlobalKeyboardController } from "./globalKeyboardController";
 import { useRecentFoldersController } from "./recentFoldersController";
 import { useToolRadialSettingsController } from "./toolRadialSettingsController";
 import { useWorkspaceTaskProgressController } from "./workspaceTaskProgressController";
 import { useWorkspaceCloseGuardController } from "./workspaceCloseGuardController";
 import { useWorkspaceExternalRefreshController } from "./workspaceExternalRefreshController";
-import { hasOpenWorkspaceMenu, useWorkspaceMenuController } from "./workspaceMenuController";
+import { useWorkspaceMenuController } from "./workspaceMenuController";
 import { useWorkspaceAutosaveController } from "./workspaceAutosaveController";
+import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
 const defaultEraserSize = 18;
-const minBrushSize = 1;
-const maxBrushSize = 28;
-const minEraserSize = 4;
-const maxEraserSize = 64;
-const minSketchOpacity = 0.2;
-const maxSketchOpacity = 1;
 const minSketchSoftness = 0;
 const maxSketchSoftness = 1;
 const maxUndoHistory = 60;
@@ -899,198 +888,6 @@ export const App = () => {
       scrollBoardBy({ top: delta, behavior: "instant" });
     }
   }, [animationImageSize.height, animationImageSize.width, isAnimationMode, isZoomScrubbing, selectedShotIds]);
-
-  const handleGlobalKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      const target = event.target;
-      const isMenuOpen =
-        isShortcutMenuOpen ||
-        hasOpenWorkspaceMenu({
-          isAddShotMenuOpen,
-          isImportHelpOpen,
-          isRecentMenuOpen,
-          isSaveMenuOpen
-        }) ||
-        hasOpenShortcutBlockingMenu();
-      if (isMenuOpen) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      const shortcutAction = shortcutActionFromKeyboardEvent(event);
-      if (shouldIgnoreShortcutForTarget(target, shortcutAction, isAnimationMode)) {
-        return;
-      }
-
-      const clipboardAction = clipboardActionFromKeyboardEvent(event);
-      if (clipboardAction) {
-        event.preventDefault();
-        if (clipboardAction === "copy") {
-          handleCopySelection();
-        } else {
-          void handlePasteSelection();
-        }
-        return;
-      }
-
-      if (
-        (event.key === "Delete" || event.key === "Backspace") &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey
-      ) {
-        event.preventDefault();
-        void handleDeleteKeyPress();
-        return;
-      }
-
-      const moveSelection = (direction: "left" | "right" | "up" | "down") => {
-        setSelectedShotIds((current) => {
-          const selection = nextKeyboardShotSelection({
-            currentSelectedIds: current,
-            direction,
-            gridColumns: measureGridColumns(),
-            isAnimationMode,
-            orderedShotIds: orderedShots.map((shot) => shot.id)
-          });
-          shotSelectionAnchorIdRef.current = selection.anchorId;
-          selectedShotIdsRef.current = selection.selectedIds;
-          return selection.selectedIds;
-        });
-      };
-
-      if (shortcutAction) {
-        event.preventDefault();
-
-        if (shortcutAction === "brush") {
-          setActiveSketchTool("brush");
-          return;
-        }
-
-        if (shortcutAction === "eraser") {
-          setActiveSketchTool("eraser");
-          return;
-        }
-
-        if (shortcutAction === "select") {
-          setActiveSketchTool("select");
-          return;
-        }
-
-        if (shortcutAction === "clearLayer") {
-          const activeShot = primaryShotOrFirst(orderedShots, selectedShotIdsRef.current);
-          const activeLayer = activeShot ? activeVisibleBitmapLayerForShot(activeShot) : undefined;
-
-          if (activeShot && activeLayer) {
-            void handleClearBitmapLayer(activeShot.id, activeLayer.id);
-          }
-          return;
-        }
-
-        if (shortcutAction === "mergeDown") {
-          const activeShot = primaryShotOrFirst(orderedShots, selectedShotIdsRef.current);
-          const activeLayer = activeShot ? activeVisibleBitmapLayerForShot(activeShot) : undefined;
-
-          if (activeShot && activeLayer) {
-            const selectedLayerIds =
-              selectedBitmapLayerIdsRef.current?.shotId === activeShot.id
-                ? selectedBitmapLayerIdsRef.current.layerIds
-                : [];
-            void handleMergeBitmapLayers(activeShot.id, activeLayer.id, selectedLayerIds);
-          }
-          return;
-        }
-
-        if (shortcutAction === "save") {
-          void handleSaveProject();
-          return;
-        }
-
-        if (shortcutAction === "addShot") {
-          void handleAddShot();
-          return;
-        }
-
-        if (shortcutAction === "onionSkin") {
-          if (isAnimationMode) {
-            setIsOnionSkinEnabled((isEnabled) => !isEnabled);
-          } else {
-            setStatus("Onion Skin is available in animation mode");
-          }
-          return;
-        }
-
-        if (shortcutAction === "decreaseBrushSize" || shortcutAction === "increaseBrushSize") {
-          const direction = shortcutAction === "decreaseBrushSize" ? "decrease" : "increase";
-          if (activeSketchTool === "brush") {
-            setBrushSize((size) =>
-              adjustSketchShortcutValue(size, direction, 0.1, minBrushSize, maxBrushSize)
-            );
-          } else if (activeSketchTool === "eraser") {
-            setEraserSize((size) =>
-              adjustSketchShortcutValue(size, direction, 0.1, minEraserSize, maxEraserSize)
-            );
-          }
-          return;
-        }
-
-        if (shortcutAction === "decreaseBrushOpacity" || shortcutAction === "increaseBrushOpacity") {
-          const direction = shortcutAction === "decreaseBrushOpacity" ? "decrease" : "increase";
-          if (activeSketchTool === "brush") {
-            setBrushOpacity((opacity) =>
-              adjustSketchShortcutValue(opacity, direction, 0.25, minSketchOpacity, maxSketchOpacity)
-            );
-          } else if (activeSketchTool === "eraser") {
-            setEraserOpacity((opacity) =>
-              adjustSketchShortcutValue(opacity, direction, 0.25, minSketchOpacity, maxSketchOpacity)
-            );
-          }
-          return;
-        }
-
-        if (shortcutAction === "previousShot") {
-          moveSelection("left");
-          return;
-        }
-
-        if (shortcutAction === "nextShot") {
-          moveSelection("right");
-          return;
-        }
-
-        if (shortcutAction === "undo") {
-          void applyUndoEntry();
-          return;
-        }
-
-        if (shortcutAction === "redo") {
-          void applyRedoEntry();
-          return;
-        }
-      }
-
-      if (!["arrowdown", "arrowup"].includes(key)) {
-        return;
-      }
-
-      event.preventDefault();
-      moveSelection(key.replace("arrow", "") as "up" | "down");
-    },
-    [
-      isAddShotMenuOpen,
-      isAnimationMode,
-      isImportHelpOpen,
-      isRecentMenuOpen,
-      isSaveMenuOpen,
-      isShortcutMenuOpen,
-      measureGridColumns,
-      orderedShots,
-      activeSketchTool,
-      primarySelectedShot
-    ]
-  );
-
-  useGlobalKeyboardController(handleGlobalKeyDown);
 
   const updateProject = (
     projectUpdate: ProjectUpdate,
@@ -2161,6 +1958,39 @@ export const App = () => {
 
     await pasteCopiedLayer(clipboard.shotId, clipboard.layerId);
   };
+
+  useAppKeyboardShortcutsController({
+    activeSketchTool,
+    isAddShotMenuOpen,
+    isAnimationMode,
+    isImportHelpOpen,
+    isRecentMenuOpen,
+    isSaveMenuOpen,
+    isShortcutMenuOpen,
+    orderedShots,
+    selectedBitmapLayerIdsRef,
+    selectedShotIdsRef,
+    shotSelectionAnchorIdRef,
+    measureGridColumns,
+    hasOpenShortcutBlockingMenu,
+    handleAddShot,
+    handleClearBitmapLayer,
+    handleCopySelection,
+    handleDeleteKeyPress,
+    handleMergeBitmapLayers,
+    handlePasteSelection,
+    handleSaveProject,
+    applyRedoEntry,
+    applyUndoEntry,
+    setActiveSketchTool,
+    setBrushOpacity,
+    setBrushSize,
+    setEraserOpacity,
+    setEraserSize,
+    setIsOnionSkinEnabled,
+    setSelectedShotIds,
+    setStatus
+  });
 
   const pasteCopiedShot = async (sourceShotId: string) => {
     if (!window.storyboard) {
