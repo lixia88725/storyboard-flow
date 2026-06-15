@@ -154,6 +154,16 @@ export const historyActionFromKeyboardEvent = (
   return event.shiftKey ? "redo" : "undo";
 };
 
+export const shortcutActionFromKeyboardEvent = (
+  event: KeyboardEvent,
+  shortcuts: KeyboardShortcuts = defaultKeyboardShortcuts
+): ShortcutAction | undefined => {
+  const configuredShortcutAction = shortcutActions.find((action) =>
+    keyboardEventMatchesShortcut(event, shortcuts[action])
+  );
+  return configuredShortcutAction ?? historyActionFromKeyboardEvent(event);
+};
+
 export const clipboardActionFromKeyboardEvent = (
   event: KeyboardEvent
 ): "copy" | "paste" | undefined => {
@@ -169,4 +179,58 @@ export const clipboardActionFromKeyboardEvent = (
     return "paste";
   }
   return undefined;
+};
+
+type KeyboardTarget = {
+  isContentEditable?: boolean;
+  closest?: (selector: string) => { type?: string } | null;
+};
+
+type KeyboardTargetElement = {
+  isContentEditable?: boolean;
+  closest: (selector: string) => { type?: string } | null;
+};
+
+const keyboardTargetElement = (target: EventTarget | null): KeyboardTargetElement | undefined => {
+  if (!target || typeof target !== "object") {
+    return undefined;
+  }
+
+  const candidate = target as KeyboardTarget;
+  return typeof candidate.closest === "function" ? (candidate as KeyboardTargetElement) : undefined;
+};
+
+export const isKeyboardEditableTarget = (target: EventTarget | null): boolean => {
+  const element = keyboardTargetElement(target);
+  if (!element) {
+    return false;
+  }
+
+  if (element.isContentEditable || element.closest("textarea, select")) {
+    return true;
+  }
+
+  const input = element.closest("input");
+  if (!input) {
+    return false;
+  }
+
+  return !["button", "checkbox", "color", "file", "radio", "submit"].includes(input.type ?? "");
+};
+
+const isRangeInputTarget = (target: EventTarget | null): boolean => {
+  return keyboardTargetElement(target)?.closest("input")?.type === "range";
+};
+
+export const shouldIgnoreShortcutForTarget = (
+  target: EventTarget | null,
+  shortcutAction: ShortcutAction | undefined,
+  isAnimationMode: boolean
+): boolean => {
+  const allowsRangeTarget =
+    isAnimationMode &&
+    isRangeInputTarget(target) &&
+    (shortcutAction === "previousShot" || shortcutAction === "nextShot");
+
+  return isKeyboardEditableTarget(target) && !allowsRangeTarget;
 };

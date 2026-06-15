@@ -112,9 +112,9 @@ import {
   adjustSketchShortcutValue,
   defaultKeyboardShortcuts,
   clipboardActionFromKeyboardEvent,
-  historyActionFromKeyboardEvent,
-  keyboardEventMatchesShortcut,
-  shortcutActions,
+  isKeyboardEditableTarget,
+  shortcutActionFromKeyboardEvent,
+  shouldIgnoreShortcutForTarget,
   type ShortcutAction
 } from "./keyboardShortcuts";
 import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon, SwatchIcon } from "./icons";
@@ -273,32 +273,6 @@ const sameLayerSelection = (
   current?.shotId === shotId &&
   current.layerIds.length === layerIds.length &&
   current.layerIds.every((layerId, index) => layerId === layerIds[index]);
-
-const isKeyboardEditableTarget = (target: EventTarget | null): boolean => {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  if (target.isContentEditable || target.closest("textarea, select")) {
-    return true;
-  }
-
-  const input = target.closest("input");
-  if (!input) {
-    return false;
-  }
-
-  return !["button", "checkbox", "color", "file", "radio", "submit"].includes(input.type);
-};
-
-const isRangeInputTarget = (target: EventTarget | null): boolean => {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  const input = target.closest("input");
-  return input?.type === "range";
-};
 
 const hasOpenShortcutBlockingMenu = (): boolean =>
   Boolean(
@@ -1137,16 +1111,8 @@ export const App = () => {
       }
 
       const key = event.key.toLowerCase();
-      const configuredShortcutAction = shortcutActions.find((action) =>
-        keyboardEventMatchesShortcut(event, defaultKeyboardShortcuts[action])
-      );
-      const shortcutAction = configuredShortcutAction ?? historyActionFromKeyboardEvent(event);
-      const allowsRangeTarget =
-        isAnimationMode &&
-        isRangeInputTarget(target) &&
-        (shortcutAction === "previousShot" || shortcutAction === "nextShot");
-
-      if (isKeyboardEditableTarget(target) && !allowsRangeTarget) {
+      const shortcutAction = shortcutActionFromKeyboardEvent(event);
+      if (shouldIgnoreShortcutForTarget(target, shortcutAction, isAnimationMode)) {
         return;
       }
 

@@ -7,7 +7,9 @@ import {
   formatShortcutFromKeyboardEvent,
   historyActionFromKeyboardEvent,
   keyboardEventMatchesShortcut,
-  normalizeShortcutValue
+  normalizeShortcutValue,
+  shortcutActionFromKeyboardEvent,
+  shouldIgnoreShortcutForTarget
 } from "./keyboardShortcuts";
 
 const keyboardEvent = (key: string, options: Partial<KeyboardEvent> = {}) =>
@@ -19,6 +21,24 @@ const keyboardEvent = (key: string, options: Partial<KeyboardEvent> = {}) =>
     shiftKey: false,
     ...options
   }) as KeyboardEvent;
+
+const keyboardTarget = (options: {
+  isContentEditable?: boolean;
+  closestInputType?: string;
+  closestTextareaOrSelect?: boolean;
+}): EventTarget =>
+  ({
+    isContentEditable: options.isContentEditable ?? false,
+    closest: (selector: string) => {
+      if (selector === "textarea, select") {
+        return options.closestTextareaOrSelect ? {} : null;
+      }
+      if (selector === "input") {
+        return options.closestInputType ? { type: options.closestInputType } : null;
+      }
+      return null;
+    }
+  }) as unknown as EventTarget;
 
 describe("keyboardShortcuts", () => {
   it("defaults clear layer to Escape", () => {
@@ -120,6 +140,37 @@ describe("keyboardShortcuts", () => {
     expect(clipboardActionFromKeyboardEvent(keyboardEvent("v", { ctrlKey: true }))).toBe("paste");
     expect(clipboardActionFromKeyboardEvent(keyboardEvent("v", { metaKey: true, shiftKey: true }))).toBeUndefined();
     expect(clipboardActionFromKeyboardEvent(keyboardEvent("c", { metaKey: true, altKey: true }))).toBeUndefined();
+  });
+
+  it("resolves configured shortcuts before history fallbacks", () => {
+    expect(shortcutActionFromKeyboardEvent(keyboardEvent("b"))).toBe("brush");
+    expect(shortcutActionFromKeyboardEvent(keyboardEvent("z", { metaKey: true }))).toBe("undo");
+    expect(shortcutActionFromKeyboardEvent(keyboardEvent("z", { metaKey: true, shiftKey: true }))).toBe("redo");
+  });
+
+  it("ignores shortcuts in editable targets except timeline range navigation in animation mode", () => {
+    const input = keyboardTarget({ closestInputType: "text" });
+    const range = keyboardTarget({ closestInputType: "range" });
+    const button = keyboardTarget({});
+
+    expect(shouldIgnoreShortcutForTarget(input, "brush", true)).toBe(true);
+    expect(shouldIgnoreShortcutForTarget(range, "previousShot", true)).toBe(false);
+    expect(shouldIgnoreShortcutForTarget(range, "previousShot", false)).toBe(true);
+    expect(shouldIgnoreShortcutForTarget(button, "brush", false)).toBe(false);
+  });
+
+  it("calls target closest with the original element receiver", () => {
+    const target = {
+      isContentEditable: false,
+      closest(this: unknown, selector: string) {
+        if (this !== target) {
+          throw new Error("closest was called with a detached receiver");
+        }
+        return selector === "input" ? { type: "text" } : null;
+      }
+    } as unknown as EventTarget;
+
+    expect(shouldIgnoreShortcutForTarget(target, "brush", false)).toBe(true);
   });
 
 });
