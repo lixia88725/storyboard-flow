@@ -175,7 +175,6 @@ import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
-import { usePopoverController } from "./popoverController";
 import {
   applyPasteAnimation,
   clearPasteAnimation,
@@ -206,6 +205,7 @@ import { useToolRadialSettingsController } from "./toolRadialSettingsController"
 import { useWorkspaceTaskProgressController } from "./workspaceTaskProgressController";
 import { useWorkspaceCloseGuardController } from "./workspaceCloseGuardController";
 import { useWorkspaceExternalRefreshController } from "./workspaceExternalRefreshController";
+import { hasOpenWorkspaceMenu, useWorkspaceMenuController } from "./workspaceMenuController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -351,29 +351,23 @@ export const App = () => {
   const [isOnionSkinEnabled, setIsOnionSkinEnabled] = useState(false);
   const [editingDialogueId, setEditingDialogueId] = useState<string | undefined>();
   const {
-    isOpen: isSaveMenuOpen,
-    setIsOpen: setIsSaveMenuOpen,
-    ref: saveMenuRef
-  } = usePopoverController<HTMLDivElement>();
-  const {
-    isOpen: isRecentMenuOpen,
-    setIsOpen: setIsRecentMenuOpen,
-    ref: recentMenuRef
-  } = usePopoverController<HTMLDivElement>();
-  const {
-    isOpen: isAddShotMenuOpen,
-    setIsOpen: setIsAddShotMenuOpen,
-    ref: addShotMenuRef
-  } = usePopoverController<HTMLDivElement>();
+    addShotMenuRef,
+    importHelpRef,
+    isAddShotMenuOpen,
+    isImportHelpOpen,
+    isRecentMenuOpen,
+    isSaveMenuOpen,
+    recentMenuRef,
+    saveMenuRef,
+    setIsAddShotMenuOpen,
+    setIsImportHelpOpen,
+    setIsRecentMenuOpen,
+    setIsSaveMenuOpen
+  } = useWorkspaceMenuController();
   const [blankShotPreset, setBlankShotPreset] = useState<BlankShotPreset>("16:9");
   const [radialToolMenu, setRadialToolMenu] = useState<RadialToolMenuState | undefined>();
   const [isStatusPanelOpen, setIsStatusPanelOpen] = useState(false);
   const [isLayerPanelOpen, setIsLayerPanelOpen] = useState(false);
-  const {
-    isOpen: isImportHelpOpen,
-    setIsOpen: setIsImportHelpOpen,
-    ref: importHelpRef
-  } = usePopoverController<HTMLDivElement>();
   const [isImportNudging, setIsImportNudging] = useState(false);
   const [cardFace, setCardFace] = useState<CardFace>("image");
   const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
@@ -932,10 +926,12 @@ export const App = () => {
       const target = event.target;
       const isMenuOpen =
         isShortcutMenuOpen ||
-        isSaveMenuOpen ||
-        isRecentMenuOpen ||
-        isAddShotMenuOpen ||
-        isImportHelpOpen ||
+        hasOpenWorkspaceMenu({
+          isAddShotMenuOpen,
+          isImportHelpOpen,
+          isRecentMenuOpen,
+          isSaveMenuOpen
+        }) ||
         hasOpenShortcutBlockingMenu();
       if (isMenuOpen) {
         return;
