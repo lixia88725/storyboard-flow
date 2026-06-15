@@ -5,6 +5,7 @@ import {
   openExternalUrl,
   respondToStoryboardImageRequest,
   selectFolderPath,
+  selectFolderPathForEvent,
   updateCloseGuard
 } from "./appShellService.js";
 
@@ -113,5 +114,43 @@ describe("appShellService", () => {
     const showOpenDialog = vi.fn(async () => ({ canceled: true, filePaths: ["/ignored"] }));
 
     await expect(selectFolderPath({ showOpenDialog })).resolves.toBeUndefined();
+  });
+
+  it("selects a folder through the owner window for an IPC event", async () => {
+    const sender = { id: 1 };
+    const owner = { id: 2 };
+    const ownerFromSender = vi.fn(() => owner);
+    const showOpenDialog = vi.fn(async () => ({ canceled: false, filePaths: ["/from-event"] }));
+
+    await expect(
+      selectFolderPathForEvent({
+        event: { sender },
+        ownerFromSender,
+        showOpenDialog
+      })
+    ).resolves.toBe("/from-event");
+
+    expect(ownerFromSender).toHaveBeenCalledWith(sender);
+    expect(showOpenDialog).toHaveBeenCalledWith(owner, {
+      properties: ["openDirectory", "createDirectory"]
+    });
+  });
+
+  it("selects a folder without an owner when the IPC sender has no window", async () => {
+    const sender = { id: 1 };
+    const ownerFromSender = vi.fn(() => undefined);
+    const showOpenDialog = vi.fn(async () => ({ canceled: false, filePaths: ["/no-owner"] }));
+
+    await expect(
+      selectFolderPathForEvent({
+        event: { sender },
+        ownerFromSender,
+        showOpenDialog
+      })
+    ).resolves.toBe("/no-owner");
+
+    expect(showOpenDialog).toHaveBeenCalledWith({
+      properties: ["openDirectory", "createDirectory"]
+    });
   });
 });

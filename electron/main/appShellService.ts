@@ -84,6 +84,10 @@ export type ShowOpenFolderDialog<Owner = unknown> = {
   (owner: Owner, options: FolderDialogOptions): Promise<FolderDialogResult>;
 };
 
+export type FolderSelectionEvent<Sender = unknown> = {
+  sender: Sender;
+};
+
 export const selectFolderPath = async <Owner = unknown>({
   owner,
   showOpenDialog
@@ -99,4 +103,19 @@ export const selectFolderPath = async <Owner = unknown>({
       ? await showOpenDialog(options)
       : await showOpenDialog(owner, options);
   return result.canceled ? undefined : result.filePaths[0];
+};
+
+export const selectFolderPathForEvent = async <Sender, Owner>({
+  event,
+  ownerFromSender,
+  showOpenDialog
+}: {
+  event: FolderSelectionEvent<Sender>;
+  ownerFromSender: (sender: Sender) => Owner | undefined;
+  showOpenDialog: ShowOpenFolderDialog<Owner>;
+}): Promise<string | undefined> => {
+  return selectFolderPath({
+    owner: ownerFromSender(event.sender),
+    showOpenDialog
+  });
 };

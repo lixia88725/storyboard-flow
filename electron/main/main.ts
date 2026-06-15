@@ -8,8 +8,7 @@ import {
   net,
   protocol,
   safeStorage,
-  shell,
-  type IpcMainInvokeEvent
+  shell
 } from "electron";
 import { copyFile, mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -77,7 +76,7 @@ import {
   getAppInfoForRenderer,
   openExternalUrl,
   respondToStoryboardImageRequest,
-  selectFolderPath,
+  selectFolderPathForEvent,
   updateCloseGuard as updateCloseGuardForWebContents
 } from "./appShellService.js";
 import {
@@ -420,7 +419,12 @@ const registerIpcHandlers = () => {
   });
 
   registerAppIpcHandlers(ipcMain, {
-    selectFolder: selectFolderForEvent,
+    selectFolder: (event) =>
+      selectFolderPathForEvent({
+        event,
+        ownerFromSender: (sender) => BrowserWindow.fromWebContents(sender) ?? undefined,
+        showOpenDialog: dialog.showOpenDialog.bind(dialog)
+      }),
     finishSaveAndClose: (payload) => finishSaveAndCloseRequest(saveAndCloseRequests, payload),
     updateCloseGuard: (event, payload) =>
       updateCloseGuardForWebContents(closeGuardWebContentsIds, event, payload),
@@ -634,14 +638,6 @@ const registerIpcHandlers = () => {
     })
   );
 
-};
-
-const selectFolderForEvent = async (event: IpcMainInvokeEvent): Promise<string | undefined> => {
-  const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-  return selectFolderPath<BrowserWindow>({
-    owner,
-    showOpenDialog: dialog.showOpenDialog.bind(dialog)
-  });
 };
 
 const saveWorkspace = async (
