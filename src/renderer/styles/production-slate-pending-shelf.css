@@ -1,0 +1,23 @@
+.parking-panel {
+  border-left-color: var(--slate-line);
+  background: var(--slate-panel);
+  color: var(--slate-text);
+  box-shadow: -18px 0 36px rgba(0, 0, 0, 0.34);
+}
+
+.parking-shelf.is-over .parking-panel {
+  outline-color: var(--slate-accent);
+}
+
+.parking-panel header {
+  border-bottom-color: var(--slate-line);
+}
+
+.parking-panel header strong {
+  border-color: var(--slate-line-strong);
+}
+
+.parking-list p {
+  border-color: var(--slate-line-strong);
+  color: var(--slate-muted);
+}
