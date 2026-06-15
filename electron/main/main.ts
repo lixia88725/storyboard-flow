@@ -11,7 +11,7 @@ import {
   shell,
   type IpcMainInvokeEvent
 } from "electron";
-import { copyFile, mkdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -101,6 +101,7 @@ import { scanWorkspaceFolder } from "./folderScanService.js";
 import { createImageRecords as createImportedImageRecords } from "./imageRecordsService.js";
 import { changedKnownImagePaths as findChangedKnownImagePaths } from "./knownImageChangesService.js";
 import { readProjectMetadata } from "./projectMetadataService.js";
+import { createBlankShot, type BlankShotPreset } from "./blankShotService.js";
 import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
 import {
   createWorkspaceTaskProgressReporter,
@@ -174,13 +175,6 @@ import {
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
 const sharpSourceOptions = { unlimited: true } as const;
-const blankShotPresets = {
-  "16:9": { width: 1920, height: 1080 },
-  "2.39:1": { width: 2581, height: 1080 },
-  "1.43:1": { width: 1544, height: 1080 }
-} as const;
-type BlankShotPreset = keyof typeof blankShotPresets;
-
 type PendingDeletedShot = {
   id: string;
   imagePath: string;
@@ -1910,40 +1904,6 @@ const bakeBitmapLayersToTiff = async (
   );
   await writeFile(tempPath, await flattenBitmapLayerBuffersToTiff(width, height, composites));
   return tempPath;
-};
-
-const createBlankShot = async (
-  folderPath: string,
-  preset: BlankShotPreset = "16:9"
-): Promise<string> => {
-  await mkdir(folderPath, { recursive: true });
-  const size = blankShotPresets[preset] ?? blankShotPresets["16:9"];
-
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const imagePath = path.join(folderPath, `new_shot_${Date.now()}_${attempt}.tiff`);
-    try {
-      await stat(imagePath);
-    } catch (error) {
-      const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
-      if (code === "ENOENT") {
-        await sharp({
-          create: {
-            width: size.width,
-            height: size.height,
-            channels: 3,
-            background: "#ffffff"
-          }
-        })
-          .tiff()
-          .toFile(imagePath);
-        return imagePath;
-      }
-
-      throw error;
-    }
-  }
-
-  throw new Error("Could not create a unique blank shot filename");
 };
 
 const scanFolder = async (
