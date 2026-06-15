@@ -112,6 +112,7 @@
 
 .bottom-bar input[type="range"] {
   width: 220px;
+  accent-color: var(--slate-accent);
 }
 
 .onion-skin-toggle {
@@ -123,7 +124,7 @@
 .onion-skin-toggle input {
   width: 16px;
   height: 16px;
-  accent-color: #f05a28;
+  accent-color: var(--slate-accent);
 }
 
 .status-popover {
