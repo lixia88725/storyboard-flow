@@ -3,6 +3,7 @@ import {
   finishSaveAndClose,
   getAppInfoForRenderer,
   openExternalUrl,
+  selectFolderPath,
   updateCloseGuard
 } from "./appShellService.js";
 
@@ -62,5 +63,32 @@ describe("appShellService", () => {
       "Only HTTPS URLs can be opened externally."
     );
     expect(openExternal).toHaveBeenCalledOnce();
+  });
+
+  it("selects a folder without an owner window", async () => {
+    const showOpenDialog = vi.fn(async () => ({ canceled: false, filePaths: ["/chosen"] }));
+
+    await expect(selectFolderPath({ showOpenDialog })).resolves.toBe("/chosen");
+
+    expect(showOpenDialog).toHaveBeenCalledWith({
+      properties: ["openDirectory", "createDirectory"]
+    });
+  });
+
+  it("selects a folder with an owner window when available", async () => {
+    const owner = { id: 42 };
+    const showOpenDialog = vi.fn(async () => ({ canceled: false, filePaths: ["/owned"] }));
+
+    await expect(selectFolderPath({ owner, showOpenDialog })).resolves.toBe("/owned");
+
+    expect(showOpenDialog).toHaveBeenCalledWith(owner, {
+      properties: ["openDirectory", "createDirectory"]
+    });
+  });
+
+  it("returns undefined when folder selection is canceled", async () => {
+    const showOpenDialog = vi.fn(async () => ({ canceled: true, filePaths: ["/ignored"] }));
+
+    await expect(selectFolderPath({ showOpenDialog })).resolves.toBeUndefined();
   });
 });

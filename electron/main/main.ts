@@ -87,6 +87,7 @@ import {
   finishSaveAndClose as finishSaveAndCloseRequest,
   getAppInfoForRenderer,
   openExternalUrl,
+  selectFolderPath,
   updateCloseGuard as updateCloseGuardForWebContents
 } from "./appShellService.js";
 import {
@@ -746,13 +747,10 @@ const registerIpcHandlers = () => {
 
 const selectFolderForEvent = async (event: IpcMainInvokeEvent): Promise<string | undefined> => {
   const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-  const options: Electron.OpenDialogOptions = {
-    properties: ["openDirectory", "createDirectory"]
-  };
-  const result = owner
-    ? await dialog.showOpenDialog(owner, options)
-    : await dialog.showOpenDialog(options);
-  return result.canceled ? undefined : result.filePaths[0];
+  return selectFolderPath<BrowserWindow>({
+    owner,
+    showOpenDialog: dialog.showOpenDialog.bind(dialog)
+  });
 };
 
 const workspaceTaskProgressReporter =

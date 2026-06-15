@@ -54,3 +54,34 @@ export const openExternalUrl = async (
   }
   await openExternal(url);
 };
+
+export type FolderDialogOptions = {
+  properties: Array<"openDirectory" | "createDirectory">;
+};
+
+export type FolderDialogResult = {
+  canceled: boolean;
+  filePaths: string[];
+};
+
+export type ShowOpenFolderDialog<Owner = unknown> = {
+  (options: FolderDialogOptions): Promise<FolderDialogResult>;
+  (owner: Owner, options: FolderDialogOptions): Promise<FolderDialogResult>;
+};
+
+export const selectFolderPath = async <Owner = unknown>({
+  owner,
+  showOpenDialog
+}: {
+  owner?: Owner;
+  showOpenDialog: ShowOpenFolderDialog<Owner>;
+}): Promise<string | undefined> => {
+  const options: FolderDialogOptions = {
+    properties: ["openDirectory", "createDirectory"]
+  };
+  const result =
+    owner === undefined
+      ? await showOpenDialog(options)
+      : await showOpenDialog(owner, options);
+  return result.canceled ? undefined : result.filePaths[0];
+};
