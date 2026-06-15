@@ -35,7 +35,6 @@ import {
   deleteShots,
   duplicateShotAfter,
   imageBitmapLayerId,
-  markBitmapLayerPainted,
   mergeExternalImageChanges,
   mergeFolderImages,
   moveDialogueToShot,
@@ -66,14 +65,12 @@ import type {
   ProjectNaming,
   Shot,
   BlankShotPreset,
-  SketchStroke,
   SketchTool,
   StrokeTool
 } from "../shared/types";
 import { maxStoryboardZoom } from "./animationViewport";
 import {
   activeVisibleBitmapLayerForShot,
-  canFillBitmapLayer,
   primaryShotFromSelection,
   primaryShotOrFirst
 } from "./activeTargets";
@@ -132,11 +129,7 @@ import {
   storyboardMarqueeShotRectsFromDom
 } from "./storyboardMarqueeDom";
 import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
-import {
-  createTransparentLayerDataUrl,
-  drawStrokeOnBitmapLayer,
-  fillBitmapLayerAtPoint
-} from "./bitmapLayerCanvas";
+import { createTransparentLayerDataUrl } from "./bitmapLayerCanvas";
 import {
   captureParkingDragRects,
   captureStoryboardDragRects,
@@ -163,6 +156,7 @@ import { dragEndInsideSelector, isPointerInsideElement } from "./dragHitTesting"
 import { sameLayerSelection, useStoryboardInteractionState } from "./storyboardInteractionState";
 import { hasOpenShortcutBlockingMenu } from "./shortcutMenuController";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
+import { useBitmapLayerPaintingController } from "./bitmapLayerPaintingController";
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
 import { useAnimationModeLayoutController } from "./animationModeLayoutController";
@@ -668,6 +662,21 @@ export const App = () => {
     setStatus
   });
 
+  const {
+    handleBitmapFill,
+    handleBitmapSelectionTransform,
+    handleBitmapStroke
+  } = useBitmapLayerPaintingController({
+    api: window.storyboard,
+    projectRef,
+    folderPath,
+    bitmapLayerWriteQueueRef,
+    createHistoryEntry,
+    recordUndoEntry,
+    markShotsDirty,
+    updateProject
+  });
+
   async function restoreHistoryLayerAssets(entry: UndoEntry) {
     const activeFolderPath = folderPathRef.current;
     if (!window.storyboard || !activeFolderPath || !entry.layerAssets?.length) {
@@ -897,149 +906,6 @@ export const App = () => {
     setIsImportNudging(true);
     setStatus("Import external changes before editing");
     window.setTimeout(() => setIsImportNudging(false), 520);
-  };
-
-  const handleBitmapStroke = async (
-    shot: Shot,
-    layerId: string,
-    stroke: SketchStroke,
-    renderedDataUrl?: string,
-    pendingStrokes: SketchStroke[] = []
-  ) => {
-    if (!window.storyboard || !folderPath) {
-      return;
-    }
-
-    const layer = bitmapLayersForShot(shot).find((item) => item.id === layerId);
-    if (!layer || layer.locked) {
-      return;
-    }
-
-    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
-      const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
-      const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
-      if (!currentLayer || currentLayer.locked) {
-        return undefined;
-      }
-
-      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
-      let dataUrl = renderedDataUrl;
-
-      if (!dataUrl) {
-        const blankDataUrl = await createTransparentLayerDataUrl(currentLayer.width, currentLayer.height);
-        const layerDataUrl = await window.storyboard
-          .readLayerPng({ folderPath, bitmapPath: currentLayer.bitmapPath })
-          .catch(() => undefined);
-        const sourceDataUrl =
-          layerDataUrl ??
-          (currentLayer.cleared
-            ? blankDataUrl
-            : currentLayer.kind === "image"
-              ? window.storyboard.assetUrl(currentShot.previewPath ?? currentShot.imagePath)
-              : blankDataUrl);
-        dataUrl = await drawStrokeOnBitmapLayer(sourceDataUrl, currentLayer, stroke, pendingStrokes);
-      }
-
-      await window.storyboard.writeLayerPng({
-        folderPath,
-        bitmapPath: currentLayer.bitmapPath,
-        dataUrl
-      });
-      markShotsDirty([currentShot.id]);
-      recordUndoEntry(undoEntry);
-      updateProject(
-        (currentProject) => markBitmapLayerPainted(currentProject, currentShot.id, currentLayer.id),
-        false,
-        false
-      );
-      return dataUrl;
-    });
-  };
-
-  const handleBitmapSelectionTransform = async (shot: Shot, layerId: string, dataUrl: string) => {
-    if (!window.storyboard || !folderPath) {
-      return;
-    }
-
-    const layer = bitmapLayersForShot(shot).find((item) => item.id === layerId);
-    if (!layer || layer.locked) {
-      return;
-    }
-
-    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
-      const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
-      const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
-      if (!currentLayer || currentLayer.locked) {
-        return undefined;
-      }
-
-      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
-      await window.storyboard.writeLayerPng({
-        folderPath,
-        bitmapPath: currentLayer.bitmapPath,
-        dataUrl
-      });
-      markShotsDirty([currentShot.id]);
-      recordUndoEntry(undoEntry);
-      updateProject(
-        (currentProject) => markBitmapLayerPainted(currentProject, currentShot.id, currentLayer.id),
-        false,
-        false
-      );
-      return dataUrl;
-    });
-  };
-
-  const handleBitmapFill = async (
-    shot: Shot,
-    layerId: string,
-    point: { x: number; y: number },
-    color: string
-  ) => {
-    if (!window.storyboard || !folderPath) {
-      return;
-    }
-
-    const layer = bitmapLayersForShot(shot).find((item) => item.id === layerId);
-    if (!canFillBitmapLayer(layer)) {
-      return;
-    }
-
-    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
-      const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
-      const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
-      if (!canFillBitmapLayer(currentLayer)) {
-        return undefined;
-      }
-
-      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
-      const blankDataUrl = await createTransparentLayerDataUrl(currentLayer.width, currentLayer.height);
-      const layerDataUrl = await window.storyboard
-        .readLayerPng({ folderPath, bitmapPath: currentLayer.bitmapPath })
-        .catch(() => undefined);
-      const sourceDataUrl =
-        layerDataUrl ??
-        (currentLayer.cleared
-          ? blankDataUrl
-          : currentLayer.kind === "image"
-            ? window.storyboard.assetUrl(currentShot.previewPath ?? currentShot.imagePath)
-            : blankDataUrl);
-      const dataUrl = await fillBitmapLayerAtPoint(sourceDataUrl, currentLayer, point, color);
-
-      await window.storyboard.writeLayerPng({
-        folderPath,
-        bitmapPath: currentLayer.bitmapPath,
-        dataUrl
-      });
-      markShotsDirty([currentShot.id]);
-      recordUndoEntry(undoEntry);
-      updateProject(
-        (currentProject) => markBitmapLayerPainted(currentProject, currentShot.id, currentLayer.id),
-        false,
-        false
-      );
-      return dataUrl;
-    });
   };
 
   const loadFolderScan = async (
