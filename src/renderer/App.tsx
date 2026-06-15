@@ -117,6 +117,11 @@ import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
 import { AiDraftPanel } from "./ai/AiDraftPanel";
 import { useBoardViewState } from "./boardViewState";
+import {
+  boardViewportHeight,
+  currentBoardScroll as readCurrentBoardScroll,
+  scrollBoardBy as scrollBoardContainerBy
+} from "./boardViewport";
 import { RadialToolMenu } from "./RadialToolMenu";
 import { ShotCard, type CardFace } from "./ShotCard";
 import { Timeline } from "./Timeline";
@@ -527,25 +532,10 @@ export const App = () => {
     board.style.setProperty("--animation-frame-height", preview.cssVariables.animationFrameHeight);
   }, []);
 
-  const currentBoardScroll = () => {
-    const scrollContainer = workspaceBoardScrollRef.current;
-    return scrollContainer
-      ? { x: scrollContainer.scrollLeft, y: scrollContainer.scrollTop }
-      : { x: window.scrollX, y: window.scrollY };
-  };
-
-  const currentBoardViewportHeight = () =>
-    workspaceBoardScrollRef.current?.clientHeight ?? window.innerHeight;
-
-  const scrollBoardBy = (options: ScrollToOptions) => {
-    const scrollContainer = workspaceBoardScrollRef.current;
-    if (scrollContainer) {
-      scrollContainer.scrollBy(options);
-      return;
-    }
-
-    window.scrollBy(options);
-  };
+  const currentBoardScroll = () => readCurrentBoardScroll(workspaceBoardScrollRef.current);
+  const currentBoardViewportHeight = () => boardViewportHeight(workspaceBoardScrollRef.current);
+  const scrollBoardBy = (options: ScrollToOptions) =>
+    scrollBoardContainerBy(workspaceBoardScrollRef.current, options);
 
   const buildZoomPreviewState = useCallback(
     (zoom: number): ZoomPreviewState | undefined => {
