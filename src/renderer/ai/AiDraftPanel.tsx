@@ -19,14 +19,8 @@ import {
 } from "./aiSettingsState";
 import { windowAiClient, type AiDraftClient } from "./aiClient";
 import { useAiDraftController } from "./useAiDraftController";
+import { useAiCandidateController, type AiCandidate } from "./useAiCandidateController";
 import { useAiResourcesController } from "./useAiResourcesController";
-
-type AiCandidate = {
-  id: string;
-  shotId: string;
-  filePath: string;
-  prompt: string;
-};
 
 type AiBatchGroupResult = {
   index: number;
@@ -65,7 +59,6 @@ export const AiDraftPanel = ({
     () => aiPanelSelectionState(project, selectedShotIds),
     [project, selectedShotIds]
   );
-  const [candidate, setCandidate] = useState<AiCandidate | undefined>();
   const [batchCandidates, setBatchCandidates] = useState<AiCandidate[]>([]);
   const [batchGroups, setBatchGroups] = useState<AiBatchGroupResult[]>([]);
   const [status, setStatus] = useState("Ready");
@@ -122,6 +115,26 @@ export const AiDraftPanel = ({
     onProjectChange,
     setStatus
   });
+  const {
+    applyCandidate: applySingleCandidate,
+    candidate,
+    clearCandidate,
+    copyRequestPreview: copySingleRequestPreview,
+    discardCandidate: discardSingleCandidate,
+    generateCandidate: generateSingleCandidate,
+    hasCandidate
+  } = useAiCandidateController({
+    aiClient,
+    folderPath,
+    generationSettings: currentGenerationSettings,
+    project,
+    selectedResourceIds: activeResourceIds,
+    selectedShotIds,
+    selection,
+    setIsGenerating,
+    setStatus,
+    onProjectChange
+  });
   const visibleStatus = visibleAiStatusMessage(status);
   const canCopyRequestPreview = canCopyAiRequestPreview(selection);
   const batchShotIds = selection.kind === "multi" ? selection.shots.map((shot) => shot.id) : [];
@@ -136,10 +149,9 @@ export const AiDraftPanel = ({
     canRequestAiGeneration({ ...apiKeyStatus, provider: providerName, isGenerating }) &&
     (selection.kind === "ready" || (selection.kind === "multi" && selection.shots.length > 0));
   const hasActiveCandidate =
-    selection.kind === "multi" ? batchCandidates.length > 0 : Boolean(candidate);
+    selection.kind === "multi" ? batchCandidates.length > 0 : hasCandidate;
 
   useEffect(() => {
-    setCandidate(undefined);
     setBatchCandidates([]);
     setBatchGroups([]);
     setStatus("Ready");
@@ -190,7 +202,7 @@ export const AiDraftPanel = ({
         });
         setBatchCandidates(result.candidates);
         setBatchGroups(result.groups);
-        setCandidate(undefined);
+        clearCandidate();
         const failedGroups = result.groups.filter((group) => group.error);
         setStatus(
           failedGroups.length > 0
@@ -205,26 +217,7 @@ export const AiDraftPanel = ({
       return;
     }
 
-    if (selection.kind !== "ready") {
-      return;
-    }
-    setIsGenerating(true);
-    setStatus("Generating AI candidate...");
-    try {
-      const nextCandidate = await aiClient.generateCandidate({
-        folderPath,
-        project,
-        shotId: selection.shot.id,
-        selectedResourceIds: activeResourceIds,
-        generationSettings: currentGenerationSettings
-      });
-      setCandidate(nextCandidate);
-      setStatus("AI candidate ready");
-    } catch (error) {
-      setStatus(`AI generation failed: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsGenerating(false);
-    }
+    await generateSingleCandidate();
   };
 
   const copyRequestPreview = async () => {
@@ -248,21 +241,7 @@ export const AiDraftPanel = ({
       return;
     }
 
-    if (selection.kind !== "ready") {
-      return;
-    }
-    try {
-      await aiClient.copyRequestPreview({
-        folderPath,
-        project,
-        shotId: selection.shot.id,
-        selectedResourceIds: activeResourceIds,
-        generationSettings: currentGenerationSettings
-      });
-      setStatus("AI request preview copied");
-    } catch (error) {
-      setStatus(`Could not copy AI request preview: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    await copySingleRequestPreview();
   };
 
   const discardCandidate = async () => {
@@ -274,12 +253,7 @@ export const AiDraftPanel = ({
       return;
     }
 
-    if (!candidate) {
-      return;
-    }
-    await aiClient.discardCandidate(folderPath, candidate.id).catch(() => undefined);
-    setCandidate(undefined);
-    setStatus("AI candidate discarded");
+    await discardSingleCandidate();
   };
 
   const applyCandidate = async () => {
@@ -307,21 +281,7 @@ export const AiDraftPanel = ({
       return;
     }
 
-    if (!candidate) {
-      return;
-    }
-    try {
-      const result = await aiClient.applyCandidate({
-        folderPath,
-        project,
-        candidateId: candidate.id
-      });
-      onProjectChange(result.project, "AI Draft layer added");
-      setCandidate(undefined);
-      setStatus("AI Draft layer added");
-    } catch (error) {
-      setStatus(`Could not apply AI candidate: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    await applySingleCandidate();
   };
 
   return (
