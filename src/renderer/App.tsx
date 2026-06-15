@@ -105,6 +105,7 @@ import {
   type DeleteTarget
 } from "./deleteTarget";
 import { createDirtyShotTracker } from "./dirtyShotTracker";
+import { blurActiveFormControl } from "./formFocus";
 import {
   defaultKeyboardShortcuts,
   isKeyboardEditableTarget
@@ -245,12 +246,6 @@ type StoryboardScriptImportDraft = {
   fileName: string;
   entryCount: number;
   targetFolderPath: string;
-};
-const blurActiveFormControl = () => {
-  const activeElement = document.activeElement;
-  if (activeElement instanceof HTMLElement && activeElement.matches("input, textarea, select")) {
-    activeElement.blur();
-  }
 };
 
 const markdownPathFromDrop = (event: ReactDragEvent): string | undefined => {
