@@ -35,7 +35,6 @@ import {
   copyBitmapLayerToShot,
   deleteShots,
   duplicateShotAfter,
-  ensureBitmapLayerMetadata,
   imageBitmapLayerId,
   markBitmapLayerPainted,
   mergeExternalImageChanges,
@@ -113,6 +112,7 @@ import {
 import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon, SwatchIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { appendHistoryEntry, useSyncedHistoryStackController } from "./historyStackController";
+import { ensureProjectBitmapMetadata } from "./projectBitmapMetadata";
 import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
 import { AiDraftPanel } from "./ai/AiDraftPanel";
@@ -232,12 +232,6 @@ const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: stri
 const animationReservedBottom = 180;
 const animationViewportMargin = 14;
 const radialToolMenuCloseAnimationMs = 140;
-
-const ensureProjectBitmapMetadata = (project: Project): Project => ({
-  ...project,
-  shots: project.shots.map((shot) => ensureBitmapLayerMetadata(shot)),
-  parkedShots: project.parkedShots?.map((shot) => ensureBitmapLayerMetadata(shot))
-});
 
 type UndoEntry = {
   project: Project;
