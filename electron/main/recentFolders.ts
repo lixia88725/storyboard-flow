@@ -103,3 +103,49 @@ export const createRecentFoldersChangeNotifier = (
 
   return { notify, flush };
 };
+
+export type RecentFoldersControllerOptions = {
+  maxRecentFolders: number;
+  userDataPath: () => string;
+  readWithRecovery: (
+    userDataPath: string,
+    maxRecentFolders: number
+  ) => Promise<{ folders: string[]; recoveredFromCorruptFile: boolean }>;
+  writeFolders: (userDataPath: string, folders: string[], maxRecentFolders: number) => Promise<string[]>;
+  updateMenu: () => Promise<void>;
+  notifyChanged: (folders: string[], reason?: string) => void;
+  corruptReason: string;
+};
+
+export const createRecentFoldersController = (options: RecentFoldersControllerOptions) => {
+  const read = async (): Promise<string[]> => {
+    const result = await options.readWithRecovery(options.userDataPath(), options.maxRecentFolders);
+    if (result.recoveredFromCorruptFile) {
+      await options.updateMenu();
+      options.notifyChanged(result.folders, options.corruptReason);
+    }
+    return result.folders;
+  };
+
+  const write = async (folders: string[]): Promise<void> => {
+    const nextFolders = await options.writeFolders(options.userDataPath(), folders, options.maxRecentFolders);
+    await options.updateMenu();
+    options.notifyChanged(nextFolders);
+  };
+
+  const add = async (folderPath: string): Promise<void> => {
+    const existing = await read();
+    const next = addRecentFolderPath(existing, folderPath, options.maxRecentFolders);
+    await write(next);
+  };
+
+  const remove = async (folderPath: string): Promise<void> => {
+    const existing = await read();
+    const next = removeRecentFolderPath(existing, folderPath);
+    if (next.length !== existing.length) {
+      await write(next);
+    }
+  };
+
+  return { add, read, remove, write };
+};

@@ -3,6 +3,7 @@ import {
   addRecentFolderPath,
   buildRecentFoldersMenuTemplate,
   createRecentFoldersChangeNotifier,
+  createRecentFoldersController,
   normalizeRecentFolders,
   removeRecentFolderPath
 } from "./recentFolders.js";
@@ -89,5 +90,68 @@ describe("recent folder helpers", () => {
     expect(sent).toEqual([["recent:foldersChanged", ["/tmp/recovered"], "recent-folders-corrupt"]]);
     notifier.flush();
     expect(sent).toHaveLength(1);
+  });
+
+  it("reports recovered corrupt recent folders while reading", async () => {
+    const calls: string[] = [];
+    const notifications: unknown[][] = [];
+    const controller = createRecentFoldersController({
+      maxRecentFolders: 10,
+      userDataPath: () => "/user-data",
+      readWithRecovery: async (userDataPath, maxRecentFolders) => {
+        calls.push(`read:${userDataPath}:${maxRecentFolders}`);
+        return { folders: ["/tmp/recovered"], recoveredFromCorruptFile: true };
+      },
+      writeFolders: async () => [],
+      updateMenu: async () => calls.push("update-menu"),
+      notifyChanged: (...args) => notifications.push(args),
+      corruptReason: "recent-folders-corrupt"
+    });
+
+    await expect(controller.read()).resolves.toEqual(["/tmp/recovered"]);
+    expect(calls).toEqual(["read:/user-data:10", "update-menu"]);
+    expect(notifications).toEqual([[["/tmp/recovered"], "recent-folders-corrupt"]]);
+  });
+
+  it("adds recent folders through the injected writer", async () => {
+    const writes: unknown[][] = [];
+    const notifications: unknown[][] = [];
+    const controller = createRecentFoldersController({
+      maxRecentFolders: 2,
+      userDataPath: () => "/user-data",
+      readWithRecovery: async () => ({ folders: ["/tmp/scene-a"], recoveredFromCorruptFile: false }),
+      writeFolders: async (...args) => {
+        writes.push(args);
+        return ["/tmp/scene-b", "/tmp/scene-a"];
+      },
+      updateMenu: async () => undefined,
+      notifyChanged: (...args) => notifications.push(args),
+      corruptReason: "recent-folders-corrupt"
+    });
+
+    await controller.add("/tmp/scene-b");
+
+    expect(writes).toEqual([["/user-data", ["/tmp/scene-b", "/tmp/scene-a"], 2]]);
+    expect(notifications).toEqual([[["/tmp/scene-b", "/tmp/scene-a"]]]);
+  });
+
+  it("does not write when removing a missing recent folder", async () => {
+    let writeCount = 0;
+    const controller = createRecentFoldersController({
+      maxRecentFolders: 10,
+      userDataPath: () => "/user-data",
+      readWithRecovery: async () => ({ folders: ["/tmp/scene-a"], recoveredFromCorruptFile: false }),
+      writeFolders: async () => {
+        writeCount += 1;
+        return [];
+      },
+      updateMenu: async () => undefined,
+      notifyChanged: () => undefined,
+      corruptReason: "recent-folders-corrupt"
+    });
+
+    await controller.remove("/tmp/missing");
+
+    expect(writeCount).toBe(0);
   });
 });

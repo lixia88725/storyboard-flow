@@ -54,10 +54,9 @@ import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewRootForFolder } from "./previewPaths.js";
 import { createPreview } from "./previewService.js";
 import {
-  addRecentFolderPath,
   buildRecentFoldersMenuTemplate,
   createRecentFoldersChangeNotifier,
-  removeRecentFolderPath
+  createRecentFoldersController
 } from "./recentFolders.js";
 import { mapWithConcurrency } from "./mapWithConcurrency.js";
 import { assertPathInsideFolder, ensureDirectory, pathExists } from "./pathSafety.js";
@@ -1201,36 +1200,33 @@ const createAiImageProvider = async (providerName: AiImageProviderName) => {
   return createOpenAiImageProvider({ apiKey: await readOpenAiApiKey(aiCredentialStore()) });
 };
 
+const recentFoldersController = createRecentFoldersController({
+  maxRecentFolders,
+  userDataPath,
+  readWithRecovery: readRecentFoldersWithRecovery,
+  writeFolders: writeRecentFoldersToUserData,
+  updateMenu: () => updateRecentFoldersMenu(),
+  notifyChanged: (folders, reason) => recentFoldersChangeNotifier.notify(folders, reason),
+  corruptReason: recentFoldersCorruptReason
+});
+
 const readRecentFolders = async (): Promise<string[]> => {
-  const result = await readRecentFoldersWithRecovery(userDataPath(), maxRecentFolders);
-  if (result.recoveredFromCorruptFile) {
-    await updateRecentFoldersMenu();
-    recentFoldersChangeNotifier.notify(result.folders, recentFoldersCorruptReason);
-  }
-  return result.folders;
+  return recentFoldersController.read();
 };
 
 const writeRecentFolders = async (folders: string[]): Promise<void> => {
-  const nextFolders = await writeRecentFoldersToUserData(userDataPath(), folders, maxRecentFolders);
-  await updateRecentFoldersMenu();
-  recentFoldersChangeNotifier.notify(nextFolders);
+  await recentFoldersController.write(folders);
 };
 
 const addRecentFolder = async (folderPath: string): Promise<void> => {
-  const existing = await readRecentFolders();
-  const next = addRecentFolderPath(existing, folderPath, maxRecentFolders);
-  await writeRecentFolders(next);
+  await recentFoldersController.add(folderPath);
 };
 
 const removeRecentFolder = async (folderPath: string): Promise<void> => {
-  const existing = await readRecentFolders();
-  const next = removeRecentFolderPath(existing, folderPath);
-  if (next.length !== existing.length) {
-    await writeRecentFolders(next);
-  }
+  await recentFoldersController.remove(folderPath);
 };
 
-const updateRecentFoldersMenu = async (): Promise<void> => {
+async function updateRecentFoldersMenu(): Promise<void> {
   const recentFolders = await readRecentFolders();
   const template: Electron.MenuItemConstructorOptions[] = buildRecentFoldersMenuTemplate(recentFolders, {
     isDarwin: process.platform === "darwin",
@@ -1240,7 +1236,7 @@ const updateRecentFoldersMenu = async (): Promise<void> => {
   }) as Electron.MenuItemConstructorOptions[];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-};
+}
 
 const importProjectToSwbFormat = async (
   project: Project,
