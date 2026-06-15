@@ -11,7 +11,7 @@ import {
   shell,
   type IpcMainInvokeEvent
 } from "electron";
-import { copyFile, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { watch, type FSWatcher } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -82,6 +82,7 @@ import {
   isWorkspaceTemporaryImagePath,
   workspaceCopyTemporaryFileName
 } from "./workspaceTemporaryPaths.js";
+import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { applyAiCandidateAsLayer, discardAiCandidate } from "./ai/candidates.js";
 import type { AiBatchResourceAssignments } from "./ai/batch.js";
 import { generateAiCandidate, type AiImageProviderName } from "./ai/generate.js";
@@ -386,7 +387,6 @@ let nextWorkspaceWatcherId = 1;
 const saveAndCloseRequests = new Map<string, BrowserWindow>();
 const closeGuardWebContentsIds = new Set<number>();
 
-const supportedExtensions = new Set([".png", ".jpg", ".jpeg", ".tif", ".tiff"]);
 let mainWindow: BrowserWindow | undefined;
 const maxRecentFolders = 10;
 const recentFoldersCorruptReason = "recent-folders-corrupt";
@@ -2299,34 +2299,6 @@ const changedKnownImagePaths = async (
   );
 
   return changed;
-};
-
-const collectImagePaths = async (filePaths: string[]): Promise<string[]> => {
-  const collected = await Promise.all(
-    filePaths.map(async (filePath) => {
-      const fileStat = await stat(filePath);
-
-      if (fileStat.isDirectory()) {
-        const entries = await readdir(filePath);
-        return entries
-          .map((entry) => path.join(filePath, entry))
-          .filter((entryPath) => supportedExtensions.has(path.extname(entryPath).toLowerCase()))
-          .filter((entryPath) => !isWorkspaceTemporaryImagePath(entryPath));
-      }
-
-      return supportedExtensions.has(path.extname(filePath).toLowerCase()) &&
-        !isWorkspaceTemporaryImagePath(filePath)
-        ? [filePath]
-        : [];
-    })
-  );
-
-  return [...new Set(collected.flat())].sort((a, b) => a.localeCompare(b));
-};
-
-
-const metadataPathForFolder = (folderPath: string): string => {
-  return path.join(folderPath, ".storyboard-workbench", "storyboard.project.json");
 };
 
 const readProject = async (metadataPath: string): Promise<Project | undefined> => {
