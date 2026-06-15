@@ -61,13 +61,6 @@ import {
   bitmapLayerPath,
 } from "../shared/projectOps";
 import { generatedShotTransparentLayerAssets } from "../shared/generatedShotAssets";
-import {
-  cacheBustedUpdateManifestUrl,
-  findAvailableUpdate,
-  isVersionGreater,
-  parseUpdateManifest,
-  type AvailableUpdate
-} from "../shared/updateManifest";
 import type {
   BitmapLayer,
   Dialogue,
@@ -182,6 +175,7 @@ import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
 import { shouldIgnoreWorkbenchWheelTarget } from "./workbenchWheel";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
+import { useUpdateNoticeController } from "./updateNoticeController";
 import {
   applyRadialPresetSlot,
   defaultToolRadialMenuConfig,
@@ -240,10 +234,6 @@ const ensureProjectBitmapMetadata = (project: Project): Project => ({
   parkedShots: project.parkedShots?.map((shot) => ensureBitmapLayerMetadata(shot))
 });
 
-type UpdateNoticeState =
-  | { status: "idle" | "checking" | "current" | "dismissed" }
-  | { status: "available"; update: AvailableUpdate }
-  | { status: "error"; message: string };
 type RadialToolMenuState = { tool: StrokeTool; x: number; y: number; isClosing?: boolean };
 type UndoEntry = {
   project: Project;
@@ -447,7 +437,6 @@ export const App = () => {
   const [saveErrorDialog, setSaveErrorDialog] = useState<string | undefined>();
   const [storyboardScriptImportDraft, setStoryboardScriptImportDraft] =
     useState<StoryboardScriptImportDraft | undefined>();
-  const [updateNotice, setUpdateNotice] = useState<UpdateNoticeState>({ status: "idle" });
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<UndoEntry[]>([]);
   const {
@@ -461,6 +450,12 @@ export const App = () => {
   const [status, setStatus] = useState(
     window.storyboard ? "Ready" : "Electron preload API is unavailable"
   );
+  const {
+    updateNotice,
+    setUpdateNotice,
+    checkForUpdates,
+    openUpdateDownload
+  } = useUpdateNoticeController({ setStatus });
   const selectionMarqueeRef = useRef<HTMLDivElement | null>(null);
   const scriptImportCheckIdRef = useRef(0);
   const dirtyShotIdsRef = useRef<Set<string>>(new Set());
@@ -566,64 +561,6 @@ export const App = () => {
     () => () => clearPasteAnimation(pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef),
     []
   );
-
-  const checkForUpdates = useCallback(async (notifyWhenCurrent = false) => {
-    if (!window.storyboard?.getAppInfo) {
-      return;
-    }
-
-    setUpdateNotice({ status: "checking" });
-    try {
-      const appInfo = await window.storyboard.getAppInfo();
-      const manifestUrl = cacheBustedUpdateManifestUrl(appInfo.updateManifestUrl, Date.now());
-      const response = await fetch(manifestUrl, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`Update check failed with status ${response.status}`);
-      }
-
-      const manifest = parseUpdateManifest(await response.json());
-      if (!manifest) {
-        throw new Error("Update manifest is invalid.");
-      }
-
-      const platformUpdate = findAvailableUpdate({
-        currentVersion: appInfo.version,
-        platform: appInfo.platform,
-        arch: appInfo.arch,
-        manifest
-      });
-      const update =
-        platformUpdate ??
-        (isVersionGreater(manifest.latest, appInfo.version)
-          ? {
-              version: manifest.latest,
-              notes: `No direct ${appInfo.platform}/${appInfo.arch} package is listed. Open the release page to choose manually.`,
-              releaseUrl: manifest.releaseUrl,
-              downloadUrl: manifest.releaseUrl
-            }
-          : undefined);
-      setUpdateNotice(update ? { status: "available", update } : { status: "current" });
-      if (!update && notifyWhenCurrent) {
-        setStatus(`Storyboard Flow ${appInfo.version} is up to date`);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setUpdateNotice({ status: "error", message });
-      if (notifyWhenCurrent) {
-        setStatus(`Update check failed: ${message}`);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    void checkForUpdates(false);
-  }, [checkForUpdates]);
-
-  const openUpdateDownload = (update: AvailableUpdate) => {
-    void window.storyboard?.openExternal(update.downloadUrl).catch((error) => {
-      setStatus(`Could not open update download: ${error instanceof Error ? error.message : String(error)}`);
-    });
-  };
 
   const syncZoomControlDisplay = useCallback((zoom: number) => {
     const normalizedZoom = normalizeStoryboardZoom(zoom);
