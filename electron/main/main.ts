@@ -114,11 +114,7 @@ import { validateComfyUiServerUrl, validateComfyUiWorkflow } from "./ai/comfyUiW
 import { createOpenAiImageProvider } from "./ai/openAiImageProvider.js";
 import { buildAiRequestPreview } from "./ai/requestPreview.js";
 import { createSeedreamImageProvider } from "./ai/seedreamImageProvider.js";
-import {
-  readAiSettings,
-  writeComfyUiSettings,
-  type AiSettingsStore
-} from "./ai/settings.js";
+import { readAiSettings, writeComfyUiSettings } from "./ai/settings.js";
 import {
   deleteAiResourceFile,
   importAiResourceFiles,
@@ -132,8 +128,7 @@ import {
   readOpenAiApiKey,
   readSeedreamApiKey,
   writeOpenAiApiKey,
-  writeSeedreamApiKey,
-  type AiCredentialStore
+  writeSeedreamApiKey
 } from "./ai/credentials.js";
 import { createAiMainHandlers } from "./ai/mainHandlers.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
@@ -169,6 +164,7 @@ import {
   writeRecentFolders as writeRecentFoldersToUserData,
   writeToolRadialMenu as writeToolRadialMenuToUserData
 } from "./userSettingsService.js";
+import { createUserDataRuntime } from "./userDataRuntime.js";
 
 const swbFormatVersion = 1;
 const swbXmpTag = "swb:metadata";
@@ -594,15 +590,15 @@ const registerIpcHandlers = () => {
   });
 
   registerSettingsIpcHandlers(ipcMain, {
-    getToolRadialMenu: readToolRadialMenu,
-    setToolRadialMenu: writeToolRadialMenu
+    getToolRadialMenu: userDataRuntime.readToolRadialMenu,
+    setToolRadialMenu: userDataRuntime.writeToolRadialMenu
   });
 
   registerAiIpcHandlers(
     ipcMain,
     createAiMainHandlers({
-      aiCredentialStore,
-      aiSettingsStore,
+      aiCredentialStore: userDataRuntime.aiCredentialStore,
+      aiSettingsStore: userDataRuntime.aiSettingsStore,
       applyCandidateAsLayer: applyAiCandidateAsLayer,
       buildAiRequestPreview,
       clearOpenAiApiKey,
@@ -955,19 +951,11 @@ const ensureStoryboardScriptMarkdown = async (
 
 const userDataPath = (): string => app.getPath("userData");
 
-const readToolRadialMenu = async (): Promise<unknown> =>
-  readToolRadialMenuFromUserData(userDataPath());
-
-const writeToolRadialMenu = async (config: unknown): Promise<unknown> =>
-  writeToolRadialMenuToUserData(userDataPath(), config);
-
-const aiCredentialStore = (): AiCredentialStore => ({
-  userDataPath: app.getPath("userData"),
-  crypto: safeStorage
-});
-
-const aiSettingsStore = (): AiSettingsStore => ({
-  userDataPath: app.getPath("userData")
+const userDataRuntime = createUserDataRuntime({
+  crypto: safeStorage,
+  readToolRadialMenu: readToolRadialMenuFromUserData,
+  userDataPath,
+  writeToolRadialMenu: writeToolRadialMenuToUserData
 });
 
 const recentFoldersRuntime = createRecentFoldersRuntime({
