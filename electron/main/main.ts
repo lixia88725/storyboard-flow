@@ -99,6 +99,7 @@ import {
   type CopyShotAssetsPayload
 } from "./copyShotAssetsService.js";
 import { checkExternalChanges } from "./checkExternalChangesService.js";
+import { scanWorkspaceFolder } from "./folderScanService.js";
 import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
 import {
   createWorkspaceTaskProgressReporter,
@@ -1948,43 +1949,14 @@ const scanFolder = async (
   folderPath: string,
   onProgress?: WorkspaceTaskProgressReporter
 ): Promise<FolderScanPayload> => {
-  const metadataPath = metadataPathForFolder(folderPath);
-  const previewRoot = previewRootForFolder(folderPath);
-  const project = await readProject(metadataPath);
-
-  if (project) {
-    onProgress?.({ kind: "open", label: "Loading storyboard...", current: 0, total: 0 });
-    return {
-      folderPath,
-      folderName: path.basename(folderPath),
-      metadataPath,
-      project,
-      images: [],
-      scriptImportNeeded: await ensureStoryboardScriptMarkdown(folderPath, project),
-      preserveProjectWithoutImageMerge: true
-    };
-  }
-
-  onProgress?.({ kind: "open", label: "Scanning folder...", current: 0, total: 0 });
-  const imagePaths = await collectImagePaths([folderPath]);
-  onProgress?.({
-    kind: "open",
-    label: "Preparing previews...",
-    current: 0,
-    total: imagePaths.length
+  return scanWorkspaceFolder(folderPath, onProgress, {
+    collectImagePaths,
+    createImageRecords,
+    ensureStoryboardScriptMarkdown,
+    metadataPathForFolder,
+    previewRootForFolder,
+    readProject
   });
-
-  return {
-    folderPath,
-    folderName: path.basename(folderPath),
-    metadataPath,
-    project,
-    images: await createImageRecords(imagePaths, previewRoot, {
-      onProgress,
-      label: "Preparing previews..."
-    }),
-    scriptImportNeeded: await ensureStoryboardScriptMarkdown(folderPath, project)
-  };
 };
 
 const changedKnownImagePaths = async (
