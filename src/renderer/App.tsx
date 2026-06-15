@@ -191,17 +191,14 @@ import { statusPanelToggleClassName, swbStatusLabel, updateCheckButtonLabel } fr
 import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, projectChangedDuringLoad, shouldAutosaveAfterLoad, shouldPersistLoadedProject } from "./workspacePersistenceController";
 import {
   applyRadialPresetSlot,
-  radialCanvasContextMenuAction,
   type RadialDragKind,
   type RadialPresetSlot,
   type RadialToolSlot
 } from "./toolRadialMenu";
 import {
-  closeRadialToolMenuState,
   nextRadialSlotConfig,
-  openRadialToolMenuState,
   updateRadialDragSettings,
-  type RadialToolMenuState
+  useRadialToolMenuController
 } from "./radialToolMenuController";
 import { usePointerPositionController } from "./pointerPositionController";
 import { useZoomInteractionController } from "./zoomInteractionController";
@@ -231,7 +228,6 @@ const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: stri
 ];
 const animationReservedBottom = 180;
 const animationViewportMargin = 14;
-const radialToolMenuCloseAnimationMs = 140;
 
 type UndoEntry = {
   project: Project;
@@ -338,7 +334,6 @@ export const App = () => {
     setIsSaveMenuOpen
   } = useWorkspaceMenuController();
   const [blankShotPreset, setBlankShotPreset] = useState<BlankShotPreset>("16:9");
-  const [radialToolMenu, setRadialToolMenu] = useState<RadialToolMenuState | undefined>();
   const [isStatusPanelOpen, setIsStatusPanelOpen] = useState(false);
   const [isImportNudging, setIsImportNudging] = useState(false);
   const [cardFace, setCardFace] = useState<CardFace>("image");
@@ -393,7 +388,6 @@ export const App = () => {
   const zoomInputRef = useRef<HTMLInputElement | null>(null);
   const zoomValueLabelRef = useRef<HTMLSpanElement | null>(null);
   const selectedShotCountLabelRef = useRef<HTMLSpanElement | null>(null);
-  const radialToolMenuCloseTimeoutRef = useRef<number | undefined>(undefined);
   const pendingZoomPreviewLevelRef = useRef<number | undefined>(undefined);
   const zoomPreviewFrameRef = useRef<number | undefined>(undefined);
   const zoomPreviewStateRef = useRef<ZoomPreviewState | undefined>(undefined);
@@ -466,6 +460,15 @@ export const App = () => {
     () => getOnionSkinNeighbors(orderedShots, primarySelectedShotId, isAnimationMode && isOnionSkinEnabled),
     [isAnimationMode, isOnionSkinEnabled, orderedShots, primarySelectedShotId]
   );
+  const {
+    radialToolMenu,
+    closeRadialToolMenu,
+    openSketchCanvasContextMenu
+  } = useRadialToolMenuController({
+    activeSketchTool,
+    needsSwbImport,
+    setStatus
+  });
 
   useLayoutEffect(() => {
     const animation = pasteAnimationRef.current;
@@ -2638,78 +2641,6 @@ export const App = () => {
     window.addEventListener("pointerup", handlePointerUp, { once: true });
     window.addEventListener("pointercancel", handlePointerUp, { once: true });
     scheduleMarqueeUpdate();
-  };
-
-  const clearRadialToolMenuCloseTimeout = useCallback(() => {
-    if (radialToolMenuCloseTimeoutRef.current !== undefined) {
-      window.clearTimeout(radialToolMenuCloseTimeoutRef.current);
-      radialToolMenuCloseTimeoutRef.current = undefined;
-    }
-  }, []);
-
-  const openRadialToolMenu = useCallback(
-    (nextMenu: Omit<RadialToolMenuState, "isClosing">) => {
-      clearRadialToolMenuCloseTimeout();
-      setRadialToolMenu(openRadialToolMenuState(nextMenu));
-    },
-    [clearRadialToolMenuCloseTimeout]
-  );
-
-  const closeRadialToolMenu = useCallback(() => {
-    clearRadialToolMenuCloseTimeout();
-
-    const shouldReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (shouldReduceMotion) {
-      setRadialToolMenu(undefined);
-      return;
-    }
-
-    setRadialToolMenu((current) => closeRadialToolMenuState(current, false));
-    radialToolMenuCloseTimeoutRef.current = window.setTimeout(() => {
-      radialToolMenuCloseTimeoutRef.current = undefined;
-      setRadialToolMenu(undefined);
-    }, radialToolMenuCloseAnimationMs);
-  }, [clearRadialToolMenuCloseTimeout]);
-
-  useEffect(() => clearRadialToolMenuCloseTimeout, [clearRadialToolMenuCloseTimeout]);
-
-  const openSketchCanvasContextMenu = (event: MouseEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("input, textarea, select, .save-menu")) {
-      return;
-    }
-
-    const action = radialCanvasContextMenuAction({
-      isCanvasTarget: Boolean(target.closest(".image-stage")),
-      isInsideRadialMenu: Boolean(target.closest(".radial-tool-menu")),
-      hasOpenRadialMenu: Boolean(radialToolMenu && !radialToolMenu.isClosing),
-      activeTool: activeSketchTool
-    });
-
-    if (action === "ignore") {
-      return;
-    }
-
-    event.preventDefault();
-    if (action === "close") {
-      closeRadialToolMenu();
-      return;
-    }
-
-    if (needsSwbImport) {
-      setStatus("Import external changes before editing");
-      return;
-    }
-
-    if (activeSketchTool !== "brush" && activeSketchTool !== "eraser") {
-      return;
-    }
-
-    openRadialToolMenu({
-      tool: activeSketchTool,
-      x: event.clientX,
-      y: event.clientY
-    });
   };
 
   const boardZoomCssVariables = zoomPreviewStateRef.current?.cssVariables;
