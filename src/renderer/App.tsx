@@ -36,7 +36,6 @@ import {
   deleteShots,
   duplicateShotAfter,
   ensureBitmapLayerMetadata,
-  getNextStoryboardIndex,
   imageBitmapLayerId,
   markBitmapLayerPainted,
   mergeExternalImageChanges,
@@ -204,6 +203,7 @@ import {
 } from "./radialToolMenuController";
 import { usePointerPositionController } from "./pointerPositionController";
 import { useZoomInteractionController } from "./zoomInteractionController";
+import { nextKeyboardShotSelection, useGlobalKeyboardController } from "./globalKeyboardController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -1017,8 +1017,8 @@ export const App = () => {
     }
   }, [animationImageSize.height, animationImageSize.width, isAnimationMode, isZoomScrubbing, selectedShotIds]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
+  const handleGlobalKeyDown = useCallback(
+    (event: KeyboardEvent) => {
       const target = event.target;
       const isMenuOpen =
         isShortcutMenuOpen ||
@@ -1061,26 +1061,16 @@ export const App = () => {
 
       const moveSelection = (direction: "left" | "right" | "up" | "down") => {
         setSelectedShotIds((current) => {
-          if (orderedShots.length === 0) {
-            shotSelectionAnchorIdRef.current = undefined;
-            selectedShotIdsRef.current = [];
-            return [];
-          }
-
-          const currentIndex = current[0]
-            ? orderedShots.findIndex((shot) => shot.id === current[0])
-            : -1;
-          const nextIndex = getNextStoryboardIndex(
-            currentIndex,
-            orderedShots.length,
-            measureGridColumns(),
+          const selection = nextKeyboardShotSelection({
+            currentSelectedIds: current,
             direction,
-            isAnimationMode
-          );
-          const nextShotId = orderedShots[nextIndex].id;
-          shotSelectionAnchorIdRef.current = nextShotId;
-          selectedShotIdsRef.current = [nextShotId];
-          return [nextShotId];
+            gridColumns: measureGridColumns(),
+            isAnimationMode,
+            orderedShotIds: orderedShots.map((shot) => shot.id)
+          });
+          shotSelectionAnchorIdRef.current = selection.anchorId;
+          selectedShotIdsRef.current = selection.selectedIds;
+          return selection.selectedIds;
         });
       };
 
@@ -1200,22 +1190,22 @@ export const App = () => {
 
       event.preventDefault();
       moveSelection(key.replace("arrow", "") as "up" | "down");
-    };
+    },
+    [
+      isAddShotMenuOpen,
+      isAnimationMode,
+      isImportHelpOpen,
+      isRecentMenuOpen,
+      isSaveMenuOpen,
+      isShortcutMenuOpen,
+      measureGridColumns,
+      orderedShots,
+      activeSketchTool,
+      primarySelectedShot
+    ]
+  );
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    isAddShotMenuOpen,
-    isAnimationMode,
-    isImportHelpOpen,
-    isRecentMenuOpen,
-    isSaveMenuOpen,
-    isShortcutMenuOpen,
-    measureGridColumns,
-    orderedShots,
-    activeSketchTool,
-    primarySelectedShot
-  ]);
+  useGlobalKeyboardController(handleGlobalKeyDown);
 
   const updateProject = (
     projectUpdate: ProjectUpdate,
