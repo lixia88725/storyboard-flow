@@ -178,6 +178,12 @@ import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
 import { usePopoverController } from "./popoverController";
+import {
+  applyPasteAnimation,
+  clearPasteAnimation,
+  measurePasteAnimationRects,
+  type PasteAnimationState
+} from "./pasteAnimationController";
 import { statusPanelToggleClassName, swbStatusLabel, updateCheckButtonLabel } from "./statusPanelController";
 import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, projectChangedDuringLoad, shouldAutosaveAfterLoad, shouldPersistLoadedProject, shouldRunAutosave } from "./workspacePersistenceController";
 import {
@@ -239,14 +245,6 @@ type StoryboardScriptImportDraft = {
   entryCount: number;
   targetFolderPath: string;
 };
-type PasteAnimationKind = "shot" | "layer";
-type PasteAnimationState = {
-  kind: PasteAnimationKind;
-  sourceId: string;
-  pastedId: string;
-  beforeRects: Map<string, DOMRect>;
-};
-
 const appendHistoryEntry = (entries: UndoEntry[], entry: UndoEntry) => [
   ...entries.slice(Math.max(0, entries.length - maxUndoHistory + 1)),
   entry
@@ -4086,103 +4084,6 @@ const inferDropPlacementFromDragEnd = (event: DragEndEvent): ShotPlacement => {
   const activeCenterY = activeRect.top + activeRect.height / 2;
   const overCenterY = overRect.top + overRect.height / 2;
   return activeCenterY > overCenterY ? "after" : "before";
-};
-
-const pasteAnimationTransition = "transform 190ms cubic-bezier(0.2, 0.8, 0.2, 1)";
-const pasteAnimationCleanupMs = 240;
-
-const pasteAnimationSelector = (kind: PasteAnimationKind): string =>
-  kind === "shot" ? "[data-shot-id]" : "[data-layer-id]";
-
-const pasteAnimationIdForElement = (element: HTMLElement, kind: PasteAnimationKind): string | undefined =>
-  kind === "shot" ? element.dataset.shotId : element.dataset.layerId;
-
-const measurePasteAnimationRects = (kind: PasteAnimationKind): Map<string, DOMRect> => {
-  const rects = new Map<string, DOMRect>();
-  for (const element of Array.from(document.querySelectorAll<HTMLElement>(pasteAnimationSelector(kind)))) {
-    const id = pasteAnimationIdForElement(element, kind);
-    if (id) {
-      rects.set(id, element.getBoundingClientRect());
-    }
-  }
-  return rects;
-};
-
-const resetPasteAnimationStyles = () => {
-  for (const element of Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id], [data-layer-id]"))) {
-    element.style.removeProperty("transform");
-    element.style.removeProperty("transition");
-    element.style.removeProperty("will-change");
-  }
-};
-
-const clearPasteAnimation = (
-  frameRef: { current: number | undefined },
-  timeoutRef: { current: number | undefined }
-) => {
-  if (frameRef.current !== undefined) {
-    window.cancelAnimationFrame(frameRef.current);
-    frameRef.current = undefined;
-  }
-
-  if (timeoutRef.current !== undefined) {
-    window.clearTimeout(timeoutRef.current);
-    timeoutRef.current = undefined;
-  }
-
-  resetPasteAnimationStyles();
-};
-
-const applyPasteAnimation = (
-  animation: PasteAnimationState,
-  frameRef: { current: number | undefined },
-  timeoutRef: { current: number | undefined }
-) => {
-  clearPasteAnimation(frameRef, timeoutRef);
-
-  const sourceRect = animation.beforeRects.get(animation.sourceId);
-  const movedElements: HTMLElement[] = [];
-  for (const element of Array.from(document.querySelectorAll<HTMLElement>(pasteAnimationSelector(animation.kind)))) {
-    const id = pasteAnimationIdForElement(element, animation.kind);
-    const fromRect =
-      id === animation.pastedId && sourceRect ? sourceRect : id ? animation.beforeRects.get(id) : undefined;
-    if (!fromRect) {
-      continue;
-    }
-
-    const afterRect = element.getBoundingClientRect();
-    const deltaX = fromRect.left - afterRect.left;
-    const deltaY = fromRect.top - afterRect.top;
-    if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) {
-      continue;
-    }
-
-    element.style.transition = "none";
-    element.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
-    element.style.willChange = "transform";
-    movedElements.push(element);
-  }
-
-  if (movedElements.length === 0) {
-    return;
-  }
-
-  frameRef.current = window.requestAnimationFrame(() => {
-    frameRef.current = undefined;
-    for (const element of movedElements) {
-      element.style.transition = pasteAnimationTransition;
-      element.style.transform = "";
-    }
-
-    timeoutRef.current = window.setTimeout(() => {
-      timeoutRef.current = undefined;
-      for (const element of movedElements) {
-        element.style.removeProperty("transform");
-        element.style.removeProperty("transition");
-        element.style.removeProperty("will-change");
-      }
-    }, pasteAnimationCleanupMs);
-  });
 };
 
 const dragEndInsideSelector = (
