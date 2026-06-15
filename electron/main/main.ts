@@ -142,6 +142,7 @@ import { registerLayerIpcHandlers } from "./ipc/layerHandlers.js";
 import { registerRecentIpcHandlers } from "./ipc/recentHandlers.js";
 import { registerSettingsIpcHandlers } from "./ipc/settingsHandlers.js";
 import { registerWorkspaceAssetIpcHandlers } from "./ipc/workspaceAssetHandlers.js";
+import { registerWorkspaceScriptIpcHandlers } from "./ipc/workspaceScriptHandlers.js";
 import { registerWorkspaceWatchIpcHandlers } from "./ipc/workspaceWatchHandlers.js";
 import {
   copyLayerPng,
@@ -502,18 +503,12 @@ const registerIpcHandlers = () => {
     openExternal: (url) => openExternalUrl(url, shell.openExternal)
   });
 
-  ipcMain.handle("workspace:inspectStoryboardScript", async (_event, sourceMarkdownPath: string) => {
-    return inspectStoryboardScriptMarkdownFile(sourceMarkdownPath);
+  registerWorkspaceScriptIpcHandlers<ProjectPayload, CreateProjectFromStoryboardScriptPayload>(ipcMain, {
+    inspectStoryboardScript: inspectStoryboardScriptMarkdownFile,
+    createFromStoryboardScript: createProjectFromStoryboardScriptMarkdown,
+    addRecentFolder,
+    ensureStoryboardScriptMarkdown
   });
-
-  ipcMain.handle(
-    "workspace:createFromStoryboardScript",
-    async (_event, payload: CreateProjectFromStoryboardScriptPayload) => {
-      const scan = await createProjectFromStoryboardScriptMarkdown(payload);
-      await addRecentFolder(scan.folderPath);
-      return scan;
-    }
-  );
 
   ipcMain.handle("workspace:autosave", async (_event, payload: ProjectPayload) => {
     await ensureProjectLayerAssets(payload.project, payload.folderPath, { includeExternalShots: false });
@@ -600,12 +595,6 @@ const registerIpcHandlers = () => {
       await scriptImport?.rollback();
       throw error;
     }
-  });
-
-  ipcMain.handle("workspace:checkStoryboardScript", async (_event, payload: ProjectPayload) => {
-    return {
-      scriptImportNeeded: await ensureStoryboardScriptMarkdown(payload.folderPath, payload.project)
-    };
   });
 
   ipcMain.handle("workspace:checkExternalChanges", async (event, payload: ProjectPayload) => {

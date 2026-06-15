@@ -6,6 +6,7 @@ import { registerLayerIpcHandlers } from "./layerHandlers";
 import { registerRecentIpcHandlers } from "./recentHandlers";
 import { registerSettingsIpcHandlers } from "./settingsHandlers";
 import { registerWorkspaceAssetIpcHandlers } from "./workspaceAssetHandlers";
+import { registerWorkspaceScriptIpcHandlers } from "./workspaceScriptHandlers";
 import { registerWorkspaceWatchIpcHandlers } from "./workspaceWatchHandlers";
 
 const fakeIpcMain = () => {
@@ -153,6 +154,55 @@ describe("domain IPC handlers", () => {
       payload: { folderPath: "/project" }
     });
     expect(copyShotAssets).toHaveBeenCalledWith({ folderPath: "/project" });
+  });
+
+  it("registers workspace script IPC channels and delegates to supplied handlers", async () => {
+    const { ipcMain, handlers } = fakeIpcMain();
+    const inspectStoryboardScript = vi.fn(async (sourceMarkdownPath) => ({
+      sourceMarkdownPath
+    }));
+    const createFromStoryboardScript = vi.fn(async (payload) => ({
+      folderPath: "/created-project",
+      payload
+    }));
+    const addRecentFolder = vi.fn();
+    const ensureStoryboardScriptMarkdown = vi.fn(async () => true);
+
+    registerWorkspaceScriptIpcHandlers(ipcMain, {
+      inspectStoryboardScript,
+      createFromStoryboardScript,
+      addRecentFolder,
+      ensureStoryboardScriptMarkdown
+    });
+
+    expect([...handlers.keys()].sort()).toEqual([
+      "workspace:checkStoryboardScript",
+      "workspace:createFromStoryboardScript",
+      "workspace:inspectStoryboardScript"
+    ]);
+    await expect(
+      handlers.get("workspace:inspectStoryboardScript")?.({}, "/project/storyboard-script.md")
+    ).resolves.toEqual({
+      sourceMarkdownPath: "/project/storyboard-script.md"
+    });
+    await expect(
+      handlers.get("workspace:createFromStoryboardScript")?.({}, { targetFolderPath: "/project" })
+    ).resolves.toEqual({
+      folderPath: "/created-project",
+      payload: { targetFolderPath: "/project" }
+    });
+    await expect(
+      handlers.get("workspace:checkStoryboardScript")?.(
+        {},
+        { folderPath: "/project", project: { shots: [] } }
+      )
+    ).resolves.toEqual({
+      scriptImportNeeded: true
+    });
+    expect(inspectStoryboardScript).toHaveBeenCalledWith("/project/storyboard-script.md");
+    expect(createFromStoryboardScript).toHaveBeenCalledWith({ targetFolderPath: "/project" });
+    expect(addRecentFolder).toHaveBeenCalledWith("/created-project");
+    expect(ensureStoryboardScriptMarkdown).toHaveBeenCalledWith("/project", { shots: [] });
   });
 
   it("registers image IPC channels and delegates to supplied handlers", async () => {
