@@ -179,7 +179,7 @@ import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceL
 import { useUpdateNoticeController } from "./updateNoticeController";
 import { usePopoverController } from "./popoverController";
 import { statusPanelToggleClassName, swbStatusLabel, updateCheckButtonLabel } from "./statusPanelController";
-import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, shouldAutosaveAfterLoad, shouldPersistLoadedProject, shouldRunAutosave } from "./workspacePersistenceController";
+import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, projectChangedDuringLoad, shouldAutosaveAfterLoad, shouldPersistLoadedProject, shouldRunAutosave } from "./workspacePersistenceController";
 import {
   applyRadialPresetSlot,
   defaultToolRadialMenuConfig,
@@ -219,25 +219,6 @@ const autosaveDelayMs = 600;
 const animationReservedBottom = 180;
 const animationViewportMargin = 14;
 const radialToolMenuCloseAnimationMs = 140;
-
-const projectChangedDuringLoad = (before: Project, after: Project): boolean => {
-  if (before.shots.length !== after.shots.length) {
-    return true;
-  }
-
-  const beforeShotsById = new Map(before.shots.map((shot) => [shot.id, shot]));
-  return after.shots.some((afterShot) => {
-    const beforeShot = beforeShotsById.get(afterShot.id);
-    return (
-      !beforeShot ||
-      beforeShot.previewPath !== afterShot.previewPath ||
-      beforeShot.fileName !== afterShot.fileName ||
-      beforeShot.activeLayerId !== afterShot.activeLayerId ||
-      JSON.stringify(beforeShot.layers ?? []) !== JSON.stringify(afterShot.layers ?? []) ||
-      JSON.stringify(beforeShot.sketchLayers ?? []) !== JSON.stringify(afterShot.sketchLayers ?? [])
-    );
-  });
-};
 
 const ensureProjectBitmapMetadata = (project: Project): Project => ({
   ...project,

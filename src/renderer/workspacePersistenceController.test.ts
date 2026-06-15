@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasOnlyCompatibleExternalEdits,
   hasUnsavedWorkspaceChanges,
+  projectChangedDuringLoad,
   shouldAutosaveAfterLoad,
   shouldPersistLoadedProject,
   shouldRunAutosave
@@ -95,5 +96,49 @@ describe("workspacePersistenceController", () => {
     expect(
       hasOnlyCompatibleExternalEdits(projectWithShotStatuses(["compatible-external-edit", "non-swb"]))
     ).toBe(false);
+  });
+
+  it("detects project changes from load when shot output metadata changes", () => {
+    const before = projectWithShotStatuses(["owned"]);
+    expect(projectChangedDuringLoad(before, before)).toBe(false);
+    expect(
+      projectChangedDuringLoad(before, {
+        ...before,
+        shots: [{ ...before.shots[0], previewPath: "/scene/preview.png" }]
+      })
+    ).toBe(true);
+    expect(
+      projectChangedDuringLoad(before, {
+        ...before,
+        shots: [{ ...before.shots[0], fileName: "renamed.tiff" }]
+      })
+    ).toBe(true);
+    expect(
+      projectChangedDuringLoad(before, {
+        ...before,
+        shots: [{ ...before.shots[0], activeLayerId: "layer-1" }]
+      })
+    ).toBe(true);
+    expect(
+      projectChangedDuringLoad(before, {
+        ...before,
+        shots: [{
+          ...before.shots[0],
+          layers: [{
+            id: "layer-1",
+            name: "Layer",
+            kind: "paint",
+            visible: true,
+            locked: false,
+            opacity: 1,
+            blendMode: "normal",
+            order: 1,
+            bitmapPath: "layer-1.png",
+            width: 1920,
+            height: 1080
+          }]
+        }]
+      })
+    ).toBe(true);
   });
 });
