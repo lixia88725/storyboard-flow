@@ -53,7 +53,7 @@ import {
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewRootForFolder } from "./previewPaths.js";
 import { createPreview } from "./previewService.js";
-import { addRecentFolderPath, removeRecentFolderPath } from "./recentFolders.js";
+import { addRecentFolderPath, buildRecentFoldersMenuTemplate, removeRecentFolderPath } from "./recentFolders.js";
 import { mapWithConcurrency } from "./mapWithConcurrency.js";
 import { assertPathInsideFolder, ensureDirectory, pathExists } from "./pathSafety.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
@@ -1251,30 +1251,12 @@ const removeRecentFolder = async (folderPath: string): Promise<void> => {
 
 const updateRecentFoldersMenu = async (): Promise<void> => {
   const recentFolders = await readRecentFolders();
-  const submenu = [
-    {
-      label: "Open Recent",
-      submenu:
-        recentFolders.length > 0
-          ? recentFolders.map((folderPath) => ({
-              label: folderPath,
-              click: () => {
-                mainWindow?.webContents.send("recent:openFolder", folderPath);
-              }
-            }))
-          : [{ label: "No Recent Folders", enabled: false }]
+  const template: Electron.MenuItemConstructorOptions[] = buildRecentFoldersMenuTemplate(recentFolders, {
+    isDarwin: process.platform === "darwin",
+    onOpenFolder: (folderPath) => {
+      mainWindow?.webContents.send("recent:openFolder", folderPath);
     }
-  ];
-  const template: Electron.MenuItemConstructorOptions[] = [
-    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
-    {
-      label: "File",
-      submenu
-    },
-    { role: "editMenu" },
-    { role: "viewMenu" },
-    { role: "windowMenu" }
-  ];
+  }) as Electron.MenuItemConstructorOptions[];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 };
