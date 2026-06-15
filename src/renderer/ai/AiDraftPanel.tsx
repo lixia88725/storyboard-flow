@@ -19,15 +19,9 @@ import {
 } from "./aiSettingsState";
 import { windowAiClient, type AiDraftClient } from "./aiClient";
 import { useAiDraftController } from "./useAiDraftController";
-import { useAiCandidateController, type AiCandidate } from "./useAiCandidateController";
+import { useAiCandidateController } from "./useAiCandidateController";
+import { useAiBatchGenerationController } from "./useAiBatchGenerationController";
 import { useAiResourcesController } from "./useAiResourcesController";
-
-type AiBatchGroupResult = {
-  index: number;
-  shotIds: string[];
-  candidateIds: string[];
-  error?: string;
-};
 
 type AiDraftPanelProps = {
   isOpen: boolean;
@@ -59,8 +53,6 @@ export const AiDraftPanel = ({
     () => aiPanelSelectionState(project, selectedShotIds),
     [project, selectedShotIds]
   );
-  const [batchCandidates, setBatchCandidates] = useState<AiCandidate[]>([]);
-  const [batchGroups, setBatchGroups] = useState<AiBatchGroupResult[]>([]);
   const [status, setStatus] = useState("Ready");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -135,9 +127,32 @@ export const AiDraftPanel = ({
     setStatus,
     onProjectChange
   });
+  const {
+    applyBatchCandidates,
+    batchCandidates,
+    batchGroups,
+    batchShotIds,
+    clearBatchCandidates,
+    copyBatchRequestPreview,
+    discardBatchCandidates,
+    generateBatchCandidates,
+    hasBatchCandidates
+  } = useAiBatchGenerationController({
+    aiClient,
+    clearSingleCandidate: clearCandidate,
+    folderPath,
+    generationSettings: currentGenerationSettings,
+    project,
+    resourceAssignments: batchResourceAssignments,
+    selectedResourceIds: batchSelectedResourceIds,
+    selectedShotIds,
+    selection,
+    setIsGenerating,
+    setStatus,
+    onProjectChange
+  });
   const visibleStatus = visibleAiStatusMessage(status);
   const canCopyRequestPreview = canCopyAiRequestPreview(selection);
-  const batchShotIds = selection.kind === "multi" ? selection.shots.map((shot) => shot.id) : [];
   const plannedBatchGroups = useMemo(
     () => (selection.kind === "multi" ? groupAiBatchShotIds(project, batchShotIds) : []),
     [batchShotIds.join("|"), project, selection.kind]
@@ -149,11 +164,10 @@ export const AiDraftPanel = ({
     canRequestAiGeneration({ ...apiKeyStatus, provider: providerName, isGenerating }) &&
     (selection.kind === "ready" || (selection.kind === "multi" && selection.shots.length > 0));
   const hasActiveCandidate =
-    selection.kind === "multi" ? batchCandidates.length > 0 : hasCandidate;
+    selection.kind === "multi" ? hasBatchCandidates : hasCandidate;
 
   useEffect(() => {
-    setBatchCandidates([]);
-    setBatchGroups([]);
+    clearBatchCandidates();
     setStatus("Ready");
   }, [folderPath, selectedShotIds.join("|")]);
 
@@ -186,34 +200,7 @@ export const AiDraftPanel = ({
 
   const generate = async () => {
     if (selection.kind === "multi") {
-      if (selection.shots.length === 0) {
-        return;
-      }
-      setIsGenerating(true);
-      setStatus("Generating AI batch candidates...");
-      try {
-        const result = await aiClient.generateBatchCandidates({
-          folderPath,
-          project,
-          shotIds: batchShotIds,
-          selectedResourceIds: batchSelectedResourceIds,
-          resourceAssignments: batchResourceAssignments,
-          generationSettings: currentGenerationSettings
-        });
-        setBatchCandidates(result.candidates);
-        setBatchGroups(result.groups);
-        clearCandidate();
-        const failedGroups = result.groups.filter((group) => group.error);
-        setStatus(
-          failedGroups.length > 0
-            ? `${result.candidates.length} AI batch candidates ready; ${failedGroups.length} group${failedGroups.length === 1 ? "" : "s"} failed: ${failedGroups.map((group) => `#${group.index + 1}`).join(", ")}`
-            : `${result.candidates.length} AI batch candidates ready`
-        );
-      } catch (error) {
-        setStatus(`AI batch generation failed: ${error instanceof Error ? error.message : String(error)}`);
-      } finally {
-        setIsGenerating(false);
-      }
+      await generateBatchCandidates();
       return;
     }
 
@@ -222,22 +209,7 @@ export const AiDraftPanel = ({
 
   const copyRequestPreview = async () => {
     if (selection.kind === "multi") {
-      if (selection.shots.length === 0) {
-        return;
-      }
-      try {
-        await aiClient.copyRequestPreview({
-          folderPath,
-          project,
-          shotIds: batchShotIds,
-          selectedResourceIds: batchSelectedResourceIds,
-          resourceAssignments: batchResourceAssignments,
-          generationSettings: currentGenerationSettings
-        });
-        setStatus("AI request preview copied");
-      } catch (error) {
-        setStatus(`Could not copy AI request preview: ${error instanceof Error ? error.message : String(error)}`);
-      }
+      await copyBatchRequestPreview();
       return;
     }
 
@@ -246,10 +218,7 @@ export const AiDraftPanel = ({
 
   const discardCandidate = async () => {
     if (selection.kind === "multi") {
-      await Promise.all(batchCandidates.map((item) => aiClient.discardCandidate(folderPath, item.id).catch(() => undefined)));
-      setBatchCandidates([]);
-      setBatchGroups([]);
-      setStatus("AI batch candidates discarded");
+      await discardBatchCandidates();
       return;
     }
 
@@ -258,26 +227,7 @@ export const AiDraftPanel = ({
 
   const applyCandidate = async () => {
     if (selection.kind === "multi") {
-      if (batchCandidates.length === 0) {
-        return;
-      }
-      try {
-        let nextProject = project;
-        for (const item of batchCandidates) {
-          const result = await aiClient.applyCandidate({
-            folderPath,
-            project: nextProject,
-            candidateId: item.id
-          });
-          nextProject = result.project;
-        }
-        onProjectChange(nextProject, `${batchCandidates.length} AI Draft layers added`);
-        setBatchCandidates([]);
-        setBatchGroups([]);
-        setStatus(`${batchCandidates.length} AI Draft layers added`);
-      } catch (error) {
-        setStatus(`Could not apply AI batch candidates: ${error instanceof Error ? error.message : String(error)}`);
-      }
+      await applyBatchCandidates();
       return;
     }
 
