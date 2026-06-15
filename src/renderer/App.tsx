@@ -115,7 +115,6 @@ import { getOnionSkinNeighbors } from "./onionSkin";
 import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
 import { AiDraftPanel } from "./ai/AiDraftPanel";
-import { useExclusiveSidebars } from "./ai/useExclusiveSidebars";
 import { useBoardViewState } from "./boardViewState";
 import { RadialToolMenu } from "./RadialToolMenu";
 import { ShotCard, type CardFace } from "./ShotCard";
@@ -203,6 +202,7 @@ import { useWorkspaceMenuController } from "./workspaceMenuController";
 import { useWorkspaceAutosaveController } from "./workspaceAutosaveController";
 import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsController";
 import { useLayerPanelController } from "./layerPanelController";
+import { useRightSidebarController } from "./rightSidebarController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -366,17 +366,22 @@ export const App = () => {
     useState<StoryboardScriptImportDraft | undefined>();
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [redoStack, setRedoStack] = useState<UndoEntry[]>([]);
-  const {
-    isAiPanelOpen,
-    isParkingShelfOpen,
-    openPendingShelf,
-    toggleAiPanel,
-    togglePendingShelf
-  } = useExclusiveSidebars();
   const [clipboardSelection, setClipboardSelection] = useState<ClipboardSelection | undefined>();
   const [status, setStatus] = useState(
     window.storyboard ? "Ready" : "Electron preload API is unavailable"
   );
+  const {
+    appShellClassName,
+    isAiPanelVisible,
+    isParkingShelfOpen,
+    openPendingShelf,
+    toggleAiPanel: handleToggleAiPanel,
+    togglePendingShelf: handleTogglePendingShelf
+  } = useRightSidebarController({
+    folderPath,
+    isAnimationMode,
+    setStatus
+  });
   const {
     toolRadialMenuConfig,
     persistToolRadialMenuConfig
@@ -2833,25 +2838,10 @@ export const App = () => {
     setAutosaveRevision((revision) => revision + 1);
     setStatus(nextStatus);
   };
-  const handleToggleAiPanel = () => {
-    if (!folderPath) {
-      setStatus("Open a folder before using AI Draft");
-      return;
-    }
-    toggleAiPanel();
-  };
-  const handleTogglePendingShelf = togglePendingShelf;
-  const isAiPanelVisible = Boolean(folderPath && isAiPanelOpen);
-
   return (
     <main
       ref={appShellRef}
-      className={[
-        "app-shell",
-        isAnimationMode ? "is-animation-mode" : "",
-        isParkingShelfOpen ? "has-parking-shelf-open" : "",
-        isAiPanelVisible ? "has-ai-panel-open" : ""
-      ].filter(Boolean).join(" ")}
+      className={appShellClassName}
       onContextMenu={openSketchCanvasContextMenu}
       onDragOver={handleStoryboardScriptDragOver}
       onDrop={(event) => void handleStoryboardScriptDrop(event)}
