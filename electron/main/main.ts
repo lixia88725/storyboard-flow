@@ -79,6 +79,12 @@ import {
   shouldSaveBeforeClose
 } from "./closePrompt.js";
 import {
+  finishSaveAndClose as finishSaveAndCloseRequest,
+  getAppInfoForRenderer,
+  openExternalUrl,
+  updateCloseGuard as updateCloseGuardForWebContents
+} from "./appShellService.js";
+import {
   isWorkspaceTemporaryImagePath,
   workspaceCopyTemporaryFileName
 } from "./workspaceTemporaryPaths.js";
@@ -116,6 +122,7 @@ import {
   type AiCredentialStore
 } from "./ai/credentials.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
+import { registerAppIpcHandlers } from "./ipc/appHandlers.js";
 import { registerLayerIpcHandlers } from "./ipc/layerHandlers.js";
 import { registerRecentIpcHandlers } from "./ipc/recentHandlers.js";
 import { registerSettingsIpcHandlers } from "./ipc/settingsHandlers.js";
@@ -518,15 +525,21 @@ const registerIpcHandlers = () => {
     return scan;
   });
 
-  ipcMain.handle("dialog:selectFolder", async (event) => {
-    const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-    const options: Electron.OpenDialogOptions = {
-      properties: ["openDirectory", "createDirectory"]
-    };
-    const result = owner
-      ? await dialog.showOpenDialog(owner, options)
-      : await dialog.showOpenDialog(options);
-    return result.canceled ? undefined : result.filePaths[0];
+  registerAppIpcHandlers(ipcMain, {
+    selectFolder: selectFolderForEvent,
+    finishSaveAndClose: (payload) => finishSaveAndCloseRequest(saveAndCloseRequests, payload),
+    updateCloseGuard: (event, payload) =>
+      updateCloseGuardForWebContents(closeGuardWebContentsIds, event, payload),
+    getInfo: () =>
+      getAppInfoForRenderer({
+        version: app.getVersion(),
+        platform: process.platform,
+        arch: process.arch,
+        updateManifestUrl:
+          process.env.STORYBOARD_FLOW_UPDATE_MANIFEST_URL ??
+          "https://raw.githubusercontent.com/lixia88725/storyboard-flow-releases/main/update.json"
+      }),
+    openExternal: (url) => openExternalUrl(url, shell.openExternal)
   });
 
   ipcMain.handle("workspace:inspectStoryboardScript", async (_event, sourceMarkdownPath: string) => {
@@ -541,42 +554,6 @@ const registerIpcHandlers = () => {
       return scan;
     }
   );
-
-  ipcMain.handle(
-    "app:finishSaveAndClose",
-    (_event, payload: { requestId: string; saved: boolean }) => {
-      const windowToClose = saveAndCloseRequests.get(payload.requestId);
-      saveAndCloseRequests.delete(payload.requestId);
-      if (payload.saved) {
-        windowToClose?.destroy();
-      }
-    }
-  );
-
-  ipcMain.handle("app:updateCloseGuard", (event, payload: { hasUnsavedChanges: boolean }) => {
-    if (payload.hasUnsavedChanges) {
-      closeGuardWebContentsIds.add(event.sender.id);
-      return;
-    }
-
-    closeGuardWebContentsIds.delete(event.sender.id);
-  });
-
-  ipcMain.handle("app:getInfo", () => ({
-    version: app.getVersion(),
-    platform: process.platform,
-    arch: process.arch,
-    updateManifestUrl:
-      process.env.STORYBOARD_FLOW_UPDATE_MANIFEST_URL ??
-      "https://raw.githubusercontent.com/lixia88725/storyboard-flow-releases/main/update.json"
-  }));
-
-  ipcMain.handle("app:openExternal", async (_event, url: string) => {
-    if (!/^https:\/\//iu.test(url)) {
-      throw new Error("Only HTTPS URLs can be opened externally.");
-    }
-    await shell.openExternal(url);
-  });
 
   ipcMain.handle("workspace:autosave", async (_event, payload: ProjectPayload) => {
     await ensureProjectLayerAssets(payload.project, payload.folderPath, { includeExternalShots: false });
@@ -879,6 +856,17 @@ const registerIpcHandlers = () => {
     applyCandidate: (payload) => applyAiCandidateAsLayer(payload as AiApplyCandidatePayload)
   });
 
+};
+
+const selectFolderForEvent = async (event: IpcMainInvokeEvent): Promise<string | undefined> => {
+  const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  const options: Electron.OpenDialogOptions = {
+    properties: ["openDirectory", "createDirectory"]
+  };
+  const result = owner
+    ? await dialog.showOpenDialog(owner, options)
+    : await dialog.showOpenDialog(options);
+  return result.canceled ? undefined : result.filePaths[0];
 };
 
 const workspaceTaskProgressReporter =

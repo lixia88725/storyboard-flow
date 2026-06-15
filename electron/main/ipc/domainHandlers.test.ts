@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { registerAppIpcHandlers } from "./appHandlers";
 import { registerAiIpcHandlers } from "./aiHandlers";
 import { registerLayerIpcHandlers } from "./layerHandlers";
 import { registerRecentIpcHandlers } from "./recentHandlers";
@@ -17,6 +18,45 @@ const fakeIpcMain = () => {
 };
 
 describe("domain IPC handlers", () => {
+  it("registers app shell IPC channels and delegates to supplied handlers", async () => {
+    const { ipcMain, handlers } = fakeIpcMain();
+    const selectFolder = vi.fn(async (event) => ({ event }));
+    const finishSaveAndClose = vi.fn((payload) => ({ payload }));
+    const updateCloseGuard = vi.fn((event, payload) => ({ event, payload }));
+    const getInfo = vi.fn(() => ({ version: "1.0.0" }));
+    const openExternal = vi.fn(async (url) => ({ url }));
+
+    registerAppIpcHandlers(ipcMain, {
+      selectFolder,
+      finishSaveAndClose,
+      updateCloseGuard,
+      getInfo,
+      openExternal
+    });
+
+    expect([...handlers.keys()].sort()).toEqual([
+      "app:finishSaveAndClose",
+      "app:getInfo",
+      "app:openExternal",
+      "app:updateCloseGuard",
+      "dialog:selectFolder"
+    ]);
+    await expect(handlers.get("dialog:selectFolder")?.({ sender: "sender" })).resolves.toEqual({
+      event: { sender: "sender" }
+    });
+    expect(handlers.get("app:getInfo")?.({})).toEqual({ version: "1.0.0" });
+    await expect(handlers.get("app:openExternal")?.({}, "https://example.com")).resolves.toEqual({
+      url: "https://example.com"
+    });
+    expect(handlers.get("app:finishSaveAndClose")?.({}, { requestId: "r1", saved: true })).toEqual({
+      payload: { requestId: "r1", saved: true }
+    });
+    expect(handlers.get("app:updateCloseGuard")?.({ sender: "sender" }, { hasUnsavedChanges: true })).toEqual({
+      event: { sender: "sender" },
+      payload: { hasUnsavedChanges: true }
+    });
+  });
+
   it("registers AI IPC channels and delegates to supplied handlers", async () => {
     const { ipcMain, handlers } = fakeIpcMain();
     const getSettings = vi.fn(async () => ({ ok: true }));
