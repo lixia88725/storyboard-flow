@@ -93,6 +93,10 @@ import {
   isWorkspaceTemporaryImagePath,
   workspaceCopyTemporaryFileName
 } from "./workspaceTemporaryPaths.js";
+import {
+  copyShotAssets,
+  type CopyShotAssetsPayload
+} from "./copyShotAssetsService.js";
 import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { applyAiCandidateAsLayer, discardAiCandidate } from "./ai/candidates.js";
@@ -312,16 +316,6 @@ type CreateProjectFromStoryboardScriptPayload = {
   sourceMarkdownPath: string;
   targetFolderPath: string;
   blankShotPreset: BlankShotPreset;
-};
-
-type CopyShotAssetsPayload = {
-  folderPath: string;
-  sourceImagePath: string;
-  fileName: string;
-  layerCopies: Array<{
-    sourceBitmapPath: string;
-    targetBitmapPath: string;
-  }>;
 };
 
 type ImportedImage = {
@@ -706,44 +700,19 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("workspace:copyShotAssets", async (_event, payload: CopyShotAssetsPayload) => {
-    assertPathInsideFolder(payload.folderPath, payload.sourceImagePath);
-    const targetImagePath = await uniquePath(
-      path.dirname(payload.sourceImagePath),
-      `copy-${payload.fileName}`
-    );
-    const temporaryImagePath = await uniquePath(
-      path.dirname(payload.sourceImagePath),
-      workspaceCopyTemporaryFileName(payload.fileName, randomUUID())
-    );
-    assertPathInsideFolder(payload.folderPath, targetImagePath);
-    assertPathInsideFolder(payload.folderPath, temporaryImagePath);
-    const copiedLayerPaths: string[] = [];
-    try {
-      await copyFile(payload.sourceImagePath, temporaryImagePath);
-      for (const item of payload.layerCopies) {
-        const targetPath = resolveLayerAssetPath(payload.folderPath, item.targetBitmapPath);
-        await copyBitmapLayerFile(
-          resolveLayerAssetPath(payload.folderPath, item.sourceBitmapPath),
-          targetPath
-        );
-        copiedLayerPaths.push(targetPath);
-      }
-      await rename(temporaryImagePath, targetImagePath);
-      const previewPath = await createPreview(targetImagePath, previewRootForFolder(payload.folderPath));
-      assertPathInsideFolder(payload.folderPath, previewPath);
-      copiedLayerPaths.push(previewPath);
-      return {
-        ...payload,
-        imagePath: targetImagePath,
-        fileName: path.basename(targetImagePath),
-        previewPath
-      };
-    } catch (error) {
-      await unlink(targetImagePath).catch(() => undefined);
-      await unlink(temporaryImagePath).catch(() => undefined);
-      await Promise.all(copiedLayerPaths.map((filePath) => unlink(filePath).catch(() => undefined)));
-      throw error;
-    }
+    return copyShotAssets(payload, {
+      assertPathInsideFolder,
+      copyBitmapLayerFile,
+      copyFile,
+      createId: randomUUID,
+      createPreview,
+      previewRootForFolder,
+      rename,
+      resolveLayerAssetPath,
+      unlink,
+      uniquePath,
+      workspaceCopyTemporaryFileName
+    });
   });
 
   ipcMain.handle(
