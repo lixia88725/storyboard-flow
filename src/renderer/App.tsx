@@ -111,6 +111,7 @@ import {
 } from "./keyboardShortcuts";
 import { BrushIcon, CardFaceIcon, ClearIcon, EraserIcon, GearIcon, SelectIcon, SidePanelIcon, SwatchIcon } from "./icons";
 import { getOnionSkinNeighbors } from "./onionSkin";
+import { useSyncedHistoryStackController } from "./historyStackController";
 import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
 import { AiDraftPanel } from "./ai/AiDraftPanel";
@@ -748,25 +749,16 @@ export const App = () => {
     );
   }, []);
 
-  useEffect(() => {
-    undoStackRef.current = undoStack;
-  }, [undoStack]);
-
-  useEffect(() => {
-    redoStackRef.current = redoStack;
-  }, [redoStack]);
-
-  const setUndoStackSynced = (update: UndoEntry[] | ((current: UndoEntry[]) => UndoEntry[])) => {
-    const next = typeof update === "function" ? update(undoStackRef.current) : update;
-    undoStackRef.current = next;
-    setUndoStack(next);
-  };
-
-  const setRedoStackSynced = (update: UndoEntry[] | ((current: UndoEntry[]) => UndoEntry[])) => {
-    const next = typeof update === "function" ? update(redoStackRef.current) : update;
-    redoStackRef.current = next;
-    setRedoStack(next);
-  };
+  const setUndoStackSynced = useSyncedHistoryStackController({
+    stack: undoStack,
+    stackRef: undoStackRef,
+    setStack: setUndoStack
+  });
+  const setRedoStackSynced = useSyncedHistoryStackController({
+    stack: redoStack,
+    stackRef: redoStackRef,
+    setStack: setRedoStack
+  });
 
   usePointerPositionController(lastPointerPositionRef);
   useWorkspaceTaskProgressController(setWorkspaceTask);
