@@ -4,6 +4,7 @@ import { registerAiIpcHandlers } from "./aiHandlers";
 import { registerLayerIpcHandlers } from "./layerHandlers";
 import { registerRecentIpcHandlers } from "./recentHandlers";
 import { registerSettingsIpcHandlers } from "./settingsHandlers";
+import { registerWorkspaceWatchIpcHandlers } from "./workspaceWatchHandlers";
 
 const fakeIpcMain = () => {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
@@ -89,8 +90,10 @@ describe("domain IPC handlers", () => {
     });
   });
 
-  it("registers layer, settings, and recent IPC channels", () => {
+  it("registers layer, settings, recent, and workspace watch IPC channels", () => {
     const { ipcMain, handlers } = fakeIpcMain();
+    const startFolderWatch = vi.fn();
+    const stopFolderWatch = vi.fn(() => "stopped");
 
     registerLayerIpcHandlers(ipcMain, {
       writePng: vi.fn(),
@@ -107,6 +110,10 @@ describe("domain IPC handlers", () => {
     registerRecentIpcHandlers(ipcMain, {
       getFolders: vi.fn()
     });
+    registerWorkspaceWatchIpcHandlers(ipcMain, {
+      startFolderWatch,
+      stopFolderWatch
+    });
 
     expect([...handlers.keys()].sort()).toEqual([
       "layers:copyPng",
@@ -117,7 +124,15 @@ describe("domain IPC handlers", () => {
       "layers:writePng",
       "recent:getFolders",
       "settings:getToolRadialMenu",
-      "settings:setToolRadialMenu"
+      "settings:setToolRadialMenu",
+      "workspace:startFolderWatch",
+      "workspace:stopFolderWatch"
     ]);
+    handlers.get("workspace:startFolderWatch")?.({ sender: "sender" }, "/folder");
+    const stopResult = handlers.get("workspace:stopFolderWatch")?.({}, 42);
+
+    expect(startFolderWatch).toHaveBeenCalledWith({ sender: "sender" }, "/folder");
+    expect(stopFolderWatch).toHaveBeenCalledWith(42);
+    expect(stopResult).toBeUndefined();
   });
 });

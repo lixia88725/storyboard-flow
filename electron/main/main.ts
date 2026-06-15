@@ -139,6 +139,7 @@ import { registerAppIpcHandlers } from "./ipc/appHandlers.js";
 import { registerLayerIpcHandlers } from "./ipc/layerHandlers.js";
 import { registerRecentIpcHandlers } from "./ipc/recentHandlers.js";
 import { registerSettingsIpcHandlers } from "./ipc/settingsHandlers.js";
+import { registerWorkspaceWatchIpcHandlers } from "./ipc/workspaceWatchHandlers.js";
 import {
   copyLayerPng,
   deleteLayerPng,
@@ -644,12 +645,12 @@ const registerIpcHandlers = () => {
     };
   });
 
-  ipcMain.handle("workspace:startFolderWatch", (event, folderPath: string) => {
-    return workspaceFolderWatchService.start(folderPath, event.sender);
-  });
-
-  ipcMain.handle("workspace:stopFolderWatch", (_event, watcherId: number) => {
-    workspaceFolderWatchService.stop(watcherId);
+  registerWorkspaceWatchIpcHandlers(ipcMain, {
+    startFolderWatch: (event, folderPath) =>
+      workspaceFolderWatchService.start(folderPath, event.sender),
+    stopFolderWatch: (watcherId) => {
+      workspaceFolderWatchService.stop(watcherId);
+    }
   });
 
   registerLayerIpcHandlers(ipcMain, {
