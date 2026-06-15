@@ -182,7 +182,7 @@ import {
   type PasteAnimationState
 } from "./pasteAnimationController";
 import { statusPanelToggleClassName, swbStatusLabel, updateCheckButtonLabel } from "./statusPanelController";
-import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, projectChangedDuringLoad, shouldAutosaveAfterLoad, shouldPersistLoadedProject, shouldRunAutosave } from "./workspacePersistenceController";
+import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, projectChangedDuringLoad, shouldAutosaveAfterLoad, shouldPersistLoadedProject } from "./workspacePersistenceController";
 import {
   applyRadialPresetSlot,
   radialCanvasContextMenuAction,
@@ -206,6 +206,7 @@ import { useWorkspaceTaskProgressController } from "./workspaceTaskProgressContr
 import { useWorkspaceCloseGuardController } from "./workspaceCloseGuardController";
 import { useWorkspaceExternalRefreshController } from "./workspaceExternalRefreshController";
 import { hasOpenWorkspaceMenu, useWorkspaceMenuController } from "./workspaceMenuController";
+import { useWorkspaceAutosaveController } from "./workspaceAutosaveController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -224,7 +225,6 @@ const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: stri
   { id: "2.39:1", label: "2.39:1", detail: "2581 x 1080" },
   { id: "1.43:1", label: "1.43:1 IMAX", detail: "1544 x 1080" }
 ];
-const autosaveDelayMs = 600;
 const animationReservedBottom = 180;
 const animationViewportMargin = 14;
 const radialToolMenuCloseAnimationMs = 140;
@@ -793,27 +793,6 @@ export const App = () => {
   usePointerPositionController(lastPointerPositionRef);
   useWorkspaceTaskProgressController(setWorkspaceTask);
 
-  useEffect(() => {
-    const activeFolderPath = folderPathRef.current;
-    const activeMetadataPath = metadataPathRef.current;
-    if (!shouldRunAutosave(autosaveRevision, activeFolderPath, activeMetadataPath, Boolean(window.storyboard))) {
-      return;
-    }
-
-    const projectToSave = projectRef.current;
-    setWorkspaceSaveState("saving");
-    const timer = window.setTimeout(() => {
-      void persistWorkspace(projectToSave, activeFolderPath, activeMetadataPath).catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        setWorkspaceSaveState("error");
-        setAutosaveError((current) => autosaveErrorReducer(current, { type: "failed", message }));
-        setStatus(`Autosave failed: ${message}`);
-      });
-    }, autosaveDelayMs);
-
-    return () => window.clearTimeout(timer);
-  }, [autosaveRevision]);
-
   useWorkspaceCloseGuardController({
     dirtyShotIdsRef,
     fileNameSyncState,
@@ -1361,6 +1340,17 @@ export const App = () => {
     setWorkspaceSaveState("saved");
     setAutosaveError((current) => autosaveErrorReducer(current, { type: "saved" }));
   };
+
+  useWorkspaceAutosaveController({
+    autosaveRevision,
+    folderPathRef,
+    metadataPathRef,
+    persistWorkspace,
+    projectRef,
+    setAutosaveError,
+    setStatus,
+    setWorkspaceSaveState
+  });
 
   const checkStoryboardScriptImportState = async (
     projectToCheck: Project,

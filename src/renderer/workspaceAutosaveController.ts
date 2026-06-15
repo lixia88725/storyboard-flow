@@ -1,0 +1,82 @@
+import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
+import type { Project } from "../shared/types";
+import { autosaveErrorReducer, type AutosaveErrorNotice } from "./autosaveError";
+import { shouldRunAutosave } from "./workspacePersistenceController";
+import type { WorkspaceSaveState } from "./workspaceLifecycleState";
+
+type AutosaveTimers = {
+  setTimeout: (callback: () => void, delayMs: number) => number;
+  clearTimeout: (timeoutId: number) => void;
+};
+
+type WorkspaceAutosaveInput = {
+  autosaveRevision: number;
+  folderPathRef: RefObject<string | undefined>;
+  hasStoryboardApi: boolean;
+  metadataPathRef: RefObject<string | undefined>;
+  persistWorkspace: (
+    projectToSave: Project,
+    activeFolderPath: string,
+    activeMetadataPath: string
+  ) => Promise<void>;
+  projectRef: RefObject<Project>;
+  setAutosaveError: Dispatch<SetStateAction<AutosaveErrorNotice | undefined>>;
+  setStatus: (status: string) => void;
+  setWorkspaceSaveState: Dispatch<SetStateAction<WorkspaceSaveState>>;
+  timers: AutosaveTimers;
+};
+
+export const autosaveDelayMs = 600;
+
+export const registerWorkspaceAutosave = ({
+  autosaveRevision,
+  folderPathRef,
+  hasStoryboardApi,
+  metadataPathRef,
+  persistWorkspace,
+  projectRef,
+  setAutosaveError,
+  setStatus,
+  setWorkspaceSaveState,
+  timers
+}: WorkspaceAutosaveInput): (() => void) | undefined => {
+  const activeFolderPath = folderPathRef.current;
+  const activeMetadataPath = metadataPathRef.current;
+  if (!shouldRunAutosave(autosaveRevision, activeFolderPath, activeMetadataPath, hasStoryboardApi)) {
+    return undefined;
+  }
+  if (!activeFolderPath || !activeMetadataPath) {
+    return undefined;
+  }
+
+  const projectToSave = projectRef.current;
+  setWorkspaceSaveState("saving");
+  const timer = timers.setTimeout(() => {
+    void persistWorkspace(projectToSave, activeFolderPath, activeMetadataPath).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setWorkspaceSaveState("error");
+      setAutosaveError((current) => autosaveErrorReducer(current, { type: "failed", message }));
+      setStatus(`Autosave failed: ${message}`);
+    });
+  }, autosaveDelayMs);
+
+  return () => timers.clearTimeout(timer);
+};
+
+export const useWorkspaceAutosaveController = (
+  input: Omit<WorkspaceAutosaveInput, "hasStoryboardApi" | "timers">
+): void => {
+  const inputRef = useRef(input);
+  inputRef.current = input;
+
+  useEffect(
+    () =>
+      registerWorkspaceAutosave({
+        ...inputRef.current,
+        autosaveRevision: input.autosaveRevision,
+        hasStoryboardApi: Boolean(window.storyboard),
+        timers: window
+      }),
+    [input.autosaveRevision]
+  );
+};
