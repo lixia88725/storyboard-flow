@@ -204,6 +204,7 @@ import {
   updateRadialDragSettings,
   type RadialToolMenuState
 } from "./radialToolMenuController";
+import { usePointerPositionController } from "./pointerPositionController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -818,22 +819,7 @@ export const App = () => {
     setRedoStack(next);
   };
 
-  useEffect(() => {
-    const handlePointerMove = (event: globalThis.PointerEvent | globalThis.MouseEvent) => {
-      lastPointerPositionRef.current = { x: event.clientX, y: event.clientY };
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("mousemove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerMove);
-    window.addEventListener("mouseup", handlePointerMove);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("mousemove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerMove);
-      window.removeEventListener("mouseup", handlePointerMove);
-    };
-  }, []);
+  usePointerPositionController(lastPointerPositionRef);
 
   useEffect(() => {
     if (!window.storyboard?.getToolRadialMenu) {
