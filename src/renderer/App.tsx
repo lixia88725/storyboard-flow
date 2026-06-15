@@ -213,6 +213,12 @@ import { useLayerPanelController } from "./layerPanelController";
 import { useRightSidebarController } from "./rightSidebarController";
 import { createShotSelectionController } from "./shotSelectionController";
 import { withStatus } from "./statusAction";
+import {
+  SaveErrorModal,
+  StoryboardScriptImportModal,
+  WorkspaceTaskProgressBanner,
+  type StoryboardScriptImportDraft
+} from "./WorkspaceOverlays";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -230,13 +236,6 @@ type UndoEntry = {
   layerAssets?: LayerAssetSnapshot[];
 };
 type ProjectUpdate = Project | ((currentProject: Project) => Project);
-type StoryboardScriptImportDraft = {
-  sourceMarkdownPath: string;
-  fileName: string;
-  entryCount: number;
-  targetFolderPath: string;
-};
-
 export const App = () => {
   const {
     project,
@@ -2728,95 +2727,20 @@ export const App = () => {
         workspaceTask={workspaceTask}
       />
 
-      {workspaceTask ? (
-        <div className="workspace-task-progress" role="status" aria-live="polite">
-          <div className="workspace-task-progress-copy">
-            <span>{workspaceTask.label}</span>
-            <span>
-              {workspaceTask.current} / {workspaceTask.total}{" "}
-              {workspaceTask.kind === "open" ? "images" : "shots"}
-            </span>
-          </div>
-          <div className="workspace-task-progress-track" aria-hidden="true">
-            <div className="workspace-task-progress-line" />
-          </div>
-        </div>
-      ) : null}
+      <WorkspaceTaskProgressBanner workspaceTask={workspaceTask} />
 
-      {saveErrorDialog ? (
-        <div className="save-error-modal-backdrop" role="presentation">
-          <section
-            className="save-error-modal"
-            role="alertdialog"
-            aria-label="Save failed"
-            aria-modal="true"
-          >
-            <header>
-              <strong>Save failed</strong>
-            </header>
-            <p>{saveErrorDialog}</p>
-            <div className="save-error-actions">
-              <button
-                type="button"
-                className="primary"
-                autoFocus
-                onClick={() => setSaveErrorDialog(undefined)}
-              >
-                OK
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <SaveErrorModal
+        message={saveErrorDialog}
+        onDismiss={() => setSaveErrorDialog(undefined)}
+      />
 
-      {storyboardScriptImportDraft ? (
-        <div className="script-import-modal-backdrop" role="presentation">
-          <section
-            className="script-import-modal"
-            role="dialog"
-            aria-label="Create storyboard from Markdown"
-          >
-            <header>
-              <strong>导入文字分镜脚本？</strong>
-              <button
-                type="button"
-                aria-label="Cancel storyboard script import"
-                onClick={() => setStoryboardScriptImportDraft(undefined)}
-              >
-                x
-              </button>
-            </header>
-            <p>
-              {storyboardScriptImportDraft.fileName} 里有 {storyboardScriptImportDraft.entryCount} 个镜头条目。
-            </p>
-            <label className="script-import-target">
-              <span>目标文件夹</span>
-              <input
-                aria-label="Storyboard script target folder"
-                value={storyboardScriptImportDraft.targetFolderPath}
-                readOnly
-                placeholder="选择一个空文件夹"
-              />
-            </label>
-            <div className="script-import-actions">
-              <button
-                type="button"
-                onClick={() => void handleSelectStoryboardScriptTargetFolder()}
-              >
-                Choose Folder
-              </button>
-              <button
-                type="button"
-                className="primary"
-                disabled={!storyboardScriptImportDraft.targetFolderPath || isWorkspaceTaskRunning}
-                onClick={() => void handleCreateProjectFromStoryboardScript()}
-              >
-                Create Storyboard
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <StoryboardScriptImportModal
+        draft={storyboardScriptImportDraft}
+        isWorkspaceTaskRunning={isWorkspaceTaskRunning}
+        onCancel={() => setStoryboardScriptImportDraft(undefined)}
+        onCreateProject={handleCreateProjectFromStoryboardScript}
+        onSelectTargetFolder={handleSelectStoryboardScriptTargetFolder}
+      />
 
       <div className="workspace-layout">
         <aside className="tool-rail" aria-label="Sketch tools">
