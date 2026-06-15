@@ -78,7 +78,6 @@ import {
   getStableBoardTop,
   getZoomPreviewState,
   maxStoryboardZoom,
-  nextWheelStoryboardZoom,
   normalizeStoryboardZoom,
   sameAnimationViewport,
   type ZoomPreviewState
@@ -174,7 +173,6 @@ import {
 import { sameLayerSelection, useStoryboardInteractionState } from "./storyboardInteractionState";
 import { hasOpenShortcutBlockingMenu, useShortcutMenuController } from "./shortcutMenuController";
 import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
-import { shouldIgnoreWorkbenchWheelTarget } from "./workbenchWheel";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
@@ -205,6 +203,7 @@ import {
   type RadialToolMenuState
 } from "./radialToolMenuController";
 import { usePointerPositionController } from "./pointerPositionController";
+import { useZoomInteractionController } from "./zoomInteractionController";
 
 const defaultBrushColor = "#f05a28";
 const defaultBrushSize = 4;
@@ -722,40 +721,14 @@ export const App = () => {
     []
   );
 
-  useEffect(() => {
-    if (!isZoomScrubbing) {
-      return;
-    }
-
-    window.addEventListener("pointerup", endZoomScrubbing, { once: true });
-    window.addEventListener("pointercancel", endZoomScrubbing, { once: true });
-    return () => {
-      window.removeEventListener("pointerup", endZoomScrubbing);
-      window.removeEventListener("pointercancel", endZoomScrubbing);
-    };
-  }, [endZoomScrubbing, isZoomScrubbing]);
-
-  useEffect(() => {
-    const element = appShellRef.current;
-    if (!element) {
-      return;
-    }
-
-    const handleWheel = (event: globalThis.WheelEvent) => {
-      if (shouldIgnoreWorkbenchWheelTarget(event.target)) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      scheduleZoomLevel(
-        nextWheelStoryboardZoom(pendingZoomLevelRef.current ?? zoomLevelRef.current, event.deltaY)
-      );
-    };
-
-    element.addEventListener("wheel", handleWheel, { passive: false });
-    return () => element.removeEventListener("wheel", handleWheel);
-  }, [scheduleZoomLevel]);
+  useZoomInteractionController({
+    appShellRef,
+    endZoomScrubbing,
+    isZoomScrubbing,
+    pendingZoomLevelRef,
+    scheduleZoomLevel,
+    zoomLevelRef
+  });
 
   useEffect(() => {
     clipboardSelectionRef.current = clipboardSelection;
