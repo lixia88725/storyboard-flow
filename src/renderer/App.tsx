@@ -133,6 +133,7 @@ import {
   type MarqueeBox,
   type MarqueeShotRect
 } from "./storyboardMarquee";
+import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
 import {
   canvasSizeForShot,
   drawImageUrl,
@@ -777,22 +778,7 @@ export const App = () => {
     resetDirtyShots: resetTrackedDirtyShots
   } = createDirtyShotTracker({ dirtyShotIdsRef, projectRef });
 
-  const measureGridColumns = useCallback(() => {
-    const firstRowTop = Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id]"))
-      .map((element) => Math.round(element.getBoundingClientRect().top))
-      .sort((a, b) => a - b)[0];
-
-    if (firstRowTop === undefined) {
-      return 1;
-    }
-
-    return Math.max(
-      1,
-      Array.from(document.querySelectorAll<HTMLElement>("[data-shot-id]")).filter(
-        (element) => Math.abs(Math.round(element.getBoundingClientRect().top) - firstRowTop) <= 4
-      ).length
-    );
-  }, []);
+  const measureGridColumns = useCallback(measureStoryboardGridColumnsFromDom, []);
 
   const measureAnimationMode = useCallback(() => {
     if (isZoomScrubbing) {
