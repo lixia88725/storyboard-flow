@@ -12,7 +12,6 @@ import {
   type IpcMainInvokeEvent
 } from "electron";
 import { copyFile, mkdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
-import { watch, type FSWatcher } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -88,6 +87,7 @@ import {
   isWorkspaceTemporaryImagePath,
   workspaceCopyTemporaryFileName
 } from "./workspaceTemporaryPaths.js";
+import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { applyAiCandidateAsLayer, discardAiCandidate } from "./ai/candidates.js";
 import type { AiBatchResourceAssignments } from "./ai/batch.js";
@@ -389,10 +389,9 @@ type StoryboardScriptImportResult = {
   rollback: () => Promise<void>;
 };
 
-const workspaceWatchers = new Map<number, FSWatcher>();
-let nextWorkspaceWatcherId = 1;
 const saveAndCloseRequests = new Map<string, BrowserWindow>();
 const closeGuardWebContentsIds = new Set<number>();
+const workspaceFolderWatchService = createWorkspaceFolderWatchService();
 
 let mainWindow: BrowserWindow | undefined;
 const maxRecentFolders = 10;
@@ -504,10 +503,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  for (const watcher of workspaceWatchers.values()) {
-    watcher.close();
-  }
-  workspaceWatchers.clear();
+  workspaceFolderWatchService.closeAll();
   if (process.platform !== "darwin") {
     app.quit();
   }
@@ -689,31 +685,11 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("workspace:startFolderWatch", (event, folderPath: string) => {
-    const watcherId = nextWorkspaceWatcherId++;
-    const sender = event.sender;
-    const watcher = watch(folderPath, { persistent: false }, (_eventType, fileName) => {
-      const changedName = fileName?.toString() ?? "";
-      if (
-        !changedName ||
-        changedName.includes(path.sep) ||
-        isWorkspaceTemporaryImagePath(changedName) ||
-        (!isLikelyTiffPath(changedName) && changedName !== storyboardScriptFileName)
-      ) {
-        return;
-      }
-
-      sender.send("workspace:folderChanged", { folderPath, fileName: changedName });
-    });
-    workspaceWatchers.set(watcherId, watcher);
-    watcher.on("error", () => {
-      workspaceWatchers.delete(watcherId);
-    });
-    return watcherId;
+    return workspaceFolderWatchService.start(folderPath, event.sender);
   });
 
   ipcMain.handle("workspace:stopFolderWatch", (_event, watcherId: number) => {
-    workspaceWatchers.get(watcherId)?.close();
-    workspaceWatchers.delete(watcherId);
+    workspaceFolderWatchService.stop(watcherId);
   });
 
   registerLayerIpcHandlers(ipcMain, {
