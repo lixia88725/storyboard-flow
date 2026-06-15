@@ -136,8 +136,23 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 
 - Folder open / refresh read-side logic now has focused service boundaries: `folderScanService.ts`, `imageRecordsService.ts`, `knownImageChangesService.ts`, and `projectMetadataService.ts`.
 - Blank shot TIFF creation is isolated in `blankShotService.ts`; `main.ts` should call it through the image IPC composition path instead of re-owning preset size and unique filename logic.
+- User data glue is isolated in `userDataRuntime.ts`; settings and AI credential/settings stores should be composed there instead of adding more `app.getPath("userData")` wrappers to `main.ts`.
 - Future Electron main service work should prefer read-side or settings/recent/AI glue slices. Do not move `saveWorkspace`, `importProjectToSwbFormat`, `writeSwbMetadataToTiffs`, or Photoshop TIFF writer orchestration without a dedicated Save/Import/TIFF migration plan.
 - `main.ts` should remain the composition layer for protected Save/Import/TIFF flows and IPC registration, not a dumping ground for new isolated filesystem helpers.
+
+2026-06-15 renderer autosave follow-through:
+
+- Autosave persistence side effects now live in `workspaceAutosaveController.ts` as `persistWorkspaceProject`; `App.tsx` should keep only the thin adapter that supplies current paths, refs, and setters.
+- Future autosave or workspace persistence cleanup should extend the controller and its focused tests before adding more save-state side effects directly to `App.tsx`.
+- Keep explicit Save button behavior and Save-time TIFF/filename synchronization out of autosave controller work. Autosave may write metadata only; `Save` remains the only real filename sync and working TIFF write boundary.
+
+2026-06-15 incremental worktree result:
+
+- `sim/user-data-runtime` and `sim/persist-workspace-action` were created as independent worktrees from consecutive clean `main` baselines.
+- The Electron slice touched only `electron/main/main.ts`, `electron/main/userDataRuntime.ts`, and `electron/main/userDataRuntime.test.ts`.
+- The renderer slice touched only `src/renderer/App.tsx`, `src/renderer/workspaceAutosaveController.ts`, and `src/renderer/workspaceAutosaveController.test.ts`.
+- Both slices cherry-picked back to `main` without conflicts because they did not share ownership files. This supports the rule that Electron glue extraction and renderer orchestration extraction can run in parallel when each slice stays inside its file boundary.
+- The remaining risk is not merge conflict in these two slices; it is semantic drift around Save/Import/TIFF boundaries. Any slice touching `autosaveWorkspace`, external refresh, `importSwbFormat`, or Save status must state whether it is metadata-only or Save-boundary work before implementation.
 
 2026-06-15 current worktree simulation:
 
