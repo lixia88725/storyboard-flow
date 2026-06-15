@@ -100,8 +100,7 @@ import {
 import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { applyAiCandidateAsLayer, discardAiCandidate } from "./ai/candidates.js";
-import type { AiBatchResourceAssignments } from "./ai/batch.js";
-import { generateAiCandidate, type AiImageProviderName } from "./ai/generate.js";
+import { generateAiCandidate } from "./ai/generate.js";
 import { generateAiBatchCandidates } from "./ai/generateBatch.js";
 import { createComfyUiImageProvider } from "./ai/comfyUiImageProvider.js";
 import { validateComfyUiServerUrl, validateComfyUiWorkflow } from "./ai/comfyUiWorkflow.js";
@@ -111,8 +110,7 @@ import { createSeedreamImageProvider } from "./ai/seedreamImageProvider.js";
 import {
   readAiSettings,
   writeComfyUiSettings,
-  type AiSettingsStore,
-  type ComfyUiSettings
+  type AiSettingsStore
 } from "./ai/settings.js";
 import {
   deleteAiResourceFile,
@@ -120,7 +118,6 @@ import {
   listAiResources,
   writeAiResourceMetadata
 } from "./ai/resources.js";
-import type { AiResourceMetadata } from "./ai/context.js";
 import {
   clearOpenAiApiKey,
   clearSeedreamApiKey,
@@ -131,6 +128,7 @@ import {
   writeSeedreamApiKey,
   type AiCredentialStore
 } from "./ai/credentials.js";
+import { createAiMainHandlers } from "./ai/mainHandlers.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
 import { registerAppIpcHandlers } from "./ipc/appHandlers.js";
 import { registerLayerIpcHandlers } from "./ipc/layerHandlers.js";
@@ -276,40 +274,6 @@ type ProjectPayload = {
   blankShotPreset?: BlankShotPreset;
   dirtyShotIds?: string[];
   preserveDirtyShotLayers?: boolean;
-};
-
-type AiGenerateCandidatePayload = {
-  folderPath: string;
-  project: Project;
-  shotId: string;
-  selectedShotContext?: string;
-  selectedResourceIds?: string[];
-  generationSettings?: {
-    provider?: AiImageProviderName;
-    model?: string;
-  };
-};
-
-type AiGenerateBatchCandidatesPayload = {
-  folderPath: string;
-  project: Project;
-  shotIds: string[];
-  selectedResourceIds?: string[];
-  resourceAssignments?: AiBatchResourceAssignments;
-  generationSettings?: {
-    provider?: AiImageProviderName;
-    model?: string;
-  };
-};
-
-type AiRequestPreviewPayload = AiGenerateCandidatePayload | AiGenerateBatchCandidatesPayload;
-
-type AiComfyUiSettingsPayload = ComfyUiSettings;
-
-type AiApplyCandidatePayload = {
-  folderPath: string;
-  project: Project;
-  candidateId: string;
 };
 
 type CreateProjectFromStoryboardScriptPayload = {
@@ -738,72 +702,45 @@ const registerIpcHandlers = () => {
     setToolRadialMenu: writeToolRadialMenu
   });
 
-  registerAiIpcHandlers(ipcMain, {
-    getSettings: readAiSettingsForRenderer,
-    saveOpenAiApiKey: async (apiKey) => {
-      await writeOpenAiApiKey(aiCredentialStore(), apiKey);
-      return readAiSettingsForRenderer();
-    },
-    clearOpenAiApiKey: async () => {
-      await clearOpenAiApiKey(aiCredentialStore());
-      return readAiSettingsForRenderer();
-    },
-    saveSeedreamApiKey: async (apiKey) => {
-      await writeSeedreamApiKey(aiCredentialStore(), apiKey);
-      return readAiSettingsForRenderer();
-    },
-    clearSeedreamApiKey: async () => {
-      await clearSeedreamApiKey(aiCredentialStore());
-      return readAiSettingsForRenderer();
-    },
-    saveComfyUiSettings: async (settings) => {
-      await writeComfyUiSettings(aiSettingsStore(), settings as AiComfyUiSettingsPayload);
-      return readAiSettingsForRenderer();
-    },
-    testComfyUiConnection: async (serverUrl) => {
-      const normalizedServerUrl = validateComfyUiServerUrl(serverUrl);
-      const response = await fetch(`${normalizedServerUrl}/system_stats`);
-      if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        throw new Error(text.trim() || `ComfyUI connection failed with ${response.status}`);
-      }
-      return { ok: true, message: "ComfyUI connection ready" };
-    },
-    listResources: listAiResources,
-    importResources: importAiResourceFiles,
-    deleteResource: deleteAiResourceFile,
-    updateResourceMetadata: (folderPath, metadata) =>
-      writeAiResourceMetadata(folderPath, metadata as AiResourceMetadata),
-    generateCandidate: async (payload) => {
-      const typedPayload = payload as AiGenerateCandidatePayload;
-      const providerName = typedPayload.generationSettings?.provider ?? "openai";
-      return generateAiCandidate({
-        ...typedPayload,
-        provider: await createAiImageProvider(providerName)
-      });
-    },
-    generateBatchCandidates: async (payload) => {
-      const typedPayload = payload as AiGenerateBatchCandidatesPayload;
-      const providerName = typedPayload.generationSettings?.provider ?? "openai";
-      return generateAiBatchCandidates({
-        ...typedPayload,
-        provider: await createAiImageProvider(providerName)
-      });
-    },
-    copyRequestPreview: async (payload) => {
-      const typedPayload = payload as AiRequestPreviewPayload;
-      const providerName = typedPayload.generationSettings?.provider ?? "openai";
-      const settings = providerName === "comfyui" ? await readAiSettings(aiSettingsStore()) : undefined;
-      const text = await buildAiRequestPreview({
-        ...typedPayload,
-        comfyUiSettings: settings?.comfyUi
-      });
-      clipboard.writeText(text);
-      return { text };
-    },
-    discardCandidate: discardAiCandidate,
-    applyCandidate: (payload) => applyAiCandidateAsLayer(payload as AiApplyCandidatePayload)
-  });
+  registerAiIpcHandlers(
+    ipcMain,
+    createAiMainHandlers({
+      aiCredentialStore,
+      aiSettingsStore,
+      applyCandidateAsLayer: applyAiCandidateAsLayer,
+      buildAiRequestPreview,
+      clearOpenAiApiKey,
+      clearSeedreamApiKey,
+      clipboardWriteText: (text) => clipboard.writeText(text),
+      createComfyUiImageProvider,
+      createOpenAiImageProvider,
+      createSeedreamImageProvider,
+      deleteAiResourceFile,
+      discardAiCandidate,
+      generateAiBatchCandidates,
+      generateAiCandidate,
+      importAiResourceFiles,
+      listAiResources,
+      readAiCredentialStatus,
+      readAiSettings,
+      readOpenAiApiKey,
+      readSeedreamApiKey,
+      testComfyUiConnection: async (serverUrl) => {
+        const normalizedServerUrl = validateComfyUiServerUrl(serverUrl);
+        const response = await fetch(`${normalizedServerUrl}/system_stats`);
+        if (!response.ok) {
+          const text = await response.text().catch(() => "");
+          throw new Error(text.trim() || `ComfyUI connection failed with ${response.status}`);
+        }
+        return { ok: true, message: "ComfyUI connection ready" };
+      },
+      validateComfyUiWorkflow,
+      writeAiResourceMetadata,
+      writeComfyUiSettings,
+      writeOpenAiApiKey,
+      writeSeedreamApiKey
+    })
+  );
 
 };
 
@@ -1145,29 +1082,6 @@ const aiCredentialStore = (): AiCredentialStore => ({
 const aiSettingsStore = (): AiSettingsStore => ({
   userDataPath: app.getPath("userData")
 });
-
-const readAiSettingsForRenderer = async () => {
-  const [credentials, settings] = await Promise.all([
-    readAiCredentialStatus(aiCredentialStore()),
-    readAiSettings(aiSettingsStore())
-  ]);
-  return {
-    ...credentials,
-    ...settings,
-    hasValidComfyUiSettings: validateComfyUiWorkflow(settings.comfyUi.workflowJson, 1).ok
-  };
-};
-
-const createAiImageProvider = async (providerName: AiImageProviderName) => {
-  if (providerName === "comfyui") {
-    const settings = await readAiSettings(aiSettingsStore());
-    return createComfyUiImageProvider({ settings: settings.comfyUi });
-  }
-  if (providerName === "seedream") {
-    return createSeedreamImageProvider({ apiKey: await readSeedreamApiKey(aiCredentialStore()) });
-  }
-  return createOpenAiImageProvider({ apiKey: await readOpenAiApiKey(aiCredentialStore()) });
-};
 
 const recentFoldersController = createRecentFoldersController({
   maxRecentFolders,
