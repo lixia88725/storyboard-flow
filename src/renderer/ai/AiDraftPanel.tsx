@@ -22,6 +22,10 @@ import { useAiResourcesController } from "./useAiResourcesController";
 import { AiCandidateSection } from "./AiCandidateSection";
 import { AiProviderSettingsSection } from "./AiProviderSettingsSection";
 import { AiResourcesSection } from "./AiResourcesSection";
+import {
+  createAiPanelActions,
+  hasActiveAiCandidate
+} from "./aiPanelActionsController";
 
 type AiDraftPanelProps = {
   isOpen: boolean;
@@ -163,8 +167,45 @@ export const AiDraftPanel = ({
   const canGenerateForSelection =
     canRequestAiGeneration({ ...apiKeyStatus, provider: providerName, isGenerating }) &&
     (selection.kind === "ready" || (selection.kind === "multi" && selection.shots.length > 0));
-  const hasActiveCandidate =
-    selection.kind === "multi" ? hasBatchCandidates : hasCandidate;
+  const aiPanelActionMode = selection.kind === "multi" ? "batch" : "single";
+  const hasActiveCandidate = hasActiveAiCandidate({
+    mode: aiPanelActionMode,
+    hasBatchCandidates,
+    hasCandidate
+  });
+  const aiPanelActions = useMemo(
+    () =>
+      createAiPanelActions({
+        mode: aiPanelActionMode,
+        single: {
+          applyCandidate: applySingleCandidate,
+          copyRequestPreview: copySingleRequestPreview,
+          discardCandidate: discardSingleCandidate,
+          generateCandidate: generateSingleCandidate,
+          hasCandidate
+        },
+        batch: {
+          applyBatchCandidates,
+          copyBatchRequestPreview,
+          discardBatchCandidates,
+          generateBatchCandidates,
+          hasBatchCandidates
+        }
+      }),
+    [
+      aiPanelActionMode,
+      applyBatchCandidates,
+      applySingleCandidate,
+      copyBatchRequestPreview,
+      copySingleRequestPreview,
+      discardBatchCandidates,
+      discardSingleCandidate,
+      generateBatchCandidates,
+      generateSingleCandidate,
+      hasBatchCandidates,
+      hasCandidate
+    ]
+  );
 
   useEffect(() => {
     clearBatchCandidates();
@@ -196,42 +237,6 @@ export const AiDraftPanel = ({
       nextAiEditableDialogueProject(project, shotId, dialogueText),
       "AI shot dialogue updated"
     );
-  };
-
-  const generate = async () => {
-    if (selection.kind === "multi") {
-      await generateBatchCandidates();
-      return;
-    }
-
-    await generateSingleCandidate();
-  };
-
-  const copyRequestPreview = async () => {
-    if (selection.kind === "multi") {
-      await copyBatchRequestPreview();
-      return;
-    }
-
-    await copySingleRequestPreview();
-  };
-
-  const discardCandidate = async () => {
-    if (selection.kind === "multi") {
-      await discardBatchCandidates();
-      return;
-    }
-
-    await discardSingleCandidate();
-  };
-
-  const applyCandidate = async () => {
-    if (selection.kind === "multi") {
-      await applyBatchCandidates();
-      return;
-    }
-
-    await applySingleCandidate();
   };
 
   return (
@@ -357,9 +362,9 @@ export const AiDraftPanel = ({
               hasActiveCandidate={hasActiveCandidate}
               canGenerate={canGenerateForSelection}
               assetUrl={aiClient.assetUrl}
-              onGenerate={() => void generate()}
-              onApply={() => void applyCandidate()}
-              onDiscard={() => void discardCandidate()}
+              onGenerate={() => void aiPanelActions.generate()}
+              onApply={() => void aiPanelActions.applyCandidate()}
+              onDiscard={() => void aiPanelActions.discardCandidate()}
             />
           </>
         ) : null}
@@ -377,7 +382,7 @@ export const AiDraftPanel = ({
         aria-label="Copy AI request preview"
         title="Copy AI request preview"
         disabled={!canCopyRequestPreview}
-        onClick={() => void copyRequestPreview()}
+        onClick={() => void aiPanelActions.copyRequestPreview()}
       >
         <CopyIcon />
       </button>
