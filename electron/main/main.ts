@@ -107,6 +107,7 @@ import { createImageAppHandlers } from "./imageAppRuntime.js";
 import { createSettingsAppHandlers } from "./settingsAppRuntime.js";
 import { createWorkspaceExternalChangesAppHandlers } from "./workspaceExternalChangesAppRuntime.js";
 import { createWorkspaceOpenAppHandlers } from "./workspaceOpenAppRuntime.js";
+import { createWorkspacePersistenceAppHandlers } from "./workspacePersistenceAppRuntime.js";
 import { createWorkspaceScriptAppHandlers } from "./workspaceScriptAppRuntime.js";
 import { createWorkspaceWatchAppHandlers } from "./workspaceWatchAppRuntime.js";
 import { createAiAppHandlers } from "./ai/appRuntime.js";
@@ -433,10 +434,13 @@ const registerIpcHandlers = () => {
     })
   );
 
-  registerWorkspacePersistenceIpcHandlers<ProjectPayload>(ipcMain, {
-    ensureProjectLayerAssets,
-    writeProjectFiles
-  });
+  registerWorkspacePersistenceIpcHandlers<ProjectPayload>(
+    ipcMain,
+    createWorkspacePersistenceAppHandlers({
+      ensureProjectLayerAssets,
+      writeProjectFiles
+    })
+  );
 
   ipcMain.handle("workspace:save", async (event, payload: ProjectPayload) => {
     return saveWorkspace(payload, createWorkspaceTaskProgressReporter(event.sender, "save"));

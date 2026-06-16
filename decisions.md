@@ -186,9 +186,10 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 - `sim/image-app-runtime` moved `images:createBlankShot` app wiring into `electron/main/imageAppRuntime.ts`; `main.ts` now only registers the image IPC handler with `createImageRecords` injected from the protected app composition layer.
 - `sim/settings-app-runtime` moved tool radial settings IPC wiring into `electron/main/settingsAppRuntime.ts`; user-data read/write behavior remains in `userDataRuntime.ts` and `userSettingsService.ts`.
 - Workspace open/watch/script IPC wiring now lives in focused runtime modules: `workspaceOpenAppRuntime.ts`, `workspaceWatchAppRuntime.ts`, and `workspaceScriptAppRuntime.ts`.
+- Workspace autosave/ensure-layer-assets IPC wiring now lives in `workspacePersistenceAppRuntime.ts`; `main.ts` still owns the underlying `ensureProjectLayerAssets` and `writeProjectFiles` helpers because Save/Import/TIFF paths also call them directly.
 - These slices had focused tests and cherry-picked back to `main` or landed as narrow follow-through changes without conflicts because they touched distinct runtime modules plus small adjacent lines in `main.ts`.
 - Rule adjustment: Electron IPC runtime slices should keep `main.ts` as a thin registration/composition file and move only low-risk glue into domain runtime modules. If a slice needs `saveWorkspace`, `importProjectToSwbFormat`, Photoshop TIFF export/import, or `.storyboard-workbench` format changes, it is not a low-risk IPC runtime slice and needs a separate plan.
-- Remaining Electron conflict risk is now concentrated in workspace persistence/asset registration and the protected Save/Import/TIFF orchestration below those handlers. Continue extracting small read-side or settings-style composition only when the new module has a real domain owner and a focused test.
+- Remaining Electron conflict risk is now concentrated in workspace asset registration and the protected Save/Import/TIFF orchestration below those handlers. Continue extracting small read-side or settings-style composition only when the new module has a real domain owner and a focused test.
 
 Reason: The highest-conflict files are still shared coordination points. Slice-owned worktrees reduce merge conflicts and keep architectural cleanup from accidentally crossing protected product/data boundaries.
 
