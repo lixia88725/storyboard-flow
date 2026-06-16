@@ -171,6 +171,15 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 - Rule adjustment: CSS theme cleanup can continue independently from renderer hook extraction as long as CSS slices treat `styles.css` as the import-order manifest and renderer slices treat shell/board class names as API-like names.
 - Remaining renderer risk is now concentrated in DND/marquee, Save/Import wiring, history, and layer action orchestration. Prefer one controller at a time, with focused tests, before considering any broader `App.tsx` movement.
 
+2026-06-16 current architecture follow-through:
+
+- Electron AI app runtime moved into `electron/main/ai/appRuntime.ts`; `main.ts` now registers AI IPC through `createAiAppHandlers` instead of directly composing provider/settings/resource/candidate dependencies.
+- External refresh app runtime moved into `electron/main/workspaceExternalChangesAppRuntime.ts`; `main.ts` now supplies only the app-specific image-record and storyboard-script helpers while the external-change service composition lives in a focused module.
+- AI project apply side effects moved into `src/renderer/ai/aiProjectChangeController.ts`; `App.tsx` no longer owns the layer-change dirty-shot detection for AI candidate/resource apply flows.
+- These slices were implemented in separate worktrees: `sim/electron-ai-app-runtime`, `sim/workspace-external-changes-runtime`, and `sim/ai-project-change-controller`, then cherry-picked back to `main` without conflicts.
+- Rule adjustment: AI provider/main glue, Electron external-refresh glue, and renderer AI project-change glue can proceed in independent worktrees as long as provider behavior, candidate-first Apply, and Save/Import/TIFF boundaries are not changed.
+- Current high-conflict files are smaller but still not “done”: `main.ts` remains the protected Save/Import/TIFF composition layer, and `App.tsx` still owns DND/marquee/history/layer-action orchestration. Future slices should keep using focused tests and avoid splitting code solely for line-count wins.
+
 Reason: The highest-conflict files are still shared coordination points. Slice-owned worktrees reduce merge conflicts and keep architectural cleanup from accidentally crossing protected product/data boundaries.
 
 ## Multi-Select Reordering Has Explicit Placement
