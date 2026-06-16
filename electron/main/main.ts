@@ -96,6 +96,7 @@ import {
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
 import { createImageAppHandlers } from "./imageAppRuntime.js";
+import { createLayerAppHandlers } from "./layerAppRuntime.js";
 import { createSettingsAppHandlers } from "./settingsAppRuntime.js";
 import { createWorkspaceAssetAppHandlers } from "./workspaceAssetAppRuntime.js";
 import { createWorkspaceExternalChangesAppHandlers } from "./workspaceExternalChangesAppRuntime.js";
@@ -117,19 +118,8 @@ import { registerWorkspacePersistenceIpcHandlers } from "./ipc/workspacePersiste
 import { registerWorkspaceScriptIpcHandlers } from "./ipc/workspaceScriptHandlers.js";
 import { registerWorkspaceWatchIpcHandlers } from "./ipc/workspaceWatchHandlers.js";
 import {
-  copyLayerPng,
-  deleteLayerPng,
-  mergeLayerDown,
-  mergeVisibleLayers,
-  readLayerPng,
   resolveLayerAssetPath,
-  sharpBlendMode,
-  writeLayerPng,
-  type CopyLayerPngPayload,
-  type LayerAssetPayload,
-  type MergeLayerDownPayload,
-  type MergeVisibleLayersPayload,
-  type WriteLayerAssetPayload
+  sharpBlendMode
 } from "./layerAssetService.js";
 import {
   readRecentFoldersWithRecovery,
@@ -525,14 +515,7 @@ const registerIpcHandlers = () => {
     createWorkspaceWatchAppHandlers({ workspaceFolderWatchService })
   );
 
-  registerLayerIpcHandlers(ipcMain, {
-    writePng: (payload) => writeLayerPng(payload as WriteLayerAssetPayload),
-    readPng: (payload) => readLayerPng(payload as LayerAssetPayload),
-    deletePng: (payload) => deleteLayerPng(payload as LayerAssetPayload),
-    copyPng: (payload) => copyLayerPng(payload as CopyLayerPngPayload),
-    mergeDown: (payload) => mergeLayerDown(payload as MergeLayerDownPayload),
-    mergeVisible: (payload) => mergeVisibleLayers(payload as MergeVisibleLayersPayload)
-  });
+  registerLayerIpcHandlers(ipcMain, createLayerAppHandlers());
 
   registerWorkspaceAssetIpcHandlers(ipcMain, createWorkspaceAssetAppHandlers({ uniquePath }));
 
