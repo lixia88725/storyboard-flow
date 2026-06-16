@@ -107,6 +107,7 @@ import { createImageAppHandlers } from "./imageAppRuntime.js";
 import { createSettingsAppHandlers } from "./settingsAppRuntime.js";
 import { createWorkspaceExternalChangesAppHandlers } from "./workspaceExternalChangesAppRuntime.js";
 import { createWorkspaceOpenAppHandlers } from "./workspaceOpenAppRuntime.js";
+import { createWorkspaceScriptAppHandlers } from "./workspaceScriptAppRuntime.js";
 import { createWorkspaceWatchAppHandlers } from "./workspaceWatchAppRuntime.js";
 import { createAiAppHandlers } from "./ai/appRuntime.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
@@ -422,12 +423,15 @@ const registerIpcHandlers = () => {
     openExternal: (url) => openExternalUrl(url, shell.openExternal)
   });
 
-  registerWorkspaceScriptIpcHandlers<ProjectPayload, CreateProjectFromStoryboardScriptPayload>(ipcMain, {
-    inspectStoryboardScript: inspectStoryboardScriptMarkdownFile,
-    createFromStoryboardScript: createProjectFromStoryboardScriptMarkdown,
-    addRecentFolder,
-    ensureStoryboardScriptMarkdown
-  });
+  registerWorkspaceScriptIpcHandlers<ProjectPayload, CreateProjectFromStoryboardScriptPayload>(
+    ipcMain,
+    createWorkspaceScriptAppHandlers({
+      inspectStoryboardScript: inspectStoryboardScriptMarkdownFile,
+      createFromStoryboardScript: createProjectFromStoryboardScriptMarkdown,
+      addRecentFolder,
+      ensureStoryboardScriptMarkdown
+    })
+  );
 
   registerWorkspacePersistenceIpcHandlers<ProjectPayload>(ipcMain, {
     ensureProjectLayerAssets,
