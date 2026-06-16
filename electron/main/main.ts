@@ -106,6 +106,7 @@ import { pixelFingerprint } from "./imageFingerprintService.js";
 import { createImageAppHandlers } from "./imageAppRuntime.js";
 import { createSettingsAppHandlers } from "./settingsAppRuntime.js";
 import { createWorkspaceExternalChangesAppHandlers } from "./workspaceExternalChangesAppRuntime.js";
+import { createWorkspaceOpenAppHandlers } from "./workspaceOpenAppRuntime.js";
 import { createWorkspaceWatchAppHandlers } from "./workspaceWatchAppRuntime.js";
 import { createAiAppHandlers } from "./ai/appRuntime.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
@@ -388,13 +389,16 @@ app.on("window-all-closed", () => {
 });
 
 const registerIpcHandlers = () => {
-  registerWorkspaceOpenIpcHandlers(ipcMain, {
-    pathExists,
-    removeRecentFolder,
-    createProgressReporter: createWorkspaceTaskProgressReporter,
-    scanFolder,
-    addRecentFolder
-  });
+  registerWorkspaceOpenIpcHandlers(
+    ipcMain,
+    createWorkspaceOpenAppHandlers({
+      pathExists,
+      removeRecentFolder,
+      createProgressReporter: createWorkspaceTaskProgressReporter,
+      scanFolder,
+      addRecentFolder
+    })
+  );
 
   registerAppIpcHandlers(ipcMain, {
     selectFolder: (event) =>
