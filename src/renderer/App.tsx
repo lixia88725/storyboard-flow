@@ -27,8 +27,6 @@ import {
   defaultProjectNaming,
   defaultSaveNaming,
   bitmapLayersForShot,
-  copyBitmapLayerToShot,
-  duplicateShotAfter,
   imageBitmapLayerId,
   mergeExternalImageChanges,
   mergeFolderImages,
@@ -42,7 +40,6 @@ import {
   reorderShots,
   sortedShots,
   type ShotPlacement,
-  bitmapLayerPath,
 } from "../shared/projectOps";
 import type {
   BitmapLayer,
@@ -62,12 +59,8 @@ import {
 } from "./activeTargets";
 import { autosaveErrorReducer, type AutosaveErrorNotice } from "./autosaveError";
 import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
-import {
-  copySelectionFromProject,
-  layerPasteTargetFromProject,
-  shotAssetCopyPlan,
-  type ClipboardSelection
-} from "./clipboardSelection";
+import type { ClipboardSelection } from "./clipboardSelection";
+import { useClipboardActionController } from "./clipboardActionController";
 import { DialoguePreview, ShotStackPreview } from "./DragPreviews";
 import type { DeleteTarget } from "./deleteTarget";
 import { useDeleteActionController } from "./deleteActionController";
@@ -1161,37 +1154,28 @@ export const App = () => {
     updateProject
   });
 
-  const handleCopySelection = () => {
-    const currentProject = projectRef.current;
-    const result = copySelectionFromProject(
-      currentProject,
-      deleteTargetRef.current,
-      selectedShotIdsRef.current
-    );
-    if (!result.ok) {
-      setStatus(result.status);
-      return;
-    }
-
-    clipboardSelectionRef.current = result.clipboard;
-    setClipboardSelection(result.clipboard);
-    setStatus(result.status);
-  };
-
-  const handlePasteSelection = async () => {
-    const clipboard = clipboardSelectionRef.current;
-    if (!clipboard) {
-      setStatus("Nothing to paste");
-      return;
-    }
-
-    if (clipboard.type === "shot") {
-      await pasteCopiedShot(clipboard.shotId);
-      return;
-    }
-
-    await pasteCopiedLayer(clipboard.shotId, clipboard.layerId);
-  };
+  const {
+    handleCopySelection,
+    handlePasteSelection
+  } = useClipboardActionController({
+    api: typeof window === "undefined" ? undefined : window.storyboard,
+    clipboardSelectionRef,
+    createHistoryEntry,
+    deleteTargetRef,
+    folderPath,
+    markShotsDirty,
+    metadataPath,
+    projectRef,
+    queuePasteAnimation,
+    recordUndoEntry,
+    selectSingleShot,
+    selectedShotIdsRef,
+    setClipboardSelection,
+    setDeleteTarget,
+    setSelectedBitmapLayerIds,
+    setStatus,
+    updateProject
+  });
 
   useAppKeyboardShortcutsController({
     activeSketchTool,
@@ -1224,133 +1208,6 @@ export const App = () => {
     setSelectedShotIds,
     setStatus
   });
-
-  const pasteCopiedShot = async (sourceShotId: string) => {
-    if (!window.storyboard) {
-      setStatus("Cannot paste storyboard: Electron preload API is unavailable");
-      return;
-    }
-    if (!folderPath || !metadataPath) {
-      setStatus("Cannot paste storyboard: workspace is not loaded");
-      return;
-    }
-
-    const currentProject = projectRef.current;
-    const sourceShot = currentProject.shots.find((shot) => shot.id === sourceShotId);
-    const targetShot = primaryShotOrFirst(sortedShots(currentProject.shots), selectedShotIdsRef.current);
-    if (!sourceShot || !targetShot) {
-      setStatus("Cannot paste storyboard: copied or target storyboard is missing");
-      return;
-    }
-
-    const pastedShotId = crypto.randomUUID();
-    const copyPlan = shotAssetCopyPlan(sourceShot, pastedShotId);
-    const ensuredLayerAssets = await withStatus(
-      "Paste storyboard failed",
-      () =>
-        window.storyboard.ensureLayerAssets({
-          project: currentProject,
-          folderPath,
-          metadataPath
-        }),
-      setStatus
-    );
-
-    if (!ensuredLayerAssets) {
-      return;
-    }
-
-    const copiedAssets = await withStatus(
-      "Paste storyboard failed",
-      () =>
-        window.storyboard.copyShotAssets({
-          folderPath,
-          sourceImagePath: sourceShot.imagePath,
-          fileName: sourceShot.fileName,
-          layerCopies: copyPlan.layerCopies
-        }),
-      setStatus
-    );
-
-    if (!copiedAssets) {
-      return;
-    }
-
-    queuePasteAnimation("shot", sourceShot.id, pastedShotId);
-    const nextProject = duplicateShotAfter(currentProject, sourceShotId, targetShot.id, {
-      shotId: pastedShotId,
-      imagePath: copiedAssets.imagePath,
-      fileName: copiedAssets.fileName,
-      previewPath: copiedAssets.previewPath,
-      placement: "after"
-    });
-    updateProject(nextProject);
-    markShotsDirty([pastedShotId]);
-    selectSingleShot(pastedShotId);
-    setSelectedBitmapLayerIds(undefined);
-    setDeleteTarget({ type: "shot" });
-    setStatus("Storyboard pasted");
-  };
-
-  const pasteCopiedLayer = async (sourceShotId: string, sourceLayerId: string) => {
-    if (!window.storyboard || !folderPath) {
-      setStatus("Cannot paste layer: Electron preload API is unavailable");
-      return;
-    }
-
-    const currentProject = projectRef.current;
-    const pasteTarget = layerPasteTargetFromProject(
-      currentProject,
-      deleteTargetRef.current,
-      sourceShotId,
-      sourceLayerId
-    );
-    if (!pasteTarget.ok) {
-      setStatus(pasteTarget.status);
-      return;
-    }
-    const { sourceLayer, targetShot, targetLayer } = pasteTarget;
-
-    const pastedLayerId = `layer-${crypto.randomUUID()}`;
-    const targetBitmapPath = bitmapLayerPath(targetShot.id, pastedLayerId);
-    const undoEntry = await createHistoryEntry([targetBitmapPath]);
-    const copied = await withStatus(
-      "Paste layer failed",
-      () =>
-        window.storyboard.copyLayerPng({
-          folderPath,
-          sourceBitmapPath: sourceLayer.bitmapPath,
-          targetBitmapPath
-        }),
-      setStatus
-    );
-
-    if (!copied) {
-      return;
-    }
-
-    queuePasteAnimation("layer", sourceLayer.id, pastedLayerId);
-    recordUndoEntry(undoEntry);
-    markShotsDirty([targetShot.id]);
-    updateProject(
-      (projectToUpdate) =>
-        copyBitmapLayerToShot(
-          projectToUpdate,
-          sourceShotId,
-          sourceLayerId,
-          targetShot.id,
-          pastedLayerId,
-          targetLayer.id,
-          "before"
-        ),
-      false,
-      false
-    );
-    selectSingleShot(targetShot.id);
-    setSelectedBitmapLayerIds({ shotId: targetShot.id, layerIds: [pastedLayerId] });
-    setDeleteTarget({ type: "layer", shotId: targetShot.id, layerId: pastedLayerId });
-    setStatus(`Layer "${sourceLayer.name}" pasted`);
-  };
 
   const handleDragStart = (event: DragStartEvent) => {
     resetInsertionDragState();
