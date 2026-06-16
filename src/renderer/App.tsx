@@ -39,8 +39,6 @@ import type {
   Project,
   Shot,
   BlankShotPreset,
-  SketchTool,
-  StrokeTool
 } from "../shared/types";
 import { maxStoryboardZoom } from "./animationViewport";
 import {
@@ -95,17 +93,9 @@ import { useUpdateNoticeController } from "./updateNoticeController";
 import { useAnimationModeLayoutController } from "./animationModeLayoutController";
 import { usePasteAnimationController } from "./pasteAnimationController";
 import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, projectChangedDuringLoad, shouldAutosaveAfterLoad, shouldPersistLoadedProject } from "./workspacePersistenceController";
-import {
-  applyRadialPresetSlot,
-  type RadialDragKind,
-  type RadialPresetSlot,
-  type RadialToolSlot
-} from "./toolRadialMenu";
-import {
-  nextRadialSlotConfig,
-  updateRadialDragSettings,
-  useRadialToolMenuController
-} from "./radialToolMenuController";
+import { useRadialToolMenuController } from "./radialToolMenuController";
+import { useSketchToolSettingsController } from "./sketchToolSettingsController";
+import type { RadialPresetSlot } from "./toolRadialMenu";
 import { usePointerPositionController } from "./pointerPositionController";
 import { useRecentFoldersController } from "./recentFoldersController";
 import { useToolRadialSettingsController } from "./toolRadialSettingsController";
@@ -131,9 +121,6 @@ import {
   type StoryboardScriptImportDraft
 } from "./WorkspaceOverlays";
 
-const defaultBrushColor = "#f05a28";
-const defaultBrushSize = 4;
-const defaultEraserSize = 18;
 const minSketchSoftness = 0;
 const maxSketchSoftness = 1;
 const maxUndoHistory = 60;
@@ -190,14 +177,6 @@ export const App = () => {
     setSelectedBitmapLayerIds,
     selectedBitmapLayerIdsRef
   } = useStoryboardInteractionState();
-  const [activeSketchTool, setActiveSketchTool] = useState<SketchTool>("brush");
-  const [brushColor, setBrushColor] = useState(defaultBrushColor);
-  const [brushOpacity, setBrushOpacity] = useState(1);
-  const [brushSize, setBrushSize] = useState(defaultBrushSize);
-  const [brushSoftness, setBrushSoftness] = useState(0);
-  const [eraserSize, setEraserSize] = useState(defaultEraserSize);
-  const [eraserOpacity, setEraserOpacity] = useState(1);
-  const [eraserSoftness, setEraserSoftness] = useState(0);
   const {
     zoomLevel,
     setZoomLevel,
@@ -310,6 +289,29 @@ export const App = () => {
     [isAnimationMode, isOnionSkinEnabled, orderedShots, primarySelectedShotId]
   );
   const {
+    activeSketchTool,
+    adjustRadialToolValue,
+    applyRadialPreset,
+    brushColor,
+    brushOpacity,
+    brushSize,
+    brushSoftness,
+    currentSketchToolSettings,
+    eraserOpacity,
+    eraserSize,
+    eraserSoftness,
+    setActiveSketchTool,
+    setBrushColor,
+    setBrushOpacity,
+    setBrushSize,
+    setEraserOpacity,
+    setEraserSize,
+    updateRadialSlot
+  } = useSketchToolSettingsController({
+    persistToolRadialMenuConfig,
+    toolRadialMenuConfig
+  });
+  const {
     radialToolMenu,
     closeRadialToolMenu,
     openSketchCanvasContextMenu
@@ -318,6 +320,13 @@ export const App = () => {
     needsSwbImport,
     setStatus
   });
+  const applyRadialPresetAndClose = useCallback(
+    (slot: RadialPresetSlot) => {
+      applyRadialPreset(slot);
+      closeRadialToolMenu();
+    },
+    [applyRadialPreset, closeRadialToolMenu]
+  );
 
   const { queueAnimation: queuePasteAnimation } = usePasteAnimationController(project);
 
@@ -1242,36 +1251,6 @@ export const App = () => {
     activeShotCount: activeShotIds.length + activeParkedShotIds.length,
     hasIndicator: Boolean(storyboardInsertionIndicator)
   });
-  const currentSketchToolSettings = {
-    tool: activeSketchTool,
-    brushColor,
-    brushSize,
-    brushOpacity,
-    brushSoftness,
-    eraserSize,
-    eraserOpacity,
-    eraserSoftness
-  };
-  const applySketchToolSettings = (settings: typeof currentSketchToolSettings) => {
-    setActiveSketchTool(settings.tool);
-    setBrushColor(settings.brushColor);
-    setBrushSize(settings.brushSize);
-    setBrushOpacity(settings.brushOpacity);
-    setBrushSoftness(settings.brushSoftness);
-    setEraserSize(settings.eraserSize);
-    setEraserOpacity(settings.eraserOpacity);
-    setEraserSoftness(settings.eraserSoftness);
-  };
-  const applyRadialPreset = (slot: RadialPresetSlot) => {
-    applySketchToolSettings(applyRadialPresetSlot(currentSketchToolSettings, slot));
-    closeRadialToolMenu();
-  };
-  const adjustRadialToolValue = (kind: RadialDragKind, value: number) => {
-    applySketchToolSettings(updateRadialDragSettings(currentSketchToolSettings, kind, value));
-  };
-  const updateRadialSlot = (tool: StrokeTool, index: number, slot: RadialToolSlot) => {
-    persistToolRadialMenuConfig(nextRadialSlotConfig(toolRadialMenuConfig, tool, index, slot));
-  };
   const handleClearCurrentLayerFromToolRail = useCallback(() => {
     if (!primarySelectedShot) {
       setStatus("Select a shot before clearing a layer");
@@ -1375,7 +1354,7 @@ export const App = () => {
             y={radialToolMenu.y}
             isClosing={radialToolMenu.isClosing === true}
             settings={currentSketchToolSettings}
-            onApplyPreset={applyRadialPreset}
+            onApplyPreset={applyRadialPresetAndClose}
             onAdjust={adjustRadialToolValue}
             onUpdateSlot={(index, slot) => updateRadialSlot(radialToolMenu.tool, index, slot)}
             onClose={closeRadialToolMenu}
