@@ -102,6 +102,7 @@ import { markdownPathFromDroppedFiles } from "./markdownDrop";
 import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
 import { AiDraftPanel } from "./ai/AiDraftPanel";
+import { applyAiProjectChange } from "./ai/aiProjectChangeController";
 import { useBoardViewState } from "./boardViewState";
 import { useStoryboardZoomController } from "./storyboardZoomController";
 import { RadialToolMenu } from "./RadialToolMenu";
@@ -2263,24 +2264,17 @@ export const App = () => {
     }
   }, [handleClearBitmapLayer, primarySelectedShot, setStatus]);
 
-  const handleAiProjectChange = (nextProject: Project, nextStatus: string) => {
-    const currentProject = projectRef.current;
-    const changedLayerShotIds = nextProject.shots
-      .filter((nextShot) => {
-        const currentShot = currentProject.shots.find((shot) => shot.id === nextShot.id);
-        return (
-          currentShot?.activeLayerId !== nextShot.activeLayerId ||
-          JSON.stringify(currentShot?.layers ?? []) !== JSON.stringify(nextShot.layers ?? [])
-        );
-      })
-      .map((shot) => shot.id);
-    markShotsDirty(changedLayerShotIds);
-    setProject(nextProject);
-    projectRef.current = nextProject;
-    setWorkspaceSaveState("saving");
-    setAutosaveRevision((revision) => revision + 1);
-    setStatus(nextStatus);
-  };
+  const handleAiProjectChange = (nextProject: Project, nextStatus: string) =>
+    applyAiProjectChange({
+      markShotsDirty,
+      nextProject,
+      nextStatus,
+      projectRef,
+      setAutosaveRevision,
+      setProject,
+      setStatus,
+      setWorkspaceSaveState
+    });
   return (
     <main
       ref={appShellRef}
