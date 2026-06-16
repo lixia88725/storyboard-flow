@@ -104,31 +104,7 @@ import {
 } from "./workspaceTaskProgress.js";
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
-import { applyAiCandidateAsLayer, discardAiCandidate } from "./ai/candidates.js";
-import { generateAiCandidate } from "./ai/generate.js";
-import { generateAiBatchCandidates } from "./ai/generateBatch.js";
-import { createComfyUiImageProvider } from "./ai/comfyUiImageProvider.js";
-import { validateComfyUiServerUrl, validateComfyUiWorkflow } from "./ai/comfyUiWorkflow.js";
-import { createOpenAiImageProvider } from "./ai/openAiImageProvider.js";
-import { buildAiRequestPreview } from "./ai/requestPreview.js";
-import { createSeedreamImageProvider } from "./ai/seedreamImageProvider.js";
-import { readAiSettings, writeComfyUiSettings } from "./ai/settings.js";
-import {
-  deleteAiResourceFile,
-  importAiResourceFiles,
-  listAiResources,
-  writeAiResourceMetadata
-} from "./ai/resources.js";
-import {
-  clearOpenAiApiKey,
-  clearSeedreamApiKey,
-  readAiCredentialStatus,
-  readOpenAiApiKey,
-  readSeedreamApiKey,
-  writeOpenAiApiKey,
-  writeSeedreamApiKey
-} from "./ai/credentials.js";
-import { createAiMainHandlers } from "./ai/mainHandlers.js";
+import { createAiAppHandlers } from "./ai/appRuntime.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
 import { registerAppIpcHandlers } from "./ipc/appHandlers.js";
 import { registerImageIpcHandlers } from "./ipc/imageHandlers.js";
@@ -599,41 +575,10 @@ const registerIpcHandlers = () => {
 
   registerAiIpcHandlers(
     ipcMain,
-    createAiMainHandlers({
+    createAiAppHandlers({
       aiCredentialStore: userDataRuntime.aiCredentialStore,
       aiSettingsStore: userDataRuntime.aiSettingsStore,
-      applyCandidateAsLayer: applyAiCandidateAsLayer,
-      buildAiRequestPreview,
-      clearOpenAiApiKey,
-      clearSeedreamApiKey,
       clipboardWriteText: (text) => clipboard.writeText(text),
-      createComfyUiImageProvider,
-      createOpenAiImageProvider,
-      createSeedreamImageProvider,
-      deleteAiResourceFile,
-      discardAiCandidate,
-      generateAiBatchCandidates,
-      generateAiCandidate,
-      importAiResourceFiles,
-      listAiResources,
-      readAiCredentialStatus,
-      readAiSettings,
-      readOpenAiApiKey,
-      readSeedreamApiKey,
-      testComfyUiConnection: async (serverUrl) => {
-        const normalizedServerUrl = validateComfyUiServerUrl(serverUrl);
-        const response = await fetch(`${normalizedServerUrl}/system_stats`);
-        if (!response.ok) {
-          const text = await response.text().catch(() => "");
-          throw new Error(text.trim() || `ComfyUI connection failed with ${response.status}`);
-        }
-        return { ok: true, message: "ComfyUI connection ready" };
-      },
-      validateComfyUiWorkflow,
-      writeAiResourceMetadata,
-      writeComfyUiSettings,
-      writeOpenAiApiKey,
-      writeSeedreamApiKey
     })
   );
 
