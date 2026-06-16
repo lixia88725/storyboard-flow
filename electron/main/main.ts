@@ -4,7 +4,6 @@ import {
   clipboard,
   dialog,
   ipcMain,
-  Menu,
   net,
   protocol,
   safeStorage,
@@ -51,7 +50,7 @@ import {
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewRootForFolder } from "./previewPaths.js";
 import { createPreview } from "./previewService.js";
-import { createRecentFoldersRuntime } from "./recentFoldersRuntime.js";
+import { createRecentFoldersAppRuntime } from "./recentFoldersAppRuntime.js";
 import { assertPathInsideFolder, ensureDirectory, pathExists } from "./pathSafety.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
 import {
@@ -954,17 +953,12 @@ const userDataRuntime = createUserDataRuntime({
   writeToolRadialMenu: writeToolRadialMenuToUserData
 });
 
-const recentFoldersRuntime = createRecentFoldersRuntime({
-  buildApplicationMenu: (template) => Menu.buildFromTemplate(template as Electron.MenuItemConstructorOptions[]),
-  corruptReason: "recent-folders-corrupt",
+const recentFoldersRuntime = createRecentFoldersAppRuntime({
   getSender: () => mainWindow?.webContents,
-  isDarwin: process.platform === "darwin",
-  maxRecentFolders: 10,
   onOpenFolder: (folderPath) => {
     mainWindow?.webContents.send("recent:openFolder", folderPath);
   },
   readWithRecovery: readRecentFoldersWithRecovery,
-  setApplicationMenu: (menu) => Menu.setApplicationMenu(menu),
   userDataPath,
   writeFolders: writeRecentFoldersToUserData
 });
