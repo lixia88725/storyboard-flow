@@ -104,6 +104,7 @@ import {
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
 import { createImageAppHandlers } from "./imageAppRuntime.js";
+import { createSettingsAppHandlers } from "./settingsAppRuntime.js";
 import { createWorkspaceExternalChangesAppHandlers } from "./workspaceExternalChangesAppRuntime.js";
 import { createAiAppHandlers } from "./ai/appRuntime.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
@@ -557,10 +558,7 @@ const registerIpcHandlers = () => {
     }
   });
 
-  registerSettingsIpcHandlers(ipcMain, {
-    getToolRadialMenu: userDataRuntime.readToolRadialMenu,
-    setToolRadialMenu: userDataRuntime.writeToolRadialMenu
-  });
+  registerSettingsIpcHandlers(ipcMain, createSettingsAppHandlers(userDataRuntime));
 
   registerAiIpcHandlers(
     ipcMain,
