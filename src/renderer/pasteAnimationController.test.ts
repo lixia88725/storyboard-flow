@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   measurePasteAnimationRects,
   pasteAnimationIdForElement,
-  pasteAnimationSelector
+  pasteAnimationSelector,
+  queuePasteAnimation
 } from "./pasteAnimationController";
 
 const elementWithDataset = (
@@ -51,5 +52,39 @@ describe("pasteAnimationController", () => {
     const rects = measurePasteAnimationRects("shot", root);
     expect(Array.from(rects.keys())).toEqual(["shot-1"]);
     expect(rects.get("shot-1")).toBe(shotRect);
+  });
+
+  it("queues a paste animation after clearing any pending animation state", () => {
+    const beforeRects = new Map([["source-shot", rect(10, 20, 100, 200)]]);
+    const animationRef = { current: undefined };
+    const frameRef = { current: 12 };
+    const timeoutRef = { current: 34 };
+    const cleared: string[] = [];
+
+    queuePasteAnimation({
+      animationRef,
+      clearAnimation: (frame, timeout) => {
+        expect(frame).toBe(frameRef);
+        expect(timeout).toBe(timeoutRef);
+        cleared.push("cleared");
+      },
+      frameRef,
+      kind: "shot",
+      measureRects: (kind) => {
+        expect(kind).toBe("shot");
+        return beforeRects;
+      },
+      pastedId: "pasted-shot",
+      sourceId: "source-shot",
+      timeoutRef
+    });
+
+    expect(cleared).toEqual(["cleared"]);
+    expect(animationRef.current).toEqual({
+      kind: "shot",
+      sourceId: "source-shot",
+      pastedId: "pasted-shot",
+      beforeRects
+    });
   });
 });

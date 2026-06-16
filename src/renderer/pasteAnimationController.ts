@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+
 export type PasteAnimationKind = "shot" | "layer";
 
 export type PasteAnimationState = {
@@ -5,6 +7,10 @@ export type PasteAnimationState = {
   sourceId: string;
   pastedId: string;
   beforeRects: Map<string, DOMRect>;
+};
+
+type MutableRef<T> = {
+  current: T;
 };
 
 type PasteAnimationQueryRoot = {
@@ -121,4 +127,72 @@ export const applyPasteAnimation = (
       }
     }, pasteAnimationCleanupMs);
   });
+};
+
+export const queuePasteAnimation = ({
+  animationRef,
+  clearAnimation = clearPasteAnimation,
+  frameRef,
+  kind,
+  measureRects = measurePasteAnimationRects,
+  pastedId,
+  sourceId,
+  timeoutRef
+}: {
+  animationRef: MutableRef<PasteAnimationState | undefined>;
+  clearAnimation?: (
+    frameRef: MutableRef<number | undefined>,
+    timeoutRef: MutableRef<number | undefined>
+  ) => void;
+  frameRef: MutableRef<number | undefined>;
+  kind: PasteAnimationKind;
+  measureRects?: (kind: PasteAnimationKind) => Map<string, DOMRect>;
+  pastedId: string;
+  sourceId: string;
+  timeoutRef: MutableRef<number | undefined>;
+}) => {
+  clearAnimation(frameRef, timeoutRef);
+  animationRef.current = {
+    kind,
+    sourceId,
+    pastedId,
+    beforeRects: measureRects(kind)
+  };
+};
+
+export const usePasteAnimationController = (refreshKey: unknown) => {
+  const animationRef = useRef<PasteAnimationState | undefined>(undefined);
+  const frameRef = useRef<number | undefined>(undefined);
+  const timeoutRef = useRef<number | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    const animation = animationRef.current;
+    if (!animation) {
+      return;
+    }
+
+    animationRef.current = undefined;
+    applyPasteAnimation(animation, frameRef, timeoutRef);
+  }, [refreshKey]);
+
+  useEffect(
+    () => () => clearPasteAnimation(frameRef, timeoutRef),
+    []
+  );
+
+  const queueAnimation = useCallback(
+    (kind: PasteAnimationKind, sourceId: string, pastedId: string) => {
+      queuePasteAnimation({
+        animationRef,
+        frameRef,
+        kind,
+        pastedId,
+        sourceId,
+        timeoutRef
+      });
+    },
+    []
+  );
+
+  return { queueAnimation };
 };

@@ -14,7 +14,6 @@ import { rectSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -161,12 +160,7 @@ import { useBitmapLayerPaintingController } from "./bitmapLayerPaintingControlle
 import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
 import { useAnimationModeLayoutController } from "./animationModeLayoutController";
-import {
-  applyPasteAnimation,
-  clearPasteAnimation,
-  measurePasteAnimationRects,
-  type PasteAnimationState
-} from "./pasteAnimationController";
+import { usePasteAnimationController } from "./pasteAnimationController";
 import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, projectChangedDuringLoad, shouldAutosaveAfterLoad, shouldPersistLoadedProject } from "./workspacePersistenceController";
 import {
   applyRadialPresetSlot,
@@ -343,9 +337,6 @@ export const App = () => {
   const scriptImportCheckIdRef = useRef(0);
   const dirtyShotIdsRef = useRef<Set<string>>(new Set());
   const clipboardSelectionRef = useRef<ClipboardSelection | undefined>(undefined);
-  const pasteAnimationRef = useRef<PasteAnimationState | undefined>(undefined);
-  const pasteAnimationFrameRef = useRef<number | undefined>(undefined);
-  const pasteAnimationCleanupTimeoutRef = useRef<number | undefined>(undefined);
   const selectedShotCountLabelRef = useRef<HTMLSpanElement | null>(null);
   const lastPointerPositionRef = useRef<{ x: number; y: number } | undefined>(undefined);
   const storyboardInsertionTargetRef = useRef<StoryboardInsertionTarget | undefined>(undefined);
@@ -424,20 +415,7 @@ export const App = () => {
     setStatus
   });
 
-  useLayoutEffect(() => {
-    const animation = pasteAnimationRef.current;
-    if (!animation) {
-      return;
-    }
-
-    pasteAnimationRef.current = undefined;
-    applyPasteAnimation(animation, pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef);
-  }, [project]);
-
-  useEffect(
-    () => () => clearPasteAnimation(pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef),
-    []
-  );
+  const { queueAnimation: queuePasteAnimation } = usePasteAnimationController(project);
 
   const {
     beginZoomScrubbing,
@@ -1557,13 +1535,7 @@ export const App = () => {
       return;
     }
 
-    clearPasteAnimation(pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef);
-    pasteAnimationRef.current = {
-      kind: "shot",
-      sourceId: sourceShot.id,
-      pastedId: pastedShotId,
-      beforeRects: measurePasteAnimationRects("shot")
-    };
+    queuePasteAnimation("shot", sourceShot.id, pastedShotId);
     const nextProject = duplicateShotAfter(currentProject, sourceShotId, targetShot.id, {
       shotId: pastedShotId,
       imagePath: copiedAssets.imagePath,
@@ -1616,13 +1588,7 @@ export const App = () => {
       return;
     }
 
-    clearPasteAnimation(pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef);
-    pasteAnimationRef.current = {
-      kind: "layer",
-      sourceId: sourceLayer.id,
-      pastedId: pastedLayerId,
-      beforeRects: measurePasteAnimationRects("layer")
-    };
+    queuePasteAnimation("layer", sourceLayer.id, pastedLayerId);
     recordUndoEntry(undoEntry);
     markShotsDirty([targetShot.id]);
     updateProject(
@@ -2053,13 +2019,7 @@ export const App = () => {
         return;
       }
 
-      clearPasteAnimation(pasteAnimationFrameRef, pasteAnimationCleanupTimeoutRef);
-      pasteAnimationRef.current = {
-        kind: "shot",
-        sourceId: "",
-        pastedId: "",
-        beforeRects: measurePasteAnimationRects("shot")
-      };
+      queuePasteAnimation("shot", "", "");
       updateProject(nextProject);
     }
 
