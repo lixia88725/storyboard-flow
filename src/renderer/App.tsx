@@ -58,7 +58,6 @@ import type {
   Dialogue,
   FolderScanPayload,
   Project,
-  ProjectNaming,
   Shot,
   BlankShotPreset,
   SketchTool,
@@ -149,6 +148,7 @@ import { useLayerPanelController } from "./layerPanelController";
 import { useRightSidebarController } from "./rightSidebarController";
 import { createShotSelectionController } from "./shotSelectionController";
 import { useAddShotController } from "./addShotController";
+import { useProjectEditController } from "./projectEditController";
 import { withStatus } from "./statusAction";
 import {
   SaveErrorModal,
@@ -596,35 +596,14 @@ export const App = () => {
     updateProject
   });
 
-  const updateProjectName = (name: string) => {
-    updateProject({
-      ...project,
-      name,
-      updatedAt: new Date().toISOString()
-    });
-  };
-
-  const updateProjectNaming = (field: keyof ProjectNaming, value: string) => {
-    updateProject({
-      ...project,
-      naming: {
-        ...defaultProjectNaming,
-        ...project.naming,
-        [field]: value
-      },
-      updatedAt: new Date().toISOString()
-    });
-  };
-
-  const handleShotScriptText = (shotId: string, scriptText: string) => {
-    updateProject((currentProject) => ({
-      ...currentProject,
-      shots: currentProject.shots.map((shot) =>
-        shot.id === shotId ? { ...shot, scriptText } : shot
-      ),
-      updatedAt: new Date().toISOString()
-    }));
-  };
+  const {
+    handleShotScriptText,
+    updateProjectName,
+    updateProjectNaming
+  } = useProjectEditController({
+    project,
+    updateProject
+  });
 
   const persistWorkspace = async (
     projectToSave: Project,
