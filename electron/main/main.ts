@@ -80,7 +80,6 @@ import {
   storyboardWindowOptions
 } from "./appWindowService.js";
 import { isWorkspaceTemporaryImagePath } from "./workspaceTemporaryPaths.js";
-import { scanWorkspaceFolder } from "./folderScanService.js";
 import { createImageRecords as createImportedImageRecords } from "./imageRecordsService.js";
 import { changedKnownImagePaths as findChangedKnownImagePaths } from "./knownImageChangesService.js";
 import { readProjectMetadata } from "./projectMetadataService.js";
@@ -101,6 +100,7 @@ import { createWorkspaceExternalChangesAppHandlers } from "./workspaceExternalCh
 import { createWorkspaceOpenAppHandlers } from "./workspaceOpenAppRuntime.js";
 import { createWorkspacePersistenceAppHandlers } from "./workspacePersistenceAppRuntime.js";
 import { createWorkspaceScriptAppHandlers } from "./workspaceScriptAppRuntime.js";
+import { createWorkspaceFolderScanner } from "./workspaceScanService.js";
 import { createWorkspaceWatchAppHandlers } from "./workspaceWatchAppRuntime.js";
 import { createAiAppHandlers } from "./ai/appRuntime.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
@@ -1711,20 +1711,6 @@ const bakeBitmapLayersToTiff = async (
   return tempPath;
 };
 
-const scanFolder = async (
-  folderPath: string,
-  onProgress?: WorkspaceTaskProgressReporter
-): Promise<FolderScanPayload> => {
-  return scanWorkspaceFolder(folderPath, onProgress, {
-    collectImagePaths,
-    createImageRecords,
-    ensureStoryboardScriptMarkdown,
-    metadataPathForFolder,
-    previewRootForFolder,
-    readProject
-  });
-};
-
 const changedKnownImagePaths = async (
   project: Project,
   imagePaths: string[],
@@ -1761,6 +1747,15 @@ const createImageRecords = async (
     concurrency: options.concurrency
   });
 };
+
+const scanFolder = createWorkspaceFolderScanner({
+  collectImagePaths,
+  createImageRecords,
+  ensureStoryboardScriptMarkdown,
+  metadataPathForFolder,
+  previewRootForFolder,
+  readProject
+});
 
 const readSwbMetadata = async (imagePath: string): Promise<SwbImageMetadata | undefined> => {
   const metadata = await sharp(imagePath, sharpSourceOptions).metadata();
