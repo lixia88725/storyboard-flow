@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRecentFoldersAppRuntime } from "./recentFoldersAppRuntime";
+import {
+  createRecentFoldersAppHandlers,
+  createRecentFoldersAppRuntime
+} from "./recentFoldersAppRuntime";
 
 describe("recentFoldersAppRuntime", () => {
   it("composes the app recent folders runtime with the standard defaults", async () => {
@@ -43,5 +46,15 @@ describe("recentFoldersAppRuntime", () => {
         { role: "windowMenu" }
       ]
     });
+  });
+
+  it("creates IPC handlers that read folders and flush changed-folder notifications", async () => {
+    const read = vi.fn(async () => ["/scene/a", "/scene/b"]);
+    const flushChangedFolders = vi.fn();
+    const handlers = createRecentFoldersAppHandlers({ read, flushChangedFolders });
+
+    await expect(handlers.getFolders()).resolves.toEqual(["/scene/a", "/scene/b"]);
+    expect(read).toHaveBeenCalledOnce();
+    expect(flushChangedFolders).toHaveBeenCalledOnce();
   });
 });

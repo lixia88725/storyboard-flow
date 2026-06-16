@@ -4,6 +4,7 @@ import {
   type RecentFoldersRuntimeOptions
 } from "./recentFoldersRuntime.js";
 import type { RecentFoldersChangedSender, RecentFoldersMenuItem } from "./recentFolders.js";
+import type { RecentIpcHandlers } from "./ipc/recentHandlers.js";
 
 export type RecentFoldersAppRuntimeOptions<ApplicationMenu> = {
   buildApplicationMenu?: (template: RecentFoldersMenuItem[]) => ApplicationMenu;
@@ -39,3 +40,19 @@ export const createRecentFoldersAppRuntime = <ApplicationMenu = Electron.Menu>({
     userDataPath,
     writeFolders
   });
+
+export type RecentFoldersAppHandlersOptions = {
+  read: () => Promise<string[]>;
+  flushChangedFolders: () => void;
+};
+
+export const createRecentFoldersAppHandlers = ({
+  read,
+  flushChangedFolders
+}: RecentFoldersAppHandlersOptions): RecentIpcHandlers => ({
+  getFolders: async () => {
+    const folders = await read();
+    flushChangedFolders();
+    return folders;
+  }
+});

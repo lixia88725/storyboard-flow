@@ -50,7 +50,10 @@ import {
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewRootForFolder } from "./previewPaths.js";
 import { createPreview } from "./previewService.js";
-import { createRecentFoldersAppRuntime } from "./recentFoldersAppRuntime.js";
+import {
+  createRecentFoldersAppHandlers,
+  createRecentFoldersAppRuntime
+} from "./recentFoldersAppRuntime.js";
 import { assertPathInsideFolder, ensureDirectory, pathExists } from "./pathSafety.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
 import {
@@ -509,13 +512,13 @@ const registerIpcHandlers = () => {
 
   registerImageIpcHandlers(ipcMain, createImageAppHandlers({ createImageRecords }));
 
-  registerRecentIpcHandlers(ipcMain, {
-    getFolders: async () => {
-      const folders = await readRecentFolders();
-      recentFoldersRuntime.flushChangedFolders();
-      return folders;
-    }
-  });
+  registerRecentIpcHandlers(
+    ipcMain,
+    createRecentFoldersAppHandlers({
+      read: readRecentFolders,
+      flushChangedFolders: recentFoldersRuntime.flushChangedFolders
+    })
+  );
 
   registerSettingsIpcHandlers(ipcMain, createSettingsAppHandlers(userDataRuntime));
 
