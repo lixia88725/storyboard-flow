@@ -44,6 +44,7 @@
 - [x] Electron main read-side services were split out for folder scan, image records, known-image external change detection, and project metadata reading; Save / Import / TIFF orchestration remains protected in `main.ts`.
 - [x] Electron settings/AI user-data glue now lives in `userDataRuntime.ts`; autosave metadata persistence side effects now live in `workspaceAutosaveController.ts`.
 - [x] Additional architecture slices moved Electron AI runtime wiring, external refresh runtime wiring, and AI project-change dirty-shot handling into focused modules with tests; all were validated in separate worktrees and cherry-picked back without touching Save / Import / TIFF / `.storyboard-workbench` formats.
+- [x] Additional Electron IPC runtime slices moved image blank-shot wiring and tool radial settings wiring out of `main.ts` into focused runtime modules with tests; both were validated in separate worktrees and cherry-picked back without touching Save / Import / TIFF / `.storyboard-workbench` formats.
 - [x] Product naming is now `Storyboard Flow`; `Storyboard Workbench` remains only as a legacy metadata compatibility value. `.storyboard-workbench`, `SWB`, `swb-*`, and `storyboard-workbench.local` remain internal compatibility names until a separate format migration.
 - [x] Detailed older milestone history was intentionally pruned from this file during the 2026-06-06 handoff cleanup. Use Git history and archived docs under `docs/` for the full dated record.
 

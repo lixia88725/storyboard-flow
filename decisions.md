@@ -180,6 +180,14 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 - Rule adjustment: AI provider/main glue, Electron external-refresh glue, and renderer AI project-change glue can proceed in independent worktrees as long as provider behavior, candidate-first Apply, and Save/Import/TIFF boundaries are not changed.
 - Current high-conflict files are smaller but still not “done”: `main.ts` remains the protected Save/Import/TIFF composition layer, and `App.tsx` still owns DND/marquee/history/layer-action orchestration. Future slices should keep using focused tests and avoid splitting code solely for line-count wins.
 
+2026-06-16 Electron IPC runtime follow-through:
+
+- `sim/image-app-runtime` moved `images:createBlankShot` app wiring into `electron/main/imageAppRuntime.ts`; `main.ts` now only registers the image IPC handler with `createImageRecords` injected from the protected app composition layer.
+- `sim/settings-app-runtime` moved tool radial settings IPC wiring into `electron/main/settingsAppRuntime.ts`; user-data read/write behavior remains in `userDataRuntime.ts` and `userSettingsService.ts`.
+- Both slices had focused tests and cherry-picked back to `main` without conflicts because they touched distinct runtime modules plus small adjacent lines in `main.ts`.
+- Rule adjustment: Electron IPC runtime slices should keep `main.ts` as a thin registration/composition file and move only low-risk glue into domain runtime modules. If a slice needs `saveWorkspace`, `importProjectToSwbFormat`, Photoshop TIFF export/import, or `.storyboard-workbench` format changes, it is not a low-risk IPC runtime slice and needs a separate plan.
+- Remaining Electron conflict risk is now concentrated in workspace open/persistence/script/watch registration and the protected Save/Import/TIFF orchestration below those handlers. Continue extracting small read-side or settings-style composition only when the new module has a real domain owner and a focused test.
+
 Reason: The highest-conflict files are still shared coordination points. Slice-owned worktrees reduce merge conflicts and keep architectural cleanup from accidentally crossing protected product/data boundaries.
 
 ## Multi-Select Reordering Has Explicit Placement
