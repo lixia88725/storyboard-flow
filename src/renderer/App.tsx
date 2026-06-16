@@ -6,9 +6,6 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragMoveEvent,
-  type DragOverEvent,
-  type DragStartEvent
 } from "@dnd-kit/core";
 import { rectSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import {
@@ -89,7 +86,6 @@ import { useStoryboardMarqueeController } from "./storyboardMarqueeController";
 import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
 import { createTransparentLayerDataUrl } from "./bitmapLayerCanvas";
 import {
-  dragPreviewShotIds as chooseDragPreviewShotIds,
   inferDropPlacementFromDragEnd,
   inferShotPlacement,
   shouldShowStoryboardInsertionIndicator,
@@ -130,6 +126,7 @@ import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsControl
 import { useLayerPanelController } from "./layerPanelController";
 import { useLayerMetadataActionController } from "./layerMetadataActionController";
 import { useRightSidebarController } from "./rightSidebarController";
+import { useStoryboardDragSessionController } from "./storyboardDragSessionController";
 import { createShotSelectionController } from "./shotSelectionController";
 import { useAddShotController } from "./addShotController";
 import { useProjectEditController } from "./projectEditController";
@@ -1209,67 +1206,33 @@ export const App = () => {
     setStatus
   });
 
-  const handleDragStart = (event: DragStartEvent) => {
-    resetInsertionDragState();
-    const data = event.active.data.current as DragData | undefined;
-    setActiveDragType(data?.type);
-
-    if (data?.type === "shot") {
-      const movingShotIds = selectedShotIdsRef.current.includes(data.shotId)
-        ? selectedShotIdsRef.current
-        : [data.shotId];
-      setActiveShotIds(movingShotIds);
-      setDragPreviewShotIds(
-        chooseDragPreviewShotIds({
-          activeShotId: data.shotId,
-          selectedShotIds: selectedShotIdsRef.current,
-          orderedShotIds: orderedShots.map((shot) => shot.id)
-        })
-      );
-
-      if (!selectedShotIdsRef.current.includes(data.shotId)) {
-        selectSingleShot(data.shotId);
-      }
-    }
-
-    if (data?.type === "parked-shot") {
-      setActiveParkedShotIds([data.shotId]);
-      openPendingShelf();
-    }
-
-    if (data?.type === "dialogue") {
-      setActiveDialogue(project.dialogues.find((dialogue) => dialogue.id === data.dialogueId));
-    }
-  };
-
-  const handleDragMove = (event: DragMoveEvent) => {
-    queueInsertionTargetsFromDrag(event);
-  };
-
-  const handleDragOver = (event: DragOverEvent) => {
-    queueInsertionTargetsFromDrag(event);
-  };
-
-  const handleDragCancel = () => {
-    setActiveDragType(undefined);
-    setActiveDialogue(undefined);
-    setActiveShotIds([]);
-    setDragPreviewShotIds([]);
-    setActiveParkedShotIds([]);
-    resetInsertionDragState();
-  };
+  const {
+    handleDragCancel,
+    handleDragMove,
+    handleDragOver,
+    handleDragStart,
+    resetActiveDragState
+  } = useStoryboardDragSessionController({
+    openPendingShelf,
+    orderedShotIds: orderedShots.map((shot) => shot.id),
+    projectRef,
+    queueInsertionTargetsFromDrag,
+    resetInsertionDragState,
+    selectedShotIdsRef,
+    selectSingleShot,
+    setActiveDialogue,
+    setActiveDragType,
+    setActiveParkedShotIds,
+    setActiveShotIds,
+    setDragPreviewShotIds
+  });
 
   const handleDragEnd = (event: DragEndEvent) => {
     const {
       storyboardInsertionTarget: dragEndStoryboardInsertionTarget,
       parkingInsertionTarget: dragEndParkingInsertionTarget
     } = flushInsertionTargetsFromDragEnd(event);
-    setActiveDragType(undefined);
-    setActiveDialogue(undefined);
-    setActiveShotIds([]);
-    setDragPreviewShotIds([]);
-    setActiveParkedShotIds([]);
-    resetInsertionDragState();
+    resetActiveDragState();
 
     const activeData = event.active.data.current as DragData | undefined;
     const overData = event.over?.data.current as DragData | undefined;
