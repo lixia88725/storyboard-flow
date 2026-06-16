@@ -106,6 +106,7 @@ import { pixelFingerprint } from "./imageFingerprintService.js";
 import { createImageAppHandlers } from "./imageAppRuntime.js";
 import { createSettingsAppHandlers } from "./settingsAppRuntime.js";
 import { createWorkspaceExternalChangesAppHandlers } from "./workspaceExternalChangesAppRuntime.js";
+import { createWorkspaceWatchAppHandlers } from "./workspaceWatchAppRuntime.js";
 import { createAiAppHandlers } from "./ai/appRuntime.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
 import { registerAppIpcHandlers } from "./ipc/appHandlers.js";
@@ -514,13 +515,10 @@ const registerIpcHandlers = () => {
     })
   );
 
-  registerWorkspaceWatchIpcHandlers(ipcMain, {
-    startFolderWatch: (event, folderPath) =>
-      workspaceFolderWatchService.start(folderPath, event.sender),
-    stopFolderWatch: (watcherId) => {
-      workspaceFolderWatchService.stop(watcherId);
-    }
-  });
+  registerWorkspaceWatchIpcHandlers(
+    ipcMain,
+    createWorkspaceWatchAppHandlers({ workspaceFolderWatchService })
+  );
 
   registerLayerIpcHandlers(ipcMain, {
     writePng: (payload) => writeLayerPng(payload as WriteLayerAssetPayload),
