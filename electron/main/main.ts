@@ -91,7 +91,6 @@ import {
   copyShotAssets,
   type CopyShotAssetsPayload
 } from "./copyShotAssetsService.js";
-import { checkExternalChanges } from "./checkExternalChangesService.js";
 import { scanWorkspaceFolder } from "./folderScanService.js";
 import { createImageRecords as createImportedImageRecords } from "./imageRecordsService.js";
 import { changedKnownImagePaths as findChangedKnownImagePaths } from "./knownImageChangesService.js";
@@ -104,6 +103,7 @@ import {
 } from "./workspaceTaskProgress.js";
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
+import { createWorkspaceExternalChangesAppHandlers } from "./workspaceExternalChangesAppRuntime.js";
 import { createAiAppHandlers } from "./ai/appRuntime.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
 import { registerAppIpcHandlers } from "./ipc/appHandlers.js";
@@ -503,19 +503,14 @@ const registerIpcHandlers = () => {
     }
   });
 
-  registerWorkspaceExternalChangesIpcHandlers(ipcMain, {
-    createProgressReporter: createWorkspaceTaskProgressReporter,
-    checkExternalChanges: (payload: ProjectPayload, { reportProgress }) => {
-      return checkExternalChanges(payload, {
-        changedKnownImagePaths,
-        collectImagePaths,
-        createImageRecords,
-        ensureStoryboardScriptMarkdown,
-        previewRootForFolder,
-        reportProgress
-      });
-    }
-  });
+  registerWorkspaceExternalChangesIpcHandlers(
+    ipcMain,
+    createWorkspaceExternalChangesAppHandlers<Project>({
+      changedKnownImagePaths,
+      createImageRecords,
+      ensureStoryboardScriptMarkdown
+    })
+  );
 
   registerWorkspaceWatchIpcHandlers(ipcMain, {
     startFolderWatch: (event, folderPath) =>
