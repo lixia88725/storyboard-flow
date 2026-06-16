@@ -21,7 +21,6 @@ import {
   type MouseEvent
 } from "react";
 import {
-  addDialogue,
   applyRenamePlan,
   createProject,
   createRenamePlan,
@@ -40,14 +39,12 @@ import {
   projectHasSwbWarning,
   projectNeedsSwbImport,
   parkShotGroup,
-  removeDialogue,
   restoreParkedShotGroup,
   reorderShotGroup,
   reorderShots,
   selectBitmapLayer,
   sortedShots,
   type ShotPlacement,
-  updateDialogueText,
   updateBitmapLayer,
   updateBitmapLayerGroupOpacity,
   bitmapLayerPath,
@@ -79,6 +76,7 @@ import {
 import { DialoguePreview, ShotStackPreview } from "./DragPreviews";
 import type { DeleteTarget } from "./deleteTarget";
 import { useDeleteActionController } from "./deleteActionController";
+import { useDialogueActionController } from "./dialogueActionController";
 import { createDirtyShotTracker } from "./dirtyShotTracker";
 import { blurActiveFormControl } from "./formFocus";
 import { isKeyboardEditableTarget } from "./keyboardShortcuts";
@@ -1145,11 +1143,14 @@ export const App = () => {
     );
   };
 
-  const handleCreateDialogue = (shotId: string) => {
-    const dialogueId = crypto.randomUUID();
-    updateProject((currentProject) => addDialogue(currentProject, shotId, "", dialogueId));
-    setEditingDialogueId(dialogueId);
-  };
+  const {
+    handleCreateDialogue,
+    handleDialogueBlur,
+    handleDialogueText
+  } = useDialogueActionController({
+    setEditingDialogueId,
+    updateProject
+  });
 
   const handleCopySelection = () => {
     const currentProject = projectRef.current;
@@ -1803,19 +1804,8 @@ export const App = () => {
                         );
                       }}
                       onCreateDialogue={handleCreateDialogue}
-                      onDialogueText={(dialogueId, text) =>
-                        updateProject((currentProject) =>
-                          updateDialogueText(currentProject, dialogueId, text)
-                        )
-                      }
-                      onDialogueBlur={(dialogue) => {
-                        if (!dialogue.text.trim()) {
-                          updateProject((currentProject) =>
-                            removeDialogue(currentProject, dialogue.id)
-                          );
-                        }
-                        setEditingDialogueId(undefined);
-                      }}
+                      onDialogueText={handleDialogueText}
+                      onDialogueBlur={handleDialogueBlur}
                       onScriptText={(shotId, scriptText) => handleShotScriptText(shotId, scriptText)}
                       onSketchStroke={(layerId, stroke, renderedDataUrl, pendingStrokes) =>
                         handleBitmapStroke(shot, layerId, stroke, renderedDataUrl, pendingStrokes)
