@@ -1,6 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { BlankShotPreset, Project, ProjectNaming } from "../shared/types";
 import { SidePanelIcon } from "./icons";
+import { IMPORT_REQUIRED_HELP } from "./importRequiredHelp";
 import type { WorkspaceTask } from "./workspaceLifecycleState";
 
 const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: string }> = [
@@ -22,6 +23,7 @@ type TopbarProps = {
   isImportNudging: boolean;
   isParkingShelfOpen: boolean;
   isRecentMenuOpen: boolean;
+  isSaveEmphasized: boolean;
   isSaveMenuOpen: boolean;
   isWorkspaceTaskRunning: boolean;
   needsSwbImport: boolean;
@@ -60,6 +62,7 @@ export const Topbar = ({
   isImportNudging,
   isParkingShelfOpen,
   isRecentMenuOpen,
+  isSaveEmphasized,
   isSaveMenuOpen,
   isWorkspaceTaskRunning,
   needsSwbImport,
@@ -108,27 +111,17 @@ export const Topbar = ({
       ) : null}
       {isImportHelpOpen ? (
         <div className="import-help-popover" role="dialog" aria-label="Import explanation">
-          <strong>为什么需要 Import？</strong>
-          <p>
-            Import 会把外部 TIFF 和 storyboard-script.md 的变化导入 Storyboard
-            Flow。在你点击 Import 之前，软件内的编辑仍然是当前工作状态。
-          </p>
-          <p>
-            原始 TIFF 会先移动到 Archive，然后 Storyboard Flow 接管工作文件。
-            能匹配上的镜头顺序、台词、分镜脚本文字和支持的位图图层会尽量继承。
-          </p>
-          <p>
-            Photoshop-only 信息不会作为内部工作格式。Save 会从
-            .storyboard-workbench/layers 下的 PNG 数据重建工作 TIFF。
-          </p>
-          <p>
-            storyboard-script.md 是根目录下的文字镜像。软件内编辑会自动写入；
-            外部修改这个 MD 文档后，需要点击 Import 才会导入软件。
-          </p>
+          <strong className="import-help-title">{IMPORT_REQUIRED_HELP.title}</strong>
+          <div className="import-help-copy">
+            <strong>{IMPORT_REQUIRED_HELP.heading}</strong>
+            {IMPORT_REQUIRED_HELP.paragraphs.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
+          </div>
         </div>
       ) : null}
       <div className="save-menu-container" ref={saveMenuRef}>
-        <div className="save-split-button">
+        <div className={isSaveEmphasized ? "save-split-button" : "save-split-button is-save-synced"}>
           <button
             type="button"
             className="save-main-button"

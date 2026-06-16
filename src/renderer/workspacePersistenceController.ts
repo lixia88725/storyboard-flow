@@ -34,6 +34,12 @@ export const hasUnsavedWorkspaceChanges = (
 ): boolean =>
   dirtyShotCount > 0 || workspaceSaveState !== "saved" || fileNameSyncState !== "synced";
 
+export const shouldEmphasizeSaveButton = (
+  dirtyShotCount: number,
+  workspaceSaveState: WorkspaceSaveState,
+  fileNameSyncState: FileNameSyncState
+): boolean => hasUnsavedWorkspaceChanges(dirtyShotCount, workspaceSaveState, fileNameSyncState);
+
 export const shouldPersistLoadedProject = (
   preserveProjectWithoutImageMerge: boolean | undefined,
   loadedProjectChanged: boolean,

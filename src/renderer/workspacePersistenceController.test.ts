@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   hasOnlyCompatibleExternalEdits,
+  shouldEmphasizeSaveButton,
   hasUnsavedWorkspaceChanges,
   projectChangedDuringLoad,
   shouldAutosaveAfterLoad,
@@ -59,6 +60,13 @@ describe("workspacePersistenceController", () => {
     expect(
       hasUnsavedWorkspaceChanges(0, "saved", "unsynced")
     ).toBe(true);
+  });
+
+  it("emphasizes the Save button only when workspace output is not synced", () => {
+    expect(shouldEmphasizeSaveButton(0, "saved", "synced")).toBe(false);
+    expect(shouldEmphasizeSaveButton(1, "saved", "synced")).toBe(true);
+    expect(shouldEmphasizeSaveButton(0, "saving", "synced")).toBe(true);
+    expect(shouldEmphasizeSaveButton(0, "saved", "unsynced")).toBe(true);
   });
 
   it("persists loaded projects only for metadata-only project changes without import or dirty output", () => {

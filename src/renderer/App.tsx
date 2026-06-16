@@ -72,6 +72,7 @@ import { StatusPopover } from "./StatusPopover";
 import { Timeline } from "./Timeline";
 import { ToolRail } from "./ToolRail";
 import { Topbar } from "./Topbar";
+import { IMPORT_REQUIRED_HELP } from "./importRequiredHelp";
 import { formatSaveFailureStatus } from "./saveErrors";
 import { useStoryboardMarqueeController } from "./storyboardMarqueeController";
 import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
@@ -91,7 +92,14 @@ import { useWorkspaceLifecycleState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
 import { useAnimationModeLayoutController } from "./animationModeLayoutController";
 import { usePasteAnimationController } from "./pasteAnimationController";
-import { hasOnlyCompatibleExternalEdits, hasUnsavedWorkspaceChanges, projectChangedDuringLoad, shouldAutosaveAfterLoad, shouldPersistLoadedProject } from "./workspacePersistenceController";
+import {
+  hasOnlyCompatibleExternalEdits,
+  hasUnsavedWorkspaceChanges,
+  projectChangedDuringLoad,
+  shouldAutosaveAfterLoad,
+  shouldEmphasizeSaveButton,
+  shouldPersistLoadedProject
+} from "./workspacePersistenceController";
 import { useRadialToolMenuController } from "./radialToolMenuController";
 import { useSketchToolSettingsController } from "./sketchToolSettingsController";
 import type { RadialPresetSlot } from "./toolRadialMenu";
@@ -254,6 +262,11 @@ export const App = () => {
   const parkingListRef = useRef<HTMLDivElement | null>(null);
   const bitmapLayerWriteQueueRef = useRef(createBitmapLayerWriteQueue());
   const appShellRef = useRef<HTMLElement | null>(null);
+  const isSaveEmphasized = shouldEmphasizeSaveButton(
+    dirtyShotIdsRef.current.size,
+    workspaceSaveState,
+    fileNameSyncState
+  );
   const orderedShots = useMemo(() => sortedShots(project.shots), [project.shots]);
   const parkedShots = useMemo(() => sortedShots(project.parkedShots ?? []), [project.parkedShots]);
   const needsImageImport = useMemo(() => projectNeedsSwbImport(project), [project]);
@@ -1253,6 +1266,7 @@ export const App = () => {
         isImportNudging={isImportNudging}
         isParkingShelfOpen={isParkingShelfOpen}
         isRecentMenuOpen={isRecentMenuOpen}
+        isSaveEmphasized={isSaveEmphasized}
         isSaveMenuOpen={isSaveMenuOpen}
         isWorkspaceTaskRunning={isWorkspaceTaskRunning}
         needsSwbImport={needsSwbImport}
@@ -1457,10 +1471,8 @@ export const App = () => {
             type="button"
             className="workspace-import-lock"
             onClick={nudgeImportRequired}
-            aria-label="Import external changes before editing"
-          >
-            <span>Import external changes before editing</span>
-          </button>
+            aria-label={IMPORT_REQUIRED_HELP.title}
+          />
         ) : null}
       </div>
 

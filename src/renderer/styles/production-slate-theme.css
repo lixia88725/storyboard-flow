@@ -152,21 +152,30 @@ button:disabled {
   color: var(--slate-warn);
 }
 
-.import-help-popover strong,
+.import-help-popover {
+  color: var(--slate-muted);
+}
+
+.import-help-title,
+.import-help-copy strong {
+  color: #ffe1a0;
+}
+
 .shortcut-menu-head strong,
 .save-error-modal header {
   color: var(--slate-ink);
 }
 
 .workspace-import-lock {
-  background: rgba(8, 10, 12, 0.66);
+  background: transparent;
   color: var(--slate-ink);
-  backdrop-filter: blur(4px);
+  backdrop-filter: none;
 }
 
-.workspace-import-lock span {
-  border-color: var(--slate-line-strong);
-  background: rgba(34, 38, 42, 0.96);
+.workspace-import-lock:hover,
+.workspace-import-lock:active {
+  background: transparent;
+  border-color: transparent;
 }
 
 .tool-rail {

@@ -195,19 +195,27 @@
 }
 
 .import-warning {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
   padding: 0;
   border: 1px solid #26231d;
   border-radius: 999px;
   background: #fff7d6;
   color: #26231d;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 800;
   line-height: 1;
   box-shadow: none;
+}
+
+.import-control > .import-warning {
+  width: var(--status-toggle-size);
+  min-width: var(--status-toggle-size);
+  height: var(--status-toggle-size);
 }
 
 .import-button.is-nudging,
@@ -236,24 +244,37 @@
 
 .import-help-popover {
   position: absolute;
-  left: 0;
-  top: calc(100% + 8px);
-  z-index: 45;
-  width: min(420px, calc(100vw - 44px));
-  padding: 12px 14px;
-  border: 1px solid #26231d;
-  background: #fffaf0;
+  left: 70px;
+  top: calc(100% + 12px);
+  z-index: 65;
+  width: min(360px, calc(100vw - 44px));
+  padding: 14px 16px;
+  border: 1px solid #27231d;
+  border-radius: 6px;
+  background: #fffdf7;
   color: #2a261f;
-  box-shadow: 0 8px 0 rgba(37, 34, 29, 0.16);
+  box-shadow: 0 8px 0 rgba(39, 35, 29, 0.14);
   font-size: 12px;
   line-height: 1.42;
   text-transform: none;
 }
 
-.import-help-popover strong {
+.import-help-popover::before,
+.import-help-popover::after {
+  content: none;
+}
+
+.import-help-title {
+  display: block;
+  margin-bottom: 9px;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.import-help-copy strong {
   display: block;
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .import-help-popover p {
@@ -352,6 +373,15 @@
   grid-template-columns: auto 30px;
 }
 
+.save-split-button.is-save-synced > button:not(:disabled) {
+  opacity: 0.44;
+}
+
+.save-split-button.is-save-synced > button:hover:not(:disabled) {
+  background: #252a2f;
+  border-color: var(--slate-line);
+}
+
 .save-main-button {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
@@ -379,4 +409,3 @@
   color: #fffaf0;
   border-color: #9b3218;
 }
-

@@ -61,16 +61,17 @@
   display: grid;
   place-items: center;
   border: 0;
-  background: rgba(21, 20, 16, 0.56);
+  background: transparent;
   color: #fff7d6;
   cursor: pointer;
+  box-shadow: none;
 }
 
-.workspace-import-lock span {
-  padding: 10px 14px;
-  border: 1px solid #fff7d6;
-  background: rgba(38, 35, 29, 0.92);
-  font-weight: 800;
+.workspace-import-lock:hover,
+.workspace-import-lock:active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .app-shell.has-parking-shelf-open .workspace-layout {
@@ -475,4 +476,3 @@
   color: #fffaf0;
   border-color: #9b3218;
 }
-
