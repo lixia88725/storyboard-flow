@@ -114,28 +114,15 @@ import { useStoryboardMarqueeController } from "./storyboardMarqueeController";
 import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
 import { createTransparentLayerDataUrl } from "./bitmapLayerCanvas";
 import {
-  captureParkingDragRects,
-  captureStoryboardDragRects,
   dragPreviewShotIds as chooseDragPreviewShotIds,
   inferDropPlacementFromDragEnd,
   inferShotPlacement,
-  parkingInsertionIndicatorFromCachedRect,
-  parkingInsertionTargetFromPointer,
-  pointerFromActiveDragRect,
-  sameParkingInsertionIndicator,
-  sameStoryboardInsertionIndicator,
   shouldShowStoryboardInsertionIndicator,
-  storyboardInsertionIndicatorFromCachedRect,
-  storyboardInsertionTargetFromPointer,
   storyboardSortableItemIds as realStoryboardSortableItemIds,
-  type ParkingDragRectCache,
-  type ParkingInsertionIndicator,
-  type StoryboardDragRectCache,
-  type StoryboardInsertionIndicator,
-  type StoryboardInsertionTarget,
   type DragData
 } from "./storyboardDnd";
-import { dragEndInsideSelector, isPointerInsideElement } from "./dragHitTesting";
+import { useStoryboardInsertionController } from "./storyboardInsertionController";
+import { dragEndInsideSelector } from "./dragHitTesting";
 import { sameLayerSelection, useStoryboardInteractionState } from "./storyboardInteractionState";
 import { hasOpenShortcutBlockingMenu } from "./shortcutMenuController";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
@@ -322,31 +309,7 @@ export const App = () => {
   const clipboardSelectionRef = useRef<ClipboardSelection | undefined>(undefined);
   const selectedShotCountLabelRef = useRef<HTMLSpanElement | null>(null);
   const lastPointerPositionRef = useRef<{ x: number; y: number } | undefined>(undefined);
-  const storyboardInsertionTargetRef = useRef<StoryboardInsertionTarget | undefined>(undefined);
-  const storyboardInsertionIndicatorRef = useRef<StoryboardInsertionIndicator | undefined>(undefined);
-  const storyboardDragRectCacheRef = useRef<StoryboardDragRectCache | undefined>(undefined);
-  const storyboardDragRectCacheScrollRef = useRef<{ x: number; y: number } | undefined>(undefined);
-  const storyboardInsertionFrameRef = useRef<number | undefined>(undefined);
-  const pendingStoryboardInsertionDragRef = useRef<
-    | {
-        pointer: { x: number; y: number };
-        movingShotIds: string[];
-      }
-    | undefined
-  >(undefined);
   const parkingListRef = useRef<HTMLDivElement | null>(null);
-  const parkingInsertionTargetRef = useRef<StoryboardInsertionTarget | undefined>(undefined);
-  const parkingInsertionIndicatorRef = useRef<ParkingInsertionIndicator | undefined>(undefined);
-  const parkingDragRectCacheRef = useRef<ParkingDragRectCache | undefined>(undefined);
-  const parkingDragRectCacheScrollRef = useRef<{ x: number; y: number } | undefined>(undefined);
-  const parkingInsertionFrameRef = useRef<number | undefined>(undefined);
-  const pendingParkingInsertionDragRef = useRef<
-    | {
-        pointer: { x: number; y: number };
-        movingShotIds: string[];
-      }
-    | undefined
-  >(undefined);
   const undoStackRef = useRef<UndoEntry[]>([]);
   const redoStackRef = useRef<UndoEntry[]>([]);
   const bitmapLayerWriteQueueRef = useRef(createBitmapLayerWriteQueue());
@@ -427,6 +390,20 @@ export const App = () => {
     setZoomLevel,
     zoomLevel,
     zoomLevelRef
+  });
+  const {
+    flushInsertionTargetsFromDragEnd,
+    queueInsertionTargetsFromDrag,
+    resetInsertionDragState
+  } = useStoryboardInsertionController({
+    boardGridRef,
+    currentBoardScroll,
+    isAnimationModeRef,
+    lastPointerPositionRef,
+    parkingListRef,
+    selectedShotIdsRef,
+    setParkingInsertionIndicator,
+    setStoryboardInsertionIndicator
   });
 
   useEffect(() => {
@@ -1607,187 +1584,8 @@ export const App = () => {
     setStatus(`Layer "${sourceLayer.name}" pasted`);
   };
 
-  const currentStoryboardDragRectCache = (): StoryboardDragRectCache | undefined => {
-    const scroll = currentBoardScroll();
-    const cachedScroll = storyboardDragRectCacheScrollRef.current;
-    if (
-      !storyboardDragRectCacheRef.current ||
-      !cachedScroll ||
-      cachedScroll.x !== scroll.x ||
-      cachedScroll.y !== scroll.y
-    ) {
-      storyboardDragRectCacheRef.current = captureStoryboardDragRects(boardGridRef.current);
-      storyboardDragRectCacheScrollRef.current = scroll;
-    }
-
-    return storyboardDragRectCacheRef.current;
-  };
-
-  const currentParkingDragRectCache = (): ParkingDragRectCache | undefined => {
-    const scroll = currentBoardScroll();
-    const cachedScroll = parkingDragRectCacheScrollRef.current;
-    if (
-      !parkingDragRectCacheRef.current ||
-      !cachedScroll ||
-      cachedScroll.x !== scroll.x ||
-      cachedScroll.y !== scroll.y
-    ) {
-      parkingDragRectCacheRef.current = captureParkingDragRects(parkingListRef.current);
-      parkingDragRectCacheScrollRef.current = scroll;
-    }
-
-    return parkingDragRectCacheRef.current;
-  };
-
-  const setNextStoryboardInsertionTarget = (
-    nextTarget: StoryboardInsertionTarget | undefined,
-    rectCache: StoryboardDragRectCache | undefined
-  ) => {
-    const currentTarget = storyboardInsertionTargetRef.current;
-    const nextIndicator = nextTarget && rectCache
-      ? storyboardInsertionIndicatorFromCachedRect(nextTarget, rectCache)
-      : undefined;
-    if (
-      currentTarget?.targetShotId === nextTarget?.targetShotId &&
-      currentTarget?.placement === nextTarget?.placement &&
-      sameStoryboardInsertionIndicator(storyboardInsertionIndicatorRef.current, nextIndicator)
-    ) {
-      return;
-    }
-
-    storyboardInsertionTargetRef.current = nextTarget;
-    storyboardInsertionIndicatorRef.current = nextIndicator;
-    setStoryboardInsertionIndicator(nextIndicator);
-  };
-
-  const clearStoryboardInsertionTarget = () => {
-    storyboardInsertionTargetRef.current = undefined;
-    storyboardInsertionIndicatorRef.current = undefined;
-    setStoryboardInsertionIndicator(undefined);
-  };
-
-  const setNextParkingInsertionTarget = (
-    nextTarget: StoryboardInsertionTarget | undefined,
-    rectCache: ParkingDragRectCache | undefined
-  ) => {
-    const currentTarget = parkingInsertionTargetRef.current;
-    const nextIndicator = nextTarget && rectCache
-      ? parkingInsertionIndicatorFromCachedRect(nextTarget, rectCache)
-      : undefined;
-    if (
-      currentTarget?.targetShotId === nextTarget?.targetShotId &&
-      currentTarget?.placement === nextTarget?.placement &&
-      sameParkingInsertionIndicator(parkingInsertionIndicatorRef.current, nextIndicator)
-    ) {
-      return;
-    }
-
-    parkingInsertionTargetRef.current = nextTarget;
-    parkingInsertionIndicatorRef.current = nextIndicator;
-    setParkingInsertionIndicator(nextIndicator);
-  };
-
-  const clearParkingInsertionTarget = () => {
-    parkingInsertionTargetRef.current = undefined;
-    parkingInsertionIndicatorRef.current = undefined;
-    setParkingInsertionIndicator(undefined);
-  };
-
-  const applyQueuedStoryboardInsertionTarget = () => {
-    const pending = pendingStoryboardInsertionDragRef.current;
-    pendingStoryboardInsertionDragRef.current = undefined;
-
-    if (!pending) {
-      clearStoryboardInsertionTarget();
-      return;
-    }
-
-    const rectCache = currentStoryboardDragRectCache();
-    if (!rectCache) {
-      clearStoryboardInsertionTarget();
-      return;
-    }
-
-    const insertionTarget = storyboardInsertionTargetFromPointer({
-      shotRects: rectCache.shots,
-      pointer: pending.pointer,
-      movingShotIds: pending.movingShotIds
-    });
-    setNextStoryboardInsertionTarget(insertionTarget, rectCache);
-  };
-
-  const applyQueuedParkingInsertionTarget = () => {
-    const pending = pendingParkingInsertionDragRef.current;
-    pendingParkingInsertionDragRef.current = undefined;
-
-    if (!pending) {
-      clearParkingInsertionTarget();
-      return;
-    }
-
-    const rectCache = currentParkingDragRectCache();
-    if (!rectCache) {
-      clearParkingInsertionTarget();
-      return;
-    }
-
-    const insertionTarget = parkingInsertionTargetFromPointer({
-      shotRects: rectCache.shots,
-      pointer: pending.pointer,
-      movingShotIds: pending.movingShotIds
-    });
-    setNextParkingInsertionTarget(insertionTarget, rectCache);
-  };
-
-  const cancelQueuedStoryboardInsertionTarget = () => {
-    if (storyboardInsertionFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(storyboardInsertionFrameRef.current);
-      storyboardInsertionFrameRef.current = undefined;
-    }
-    pendingStoryboardInsertionDragRef.current = undefined;
-  };
-
-  const cancelQueuedParkingInsertionTarget = () => {
-    if (parkingInsertionFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(parkingInsertionFrameRef.current);
-      parkingInsertionFrameRef.current = undefined;
-    }
-    pendingParkingInsertionDragRef.current = undefined;
-  };
-
-  const flushQueuedStoryboardInsertionTarget = () => {
-    if (storyboardInsertionFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(storyboardInsertionFrameRef.current);
-      storyboardInsertionFrameRef.current = undefined;
-    }
-    applyQueuedStoryboardInsertionTarget();
-  };
-
-  const flushQueuedParkingInsertionTarget = () => {
-    if (parkingInsertionFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(parkingInsertionFrameRef.current);
-      parkingInsertionFrameRef.current = undefined;
-    }
-    applyQueuedParkingInsertionTarget();
-  };
-
-  const resetStoryboardInsertionDragState = () => {
-    cancelQueuedStoryboardInsertionTarget();
-    storyboardDragRectCacheRef.current = undefined;
-    storyboardDragRectCacheScrollRef.current = undefined;
-    clearStoryboardInsertionTarget();
-  };
-
-  const resetParkingInsertionDragState = () => {
-    cancelQueuedParkingInsertionTarget();
-    parkingDragRectCacheRef.current = undefined;
-    parkingDragRectCacheScrollRef.current = undefined;
-    clearParkingInsertionTarget();
-  };
-
   const handleDragStart = (event: DragStartEvent) => {
-    resetStoryboardInsertionDragState();
-    resetParkingInsertionDragState();
+    resetInsertionDragState();
     const data = event.active.data.current as DragData | undefined;
     setActiveDragType(data?.type);
 
@@ -1819,90 +1617,12 @@ export const App = () => {
     }
   };
 
-  const queueStoryboardInsertionTargetFromDrag = (event: DragMoveEvent | DragOverEvent | DragEndEvent) => {
-    const activeData = event.active.data.current as DragData | undefined;
-    if ((activeData?.type !== "shot" && activeData?.type !== "parked-shot") || isAnimationModeRef.current) {
-      resetStoryboardInsertionDragState();
-      return;
-    }
-
-    const pointer =
-      lastPointerPositionRef.current ??
-      pointerFromActiveDragRect(event.active.rect.current.translated ?? event.active.rect.current.initial);
-    if (!pointer) {
-      clearStoryboardInsertionTarget();
-      return;
-    }
-
-    if (activeData.type === "parked-shot" && !isPointerInsideElement(boardGridRef.current, pointer)) {
-      clearStoryboardInsertionTarget();
-      return;
-    }
-
-    if (activeData.type === "shot" && isPointerInsideElement(parkingListRef.current, pointer)) {
-      clearStoryboardInsertionTarget();
-      return;
-    }
-
-    const movingShotIds =
-      activeData.type === "shot"
-        ? selectedShotIdsRef.current.includes(activeData.shotId)
-          ? selectedShotIdsRef.current
-          : [activeData.shotId]
-        : [];
-    pendingStoryboardInsertionDragRef.current = {
-      pointer,
-      movingShotIds
-    };
-
-    if (storyboardInsertionFrameRef.current !== undefined) {
-      return;
-    }
-
-    storyboardInsertionFrameRef.current = window.requestAnimationFrame(() => {
-      storyboardInsertionFrameRef.current = undefined;
-      applyQueuedStoryboardInsertionTarget();
-    });
-  };
-
-  const queueParkingInsertionTargetFromDrag = (event: DragMoveEvent | DragOverEvent | DragEndEvent) => {
-    const activeData = event.active.data.current as DragData | undefined;
-    if (activeData?.type !== "shot") {
-      resetParkingInsertionDragState();
-      return;
-    }
-
-    const pointer =
-      lastPointerPositionRef.current ??
-      pointerFromActiveDragRect(event.active.rect.current.translated ?? event.active.rect.current.initial);
-    if (!pointer || !isPointerInsideElement(parkingListRef.current, pointer)) {
-      clearParkingInsertionTarget();
-      return;
-    }
-
-    pendingParkingInsertionDragRef.current = {
-      pointer,
-      movingShotIds: []
-    };
-
-    if (parkingInsertionFrameRef.current !== undefined) {
-      return;
-    }
-
-    parkingInsertionFrameRef.current = window.requestAnimationFrame(() => {
-      parkingInsertionFrameRef.current = undefined;
-      applyQueuedParkingInsertionTarget();
-    });
-  };
-
   const handleDragMove = (event: DragMoveEvent) => {
-    queueStoryboardInsertionTargetFromDrag(event);
-    queueParkingInsertionTargetFromDrag(event);
+    queueInsertionTargetsFromDrag(event);
   };
 
   const handleDragOver = (event: DragOverEvent) => {
-    queueStoryboardInsertionTargetFromDrag(event);
-    queueParkingInsertionTargetFromDrag(event);
+    queueInsertionTargetsFromDrag(event);
   };
 
   const handleDragCancel = () => {
@@ -1911,24 +1631,20 @@ export const App = () => {
     setActiveShotIds([]);
     setDragPreviewShotIds([]);
     setActiveParkedShotIds([]);
-    resetStoryboardInsertionDragState();
-    resetParkingInsertionDragState();
+    resetInsertionDragState();
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
-    queueStoryboardInsertionTargetFromDrag(event);
-    queueParkingInsertionTargetFromDrag(event);
-    flushQueuedStoryboardInsertionTarget();
-    flushQueuedParkingInsertionTarget();
-    const dragEndStoryboardInsertionTarget = storyboardInsertionTargetRef.current;
-    const dragEndParkingInsertionTarget = parkingInsertionTargetRef.current;
+    const {
+      storyboardInsertionTarget: dragEndStoryboardInsertionTarget,
+      parkingInsertionTarget: dragEndParkingInsertionTarget
+    } = flushInsertionTargetsFromDragEnd(event);
     setActiveDragType(undefined);
     setActiveDialogue(undefined);
     setActiveShotIds([]);
     setDragPreviewShotIds([]);
     setActiveParkedShotIds([]);
-    resetStoryboardInsertionDragState();
-    resetParkingInsertionDragState();
+    resetInsertionDragState();
 
     const activeData = event.active.data.current as DragData | undefined;
     const overData = event.over?.data.current as DragData | undefined;
