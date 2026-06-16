@@ -188,6 +188,7 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 - Project title, naming field, and shot script edit updates now live in `projectEditController.ts`; `App.tsx` uses the controller for pure project-edit mutations while Save/Import/TIFF behavior remains unchanged.
 - Delete key and selected storyboard delete orchestration now lives in `deleteActionController.ts`; `App.tsx` injects existing layer removal, selection, delete target, status, and project update dependencies while Save-to-Trash semantics remain unchanged.
 - Dialogue create, edit, and empty-blur cleanup orchestration now lives in `dialogueActionController.ts`; `App.tsx` passes the controller callbacks to `ShotCard` while shared project dialogue mutations remain in `projectOps.ts`.
+- Layer metadata selection/update/reorder/opacity orchestration now lives in `layerMetadataActionController.ts`; PNG asset creation/deletion/merge/clear work remains in bitmap layer action services and Save/TIFF behavior is unchanged.
 - Rule adjustment: AI provider/main glue, Electron external-refresh glue, and renderer AI project-change glue can proceed in independent worktrees as long as provider behavior, candidate-first Apply, and Save/Import/TIFF boundaries are not changed.
 - Current high-conflict files are smaller but still not “done”: `main.ts` remains the protected Save/Import/TIFF composition layer, and `App.tsx` still owns DND business actions and layer-action orchestration. Future slices should keep using focused tests and avoid splitting code solely for line-count wins.
 

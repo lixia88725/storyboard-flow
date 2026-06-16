@@ -33,8 +33,6 @@ import {
   mergeExternalImageChanges,
   mergeFolderImages,
   moveDialogueToShot,
-  moveBitmapLayer,
-  moveBitmapLayerGroup,
   projectAcceptedExternalEdits,
   projectHasSwbWarning,
   projectNeedsSwbImport,
@@ -42,11 +40,8 @@ import {
   restoreParkedShotGroup,
   reorderShotGroup,
   reorderShots,
-  selectBitmapLayer,
   sortedShots,
   type ShotPlacement,
-  updateBitmapLayer,
-  updateBitmapLayerGroupOpacity,
   bitmapLayerPath,
 } from "../shared/projectOps";
 import type {
@@ -140,6 +135,7 @@ import { useWorkspaceMenuController } from "./workspaceMenuController";
 import { persistWorkspaceProject, useWorkspaceAutosaveController } from "./workspaceAutosaveController";
 import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsController";
 import { useLayerPanelController } from "./layerPanelController";
+import { useLayerMetadataActionController } from "./layerMetadataActionController";
 import { useRightSidebarController } from "./rightSidebarController";
 import { createShotSelectionController } from "./shotSelectionController";
 import { useAddShotController } from "./addShotController";
@@ -506,6 +502,19 @@ export const App = () => {
     scriptImportCheckIdRef.current += 1;
     setScriptImportNeeded(false);
   };
+
+  const {
+    handleMoveLayer,
+    handleMoveLayerGroup,
+    handleSelectLayer,
+    handleUpdateLayer,
+    handleUpdateLayerGroupOpacity
+  } = useLayerMetadataActionController({
+    markShotsDirty,
+    setDeleteTarget,
+    shotSelectionAnchorIdRef,
+    updateProject
+  });
 
   const {
     handleAddBitmapLayer,
@@ -1760,49 +1769,12 @@ export const App = () => {
                       }
                       onMergeVisibleLayers={(shotId) => void handleMergeVisibleBitmapLayers(shotId)}
                       onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
-                      onSelectLayer={(shotId, layerId) => {
-                        shotSelectionAnchorIdRef.current = undefined;
-                        setDeleteTarget({ type: "layer", shotId, layerId });
-                        updateProject((currentProject) => selectBitmapLayer(currentProject, shotId, layerId), false, false);
-                      }}
-                      onUpdateLayer={(shotId, layerId, patch) => {
-                        markShotsDirty([shotId]);
-                        updateProject(
-                          (currentProject) => updateBitmapLayer(currentProject, shotId, layerId, patch),
-                          false
-                        );
-                      }}
-                      onMoveLayer={(shotId, layerId, targetLayerId, placement) => {
-                        markShotsDirty([shotId]);
-                        updateProject(
-                          (currentProject) =>
-                            moveBitmapLayer(currentProject, shotId, layerId, targetLayerId, placement),
-                          false
-                        );
-                      }}
-                      onMoveLayerGroup={(shotId, layerIds, targetLayerId, placement) => {
-                        markShotsDirty([shotId]);
-                        updateProject(
-                          (currentProject) =>
-                            moveBitmapLayerGroup(currentProject, shotId, layerIds, targetLayerId, placement),
-                          false
-                        );
-                      }}
+                      onSelectLayer={handleSelectLayer}
+                      onUpdateLayer={handleUpdateLayer}
+                      onMoveLayer={handleMoveLayer}
+                      onMoveLayerGroup={handleMoveLayerGroup}
                       onSelectedLayerIdsChange={handleSelectedBitmapLayerIdsChange}
-                      onUpdateLayerGroupOpacity={(shotId, layerIds, deltaOpacity, initialOpacityByLayerId) => {
-                        markShotsDirty([shotId]);
-                        updateProject(
-                          (currentProject) =>
-                            updateBitmapLayerGroupOpacity(
-                              currentProject,
-                              shotId,
-                              layerIds,
-                              deltaOpacity,
-                              initialOpacityByLayerId
-                            ),
-                          false
-                        );
-                      }}
+                      onUpdateLayerGroupOpacity={handleUpdateLayerGroupOpacity}
                       onCreateDialogue={handleCreateDialogue}
                       onDialogueText={handleDialogueText}
                       onDialogueBlur={handleDialogueBlur}
