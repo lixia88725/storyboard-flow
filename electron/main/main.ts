@@ -7,7 +7,8 @@ import {
   net,
   protocol,
   safeStorage,
-  shell
+  shell,
+  type WebContents
 } from "electron";
 import { copyFile, mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -69,14 +70,7 @@ import {
   createProjectFromStoryboardScriptMarkdown,
   inspectStoryboardScriptMarkdownFile
 } from "./storyboardScriptProject.js";
-import {
-  finishSaveAndClose as finishSaveAndCloseRequest,
-  getAppInfoForRenderer,
-  openExternalUrl,
-  respondToStoryboardImageRequest,
-  selectFolderPathForEvent,
-  updateCloseGuard as updateCloseGuardForWebContents
-} from "./appShellService.js";
+import { respondToStoryboardImageRequest } from "./appShellService.js";
 import {
   attachStoryboardWindowHandlers,
   loadStoryboardWindowEntry,
@@ -95,6 +89,7 @@ import {
 } from "./workspaceTaskProgress.js";
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
+import { createAppAppHandlers } from "./appAppRuntime.js";
 import { createImageAppHandlers } from "./imageAppRuntime.js";
 import { createLayerAppHandlers } from "./layerAppRuntime.js";
 import { createSettingsAppHandlers } from "./settingsAppRuntime.js";
@@ -385,27 +380,20 @@ const registerIpcHandlers = () => {
     })
   );
 
-  registerAppIpcHandlers(ipcMain, {
-    selectFolder: (event) =>
-      selectFolderPathForEvent({
-        event,
-        ownerFromSender: (sender) => BrowserWindow.fromWebContents(sender) ?? undefined,
-        showOpenDialog: dialog.showOpenDialog.bind(dialog)
-      }),
-    finishSaveAndClose: (payload) => finishSaveAndCloseRequest(saveAndCloseRequests, payload),
-    updateCloseGuard: (event, payload) =>
-      updateCloseGuardForWebContents(closeGuardWebContentsIds, event, payload),
-    getInfo: () =>
-      getAppInfoForRenderer({
-        version: app.getVersion(),
-        platform: process.platform,
-        arch: process.arch,
-        updateManifestUrl:
-          process.env.STORYBOARD_FLOW_UPDATE_MANIFEST_URL ??
-          "https://raw.githubusercontent.com/lixia88725/storyboard-flow-releases/main/update.json"
-      }),
-    openExternal: (url) => openExternalUrl(url, shell.openExternal)
-  });
+  registerAppIpcHandlers(
+    ipcMain,
+    createAppAppHandlers({
+      arch: process.arch,
+      closeGuardWebContentsIds,
+      getVersion: () => app.getVersion(),
+      openExternal: shell.openExternal,
+      ownerFromSender: (sender: WebContents) => BrowserWindow.fromWebContents(sender) ?? undefined,
+      platform: process.platform,
+      saveAndCloseRequests,
+      showOpenDialog: dialog.showOpenDialog.bind(dialog),
+      updateManifestUrl: process.env.STORYBOARD_FLOW_UPDATE_MANIFEST_URL
+    })
+  );
 
   registerWorkspaceScriptIpcHandlers<ProjectPayload, CreateProjectFromStoryboardScriptPayload>(
     ipcMain,
