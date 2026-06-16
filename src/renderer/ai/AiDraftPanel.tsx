@@ -11,11 +11,8 @@ import {
   visibleAiStatusMessage
 } from "./aiPanelState";
 import {
-  aiProviderApiKeyStatusLabel,
-  type AiProviderName,
   canRequestAiGeneration,
-  nextAiSettingsPanelOpen,
-  isAiApiKeyDraftSaveable
+  nextAiSettingsPanelOpen
 } from "./aiSettingsState";
 import { windowAiClient, type AiDraftClient } from "./aiClient";
 import { useAiDraftController } from "./useAiDraftController";
@@ -23,6 +20,7 @@ import { useAiCandidateController } from "./useAiCandidateController";
 import { useAiBatchGenerationController } from "./useAiBatchGenerationController";
 import { useAiResourcesController } from "./useAiResourcesController";
 import { AiCandidateSection } from "./AiCandidateSection";
+import { AiProviderSettingsSection } from "./AiProviderSettingsSection";
 import { AiResourcesSection } from "./AiResourcesSection";
 
 type AiDraftPanelProps = {
@@ -263,160 +261,33 @@ export const AiDraftPanel = ({
 
       <div className="ai-draft-panel-content">
         {isSettingsOpen ? (
-          <section className="ai-panel-section ai-settings-panel">
-            <h3>General Settings</h3>
-            <div className="ai-settings-fields">
-              <label className="ai-setting-row">
-                <span>Provider</span>
-                <select
-                  value={providerName}
-                  onChange={(event) => setProviderName(event.target.value as AiProviderName)}
-                >
-                  <option value="openai">OpenAI</option>
-                  <option value="seedream">Seedream</option>
-                  <option value="comfyui">ComfyUI</option>
-                </select>
-              </label>
-              {providerSettings.showOpenAi ? (
-                <>
-                  <label className="ai-setting-row">
-                    <span>OpenAI API Key</span>
-                    <input
-                      type="password"
-                      value={openAiApiKeyDraft}
-                      onChange={(event) => setOpenAiApiKeyDraft(event.target.value)}
-                      onFocus={(event) => {
-                        if (!isAiApiKeyDraftSaveable(openAiApiKeyDraft) && apiKeyStatus.hasOpenAiApiKey) {
-                          event.currentTarget.select();
-                        }
-                      }}
-                      placeholder="Paste OpenAI API key"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                  </label>
-                  <div className="ai-settings-actions">
-                    <span className="ai-setting-status">{aiProviderApiKeyStatusLabel("openai", apiKeyStatus)}</span>
-                    <button
-                      type="button"
-                      onClick={() => void saveOpenAiApiKey()}
-                      disabled={!isAiApiKeyDraftSaveable(openAiApiKeyDraft)}
-                    >
-                      Save Key
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void clearOpenAiApiKey()}
-                      disabled={!apiKeyStatus.hasOpenAiApiKey}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </>
-              ) : null}
-              {providerSettings.showSeedream ? (
-                <>
-                  <label className="ai-setting-row">
-                    <span>Seedream API Key</span>
-                    <input
-                      type="password"
-                      value={seedreamApiKeyDraft}
-                      onChange={(event) => setSeedreamApiKeyDraft(event.target.value)}
-                      onFocus={(event) => {
-                        if (!isAiApiKeyDraftSaveable(seedreamApiKeyDraft) && apiKeyStatus.hasSeedreamApiKey) {
-                          event.currentTarget.select();
-                        }
-                      }}
-                      placeholder="Paste Seedream API key"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                  </label>
-                  <div className="ai-settings-actions">
-                    <span className="ai-setting-status">{aiProviderApiKeyStatusLabel("seedream", apiKeyStatus)}</span>
-                    <button
-                      type="button"
-                      onClick={() => void saveSeedreamApiKey()}
-                      disabled={!isAiApiKeyDraftSaveable(seedreamApiKeyDraft)}
-                    >
-                      Save Key
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void clearSeedreamApiKey()}
-                      disabled={!apiKeyStatus.hasSeedreamApiKey}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </>
-              ) : null}
-              {providerSettings.showComfyUi ? (
-                <>
-                  <label className="ai-setting-row">
-                    <span>ComfyUI Server URL</span>
-                    <input
-                      type="text"
-                      value={comfyUiServerUrl}
-                      onChange={(event) => setComfyUiServerUrl(event.target.value)}
-                      placeholder="http://127.0.0.1:8188"
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label className="ai-setting-row">
-                    <span>Timeout (ms)</span>
-                    <input
-                      type="number"
-                      min={1000}
-                      step={1000}
-                      value={comfyUiTimeoutMs}
-                      onChange={(event) =>
-                        setComfyUiTimeoutMs(Math.max(1000, Math.round(Number(event.target.value) || 1000)))
-                      }
-                    />
-                  </label>
-                  <label className="ai-setting-row ai-setting-row-tall">
-                    <span>API Workflow JSON</span>
-                    <textarea
-                      value={comfyUiWorkflowJson}
-                      onChange={(event) => setComfyUiWorkflowJson(event.target.value)}
-                      placeholder="Paste ComfyUI API workflow JSON with __SBF_PROMPT__ and __SBF_IMAGE_1__"
-                      spellCheck={false}
-                    />
-                  </label>
-                  <div className="ai-settings-actions">
-                    <span className="ai-setting-status">
-                      {comfyUiConnectionStatus || aiProviderApiKeyStatusLabel("comfyui", apiKeyStatus)}
-                    </span>
-                    <button type="button" onClick={() => void testComfyUiConnection()}>
-                      Test Connection
-                    </button>
-                    <button type="button" onClick={() => void saveComfyUiSettings()}>
-                      Save Settings
-                    </button>
-                  </div>
-                  <p className={`ai-setting-note ${comfyUiDraftStatus.ok ? "is-ready" : ""}`}>
-                    {comfyUiDraftStatus.message}
-                  </p>
-                </>
-              ) : null}
-              {providerSettings.showModel ? (
-                <label className="ai-setting-row">
-                  <span>{providerName === "seedream" ? "Seedream Model / Endpoint ID" : "OpenAI Model"}</span>
-                  <input
-                    type="text"
-                    value={currentModel}
-                    onChange={(event) =>
-                      providerName === "seedream"
-                        ? setSeedreamModel(event.target.value)
-                        : setOpenAiModel(event.target.value)
-                    }
-                    spellCheck={false}
-                  />
-                </label>
-              ) : null}
-            </div>
-          </section>
+          <AiProviderSettingsSection
+            apiKeyStatus={apiKeyStatus}
+            comfyUiConnectionStatus={comfyUiConnectionStatus}
+            comfyUiDraftStatus={comfyUiDraftStatus}
+            comfyUiServerUrl={comfyUiServerUrl}
+            comfyUiTimeoutMs={comfyUiTimeoutMs}
+            comfyUiWorkflowJson={comfyUiWorkflowJson}
+            currentModel={currentModel}
+            openAiApiKeyDraft={openAiApiKeyDraft}
+            providerName={providerName}
+            providerSettings={providerSettings}
+            seedreamApiKeyDraft={seedreamApiKeyDraft}
+            clearOpenAiApiKey={clearOpenAiApiKey}
+            clearSeedreamApiKey={clearSeedreamApiKey}
+            saveComfyUiSettings={saveComfyUiSettings}
+            saveOpenAiApiKey={saveOpenAiApiKey}
+            saveSeedreamApiKey={saveSeedreamApiKey}
+            setComfyUiServerUrl={setComfyUiServerUrl}
+            setComfyUiTimeoutMs={setComfyUiTimeoutMs}
+            setComfyUiWorkflowJson={setComfyUiWorkflowJson}
+            setOpenAiApiKeyDraft={setOpenAiApiKeyDraft}
+            setOpenAiModel={setOpenAiModel}
+            setProviderName={setProviderName}
+            setSeedreamApiKeyDraft={setSeedreamApiKeyDraft}
+            setSeedreamModel={setSeedreamModel}
+            testComfyUiConnection={testComfyUiConnection}
+          />
         ) : null}
 
         {selection.kind === "empty" ? <p className="ai-empty-state">Select one storyboard to generate an AI draft.</p> : null}
