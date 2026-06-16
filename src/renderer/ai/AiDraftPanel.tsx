@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Project } from "../../shared/types";
 import { groupAiBatchShotIds, summarizeAiBatchGroups } from "../../shared/ai/batch";
-import { CloseIcon, CopyIcon, SettingsIcon } from "../icons";
+import { CopyIcon, SettingsIcon } from "../icons";
 import {
   aiPanelSelectionState,
   aiShotNumberLabel,
@@ -23,6 +23,7 @@ import { useAiCandidateController } from "./useAiCandidateController";
 import { useAiBatchGenerationController } from "./useAiBatchGenerationController";
 import { useAiResourcesController } from "./useAiResourcesController";
 import { AiCandidateSection } from "./AiCandidateSection";
+import { AiResourcesSection } from "./AiResourcesSection";
 
 type AiDraftPanelProps = {
   isOpen: boolean;
@@ -458,125 +459,24 @@ export const AiDraftPanel = ({
 
         {isAiContentVisible ? (
           <>
-            {selection.kind === "ready" ? (
-              <section
-                className={`ai-panel-section ai-resources-section ${isResourceDropActive ? "is-drop-active" : ""}`}
-                onDragEnter={(event) => {
-                  if (event.dataTransfer.types.includes("Files")) {
-                    event.preventDefault();
-                    setIsResourceDropActive(true);
-                  }
-                }}
-                onDragOver={(event) => {
-                  if (event.dataTransfer.types.includes("Files")) {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "copy";
-                    setIsResourceDropActive(true);
-                  }
-                }}
-                onDragLeave={() => setIsResourceDropActive(false)}
-                onDrop={(event) => void importDroppedResources(event)}
-              >
-                <h3>AI Resources</h3>
-                {resources.length === 0 ? (
-                  <p className="ai-empty-state">Drop reference images here to add them to AI Resources.</p>
-                ) : (
-                  <div className="ai-resource-list">
-                    {resources.map((resource) => (
-                      <article key={resource.id} className="ai-resource-card">
-                        <button
-                          type="button"
-                          className="ai-resource-delete"
-                          aria-label={`Delete ${resource.fileName}`}
-                          title="Delete resource"
-                          onClick={() => void deleteResource(resource)}
-                        >
-                          <CloseIcon />
-                        </button>
-                        <label className="ai-resource-select">
-                          <input
-                            type="checkbox"
-                            checked={activeResourceIds.includes(resource.id)}
-                            onChange={() => toggleResource(resource.id)}
-                          />
-                          <img src={aiClient.assetUrl(resource.filePath)} alt="" />
-                          <span>{resource.fileName}</span>
-                        </label>
-                        <div className="ai-resource-details">
-                          <select
-                            value={resource.role}
-                            onChange={(event) => updateResource(resource.fileName, { role: event.target.value })}
-                          >
-                            {referenceRoles.map((role) => (
-                              <option key={role} value={role}>
-                                {role}
-                              </option>
-                            ))}
-                          </select>
-                          <textarea
-                            value={resource.note}
-                            onChange={(event) => updateResource(resource.fileName, { note: event.target.value })}
-                            placeholder="How should the model use this image?"
-                          />
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </section>
-            ) : null}
-
-            {selection.kind === "multi" ? (
-              <section className="ai-resource-assignment">
-                  <button
-                    type="button"
-                    className="ai-assignment-toggle"
-                    aria-expanded={isAssignmentOpen}
-                    onClick={() => setIsAssignmentOpen((isOpen) => !isOpen)}
-                  >
-                    <span>Shot Resource Assignment</span>
-                    <span
-                      className={`ai-assignment-toggle-icon ${isAssignmentOpen ? "is-open" : ""}`}
-                      aria-hidden="true"
-                    />
-                  </button>
-                  {isAssignmentOpen ? (
-                    <div className="ai-assignment-list">
-                      {selection.shots.map((shot) => {
-                        const availableResourceIds = batchResourceAssignments[shot.id] ?? [];
-                        return (
-                          <article key={shot.id} className="ai-assignment-card">
-                            <div className="ai-assignment-card-header">
-                              <span>{aiShotNumberLabel(project, shot.id)}</span>
-                              <span>
-                                {availableResourceIds.length} / {resources.length} references
-                              </span>
-                            </div>
-                            {resources.length > 0 ? (
-                              <div className="ai-assignment-resources">
-                                {resources.map((resource) => (
-                                  <label key={resource.id}>
-                                    <input
-                                      type="checkbox"
-                                      checked={availableResourceIds.includes(resource.id)}
-                                      onChange={() => toggleAssignmentResource(shot.id, resource.id)}
-                                    />
-                                    <span>{resource.fileName}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="ai-empty-state">
-                                Drop reference images into AI Resources from a single shot.
-                              </p>
-                            )}
-                          </article>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-              </section>
-            ) : null}
+            <AiResourcesSection
+              activeResourceIds={activeResourceIds}
+              assetUrl={aiClient.assetUrl}
+              batchResourceAssignments={batchResourceAssignments}
+              deleteResource={(resource) => void deleteResource(resource)}
+              importDroppedResources={(event) => void importDroppedResources(event)}
+              isAssignmentOpen={isAssignmentOpen}
+              isResourceDropActive={isResourceDropActive}
+              referenceRoles={referenceRoles}
+              resources={resources}
+              selection={selection}
+              setIsAssignmentOpen={setIsAssignmentOpen}
+              setIsResourceDropActive={setIsResourceDropActive}
+              shotNumberLabel={(shotId) => aiShotNumberLabel(project, shotId)}
+              toggleAssignmentResource={toggleAssignmentResource}
+              toggleResource={toggleResource}
+              updateResource={updateResource}
+            />
 
             <AiCandidateSection
               mode={selection.kind === "multi" ? "batch" : "single"}
