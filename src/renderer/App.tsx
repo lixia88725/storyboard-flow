@@ -100,7 +100,10 @@ import { useRecentFoldersController } from "./recentFoldersController";
 import { useToolRadialSettingsController } from "./toolRadialSettingsController";
 import { useWorkspaceTaskProgressController } from "./workspaceTaskProgressController";
 import { useWorkspaceCloseGuardController } from "./workspaceCloseGuardController";
-import { useWorkspaceExternalRefreshController } from "./workspaceExternalRefreshController";
+import {
+  refreshWorkspaceExternalImportState,
+  useWorkspaceExternalRefreshController
+} from "./workspaceExternalRefreshController";
 import { useWorkspaceMenuController } from "./workspaceMenuController";
 import { persistWorkspaceProject, useWorkspaceAutosaveController } from "./workspaceAutosaveController";
 import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsController";
@@ -612,76 +615,31 @@ export const App = () => {
   };
 
   const refreshExternalImportState = async () => {
-    if (!window.storyboard || !folderPathRef.current || !metadataPathRef.current) {
-      return;
-    }
-    if (workspaceSaveStateRef.current === "saving") {
-      return;
-    }
-
-    const checkId = (scriptImportCheckIdRef.current += 1);
-    const projectToCheck = projectRef.current;
-    const nextFolderPath = folderPathRef.current;
-    const nextMetadataPath = metadataPathRef.current;
-    const result = await withStatus(
-      "Workspace change check failed",
-      () =>
-        window.storyboard.checkExternalChanges({
-          project: projectToCheck,
-          folderPath: nextFolderPath,
-          metadataPath: nextMetadataPath
-        }),
-      setStatus
-    );
-
-    if (
-      result &&
-      checkId === scriptImportCheckIdRef.current &&
-      projectRef.current === projectToCheck &&
-      folderPathRef.current === nextFolderPath &&
-      metadataPathRef.current === nextMetadataPath
-    ) {
-      const nextProject = mergeExternalImageChanges(projectToCheck, result.images);
-      if (
-        nextProject !== projectToCheck &&
-        hasOnlyCompatibleExternalEdits(nextProject)
-      ) {
-        const imported = await withStatus(
-          "Import external Photoshop edits failed",
-          () =>
-            window.storyboard.importSwbFormat({
-              project: nextProject,
-              folderPath: nextFolderPath,
-              metadataPath: nextMetadataPath,
-              blankShotPreset,
-              dirtyShotIds: dirtyShotIds(),
-              preserveDirtyShotLayers: true
-            }),
-          setStatus
-        );
-        if (
-          imported &&
-          checkId === scriptImportCheckIdRef.current &&
-          folderPathRef.current === nextFolderPath &&
-          metadataPathRef.current === nextMetadataPath
-        ) {
-          await loadFolderScan(imported, "Imported external Photoshop edits", false, true);
-          return;
-        }
-      }
-      if (nextProject !== projectToCheck) {
-        setProject(nextProject);
-        if (projectNeedsSwbImport(projectToCheck) && !projectNeedsSwbImport(nextProject)) {
-          void persistWorkspace(nextProject, nextFolderPath, nextMetadataPath).catch((error) => {
-            const message = error instanceof Error ? error.message : String(error);
-            setWorkspaceSaveState("error");
-            setAutosaveError((current) => autosaveErrorReducer(current, { type: "failed", message }));
-            setStatus(`Autosave failed: ${message}`);
-          });
-        }
-      }
-      setScriptImportNeeded(result.scriptImportNeeded);
-    }
+    await refreshWorkspaceExternalImportState({
+      api: window.storyboard,
+      blankShotPreset,
+      checkIdRef: scriptImportCheckIdRef,
+      dirtyShotIds,
+      folderPathRef,
+      hasOnlyCompatibleExternalEdits,
+      loadFolderScan,
+      metadataPathRef,
+      mergeExternalImageChanges,
+      persistResolvedExternalProject: (nextProject, nextFolderPath, nextMetadataPath) => {
+        void persistWorkspace(nextProject, nextFolderPath, nextMetadataPath).catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          setWorkspaceSaveState("error");
+          setAutosaveError((current) => autosaveErrorReducer(current, { type: "failed", message }));
+          setStatus(`Autosave failed: ${message}`);
+        });
+      },
+      projectNeedsSwbImport,
+      projectRef,
+      runWithStatus: (label, action) => withStatus(label, action, setStatus),
+      setProject,
+      setScriptImportNeeded,
+      workspaceSaveStateRef
+    });
   };
 
   useWorkspaceExternalRefreshController({
