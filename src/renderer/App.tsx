@@ -42,7 +42,6 @@ import type {
 } from "../shared/types";
 import { maxStoryboardZoom } from "./animationViewport";
 import {
-  activeVisibleBitmapLayerForShot,
   primaryShotFromSelection,
   primaryShotOrFirst
 } from "./activeTargets";
@@ -114,6 +113,7 @@ import { createShotSelectionController } from "./shotSelectionController";
 import { useAddShotController } from "./addShotController";
 import { useProjectEditController } from "./projectEditController";
 import { withStatus } from "./statusAction";
+import { createCurrentLayerActionController } from "./currentLayerActionController";
 import {
   SaveErrorModal,
   StoryboardScriptImportModal,
@@ -1251,17 +1251,11 @@ export const App = () => {
     activeShotCount: activeShotIds.length + activeParkedShotIds.length,
     hasIndicator: Boolean(storyboardInsertionIndicator)
   });
-  const handleClearCurrentLayerFromToolRail = useCallback(() => {
-    if (!primarySelectedShot) {
-      setStatus("Select a shot before clearing a layer");
-      return;
-    }
-
-    const activeLayer = activeVisibleBitmapLayerForShot(primarySelectedShot);
-    if (activeLayer) {
-      void handleClearBitmapLayer(primarySelectedShot.id, activeLayer.id);
-    }
-  }, [handleClearBitmapLayer, primarySelectedShot, setStatus]);
+  const { handleClearCurrentLayerFromToolRail } = createCurrentLayerActionController({
+    getPrimarySelectedShot: () => primarySelectedShot,
+    handleClearBitmapLayer,
+    setStatus
+  });
 
   const handleAiProjectChange = (nextProject: Project, nextStatus: string) =>
     applyAiProjectChange({

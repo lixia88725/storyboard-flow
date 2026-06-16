@@ -194,8 +194,9 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 - DND drag-end project actions now live in `storyboardDragEndController.ts`; `App.tsx` injects the existing insertion-target flush, pending-shelf hit test, project refs, paste animation, selection, delete target, status, and project update dependencies while shared reorder/park/restore/dialogue mutations remain in `projectOps.ts`.
 - Shot click selection side effects now live in `shotSelectionController.ts`; `App.tsx` injects focus blur, editable-target detection, delete-target reset, and layer-selection clearing instead of re-owning click modifier behavior inline.
 - Sketch tool settings and radial preset/drag application now live in `sketchToolSettingsController.ts`; `App.tsx` still composes the radial menu close action, but no longer owns brush/eraser default settings or setter fan-out inline.
+- Current-layer tool rail actions now live in `currentLayerActionController.ts`; `App.tsx` injects the current selected shot, bitmap-layer clear action, and status setter instead of resolving the active visible layer inline.
 - Rule adjustment: AI provider/main glue, Electron external-refresh glue, and renderer AI project-change glue can proceed in independent worktrees as long as provider behavior, candidate-first Apply, and Save/Import/TIFF boundaries are not changed.
-- Current high-conflict files are smaller but still not “done”: `main.ts` remains the protected Save/Import/TIFF composition layer, and `App.tsx` still owns protected Save/Import wiring plus some layer-asset action composition. Future slices should keep using focused tests and avoid splitting code solely for line-count wins.
+- Current high-conflict files are smaller but still not “done”: `main.ts` remains the protected Save/Import/TIFF composition layer, and `App.tsx` still owns protected Save/Import wiring plus remaining bitmap-layer asset action composition. Future slices should keep using focused tests and avoid splitting code solely for line-count wins.
 
 2026-06-16 Electron IPC runtime follow-through:
 
