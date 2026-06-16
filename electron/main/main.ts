@@ -24,7 +24,6 @@ import {
   type AppliedFileReplacements
 } from "./fileRenames.js";
 import {
-  copyBitmapLayerFile,
   flattenBitmapLayerBuffersToTiff,
   shouldEnsureLayerAssetsForShot,
   type BitmapLayerComposite
@@ -83,14 +82,7 @@ import {
   loadStoryboardWindowEntry,
   storyboardWindowOptions
 } from "./appWindowService.js";
-import {
-  isWorkspaceTemporaryImagePath,
-  workspaceCopyTemporaryFileName
-} from "./workspaceTemporaryPaths.js";
-import {
-  copyShotAssets,
-  type CopyShotAssetsPayload
-} from "./copyShotAssetsService.js";
+import { isWorkspaceTemporaryImagePath } from "./workspaceTemporaryPaths.js";
 import { scanWorkspaceFolder } from "./folderScanService.js";
 import { createImageRecords as createImportedImageRecords } from "./imageRecordsService.js";
 import { changedKnownImagePaths as findChangedKnownImagePaths } from "./knownImageChangesService.js";
@@ -105,6 +97,7 @@ import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryServic
 import { pixelFingerprint } from "./imageFingerprintService.js";
 import { createImageAppHandlers } from "./imageAppRuntime.js";
 import { createSettingsAppHandlers } from "./settingsAppRuntime.js";
+import { createWorkspaceAssetAppHandlers } from "./workspaceAssetAppRuntime.js";
 import { createWorkspaceExternalChangesAppHandlers } from "./workspaceExternalChangesAppRuntime.js";
 import { createWorkspaceOpenAppHandlers } from "./workspaceOpenAppRuntime.js";
 import { createWorkspacePersistenceAppHandlers } from "./workspacePersistenceAppRuntime.js";
@@ -541,22 +534,7 @@ const registerIpcHandlers = () => {
     mergeVisible: (payload) => mergeVisibleLayers(payload as MergeVisibleLayersPayload)
   });
 
-  registerWorkspaceAssetIpcHandlers(ipcMain, {
-    copyShotAssets: (payload) =>
-      copyShotAssets(payload as CopyShotAssetsPayload, {
-        assertPathInsideFolder,
-        copyBitmapLayerFile,
-        copyFile,
-        createId: randomUUID,
-        createPreview,
-        previewRootForFolder,
-        rename,
-        resolveLayerAssetPath,
-        unlink,
-        uniquePath,
-        workspaceCopyTemporaryFileName
-      })
-  });
+  registerWorkspaceAssetIpcHandlers(ipcMain, createWorkspaceAssetAppHandlers({ uniquePath }));
 
   registerImageIpcHandlers(ipcMain, createImageAppHandlers({ createImageRecords }));
 
