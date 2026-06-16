@@ -22,7 +22,6 @@ import {
 } from "react";
 import {
   addDialogue,
-  addGeneratedShot,
   applyRenamePlan,
   createProject,
   createRenamePlan,
@@ -54,7 +53,6 @@ import {
   updateBitmapLayerGroupOpacity,
   bitmapLayerPath,
 } from "../shared/projectOps";
-import { generatedShotTransparentLayerAssets } from "../shared/generatedShotAssets";
 import type {
   BitmapLayer,
   Dialogue,
@@ -150,6 +148,7 @@ import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsControl
 import { useLayerPanelController } from "./layerPanelController";
 import { useRightSidebarController } from "./rightSidebarController";
 import { createShotSelectionController } from "./shotSelectionController";
+import { useAddShotController } from "./addShotController";
 import { withStatus } from "./statusAction";
 import {
   SaveErrorModal,
@@ -1133,96 +1132,22 @@ export const App = () => {
     });
   }, [handleSaveProject]);
 
-  const handleAddShot = async () => {
-    if (!window.storyboard) {
-      setStatus("Cannot add shot: Electron preload API is unavailable");
-      return;
-    }
-
-    let targetFolderPath = folderPath;
-    let baseProject = projectRef.current;
-    let insertAfterShotId = primarySelectedShotId;
-
-    if (!targetFolderPath || !metadataPath) {
-      setStatus("Choose a folder for the first shot");
-      const selectedFolder = await withStatus(
-        "Choose folder failed",
-        () => window.storyboard.selectFolder(),
-        setStatus
-      );
-      if (!selectedFolder) {
-        setStatus("Add shot cancelled");
-        return;
-      }
-
-      setWorkspaceTask({
-        kind: "open",
-        label: "Loading folder...",
-        current: 0,
-        total: 0
-      });
-
-      const scan = await withStatus(
-        "Open folder failed",
-        () => window.storyboard.openFolderByPath(selectedFolder),
-        setStatus
-      );
-
-      setWorkspaceTask(undefined);
-      if (!scan) {
-        return;
-      }
-
-      const loadedProject = await loadFolderScan(scan, "Folder opened", !scan.project);
-      targetFolderPath = scan.folderPath;
-      baseProject = loadedProject ?? projectRef.current;
-      insertAfterShotId = baseProject.shots[0]?.id;
-      void window.storyboard.getRecentFolders().then(setRecentFolders).catch(() => undefined);
-    }
-
-    const image = await withStatus(
-      "Add shot failed",
-      () => window.storyboard.createBlankShot(targetFolderPath, { preset: blankShotPreset }),
-      setStatus
-    );
-
-    if (!image) {
-      return;
-    }
-
-    const nextProject = addGeneratedShot(baseProject, image, insertAfterShotId);
-    const nextShotId = nextProject.shots.find((shot) => shot.imagePath === image.imagePath)?.id;
-    const nextShot = nextShotId ? nextProject.shots.find((shot) => shot.id === nextShotId) : undefined;
-    if (nextShot) {
-      const didCreateLayerAssets = await withStatus(
-        "Add shot layer failed",
-        async () => {
-          await Promise.all(
-            generatedShotTransparentLayerAssets(nextShot).map(async (layer) => {
-              const dataUrl = await createTransparentLayerDataUrl(layer.width, layer.height);
-              await window.storyboard.writeLayerPng({
-                folderPath: targetFolderPath,
-                bitmapPath: layer.bitmapPath,
-                dataUrl
-              });
-            })
-          );
-          return true;
-        },
-        setStatus
-      );
-      if (!didCreateLayerAssets) {
-        return;
-      }
-    }
-
-    updateProject(nextProject, true, false);
-    if (nextShotId) {
-      markShotsDirty([nextShotId]);
-    }
-    selectSingleShot(nextShotId);
-    setStatus(`Added ${blankShotPreset} shot: ${image.fileName}`);
-  };
+  const { handleAddShot } = useAddShotController({
+    api: window.storyboard,
+    blankShotPreset,
+    createTransparentLayerDataUrl,
+    folderPath,
+    loadFolderScan,
+    markShotsDirty,
+    metadataPath,
+    primarySelectedShotId,
+    projectRef,
+    selectSingleShot,
+    setRecentFolders,
+    setStatus,
+    setWorkspaceTask,
+    updateProject
+  });
 
   const handleImportSwbFormat = async () => {
     if (!window.storyboard) {
