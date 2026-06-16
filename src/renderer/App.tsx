@@ -27,14 +27,9 @@ import {
   imageBitmapLayerId,
   mergeExternalImageChanges,
   mergeFolderImages,
-  moveDialogueToShot,
   projectAcceptedExternalEdits,
   projectHasSwbWarning,
   projectNeedsSwbImport,
-  parkShotGroup,
-  restoreParkedShotGroup,
-  reorderShotGroup,
-  reorderShots,
   sortedShots,
   type ShotPlacement,
 } from "../shared/projectOps";
@@ -86,8 +81,6 @@ import { useStoryboardMarqueeController } from "./storyboardMarqueeController";
 import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
 import { createTransparentLayerDataUrl } from "./bitmapLayerCanvas";
 import {
-  inferDropPlacementFromDragEnd,
-  inferShotPlacement,
   shouldShowStoryboardInsertionIndicator,
   storyboardSortableItemIds as realStoryboardSortableItemIds,
   type DragData
@@ -127,6 +120,7 @@ import { useLayerPanelController } from "./layerPanelController";
 import { useLayerMetadataActionController } from "./layerMetadataActionController";
 import { useRightSidebarController } from "./rightSidebarController";
 import { useStoryboardDragSessionController } from "./storyboardDragSessionController";
+import { useStoryboardDragEndController } from "./storyboardDragEndController";
 import { createShotSelectionController } from "./shotSelectionController";
 import { useAddShotController } from "./addShotController";
 import { useProjectEditController } from "./projectEditController";
@@ -1227,130 +1221,19 @@ export const App = () => {
     setDragPreviewShotIds
   });
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const {
-      storyboardInsertionTarget: dragEndStoryboardInsertionTarget,
-      parkingInsertionTarget: dragEndParkingInsertionTarget
-    } = flushInsertionTargetsFromDragEnd(event);
-    resetActiveDragState();
-
-    const activeData = event.active.data.current as DragData | undefined;
-    const overData = event.over?.data.current as DragData | undefined;
-
-    if (!activeData) {
-      return;
-    }
-
-    if (
-      activeData.type === "shot" &&
-      dragEndInsideSelector(event, ".parking-shelf.is-open", lastPointerPositionRef.current)
-    ) {
-      const movingShotIds = selectedShotIdsRef.current.includes(activeData.shotId)
-        ? selectedShotIdsRef.current
-        : [activeData.shotId];
-      const nextProject = parkShotGroup(
-        projectRef.current,
-        movingShotIds,
-        dragEndParkingInsertionTarget
-          ? {
-              targetParkedShotId: dragEndParkingInsertionTarget.targetShotId,
-              placement: dragEndParkingInsertionTarget.placement
-            }
-          : undefined
-      );
-      updateProject(nextProject);
-      const nextSelectedShot = sortedShots(nextProject.shots)[0];
-      selectSingleShot(nextSelectedShot?.id);
-      setDeleteTarget({ type: "shot" });
-      setStatus(`${movingShotIds.length} storyboard${movingShotIds.length === 1 ? "" : "s"} moved to pending`);
-      return;
-    }
-
-    if (!overData && !dragEndStoryboardInsertionTarget) {
-      return;
-    }
-
-    if (
-      activeData.type === "shot" &&
-      (overData?.type === "parking-zone" || overData?.type === "parked-shot")
-    ) {
-      const movingShotIds = selectedShotIdsRef.current.includes(activeData.shotId)
-        ? selectedShotIdsRef.current
-        : [activeData.shotId];
-      const nextProject = parkShotGroup(
-        projectRef.current,
-        movingShotIds,
-        dragEndParkingInsertionTarget
-          ? {
-              targetParkedShotId: dragEndParkingInsertionTarget.targetShotId,
-              placement: dragEndParkingInsertionTarget.placement
-            }
-          : undefined
-      );
-      updateProject(nextProject);
-      const nextSelectedShot = sortedShots(nextProject.shots)[0];
-      selectSingleShot(nextSelectedShot?.id);
-      setDeleteTarget({ type: "shot" });
-      setStatus(`${movingShotIds.length} storyboard${movingShotIds.length === 1 ? "" : "s"} moved to pending`);
-      return;
-    }
-
-    if (
-      activeData.type === "shot" &&
-      (dragEndStoryboardInsertionTarget || overData?.type === "shot")
-    ) {
-      const movingShotIds = selectedShotIdsRef.current.includes(activeData.shotId)
-        ? selectedShotIdsRef.current
-        : [activeData.shotId];
-      const fallbackTargetShotId = overData?.type === "shot" ? overData.shotId : undefined;
-      const targetShotId = dragEndStoryboardInsertionTarget?.targetShotId ?? fallbackTargetShotId;
-      if (!targetShotId) {
-        return;
-      }
-      const currentProject = projectRef.current;
-      const placement =
-        dragEndStoryboardInsertionTarget?.placement ??
-        inferShotPlacement(currentProject, movingShotIds, targetShotId, activeData.shotId);
-      const nextProject =
-        movingShotIds.length > 1
-          ? reorderShotGroup(currentProject, movingShotIds, targetShotId, placement)
-          : reorderShots(currentProject, activeData.shotId, targetShotId, placement);
-      if (nextProject === currentProject) {
-        return;
-      }
-
-      queuePasteAnimation("shot", "", "");
-      updateProject(nextProject);
-    }
-
-    if (
-      activeData.type === "parked-shot" &&
-      (dragEndStoryboardInsertionTarget || overData?.type === "shot" || overData?.type === "drop-zone")
-    ) {
-      const fallbackTargetShotId =
-        overData?.type === "shot" || overData?.type === "drop-zone" ? overData.shotId : undefined;
-      const targetShotId = dragEndStoryboardInsertionTarget?.targetShotId ?? fallbackTargetShotId;
-      if (!targetShotId) {
-        return;
-      }
-      const placement = dragEndStoryboardInsertionTarget?.placement ?? inferDropPlacementFromDragEnd(event);
-      const nextProject = restoreParkedShotGroup(projectRef.current, [activeData.shotId], targetShotId, placement);
-      updateProject(nextProject);
-      selectSingleShot(activeData.shotId);
-      setDeleteTarget({ type: "shot" });
-      setStatus("Storyboard restored from pending");
-    }
-
-    if (activeData.type === "dialogue" && (overData?.type === "shot" || overData?.type === "drop-zone")) {
-      const targetShotId = overData.type === "drop-zone" ? overData.shotId : overData.shotId;
-
-      if (targetShotId && targetShotId !== activeData.shotId) {
-        updateProject((currentProject) =>
-          moveDialogueToShot(currentProject, activeData.dialogueId, targetShotId)
-        );
-      }
-    }
-  };
+  const { handleDragEnd } = useStoryboardDragEndController({
+    flushInsertionTargetsFromDragEnd,
+    isDragEndInsideParkingShelf: (event) =>
+      dragEndInsideSelector(event, ".parking-shelf.is-open", lastPointerPositionRef.current),
+    projectRef,
+    queuePasteAnimation,
+    resetActiveDragState,
+    selectedShotIdsRef,
+    selectSingleShot,
+    setDeleteTarget,
+    setStatus,
+    updateProject
+  });
 
   const handleShotSelect = (shotId: string, event: MouseEvent) => {
     if (!isKeyboardEditableTarget(event.target)) {
