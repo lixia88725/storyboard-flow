@@ -32,22 +32,12 @@
 
 ## Completed Summary
 
-- [x] Storyboard Flow now has a local-first scene-folder model, bitmap layer drawing, Save/Import safety, Photoshop layered TIFF exchange, script Markdown sync, parking shelf, fixed shortcut list, Copy/Paste, Merge, selection, animation/onion skin, UI polish, and repeatable automated coverage.
-- [x] GitHub Actions now publishes tester releases automatically from `main` to `lixia88725/storyboard-flow-releases`, including Windows portable zip, macOS Apple Silicon zip, and `update.json`.
-- [x] Storyboard marquee drag preview now uses lightweight temporary DOM selection and transform-positioned marquee box; final selection state still commits on pointer up.
-- [x] AI Draft MVP now supports GUI-only provider settings, OpenAI / Seedream / local ComfyUI providers, request preview copy, single-shot candidates, batch 4-up candidates, and per-shot AI resource availability.
-- [x] AI renderer logic now has controller/client boundaries for provider settings, resources, single-candidate flow, batch flow, and renderer API access; `AiDraftPanel.tsx` remains the UI composition surface.
-- [x] Major extraction boundaries are in place for `ShotCard`, `SketchPad`, `LayerPanel`, shared project operations, Electron Save/Import helpers, and preload sync checks.
-- [x] Architecture worktree slicing was validated with separate local renderer-controller and CSS-slice worktrees; remaining cross-slice risk is shell class naming between renderer controllers and CSS modules.
-- [x] Architecture worktree slicing was further validated with separate Electron user-data runtime and renderer autosave persistence slices; both stayed inside their file boundaries and cherry-picked back to `main` without conflicts.
-- [x] Architecture worktree slicing was validated again with CSS-only Production Slate override absorption and a separate renderer zoom controller slice; CSS files and renderer hook files stayed independent and cherry-picked back to `main` without conflicts.
-- [x] Electron main read-side services were split out for folder scan, image records, known-image external change detection, and project metadata reading; Save / Import / TIFF orchestration remains protected in `main.ts`.
-- [x] Electron settings/AI user-data glue now lives in `userDataRuntime.ts`; autosave metadata persistence side effects now live in `workspaceAutosaveController.ts`.
-- [x] Additional architecture slices moved Electron AI runtime wiring, external refresh runtime wiring, and AI project-change dirty-shot handling into focused modules with tests; all were validated in separate worktrees and cherry-picked back without touching Save / Import / TIFF / `.storyboard-workbench` formats.
-- [x] Additional Electron IPC runtime slices moved image blank-shot wiring and tool radial settings wiring out of `main.ts` into focused runtime modules with tests; both were validated in separate worktrees and cherry-picked back without touching Save / Import / TIFF / `.storyboard-workbench` formats.
-- [x] Architecture audit now has an explicit stop rule: continue refactoring only for repeated conflicts, real bug-risk hotspots, clear module ownership, and focused tests; protected Save / Import / TIFF / `.storyboard-workbench` wiring needs a separate plan before movement.
-- [x] Product naming is now `Storyboard Flow`; `Storyboard Workbench` remains only as a legacy metadata compatibility value. `.storyboard-workbench`, `SWB`, `swb-*`, and `storyboard-workbench.local` remain internal compatibility names until a separate format migration.
-- [x] Detailed older milestone history was intentionally pruned from this file during the 2026-06-06 handoff cleanup. Use Git history and archived docs under `docs/` for the full dated record.
+- [x] Storyboard Flow has the V1 local-first storyboard workflow: scene-folder projects, bitmap layers, Save/Import safety, Photoshop layered TIFF exchange, script Markdown sync, parking shelf, Copy/Paste, Merge, selection, animation/onion skin, and smoke coverage.
+- [x] GitHub Actions publishes tester releases from `main` to `lixia88725/storyboard-flow-releases`, including Windows portable zip, macOS Apple Silicon zip, and `update.json`.
+- [x] AI Draft MVP supports GUI-only OpenAI / Seedream / local ComfyUI settings, request preview copy, single-shot candidates, batch 4-up/remainder candidates, AI Resources, and candidate-first Apply.
+- [x] Architecture cleanup established focused renderer controllers, Electron runtime/service modules, CSS feature modules, preload sync checks, and AI controller/client boundaries.
+- [x] Worktree slicing was validated across renderer, CSS, Electron, and AI slices; architecture work is now in guarded mode with an explicit stop rule.
+- [x] Product naming is `Storyboard Flow`; `Storyboard Workbench` remains legacy/internal compatibility only.
 
 ## Out Of Scope For Current Scope
 

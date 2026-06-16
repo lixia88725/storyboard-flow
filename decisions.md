@@ -112,6 +112,41 @@ Reason: 这些行为在 React UI 状态之外更易测试、更安全演进。
 
 Reason: The renderer was becoming too large for smooth collaboration. Keeping Save/Import/history in `App.tsx` while moving card, canvas, and layer drawer presentation into focused components reduces merge conflicts and lowers the risk of UI work accidentally touching filesystem boundaries.
 
+## Current Architecture Map
+
+Storyboard Flow is a local-first Electron app with four major layers:
+
+1. Renderer UI and interaction layer
+   - `src/renderer/App.tsx` is the composition shell for workspace open/load, Save/Import wiring, bitmap layer asset action composition, global selection, sidebar orchestration, and cross-domain coordination.
+   - Focused renderer controllers own low-risk orchestration for autosave, external refresh, zoom, marquee, history, DND, selection, sketch/tool settings, current-layer actions, add-shot, delete, dialogue, clipboard, layer metadata, and AI project changes.
+   - `ShotCard.tsx`, `SketchPad.tsx`, `LayerPanel.tsx`, and `ParkingShelf.tsx` own card presentation, bitmap drawing/select behavior, layer drawer UI, and parked-shot UI.
+   - Rule: add behavior to focused helpers/controllers first when there is an obvious owner; keep `App.tsx` as the explicit composition point for protected cross-domain wiring.
+
+2. Electron main and filesystem layer
+   - `electron/main/main.ts` is the protected app composition layer for Electron startup, IPC registration, Save / Import / TIFF orchestration, and shared helper injection.
+   - Low-risk IPC and runtime glue live in focused `electron/main/*AppRuntime.ts` modules. Read-side and settings-style behavior lives in focused `electron/main/*Service.ts` modules.
+   - Photoshop/TIFF exchange helpers live in dedicated main-side modules such as `photoshopTiffExport.ts`, `photoshopTiffImport.ts`, `bitmapLayerOrdering.ts`, and `storyboardScript.ts`.
+   - Rule: do not move `saveWorkspace`, `importProjectToSwbFormat`, `writeSwbMetadataToTiffs`, `workspace:save`, `workspace:importSwbFormat`, or Photoshop layered TIFF writer composition without a dedicated Save / Import / TIFF plan.
+
+3. Shared project logic layer
+   - `src/shared/projectOps.ts` owns pure project-data behavior such as ordering, dialogue movement, layer metadata updates, rename planning, lock rules, and SWB import status.
+   - Focused shared tests should cover behavior changes before renderer or Electron wiring is changed.
+   - Rule: if a change affects project JSON semantics, start in shared pure logic instead of hiding the behavior inside a UI component.
+
+4. AI Draft layer
+   - `electron/main/ai/*` owns provider adapters, GUI-only settings, prompt/request preview logic, candidate generation, batch generation, ComfyUI workflow handling, and AI file/resource services.
+   - `src/renderer/ai/aiClient.ts` is the renderer API boundary. Controller hooks, action controllers, and section components own renderer-side AI state and UI composition.
+   - Rule: AI output stays candidate-first and additive. Apply adds an `AI Draft` bitmap layer and must not replace base art or bypass Save / Import / TIFF boundaries.
+
+Cross-cutting contracts:
+
+- Preload: update `electron/preload/preload.ts`, `electron/preload/preload.cjs`, and renderer typings together; run `npm run check:preload`.
+- CSS: `src/renderer/styles.css` is the import-order manifest; feature styles live under `src/renderer/styles/*`; `production-slate-theme.css` remains the final override layer.
+- Disk format: `.storyboard-workbench`, `SWB`, `swb-*`, and `storyboard-workbench.local` remain internal compatibility names until a separate migration plan exists.
+- Save boundary: `Save` is the only operation that synchronizes real image filenames and writes working TIFF pixels. Autosave writes metadata only.
+- Worktree rule: one slice owns one domain. Do not mix renderer behavior, Electron filesystem behavior, CSS cleanup, preload contract changes, and AI provider work in the same slice.
+- Stop rule: do not refactor only to reduce line counts. Start a new architecture slice only for a repeated conflict, real bug-risk hotspot, clear module owner, and focused test plan.
+
 ## Parallel Work Uses Slice-Owned Worktrees
 
 Future architecture work should split into slice-owned git worktrees instead of multiple people or agents editing the same aggregation files at the same time:
@@ -124,109 +159,16 @@ Future architecture work should split into slice-owned git worktrees instead of 
 
 Each worktree should own one slice and avoid opportunistic edits outside that slice. Changes to Save / Import / TIFF / `.storyboard-workbench` behavior require a separate explicit plan and should not be bundled with renderer UI, CSS, or AI controller cleanup.
 
-2026-06-15 worktree simulation:
+Validated architecture result:
 
-- Created two local worktrees from the same `main` baseline: `sim/renderer-controller-slice` and `sim/css-slice`.
-- Renderer controller work can stay limited to `src/renderer/App.tsx` plus focused controller/test files such as `src/renderer/rightSidebarController.ts`.
-- CSS work can stay limited to `src/renderer/styles.css` and `src/renderer/styles/*`, with `src/renderer/styles.css` kept as the import-order manifest.
-- The main remaining cross-slice seam is shell class naming: renderer controller slices may add class names such as `has-ai-panel-open`, while CSS slices style those classes. Add or rename shell classes deliberately and document them in the owning controller test before a CSS slice consumes them.
-- Do not let a CSS slice make opportunistic TypeScript behavior edits, and do not let a renderer controller slice clean up theme overrides.
+- Renderer, CSS, Electron, and AI slices were tested in separate worktrees and integrated without cross-domain conflicts when each slice owned one domain.
+- Low-risk renderer orchestration now has focused controllers. The remaining `App.tsx` work is mostly protected workspace open/load, Save/Import wiring, and bitmap layer asset action composition.
+- Low-risk Electron IPC/read-side/settings/runtime glue now has focused modules. Protected Save / Import / TIFF orchestration remains in `electron/main/main.ts` by design.
+- CSS split is complete enough for collaboration: `styles.css` is an import-order manifest, feature styles live under `src/renderer/styles/*`, and `production-slate-theme.css` remains the final override layer.
+- AI renderer/controller split is complete enough for parallel feature work. Future AI work should prioritize provider/candidate hardening and dogfood over architecture-only splitting.
+- The standard verification set for architecture slices is `npm run test`, `npm run check:preload` when preload changes, `npm run typecheck`, `npm run build`, and `npm run smoke:bitmap` when the slice touches renderer interaction, Electron, layers, drawing, Save, Import, or TIFF paths.
 
-2026-06-15 Electron main service follow-through:
-
-- Folder open / refresh read-side logic now has focused service boundaries: `folderScanService.ts`, `imageRecordsService.ts`, `knownImageChangesService.ts`, and `projectMetadataService.ts`.
-- Blank shot TIFF creation is isolated in `blankShotService.ts`; `main.ts` should call it through the image IPC composition path instead of re-owning preset size and unique filename logic.
-- User data glue is isolated in `userDataRuntime.ts`; settings and AI credential/settings stores should be composed there instead of adding more `app.getPath("userData")` wrappers to `main.ts`.
-- Future Electron main service work should prefer read-side or settings/recent/AI glue slices. Do not move `saveWorkspace`, `importProjectToSwbFormat`, `writeSwbMetadataToTiffs`, or Photoshop TIFF writer orchestration without a dedicated Save/Import/TIFF migration plan.
-- `main.ts` should remain the composition layer for protected Save/Import/TIFF flows and IPC registration, not a dumping ground for new isolated filesystem helpers.
-
-2026-06-15 renderer autosave follow-through:
-
-- Autosave persistence side effects now live in `workspaceAutosaveController.ts` as `persistWorkspaceProject`; `App.tsx` should keep only the thin adapter that supplies current paths, refs, and setters.
-- Future autosave or workspace persistence cleanup should extend the controller and its focused tests before adding more save-state side effects directly to `App.tsx`.
-- Keep explicit Save button behavior and Save-time TIFF/filename synchronization out of autosave controller work. Autosave may write metadata only; `Save` remains the only real filename sync and working TIFF write boundary.
-
-2026-06-15 incremental worktree result:
-
-- `sim/user-data-runtime` and `sim/persist-workspace-action` were created as independent worktrees from consecutive clean `main` baselines.
-- The Electron slice touched only `electron/main/main.ts`, `electron/main/userDataRuntime.ts`, and `electron/main/userDataRuntime.test.ts`.
-- The renderer slice touched only `src/renderer/App.tsx`, `src/renderer/workspaceAutosaveController.ts`, and `src/renderer/workspaceAutosaveController.test.ts`.
-- Both slices cherry-picked back to `main` without conflicts because they did not share ownership files. This supports the rule that Electron glue extraction and renderer orchestration extraction can run in parallel when each slice stays inside its file boundary.
-- The remaining risk is not merge conflict in these two slices; it is semantic drift around Save/Import/TIFF boundaries. Any slice touching `autosaveWorkspace`, external refresh, `importSwbFormat`, or Save status must state whether it is metadata-only or Save-boundary work before implementation.
-
-2026-06-15 current worktree simulation:
-
-- Created two current local worktrees from the same CSS baseline `dce395b`: `sim/current-renderer-radial` and `sim/current-electron-blank-shot`.
-- Renderer menu orchestration slice changed only `src/renderer/App.tsx` and `src/renderer/radialToolMenuController.ts`.
-- Electron low-risk service slice changed only `electron/main/main.ts`, `electron/main/blankShotService.ts`, and `electron/main/blankShotService.test.ts`.
-- `git merge-tree --write-tree sim/current-renderer-radial sim/current-electron-blank-shot` completed with exit code 0, confirming these slices can merge without file conflicts.
-- Rule adjustment: renderer menu/controller cleanup and Electron service extraction can proceed in separate worktrees when each slice avoids opportunistic edits outside its ownership area.
-
-2026-06-16 slice follow-through:
-
-- CSS cleanup ran as a sequence of CSS-only worktrees that absorbed Production Slate override files into their owning modules: pending shelf, board overlays, timeline/status, toolbar, shot card, and layer panel. Each slice avoided TypeScript and behavior edits, which kept visual cleanup separate from renderer/controller work.
-- Renderer zoom orchestration ran in `sim/app-zoom-controller` and changed only `src/renderer/App.tsx`, `src/renderer/storyboardZoomController.ts`, and `src/renderer/storyboardZoomController.test.ts`.
-- `App.tsx` dropped from 3004 to 2781 lines after moving zoom slider RAF scheduling, live preview CSS variables, board scroll helpers, and wheel zoom wiring into `useStoryboardZoomController`.
-- Paste/reorder FLIP animation queueing now lives in `pasteAnimationController.ts`; `App.tsx` asks for a queued shot/layer animation instead of repeating clear/measure/ref assignment blocks around paste and reorder actions.
-- Storyboard marquee selection orchestration now lives in `storyboardMarqueeController.ts`; `App.tsx` passes board scroll, selection refs, delete target, and marquee DOM refs into the controller instead of owning pointermove/RAF/edge-scroll listener wiring inline.
-- The zoom slice cherry-picked cleanly after the CSS slices because it did not touch `src/renderer/styles/` and the CSS slices did not touch renderer behavior files.
-- Rule adjustment: CSS theme cleanup can continue independently from renderer hook extraction as long as CSS slices treat `styles.css` as the import-order manifest and renderer slices treat shell/board class names as API-like names.
-- Remaining renderer risk is now concentrated in DND, Save/Import wiring, history, and layer action orchestration. Prefer one controller at a time, with focused tests, before considering any broader `App.tsx` movement.
-
-2026-06-16 current architecture follow-through:
-
-- Electron AI app runtime moved into `electron/main/ai/appRuntime.ts`; `main.ts` now registers AI IPC through `createAiAppHandlers` instead of directly composing provider/settings/resource/candidate dependencies.
-- External refresh app runtime moved into `electron/main/workspaceExternalChangesAppRuntime.ts`; `main.ts` now supplies only the app-specific image-record and storyboard-script helpers while the external-change service composition lives in a focused module.
-- AI project apply side effects moved into `src/renderer/ai/aiProjectChangeController.ts`; `App.tsx` no longer owns the layer-change dirty-shot detection for AI candidate/resource apply flows.
-- These slices were implemented in separate worktrees: `sim/electron-ai-app-runtime`, `sim/workspace-external-changes-runtime`, and `sim/ai-project-change-controller`, then cherry-picked back to `main` without conflicts.
-- AI candidate preview/actions UI now lives in `AiCandidateSection.tsx`; `AiDraftPanel.tsx` keeps the existing controller wiring while candidate display copy and single/batch action labels are tested in the section module.
-- AI resources and multi-shot assignment UI now lives in `AiResourcesSection.tsx`; `AiDraftPanel.tsx` passes existing `useAiResourcesController` state/actions into the section without changing resource persistence or candidate apply behavior.
-- AI provider settings UI now lives in `AiProviderSettingsSection.tsx`; `AiDraftPanel.tsx` passes existing `useAiDraftController` state/actions into the section without changing provider storage, ComfyUI settings behavior, or candidate apply behavior.
-- AI panel single/batch action dispatch now lives in `aiPanelActionsController.ts`; `AiDraftPanel.tsx` still composes the existing candidate and batch controllers, but no longer owns Generate / Copy Preview / Discard / Apply branch logic inline.
-- Storyboard and pending-shelf insertion indicator orchestration now lives in `storyboardInsertionController.ts`; `App.tsx` still owns the drag-end business actions for reorder, park, restore, and dialogue movement.
-- Undo/redo stack orchestration and layer asset snapshot restore now live in `projectHistoryController.ts`; `App.tsx` records history through the controller while keeping project mutation call sites explicit.
-- Add Shot renderer orchestration now lives in `addShotController.ts`; `App.tsx` injects existing folder-open/load, blank-shot creation, transparent layer asset write, dirty-shot marking, and selection/status dependencies without changing blank TIFF creation, Save, Import, or `.storyboard-workbench` format behavior.
-- Project title, naming field, and shot script edit updates now live in `projectEditController.ts`; `App.tsx` uses the controller for pure project-edit mutations while Save/Import/TIFF behavior remains unchanged.
-- Delete key and selected storyboard delete orchestration now lives in `deleteActionController.ts`; `App.tsx` injects existing layer removal, selection, delete target, status, and project update dependencies while Save-to-Trash semantics remain unchanged.
-- Dialogue create, edit, and empty-blur cleanup orchestration now lives in `dialogueActionController.ts`; `App.tsx` passes the controller callbacks to `ShotCard` while shared project dialogue mutations remain in `projectOps.ts`.
-- Layer metadata selection/update/reorder/opacity orchestration now lives in `layerMetadataActionController.ts`; PNG asset creation/deletion/merge/clear work remains in bitmap layer action services and Save/TIFF behavior is unchanged.
-- Clipboard copy/paste orchestration now lives in `clipboardActionController.ts`; `App.tsx` injects existing storyboard/layer asset copy APIs, history, paste animation, dirty-shot marking, selection, delete target, status, and project update dependencies without changing Save/Import/TIFF boundaries.
-- DND drag-session state now lives in `storyboardDragSessionController.ts`; `App.tsx` keeps the actual reorder/park/restore/dialogue-move project mutations while drag preview IDs, active drag/dialogue state, pending-shelf opening, insertion target queuing, and drag cleanup are tested in a focused renderer controller.
-- DND drag-end project actions now live in `storyboardDragEndController.ts`; `App.tsx` injects the existing insertion-target flush, pending-shelf hit test, project refs, paste animation, selection, delete target, status, and project update dependencies while shared reorder/park/restore/dialogue mutations remain in `projectOps.ts`.
-- Shot click selection side effects now live in `shotSelectionController.ts`; `App.tsx` injects focus blur, editable-target detection, delete-target reset, and layer-selection clearing instead of re-owning click modifier behavior inline.
-- Sketch tool settings and radial preset/drag application now live in `sketchToolSettingsController.ts`; `App.tsx` still composes the radial menu close action, but no longer owns brush/eraser default settings or setter fan-out inline.
-- Current-layer tool rail actions now live in `currentLayerActionController.ts`; `App.tsx` injects the current selected shot, bitmap-layer clear action, and status setter instead of resolving the active visible layer inline.
-- External refresh action orchestration now lives in `workspaceExternalRefreshController.ts`; `App.tsx` still injects the current preload API, status wrapper, load-folder adapter, and metadata-only autosave failure handling, but no longer owns the check/import/apply decision tree inline.
-- Rule adjustment: AI provider/main glue, Electron external-refresh glue, and renderer AI project-change glue can proceed in independent worktrees as long as provider behavior, candidate-first Apply, and Save/Import/TIFF boundaries are not changed.
-- Current high-conflict files are smaller but still not “done”: `main.ts` remains the protected Save/Import/TIFF composition layer, and `App.tsx` still owns protected Save/Import wiring plus remaining bitmap-layer asset action composition. Future slices should keep using focused tests and avoid splitting code solely for line-count wins.
-
-2026-06-16 Electron IPC runtime follow-through:
-
-- `sim/image-app-runtime` moved `images:createBlankShot` app wiring into `electron/main/imageAppRuntime.ts`; `main.ts` now only registers the image IPC handler with `createImageRecords` injected from the protected app composition layer.
-- `sim/settings-app-runtime` moved tool radial settings IPC wiring into `electron/main/settingsAppRuntime.ts`; user-data read/write behavior remains in `userDataRuntime.ts` and `userSettingsService.ts`.
-- Workspace open/watch/script IPC wiring now lives in focused runtime modules: `workspaceOpenAppRuntime.ts`, `workspaceWatchAppRuntime.ts`, and `workspaceScriptAppRuntime.ts`.
-- Workspace autosave/ensure-layer-assets IPC wiring now lives in `workspacePersistenceAppRuntime.ts`; `main.ts` still owns the underlying `ensureProjectLayerAssets` and `writeProjectFiles` helpers because Save/Import/TIFF paths also call them directly.
-- Workspace copy-shot-assets IPC wiring now lives in `workspaceAssetAppRuntime.ts`; `main.ts` only injects the existing `uniquePath` helper because protected Save/Import paths still use it directly.
-- Layer asset IPC wiring now lives in `layerAppRuntime.ts`; `main.ts` keeps only the layer helpers that protected Save/TIFF composition still calls directly.
-- App shell IPC wiring now lives in `appAppRuntime.ts`; `main.ts` injects Electron runtime dependencies such as BrowserWindow owner lookup, folder dialog, shell external-open, app version, close-guard state, and the update manifest override.
-- Recent folders IPC wiring now lives in `recentFoldersAppRuntime.ts`; `main.ts` injects the existing recent folders runtime read/flush functions instead of owning the `recent:getFolders` handler body inline.
-- Storyboard image protocol wiring now lives in `appProtocolRuntime.ts`; `main.ts` injects Electron `net.fetch` while the existing `respondToStoryboardImageRequest` file-url behavior remains in `appShellService.ts`.
-- Workspace folder scan composition now lives in `workspaceScanService.ts`; `main.ts` injects existing read-side scan, metadata, preview, and storyboard-script helpers without moving Save/Import/TIFF orchestration.
-- These slices had focused tests and cherry-picked back to `main` or landed as narrow follow-through changes without conflicts because they touched distinct runtime modules plus small adjacent lines in `main.ts`.
-- Rule adjustment: Electron IPC runtime slices should keep `main.ts` as a thin registration/composition file and move only low-risk glue into domain runtime modules. If a slice needs `saveWorkspace`, `importProjectToSwbFormat`, Photoshop TIFF export/import, or `.storyboard-workbench` format changes, it is not a low-risk IPC runtime slice and needs a separate plan.
-- Remaining Electron conflict risk is now concentrated in the protected Save/Import/TIFF orchestration and shared helper functions below those handlers. Continue extracting small read-side or settings-style composition only when the new module has a real domain owner and a focused test.
-
-2026-06-16 architecture completion audit:
-
-- Goal 1 baseline is stable enough for follow-up work: the current architecture slices have been committed to `main`, and the standard verification set has been run after behavior-affecting renderer/Electron slices. Continue to run `npm run test`, `npm run check:preload`, `npm run typecheck`, `npm run build`, and `npm run smoke:bitmap` when the slice touches renderer interaction, Electron, layers, drawing, Save, Import, or TIFF paths.
-- Goal 2 App shell extraction is now in guarded mode, not broad extraction mode. Low-risk orchestration for autosave, external refresh, menu/keyboard/update notice, zoom, marquee, history, DND, selection, sketch settings, current-layer actions, add-shot, delete, dialogue, clipboard, layer metadata, and AI project changes has focused boundaries. The remaining `App.tsx` work is mostly protected workspace open/load/Save/Import wiring plus bitmap layer asset action composition; move it only when the new owner is obvious and tested.
-- Goal 3 Electron main extraction is now in protected-composition mode. Low-risk IPC/read-side/settings/runtime glue has moved into domain modules, while direct `workspace:save`, `workspace:importSwbFormat`, `workspace:exportPhotoshopTiffs`, `saveWorkspace`, `importProjectToSwbFormat`, `writeSwbMetadataToTiffs`, and Photoshop layered TIFF writer composition remain in `main.ts` by design. Do not move them without a dedicated Save/Import/TIFF plan.
-- Goal 4 CSS split is effectively complete for collaboration: `src/renderer/styles.css` is an import-order manifest, feature styles live in `src/renderer/styles/*`, and `production-slate-theme.css` remains the final override layer. Future CSS work should be driven by visual regression, repeated override conflict, or a concrete theme cleanup need.
-- Goal 5 AI renderer/controller split is effectively complete for parallel feature work: provider settings, resources, single candidates, batch generation, request preview access, AI project change application, UI sections, and single/batch action dispatch have focused modules and tests. Future AI work should prioritize manual dogfood and provider/candidate hardening over architecture-only splitting.
-- Goal 6 worktree slicing has been validated by multiple independent renderer, CSS, Electron, and AI worktrees cherry-picked back to `main` without conflicts. The durable rule is: one slice owns one domain, does not make opportunistic edits, and treats class names, preload contracts, and Save/Import/TIFF boundaries as API-like seams.
-- Stop rule: do not continue architecture refactoring just to reduce line counts. Start a new slice only when there is a repeated conflict, a real bug-risk hotspot, a clear module owner, and a focused test plan. If the change touches Save / Import / TIFF / `.storyboard-workbench`, create a separate migration or safety plan before code.
-
-Reason: The highest-conflict files are still shared coordination points. Slice-owned worktrees reduce merge conflicts and keep architectural cleanup from accidentally crossing protected product/data boundaries.
+Reason: The highest-conflict files are still shared coordination points. Slice-owned worktrees reduce merge conflicts and keep architectural cleanup from accidentally crossing protected product/data boundaries, but further refactoring should be driven by real risk rather than line count.
 
 ## Multi-Select Reordering Has Explicit Placement
 

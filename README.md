@@ -28,25 +28,23 @@ npm run dev
 
 ## Developer Map
 
-如果是接手开发，先读 `AGENTS.md`、`decisions.md`、`context-handoff.md` 和 `todo.md`。常用入口：
+如果是接手开发，先读：
 
-- `src/shared/projectOps.ts`：项目数据、排序、重命名计划、bitmap layer metadata 等纯逻辑。改项目行为时优先在这里补单测。
-- `electron/main/main.ts`：Electron app/IPC composition、Import / Save 编排、TIFF metadata 写入和 bitmap asset 初始化。
-- `electron/main/folderScanService.ts`、`imageRecordsService.ts`、`knownImageChangesService.ts`、`projectMetadataService.ts`：打开文件夹、创建图片记录、已知图片外部变更检测和项目 metadata 读取等低风险读侧服务。
-- `electron/main/externalChanges.ts`、`saveProgress.ts`、`closePrompt.ts`、`previewCache.ts`、`storyboardScriptProject.ts`：外部编辑判断、Save 进度、关闭确认、预览缓存和 Markdown 创建项目 helper。
-- `electron/main/bitmapLayerOrdering.ts`：Electron Save / Photoshop export 共用的 bitmap layer 排序和默认值规则。
-- `electron/main/storyboardScript.ts`：`storyboard-script.md` 的序列化、解析和 Import 计划 helper。
-- `electron/main/photoshopTiffExport.ts` / `electron/main/photoshopTiffImport.ts`：Photoshop layered TIFF 交换路径。
-- `electron/main/ai/*`：AI provider adapters, GUI-only settings, prompt/request preview logic, candidate generation, batch generation, and ComfyUI workflow handling.
-- `electron/preload/preload.ts` 和 `electron/preload/preload.cjs`：renderer-safe API。改其中一个后跑 `npm run check:preload`。
-- `src/renderer/App.tsx`：主 UI 状态、工具栏、Save/Import/autosave wiring、全局选择状态和项目历史。它仍是协作热点，优先做小步改动。
-- `src/renderer/ai/AiDraftPanel.tsx`：AI Draft side panel UI, provider settings UI, single-shot / batch candidate controls, and AI resource assignment UI.
-- `src/renderer/ShotCard.tsx`：每张 storyboard card 的展示、台词卡、script 背面、懒渲染占位，以及卡片内组合 `SketchPad` / `LayerPanel`。
-- `src/renderer/SketchPad.tsx`：bitmap drawing、eraser live preview、bitmap Select transform、Onion Skin overlay 和 Konva stage wiring。改这里先跑 renderer tests，再跑 build/smoke。
-- `src/renderer/LayerPanel.tsx`：per-shot layer drawer UI、layer row gestures、visibility sweep、opacity/reorder controls。
-- `src/renderer/ParkingShelf.tsx`、`deleteTarget.ts`、`bitmapLayerWriteQueue.ts`、`storyboardDnd.ts`：待定区、Delete 目标、bitmap 写队列和拖拽 helper。
-- `src/renderer/sketchRendering.ts`、`sketchGeometry.ts`、`activeTargets.ts`、`keyboardShortcuts.ts`、`animationViewport.ts`：renderer helper，适合先补单测再接入 UI。
-- `scripts/electron-bitmap-smoke.mjs`：端到端 Electron/CDP smoke，覆盖 Save safety、bitmap drawing、layer panel、Photoshop round trip、animation 和 legacy migration。
+1. `AGENTS.md`：Agent 工作规则、禁止事项、验证要求。
+2. `decisions.md`：长期架构决策，尤其是 `Current Architecture Map`。
+3. `context-handoff.md`：当前接手状态。
+4. `todo.md`：下一步工作。
+
+代码入口按层理解：
+
+- Shared project logic: `src/shared/projectOps.ts`
+- Renderer UI: `src/renderer/App.tsx`, `ShotCard.tsx`, `SketchPad.tsx`, `LayerPanel.tsx`, `src/renderer/ai/*`
+- Electron main/filesystem: `electron/main/main.ts`, `electron/main/*AppRuntime.ts`, `electron/main/*Service.ts`
+- AI providers and generation: `electron/main/ai/*`
+- Preload contract: `electron/preload/preload.ts`, `electron/preload/preload.cjs`
+- End-to-end smoke: `scripts/electron-bitmap-smoke.mjs`
+
+Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`.
 
 ## Workflow
 
