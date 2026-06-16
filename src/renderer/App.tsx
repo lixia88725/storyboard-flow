@@ -18,8 +18,7 @@ import {
   useRef,
   useState,
   type DragEvent as ReactDragEvent,
-  type MouseEvent,
-  type PointerEvent
+  type MouseEvent
 } from "react";
 import {
   addDialogue,
@@ -111,23 +110,7 @@ import { Timeline } from "./Timeline";
 import { ToolRail } from "./ToolRail";
 import { Topbar } from "./Topbar";
 import { formatSaveFailureStatus } from "./saveErrors";
-import {
-  createMarqueeBox,
-  marqueeEdgeScrollDelta,
-  sameMarqueeSelection,
-  shotIdsInMarqueeBox,
-  updateMarqueeBox
-} from "./storyboardMarquee";
-import {
-  applyMarqueeShotSelection,
-  applySelectedShotCountLabel,
-  applySelectionMarqueeStyle,
-  clearCommittedMarqueeShotSelection,
-  hideSelectionMarquee,
-  showSelectionMarquee,
-  storyboardMarqueeShotElementsFromDom,
-  storyboardMarqueeShotRectsFromDom
-} from "./storyboardMarqueeDom";
+import { useStoryboardMarqueeController } from "./storyboardMarqueeController";
 import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
 import { createTransparentLayerDataUrl } from "./bitmapLayerCanvas";
 import {
@@ -460,6 +443,19 @@ export const App = () => {
     selectedShotIdsRef,
     shotSelectionAnchorIdRef,
     setSelectedShotIds
+  });
+
+  const { handleSelectionPointerDown } = useStoryboardMarqueeController({
+    currentBoardScroll,
+    scrollBoardBy,
+    selectShotsByIds,
+    deleteTargetRef,
+    selectedShotCountLabelRef,
+    selectedShotIdsRef,
+    selectionMarqueeRef,
+    setDeleteTarget,
+    shotSelectionAnchorIdRef,
+    workspaceBoardScrollRef
   });
 
   const { layerPanelPropsForShot } = useLayerPanelController({
@@ -2071,111 +2067,6 @@ export const App = () => {
     }
 
     selectShotWithMode(shotId, "single");
-  };
-
-  const handleSelectionPointerDown = (event: PointerEvent<HTMLElement>) => {
-    if (event.target !== event.currentTarget || event.button !== 0) {
-      return;
-    }
-
-    const board = event.currentTarget;
-    const marqueeShotRects = storyboardMarqueeShotRectsFromDom(board, currentBoardScroll());
-    const marqueeShotElements = storyboardMarqueeShotElementsFromDom(board);
-    const initialSelectedShotIds = selectedShotIdsRef.current;
-    const shouldCommitShotDeleteTarget = deleteTargetRef.current.type !== "shot";
-    let marqueeSelectedShotIds: string[] = [];
-    const initialBoardScroll = currentBoardScroll();
-    const nextBox = createMarqueeBox({
-      clientX: event.clientX,
-      clientY: event.clientY,
-      scrollX: initialBoardScroll.x,
-      scrollY: initialBoardScroll.y
-    });
-    board.classList.add("is-marquee-selecting");
-    showSelectionMarquee(selectionMarqueeRef.current, nextBox);
-    shotSelectionAnchorIdRef.current = undefined;
-    selectedShotIdsRef.current = [];
-    deleteTargetRef.current = { type: "shot" };
-    clearCommittedMarqueeShotSelection(marqueeShotElements, initialSelectedShotIds);
-    applyMarqueeShotSelection(marqueeShotElements, [], marqueeSelectedShotIds);
-    applySelectedShotCountLabel(selectedShotCountLabelRef.current, marqueeSelectedShotIds.length);
-    let latestPointer = { clientX: event.clientX, clientY: event.clientY };
-    let marqueeFrame: number | undefined;
-
-    function updateMarqueeSelection(continueAutoScroll: boolean) {
-      const scrollViewportRect = workspaceBoardScrollRef.current?.getBoundingClientRect();
-      const scrollDelta = marqueeEdgeScrollDelta({
-        pointerY: latestPointer.clientY,
-        viewportTop: scrollViewportRect?.top ?? 0,
-        viewportHeight: scrollViewportRect?.height ?? window.innerHeight
-      });
-      if (scrollDelta !== 0) {
-        scrollBoardBy({ top: scrollDelta, left: 0, behavior: "auto" });
-      }
-
-      const boardScroll = currentBoardScroll();
-      const movedBox = updateMarqueeBox(nextBox, {
-        clientX: latestPointer.clientX,
-        clientY: latestPointer.clientY,
-        scrollX: boardScroll.x,
-        scrollY: boardScroll.y
-      });
-      applySelectionMarqueeStyle(selectionMarqueeRef.current, movedBox);
-
-      const nextShotIds = shotIdsInMarqueeBox(movedBox, marqueeShotRects);
-      if (!sameMarqueeSelection(marqueeSelectedShotIds, nextShotIds)) {
-        applyMarqueeShotSelection(marqueeShotElements, marqueeSelectedShotIds, nextShotIds);
-        marqueeSelectedShotIds = nextShotIds;
-        selectedShotIdsRef.current = nextShotIds;
-        shotSelectionAnchorIdRef.current = nextShotIds.at(-1);
-        applySelectedShotCountLabel(selectedShotCountLabelRef.current, nextShotIds.length);
-      }
-
-      if (scrollDelta !== 0 && continueAutoScroll) {
-        scheduleMarqueeUpdate();
-      }
-    }
-
-    function scheduleMarqueeUpdate() {
-      if (marqueeFrame !== undefined) {
-        return;
-      }
-
-      marqueeFrame = window.requestAnimationFrame(() => {
-        marqueeFrame = undefined;
-        updateMarqueeSelection(true);
-      });
-    }
-
-    const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
-      latestPointer = { clientX: moveEvent.clientX, clientY: moveEvent.clientY };
-      scheduleMarqueeUpdate();
-    };
-
-    const handlePointerUp = () => {
-      if (marqueeFrame !== undefined) {
-        window.cancelAnimationFrame(marqueeFrame);
-        marqueeFrame = undefined;
-      }
-      updateMarqueeSelection(false);
-      selectShotsByIds(marqueeSelectedShotIds);
-      if (shouldCommitShotDeleteTarget) {
-        setDeleteTarget({ type: "shot" });
-      }
-      hideSelectionMarquee(selectionMarqueeRef.current);
-      board.classList.remove("is-marquee-selecting");
-      window.requestAnimationFrame(() => {
-        applyMarqueeShotSelection(marqueeShotElements, marqueeSelectedShotIds, []);
-      });
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp, { once: true });
-    window.addEventListener("pointercancel", handlePointerUp, { once: true });
-    scheduleMarqueeUpdate();
   };
 
   const showStoryboardInsertionIndicator = shouldShowStoryboardInsertionIndicator({

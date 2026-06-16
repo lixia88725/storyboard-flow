@@ -168,9 +168,10 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 - Renderer zoom orchestration ran in `sim/app-zoom-controller` and changed only `src/renderer/App.tsx`, `src/renderer/storyboardZoomController.ts`, and `src/renderer/storyboardZoomController.test.ts`.
 - `App.tsx` dropped from 3004 to 2781 lines after moving zoom slider RAF scheduling, live preview CSS variables, board scroll helpers, and wheel zoom wiring into `useStoryboardZoomController`.
 - Paste/reorder FLIP animation queueing now lives in `pasteAnimationController.ts`; `App.tsx` asks for a queued shot/layer animation instead of repeating clear/measure/ref assignment blocks around paste and reorder actions.
+- Storyboard marquee selection orchestration now lives in `storyboardMarqueeController.ts`; `App.tsx` passes board scroll, selection refs, delete target, and marquee DOM refs into the controller instead of owning pointermove/RAF/edge-scroll listener wiring inline.
 - The zoom slice cherry-picked cleanly after the CSS slices because it did not touch `src/renderer/styles/` and the CSS slices did not touch renderer behavior files.
 - Rule adjustment: CSS theme cleanup can continue independently from renderer hook extraction as long as CSS slices treat `styles.css` as the import-order manifest and renderer slices treat shell/board class names as API-like names.
-- Remaining renderer risk is now concentrated in DND/marquee, Save/Import wiring, history, and layer action orchestration. Prefer one controller at a time, with focused tests, before considering any broader `App.tsx` movement.
+- Remaining renderer risk is now concentrated in DND, Save/Import wiring, history, and layer action orchestration. Prefer one controller at a time, with focused tests, before considering any broader `App.tsx` movement.
 
 2026-06-16 current architecture follow-through:
 
@@ -179,7 +180,7 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 - AI project apply side effects moved into `src/renderer/ai/aiProjectChangeController.ts`; `App.tsx` no longer owns the layer-change dirty-shot detection for AI candidate/resource apply flows.
 - These slices were implemented in separate worktrees: `sim/electron-ai-app-runtime`, `sim/workspace-external-changes-runtime`, and `sim/ai-project-change-controller`, then cherry-picked back to `main` without conflicts.
 - Rule adjustment: AI provider/main glue, Electron external-refresh glue, and renderer AI project-change glue can proceed in independent worktrees as long as provider behavior, candidate-first Apply, and Save/Import/TIFF boundaries are not changed.
-- Current high-conflict files are smaller but still not “done”: `main.ts` remains the protected Save/Import/TIFF composition layer, and `App.tsx` still owns DND/marquee/history/layer-action orchestration. Future slices should keep using focused tests and avoid splitting code solely for line-count wins.
+- Current high-conflict files are smaller but still not “done”: `main.ts` remains the protected Save/Import/TIFF composition layer, and `App.tsx` still owns DND/history/layer-action orchestration. Future slices should keep using focused tests and avoid splitting code solely for line-count wins.
 
 2026-06-16 Electron IPC runtime follow-through:
 
