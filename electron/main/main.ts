@@ -73,7 +73,7 @@ import {
   createProjectFromStoryboardScriptMarkdown,
   inspectStoryboardScriptMarkdownFile
 } from "./storyboardScriptProject.js";
-import { respondToStoryboardImageRequest } from "./appShellService.js";
+import { createStoryboardImageProtocolHandler } from "./appProtocolRuntime.js";
 import {
   attachStoryboardWindowHandlers,
   loadStoryboardWindowEntry,
@@ -349,9 +349,10 @@ const createWindow = async () => {
 };
 
 app.whenReady().then(async () => {
-  protocol.handle("storyboard-img", (request) => {
-    return respondToStoryboardImageRequest(request.url, (url) => net.fetch(url));
-  });
+  protocol.handle(
+    "storyboard-img",
+    createStoryboardImageProtocolHandler({ fetchFileUrl: (url) => net.fetch(url) })
+  );
 
   registerIpcHandlers();
   await updateRecentFoldersMenu();
