@@ -29,7 +29,6 @@ import {
   defaultSaveNaming,
   bitmapLayersForShot,
   copyBitmapLayerToShot,
-  deleteShots,
   duplicateShotAfter,
   imageBitmapLayerId,
   mergeExternalImageChanges,
@@ -78,10 +77,8 @@ import {
   type ClipboardSelection
 } from "./clipboardSelection";
 import { DialoguePreview, ShotStackPreview } from "./DragPreviews";
-import {
-  resolveDeleteTarget,
-  type DeleteTarget
-} from "./deleteTarget";
+import type { DeleteTarget } from "./deleteTarget";
+import { useDeleteActionController } from "./deleteActionController";
 import { createDirtyShotTracker } from "./dirtyShotTracker";
 import { blurActiveFormControl } from "./formFocus";
 import { isKeyboardEditableTarget } from "./keyboardShortcuts";
@@ -512,57 +509,6 @@ export const App = () => {
     setScriptImportNeeded(false);
   };
 
-  const handleDeleteSelectedShots = () => {
-    const selectedIds = selectedShotIdsRef.current;
-
-    if (selectedIds.length === 0) {
-      return;
-    }
-
-    const currentProject = projectRef.current;
-    const selected = new Set(selectedIds);
-    const ordered = sortedShots(currentProject.shots);
-    const firstDeletedIndex = ordered.findIndex((shot) => selected.has(shot.id));
-    const remaining = ordered.filter((shot) => !selected.has(shot.id));
-
-    if (firstDeletedIndex === -1 || remaining.length === ordered.length) {
-      return;
-    }
-
-    const nextSelectedShot = remaining[Math.min(firstDeletedIndex, remaining.length - 1)];
-    updateProject((projectToUpdate) => deleteShots(projectToUpdate, selectedIds));
-    selectSingleShot(nextSelectedShot?.id);
-    setDeleteTarget({ type: "shot" });
-    setStatus(
-      selectedIds.length === 1
-        ? "Storyboard deleted; Save will move its file to Trash"
-        : `${selectedIds.length} storyboards deleted; Save will move their files to Trash`
-    );
-  };
-
-  const handleDeleteKeyPress = async () => {
-    const resolvedTarget = resolveDeleteTarget(projectRef.current, deleteTarget);
-
-    if (resolvedTarget.type === "layer") {
-      await handleRemoveBitmapLayer(resolvedTarget.shotId, resolvedTarget.layerId);
-      const nextShot = projectRef.current.shots.find((shot) => shot.id === resolvedTarget.shotId);
-      const nextLayer = nextShot ? activeVisibleBitmapLayerForShot(nextShot) : undefined;
-      setDeleteTarget(
-        nextShot && nextLayer
-          ? { type: "layer", shotId: nextShot.id, layerId: nextLayer.id }
-          : { type: "shot" }
-      );
-      return;
-    }
-
-    if (resolvedTarget.type === "locked-layer") {
-      setStatus("Cannot delete a locked layer");
-      return;
-    }
-
-    handleDeleteSelectedShots();
-  };
-
   const {
     handleAddBitmapLayer,
     handleClearBitmapLayer,
@@ -579,6 +525,17 @@ export const App = () => {
     markShotsDirty,
     updateProject,
     setStatus
+  });
+
+  const { handleDeleteKeyPress } = useDeleteActionController({
+    deleteTarget,
+    handleRemoveBitmapLayer,
+    projectRef,
+    selectedShotIdsRef,
+    selectSingleShot,
+    setDeleteTarget,
+    setStatus,
+    updateProject
   });
 
   const {
