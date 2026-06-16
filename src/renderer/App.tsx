@@ -73,11 +73,6 @@ import {
   primaryShotOrFirst
 } from "./activeTargets";
 import { autosaveErrorReducer, type AutosaveErrorNotice } from "./autosaveError";
-import {
-  readLayerAssetSnapshots,
-  restoreLayerAssetSnapshots,
-  type LayerAssetSnapshot
-} from "./bitmapLayerHistory";
 import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import {
   copySelectionFromProject,
@@ -94,8 +89,8 @@ import { createDirtyShotTracker } from "./dirtyShotTracker";
 import { blurActiveFormControl } from "./formFocus";
 import { isKeyboardEditableTarget } from "./keyboardShortcuts";
 import { getOnionSkinNeighbors } from "./onionSkin";
-import { appendHistoryEntry, useSyncedHistoryStackController } from "./historyStackController";
 import { ensureProjectBitmapMetadata } from "./projectBitmapMetadata";
+import { useProjectHistoryController } from "./projectHistoryController";
 import { markdownPathFromDroppedFiles } from "./markdownDrop";
 import { SelectionMarquee } from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
@@ -127,7 +122,7 @@ import { sameLayerSelection, useStoryboardInteractionState } from "./storyboardI
 import { hasOpenShortcutBlockingMenu } from "./shortcutMenuController";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { useBitmapLayerPaintingController } from "./bitmapLayerPaintingController";
-import { useWorkspaceLifecycleState, type FileNameSyncState } from "./workspaceLifecycleState";
+import { useWorkspaceLifecycleState } from "./workspaceLifecycleState";
 import { useUpdateNoticeController } from "./updateNoticeController";
 import { useAnimationModeLayoutController } from "./animationModeLayoutController";
 import { usePasteAnimationController } from "./pasteAnimationController";
@@ -170,12 +165,6 @@ const minSketchSoftness = 0;
 const maxSketchSoftness = 1;
 const maxUndoHistory = 60;
 
-type UndoEntry = {
-  project: Project;
-  selectedShotIds: string[];
-  fileNameSyncState: FileNameSyncState;
-  layerAssets?: LayerAssetSnapshot[];
-};
 type ProjectUpdate = Project | ((currentProject: Project) => Project);
 export const App = () => {
   const {
@@ -275,8 +264,6 @@ export const App = () => {
   const [saveErrorDialog, setSaveErrorDialog] = useState<string | undefined>();
   const [storyboardScriptImportDraft, setStoryboardScriptImportDraft] =
     useState<StoryboardScriptImportDraft | undefined>();
-  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
-  const [redoStack, setRedoStack] = useState<UndoEntry[]>([]);
   const [clipboardSelection, setClipboardSelection] = useState<ClipboardSelection | undefined>();
   const [status, setStatus] = useState(
     window.storyboard ? "Ready" : "Electron preload API is unavailable"
@@ -310,8 +297,6 @@ export const App = () => {
   const selectedShotCountLabelRef = useRef<HTMLSpanElement | null>(null);
   const lastPointerPositionRef = useRef<{ x: number; y: number } | undefined>(undefined);
   const parkingListRef = useRef<HTMLDivElement | null>(null);
-  const undoStackRef = useRef<UndoEntry[]>([]);
-  const redoStackRef = useRef<UndoEntry[]>([]);
   const bitmapLayerWriteQueueRef = useRef(createBitmapLayerWriteQueue());
   const appShellRef = useRef<HTMLElement | null>(null);
   const orderedShots = useMemo(() => sortedShots(project.shots), [project.shots]);
@@ -445,17 +430,6 @@ export const App = () => {
     );
   }, []);
 
-  const setUndoStackSynced = useSyncedHistoryStackController({
-    stack: undoStack,
-    stackRef: undoStackRef,
-    setStack: setUndoStack
-  });
-  const setRedoStackSynced = useSyncedHistoryStackController({
-    stack: redoStack,
-    stackRef: redoStackRef,
-    setStack: setRedoStack
-  });
-
   usePointerPositionController(lastPointerPositionRef);
   useWorkspaceTaskProgressController(setWorkspaceTask);
 
@@ -471,6 +445,31 @@ export const App = () => {
     markShotsDirty,
     resetDirtyShots: resetTrackedDirtyShots
   } = createDirtyShotTracker({ dirtyShotIdsRef, projectRef });
+  const {
+    applyRedoEntry,
+    applyUndoEntry,
+    createHistoryEntry,
+    recordProjectUndoEntry,
+    recordUndoEntry,
+    resetHistoryStacks
+  } = useProjectHistoryController({
+    api: window.storyboard,
+    bitmapLayerWriteQueueRef,
+    fileNameSyncStateRef,
+    folderPathRef,
+    markAllShotsDirty,
+    maxEntries: maxUndoHistory,
+    projectRef,
+    scriptImportCheckIdRef,
+    selectShotsByIds,
+    selectedShotIdsRef,
+    setAutosaveRevision,
+    setFileNameSyncState,
+    setProject,
+    setScriptImportNeeded,
+    setStatus,
+    setWorkspaceSaveState
+  });
 
   const measureGridColumns = useCallback(measureStoryboardGridColumnsFromDom, []);
 
@@ -499,19 +498,8 @@ export const App = () => {
       typeof projectUpdate === "function" ? projectUpdate(projectRef.current) : projectUpdate;
 
     if (recordUndo) {
-      setUndoStackSynced((current) =>
-        appendHistoryEntry(
-          current,
-          {
-            project: projectRef.current,
-            selectedShotIds: selectedShotIdsRef.current,
-            fileNameSyncState: fileNameSyncStateRef.current
-          },
-          maxUndoHistory
-        )
-      );
+      recordProjectUndoEntry();
     }
-    setRedoStackSynced([]);
     const acceptedExternalEdits = projectAcceptedExternalEdits(nextProject);
 
     projectRef.current = nextProject;
@@ -576,26 +564,6 @@ export const App = () => {
     handleDeleteSelectedShots();
   };
 
-  const createHistoryEntry = async (bitmapPaths: string[] = []): Promise<UndoEntry> => {
-    const activeFolderPath = folderPathRef.current;
-    const layerAssets =
-      window.storyboard && activeFolderPath && bitmapPaths.length > 0
-        ? await readLayerAssetSnapshots(window.storyboard, activeFolderPath, bitmapPaths)
-        : [];
-
-    return {
-      project: projectRef.current,
-      selectedShotIds: selectedShotIdsRef.current,
-      fileNameSyncState: fileNameSyncStateRef.current,
-      layerAssets
-    };
-  };
-
-  const recordUndoEntry = (entry: UndoEntry) => {
-    setUndoStackSynced((current) => appendHistoryEntry(current, entry, maxUndoHistory));
-    setRedoStackSynced([]);
-  };
-
   const {
     handleAddBitmapLayer,
     handleClearBitmapLayer,
@@ -628,75 +596,6 @@ export const App = () => {
     markShotsDirty,
     updateProject
   });
-
-  async function restoreHistoryLayerAssets(entry: UndoEntry) {
-    const activeFolderPath = folderPathRef.current;
-    if (!window.storyboard || !activeFolderPath || !entry.layerAssets?.length) {
-      return;
-    }
-
-    await restoreLayerAssetSnapshots(window.storyboard, activeFolderPath, entry.layerAssets);
-  }
-
-  async function applyUndoEntry() {
-    const previous = undoStackRef.current.at(-1);
-    if (!previous) {
-      setStatus("Nothing to undo");
-      return;
-    }
-
-    try {
-      const affectedPaths = previous.layerAssets?.map((snapshot) => snapshot.bitmapPath) ?? [];
-      await bitmapLayerWriteQueueRef.current.drain();
-      const redoEntry = await createHistoryEntry(affectedPaths);
-      await restoreHistoryLayerAssets(previous);
-
-      setRedoStackSynced((current) => appendHistoryEntry(current, redoEntry, maxUndoHistory));
-      setUndoStackSynced((current) => current.slice(0, -1));
-      setProject(previous.project);
-      projectRef.current = previous.project;
-      selectShotsByIds(previous.selectedShotIds);
-      setFileNameSyncState(previous.fileNameSyncState);
-      setWorkspaceSaveState("saving");
-      markAllShotsDirty();
-      setAutosaveRevision((revision) => revision + 1);
-      scriptImportCheckIdRef.current += 1;
-      setScriptImportNeeded(false);
-      setStatus("Undid last change");
-    } catch (error) {
-      setStatus(`Undo failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  async function applyRedoEntry() {
-    const next = redoStackRef.current.at(-1);
-    if (!next) {
-      setStatus("Nothing to redo");
-      return;
-    }
-
-    try {
-      const affectedPaths = next.layerAssets?.map((snapshot) => snapshot.bitmapPath) ?? [];
-      await bitmapLayerWriteQueueRef.current.drain();
-      const undoEntry = await createHistoryEntry(affectedPaths);
-      await restoreHistoryLayerAssets(next);
-
-      setUndoStackSynced((current) => appendHistoryEntry(current, undoEntry, maxUndoHistory));
-      setRedoStackSynced((current) => current.slice(0, -1));
-      setProject(next.project);
-      projectRef.current = next.project;
-      selectShotsByIds(next.selectedShotIds);
-      setFileNameSyncState(next.fileNameSyncState);
-      setWorkspaceSaveState("saving");
-      markAllShotsDirty();
-      setAutosaveRevision((revision) => revision + 1);
-      scriptImportCheckIdRef.current += 1;
-      setScriptImportNeeded(false);
-      setStatus("Redid last change");
-    } catch (error) {
-      setStatus(`Redo failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
 
   const updateProjectName = (name: string) => {
     updateProject({
@@ -916,8 +815,7 @@ export const App = () => {
     setWorkspaceSaveState(dirty || acceptedExternalEdits || loadedProjectChanged ? "saving" : "saved");
     setFileNameSyncState("synced");
     setStatus(acceptedExternalEdits ? "External TIFF edits accepted as new base" : nextStatus);
-    setUndoStackSynced([]);
-    setRedoStackSynced([]);
+    resetHistoryStacks();
     selectSingleShot(nextProject.shots[0]?.id);
     if (resetDirtyShots) {
       resetTrackedDirtyShots();
@@ -1205,8 +1103,7 @@ export const App = () => {
       resetTrackedDirtyShots();
       workspaceSaveStateRef.current = "saved";
       fileNameSyncStateRef.current = "synced";
-      setUndoStackSynced([]);
-      setRedoStackSynced([]);
+      resetHistoryStacks();
       setStatus("Saved and synced file names");
       return true;
     } catch (error) {

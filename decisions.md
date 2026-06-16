@@ -182,8 +182,9 @@ Each worktree should own one slice and avoid opportunistic edits outside that sl
 - AI candidate preview/actions UI now lives in `AiCandidateSection.tsx`; `AiDraftPanel.tsx` keeps the existing controller wiring while candidate display copy and single/batch action labels are tested in the section module.
 - AI resources and multi-shot assignment UI now lives in `AiResourcesSection.tsx`; `AiDraftPanel.tsx` passes existing `useAiResourcesController` state/actions into the section without changing resource persistence or candidate apply behavior.
 - Storyboard and pending-shelf insertion indicator orchestration now lives in `storyboardInsertionController.ts`; `App.tsx` still owns the drag-end business actions for reorder, park, restore, and dialogue movement.
+- Undo/redo stack orchestration and layer asset snapshot restore now live in `projectHistoryController.ts`; `App.tsx` records history through the controller while keeping project mutation call sites explicit.
 - Rule adjustment: AI provider/main glue, Electron external-refresh glue, and renderer AI project-change glue can proceed in independent worktrees as long as provider behavior, candidate-first Apply, and Save/Import/TIFF boundaries are not changed.
-- Current high-conflict files are smaller but still not “done”: `main.ts` remains the protected Save/Import/TIFF composition layer, and `App.tsx` still owns DND/history/layer-action orchestration. Future slices should keep using focused tests and avoid splitting code solely for line-count wins.
+- Current high-conflict files are smaller but still not “done”: `main.ts` remains the protected Save/Import/TIFF composition layer, and `App.tsx` still owns DND business actions and layer-action orchestration. Future slices should keep using focused tests and avoid splitting code solely for line-count wins.
 
 2026-06-16 Electron IPC runtime follow-through:
 
