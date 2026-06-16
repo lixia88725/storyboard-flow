@@ -103,6 +103,7 @@ import {
 } from "./workspaceTaskProgress.js";
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
+import { createImageAppHandlers } from "./imageAppRuntime.js";
 import { createWorkspaceExternalChangesAppHandlers } from "./workspaceExternalChangesAppRuntime.js";
 import { createAiAppHandlers } from "./ai/appRuntime.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
@@ -546,14 +547,7 @@ const registerIpcHandlers = () => {
       })
   });
 
-  registerImageIpcHandlers(ipcMain, {
-    createBlankShot: async (folderPath, options?: { preset?: BlankShotPreset }) => {
-      const imagePath = await createBlankShot(folderPath, options?.preset ?? "16:9");
-      const previewRoot = previewRootForFolder(folderPath);
-      const [image] = await createImageRecords([imagePath], previewRoot);
-      return image;
-    }
-  });
+  registerImageIpcHandlers(ipcMain, createImageAppHandlers({ createImageRecords }));
 
   registerRecentIpcHandlers(ipcMain, {
     getFolders: async () => {
