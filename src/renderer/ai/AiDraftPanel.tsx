@@ -22,6 +22,7 @@ import { useAiDraftController } from "./useAiDraftController";
 import { useAiCandidateController } from "./useAiCandidateController";
 import { useAiBatchGenerationController } from "./useAiBatchGenerationController";
 import { useAiResourcesController } from "./useAiResourcesController";
+import { AiCandidateSection } from "./AiCandidateSection";
 
 type AiDraftPanelProps = {
   isOpen: boolean;
@@ -577,48 +578,18 @@ export const AiDraftPanel = ({
               </section>
             ) : null}
 
-            <section className="ai-panel-section">
-              <h3>Candidate</h3>
-              {selection.kind === "ready" && candidate ? (
-                <img className="ai-candidate-preview" src={aiClient.assetUrl(candidate.filePath)} alt="" />
-              ) : selection.kind === "multi" && batchCandidates.length > 0 ? (
-                <div className="ai-batch-candidate-list">
-                  {batchCandidates.map((item) => (
-                    <img key={item.id} src={aiClient.assetUrl(item.filePath)} alt="" />
-                  ))}
-                </div>
-              ) : (
-                <p className="ai-empty-state">
-                  {selection.kind === "multi"
-                    ? "Generate batch candidates, then apply them as new AI Draft layers."
-                    : "Generate one candidate, then apply it as a new AI Draft layer."}
-                </p>
-              )}
-              {batchGroups.some((group) => group.error) ? (
-                <div className="ai-batch-errors">
-                  {batchGroups
-                    .filter((group) => group.error)
-                    .map((group) => (
-                      <p key={group.index}>Group {group.index + 1} failed: {group.error}</p>
-                    ))}
-                </div>
-              ) : null}
-              <div className="ai-actions">
-                <button
-                  type="button"
-                  onClick={() => void generate()}
-                  disabled={!canGenerateForSelection}
-                >
-                  {hasActiveCandidate ? "Retry" : "Generate"}
-                </button>
-                <button type="button" onClick={() => void applyCandidate()} disabled={!hasActiveCandidate}>
-                  {selection.kind === "multi" ? "Apply All" : "Apply"}
-                </button>
-                <button type="button" onClick={() => void discardCandidate()} disabled={!hasActiveCandidate}>
-                  {selection.kind === "multi" ? "Discard All" : "Discard"}
-                </button>
-              </div>
-            </section>
+            <AiCandidateSection
+              mode={selection.kind === "multi" ? "batch" : "single"}
+              singleCandidate={candidate}
+              batchCandidates={batchCandidates}
+              batchGroups={batchGroups}
+              hasActiveCandidate={hasActiveCandidate}
+              canGenerate={canGenerateForSelection}
+              assetUrl={aiClient.assetUrl}
+              onGenerate={() => void generate()}
+              onApply={() => void applyCandidate()}
+              onDiscard={() => void discardCandidate()}
+            />
           </>
         ) : null}
       </div>
