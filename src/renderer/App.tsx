@@ -14,8 +14,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type DragEvent as ReactDragEvent,
-  type MouseEvent
+  type DragEvent as ReactDragEvent
 } from "react";
 import {
   applyRenamePlan,
@@ -371,13 +370,17 @@ export const App = () => {
 
   const {
     clearSelectedShots,
+    handleShotSelect,
     selectSingleShot,
-    selectShotsByIds,
-    selectShotWithMode
+    selectShotsByIds
   } = createShotSelectionController({
+    blurActiveFormControl,
+    isEditableTarget: isKeyboardEditableTarget,
     orderedShotIds: orderedShots.map((shot) => shot.id),
     selectedShotIdsRef,
     shotSelectionAnchorIdRef,
+    setDeleteTarget,
+    setSelectedBitmapLayerIds,
     setSelectedShotIds
   });
 
@@ -1234,27 +1237,6 @@ export const App = () => {
     setStatus,
     updateProject
   });
-
-  const handleShotSelect = (shotId: string, event: MouseEvent) => {
-    if (!isKeyboardEditableTarget(event.target)) {
-      blurActiveFormControl();
-    }
-
-    setDeleteTarget({ type: "shot" });
-    setSelectedBitmapLayerIds(undefined);
-
-    if (event.shiftKey) {
-      selectShotWithMode(shotId, "range");
-      return;
-    }
-
-    if (event.metaKey || event.ctrlKey) {
-      selectShotWithMode(shotId, "toggle");
-      return;
-    }
-
-    selectShotWithMode(shotId, "single");
-  };
 
   const showStoryboardInsertionIndicator = shouldShowStoryboardInsertionIndicator({
     activeShotCount: activeShotIds.length + activeParkedShotIds.length,

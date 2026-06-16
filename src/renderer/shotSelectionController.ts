@@ -1,19 +1,36 @@
 import type { MutableRefObject } from "react";
+import type { DeleteTarget } from "./deleteTarget";
 import { nextRangeSelection, type RangeSelectionMode } from "./rangeSelection";
+import type { SelectedBitmapLayerIds } from "./storyboardInteractionState";
 
 type StateSetter<T> = (value: T) => void;
 
 export type ShotSelectionControllerInput = {
+  blurActiveFormControl: () => void;
+  isEditableTarget: (target: EventTarget | null) => boolean;
   orderedShotIds: string[];
   selectedShotIdsRef: MutableRefObject<string[]>;
   shotSelectionAnchorIdRef: MutableRefObject<string | undefined>;
+  setDeleteTarget: StateSetter<DeleteTarget>;
+  setSelectedBitmapLayerIds: StateSetter<SelectedBitmapLayerIds | undefined>;
   setSelectedShotIds: StateSetter<string[]>;
 };
 
+export type ShotSelectEvent = {
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  target: EventTarget | null;
+};
+
 export const createShotSelectionController = ({
+  blurActiveFormControl,
+  isEditableTarget,
   orderedShotIds,
   selectedShotIdsRef,
   shotSelectionAnchorIdRef,
+  setDeleteTarget,
+  setSelectedBitmapLayerIds,
   setSelectedShotIds
 }: ShotSelectionControllerInput) => {
   const selectSingleShot = (shotId: string | undefined) => {
@@ -48,8 +65,30 @@ export const createShotSelectionController = ({
     setSelectedShotIds(selection.selectedIds);
   };
 
+  const handleShotSelect = (shotId: string, event: ShotSelectEvent) => {
+    if (!isEditableTarget(event.target)) {
+      blurActiveFormControl();
+    }
+
+    setDeleteTarget({ type: "shot" });
+    setSelectedBitmapLayerIds(undefined);
+
+    if (event.shiftKey) {
+      selectShotWithMode(shotId, "range");
+      return;
+    }
+
+    if (event.metaKey || event.ctrlKey) {
+      selectShotWithMode(shotId, "toggle");
+      return;
+    }
+
+    selectShotWithMode(shotId, "single");
+  };
+
   return {
     clearSelectedShots,
+    handleShotSelect,
     selectSingleShot,
     selectShotsByIds,
     selectShotWithMode
