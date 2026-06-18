@@ -104,7 +104,12 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
-        run: gh release upload "$env:STORYBOARD_FLOW_TAG" release-artifacts/*.zip --repo "$env:RELEASE_REPO" --clobber
+        run: |
+          $zipPath = Get-ChildItem -Path release-artifacts -Recurse -Filter *.zip | Select-Object -ExpandProperty FullName -First 1
+          if (-not $zipPath) {
+            throw "No release zip found"
+          }
+          gh release upload "$env:STORYBOARD_FLOW_TAG" "$zipPath" --repo "$env:RELEASE_REPO" --clobber
 
   package-macos:
     name: Package macOS
@@ -142,7 +147,10 @@ jobs:
       - name: Upload macOS release asset
         env:
           GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
-        run: gh release upload "$STORYBOARD_FLOW_TAG" release-artifacts/*.zip --repo "$RELEASE_REPO" --clobber
+        run: |
+          zip_path="$(find release-artifacts -type f -name "*.zip" -print -quit)"
+          test -n "$zip_path"
+          gh release upload "$STORYBOARD_FLOW_TAG" "$zip_path" --repo "$RELEASE_REPO" --clobber
 
   publish:
     name: Publish release assets
