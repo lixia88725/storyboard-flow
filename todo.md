@@ -9,6 +9,7 @@
 - [ ] Manual dogfood latest tester release flow: after GitHub Actions publishes a new Release, install/update from `storyboard-flow-releases` on one Windows machine and one Apple Silicon Mac.
 - [ ] Manual dogfood in-app update notice: run an older packaged build, confirm the bottom-right status/info panel shows the newer version, and confirm `Download` opens the release page.
 - [ ] Manual dogfood 60+ shot marquee selection: 50% zoom, background drag across multiple rows, edge-scroll near the bottom, then Delete / copy-paste / drag reorder with the final selected group.
+- [ ] Manual dogfood Import-required UI: open a folder with half-finished Photoshop TIFFs, trigger external TIFF / `storyboard-script.md` changes, confirm the board lock is transparent, the Import help card is readable, Import/status warning icons match size, Save is gray only when synced, and Import/Save still preserve existing data boundaries.
 
 ## P2
 
@@ -38,6 +39,7 @@
 - [x] Architecture cleanup established focused renderer controllers, Electron runtime/service modules, CSS feature modules, preload sync checks, and AI controller/client boundaries.
 - [x] Worktree slicing was validated across renderer, CSS, Electron, and AI slices; architecture work is now in guarded mode with an explicit stop rule.
 - [x] Product naming is `Storyboard Flow`; `Storyboard Workbench` remains legacy/internal compatibility only.
+- [x] Import-required warning UI and Save button state were polished without changing Save / Import / TIFF / `.storyboard-workbench` data behavior.
 
 ## Out Of Scope For Current Scope
 
