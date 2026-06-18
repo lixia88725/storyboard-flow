@@ -43,8 +43,10 @@ import {
 import {
   canvasSizeForShot,
   cssBlendMode,
+  drawBitmapLayerImageUrl,
   drawImageUrl,
-  drawStrokePathOnCanvas
+  drawStrokePathOnCanvas,
+  sampleImageDataColorAtPoint
 } from "./sketchRendering";
 import { nextStageResizeDecision, sameStageSize } from "./stageResize";
 import { canFillBitmapLayer, editableBitmapLayerForShot } from "./activeTargets";
@@ -167,6 +169,7 @@ export type SketchPadProps = {
   ) => Promise<string | undefined>;
   onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
   onFill: (layerId: string, point: Point, color: string) => Promise<string | undefined>;
+  onPickColor: (color: string) => void;
   onFocusShot: () => void;
   onBeginInteraction?: () => void;
 };
@@ -188,6 +191,7 @@ export const SketchPad = ({
   onStroke,
   onSelectionTransform,
   onFill,
+  onPickColor,
   onFocusShot,
   onBeginInteraction
 }: SketchPadProps) => {
@@ -509,6 +513,43 @@ export const SketchPad = ({
   const layerSourceUrl = (layer: BitmapLayer) =>
     layerDataUrls[layer.id] ?? (layer.kind === "image" && !layer.cleared ? imageSrc : undefined);
 
+  const pickVisibleColor = async (position: Point) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvasSize.width;
+    canvas.height = canvasSize.height;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return;
+    }
+
+    try {
+      if (bitmapLayers.length === 0) {
+        await drawImageUrl(context, imageSrc, canvas.width, canvas.height);
+      } else {
+        for (const layer of bitmapLayers.filter((item) => item.visible)) {
+          const sourceUrl = layerSourceUrl(layer);
+          if (!sourceUrl) {
+            continue;
+          }
+          await drawBitmapLayerImageUrl(context, layer, sourceUrl, canvas.width, canvas.height).catch(
+            () => undefined
+          );
+        }
+      }
+
+      const color = sampleImageDataColorAtPoint(
+        context.getImageData(0, 0, canvas.width, canvas.height),
+        position
+      );
+      if (color) {
+        onPickColor(color);
+      }
+    } catch {
+      return;
+    }
+  };
+
   const prepareLiveBitmapEdit = async (layer: BitmapLayer) => {
     const editRun = liveBitmapEditRunRef.current + 1;
     liveBitmapEditRunRef.current = editRun;
@@ -806,6 +847,11 @@ export const SketchPad = ({
 
     if (shouldCloseRadialMenuForSketchPointer(pointerEvent)) {
       onBeginInteraction?.();
+    }
+
+    if (tool === "eyedropper") {
+      void pickVisibleColor(position);
+      return;
     }
 
     if (tool === "select") {

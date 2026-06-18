@@ -1,4 +1,4 @@
-export type SketchTool = "brush" | "eraser" | "select";
+export type SketchTool = "brush" | "eraser" | "select" | "eyedropper";
 export type StrokeTool = "brush" | "eraser";
 export type BitmapSelectionMode = "lasso";
 export type SketchBlendMode = "normal" | "multiply" | "screen";

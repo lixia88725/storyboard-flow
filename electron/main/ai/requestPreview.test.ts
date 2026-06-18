@@ -31,6 +31,18 @@ const project = {
   updatedAt: "2026-06-12T00:00:00.000Z"
 } satisfies Project;
 
+const makeProject = (count: number): Project => ({
+  ...project,
+  shots: Array.from({ length: count }, (_item, index) => ({
+    id: `shot-${index + 1}`,
+    imagePath: `/project/shot-${index + 1}.tiff`,
+    fileName: `shot-${index + 1}.tiff`,
+    order: index,
+    scriptText: `Script for shot ${index + 1}.`
+  })),
+  dialogues: []
+});
+
 describe("AI request preview", () => {
   it("copies the prompt and selected image input summary without secrets or absolute paths", async () => {
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-ai-preview-"));
@@ -106,6 +118,24 @@ describe("AI request preview", () => {
     expect(preview).not.toContain("Do not send this one.");
     expect(preview).not.toContain(folderPath);
     expect(preview).not.toContain("API key");
+  });
+
+  it("copies a 16-up batch request preview with adaptive remainder grouping", async () => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-ai-preview-batch-16-"));
+
+    const preview = await buildAiRequestPreview({
+      folderPath,
+      project: makeProject(18),
+      shotIds: Array.from({ length: 18 }, (_item, index) => `shot-${index + 1}`),
+      batchSize: 16,
+      generationSettings: { provider: "openai", model: "gpt-image-2" }
+    });
+
+    expect(preview).toContain("Batch: 18 shots -> 2 generations: 16, 2");
+    expect(preview).toContain("Group 1 (16 panels):");
+    expect(preview).toContain("sixteen equal panels in a 4x4 grid");
+    expect(preview).toContain("Group 2 (2 panels):");
+    expect(preview).toContain("two equal horizontal panels");
   });
 
   it("copies a ComfyUI request preview without exposing workflow JSON", async () => {

@@ -1,7 +1,7 @@
 import type { AiIpcHandlers } from "../ipc/aiHandlers.js";
 import type { AiImageProviderName, GenerateAiCandidateInput } from "./generate.js";
 import type { GenerateAiBatchCandidatesInput } from "./generateBatch.js";
-import type { AiBatchResourceAssignments } from "./batch.js";
+import type { AiBatchResourceAssignments, AiBatchSize } from "./batch.js";
 import type { AiResourceMetadata } from "./context.js";
 import type { AiCredentialStore } from "./credentials.js";
 import type { AiImageProvider } from "./openAiImageProvider.js";
@@ -24,6 +24,7 @@ type AiGenerateBatchCandidatesPayload = {
   folderPath: string;
   project: Project;
   shotIds: string[];
+  batchSize?: AiBatchSize;
   selectedResourceIds?: string[];
   resourceAssignments?: AiBatchResourceAssignments;
   generationSettings?: {

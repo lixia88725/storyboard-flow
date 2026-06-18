@@ -1,4 +1,15 @@
-import { Brush, Copy, Eraser, Images, Keyboard, LassoSelect, Settings, SquareX, X } from "lucide-react";
+import {
+  Brush,
+  Copy,
+  Eraser,
+  Images,
+  Keyboard,
+  LassoSelect,
+  Pipette,
+  Settings,
+  SquareX,
+  X
+} from "lucide-react";
 
 const lucideIconProps = {
   className: "tool-icon",
@@ -17,6 +28,8 @@ export const CopyIcon = () => <Copy {...lucideIconProps} />;
 export const BrushIcon = () => <Brush {...lucideIconProps} />;
 
 export const EraserIcon = () => <Eraser {...lucideIconProps} />;
+
+export const EyedropperIcon = () => <Pipette {...lucideIconProps} />;
 
 export const SelectIcon = () => <LassoSelect {...lucideIconProps} />;
 

@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Project } from "../../shared/types";
-import { groupAiBatchShotIds, summarizeAiBatchGroups } from "../../shared/ai/batch";
+import {
+  defaultAiBatchSize,
+  groupAiBatchShotIds,
+  summarizeAiBatchGroups,
+  type AiBatchSize
+} from "../../shared/ai/batch";
 import { CopyIcon, SettingsIcon } from "../icons";
 import {
   aiPanelSelectionState,
@@ -44,6 +49,8 @@ const referenceRoles = [
   "Prop reference"
 ];
 
+const aiBatchSizeOptions: AiBatchSize[] = [1, 4, 16];
+
 export const AiDraftPanel = ({
   isOpen,
   folderPath,
@@ -60,6 +67,7 @@ export const AiDraftPanel = ({
   const [status, setStatus] = useState("Ready");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [batchSize, setBatchSize] = useState<AiBatchSize>(defaultAiBatchSize);
   const {
     providerName,
     setProviderName,
@@ -143,6 +151,7 @@ export const AiDraftPanel = ({
     hasBatchCandidates
   } = useAiBatchGenerationController({
     aiClient,
+    batchSize,
     clearSingleCandidate: clearCandidate,
     folderPath,
     generationSettings: currentGenerationSettings,
@@ -158,8 +167,8 @@ export const AiDraftPanel = ({
   const visibleStatus = visibleAiStatusMessage(status);
   const canCopyRequestPreview = canCopyAiRequestPreview(selection);
   const plannedBatchGroups = useMemo(
-    () => (selection.kind === "multi" ? groupAiBatchShotIds(project, batchShotIds) : []),
-    [batchShotIds.join("|"), project, selection.kind]
+    () => (selection.kind === "multi" ? groupAiBatchShotIds(project, batchShotIds, batchSize) : []),
+    [batchShotIds.join("|"), batchSize, project, selection.kind]
   );
   const batchSummary =
     selection.kind === "multi" ? summarizeAiBatchGroups(selection.shots.length, plannedBatchGroups) : "";
@@ -242,26 +251,47 @@ export const AiDraftPanel = ({
   return (
     <aside className={`ai-draft-panel ${isOpen ? "is-open" : ""}`} aria-label="AI Draft panel">
       <header className="ai-draft-panel-header">
-        <div>
-          <span>
-            {selection.kind === "ready"
-              ? selection.shot.fileName
-              : selection.kind === "multi"
-                ? `${selection.shots.length} selected shots`
-                : "Select one storyboard"}
-          </span>
-          {selection.kind === "multi" ? <small>{batchSummary}</small> : null}
+        <div className="ai-draft-panel-header-main">
+          <div className="ai-draft-panel-title">
+            <span>
+              {selection.kind === "ready"
+                ? selection.shot.fileName
+                : selection.kind === "multi"
+                  ? `${selection.shots.length} selected shots`
+                  : "Select one storyboard"}
+            </span>
+            {selection.kind === "multi" ? <small>{batchSummary}</small> : null}
+          </div>
+          <button
+            type="button"
+            className={`ai-settings-toggle ${isSettingsOpen ? "selected" : ""}`}
+            aria-label="Toggle AI General Settings"
+            aria-expanded={isSettingsOpen}
+            title="General Settings"
+            onClick={() => setIsSettingsOpen((isOpen) => nextAiSettingsPanelOpen(isOpen))}
+          >
+            <SettingsIcon />
+          </button>
         </div>
-        <button
-          type="button"
-          className={`ai-settings-toggle ${isSettingsOpen ? "selected" : ""}`}
-          aria-label="Toggle AI General Settings"
-          aria-expanded={isSettingsOpen}
-          title="General Settings"
-          onClick={() => setIsSettingsOpen((isOpen) => nextAiSettingsPanelOpen(isOpen))}
-        >
-          <SettingsIcon />
-        </button>
+        {selection.kind === "multi" ? (
+          <div className="ai-batch-size-row">
+            <span>Batch Size</span>
+            <div className="ai-batch-size-control" role="group" aria-label="AI batch size">
+              {aiBatchSizeOptions.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={batchSize === option ? "selected" : ""}
+                  aria-pressed={batchSize === option}
+                  disabled={isGenerating}
+                  onClick={() => setBatchSize(option)}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </header>
 
       <div className="ai-draft-panel-content">

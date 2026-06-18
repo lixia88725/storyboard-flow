@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  aiBatchGenerationPayload,
   aiBatchApplySuccessStatus,
   aiBatchGenerationReadyStatus,
   aiBatchGenerationResetKey,
@@ -56,9 +57,35 @@ describe("AI batch generation controller", () => {
   it("resets batch candidates when folder or selected shots change", () => {
     expect(
       aiBatchGenerationResetKey({
+        batchSize: 16,
         folderPath: "/workspace",
         selectedShotIds: ["shot-1", "shot-2"]
       })
-    ).toBe("/workspace|shot-1|shot-2");
+    ).toBe("/workspace|16|shot-1|shot-2");
+  });
+
+  it("includes batch size in generation payloads", () => {
+    expect(
+      aiBatchGenerationPayload({
+        batchSize: 16,
+        folderPath: "/workspace",
+        generationSettings: { provider: "openai", model: "gpt-image-2" },
+        project: {
+          id: "project-1",
+          name: "Scene",
+          shots: [],
+          dialogues: [],
+          createdAt: "2026-06-18T00:00:00.000Z",
+          updatedAt: "2026-06-18T00:00:00.000Z"
+        },
+        resourceAssignments: { "shot-1": ["hero.png"] },
+        selectedResourceIds: ["hero.png"],
+        shotIds: ["shot-1", "shot-2"]
+      })
+    ).toMatchObject({
+      batchSize: 16,
+      folderPath: "/workspace",
+      shotIds: ["shot-1", "shot-2"]
+    });
   });
 });

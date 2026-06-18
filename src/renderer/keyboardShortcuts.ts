@@ -2,6 +2,7 @@ export type ShortcutAction =
   | "brush"
   | "eraser"
   | "select"
+  | "eyedropper"
   | "clearLayer"
   | "mergeDown"
   | "save"
@@ -43,6 +44,7 @@ export const defaultKeyboardShortcutsForPlatform = (
     brush: "B",
     eraser: "E",
     select: "V",
+    eyedropper: "I",
     clearLayer: "Escape",
     mergeDown: `${primaryModifier}+E`,
     save: `${primaryModifier}+S`,

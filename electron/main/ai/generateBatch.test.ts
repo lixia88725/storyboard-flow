@@ -35,6 +35,32 @@ const makeFourPanelSheet = async () =>
     .png()
     .toBuffer();
 
+const makeSixteenPanelSheet = async () => {
+  const colors = Array.from({ length: 16 }, (_item, index) => {
+    const channel = index * 16;
+    return `#${channel.toString(16).padStart(2, "0")}0000`;
+  });
+  return sharp({
+    create: {
+      width: 160,
+      height: 160,
+      channels: 4,
+      background: "#ffffff"
+    }
+  })
+    .composite(
+      await Promise.all(
+        colors.map(async (color, index) => ({
+          input: await makePng(color, 40, 40),
+          left: (index % 4) * 40,
+          top: Math.floor(index / 4) * 40
+        }))
+      )
+    )
+    .png()
+    .toBuffer();
+};
+
 const centerPixel = async (filePath: string): Promise<[number, number, number]> => {
   const { data, info } = await sharp(await readFile(filePath))
     .resize({ width: 1, height: 1, fit: "fill" })
@@ -128,6 +154,40 @@ describe("AI batch candidate generation", () => {
     await expect(centerPixel(result.candidates[1].filePath)).resolves.toEqual([0, 255, 0]);
     await expect(centerPixel(result.candidates[2].filePath)).resolves.toEqual([0, 0, 255]);
     await expect(centerPixel(result.candidates[3].filePath)).resolves.toEqual([255, 255, 0]);
+  });
+
+  it("generates one 16-panel contact sheet and crops sixteen candidates back to matching shots", async () => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-ai-batch-16-"));
+    const project = await makeProject(folderPath, 16);
+    const calls: Array<{ prompt: string; width?: number; height?: number; images: Array<{ name: string; buffer: Buffer }> }> = [];
+
+    const result = await generateAiBatchCandidates({
+      folderPath,
+      project,
+      shotIds: project.shots.map((shot) => shot.id).reverse(),
+      batchSize: 16,
+      provider: {
+        generate: async (request) => {
+          calls.push(request);
+          return makeSixteenPanelSheet();
+        }
+      }
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].prompt).toContain("sixteen equal panels in a 4x4 grid");
+    expect(calls[0].images.map((image) => image.name)).toEqual(["selected-storyboards-contact-sheet.png"]);
+    expect(result.groups).toEqual([
+      {
+        index: 0,
+        shotIds: project.shots.map((shot) => shot.id),
+        candidateIds: result.candidates.map((candidate) => candidate.id)
+      }
+    ]);
+    expect(result.candidates).toHaveLength(16);
+    expect(result.candidates.map((candidate) => candidate.shotId)).toEqual(project.shots.map((shot) => shot.id));
+    await expect(centerPixel(result.candidates[0].filePath)).resolves.toEqual([0, 0, 0]);
+    await expect(centerPixel(result.candidates[15].filePath)).resolves.toEqual([240, 0, 0]);
   });
 
   it("sends only resources used by each batch group", async () => {

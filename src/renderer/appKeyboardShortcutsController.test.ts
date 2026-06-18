@@ -122,6 +122,16 @@ describe("appKeyboardShortcutsController", () => {
     expect(options.setActiveSketchTool).toHaveBeenCalledWith("brush");
   });
 
+  it("switches to eyedropper from the fixed I shortcut", () => {
+    const { handler, options } = createHarness();
+    const event = keyboardEvent("i");
+
+    handler(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(options.setActiveSketchTool).toHaveBeenCalledWith("eyedropper");
+  });
+
   it("moves keyboard shot selection with arrow keys", () => {
     const { handler, selectedShotIdsRef, shotSelectionAnchorIdRef } = createHarness();
     const event = keyboardEvent("ArrowDown");

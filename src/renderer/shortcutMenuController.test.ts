@@ -7,6 +7,7 @@ describe("shortcutMenuController", () => {
       ["brush", "Brush"],
       ["eraser", "Eraser"],
       ["select", "Select"],
+      ["eyedropper", "Eyedropper"],
       ["clearLayer", "Clear layer"],
       ["mergeDown", "Merge"],
       ["save", "Save"],

@@ -17,6 +17,7 @@ type WorkspaceTaskProgress = {
 };
 
 type AiProviderName = "openai" | "seedream" | "comfyui";
+type AiBatchSize = 1 | 4 | 16;
 
 type ComfyUiSettings = {
   serverUrl: string;
@@ -229,6 +230,7 @@ declare global {
           folderPath: string;
           project: Project;
           shotIds: string[];
+          batchSize?: AiBatchSize;
           selectedResourceIds?: string[];
           resourceAssignments?: Record<string, string[]>;
           generationSettings?: {
@@ -258,6 +260,7 @@ declare global {
           project: Project;
           shotId?: string;
           shotIds?: string[];
+          batchSize?: AiBatchSize;
           selectedShotContext?: string;
           selectedResourceIds?: string[];
           resourceAssignments?: Record<string, string[]>;

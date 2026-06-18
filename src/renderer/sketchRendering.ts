@@ -1,7 +1,7 @@
-import type { BitmapLayer, Shot, SketchBlendMode, SketchStroke } from "../shared/types";
+import type { BitmapBlendMode, BitmapLayer, Shot, SketchBlendMode, SketchStroke } from "../shared/types";
 import { sketchCanvasSize, type CanvasSize } from "./sketchGeometry";
 
-export const canvasBlendMode = (blendMode: SketchBlendMode | undefined) => {
+export const canvasBlendMode = (blendMode: BitmapBlendMode | SketchBlendMode | undefined) => {
   if (blendMode === "multiply" || blendMode === "screen") {
     return blendMode;
   }
@@ -30,6 +30,32 @@ export const aspectRatioForShot = (shot: Shot): number => {
 };
 
 export type RgbaColor = readonly [number, number, number, number];
+
+const hexComponent = (value: number): string =>
+  Math.min(255, Math.max(0, Math.round(value))).toString(16).padStart(2, "0");
+
+export const rgbaToHex = (red: number, green: number, blue: number): string =>
+  `#${hexComponent(red)}${hexComponent(green)}${hexComponent(blue)}`;
+
+export const sampleImageDataColorAtPoint = (
+  imageData: ImageData,
+  point: { x: number; y: number }
+): string | undefined => {
+  const x = Math.floor(point.x);
+  const y = Math.floor(point.y);
+
+  if (x < 0 || y < 0 || x >= imageData.width || y >= imageData.height) {
+    return undefined;
+  }
+
+  const offset = (y * imageData.width + x) * 4;
+  const alpha = imageData.data[offset + 3];
+  if (alpha <= 0) {
+    return undefined;
+  }
+
+  return rgbaToHex(imageData.data[offset], imageData.data[offset + 1], imageData.data[offset + 2]);
+};
 
 export const hexToRgba = (hexColor: string): RgbaColor => {
   const normalized = hexColor.trim().replace(/^#/, "");
@@ -153,19 +179,39 @@ export const drawStrokePathOnCanvas = (
 export const shouldDrawStrokeToBitmapLayer = (stroke: Pick<SketchStroke, "points">): boolean =>
   stroke.points.length >= 2;
 
-export const drawImageUrl = (
+const loadImageUrl = (sourceUrl: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not load layer bitmap"));
+    image.src = sourceUrl;
+  });
+
+export const drawImageUrl = async (
   context: CanvasRenderingContext2D,
   sourceUrl: string,
   width: number,
   height: number
-): Promise<void> =>
-  new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => {
-      context.clearRect(0, 0, width, height);
-      context.drawImage(image, 0, 0, width, height);
-      resolve();
-    };
-    image.onerror = () => reject(new Error("Could not load layer bitmap"));
-    image.src = sourceUrl;
-  });
+): Promise<void> => {
+  const image = await loadImageUrl(sourceUrl);
+  context.clearRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+};
+
+export const drawBitmapLayerImageUrl = async (
+  context: CanvasRenderingContext2D,
+  layer: BitmapLayer,
+  sourceUrl: string,
+  width: number,
+  height: number
+): Promise<void> => {
+  const image = await loadImageUrl(sourceUrl);
+  context.save();
+  try {
+    context.globalAlpha = layer.opacity;
+    context.globalCompositeOperation = canvasBlendMode(layer.blendMode);
+    context.drawImage(image, 0, 0, width, height);
+  } finally {
+    context.restore();
+  }
+};

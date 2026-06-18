@@ -1418,6 +1418,7 @@ export const App = () => {
                       onFill={(layerId, point, color) =>
                         handleBitmapFill(shot, layerId, point, color)
                       }
+                      onPickColor={setBrushColor}
                       onSketchBeginInteraction={closeRadialToolMenu}
                     />
                   );

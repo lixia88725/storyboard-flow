@@ -161,7 +161,12 @@ export const createAppKeyboardKeyDownHandler = ({
     if (shortcutAction) {
       event.preventDefault();
 
-      if (shortcutAction === "brush" || shortcutAction === "eraser" || shortcutAction === "select") {
+      if (
+        shortcutAction === "brush" ||
+        shortcutAction === "eraser" ||
+        shortcutAction === "select" ||
+        shortcutAction === "eyedropper"
+      ) {
         setActiveSketchTool(shortcutAction);
         return;
       }

@@ -28,9 +28,9 @@ const makeProject = (count: number): Project => ({
 });
 
 describe("AI batch generation planning", () => {
-  it("groups selected shots into 4-up batches in storyboard order", () => {
+  it("groups selected shots into configurable batches in storyboard order", () => {
     const project = makeProject(19);
-    const groups = groupAiBatchShotIds(project, [
+    const selectedShotIds = [
       "shot-8",
       "shot-1",
       "shot-19",
@@ -50,14 +50,26 @@ describe("AI batch generation planning", () => {
       "shot-16",
       "shot-17",
       "shot-18"
-    ]);
+    ];
+    const groups = groupAiBatchShotIds(project, selectedShotIds);
 
     expect(groups.map((group) => group.shotIds.length)).toEqual([4, 4, 4, 4, 3]);
     expect(groups[0].shotIds).toEqual(["shot-1", "shot-2", "shot-3", "shot-4"]);
     expect(summarizeAiBatchGroups(19, groups)).toBe("19 shots -> 5 generations: 4, 4, 4, 4, 3");
+
+    expect(groupAiBatchShotIds(project, selectedShotIds, 1).map((group) => group.shotIds.length)).toEqual(
+      Array.from({ length: 19 }, () => 1)
+    );
+    expect(groupAiBatchShotIds(project, selectedShotIds, 16).map((group) => group.shotIds.length)).toEqual([
+      16,
+      3
+    ]);
+    expect(summarizeAiBatchGroups(19, groupAiBatchShotIds(project, selectedShotIds, 16))).toBe(
+      "19 shots -> 2 generations: 16, 3"
+    );
   });
 
-  it("returns fixed crop templates for 1, 2, 3, and 4 panels", () => {
+  it("returns adaptive crop templates for 1 through 16 panels", () => {
     expect(aiBatchPanelLayout(1).rects).toEqual([{ x: 0, y: 0, width: 1, height: 1 }]);
     expect(aiBatchPanelLayout(2).rects).toEqual([
       { x: 0, y: 0, width: 0.5, height: 1 },
@@ -70,7 +82,16 @@ describe("AI batch generation planning", () => {
       { x: 0, y: 0.5, width: 0.5, height: 0.5 },
       { x: 0.5, y: 0.5, width: 0.5, height: 0.5 }
     ]);
-    expect(() => aiBatchPanelLayout(5)).toThrow("Unsupported AI batch panel count");
+    expect(aiBatchPanelLayout(5)).toMatchObject({ name: "6-up-grid", columns: 3, rows: 2 });
+    expect(aiBatchPanelLayout(6).rects).toHaveLength(6);
+    expect(aiBatchPanelLayout(7)).toMatchObject({ name: "9-up-grid", columns: 3, rows: 3 });
+    expect(aiBatchPanelLayout(9).rects).toHaveLength(9);
+    expect(aiBatchPanelLayout(10)).toMatchObject({ name: "12-up-grid", columns: 4, rows: 3 });
+    expect(aiBatchPanelLayout(12).rects).toHaveLength(12);
+    expect(aiBatchPanelLayout(13)).toMatchObject({ name: "16-up-grid", columns: 4, rows: 4 });
+    expect(aiBatchPanelLayout(16).rects).toHaveLength(16);
+    expect(aiBatchPanelLayout(16).rects[15]).toEqual({ x: 0.75, y: 0.75, width: 0.25, height: 0.25 });
+    expect(() => aiBatchPanelLayout(17)).toThrow("Unsupported AI batch panel count");
   });
 
   it("uses the union of resources available to shots in a batch group", () => {

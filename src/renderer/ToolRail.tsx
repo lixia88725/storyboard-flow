@@ -7,6 +7,7 @@ import {
   CardFaceIcon,
   ClearIcon,
   EraserIcon,
+  EyedropperIcon,
   SelectIcon,
   SwatchIcon
 } from "./icons";
@@ -71,6 +72,18 @@ export const ToolRail = ({
       aria-label="Eraser"
     >
       <EraserIcon />
+    </button>
+    <button
+      type="button"
+      className={activeSketchTool === "eyedropper" ? "selected" : ""}
+      onClick={() => {
+        setActiveSketchTool("eyedropper");
+        closeRadialToolMenu();
+      }}
+      title="Eyedropper"
+      aria-label="Eyedropper"
+    >
+      <EyedropperIcon />
     </button>
     <button
       type="button"

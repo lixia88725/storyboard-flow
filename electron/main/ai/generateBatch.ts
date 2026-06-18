@@ -5,10 +5,12 @@ import {
   aiBatchPanelLayout,
   assembleAiBatchImagePrompt,
   groupAiBatchShotIds,
+  normalizeAiBatchSize,
   orderedAiBatchShots,
   type AiBatchGroup,
   type AiBatchPanelRect,
-  type AiBatchResourceAssignments
+  type AiBatchResourceAssignments,
+  type AiBatchSize
 } from "./batch.js";
 import type { AiSelectedReference } from "./context.js";
 import { writeAiCandidate, type AiCandidateMetadata } from "./candidates.js";
@@ -22,6 +24,7 @@ export type GenerateAiBatchCandidatesInput = {
   folderPath: string;
   project: Project;
   shotIds: string[];
+  batchSize?: AiBatchSize;
   selectedResourceIds?: string[];
   resourceAssignments?: AiBatchResourceAssignments;
   generationSettings?: {
@@ -115,12 +118,13 @@ export const generateAiBatchCandidates = async ({
   folderPath,
   project,
   shotIds,
+  batchSize,
   selectedResourceIds = [],
   resourceAssignments = {},
   generationSettings,
   provider = createOpenAiImageProvider()
 }: GenerateAiBatchCandidatesInput): Promise<AiBatchGenerationResult> => {
-  const groups = groupAiBatchShotIds(project, shotIds);
+  const groups = groupAiBatchShotIds(project, shotIds, normalizeAiBatchSize(batchSize));
   if (groups.length === 0) {
     throw new Error("No shots selected for AI batch generation");
   }

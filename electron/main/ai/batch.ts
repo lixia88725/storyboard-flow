@@ -2,6 +2,7 @@ import type { Project, Shot } from "./types.js";
 import type { AiSelectedReference } from "./context.js";
 
 export type AiBatchResourceAssignments = Record<string, string[]>;
+export type AiBatchSize = 1 | 4 | 16;
 
 export type AiBatchGroup = {
   index: number;
@@ -16,7 +17,15 @@ export type AiBatchPanelRect = {
 };
 
 export type AiBatchPanelLayout = {
-  name: "1-up" | "2-up-horizontal" | "3-up-horizontal" | "4-up-grid";
+  name:
+    | "1-up"
+    | "2-up-horizontal"
+    | "3-up-horizontal"
+    | "4-up-grid"
+    | "6-up-grid"
+    | "9-up-grid"
+    | "12-up-grid"
+    | "16-up-grid";
   description: string;
   columns: number;
   rows: number;
@@ -36,7 +45,10 @@ export type AiBatchResourceIdsForGroupInput = {
   resourceAssignments?: AiBatchResourceAssignments;
 };
 
-const batchSize = 4;
+export const defaultAiBatchSize: AiBatchSize = 4;
+
+export const normalizeAiBatchSize = (value: unknown): AiBatchSize =>
+  value === 1 || value === 4 || value === 16 ? value : defaultAiBatchSize;
 
 const dialoguesForShot = (project: Project, shotId: string) =>
   project.dialogues
@@ -48,7 +60,11 @@ export const orderedAiBatchShots = (project: Project, shotIds: string[]): Shot[]
   return project.shots.filter((shot) => selected.has(shot.id)).sort((a, b) => a.order - b.order);
 };
 
-export const groupAiBatchShotIds = (project: Project, shotIds: string[]): AiBatchGroup[] => {
+export const groupAiBatchShotIds = (
+  project: Project,
+  shotIds: string[],
+  batchSize: AiBatchSize = defaultAiBatchSize
+): AiBatchGroup[] => {
   const orderedShotIds = orderedAiBatchShots(project, shotIds).map((shot) => shot.id);
   const groups: AiBatchGroup[] = [];
   for (let index = 0; index < orderedShotIds.length; index += batchSize) {
@@ -135,7 +151,51 @@ export const aiBatchPanelLayout = (panelCount: number): AiBatchPanelLayout => {
       ]
     };
   }
+  if (panelCount > 4 && panelCount <= 16) {
+    return aiBatchGridLayout(panelCount);
+  }
   throw new Error(`Unsupported AI batch panel count: ${panelCount}`);
+};
+
+const aiBatchGridLayout = (panelCount: number): AiBatchPanelLayout => {
+  const grid =
+    panelCount <= 6
+      ? {
+          name: "6-up-grid" as const,
+          columns: 3,
+          rows: 2,
+          description: "six equal panels in a 3x2 grid, reading left to right then top to bottom"
+        }
+      : panelCount <= 9
+        ? {
+            name: "9-up-grid" as const,
+            columns: 3,
+            rows: 3,
+            description: "nine equal panels in a 3x3 grid, reading left to right then top to bottom"
+          }
+        : panelCount <= 12
+          ? {
+              name: "12-up-grid" as const,
+              columns: 4,
+              rows: 3,
+              description: "twelve equal panels in a 4x3 grid, reading left to right then top to bottom"
+            }
+          : {
+              name: "16-up-grid" as const,
+              columns: 4,
+              rows: 4,
+              description: "sixteen equal panels in a 4x4 grid, reading left to right then top to bottom"
+            };
+  return {
+    ...grid,
+    description: `${grid.description}.`,
+    rects: Array.from({ length: panelCount }, (_item, index) => ({
+      x: (index % grid.columns) / grid.columns,
+      y: Math.floor(index / grid.columns) / grid.rows,
+      width: 1 / grid.columns,
+      height: 1 / grid.rows
+    }))
+  };
 };
 
 const cleanAssignment = (

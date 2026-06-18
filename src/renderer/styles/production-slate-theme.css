@@ -241,11 +241,6 @@ button:disabled {
   opacity: 0.58;
 }
 
-.dialogue-grip {
-  background:
-    radial-gradient(currentColor 1.2px, transparent 1.2px) 0 0 / 6px 6px;
-}
-
 .dialogue-preview,
 .shot-stack-card,
 .parked-shot-card {

@@ -4,6 +4,7 @@ import {
   drawStrokePathOnCanvas,
   fillImageDataAtPoint,
   hexToRgba,
+  sampleImageDataColorAtPoint,
   shouldDrawStrokeToBitmapLayer
 } from "./sketchRendering";
 import type { Shot, SketchStroke } from "../shared/types";
@@ -140,6 +141,23 @@ describe("sketch rendering", () => {
   it("allows committed single-point strokes to be written to bitmap layers", () => {
     expect(shouldDrawStrokeToBitmapLayer({ points: [12, 16] })).toBe(true);
     expect(shouldDrawStrokeToBitmapLayer({ points: [] })).toBe(false);
+  });
+
+  it("samples an opaque image-data pixel as a brush hex color", () => {
+    const imageData = testImageData(2, 1, [
+      240, 90, 40, 255,
+      12, 34, 56, 255
+    ]);
+
+    expect(sampleImageDataColorAtPoint(imageData, { x: 1.2, y: 0.8 })).toBe("#0c2238");
+  });
+
+  it("does not sample transparent image-data pixels", () => {
+    const imageData = testImageData(1, 1, [
+      240, 90, 40, 0
+    ]);
+
+    expect(sampleImageDataColorAtPoint(imageData, { x: 0, y: 0 })).toBeUndefined();
   });
 
   it("fills a transparent image when the target layer is empty", () => {

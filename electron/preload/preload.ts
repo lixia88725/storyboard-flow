@@ -88,6 +88,7 @@ type AiCredentialStatus = {
 };
 
 type AiProviderName = "openai" | "seedream" | "comfyui";
+type AiBatchSize = 1 | 4 | 16;
 
 type AiGenerateCandidatePayload = {
   folderPath: string;
@@ -105,6 +106,7 @@ type AiGenerateBatchCandidatesPayload = {
   folderPath: string;
   project: unknown;
   shotIds: string[];
+  batchSize?: AiBatchSize;
   selectedResourceIds?: string[];
   resourceAssignments?: Record<string, string[]>;
   generationSettings?: {

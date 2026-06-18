@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Project } from "../../shared/types";
+import type { AiBatchSize } from "../../shared/ai/batch";
 import type { AiDraftClient } from "./aiClient";
 import type { AiPanelSelectionState } from "./aiPanelState";
 import type { AiCandidate } from "./useAiCandidateController";
@@ -24,15 +25,44 @@ export const aiBatchApplySuccessStatus = (candidateCount: number): string =>
   `${candidateCount} AI Draft layers added`;
 
 export const aiBatchGenerationResetKey = ({
+  batchSize,
   folderPath,
   selectedShotIds
 }: {
+  batchSize: AiBatchSize;
   folderPath: string;
   selectedShotIds: string[];
-}): string => [folderPath, ...selectedShotIds].join("|");
+}): string => [folderPath, String(batchSize), ...selectedShotIds].join("|");
+
+export const aiBatchGenerationPayload = ({
+  batchSize,
+  folderPath,
+  generationSettings,
+  project,
+  resourceAssignments,
+  selectedResourceIds,
+  shotIds
+}: {
+  batchSize: AiBatchSize;
+  folderPath: string;
+  generationSettings: AiGenerationSettings;
+  project: Project;
+  resourceAssignments: Record<string, string[]>;
+  selectedResourceIds: string[];
+  shotIds: string[];
+}): Parameters<AiDraftClient["generateBatchCandidates"]>[0] => ({
+  batchSize,
+  folderPath,
+  project,
+  shotIds,
+  selectedResourceIds,
+  resourceAssignments,
+  generationSettings
+});
 
 export const useAiBatchGenerationController = ({
   aiClient,
+  batchSize,
   clearSingleCandidate,
   folderPath,
   generationSettings,
@@ -46,6 +76,7 @@ export const useAiBatchGenerationController = ({
   onProjectChange
 }: {
   aiClient: AiDraftClient;
+  batchSize: AiBatchSize;
   clearSingleCandidate: () => void;
   folderPath: string;
   generationSettings: AiGenerationSettings;
@@ -60,7 +91,7 @@ export const useAiBatchGenerationController = ({
 }) => {
   const [batchCandidates, setBatchCandidates] = useState<AiBatchCandidate[]>([]);
   const [batchGroups, setBatchGroups] = useState<AiBatchGroupResult[]>([]);
-  const resetKey = aiBatchGenerationResetKey({ folderPath, selectedShotIds });
+  const resetKey = aiBatchGenerationResetKey({ batchSize, folderPath, selectedShotIds });
 
   useEffect(() => {
     setBatchCandidates([]);
@@ -81,14 +112,15 @@ export const useAiBatchGenerationController = ({
     setIsGenerating(true);
     setStatus("Generating AI batch candidates...");
     try {
-      const result = await aiClient.generateBatchCandidates({
+      const result = await aiClient.generateBatchCandidates(aiBatchGenerationPayload({
+        batchSize,
         folderPath,
+        generationSettings,
         project,
-        shotIds: batchShotIds,
-        selectedResourceIds,
         resourceAssignments,
-        generationSettings
-      });
+        selectedResourceIds,
+        shotIds: batchShotIds
+      }));
       setBatchCandidates(result.candidates);
       setBatchGroups(result.groups);
       clearSingleCandidate();
@@ -105,14 +137,15 @@ export const useAiBatchGenerationController = ({
       return;
     }
     try {
-      await aiClient.copyRequestPreview({
+      await aiClient.copyRequestPreview(aiBatchGenerationPayload({
+        batchSize,
         folderPath,
+        generationSettings,
         project,
-        shotIds: batchShotIds,
-        selectedResourceIds,
         resourceAssignments,
-        generationSettings
-      });
+        selectedResourceIds,
+        shotIds: batchShotIds
+      }));
       setStatus("AI request preview copied");
     } catch (error) {
       setStatus(`Could not copy AI request preview: ${error instanceof Error ? error.message : String(error)}`);

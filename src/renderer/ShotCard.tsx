@@ -25,6 +25,7 @@ import { isDialogueDropZoneHighlighted, type DragData } from "./storyboardDnd";
 export type CardFace = "image" | "script";
 
 const maxDialogueRows = 3;
+const dialogueGripDots = Array.from({ length: 9 }, (_item, index) => index);
 
 const dialogueLines = (text: string) => text.replace(/\r\n?/g, "\n").split("\n");
 const clampDialogueText = (text: string) => dialogueLines(text).slice(0, maxDialogueRows).join("\n");
@@ -102,6 +103,7 @@ export type ShotCardProps = {
   ) => Promise<string | undefined>;
   onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
   onFill: (layerId: string, point: { x: number; y: number }, color: string) => Promise<string | undefined>;
+  onPickColor: (color: string) => void;
   onSketchBeginInteraction?: () => void;
 };
 
@@ -152,6 +154,7 @@ export const ShotCard = ({
   onSketchStroke,
   onSelectionTransform,
   onFill,
+  onPickColor,
   onSketchBeginInteraction
 }: ShotCardProps) => {
   const cardRef = useRef<HTMLElement | null>(null);
@@ -267,6 +270,7 @@ export const ShotCard = ({
                   onStroke={onSketchStroke}
                   onSelectionTransform={onSelectionTransform}
                   onFill={onFill}
+                  onPickColor={onPickColor}
                   onFocusShot={onFocusShot}
                   onBeginInteraction={onSketchBeginInteraction}
                 />
@@ -389,7 +393,11 @@ const DialogueCard = ({ dialogue, isEditing, onChange, onBlur }: DialogueCardPro
         {...sortable.listeners}
         title="Drag dialogue to another shot"
       >
-        ::
+        <span className="dialogue-grip-dots" aria-hidden="true">
+          {dialogueGripDots.map((dot) => (
+            <span key={dot} />
+          ))}
+        </span>
       </button>
       <textarea
         ref={textareaRef}

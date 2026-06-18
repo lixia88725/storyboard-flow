@@ -6,8 +6,10 @@ import {
   aiBatchResourceIdsForGroup,
   assembleAiBatchImagePrompt,
   groupAiBatchShotIds,
+  normalizeAiBatchSize,
   summarizeAiBatchGroups,
-  type AiBatchResourceAssignments
+  type AiBatchResourceAssignments,
+  type AiBatchSize
 } from "./batch.js";
 import { validateComfyUiWorkflow } from "./comfyUiWorkflow.js";
 import type { ComfyUiSettings } from "./settings.js";
@@ -17,6 +19,7 @@ export type AiRequestPreviewInput = {
   project: Project;
   shotId?: string;
   shotIds?: string[];
+  batchSize?: AiBatchSize;
   selectedShotContext?: string;
   selectedResourceIds?: string[];
   resourceAssignments?: AiBatchResourceAssignments;
@@ -65,6 +68,7 @@ export const buildAiRequestPreview = async ({
   project,
   shotId,
   shotIds,
+  batchSize,
   selectedShotContext,
   selectedResourceIds = [],
   resourceAssignments = {},
@@ -86,7 +90,7 @@ export const buildAiRequestPreview = async ({
   const batchShotIds = shotIds ?? [];
 
   if (batchShotIds.length > 1) {
-    const groups = groupAiBatchShotIds(project, batchShotIds);
+    const groups = groupAiBatchShotIds(project, batchShotIds, normalizeAiBatchSize(batchSize));
     const groupPreviews = groups.map((group) => {
       const groupResourceIds = new Set(
         aiBatchResourceIdsForGroup({

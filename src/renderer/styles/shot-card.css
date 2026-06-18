@@ -420,26 +420,39 @@
 
 .dialogue-grip {
   overflow: hidden;
+  display: grid;
+  place-items: center;
   padding: 0;
   width: 1.28em;
   min-height: 1.28em;
   justify-self: center;
   cursor: grab;
   border: 0;
-  background:
-    radial-gradient(currentColor 0.085em, transparent 0.085em) 0 0 / 0.43em 0.43em;
+  background: transparent;
   color: var(--slate-muted);
   box-shadow: none;
   font-size: 1em;
   line-height: 1;
   opacity: 0.75;
-  text-indent: -999px;
 }
 
 .dialogue-grip:hover,
 .dialogue-grip:focus-visible {
-  background:
-    radial-gradient(currentColor 0.085em, transparent 0.085em) 0 0 / 0.43em 0.43em;
+  color: var(--slate-text);
+}
+
+.dialogue-grip-dots {
+  display: grid;
+  grid-template-columns: repeat(3, 0.16em);
+  grid-template-rows: repeat(3, 0.16em);
+  gap: 0.24em;
+}
+
+.dialogue-grip-dots span {
+  width: 0.16em;
+  height: 0.16em;
+  border-radius: 999px;
+  background: currentColor;
 }
 
 .dialogue-card textarea {

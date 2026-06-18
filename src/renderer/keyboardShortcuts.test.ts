@@ -78,6 +78,11 @@ describe("keyboardShortcuts", () => {
     });
   });
 
+  it("defaults eyedropper to the Photoshop-style I shortcut", () => {
+    expect(defaultKeyboardShortcuts.eyedropper).toBe("I");
+    expect(shortcutActionFromKeyboardEvent(keyboardEvent("i"))).toBe("eyedropper");
+  });
+
   it("adjusts brush size by visible ten percent steps within bounds", () => {
     expect(adjustSketchShortcutValue(10, "decrease", 0.1, 1, 28)).toBe(9);
     expect(adjustSketchShortcutValue(10, "increase", 0.1, 1, 28)).toBe(11);

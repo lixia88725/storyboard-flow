@@ -5,6 +5,7 @@ export const shortcutMenuItems: Array<{ action: ShortcutAction; label: string }>
   { action: "brush", label: "Brush" },
   { action: "eraser", label: "Eraser" },
   { action: "select", label: "Select" },
+  { action: "eyedropper", label: "Eyedropper" },
   { action: "clearLayer", label: "Clear layer" },
   { action: "mergeDown", label: "Merge" },
   { action: "save", label: "Save" },
