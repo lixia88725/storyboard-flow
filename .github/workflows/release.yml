@@ -74,6 +74,7 @@ jobs:
           name: windows-portable
           path: release-artifacts/**/*.zip
           if-no-files-found: error
+          retention-days: 1
 
   package-macos:
     name: Package macOS
@@ -111,6 +112,7 @@ jobs:
           name: macos
           path: release-artifacts/**/*.zip
           if-no-files-found: error
+          retention-days: 1
 
   publish:
     name: Publish release assets
