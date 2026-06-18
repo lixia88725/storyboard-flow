@@ -176,7 +176,6 @@ jobs:
 
           mkdir release-repo
           gh repo clone "$RELEASE_REPO" release-repo -- --depth 1
-          cd release-repo
           node -e '
             const fs = require("fs");
             const manifest = {
@@ -189,11 +188,13 @@ jobs:
             };
             if (process.env.macos_arm64_url) manifest.downloads.macosAppleSilicon = process.env.macos_arm64_url;
             if (process.env.macos_x64_url) manifest.downloads.macosIntel = process.env.macos_x64_url;
-            fs.writeFileSync("update.json", `${JSON.stringify(manifest, null, 2)}\n`);
+            fs.writeFileSync("release-repo/update.json", `${JSON.stringify(manifest, null, 2)}\n`);
           '
+          node scripts/generate-release-readme.mjs release-repo/README.md
+          cd release-repo
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add update.json
-          git commit -m "Update Storyboard Flow $STORYBOARD_FLOW_VERSION manifest" || exit 0
+          git add update.json README.md
+          git commit -m "Update Storyboard Flow $STORYBOARD_FLOW_VERSION release info" || exit 0
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${RELEASE_REPO}.git"
           git push
