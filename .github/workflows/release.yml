@@ -35,9 +35,38 @@ jobs:
       - run: npm run test
       - run: npm run typecheck
 
+  prepare-release:
+    name: Prepare public release
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve release metadata
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.version }}"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            base_version="$(node -p "const v=require('./package.json').version.split('.'); v[0]+'.'+v[1]")"
+            version="${base_version}.${{ github.run_number }}"
+          fi
+          echo "STORYBOARD_FLOW_VERSION=$version" >> "$GITHUB_ENV"
+          echo "STORYBOARD_FLOW_TAG=v$version" >> "$GITHUB_ENV"
+      - name: Create empty public release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+        run: |
+          gh release delete "$STORYBOARD_FLOW_TAG" --repo "$RELEASE_REPO" --yes --cleanup-tag || true
+          gh release create "$STORYBOARD_FLOW_TAG" \
+            --repo "$RELEASE_REPO" \
+            --title "Storyboard Flow $STORYBOARD_FLOW_VERSION" \
+            --notes "Storyboard Flow $STORYBOARD_FLOW_VERSION"
+
   package-windows:
     name: Package Windows portable
-    needs: test
+    needs: prepare-release
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,13 +81,15 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            "STORYBOARD_FLOW_VERSION=${{ inputs.version }}" >> $env:GITHUB_ENV
+            $version = "${{ inputs.version }}"
           } elseif ("${{ github.ref_type }}" -eq "tag") {
-            "STORYBOARD_FLOW_VERSION=$($env:GITHUB_REF_NAME -replace '^v','')" >> $env:GITHUB_ENV
+            $version = $env:GITHUB_REF_NAME -replace '^v',''
           } else {
             $baseVersion = node -p "const v=require('./package.json').version.split('.'); v[0]+'.'+v[1]"
-            "STORYBOARD_FLOW_VERSION=$baseVersion.${{ github.run_number }}" >> $env:GITHUB_ENV
+            $version = "$baseVersion.${{ github.run_number }}"
           }
+          "STORYBOARD_FLOW_VERSION=$version" >> $env:GITHUB_ENV
+          "STORYBOARD_FLOW_TAG=v$version" >> $env:GITHUB_ENV
       - run: npm ci
       - name: Install Windows Photoshop TIFF Python deps
         shell: pwsh
@@ -69,16 +100,15 @@ jobs:
           STORYBOARD_FLOW_PACKAGE_DIR: ${{ github.workspace }}\release-artifacts
           STORYBOARD_FLOW_WINDOWS_PYTHON_DIR: ${{ env.pythonLocation }}
         run: npm run package:windows
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-portable
-          path: release-artifacts/**/*.zip
-          if-no-files-found: error
-          retention-days: 1
+      - name: Upload Windows release asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+        run: gh release upload "$env:STORYBOARD_FLOW_TAG" release-artifacts/*.zip --repo "$env:RELEASE_REPO" --clobber
 
   package-macos:
     name: Package macOS
-    needs: test
+    needs: prepare-release
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -93,13 +123,15 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "STORYBOARD_FLOW_VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+            version="${{ inputs.version }}"
           elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "STORYBOARD_FLOW_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+            version="${GITHUB_REF_NAME#v}"
           else
             base_version="$(node -p "const v=require('./package.json').version.split('.'); v[0]+'.'+v[1]")"
-            echo "STORYBOARD_FLOW_VERSION=${base_version}.${{ github.run_number }}" >> "$GITHUB_ENV"
+            version="${base_version}.${{ github.run_number }}"
           fi
+          echo "STORYBOARD_FLOW_VERSION=$version" >> "$GITHUB_ENV"
+          echo "STORYBOARD_FLOW_TAG=v$version" >> "$GITHUB_ENV"
       - run: npm ci
       - name: Install macOS Photoshop TIFF Python deps
         run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
@@ -107,12 +139,10 @@ jobs:
         env:
           STORYBOARD_FLOW_PACKAGE_DIR: ${{ github.workspace }}/release-artifacts
         run: npm run package:macos
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos
-          path: release-artifacts/**/*.zip
-          if-no-files-found: error
-          retention-days: 1
+      - name: Upload macOS release asset
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+        run: gh release upload "$STORYBOARD_FLOW_TAG" release-artifacts/*.zip --repo "$RELEASE_REPO" --clobber
 
   publish:
     name: Publish release assets
@@ -124,17 +154,6 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-      - name: Collect release zips
-        shell: bash
-        run: |
-          mkdir -p release-zips
-          find artifacts -type f -name "Storyboard-Flow-*.zip" -exec cp {} release-zips/ \;
-          ls -lh release-zips
-          test -f release-zips/Storyboard-Flow-Windows-x64.zip
       - name: Resolve release metadata
         shell: bash
         run: |
@@ -148,15 +167,6 @@ jobs:
           fi
           echo "STORYBOARD_FLOW_VERSION=$version" >> "$GITHUB_ENV"
           echo "STORYBOARD_FLOW_TAG=v$version" >> "$GITHUB_ENV"
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
-        run: |
-          gh release delete "$STORYBOARD_FLOW_TAG" --repo "$RELEASE_REPO" --yes --cleanup-tag || true
-          gh release create "$STORYBOARD_FLOW_TAG" release-zips/*.zip \
-            --repo "$RELEASE_REPO" \
-            --title "Storyboard Flow $STORYBOARD_FLOW_VERSION" \
-            --notes "Storyboard Flow $STORYBOARD_FLOW_VERSION"
       - name: Update public update.json
         env:
           GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
@@ -164,14 +174,16 @@ jobs:
         run: |
           release_url="https://github.com/$RELEASE_REPO/releases/tag/$STORYBOARD_FLOW_TAG"
           asset_base="https://github.com/$RELEASE_REPO/releases/download/$STORYBOARD_FLOW_TAG"
+          asset_names="$(gh release view "$STORYBOARD_FLOW_TAG" --repo "$RELEASE_REPO" --json assets --jq '.assets[].name')"
           windows_url="$asset_base/Storyboard-Flow-Windows-x64.zip"
           macos_arm64_url=""
           macos_x64_url=""
 
-          if [[ -f release-zips/Storyboard-Flow-macOS-arm64.zip ]]; then
+          echo "$asset_names" | grep -Fx "Storyboard-Flow-Windows-x64.zip" >/dev/null
+          if echo "$asset_names" | grep -Fx "Storyboard-Flow-macOS-arm64.zip" >/dev/null; then
             macos_arm64_url="$asset_base/Storyboard-Flow-macOS-arm64.zip"
           fi
-          if [[ -f release-zips/Storyboard-Flow-macOS-x64.zip ]]; then
+          if echo "$asset_names" | grep -Fx "Storyboard-Flow-macOS-x64.zip" >/dev/null; then
             macos_x64_url="$asset_base/Storyboard-Flow-macOS-x64.zip"
           fi
           export release_url windows_url macos_arm64_url macos_x64_url
