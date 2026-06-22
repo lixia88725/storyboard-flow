@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { storyboardRowGaps, storyboardRowGapsAreConsistent } from "./storyboardZoomLayout";
 
@@ -47,5 +48,12 @@ describe("storyboard zoom layout", () => {
         maxExtraGap: 4
       })
     ).toBe(false);
+  });
+
+  it("lets animation-mode shot cards use the animation frame width", () => {
+    const css = readFileSync(new URL("./styles/shot-card.css", import.meta.url), "utf8");
+    const animationShotCardRule = css.match(/\.app-shell\.is-animation-mode \.shot-card\s*{(?<body>[^}]*)}/);
+
+    expect(animationShotCardRule?.groups?.body).toContain("max-width: var(--animation-frame-width);");
   });
 });

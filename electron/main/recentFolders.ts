@@ -33,7 +33,15 @@ export const removeRecentFolderPath = (folders: string[], folderPath: string): s
 
 export type RecentFoldersMenuItem = {
   label?: string;
-  role?: "appMenu" | "editMenu" | "viewMenu" | "windowMenu";
+  role?:
+    | "appMenu"
+    | "editMenu"
+    | "viewMenu"
+    | "windowMenu"
+    | "reload"
+    | "forceReload"
+    | "toggleDevTools"
+    | "togglefullscreen";
   enabled?: boolean;
   submenu?: RecentFoldersMenuItem[];
   click?: () => void;
@@ -66,7 +74,15 @@ export const buildRecentFoldersMenuTemplate = (
       submenu
     },
     { role: "editMenu" },
-    { role: "viewMenu" },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { role: "togglefullscreen" }
+      ]
+    },
     { role: "windowMenu" }
   ];
 };

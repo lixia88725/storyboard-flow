@@ -6,6 +6,7 @@ import type { WorkspaceTask } from "./workspaceLifecycleState";
 
 const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: string }> = [
   { id: "16:9", label: "16:9", detail: "1920 x 1080" },
+  { id: "9:16", label: "9:16 Phone", detail: "1080 x 1920" },
   { id: "2.39:1", label: "2.39:1", detail: "2581 x 1080" },
   { id: "1.43:1", label: "1.43:1 IMAX", detail: "1544 x 1080" }
 ];

@@ -9,6 +9,7 @@ import {
   keyboardEventMatchesShortcut,
   normalizeShortcutValue,
   shortcutActionFromKeyboardEvent,
+  storyboardZoomActionFromKeyboardEvent,
   shouldIgnoreShortcutForTarget
 } from "./keyboardShortcuts";
 
@@ -145,6 +146,15 @@ describe("keyboardShortcuts", () => {
     expect(clipboardActionFromKeyboardEvent(keyboardEvent("v", { ctrlKey: true }))).toBe("paste");
     expect(clipboardActionFromKeyboardEvent(keyboardEvent("v", { metaKey: true, shiftKey: true }))).toBeUndefined();
     expect(clipboardActionFromKeyboardEvent(keyboardEvent("c", { metaKey: true, altKey: true }))).toBeUndefined();
+  });
+
+  it("maps primary modifier plus and minus to storyboard zoom actions", () => {
+    expect(storyboardZoomActionFromKeyboardEvent(keyboardEvent("+", { metaKey: true }))).toBe("in");
+    expect(storyboardZoomActionFromKeyboardEvent(keyboardEvent("=", { metaKey: true }))).toBe("in");
+    expect(storyboardZoomActionFromKeyboardEvent(keyboardEvent("-", { metaKey: true }))).toBe("out");
+    expect(storyboardZoomActionFromKeyboardEvent(keyboardEvent("+", { ctrlKey: true }))).toBe("in");
+    expect(storyboardZoomActionFromKeyboardEvent(keyboardEvent("-", { ctrlKey: true }))).toBe("out");
+    expect(storyboardZoomActionFromKeyboardEvent(keyboardEvent("+"))).toBeUndefined();
   });
 
   it("resolves configured shortcuts before history fallbacks", () => {

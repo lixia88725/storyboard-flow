@@ -5,7 +5,8 @@ import {
   getStableBoardTop,
   maxStoryboardZoom,
   sameAnimationViewport,
-  type AnimationViewport
+  type AnimationViewport,
+  type AnimationViewportInput
 } from "./animationViewport";
 import type { BoardViewSize } from "./boardViewState";
 import {
@@ -19,11 +20,125 @@ import { scrollDeltaToCenterInReservedViewport } from "./viewportGeometry";
 export const animationReservedBottom = 180;
 export const animationViewportMargin = 14;
 
+type RectLike = {
+  top: number;
+  bottom: number;
+};
+
+type ElementRectLike = RectLike & {
+  height: number;
+};
+
 type BoardElement = Pick<HTMLElement, "getBoundingClientRect" | "querySelector">;
 type BoardScrollContainer = Pick<
   HTMLElement,
-  "clientHeight" | "scrollBy" | "scrollLeft" | "scrollTop"
+  "clientHeight" | "getBoundingClientRect" | "scrollBy" | "scrollLeft" | "scrollTop"
 >;
+
+export const animationShotChromeHeightFromElement = (shotElement: Partial<BoardElement>): number | undefined => {
+  if (
+    typeof shotElement.getBoundingClientRect !== "function" ||
+    typeof shotElement.querySelector !== "function"
+  ) {
+    return undefined;
+  }
+
+  const imageStage = shotElement.querySelector<HTMLElement>(".image-stage");
+  if (!imageStage || typeof imageStage.getBoundingClientRect !== "function") {
+    return undefined;
+  }
+
+  const shotRect = shotElement.getBoundingClientRect();
+  const imageRect = imageStage.getBoundingClientRect();
+  const chromeHeight = shotRect.height - imageRect.height;
+  if (!Number.isFinite(chromeHeight) || chromeHeight <= 0) {
+    return undefined;
+  }
+
+  const roundedHeight = Math.round(chromeHeight);
+  return roundedHeight > 0 ? roundedHeight : undefined;
+};
+
+export const animationCenteringScrollDelta = ({
+  elementRect,
+  scrollContainerRect,
+  scrollContainerHeight,
+  timelineRect,
+  margin
+}: {
+  elementRect: ElementRectLike;
+  scrollContainerRect: RectLike;
+  scrollContainerHeight: number;
+  timelineRect?: Pick<RectLike, "top">;
+  margin: number;
+}): number => {
+  const localElementRect = {
+    top: elementRect.top - scrollContainerRect.top,
+    bottom: elementRect.bottom - scrollContainerRect.top,
+    height: elementRect.height
+  };
+  const reservedBottom = timelineRect
+    ? Math.max(0, scrollContainerRect.bottom - timelineRect.top)
+    : animationReservedBottom;
+
+  return scrollDeltaToCenterInReservedViewport(localElementRect, {
+    height: scrollContainerHeight,
+    reservedBottom,
+    margin
+  });
+};
+
+export const animationViewportInputFromBoard = ({
+  board,
+  scrollContainer,
+  viewportShot,
+  zoomLevel,
+  isAnimationMode
+}: AnimationViewportFromBoardOptions): AnimationViewportInput | undefined => {
+  const firstShot =
+    board && viewportShot
+      ? board.querySelector<HTMLElement>(`[data-shot-id="${viewportShot.id}"]`) ??
+        board.querySelector<HTMLElement>("[data-shot-id]")
+      : board?.querySelector<HTMLElement>("[data-shot-id]");
+  if (!board || !firstShot) {
+    return undefined;
+  }
+
+  const boardRect = board.getBoundingClientRect();
+  const shotRect =
+    typeof firstShot.getBoundingClientRect === "function"
+      ? firstShot.getBoundingClientRect()
+      : boardRect;
+  const scrollContainerRect = scrollContainer?.getBoundingClientRect();
+  const boardScroll = readCurrentBoardScroll(scrollContainer);
+  const timelineRect =
+    typeof document !== "undefined"
+      ? document.querySelector<HTMLElement>(".timeline")?.getBoundingClientRect()
+      : undefined;
+  const reservedBottom =
+    scrollContainerRect && timelineRect
+      ? Math.max(0, scrollContainerRect.bottom - timelineRect.top)
+      : animationReservedBottom;
+  const cardChromeHeight = isAnimationMode
+    ? animationShotChromeHeightFromElement(firstShot)
+    : undefined;
+
+  return {
+    boardWidth: scrollContainerRect?.width ?? boardRect.width,
+    boardTop: getStableBoardTop(
+      scrollContainerRect ? shotRect.top - scrollContainerRect.top : shotRect.top,
+      boardScroll.y
+    ),
+    viewportHeight: boardViewportHeight(scrollContainer),
+    reservedBottom,
+    margin: animationViewportMargin,
+    zoomLevel,
+    maxZoomLevel: maxStoryboardZoom,
+    isAnimationMode,
+    imageAspectRatio: viewportShot ? aspectRatioForShot(viewportShot) : 420 / 265,
+    ...(cardChromeHeight !== undefined ? { cardChromeHeight } : {})
+  };
+};
 
 type AnimationViewportFromBoardOptions = {
   board: BoardElement | null;
@@ -40,24 +155,15 @@ export const animationViewportFromBoard = ({
   zoomLevel,
   isAnimationMode
 }: AnimationViewportFromBoardOptions): AnimationViewport | undefined => {
-  const firstShot = board?.querySelector<HTMLElement>("[data-shot-id]");
-  if (!board || !firstShot) {
-    return undefined;
-  }
-
-  const boardRect = board.getBoundingClientRect();
-  const boardScroll = readCurrentBoardScroll(scrollContainer);
-  return getAnimationViewport({
-    boardWidth: boardRect.width,
-    boardTop: getStableBoardTop(boardRect.top, boardScroll.y),
-    viewportHeight: boardViewportHeight(scrollContainer),
-    reservedBottom: animationReservedBottom,
-    margin: animationViewportMargin,
+  const input = animationViewportInputFromBoard({
+    board,
+    scrollContainer,
+    viewportShot,
     zoomLevel,
-    maxZoomLevel: maxStoryboardZoom,
-    isAnimationMode,
-    imageAspectRatio: viewportShot ? aspectRatioForShot(viewportShot) : 420 / 265
+    isAnimationMode
   });
+
+  return input ? getAnimationViewport(input) : undefined;
 };
 
 type UseAnimationModeLayoutControllerOptions = {
@@ -161,13 +267,17 @@ export const useAnimationModeLayoutController = ({
       return;
     }
 
-    const timeline = document.querySelector<HTMLElement>(".timeline");
-    const reservedBottom = timeline
-      ? window.innerHeight - timeline.getBoundingClientRect().top
-      : animationReservedBottom;
-    const delta = scrollDeltaToCenterInReservedViewport(element.getBoundingClientRect(), {
-      height: boardViewportHeight(workspaceBoardScrollRef.current),
-      reservedBottom,
+    const scrollContainer = workspaceBoardScrollRef.current;
+    const scrollContainerRect = scrollContainer?.getBoundingClientRect() ?? {
+      top: 0,
+      bottom: window.innerHeight
+    };
+    const timelineRect = document.querySelector<HTMLElement>(".timeline")?.getBoundingClientRect();
+    const delta = animationCenteringScrollDelta({
+      elementRect: element.getBoundingClientRect(),
+      scrollContainerRect,
+      scrollContainerHeight: boardViewportHeight(scrollContainer),
+      timelineRect,
       margin: animationViewportMargin
     });
 

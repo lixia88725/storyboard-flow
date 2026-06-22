@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
-import { createAppKeyboardKeyDownHandler } from "./appKeyboardShortcutsController";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createAppKeyboardKeyDownHandler,
+  createAppKeyboardKeyUpHandler,
+  eraserHoldDelayMs
+} from "./appKeyboardShortcutsController";
 import type { Shot } from "../shared/types";
 
 const keyboardEvent = (key: string, options: Partial<KeyboardEvent> = {}) =>
@@ -48,6 +52,7 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
     handleMergeBitmapLayers: vi.fn(),
     handlePasteSelection: vi.fn(),
     handleSaveProject: vi.fn(),
+    handleStoryboardZoomShortcut: vi.fn(),
     applyRedoEntry: vi.fn(),
     applyUndoEntry: vi.fn(),
     setActiveSketchTool: vi.fn(),
@@ -58,11 +63,14 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
     setIsOnionSkinEnabled: vi.fn(),
     setSelectedShotIds,
     setStatus: vi.fn(),
+    pendingEraserHoldRef: { current: undefined },
+    temporarySketchToolOverrideRef: { current: undefined },
     ...overrides
   };
 
   return {
     handler: createAppKeyboardKeyDownHandler(options),
+    keyUpHandler: createAppKeyboardKeyUpHandler(options),
     options,
     selectedShotIdsRef,
     shotSelectionAnchorIdRef
@@ -70,6 +78,10 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
 };
 
 describe("appKeyboardShortcutsController", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("ignores shortcuts when a blocking menu is open", () => {
     const { handler, options } = createHarness({ isSaveMenuOpen: true });
     const event = keyboardEvent("b");
@@ -78,6 +90,16 @@ describe("appKeyboardShortcutsController", () => {
 
     expect(event.preventDefault).not.toHaveBeenCalled();
     expect(options.setActiveSketchTool).not.toHaveBeenCalled();
+  });
+
+  it("prevents browser page zoom while a blocking menu is open", () => {
+    const { handler, options } = createHarness({ isSaveMenuOpen: true });
+    const event = keyboardEvent("+", { metaKey: true });
+
+    handler(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(options.handleStoryboardZoomShortcut).not.toHaveBeenCalled();
   });
 
   it("ignores shortcuts when a DOM blocking menu is open", () => {
@@ -100,6 +122,20 @@ describe("appKeyboardShortcutsController", () => {
 
     expect(event.preventDefault).toHaveBeenCalled();
     expect(options.handleCopySelection).toHaveBeenCalled();
+  });
+
+  it("maps Command plus and minus to storyboard zoom instead of page zoom", () => {
+    const { handler, options } = createHarness();
+    const zoomInEvent = keyboardEvent("+", { metaKey: true });
+    const zoomOutEvent = keyboardEvent("-", { metaKey: true });
+
+    handler(zoomInEvent);
+    handler(zoomOutEvent);
+
+    expect(zoomInEvent.preventDefault).toHaveBeenCalled();
+    expect(zoomOutEvent.preventDefault).toHaveBeenCalled();
+    expect(options.handleStoryboardZoomShortcut).toHaveBeenNthCalledWith(1, "in");
+    expect(options.handleStoryboardZoomShortcut).toHaveBeenNthCalledWith(2, "out");
   });
 
   it("handles delete without modifier keys", () => {
@@ -130,6 +166,78 @@ describe("appKeyboardShortcutsController", () => {
 
     expect(event.preventDefault).toHaveBeenCalled();
     expect(options.setActiveSketchTool).toHaveBeenCalledWith("eyedropper");
+  });
+
+  it("temporarily switches from brush to eyedropper while Alt is held", () => {
+    const { handler, keyUpHandler, options } = createHarness();
+    const keyDownEvent = keyboardEvent("Alt", { altKey: true });
+    const keyUpEvent = keyboardEvent("Alt");
+
+    handler(keyDownEvent);
+    keyUpHandler(keyUpEvent);
+
+    expect(keyDownEvent.preventDefault).toHaveBeenCalled();
+    expect(options.setActiveSketchTool).toHaveBeenNthCalledWith(1, "eyedropper");
+    expect(options.setActiveSketchTool).toHaveBeenNthCalledWith(2, "brush");
+  });
+
+  it("switches from brush to eraser permanently when E is tapped", () => {
+    const { handler, keyUpHandler, options } = createHarness();
+    const keyDownEvent = keyboardEvent("e");
+    const keyUpEvent = keyboardEvent("e");
+
+    handler(keyDownEvent);
+    keyUpHandler(keyUpEvent);
+
+    expect(keyDownEvent.preventDefault).toHaveBeenCalled();
+    expect(keyUpEvent.preventDefault).toHaveBeenCalled();
+    expect(options.setActiveSketchTool).toHaveBeenCalledTimes(1);
+    expect(options.setActiveSketchTool).toHaveBeenCalledWith("eraser");
+  });
+
+  it("temporarily switches from brush to eraser immediately while E is held", () => {
+    vi.useFakeTimers();
+    const { handler, keyUpHandler, options } = createHarness();
+    const keyDownEvent = keyboardEvent("e");
+    const keyUpEvent = keyboardEvent("e");
+
+    handler(keyDownEvent);
+
+    expect(keyDownEvent.preventDefault).toHaveBeenCalled();
+    expect(options.setActiveSketchTool).toHaveBeenCalledTimes(1);
+    expect(options.setActiveSketchTool).toHaveBeenCalledWith("eraser");
+
+    vi.advanceTimersByTime(eraserHoldDelayMs);
+    keyUpHandler(keyUpEvent);
+
+    expect(keyUpEvent.preventDefault).toHaveBeenCalled();
+    expect(options.setActiveSketchTool).toHaveBeenNthCalledWith(1, "eraser");
+    expect(options.setActiveSketchTool).toHaveBeenNthCalledWith(2, "brush");
+  });
+
+  it("does not restore brush on E keyup after permanent eraser selection outside brush mode", () => {
+    const { handler, keyUpHandler, options } = createHarness({ activeSketchTool: "select" });
+    const keyDownEvent = keyboardEvent("e");
+    const keyUpEvent = keyboardEvent("e");
+
+    handler(keyDownEvent);
+    keyUpHandler(keyUpEvent);
+
+    expect(options.setActiveSketchTool).toHaveBeenCalledTimes(1);
+    expect(options.setActiveSketchTool).toHaveBeenCalledWith("eraser");
+  });
+
+  it("does not temporarily switch tools while typing in editable fields", () => {
+    const editableTarget = {
+      closest: (selector: string) => (selector === "textarea, select" ? {} : null)
+    } as unknown as EventTarget;
+    const { handler, options } = createHarness();
+    const event = keyboardEvent("e", { target: editableTarget });
+
+    handler(event);
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(options.setActiveSketchTool).not.toHaveBeenCalled();
   });
 
   it("moves keyboard shot selection with arrow keys", () => {

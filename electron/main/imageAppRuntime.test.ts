@@ -20,13 +20,13 @@ describe("createImageAppHandlers", () => {
     });
 
     await expect(
-      handlers.createBlankShot("/project", { preset: "2.39:1" })
+      handlers.createBlankShot("/project", { preset: "9:16" })
     ).resolves.toEqual({
       imagePath: "/project/new_shot.tiff",
       fileName: "new_shot.tiff",
       previewPath: "/project/.storyboard-workbench/previews/new_shot.png"
     });
-    expect(createBlankShot).toHaveBeenCalledWith("/project", "2.39:1");
+    expect(createBlankShot).toHaveBeenCalledWith("/project", "9:16");
     expect(previewRootForFolder).toHaveBeenCalledWith("/project");
     expect(createImageRecords).toHaveBeenCalledWith(
       ["/project/new_shot.tiff"],

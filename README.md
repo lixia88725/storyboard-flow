@@ -125,13 +125,13 @@ ComfyUI support expects the user to run local ComfyUI and provide an API-format 
 
 ## Storyboard And Animation Mode
 
-- `Add Shot` 可创建白底 TIFF，支持 `16:9`、`2.39:1`、`1.43:1 IMAX`。
+- `Add Shot` 可创建白底 TIFF，支持 `16:9`、`9:16 Phone`、`2.39:1`、`1.43:1 IMAX`。
 - 工具栏 `文 / 图` 可在图片面和文字面之间切换；文字面编辑每张 shot 的分镜脚本。
 - 根目录 `storyboard-script.md` 用标准 Markdown ordered list 表示当前 shot 顺序；空 shot 仍保留空条目，外部 MD 修改通过 Import 吸收。
 - Storyboard 按真实画布比例显示，混合画幅不会额外加黑边。
-- Zoom 到单张 storyboard 填满工作区时进入动画模式，底部显示时间线。
+- Zoom 拉到最大值时进入动画模式，底部显示时间线；低于最大 Zoom 时保持普通 storyboard 网格模式。
 - 动画模式支持左右键线性播放、时间线点击跳转，以及 Onion Skin 前后帧参考。
-- 动画模式主画面只渲染当前 storyboard，并放入稳定 dark matte frame；不同画幅图片在 frame 内居中显示，不被拉伸。
+- 动画模式主画面只渲染当前 storyboard，并按当前 shot 的真实比例居中放入 dark matte frame，不拉伸画面。
 
 旧的 stroke 项目打开后会一次性生成 bitmap layer metadata 和内部 PNG layer assets。旧字段只作为迁移输入保留，主绘图流程不再依赖 `sketchLayers` / `imageLayerEdits`。
 

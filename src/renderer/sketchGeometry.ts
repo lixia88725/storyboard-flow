@@ -195,12 +195,31 @@ export const shouldKeepCommittedStrokePreview = (stroke: { tool?: "brush" | "era
   return stroke.tool === "brush";
 };
 
+export const shouldUseRenderedEraserDataUrl = ({
+  layerId,
+  pendingCommittedStrokes
+}: {
+  layerId: string;
+  pendingCommittedStrokes: { layerId: string; stroke: { tool?: "brush" | "eraser" } }[];
+}): boolean => {
+  return !pendingCommittedStrokes.some(
+    (pendingStroke) => pendingStroke.layerId === layerId && pendingStroke.stroke.tool === "brush"
+  );
+};
+
 export const liveStrokePreviewOpacity = (
   stroke: { tool?: "brush" | "eraser"; opacity?: number },
   layerOpacity = 1
 ): number => {
   const strokeOpacity = stroke.opacity ?? 1;
   return stroke.tool === "eraser" ? strokeOpacity : strokeOpacity * layerOpacity;
+};
+
+export const shouldRestartStrokeForToolChange = (
+  stroke: { tool?: "brush" | "eraser" },
+  activeTool: "brush" | "eraser" | "select" | "eyedropper"
+): boolean => {
+  return (activeTool === "brush" || activeTool === "eraser") && stroke.tool !== activeTool;
 };
 
 export const bitmapSelectionBounds = (points: Point[]): Bounds | undefined => {

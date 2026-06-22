@@ -1,11 +1,13 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
+type BlankShotPreset = "16:9" | "9:16" | "2.39:1" | "1.43:1";
+
 type ProjectPayload = {
   project: unknown;
   folderPath: string;
   metadataPath: string;
   renamePlan?: unknown[];
-  blankShotPreset?: string;
+  blankShotPreset?: BlankShotPreset;
   dirtyShotIds?: string[];
   preserveDirtyShotLayers?: boolean;
 };
@@ -137,7 +139,7 @@ const api = {
   createFromStoryboardScript: (payload: {
     sourceMarkdownPath: string;
     targetFolderPath: string;
-    blankShotPreset?: string;
+    blankShotPreset?: BlankShotPreset;
   }) => ipcRenderer.invoke("workspace:createFromStoryboardScript", payload),
   autosaveWorkspace: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:autosave", payload) as Promise<ProjectPayload>,

@@ -42,7 +42,15 @@ describe("recentFoldersAppRuntime", () => {
           ]
         },
         { role: "editMenu" },
-        { role: "viewMenu" },
+        {
+          label: "View",
+          submenu: [
+            { role: "reload" },
+            { role: "forceReload" },
+            { role: "toggleDevTools" },
+            { role: "togglefullscreen" }
+          ]
+        },
         { role: "windowMenu" }
       ]
     });

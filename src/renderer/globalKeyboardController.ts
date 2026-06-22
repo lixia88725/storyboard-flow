@@ -39,21 +39,36 @@ export const nextKeyboardShotSelection = ({
   return { anchorId: nextShotId, selectedIds: [nextShotId] };
 };
 
+type GlobalKeyboardEventType = "keydown" | "keyup";
+
 type GlobalKeyboardTarget = {
-  addEventListener: (type: "keydown", listener: (event: KeyboardEvent) => void) => void;
-  removeEventListener: (type: "keydown", listener: (event: KeyboardEvent) => void) => void;
+  addEventListener: (type: GlobalKeyboardEventType, listener: (event: KeyboardEvent) => void) => void;
+  removeEventListener: (type: GlobalKeyboardEventType, listener: (event: KeyboardEvent) => void) => void;
 };
 
 export const registerGlobalKeyboardListener = (
   target: GlobalKeyboardTarget,
-  handleKeyDown: (event: KeyboardEvent) => void
+  handleKeyDown: (event: KeyboardEvent) => void,
+  handleKeyUp?: (event: KeyboardEvent) => void
 ): (() => void) => {
   target.addEventListener("keydown", handleKeyDown);
-  return () => target.removeEventListener("keydown", handleKeyDown);
+  if (handleKeyUp) {
+    target.addEventListener("keyup", handleKeyUp);
+  }
+  return () => {
+    target.removeEventListener("keydown", handleKeyDown);
+    if (handleKeyUp) {
+      target.removeEventListener("keyup", handleKeyUp);
+    }
+  };
 };
 
 export const useGlobalKeyboardController = (
-  handleKeyDown: (event: KeyboardEvent) => void
+  handleKeyDown: (event: KeyboardEvent) => void,
+  handleKeyUp?: (event: KeyboardEvent) => void
 ): void => {
-  useEffect(() => registerGlobalKeyboardListener(window, handleKeyDown), [handleKeyDown]);
+  useEffect(
+    () => registerGlobalKeyboardListener(window, handleKeyDown, handleKeyUp),
+    [handleKeyDown, handleKeyUp]
+  );
 };

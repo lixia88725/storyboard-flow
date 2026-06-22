@@ -10,23 +10,17 @@ import {
 } from "react";
 import type { Shot } from "../shared/types";
 import {
-  getStableBoardTop,
   getZoomPreviewState,
-  maxStoryboardZoom,
+  nextKeyboardStoryboardZoom,
   normalizeStoryboardZoom,
   type ZoomPreviewState
 } from "./animationViewport";
+import { animationViewportInputFromBoard } from "./animationModeLayoutController";
 import {
-  animationReservedBottom,
-  animationViewportMargin
-} from "./animationModeLayoutController";
-import {
-  boardViewportHeight,
   currentBoardScroll as readCurrentBoardScroll,
   scrollBoardBy as scrollBoardContainerBy
 } from "./boardViewport";
 import type { BoardViewSize } from "./boardViewState";
-import { aspectRatioForShot } from "./sketchRendering";
 import { useZoomInteractionController } from "./zoomInteractionController";
 
 type StoryboardZoomStyleVariablesInput = {
@@ -52,6 +46,32 @@ export const storyboardZoomStyleVariables = ({
   "--animation-frame-height":
     previewCssVariables?.animationFrameHeight ?? `${animationFrameSize.height}px`
 } as CSSProperties);
+
+type StoryboardZoomPreviewStateFromBoardOptions = {
+  board: HTMLElement | null;
+  scrollContainer: HTMLDivElement | null;
+  viewportShot: Shot | undefined;
+  zoomLevel: number;
+  isAnimationMode: boolean;
+};
+
+export const storyboardZoomPreviewStateFromBoard = ({
+  board,
+  scrollContainer,
+  viewportShot,
+  zoomLevel,
+  isAnimationMode
+}: StoryboardZoomPreviewStateFromBoardOptions): ZoomPreviewState | undefined => {
+  const input = animationViewportInputFromBoard({
+    board,
+    scrollContainer,
+    viewportShot,
+    zoomLevel,
+    isAnimationMode
+  });
+
+  return input ? getZoomPreviewState(input) : undefined;
+};
 
 type StoryboardZoomControllerOptions = {
   animationFrameSize: BoardViewSize;
@@ -126,10 +146,6 @@ export const useStoryboardZoomController = ({
     () => readCurrentBoardScroll(workspaceBoardScrollRef.current),
     []
   );
-  const currentBoardViewportHeight = useCallback(
-    () => boardViewportHeight(workspaceBoardScrollRef.current),
-    []
-  );
   const scrollBoardBy = useCallback(
     (options: ScrollToOptions) => scrollBoardContainerBy(workspaceBoardScrollRef.current, options),
     []
@@ -138,27 +154,16 @@ export const useStoryboardZoomController = ({
   const buildZoomPreviewState = useCallback(
     (zoom: number): ZoomPreviewState | undefined => {
       const board = boardGridRef.current;
-      const firstShot = board?.querySelector<HTMLElement>("[data-shot-id]");
-      if (!board || !firstShot) {
-        return undefined;
-      }
-
-      const boardRect = board.getBoundingClientRect();
-      const boardScroll = currentBoardScroll();
       const viewportShot = primarySelectedShot ?? orderedShots[0];
-      return getZoomPreviewState({
-        boardWidth: boardRect.width,
-        boardTop: getStableBoardTop(boardRect.top, boardScroll.y),
-        viewportHeight: currentBoardViewportHeight(),
-        reservedBottom: animationReservedBottom,
-        margin: animationViewportMargin,
+      return storyboardZoomPreviewStateFromBoard({
+        board,
+        scrollContainer: workspaceBoardScrollRef.current,
+        viewportShot,
         zoomLevel: zoom,
-        maxZoomLevel: maxStoryboardZoom,
-        isAnimationMode: isAnimationModeRef.current,
-        imageAspectRatio: viewportShot ? aspectRatioForShot(viewportShot) : 420 / 265
+        isAnimationMode: isAnimationModeRef.current
       });
     },
-    [currentBoardScroll, currentBoardViewportHeight, isAnimationModeRef, orderedShots, primarySelectedShot]
+    [isAnimationModeRef, orderedShots, primarySelectedShot]
   );
 
   const applyZoomPreviewState = useCallback(
@@ -342,6 +347,14 @@ export const useStoryboardZoomController = ({
     [isZoomScrubbingRef, scheduleZoomLevel, scheduleZoomPreviewLevel]
   );
 
+  const handleStoryboardZoomShortcut = useCallback(
+    (direction: "in" | "out") => {
+      const currentZoom = pendingZoomLevelRef.current ?? zoomLevelRef.current;
+      scheduleZoomLevel(nextKeyboardStoryboardZoom(currentZoom, direction));
+    },
+    [scheduleZoomLevel, zoomLevelRef]
+  );
+
   return {
     beginZoomScrubbing,
     boardGridRef,
@@ -353,6 +366,7 @@ export const useStoryboardZoomController = ({
     }),
     currentBoardScroll,
     endZoomScrubbing,
+    handleStoryboardZoomShortcut,
     handleZoomInputChange,
     scrollBoardBy,
     workspaceBoardScrollRef,

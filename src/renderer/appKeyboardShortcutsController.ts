@@ -1,10 +1,11 @@
-import { useCallback, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import type { BitmapLayer, Shot, SketchTool } from "../shared/types";
 import { activeVisibleBitmapLayerForShot, primaryShotOrFirst } from "./activeTargets";
 import {
   adjustSketchShortcutValue,
   clipboardActionFromKeyboardEvent,
   shortcutActionFromKeyboardEvent,
+  storyboardZoomActionFromKeyboardEvent,
   shouldIgnoreShortcutForTarget
 } from "./keyboardShortcuts";
 import {
@@ -24,6 +25,16 @@ const maxSketchOpacity = 1;
 
 type StateSetter<T> = (value: T | ((current: T) => T)) => void;
 type MaybePromise = void | Promise<unknown>;
+type TemporarySketchToolOverride = {
+  key: "alt" | "e";
+  tool: "eyedropper" | "eraser";
+};
+type PendingEraserHold = {
+  key: "e";
+  timerId: ReturnType<typeof globalThis.setTimeout>;
+};
+
+export const eraserHoldDelayMs = 180;
 
 export type AppKeyboardShortcutsControllerOptions = {
   activeSketchTool: SketchTool;
@@ -49,6 +60,7 @@ export type AppKeyboardShortcutsControllerOptions = {
   ) => MaybePromise;
   handlePasteSelection: () => MaybePromise;
   handleSaveProject: () => MaybePromise;
+  handleStoryboardZoomShortcut: (direction: "in" | "out") => void;
   applyRedoEntry: () => MaybePromise;
   applyUndoEntry: () => MaybePromise;
   setActiveSketchTool: (tool: SketchTool) => void;
@@ -59,6 +71,11 @@ export type AppKeyboardShortcutsControllerOptions = {
   setIsOnionSkinEnabled: StateSetter<boolean>;
   setSelectedShotIds: StateSetter<string[]>;
   setStatus: (status: string) => void;
+};
+
+type AppKeyboardShortcutsHandlerOptions = AppKeyboardShortcutsControllerOptions & {
+  pendingEraserHoldRef: MutableRefObject<PendingEraserHold | undefined>;
+  temporarySketchToolOverrideRef: MutableRefObject<TemporarySketchToolOverride | undefined>;
 };
 
 const activeShotAndLayer = (
@@ -90,6 +107,7 @@ export const createAppKeyboardKeyDownHandler = ({
   handleMergeBitmapLayers,
   handlePasteSelection,
   handleSaveProject,
+  handleStoryboardZoomShortcut,
   applyRedoEntry,
   applyUndoEntry,
   setActiveSketchTool,
@@ -99,8 +117,10 @@ export const createAppKeyboardKeyDownHandler = ({
   setEraserSize,
   setIsOnionSkinEnabled,
   setSelectedShotIds,
-  setStatus
-}: AppKeyboardShortcutsControllerOptions): ((event: KeyboardEvent) => void) => {
+  setStatus,
+  pendingEraserHoldRef,
+  temporarySketchToolOverrideRef
+}: AppKeyboardShortcutsHandlerOptions): ((event: KeyboardEvent) => void) => {
   const moveSelection = (direction: KeyboardSelectionDirection) => {
     setSelectedShotIds((current) => {
       const selection = nextKeyboardShotSelection({
@@ -118,6 +138,7 @@ export const createAppKeyboardKeyDownHandler = ({
 
   return (event: KeyboardEvent) => {
     const target = event.target;
+    const storyboardZoomAction = storyboardZoomActionFromKeyboardEvent(event);
     const isMenuOpen =
       hasOpenWorkspaceMenu({
         isAddShotMenuOpen,
@@ -127,12 +148,53 @@ export const createAppKeyboardKeyDownHandler = ({
       }) ||
       hasOpenShortcutBlockingMenu();
     if (isMenuOpen) {
+      if (storyboardZoomAction) {
+        event.preventDefault();
+      }
       return;
     }
 
     const key = event.key.toLowerCase();
+    if (storyboardZoomAction) {
+      event.preventDefault();
+      handleStoryboardZoomShortcut(storyboardZoomAction);
+      return;
+    }
+
     const shortcutAction = shortcutActionFromKeyboardEvent(event);
     if (shouldIgnoreShortcutForTarget(target, shortcutAction, isAnimationMode)) {
+      return;
+    }
+
+    if (
+      activeSketchTool === "brush" &&
+      !event.repeat &&
+      !temporarySketchToolOverrideRef.current &&
+      event.key === "Alt"
+    ) {
+      event.preventDefault();
+      temporarySketchToolOverrideRef.current = { key: "alt", tool: "eyedropper" };
+      setActiveSketchTool("eyedropper");
+      return;
+    }
+
+    if (activeSketchTool === "brush" && !event.metaKey && !event.ctrlKey && !event.altKey && key === "e") {
+      event.preventDefault();
+      if (event.repeat || pendingEraserHoldRef.current || temporarySketchToolOverrideRef.current) {
+        return;
+      }
+
+      const timerId = globalThis.setTimeout(() => {
+        if (pendingEraserHoldRef.current?.timerId !== timerId) {
+          return;
+        }
+
+        pendingEraserHoldRef.current = undefined;
+        temporarySketchToolOverrideRef.current = { key: "e", tool: "eraser" };
+      }, eraserHoldDelayMs);
+
+      pendingEraserHoldRef.current = { key: "e", timerId };
+      setActiveSketchTool("eraser");
       return;
     }
 
@@ -272,11 +334,47 @@ export const createAppKeyboardKeyDownHandler = ({
   };
 };
 
+export const createAppKeyboardKeyUpHandler = ({
+  setActiveSketchTool,
+  pendingEraserHoldRef,
+  temporarySketchToolOverrideRef
+}: AppKeyboardShortcutsHandlerOptions): ((event: KeyboardEvent) => void) => {
+  return (event: KeyboardEvent) => {
+    const key = event.key.toLowerCase();
+    const pendingEraserHold = pendingEraserHoldRef.current;
+    if (pendingEraserHold?.key === "e" && key === "e") {
+      event.preventDefault();
+      globalThis.clearTimeout(pendingEraserHold.timerId);
+      pendingEraserHoldRef.current = undefined;
+      return;
+    }
+
+    const override = temporarySketchToolOverrideRef.current;
+    const didReleaseTemporaryKey =
+      override?.key === "alt" ? event.key === "Alt" : override?.key === "e" && key === "e";
+
+    if (!didReleaseTemporaryKey) {
+      return;
+    }
+
+    event.preventDefault();
+    temporarySketchToolOverrideRef.current = undefined;
+    setActiveSketchTool("brush");
+  };
+};
+
 export const useAppKeyboardShortcutsController = (
   options: AppKeyboardShortcutsControllerOptions
 ): void => {
+  const pendingEraserHoldRef = useRef<PendingEraserHold | undefined>(undefined);
+  const temporarySketchToolOverrideRef = useRef<TemporarySketchToolOverride | undefined>(undefined);
+  const handlerOptions = {
+    ...options,
+    pendingEraserHoldRef,
+    temporarySketchToolOverrideRef
+  };
   const handleGlobalKeyDown = useCallback(
-    createAppKeyboardKeyDownHandler(options),
+    createAppKeyboardKeyDownHandler(handlerOptions),
     [
       options.activeSketchTool,
       options.isAddShotMenuOpen,
@@ -293,6 +391,7 @@ export const useAppKeyboardShortcutsController = (
       options.handleMergeBitmapLayers,
       options.handlePasteSelection,
       options.handleSaveProject,
+      options.handleStoryboardZoomShortcut,
       options.applyRedoEntry,
       options.applyUndoEntry,
       options.setActiveSketchTool,
@@ -305,6 +404,20 @@ export const useAppKeyboardShortcutsController = (
       options.setStatus
     ]
   );
+  const handleGlobalKeyUp = useCallback(
+    createAppKeyboardKeyUpHandler(handlerOptions),
+    [options.setActiveSketchTool]
+  );
 
-  useGlobalKeyboardController(handleGlobalKeyDown);
+  useEffect(
+    () => () => {
+      if (pendingEraserHoldRef.current) {
+        globalThis.clearTimeout(pendingEraserHoldRef.current.timerId);
+        pendingEraserHoldRef.current = undefined;
+      }
+    },
+    []
+  );
+
+  useGlobalKeyboardController(handleGlobalKeyDown, handleGlobalKeyUp);
 };

@@ -1,5 +1,6 @@
 const baseShotWidth = 430;
 const zoomStep = 5;
+const fallbackAnimationShotChromeHeight = 84;
 export const minStoryboardZoom = 25;
 export const maxStoryboardZoom = 260;
 
@@ -13,6 +14,7 @@ export type AnimationViewportInput = {
   maxZoomLevel?: number;
   isAnimationMode: boolean;
   imageAspectRatio: number;
+  cardChromeHeight?: number;
 };
 
 export type AnimationViewport = {
@@ -55,6 +57,15 @@ export const nextWheelStoryboardZoom = (
   return normalizeStoryboardZoom(currentZoomLevel + direction * zoomStep, minStoryboardZoom, maxZoomLevel);
 };
 
+export const nextKeyboardStoryboardZoom = (
+  currentZoomLevel: number,
+  direction: "in" | "out",
+  maxZoomLevel = maxStoryboardZoom
+): number => {
+  const nextZoom = currentZoomLevel + (direction === "in" ? zoomStep : -zoomStep);
+  return normalizeStoryboardZoom(nextZoom, minStoryboardZoom, maxZoomLevel);
+};
+
 export const sameAnimationViewport = (a: AnimationViewport, b: AnimationViewport): boolean =>
   a.isAnimationMode === b.isAnimationMode &&
   a.imageWidth === b.imageWidth &&
@@ -74,30 +85,30 @@ export const getAnimationViewport = ({
   margin,
   zoomLevel,
   maxZoomLevel = maxStoryboardZoom,
-  isAnimationMode: wasAnimationMode,
-  imageAspectRatio
+  imageAspectRatio,
+  cardChromeHeight
 }: AnimationViewportInput): AnimationViewport => {
   const safeAspectRatio = imageAspectRatio > 0 ? imageAspectRatio : 420 / 265;
   const visibleTop = Math.max(boardTop, margin);
   const visibleHeight = Math.max(1, viewportHeight - visibleTop - reservedBottom - margin);
-  const frameWidth = boardWidth;
-  const frameHeight = Math.round(visibleHeight);
-  const fitWidth = Math.min(frameWidth, frameHeight * safeAspectRatio);
-  const fitHeight = Math.round(fitWidth / safeAspectRatio);
-  const fitZoom = (fitWidth / baseShotWidth) * 100;
-  const animationStartZoom = Math.min(maxZoomLevel, Math.ceil(fitZoom / zoomStep) * zoomStep);
-  const animationEndZoom = animationStartZoom - zoomStep;
-  const isAnimationMode = wasAnimationMode
-    ? zoomLevel >= animationEndZoom
-    : zoomLevel >= animationStartZoom;
+  const shotChromeHeight =
+    cardChromeHeight !== undefined && Number.isFinite(cardChromeHeight)
+      ? Math.max(0, cardChromeHeight)
+      : fallbackAnimationShotChromeHeight;
+  const fittedFrameHeight = Math.max(1, Math.round(visibleHeight - shotChromeHeight));
+  const fitWidth = Math.min(boardWidth, fittedFrameHeight * safeAspectRatio);
+  const isAnimationMode = zoomLevel >= maxZoomLevel;
   const imageWidth = isAnimationMode
-    ? fitWidth * (zoomLevel / animationStartZoom)
+    ? fitWidth
     : baseShotWidth * (zoomLevel / 100);
+  const imageHeight = Math.round(imageWidth / safeAspectRatio);
+  const frameWidth = isAnimationMode ? imageWidth : boardWidth;
+  const frameHeight = isAnimationMode ? imageHeight : fittedFrameHeight;
 
   return {
     isAnimationMode,
     imageWidth,
-    imageHeight: Math.round(imageWidth / safeAspectRatio || fitHeight),
+    imageHeight,
     frameWidth,
     frameHeight
   };

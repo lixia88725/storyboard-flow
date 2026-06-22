@@ -16,12 +16,17 @@
 
 .app-shell.is-animation-mode .board-grid {
   grid-template-columns: max-content;
+  align-content: start;
   justify-content: center;
-  padding-bottom: 132px;
+  height: 100%;
+  min-height: 100%;
+  padding-top: 18px;
+  padding-bottom: 0;
 }
 
 .app-shell.is-animation-mode .shot-card {
   width: var(--animation-frame-width);
+  max-width: var(--animation-frame-width);
   scroll-margin-bottom: 164px;
   font-size: 14px;
 }
@@ -282,6 +287,17 @@
   inset: 0;
   width: 100% !important;
   height: 100% !important;
+}
+
+.brush-cursor-preview {
+  position: absolute;
+  z-index: 4;
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 1px solid rgba(16, 24, 32, 0.82);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.94);
+  transform: translate(-50%, -50%);
 }
 
 .image-stage img {

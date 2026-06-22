@@ -49,6 +49,22 @@ describe("recent folder helpers", () => {
     expect(opened).toEqual(["/tmp/scene-a"]);
   });
 
+  it("builds a view menu without Electron page zoom accelerators", () => {
+    const template = buildRecentFoldersMenuTemplate(["/tmp/scene-a"], {
+      isDarwin: false,
+      onOpenFolder: () => undefined
+    });
+    const viewMenu = template.find((item) => item.label === "View");
+
+    expect(template.some((item) => item.role === "viewMenu")).toBe(false);
+    expect(viewMenu?.submenu?.map((item) => item.role)).toEqual([
+      "reload",
+      "forceReload",
+      "toggleDevTools",
+      "togglefullscreen"
+    ]);
+  });
+
   it("builds an empty recent folders menu item", () => {
     const template = buildRecentFoldersMenuTemplate([], {
       isDarwin: false,

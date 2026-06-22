@@ -5,7 +5,7 @@ import {
 } from "./globalKeyboardController";
 
 describe("globalKeyboardController", () => {
-  it("registers a global keydown listener until cleanup", () => {
+  it("registers global keydown and keyup listeners until cleanup", () => {
     const listeners = new Map<string, (event: KeyboardEvent) => void>();
     const target = {
       addEventListener: vi.fn((type: string, listener: (event: KeyboardEvent) => void) => {
@@ -18,12 +18,16 @@ describe("globalKeyboardController", () => {
       })
     };
     const handleKeyDown = vi.fn();
+    const handleKeyUp = vi.fn();
 
-    const cleanup = registerGlobalKeyboardListener(target, handleKeyDown);
+    const cleanup = registerGlobalKeyboardListener(target, handleKeyDown, handleKeyUp);
     listeners.get("keydown")?.({ key: "b" } as KeyboardEvent);
+    listeners.get("keyup")?.({ key: "b" } as KeyboardEvent);
 
     expect(handleKeyDown).toHaveBeenCalledWith({ key: "b" });
+    expect(handleKeyUp).toHaveBeenCalledWith({ key: "b" });
     expect(target.addEventListener).toHaveBeenCalledWith("keydown", handleKeyDown);
+    expect(target.addEventListener).toHaveBeenCalledWith("keyup", handleKeyUp);
 
     cleanup();
 

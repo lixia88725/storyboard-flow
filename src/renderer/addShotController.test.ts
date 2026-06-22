@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Project } from "../shared/types";
 import {
   addShotInsertedShotId,
-  initialAddShotContext
+  initialAddShotContext,
+  useAddShotController
 } from "./addShotController";
 
 const projectWithShots = (shotIds: string[]): Project =>
@@ -55,5 +56,41 @@ describe("addShotController", () => {
 
     expect(addShotInsertedShotId(project, "/scene/new.tiff")).toBe("new-shot");
     expect(addShotInsertedShotId(project, "/scene/missing.tiff")).toBeUndefined();
+  });
+
+  it("passes the selected 9:16 preset when adding a blank shot", async () => {
+    const api = {
+      createBlankShot: vi.fn(async () => ({
+        imagePath: "/scene/new.tiff",
+        fileName: "new.tiff",
+        width: 1080,
+        height: 1920
+      })),
+      writeLayerPng: vi.fn(async () => undefined)
+    } as unknown as Window["storyboard"];
+    const project = projectWithShots(["shot-1"]);
+    const updateProject = vi.fn();
+
+    const { handleAddShot } = useAddShotController({
+      api,
+      blankShotPreset: "9:16",
+      createTransparentLayerDataUrl: vi.fn(async () => "data:image/png;base64,"),
+      folderPath: "/scene",
+      loadFolderScan: vi.fn(),
+      markShotsDirty: vi.fn(),
+      metadataPath: "/scene/.storyboard-workbench/storyboard.project.json",
+      primarySelectedShotId: "shot-1",
+      projectRef: { current: project },
+      selectSingleShot: vi.fn(),
+      setRecentFolders: vi.fn(),
+      setStatus: vi.fn(),
+      setWorkspaceTask: vi.fn(),
+      updateProject
+    });
+
+    await handleAddShot();
+
+    expect(api?.createBlankShot).toHaveBeenCalledWith("/scene", { preset: "9:16" });
+    expect(updateProject).toHaveBeenCalled();
   });
 });

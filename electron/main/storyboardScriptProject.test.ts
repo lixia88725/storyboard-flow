@@ -34,6 +34,26 @@ describe("createProjectFromStoryboardScriptMarkdown", () => {
     ).resolves.toContain("Opening shot");
   });
 
+  it("creates 9:16 phone blank shots from numbered markdown entries", async () => {
+    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "swb-md-phone-source-")), "script.md");
+    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "swb-md-phone-project-"));
+    await writeFile(sourcePath, "1. Vertical opening\n", "utf8");
+
+    const scan = await createProjectFromStoryboardScriptMarkdown({
+      sourceMarkdownPath: sourcePath,
+      targetFolderPath: targetFolder,
+      blankShotPreset: "9:16"
+    });
+    const shot = scan.project?.shots[0];
+
+    expect(shot?.swb?.canvasWidth).toBe(1080);
+    expect(shot?.swb?.canvasHeight).toBe(1920);
+    expect(shot?.layers?.[0]?.width).toBe(1080);
+    expect(shot?.layers?.[0]?.height).toBe(1920);
+    expect(scan.images[0]?.width).toBe(1080);
+    expect(scan.images[0]?.height).toBe(1920);
+  });
+
   it("rejects target folders that already contain files", async () => {
     const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "swb-md-source-")), "script.md");
     const targetFolder = await mkdtemp(path.join(os.tmpdir(), "swb-md-project-non-empty-"));

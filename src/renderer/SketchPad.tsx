@@ -30,7 +30,9 @@ import {
   shouldHandleSketchPointer,
   shouldKeepCommittedStrokePreview,
   shouldRenderLiveStroke,
+  shouldRestartStrokeForToolChange,
   shouldStartSketchPointer,
+  shouldUseRenderedEraserDataUrl,
   sketchCanvasSize,
   sketchPointFromClientPoint,
   sketchPointsFromClientPoints,
@@ -41,12 +43,16 @@ import {
   type SelectionCorner
 } from "./sketchGeometry";
 import {
+  brushCursorPreviewDiameter,
+  brushCursorPreviewToolSize,
   canvasSizeForShot,
   cssBlendMode,
   drawBitmapLayerImageUrl,
   drawImageUrl,
   drawStrokePathOnCanvas,
-  sampleImageDataColorAtPoint
+  sampleImageDataColorAtPoint,
+  sketchCursorForTool,
+  shouldShowBrushCursorPreviewForTool
 } from "./sketchRendering";
 import { nextStageResizeDecision, sameStageSize } from "./stageResize";
 import { canFillBitmapLayer, editableBitmapLayerForShot } from "./activeTargets";
@@ -76,6 +82,10 @@ type PreparedBitmapTransform = {
 type PendingCommittedStroke = {
   layerId: string;
   stroke: SketchStroke;
+};
+type BrushCursorPreview = {
+  x: number;
+  y: number;
 };
 const blurActiveFormControl = () => {
   const activeElement = document.activeElement;
@@ -211,6 +221,7 @@ export const SketchPad = ({
   const liveBitmapCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
   const liveBitmapLayerIdRef = useRef<string | undefined>(undefined);
   const liveBitmapEditRunRef = useRef(0);
+  const liveBitmapEditCanCommitRenderedDataUrlRef = useRef(false);
   const committingStrokeIdsRef = useRef<Set<string>>(new Set());
   const activePointerIdRef = useRef<number | undefined>(undefined);
   const transformPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -237,6 +248,14 @@ export const SketchPad = ({
   const [selectionDraft, setSelectionDraft] = useState<BitmapSelectionDraft | undefined>();
   const [transformDraft, setTransformDraft] = useState<BitmapTransformDraft | undefined>();
   const [isTransformPreviewReady, setIsTransformPreviewReady] = useState(false);
+  const [brushCursorPreview, setBrushCursorPreview] = useState<BrushCursorPreview | undefined>();
+  const sketchCursor = sketchCursorForTool(tool);
+  const isBrushCursorPreviewTool = shouldShowBrushCursorPreviewForTool(tool);
+  const cursorPreviewToolSize = brushCursorPreviewToolSize(tool, { brushSize, eraserSize });
+  const cursorPreviewDiameter = brushCursorPreviewDiameter({
+    toolSize: cursorPreviewToolSize ?? brushSize,
+    stageSize
+  });
 
   const setStageSizeSynced = useCallback((size: CanvasSize) => {
     if (sameStageSize(stageSizeRef.current, size)) {
@@ -267,6 +286,10 @@ export const SketchPad = ({
   useEffect(() => {
     if (tool !== "select") {
       clearBitmapSelectionState();
+    }
+
+    if (!isBrushCursorPreviewTool) {
+      setBrushCursorPreview(undefined);
     }
   }, [tool]);
 
@@ -426,7 +449,9 @@ export const SketchPad = ({
     }
     try {
       const renderedDataUrl =
-        stroke.tool === "eraser" && liveBitmapLayerIdRef.current === layerId
+        stroke.tool === "eraser" &&
+        liveBitmapLayerIdRef.current === layerId &&
+        liveBitmapEditCanCommitRenderedDataUrlRef.current
           ? liveBitmapCanvasRefs.current[layerId]?.toDataURL("image/png")
           : undefined;
       const pendingStrokesForLayer =
@@ -553,6 +578,7 @@ export const SketchPad = ({
   const prepareLiveBitmapEdit = async (layer: BitmapLayer) => {
     const editRun = liveBitmapEditRunRef.current + 1;
     liveBitmapEditRunRef.current = editRun;
+    liveBitmapEditCanCommitRenderedDataUrlRef.current = false;
     const canvas = liveBitmapCanvasRefs.current[layer.id];
     const context = canvas?.getContext("2d");
 
@@ -576,6 +602,10 @@ export const SketchPad = ({
     }
 
     liveBitmapLayerIdRef.current = layer.id;
+    liveBitmapEditCanCommitRenderedDataUrlRef.current = shouldUseRenderedEraserDataUrl({
+      layerId: layer.id,
+      pendingCommittedStrokes: pendingCommittedStrokesRef.current
+    });
     setLiveBitmapLayerId(layer.id);
 
     const currentStroke = draftStrokeRef.current;
@@ -609,6 +639,7 @@ export const SketchPad = ({
   const clearLiveBitmapEdit = () => {
     liveBitmapEditRunRef.current += 1;
     liveBitmapLayerIdRef.current = undefined;
+    liveBitmapEditCanCommitRenderedDataUrlRef.current = false;
     setLiveBitmapLayerId(undefined);
   };
 
@@ -817,6 +848,40 @@ export const SketchPad = ({
     return sketchPointsFromClientPoints(points, rect, canvasSize);
   };
 
+  const updateBrushCursorPreview = (pointerEvent: globalThis.PointerEvent) => {
+    if (!isBrushCursorPreviewTool) {
+      return;
+    }
+
+    const rect = imageStageRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+
+    setBrushCursorPreview({
+      x: pointerEvent.clientX - rect.left,
+      y: pointerEvent.clientY - rect.top
+    });
+  };
+
+  const hideBrushCursorPreview = () => {
+    setBrushCursorPreview(undefined);
+  };
+
+  const createStroke = (strokeTool: StrokeTool, position: Point): SketchStroke => {
+    const toolSize = strokeTool === "eraser" ? eraserSize : brushSize;
+    const canvasScale = canvasSize.width / sketchCanvasSize.width;
+    return {
+      id: crypto.randomUUID(),
+      tool: strokeTool,
+      color: strokeTool === "eraser" ? "#ffffff" : brushColor,
+      opacity: strokeTool === "eraser" ? eraserOpacity : brushOpacity,
+      size: toolSize * canvasScale,
+      softness: strokeTool === "eraser" ? eraserSoftness : brushSoftness,
+      points: [position.x, position.y]
+    };
+  };
+
   const beginStroke = (event: {
     evt?: globalThis.PointerEvent;
     target: { getStage: () => { container: () => HTMLDivElement } | null };
@@ -825,6 +890,9 @@ export const SketchPad = ({
     onFocusShot();
     event.evt?.preventDefault();
     event.evt?.stopPropagation();
+    if (event.evt) {
+      updateBrushCursorPreview(event.evt);
+    }
     const stage = event.target.getStage();
     const pointerEvent = event.evt;
     if (!pointerEvent || !shouldStartSketchPointer(pointerEvent)) {
@@ -868,17 +936,7 @@ export const SketchPad = ({
 
     updateDrawingState(true);
     const strokeTool: StrokeTool = tool;
-    const toolSize = tool === "eraser" ? eraserSize : brushSize;
-    const canvasScale = canvasSize.width / sketchCanvasSize.width;
-    const nextStroke = {
-      id: crypto.randomUUID(),
-      tool: strokeTool,
-      color: tool === "eraser" ? "#ffffff" : brushColor,
-      opacity: tool === "eraser" ? eraserOpacity : brushOpacity,
-      size: toolSize * canvasScale,
-      softness: tool === "eraser" ? eraserSoftness : brushSoftness,
-      points: [position.x, position.y]
-    };
+    const nextStroke = createStroke(strokeTool, position);
     draftStrokeRef.current = nextStroke;
     if (shouldRenderLiveStroke(nextStroke)) {
       setDraftStroke(nextStroke);
@@ -934,6 +992,9 @@ export const SketchPad = ({
   }) => {
     event.evt?.preventDefault();
     event.evt?.stopPropagation();
+    if (event.evt) {
+      updateBrushCursorPreview(event.evt);
+    }
 
     if (event.evt && !shouldHandleSketchPointer(event.evt, activePointerIdRef.current)) {
       return;
@@ -988,6 +1049,27 @@ export const SketchPad = ({
     let currentStroke = draftStrokeRef.current;
     if (!currentStroke) {
       return;
+    }
+
+    if (shouldRestartStrokeForToolChange(currentStroke, tool)) {
+      if (shouldCommitStroke(currentStroke)) {
+        void commitStroke(activeDrawingLayerId, currentStroke);
+      } else {
+        clearDraftStroke();
+      }
+
+      if (!activeDrawingLayer || (tool !== "brush" && tool !== "eraser")) {
+        return;
+      }
+
+      const nextStroke = createStroke(tool, positions[0]);
+      draftStrokeRef.current = nextStroke;
+      currentStroke = nextStroke;
+      if (shouldRenderLiveStroke(nextStroke)) {
+        setDraftStroke(nextStroke);
+      } else {
+        void prepareLiveBitmapEdit(activeDrawingLayer);
+      }
     }
 
     const previousPointOffset = currentStroke.points.length / 2;
@@ -1147,7 +1229,10 @@ export const SketchPad = ({
       <div
         className="image-stage"
         ref={imageStageRef}
-        style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}
+        style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}`, cursor: sketchCursor }}
+        onPointerMove={(event) => updateBrushCursorPreview(event.nativeEvent)}
+        onPointerLeave={hideBrushCursorPreview}
+        onPointerCancel={hideBrushCursorPreview}
         onDragOver={handleFillDragOver}
         onDrop={handleFillDrop}
       >
@@ -1202,6 +1287,7 @@ export const SketchPad = ({
         />
         <Stage
           className="stage-overlay"
+          style={{ cursor: sketchCursor }}
           width={stageSize.width}
           height={stageSize.height}
           onPointerDown={beginStroke}
@@ -1242,6 +1328,17 @@ export const SketchPad = ({
             </Layer>
           ) : null}
         </Stage>
+        {brushCursorPreview && isBrushCursorPreviewTool ? (
+          <div
+            className="brush-cursor-preview"
+            style={{
+              left: brushCursorPreview.x,
+              top: brushCursorPreview.y,
+              width: cursorPreviewDiameter,
+              height: cursorPreviewDiameter
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

@@ -96,7 +96,7 @@ Reason: Photoshop 保存后的兼容修改应接近实时进入 SWB；但 SWB �
 
 ## Add Shot Creates A Blank TIFF
 
-`Add Shot` 在当前场景文件夹创建白色 TIFF，支持 `16:9`、`2.39:1`、`1.43:1 IMAX` 预设。
+`Add Shot` 在当前场景文件夹创建白色 TIFF，支持 `16:9`、`9:16 Phone`、`2.39:1`、`1.43:1 IMAX` 预设。
 
 Reason: 用户想在当前工作区内创建新分镜图，而非导入外部图片。
 
@@ -178,15 +178,15 @@ Reason: 用户会把多选组拖到前方或后方的 storyboard，只有“插�
 
 ## Animation Mode Is View-Driven
 
-当单张 storyboard 在当前窗口中接近填满工作区时进入动画模式，并显示底部时间线。
+当 Zoom 拉到最大值时进入动画模式，并显示底部时间线。低于最大 Zoom 时保持普通 storyboard 网格模式。
 
-Reason: 这是从全局整理顺序切换到线性感知故事板流动的状态，不应该只依赖某个固定 zoom 数字。
+Reason: 最大 Zoom 是用户明确进入线性阅读/播放状态的意图边界，避免在接近阈值时因为窗口尺寸、滚动位置或缩放拖动造成动画模式反复抖动。
 
 ## Animation Mode Uses A Stable Dark Frame
 
-动画模式主画面只渲染当前 storyboard，并把当前 storyboard 的真实画幅居中放入稳定的深色 frame。不同画幅切换时 frame 尺寸保持稳定，图片本身不拉伸；timeline 仍显示全部 shot 缩略图用于跳转。
+动画模式主画面只渲染当前 storyboard，并把当前 storyboard 的真实画幅按比例居中放入深色 frame。frame 跟随当前 shot 的真实比例和可用空间适配，图片本身不拉伸；timeline 仍显示全部 shot 缩略图用于跳转。
 
-Reason: 线性播放时用户注意力应集中在当前画面；不挂载非当前 storyboard 可以避免其他卡片的 header、z-index 或滚动几何干扰 timeline。混合 16:9、2.39:1、1.43:1 时，外框尺寸跳动会干扰阅读节奏。
+Reason: 线性播放时用户注意力应集中在当前画面；不挂载非当前 storyboard 可以避免其他卡片的 header、z-index 或滚动几何干扰 timeline。混合 16:9、9:16、2.39:1、1.43:1 时，按真实比例适配可以避免画面变形和裁切。
 
 ## Storyboard Display Uses Real Canvas Aspect Ratio
 

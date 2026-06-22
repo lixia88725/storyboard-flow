@@ -352,6 +352,7 @@ export const App = () => {
     boardZoomStyle,
     currentBoardScroll,
     endZoomScrubbing,
+    handleStoryboardZoomShortcut,
     handleZoomInputChange,
     scrollBoardBy,
     workspaceBoardScrollRef,
@@ -1171,6 +1172,7 @@ export const App = () => {
     handleMergeBitmapLayers,
     handlePasteSelection,
     handleSaveProject,
+    handleStoryboardZoomShortcut,
     applyRedoEntry,
     applyUndoEntry,
     setActiveSketchTool,
@@ -1489,6 +1491,8 @@ export const App = () => {
 
       {isAnimationMode && orderedShots.length > 0 ? (
         <Timeline
+          folderPath={folderPath}
+          thumbnailRevision={autosaveRevision}
           shots={orderedShots}
           selectedShotIds={selectedShotIds}
           onSelect={(shotId) => {

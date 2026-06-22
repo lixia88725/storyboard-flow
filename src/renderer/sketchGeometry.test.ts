@@ -13,7 +13,9 @@ import {
   strokeSegmentsFromPointOffset,
   shouldCommitStroke,
   shouldKeepCommittedStrokePreview,
+  shouldUseRenderedEraserDataUrl,
   shouldRenderLiveStroke,
+  shouldRestartStrokeForToolChange,
   shouldAppendStrokePoint,
   shouldHandleSketchPointer,
   shouldCloseRadialMenuForSketchPointer,
@@ -193,11 +195,39 @@ describe("sketch geometry", () => {
     expect(shouldKeepCommittedStrokePreview({ tool: "eraser" })).toBe(false);
   });
 
+  it("does not use rendered eraser data while same-layer brush writes are pending", () => {
+    expect(
+      shouldUseRenderedEraserDataUrl({
+        layerId: "layer-1",
+        pendingCommittedStrokes: [{ layerId: "layer-1", stroke: { tool: "brush" } }]
+      })
+    ).toBe(false);
+    expect(
+      shouldUseRenderedEraserDataUrl({
+        layerId: "layer-1",
+        pendingCommittedStrokes: [{ layerId: "layer-2", stroke: { tool: "brush" } }]
+      })
+    ).toBe(true);
+    expect(
+      shouldUseRenderedEraserDataUrl({
+        layerId: "layer-1",
+        pendingCommittedStrokes: [{ layerId: "layer-1", stroke: { tool: "eraser" } }]
+      })
+    ).toBe(true);
+  });
+
   it("matches live brush preview opacity to the active bitmap layer opacity", () => {
     expect(liveStrokePreviewOpacity({ tool: "brush", opacity: 1 }, 0.35)).toBe(0.35);
     expect(liveStrokePreviewOpacity({ tool: "brush", opacity: 0.5 }, 0.5)).toBe(0.25);
     expect(liveStrokePreviewOpacity({ tool: "brush", opacity: 1 }, undefined)).toBe(1);
     expect(liveStrokePreviewOpacity({ tool: "eraser", opacity: 0.5 }, 0.35)).toBe(0.5);
+  });
+
+  it("restarts an active stroke when the stroke tool changes mid-draw", () => {
+    expect(shouldRestartStrokeForToolChange({ tool: "brush" }, "eraser")).toBe(true);
+    expect(shouldRestartStrokeForToolChange({ tool: "eraser" }, "brush")).toBe(true);
+    expect(shouldRestartStrokeForToolChange({ tool: "brush" }, "brush")).toBe(false);
+    expect(shouldRestartStrokeForToolChange({ tool: "eraser" }, "select")).toBe(false);
   });
 
   it("builds bitmap selection bounds from lasso points", () => {

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -21,6 +22,7 @@ import {
   type LayerRowDragIntent
 } from "./sketchGeometry";
 import { nextRangeSelection, type RangeSelectionMode } from "./rangeSelection";
+import { layerSelectionForPanelState } from "./layerPanelController";
 
 type LayerRowGesture = {
   layerId: string;
@@ -99,7 +101,7 @@ export const LayerPanel = ({
   onSelectedLayerIdsChange,
   onUpdateLayerGroupOpacity
 }: LayerPanelProps) => {
-  const layers = shot ? bitmapLayersForShot(shot) : [];
+  const layers = useMemo(() => (shot ? bitmapLayersForShot(shot) : []), [shot]);
   const displayLayers = [...layers].reverse();
   const activeLayer = shot ? activeVisibleBitmapLayerForShot(shot) : undefined;
   const activeLayerId = activeLayer?.id;
@@ -116,7 +118,8 @@ export const LayerPanel = ({
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const suppressNextRowClickRef = useRef(false);
   const layerSelectionAnchorIdRef = useRef<string | undefined>(undefined);
-  const layerIdsKey = layers.map((layer) => layer.id).join("|");
+  const layerIds = useMemo(() => layers.map((layer) => layer.id), [layers]);
+  const layerIdsKey = layerIds.join("|");
   const selectedMergeLayers = layers.filter((layer) => selectedLayerIds.includes(layer.id));
   const isMultiLayerMerge =
     selectedMergeLayers.length >= 2 &&
@@ -125,19 +128,30 @@ export const LayerPanel = ({
   useEffect(() => {
     if (!shot || !isOpen) {
       layerSelectionAnchorIdRef.current = undefined;
-      setSelectedLayerIds([]);
+      setSelectedLayerIds((current) =>
+        layerSelectionForPanelState({
+          availableLayerIds: layerIds,
+          hasShot: Boolean(shot),
+          isOpen,
+          selectedLayerIds: current
+        })
+      );
       return;
     }
 
-    const existingLayerIds = new Set(layers.map((layer) => layer.id));
     setSelectedLayerIds((current) => {
-      const next = current.filter((layerId) => existingLayerIds.has(layerId));
-      if (layerSelectionAnchorIdRef.current && !existingLayerIds.has(layerSelectionAnchorIdRef.current)) {
+      const next = layerSelectionForPanelState({
+        availableLayerIds: layerIds,
+        hasShot: true,
+        isOpen: true,
+        selectedLayerIds: current
+      });
+      if (layerSelectionAnchorIdRef.current && !layerIds.includes(layerSelectionAnchorIdRef.current)) {
         layerSelectionAnchorIdRef.current = next.at(-1);
       }
-      return next.length === current.length ? current : next;
+      return next;
     });
-  }, [shot?.id, isOpen, layerIdsKey, layers]);
+  }, [shot, shot?.id, isOpen, layerIds, layerIdsKey]);
 
   useEffect(() => {
     if (!shot || !isOpen) {

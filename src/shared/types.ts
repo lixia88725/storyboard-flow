@@ -124,7 +124,7 @@ export type ImportedImage = {
   swbMetadata?: SwbImageMetadata;
 };
 
-export type BlankShotPreset = "16:9" | "2.39:1" | "1.43:1";
+export type BlankShotPreset = "16:9" | "9:16" | "2.39:1" | "1.43:1";
 
 export type BlankShotOptions = {
   preset: BlankShotPreset;

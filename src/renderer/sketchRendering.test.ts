@@ -3,8 +3,12 @@ import {
   aspectRatioForShot,
   drawStrokePathOnCanvas,
   fillImageDataAtPoint,
+  brushCursorPreviewDiameter,
+  brushCursorPreviewToolSize,
   hexToRgba,
   sampleImageDataColorAtPoint,
+  sketchCursorForTool,
+  shouldShowBrushCursorPreviewForTool,
   shouldDrawStrokeToBitmapLayer
 } from "./sketchRendering";
 import type { Shot, SketchStroke } from "../shared/types";
@@ -158,6 +162,56 @@ describe("sketch rendering", () => {
     ]);
 
     expect(sampleImageDataColorAtPoint(imageData, { x: 0, y: 0 })).toBeUndefined();
+  });
+
+  it("uses a custom cursor for the eyedropper tool", () => {
+    const cursor = sketchCursorForTool("eyedropper");
+
+    expect(cursor).toContain("data:image/svg+xml");
+    expect(cursor).toContain("m12%209-8.414%208.414");
+    expect(cursor).toContain("crosshair");
+  });
+
+  it("hides the system cursor for brush and eraser tools", () => {
+    expect(sketchCursorForTool("brush")).toBe("none");
+    expect(sketchCursorForTool("eraser")).toBe("none");
+  });
+
+  it("keeps a neutral cursor for non-stroke tools", () => {
+    expect(sketchCursorForTool("select")).toBe("crosshair");
+  });
+
+  it("scales the brush cursor preview diameter with the visible stage width", () => {
+    expect(
+      brushCursorPreviewDiameter({
+        toolSize: 10,
+        stageSize: { width: 840, height: 530 }
+      })
+    ).toBe(20);
+  });
+
+  it("keeps the brush cursor preview visible for very small brush sizes", () => {
+    expect(
+      brushCursorPreviewDiameter({
+        toolSize: 1,
+        stageSize: { width: 420, height: 265 }
+      })
+    ).toBe(4);
+  });
+
+  it("shows brush cursor previews only for stroke tools", () => {
+    expect(shouldShowBrushCursorPreviewForTool("brush")).toBe(true);
+    expect(shouldShowBrushCursorPreviewForTool("eraser")).toBe(true);
+    expect(shouldShowBrushCursorPreviewForTool("eyedropper")).toBe(false);
+    expect(shouldShowBrushCursorPreviewForTool("select")).toBe(false);
+  });
+
+  it("uses the active stroke tool size for the brush cursor preview", () => {
+    const sizes = { brushSize: 8, eraserSize: 24 };
+
+    expect(brushCursorPreviewToolSize("brush", sizes)).toBe(8);
+    expect(brushCursorPreviewToolSize("eraser", sizes)).toBe(24);
+    expect(brushCursorPreviewToolSize("select", sizes)).toBeUndefined();
   });
 
   it("fills a transparent image when the target layer is empty", () => {

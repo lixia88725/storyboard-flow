@@ -183,6 +183,22 @@ export const clipboardActionFromKeyboardEvent = (
   return undefined;
 };
 
+export const storyboardZoomActionFromKeyboardEvent = (
+  event: KeyboardEvent
+): "in" | "out" | undefined => {
+  if ((!event.metaKey && !event.ctrlKey) || event.altKey) {
+    return undefined;
+  }
+
+  if (event.key === "+" || event.key === "=") {
+    return "in";
+  }
+  if (event.key === "-" || event.key === "_") {
+    return "out";
+  }
+  return undefined;
+};
+
 type KeyboardTarget = {
   isContentEditable?: boolean;
   closest?: (selector: string) => { type?: string } | null;

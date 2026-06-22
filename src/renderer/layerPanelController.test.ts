@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isLayerPanelOpenForShot,
+  layerSelectionForPanelState,
   nextLayerPanelOpenState
 } from "./layerPanelController";
 
@@ -17,5 +18,38 @@ describe("layerPanelController", () => {
     expect(nextLayerPanelOpenState(false, "shot-1", "shot-1")).toBe(true);
     expect(nextLayerPanelOpenState(false, "shot-2", "shot-1")).toBe(true);
     expect(nextLayerPanelOpenState(true, "shot-2", "shot-1")).toBe(true);
+  });
+
+  it("keeps a closed layer panel selection stable when already empty", () => {
+    const current: string[] = [];
+
+    expect(
+      layerSelectionForPanelState({
+        availableLayerIds: ["layer-image"],
+        hasShot: true,
+        isOpen: false,
+        selectedLayerIds: current
+      })
+    ).toBe(current);
+  });
+
+  it("clears closed layer panel selection and filters missing layers while open", () => {
+    expect(
+      layerSelectionForPanelState({
+        availableLayerIds: ["layer-image"],
+        hasShot: true,
+        isOpen: false,
+        selectedLayerIds: ["paint"]
+      })
+    ).toEqual([]);
+
+    expect(
+      layerSelectionForPanelState({
+        availableLayerIds: ["layer-image"],
+        hasShot: true,
+        isOpen: true,
+        selectedLayerIds: ["paint", "layer-image"]
+      })
+    ).toEqual(["layer-image"]);
   });
 });

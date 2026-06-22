@@ -4,37 +4,49 @@ import {
   getZoomPreviewState,
   getStableBoardTop,
   maxStoryboardZoom,
+  nextKeyboardStoryboardZoom,
   nextWheelStoryboardZoom,
   normalizeStoryboardZoom,
   sameAnimationViewport
 } from "./animationViewport";
 
 describe("animation viewport", () => {
-  it("fits the image into the visible board area when animation mode starts", () => {
-    const viewport = getAnimationViewport({
+  it("enters animation mode only at max zoom", () => {
+    const beforeMax = getAnimationViewport({
       boardWidth: 1200,
       boardTop: 120,
       viewportHeight: 900,
       reservedBottom: 180,
       margin: 14,
-      zoomLevel: 220,
+      zoomLevel: 255,
+      isAnimationMode: true,
+      imageAspectRatio: 420 / 265
+    });
+    const atMax = getAnimationViewport({
+      boardWidth: 1200,
+      boardTop: 120,
+      viewportHeight: 900,
+      reservedBottom: 180,
+      margin: 14,
+      zoomLevel: maxStoryboardZoom,
       isAnimationMode: false,
       imageAspectRatio: 420 / 265
     });
 
-    expect(viewport.isAnimationMode).toBe(true);
-    expect(viewport.imageWidth).toBeCloseTo(928.8, 1);
-    expect(viewport.imageHeight).toBe(586);
+    expect(beforeMax.isAnimationMode).toBe(false);
+    expect(atMax.isAnimationMode).toBe(true);
+    expect(atMax.imageWidth).toBeCloseTo(795.6, 1);
+    expect(atMax.imageHeight).toBe(502);
   });
 
-  it("does not jump into animation mode before the zoomed image reaches the visible board area", () => {
+  it("keeps normal storyboard scaling below max zoom", () => {
     const before = getAnimationViewport({
       boardWidth: 1200,
       boardTop: 120,
       viewportHeight: 900,
       reservedBottom: 180,
       margin: 14,
-      zoomLevel: 150,
+      zoomLevel: 250,
       isAnimationMode: false,
       imageAspectRatio: 420 / 265
     });
@@ -44,7 +56,7 @@ describe("animation viewport", () => {
       viewportHeight: 900,
       reservedBottom: 180,
       margin: 14,
-      zoomLevel: 155,
+      zoomLevel: 255,
       isAnimationMode: false,
       imageAspectRatio: 420 / 265
     });
@@ -54,30 +66,64 @@ describe("animation viewport", () => {
     expect(nextStep.imageWidth - before.imageWidth).toBeCloseTo(21.5, 1);
   });
 
-  it("uses further zoom to enlarge the image beyond the fitted size", () => {
-    const fitted = getAnimationViewport({
+  it("aligns the animation frame to the fitted image size", () => {
+    const viewport = getAnimationViewport({
       boardWidth: 1200,
       boardTop: 120,
       viewportHeight: 900,
       reservedBottom: 180,
       margin: 14,
-      zoomLevel: 220,
-      isAnimationMode: false,
-      imageAspectRatio: 420 / 265
-    });
-    const zoomed = getAnimationViewport({
-      boardWidth: 1200,
-      boardTop: 120,
-      viewportHeight: 900,
-      reservedBottom: 180,
-      margin: 14,
-      zoomLevel: 250,
+      zoomLevel: maxStoryboardZoom,
       isAnimationMode: true,
       imageAspectRatio: 420 / 265
     });
 
-    expect(zoomed.imageWidth).toBeGreaterThan(fitted.imageWidth);
-    expect(zoomed.imageHeight).toBeGreaterThan(fitted.imageHeight);
+    expect(viewport.frameWidth).toBe(viewport.imageWidth);
+    expect(viewport.frameHeight).toBe(viewport.imageHeight);
+  });
+
+  it("leaves room for the animation shot header and dialogue chrome", () => {
+    const cardChromeHeight = 84;
+    const viewportHeight = 1110;
+    const boardTop = 22;
+    const reservedBottom = 84;
+    const margin = 14;
+    const visibleHeight = viewportHeight - Math.max(boardTop, margin) - reservedBottom - margin;
+    const viewport = getAnimationViewport({
+      boardWidth: 1740,
+      boardTop,
+      viewportHeight,
+      reservedBottom,
+      margin,
+      zoomLevel: 260,
+      isAnimationMode: true,
+      imageAspectRatio: 16 / 9
+    });
+
+    expect(viewport.imageHeight + cardChromeHeight).toBeLessThanOrEqual(visibleHeight);
+  });
+
+  it("uses measured shot chrome height when fitting animation mode", () => {
+    const viewportHeight = 1110;
+    const boardTop = 22;
+    const reservedBottom = 84;
+    const margin = 14;
+    const measuredChromeHeight = 160;
+    const visibleHeight = viewportHeight - Math.max(boardTop, margin) - reservedBottom - margin;
+    const viewport = getAnimationViewport({
+      boardWidth: 1740,
+      boardTop,
+      viewportHeight,
+      reservedBottom,
+      margin,
+      zoomLevel: 260,
+      isAnimationMode: true,
+      imageAspectRatio: 16 / 9,
+      cardChromeHeight: measuredChromeHeight
+    });
+
+    expect(viewport.imageHeight + measuredChromeHeight).toBeLessThanOrEqual(visibleHeight);
+    expect(viewport.imageHeight).toBeLessThan(906);
   });
 
   it("keeps storyboard mode before the image can fill the visible board area", () => {
@@ -95,30 +141,30 @@ describe("animation viewport", () => {
     expect(viewport.isAnimationMode).toBe(false);
   });
 
-  it("keeps animation mode through the threshold step while zooming back out", () => {
-    const stillAnimation = getAnimationViewport({
-      boardWidth: 1200,
-      boardTop: 120,
-      viewportHeight: 900,
-      reservedBottom: 180,
-      margin: 14,
-      zoomLevel: 215,
-      isAnimationMode: true,
-      imageAspectRatio: 420 / 265
-    });
+  it("exits animation mode immediately below max zoom", () => {
     const storyboardMode = getAnimationViewport({
       boardWidth: 1200,
       boardTop: 120,
       viewportHeight: 900,
       reservedBottom: 180,
       margin: 14,
-      zoomLevel: 210,
+      zoomLevel: 255,
+      isAnimationMode: true,
+      imageAspectRatio: 420 / 265
+    });
+    const animationMode = getAnimationViewport({
+      boardWidth: 1200,
+      boardTop: 120,
+      viewportHeight: 900,
+      reservedBottom: 180,
+      margin: 14,
+      zoomLevel: maxStoryboardZoom,
       isAnimationMode: true,
       imageAspectRatio: 420 / 265
     });
 
-    expect(stillAnimation.isAnimationMode).toBe(true);
     expect(storyboardMode.isAnimationMode).toBe(false);
+    expect(animationMode.isAnimationMode).toBe(true);
   });
 
   it("keeps the board top stable when scrolling in animation mode", () => {
@@ -133,7 +179,7 @@ describe("animation viewport", () => {
       viewportHeight: 900,
       reservedBottom: 180,
       margin: 14,
-      zoomLevel: 220,
+      zoomLevel: maxStoryboardZoom,
       isAnimationMode: false,
       imageAspectRatio: 420 / 265
     });
@@ -143,7 +189,7 @@ describe("animation viewport", () => {
       viewportHeight: 900,
       reservedBottom: 180,
       margin: 14,
-      zoomLevel: 220,
+      zoomLevel: maxStoryboardZoom,
       isAnimationMode: true,
       imageAspectRatio: 420 / 265
     });
@@ -153,25 +199,26 @@ describe("animation viewport", () => {
     expect(afterScroll.imageWidth).toBe(beforeScroll.imageWidth);
   });
 
-  it("uses the provided image aspect ratio for animation sizing", () => {
+  it("uses the provided image aspect ratio for animation width", () => {
     const scope = {
       boardWidth: 1200,
       boardTop: 120,
       viewportHeight: 900,
       reservedBottom: 180,
       margin: 14,
-      zoomLevel: 220,
-      isAnimationMode: false
+      zoomLevel: maxStoryboardZoom,
+      isAnimationMode: true
     };
     const wide = getAnimationViewport({ ...scope, imageAspectRatio: 2581 / 1080 });
     const tall = getAnimationViewport({ ...scope, imageAspectRatio: 1544 / 1080 });
 
-    expect(wide.imageHeight).toBeLessThan(tall.imageHeight);
+    expect(wide.imageWidth).toBeGreaterThan(tall.imageWidth);
+    expect(wide.imageHeight).toBe(tall.imageHeight);
     expect(Math.round(wide.imageWidth / wide.imageHeight)).toBeCloseTo(Math.round(2581 / 1080), 0);
     expect(tall.imageHeight).toBe(Math.round(tall.imageWidth / (1544 / 1080)));
   });
 
-  it("keeps the animation frame stable across different image aspect ratios", () => {
+  it("keeps the animation frame matched to each fitted image aspect ratio", () => {
     const scope = {
       boardWidth: 1200,
       boardTop: 120,
@@ -184,9 +231,9 @@ describe("animation viewport", () => {
     const wide = getAnimationViewport({ ...scope, imageAspectRatio: 2581 / 1080 });
     const tall = getAnimationViewport({ ...scope, imageAspectRatio: 1544 / 1080 });
 
-    expect(wide.frameWidth).toBe(tall.frameWidth);
-    expect(wide.frameHeight).toBe(tall.frameHeight);
-    expect(wide.imageHeight).not.toBe(tall.imageHeight);
+    expect(wide.frameHeight).toBeLessThanOrEqual(502);
+    expect(tall.frameHeight).toBe(502);
+    expect(wide.imageWidth).not.toBe(tall.imageWidth);
   });
 
   it("enters animation mode at max zoom when a wide image would otherwise need more zoom", () => {
@@ -203,8 +250,8 @@ describe("animation viewport", () => {
     });
 
     expect(viewport.isAnimationMode).toBe(true);
-    expect(viewport.imageWidth).toBe(1200);
-    expect(viewport.imageHeight).toBe(Math.round(1200 / (2581 / 1080)));
+    expect(viewport.imageWidth).toBeCloseTo(1199.7, 1);
+    expect(viewport.imageHeight).toBe(502);
   });
 
   it("normalizes storyboard zoom to the supported stepped range", () => {
@@ -219,6 +266,13 @@ describe("animation viewport", () => {
     expect(nextWheelStoryboardZoom(100, 1)).toBe(95);
     expect(nextWheelStoryboardZoom(25, 1)).toBe(25);
     expect(nextWheelStoryboardZoom(maxStoryboardZoom, -1)).toBe(maxStoryboardZoom);
+  });
+
+  it("steps keyboard zoom from the current zoom level", () => {
+    expect(nextKeyboardStoryboardZoom(100, "in")).toBe(105);
+    expect(nextKeyboardStoryboardZoom(100, "out")).toBe(95);
+    expect(nextKeyboardStoryboardZoom(25, "out")).toBe(25);
+    expect(nextKeyboardStoryboardZoom(maxStoryboardZoom, "in")).toBe(maxStoryboardZoom);
   });
 
   it("compares animation viewport state before updating React state", () => {
@@ -252,18 +306,34 @@ describe("animation viewport", () => {
       animationImageWidth: "559px",
       animationImageHeight: "353px",
       animationFrameWidth: "1200px",
-      animationFrameHeight: "586px"
+      animationFrameHeight: "502px"
     });
   });
 
-  it("builds an animation zoom preview from the same viewport math as final state", () => {
+  it("builds a non-animation zoom preview until max zoom", () => {
     const preview = getZoomPreviewState({
       boardWidth: 1200,
       boardTop: 120,
       viewportHeight: 900,
       reservedBottom: 180,
       margin: 14,
-      zoomLevel: 250,
+      zoomLevel: 255,
+      isAnimationMode: true,
+      imageAspectRatio: 420 / 265
+    });
+
+    expect(preview.viewport.isAnimationMode).toBe(false);
+    expect(preview.cssVariables.shotScale).toBe("2.55");
+  });
+
+  it("builds an animation zoom preview from the same viewport math as final state at max zoom", () => {
+    const preview = getZoomPreviewState({
+      boardWidth: 1200,
+      boardTop: 120,
+      viewportHeight: 900,
+      reservedBottom: 180,
+      margin: 14,
+      zoomLevel: maxStoryboardZoom,
       isAnimationMode: true,
       imageAspectRatio: 420 / 265
     });

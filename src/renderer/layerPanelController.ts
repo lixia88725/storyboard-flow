@@ -22,6 +22,26 @@ export const nextLayerPanelOpenState = (
   return shotId === primarySelectedShotId ? !isLayerPanelOpen : true;
 };
 
+export const layerSelectionForPanelState = ({
+  availableLayerIds,
+  hasShot,
+  isOpen,
+  selectedLayerIds
+}: {
+  availableLayerIds: string[];
+  hasShot: boolean;
+  isOpen: boolean;
+  selectedLayerIds: string[];
+}): string[] => {
+  if (!hasShot || !isOpen) {
+    return selectedLayerIds.length === 0 ? selectedLayerIds : [];
+  }
+
+  const existingLayerIds = new Set(availableLayerIds);
+  const nextLayerIds = selectedLayerIds.filter((layerId) => existingLayerIds.has(layerId));
+  return nextLayerIds.length === selectedLayerIds.length ? selectedLayerIds : nextLayerIds;
+};
+
 export type LayerPanelControllerOptions = {
   primarySelectedShotId: string | undefined;
   selectSingleShot: (shotId: string) => void;

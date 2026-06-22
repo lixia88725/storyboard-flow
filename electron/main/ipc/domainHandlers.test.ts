@@ -321,11 +321,11 @@ describe("domain IPC handlers", () => {
 
     expect([...handlers.keys()].sort()).toEqual(["images:createBlankShot"]);
     await expect(
-      handlers.get("images:createBlankShot")?.({}, "/project", { preset: "2.39:1" })
+      handlers.get("images:createBlankShot")?.({}, "/project", { preset: "9:16" })
     ).resolves.toEqual({
       folderPath: "/project",
-      options: { preset: "2.39:1" }
+      options: { preset: "9:16" }
     });
-    expect(createBlankShot).toHaveBeenCalledWith("/project", { preset: "2.39:1" });
+    expect(createBlankShot).toHaveBeenCalledWith("/project", { preset: "9:16" });
   });
 });

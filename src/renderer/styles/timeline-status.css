@@ -63,10 +63,29 @@
   border-color: var(--slate-accent);
 }
 
-.timeline-shot img {
+.timeline-shot > img,
+.timeline-shot-composite {
   width: 100%;
   height: 100%;
+}
+
+.timeline-shot > img {
   object-fit: cover;
+  user-select: none;
+}
+
+.timeline-shot-composite {
+  position: relative;
+  overflow: hidden;
+  background: var(--slate-canvas);
+}
+
+.timeline-shot-composite img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
   user-select: none;
 }
 
