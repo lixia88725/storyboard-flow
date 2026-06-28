@@ -75,7 +75,6 @@ button:disabled {
 
 .path-form input,
 .save-menu-field input,
-.shot-script-textarea,
 .layer-panel-controls select,
 .layer-panel-controls input {
   border-color: #101316;
@@ -94,8 +93,7 @@ button:disabled {
 
 .path-form input::placeholder,
 .save-menu-field input::placeholder,
-.dialogue-card textarea::placeholder,
-.shot-script-textarea::placeholder {
+.dialogue-card textarea::placeholder {
   color: var(--slate-dim);
 }
 

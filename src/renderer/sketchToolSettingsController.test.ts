@@ -3,7 +3,8 @@ import {
   defaultSketchToolSettings,
   nextSketchToolSettingsForRadialDrag,
   nextSketchToolSettingsForRadialPreset,
-  nextToolRadialMenuConfig
+  nextToolRadialMenuConfig,
+  nextToolRadialMenuSlotsConfig
 } from "./sketchToolSettingsController";
 import { defaultToolRadialMenuConfig } from "./toolRadialMenu";
 
@@ -72,5 +73,23 @@ describe("sketchToolSettingsController", () => {
       type: "empty",
       label: undefined
     });
+  });
+
+  it("updates radial slots in one normalized config write", () => {
+    const config = defaultToolRadialMenuConfig();
+    const nextBrushSlots = config.brush.slots.map((slot, index) =>
+      index === 1 ? { id: "empty-size", type: "empty" as const } : slot
+    );
+
+    const next = nextToolRadialMenuSlotsConfig(config, "brush", nextBrushSlots);
+
+    expect(next.brush.slots[1]).toEqual({
+      id: "empty-size",
+      type: "empty",
+      label: undefined
+    });
+    expect(next.eraser.slots.map(({ id, type, label }) => ({ id, type, label }))).toEqual(
+      config.eraser.slots.map(({ id, type, label }) => ({ id, type, label }))
+    );
   });
 });

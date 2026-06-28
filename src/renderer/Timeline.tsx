@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { bitmapLayersForShot } from "../shared/projectOps";
+import { useEffect, useRef } from "react";
 import type { Shot } from "../shared/types";
-import { canvasSizeForShot, cssBlendMode } from "./sketchRendering";
+import {
+  ShotPreviewComposite,
+  shotPreviewLayerItems as timelineLayerPreviewItems
+} from "./ShotPreviewComposite";
 import { timelineScrollTarget } from "./timelineScroll";
 
 type TimelineProps = {
@@ -12,40 +14,7 @@ type TimelineProps = {
   onSelect: (shotId: string) => void;
 };
 
-type TimelineLayerPreviewItem = {
-  id: string;
-  src: string;
-  opacity: number;
-  mixBlendMode: CSSProperties["mixBlendMode"];
-};
-
-export const timelineLayerPreviewItems = (
-  shot: Shot,
-  {
-    fallbackSrc,
-    layerDataUrls
-  }: {
-    fallbackSrc: string;
-    layerDataUrls: Record<string, string>;
-  }
-): TimelineLayerPreviewItem[] =>
-  bitmapLayersForShot(shot)
-    .filter((layer) => layer.visible)
-    .flatMap((layer) => {
-      const src =
-        layerDataUrls[layer.id] ?? (layer.kind === "image" && !layer.cleared ? fallbackSrc : undefined);
-
-      return src
-        ? [
-            {
-              id: layer.id,
-              src,
-              opacity: layer.opacity,
-              mixBlendMode: cssBlendMode(layer.blendMode)
-            }
-          ]
-        : [];
-    });
+export { timelineLayerPreviewItems };
 
 export const Timeline = ({
   folderPath,
@@ -121,71 +90,12 @@ const TimelineThumbnail = ({
   folderPath?: string;
   revision: number;
 }) => {
-  const bitmapLayers = useMemo(() => bitmapLayersForShot(shot), [shot]);
-  const canvasSize = useMemo(() => canvasSizeForShot(shot), [shot]);
-  const fallbackSrc = window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath);
-  const [layerDataUrls, setLayerDataUrls] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadLayers = async () => {
-      setLayerDataUrls({});
-
-      const visibleLayers = bitmapLayers.filter((layer) => layer.visible);
-      if (!folderPath || visibleLayers.length === 0) {
-        return;
-      }
-
-      const entries = await Promise.all(
-        visibleLayers.map(async (layer) => {
-          if (layer.cleared) {
-            return [layer.id, undefined] as const;
-          }
-
-          const dataUrl = await window.storyboard
-            .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
-            .catch(() => undefined);
-          return [layer.id, dataUrl] as const;
-        })
-      );
-
-      if (!cancelled) {
-        setLayerDataUrls(
-          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1])))
-        );
-      }
-    };
-
-    void loadLayers();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bitmapLayers, fallbackSrc, folderPath, revision]);
-
-  if (bitmapLayers.length === 0) {
-    return <img src={fallbackSrc} alt="" draggable={false} />;
-  }
-
   return (
-    <div
+    <ShotPreviewComposite
+      shot={shot}
+      folderPath={folderPath}
+      revision={revision}
       className="timeline-shot-composite"
-      style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}
-      aria-hidden="true"
-    >
-      {timelineLayerPreviewItems(shot, { fallbackSrc, layerDataUrls }).map((layer) => (
-        <img
-          key={layer.id}
-          src={layer.src}
-          alt=""
-          draggable={false}
-          style={{
-            opacity: layer.opacity,
-            mixBlendMode: layer.mixBlendMode
-          }}
-        />
-      ))}
-    </div>
+    />
   );
 };

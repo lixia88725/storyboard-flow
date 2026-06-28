@@ -1,5 +1,8 @@
-import { dialoguesForShot } from "../../shared/projectOps";
-import type { Dialogue, Project, Shot } from "../../shared/types";
+import type { Project, Shot } from "../../shared/types";
+import {
+  nextEditableDialogueTextProject,
+  shotDialogueText
+} from "../editableDialogueText";
 
 export type AiPanelSelectionState =
   | { kind: "empty" }
@@ -37,13 +40,6 @@ const exclusionsEqual = (
   left: Record<string, string[]> | undefined,
   right: Record<string, string[]> | undefined
 ): boolean => JSON.stringify(left ?? {}) === JSON.stringify(right ?? {});
-
-const editableDialogueLines = (dialogueText: string): string[] =>
-  dialogueText
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
 
 export const visibleAiStatusMessage = (status: string): string => (status === "Ready" ? "" : status);
 
@@ -151,29 +147,8 @@ export const nextAiEditableDialogueProject = (
   dialogueText: string,
   createDialogueId: () => string = () => crypto.randomUUID(),
   updatedAt = currentTimestamp()
-): Project => {
-  const existingDialogues = dialoguesForShot(project, shotId);
-  const nextDialoguesForShot: Dialogue[] = editableDialogueLines(dialogueText).map((text, order) => {
-    const existing = existingDialogues[order];
-    return existing
-      ? { ...existing, text, order }
-      : {
-          id: createDialogueId(),
-          shotId,
-          text,
-          order
-        };
-  });
-
-  return {
-    ...project,
-    dialogues: [
-      ...project.dialogues.filter((dialogue) => dialogue.shotId !== shotId),
-      ...nextDialoguesForShot
-    ],
-    updatedAt
-  };
-};
+): Project =>
+  nextEditableDialogueTextProject(project, shotId, dialogueText, createDialogueId, updatedAt);
 
 export const aiPanelSelectionState = (
   project: Project,
@@ -198,6 +173,6 @@ export const aiPanelSelectionState = (
     kind: "ready",
     shot,
     scriptText: shot.scriptText ?? "",
-    dialogueText: dialoguesForShot(project, shot.id).map((dialogue) => dialogue.text).join("\n")
+    dialogueText: shotDialogueText(project, shot.id)
   };
 };

@@ -7,7 +7,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { rectSortingStrategy, SortableContext } from "@dnd-kit/sortable";
+import { rectSortingStrategy, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
   useCallback,
   useEffect,
@@ -50,6 +50,7 @@ import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import type { ClipboardSelection } from "./clipboardSelection";
 import { useClipboardActionController } from "./clipboardActionController";
 import { DialoguePreview, ShotStackPreview } from "./DragPreviews";
+import { nextEditableDialogueTextProject } from "./editableDialogueText";
 import type { DeleteTarget } from "./deleteTarget";
 import { useDeleteActionController } from "./deleteActionController";
 import { useDialogueActionController } from "./dialogueActionController";
@@ -67,11 +68,12 @@ import { applyAiProjectChange } from "./ai/aiProjectChangeController";
 import { useBoardViewState } from "./boardViewState";
 import { useStoryboardZoomController } from "./storyboardZoomController";
 import { RadialToolMenu } from "./RadialToolMenu";
-import { ShotCard, type CardFace } from "./ShotCard";
+import { ShotCard } from "./ShotCard";
 import { StatusPopover } from "./StatusPopover";
 import { Timeline } from "./Timeline";
 import { ToolRail } from "./ToolRail";
 import { Topbar } from "./Topbar";
+import { JapaneseStoryboardView } from "./JapaneseStoryboardView";
 import { IMPORT_REQUIRED_HELP } from "./importRequiredHelp";
 import { formatSaveFailureStatus } from "./saveErrors";
 import { useStoryboardMarqueeController } from "./storyboardMarqueeController";
@@ -82,7 +84,7 @@ import {
   storyboardSortableItemIds as realStoryboardSortableItemIds,
   type DragData
 } from "./storyboardDnd";
-import { useStoryboardInsertionController } from "./storyboardInsertionController";
+import { useStoryboardInsertionController, type StoryboardInsertionLayout } from "./storyboardInsertionController";
 import { dragEndInsideSelector } from "./dragHitTesting";
 import { sameLayerSelection, useStoryboardInteractionState } from "./storyboardInteractionState";
 import { hasOpenShortcutBlockingMenu } from "./shortcutMenuController";
@@ -122,6 +124,7 @@ import { useStoryboardDragSessionController } from "./storyboardDragSessionContr
 import { useStoryboardDragEndController } from "./storyboardDragEndController";
 import { createShotSelectionController } from "./shotSelectionController";
 import { useAddShotController } from "./addShotController";
+import { visibleBoardViewMode, type BoardViewMode } from "./boardViewMode";
 import { useProjectEditController } from "./projectEditController";
 import { withStatus } from "./statusAction";
 import { createCurrentLayerActionController } from "./currentLayerActionController";
@@ -221,7 +224,9 @@ export const App = () => {
   } = useWorkspaceMenuController();
   const [blankShotPreset, setBlankShotPreset] = useState<BlankShotPreset>("16:9");
   const [isImportNudging, setIsImportNudging] = useState(false);
-  const [cardFace, setCardFace] = useState<CardFace>("image");
+  const [boardViewMode, setBoardViewMode] = useState<BoardViewMode>("storyboard");
+  const currentBoardViewMode = visibleBoardViewMode({ boardViewMode, isAnimationMode });
+  const isStoryboardBoardMode = currentBoardViewMode !== "japaneseStoryboard";
   const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
   const [autosaveError, setAutosaveError] = useState<AutosaveErrorNotice | undefined>();
   const [saveErrorDialog, setSaveErrorDialog] = useState<string | undefined>();
@@ -260,8 +265,11 @@ export const App = () => {
   const selectedShotCountLabelRef = useRef<HTMLSpanElement | null>(null);
   const lastPointerPositionRef = useRef<{ x: number; y: number } | undefined>(undefined);
   const parkingListRef = useRef<HTMLDivElement | null>(null);
+  const storyboardInsertionLayoutRef = useRef<StoryboardInsertionLayout>("grid");
+  const storyboardInsertionBlockedRef = useRef(false);
   const bitmapLayerWriteQueueRef = useRef(createBitmapLayerWriteQueue());
-  const appShellRef = useRef<HTMLElement | null>(null);
+  storyboardInsertionLayoutRef.current = isStoryboardBoardMode ? "grid" : "list";
+  storyboardInsertionBlockedRef.current = isStoryboardBoardMode && isAnimationMode;
   const isSaveEmphasized = shouldEmphasizeSaveButton(
     dirtyShotIdsRef.current.size,
     workspaceSaveState,
@@ -300,6 +308,10 @@ export const App = () => {
     () => realStoryboardSortableItemIds(renderedShotEntries.map(({ shot }) => shot.id)),
     [renderedShotEntries]
   );
+  const japaneseStoryboardSortableItemIds = useMemo(
+    () => realStoryboardSortableItemIds(orderedShots.map((shot) => shot.id)),
+    [orderedShots]
+  );
   const onionSkinNeighbors = useMemo(
     () => getOnionSkinNeighbors(orderedShots, primarySelectedShotId, isAnimationMode && isOnionSkinEnabled),
     [isAnimationMode, isOnionSkinEnabled, orderedShots, primarySelectedShotId]
@@ -322,7 +334,8 @@ export const App = () => {
     setBrushSize,
     setEraserOpacity,
     setEraserSize,
-    updateRadialSlot
+    updateRadialSlot,
+    updateRadialSlots
   } = useSketchToolSettingsController({
     persistToolRadialMenuConfig,
     toolRadialMenuConfig
@@ -361,7 +374,6 @@ export const App = () => {
   } = useStoryboardZoomController({
     animationFrameSize,
     animationImageSize,
-    appShellRef,
     isAnimationModeRef,
     isZoomScrubbing,
     isZoomScrubbingRef,
@@ -382,10 +394,11 @@ export const App = () => {
   } = useStoryboardInsertionController({
     boardGridRef,
     currentBoardScroll,
-    isAnimationModeRef,
+    isAnimationModeRef: storyboardInsertionBlockedRef,
     lastPointerPositionRef,
     parkingListRef,
     selectedShotIdsRef,
+    storyboardInsertionLayoutRef,
     setParkingInsertionIndicator,
     setStoryboardInsertionIndicator
   });
@@ -581,6 +594,11 @@ export const App = () => {
     project,
     updateProject
   });
+  const handleShotDialogueText = (shotId: string, dialogueText: string) => {
+    updateProject((currentProject) =>
+      nextEditableDialogueTextProject(currentProject, shotId, dialogueText)
+    );
+  };
 
   const persistWorkspace = async (
     projectToSave: Project,
@@ -1224,6 +1242,42 @@ export const App = () => {
     activeShotCount: activeShotIds.length + activeParkedShotIds.length,
     hasIndicator: Boolean(storyboardInsertionIndicator)
   });
+  const storyboardInsertionIndicatorElement =
+    showStoryboardInsertionIndicator && storyboardInsertionIndicator ? (
+      <div
+        className={`storyboard-insertion-indicator ${
+          storyboardInsertionIndicator.orientation === "horizontal" ? "is-horizontal" : ""
+        }`}
+        aria-hidden="true"
+        style={{
+          left: storyboardInsertionIndicator.left,
+          top: storyboardInsertionIndicator.top,
+          height: storyboardInsertionIndicator.height,
+          width: storyboardInsertionIndicator.width
+        }}
+      />
+    ) : null;
+  const storyboardDragOverlay = (
+    <DragOverlay>
+      {activeDialogue ? <DialoguePreview dialogue={activeDialogue} /> : null}
+      {!activeDialogue && dragPreviewShotIds.length > 0 ? (
+        <ShotStackPreview
+          shots={dragPreviewShotIds
+            .map((shotId) => shotById.get(shotId))
+            .filter((shot): shot is Shot => Boolean(shot))}
+          folderPath={folderPath}
+          variant="thumbnail"
+        />
+      ) : null}
+      {!activeDialogue && dragPreviewShotIds.length === 0 && activeParkedShotIds.length > 0 ? (
+        <ShotStackPreview
+          shots={parkedShots.filter((shot) => activeParkedShotIds.includes(shot.id))}
+          folderPath={folderPath}
+          variant="thumbnail"
+        />
+      ) : null}
+    </DragOverlay>
+  );
   const { handleClearCurrentLayerFromToolRail } = createCurrentLayerActionController({
     getPrimarySelectedShot: () => primarySelectedShot,
     handleClearBitmapLayer,
@@ -1243,7 +1297,6 @@ export const App = () => {
     });
   return (
     <main
-      ref={appShellRef}
       className={appShellClassName}
       onContextMenu={openSketchCanvasContextMenu}
       onDragOver={handleStoryboardScriptDragOver}
@@ -1252,6 +1305,7 @@ export const App = () => {
       <Topbar
         addShotMenuRef={addShotMenuRef}
         blankShotPreset={blankShotPreset}
+        boardViewMode={boardViewMode}
         folderInputValue={folderInputValue}
         handleAddShot={handleAddShot}
         handleImportSwbFormat={handleImportSwbFormat}
@@ -1278,6 +1332,7 @@ export const App = () => {
         recentMenuRef={recentMenuRef}
         saveMenuRef={saveMenuRef}
         setBlankShotPreset={setBlankShotPreset}
+        setBoardViewMode={setBoardViewMode}
         setFolderInputValue={setFolderInputValue}
         setIsAddShotMenuOpen={setIsAddShotMenuOpen}
         setIsImportHelpOpen={setIsImportHelpOpen}
@@ -1307,12 +1362,10 @@ export const App = () => {
         <ToolRail
           activeSketchTool={activeSketchTool}
           brushColor={brushColor}
-          cardFace={cardFace}
           closeRadialToolMenu={closeRadialToolMenu}
           onClearCurrentLayer={handleClearCurrentLayerFromToolRail}
           setActiveSketchTool={setActiveSketchTool}
           setBrushColor={setBrushColor}
-          setCardFace={setCardFace}
         />
         {radialToolMenu ? (
           <RadialToolMenu
@@ -1325,150 +1378,184 @@ export const App = () => {
             onApplyPreset={applyRadialPresetAndClose}
             onAdjust={adjustRadialToolValue}
             onUpdateSlot={(index, slot) => updateRadialSlot(radialToolMenu.tool, index, slot)}
+            onUpdateSlots={(slots) => updateRadialSlots(radialToolMenu.tool, slots)}
             onClose={closeRadialToolMenu}
           />
         ) : null}
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragMove={handleDragMove}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-        >
-          <div className="workspace-board-scroll" ref={workspaceBoardScrollRef}>
-            <SortableContext
-              items={storyboardSortableItemIds}
-              strategy={rectSortingStrategy}
-            >
-              <section
-                ref={boardGridRef}
-                className="board-grid"
-                style={boardZoomStyle}
-                onPointerDown={handleSelectionPointerDown}
+        {isStoryboardBoardMode ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <div className="workspace-board-scroll" ref={workspaceBoardScrollRef}>
+              <SortableContext
+                items={storyboardSortableItemIds}
+                strategy={rectSortingStrategy}
               >
-                {renderedShotEntries.map((entry) => {
-                  const { shot, index } = entry;
-                  return (
-                    <ShotCard
-                      key={shot.id}
-                      shot={shot}
-                      index={index}
-                    project={project}
-                    folderPath={folderPath}
-                    isSelected={selectedShotIds.length > 1 && selectedShotIds.includes(shot.id)}
-                    isPrimarySelected={shot.id === primarySelectedShotId}
-                    isAnimationFocused={isAnimationMode && shot.id === primarySelectedShotId}
-                    isZoomScrubbing={isZoomScrubbing}
-                    disableSortableTransform={activeShotIds.length > 0}
-                    keepDraggingSourceVisible={activeShotIds.includes(shot.id)}
-                    activeDragType={activeDragType}
-                    activeSketchTool={activeSketchTool}
-                    brushColor={brushColor}
-                    brushOpacity={brushOpacity}
-                    brushSize={brushSize}
-                    brushSoftness={brushSoftness}
-                    eraserOpacity={eraserOpacity}
-                    eraserSize={eraserSize}
-                    eraserSoftness={eraserSoftness}
-                    cardFace={cardFace}
-                    onionSkinPreviousShot={
-                      isAnimationMode && shot.id === primarySelectedShotId
-                        ? onionSkinNeighbors.previous
-                        : undefined
-                    }
-                    onionSkinNextShot={
-                      isAnimationMode && shot.id === primarySelectedShotId
-                        ? onionSkinNeighbors.next
-                        : undefined
-                    }
-                      editingDialogueId={editingDialogueId}
-                      onSelect={(event) => handleShotSelect(shot.id, event)}
-                    onFocusShot={() => {
-                      selectSingleShot(shot.id);
-                      setDeleteTarget({ type: "shot" });
-                      setSelectedBitmapLayerIds(undefined);
-                    }}
-                      {...layerPanelPropsForShot(shot.id)}
-                      thumbnailRevision={autosaveRevision}
-                      onAddLayer={(shotId) => void handleAddBitmapLayer(shotId)}
-                      onRemoveLayer={(shotId, layerId) =>
-                        void handleRemoveBitmapLayer(shotId, layerId)
-                      }
-                      onMergeLayers={(shotId, layerId, selectedLayerIds) =>
-                        void handleMergeBitmapLayers(shotId, layerId, selectedLayerIds)
-                      }
-                      onMergeVisibleLayers={(shotId) => void handleMergeVisibleBitmapLayers(shotId)}
-                      onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
-                      onSelectLayer={handleSelectLayer}
-                      onUpdateLayer={handleUpdateLayer}
-                      onMoveLayer={handleMoveLayer}
-                      onMoveLayerGroup={handleMoveLayerGroup}
-                      onSelectedLayerIdsChange={handleSelectedBitmapLayerIdsChange}
-                      onUpdateLayerGroupOpacity={handleUpdateLayerGroupOpacity}
-                      onCreateDialogue={handleCreateDialogue}
-                      onDialogueText={handleDialogueText}
-                      onDialogueBlur={handleDialogueBlur}
-                      onScriptText={(shotId, scriptText) => handleShotScriptText(shotId, scriptText)}
-                      onSketchStroke={(layerId, stroke, renderedDataUrl, pendingStrokes) =>
-                        handleBitmapStroke(shot, layerId, stroke, renderedDataUrl, pendingStrokes)
-                      }
-                      onSelectionTransform={(layerId, dataUrl) =>
-                        handleBitmapSelectionTransform(shot, layerId, dataUrl)
-                      }
-                      onFill={(layerId, point, color) =>
-                        handleBitmapFill(shot, layerId, point, color)
-                      }
-                      onPickColor={setBrushColor}
-                      onSketchBeginInteraction={closeRadialToolMenu}
-                    />
-                  );
-                })}
-                {showStoryboardInsertionIndicator && storyboardInsertionIndicator ? (
-                  <div
-                    className="storyboard-insertion-indicator"
-                    aria-hidden="true"
-                    style={{
-                      left: storyboardInsertionIndicator.left,
-                      top: storyboardInsertionIndicator.top,
-                      height: storyboardInsertionIndicator.height
-                    }}
-                  />
-                ) : null}
-                <SelectionMarquee ref={selectionMarqueeRef} />
-              </section>
+                <section
+                  ref={boardGridRef}
+                  className="board-grid"
+                  style={boardZoomStyle}
+                  onPointerDown={handleSelectionPointerDown}
+                >
+                  {renderedShotEntries.map((entry) => {
+                    const { shot, index } = entry;
+                    return (
+                      <ShotCard
+                        key={shot.id}
+                        shot={shot}
+                        index={index}
+                        project={project}
+                        folderPath={folderPath}
+                        isSelected={selectedShotIds.length > 1 && selectedShotIds.includes(shot.id)}
+                        isPrimarySelected={shot.id === primarySelectedShotId}
+                        isAnimationFocused={isAnimationMode && shot.id === primarySelectedShotId}
+                        isZoomScrubbing={isZoomScrubbing}
+                        disableSortableTransform={activeShotIds.length > 0}
+                        keepDraggingSourceVisible={activeShotIds.includes(shot.id)}
+                        activeDragType={activeDragType}
+                        activeSketchTool={activeSketchTool}
+                        brushColor={brushColor}
+                        brushOpacity={brushOpacity}
+                        brushSize={brushSize}
+                        brushSoftness={brushSoftness}
+                        eraserOpacity={eraserOpacity}
+                        eraserSize={eraserSize}
+                        eraserSoftness={eraserSoftness}
+                        onionSkinPreviousShot={
+                          isAnimationMode && shot.id === primarySelectedShotId
+                            ? onionSkinNeighbors.previous
+                            : undefined
+                        }
+                        onionSkinNextShot={
+                          isAnimationMode && shot.id === primarySelectedShotId
+                            ? onionSkinNeighbors.next
+                            : undefined
+                        }
+                        editingDialogueId={editingDialogueId}
+                        onSelect={(event) => handleShotSelect(shot.id, event)}
+                        onFocusShot={() => {
+                          selectSingleShot(shot.id);
+                          setDeleteTarget({ type: "shot" });
+                          setSelectedBitmapLayerIds(undefined);
+                        }}
+                        {...layerPanelPropsForShot(shot.id)}
+                        thumbnailRevision={autosaveRevision}
+                        onAddLayer={(shotId) => void handleAddBitmapLayer(shotId)}
+                        onRemoveLayer={(shotId, layerId) =>
+                          void handleRemoveBitmapLayer(shotId, layerId)
+                        }
+                        onMergeLayers={(shotId, layerId, selectedLayerIds) =>
+                          void handleMergeBitmapLayers(shotId, layerId, selectedLayerIds)
+                        }
+                        onMergeVisibleLayers={(shotId) => void handleMergeVisibleBitmapLayers(shotId)}
+                        onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
+                        onSelectLayer={handleSelectLayer}
+                        onUpdateLayer={handleUpdateLayer}
+                        onMoveLayer={handleMoveLayer}
+                        onMoveLayerGroup={handleMoveLayerGroup}
+                        onSelectedLayerIdsChange={handleSelectedBitmapLayerIdsChange}
+                        onUpdateLayerGroupOpacity={handleUpdateLayerGroupOpacity}
+                        onCreateDialogue={handleCreateDialogue}
+                        onDialogueText={handleDialogueText}
+                        onDialogueBlur={handleDialogueBlur}
+                        onSketchStroke={(layerId, stroke, renderedDataUrl, pendingStrokes) =>
+                          handleBitmapStroke(shot, layerId, stroke, renderedDataUrl, pendingStrokes)
+                        }
+                        onSelectionTransform={(layerId, dataUrl) =>
+                          handleBitmapSelectionTransform(shot, layerId, dataUrl)
+                        }
+                        onFill={(layerId, point, color) =>
+                          handleBitmapFill(shot, layerId, point, color)
+                        }
+                        onPickColor={setBrushColor}
+                        onSketchBeginInteraction={closeRadialToolMenu}
+                      />
+                    );
+                  })}
+                  {storyboardInsertionIndicatorElement}
+                  <SelectionMarquee ref={selectionMarqueeRef} />
+                </section>
+              </SortableContext>
+            </div>
+            <SortableContext items={parkedShots.map((shot) => `parked-${shot.id}`)} strategy={rectSortingStrategy}>
+              <ParkingShelf
+                shots={parkedShots}
+                isOpen={isParkingShelfOpen}
+                insertionIndicator={activeShotIds.length > 0 ? parkingInsertionIndicator : undefined}
+                listRef={parkingListRef}
+              />
             </SortableContext>
-          </div>
-          <SortableContext items={parkedShots.map((shot) => `parked-${shot.id}`)} strategy={rectSortingStrategy}>
-            <ParkingShelf
-              shots={parkedShots}
-              isOpen={isParkingShelfOpen}
-              insertionIndicator={activeShotIds.length > 0 ? parkingInsertionIndicator : undefined}
-              listRef={parkingListRef}
-            />
-          </SortableContext>
 
-          <DragOverlay>
-            {activeDialogue ? <DialoguePreview dialogue={activeDialogue} /> : null}
-            {!activeDialogue && dragPreviewShotIds.length > 0 ? (
-              <ShotStackPreview
-                shots={dragPreviewShotIds
-                  .map((shotId) => shotById.get(shotId))
-                  .filter((shot): shot is Shot => Boolean(shot))}
-                folderPath={folderPath}
-                variant="thumbnail"
-              />
-            ) : null}
-            {!activeDialogue && dragPreviewShotIds.length === 0 && activeParkedShotIds.length > 0 ? (
-              <ShotStackPreview
-                shots={parkedShots.filter((shot) => activeParkedShotIds.includes(shot.id))}
-                folderPath={folderPath}
-                variant="thumbnail"
-              />
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+            {storyboardDragOverlay}
+          </DndContext>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <div className="workspace-board-scroll" ref={workspaceBoardScrollRef}>
+              <SortableContext
+                items={japaneseStoryboardSortableItemIds}
+                strategy={verticalListSortingStrategy}
+              >
+                <JapaneseStoryboardView
+                  ref={boardGridRef}
+                  activeSketchTool={activeSketchTool}
+                  brushColor={brushColor}
+                  brushOpacity={brushOpacity}
+                  brushSize={brushSize}
+                  brushSoftness={brushSoftness}
+                  eraserOpacity={eraserOpacity}
+                  eraserSize={eraserSize}
+                  eraserSoftness={eraserSoftness}
+                  folderPath={folderPath}
+                  isZoomScrubbing={isZoomScrubbing}
+                  marquee={
+                    <>
+                      {storyboardInsertionIndicatorElement}
+                      <SelectionMarquee ref={selectionMarqueeRef} />
+                    </>
+                  }
+                  onPointerDown={handleSelectionPointerDown}
+                  project={project}
+                  selectedShotIds={selectedShotIds}
+                  zoomLevel={zoomLevel}
+                  onActionText={handleShotScriptText}
+                  onDialogueText={handleShotDialogueText}
+                  onFill={(shot, layerId, point, color) =>
+                    handleBitmapFill(shot, layerId, point, color)
+                  }
+                  onFocusShot={(shotId) => {
+                    selectSingleShot(shotId);
+                    setDeleteTarget({ type: "shot" });
+                    setSelectedBitmapLayerIds(undefined);
+                  }}
+                  onPickColor={setBrushColor}
+                  onSelectShot={(shotId, event) => handleShotSelect(shotId, event)}
+                  onSelectionTransform={(shot, layerId, dataUrl) =>
+                    handleBitmapSelectionTransform(shot, layerId, dataUrl)
+                  }
+                  onSketchBeginInteraction={closeRadialToolMenu}
+                  onSketchStroke={(shot, layerId, stroke, renderedDataUrl, pendingStrokes) =>
+                    handleBitmapStroke(shot, layerId, stroke, renderedDataUrl, pendingStrokes)
+                  }
+                />
+              </SortableContext>
+            </div>
+            {storyboardDragOverlay}
+          </DndContext>
+        )}
         {isImportLocked ? (
           <button
             type="button"

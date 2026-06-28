@@ -108,7 +108,7 @@ Reason: 这些行为在 React UI 状态之外更易测试、更安全演进。
 
 ## Renderer Components Have Explicit Ownership Boundaries
 
-`App.tsx` owns top-level project state, Save/Import/autosave wiring, global selection, shortcuts, menus, and history. `ShotCard.tsx` owns per-card presentation, dialogue cards, script back faces, lazy media placeholders, and card-local composition of `SketchPad` and `LayerPanel`. `SketchPad.tsx` owns bitmap stage behavior. `LayerPanel.tsx` owns the per-shot layer drawer.
+`App.tsx` owns top-level project state, Save/Import/autosave wiring, global selection, shortcuts, menus, and history. `ShotCard.tsx` owns per-card storyboard presentation, dialogue cards, lazy media placeholders, and card-local composition of `SketchPad` and `LayerPanel`. `JapaneseStoryboardView.tsx` owns the Japanese storyboard sheet presentation and row-level editing/drag handles. `ShotPreviewComposite.tsx` owns reusable shot/layer preview composition for non-drawing surfaces. `SketchPad.tsx` owns bitmap stage behavior. `LayerPanel.tsx` owns the per-shot layer drawer.
 
 Reason: The renderer was becoming too large for smooth collaboration. Keeping Save/Import/history in `App.tsx` while moving card, canvas, and layer drawer presentation into focused components reduces merge conflicts and lowers the risk of UI work accidentally touching filesystem boundaries.
 
@@ -119,7 +119,11 @@ Storyboard Flow is a local-first Electron app with four major layers:
 1. Renderer UI and interaction layer
    - `src/renderer/App.tsx` is the composition shell for workspace open/load, Save/Import wiring, bitmap layer asset action composition, global selection, sidebar orchestration, and cross-domain coordination.
    - Focused renderer controllers own low-risk orchestration for autosave, external refresh, zoom, marquee, history, DND, selection, sketch/tool settings, current-layer actions, add-shot, delete, dialogue, clipboard, layer metadata, and AI project changes.
+   - `boardViewMode.ts` defines the non-persistent board-level switch between storyboard mode and Japanese storyboard sheet mode.
    - `ShotCard.tsx`, `SketchPad.tsx`, `LayerPanel.tsx`, and `ParkingShelf.tsx` own card presentation, bitmap drawing/select behavior, layer drawer UI, and parked-shot UI.
+   - `JapaneseStoryboardView.tsx` owns Japanese storyboard sheet layout: rows ordered by shot order, picture preview, action text backed by `Shot.scriptText`, dialogue text backed by existing Dialogue records, and Cut-area drag handles.
+   - `ShotPreviewComposite.tsx` owns non-interactive shot/layer preview rendering reused outside `ShotCard`, and `editableDialogueText.ts` owns the text-to-dialogue conversion used by sheet editing.
+   - Storyboard and Japanese storyboard modes share the same main shot selection, marquee, DND, `reorderShots`, and `reorderShotGroup` flow; only the insertion geometry differs between grid and vertical-list layouts.
    - Rule: add behavior to focused helpers/controllers first when there is an obvious owner; keep `App.tsx` as the explicit composition point for protected cross-domain wiring.
 
 2. Electron main and filesystem layer

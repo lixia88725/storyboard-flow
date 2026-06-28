@@ -36,6 +36,11 @@ body {
   background-size: 32px 32px;
 }
 
+body.is-z-zoom-active,
+body.is-z-zoom-active * {
+  cursor: zoom-in !important;
+}
+
 button,
 textarea,
 input,

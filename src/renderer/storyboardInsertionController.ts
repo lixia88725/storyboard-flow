@@ -11,6 +11,8 @@ import {
   sameStoryboardInsertionIndicator,
   storyboardInsertionIndicatorFromCachedRect,
   storyboardInsertionTargetFromPointer,
+  storyboardListInsertionIndicatorFromCachedRect,
+  storyboardListInsertionTargetFromPointer,
   type DragData,
   type ParkingDragRectCache,
   type ParkingInsertionIndicator,
@@ -20,6 +22,7 @@ import {
 } from "./storyboardDnd";
 
 type PointerPosition = { x: number; y: number };
+export type StoryboardInsertionLayout = "grid" | "list";
 type InsertionDragRequest =
   | { type: "reset" }
   | { type: "clear" }
@@ -98,6 +101,7 @@ type UseStoryboardInsertionControllerOptions = {
   lastPointerPositionRef: RefObject<PointerPosition | undefined>;
   parkingListRef: RefObject<HTMLElement | null>;
   selectedShotIdsRef: RefObject<string[]>;
+  storyboardInsertionLayoutRef: RefObject<StoryboardInsertionLayout>;
   setParkingInsertionIndicator: (indicator: ParkingInsertionIndicator | undefined) => void;
   setStoryboardInsertionIndicator: (indicator: StoryboardInsertionIndicator | undefined) => void;
 };
@@ -109,6 +113,7 @@ export const useStoryboardInsertionController = ({
   lastPointerPositionRef,
   parkingListRef,
   selectedShotIdsRef,
+  storyboardInsertionLayoutRef,
   setParkingInsertionIndicator,
   setStoryboardInsertionIndicator
 }: UseStoryboardInsertionControllerOptions) => {
@@ -175,7 +180,9 @@ export const useStoryboardInsertionController = ({
   ) => {
     const currentTarget = storyboardInsertionTargetRef.current;
     const nextIndicator = nextTarget && rectCache
-      ? storyboardInsertionIndicatorFromCachedRect(nextTarget, rectCache)
+      ? storyboardInsertionLayoutRef.current === "list"
+        ? storyboardListInsertionIndicatorFromCachedRect(nextTarget, rectCache)
+        : storyboardInsertionIndicatorFromCachedRect(nextTarget, rectCache)
       : undefined;
     if (
       currentTarget?.targetShotId === nextTarget?.targetShotId &&
@@ -238,11 +245,18 @@ export const useStoryboardInsertionController = ({
       return;
     }
 
-    const insertionTarget = storyboardInsertionTargetFromPointer({
-      shotRects: rectCache.shots,
-      pointer: pending.pointer,
-      movingShotIds: pending.movingShotIds
-    });
+    const insertionTarget =
+      storyboardInsertionLayoutRef.current === "list"
+        ? storyboardListInsertionTargetFromPointer({
+            shotRects: rectCache.shots,
+            pointer: pending.pointer,
+            movingShotIds: pending.movingShotIds
+          })
+        : storyboardInsertionTargetFromPointer({
+            shotRects: rectCache.shots,
+            pointer: pending.pointer,
+            movingShotIds: pending.movingShotIds
+          });
     setNextStoryboardInsertionTarget(insertionTarget, rectCache);
   };
 

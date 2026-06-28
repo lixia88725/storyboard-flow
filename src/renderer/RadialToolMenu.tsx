@@ -3,16 +3,23 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
 import type { StrokeTool } from "../shared/types";
 import {
+  clearRadialSlot,
+  radialEditHoldDelayMs,
+  radialEditMoveTolerancePx,
   radialDragPreviewState,
   radialDragValue,
   radialPresetApplyDelayMs,
   registerRadialDragListeners,
   shouldApplyRadialPresetClick,
+  shouldEnterRadialEditMode,
   shouldCloseRadialMenuFromOutsidePointerDown,
+  swapRadialSlots,
   type RadialDragKind,
   type RadialDragPreviewState,
   type RadialPresetSlot,
@@ -31,6 +38,7 @@ type RadialToolMenuProps = {
   onApplyPreset: (slot: RadialPresetSlot) => void;
   onAdjust: (kind: RadialDragKind, value: number) => void;
   onUpdateSlot: (index: number, slot: RadialToolSlot) => void;
+  onUpdateSlots: (slots: RadialToolSlot[]) => void;
   onClose: () => void;
 };
 
@@ -159,13 +167,20 @@ export const RadialToolMenu = ({
   onApplyPreset,
   onAdjust,
   onUpdateSlot,
+  onUpdateSlots,
   onClose
 }: RadialToolMenuProps) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const onCloseRef = useRef(onClose);
   const clickTimerRef = useRef<number | undefined>(undefined);
   const activeDragCleanupRef = useRef<(() => void) | undefined>(undefined);
+  const holdTimerRef = useRef<number | undefined>(undefined);
+  const suppressNextClickRef = useRef(false);
   const [editingSlotIndex, setEditingSlotIndex] = useState<number | undefined>();
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [heldSlotIndex, setHeldSlotIndex] = useState<number | undefined>();
+  const [draggingSlotIndex, setDraggingSlotIndex] = useState<number | undefined>();
+  const [hoveredDropIndex, setHoveredDropIndex] = useState<number | undefined>();
   const [dragHint, setDragHint] = useState<
     { index: number; kind: RadialDragKind; label: string; preview: RadialDragPreviewState } | undefined
   >();
@@ -198,6 +213,9 @@ export const RadialToolMenu = ({
       if (clickTimerRef.current !== undefined) {
         window.clearTimeout(clickTimerRef.current);
       }
+      if (holdTimerRef.current !== undefined) {
+        window.clearTimeout(holdTimerRef.current);
+      }
       activeDragCleanupRef.current?.();
       activeDragCleanupRef.current = undefined;
     };
@@ -214,49 +232,227 @@ export const RadialToolMenu = ({
     [x, y]
   );
 
-  const beginDrag = (event: ReactPointerEvent<HTMLButtonElement>, slot: RadialToolSlot, index: number) => {
-    const kind = dragKindForSlot(slot);
-    if (!kind) {
+  const clearHoldTimer = () => {
+    if (holdTimerRef.current !== undefined) {
+      window.clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = undefined;
+    }
+  };
+
+  const dropIndexFromPoint = (clientX: number, clientY: number): number | undefined => {
+    const element = document.elementFromPoint(clientX, clientY);
+    const slotElement = element?.closest("[data-radial-slot-index]");
+    const index = slotElement?.getAttribute("data-radial-slot-index");
+    return index === undefined || index === null ? undefined : Number(index);
+  };
+
+  const beginRadialValueDrag = ({
+    index,
+    kind,
+    startX,
+    pointerEvent
+  }: {
+    index: number;
+    kind: RadialDragKind;
+    startX: number;
+    pointerEvent: PointerEvent;
+  }) => {
+    const initial = activeValueForKind(settings, tool, kind);
+    const range = dragRangeForKind(tool, kind);
+    const nextValue = radialDragValue({
+      kind,
+      initial,
+      deltaX: pointerEvent.clientX - startX,
+      min: range.min,
+      max: range.max
+    });
+    setDragHint({
+      index,
+      kind,
+      label: kind === "size" ? "调尺寸" : kind === "opacity" ? "调透明度" : "调软硬",
+      preview: radialDragPreviewState({ kind, value: nextValue, min: range.min, max: range.max })
+    });
+    onAdjust(kind, nextValue);
+
+    return { initial, range };
+  };
+
+  const handleEditDragPointerDown = (event: ReactPointerEvent<HTMLElement>, index: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggingSlotIndex(index);
+    setHoveredDropIndex(index);
+    let currentDropIndex: number | undefined = index;
+    let movedBetweenSlots = false;
+
+    activeDragCleanupRef.current?.();
+    activeDragCleanupRef.current = registerRadialDragListeners(window, (pointerEvent) => {
+      currentDropIndex = dropIndexFromPoint(pointerEvent.clientX, pointerEvent.clientY);
+      movedBetweenSlots = currentDropIndex !== index;
+      setHoveredDropIndex(currentDropIndex);
+    },
+      () => {
+        const dropIndex = currentDropIndex;
+        if (dropIndex !== undefined && dropIndex !== index) {
+          onUpdateSlots(swapRadialSlots(menu.slots, index, dropIndex));
+        } else if (!movedBetweenSlots && menu.slots[index]?.type === "empty") {
+          onEditEmptySlot(index);
+        }
+        activeDragCleanupRef.current = undefined;
+        setDraggingSlotIndex(undefined);
+        setHoveredDropIndex(undefined);
+      }
+    );
+  };
+
+  const handleEditDragDrop = (
+    index: number,
+    dropIndex: number | undefined,
+    movedBetweenSlots: boolean
+  ) => {
+    if (dropIndex !== undefined && dropIndex !== index) {
+      onUpdateSlots(swapRadialSlots(menu.slots, index, dropIndex));
+    } else if (!movedBetweenSlots && menu.slots[index]?.type === "empty") {
+      onEditEmptySlot(index);
+    }
+  };
+
+  const handleSlotPointerDown = (
+    event: ReactPointerEvent<HTMLElement>,
+    slot: RadialToolSlot,
+    index: number
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    if (isEditMode) {
+      handleEditDragPointerDown(event, index);
       return;
     }
 
     event.preventDefault();
     event.stopPropagation();
+    const kind = dragKindForSlot(slot);
     const startX = event.clientX;
-    const initial = activeValueForKind(settings, tool, kind);
-    const range = dragRangeForKind(tool, kind);
-    setDragHint({
-      index,
-      kind,
-      label: kind === "size" ? "调尺寸" : kind === "opacity" ? "调透明度" : "调软硬",
-      preview: radialDragPreviewState({ kind, value: initial, min: range.min, max: range.max })
-    });
+    const startY = event.clientY;
+    const startTime = performance.now();
+    let currentX = startX;
+    let currentY = startY;
+    let radialValueDrag:
+      | { kind: RadialDragKind; initial: number; range: { min: number; max: number } }
+      | undefined;
+    let editTriggered = false;
+    let editDropIndex: number | undefined = index;
+    let movedBetweenEditSlots = false;
+    setHeldSlotIndex(index);
+
+    clearHoldTimer();
+    holdTimerRef.current = window.setTimeout(() => {
+      holdTimerRef.current = undefined;
+      if (
+        shouldEnterRadialEditMode({
+          elapsedMs: performance.now() - startTime,
+          startX,
+          startY,
+          currentX,
+          currentY
+        })
+      ) {
+        editTriggered = true;
+        suppressNextClickRef.current = true;
+        if (clickTimerRef.current !== undefined) {
+          window.clearTimeout(clickTimerRef.current);
+          clickTimerRef.current = undefined;
+        }
+        setDragHint(undefined);
+        setHeldSlotIndex(undefined);
+        setDraggingSlotIndex(index);
+        setHoveredDropIndex(index);
+        setIsEditMode(true);
+      }
+    }, radialEditHoldDelayMs);
 
     activeDragCleanupRef.current?.();
     activeDragCleanupRef.current = registerRadialDragListeners(window, (pointerEvent) => {
-      const nextValue = radialDragValue({
-        kind,
-        initial,
-        deltaX: pointerEvent.clientX - startX,
-        min: range.min,
-        max: range.max
-      });
-      onAdjust(kind, nextValue);
-      setDragHint({
-        index,
-        kind,
-        label: kind === "size" ? "调尺寸" : kind === "opacity" ? "调透明度" : "调软硬",
-          preview: radialDragPreviewState({ kind, value: nextValue, min: range.min, max: range.max })
+      if (editTriggered) {
+        editDropIndex = dropIndexFromPoint(pointerEvent.clientX, pointerEvent.clientY);
+        movedBetweenEditSlots = editDropIndex !== index;
+        setHoveredDropIndex(editDropIndex);
+        return;
+      }
+
+      currentX = pointerEvent.clientX;
+      currentY = pointerEvent.clientY;
+      const movedEnough =
+        Math.hypot(currentX - startX, currentY - startY) > radialEditMoveTolerancePx;
+
+      if (!radialValueDrag && movedEnough) {
+        clearHoldTimer();
+        setHeldSlotIndex(undefined);
+        if (kind) {
+          const dragStart = beginRadialValueDrag({ index, kind, startX, pointerEvent });
+          radialValueDrag = { kind, ...dragStart };
+        } else {
+          suppressNextClickRef.current = true;
+        }
+        return;
+      }
+
+      if (radialValueDrag) {
+        const nextValue = radialDragValue({
+          kind: radialValueDrag.kind,
+          initial: radialValueDrag.initial,
+          deltaX: pointerEvent.clientX - startX,
+          min: radialValueDrag.range.min,
+          max: radialValueDrag.range.max
         });
-      },
+        onAdjust(radialValueDrag.kind, nextValue);
+        setDragHint({
+          index,
+          kind: radialValueDrag.kind,
+          label:
+            radialValueDrag.kind === "size"
+              ? "调尺寸"
+              : radialValueDrag.kind === "opacity"
+                ? "调透明度"
+                : "调软硬",
+          preview: radialDragPreviewState({
+            kind: radialValueDrag.kind,
+            value: nextValue,
+            min: radialValueDrag.range.min,
+            max: radialValueDrag.range.max
+          })
+        });
+      }
+    },
       () => {
+        clearHoldTimer();
         activeDragCleanupRef.current = undefined;
+        setHeldSlotIndex(undefined);
+        if (editTriggered) {
+          handleEditDragDrop(index, editDropIndex, movedBetweenEditSlots);
+          setDraggingSlotIndex(undefined);
+          setHoveredDropIndex(undefined);
+        }
         setDragHint(undefined);
       }
     );
   };
 
   const handleSlotClick = (slot: RadialToolSlot, clickDetail: number) => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
+
+    if (isEditMode) {
+      if (slot.type === "empty") {
+        onEditEmptySlot(menu.slots.indexOf(slot));
+      }
+      return;
+    }
+
     if (slot.type !== "preset" || !shouldApplyRadialPresetClick(clickDetail)) {
       return;
     }
@@ -278,11 +474,49 @@ export const RadialToolMenu = ({
     setEditingSlotIndex(index);
   };
 
+  const handleSlotKeyDown = (
+    event: ReactKeyboardEvent<HTMLElement>,
+    slot: RadialToolSlot,
+    index: number
+  ) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (isEditMode && slot.type === "empty") {
+      onEditEmptySlot(index);
+      return;
+    }
+
+    handleSlotClick(slot, 1);
+  };
+
+  const onEditEmptySlot = (index: number) => {
+    setEditingSlotIndex(index);
+  };
+
+  const handleClearSlot = (event: ReactMouseEvent<HTMLButtonElement>, index: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onUpdateSlots(clearRadialSlot(menu.slots, index));
+    if (editingSlotIndex === index) {
+      setEditingSlotIndex(undefined);
+    }
+  };
+
+  const radialMenuClassName = [
+    "radial-tool-menu",
+    isClosing ? "is-closing" : "",
+    isEditMode ? "is-editing" : ""
+  ].filter(Boolean).join(" ");
+
   return (
     <div className="radial-tool-layer" onContextMenu={(event) => event.preventDefault()}>
       <div
         ref={menuRef}
-        className={`radial-tool-menu ${isClosing ? "is-closing" : ""}`}
+        className={radialMenuClassName}
         style={menuStyle}
       >
         <button
@@ -297,13 +531,19 @@ export const RadialToolMenu = ({
           const presetColor =
             slot.type === "preset" && slot.tool === "brush" && slot.applyColor ? slot.color : undefined;
           const lightPreset = textColorForBackground(presetColor) !== undefined;
+          const isSlotDragging = draggingSlotIndex === index;
+          const isDropTarget = hoveredDropIndex === index && draggingSlotIndex !== index;
           return (
-            <button
+            <div
               key={slot.id}
-              type="button"
               className={`radial-tool-slot radial-tool-slot-${slot.type} ${
                 lightPreset ? "is-light-preset" : ""
-              }`}
+              } ${heldSlotIndex === index ? "is-held" : ""} ${
+                isEditMode ? "is-editing" : ""
+              } ${isSlotDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""}`}
+              role="button"
+              tabIndex={0}
+              data-radial-slot-index={index}
               style={{
                 left: position.left,
                 top: position.top,
@@ -313,11 +553,21 @@ export const RadialToolMenu = ({
               title="Click to use, double-click to edit"
               onClick={(event) => handleSlotClick(slot, event.detail)}
               onDoubleClick={() => handleSlotDoubleClick(index)}
-              onPointerDown={(event) => beginDrag(event, slot, index)}
+              onKeyDown={(event) => handleSlotKeyDown(event, slot, index)}
+              onPointerDown={(event) => handleSlotPointerDown(event, slot, index)}
             >
               <span>{slotLabel(slot)}</span>
               <small>{slotDetail(slot)}</small>
-            </button>
+              {isEditMode && slot.type !== "empty" ? (
+                <button
+                  type="button"
+                  className="radial-tool-slot-delete"
+                  aria-label={`Remove radial shortcut ${index + 1}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => handleClearSlot(event, index)}
+                />
+              ) : null}
+            </div>
           );
         })}
         {dragHint ? (

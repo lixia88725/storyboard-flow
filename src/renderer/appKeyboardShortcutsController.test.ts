@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createAppKeyboardBlurHandler,
   createAppKeyboardKeyDownHandler,
   createAppKeyboardKeyUpHandler,
+  createAppKeyboardWheelHandler,
   eraserHoldDelayMs
 } from "./appKeyboardShortcutsController";
 import type { Shot } from "../shared/types";
@@ -17,6 +19,13 @@ const keyboardEvent = (key: string, options: Partial<KeyboardEvent> = {}) =>
     preventDefault: vi.fn(),
     ...options
   }) as KeyboardEvent & { preventDefault: ReturnType<typeof vi.fn> };
+
+const wheelEvent = (deltaY: number, options: Partial<WheelEvent> = {}) =>
+  ({
+    deltaY,
+    preventDefault: vi.fn(),
+    ...options
+  }) as WheelEvent & { preventDefault: ReturnType<typeof vi.fn> };
 
 const shot = (id: string, order: number): Shot => ({
   id,
@@ -65,12 +74,15 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
     setStatus: vi.fn(),
     pendingEraserHoldRef: { current: undefined },
     temporarySketchToolOverrideRef: { current: undefined },
+    zWheelZoomRef: { current: false },
     ...overrides
   };
 
   return {
+    blurHandler: createAppKeyboardBlurHandler(options),
     handler: createAppKeyboardKeyDownHandler(options),
     keyUpHandler: createAppKeyboardKeyUpHandler(options),
+    wheelHandler: createAppKeyboardWheelHandler(options),
     options,
     selectedShotIdsRef,
     shotSelectionAnchorIdRef
@@ -80,6 +92,7 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
 describe("appKeyboardShortcutsController", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("ignores shortcuts when a blocking menu is open", () => {
@@ -136,6 +149,96 @@ describe("appKeyboardShortcutsController", () => {
     expect(zoomOutEvent.preventDefault).toHaveBeenCalled();
     expect(options.handleStoryboardZoomShortcut).toHaveBeenNthCalledWith(1, "in");
     expect(options.handleStoryboardZoomShortcut).toHaveBeenNthCalledWith(2, "out");
+  });
+
+  it("zooms the storyboard with the mouse wheel while Z is held", () => {
+    const { handler, keyUpHandler, wheelHandler, options } = createHarness();
+    const keyDownEvent = keyboardEvent("z");
+    const wheelUpEvent = wheelEvent(-120);
+    const wheelDownEvent = wheelEvent(120);
+    const keyUpEvent = keyboardEvent("z");
+
+    handler(keyDownEvent);
+    wheelHandler(wheelUpEvent);
+    wheelHandler(wheelDownEvent);
+    keyUpHandler(keyUpEvent);
+
+    expect(keyDownEvent.preventDefault).toHaveBeenCalled();
+    expect(wheelUpEvent.preventDefault).toHaveBeenCalled();
+    expect(wheelDownEvent.preventDefault).toHaveBeenCalled();
+    expect(keyUpEvent.preventDefault).toHaveBeenCalled();
+    expect(options.handleStoryboardZoomShortcut).toHaveBeenNthCalledWith(1, "in");
+    expect(options.handleStoryboardZoomShortcut).toHaveBeenNthCalledWith(2, "out");
+  });
+
+  it("shows a zoom cursor while Z is held", () => {
+    const addClass = vi.fn();
+    const removeClass = vi.fn();
+    vi.stubGlobal("document", {
+      body: {
+        classList: {
+          add: addClass,
+          remove: removeClass
+        }
+      }
+    });
+    const { handler, keyUpHandler } = createHarness();
+
+    handler(keyboardEvent("z"));
+    keyUpHandler(keyboardEvent("z"));
+
+    expect(addClass).toHaveBeenCalledWith("is-z-zoom-active");
+    expect(removeClass).toHaveBeenCalledWith("is-z-zoom-active");
+  });
+
+  it("clears Z wheel zoom when the window loses focus", () => {
+    const removeClass = vi.fn();
+    vi.stubGlobal("document", {
+      body: {
+        classList: {
+          add: vi.fn(),
+          remove: removeClass
+        }
+      }
+    });
+    const { blurHandler, handler, wheelHandler, options } = createHarness();
+    const keyDownEvent = keyboardEvent("z");
+    const wheelDownEvent = wheelEvent(120);
+
+    handler(keyDownEvent);
+    blurHandler();
+    wheelHandler(wheelDownEvent);
+
+    expect(keyDownEvent.preventDefault).toHaveBeenCalled();
+    expect(removeClass).toHaveBeenCalledWith("is-z-zoom-active");
+    expect(wheelDownEvent.preventDefault).not.toHaveBeenCalled();
+    expect(options.handleStoryboardZoomShortcut).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary wheel scrolling when Z is not held", () => {
+    const { wheelHandler, options } = createHarness();
+    const event = wheelEvent(120);
+
+    wheelHandler(event);
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(options.handleStoryboardZoomShortcut).not.toHaveBeenCalled();
+  });
+
+  it("does not start Z wheel zoom while typing in editable fields", () => {
+    const editableTarget = {
+      closest: (selector: string) => (selector === "textarea, select" ? {} : null)
+    } as unknown as EventTarget;
+    const { handler, wheelHandler, options } = createHarness();
+    const keyDownEvent = keyboardEvent("z", { target: editableTarget });
+    const wheelDownEvent = wheelEvent(120);
+
+    handler(keyDownEvent);
+    wheelHandler(wheelDownEvent);
+
+    expect(keyDownEvent.preventDefault).not.toHaveBeenCalled();
+    expect(wheelDownEvent.preventDefault).not.toHaveBeenCalled();
+    expect(options.handleStoryboardZoomShortcut).not.toHaveBeenCalled();
   });
 
   it("handles delete without modifier keys", () => {

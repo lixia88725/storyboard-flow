@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   closeRadialToolMenuState,
   nextRadialSlotConfig,
+  nextRadialSlotsConfig,
   openRadialToolMenuState,
   updateRadialDragSettings
 } from "./radialToolMenuController";
@@ -71,6 +72,24 @@ describe("radialToolMenuController", () => {
     });
     expect(next.brush.slots).toHaveLength(8);
     expect(next.eraser.slots).toHaveLength(8);
+  });
+
+  it("replaces all radial slots for one tool without changing the other tool", () => {
+    const config = defaultToolRadialMenuConfig();
+    const nextBrushSlots = config.brush.slots.map((slot, index) =>
+      index === 0 ? { id: "custom-empty", type: "empty" as const } : slot
+    );
+    const next = nextRadialSlotsConfig(config, "brush", nextBrushSlots);
+
+    expect(next.brush.slots[0]).toEqual({
+      id: "custom-empty",
+      type: "empty",
+      label: undefined
+    });
+    expect(next.brush.slots).toHaveLength(8);
+    expect(next.eraser.slots.map(({ id, type, label }) => ({ id, type, label }))).toEqual(
+      config.eraser.slots.map(({ id, type, label }) => ({ id, type, label }))
+    );
   });
 
   it("opens and closes radial menu state without leaking closing animation state", () => {

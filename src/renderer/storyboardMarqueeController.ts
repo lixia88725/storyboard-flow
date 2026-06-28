@@ -71,6 +71,25 @@ type StoryboardMarqueeSelectionOptions = {
   workspaceBoardScrollRef: RefObject<HTMLElement | null>;
 };
 
+const marqueeBlockedTargetSelector = "input, textarea, select, button, .image-stage, .japanese-storyboard-picture";
+
+export const shouldStartStoryboardMarqueeSelection = (event: Pick<PointerDownLike, "button" | "currentTarget" | "target">) => {
+  if (event.button !== 0) {
+    return false;
+  }
+
+  if (event.target === event.currentTarget) {
+    return true;
+  }
+
+  if (event.currentTarget.dataset.marqueeMode !== "rows") {
+    return false;
+  }
+
+  const closest = (event.target as { closest?: (selector: string) => Element | null } | null)?.closest;
+  return typeof closest === "function" ? !closest.call(event.target, marqueeBlockedTargetSelector) : false;
+};
+
 export const startStoryboardMarqueeSelection = ({
   currentBoardScroll,
   event,
@@ -87,7 +106,7 @@ export const startStoryboardMarqueeSelection = ({
   viewportHeight,
   workspaceBoardScrollRef
 }: StoryboardMarqueeSelectionOptions): void => {
-  if (event.target !== event.currentTarget || event.button !== 0) {
+  if (!shouldStartStoryboardMarqueeSelection(event)) {
     return;
   }
 

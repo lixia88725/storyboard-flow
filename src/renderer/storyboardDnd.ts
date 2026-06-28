@@ -35,6 +35,8 @@ export type StoryboardInsertionIndicator = StoryboardInsertionTarget & {
   left: number;
   top: number;
   height: number;
+  width?: number;
+  orientation?: "vertical" | "horizontal";
 };
 
 export type ParkingDragRectCache = {
@@ -137,6 +139,29 @@ export const storyboardInsertionIndicatorFromCachedRect = (
         : targetRect.right - cache.board.left + gapOffset,
     top: targetRect.top - cache.board.top,
     height: targetRect.bottom - targetRect.top
+  };
+};
+
+export const storyboardListInsertionIndicatorFromCachedRect = (
+  target: StoryboardInsertionTarget,
+  cache: StoryboardDragRectCache
+): StoryboardInsertionIndicator | undefined => {
+  const targetRect = cache.shots.find((rect) => rect.shotId === target.targetShotId);
+  if (!targetRect) {
+    return undefined;
+  }
+
+  const gapOffset = 8;
+  return {
+    ...target,
+    left: targetRect.left - cache.board.left,
+    top:
+      target.placement === "before"
+        ? targetRect.top - cache.board.top - gapOffset
+        : targetRect.bottom - cache.board.top + gapOffset,
+    height: 4,
+    width: targetRect.right - targetRect.left,
+    orientation: "horizontal"
   };
 };
 
@@ -263,6 +288,48 @@ export const storyboardInsertionTargetFromPointer = ({
   return { targetShotId: lastRow[lastRow.length - 1].shotId, placement: "after" };
 };
 
+export const storyboardListInsertionTargetFromPointer = ({
+  shotRects,
+  pointer,
+  movingShotIds
+}: {
+  shotRects: StoryboardShotRect[];
+  pointer: { x: number; y: number };
+  movingShotIds: string[];
+}): StoryboardInsertionTarget | undefined => {
+  const moving = new Set(movingShotIds);
+  const movingRects = shotRects.filter((rect) => moving.has(rect.shotId));
+  const isPointerInsideMovingRect = movingRects.some(
+    (rect) => pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom
+  );
+  if (isPointerInsideMovingRect) {
+    return undefined;
+  }
+
+  const candidates = shotRects
+    .filter((rect) => !moving.has(rect.shotId))
+    .sort((a, b) => a.top - b.top || a.left - b.left);
+
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  const containingRow = candidates.find((rect) => pointer.y >= rect.top && pointer.y <= rect.bottom);
+  if (containingRow) {
+    return {
+      targetShotId: containingRow.shotId,
+      placement: pointer.y < (containingRow.top + containingRow.bottom) / 2 ? "before" : "after"
+    };
+  }
+
+  const firstAfterPointer = candidates.find((rect) => pointer.y < rect.top);
+  if (firstAfterPointer) {
+    return { targetShotId: firstAfterPointer.shotId, placement: "before" };
+  }
+
+  return { targetShotId: candidates[candidates.length - 1].shotId, placement: "after" };
+};
+
 export const parkingInsertionTargetFromPointer = ({
   shotRects,
   pointer,
@@ -357,7 +424,9 @@ export const sameStoryboardInsertionIndicator = (
   current?.placement === next?.placement &&
   current?.left === next?.left &&
   current?.top === next?.top &&
-  current?.height === next?.height;
+  current?.height === next?.height &&
+  current?.width === next?.width &&
+  current?.orientation === next?.orientation;
 
 export const sameParkingInsertionIndicator = (
   current: ParkingInsertionIndicator | undefined,

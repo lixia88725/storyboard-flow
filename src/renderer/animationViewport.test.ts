@@ -5,7 +5,6 @@ import {
   getStableBoardTop,
   maxStoryboardZoom,
   nextKeyboardStoryboardZoom,
-  nextWheelStoryboardZoom,
   normalizeStoryboardZoom,
   sameAnimationViewport
 } from "./animationViewport";
@@ -259,13 +258,6 @@ describe("animation viewport", () => {
     expect(normalizeStoryboardZoom(28)).toBe(30);
     expect(normalizeStoryboardZoom(4)).toBe(25);
     expect(normalizeStoryboardZoom(maxStoryboardZoom + 20)).toBe(maxStoryboardZoom);
-  });
-
-  it("steps wheel zoom from the current zoom level", () => {
-    expect(nextWheelStoryboardZoom(100, -1)).toBe(105);
-    expect(nextWheelStoryboardZoom(100, 1)).toBe(95);
-    expect(nextWheelStoryboardZoom(25, 1)).toBe(25);
-    expect(nextWheelStoryboardZoom(maxStoryboardZoom, -1)).toBe(maxStoryboardZoom);
   });
 
   it("steps keyboard zoom from the current zoom level", () => {

@@ -8,7 +8,11 @@ import {
   type SketchToolSettings,
   type ToolRadialMenuConfig
 } from "./toolRadialMenu";
-import { nextRadialSlotConfig, updateRadialDragSettings } from "./radialToolMenuController";
+import {
+  nextRadialSlotConfig,
+  nextRadialSlotsConfig,
+  updateRadialDragSettings
+} from "./radialToolMenuController";
 
 export const defaultSketchToolSettings = (): SketchToolSettings => ({
   tool: "brush",
@@ -38,6 +42,12 @@ export const nextToolRadialMenuConfig = (
   index: number,
   slot: RadialToolSlot
 ): ToolRadialMenuConfig => nextRadialSlotConfig(config, tool, index, slot);
+
+export const nextToolRadialMenuSlotsConfig = (
+  config: ToolRadialMenuConfig,
+  tool: StrokeTool,
+  slots: RadialToolSlot[]
+): ToolRadialMenuConfig => nextRadialSlotsConfig(config, tool, slots);
 
 type UseSketchToolSettingsControllerOptions = {
   persistToolRadialMenuConfig: (config: ToolRadialMenuConfig) => void;
@@ -83,6 +93,13 @@ export const useSketchToolSettingsController = ({
     [persistToolRadialMenuConfig, toolRadialMenuConfig]
   );
 
+  const updateRadialSlots = useCallback(
+    (tool: StrokeTool, slots: RadialToolSlot[]) => {
+      persistToolRadialMenuConfig(nextToolRadialMenuSlotsConfig(toolRadialMenuConfig, tool, slots));
+    },
+    [persistToolRadialMenuConfig, toolRadialMenuConfig]
+  );
+
   return {
     activeSketchTool: settings.tool,
     adjustRadialToolValue,
@@ -104,6 +121,7 @@ export const useSketchToolSettingsController = ({
     setEraserOpacity: (eraserOpacity: SetStateAction<number>) =>
       setSetting("eraserOpacity", eraserOpacity),
     setEraserSize: (eraserSize: SetStateAction<number>) => setSetting("eraserSize", eraserSize),
-    updateRadialSlot
+    updateRadialSlot,
+    updateRadialSlots
   };
 };

@@ -66,6 +66,8 @@ export type RadialDragListenerTarget = {
 
 const radialSlotCount = 8;
 export const radialPresetApplyDelayMs = 360;
+export const radialEditHoldDelayMs = 550;
+export const radialEditMoveTolerancePx = 6;
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
@@ -310,6 +312,59 @@ export const radialDragPreviewState = ({
 };
 
 export const shouldApplyRadialPresetClick = (clickDetail: number): boolean => clickDetail === 1;
+
+export const shouldEnterRadialEditMode = ({
+  elapsedMs,
+  startX,
+  startY,
+  currentX,
+  currentY
+}: {
+  elapsedMs: number;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}): boolean => {
+  if (elapsedMs < radialEditHoldDelayMs) {
+    return false;
+  }
+
+  const distance = Math.hypot(currentX - startX, currentY - startY);
+  return distance <= radialEditMoveTolerancePx;
+};
+
+export const swapRadialSlots = (
+  slots: RadialToolSlot[],
+  fromIndex: number,
+  toIndex: number
+): RadialToolSlot[] => {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= slots.length ||
+    toIndex >= slots.length
+  ) {
+    return slots;
+  }
+
+  const nextSlots = [...slots];
+  const fromSlot = nextSlots[fromIndex];
+  nextSlots[fromIndex] = nextSlots[toIndex];
+  nextSlots[toIndex] = fromSlot;
+  return nextSlots;
+};
+
+export const clearRadialSlot = (slots: RadialToolSlot[], index: number): RadialToolSlot[] => {
+  if (index < 0 || index >= slots.length) {
+    return slots;
+  }
+
+  return slots.map((slot, slotIndex) =>
+    slotIndex === index ? { id: slot.id, type: "empty", label: undefined } : slot
+  );
+};
 
 export const shouldCloseRadialMenuFromOutsidePointerDown = ({
   button,

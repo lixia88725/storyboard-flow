@@ -48,15 +48,6 @@ export const normalizeStoryboardZoom = (
   return Math.min(maxZoomLevel, Math.max(minZoomLevel, steppedZoom));
 };
 
-export const nextWheelStoryboardZoom = (
-  currentZoomLevel: number,
-  deltaY: number,
-  maxZoomLevel = maxStoryboardZoom
-): number => {
-  const direction = deltaY < 0 ? 1 : -1;
-  return normalizeStoryboardZoom(currentZoomLevel + direction * zoomStep, minStoryboardZoom, maxZoomLevel);
-};
-
 export const nextKeyboardStoryboardZoom = (
   currentZoomLevel: number,
   direction: "in" | "out",

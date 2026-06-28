@@ -1,10 +1,8 @@
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import type { SketchTool } from "../shared/types";
-import type { CardFace } from "./ShotCard";
 import { ShortcutMenuButton } from "./ShortcutMenuButton";
 import {
   BrushIcon,
-  CardFaceIcon,
   ClearIcon,
   EraserIcon,
   EyedropperIcon,
@@ -12,40 +10,24 @@ import {
   SwatchIcon
 } from "./icons";
 
-export const nextCardFace = (face: CardFace): CardFace =>
-  face === "image" ? "script" : "image";
-
 type ToolRailProps = {
   activeSketchTool: SketchTool;
   brushColor: string;
-  cardFace: CardFace;
   closeRadialToolMenu: () => void;
   onClearCurrentLayer: () => void;
   setActiveSketchTool: Dispatch<SetStateAction<SketchTool>>;
   setBrushColor: Dispatch<SetStateAction<string>>;
-  setCardFace: Dispatch<SetStateAction<CardFace>>;
 };
 
 export const ToolRail = ({
   activeSketchTool,
   brushColor,
-  cardFace,
   closeRadialToolMenu,
   onClearCurrentLayer,
   setActiveSketchTool,
-  setBrushColor,
-  setCardFace
+  setBrushColor
 }: ToolRailProps) => (
   <aside className="tool-rail" aria-label="Sketch tools">
-    <button
-      type="button"
-      className={`card-face-tool ${cardFace === "script" ? "selected" : ""}`}
-      onClick={() => setCardFace(nextCardFace)}
-      title={cardFace === "image" ? "Show script side" : "Show image side"}
-      aria-label={cardFace === "image" ? "Show script side" : "Show image side"}
-    >
-      <CardFaceIcon />
-    </button>
     <ShortcutMenuButton />
     <button
       type="button"

@@ -14,6 +14,8 @@ import {
   sameStoryboardInsertionIndicator,
   shouldShowStoryboardInsertionIndicator,
   storyboardInsertionIndicatorFromCachedRect,
+  storyboardListInsertionIndicatorFromCachedRect,
+  storyboardListInsertionTargetFromPointer,
   storyboardSortableItemIds,
   storyboardInsertionTargetFromPointer
 } from "./storyboardDnd";
@@ -111,6 +113,91 @@ describe("storyboard insertion target", () => {
         movingShotIds: ["shot-1", "shot-2"]
       })
     ).toEqual({ targetShotId: "shot-3", placement: "before" });
+  });
+});
+
+describe("storyboard list insertion target", () => {
+  const listRects = [
+    { shotId: "shot-1", left: 20, right: 500, top: 30, bottom: 130 },
+    { shotId: "shot-2", left: 20, right: 500, top: 142, bottom: 242 },
+    { shotId: "shot-3", left: 20, right: 500, top: 254, bottom: 354 }
+  ];
+
+  it("targets before or after rows by vertical pointer position", () => {
+    expect(
+      storyboardListInsertionTargetFromPointer({
+        shotRects: listRects,
+        pointer: { x: 100, y: 60 },
+        movingShotIds: ["shot-2"]
+      })
+    ).toEqual({ targetShotId: "shot-1", placement: "before" });
+    expect(
+      storyboardListInsertionTargetFromPointer({
+        shotRects: listRects,
+        pointer: { x: 100, y: 112 },
+        movingShotIds: ["shot-2"]
+      })
+    ).toEqual({ targetShotId: "shot-1", placement: "after" });
+    expect(
+      storyboardListInsertionTargetFromPointer({
+        shotRects: listRects,
+        pointer: { x: 100, y: 248 },
+        movingShotIds: ["shot-1"]
+      })
+    ).toEqual({ targetShotId: "shot-3", placement: "before" });
+    expect(
+      storyboardListInsertionTargetFromPointer({
+        shotRects: listRects,
+        pointer: { x: 100, y: 370 },
+        movingShotIds: ["shot-1"]
+      })
+    ).toEqual({ targetShotId: "shot-3", placement: "after" });
+  });
+
+  it("does not show a target while the pointer is still inside moving rows", () => {
+    expect(
+      storyboardListInsertionTargetFromPointer({
+        shotRects: listRects,
+        pointer: { x: 100, y: 170 },
+        movingShotIds: ["shot-2"]
+      })
+    ).toBeUndefined();
+  });
+
+  it("computes a horizontal insertion line across the target row", () => {
+    const cache = {
+      board: { left: 12, top: 18 },
+      shots: [{ shotId: "shot-2", left: 20, right: 500, top: 142, bottom: 242 }]
+    };
+
+    expect(
+      storyboardListInsertionIndicatorFromCachedRect(
+        { targetShotId: "shot-2", placement: "before" },
+        cache
+      )
+    ).toEqual({
+      targetShotId: "shot-2",
+      placement: "before",
+      left: 8,
+      top: 116,
+      height: 4,
+      width: 480,
+      orientation: "horizontal"
+    });
+    expect(
+      storyboardListInsertionIndicatorFromCachedRect(
+        { targetShotId: "shot-2", placement: "after" },
+        cache
+      )
+    ).toEqual({
+      targetShotId: "shot-2",
+      placement: "after",
+      left: 8,
+      top: 232,
+      height: 4,
+      width: 480,
+      orientation: "horizontal"
+    });
   });
 });
 

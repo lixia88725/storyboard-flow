@@ -108,12 +108,6 @@
   border-color: #9b3218;
 }
 
-.card-face-tool {
-  font-size: 15px;
-  font-weight: 900;
-  line-height: 1;
-}
-
 .tool-icon {
   width: 24px;
   height: 24px;
@@ -329,6 +323,41 @@
   line-height: 1;
 }
 
+.radial-tool-menu.is-editing .radial-tool-slot {
+  cursor: grab;
+}
+
+.radial-tool-slot.is-editing {
+  animation: radial-tool-slot-jiggle 180ms ease-in-out infinite alternate;
+}
+
+.radial-tool-slot.is-held {
+  border-color: rgba(255, 90, 42, 0.8);
+  box-shadow: 0 0 0 3px rgba(255, 90, 42, 0.18), 0 10px 22px rgba(0, 0, 0, 0.4);
+}
+
+.radial-tool-slot.is-dragging {
+  cursor: grabbing;
+  opacity: 0.76;
+  transform: scale(1.08);
+  z-index: 2;
+}
+
+.radial-tool-slot.is-drop-target {
+  border-color: #ff5a2a;
+  box-shadow: 0 0 0 4px rgba(255, 90, 42, 0.24), 0 10px 22px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes radial-tool-slot-jiggle {
+  from {
+    transform: rotate(-2deg);
+  }
+
+  to {
+    transform: rotate(2deg);
+  }
+}
+
 .radial-tool-slot:hover {
   border-color: rgba(255, 90, 42, 0.7);
   box-shadow: 0 0 0 2px rgba(255, 90, 42, 0.18), 0 10px 22px rgba(0, 0, 0, 0.4);
@@ -352,6 +381,45 @@
 
 .radial-tool-slot-empty {
   color: rgba(243, 239, 228, 0.56);
+}
+
+.radial-tool-slot-delete {
+  position: absolute;
+  right: -5px;
+  top: -5px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid rgba(20, 22, 24, 0.72);
+  border-radius: 50%;
+  background: #f3efe4;
+  color: #151719;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32);
+}
+
+.radial-tool-slot-delete::before,
+.radial-tool-slot-delete::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.radial-tool-slot-delete::before {
+  transform: rotate(45deg);
+}
+
+.radial-tool-slot-delete::after {
+  transform: rotate(-45deg);
+}
+
+.radial-tool-slot-delete:hover {
+  background: #ff5a2a;
+  color: #fffaf0;
 }
 
 .radial-tool-hint {
@@ -397,6 +465,12 @@
   border-radius: 50%;
   background: #141617;
   box-shadow: 0 0 0 1px rgba(20, 22, 24, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radial-tool-slot.is-editing {
+    animation: none;
+  }
 }
 
 .radial-slot-editor {

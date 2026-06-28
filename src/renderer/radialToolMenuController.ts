@@ -79,6 +79,18 @@ export const nextRadialSlotConfig = (
     }
   });
 
+export const nextRadialSlotsConfig = (
+  config: ToolRadialMenuConfig,
+  tool: StrokeTool,
+  slots: RadialToolSlot[]
+): ToolRadialMenuConfig =>
+  normalizeToolRadialMenuConfig({
+    ...config,
+    [tool]: {
+      slots
+    }
+  });
+
 type UseRadialToolMenuControllerOptions = {
   activeSketchTool: SketchToolSettings["tool"];
   needsSwbImport: boolean;

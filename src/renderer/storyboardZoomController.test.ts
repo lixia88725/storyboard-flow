@@ -3,6 +3,7 @@ import type { Shot } from "../shared/types";
 import { getAnimationViewport, maxStoryboardZoom } from "./animationViewport";
 import { animationViewportMargin } from "./animationModeLayoutController";
 import {
+  applyZoomPreviewCssVariablesToBoard,
   storyboardZoomPreviewStateFromBoard,
   storyboardZoomStyleVariables
 } from "./storyboardZoomController";
@@ -63,6 +64,27 @@ describe("storyboardZoomController", () => {
       "--animation-frame-width": "520px",
       "--animation-frame-height": "300px"
     });
+  });
+
+  it("applies live zoom preview variables for both storyboard and Japanese storyboard views", () => {
+    const styleProperties = new Map<string, string>();
+    const board = {
+      style: {
+        setProperty: (property: string, value: string) => styleProperties.set(property, value)
+      }
+    } as unknown as HTMLElement;
+
+    applyZoomPreviewCssVariablesToBoard(board, {
+      shotScale: "1.5",
+      animationImageWidth: "640px",
+      animationImageHeight: "360px",
+      animationFrameWidth: "700px",
+      animationFrameHeight: "420px"
+    });
+
+    expect(styleProperties.get("--shot-scale")).toBe("1.5");
+    expect(styleProperties.get("--japanese-storyboard-zoom")).toBe("1.5");
+    expect(styleProperties.get("--animation-image-width")).toBe("640px");
   });
 
   it("builds zoom preview state from the animation viewport measurement", () => {

@@ -2,7 +2,6 @@ import {
   Brush,
   Copy,
   Eraser,
-  Images,
   Keyboard,
   LassoSelect,
   Pipette,
@@ -16,8 +15,6 @@ const lucideIconProps = {
   "aria-hidden": true,
   focusable: false
 } as const;
-
-export const CardFaceIcon = () => <Images {...lucideIconProps} />;
 
 export const GearIcon = () => <Keyboard {...lucideIconProps} />;
 
@@ -48,5 +45,22 @@ export const SidePanelIcon = () => (
   <svg className="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
     <rect x="4" y="5" width="16" height="14" rx="1.8" />
     <path d="M15 5v14" />
+  </svg>
+);
+
+export const StoryboardGridIcon = () => (
+  <svg className="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="4" y="5" width="6" height="5" rx="1.1" />
+    <rect x="14" y="5" width="6" height="5" rx="1.1" />
+    <rect x="4" y="14" width="6" height="5" rx="1.1" />
+    <rect x="14" y="14" width="6" height="5" rx="1.1" />
+  </svg>
+);
+
+export const JapaneseStoryboardIcon = () => (
+  <svg className="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M5 6h14" />
+    <path d="M5 12h14" />
+    <path d="M5 18h14" />
   </svg>
 );

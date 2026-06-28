@@ -1,6 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { BlankShotPreset, Project, ProjectNaming } from "../shared/types";
-import { SidePanelIcon } from "./icons";
+import type { BoardViewMode } from "./boardViewMode";
+import { JapaneseStoryboardIcon, SidePanelIcon, StoryboardGridIcon } from "./icons";
 import { IMPORT_REQUIRED_HELP } from "./importRequiredHelp";
 import type { WorkspaceTask } from "./workspaceLifecycleState";
 
@@ -14,6 +15,7 @@ const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: stri
 type TopbarProps = {
   addShotMenuRef: RefObject<HTMLDivElement | null>;
   blankShotPreset: BlankShotPreset;
+  boardViewMode: BoardViewMode;
   folderInputValue: string;
   hasSwbWarning: boolean;
   importHelpRef: RefObject<HTMLDivElement | null>;
@@ -33,6 +35,7 @@ type TopbarProps = {
   recentMenuRef: RefObject<HTMLDivElement | null>;
   saveMenuRef: RefObject<HTMLDivElement | null>;
   setBlankShotPreset: Dispatch<SetStateAction<BlankShotPreset>>;
+  setBoardViewMode: Dispatch<SetStateAction<BoardViewMode>>;
   setFolderInputValue: Dispatch<SetStateAction<string>>;
   setIsAddShotMenuOpen: Dispatch<SetStateAction<boolean>>;
   setIsImportHelpOpen: Dispatch<SetStateAction<boolean>>;
@@ -53,6 +56,7 @@ type TopbarProps = {
 export const Topbar = ({
   addShotMenuRef,
   blankShotPreset,
+  boardViewMode,
   folderInputValue,
   hasSwbWarning,
   importHelpRef,
@@ -72,6 +76,7 @@ export const Topbar = ({
   recentMenuRef,
   saveMenuRef,
   setBlankShotPreset,
+  setBoardViewMode,
   setFolderInputValue,
   setIsAddShotMenuOpen,
   setIsImportHelpOpen,
@@ -185,6 +190,28 @@ export const Topbar = ({
             </label>
           </div>
         ) : null}
+      </div>
+      <div className="board-view-toggle" aria-label="Storyboard view mode">
+        <button
+          type="button"
+          className={boardViewMode === "storyboard" ? "selected" : ""}
+          aria-label="Show storyboard board"
+          aria-pressed={boardViewMode === "storyboard"}
+          title="Storyboard board"
+          onClick={() => setBoardViewMode("storyboard")}
+        >
+          <StoryboardGridIcon />
+        </button>
+        <button
+          type="button"
+          className={boardViewMode === "japaneseStoryboard" ? "selected" : ""}
+          aria-label="Show Japanese storyboard sheet"
+          aria-pressed={boardViewMode === "japaneseStoryboard"}
+          title="Japanese storyboard sheet"
+          onClick={() => setBoardViewMode("japaneseStoryboard")}
+        >
+          <JapaneseStoryboardIcon />
+        </button>
       </div>
     </div>
     <div className="address-bar-container" ref={recentMenuRef}>

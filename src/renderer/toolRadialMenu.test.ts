@@ -1,16 +1,25 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   applyRadialPresetSlot,
+  clearRadialSlot,
   defaultToolRadialMenuConfig,
   radialCanvasContextMenuAction,
   radialDragPreviewState,
   radialDragValue,
+  radialEditHoldDelayMs,
+  radialEditMoveTolerancePx,
   radialPresetApplyDelayMs,
   registerRadialDragListeners,
   shouldApplyRadialPresetClick,
+  shouldEnterRadialEditMode,
   shouldCloseRadialMenuFromOutsidePointerDown,
-  normalizeToolRadialMenuConfig
+  normalizeToolRadialMenuConfig,
+  swapRadialSlots
 } from "./toolRadialMenu";
+
+const radialToolMenuSource = readFileSync(new URL("./RadialToolMenu.tsx", import.meta.url), "utf8");
+const workspaceBoardCss = readFileSync(new URL("./styles/workspace-board.css", import.meta.url), "utf8");
 
 describe("toolRadialMenu", () => {
   it("defaults brush and eraser to eight local radial slots each", () => {
@@ -202,6 +211,74 @@ describe("toolRadialMenu", () => {
     expect(shouldApplyRadialPresetClick(1)).toBe(true);
     expect(shouldApplyRadialPresetClick(2)).toBe(false);
     expect(radialPresetApplyDelayMs).toBeGreaterThanOrEqual(300);
+  });
+
+  it("enters radial edit mode only after a stable long hold", () => {
+    expect(radialEditHoldDelayMs).toBe(550);
+    expect(radialEditMoveTolerancePx).toBe(6);
+    expect(
+      shouldEnterRadialEditMode({
+        elapsedMs: 550,
+        startX: 100,
+        startY: 100,
+        currentX: 103,
+        currentY: 104
+      })
+    ).toBe(true);
+    expect(
+      shouldEnterRadialEditMode({
+        elapsedMs: 549,
+        startX: 100,
+        startY: 100,
+        currentX: 100,
+        currentY: 100
+      })
+    ).toBe(false);
+    expect(
+      shouldEnterRadialEditMode({
+        elapsedMs: 550,
+        startX: 100,
+        startY: 100,
+        currentX: 107,
+        currentY: 100
+      })
+    ).toBe(false);
+  });
+
+  it("swaps radial slots by index without changing slot count", () => {
+    const slots = defaultToolRadialMenuConfig().brush.slots;
+    const swapped = swapRadialSlots(slots, 0, 6);
+
+    expect(swapped).toHaveLength(8);
+    expect(swapped[0]).toEqual(slots[6]);
+    expect(swapped[6]).toEqual(slots[0]);
+    expect(swapRadialSlots(slots, 2, 2)).toEqual(slots);
+  });
+
+  it("clears a radial slot into a normalized empty slot", () => {
+    const slots = defaultToolRadialMenuConfig().brush.slots;
+    const cleared = clearRadialSlot(slots, 0);
+
+    expect(cleared).toHaveLength(8);
+    expect(cleared[0]).toEqual({
+      id: "brush-red",
+      type: "empty",
+      label: undefined
+    });
+    expect(cleared[1]).toEqual(slots[1]);
+  });
+
+  it("declares edit-mode UI affordances and reduced-motion safe jiggle CSS", () => {
+    expect(radialToolMenuSource).toContain("isEditMode");
+    expect(radialToolMenuSource).toContain("radial-tool-slot-delete");
+    expect(radialToolMenuSource).toContain("onEditEmptySlot");
+    expect(radialToolMenuSource).toContain("onKeyDown");
+    expect(radialToolMenuSource).toContain("handleEditDragDrop");
+    expect(radialToolMenuSource).toContain("editDropIndex = dropIndexFromPoint");
+    expect(workspaceBoardCss).toContain(".radial-tool-menu.is-editing");
+    expect(workspaceBoardCss).toContain("@keyframes radial-tool-slot-jiggle");
+    expect(workspaceBoardCss).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(workspaceBoardCss).toContain("animation: none");
   });
 
   it("toggles the radial menu from canvas right-clicks without affecting menu internals", () => {

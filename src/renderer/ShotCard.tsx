@@ -22,8 +22,6 @@ import { SketchPad } from "./SketchPad";
 import { canvasSizeForShot } from "./sketchRendering";
 import { isDialogueDropZoneHighlighted, type DragData } from "./storyboardDnd";
 
-export type CardFace = "image" | "script";
-
 const maxDialogueRows = 3;
 const dialogueGripDots = Array.from({ length: 9 }, (_item, index) => index);
 
@@ -52,7 +50,6 @@ export type ShotCardProps = {
   eraserOpacity: number;
   eraserSize: number;
   eraserSoftness: number;
-  cardFace: CardFace;
   onionSkinPreviousShot?: Shot;
   onionSkinNextShot?: Shot;
   editingDialogueId?: string;
@@ -94,7 +91,6 @@ export type ShotCardProps = {
   onCreateDialogue: (shotId: string) => void;
   onDialogueText: (dialogueId: string, text: string) => void;
   onDialogueBlur: (dialogue: Dialogue) => void;
-  onScriptText: (shotId: string, scriptText: string) => void;
   onSketchStroke: (
     layerId: string,
     stroke: SketchStroke,
@@ -127,7 +123,6 @@ export const ShotCard = ({
   eraserOpacity,
   eraserSize,
   eraserSoftness,
-  cardFace,
   onionSkinPreviousShot,
   onionSkinNextShot,
   editingDialogueId,
@@ -150,7 +145,6 @@ export const ShotCard = ({
   onCreateDialogue,
   onDialogueText,
   onDialogueBlur,
-  onScriptText,
   onSketchStroke,
   onSelectionTransform,
   onFill,
@@ -230,9 +224,7 @@ export const ShotCard = ({
         isSelected ? "is-selected" : ""
       } ${isAnimationFocused ? "is-animation-focus" : ""} ${
         isLayerPanelVisible ? "has-layer-panel-open" : ""
-      } ${keepDraggingSourceVisible ? "keep-dragging-source-visible" : ""} ${
-        cardFace === "script" ? "is-script-face" : ""
-      }`}
+      } ${keepDraggingSourceVisible ? "keep-dragging-source-visible" : ""}`}
       style={style}
       data-shot-id={shot.id}
       onClick={onSelect}
@@ -249,7 +241,7 @@ export const ShotCard = ({
       </div>
 
       <div className="shot-flip-shell">
-        <div className="shot-face shot-face-front" aria-hidden={cardFace === "script"}>
+        <div className="shot-face shot-face-front">
           <div className={`shot-image-shell ${isLayerPanelVisible ? "has-layer-panel" : ""}`}>
             {shouldRenderMedia ? (
               <>
@@ -322,16 +314,6 @@ export const ShotCard = ({
               />
             ))}
           </div>
-        </div>
-
-        <div className="shot-face shot-face-back" aria-hidden={cardFace === "image"}>
-          <textarea
-            className="shot-script-textarea"
-            aria-label={`Shot ${index + 1} storyboard script`}
-            value={shot.scriptText ?? ""}
-            onChange={(event) => onScriptText(shot.id, event.target.value)}
-            placeholder="分镜头脚本"
-          />
         </div>
       </div>
     </article>

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { startStoryboardMarqueeSelection } from "./storyboardMarqueeController";
+import {
+  shouldStartStoryboardMarqueeSelection,
+  startStoryboardMarqueeSelection
+} from "./storyboardMarqueeController";
 import type { DeleteTarget } from "./deleteTarget";
 
 const fakeElement = (shotId: string, rect: { left: number; right: number; top: number; bottom: number }) => ({
@@ -45,7 +48,67 @@ const fakeMarqueeElement = () => {
   };
 };
 
+const fakeTarget = (blockedSelector?: string) => ({
+  closest: (selector: string) => (blockedSelector && selector.includes(blockedSelector) ? {} : null)
+});
+
 describe("storyboardMarqueeController", () => {
+  it("starts from row background in Japanese storyboard mode but not from editing or drawing targets", () => {
+    const board = {
+      dataset: { marqueeMode: "rows" }
+    };
+    const rowBackground = fakeTarget();
+
+    expect(
+      shouldStartStoryboardMarqueeSelection({
+        button: 0,
+        currentTarget: board as unknown as HTMLElement,
+        target: rowBackground as unknown as HTMLElement
+      })
+    ).toBe(true);
+    expect(
+      shouldStartStoryboardMarqueeSelection({
+        button: 0,
+        currentTarget: board as unknown as HTMLElement,
+        target: fakeTarget("textarea") as unknown as HTMLElement
+      })
+    ).toBe(false);
+    expect(
+      shouldStartStoryboardMarqueeSelection({
+        button: 0,
+        currentTarget: board as unknown as HTMLElement,
+        target: fakeTarget(".image-stage") as unknown as HTMLElement
+      })
+    ).toBe(false);
+    expect(
+      shouldStartStoryboardMarqueeSelection({
+        button: 0,
+        currentTarget: board as unknown as HTMLElement,
+        target: fakeTarget("button") as unknown as HTMLElement
+      })
+    ).toBe(false);
+  });
+
+  it("keeps ordinary storyboard marquee starts limited to board whitespace", () => {
+    const board = { dataset: {} };
+    const child = fakeTarget();
+
+    expect(
+      shouldStartStoryboardMarqueeSelection({
+        button: 0,
+        currentTarget: board as unknown as HTMLElement,
+        target: child as unknown as HTMLElement
+      })
+    ).toBe(false);
+    expect(
+      shouldStartStoryboardMarqueeSelection({
+        button: 0,
+        currentTarget: board as unknown as HTMLElement,
+        target: board as unknown as HTMLElement
+      })
+    ).toBe(true);
+  });
+
   it("tracks marquee selection during drag and commits it on pointer up", () => {
     const shotA = fakeElement("shot-a", { left: 10, right: 110, top: 10, bottom: 110 });
     const shotB = fakeElement("shot-b", { left: 10, right: 110, top: 120, bottom: 220 });

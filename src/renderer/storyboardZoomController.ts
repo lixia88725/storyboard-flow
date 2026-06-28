@@ -5,7 +5,6 @@ import {
   type CSSProperties,
   type Dispatch,
   type MutableRefObject,
-  type RefObject,
   type SetStateAction
 } from "react";
 import type { Shot } from "../shared/types";
@@ -73,10 +72,21 @@ export const storyboardZoomPreviewStateFromBoard = ({
   return input ? getZoomPreviewState(input) : undefined;
 };
 
+export const applyZoomPreviewCssVariablesToBoard = (
+  board: HTMLElement,
+  cssVariables: ZoomPreviewState["cssVariables"]
+): void => {
+  board.style.setProperty("--shot-scale", cssVariables.shotScale);
+  board.style.setProperty("--japanese-storyboard-zoom", cssVariables.shotScale);
+  board.style.setProperty("--animation-image-width", cssVariables.animationImageWidth);
+  board.style.setProperty("--animation-image-height", cssVariables.animationImageHeight);
+  board.style.setProperty("--animation-frame-width", cssVariables.animationFrameWidth);
+  board.style.setProperty("--animation-frame-height", cssVariables.animationFrameHeight);
+};
+
 type StoryboardZoomControllerOptions = {
   animationFrameSize: BoardViewSize;
   animationImageSize: BoardViewSize;
-  appShellRef: RefObject<HTMLElement | null>;
   isAnimationModeRef: MutableRefObject<boolean>;
   isZoomScrubbing: boolean;
   isZoomScrubbingRef: MutableRefObject<boolean>;
@@ -94,7 +104,6 @@ type StoryboardZoomControllerOptions = {
 export const useStoryboardZoomController = ({
   animationFrameSize,
   animationImageSize,
-  appShellRef,
   isAnimationModeRef,
   isZoomScrubbing,
   isZoomScrubbingRef,
@@ -135,11 +144,7 @@ export const useStoryboardZoomController = ({
       return;
     }
 
-    board.style.setProperty("--shot-scale", preview.cssVariables.shotScale);
-    board.style.setProperty("--animation-image-width", preview.cssVariables.animationImageWidth);
-    board.style.setProperty("--animation-image-height", preview.cssVariables.animationImageHeight);
-    board.style.setProperty("--animation-frame-width", preview.cssVariables.animationFrameWidth);
-    board.style.setProperty("--animation-frame-height", preview.cssVariables.animationFrameHeight);
+    applyZoomPreviewCssVariablesToBoard(board, preview.cssVariables);
   }, []);
 
   const currentBoardScroll = useCallback(
@@ -328,12 +333,8 @@ export const useStoryboardZoomController = ({
   );
 
   useZoomInteractionController({
-    appShellRef,
     endZoomScrubbing,
-    isZoomScrubbing,
-    pendingZoomLevelRef,
-    scheduleZoomLevel,
-    zoomLevelRef
+    isZoomScrubbing
   });
 
   const handleZoomInputChange = useCallback(
