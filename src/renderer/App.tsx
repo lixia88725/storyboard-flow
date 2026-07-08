@@ -14,7 +14,8 @@ import {
   useMemo,
   useRef,
   useState,
-  type DragEvent as ReactDragEvent
+  type DragEvent as ReactDragEvent,
+  type SetStateAction
 } from "react";
 import {
   applyRenamePlan,
@@ -125,6 +126,7 @@ import { useStoryboardDragEndController } from "./storyboardDragEndController";
 import { createShotSelectionController } from "./shotSelectionController";
 import { useAddShotController } from "./addShotController";
 import { visibleBoardViewMode, type BoardViewMode } from "./boardViewMode";
+import { useBoardPanController } from "./boardPanController";
 import { useProjectEditController } from "./projectEditController";
 import { withStatus } from "./statusAction";
 import { createCurrentLayerActionController } from "./currentLayerActionController";
@@ -225,6 +227,9 @@ export const App = () => {
   const [blankShotPreset, setBlankShotPreset] = useState<BlankShotPreset>("16:9");
   const [isImportNudging, setIsImportNudging] = useState(false);
   const [boardViewMode, setBoardViewMode] = useState<BoardViewMode>("storyboard");
+  const [isSpacePanActive, setIsSpacePanActive] = useState(false);
+  const [isBoardPanning, setIsBoardPanning] = useState(false);
+  const isSpacePanActiveRef = useRef(false);
   const currentBoardViewMode = visibleBoardViewMode({ boardViewMode, isAnimationMode });
   const isStoryboardBoardMode = currentBoardViewMode !== "japaneseStoryboard";
   const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
@@ -386,6 +391,12 @@ export const App = () => {
     setZoomLevel,
     zoomLevel,
     zoomLevelRef
+  });
+  const { handleBoardPanPointerDownCapture } = useBoardPanController({
+    isSpacePanActiveRef,
+    scrollBoardBy,
+    setIsBoardPanning,
+    workspaceBoardScrollRef
   });
   const {
     flushInsertionTargetsFromDragEnd,
@@ -1169,6 +1180,16 @@ export const App = () => {
     setStatus,
     updateProject
   });
+  const setSpacePanActiveForKeyboard = useCallback((value: SetStateAction<boolean>) => {
+    setIsSpacePanActive((current) => {
+      const next = typeof value === "function" ? value(current) : value;
+      isSpacePanActiveRef.current = next;
+      if (!next) {
+        setIsBoardPanning(false);
+      }
+      return next;
+    });
+  }, []);
 
   useAppKeyboardShortcutsController({
     activeSketchTool,
@@ -1198,6 +1219,7 @@ export const App = () => {
     setBrushSize,
     setEraserOpacity,
     setEraserSize,
+    setIsSpacePanActive: setSpacePanActiveForKeyboard,
     setIsOnionSkinEnabled,
     setSelectedShotIds,
     setStatus
@@ -1295,6 +1317,19 @@ export const App = () => {
       setStatus,
       setWorkspaceSaveState
     });
+  const workspaceBoardScrollClassName = `workspace-board-scroll ${
+    isSpacePanActive ? "is-space-pan-active" : ""
+  } ${isBoardPanning ? "is-space-panning" : ""}`;
+  const parkingShelfElement = (
+    <SortableContext items={parkedShots.map((shot) => `parked-${shot.id}`)} strategy={rectSortingStrategy}>
+      <ParkingShelf
+        shots={parkedShots}
+        isOpen={isParkingShelfOpen}
+        insertionIndicator={activeShotIds.length > 0 ? parkingInsertionIndicator : undefined}
+        listRef={parkingListRef}
+      />
+    </SortableContext>
+  );
   return (
     <main
       className={appShellClassName}
@@ -1392,7 +1427,11 @@ export const App = () => {
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
-            <div className="workspace-board-scroll" ref={workspaceBoardScrollRef}>
+            <div
+              className={workspaceBoardScrollClassName}
+              ref={workspaceBoardScrollRef}
+              onPointerDownCapture={handleBoardPanPointerDownCapture}
+            >
               <SortableContext
                 items={storyboardSortableItemIds}
                 strategy={rectSortingStrategy}
@@ -1483,14 +1522,7 @@ export const App = () => {
                 </section>
               </SortableContext>
             </div>
-            <SortableContext items={parkedShots.map((shot) => `parked-${shot.id}`)} strategy={rectSortingStrategy}>
-              <ParkingShelf
-                shots={parkedShots}
-                isOpen={isParkingShelfOpen}
-                insertionIndicator={activeShotIds.length > 0 ? parkingInsertionIndicator : undefined}
-                listRef={parkingListRef}
-              />
-            </SortableContext>
+            {parkingShelfElement}
 
             {storyboardDragOverlay}
           </DndContext>
@@ -1504,7 +1536,11 @@ export const App = () => {
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
-            <div className="workspace-board-scroll" ref={workspaceBoardScrollRef}>
+            <div
+              className={workspaceBoardScrollClassName}
+              ref={workspaceBoardScrollRef}
+              onPointerDownCapture={handleBoardPanPointerDownCapture}
+            >
               <SortableContext
                 items={japaneseStoryboardSortableItemIds}
                 strategy={verticalListSortingStrategy}
@@ -1553,6 +1589,7 @@ export const App = () => {
                 />
               </SortableContext>
             </div>
+            {parkingShelfElement}
             {storyboardDragOverlay}
           </DndContext>
         )}

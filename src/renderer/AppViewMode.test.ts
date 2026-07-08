@@ -14,4 +14,9 @@ describe("App view mode rendering", () => {
     expect(appSource).toContain("{isAnimationMode && orderedShots.length > 0 ? (");
     expect(appSource).not.toContain("isStoryboardBoardMode && isAnimationMode && orderedShots.length > 0");
   });
+
+  it("renders the pending shelf in both storyboard and Japanese storyboard branches", () => {
+    expect(appSource).toContain("const parkingShelfElement = (");
+    expect(appSource.match(/{parkingShelfElement}/g)).toHaveLength(2);
+  });
 });

@@ -73,8 +73,10 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
     setSelectedShotIds,
     setStatus: vi.fn(),
     pendingEraserHoldRef: { current: undefined },
+    spacePanActiveRef: { current: false },
     temporarySketchToolOverrideRef: { current: undefined },
     zWheelZoomRef: { current: false },
+    setIsSpacePanActive: vi.fn(),
     ...overrides
   };
 
@@ -239,6 +241,51 @@ describe("appKeyboardShortcutsController", () => {
     expect(keyDownEvent.preventDefault).not.toHaveBeenCalled();
     expect(wheelDownEvent.preventDefault).not.toHaveBeenCalled();
     expect(options.handleStoryboardZoomShortcut).not.toHaveBeenCalled();
+  });
+
+  it("starts Space board pan outside editable fields", () => {
+    const { handler, options } = createHarness();
+    const event = keyboardEvent(" ");
+
+    handler(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(options.spacePanActiveRef.current).toBe(true);
+    expect(options.setIsSpacePanActive).toHaveBeenCalledWith(true);
+  });
+
+  it("does not start Space board pan while typing in editable fields", () => {
+    const editableTarget = {
+      closest: (selector: string) => (selector === "textarea, select" ? {} : null)
+    } as unknown as EventTarget;
+    const { handler, options } = createHarness();
+    const event = keyboardEvent(" ", { target: editableTarget });
+
+    handler(event);
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(options.spacePanActiveRef.current).toBe(false);
+    expect(options.setIsSpacePanActive).not.toHaveBeenCalled();
+  });
+
+  it("clears Space board pan on keyup and window blur", () => {
+    const { blurHandler, handler, keyUpHandler, options } = createHarness();
+    const keyDownEvent = keyboardEvent(" ");
+    const keyUpEvent = keyboardEvent(" ");
+
+    handler(keyDownEvent);
+    keyUpHandler(keyUpEvent);
+
+    expect(keyUpEvent.preventDefault).toHaveBeenCalled();
+    expect(options.spacePanActiveRef.current).toBe(false);
+    expect(options.setIsSpacePanActive).toHaveBeenNthCalledWith(1, true);
+    expect(options.setIsSpacePanActive).toHaveBeenNthCalledWith(2, false);
+
+    handler(keyDownEvent);
+    blurHandler();
+
+    expect(options.spacePanActiveRef.current).toBe(false);
+    expect(options.setIsSpacePanActive).toHaveBeenLastCalledWith(false);
   });
 
   it("handles delete without modifier keys", () => {

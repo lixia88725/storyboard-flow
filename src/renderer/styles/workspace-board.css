@@ -15,15 +15,41 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: auto;
   scrollbar-color: rgba(216, 210, 197, 0.42) transparent;
   scrollbar-width: thin;
 }
 
+.workspace-board-scroll.is-space-pan-active {
+  cursor: grab;
+}
+
+.workspace-board-scroll.is-space-panning,
+.workspace-board-scroll.is-space-panning * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.workspace-board-scroll.is-space-pan-active .image-stage,
+.workspace-board-scroll.is-space-pan-active .stage-overlay,
+.workspace-board-scroll.is-space-pan-active .stage-overlay canvas {
+  cursor: grab !important;
+}
+
+.workspace-board-scroll.is-space-panning .image-stage,
+.workspace-board-scroll.is-space-panning .stage-overlay,
+.workspace-board-scroll.is-space-panning .stage-overlay canvas {
+  cursor: grabbing !important;
+}
+
 .workspace-board-scroll::-webkit-scrollbar,
 .ai-draft-panel-content::-webkit-scrollbar {
   width: 10px;
+}
+
+.workspace-board-scroll::-webkit-scrollbar:horizontal {
+  height: 0;
 }
 
 .workspace-board-scroll::-webkit-scrollbar-track,
