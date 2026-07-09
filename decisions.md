@@ -108,7 +108,7 @@ Reason: 这些行为在 React UI 状态之外更易测试、更安全演进。
 
 ## Renderer Components Have Explicit Ownership Boundaries
 
-`App.tsx` owns top-level project state, Save/Import/autosave wiring, global selection, shortcuts, menus, and history. `ShotCard.tsx` owns per-card storyboard presentation, dialogue cards, lazy media placeholders, and card-local composition of `SketchPad` and `LayerPanel`. `JapaneseStoryboardView.tsx` owns the Japanese storyboard sheet presentation and row-level editing/drag handles. `ShotPreviewComposite.tsx` owns reusable shot/layer preview composition for non-drawing surfaces. `SketchPad.tsx` owns bitmap stage behavior. `LayerPanel.tsx` owns the per-shot layer drawer.
+`App.tsx` owns top-level project state, Save/Import/autosave wiring, global selection, shortcuts, menus, and history. `Topbar.tsx` owns the board-view segmented control. `ToolRail.tsx` owns drawing tools. `ShotCard.tsx` owns per-card storyboard presentation, dialogue cards, lazy media placeholders, and card-local composition of `SketchPad` and `LayerPanel`. `JapaneseStoryboardView.tsx` owns the Japanese storyboard sheet presentation, drawable picture cells, and row-level editing/drag handles. `ShotPreviewComposite.tsx` owns reusable shot/layer preview composition for non-drawing surfaces. `SketchPad.tsx` owns bitmap stage behavior. `LayerPanel.tsx` owns the per-shot layer drawer.
 
 Reason: The renderer was becoming too large for smooth collaboration. Keeping Save/Import/history in `App.tsx` while moving card, canvas, and layer drawer presentation into focused components reduces merge conflicts and lowers the risk of UI work accidentally touching filesystem boundaries.
 
@@ -118,12 +118,13 @@ Storyboard Flow is a local-first Electron app with four major layers:
 
 1. Renderer UI and interaction layer
    - `src/renderer/App.tsx` is the composition shell for workspace open/load, Save/Import wiring, bitmap layer asset action composition, global selection, sidebar orchestration, and cross-domain coordination.
-   - Focused renderer controllers own low-risk orchestration for autosave, external refresh, zoom, marquee, history, DND, selection, sketch/tool settings, current-layer actions, add-shot, delete, dialogue, clipboard, layer metadata, and AI project changes.
+   - Focused renderer controllers own low-risk orchestration for autosave, external refresh, zoom, marquee, history, DND, selection, sketch/tool settings, current-layer actions, add-shot, delete, dialogue, clipboard, layer metadata, board pan, and AI project changes.
    - `boardViewMode.ts` defines the non-persistent board-level switch between storyboard mode and Japanese storyboard sheet mode.
    - `ShotCard.tsx`, `SketchPad.tsx`, `LayerPanel.tsx`, and `ParkingShelf.tsx` own card presentation, bitmap drawing/select behavior, layer drawer UI, and parked-shot UI.
-   - `JapaneseStoryboardView.tsx` owns Japanese storyboard sheet layout: rows ordered by shot order, picture preview, action text backed by `Shot.scriptText`, dialogue text backed by existing Dialogue records, and Cut-area drag handles.
+   - `Topbar.tsx` owns the board-view segmented control. `ToolRail.tsx` owns drawing tools only.
+   - `JapaneseStoryboardView.tsx` owns Japanese storyboard sheet layout: rows ordered by shot order, drawable picture cells, action text backed by `Shot.scriptText`, dialogue text backed by existing Dialogue records, and Cut-area drag handles.
    - `ShotPreviewComposite.tsx` owns non-interactive shot/layer preview rendering reused outside `ShotCard`, and `editableDialogueText.ts` owns the text-to-dialogue conversion used by sheet editing.
-   - Storyboard and Japanese storyboard modes share the same main shot selection, marquee, DND, `reorderShots`, and `reorderShotGroup` flow; only the insertion geometry differs between grid and vertical-list layouts.
+   - Storyboard and Japanese storyboard modes share the same main shot selection, marquee, DND, pending shelf, `reorderShots`, `reorderShotGroup`, zoom state, max-zoom animation mode, and Space hand-pan flow; only the insertion geometry and presentation layout differ.
    - Rule: add behavior to focused helpers/controllers first when there is an obvious owner; keep `App.tsx` as the explicit composition point for protected cross-domain wiring.
 
 2. Electron main and filesystem layer
@@ -182,7 +183,7 @@ Reason: 用户会把多选组拖到前方或后方的 storyboard，只有“插�
 
 ## Animation Mode Is View-Driven
 
-当 Zoom 拉到最大值时进入动画模式，并显示底部时间线。低于最大 Zoom 时保持普通 storyboard 网格模式。
+当 Zoom 拉到最大值时进入动画模式，并显示底部时间线。Storyboard grid 和 Japanese storyboard sheet 共用同一个最大 Zoom 动画模式；低于最大 Zoom 时回到进入动画前的 board view mode。
 
 Reason: 最大 Zoom 是用户明确进入线性阅读/播放状态的意图边界，避免在接近阈值时因为窗口尺寸、滚动位置或缩放拖动造成动画模式反复抖动。
 
@@ -334,9 +335,9 @@ Reason: AI work now has enough internal separation for provider, resource, candi
 
 ## Batch AI Generation Uses Fixed Contact-Sheet Templates
 
-Batch AI generation groups selected shots in current storyboard order. Full groups use a 4-up 2x2 contact sheet; the final remainder uses 1-up, 2-up horizontal, or 3-up horizontal templates. Provider output is cropped back by fixed ratios into per-shot candidates.
+Batch AI generation groups selected shots in current storyboard order. The renderer offers non-persistent batch size `1 / 4 / 16`, defaulting to `4`. Each group makes one provider call, produces a contact sheet, and crops output back into per-shot candidates. Remainder groups use adaptive layouts from 1-up through 4x4.
 
-Reason: The first batch version should be predictable and testable. Fixed templates avoid brittle computer-vision panel detection and keep provider differences isolated behind the existing candidate flow.
+Reason: Batch generation should stay predictable and testable while giving users control over provider-call granularity. Fixed/adaptive templates avoid brittle computer-vision panel detection and keep provider differences isolated behind the existing candidate flow.
 
 ## ComfyUI Provider Uses User-Run Local API Workflows
 

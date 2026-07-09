@@ -3,13 +3,14 @@
 ## P1
 
 - [ ] Manual dogfood single-shot AI Draft generation with OpenAI, Seedream, and ComfyUI: set provider credentials/settings from the GUI, generate one candidate, Apply as an `AI Draft` layer, Discard, and copy request preview.
-- [ ] Manual dogfood batch AI generation: select 5+ and 19+ shots, confirm 4-up / remainder grouping, per-shot resource availability, crop-back candidates, Apply All, and Discard All.
+- [ ] Manual dogfood batch AI generation: select 5+ and 19+ shots, confirm batch size `1 / 4 / 16`, per-shot resource availability, crop-back candidates, Apply All, and Discard All.
 - [ ] Manual dogfood AI Resources: drag images into the AI panel, edit role/note in single-shot mode, delete resources, and confirm per-shot exclusions persist after project reload.
-- [ ] Manual dogfood storyboard canvas scrollbar: AI/Pending closed and open, macOS and Windows if possible, confirm the scrollbar is inside the board area and visually matches the AI panel scrollbar.
+- [ ] Manual dogfood board navigation: normal mouse wheel scrolls vertically, `Z` + mouse wheel zooms, Space hand pan can reveal an open layer drawer without adding excessive empty horizontal space, and AI/Pending sidebars still behave normally.
 - [ ] Manual dogfood latest tester release flow: after GitHub Actions publishes a new Release, install/update from `storyboard-flow-releases` on one Windows machine and one Apple Silicon Mac.
 - [ ] Manual dogfood in-app update notice: run an older packaged build, confirm the bottom-right status/info panel shows the newer version, and confirm `Download` opens the release page.
-- [ ] Manual dogfood 60+ shot marquee selection: 50% zoom, background drag across multiple rows, edge-scroll near the bottom, then Delete / copy-paste / drag reorder with the final selected group.
+- [ ] Manual dogfood 60+ shot marquee selection in both storyboard grid and Japanese storyboard mode: 50% zoom, background drag across multiple rows, edge-scroll near the bottom, then Delete / copy-paste / drag reorder with the final selected group.
 - [ ] Manual dogfood Import-required UI: open a folder with half-finished Photoshop TIFFs, trigger external TIFF / `storyboard-script.md` changes, confirm the board lock is transparent, the Import help card is readable, Import/status warning icons match size, Save is gray only when synced, and Import/Save still preserve existing data boundaries.
+- [ ] Manual dogfood Japanese storyboard mode: topbar mode switch, Action text backed by `shot.scriptText`, Dialogue text backed by existing Dialogue records, picture-cell drawing/context menu, Cut-handle drag sorting, pending shelf visibility, and max-zoom animation entry/exit.
 
 ## P2
 
@@ -40,6 +41,8 @@
 - [x] Worktree slicing was validated across renderer, CSS, Electron, and AI slices; architecture work is now in guarded mode with an explicit stop rule.
 - [x] Product naming is `Storyboard Flow`; `Storyboard Workbench` remains legacy/internal compatibility only.
 - [x] Import-required warning UI and Save button state were polished without changing Save / Import / TIFF / `.storyboard-workbench` data behavior.
+- [x] The legacy per-shot Script face was replaced by a board-level Japanese storyboard sheet with drawing, Action/Dialogue editing, shared selection/DND, zoom, and animation-mode handoff.
+- [x] Drawing and navigation now include eyedropper, temporary eyedropper/eraser shortcuts, brush/eraser cursor rings, `Z` + wheel zoom, Space hand pan, radial menu edit mode, and `9:16 Phone` blank shot preset.
 
 ## Out Of Scope For Current Scope
 

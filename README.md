@@ -119,17 +119,18 @@ Option/Alt drag 不再作为复制手势；按住 Option/Alt 拖动 storyboard�
 
 AI Draft is an experimental candidate-first image generation flow. It supports GUI-only local provider settings for OpenAI, Seedream, and local ComfyUI. Generated results are stored as candidates first; Apply adds a visible top bitmap layer named `AI Draft`. It does not replace base art and does not change the Save / Import / TIFF filename boundary.
 
-`AI Resources/` is a visible project folder for reference images. Resource role/note metadata is stored beside the resources, and per-shot availability is stored in project AI metadata as exclusions. Single-shot mode edits resource role/note and shot availability. Multi-shot mode uses fixed 4-up / remainder contact sheets, then crops provider output back into one candidate per selected shot.
+`AI Resources/` is a visible project folder for reference images. Resource role/note metadata is stored beside the resources, and per-shot availability is stored in project AI metadata as exclusions. Single-shot mode edits resource role/note and shot availability. Multi-shot mode supports batch size `1 / 4 / 16`, uses contact sheets, then crops provider output back into one candidate per selected shot.
 
 ComfyUI support expects the user to run local ComfyUI and provide an API-format workflow exported from ComfyUI. Storyboard Flow validates placeholders, submits the workflow to the local server, and reuses the normal candidate/apply path. It does not install or manage ComfyUI.
 
 ## Storyboard And Animation Mode
 
 - `Add Shot` 可创建白底 TIFF，支持 `16:9`、`9:16 Phone`、`2.39:1`、`1.43:1 IMAX`。
-- 工具栏 `文 / 图` 可在图片面和文字面之间切换；文字面编辑每张 shot 的分镜脚本。
+- 顶部栏的模式切换可在普通 storyboard grid 和 Japanese storyboard sheet 之间切换。Japanese storyboard sheet 从上到下排列 shot，包含 Cut、Picture、Action 和 Dialogue；Action 写入 `shot.scriptText`，Dialogue 复用现有 Dialogue 数据。
+- Japanese storyboard sheet 的 Picture 单元可直接绘制，也可以右键打开画布快捷菜单；Cut 区域可拖动排序，空白区域可框选多张 shot。
 - 根目录 `storyboard-script.md` 用标准 Markdown ordered list 表示当前 shot 顺序；空 shot 仍保留空条目，外部 MD 修改通过 Import 吸收。
 - Storyboard 按真实画布比例显示，混合画幅不会额外加黑边。
-- Zoom 拉到最大值时进入动画模式，底部显示时间线；低于最大 Zoom 时保持普通 storyboard 网格模式。
+- Zoom 拉到最大值时进入动画模式，底部显示时间线；普通 storyboard grid 和 Japanese storyboard sheet 都使用同一个动画模式，退出后回到进入前的模式。
 - 动画模式支持左右键线性播放、时间线点击跳转，以及 Onion Skin 前后帧参考。
 - 动画模式主画面只渲染当前 storyboard，并按当前 shot 的真实比例居中放入 dark matte frame，不拉伸画面。
 
