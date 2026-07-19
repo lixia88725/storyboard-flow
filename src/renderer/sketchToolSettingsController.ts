@@ -16,7 +16,7 @@ import {
 
 export const defaultSketchToolSettings = (): SketchToolSettings => ({
   tool: "brush",
-  brushColor: "#f05a28",
+  brushColor: "#111111",
   brushSize: 4,
   brushOpacity: 1,
   brushSoftness: 0,

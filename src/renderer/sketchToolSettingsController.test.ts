@@ -12,7 +12,7 @@ describe("sketchToolSettingsController", () => {
   it("creates the default sketch tool settings used by the app shell", () => {
     expect(defaultSketchToolSettings()).toEqual({
       tool: "brush",
-      brushColor: "#f05a28",
+      brushColor: "#111111",
       brushSize: 4,
       brushOpacity: 1,
       brushSoftness: 0,
