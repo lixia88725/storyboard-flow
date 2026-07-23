@@ -6,9 +6,11 @@
 
 - Worktree: `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers`
 - Branch: `main`
-- Handoff date: 2026-07-09
-- Latest pushed code commit: `5b2ff23 Polish board navigation interactions`.
-- Local state before this handoff update: `main` was synchronized with `origin/main`. This handoff doc update is intended to be committed locally; do not push again unless the user explicitly asks. Pushing `main` triggers GitHub Actions release automation.
+- Handoff date: 2026-07-23
+- Latest pushed code commit: `7b576a8 Set default brush color to black`.
+- Latest local commit: `0a52ea9 session: refresh handoff after board interaction polish`.
+- Repository state: before this handoff refresh, the working tree was clean and local `main` was ahead of `origin/main` by one documentation-only handoff commit. This file is the only pending change until the refresh is committed. Do not push unless the user explicitly asks; pushing `main` triggers GitHub Actions release automation.
+- Worktree state: only the `main` worktree remains. On 2026-07-21, 59 obsolete `sim/*` worktrees and local branches were removed after confirming that they were clean and contained no patches missing from `main`.
 - Product name: `Storyboard Flow`. `Storyboard Workbench` remains legacy/internal compatibility only.
 
 ## Must Preserve
@@ -43,10 +45,11 @@ Start a new architecture slice only for a repeated conflict, real bug-risk hotsp
 - Storyboard view polish: the old per-shot Script back face was replaced by a board-level Japanese storyboard sheet. The topbar now switches between storyboard grid and Japanese storyboard modes; the sheet supports drawing on picture cells, Action/Dialogue editing, marquee selection, Cut-handle drag sorting, zoom scaling, and max-zoom animation mode.
 - Drawing/navigation polish: eyedropper tool and temporary eyedropper/eraser shortcuts, brush/eraser size cursor rings, `Z` + mouse wheel zoom, Space temporary hand pan, radial menu edit mode, fixed dialogue drag handle dots, and `9:16 Phone` blank shot preset are implemented.
 - Pending shelf is available in Japanese storyboard mode, and board panning no longer adds excessive horizontal space just because a layer drawer opens.
+- Repository maintenance: `origin/main` was updated to `7b576a8`, the local handoff commit was preserved as `0a52ea9`, and obsolete architecture-simulation worktrees were removed after integration checks.
 
 ## Verification
 
-Latest verification for the pushed UI polish and this handoff pass:
+Verification rerun on 2026-07-23 against current local `HEAD` (`0a52ea9`):
 
 ```bash
 npm run test
