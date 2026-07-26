@@ -20,12 +20,19 @@ import type {
 } from "../shared/types";
 import {
   bitmapSelectionBounds,
+  bitmapSelectionBoundsCorners,
+  bitmapSelectionCenter,
   bitmapSelectionHandleRadiusForStage,
   bitmapSelectionHitTarget,
+  bitmapSelectionRotationHandlePoint,
   liveStrokePreviewOpacity,
   scaleBitmapSelectionBounds,
+  rotatePointAroundCenter,
+  rotatedBitmapSelectionBounds,
+  rotationRadiansBetweenPoints,
   shouldAppendStrokePoint,
   shouldCloseRadialMenuForSketchPointer,
+  shouldClearBitmapSelectionForTool,
   shouldCommitStroke,
   shouldHandleSketchPointer,
   shouldKeepCommittedStrokePreview,
@@ -67,11 +74,12 @@ type BitmapSelectionDraft = {
   points: Point[];
 };
 type BitmapTransformDraft = {
-  type: "move" | "scale";
+  type: "move" | "scale" | "rotate";
   startPoint: Point;
   startBounds: Bounds;
   currentBounds: Bounds;
   corner?: SelectionCorner;
+  rotationRadians?: number;
 };
 type PreparedBitmapTransform = {
   layerId: string;
@@ -101,41 +109,74 @@ const blurActiveFormControl = () => {
 const BitmapSelectionOverlay = ({
   selection,
   draft,
-  transformBounds,
+  transform,
   stageSize,
   canvasSize
 }: {
   selection?: BitmapSelection;
   draft?: BitmapSelectionDraft;
-  transformBounds?: Bounds;
+  transform?: BitmapTransformDraft;
   stageSize: CanvasSize;
   canvasSize: CanvasSize;
 }) => {
   const scaleX = stageSize.width / canvasSize.width;
   const scaleY = stageSize.height / canvasSize.height;
-  const activeBounds = transformBounds ?? selection?.bounds;
+  const activeBounds = transform?.currentBounds ?? selection?.bounds;
   const draftSelection = draft ? buildOverlaySelection(draft) : undefined;
-  const points = draftSelection?.points ?? selection?.points;
+  const rotationRadians = transform?.type === "rotate" ? transform.rotationRadians ?? 0 : 0;
+  const rotationCenter =
+    transform?.type === "rotate" ? bitmapSelectionCenter(transform.startBounds) : undefined;
+  const points =
+    draftSelection?.points ??
+    (selection?.points && rotationCenter
+      ? selection.points.map((point) =>
+          rotatePointAroundCenter(point, rotationCenter, rotationRadians)
+        )
+      : selection?.points);
   const pathPoints = points?.map((point) => `${point.x * scaleX},${point.y * scaleY}`).join(" ");
+  const framePoints =
+    transform?.type === "rotate"
+      ? rotatedBitmapSelectionBounds(transform.startBounds, rotationRadians).points
+      : activeBounds
+        ? bitmapSelectionBoundsCorners(activeBounds)
+        : undefined;
+  const framePathPoints = framePoints
+    ?.map((point) => `${point.x * scaleX},${point.y * scaleY}`)
+    .join(" ");
+  const rotationOffset = scaleY > 0 ? 26 / scaleY : 26;
+  const baseRotationBounds = transform?.type === "rotate" ? transform.startBounds : activeBounds;
+  const baseRotationHandle = baseRotationBounds
+    ? bitmapSelectionRotationHandlePoint(baseRotationBounds, rotationOffset, canvasSize.height)
+    : undefined;
+  const baseRotationAnchor =
+    baseRotationBounds && baseRotationHandle
+      ? {
+          x: baseRotationBounds.x + baseRotationBounds.width / 2,
+          y:
+            Math.abs(baseRotationHandle.y - baseRotationBounds.y) <=
+            Math.abs(
+              baseRotationHandle.y - (baseRotationBounds.y + baseRotationBounds.height)
+            )
+              ? baseRotationBounds.y
+              : baseRotationBounds.y + baseRotationBounds.height
+        }
+      : undefined;
+  const rotationHandle =
+    baseRotationHandle && rotationCenter
+      ? rotatePointAroundCenter(baseRotationHandle, rotationCenter, rotationRadians)
+      : baseRotationHandle;
+  const rotationAnchor =
+    baseRotationAnchor && rotationCenter
+      ? rotatePointAroundCenter(baseRotationAnchor, rotationCenter, rotationRadians)
+      : baseRotationAnchor;
 
   return (
     <svg className="bitmap-selection-overlay" viewBox={`0 0 ${stageSize.width} ${stageSize.height}`}>
       {pathPoints ? <polygon className="bitmap-selection-outline" points={pathPoints} /> : null}
-      {activeBounds ? (
+      {framePoints && framePathPoints ? (
         <>
-          <rect
-            className="bitmap-selection-bounds"
-            x={activeBounds.x * scaleX}
-            y={activeBounds.y * scaleY}
-            width={activeBounds.width * scaleX}
-            height={activeBounds.height * scaleY}
-          />
-          {[
-            [activeBounds.x, activeBounds.y],
-            [activeBounds.x + activeBounds.width, activeBounds.y],
-            [activeBounds.x, activeBounds.y + activeBounds.height],
-            [activeBounds.x + activeBounds.width, activeBounds.y + activeBounds.height]
-          ].map(([x, y]) => (
+          <polygon className="bitmap-selection-bounds" points={framePathPoints} />
+          {framePoints.map(({ x, y }) => (
             <rect
               key={`${x}-${y}`}
               className="bitmap-selection-handle"
@@ -145,6 +186,23 @@ const BitmapSelectionOverlay = ({
               height={8}
             />
           ))}
+          {rotationHandle && rotationAnchor ? (
+            <>
+              <line
+                className="bitmap-selection-rotation-stem"
+                x1={rotationAnchor.x * scaleX}
+                y1={rotationAnchor.y * scaleY}
+                x2={rotationHandle.x * scaleX}
+                y2={rotationHandle.y * scaleY}
+              />
+              <circle
+                className="bitmap-selection-rotation-handle"
+                cx={rotationHandle.x * scaleX}
+                cy={rotationHandle.y * scaleY}
+                r={5}
+              />
+            </>
+          ) : null}
         </>
       ) : null}
     </svg>
@@ -178,6 +236,11 @@ export type SketchPadProps = {
     pendingStrokes?: SketchStroke[]
   ) => Promise<string | undefined>;
   onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onBitmapSelectionChange?: (
+    shotId: string,
+    layerId: string | undefined,
+    points: Point[] | undefined
+  ) => void;
   onFill: (layerId: string, point: Point, color: string) => Promise<string | undefined>;
   onPickColor: (color: string) => void;
   onFocusShot: () => void;
@@ -200,6 +263,7 @@ export const SketchPad = ({
   isZoomScrubbing,
   onStroke,
   onSelectionTransform,
+  onBitmapSelectionChange,
   onFill,
   onPickColor,
   onFocusShot,
@@ -284,7 +348,7 @@ export const SketchPad = ({
   }, [activeDrawingLayerId, shot.id]);
 
   useEffect(() => {
-    if (tool !== "select") {
+    if (shouldClearBitmapSelectionForTool(tool)) {
       clearBitmapSelectionState();
     }
 
@@ -292,6 +356,13 @@ export const SketchPad = ({
       setBrushCursorPreview(undefined);
     }
   }, [tool]);
+
+  useEffect(
+    () => () => {
+      onBitmapSelectionChange?.(shot.id, undefined, undefined);
+    },
+    [onBitmapSelectionChange, shot.id]
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -508,6 +579,7 @@ export const SketchPad = ({
   const updateBitmapSelectionState = (selection: BitmapSelection | undefined) => {
     bitmapSelectionRef.current = selection;
     setBitmapSelection(selection);
+    onBitmapSelectionChange?.(shot.id, activeLayer?.id, selection?.points);
   };
 
   const updateSelectionDraftState = (draft: BitmapSelectionDraft | undefined) => {
@@ -745,11 +817,18 @@ export const SketchPad = ({
       sourceCanvas,
       patchCanvas: sourcePatch
     };
-    drawPreparedTransformPreview(transformDraftRef.current.currentBounds);
+    const currentTransform = transformDraftRef.current;
+    drawPreparedTransformPreview(
+      currentTransform.currentBounds,
+      currentTransform.rotationRadians ?? 0
+    );
     setIsTransformPreviewReady(true);
   };
 
-  const drawPreparedTransformPreview = (targetBounds: Bounds): string | undefined => {
+  const drawPreparedTransformPreview = (
+    targetBounds: Bounds,
+    rotationRadians = 0
+  ): string | undefined => {
     const preparedTransform = preparedTransformRef.current;
     const previewCanvas = transformPreviewCanvasRef.current;
     const previewContext = previewCanvas?.getContext("2d");
@@ -765,18 +844,33 @@ export const SketchPad = ({
     drawSelectionMask(previewContext, preparedTransform.selection);
     previewContext.fill();
     previewContext.restore();
-    previewContext.drawImage(
-      preparedTransform.patchCanvas,
-      targetBounds.x,
-      targetBounds.y,
-      targetBounds.width,
-      targetBounds.height
-    );
+    if (rotationRadians !== 0) {
+      const center = bitmapSelectionCenter(preparedTransform.selection.bounds);
+      previewContext.save();
+      previewContext.translate(center.x, center.y);
+      previewContext.rotate(rotationRadians);
+      previewContext.drawImage(
+        preparedTransform.patchCanvas,
+        -preparedTransform.selection.bounds.width / 2,
+        -preparedTransform.selection.bounds.height / 2,
+        preparedTransform.selection.bounds.width,
+        preparedTransform.selection.bounds.height
+      );
+      previewContext.restore();
+    } else {
+      previewContext.drawImage(
+        preparedTransform.patchCanvas,
+        targetBounds.x,
+        targetBounds.y,
+        targetBounds.width,
+        targetBounds.height
+      );
+    }
 
     return previewCanvas.toDataURL("image/png");
   };
 
-  const commitSelectionTransform = async (targetBounds: Bounds) => {
+  const commitSelectionTransform = async (transform: BitmapTransformDraft) => {
     const currentSelection = bitmapSelectionRef.current;
     if (!currentSelection || !activeLayer || activeLayer.locked) {
       return;
@@ -786,7 +880,10 @@ export const SketchPad = ({
       await prepareTransformPreview(currentSelection);
     }
 
-    const dataUrl = drawPreparedTransformPreview(targetBounds);
+    const dataUrl = drawPreparedTransformPreview(
+      transform.currentBounds,
+      transform.rotationRadians ?? 0
+    );
     if (!dataUrl) {
       return;
     }
@@ -796,6 +893,20 @@ export const SketchPad = ({
       setLayerDataUrls((current) => ({ ...current, [activeLayer.id]: writtenDataUrl }));
     }
 
+    if (transform.type === "rotate") {
+      const center = bitmapSelectionCenter(transform.startBounds);
+      const points = currentSelection.points.map((point) =>
+        rotatePointAroundCenter(point, center, transform.rotationRadians ?? 0)
+      );
+      updateBitmapSelectionState({
+        ...currentSelection,
+        bounds: bitmapSelectionBounds(points) ?? transform.currentBounds,
+        points
+      });
+      return;
+    }
+
+    const targetBounds = transform.currentBounds;
     updateBitmapSelectionState({
       ...currentSelection,
       bounds: targetBounds,
@@ -930,6 +1041,10 @@ export const SketchPad = ({
       return;
     }
 
+    if (tool === "blur") {
+      return;
+    }
+
     if (!activeDrawingLayer) {
       return;
     }
@@ -949,7 +1064,18 @@ export const SketchPad = ({
     const currentSelection = bitmapSelectionRef.current;
     if (currentSelection) {
       const handleRadius = bitmapSelectionHandleRadiusForStage(canvasSize, stageSize, 12);
-      const hit = bitmapSelectionHitTarget(position, currentSelection.bounds, handleRadius);
+      const rotationHandleOffset = bitmapSelectionHandleRadiusForStage(
+        canvasSize,
+        stageSize,
+        26
+      );
+      const hit = bitmapSelectionHitTarget(
+        position,
+        currentSelection.bounds,
+        handleRadius,
+        rotationHandleOffset,
+        canvasSize.height
+      );
       if (hit.type === "move") {
         const nextTransform = {
           type: "move",
@@ -970,6 +1096,20 @@ export const SketchPad = ({
           startPoint: position,
           startBounds: currentSelection.bounds,
           currentBounds: currentSelection.bounds
+        } satisfies BitmapTransformDraft;
+        updateTransformDraftState(nextTransform);
+        updateDrawingState(true);
+        void prepareTransformPreview(currentSelection);
+        return;
+      }
+
+      if (hit.type === "rotate") {
+        const nextTransform = {
+          type: "rotate",
+          startPoint: position,
+          startBounds: currentSelection.bounds,
+          currentBounds: currentSelection.bounds,
+          rotationRadians: 0
         } satisfies BitmapTransformDraft;
         updateTransformDraftState(nextTransform);
         updateDrawingState(true);
@@ -1105,6 +1245,28 @@ export const SketchPad = ({
   const extendBitmapSelection = (position: Point) => {
     const currentTransform = transformDraftRef.current;
     if (currentTransform) {
+      if (currentTransform.type === "rotate") {
+        const rotationRadians = rotationRadiansBetweenPoints(
+          bitmapSelectionCenter(currentTransform.startBounds),
+          currentTransform.startPoint,
+          position
+        );
+        const nextBounds = rotatedBitmapSelectionBounds(
+          currentTransform.startBounds,
+          rotationRadians
+        ).bounds;
+        const nextTransform = {
+          ...currentTransform,
+          currentBounds: nextBounds,
+          rotationRadians
+        };
+        updateTransformDraftState(nextTransform);
+        if (bitmapSelectionRef.current && preparedTransformRef.current) {
+          drawPreparedTransformPreview(nextBounds, rotationRadians);
+        }
+        return;
+      }
+
       const nextBounds =
         currentTransform.type === "move"
           ? {
@@ -1160,7 +1322,7 @@ export const SketchPad = ({
   const finishBitmapSelection = async () => {
     const currentTransform = transformDraftRef.current;
     if (currentTransform) {
-      await commitSelectionTransform(currentTransform.currentBounds);
+      await commitSelectionTransform(currentTransform);
       updateTransformDraftState(undefined);
       clearPreparedTransform();
       return;
@@ -1275,7 +1437,7 @@ export const SketchPad = ({
         <BitmapSelectionOverlay
           selection={bitmapSelection}
           draft={selectionDraft}
-          transformBounds={transformDraft?.currentBounds}
+          transform={transformDraft}
           stageSize={stageSize}
           canvasSize={canvasSize}
         />

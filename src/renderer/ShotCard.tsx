@@ -98,6 +98,11 @@ export type ShotCardProps = {
     pendingStrokes?: SketchStroke[]
   ) => Promise<string | undefined>;
   onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onBitmapSelectionChange?: (
+    shotId: string,
+    layerId: string | undefined,
+    points: { x: number; y: number }[] | undefined
+  ) => void;
   onFill: (layerId: string, point: { x: number; y: number }, color: string) => Promise<string | undefined>;
   onPickColor: (color: string) => void;
   onSketchBeginInteraction?: () => void;
@@ -147,6 +152,7 @@ export const ShotCard = ({
   onDialogueBlur,
   onSketchStroke,
   onSelectionTransform,
+  onBitmapSelectionChange,
   onFill,
   onPickColor,
   onSketchBeginInteraction
@@ -261,6 +267,7 @@ export const ShotCard = ({
                   isZoomScrubbing={isZoomScrubbing}
                   onStroke={onSketchStroke}
                   onSelectionTransform={onSelectionTransform}
+                  onBitmapSelectionChange={onBitmapSelectionChange}
                   onFill={onFill}
                   onPickColor={onPickColor}
                   onFocusShot={onFocusShot}

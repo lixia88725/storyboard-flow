@@ -59,6 +59,7 @@ export const useSketchToolSettingsController = ({
   toolRadialMenuConfig
 }: UseSketchToolSettingsControllerOptions) => {
   const [settings, setSettings] = useState(defaultSketchToolSettings);
+  const [blurRadius, setBlurRadius] = useState(8);
   const setSetting = useCallback(
     <Key extends keyof SketchToolSettings>(
       key: Key,
@@ -104,6 +105,7 @@ export const useSketchToolSettingsController = ({
     activeSketchTool: settings.tool,
     adjustRadialToolValue,
     applyRadialPreset,
+    blurRadius,
     brushColor: settings.brushColor,
     brushOpacity: settings.brushOpacity,
     brushSize: settings.brushSize,
@@ -114,6 +116,7 @@ export const useSketchToolSettingsController = ({
     eraserSoftness: settings.eraserSoftness,
     setActiveSketchTool: (tool: SetStateAction<SketchToolSettings["tool"]>) =>
       setSetting("tool", tool),
+    setBlurRadius,
     setBrushColor: (brushColor: SetStateAction<string>) => setSetting("brushColor", brushColor),
     setBrushOpacity: (brushOpacity: SetStateAction<number>) =>
       setSetting("brushOpacity", brushOpacity),

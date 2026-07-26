@@ -25,7 +25,7 @@ describe("shortcutMenuController", () => {
   });
 
   it("blocks global shortcuts when any shortcut-blocking menu is open", () => {
-    const matches = new Set([".save-menu"]);
+    const matches = new Set([".matte-menu"]);
     const root = {
       querySelector: (selector: string) =>
         selector.split(", ").some((part) => matches.has(part)) ? {} : null

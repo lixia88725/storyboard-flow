@@ -7,6 +7,7 @@ import type {
   RenamePlanItem,
   RenamePreflightResult,
   Shot,
+  ShotMatte,
   ShotSwbState,
   SketchLayer,
   SketchStroke
@@ -35,6 +36,11 @@ export const swbFormatVersion = 1;
 export const defaultSketchLayerName = "Drawing";
 export const imageBitmapLayerId = "layer-image";
 export const imageBitmapLayerName = "Image";
+export const matteOverlayBitmapLayerId = "layer-matte-overlay";
+export const matteOverlayBitmapLayerName = "Matte Overlay";
+export const dialogueOverlayBitmapLayerId = "layer-dialogue-overlay";
+export const dialogueOverlayBitmapLayerName = "Dialogue Overlay";
+export const defaultShotMatteBarHeight = 75;
 
 export const createProject = (name = "Untitled Storyboard"): Project => {
   const timestamp = now();
@@ -108,6 +114,278 @@ export const dialoguesForShot = (project: Project, shotId: string): Dialogue[] =
   return project.dialogues
     .filter((dialogue) => dialogue.shotId === shotId)
     .sort((a, b) => a.order - b.order);
+};
+
+export const matteForShot = (shot: Shot): ShotMatte | undefined => shot.presentation?.matte;
+
+export const sceneMatteModeForProject = (
+  project: Project
+): ShotMatte["mode"] | undefined => {
+  const modes = new Set(
+    project.shots
+      .map((shot) => matteForShot(shot)?.mode)
+      .filter((mode): mode is ShotMatte["mode"] => Boolean(mode))
+  );
+  return modes.size === 1
+    ? [...modes][0]
+    : undefined;
+};
+
+export const sceneDialogueOverlayEnabledForProject = (project: Project): boolean =>
+  project.shots.length > 0 &&
+  project.shots.every((shot) =>
+    bitmapLayersForShot(shot).some(
+      (layer) => layer.id === dialogueOverlayBitmapLayerId
+    )
+  );
+
+const applyMatteToShot = (
+  shot: Shot,
+  mode: ShotMatte["mode"],
+  normalizedBarHeight: number
+): Shot => {
+  const existingMatte = matteForShot(shot);
+  if (existingMatte && existingMatte.mode !== mode) {
+    return shot;
+  }
+
+  const layers = bitmapLayersForShot(shot);
+  const sourceHeight =
+    shot.swb?.canvasHeight ??
+    Math.max(0, ...layers.map((layer) => layer.height));
+  const canvasWidth =
+    shot.swb?.canvasWidth ??
+    Math.max(0, ...layers.map((layer) => layer.width));
+  if (sourceHeight <= 0 || canvasWidth <= 0) {
+    return shot;
+  }
+
+  const existingOverlay = layers.find((layer) => layer.id === matteOverlayBitmapLayerId);
+  if (
+    existingMatte &&
+    existingOverlay?.width === canvasWidth &&
+    existingOverlay.height === sourceHeight &&
+    existingOverlay.visible &&
+    existingOverlay.locked &&
+    existingOverlay.opacity === 1 &&
+    existingOverlay.blendMode === "normal"
+  ) {
+    return shot;
+  }
+
+  const shouldExpand = mode === "expanded" && !existingMatte;
+  const canvasHeight = shouldExpand
+    ? sourceHeight + normalizedBarHeight * 2
+    : sourceHeight;
+  const matte: ShotMatte =
+    existingMatte ?? {
+      mode,
+      top: normalizedBarHeight,
+      bottom: normalizedBarHeight,
+      ...(mode === "expanded" ? { sourceHeight } : {})
+    };
+  const resizedLayers = layers
+    .filter((layer) => layer.id !== matteOverlayBitmapLayerId)
+    .map((layer) =>
+      shouldExpand
+        ? {
+            ...layer,
+            height: layer.height + normalizedBarHeight * 2
+          }
+        : layer
+    );
+  const matteOverlay: BitmapLayer = {
+    id: matteOverlayBitmapLayerId,
+    kind: "paint",
+    name: matteOverlayBitmapLayerName,
+    visible: true,
+    locked: true,
+    opacity: 1,
+    blendMode: "normal",
+    order: existingOverlay?.order ?? resizedLayers.length,
+    bitmapPath: bitmapLayerPath(shot.id, matteOverlayBitmapLayerId),
+    width: canvasWidth,
+    height: canvasHeight
+  };
+
+  return {
+    ...shot,
+    layers: normalizeBitmapLayerOrder([...resizedLayers, matteOverlay]),
+    swb: shot.swb
+      ? {
+          ...shot.swb,
+          canvasHeight
+        }
+      : {
+          version: swbFormatVersion,
+          status: "owned" as const,
+          canvasWidth,
+          canvasHeight
+        },
+    presentation: {
+      ...shot.presentation,
+      matte
+    }
+  };
+};
+
+export const applyProjectMatte = (
+  project: Project,
+  mode: ShotMatte["mode"],
+  shotIds: readonly string[] = project.shots.map((shot) => shot.id),
+  barHeight = defaultShotMatteBarHeight
+): Project => {
+  const normalizedBarHeight = Math.max(1, Math.round(barHeight));
+  const targetShotIds = new Set(shotIds);
+  let didChange = false;
+  const shots = project.shots.map((shot) => {
+    if (!targetShotIds.has(shot.id)) {
+      return shot;
+    }
+
+    const nextShot = applyMatteToShot(shot, mode, normalizedBarHeight);
+    didChange ||= nextShot !== shot;
+    return nextShot;
+  });
+
+  return didChange ? { ...project, shots, updatedAt: now() } : project;
+};
+
+export const applyShotMatte = (
+  project: Project,
+  shotId: string,
+  mode: ShotMatte["mode"],
+  barHeight = defaultShotMatteBarHeight
+): Project => applyProjectMatte(project, mode, [shotId], barHeight);
+
+export const removeProjectMatte = (
+  project: Project,
+  shotIds: readonly string[] = project.shots.map((shot) => shot.id)
+): Project => {
+  const targetShotIds = new Set(shotIds);
+  let didChange = false;
+  const shots = project.shots.map((shot) => {
+    const matte = targetShotIds.has(shot.id) ? matteForShot(shot) : undefined;
+    if (!matte) {
+      return shot;
+    }
+
+    const contentLayers = bitmapLayersForShot(shot).filter(
+      (layer) =>
+        layer.id !== matteOverlayBitmapLayerId &&
+        layer.id !== dialogueOverlayBitmapLayerId
+    );
+    const targetHeight =
+      matte.mode === "expanded"
+        ? matte.sourceHeight ??
+          Math.max(1, (shot.swb?.canvasHeight ?? contentLayers[0]?.height ?? 1) - matte.top - matte.bottom)
+        : shot.swb?.canvasHeight ?? contentLayers[0]?.height ?? 1;
+    const resizedLayers =
+      matte.mode === "expanded"
+        ? contentLayers.map((layer) => ({ ...layer, height: targetHeight }))
+        : contentLayers;
+    const activeLayerId = resizedLayers.some(
+      (layer) => layer.id === shot.activeLayerId && layer.visible && !layer.locked
+    )
+      ? shot.activeLayerId
+      : [...resizedLayers].reverse().find((layer) => layer.visible && !layer.locked)?.id;
+    const { matte: _removedMatte, ...remainingPresentation } = shot.presentation ?? {};
+    didChange = true;
+
+    return {
+      ...shot,
+      layers: normalizeBitmapLayerOrder(resizedLayers),
+      activeLayerId,
+      swb: shot.swb
+        ? {
+            ...shot.swb,
+            canvasHeight: targetHeight
+          }
+        : shot.swb,
+      presentation:
+        Object.keys(remainingPresentation).length > 0
+          ? remainingPresentation
+          : undefined
+    };
+  });
+
+  return didChange ? { ...project, shots, updatedAt: now() } : project;
+};
+
+export const upsertDialogueOverlayBitmapLayer = (
+  project: Project,
+  shotId: string
+): Project => {
+  let didChange = false;
+  const shots = project.shots.map((shot) => {
+    if (shot.id !== shotId || !matteForShot(shot)) {
+      return shot;
+    }
+
+    const layers = bitmapLayersForShot(shot);
+    const width = shot.swb?.canvasWidth ?? Math.max(0, ...layers.map((layer) => layer.width));
+    const height = shot.swb?.canvasHeight ?? Math.max(0, ...layers.map((layer) => layer.height));
+    if (width <= 0 || height <= 0) {
+      return shot;
+    }
+
+    const existingOverlay = layers.find((layer) => layer.id === dialogueOverlayBitmapLayerId);
+    const overlay: BitmapLayer = {
+      id: dialogueOverlayBitmapLayerId,
+      kind: "paint",
+      name: dialogueOverlayBitmapLayerName,
+      visible: true,
+      locked: true,
+      opacity: 1,
+      blendMode: "normal",
+      order: existingOverlay?.order ?? layers.length,
+      bitmapPath: bitmapLayerPath(shot.id, dialogueOverlayBitmapLayerId),
+      width,
+      height
+    };
+    const nextLayers = existingOverlay
+      ? layers.map((layer) => (layer.id === existingOverlay.id ? overlay : layer))
+      : [...layers, overlay];
+    didChange = true;
+
+    return {
+      ...shot,
+      layers: normalizeBitmapLayerOrder(nextLayers),
+      activeLayerId: visibleBitmapLayerId(nextLayers, shot.activeLayerId)
+    };
+  });
+
+  return didChange ? { ...project, shots, updatedAt: now() } : project;
+};
+
+export const removeProjectDialogueOverlay = (
+  project: Project,
+  shotIds: readonly string[] = project.shots.map((shot) => shot.id)
+): Project => {
+  const targetShotIds = new Set(shotIds);
+  let didChange = false;
+  const shots = project.shots.map((shot) => {
+    if (
+      !targetShotIds.has(shot.id) ||
+      !bitmapLayersForShot(shot).some(
+        (layer) => layer.id === dialogueOverlayBitmapLayerId
+      )
+    ) {
+      return shot;
+    }
+
+    const layers = bitmapLayersForShot(shot).filter(
+      (layer) => layer.id !== dialogueOverlayBitmapLayerId
+    );
+    didChange = true;
+    return {
+      ...shot,
+      layers: normalizeBitmapLayerOrder(layers),
+      activeLayerId: visibleBitmapLayerId(layers, shot.activeLayerId)
+    };
+  });
+
+  return didChange ? { ...project, shots, updatedAt: now() } : project;
 };
 
 export const addImportedImages = (project: Project, images: ImportedImage[]): Project => {
@@ -1627,7 +1905,15 @@ const normalizeSketchLayerOrder = (layers: SketchLayer[]): SketchLayer[] => {
 };
 
 const normalizeBitmapLayerOrder = (layers: BitmapLayer[]): BitmapLayer[] => {
-  return layers.map((layer, order) => ({
+  const contentLayers = layers.filter(
+    (layer) =>
+      layer.id !== matteOverlayBitmapLayerId &&
+      layer.id !== dialogueOverlayBitmapLayerId
+  );
+  const matteLayers = layers.filter((layer) => layer.id === matteOverlayBitmapLayerId);
+  const dialogueLayers = layers.filter((layer) => layer.id === dialogueOverlayBitmapLayerId);
+
+  return [...contentLayers, ...matteLayers, ...dialogueLayers].map((layer, order) => ({
     ...layer,
     visible: layer.visible ?? true,
     locked: layer.locked ?? false,
@@ -1817,6 +2103,7 @@ const createShotFromImportedImage = (
     sketchLayers: options.includeDefaultSketchLayer ? [createDefaultSketchLayer([])] : [],
     activeLayerTarget: "image",
     activeLayerId: imageBitmapLayerId,
+    presentation: image.swbMetadata?.presentation,
     layers: [createImageBitmapLayer(shotId, width, height)],
     swb: swbStateForImportedImage(image)
   };

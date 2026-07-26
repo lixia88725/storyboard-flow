@@ -1,6 +1,30 @@
 import type { Project } from "../shared/types";
 import type { FileNameSyncState, WorkspaceSaveState } from "./workspaceLifecycleState";
 
+export type InFlightWorkspaceActionRef<Result> = {
+  current: Promise<Result> | undefined;
+};
+
+export const runExclusiveWorkspaceAction = <Result>(
+  inFlightRef: InFlightWorkspaceActionRef<Result>,
+  action: () => Promise<Result>
+): Promise<Result> => {
+  if (inFlightRef.current) {
+    return inFlightRef.current;
+  }
+
+  let trackedAction: Promise<Result>;
+  trackedAction = Promise.resolve()
+    .then(action)
+    .finally(() => {
+      if (inFlightRef.current === trackedAction) {
+        inFlightRef.current = undefined;
+      }
+    });
+  inFlightRef.current = trackedAction;
+  return trackedAction;
+};
+
 export const projectChangedDuringLoad = (before: Project, after: Project): boolean => {
   if (before.shots.length !== after.shots.length) {
     return true;

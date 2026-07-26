@@ -17,17 +17,27 @@ type BoardPanPointerDown = {
 type BoardPanPointerMove = {
   clientX: number;
   clientY: number;
+  preventDefault?: () => void;
 };
+
+type BoardPanListenerOptions =
+  | boolean
+  | {
+      capture?: boolean;
+      once?: boolean;
+      passive?: boolean;
+    };
 
 type BoardPanEventTarget = {
   addEventListener: (
     type: "pointermove" | "pointerup" | "pointercancel",
     listener: (event: BoardPanPointerMove) => void,
-    options?: { once?: boolean }
+    options?: BoardPanListenerOptions
   ) => void;
   removeEventListener: (
     type: "pointermove" | "pointerup" | "pointercancel",
-    listener: (event: BoardPanPointerMove) => void
+    listener: (event: BoardPanPointerMove) => void,
+    options?: BoardPanListenerOptions
   ) => void;
 };
 
@@ -121,6 +131,7 @@ export const startBoardPanDrag = ({
       return;
     }
 
+    moveEvent.preventDefault?.();
     const delta = boardPanScrollDelta({
       fromX: previousPointer.clientX,
       fromY: previousPointer.clientY,
@@ -133,14 +144,17 @@ export const startBoardPanDrag = ({
 
   const finishPan = () => {
     setIsBoardPanning(false);
-    eventTarget.removeEventListener("pointermove", handlePointerMove);
-    eventTarget.removeEventListener("pointerup", finishPan);
-    eventTarget.removeEventListener("pointercancel", finishPan);
+    eventTarget.removeEventListener("pointermove", handlePointerMove, true);
+    eventTarget.removeEventListener("pointerup", finishPan, true);
+    eventTarget.removeEventListener("pointercancel", finishPan, true);
   };
 
-  eventTarget.addEventListener("pointermove", handlePointerMove);
-  eventTarget.addEventListener("pointerup", finishPan, { once: true });
-  eventTarget.addEventListener("pointercancel", finishPan, { once: true });
+  eventTarget.addEventListener("pointermove", handlePointerMove, {
+    capture: true,
+    passive: false
+  });
+  eventTarget.addEventListener("pointerup", finishPan, { capture: true, once: true });
+  eventTarget.addEventListener("pointercancel", finishPan, { capture: true, once: true });
 };
 
 export const useBoardPanController = ({

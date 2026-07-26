@@ -5,6 +5,17 @@ import { nextBoardViewMode, visibleBoardViewMode } from "./boardViewMode";
 const toolRailSource = readFileSync(new URL("./ToolRail.tsx", import.meta.url), "utf8");
 
 describe("ToolRail", () => {
+  it("places the Gaussian blur tool directly after the lasso select tool", () => {
+    const selectIndex = toolRailSource.indexOf('aria-label="Select"');
+    const blurIndex = toolRailSource.indexOf('aria-label="Blur"');
+    const clearIndex = toolRailSource.indexOf('aria-label="Clear current layer"');
+
+    expect(selectIndex).toBeGreaterThan(-1);
+    expect(blurIndex).toBeGreaterThan(selectIndex);
+    expect(clearIndex).toBeGreaterThan(blurIndex);
+    expect(toolRailSource).toContain('aria-label="Gaussian blur radius"');
+  });
+
   it("does not own the board view mode toggle", () => {
     expect(toolRailSource).not.toContain("board-view-tool");
     expect(toolRailSource).not.toContain("setBoardViewMode");

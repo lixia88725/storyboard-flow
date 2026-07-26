@@ -1,12 +1,19 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import type { BlankShotPreset, Project, ProjectNaming } from "../shared/types";
+import type { BlankShotPreset, Project, ProjectNaming, ShotMatte } from "../shared/types";
 import type { BoardViewMode } from "./boardViewMode";
-import { JapaneseStoryboardIcon, SidePanelIcon, StoryboardGridIcon } from "./icons";
+import {
+  DialogueOverlayIcon,
+  JapaneseStoryboardIcon,
+  MatteIcon,
+  SidePanelIcon,
+  StoryboardGridIcon
+} from "./icons";
 import { IMPORT_REQUIRED_HELP } from "./importRequiredHelp";
 import type { WorkspaceTask } from "./workspaceLifecycleState";
 
 const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: string }> = [
   { id: "16:9", label: "16:9", detail: "1920 x 1080" },
+  { id: "1.85:1", label: "1.85:1", detail: "1998 x 1080" },
   { id: "9:16", label: "9:16 Phone", detail: "1080 x 1920" },
   { id: "2.39:1", label: "2.39:1", detail: "2581 x 1080" },
   { id: "1.43:1", label: "1.43:1 IMAX", detail: "1544 x 1080" }
@@ -24,27 +31,38 @@ type TopbarProps = {
   isImportHelpOpen: boolean;
   isImportLocked: boolean;
   isImportNudging: boolean;
+  isMatteMenuOpen: boolean;
   isParkingShelfOpen: boolean;
   isRecentMenuOpen: boolean;
   isSaveEmphasized: boolean;
   isSaveMenuOpen: boolean;
   isWorkspaceTaskRunning: boolean;
+  isDialogueOverlayDisabled: boolean;
+  isMatteConfigurationDisabled: boolean;
+  isSceneDialogueOverlayConfigured: boolean;
+  isSceneMatteConfigured: boolean;
   needsSwbImport: boolean;
   project: Project;
+  sceneMatteMode: ShotMatte["mode"] | undefined;
   recentFolders: string[];
   recentMenuRef: RefObject<HTMLDivElement | null>;
+  matteMenuRef: RefObject<HTMLDivElement | null>;
   saveMenuRef: RefObject<HTMLDivElement | null>;
   setBlankShotPreset: Dispatch<SetStateAction<BlankShotPreset>>;
   setBoardViewMode: Dispatch<SetStateAction<BoardViewMode>>;
   setFolderInputValue: Dispatch<SetStateAction<string>>;
   setIsAddShotMenuOpen: Dispatch<SetStateAction<boolean>>;
   setIsImportHelpOpen: Dispatch<SetStateAction<boolean>>;
+  setIsMatteMenuOpen: Dispatch<SetStateAction<boolean>>;
   setIsRecentMenuOpen: Dispatch<SetStateAction<boolean>>;
   setIsSaveMenuOpen: Dispatch<SetStateAction<boolean>>;
   handleAddShot: () => Promise<unknown>;
   handleImportSwbFormat: () => Promise<unknown>;
   handleOpenFolderByPath: (pathOverride?: string) => Promise<unknown>;
+  handleDisableSceneMatte: () => Promise<unknown>;
+  handlePlaceDialogueOnMatte: () => Promise<unknown>;
   handleSaveProject: () => Promise<unknown>;
+  handleSetShotMatteMode: (mode: ShotMatte["mode"]) => Promise<unknown>;
   handleToggleAiPanel: () => void;
   handleTogglePendingShelf: () => void;
   nudgeImportRequired: () => void;
@@ -65,27 +83,38 @@ export const Topbar = ({
   isImportHelpOpen,
   isImportLocked,
   isImportNudging,
+  isMatteMenuOpen,
   isParkingShelfOpen,
   isRecentMenuOpen,
   isSaveEmphasized,
   isSaveMenuOpen,
   isWorkspaceTaskRunning,
+  isDialogueOverlayDisabled,
+  isMatteConfigurationDisabled,
+  isSceneDialogueOverlayConfigured,
+  isSceneMatteConfigured,
   needsSwbImport,
   project,
+  sceneMatteMode,
   recentFolders,
   recentMenuRef,
+  matteMenuRef,
   saveMenuRef,
   setBlankShotPreset,
   setBoardViewMode,
   setFolderInputValue,
   setIsAddShotMenuOpen,
   setIsImportHelpOpen,
+  setIsMatteMenuOpen,
   setIsRecentMenuOpen,
   setIsSaveMenuOpen,
   handleAddShot,
   handleImportSwbFormat,
   handleOpenFolderByPath,
+  handleDisableSceneMatte,
+  handlePlaceDialogueOnMatte,
   handleSaveProject,
+  handleSetShotMatteMode,
   handleToggleAiPanel,
   handleTogglePendingShelf,
   nudgeImportRequired,
@@ -213,6 +242,83 @@ export const Topbar = ({
           <JapaneseStoryboardIcon />
         </button>
       </div>
+      <div className="shot-presentation-control" ref={matteMenuRef}>
+        <div className="shot-presentation-toggle" aria-label="Storyboard matte and dialogue">
+          <button
+            type="button"
+            className={sceneMatteMode ? "selected" : ""}
+            aria-label="Configure storyboard matte"
+            aria-expanded={isMatteMenuOpen}
+            title={
+              sceneMatteMode
+                ? "Turn off matte for every storyboard in this scene"
+                : "Configure matte for every storyboard in this scene"
+            }
+            disabled={isMatteConfigurationDisabled}
+            onClick={() => {
+              if (sceneMatteMode) {
+                setIsMatteMenuOpen(false);
+                void handleDisableSceneMatte();
+                return;
+              }
+              setIsMatteMenuOpen((isOpen) => !isOpen);
+            }}
+          >
+            <MatteIcon />
+          </button>
+          <button
+            type="button"
+            className={isSceneDialogueOverlayConfigured ? "selected" : ""}
+            aria-label="Place dialogue on lower matte"
+            aria-pressed={isSceneDialogueOverlayConfigured}
+            title={
+              isSceneMatteConfigured
+                ? isSceneDialogueOverlayConfigured
+                  ? "Turn off dialogue for every storyboard in this scene"
+                  : "Place dialogue on every storyboard in this scene"
+                : "Configure a matte before placing dialogue"
+            }
+            disabled={isDialogueOverlayDisabled || !isSceneMatteConfigured}
+            onClick={() => void handlePlaceDialogueOnMatte()}
+          >
+            <DialogueOverlayIcon />
+          </button>
+        </div>
+        {isMatteMenuOpen ? (
+          <div className="matte-menu" aria-label="Storyboard matte mode">
+            <button
+              type="button"
+              className={sceneMatteMode === "expanded" ? "is-selected" : ""}
+              disabled={
+                isSceneMatteConfigured ||
+                (sceneMatteMode !== undefined && sceneMatteMode !== "expanded")
+              }
+              onClick={() => {
+                setIsMatteMenuOpen(false);
+                void handleSetShotMatteMode("expanded");
+              }}
+            >
+              <span>Expand canvas</span>
+              <small>Every storyboard · +75px top / bottom</small>
+            </button>
+            <button
+              type="button"
+              className={sceneMatteMode === "embedded" ? "is-selected" : ""}
+              disabled={
+                isSceneMatteConfigured ||
+                (sceneMatteMode !== undefined && sceneMatteMode !== "embedded")
+              }
+              onClick={() => {
+                setIsMatteMenuOpen(false);
+                void handleSetShotMatteMode("embedded");
+              }}
+            >
+              <span>Use existing matte</span>
+              <small>Every storyboard · keep canvas size</small>
+            </button>
+          </div>
+        ) : null}
+      </div>
     </div>
     <div className="address-bar-container" ref={recentMenuRef}>
       <div className="address-bar">
@@ -305,6 +411,7 @@ export const Topbar = ({
               <button
                 key={preset.id}
                 type="button"
+                data-blank-shot-preset={preset.id}
                 className={preset.id === blankShotPreset ? "is-selected" : ""}
                 onClick={() => {
                   setBlankShotPreset(preset.id);

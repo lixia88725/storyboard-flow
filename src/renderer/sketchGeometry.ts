@@ -26,6 +26,11 @@ export type Bounds = {
 };
 
 export type SelectionCorner = "nw" | "ne" | "sw" | "se";
+export type BitmapSelectionHitTarget =
+  | { type: "scale"; corner: SelectionCorner }
+  | { type: "rotate" }
+  | { type: "move" }
+  | { type: "none" };
 
 type ClientRectLike = {
   left: number;
@@ -217,10 +222,14 @@ export const liveStrokePreviewOpacity = (
 
 export const shouldRestartStrokeForToolChange = (
   stroke: { tool?: "brush" | "eraser" },
-  activeTool: "brush" | "eraser" | "select" | "eyedropper"
+  activeTool: "brush" | "eraser" | "select" | "blur" | "eyedropper"
 ): boolean => {
   return (activeTool === "brush" || activeTool === "eraser") && stroke.tool !== activeTool;
 };
+
+export const shouldClearBitmapSelectionForTool = (
+  activeTool: "brush" | "eraser" | "select" | "blur" | "eyedropper"
+): boolean => activeTool !== "select" && activeTool !== "blur";
 
 export const bitmapSelectionBounds = (points: Point[]): Bounds | undefined => {
   if (points.length === 0) {
@@ -245,8 +254,22 @@ export const bitmapSelectionBounds = (points: Point[]): Bounds | undefined => {
 export const bitmapSelectionHitTarget = (
   point: Point,
   bounds: Bounds,
-  handleRadius: number
-): { type: "scale"; corner: SelectionCorner } | { type: "move" } | { type: "none" } => {
+  handleRadius: number,
+  rotationHandleOffset = handleRadius * 2.5,
+  canvasHeight = Number.POSITIVE_INFINITY
+): BitmapSelectionHitTarget => {
+  const rotationHandle = bitmapSelectionRotationHandlePoint(
+    bounds,
+    rotationHandleOffset,
+    canvasHeight
+  );
+  const rotationDx = point.x - rotationHandle.x;
+  const rotationDy = point.y - rotationHandle.y;
+  const handleRadiusSquared = handleRadius * handleRadius;
+  if (rotationDx * rotationDx + rotationDy * rotationDy <= handleRadiusSquared) {
+    return { type: "rotate" };
+  }
+
   const corners: Array<{ corner: SelectionCorner; point: Point }> = [
     { corner: "nw", point: { x: bounds.x, y: bounds.y } },
     { corner: "ne", point: { x: bounds.x + bounds.width, y: bounds.y } },
@@ -254,7 +277,6 @@ export const bitmapSelectionHitTarget = (
     { corner: "se", point: { x: bounds.x + bounds.width, y: bounds.y + bounds.height } }
   ];
 
-  const handleRadiusSquared = handleRadius * handleRadius;
   const hitCorner = corners.find((item) => {
     const dx = point.x - item.point.x;
     const dy = point.y - item.point.y;
@@ -275,6 +297,81 @@ export const bitmapSelectionHitTarget = (
   }
 
   return { type: "none" };
+};
+
+export const bitmapSelectionCenter = (bounds: Bounds): Point => ({
+  x: bounds.x + bounds.width / 2,
+  y: bounds.y + bounds.height / 2
+});
+
+export const bitmapSelectionRotationHandlePoint = (
+  bounds: Bounds,
+  offset: number,
+  canvasHeight = Number.POSITIVE_INFINITY
+): Point => {
+  const above = bounds.y - offset;
+  const below = bounds.y + bounds.height + offset;
+  return {
+    x: bounds.x + bounds.width / 2,
+    y:
+      above >= 0
+        ? above
+        : below <= canvasHeight
+          ? below
+          : Math.min(canvasHeight, Math.max(0, bounds.y + offset))
+  };
+};
+
+export const rotationRadiansBetweenPoints = (
+  center: Point,
+  startPoint: Point,
+  currentPoint: Point
+): number => {
+  const startAngle = Math.atan2(startPoint.y - center.y, startPoint.x - center.x);
+  const currentAngle = Math.atan2(currentPoint.y - center.y, currentPoint.x - center.x);
+  let delta = currentAngle - startAngle;
+  if (delta > Math.PI) {
+    delta -= Math.PI * 2;
+  } else if (delta < -Math.PI) {
+    delta += Math.PI * 2;
+  }
+  return delta;
+};
+
+export const rotatePointAroundCenter = (
+  point: Point,
+  center: Point,
+  radians: number
+): Point => {
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dx * sin + dy * cos
+  };
+};
+
+export const bitmapSelectionBoundsCorners = (bounds: Bounds): Point[] => [
+  { x: bounds.x, y: bounds.y },
+  { x: bounds.x + bounds.width, y: bounds.y },
+  { x: bounds.x + bounds.width, y: bounds.y + bounds.height },
+  { x: bounds.x, y: bounds.y + bounds.height }
+];
+
+export const rotatedBitmapSelectionBounds = (
+  bounds: Bounds,
+  radians: number
+): { bounds: Bounds; points: Point[] } => {
+  const center = bitmapSelectionCenter(bounds);
+  const points = bitmapSelectionBoundsCorners(bounds).map((point) =>
+    rotatePointAroundCenter(point, center, radians)
+  );
+  return {
+    bounds: bitmapSelectionBounds(points) ?? bounds,
+    points
+  };
 };
 
 export const bitmapSelectionHandleRadiusForStage = (

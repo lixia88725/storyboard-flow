@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   hasOnlyCompatibleExternalEdits,
+  runExclusiveWorkspaceAction,
   shouldEmphasizeSaveButton,
   hasUnsavedWorkspaceChanges,
   projectChangedDuringLoad,
@@ -35,6 +36,34 @@ const projectWithShotStatuses = (statuses: Array<NonNullable<Shot["swb"]>["statu
 });
 
 describe("workspacePersistenceController", () => {
+  it("reuses an in-flight workspace action and allows a new action after it settles", async () => {
+    let resolveFirst: ((value: boolean) => void) | undefined;
+    const action = vi
+      .fn<() => Promise<boolean>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveFirst = resolve;
+          })
+      )
+      .mockResolvedValueOnce(false);
+    const inFlightRef = { current: undefined as Promise<boolean> | undefined };
+
+    const first = runExclusiveWorkspaceAction(inFlightRef, action);
+    const overlapping = runExclusiveWorkspaceAction(inFlightRef, action);
+    await Promise.resolve();
+
+    expect(overlapping).toBe(first);
+    expect(action).toHaveBeenCalledTimes(1);
+
+    resolveFirst?.(true);
+    await expect(first).resolves.toBe(true);
+    expect(inFlightRef.current).toBeUndefined();
+
+    await expect(runExclusiveWorkspaceAction(inFlightRef, action)).resolves.toBe(false);
+    expect(action).toHaveBeenCalledTimes(2);
+  });
+
   it("runs autosave only when the workspace has an API and active paths after the initial revision", () => {
     expect(
       shouldRunAutosave(0, "/scene", "/scene/.storyboard-workbench/storyboard.project.json", true)

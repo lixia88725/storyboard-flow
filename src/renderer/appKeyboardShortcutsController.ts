@@ -4,6 +4,7 @@ import { activeVisibleBitmapLayerForShot, primaryShotOrFirst } from "./activeTar
 import {
   adjustSketchShortcutValue,
   clipboardActionFromKeyboardEvent,
+  isSaveShortcutFromKeyboardEvent,
   shortcutActionFromKeyboardEvent,
   storyboardZoomActionFromKeyboardEvent,
   shouldIgnoreShortcutForTarget
@@ -14,6 +15,7 @@ import {
   type KeyboardSelectionDirection
 } from "./globalKeyboardController";
 import type { SelectedBitmapLayerIds } from "./storyboardInteractionState";
+import type { ZoomClientPoint } from "./storyboardZoomAnchorController";
 import { hasOpenWorkspaceMenu } from "./workspaceMenuController";
 
 const minBrushSize = 1;
@@ -61,7 +63,10 @@ export type AppKeyboardShortcutsControllerOptions = {
   ) => MaybePromise;
   handlePasteSelection: () => MaybePromise;
   handleSaveProject: () => MaybePromise;
-  handleStoryboardZoomShortcut: (direction: "in" | "out") => void;
+  handleStoryboardZoomShortcut: (
+    direction: "in" | "out",
+    clientPoint?: ZoomClientPoint
+  ) => void;
   applyRedoEntry: () => MaybePromise;
   applyUndoEntry: () => MaybePromise;
   setActiveSketchTool: (tool: SketchTool) => void;
@@ -73,13 +78,13 @@ export type AppKeyboardShortcutsControllerOptions = {
   setIsOnionSkinEnabled: StateSetter<boolean>;
   setSelectedShotIds: StateSetter<string[]>;
   setStatus: (status: string) => void;
+  zZoomActiveRef: MutableRefObject<boolean>;
 };
 
 type AppKeyboardShortcutsHandlerOptions = AppKeyboardShortcutsControllerOptions & {
   pendingEraserHoldRef: MutableRefObject<PendingEraserHold | undefined>;
   spacePanActiveRef: MutableRefObject<boolean>;
   temporarySketchToolOverrideRef: MutableRefObject<TemporarySketchToolOverride | undefined>;
-  zWheelZoomRef: MutableRefObject<boolean>;
 };
 
 const activeShotAndLayer = (
@@ -104,8 +109,8 @@ const setZZoomCursorActive = (isActive: boolean): void => {
   }
 };
 
-const clearZWheelZoomState = (zWheelZoomRef: MutableRefObject<boolean>): void => {
-  zWheelZoomRef.current = false;
+const clearZZoomState = (zZoomActiveRef: MutableRefObject<boolean>): void => {
+  zZoomActiveRef.current = false;
   setZZoomCursorActive(false);
 };
 
@@ -153,7 +158,7 @@ export const createAppKeyboardKeyDownHandler = ({
   pendingEraserHoldRef,
   spacePanActiveRef,
   temporarySketchToolOverrideRef,
-  zWheelZoomRef
+  zZoomActiveRef
 }: AppKeyboardShortcutsHandlerOptions): ((event: KeyboardEvent) => void) => {
   const moveSelection = (direction: KeyboardSelectionDirection) => {
     setSelectedShotIds((current) => {
@@ -172,6 +177,14 @@ export const createAppKeyboardKeyDownHandler = ({
 
   return (event: KeyboardEvent) => {
     const target = event.target;
+    if (isSaveShortcutFromKeyboardEvent(event)) {
+      event.preventDefault();
+      if (!event.repeat) {
+        void handleSaveProject();
+      }
+      return;
+    }
+
     const storyboardZoomAction = storyboardZoomActionFromKeyboardEvent(event);
     const isMenuOpen =
       hasOpenWorkspaceMenu({
@@ -214,7 +227,7 @@ export const createAppKeyboardKeyDownHandler = ({
 
     if (!event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && key === "z") {
       event.preventDefault();
-      zWheelZoomRef.current = true;
+      zZoomActiveRef.current = true;
       setZZoomCursorActive(true);
       return;
     }
@@ -310,11 +323,6 @@ export const createAppKeyboardKeyDownHandler = ({
         return;
       }
 
-      if (shortcutAction === "save") {
-        void handleSaveProject();
-        return;
-      }
-
       if (shortcutAction === "addShot") {
         void handleAddShot();
         return;
@@ -393,7 +401,7 @@ export const createAppKeyboardKeyUpHandler = ({
   pendingEraserHoldRef,
   spacePanActiveRef,
   temporarySketchToolOverrideRef,
-  zWheelZoomRef
+  zZoomActiveRef
 }: AppKeyboardShortcutsHandlerOptions): ((event: KeyboardEvent) => void) => {
   return (event: KeyboardEvent) => {
     const key = event.key.toLowerCase();
@@ -403,9 +411,9 @@ export const createAppKeyboardKeyUpHandler = ({
       return;
     }
 
-    if (key === "z" && zWheelZoomRef.current) {
+    if (key === "z" && zZoomActiveRef.current) {
       event.preventDefault();
-      clearZWheelZoomState(zWheelZoomRef);
+      clearZZoomState(zZoomActiveRef);
       return;
     }
 
@@ -434,14 +442,14 @@ export const createAppKeyboardKeyUpHandler = ({
 export const createAppKeyboardBlurHandler = ({
   setIsSpacePanActive,
   spacePanActiveRef,
-  zWheelZoomRef
+  zZoomActiveRef
 }: Pick<
   AppKeyboardShortcutsHandlerOptions,
-  "setIsSpacePanActive" | "spacePanActiveRef" | "zWheelZoomRef"
+  "setIsSpacePanActive" | "spacePanActiveRef" | "zZoomActiveRef"
 >): (() => void) => {
   return () => {
     setSpacePanActive(spacePanActiveRef, setIsSpacePanActive, false);
-    clearZWheelZoomState(zWheelZoomRef);
+    clearZZoomState(zZoomActiveRef);
   };
 };
 
@@ -452,10 +460,10 @@ export const createAppKeyboardWheelHandler = ({
   isSaveMenuOpen,
   hasOpenShortcutBlockingMenu,
   handleStoryboardZoomShortcut,
-  zWheelZoomRef
+  zZoomActiveRef
 }: AppKeyboardShortcutsHandlerOptions): ((event: WheelEvent) => void) => {
   return (event: WheelEvent) => {
-    if (!zWheelZoomRef.current || event.deltaY === 0) {
+    if (!zZoomActiveRef.current || event.deltaY === 0) {
       return;
     }
 
@@ -472,7 +480,10 @@ export const createAppKeyboardWheelHandler = ({
     }
 
     event.preventDefault();
-    handleStoryboardZoomShortcut(event.deltaY < 0 ? "in" : "out");
+    handleStoryboardZoomShortcut(event.deltaY < 0 ? "in" : "out", {
+      x: event.clientX,
+      y: event.clientY
+    });
   };
 };
 
@@ -482,13 +493,11 @@ export const useAppKeyboardShortcutsController = (
   const pendingEraserHoldRef = useRef<PendingEraserHold | undefined>(undefined);
   const spacePanActiveRef = useRef(false);
   const temporarySketchToolOverrideRef = useRef<TemporarySketchToolOverride | undefined>(undefined);
-  const zWheelZoomRef = useRef(false);
   const handlerOptions = {
     ...options,
     pendingEraserHoldRef,
     spacePanActiveRef,
-    temporarySketchToolOverrideRef,
-    zWheelZoomRef
+    temporarySketchToolOverrideRef
   };
   const handleGlobalKeyDown = useCallback(
     createAppKeyboardKeyDownHandler(handlerOptions),
@@ -519,12 +528,13 @@ export const useAppKeyboardShortcutsController = (
       options.setIsSpacePanActive,
       options.setIsOnionSkinEnabled,
       options.setSelectedShotIds,
-      options.setStatus
+      options.setStatus,
+      options.zZoomActiveRef
     ]
   );
   const handleGlobalKeyUp = useCallback(
     createAppKeyboardKeyUpHandler(handlerOptions),
-    [options.setActiveSketchTool, options.setIsSpacePanActive]
+    [options.setActiveSketchTool, options.setIsSpacePanActive, options.zZoomActiveRef]
   );
   const handleGlobalWheel = useCallback(
     createAppKeyboardWheelHandler(handlerOptions),
@@ -534,12 +544,13 @@ export const useAppKeyboardShortcutsController = (
       options.isRecentMenuOpen,
       options.isSaveMenuOpen,
       options.hasOpenShortcutBlockingMenu,
-      options.handleStoryboardZoomShortcut
+      options.handleStoryboardZoomShortcut,
+      options.zZoomActiveRef
     ]
   );
   const handleGlobalBlur = useCallback(
     createAppKeyboardBlurHandler(handlerOptions),
-    [options.setIsSpacePanActive]
+    [options.setIsSpacePanActive, options.zZoomActiveRef]
   );
 
   useEffect(
@@ -549,9 +560,9 @@ export const useAppKeyboardShortcutsController = (
         pendingEraserHoldRef.current = undefined;
       }
       setSpacePanActive(spacePanActiveRef, options.setIsSpacePanActive, false);
-      clearZWheelZoomState(zWheelZoomRef);
+      clearZZoomState(options.zZoomActiveRef);
     },
-    [options.setIsSpacePanActive]
+    [options.setIsSpacePanActive, options.zZoomActiveRef]
   );
 
   useEffect(() => {

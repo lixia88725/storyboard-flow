@@ -4,6 +4,7 @@ import { usePopoverController } from "./popoverController";
 export type WorkspaceMenuState = {
   isAddShotMenuOpen: boolean;
   isImportHelpOpen: boolean;
+  isMatteMenuOpen: boolean;
   isRecentMenuOpen: boolean;
   isSaveMenuOpen: boolean;
 };
@@ -11,10 +12,12 @@ export type WorkspaceMenuState = {
 export type WorkspaceMenuController = WorkspaceMenuState & {
   addShotMenuRef: RefObject<HTMLDivElement | null>;
   importHelpRef: RefObject<HTMLDivElement | null>;
+  matteMenuRef: RefObject<HTMLDivElement | null>;
   recentMenuRef: RefObject<HTMLDivElement | null>;
   saveMenuRef: RefObject<HTMLDivElement | null>;
   setIsAddShotMenuOpen: Dispatch<SetStateAction<boolean>>;
   setIsImportHelpOpen: Dispatch<SetStateAction<boolean>>;
+  setIsMatteMenuOpen: Dispatch<SetStateAction<boolean>>;
   setIsRecentMenuOpen: Dispatch<SetStateAction<boolean>>;
   setIsSaveMenuOpen: Dispatch<SetStateAction<boolean>>;
 };
@@ -22,10 +25,17 @@ export type WorkspaceMenuController = WorkspaceMenuState & {
 export const hasOpenWorkspaceMenu = ({
   isAddShotMenuOpen,
   isImportHelpOpen,
+  isMatteMenuOpen,
   isRecentMenuOpen,
   isSaveMenuOpen
-}: WorkspaceMenuState): boolean =>
-  isAddShotMenuOpen || isImportHelpOpen || isRecentMenuOpen || isSaveMenuOpen;
+}: Omit<WorkspaceMenuState, "isMatteMenuOpen"> & {
+  isMatteMenuOpen?: boolean;
+}): boolean =>
+  isAddShotMenuOpen ||
+  isImportHelpOpen ||
+  isMatteMenuOpen ||
+  isRecentMenuOpen ||
+  isSaveMenuOpen;
 
 export const useWorkspaceMenuController = (): WorkspaceMenuController => {
   const {
@@ -48,18 +58,26 @@ export const useWorkspaceMenuController = (): WorkspaceMenuController => {
     setIsOpen: setIsImportHelpOpen,
     ref: importHelpRef
   } = usePopoverController<HTMLDivElement>();
+  const {
+    isOpen: isMatteMenuOpen,
+    setIsOpen: setIsMatteMenuOpen,
+    ref: matteMenuRef
+  } = usePopoverController<HTMLDivElement>();
 
   return {
     addShotMenuRef,
     importHelpRef,
     isAddShotMenuOpen,
     isImportHelpOpen,
+    isMatteMenuOpen,
     isRecentMenuOpen,
     isSaveMenuOpen,
+    matteMenuRef,
     recentMenuRef,
     saveMenuRef,
     setIsAddShotMenuOpen,
     setIsImportHelpOpen,
+    setIsMatteMenuOpen,
     setIsRecentMenuOpen,
     setIsSaveMenuOpen
   };

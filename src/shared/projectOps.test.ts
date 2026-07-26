@@ -5,6 +5,8 @@ import {
   addImportedImages,
   addSketchLayer,
   addGeneratedShot,
+  applyProjectMatte,
+  applyShotMatte,
   bitmapLayerPath,
   bitmapLayersForShot,
   clearBitmapLayer,
@@ -38,11 +40,16 @@ import {
   validateRenamePlan,
   mergeFolderImages,
   moveDialogueToShot,
+  matteForShot,
+  matteOverlayBitmapLayerId,
   projectAcceptedExternalEdits,
   projectHasSwbWarning,
   projectNeedsSwbImport,
+  removeProjectDialogueOverlay,
+  removeProjectMatte,
   removeDialogue,
   restoreParkedShotGroup,
+  sceneDialogueOverlayEnabledForProject,
   reorderShots,
   reorderShotGroup,
   sketchLayersForShot,
@@ -51,7 +58,8 @@ import {
   clearImageLayerEdits,
   deleteImageLayerContent,
   selectImageLayer,
-  updateSketch
+  updateSketch,
+  upsertDialogueOverlayBitmapLayer
 } from "./projectOps";
 import type { Project, SketchStroke } from "./types";
 
@@ -159,6 +167,222 @@ describe("project operations", () => {
     expect(bitmapLayerPath("shot-a", "paint-1")).toBe(
       ".storyboard-workbench/layers/shot-a/paint-1.png"
     );
+  });
+
+  it("expands every bitmap layer by 75px above and below and records the matte mode", () => {
+    const project = makeBitmapProject();
+    project.shots[0] = {
+      ...project.shots[0],
+      swb: {
+        version: 1,
+        status: "owned",
+        canvasWidth: 1920,
+        canvasHeight: 1080
+      },
+      layers: [
+        ...bitmapLayersForShot(project.shots[0]),
+        {
+          id: "paint-1",
+          kind: "paint",
+          name: "Drawing",
+          visible: true,
+          locked: false,
+          opacity: 1,
+          blendMode: "normal",
+          order: 1,
+          bitmapPath: ".storyboard-workbench/layers/shot-a/paint-1.png",
+          width: 1920,
+          height: 1080
+        }
+      ]
+    };
+
+    const updated = applyShotMatte(project, "shot-a", "expanded");
+    const shot = updated.shots[0];
+
+    expect(shot.swb?.canvasHeight).toBe(1230);
+    expect(bitmapLayersForShot(shot).map((layer) => layer.height)).toEqual([
+      1230,
+      1230,
+      1230
+    ]);
+    expect(bitmapLayersForShot(shot).at(-1)).toMatchObject({
+      id: matteOverlayBitmapLayerId,
+      name: "Matte Overlay",
+      locked: true,
+      kind: "paint"
+    });
+    expect(matteForShot(shot)).toEqual({
+      mode: "expanded",
+      top: 75,
+      bottom: 75,
+      sourceHeight: 1080
+    });
+    expect(applyShotMatte(updated, "shot-a", "expanded")).toBe(updated);
+  });
+
+  it("marks an existing matte without changing canvas or bitmap dimensions", () => {
+    const project = makeBitmapProject();
+    const updated = applyShotMatte(project, "shot-a", "embedded");
+
+    expect(bitmapLayersForShot(updated.shots[0])[0].height).toBe(1080);
+    expect(updated.shots[0].swb?.canvasHeight).toBe(1080);
+    expect(matteForShot(updated.shots[0])).toEqual({
+      mode: "embedded",
+      top: 75,
+      bottom: 75
+    });
+    expect(bitmapLayersForShot(updated.shots[0]).at(-1)).toMatchObject({
+      id: matteOverlayBitmapLayerId,
+      locked: true,
+      height: 1080
+    });
+  });
+
+  it("applies one scene matte mode to every requested storyboard", () => {
+    const project = makeBitmapProject();
+    project.shots.push({
+      ...project.shots[0],
+      id: "shot-b",
+      imagePath: "/tmp/b.tif",
+      fileName: "b.tif",
+      order: 1,
+      layers: [
+        createImageBitmapLayer("shot-b", 1920, 1080)
+      ]
+    });
+
+    const updated = applyProjectMatte(project, "embedded");
+
+    expect(updated.shots.map((shot) => matteForShot(shot)?.mode)).toEqual([
+      "embedded",
+      "embedded"
+    ]);
+    expect(
+      updated.shots.map(
+        (shot) => bitmapLayersForShot(shot).at(-1)?.id
+      )
+    ).toEqual([matteOverlayBitmapLayerId, matteOverlayBitmapLayerId]);
+  });
+
+  it("adds a locked dialogue overlay above existing layers without changing the active layer", () => {
+    const project = applyShotMatte(makeBitmapProject(), "shot-a", "embedded");
+    const updated = upsertDialogueOverlayBitmapLayer(project, "shot-a");
+    const shot = updated.shots[0];
+
+    expect(shot.activeLayerId).toBe("layer-image");
+    expect(bitmapLayersForShot(shot).at(-1)).toMatchObject({
+      id: "layer-dialogue-overlay",
+      name: "Dialogue Overlay",
+      kind: "paint",
+      visible: true,
+      locked: true,
+      width: 1920,
+      height: 1080
+    });
+    expect(bitmapLayersForShot(shot).at(-2)?.id).toBe(matteOverlayBitmapLayerId);
+  });
+
+  it("keeps new drawing layers below locked matte and dialogue system layers", () => {
+    const project = upsertDialogueOverlayBitmapLayer(
+      applyShotMatte(makeBitmapProject(), "shot-a", "embedded"),
+      "shot-a"
+    );
+    const updated = addBitmapLayer(project, "shot-a", {
+      id: "paint-over-system-layers",
+      width: 1920,
+      height: 1080
+    });
+
+    expect(bitmapLayersForShot(updated.shots[0]).map((layer) => layer.id)).toEqual([
+      "layer-image",
+      "paint-over-system-layers",
+      matteOverlayBitmapLayerId,
+      "layer-dialogue-overlay"
+    ]);
+  });
+
+  it("removes dialogue overlays without changing the configured matte", () => {
+    const configured = upsertDialogueOverlayBitmapLayer(
+      applyShotMatte(makeBitmapProject(), "shot-a", "embedded"),
+      "shot-a"
+    );
+
+    const updated = removeProjectDialogueOverlay(configured);
+
+    expect(updated.shots[0].presentation?.matte?.mode).toBe("embedded");
+    expect(bitmapLayersForShot(updated.shots[0]).map((layer) => layer.id)).toEqual([
+      "layer-image",
+      matteOverlayBitmapLayerId
+    ]);
+    expect(updated.shots[0].activeLayerId).toBe("layer-image");
+  });
+
+  it("reports scene dialogue enabled only when every active storyboard has an overlay", () => {
+    const baseProject = makeBitmapProject();
+    const secondShot = {
+      ...baseProject.shots[0],
+      id: "shot-b",
+      fileName: "b.tif",
+      imagePath: "/tmp/b.tif",
+      order: 1,
+      layers: bitmapLayersForShot(baseProject.shots[0]).map((layer) => ({
+        ...layer,
+        bitmapPath: layer.bitmapPath.replace("shot-a", "shot-b")
+      }))
+    };
+    const matteProject = applyProjectMatte(
+      { ...baseProject, shots: [...baseProject.shots, secondShot] },
+      "embedded"
+    );
+    const oneOverlay = upsertDialogueOverlayBitmapLayer(matteProject, "shot-a");
+    const everyOverlay = oneOverlay.shots.reduce(
+      (currentProject, shot) =>
+        upsertDialogueOverlayBitmapLayer(currentProject, shot.id),
+      oneOverlay
+    );
+
+    expect(sceneDialogueOverlayEnabledForProject(matteProject)).toBe(false);
+    expect(sceneDialogueOverlayEnabledForProject(oneOverlay)).toBe(false);
+    expect(sceneDialogueOverlayEnabledForProject(everyOverlay)).toBe(true);
+  });
+
+  it("removes expanded matte system layers and restores the original canvas height", () => {
+    const configured = upsertDialogueOverlayBitmapLayer(
+      applyShotMatte(makeBitmapProject(), "shot-a", "expanded"),
+      "shot-a"
+    );
+    const withSystemLayerActive: Project = {
+      ...configured,
+      shots: configured.shots.map((shot) => ({
+        ...shot,
+        activeLayerId: "layer-dialogue-overlay"
+      }))
+    };
+
+    const updated = removeProjectMatte(withSystemLayerActive);
+    const shot = updated.shots[0];
+
+    expect(shot.presentation?.matte).toBeUndefined();
+    expect(shot.swb?.canvasHeight).toBe(1080);
+    expect(bitmapLayersForShot(shot).map((layer) => layer.id)).toEqual(["layer-image"]);
+    expect(bitmapLayersForShot(shot)[0].height).toBe(1080);
+    expect(shot.activeLayerId).toBe("layer-image");
+  });
+
+  it("removes embedded matte system layers without changing canvas height", () => {
+    const configured = upsertDialogueOverlayBitmapLayer(
+      applyShotMatte(makeBitmapProject(), "shot-a", "embedded"),
+      "shot-a"
+    );
+
+    const updated = removeProjectMatte(configured);
+
+    expect(updated.shots[0].presentation?.matte).toBeUndefined();
+    expect(updated.shots[0].swb?.canvasHeight).toBe(1080);
+    expect(bitmapLayersForShot(updated.shots[0]).map((layer) => layer.id)).toEqual([
+      "layer-image"
+    ]);
   });
 
   it("adds a paint bitmap layer and selects it without touching the real image path", () => {
@@ -1671,6 +1895,58 @@ describe("project operations", () => {
       statusMessage: "Import to convert this Photoshop layered TIFF into Storyboard Flow Format"
     });
     expect(projectNeedsSwbImport(updated)).toBe(true);
+  });
+
+  it("restores saved matte presentation metadata when an SWB TIFF is discovered", () => {
+    const updated = addImportedImages(createEmptyProject(), [
+      {
+        imagePath: "/tmp/a.tiff",
+        fileName: "a.tiff",
+        width: 1920,
+        height: 1230,
+        fingerprint: "pixel-a",
+        swbMetadata: {
+          app: "Storyboard Flow",
+          format: "swb-tiff",
+          version: 1,
+          shotId: "shot-a",
+          canvasWidth: 1920,
+          canvasHeight: 1230,
+          baseFingerprint: "pixel-a",
+          updatedAt: "2026-07-26T00:00:00.000Z",
+          presentation: {
+            matte: {
+              mode: "expanded",
+              top: 75,
+              bottom: 75,
+              sourceHeight: 1080
+            }
+          },
+          layers: [
+            {
+              id: "layer-image",
+              kind: "image",
+              name: "Image",
+              visible: true,
+              locked: false,
+              opacity: 1,
+              blendMode: "normal",
+              order: 0,
+              width: 1920,
+              height: 1230,
+              strokeCount: 0
+            }
+          ]
+        }
+      }
+    ]);
+
+    expect(updated.shots[0].presentation?.matte).toEqual({
+      mode: "expanded",
+      top: 75,
+      bottom: 75,
+      sourceHeight: 1080
+    });
   });
 
   it("does not create an empty Drawing layer for newly imported images", () => {

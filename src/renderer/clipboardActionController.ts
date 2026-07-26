@@ -12,6 +12,7 @@ import {
   shotAssetCopyPlan,
   type ClipboardSelection
 } from "./clipboardSelection";
+import type { BitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import type { DeleteTarget } from "./deleteTarget";
 import type { SelectedBitmapLayerIds } from "./storyboardInteractionState";
 import { withStatus } from "./statusAction";
@@ -24,6 +25,7 @@ type StoryboardClipboardApi = Pick<
 
 export type ClipboardActionControllerOptions<HistoryEntry> = {
   api: StoryboardClipboardApi | undefined;
+  bitmapLayerWriteQueueRef: { current: BitmapLayerWriteQueue };
   clipboardSelectionRef: { current: ClipboardSelection | undefined };
   createHistoryEntry: (bitmapPaths?: string[]) => Promise<HistoryEntry>;
   createId?: () => string;
@@ -53,6 +55,7 @@ export type ClipboardActionControllerOptions<HistoryEntry> = {
 
 export const useClipboardActionController = <HistoryEntry,>({
   api,
+  bitmapLayerWriteQueueRef,
   clipboardSelectionRef,
   createHistoryEntry,
   createId = () => crypto.randomUUID(),
@@ -98,61 +101,73 @@ export const useClipboardActionController = <HistoryEntry,>({
       return;
     }
 
-    const currentProject = projectRef.current;
-    const sourceShot = currentProject.shots.find((shot) => shot.id === sourceShotId);
-    const targetShot = primaryShotOrFirst(sortedShots(currentProject.shots), selectedShotIdsRef.current);
-    if (!sourceShot || !targetShot) {
-      setStatus("Cannot paste storyboard: copied or target storyboard is missing");
-      return;
-    }
+    await bitmapLayerWriteQueueRef.current.runExclusive(async () => {
+      const currentProject = projectRef.current;
+      const sourceShot = currentProject.shots.find(
+        (shot) => shot.id === sourceShotId
+      );
+      const targetShot = primaryShotOrFirst(
+        sortedShots(currentProject.shots),
+        selectedShotIdsRef.current
+      );
+      if (!sourceShot || !targetShot) {
+        setStatus("Cannot paste storyboard: copied or target storyboard is missing");
+        return;
+      }
 
-    const pastedShotId = createId();
-    const copyPlan = shotAssetCopyPlan(sourceShot, pastedShotId);
-    const ensuredLayerAssets = await withStatus(
-      "Paste storyboard failed",
-      () =>
-        api.ensureLayerAssets({
-          project: currentProject,
-          folderPath,
-          metadataPath
-        }),
-      setStatus
-    );
+      const pastedShotId = createId();
+      const copyPlan = shotAssetCopyPlan(sourceShot, pastedShotId);
+      const ensuredLayerAssets = await withStatus(
+        "Paste storyboard failed",
+        () =>
+          api.ensureLayerAssets({
+            project: currentProject,
+            folderPath,
+            metadataPath
+          }),
+        setStatus
+      );
 
-    if (!ensuredLayerAssets) {
-      return;
-    }
+      if (!ensuredLayerAssets) {
+        return;
+      }
 
-    const copiedAssets = await withStatus(
-      "Paste storyboard failed",
-      () =>
-        api.copyShotAssets({
-          folderPath,
-          sourceImagePath: sourceShot.imagePath,
-          fileName: sourceShot.fileName,
-          layerCopies: copyPlan.layerCopies
-        }),
-      setStatus
-    );
+      const copiedAssets = await withStatus(
+        "Paste storyboard failed",
+        () =>
+          api.copyShotAssets({
+            folderPath,
+            sourceImagePath: sourceShot.imagePath,
+            fileName: sourceShot.fileName,
+            layerCopies: copyPlan.layerCopies
+          }),
+        setStatus
+      );
 
-    if (!copiedAssets) {
-      return;
-    }
+      if (!copiedAssets) {
+        return;
+      }
 
-    queuePasteAnimation("shot", sourceShot.id, pastedShotId);
-    const nextProject = duplicateShotAfter(currentProject, sourceShotId, targetShot.id, {
-      shotId: pastedShotId,
-      imagePath: copiedAssets.imagePath,
-      fileName: copiedAssets.fileName,
-      previewPath: copiedAssets.previewPath,
-      placement: "after"
+      queuePasteAnimation("shot", sourceShot.id, pastedShotId);
+      const nextProject = duplicateShotAfter(
+        currentProject,
+        sourceShotId,
+        targetShot.id,
+        {
+          shotId: pastedShotId,
+          imagePath: copiedAssets.imagePath,
+          fileName: copiedAssets.fileName,
+          previewPath: copiedAssets.previewPath,
+          placement: "after"
+        }
+      );
+      updateProject(nextProject);
+      markShotsDirty([pastedShotId]);
+      selectSingleShot(pastedShotId);
+      setSelectedBitmapLayerIds(undefined);
+      setDeleteTarget({ type: "shot" });
+      setStatus("Storyboard pasted");
     });
-    updateProject(nextProject);
-    markShotsDirty([pastedShotId]);
-    selectSingleShot(pastedShotId);
-    setSelectedBitmapLayerIds(undefined);
-    setDeleteTarget({ type: "shot" });
-    setStatus("Storyboard pasted");
   };
 
   const pasteCopiedLayer = async (sourceShotId: string, sourceLayerId: string) => {
@@ -161,58 +176,67 @@ export const useClipboardActionController = <HistoryEntry,>({
       return;
     }
 
-    const currentProject = projectRef.current;
-    const pasteTarget = layerPasteTargetFromProject(
-      currentProject,
-      deleteTargetRef.current,
-      sourceShotId,
-      sourceLayerId
-    );
-    if (!pasteTarget.ok) {
-      setStatus(pasteTarget.status);
-      return;
-    }
-    const { sourceLayer, targetShot, targetLayer } = pasteTarget;
+    await bitmapLayerWriteQueueRef.current.runExclusive(async () => {
+      const currentProject = projectRef.current;
+      const pasteTarget = layerPasteTargetFromProject(
+        currentProject,
+        deleteTargetRef.current,
+        sourceShotId,
+        sourceLayerId
+      );
+      if (!pasteTarget.ok) {
+        setStatus(pasteTarget.status);
+        return;
+      }
+      const { sourceLayer, targetShot, targetLayer } = pasteTarget;
 
-    const pastedLayerId = `layer-${createId()}`;
-    const targetBitmapPath = bitmapLayerPath(targetShot.id, pastedLayerId);
-    const undoEntry = await createHistoryEntry([targetBitmapPath]);
-    const copied = await withStatus(
-      "Paste layer failed",
-      () =>
-        api.copyLayerPng({
-          folderPath,
-          sourceBitmapPath: sourceLayer.bitmapPath,
-          targetBitmapPath
-        }),
-      setStatus
-    );
+      const pastedLayerId = `layer-${createId()}`;
+      const targetBitmapPath = bitmapLayerPath(targetShot.id, pastedLayerId);
+      const undoEntry = await createHistoryEntry([targetBitmapPath]);
+      const copied = await withStatus(
+        "Paste layer failed",
+        () =>
+          api.copyLayerPng({
+            folderPath,
+            sourceBitmapPath: sourceLayer.bitmapPath,
+            targetBitmapPath
+          }),
+        setStatus
+      );
 
-    if (!copied) {
-      return;
-    }
+      if (!copied) {
+        return;
+      }
 
-    queuePasteAnimation("layer", sourceLayer.id, pastedLayerId);
-    recordUndoEntry(undoEntry);
-    markShotsDirty([targetShot.id]);
-    updateProject(
-      (projectToUpdate) =>
-        copyBitmapLayerToShot(
-          projectToUpdate,
-          sourceShotId,
-          sourceLayerId,
-          targetShot.id,
-          pastedLayerId,
-          targetLayer.id,
-          "before"
-        ),
-      false,
-      false
-    );
-    selectSingleShot(targetShot.id);
-    setSelectedBitmapLayerIds({ shotId: targetShot.id, layerIds: [pastedLayerId] });
-    setDeleteTarget({ type: "layer", shotId: targetShot.id, layerId: pastedLayerId });
-    setStatus(`Layer "${sourceLayer.name}" pasted`);
+      queuePasteAnimation("layer", sourceLayer.id, pastedLayerId);
+      recordUndoEntry(undoEntry);
+      markShotsDirty([targetShot.id]);
+      updateProject(
+        (projectToUpdate) =>
+          copyBitmapLayerToShot(
+            projectToUpdate,
+            sourceShotId,
+            sourceLayerId,
+            targetShot.id,
+            pastedLayerId,
+            targetLayer.id,
+            "before"
+          ),
+        false,
+        false
+      );
+      selectSingleShot(targetShot.id);
+      setSelectedBitmapLayerIds({
+        shotId: targetShot.id,
+        layerIds: [pastedLayerId]
+      });
+      setDeleteTarget({
+        type: "layer",
+        shotId: targetShot.id,
+        layerId: pastedLayerId
+      });
+      setStatus(`Layer "${sourceLayer.name}" pasted`);
+    });
   };
 
   const handlePasteSelection = async () => {

@@ -64,6 +64,10 @@ const setupController = ({
   const selectedShotIdsByCall: Array<string | undefined> = [];
   const statuses: string[] = [];
   const resetActiveDragState = vi.fn();
+  const inheritSceneMatte = vi.fn(async (baseProject: Project) => {
+    projectRef.current = baseProject;
+    return true;
+  });
   const flushInsertionTargetsFromDragEnd = vi.fn(() => ({
     storyboardInsertionTarget,
     parkingInsertionTarget
@@ -71,6 +75,7 @@ const setupController = ({
 
   const controller = useStoryboardDragEndController({
     flushInsertionTargetsFromDragEnd,
+    inheritSceneMatte,
     isDragEndInsideParkingShelf: () => isInsideParkingShelf,
     projectRef,
     queuePasteAnimation: (kind, sourceId, pastedId) => {
@@ -91,6 +96,7 @@ const setupController = ({
     controller,
     deleteTargets,
     flushInsertionTargetsFromDragEnd,
+    inheritSceneMatte,
     pasteAnimations,
     projectRef,
     resetActiveDragState,
@@ -154,6 +160,142 @@ describe("useStoryboardDragEndController", () => {
     expect(selectedShotIdsByCall).toEqual(["parked-a"]);
     expect(deleteTargets).toEqual([{ type: "shot" }]);
     expect(statuses).toEqual(["Storyboard restored from pending"]);
+  });
+
+  it("inherits the active scene matte when restoring an unconfigured parked storyboard", async () => {
+    const activeShot = {
+      ...shot("shot-a", 0),
+      presentation: {
+        matte: { mode: "expanded" as const, top: 75, bottom: 75, sourceHeight: 1080 }
+      }
+    };
+    const {
+      controller,
+      inheritSceneMatte,
+      selectedShotIdsByCall,
+      statuses
+    } = setupController({
+      project: projectWithShots({
+        shots: [activeShot, shot("shot-b", 1)],
+        parkedShots: [shot("parked-a", 0)]
+      }),
+      storyboardInsertionTarget: { targetShotId: "shot-b", placement: "before" }
+    });
+
+    controller.handleDragEnd(
+      dragEndEvent({ activeData: { type: "parked-shot", shotId: "parked-a" } })
+    );
+    await vi.waitFor(() => expect(inheritSceneMatte).toHaveBeenCalledOnce());
+
+    expect(inheritSceneMatte).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shots: expect.arrayContaining([expect.objectContaining({ id: "parked-a" })])
+      }),
+      "expanded",
+      ["parked-a"],
+      {
+        dialogueOverlayEnabled: false,
+        markFileNamesUnsynced: true,
+        recordUndo: true
+      }
+    );
+    expect(selectedShotIdsByCall).toEqual(["parked-a"]);
+    expect(statuses).toEqual(["Storyboard restored from pending"]);
+  });
+
+  it("removes a parked storyboard matte when restoring it into a matte-off scene", async () => {
+    const parkedShot = {
+      ...shot("parked-a", 0),
+      presentation: {
+        matte: { mode: "embedded" as const, top: 75, bottom: 75 }
+      }
+    };
+    const { controller, inheritSceneMatte } = setupController({
+      project: projectWithShots({
+        shots: [shot("shot-a", 0), shot("shot-b", 1)],
+        parkedShots: [parkedShot]
+      }),
+      storyboardInsertionTarget: { targetShotId: "shot-b", placement: "before" }
+    });
+
+    controller.handleDragEnd(
+      dragEndEvent({ activeData: { type: "parked-shot", shotId: "parked-a" } })
+    );
+    await vi.waitFor(() => expect(inheritSceneMatte).toHaveBeenCalledOnce());
+
+    expect(inheritSceneMatte).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      ["parked-a"],
+      {
+        dialogueOverlayEnabled: false,
+        markFileNamesUnsynced: true,
+        recordUndo: true
+      }
+    );
+  });
+
+  it("inherits an enabled scene dialogue overlay when restoring a parked storyboard", async () => {
+    const systemLayers = (shotId: string) => [
+      {
+        id: "layer-matte-overlay",
+        kind: "paint" as const,
+        name: "Matte Overlay",
+        visible: true,
+        locked: true,
+        opacity: 1,
+        blendMode: "normal" as const,
+        order: 0,
+        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-matte-overlay.png`,
+        width: 1920,
+        height: 1080
+      },
+      {
+        id: "layer-dialogue-overlay",
+        kind: "paint" as const,
+        name: "Dialogue Overlay",
+        visible: true,
+        locked: true,
+        opacity: 1,
+        blendMode: "normal" as const,
+        order: 1,
+        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-dialogue-overlay.png`,
+        width: 1920,
+        height: 1080
+      }
+    ];
+    const configuredShot = (id: string, order: number) => ({
+      ...shot(id, order),
+      layers: systemLayers(id),
+      presentation: {
+        matte: { mode: "embedded" as const, top: 75, bottom: 75 }
+      }
+    });
+    const parkedShot = {
+      ...shot("parked-a", 0),
+      presentation: {
+        matte: { mode: "embedded" as const, top: 75, bottom: 75 }
+      }
+    };
+    const { controller, inheritSceneMatte } = setupController({
+      project: projectWithShots({
+        shots: [configuredShot("shot-a", 0), configuredShot("shot-b", 1)],
+        parkedShots: [parkedShot]
+      }),
+      storyboardInsertionTarget: { targetShotId: "shot-b", placement: "before" }
+    });
+
+    controller.handleDragEnd(
+      dragEndEvent({ activeData: { type: "parked-shot", shotId: "parked-a" } })
+    );
+    await vi.waitFor(() => expect(inheritSceneMatte).toHaveBeenCalledOnce());
+
+    expect(inheritSceneMatte).toHaveBeenCalledWith(
+      expect.any(Object),
+      "embedded",
+      ["parked-a"],
+      expect.objectContaining({ dialogueOverlayEnabled: true })
+    );
   });
 
   it("moves dialogue to the drop target storyboard", () => {

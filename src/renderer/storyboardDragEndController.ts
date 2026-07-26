@@ -1,10 +1,14 @@
 import type { DragEndEvent } from "@dnd-kit/core";
 import {
+  bitmapLayersForShot,
+  dialogueOverlayBitmapLayerId,
   moveDialogueToShot,
   parkShotGroup,
   reorderShotGroup,
   reorderShots,
   restoreParkedShotGroup,
+  sceneDialogueOverlayEnabledForProject,
+  sceneMatteModeForProject,
   sortedShots
 } from "../shared/projectOps";
 import type { Project } from "../shared/types";
@@ -24,6 +28,16 @@ export type StoryboardDragEndControllerOptions = {
     parkingInsertionTarget: StoryboardInsertionTarget | undefined;
   };
   isDragEndInsideParkingShelf: (event: DragEndEvent) => boolean;
+  inheritSceneMatte: (
+    baseProject: Project,
+    mode: "expanded" | "embedded" | undefined,
+    shotIds: readonly string[],
+    options?: {
+      dialogueOverlayEnabled?: boolean;
+      markFileNamesUnsynced?: boolean;
+      recordUndo?: boolean;
+    }
+  ) => Promise<boolean>;
   projectRef: { current: Project };
   queuePasteAnimation: (kind: "shot" | "layer", sourceId: string, pastedId: string) => void;
   resetActiveDragState: () => void;
@@ -36,6 +50,7 @@ export type StoryboardDragEndControllerOptions = {
 
 export const useStoryboardDragEndController = ({
   flushInsertionTargetsFromDragEnd,
+  inheritSceneMatte,
   isDragEndInsideParkingShelf,
   projectRef,
   queuePasteAnimation,
@@ -139,11 +154,53 @@ export const useStoryboardDragEndController = ({
         return;
       }
       const placement = dragEndStoryboardInsertionTarget?.placement ?? inferDropPlacementFromDragEnd(event);
-      const nextProject = restoreParkedShotGroup(projectRef.current, [activeData.shotId], targetShotId, placement);
-      updateProject(nextProject);
-      selectSingleShot(activeData.shotId);
-      setDeleteTarget({ type: "shot" });
-      setStatus("Storyboard restored from pending");
+      const currentProject = projectRef.current;
+      const inheritedMatteMode = sceneMatteModeForProject(currentProject);
+      const inheritedDialogueOverlayEnabled =
+        sceneDialogueOverlayEnabledForProject(currentProject);
+      const nextProject = restoreParkedShotGroup(
+        currentProject,
+        [activeData.shotId],
+        targetShotId,
+        placement
+      );
+      const restoredShot = nextProject.shots.find((shot) => shot.id === activeData.shotId);
+      const restoredShotHasDialogueOverlay = Boolean(
+        restoredShot &&
+          bitmapLayersForShot(restoredShot).some(
+            (layer) => layer.id === dialogueOverlayBitmapLayerId
+          )
+      );
+      const finishRestore = () => {
+        selectSingleShot(activeData.shotId);
+        setDeleteTarget({ type: "shot" });
+        setStatus("Storyboard restored from pending");
+      };
+      if (
+        restoredShot &&
+        ((inheritedMatteMode && !restoredShot.presentation?.matte) ||
+          (!inheritedMatteMode && restoredShot.presentation?.matte) ||
+          (Boolean(inheritedMatteMode) &&
+            inheritedDialogueOverlayEnabled !== restoredShotHasDialogueOverlay))
+      ) {
+        void inheritSceneMatte(
+          nextProject,
+          inheritedMatteMode,
+          [activeData.shotId],
+          {
+            dialogueOverlayEnabled: inheritedDialogueOverlayEnabled,
+            markFileNamesUnsynced: true,
+            recordUndo: true
+          }
+        ).then((inherited) => {
+          if (inherited) {
+            finishRestore();
+          }
+        });
+      } else {
+        updateProject(nextProject);
+        finishRestore();
+      }
     }
 
     if (activeData.type === "dialogue" && (overData?.type === "shot" || overData?.type === "drop-zone")) {

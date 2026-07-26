@@ -19,4 +19,37 @@ describe("App view mode rendering", () => {
     expect(appSource).toContain("const parkingShelfElement = (");
     expect(appSource.match(/{parkingShelfElement}/g)).toHaveLength(2);
   });
+
+  it("routes captured pointers through shared board navigation in both board views", () => {
+    expect(
+      appSource.match(
+        /onPointerDownCapture=\{handleBoardNavigationPointerDownCapture\}/g
+      )
+    ).toHaveLength(2);
+  });
+
+  it("applies the active scene matte after imported shots become owned", () => {
+    expect(appSource).toContain("const inheritedMatteMode = sceneMatteModeForProject(project)");
+    expect(appSource).toContain(
+      "const inheritedDialogueOverlayEnabled ="
+    );
+    expect(appSource).toContain(
+      "dialogueOverlayEnabled: inheritedDialogueOverlayEnabled"
+    );
+    expect(appSource).toContain("const importedProject = await loadFolderScan(");
+    expect(appSource).toContain("sceneMatteInheritanceRef.current?.(");
+  });
+
+  it("serializes autosave and Save with bitmap presentation transactions", () => {
+    expect(appSource).toContain(
+      "bitmapLayerWriteQueueRef.current.runExclusive(async () => {"
+    );
+    expect(appSource).toContain(
+      "await persistWorkspaceWithoutAssetLock(projectToSave);"
+    );
+    expect(appSource).toContain("projectRef.current = result.project;");
+    expect(appSource).toContain(
+      "if (workspaceRecoveryRequiredRef.current) {"
+    );
+  });
 });

@@ -115,36 +115,44 @@ export const useProjectHistoryController = ({
   };
 
   const applyHistoryEntry = async (direction: HistoryDirection) => {
-    const sourceStackRef = direction === "undo" ? undoStackRef : redoStackRef;
-    const entry = sourceStackRef.current.at(-1);
-    if (!entry) {
-      setStatus(historyUnavailableStatus(direction));
-      return;
-    }
-
     try {
-      await bitmapLayerWriteQueueRef.current.drain();
-      const reciprocalEntry = await createHistoryEntry(historyEntryAffectedBitmapPaths(entry));
-      await restoreHistoryLayerAssets(entry);
+      await bitmapLayerWriteQueueRef.current.runExclusive(async () => {
+        const sourceStackRef =
+          direction === "undo" ? undoStackRef : redoStackRef;
+        const entry = sourceStackRef.current.at(-1);
+        if (!entry) {
+          setStatus(historyUnavailableStatus(direction));
+          return;
+        }
 
-      if (direction === "undo") {
-        setRedoStackSynced((current) => appendHistoryEntry(current, reciprocalEntry, maxEntries));
-        setUndoStackSynced((current) => current.slice(0, -1));
-      } else {
-        setUndoStackSynced((current) => appendHistoryEntry(current, reciprocalEntry, maxEntries));
-        setRedoStackSynced((current) => current.slice(0, -1));
-      }
+        const reciprocalEntry = await createHistoryEntry(
+          historyEntryAffectedBitmapPaths(entry)
+        );
+        await restoreHistoryLayerAssets(entry);
 
-      setProject(entry.project);
-      projectRef.current = entry.project;
-      selectShotsByIds(entry.selectedShotIds);
-      setFileNameSyncState(entry.fileNameSyncState);
-      setWorkspaceSaveState("saving");
-      markAllShotsDirty();
-      setAutosaveRevision((revision) => revision + 1);
-      scriptImportCheckIdRef.current += 1;
-      setScriptImportNeeded(false);
-      setStatus(historyAppliedStatus(direction));
+        if (direction === "undo") {
+          setRedoStackSynced((current) =>
+            appendHistoryEntry(current, reciprocalEntry, maxEntries)
+          );
+          setUndoStackSynced((current) => current.slice(0, -1));
+        } else {
+          setUndoStackSynced((current) =>
+            appendHistoryEntry(current, reciprocalEntry, maxEntries)
+          );
+          setRedoStackSynced((current) => current.slice(0, -1));
+        }
+
+        setProject(entry.project);
+        projectRef.current = entry.project;
+        selectShotsByIds(entry.selectedShotIds);
+        setFileNameSyncState(entry.fileNameSyncState);
+        setWorkspaceSaveState("saving");
+        markAllShotsDirty();
+        setAutosaveRevision((revision) => revision + 1);
+        scriptImportCheckIdRef.current += 1;
+        setScriptImportNeeded(false);
+        setStatus(historyAppliedStatus(direction));
+      });
     } catch (error) {
       setStatus(
         `${direction === "undo" ? "Undo" : "Redo"} failed: ${

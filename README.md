@@ -80,12 +80,14 @@ Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`
 - 图层元数据保存在 `.storyboard-workbench/storyboard.project.json` 的 `shots[].layers`。
 - 每个可编辑图层是一张 PNG 工作层：`.storyboard-workbench/layers/{shotId}/{layerId}.png`。
 - 画笔、橡皮、清空和删除图层只写 `.storyboard-workbench/` 内部工作数据。
-- Select 工具支持 V1 lasso / rectangle 选区，对当前 active bitmap layer 做移动和角点缩放；选区本身不写入项目文件，提交后的像素结果写回当前 layer PNG。
+- Select 工具支持 V1 lasso / rectangle 选区，对当前 active bitmap layer 做移动、角点缩放和顶部旋转手柄变换；旋转围绕选区中心实时预览，松手后与其他变换一样写回当前 layer PNG 并进入 undo / redo。选区本身不写入项目文件。
+- Blur 工具位于 Select 下方，可设置 `1–50px` Gaussian blur 半径并 Apply 到当前 visible/unlocked bitmap layer；若当前 active layer 保留了 Select 套索选区，只替换选区蒙版内的模糊像素，选区外保持不变；没有选区时模糊整层。每次 Apply 写回 layer PNG，进入 undo / redo，但不新增项目或 TIFF metadata 字段。
+- 顶部视图切换右侧提供遮幅和台词按钮。遮幅关闭时点击会打开二选一菜单，选择扩展所有画布（上下各增加 `75px`）或使用原图已有遮幅；开启后再次点击会关闭整场遮幅。黑边由每张图最上方锁定的透明 `Matte Overlay` bitmap layer 提供，普通绘画不会盖住它。台词按钮同样是场景开关：首次点击为所有分镜生成锁定的 `Dialogue Overlay`，再次点击统一移除；没有台词的分镜使用透明 overlay 保持状态一致。关闭 expanded 会裁回原高度并移除 Matte/Dialogue 系统层；关闭 existing 只移除系统层，原图自带黑边仍保留。新建、Import 完成或从 Pending 恢复的分镜会同时继承当前场景的遮幅模式和台词显示开关。
 - Undo / redo 会恢复相关 layer PNG snapshot 和 JSON metadata。
 - 新增图层进入 undo 时会记录新增 layer PNG 的空快照；如果 autosave 已创建内部 PNG，Undo 会删除该 orphan asset，Redo 会恢复它。
 - Save 时由 Electron 写入工作 TIFF：单层内容走 sharp 单层 TIFF；多 bitmap layer shot 走 Photoshop-readable layered TIFF，包含图层顺序、名称、显隐、opacity 和 blend mode。
 
-图层面板是每张 storyboard 右侧的 click-toggle 抽屉，支持新增、删除、重命名、显隐、lock、opacity、blend mode、Merge 和拖动排序。图层行纵向拖动用于排序，横向拖动用于调整 opacity；Shift-click 可多选图层并批量排序/调整 opacity，锁定层可被选中但不会参与批量修改。隐藏图层不会成为 active 绘制目标。锁定图层仍可选择和显隐，但不能绘制、擦除、选区变换、清空、删除、重命名、调整 opacity / blend mode 或排序。`Image` 层在 UI 中可像普通图层一样选中、绘制、擦除、重排；如果当前 shot 有多个图层，选中 `Image` 后点击 `Delete current layer` 会移除 Image layer 和内部 PNG asset。每个 shot 至少保留一个图层，所以只剩一个 `Image` 层时删除按钮会禁用。
+图层面板是每张 storyboard 右侧的 click-toggle 抽屉，支持新增、删除、重命名、显隐、lock、opacity、blend mode、Merge 和拖动排序。图层行纵向拖动用于排序，横向拖动用于调整 opacity；Shift-click 可多选图层并批量排序/调整 opacity，锁定层可被选中但不会参与批量修改。隐藏图层不会成为 active 绘制目标。锁定图层仍可选择和显隐，但不能绘制、擦除、模糊、选区变换、清空、删除、重命名、调整 opacity / blend mode 或排序。`Image` 层在 UI 中可像普通图层一样选中、绘制、擦除、重排；如果当前 shot 有多个图层，选中 `Image` 后点击 `Delete current layer` 会移除 Image layer 和内部 PNG asset。每个 shot 至少保留一个图层，所以只剩一个 `Image` 层时删除按钮会禁用。
 
 `Merge` 是上下文动作：单选时合并 active layer 到下方可见层；多选两层及以上时合并选中 visible/unlocked layers 到选中组最下面的图层。`Cmd+E` / `Ctrl+E` 走同一套逻辑。`Merge visible` 会把 locked visible layers 烘焙进新 merged layer，但保留并隐藏这些 locked source layers。
 
@@ -125,11 +127,13 @@ ComfyUI support expects the user to run local ComfyUI and provide an API-format 
 
 ## Storyboard And Animation Mode
 
-- `Add Shot` 可创建白底 TIFF，支持 `16:9`、`9:16 Phone`、`2.39:1`、`1.43:1 IMAX`。
+- `Add Shot` 可创建白底 TIFF，支持 `16:9`、`1.85:1`、`9:16 Phone`、`2.39:1`、`1.43:1 IMAX`。
 - 顶部栏的模式切换可在普通 storyboard grid 和 Japanese storyboard sheet 之间切换。Japanese storyboard sheet 从上到下排列 shot，包含 Cut、Picture、Action 和 Dialogue；Action 写入 `shot.scriptText`，Dialogue 复用现有 Dialogue 数据。
+- 视图切换右侧的遮幅菜单是可逆的场景级动作：`Expand canvas` 会把场景内所有 storyboard 的内容层扩展 `150px`，`Use existing matte` 保持尺寸；开启后遮幅按钮成为整场关闭开关，两种模式都可通过一次 Undo/Redo 恢复。
 - Japanese storyboard sheet 的 Picture 单元可直接绘制，也可以右键打开画布快捷菜单；Cut 区域可拖动排序，空白区域可框选多张 shot。
 - 根目录 `storyboard-script.md` 用标准 Markdown ordered list 表示当前 shot 顺序；空 shot 仍保留空条目，外部 MD 修改通过 Import 吸收。
 - Storyboard 按真实画布比例显示，混合画幅不会额外加黑边。
+- 缩放会保持当前选中 Picture 的屏幕焦点：Z + 滚轮或 Z 横拖优先固定笔尖/鼠标指向的画面细节，底部滑块和键盘缩放固定主选中 Picture 的中心；普通网格换列和日式分镜行高变化都会补偿位置。
 - Zoom 拉到最大值时进入动画模式，底部显示时间线；普通 storyboard grid 和 Japanese storyboard sheet 都使用同一个动画模式，退出后回到进入前的模式。
 - 动画模式支持左右键线性播放、时间线点击跳转，以及 Onion Skin 前后帧参考。
 - 动画模式主画面只渲染当前 storyboard，并按当前 shot 的真实比例居中放入 dark matte frame，不拉伸画面。

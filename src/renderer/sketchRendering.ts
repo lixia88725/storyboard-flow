@@ -233,11 +233,13 @@ export const drawImageUrl = async (
   context: CanvasRenderingContext2D,
   sourceUrl: string,
   width: number,
-  height: number
+  height: number,
+  x = 0,
+  y = 0
 ): Promise<void> => {
   const image = await loadImageUrl(sourceUrl);
-  context.clearRect(0, 0, width, height);
-  context.drawImage(image, 0, 0, width, height);
+  context.clearRect(x, y, width, height);
+  context.drawImage(image, x, y, width, height);
 };
 
 export const drawBitmapLayerImageUrl = async (

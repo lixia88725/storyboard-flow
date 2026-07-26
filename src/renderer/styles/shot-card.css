@@ -303,6 +303,19 @@
   vector-effect: non-scaling-stroke;
 }
 
+.bitmap-selection-rotation-stem {
+  stroke: #fff;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.bitmap-selection-rotation-handle {
+  fill: #f05a28;
+  stroke: #fff;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
 .onion-skin-overlay,
 .onion-skin-ghost,
 .onion-skin-stage,

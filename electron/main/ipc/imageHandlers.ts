@@ -3,7 +3,7 @@ import type { IpcMain } from "electron";
 type IpcMainLike = Pick<IpcMain, "handle">;
 
 export type ImageCreateBlankShotOptions = {
-  preset?: "16:9" | "9:16" | "2.39:1" | "1.43:1";
+  preset?: "16:9" | "1.85:1" | "9:16" | "2.39:1" | "1.43:1";
 };
 
 export type ImageIpcHandlers = {

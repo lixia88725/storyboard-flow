@@ -183,6 +183,12 @@ export const clipboardActionFromKeyboardEvent = (
   return undefined;
 };
 
+export const isSaveShortcutFromKeyboardEvent = (event: KeyboardEvent): boolean =>
+  event.key.toLowerCase() === "s" &&
+  (event.metaKey || event.ctrlKey) &&
+  !event.altKey &&
+  !event.shiftKey;
+
 export const storyboardZoomActionFromKeyboardEvent = (
   event: KeyboardEvent
 ): "in" | "out" | undefined => {

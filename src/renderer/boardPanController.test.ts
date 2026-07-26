@@ -68,10 +68,25 @@ describe("boardPanController", () => {
   });
 
   it("scrolls the board while dragging", () => {
-    const listeners = new Map<string, (event: { clientX: number; clientY: number }) => void>();
+    const listeners = new Map<
+      string,
+      (event: { clientX: number; clientY: number; preventDefault?: () => void }) => void
+    >();
+    const addEventListener = vi.fn(
+      (
+        type: string,
+        listener: (event: {
+          clientX: number;
+          clientY: number;
+          preventDefault?: () => void;
+        }) => void
+      ) => listeners.set(type, listener)
+    );
+    const removeEventListener = vi.fn((type: string) => listeners.delete(type));
     const scrollBoardBy = vi.fn();
     const setIsBoardPanning = vi.fn();
     const preventDefault = vi.fn();
+    const movePreventDefault = vi.fn();
     const stopPropagation = vi.fn();
 
     startBoardPanDrag({
@@ -85,17 +100,35 @@ describe("boardPanController", () => {
         stopPropagation
       },
       eventTarget: {
-        addEventListener: (type, listener) => listeners.set(type, listener),
-        removeEventListener: (type) => listeners.delete(type)
+        addEventListener,
+        removeEventListener
       },
       isSpacePanActive: true,
       scrollBoardBy,
       setIsBoardPanning
     });
 
-    listeners.get("pointermove")?.({ clientX: 82, clientY: 95 });
+    expect(addEventListener).toHaveBeenCalledWith("pointermove", expect.any(Function), {
+      capture: true,
+      passive: false
+    });
+    expect(addEventListener).toHaveBeenCalledWith("pointerup", expect.any(Function), {
+      capture: true,
+      once: true
+    });
+    expect(addEventListener).toHaveBeenCalledWith("pointercancel", expect.any(Function), {
+      capture: true,
+      once: true
+    });
+
+    listeners.get("pointermove")?.({
+      clientX: 82,
+      clientY: 95,
+      preventDefault: movePreventDefault
+    });
 
     expect(preventDefault).toHaveBeenCalled();
+    expect(movePreventDefault).toHaveBeenCalled();
     expect(stopPropagation).toHaveBeenCalled();
     expect(setIsBoardPanning).toHaveBeenCalledWith(true);
     expect(scrollBoardBy).toHaveBeenCalledWith({ left: 18, top: -15, behavior: "auto" });
@@ -104,6 +137,17 @@ describe("boardPanController", () => {
 
     expect(setIsBoardPanning).toHaveBeenLastCalledWith(false);
     expect(listeners.has("pointermove")).toBe(false);
+    expect(removeEventListener).toHaveBeenCalledWith(
+      "pointermove",
+      expect.any(Function),
+      true
+    );
+    expect(removeEventListener).toHaveBeenCalledWith("pointerup", expect.any(Function), true);
+    expect(removeEventListener).toHaveBeenCalledWith(
+      "pointercancel",
+      expect.any(Function),
+      true
+    );
   });
 
   it("stops dragging when Space pan is no longer active", () => {

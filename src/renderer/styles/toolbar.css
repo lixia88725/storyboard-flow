@@ -50,7 +50,8 @@
   opacity: 0.45;
 }
 
-.board-view-toggle {
+.board-view-toggle,
+.shot-presentation-toggle {
   display: grid;
   grid-template-columns: repeat(2, var(--topbar-control-height));
   height: var(--topbar-control-height);
@@ -60,7 +61,8 @@
   background: rgba(21, 23, 25, 0.48);
 }
 
-.board-view-toggle button {
+.board-view-toggle button,
+.shot-presentation-toggle button {
   display: grid;
   place-items: center;
   width: var(--topbar-control-height);
@@ -74,18 +76,86 @@
   color: var(--slate-muted);
 }
 
-.board-view-toggle button + button {
+.board-view-toggle button + button,
+.shot-presentation-toggle button + button {
   border-left: 1px solid var(--slate-line);
 }
 
-.board-view-toggle button:hover {
+.board-view-toggle button:hover,
+.shot-presentation-toggle button:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--slate-ink);
 }
 
-.board-view-toggle button.selected {
+.board-view-toggle button.selected,
+.shot-presentation-toggle button.selected {
   background: #4a5158;
   color: #fffaf0;
+}
+
+.shot-presentation-control {
+  position: relative;
+}
+
+.shot-presentation-toggle {
+  grid-template-columns: repeat(2, var(--topbar-control-height));
+}
+
+.shot-presentation-toggle button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.shot-presentation-toggle .tool-icon-fill {
+  fill: currentColor;
+  stroke: none;
+}
+
+.matte-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 66;
+  display: grid;
+  gap: 4px;
+  width: 250px;
+  padding: 6px;
+  border: 1px solid #27231d;
+  border-radius: 6px;
+  background: #fffdf7;
+  color: #211f1a;
+  box-shadow: 0 8px 0 rgba(39, 35, 29, 0.14);
+}
+
+.matte-menu button {
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  text-align: left;
+}
+
+.matte-menu button:hover:not(:disabled),
+.matte-menu button.is-selected {
+  background: #fff3d8;
+}
+
+.matte-menu button:disabled {
+  opacity: 0.45;
+}
+
+.matte-menu span {
+  font-weight: 800;
+}
+
+.matte-menu small {
+  color: #5f584f;
+  font-size: 11px;
 }
 
 .address-bar-container {

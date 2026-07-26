@@ -5,7 +5,10 @@ import type { BitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import {
   createTransparentLayerDataUrl,
   drawStrokeOnBitmapLayer,
-  fillBitmapLayerAtPoint
+  fillBitmapLayerAtPoint,
+  gaussianBlurBitmapLayer,
+  normalizeGaussianBlurRadius,
+  type BitmapBlurPoint
 } from "./bitmapLayerCanvas";
 import { canFillBitmapLayer } from "./activeTargets";
 
@@ -25,6 +28,7 @@ export type BitmapLayerPaintingControllerOptions<HistoryEntry> = {
     markFileNamesUnsynced?: boolean,
     recordUndo?: boolean
   ) => void;
+  blurBitmapLayer?: typeof gaussianBlurBitmapLayer;
 };
 
 export const sourceDataUrlForBitmapLayer = async ({
@@ -64,8 +68,61 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
   createHistoryEntry,
   recordUndoEntry,
   markShotsDirty,
-  updateProject
+  updateProject,
+  blurBitmapLayer = gaussianBlurBitmapLayer
 }: BitmapLayerPaintingControllerOptions<HistoryEntry>) => {
+  const handleBitmapBlur = async (
+    shot: Shot,
+    layerId: string,
+    radius: number,
+    selectionPoints?: readonly BitmapBlurPoint[]
+  ) => {
+    if (!api || !folderPath || normalizeGaussianBlurRadius(radius) === 0) {
+      return;
+    }
+
+    const layer = bitmapLayersForShot(shot).find((item) => item.id === layerId);
+    if (!canFillBitmapLayer(layer)) {
+      return;
+    }
+
+    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
+      const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
+      const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
+      if (!canFillBitmapLayer(currentLayer)) {
+        return undefined;
+      }
+
+      const normalizedRadius = normalizeGaussianBlurRadius(radius);
+      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
+      const dataUrl = await blurBitmapLayer(
+        await sourceDataUrlForBitmapLayer({
+          api,
+          folderPath,
+          shot: currentShot,
+          layer: currentLayer
+        }),
+        currentLayer,
+        normalizedRadius,
+        selectionPoints
+      );
+
+      await api.writeLayerPng({
+        folderPath,
+        bitmapPath: currentLayer.bitmapPath,
+        dataUrl
+      });
+      markShotsDirty([currentShot.id]);
+      recordUndoEntry(undoEntry);
+      updateProject(
+        (currentProject) => markBitmapLayerPainted(currentProject, currentShot.id, currentLayer.id),
+        false,
+        false
+      );
+      return dataUrl;
+    });
+  };
+
   const handleBitmapStroke = async (
     shot: Shot,
     layerId: string,
@@ -196,6 +253,7 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
   };
 
   return {
+    handleBitmapBlur,
     handleBitmapFill,
     handleBitmapSelectionTransform,
     handleBitmapStroke

@@ -7,6 +7,7 @@ describe("workspaceMenuController", () => {
       hasOpenWorkspaceMenu({
         isAddShotMenuOpen: false,
         isImportHelpOpen: false,
+        isMatteMenuOpen: false,
         isRecentMenuOpen: false,
         isSaveMenuOpen: false
       })
@@ -16,7 +17,18 @@ describe("workspaceMenuController", () => {
       hasOpenWorkspaceMenu({
         isAddShotMenuOpen: false,
         isImportHelpOpen: false,
+        isMatteMenuOpen: false,
         isRecentMenuOpen: true,
+        isSaveMenuOpen: false
+      })
+    ).toBe(true);
+
+    expect(
+      hasOpenWorkspaceMenu({
+        isAddShotMenuOpen: false,
+        isImportHelpOpen: false,
+        isMatteMenuOpen: true,
+        isRecentMenuOpen: false,
         isSaveMenuOpen: false
       })
     ).toBe(true);

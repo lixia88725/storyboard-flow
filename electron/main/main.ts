@@ -209,6 +209,14 @@ type Project = {
       acceptedExternalEditAt?: string;
       sourceKind?: "photoshop-layered-tiff";
     };
+    presentation?: {
+      matte?: {
+        mode: "expanded" | "embedded";
+        top: number;
+        bottom: number;
+        sourceHeight?: number;
+      };
+    };
     importWarnings?: string[];
   }>;
   parkedShots?: Project["shots"];
@@ -261,6 +269,7 @@ type SwbImageMetadata = {
   updatedAt: string;
   sourcePath?: string;
   archivePath?: string;
+  presentation?: Project["shots"][number]["presentation"];
   imageLayerEdits?: Project["shots"][number]["imageLayerEdits"];
   sketchLayers?: Project["shots"][number]["sketchLayers"];
   layers: Array<{
@@ -1446,6 +1455,7 @@ const swbMetadataForShot = (
     updatedAt: new Date().toISOString(),
     sourcePath: shot.swb?.sourcePath,
     archivePath: shot.swb?.archivePath,
+    presentation: shot.presentation,
     imageLayerEdits: [],
     sketchLayers,
     layers:

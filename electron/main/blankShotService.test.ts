@@ -41,4 +41,20 @@ describe("blankShotService", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("creates 1.85:1 blank TIFF shots at 1998 by 1080", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "swb-blank-shot-185-"));
+    const folderPath = path.join(root, "workspace");
+
+    try {
+      const imagePath = await createBlankShot(folderPath, "1.85:1");
+      const metadata = await sharp(imagePath).metadata();
+
+      expect(metadata.format).toBe("tiff");
+      expect(metadata.width).toBe(1998);
+      expect(metadata.height).toBe(1080);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

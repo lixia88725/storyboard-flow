@@ -15,6 +15,7 @@ const keyboardEvent = (key: string, options: Partial<KeyboardEvent> = {}) =>
     ctrlKey: false,
     altKey: false,
     shiftKey: false,
+    repeat: false,
     target: null,
     preventDefault: vi.fn(),
     ...options
@@ -22,6 +23,8 @@ const keyboardEvent = (key: string, options: Partial<KeyboardEvent> = {}) =>
 
 const wheelEvent = (deltaY: number, options: Partial<WheelEvent> = {}) =>
   ({
+    clientX: 320,
+    clientY: 240,
     deltaY,
     preventDefault: vi.fn(),
     ...options
@@ -75,7 +78,7 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
     pendingEraserHoldRef: { current: undefined },
     spacePanActiveRef: { current: false },
     temporarySketchToolOverrideRef: { current: undefined },
-    zWheelZoomRef: { current: false },
+    zZoomActiveRef: { current: false },
     setIsSpacePanActive: vi.fn(),
     ...overrides
   };
@@ -105,6 +108,32 @@ describe("appKeyboardShortcutsController", () => {
 
     expect(event.preventDefault).not.toHaveBeenCalled();
     expect(options.setActiveSketchTool).not.toHaveBeenCalled();
+  });
+
+  it("saves once from editable fields and open menus with Command or Control S", () => {
+    const editableTarget = {
+      closest: (selector: string) => (selector === "textarea, select" ? {} : null)
+    } as unknown as EventTarget;
+    const { handler, options } = createHarness({
+      isSaveMenuOpen: true,
+      hasOpenShortcutBlockingMenu: vi.fn(() => true)
+    });
+    const commandEvent = keyboardEvent("s", { metaKey: true, target: editableTarget });
+    const controlEvent = keyboardEvent("s", { ctrlKey: true, target: editableTarget });
+    const repeatedEvent = keyboardEvent("s", {
+      metaKey: true,
+      repeat: true,
+      target: editableTarget
+    });
+
+    handler(commandEvent);
+    handler(controlEvent);
+    handler(repeatedEvent);
+
+    expect(commandEvent.preventDefault).toHaveBeenCalled();
+    expect(controlEvent.preventDefault).toHaveBeenCalled();
+    expect(repeatedEvent.preventDefault).toHaveBeenCalled();
+    expect(options.handleSaveProject).toHaveBeenCalledTimes(2);
   });
 
   it("prevents browser page zoom while a blocking menu is open", () => {
@@ -161,6 +190,7 @@ describe("appKeyboardShortcutsController", () => {
     const keyUpEvent = keyboardEvent("z");
 
     handler(keyDownEvent);
+    expect(options.zZoomActiveRef.current).toBe(true);
     wheelHandler(wheelUpEvent);
     wheelHandler(wheelDownEvent);
     keyUpHandler(keyUpEvent);
@@ -169,8 +199,15 @@ describe("appKeyboardShortcutsController", () => {
     expect(wheelUpEvent.preventDefault).toHaveBeenCalled();
     expect(wheelDownEvent.preventDefault).toHaveBeenCalled();
     expect(keyUpEvent.preventDefault).toHaveBeenCalled();
-    expect(options.handleStoryboardZoomShortcut).toHaveBeenNthCalledWith(1, "in");
-    expect(options.handleStoryboardZoomShortcut).toHaveBeenNthCalledWith(2, "out");
+    expect(options.zZoomActiveRef.current).toBe(false);
+    expect(options.handleStoryboardZoomShortcut).toHaveBeenNthCalledWith(1, "in", {
+      x: 320,
+      y: 240
+    });
+    expect(options.handleStoryboardZoomShortcut).toHaveBeenNthCalledWith(2, "out", {
+      x: 320,
+      y: 240
+    });
   });
 
   it("shows a zoom cursor while Z is held", () => {
@@ -193,7 +230,7 @@ describe("appKeyboardShortcutsController", () => {
     expect(removeClass).toHaveBeenCalledWith("is-z-zoom-active");
   });
 
-  it("clears Z wheel zoom when the window loses focus", () => {
+  it("clears shared Z zoom state when the window loses focus", () => {
     const removeClass = vi.fn();
     vi.stubGlobal("document", {
       body: {
@@ -208,11 +245,13 @@ describe("appKeyboardShortcutsController", () => {
     const wheelDownEvent = wheelEvent(120);
 
     handler(keyDownEvent);
+    expect(options.zZoomActiveRef.current).toBe(true);
     blurHandler();
     wheelHandler(wheelDownEvent);
 
     expect(keyDownEvent.preventDefault).toHaveBeenCalled();
     expect(removeClass).toHaveBeenCalledWith("is-z-zoom-active");
+    expect(options.zZoomActiveRef.current).toBe(false);
     expect(wheelDownEvent.preventDefault).not.toHaveBeenCalled();
     expect(options.handleStoryboardZoomShortcut).not.toHaveBeenCalled();
   });

@@ -6,6 +6,7 @@ import {
   defaultKeyboardShortcutsForPlatform,
   formatShortcutFromKeyboardEvent,
   historyActionFromKeyboardEvent,
+  isSaveShortcutFromKeyboardEvent,
   keyboardEventMatchesShortcut,
   normalizeShortcutValue,
   shortcutActionFromKeyboardEvent,
@@ -155,6 +156,16 @@ describe("keyboardShortcuts", () => {
     expect(storyboardZoomActionFromKeyboardEvent(keyboardEvent("+", { ctrlKey: true }))).toBe("in");
     expect(storyboardZoomActionFromKeyboardEvent(keyboardEvent("-", { ctrlKey: true }))).toBe("out");
     expect(storyboardZoomActionFromKeyboardEvent(keyboardEvent("+"))).toBeUndefined();
+  });
+
+  it("recognizes Command or Control S as the global save shortcut", () => {
+    expect(isSaveShortcutFromKeyboardEvent(keyboardEvent("s", { metaKey: true }))).toBe(true);
+    expect(isSaveShortcutFromKeyboardEvent(keyboardEvent("s", { ctrlKey: true }))).toBe(true);
+    expect(
+      isSaveShortcutFromKeyboardEvent(keyboardEvent("s", { metaKey: true, shiftKey: true }))
+    ).toBe(false);
+    expect(isSaveShortcutFromKeyboardEvent(keyboardEvent("s", { altKey: true }))).toBe(false);
+    expect(isSaveShortcutFromKeyboardEvent(keyboardEvent("s"))).toBe(false);
   });
 
   it("resolves configured shortcuts before history fallbacks", () => {

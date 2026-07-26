@@ -4,6 +4,7 @@ import sharp from "sharp";
 
 const blankShotPresets = {
   "16:9": { width: 1920, height: 1080 },
+  "1.85:1": { width: 1998, height: 1080 },
   "9:16": { width: 1080, height: 1920 },
   "2.39:1": { width: 2581, height: 1080 },
   "1.43:1": { width: 1544, height: 1080 }

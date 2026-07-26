@@ -28,7 +28,7 @@ export const hasOpenShortcutBlockingMenu = (
 ): boolean =>
   Boolean(
     root.querySelector(
-      ".shortcut-menu, .save-menu, .recent-menu, .add-shot-menu, .radial-tool-menu"
+      ".shortcut-menu, .save-menu, .recent-menu, .add-shot-menu, .matte-menu, .radial-tool-menu"
     )
   );
 

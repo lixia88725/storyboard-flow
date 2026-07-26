@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   bitmapSelectionBounds,
+  bitmapSelectionCenter,
   bitmapSelectionHandleRadiusForStage,
   bitmapSelectionHitTarget,
+  bitmapSelectionRotationHandlePoint,
   blendMenuDirectionFromRects,
   layerOpacityFromClientX,
   layerRowDragIntentFromDelta,
   scaleBitmapSelectionBounds,
+  rotatePointAroundCenter,
+  rotatedBitmapSelectionBounds,
+  rotationRadiansBetweenPoints,
   layerDropPlacementFromClientY,
   liveStrokePreviewOpacity,
   latestStrokeSegment,
@@ -19,6 +24,7 @@ import {
   shouldAppendStrokePoint,
   shouldHandleSketchPointer,
   shouldCloseRadialMenuForSketchPointer,
+  shouldClearBitmapSelectionForTool,
   shouldStartSketchPointer,
   sketchPointsFromClientPoints,
   sketchPointFromClientPoint
@@ -228,6 +234,15 @@ describe("sketch geometry", () => {
     expect(shouldRestartStrokeForToolChange({ tool: "eraser" }, "brush")).toBe(true);
     expect(shouldRestartStrokeForToolChange({ tool: "brush" }, "brush")).toBe(false);
     expect(shouldRestartStrokeForToolChange({ tool: "eraser" }, "select")).toBe(false);
+    expect(shouldRestartStrokeForToolChange({ tool: "brush" }, "blur")).toBe(false);
+  });
+
+  it("keeps bitmap selections while switching from Select to Blur", () => {
+    expect(shouldClearBitmapSelectionForTool("select")).toBe(false);
+    expect(shouldClearBitmapSelectionForTool("blur")).toBe(false);
+    expect(shouldClearBitmapSelectionForTool("brush")).toBe(true);
+    expect(shouldClearBitmapSelectionForTool("eraser")).toBe(true);
+    expect(shouldClearBitmapSelectionForTool("eyedropper")).toBe(true);
   });
 
   it("builds bitmap selection bounds from lasso points", () => {
@@ -260,6 +275,50 @@ describe("sketch geometry", () => {
     });
     expect(bitmapSelectionHitTarget({ x: 60, y: 60 }, bounds, 8)).toEqual({ type: "move" });
     expect(bitmapSelectionHitTarget({ x: 10, y: 60 }, bounds, 8)).toEqual({ type: "none" });
+  });
+
+  it("places and detects the selection rotation handle outside the transform box", () => {
+    const bounds = { x: 20, y: 30, width: 100, height: 80 };
+
+    expect(bitmapSelectionRotationHandlePoint(bounds, 20)).toEqual({ x: 70, y: 10 });
+    expect(bitmapSelectionHitTarget({ x: 70, y: 10 }, bounds, 8, 20)).toEqual({
+      type: "rotate"
+    });
+    expect(
+      bitmapSelectionRotationHandlePoint({ x: 20, y: 5, width: 100, height: 80 }, 20)
+    ).toEqual({ x: 70, y: 105 });
+    expect(bitmapSelectionRotationHandlePoint({ x: 0, y: 0, width: 100, height: 100 }, 20, 100))
+      .toEqual({ x: 50, y: 20 });
+    expect(
+      bitmapSelectionHitTarget(
+        { x: 50, y: 20 },
+        { x: 0, y: 0, width: 100, height: 100 },
+        8,
+        20,
+        100
+      )
+    ).toEqual({ type: "rotate" });
+  });
+
+  it("rotates selection points and returns their axis-aligned committed bounds", () => {
+    const bounds = { x: 20, y: 30, width: 100, height: 80 };
+    const center = bitmapSelectionCenter(bounds);
+    const radians = rotationRadiansBetweenPoints(
+      center,
+      { x: center.x + 20, y: center.y },
+      { x: center.x, y: center.y + 20 }
+    );
+
+    expect(radians).toBeCloseTo(Math.PI / 2);
+    expect(rotatePointAroundCenter({ x: center.x + 20, y: center.y }, center, radians)).toEqual({
+      x: center.x,
+      y: center.y + 20
+    });
+    const rotatedBounds = rotatedBitmapSelectionBounds(bounds, radians).bounds;
+    expect(rotatedBounds.x).toBeCloseTo(30);
+    expect(rotatedBounds.y).toBeCloseTo(20);
+    expect(rotatedBounds.width).toBeCloseTo(80);
+    expect(rotatedBounds.height).toBeCloseTo(100);
   });
 
   it("keeps bitmap selection handles easy to hit when large canvases are displayed smaller", () => {

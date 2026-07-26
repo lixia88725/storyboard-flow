@@ -1,4 +1,4 @@
-export type SketchTool = "brush" | "eraser" | "select" | "eyedropper";
+export type SketchTool = "brush" | "eraser" | "select" | "blur" | "eyedropper";
 export type StrokeTool = "brush" | "eraser";
 export type BitmapSelectionMode = "lasso";
 export type SketchBlendMode = "normal" | "multiply" | "screen";
@@ -59,6 +59,17 @@ export type ShotSwbState = {
   sourceKind?: "photoshop-layered-tiff";
 };
 
+export type ShotMatte = {
+  mode: "expanded" | "embedded";
+  top: number;
+  bottom: number;
+  sourceHeight?: number;
+};
+
+export type ShotPresentation = {
+  matte?: ShotMatte;
+};
+
 export type Shot = {
   id: string;
   imagePath: string;
@@ -75,6 +86,7 @@ export type Shot = {
   imageLayerEdits?: SketchStroke[];
   baseVisible?: boolean;
   swb?: ShotSwbState;
+  presentation?: ShotPresentation;
 };
 
 export type Dialogue = {
@@ -124,7 +136,7 @@ export type ImportedImage = {
   swbMetadata?: SwbImageMetadata;
 };
 
-export type BlankShotPreset = "16:9" | "9:16" | "2.39:1" | "1.43:1";
+export type BlankShotPreset = "16:9" | "1.85:1" | "9:16" | "2.39:1" | "1.43:1";
 
 export type BlankShotOptions = {
   preset: BlankShotPreset;
@@ -142,6 +154,7 @@ export type SwbImageMetadata = {
   updatedAt: string;
   sourcePath?: string;
   archivePath?: string;
+  presentation?: ShotPresentation;
   imageLayerEdits?: SketchStroke[];
   sketchLayers?: SketchLayer[];
   layers: Array<{

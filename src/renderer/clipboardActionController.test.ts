@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BitmapLayer, Project, Shot } from "../shared/types";
 import { bitmapLayerPath } from "../shared/projectOps";
+import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import { useClipboardActionController } from "./clipboardActionController";
 import type { ClipboardSelection } from "./clipboardSelection";
 import type { DeleteTarget } from "./deleteTarget";
@@ -98,6 +99,7 @@ const setupController = ({
 
   const controller = useClipboardActionController<string>({
     api,
+    bitmapLayerWriteQueueRef: { current: createBitmapLayerWriteQueue() },
     clipboardSelectionRef,
     createHistoryEntry: vi.fn(async () => "undo-entry"),
     createId: () => "pasted",

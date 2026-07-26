@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 
 describe("bitmap layer write queue", () => {
@@ -45,5 +45,49 @@ describe("bitmap layer write queue", () => {
     await next;
 
     expect(events).toEqual(["failed:start", "next:start"]);
+  });
+
+  it("blocks new bitmap writes until an exclusive workspace transaction finishes", async () => {
+    const queue = createBitmapLayerWriteQueue();
+    const events: string[] = [];
+    let finishExisting!: () => void;
+    let finishExclusive!: () => void;
+
+    const existing = queue.enqueue("layers/a.png", async () => {
+      events.push("existing:start");
+      await new Promise<void>((resolve) => {
+        finishExisting = resolve;
+      });
+      events.push("existing:end");
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const exclusive = queue.runExclusive(async () => {
+      events.push("exclusive:start");
+      await new Promise<void>((resolve) => {
+        finishExclusive = resolve;
+      });
+      events.push("exclusive:end");
+    });
+    const later = queue.enqueue("layers/b.png", async () => {
+      events.push("later:start");
+    });
+
+    finishExisting();
+    await existing;
+    await vi.waitFor(() =>
+      expect(events).toEqual(["existing:start", "existing:end", "exclusive:start"])
+    );
+
+    finishExclusive();
+    await Promise.all([exclusive, later]);
+    expect(events).toEqual([
+      "existing:start",
+      "existing:end",
+      "exclusive:start",
+      "exclusive:end",
+      "later:start"
+    ]);
   });
 });

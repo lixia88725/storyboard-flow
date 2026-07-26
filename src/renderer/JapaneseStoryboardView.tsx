@@ -80,6 +80,11 @@ type JapaneseStoryboardViewProps = {
   onPickColor: (color: string) => void;
   onSelectShot: (shotId: string, event: MouseEvent<HTMLElement>) => void;
   onSelectionTransform: (shot: Shot, layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onBitmapSelectionChange?: (
+    shotId: string,
+    layerId: string | undefined,
+    points: { x: number; y: number }[] | undefined
+  ) => void;
   onSketchBeginInteraction?: () => void;
   onSketchStroke: (
     shot: Shot,
@@ -115,6 +120,11 @@ type JapaneseStoryboardRowViewProps = {
   onPickColor: (color: string) => void;
   onSelectShot: (shotId: string, event: MouseEvent<HTMLElement>) => void;
   onSelectionTransform: (shot: Shot, layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onBitmapSelectionChange?: (
+    shotId: string,
+    layerId: string | undefined,
+    points: { x: number; y: number }[] | undefined
+  ) => void;
   onSketchBeginInteraction?: () => void;
   onSketchStroke: (
     shot: Shot,
@@ -145,6 +155,7 @@ const JapaneseStoryboardRowView = ({
   onPickColor,
   onSelectShot,
   onSelectionTransform,
+  onBitmapSelectionChange,
   onSketchBeginInteraction,
   onSketchStroke
 }: JapaneseStoryboardRowViewProps) => {
@@ -203,6 +214,7 @@ const JapaneseStoryboardRowView = ({
           onSelectionTransform={(layerId, dataUrl) =>
             onSelectionTransform(row.shot, layerId, dataUrl)
           }
+          onBitmapSelectionChange={onBitmapSelectionChange}
           onFill={(layerId, point, color) => onFill(row.shot, layerId, point, color)}
           onPickColor={onPickColor}
           onFocusShot={() => onFocusShot(row.shot.id)}
@@ -252,6 +264,7 @@ export const JapaneseStoryboardView = forwardRef<HTMLElement, JapaneseStoryboard
   onPickColor,
   onSelectShot,
   onSelectionTransform,
+  onBitmapSelectionChange,
   onSketchBeginInteraction,
   onSketchStroke
 }, ref) => {
@@ -293,6 +306,7 @@ export const JapaneseStoryboardView = forwardRef<HTMLElement, JapaneseStoryboard
             onPickColor={onPickColor}
             onSelectShot={onSelectShot}
             onSelectionTransform={onSelectionTransform}
+            onBitmapSelectionChange={onBitmapSelectionChange}
             onSketchBeginInteraction={onSketchBeginInteraction}
             onSketchStroke={onSketchStroke}
           />

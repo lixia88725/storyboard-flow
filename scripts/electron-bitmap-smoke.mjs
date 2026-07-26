@@ -10,6 +10,10 @@ const smokeRoot = path.join("/private/tmp", `swb-bitmap-smoke-${Date.now()}`);
 const scriptRoot = path.join("/private/tmp", `swb-script-smoke-${Date.now()}`);
 const mdBootstrapRoot = path.join("/private/tmp", `swb-md-bootstrap-source-${Date.now()}`);
 const mdBootstrapTargetRoot = path.join("/private/tmp", `swb-md-bootstrap-target-${Date.now()}`);
+const mdEmbeddedMatteTargetRoot = path.join(
+  "/private/tmp",
+  `swb-md-embedded-matte-target-${Date.now()}`
+);
 const deleteRoot = path.join("/private/tmp", `swb-delete-smoke-${Date.now()}`);
 const clipboardRoot = path.join("/private/tmp", `swb-clipboard-smoke-${Date.now()}`);
 const denseMarqueeRoot = path.join("/private/tmp", `swb-dense-marquee-smoke-${Date.now()}`);
@@ -753,7 +757,306 @@ try {
     !mdBootstrapMarkdown.includes("2. Close on the phone")) {
     throw new Error(`Markdown storyboard mirror was not written correctly: ${mdBootstrapMarkdown}`);
   }
+  mdBootstrapProject.dialogues = [
+    {
+      id: "matte-dialogue-1",
+      shotId: mdBootstrapProject.shots[0].id,
+      text: "Dialogue on the expanded matte",
+      order: 0
+    },
+    {
+      id: "matte-dialogue-2",
+      shotId: mdBootstrapProject.shots[1].id,
+      text: "Dialogue on the existing matte",
+      order: 0
+    }
+  ];
+  await writeFile(
+    projectMetadataPath(mdBootstrapTargetRoot),
+    `${JSON.stringify(mdBootstrapProject, null, 2)}\n`,
+    "utf8"
+  );
   await openFolder(mdBootstrapTargetRoot);
+  await waitFor(
+    () =>
+      evaluate(
+        `Boolean(document.querySelector('[data-shot-id="${mdBootstrapProject.shots[0].id}"]'))`
+      ),
+    "expanded matte storyboard card"
+  );
+  await evaluate(`document.querySelector('[data-shot-id="${mdBootstrapProject.shots[0].id}"]')?.click()`);
+  await waitFor(
+    () =>
+      evaluate(
+        `document.querySelector('button[aria-label="Configure storyboard matte"]')?.disabled === false`
+      ),
+    "expanded matte storyboard controls"
+  );
+  await evaluate(`document.querySelector('button[aria-label="Configure storyboard matte"]')?.click()`);
+  await waitFor(
+    () => evaluate(`Boolean(document.querySelector(".matte-menu"))`),
+    "storyboard matte menu"
+  );
+  await evaluate(`
+    Array.from(document.querySelectorAll(".matte-menu button"))
+      .find((button) => button.textContent?.includes("Expand canvas"))
+      ?.click()
+  `);
+  await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdBootstrapTargetRoot);
+    const shots = matteProject.shots ?? [];
+    return shots.length === 2 &&
+      shots.every(
+        (shot) =>
+          shot.swb?.canvasHeight === 1230 &&
+          shot.presentation?.matte?.mode === "expanded" &&
+          shot.layers?.at(-1)?.id === "layer-matte-overlay" &&
+          shot.layers.at(-1)?.locked === true
+      )
+      ? shots
+      : undefined;
+  }, "scene-wide expanded storyboard matte metadata");
+  const expandedSceneProject = await readProjectMetadata(mdBootstrapTargetRoot);
+  const expandedMatteLayer = expandedSceneProject.shots[0].layers.find(
+    (layer) => layer.id === "layer-matte-overlay"
+  );
+  const expandedImageLayer = expandedSceneProject.shots[0].layers.find(
+    (layer) => layer.id === "layer-image"
+  );
+  const expandedMattePath = path.join(mdBootstrapTargetRoot, expandedMatteLayer.bitmapPath);
+  const expandedImagePath = path.join(mdBootstrapTargetRoot, expandedImageLayer.bitmapPath);
+  const expandedMattePixels = await sharp(expandedMattePath).ensureAlpha().raw().toBuffer();
+  const expandedImagePixels = await sharp(expandedImagePath).ensureAlpha().raw().toBuffer();
+  const expandedPixelOffset = (x, y) => (y * 1920 + x) * 4;
+  const matteTopOffset = expandedPixelOffset(10, 10);
+  const matteCenterOffset = expandedPixelOffset(10, 200);
+  const matteBottomOffset = expandedPixelOffset(10, 1220);
+  const imageTopOffset = expandedPixelOffset(10, 10);
+  const imageContentOffset = expandedPixelOffset(10, 75);
+  if (
+    expandedMattePixels[matteTopOffset] !== 0 ||
+    expandedMattePixels[matteTopOffset + 3] !== 255 ||
+    expandedMattePixels[matteCenterOffset + 3] !== 0 ||
+    expandedMattePixels[matteBottomOffset] !== 0 ||
+    expandedMattePixels[matteBottomOffset + 3] !== 255 ||
+    expandedImagePixels[imageTopOffset + 3] !== 0 ||
+    expandedImagePixels[imageContentOffset + 3] !== 255
+  ) {
+    throw new Error("Expanded scene matte was not isolated on a transparent locked overlay");
+  }
+  await evaluate(`document.querySelector('button[aria-label="Place dialogue on lower matte"]')?.click()`);
+  const expandedDialogueShots = await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdBootstrapTargetRoot);
+    const shots = matteProject.shots ?? [];
+    return shots.length === 2 &&
+      shots.every((shot) =>
+        shot.layers?.some((layer) => layer.id === "layer-dialogue-overlay")
+      )
+      ? shots
+      : undefined;
+  }, "scene-wide expanded matte dialogue overlays");
+  const expandedMatteShot = expandedDialogueShots.find(
+    (item) => item.id === mdBootstrapProject.shots[0].id
+  );
+  const dialogueOverlayPath = path.join(
+    mdBootstrapTargetRoot,
+    expandedMatteShot.layers.find((layer) => layer.id === "layer-dialogue-overlay").bitmapPath
+  );
+  const dialogueOverlayMetadata = await sharp(dialogueOverlayPath).metadata();
+  if (dialogueOverlayMetadata.width !== 1920 || dialogueOverlayMetadata.height !== 1230) {
+    throw new Error(
+      `Expanded matte dialogue layer dimensions were incorrect: ${JSON.stringify(dialogueOverlayMetadata)}`
+    );
+  }
+  if (
+    expandedMatteShot.layers.at(-2)?.id !== "layer-matte-overlay" ||
+    expandedMatteShot.layers.at(-1)?.id !== "layer-dialogue-overlay"
+  ) {
+    throw new Error("Dialogue overlay was not kept above the locked matte overlay");
+  }
+  await evaluate(`document.querySelector('button[aria-label="Place dialogue on lower matte"]')?.click()`);
+  await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdBootstrapTargetRoot);
+    return matteProject.shots?.length === 2 &&
+      matteProject.shots.every(
+        (shot) => !shot.layers?.some((layer) => layer.id === "layer-dialogue-overlay")
+      );
+  }, "scene-wide dialogue overlays disabled");
+  await evaluate(`document.querySelector('button[aria-label="Place dialogue on lower matte"]')?.click()`);
+  await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdBootstrapTargetRoot);
+    return matteProject.shots?.length === 2 &&
+      matteProject.shots.every((shot) =>
+        shot.layers?.some((layer) => layer.id === "layer-dialogue-overlay")
+      );
+  }, "scene-wide dialogue overlays re-enabled");
+  await evaluate(`document.querySelector('button[aria-label="Configure storyboard matte"]')?.click()`);
+  await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdBootstrapTargetRoot);
+    const shots = matteProject.shots ?? [];
+    return shots.length === 2 &&
+      shots.every(
+        (shot) =>
+          shot.swb?.canvasHeight === 1080 &&
+          !shot.presentation?.matte &&
+          !shot.layers?.some(
+            (layer) =>
+              layer.id === "layer-matte-overlay" ||
+              layer.id === "layer-dialogue-overlay"
+          )
+      )
+      ? shots
+      : undefined;
+  }, "scene-wide expanded matte disabled");
+  if (
+    (await fileExists(expandedMattePath)) ||
+    (await fileExists(dialogueOverlayPath))
+  ) {
+    throw new Error("Turning off expanded matte did not remove system layer assets");
+  }
+  const collapsedImageMetadata = await sharp(expandedImagePath).metadata();
+  if (collapsedImageMetadata.width !== 1920 || collapsedImageMetadata.height !== 1080) {
+    throw new Error(
+      `Expanded matte did not restore image dimensions: ${JSON.stringify(collapsedImageMetadata)}`
+    );
+  }
+
+  await waitForUndoReady();
+  await dispatchKeyZ(send, 4);
+  await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdBootstrapTargetRoot);
+    return matteProject.shots?.length === 2 &&
+      matteProject.shots.every(
+        (shot) =>
+          shot.swb?.canvasHeight === 1230 &&
+          shot.presentation?.matte?.mode === "expanded" &&
+          shot.layers?.some((layer) => layer.id === "layer-matte-overlay")
+      )
+      ? matteProject
+      : undefined;
+  }, "expanded matte disable undo");
+  if (
+    !(await fileExists(expandedMattePath)) ||
+    !(await fileExists(dialogueOverlayPath))
+  ) {
+    throw new Error("Undo did not restore matte and dialogue assets");
+  }
+
+  await dispatchKeyZ(send, 12);
+  await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdBootstrapTargetRoot);
+    return matteProject.shots?.length === 2 &&
+      matteProject.shots.every(
+        (shot) =>
+          shot.swb?.canvasHeight === 1080 &&
+          !shot.presentation?.matte &&
+          !shot.layers?.some(
+            (layer) =>
+              layer.id === "layer-matte-overlay" ||
+              layer.id === "layer-dialogue-overlay"
+          )
+      )
+      ? matteProject
+      : undefined;
+  }, "expanded matte disable redo");
+
+  await mkdir(mdEmbeddedMatteTargetRoot, { recursive: true });
+  const embeddedMatteScan = await evaluate(
+    `window.storyboard.createFromStoryboardScript(${JSON.stringify({
+      sourceMarkdownPath: mdBootstrapSourcePath,
+      targetFolderPath: mdEmbeddedMatteTargetRoot,
+      blankShotPreset: "16:9"
+    })})`
+  );
+  const embeddedMatteProject = await readProjectMetadata(mdEmbeddedMatteTargetRoot);
+  if (
+    embeddedMatteScan.folderPath !== mdEmbeddedMatteTargetRoot ||
+    embeddedMatteProject.shots?.length !== 2
+  ) {
+    throw new Error("Existing-matte scene bootstrap was incorrect");
+  }
+  const embeddedOriginalShotIds = new Set(
+    embeddedMatteProject.shots.map((shot) => shot.id)
+  );
+  await openFolder(mdEmbeddedMatteTargetRoot);
+  await waitFor(
+    () =>
+      evaluate(
+        `Boolean(document.querySelector('[data-shot-id="${embeddedMatteProject.shots[0].id}"]'))`
+      ),
+    "existing matte storyboard card"
+  );
+  await waitFor(
+    () =>
+      evaluate(
+        `document.querySelector('button[aria-label="Configure storyboard matte"]')?.disabled === false`
+      ),
+    "existing matte storyboard controls"
+  );
+  await evaluate(`document.querySelector('button[aria-label="Configure storyboard matte"]')?.click()`);
+  await waitFor(
+    () => evaluate(`Boolean(document.querySelector(".matte-menu"))`),
+    "existing scene matte menu"
+  );
+  await evaluate(`
+    Array.from(document.querySelectorAll(".matte-menu button"))
+      .find((button) => button.textContent?.includes("Use existing matte"))
+      ?.click()
+  `);
+  await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdEmbeddedMatteTargetRoot);
+    const shots = matteProject.shots ?? [];
+    return shots.length === 2 &&
+      shots.every(
+        (shot) =>
+          shot.swb?.canvasHeight === 1080 &&
+          shot.presentation?.matte?.mode === "embedded" &&
+          shot.layers?.at(-1)?.id === "layer-matte-overlay"
+      )
+      ? shots
+      : undefined;
+  }, "scene-wide embedded storyboard matte metadata");
+  await evaluate(`document.querySelector('button[aria-label="Place dialogue on lower matte"]')?.click()`);
+  await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdEmbeddedMatteTargetRoot);
+    return matteProject.shots?.length === 2 &&
+      matteProject.shots.every((shot) =>
+        shot.layers?.some((layer) => layer.id === "layer-dialogue-overlay")
+      );
+  }, "embedded scene dialogue overlays enabled");
+  await evaluate(`document.querySelector(".add-shot-main-button")?.click()`);
+  await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdEmbeddedMatteTargetRoot);
+    const inheritedShot = matteProject.shots?.find(
+      (shot) => !embeddedOriginalShotIds.has(shot.id)
+    );
+    return matteProject.shots?.length === 3 &&
+      inheritedShot?.swb?.canvasHeight === 1080 &&
+      inheritedShot.presentation?.matte?.mode === "embedded" &&
+      inheritedShot.layers?.at(-2)?.id === "layer-matte-overlay" &&
+      inheritedShot.layers?.at(-1)?.id === "layer-dialogue-overlay"
+      ? inheritedShot
+      : undefined;
+  }, "new storyboard inherited embedded scene matte and dialogue overlay");
+  await evaluate(`document.querySelector('button[aria-label="Configure storyboard matte"]')?.click()`);
+  await waitFor(async () => {
+    const matteProject = await readProjectMetadata(mdEmbeddedMatteTargetRoot);
+    const shots = matteProject.shots ?? [];
+    return shots.length === 3 &&
+      shots.every(
+        (shot) =>
+          shot.swb?.canvasHeight === 1080 &&
+          !shot.presentation?.matte &&
+          !shot.layers?.some(
+            (layer) =>
+              layer.id === "layer-matte-overlay" ||
+              layer.id === "layer-dialogue-overlay"
+          )
+      )
+      ? shots
+      : undefined;
+  }, "scene-wide embedded matte disabled");
+
   await showScriptSide(evaluate);
   const mdBootstrapUiScript = await waitFor(
     () => evaluate(`document.querySelector(".shot-script-textarea")?.value ?? ""`),
@@ -1460,6 +1763,12 @@ try {
     "sketch settings menu closed after stage check"
   );
 
+  await send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "z",
+    code: "KeyZ",
+    windowsVirtualKeyCode: 90
+  });
   const zoomBeforeWheel = await evaluate(`document.querySelector(".bottom-bar span")?.textContent`);
   await send("Input.dispatchMouseEvent", {
     type: "mouseWheel",
@@ -1534,6 +1843,188 @@ try {
   await waitFor(
     () => evaluate(`document.querySelector(".bottom-bar span")?.textContent === "100%"`),
     "blank board wheel zoom reset"
+  );
+  const zDragZoomRect = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const stage = document.querySelector(".image-stage")?.getBoundingClientRect();
+          return stage
+            ? { x: stage.x, y: stage.y, width: stage.width, height: stage.height }
+            : undefined;
+        })()
+      `),
+    "stage rect before Z drag zoom"
+  );
+  const zDragStartX = Math.round(zDragZoomRect.x + zDragZoomRect.width / 2);
+  const zDragStartY = Math.round(zDragZoomRect.y + zDragZoomRect.height / 2);
+  await dragStroke(send, zDragStartX, zDragStartY, zDragStartX + 30, zDragStartY);
+  const zDragZoomedIn = await waitFor(
+    () => evaluate(`document.querySelector(".bottom-bar span")?.textContent === "115%"`),
+    "Z drag zoom in"
+  );
+  const zDragZoomOutRect = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const stage = document.querySelector(".image-stage")?.getBoundingClientRect();
+          return stage
+            ? { x: stage.x, y: stage.y, width: stage.width, height: stage.height }
+            : undefined;
+        })()
+      `),
+    "stage rect before reverse Z drag zoom"
+  );
+  const zDragOutStartX = Math.round(zDragZoomOutRect.x + zDragZoomOutRect.width / 2);
+  const zDragOutStartY = Math.round(zDragZoomOutRect.y + zDragZoomOutRect.height / 2);
+  await dragStroke(send, zDragOutStartX, zDragOutStartY, zDragOutStartX - 30, zDragOutStartY);
+  const zDragZoomedOut = await waitFor(
+    () => evaluate(`document.querySelector(".bottom-bar span")?.textContent === "100%"`),
+    "Z drag zoom out"
+  );
+  await send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "z",
+    code: "KeyZ",
+    windowsVirtualKeyCode: 90
+  });
+  const zDragPreservedLayer = (await layerAssetState(layerPath)) === beforeHash;
+  const zDragZoomChecks = {
+    drawingPreserved: zDragPreservedLayer,
+    zoomedIn: Boolean(zDragZoomedIn),
+    zoomedOut: Boolean(zDragZoomedOut)
+  };
+  if (!Object.values(zDragZoomChecks).every(Boolean)) {
+    throw new Error(`Z drag zoom failed: ${JSON.stringify(zDragZoomChecks)}`);
+  }
+  const storyboardOrderBeforeJapanesePan = await evaluate(`
+    Array.from(document.querySelectorAll(".shot-card")).map((shot) => shot.dataset.shotId)
+  `);
+  await evaluate(`
+    (() => {
+      document.activeElement?.blur?.();
+      window.getSelection()?.removeAllRanges();
+      document.querySelector('button[aria-label="Show Japanese storyboard sheet"]')?.click();
+      return true;
+    })()
+  `);
+  await waitFor(
+    () => evaluate(`Boolean(document.querySelector(".japanese-storyboard-view"))`),
+    "Japanese storyboard view before Space pan"
+  );
+  await evaluate(`
+    (() => {
+      const slider = document.querySelector('.bottom-bar input[type="range"]');
+      const rangeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      rangeSetter.call(slider, "180");
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      slider.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()
+  `);
+  await waitFor(
+    () => evaluate(`document.querySelector(".bottom-bar span")?.textContent === "180%"`),
+    "Japanese storyboard zoom before Space pan"
+  );
+  const japaneseSpacePanStart = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const scroll = document.querySelector(".workspace-board-scroll");
+          const canvas = document.querySelector(".japanese-storyboard-picture .konvajs-content");
+          if (!scroll || !canvas || scroll.scrollHeight <= scroll.clientHeight) {
+            return undefined;
+          }
+          scroll.scrollTop = 0;
+          const rect = canvas.getBoundingClientRect();
+          return {
+            before: scroll.scrollTop,
+            maxScrollTop: scroll.scrollHeight - scroll.clientHeight,
+            rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+          };
+        })()
+      `),
+    "scrollable Japanese storyboard Picture canvas"
+  );
+  const japanesePanStartX = Math.round(
+    japaneseSpacePanStart.rect.x + japaneseSpacePanStart.rect.width / 2
+  );
+  const japanesePanStartY = Math.round(
+    japaneseSpacePanStart.rect.y + japaneseSpacePanStart.rect.height / 2
+  );
+  await send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: " ",
+    code: "Space",
+    windowsVirtualKeyCode: 32
+  });
+  await dragStroke(
+    send,
+    japanesePanStartX,
+    japanesePanStartY,
+    japanesePanStartX,
+    japanesePanStartY - 100
+  );
+  await send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: " ",
+    code: "Space",
+    windowsVirtualKeyCode: 32
+  });
+  const japaneseSpacePanScrolled = await waitFor(
+    () =>
+      evaluate(`
+        (() => {
+          const scroll = document.querySelector(".workspace-board-scroll");
+          return scroll && scroll.scrollTop > ${japaneseSpacePanStart.before}
+            ? scroll.scrollTop
+            : undefined;
+        })()
+      `),
+    "Japanese storyboard Space pan scroll"
+  );
+  await delay(300);
+  const japaneseStoryboardOrderAfterPan = await evaluate(`
+    Array.from(document.querySelectorAll(".japanese-storyboard-row")).map((shot) => shot.dataset.shotId)
+  `);
+  const japaneseSpacePanChecks = {
+    drawingPreserved: (await layerAssetState(layerPath)) === beforeHash,
+    orderPreserved:
+      JSON.stringify(japaneseStoryboardOrderAfterPan) ===
+      JSON.stringify(storyboardOrderBeforeJapanesePan),
+    panStateCleaned: await evaluate(
+      `!document.querySelector(".workspace-board-scroll")?.classList.contains("is-space-panning")`
+    ),
+    scrolled: japaneseSpacePanScrolled > japaneseSpacePanStart.before,
+    textSelectionPreserved: await evaluate(`window.getSelection()?.toString() === ""`)
+  };
+  if (!Object.values(japaneseSpacePanChecks).every(Boolean)) {
+    throw new Error(
+      `Japanese storyboard Space pan failed: ${JSON.stringify(japaneseSpacePanChecks)}`
+    );
+  }
+  await evaluate(`
+    (() => {
+      const scroll = document.querySelector(".workspace-board-scroll");
+      if (scroll) {
+        scroll.scrollTop = 0;
+      }
+      const slider = document.querySelector('.bottom-bar input[type="range"]');
+      const rangeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      rangeSetter.call(slider, "100");
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+      slider.dispatchEvent(new Event("change", { bubbles: true }));
+      document.querySelector('button[aria-label="Show storyboard board"]')?.click();
+      return true;
+    })()
+  `);
+  await waitFor(
+    () =>
+      evaluate(`
+        document.querySelector(".bottom-bar span")?.textContent === "100%" &&
+        Boolean(document.querySelector(".board-grid"))
+      `),
+    "storyboard view restored after Japanese Space pan"
   );
   rect = await waitFor(
     () =>
@@ -3269,14 +3760,28 @@ try {
     "temporary rename conflict removed before retrying Save"
   );
 
-  await evaluate(`
+  const saveShortcutFromDialogue = await evaluate(`
     (() => {
-      const saveButton = Array.from(document.querySelectorAll("button"))
-        .find((button) => button.textContent.trim() === "Save");
-      saveButton.click();
-      return true;
+      const dialogueTextarea = document.querySelector("[data-shot-id] .dialogue-zone textarea");
+      if (!dialogueTextarea) {
+        return false;
+      }
+      dialogueTextarea.focus();
+      dialogueTextarea.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "s",
+          code: "KeyS",
+          metaKey: true,
+          bubbles: true,
+          cancelable: true
+        })
+      );
+      return document.activeElement === dialogueTextarea;
     })()
   `);
+  if (!saveShortcutFromDialogue) {
+    throw new Error("Could not trigger Command+S while the dialogue textarea was focused");
+  }
   const saveProgressShown = await waitFor(
     () =>
       evaluate(`
@@ -3534,6 +4039,12 @@ try {
     (async () => {
       const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const beforeTimelineCount = document.querySelectorAll(".timeline-shot").length;
+      const addShotMenuToggle = document.querySelector(".add-shot-menu-toggle");
+      addShotMenuToggle.click();
+      await delay(50);
+      const theatricalPreset = document.querySelector('[data-blank-shot-preset="1.85:1"]');
+      theatricalPreset.click();
+      await delay(50);
       const addShotButton = document.querySelector(".add-shot-main-button");
       addShotButton.click();
 
@@ -3551,11 +4062,21 @@ try {
     throw new Error(`Add Shot did not update the storyboard UI: ${JSON.stringify(addShotUiCount)}`);
   }
 
-  await waitFor(async () => {
+  const addedShotProject = await waitFor(async () => {
     const project = await readProjectMetadata(smokeRoot);
     const tiffFiles = await findTiffFiles(smokeRoot);
     return project.shots?.length === 4 && tiffFiles.length === 4 ? project : undefined;
   }, "Add Shot metadata and TIFF file");
+  const addedTheatricalShot = addedShotProject.shots.find(
+    (shot) => shot.swb?.canvasWidth === 1998 && shot.swb?.canvasHeight === 1080
+  );
+  if (!addedTheatricalShot) {
+    throw new Error(`Add Shot did not create 1.85:1 metadata: ${JSON.stringify(addedShotProject)}`);
+  }
+  const addedTheatricalTiff = await sharp(addedTheatricalShot.imagePath).metadata();
+  if (addedTheatricalTiff.width !== 1998 || addedTheatricalTiff.height !== 1080) {
+    throw new Error(`Add Shot did not create a 1998x1080 TIFF: ${JSON.stringify(addedTheatricalTiff)}`);
+  }
 
   await openFolder(legacyRoot);
   const legacyProject = await waitFor(async () => {
@@ -3662,6 +4183,8 @@ try {
         keyboardShortcutChecks,
         sketchSettingsOpensOnStage,
         sketchSettingsIgnoredOutsideStage,
+        zDragZoomChecks,
+        japaneseSpacePanChecks,
         dialogueRowChecks,
         layerToggleClickClosedPanel,
         layerToggleBottomStableAfterClose,
@@ -3723,6 +4246,7 @@ try {
   await rm(scriptRoot, { recursive: true, force: true });
   await rm(mdBootstrapRoot, { recursive: true, force: true });
   await rm(mdBootstrapTargetRoot, { recursive: true, force: true });
+  await rm(mdEmbeddedMatteTargetRoot, { recursive: true, force: true });
   await rm(deleteRoot, { recursive: true, force: true });
   await rm(clipboardRoot, { recursive: true, force: true });
   await rm(legacyRoot, { recursive: true, force: true });

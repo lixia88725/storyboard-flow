@@ -1,4 +1,8 @@
-import { addGeneratedShot } from "../shared/projectOps";
+import {
+  addGeneratedShot,
+  sceneMatteModeForProject,
+  sortedShots
+} from "../shared/projectOps";
 import { generatedShotTransparentLayerAssets } from "../shared/generatedShotAssets";
 import type {
   BlankShotPreset,
@@ -58,6 +62,7 @@ export const useAddShotController = ({
   createTransparentLayerDataUrl,
   folderPath,
   loadFolderScan,
+  inheritSceneMatte,
   markShotsDirty,
   metadataPath,
   primarySelectedShotId,
@@ -76,8 +81,14 @@ export const useAddShotController = ({
     scan: FolderScanPayload,
     nextStatus: string,
     dirty?: boolean,
-    resetDirtyShots?: boolean
+    resetDirtyShots?: boolean,
+    clearRecoveryRequired?: boolean
   ) => Promise<Project | undefined>;
+  inheritSceneMatte: (
+    baseProject: Project,
+    mode: "expanded" | "embedded",
+    shotIds: readonly string[]
+  ) => Promise<boolean>;
   markShotsDirty: (shotIds: string[]) => void;
   metadataPath: string | undefined;
   primarySelectedShotId: string | undefined;
@@ -131,7 +142,13 @@ export const useAddShotController = ({
         return;
       }
 
-      const loadedProject = await loadFolderScan(scan, "Folder opened", !scan.project);
+      const loadedProject = await loadFolderScan(
+        scan,
+        "Folder opened",
+        !scan.project,
+        true,
+        true
+      );
       const baseProject = loadedProject ?? projectRef.current;
       context = {
         kind: "ready",
@@ -152,9 +169,16 @@ export const useAddShotController = ({
       return;
     }
 
-    const nextProject = addGeneratedShot(context.baseProject, image as ImportedImage, context.insertAfterShotId);
+    const projectAtInsert = projectRef.current;
+    let nextProject = addGeneratedShot(
+      projectAtInsert,
+      image as ImportedImage,
+      context.insertAfterShotId
+    );
     const nextShotId = addShotInsertedShotId(nextProject, image.imagePath);
-    const nextShot = nextShotId ? nextProject.shots.find((shot) => shot.id === nextShotId) : undefined;
+    const nextShot = nextShotId
+      ? nextProject.shots.find((shot) => shot.id === nextShotId)
+      : undefined;
     if (nextShot) {
       const didCreateLayerAssets = await withStatus(
         "Add shot layer failed",
@@ -178,7 +202,35 @@ export const useAddShotController = ({
       }
     }
 
-    updateProject(nextProject, true, false);
+    if (nextShot && projectRef.current !== projectAtInsert) {
+      const latestProject = projectRef.current;
+      const orderedShots = sortedShots(latestProject.shots);
+      const selectedIndex = context.insertAfterShotId
+        ? orderedShots.findIndex((shot) => shot.id === context.insertAfterShotId)
+        : -1;
+      const insertIndex =
+        selectedIndex === -1 ? orderedShots.length : selectedIndex + 1;
+      orderedShots.splice(insertIndex, 0, nextShot);
+      nextProject = {
+        ...latestProject,
+        shots: orderedShots.map((shot, order) => ({ ...shot, order })),
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    const inheritedMatteMode = sceneMatteModeForProject(projectRef.current);
+    if (inheritedMatteMode && nextShotId) {
+      const inherited = await inheritSceneMatte(
+        nextProject,
+        inheritedMatteMode,
+        [nextShotId]
+      );
+      if (!inherited) {
+        return;
+      }
+    } else {
+      updateProject(nextProject, true, false);
+    }
     if (nextShotId) {
       markShotsDirty([nextShotId]);
     }

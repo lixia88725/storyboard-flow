@@ -2,6 +2,7 @@ import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import type { SketchTool } from "../shared/types";
 import { ShortcutMenuButton } from "./ShortcutMenuButton";
 import {
+  BlurIcon,
   BrushIcon,
   ClearIcon,
   EraserIcon,
@@ -12,19 +13,25 @@ import {
 
 type ToolRailProps = {
   activeSketchTool: SketchTool;
+  blurRadius: number;
   brushColor: string;
   closeRadialToolMenu: () => void;
+  onApplyBlur: () => void;
   onClearCurrentLayer: () => void;
   setActiveSketchTool: Dispatch<SetStateAction<SketchTool>>;
+  setBlurRadius: Dispatch<SetStateAction<number>>;
   setBrushColor: Dispatch<SetStateAction<string>>;
 };
 
 export const ToolRail = ({
   activeSketchTool,
+  blurRadius,
   brushColor,
   closeRadialToolMenu,
+  onApplyBlur,
   onClearCurrentLayer,
   setActiveSketchTool,
+  setBlurRadius,
   setBrushColor
 }: ToolRailProps) => (
   <aside className="tool-rail" aria-label="Sketch tools">
@@ -79,6 +86,41 @@ export const ToolRail = ({
     >
       <SelectIcon />
     </button>
+    <div className="blur-tool-container">
+      <button
+        type="button"
+        className={activeSketchTool === "blur" ? "selected" : ""}
+        onClick={() => {
+          setActiveSketchTool("blur");
+          closeRadialToolMenu();
+        }}
+        title="Blur"
+        aria-label="Blur"
+      >
+        <BlurIcon />
+      </button>
+      {activeSketchTool === "blur" ? (
+        <div className="blur-tool-settings" aria-label="Blur settings">
+          <div className="blur-tool-settings-heading">
+            <span>Gaussian blur</span>
+            <output htmlFor="blur-radius">{blurRadius}px</output>
+          </div>
+          <input
+            id="blur-radius"
+            aria-label="Gaussian blur radius"
+            type="range"
+            min={1}
+            max={50}
+            step={1}
+            value={blurRadius}
+            onChange={(event) => setBlurRadius(Number(event.target.value))}
+          />
+          <button type="button" className="blur-tool-apply" onClick={onApplyBlur}>
+            Apply to current layer
+          </button>
+        </div>
+      ) : null}
+    </div>
     <button
       type="button"
       onClick={onClearCurrentLayer}

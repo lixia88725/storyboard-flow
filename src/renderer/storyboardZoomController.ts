@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   type CSSProperties,
   type Dispatch,
@@ -20,6 +21,12 @@ import {
   scrollBoardBy as scrollBoardContainerBy
 } from "./boardViewport";
 import type { BoardViewSize } from "./boardViewState";
+import {
+  captureStoryboardZoomAnchor,
+  restoreStoryboardZoomAnchor,
+  type ZoomAnchorSnapshot,
+  type ZoomClientPoint
+} from "./storyboardZoomAnchorController";
 import { useZoomInteractionController } from "./zoomInteractionController";
 
 type StoryboardZoomStyleVariablesInput = {
@@ -87,11 +94,13 @@ export const applyZoomPreviewCssVariablesToBoard = (
 type StoryboardZoomControllerOptions = {
   animationFrameSize: BoardViewSize;
   animationImageSize: BoardViewSize;
+  isAnimationMode: boolean;
   isAnimationModeRef: MutableRefObject<boolean>;
   isZoomScrubbing: boolean;
   isZoomScrubbingRef: MutableRefObject<boolean>;
   orderedShots: Shot[];
   primarySelectedShot: Shot | undefined;
+  selectedShotIds: string[];
   setAnimationFrameSize: Dispatch<SetStateAction<BoardViewSize>>;
   setAnimationImageSize: Dispatch<SetStateAction<BoardViewSize>>;
   setIsAnimationMode: Dispatch<SetStateAction<boolean>>;
@@ -104,11 +113,13 @@ type StoryboardZoomControllerOptions = {
 export const useStoryboardZoomController = ({
   animationFrameSize,
   animationImageSize,
+  isAnimationMode,
   isAnimationModeRef,
   isZoomScrubbing,
   isZoomScrubbingRef,
   orderedShots,
   primarySelectedShot,
+  selectedShotIds,
   setAnimationFrameSize,
   setAnimationImageSize,
   setIsAnimationMode,
@@ -124,6 +135,8 @@ export const useStoryboardZoomController = ({
   const pendingZoomPreviewLevelRef = useRef<number | undefined>(undefined);
   const zoomPreviewFrameRef = useRef<number | undefined>(undefined);
   const zoomPreviewStateRef = useRef<ZoomPreviewState | undefined>(undefined);
+  const zoomAnchorRef = useRef<ZoomAnchorSnapshot | undefined>(undefined);
+  const pendingZoomAnchorRestoreRef = useRef(false);
   const workspaceBoardScrollRef = useRef<HTMLDivElement | null>(null);
   const boardGridRef = useRef<HTMLElement | null>(null);
 
@@ -155,6 +168,30 @@ export const useStoryboardZoomController = ({
     (options: ScrollToOptions) => scrollBoardContainerBy(workspaceBoardScrollRef.current, options),
     []
   );
+  const captureZoomAnchor = useCallback(
+    (clientPoint?: ZoomClientPoint, replace = false) => {
+      if (!replace && zoomAnchorRef.current) {
+        return zoomAnchorRef.current;
+      }
+
+      const anchor = captureStoryboardZoomAnchor({
+        board: boardGridRef.current,
+        clientPoint,
+        scrollContainer: workspaceBoardScrollRef.current,
+        selectedShotIds
+      });
+      zoomAnchorRef.current = anchor;
+      return anchor;
+    },
+    [selectedShotIds]
+  );
+  const restoreZoomAnchor = useCallback(() => {
+    restoreStoryboardZoomAnchor({
+      anchor: zoomAnchorRef.current,
+      board: boardGridRef.current,
+      scrollContainer: workspaceBoardScrollRef.current
+    });
+  }, []);
 
   const buildZoomPreviewState = useCallback(
     (zoom: number): ZoomPreviewState | undefined => {
@@ -176,14 +213,23 @@ export const useStoryboardZoomController = ({
       zoomPreviewStateRef.current = preview;
       zoomLevelRef.current = preview.zoomLevel;
       applyZoomPreviewCssVariables(preview);
+      restoreZoomAnchor();
       syncZoomControlDisplay(preview.zoomLevel);
 
       if (preview.viewport.isAnimationMode !== isAnimationModeRef.current) {
+        pendingZoomAnchorRestoreRef.current = Boolean(zoomAnchorRef.current);
         isAnimationModeRef.current = preview.viewport.isAnimationMode;
         setIsAnimationMode(preview.viewport.isAnimationMode);
       }
     },
-    [applyZoomPreviewCssVariables, isAnimationModeRef, setIsAnimationMode, syncZoomControlDisplay, zoomLevelRef]
+    [
+      applyZoomPreviewCssVariables,
+      isAnimationModeRef,
+      restoreZoomAnchor,
+      setIsAnimationMode,
+      syncZoomControlDisplay,
+      zoomLevelRef
+    ]
   );
 
   useEffect(() => {
@@ -195,9 +241,28 @@ export const useStoryboardZoomController = ({
 
   const commitZoomLevel = useCallback((zoom: number) => {
     const nextZoom = normalizeStoryboardZoom(zoom);
+    pendingZoomAnchorRestoreRef.current = Boolean(zoomAnchorRef.current);
     zoomLevelRef.current = nextZoom;
     setZoomLevel((currentZoom) => (currentZoom === nextZoom ? currentZoom : nextZoom));
   }, [setZoomLevel, zoomLevelRef]);
+
+  useLayoutEffect(() => {
+    if (!pendingZoomAnchorRestoreRef.current) {
+      return;
+    }
+
+    restoreZoomAnchor();
+    pendingZoomAnchorRestoreRef.current = false;
+    if (!isZoomScrubbingRef.current) {
+      zoomAnchorRef.current = undefined;
+    }
+  }, [
+    isAnimationMode,
+    isZoomScrubbing,
+    restoreZoomAnchor,
+    zoomLevel,
+    isZoomScrubbingRef
+  ]);
 
   const scheduleZoomLevel = useCallback(
     (zoom: number) => {
@@ -293,8 +358,9 @@ export const useStoryboardZoomController = ({
     zoomLevelRef
   ]);
 
-  const beginZoomScrubbing = useCallback(() => {
+  const beginZoomScrubbing = useCallback((clientPoint?: ZoomClientPoint) => {
     flushScheduledZoomLevel();
+    captureZoomAnchor(clientPoint, true);
     isZoomScrubbingRef.current = true;
     const preview = buildZoomPreviewState(zoomLevelRef.current);
     if (preview) {
@@ -304,6 +370,7 @@ export const useStoryboardZoomController = ({
   }, [
     applyZoomPreviewState,
     buildZoomPreviewState,
+    captureZoomAnchor,
     flushScheduledZoomLevel,
     isZoomScrubbingRef,
     setIsZoomScrubbing,
@@ -342,18 +409,20 @@ export const useStoryboardZoomController = ({
       if (isZoomScrubbingRef.current) {
         scheduleZoomPreviewLevel(zoom);
       } else {
+        captureZoomAnchor();
         scheduleZoomLevel(zoom);
       }
     },
-    [isZoomScrubbingRef, scheduleZoomLevel, scheduleZoomPreviewLevel]
+    [captureZoomAnchor, isZoomScrubbingRef, scheduleZoomLevel, scheduleZoomPreviewLevel]
   );
 
   const handleStoryboardZoomShortcut = useCallback(
-    (direction: "in" | "out") => {
+    (direction: "in" | "out", clientPoint?: ZoomClientPoint) => {
+      captureZoomAnchor(clientPoint);
       const currentZoom = pendingZoomLevelRef.current ?? zoomLevelRef.current;
       scheduleZoomLevel(nextKeyboardStoryboardZoom(currentZoom, direction));
     },
-    [scheduleZoomLevel, zoomLevelRef]
+    [captureZoomAnchor, scheduleZoomLevel, zoomLevelRef]
   );
 
   return {

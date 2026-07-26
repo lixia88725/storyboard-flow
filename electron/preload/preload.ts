@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
-type BlankShotPreset = "16:9" | "9:16" | "2.39:1" | "1.43:1";
+type BlankShotPreset = "16:9" | "1.85:1" | "9:16" | "2.39:1" | "1.43:1";
 
 type ProjectPayload = {
   project: unknown;

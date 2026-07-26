@@ -96,7 +96,7 @@ Reason: Photoshop 保存后的兼容修改应接近实时进入 SWB；但 SWB �
 
 ## Add Shot Creates A Blank TIFF
 
-`Add Shot` 在当前场景文件夹创建白色 TIFF，支持 `16:9`、`9:16 Phone`、`2.39:1`、`1.43:1 IMAX` 预设。
+`Add Shot` 在当前场景文件夹创建白色 TIFF，支持 `16:9`、`1.85:1`、`9:16 Phone`、`2.39:1`、`1.43:1 IMAX` 预设。
 
 Reason: 用户想在当前工作区内创建新分镜图，而非导入外部图片。
 
@@ -187,17 +187,23 @@ Reason: 用户会把多选组拖到前方或后方的 storyboard，只有“插�
 
 Reason: 最大 Zoom 是用户明确进入线性阅读/播放状态的意图边界，避免在接近阈值时因为窗口尺寸、滚动位置或缩放拖动造成动画模式反复抖动。
 
+## Board Zoom Preserves The Active Picture Anchor
+
+普通 storyboard grid 与 Japanese storyboard sheet 缩放前会暂存目标 shot、Picture 内归一化锚点和屏幕坐标；布局更新后通过 scroll 补偿恢复同一屏幕焦点。Z + wheel / pen-mouse horizontal drag 在指针位于任一 selected Picture 内时使用指针细节点，否则使用 primary selected Picture 中心；目标不可见时回退到指针下方或视口中心附近的可见 Picture。补偿只使用 `.workspace-board-scroll` 的原生横纵滚动；到达滚动边界时把锚点收敛到滚动视口内缩 16px 的安全区域，不再平移整个 board。
+
+Reason: 缩放会改变卡片宽度、网格列数和日式分镜行高；只更新 Zoom 会让正在绘制的 shot 跳到另一行甚至离开视口。强行用 CSS translate 吸收滚动边界剩余量会把第一列或末列推到工具栏/侧栏下方，因此可见安全区优先于边界处的绝对像素锁定。锚点是瞬时导航状态，不进入项目、preload、Save、TIFF 或 `.storyboard-workbench` 数据。
+
 ## Animation Mode Uses A Stable Dark Frame
 
 动画模式主画面只渲染当前 storyboard，并把当前 storyboard 的真实画幅按比例居中放入深色 frame。frame 跟随当前 shot 的真实比例和可用空间适配，图片本身不拉伸；timeline 仍显示全部 shot 缩略图用于跳转。
 
-Reason: 线性播放时用户注意力应集中在当前画面；不挂载非当前 storyboard 可以避免其他卡片的 header、z-index 或滚动几何干扰 timeline。混合 16:9、9:16、2.39:1、1.43:1 时，按真实比例适配可以避免画面变形和裁切。
+Reason: 线性播放时用户注意力应集中在当前画面；不挂载非当前 storyboard 可以避免其他卡片的 header、z-index 或滚动几何干扰 timeline。混合 16:9、1.85:1、9:16、2.39:1、1.43:1 时，按真实比例适配可以避免画面变形和裁切。
 
 ## Storyboard Display Uses Real Canvas Aspect Ratio
 
 Storyboard 显示容器按每张 shot 的 `swb.canvasWidth/canvasHeight` 设置比例，不再使用固定比例容器。
 
-Reason: 混合画幅项目中，16:9、2.39:1、1.43:1 都不应出现额外黑边或裁切；绘制坐标也必须和真实画布尺寸一致。
+Reason: 混合画幅项目中，16:9、1.85:1、2.39:1、1.43:1 都不应出现额外黑边或裁切；绘制坐标也必须和真实画布尺寸一致。
 
 ## Onion Skin Is Preview Only
 
@@ -223,13 +229,31 @@ Reason: 原文件已有 Archive 和 Save 边界保护，用户在绘图时应获
 
 ## Bitmap Selection Is A Transient Active-Layer Tool
 
-Select 工具的 lasso / rectangle 选区只作用于当前 active bitmap layer。选区状态不写入 `storyboard.project.json`；移动或缩放提交后，只把像素结果写回当前 layer PNG，并通过 bitmap layer snapshot 进入 undo/redo。
+Select 工具的 lasso / rectangle 选区只作用于当前 active bitmap layer。选区状态不写入 `storyboard.project.json`；移动、角点缩放或通过顶部手柄围绕选区中心旋转后，只把像素结果写回当前 layer PNG，并通过 bitmap layer snapshot 进入 undo/redo。旋转拖动期间由 Renderer canvas 实时预览；松手提交后继续保留变换后的临时选区。
 
-Reason: V1 先提供接近 Photoshop 的基础选区移动/缩放体验，同时避免跨图层、保存选区、羽化、魔棒、旋转、自由变形等复杂状态污染内部项目格式。
+Reason: V1 提供接近 Photoshop 的基础选区移动/缩放/旋转体验，同时避免跨图层、保存选区、羽化、魔棒、自由变形等复杂状态污染内部项目格式。
 
 Selection transform hit testing converts a visible screen-space handle target into canvas coordinates.
 
 Reason: storyboard images can be much larger than their displayed size. A fixed canvas-space radius makes corner scale handles effectively unclickable on high-resolution images.
+
+## Gaussian Blur Is An Undoable Bitmap-Layer Edit
+
+Blur 工具对当前 visible/unlocked bitmap layer 应用 `1–50px` Gaussian blur。Select 套索点按 shot + active layer 暂存在 Renderer；从 Select 切到 Blur 时保留选区，Apply 先生成整层模糊副本，再通过套索 clip 蒙版清除选区内原像素并写入模糊像素。不能用普通 `source-over` 直接叠加，否则透明 paint layer 的清晰笔迹会保留在模糊光晕下方。无有效选区时才模糊整层。半径和选区都只属于 Renderer 临时状态；Apply 后像素写回现有 layer PNG，并通过 bitmap layer snapshot 进入 undo/redo，不新增 project、preload、TIFF 或 `.storyboard-workbench` metadata 字段。
+
+Reason: 模糊是像素编辑而不是项目结构。保持参数与选区为临时工具状态，可以复用现有 bitmap 历史与 Save 边界，避免为了一个破坏性滤镜扩展磁盘格式；按 active layer 关联选区也避免切层后把旧蒙版误用到另一层。
+
+## Storyboard Matte Mode Is Explicit
+
+顶部遮幅菜单只提供 `expanded` 和 `embedded` 两种显式模式，不做像素自动识别，并把一次选择作为场景级事务应用到当前 active storyboard 列表。`expanded` 把每张 storyboard 的既有 bitmap 内容层画布上下各增加 `75px`，原内容整体下移 `75px`，新增区域保持透明；`embedded` 保持既有画布和内容层尺寸。两种模式都会为每张图创建独立的透明 `Matte Overlay` PNG：中间透明、上下各 `75px` 为不透明黑色，layer 固定锁定在普通内容层上方。选择结果仍分别保存在 `shot.presentation.matte`，并随 SWB TIFF XMP 快照写入。
+
+台词按钮只在整场 matte 已配置时启用，并作为场景级开关。开启时，它为每个 active storyboard 创建锁定的 `Dialogue Overlay` bitmap layer，把该 shot 按顺序排列的非空 Dialogue 合并成单行白字放在底部遮幅左侧；没有台词的 shot 仍创建透明 overlay，使开关状态保持一致。再次点击会移除整场 Dialogue Overlay。系统图层顺序固定为普通内容层、`Matte Overlay`、`Dialogue Overlay`，因此画笔内容会被遮幅盖住，而台词仍显示在黑边上。整场遮幅或台词切换各自作为一个 bitmap snapshot Undo/Redo 事务；真实工作 TIFF 像素仍只在 Save 时写入。
+
+遮幅按钮在关闭状态打开模式菜单，在开启状态直接关闭整场。关闭 `expanded` 会按保存的 `sourceHeight` 裁掉内容层上下 padding 并移除 Matte/Dialogue system layers；关闭 `embedded` 只移除 system layers，不尝试删除原图自带的黑色像素。关闭操作是单个 bitmap snapshot Undo/Redo 事务，任一裁切或删除失败时恢复全部资产。Add Shot、显式 Import 完成及 Pending restore 会继承 active storyboard 列表当前的统一 matte mode 和 scene dialogue overlay 开关；若 active scene 已关闭，从 Pending 恢复的旧 matte shot 会同步关闭。Pending 和 pending-deleted 项本身不被场景按钮直接改写。
+
+场景遮幅/台词资产事务、bitmap 写入、autosave 和最终 Save 共用 renderer 侧的串行资产边界。事务等待期间若项目对象已经被其他编辑替换，操作必须放弃提交并恢复已修改的 PNG，不能用旧 snapshot 覆盖新项目；Add Shot 则把已生成的 shot 重新合并到最新项目后再继承场景显示状态。若原操作失败后连资产回滚也失败，workspace 进入 recovery-required 状态并阻止 autosave、Save 和后续场景显示事务，直到用户明确重新打开 workspace。
+
+Reason: 一个文件夹代表一个场景，因此遮幅选择应统一作用于整场，而不是让 shot 逐张进入不一致状态。软件新增遮幅和导入图片自带遮幅具有不同画布语义，不能自动猜测；显式模式避免重复扩展。独立锁定的 Matte Overlay 保证浅色绘画不会覆盖黑边，同时真实 resize 仍只发生在内部 bitmap layer assets 上，使 Renderer 和现有 TIFF Save 继续使用统一画布尺寸。
 
 ## Keyboard Shortcuts Are Fixed For Now
 
@@ -359,7 +383,7 @@ Reason: 临时 spike 目录不适合作为长期默认依赖来源。保留 fall
 
 ## Locked Bitmap Layers Protect Content But Not Visibility
 
-Locked bitmap layer 仍可被选中，也可显示/隐藏；但不能绘制、擦除、Select transform、Clear、Delete、重命名、调整 opacity / blend mode 或排序。
+Locked bitmap layer 仍可被选中，也可显示/隐藏；但不能绘制、擦除、Blur、Select transform、Clear、Delete、重命名、调整 opacity / blend mode 或排序。
 
 Reason: 锁定的核心目的是避免误改像素和图层属性。显示/隐藏属于查看状态，允许切换可以保持接近 Photoshop 的图层管理体验。
 
