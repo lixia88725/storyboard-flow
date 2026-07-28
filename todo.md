@@ -2,7 +2,6 @@
 
 ## P1
 
-- [ ] Diagnose the existing `npm run smoke:bitmap` timeout at `markdown storyboard script textarea` (`scripts/electron-bitmap-smoke.mjs:1061`) without weakening the matte/dialogue scenarios that already pass before it.
 - [ ] Manual dogfood single-shot AI Draft generation with OpenAI, Seedream, and ComfyUI: set provider credentials/settings from the GUI, generate one candidate, Apply as an `AI Draft` layer, Discard, and copy request preview.
 - [ ] Manual dogfood batch AI generation: select 5+ and 19+ shots, confirm batch size `1 / 4 / 16`, per-shot resource availability, crop-back candidates, Apply All, and Discard All.
 - [ ] Manual dogfood AI Resources: drag images into the AI panel, edit role/note in single-shot mode, delete resources, and confirm per-shot exclusions persist after project reload.
@@ -38,6 +37,7 @@
 
 ## Completed Summary
 
+- [x] Updated bitmap smoke coverage for the Japanese storyboard UI: Action text checks the Japanese storyboard Action field instead of the retired card-back textarea, Import help checks current copy, and the smoke returns to the standard board before card-origin marquee coverage. `npm run smoke:bitmap` passed in a normal macOS Terminal session.
 - [x] Scene-wide Matte and Dialogue controls are reversible bitmap transactions. Expanded mode adds/removes `75px` above and below; embedded mode preserves dimensions. Add/Import/Pending inherit both switches, asset operations serialize with Save/autosave/bitmap writes, and rollback failures enter recovery-required state.
 - [x] The left ToolRail now includes Blur directly below Select, with a transient `1–50px` Gaussian radius, current-layer Apply, selection-mask compositing, bitmap history/Undo support, and locked/hidden layer protection.
 - [x] Bitmap Select now supports Photoshop-style center rotation from an external transform handle, with live preview and bitmap history/Undo through the existing active-layer transform path.

@@ -6,9 +6,8 @@
 
 - Workspace: `/Users/xiali/Documents/Storyboard-flow`
 - Branch: `main`
-- Handoff date: 2026-07-26
-- Base commit before this handoff commit: `3a0cd77 Refresh handoff documentation`
-- `3a0cd77` 与本地 `origin/main` 同步；本次 `session:` 提交完成后，本地 `main` 将领先远端 1 个提交，除非用户之后手动 push。
+- Handoff date: 2026-07-28
+- Most recent local commit: `724e345 Update bitmap smoke tests for Japanese storyboard UI`
 - Product name: `Storyboard Flow`. `Storyboard Workbench` remains legacy/internal compatibility only.
 
 ## Must Preserve
@@ -53,6 +52,10 @@ Protected Save / Import / TIFF orchestration remains in `electron/main/main.ts`.
   - Add Shot rebases onto the latest project;
   - rollback failure enters recovery-required state and blocks autosave, Save, and further presentation changes until the workspace is explicitly reopened.
 - Updated README, decisions, TODO, smoke coverage, and focused unit tests for these workflows.
+- Updated stale bitmap smoke coverage after the legacy per-shot Script face was replaced by the Japanese storyboard sheet:
+  - Action text now verifies the Japanese storyboard Action field, not the removed card-back textarea.
+  - Import help checks the current explanatory copy.
+  - The smoke explicitly returns to the standard storyboard board before card-origin marquee coverage.
 
 ## Verification
 
@@ -74,23 +77,17 @@ npm run build
 
 There is no `lint` script in `package.json`, so lint was skipped.
 
-`npm run smoke:bitmap` was also run after the latest build. The expanded/embedded matte toggles, scene dialogue toggles, Undo/Redo, and Add Shot matte/dialogue inheritance all passed. The full smoke then stopped at the pre-existing unrelated failure:
-
-```text
-markdown storyboard script textarea timed out
-scripts/electron-bitmap-smoke.mjs:1061
-```
+`npm run smoke:bitmap` was run from a normal macOS Terminal session after the smoke updates and passed in full. The Codex-managed execution environment may abort Electron during macOS AppKit initialization before the app code runs; this is an environment limitation, not a Storyboard Flow failure.
 
 Earlier focused Electron checks in this same worktree also passed Z-drag zoom, Japanese Space pan, Blur (including masked transparent-layer replacement), Select rotation, and 24-shot zoom anchoring. These are now summarized here instead of keeping several obsolete per-feature verification blocks.
 
 ## Next Work
 
-1. Diagnose the existing `markdown storyboard script textarea timed out` smoke failure at line 1061 without weakening earlier smoke scenarios.
-2. Manually dogfood both matte modes with real production folders:
+1. Manually dogfood both matte modes with real production folders:
    - toggle expanded `1080↔1230`;
    - toggle embedded without resizing;
    - verify Add/Import/Pending inherit Matte and Dialogue state;
    - Save, reopen, and inspect layered TIFF dimensions/layers.
-3. Manually verify Z-drag zoom with a real pen tablet and confirm Space pan, Blur, and Select rotation in both board views.
-4. After an explicit push, verify GitHub Actions tester releases, Windows/macOS packages, `update.json`, and the in-app update notice.
-5. Keep Save / Import / TIFF / `.storyboard-workbench` boundaries unchanged unless the user approves a separate migration plan.
+2. Manually verify Z-drag zoom with a real pen tablet and confirm Space pan, Blur, and Select rotation in both board views.
+3. After an explicit push, verify GitHub Actions tester releases, Windows/macOS packages, `update.json`, and the in-app update notice.
+4. Keep Save / Import / TIFF / `.storyboard-workbench` boundaries unchanged unless the user approves a separate migration plan.
