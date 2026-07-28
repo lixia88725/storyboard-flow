@@ -328,21 +328,21 @@ const waitForUndoReady = async () => {
   await delay(700);
 };
 
-const showScriptSide = (evaluate) =>
+const showJapaneseStoryboardSheet = (evaluate) =>
   evaluate(`
     (() => {
-      const button = document.querySelector('.tool-rail .card-face-tool[aria-label="Show script side"]');
+      const button = document.querySelector('button[aria-label="Show Japanese storyboard sheet"]');
       button?.click();
-      return true;
+      return button?.getAttribute('aria-pressed') === 'true';
     })()
   `);
 
-const showImageSide = (evaluate) =>
+const showStoryboardBoard = (evaluate) =>
   evaluate(`
     (() => {
-      const button = document.querySelector('.tool-rail .card-face-tool[aria-label="Show image side"]');
+      const button = document.querySelector('button[aria-label="Show storyboard board"]');
       button?.click();
-      return true;
+      return button?.getAttribute('aria-pressed') === 'true';
     })()
   `);
 
@@ -1057,10 +1057,10 @@ try {
       : undefined;
   }, "scene-wide embedded matte disabled");
 
-  await showScriptSide(evaluate);
+  await showJapaneseStoryboardSheet(evaluate);
   const mdBootstrapUiScript = await waitFor(
-    () => evaluate(`document.querySelector(".shot-script-textarea")?.value ?? ""`),
-    "markdown storyboard script textarea"
+    () => evaluate(`document.querySelector('[aria-label="Shot 001 action notes"]')?.value ?? ""`),
+    "markdown storyboard action notes"
   );
   if (mdBootstrapUiScript !== "Establishing shot\nCamera glides over the street.") {
     throw new Error(`Markdown storyboard UI did not open imported script text: ${mdBootstrapUiScript}`);
@@ -1068,31 +1068,31 @@ try {
 
   await openFolder(scriptRoot);
 
-  // Scenario: storyboard script back side and root markdown sync/import.
+  // Scenario: Japanese storyboard Action field and root markdown sync/import.
   const scriptMarkdownPath = path.join(scriptRoot, "storyboard-script.md");
-  await showScriptSide(evaluate);
+  await showJapaneseStoryboardSheet(evaluate);
   await waitFor(
-    () => evaluate(`document.querySelector("[data-shot-id]")?.classList.contains("is-script-face")`),
-    "storyboard script side visible"
+    () => evaluate(`Boolean(document.querySelector('.japanese-storyboard-view [aria-label="Shot 001 action notes"]'))`),
+    "Japanese storyboard Action field visible"
   );
-  const scriptCardGeometry = await evaluate(`
-    (() => Array.from(document.querySelectorAll(".shot-card.is-script-face")).map((card) => {
-      const cardRect = card.getBoundingClientRect();
-      const textareaRect = card.querySelector(".shot-script-textarea")?.getBoundingClientRect();
+  const scriptCellGeometry = await evaluate(`
+    (() => Array.from(document.querySelectorAll(".japanese-storyboard-row")).map((row) => {
+      const rowRect = row.getBoundingClientRect();
+      const textareaRect = row.querySelector('[aria-label$="action notes"]')?.getBoundingClientRect();
       return {
-        shotId: card.getAttribute("data-shot-id"),
-        cardBottom: cardRect.bottom,
+        shotId: row.getAttribute("data-shot-id"),
+        rowBottom: rowRect.bottom,
         textareaBottom: textareaRect?.bottom ?? null,
-        textareaWithinCard: textareaRect ? textareaRect.bottom <= cardRect.bottom + 1 : false
+        textareaWithinRow: textareaRect ? textareaRect.bottom <= rowRect.bottom + 1 : false
       };
     }))()
   `);
-  if (scriptCardGeometry.some((item) => !item.textareaWithinCard)) {
-    throw new Error(`Script textarea overflowed card bounds: ${JSON.stringify(scriptCardGeometry)}`);
+  if (scriptCellGeometry.some((item) => !item.textareaWithinRow)) {
+    throw new Error(`Action textarea overflowed Japanese storyboard row bounds: ${JSON.stringify(scriptCellGeometry)}`);
   }
   await evaluate(`
     (() => {
-      const textarea = document.querySelector(".shot-script-textarea");
+      const textarea = document.querySelector('[aria-label="Shot 001 action notes"]');
       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
       setter.call(textarea, "Opening shot\\nCamera pushes in");
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1123,10 +1123,12 @@ try {
     () => evaluate(`document.querySelector(".import-help-popover")?.textContent ?? ""`),
     "import help popover"
   );
-  if (!importHelpText.includes("原始 TIFF") ||
-    !importHelpText.includes("Archive") ||
+  if (
+    !importHelpText.includes("为什么需要 Import？") ||
     !importHelpText.includes("storyboard-script.md") ||
-    !importHelpText.includes("点击 Import")) {
+    !importHelpText.includes("Storyboard Flow") ||
+    !importHelpText.includes("Save")
+  ) {
     throw new Error(`Import help popover copy was incomplete: ${importHelpText}`);
   }
   await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
@@ -1160,13 +1162,13 @@ try {
     importedFileNames: scriptImportedProject.shots.map((shot) => shot.fileName),
     markdownAfterImport: scriptMarkdownAfterImport
   };
-  await evaluate(`document.querySelector(".shot-script-textarea")?.focus()`);
+  await evaluate(`document.querySelector('[aria-label="Shot 001 action notes"]')?.focus()`);
   await dispatchKey(send, "Backspace", "Backspace", 8);
   const deleteInScriptTextareaKeptCards = await evaluate(
     `document.querySelectorAll("[data-shot-id]").length`
   );
   if (deleteInScriptTextareaKeptCards !== scriptImportedProject.shots.length) {
-    throw new Error("Delete inside script textarea removed a storyboard card");
+    throw new Error("Delete inside Japanese storyboard Action field removed a storyboard card");
   }
   await copyFile(originalShotBPath, scriptExternalShotAPath);
   await copyFile(originalShotCPath, scriptExternalShotBPath);
@@ -1189,7 +1191,7 @@ try {
       ? project
       : undefined;
   }, "external folder images import");
-  await showImageSide(evaluate);
+  await showStoryboardBoard(evaluate);
 
   // Scenario: Delete removes selected storyboards in the app, Undo restores them, and Save moves files to Trash.
   await openFolder(deleteRoot);
