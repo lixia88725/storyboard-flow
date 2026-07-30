@@ -43,6 +43,7 @@ const api = ({
 describe("bitmapLayerPaintingController", () => {
   it("uses the existing layer PNG as the paint source when it is available", async () => {
     const storyboardApi = api({ layerDataUrl: "data:image/png;base64,layer" });
+    const createBlankLayerDataUrl = vi.fn().mockResolvedValue("blank");
 
     await expect(
       sourceDataUrlForBitmapLayer({
@@ -50,9 +51,30 @@ describe("bitmapLayerPaintingController", () => {
         folderPath: "/scene",
         shot: shot(),
         layer: imageLayer(),
-        createBlankLayerDataUrl: vi.fn().mockResolvedValue("blank")
+        createBlankLayerDataUrl
       })
     ).resolves.toBe("data:image/png;base64,layer");
+    expect(storyboardApi.readLayerPng).toHaveBeenCalledTimes(1);
+    expect(createBlankLayerDataUrl).not.toHaveBeenCalled();
+  });
+
+  it("reuses a preloaded missing layer result without issuing a second read", async () => {
+    const storyboardApi = api();
+    const createBlankLayerDataUrl = vi.fn().mockResolvedValue("blank");
+
+    await expect(
+      sourceDataUrlForBitmapLayer({
+        api: storyboardApi,
+        folderPath: "/scene",
+        shot: shot(),
+        layer: imageLayer({ kind: "paint" }),
+        createBlankLayerDataUrl,
+        preloadedLayer: { loaded: true, dataUrl: undefined }
+      })
+    ).resolves.toBe("blank");
+
+    expect(storyboardApi.readLayerPng).not.toHaveBeenCalled();
+    expect(createBlankLayerDataUrl).toHaveBeenCalledTimes(1);
   });
 
   it("uses a blank source for cleared image layers and paint layers", async () => {
@@ -94,6 +116,25 @@ describe("bitmapLayerPaintingController", () => {
     ).resolves.toBe("asset:///scene/.storyboard-workbench/previews/shot.png");
   });
 
+  it("propagates layer read failures instead of treating existing pixels as missing", async () => {
+    const readError = new Error("layer read failed");
+    const storyboardApi = api();
+    vi.mocked(storyboardApi.readLayerPng).mockRejectedValue(readError);
+    const createBlankLayerDataUrl = vi.fn().mockResolvedValue("blank");
+
+    await expect(
+      sourceDataUrlForBitmapLayer({
+        api: storyboardApi,
+        folderPath: "/scene",
+        shot: shot(),
+        layer: imageLayer({ kind: "paint" }),
+        createBlankLayerDataUrl
+      })
+    ).rejects.toBe(readError);
+
+    expect(createBlankLayerDataUrl).not.toHaveBeenCalled();
+  });
+
   it("records history and writes the blurred bitmap through the layer queue", async () => {
     vi.stubGlobal("document", {
       createElement: vi.fn(() => ({
@@ -130,7 +171,7 @@ describe("bitmapLayerPaintingController", () => {
           runExclusive: async (task) => task()
         }
       },
-      createHistoryEntry: vi.fn().mockResolvedValue("history"),
+      createHistoryEntryFromLayerAssets: vi.fn(() => "history"),
       recordUndoEntry,
       markShotsDirty,
       updateProject,
@@ -158,6 +199,7 @@ describe("bitmapLayerPaintingController", () => {
       dataUrl: "blurred-layer"
     });
     expect(recordUndoEntry).toHaveBeenCalledWith("history");
+    expect(storyboardApi.readLayerPng).toHaveBeenCalledTimes(1);
     expect(markShotsDirty).toHaveBeenCalledWith(["shot-1"]);
     expect(updateProject).toHaveBeenCalledWith(expect.any(Function), false, false);
   });
@@ -186,7 +228,7 @@ describe("bitmapLayerPaintingController", () => {
           runExclusive: async (task) => task()
         }
       },
-      createHistoryEntry: vi.fn(),
+      createHistoryEntryFromLayerAssets: vi.fn(),
       recordUndoEntry: vi.fn(),
       markShotsDirty: vi.fn(),
       updateProject: vi.fn(),
@@ -196,5 +238,57 @@ describe("bitmapLayerPaintingController", () => {
     await expect(controller.handleBitmapBlur(currentShot, lockedLayer.id, 8)).resolves.toBeUndefined();
     await expect(controller.handleBitmapBlur(shot(), "layer-image", 0)).resolves.toBeUndefined();
     expect(blurBitmapLayer).not.toHaveBeenCalled();
+  });
+
+  it("aborts bitmap edits when the undo source cannot be read", async () => {
+    const readError = new Error("layer read failed");
+    const currentShot = shot();
+    const project: Project = {
+      id: "project",
+      name: "Project",
+      shots: [currentShot],
+      dialogues: [],
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01"
+    };
+    const storyboardApi = {
+      ...api(),
+      readLayerPng: vi.fn().mockRejectedValue(readError),
+      writeLayerPng: vi.fn()
+    } as unknown as Window["storyboard"];
+    const createHistoryEntryFromLayerAssets = vi.fn();
+    const recordUndoEntry = vi.fn();
+    const markShotsDirty = vi.fn();
+    const updateProject = vi.fn();
+    const controller = useBitmapLayerPaintingController({
+      api: storyboardApi,
+      projectRef: { current: project },
+      folderPath: "/scene",
+      bitmapLayerWriteQueueRef: {
+        current: {
+          enqueue: async (_bitmapPath, task) => task(),
+          drain: async () => undefined,
+          runExclusive: async (task) => task()
+        }
+      },
+      createHistoryEntryFromLayerAssets,
+      recordUndoEntry,
+      markShotsDirty,
+      updateProject
+    });
+
+    await expect(
+      controller.handleBitmapSelectionTransform(
+        currentShot,
+        "layer-image",
+        "data:image/png;base64,transformed"
+      )
+    ).rejects.toBe(readError);
+
+    expect(createHistoryEntryFromLayerAssets).not.toHaveBeenCalled();
+    expect(storyboardApi.writeLayerPng).not.toHaveBeenCalled();
+    expect(recordUndoEntry).not.toHaveBeenCalled();
+    expect(markShotsDirty).not.toHaveBeenCalled();
+    expect(updateProject).not.toHaveBeenCalled();
   });
 });

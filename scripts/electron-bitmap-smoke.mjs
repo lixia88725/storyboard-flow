@@ -1358,7 +1358,11 @@ try {
   const denseMarqueeDuringDrag = await evaluate(`
     ({
       scrollY: document.querySelector(".workspace-board-scroll")?.scrollTop ?? window.scrollY,
-      selectedCount: Number(document.querySelector("footer span:last-child")?.textContent?.match(/\\d+/)?.[0] ?? 0),
+      selectedCount: Number(
+        document.querySelector(".selection-marquee")?.dataset.selectedCount ??
+        document.querySelector("footer span:last-child")?.textContent?.match(/\\d+/)?.[0] ??
+        0
+      ),
       marqueeVisible: Boolean(document.querySelector(".selection-marquee"))
     })
   `);

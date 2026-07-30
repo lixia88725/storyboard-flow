@@ -58,16 +58,41 @@ export const openExternalUrl = async (
 
 export const respondToStoryboardImageRequest = async (
   requestUrl: string,
-  fetchFileUrl: (url: string) => Promise<Response>
+  fetchFileUrl: (url: string) => Promise<Response>,
+  resolveLayerAssetPath?: (folderPath: string, bitmapPath: string) => string
 ): Promise<Response> => {
   const parsedUrl = new URL(requestUrl);
-  const filePath = parsedUrl.searchParams.get("path");
+  let filePath: string | null;
+  const isLayerRequest = parsedUrl.hostname === "layer";
+
+  if (isLayerRequest) {
+    const folderPath = parsedUrl.searchParams.get("folderPath");
+    const bitmapPath = parsedUrl.searchParams.get("bitmapPath");
+    if (!folderPath || !bitmapPath || !resolveLayerAssetPath) {
+      return new Response("Missing layer path", { status: 400 });
+    }
+
+    try {
+      filePath = resolveLayerAssetPath(folderPath, bitmapPath);
+    } catch {
+      return new Response("Invalid layer path", { status: 400 });
+    }
+  } else {
+    filePath = parsedUrl.searchParams.get("path");
+  }
 
   if (!filePath) {
     return new Response("Missing path", { status: 400 });
   }
 
-  return fetchFileUrl(pathToFileURL(filePath).toString());
+  try {
+    return await fetchFileUrl(pathToFileURL(filePath).toString());
+  } catch (error) {
+    if (isLayerRequest) {
+      return new Response("Layer asset not found", { status: 404 });
+    }
+    throw error;
+  }
 };
 
 export type FolderDialogOptions = {

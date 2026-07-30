@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { bitmapLayersForShot } from "../shared/projectOps";
+import { useState } from "react";
 import type { Dialogue, Shot } from "../shared/types";
-import { canvasSizeForShot, cssBlendMode } from "./sketchRendering";
+import { canvasSizeForShot } from "./sketchRendering";
+import { ShotLayerImageStack } from "./ShotStaticMedia";
 
 export const DialoguePreview = ({ dialogue }: { dialogue: Dialogue }) => {
   return <div className="dialogue-preview">{dialogue.text || "Empty dialogue"}</div>;
@@ -17,10 +17,12 @@ type ShotStackPreviewVariant = "composite" | "thumbnail";
 export const ShotStackPreview = ({
   shots,
   folderPath,
+  bitmapRevisionByShotId,
   variant = "composite"
 }: {
   shots: Shot[];
   folderPath?: string;
+  bitmapRevisionByShotId?: Readonly<Record<string, number>>;
   variant?: ShotStackPreviewVariant;
 }) => {
   const visibleShots = shots.slice(0, 4);
@@ -53,9 +55,8 @@ export const ShotStackPreview = ({
               <ShotCompositePreview
                 shot={shot}
                 folderPath={folderPath}
-                fallbackAssetPath={assetPath}
+                revision={bitmapRevisionByShotId?.[shot.id] ?? 0}
                 didFail={didFail}
-                onFail={onFail}
               />
             )}
             <span>{shot.fileName}</span>
@@ -86,64 +87,18 @@ const ShotThumbnailPreview = ({
 const ShotCompositePreview = ({
   shot,
   folderPath,
-  fallbackAssetPath,
-  didFail,
-  onFail
+  revision,
+  didFail
 }: {
   shot: Shot;
   folderPath?: string;
-  fallbackAssetPath: string;
+  revision: number;
   didFail: boolean;
-  onFail: () => void;
 }) => {
-  const bitmapLayers = useMemo(() => bitmapLayersForShot(shot), [shot]);
-  const canvasSize = useMemo(() => canvasSizeForShot(shot), [shot]);
-  const fallbackSrc = window.storyboard.assetUrl(fallbackAssetPath);
-  const [layerDataUrls, setLayerDataUrls] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadLayers = async () => {
-      setLayerDataUrls({});
-
-      if (!folderPath || bitmapLayers.length === 0) {
-        return;
-      }
-
-      const entries = await Promise.all(
-        bitmapLayers.map(async (layer) => {
-          if (layer.cleared) {
-            return [layer.id, undefined] as const;
-          }
-
-          const dataUrl = await window.storyboard
-            .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
-            .catch(() => undefined);
-          return [layer.id, dataUrl] as const;
-        })
-      );
-
-      if (!cancelled) {
-        setLayerDataUrls(
-          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1])))
-        );
-      }
-    };
-
-    void loadLayers();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bitmapLayers, folderPath]);
+  const canvasSize = canvasSizeForShot(shot);
 
   if (didFail) {
     return <div className="shot-stack-card-placeholder" aria-hidden="true" />;
-  }
-
-  if (bitmapLayers.length === 0) {
-    return <img src={fallbackSrc} alt="" draggable={false} onError={onFail} />;
   }
 
   return (
@@ -152,26 +107,7 @@ const ShotCompositePreview = ({
       style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}
       aria-hidden="true"
     >
-      {bitmapLayers
-        .filter((layer) => layer.visible)
-        .map((layer) => {
-          const layerSrc =
-            layerDataUrls[layer.id] ?? (layer.kind === "image" && !layer.cleared ? fallbackSrc : undefined);
-
-          return layerSrc ? (
-            <img
-              key={layer.id}
-              src={layerSrc}
-              alt=""
-              draggable={false}
-              onError={onFail}
-              style={{
-                opacity: layer.opacity,
-                mixBlendMode: cssBlendMode(layer.blendMode)
-              }}
-            />
-          ) : null;
-        })}
+      <ShotLayerImageStack shot={shot} folderPath={folderPath} revision={revision} />
     </div>
   );
 };

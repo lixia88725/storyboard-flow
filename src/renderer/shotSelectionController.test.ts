@@ -47,6 +47,17 @@ describe("shotSelectionController", () => {
     expect(setSelectedShotIds).toHaveBeenCalledWith(["shot-3"]);
   });
 
+  it("does not publish a new array when the shot is already the only selection", () => {
+    const { controller, selectedShotIdsRef, setSelectedShotIds } = createHarness();
+    const current = selectedShotIdsRef.current;
+
+    controller.selectSingleShot("shot-1");
+    controller.selectShotWithMode("shot-1", "single");
+
+    expect(selectedShotIdsRef.current).toBe(current);
+    expect(setSelectedShotIds).not.toHaveBeenCalled();
+  });
+
   it("clears the selected shot and range anchor together", () => {
     const { controller, selectedShotIdsRef, setSelectedShotIds, shotSelectionAnchorIdRef } =
       createHarness();

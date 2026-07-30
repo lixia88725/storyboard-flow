@@ -16,6 +16,7 @@ npm run test
 npm run typecheck
 npm run build
 npm run smoke:bitmap
+npm run smoke:performance
 npm run check:preload
 npm run dev
 ```
@@ -43,6 +44,7 @@ npm run dev
 - AI providers and generation: `electron/main/ai/*`
 - Preload contract: `electron/preload/preload.ts`, `electron/preload/preload.cjs`
 - End-to-end smoke: `scripts/electron-bitmap-smoke.mjs`
+- Large-scene performance smoke: `scripts/electron-performance-smoke.mjs`
 
 Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`.
 
@@ -79,6 +81,8 @@ Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`
 
 - 图层元数据保存在 `.storyboard-workbench/storyboard.project.json` 的 `shots[].layers`。
 - 每个可编辑图层是一张 PNG 工作层：`.storyboard-workbench/layers/{shotId}/{layerId}.png`。
+- 普通显示通过校验过的 `storyboard-img://layer` URL 直接流式读取 PNG，不会在打开或滚动时把整张 layer 转成 base64 IPC payload。
+- 两种 storyboard 视图把图片预热和完整编辑器分开：视口上下各一个 viewport 的 Warm 范围只主动准备 base layer，视口上下 25% 的 Hot 范围才挂载完整 `SketchPad`；离开 Hot 的 card/row 和布局保持存在，画面切换为 lazy/async 静态 bitmap layer stack。主选中、动画焦点、打开图层抽屉以及正在绘画/Select 的 shot 会保持 Hot。
 - 画笔、橡皮、清空和删除图层只写 `.storyboard-workbench/` 内部工作数据。
 - Select 工具支持 V1 lasso / rectangle 选区，对当前 active bitmap layer 做移动、角点缩放和顶部旋转手柄变换；旋转围绕选区中心实时预览，松手后与其他变换一样写回当前 layer PNG 并进入 undo / redo。选区本身不写入项目文件。
 - Blur 工具位于 Select 下方，可设置 `1–50px` Gaussian blur 半径并 Apply 到当前 visible/unlocked bitmap layer；若当前 active layer 保留了 Select 套索选区，只替换选区蒙版内的模糊像素，选区外保持不变；没有选区时模糊整层。每次 Apply 写回 layer PNG，进入 undo / redo，但不新增项目或 TIFF metadata 字段。
@@ -96,6 +100,8 @@ Option/Alt drag 不再作为复制手势；按住 Option/Alt 拖动 storyboard�
 工具栏顶部的齿轮按钮显示当前固定快捷键清单，覆盖 Brush、Eraser、Select、Clear layer、Save、Add Shot、Onion Skin、左右切帧、Undo 和 Redo。快捷键暂不开放用户自定义，也不写入 Electron `userData`。`Escape` 默认用于 Clear layer；当菜单打开时，`Escape` 优先关闭菜单。
 
 `npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、拖动排序、图层缩略图、Select 移动/缩放、Add Shot、Save safety、Save 写入 Photoshop-readable layered TIFF、固定快捷键清单、混合画幅动画模式、Onion Skin 和重开恢复；它也覆盖旧 stroke 项目的 bitmap migration、Photoshop layered TIFF export/import round trip，并检查内部 layer PNG 没有 metadata 未引用的 orphan asset。
+
+`npm run smoke:performance` 默认生成 250-shot 单层和 130-shot 三层两个 owned bitmap 临时 workspace，在普通与 Japanese storyboard 两种视图的 50% zoom 下测量视图激活、完整滚动、多选、marquee 和第一笔绘画。Marquee 会分别记录普通拖动、边缘滚动和松手恢复阶段，检查 active/edge editor churn 为 0、普通拖动 Layout 不超过 2、恢复阶段每帧 tier 变化不超过 6，并覆盖 20+ shot 密集圈选。它也检查 Cold/Warm/Hot 数量、编辑器峰值、可见图片解码、RAF p95、超过 100ms 的停顿、首笔可见延迟、被动 `readLayerPng` 调用、单次 stroke 读取次数和强制 GC 后的 heap 稳定性。`STORYBOARD_PERF_LAYER_COUNT=8` 可运行更激进的多图层诊断；普遍 8+ full-resolution layer 仍需要 flattened proxy/thumbnail cache。设置 `STORYBOARD_PERF_FIXTURE=/absolute/project/path` 时，会先用 APFS clone 把真实项目复制到 `/private/tmp`，只对临时副本执行绘画。
 
 ## Photoshop Layered TIFF Export
 

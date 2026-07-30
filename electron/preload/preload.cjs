@@ -1,5 +1,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
+let readLayerPngCalls = 0;
+
 const api = {
   openFolderByPath: (folderPath) => ipcRenderer.invoke("workspace:openFolderByPath", folderPath),
   filePathForDroppedFile: (file) => webUtils.getPathForFile(file),
@@ -25,7 +27,10 @@ const api = {
     };
   },
   writeLayerPng: (payload) => ipcRenderer.invoke("layers:writePng", payload),
-  readLayerPng: (payload) => ipcRenderer.invoke("layers:readPng", payload),
+  readLayerPng: (payload) => {
+    readLayerPngCalls += 1;
+    return ipcRenderer.invoke("layers:readPng", payload);
+  },
   deleteLayerPng: (payload) => ipcRenderer.invoke("layers:deletePng", payload),
   copyLayerPng: (payload) => ipcRenderer.invoke("layers:copyPng", payload),
   copyShotAssets: (payload) => ipcRenderer.invoke("workspace:copyShotAssets", payload),
@@ -81,7 +86,16 @@ const api = {
   updateCloseGuard: (payload) => ipcRenderer.invoke("app:updateCloseGuard", payload),
   getAppInfo: () => ipcRenderer.invoke("app:getInfo"),
   openExternal: (url) => ipcRenderer.invoke("app:openExternal", url),
-  assetUrl: (filePath) => `storyboard-img://asset?path=${encodeURIComponent(filePath)}`
+  assetUrl: (filePath) => `storyboard-img://asset?path=${encodeURIComponent(filePath)}`,
+  layerAssetUrl: (payload) => {
+    const { folderPath, bitmapPath, revision } = payload;
+    const query = new URLSearchParams({ folderPath, bitmapPath });
+    if (revision !== undefined) {
+      query.set("revision", String(revision));
+    }
+    return `storyboard-img://layer?${query.toString()}`;
+  },
+  getRendererPerformanceCounters: () => ({ readLayerPngCalls })
 };
 
 contextBridge.exposeInMainWorld("storyboard", api);

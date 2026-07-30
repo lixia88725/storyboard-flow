@@ -4,7 +4,9 @@ import type { Project } from "../shared/types";
 import {
   japaneseStoryboardRowClassName,
   japaneseStoryboardRows,
-  japaneseStoryboardZoomStyle
+  japaneseStoryboardZoomStyle,
+  sameJapaneseStoryboardRowViewProps,
+  type JapaneseStoryboardRowViewProps
 } from "./JapaneseStoryboardView";
 
 vi.mock("./SketchPad", () => ({
@@ -90,6 +92,51 @@ describe("JapaneseStoryboardView", () => {
     expect(japaneseStoryboardSource).toContain('import { SketchPad } from "./SketchPad"');
     expect(japaneseStoryboardSource).toContain("<SketchPad");
     expect(japaneseStoryboardSource).not.toContain('import { ShotPreviewComposite } from "./ShotPreviewComposite"');
+  });
+
+  it("keeps an unaffected memoized row stable when another shot selection changes", () => {
+    const row = japaneseStoryboardRows(project)[0];
+    const noop = vi.fn();
+    const noopAsync = vi.fn(async () => undefined);
+    const props = {
+      activeSketchTool: "brush",
+      brushColor: "#000000",
+      brushOpacity: 1,
+      brushSize: 8,
+      brushSoftness: 0,
+      eraserOpacity: 1,
+      eraserSize: 24,
+      eraserSoftness: 0,
+      folderPath: "/scene",
+      bitmapRevision: 0,
+      isZoomScrubbing: false,
+      isPrimarySelected: false,
+      isSelected: false,
+      row,
+      onActionText: noop,
+      onDialogueText: noop,
+      onFill: noopAsync,
+      onFocusShot: noop,
+      onPickColor: noop,
+      onSelectShot: noop,
+      onSelectionTransform: noopAsync,
+      onBitmapSelectionChange: noop,
+      onSketchBeginInteraction: noop,
+      onSketchStroke: noopAsync
+    } satisfies JapaneseStoryboardRowViewProps;
+
+    expect(
+      sameJapaneseStoryboardRowViewProps(props, {
+        ...props,
+        row: { ...row }
+      })
+    ).toBe(true);
+    expect(
+      sameJapaneseStoryboardRowViewProps(props, {
+        ...props,
+        isSelected: true
+      })
+    ).toBe(false);
   });
 
   it("keeps the marquee hit area full-size while centering the sheet", () => {

@@ -93,20 +93,6 @@
   box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.42);
 }
 
-.shot-card.is-marquee-selected::after {
-  content: "";
-  position: absolute;
-  inset: -3px;
-  z-index: 4;
-  border: 2px solid rgba(255, 100, 45, 0.72);
-  border-radius: calc(var(--slate-radius) + 3px);
-  pointer-events: none;
-}
-
-.board-grid.is-marquee-selecting .shot-card {
-  transition: none;
-}
-
 .board-grid.is-marquee-selecting .shot-card.is-selected {
   border-color: var(--slate-line);
   box-shadow: var(--slate-shadow-card);

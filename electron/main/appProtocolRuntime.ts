@@ -6,9 +6,10 @@ export type StoryboardImageProtocolRequest = {
 
 export type StoryboardImageProtocolOptions = {
   fetchFileUrl: (url: string) => Promise<Response>;
+  resolveLayerAssetPath?: (folderPath: string, bitmapPath: string) => string;
 };
 
 export const createStoryboardImageProtocolHandler =
-  ({ fetchFileUrl }: StoryboardImageProtocolOptions) =>
+  ({ fetchFileUrl, resolveLayerAssetPath }: StoryboardImageProtocolOptions) =>
   (request: StoryboardImageProtocolRequest): Promise<Response> =>
-    respondToStoryboardImageRequest(request.url, fetchFileUrl);
+    respondToStoryboardImageRequest(request.url, fetchFileUrl, resolveLayerAssetPath);

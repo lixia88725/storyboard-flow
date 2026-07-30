@@ -112,6 +112,26 @@ Reason: 这些行为在 React UI 状态之外更易测试、更安全演进。
 
 Reason: The renderer was becoming too large for smooth collaboration. Keeping Save/Import/history in `App.tsx` while moving card, canvas, and layer drawer presentation into focused components reduces merge conflicts and lowers the risk of UI work accidentally touching filesystem boundaries.
 
+## Large Storyboards Window Editors, Not Layout
+
+普通 Storyboard 和 Japanese Storyboard 都保留完整 card/row 外壳、CSS 布局、DND 和 marquee 几何，但图片预热和完整编辑器挂载使用不同范围。视口上下各一个 viewport 是 Warm 图片范围；只有视口上下 25% 的 Hot 范围挂载完整 `SketchPad`。离开 Hot 的 shot 使用无 Canvas、无 ResizeObserver、无全局绘图事件的静态 bitmap layer 图片栈。primary selection、动画焦点、打开图层抽屉以及正在绘画/Select 的 shot 会被 pin 住，不能在交互中卸载。
+
+Warm 范围只主动 eager/decode 最底部的 base layer，其他可见 layer 保持 lazy；完整 layer stack 在进入 Hot 后加载。这样普通 50% grid 不会为了提前准备图片而一次解码数百张全尺寸 paint PNG，也不会把编辑器推迟到真正进入屏幕后才挂载。Cold/Warm/Hot 状态写在 card/row 外壳的 renderer-only data attribute 上，performance smoke 可直接审计媒体级别、编辑器峰值、挂载 churn 和可见图片就绪状态。
+
+Renderer 通过一个以 `.workspace-board-scroll` 为 root 的共享 Warm/Hot `IntersectionObserver` 对管理双向进入/退出。Bitmap layer 普通显示、静态 composite、Timeline、图层缩略图和 Onion Skin 使用经过 main-side layer path 校验的 `storyboard-img://layer` URL；`readLayerPng` 只用于真实像素修改和 Undo/Redo snapshot。Cache bust 使用 renderer-only per-shot revision，metadata-only shot 更新和重排不应刷新无关 layer URL。
+
+画笔高频路径使用缓存的 stage rect、coalesced pointer events、ref 内 points、每 RAF 最多一次 Konva snapshot，以及 DOM-ref brush cursor。单次 bitmap edit 只读取一次旧 layer PNG；同一份数据同时作为 Undo snapshot 和绘制输入。第一下按压用即时 dot preview 显示，磁盘写入、history 和 autosave 仍在 pointer-up 后经过原有 bitmap write queue。
+
+Reason: 整卡虚拟化会破坏 CSS Grid、dnd-kit、文本编辑和框选几何；只窗口化重型 media/editor 可以保留交互模型，同时让 130–250 shot 场景不再常驻数百个 Konva Stage，也避免被动滚动把整套 layer PNG 作为 base64 拉进 renderer heap。图片预热与编辑器挂载必须分离：预热太窄会把解码集中到可见边缘，预热全部图层又会让多层场景在滚动中产生解码风暴。当前 base-first Warm 策略匹配 C23 的 1–3 layer 生产分布；普遍 8+ full-resolution layer 的场景需要后续 flattened proxy/thumbnail cache，而不是继续缩小 Hot 距离。
+
+## Marquee Feedback Uses One Canvas And Freezes Media Churn
+
+普通与 Japanese Storyboard 圈选都只操作一个固定、裁切在 `.workspace-board-scroll` 内的 Canvas 覆盖层。pointer-down 一次缓存 viewport、scroll 起点和全部 shot 的文档坐标；pointer-move 每 RAF 最多处理一次，只读取 `scrollTop/scrollLeft`，不再逐卡添加临时 class，也不再逐帧读取 `getBoundingClientRect()`。绿色选框、橘红候选边和实时数量都画在 Canvas；松手后覆盖层保留一帧，再交接给正式 React `is-selected` 边框。
+
+圈选期间 Warm/Hot `IntersectionObserver` 继续记录最新可见性，但媒体 Provider 暂停向 card/row 发布 tier 变化。现有编辑器不卸载，新滚入 shot 暂用静态图片；primary selection、绘画、Select 和图层抽屉 pinning 仍可直接获得 Hot。松手后下一帧恢复，并按每帧最多 6 个变化分批处理：先卸载离屏编辑器，再挂载 Hot，最后处理 Warm/Cold 图片预热。新的圈选 lease 会取消旧恢复队列。
+
+Reason: 破坏性实测否定了最初的“双 SVG path”假设：在 Chromium 中每帧修改 SVG `d` 会进入 SVG Layout，36 帧产生约 38–39 次 Layout。Canvas 保留单层反馈和相同视觉语义，但避开 DOM/SVG layout pipeline；冻结媒体窗口则避免边缘滚动时 SketchPad mount/unmount 与命中测试争抢主线程。
+
 ## Current Architecture Map
 
 Storyboard Flow is a local-first Electron app with four major layers:

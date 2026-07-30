@@ -1,5 +1,5 @@
 import { useRef, useState, type MutableRefObject, type RefObject } from "react";
-import type { Project } from "../shared/types";
+import type { Project, Shot } from "../shared/types";
 import {
   readLayerAssetSnapshots,
   restoreLayerAssetSnapshots,
@@ -9,6 +9,7 @@ import {
 import { appendHistoryEntry, useSyncedHistoryStackController } from "./historyStackController";
 import type { FileNameSyncState, WorkspaceSaveState } from "./workspaceLifecycleState";
 import type { BitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
+import { shotIdsForBitmapPaths } from "./shotBitmapRevision";
 
 export type ProjectHistoryEntry = {
   project: Project;
@@ -22,6 +23,37 @@ type HistoryDirection = "undo" | "redo";
 export const historyEntryAffectedBitmapPaths = (entry: ProjectHistoryEntry): string[] =>
   entry.layerAssets?.map((snapshot) => snapshot.bitmapPath) ?? [];
 
+const shotTiffInputsChanged = (previousShot: Shot | undefined, nextShot: Shot): boolean =>
+  !previousShot ||
+  previousShot.layers !== nextShot.layers ||
+  previousShot.sketchLayers !== nextShot.sketchLayers ||
+  previousShot.imageLayerEdits !== nextShot.imageLayerEdits ||
+  previousShot.baseVisible !== nextShot.baseVisible ||
+  previousShot.presentation !== nextShot.presentation ||
+  previousShot.swb !== nextShot.swb;
+
+export const historyDirtyShotIds = (
+  currentProject: Project,
+  restoredProject: Project,
+  restoredBitmapPaths: readonly string[]
+): string[] => {
+  const currentShotById = new Map(currentProject.shots.map((shot) => [shot.id, shot]));
+  const dirtyShotIds = new Set([
+    ...shotIdsForBitmapPaths(currentProject, restoredBitmapPaths),
+    ...shotIdsForBitmapPaths(restoredProject, restoredBitmapPaths)
+  ]);
+
+  for (const shot of restoredProject.shots) {
+    if (shotTiffInputsChanged(currentShotById.get(shot.id), shot)) {
+      dirtyShotIds.add(shot.id);
+    }
+  }
+
+  return restoredProject.shots
+    .filter((shot) => dirtyShotIds.has(shot.id))
+    .map((shot) => shot.id);
+};
+
 export const historyUnavailableStatus = (direction: HistoryDirection): string =>
   direction === "undo" ? "Nothing to undo" : "Nothing to redo";
 
@@ -33,8 +65,9 @@ type UseProjectHistoryControllerOptions = {
   bitmapLayerWriteQueueRef: MutableRefObject<BitmapLayerWriteQueue>;
   fileNameSyncStateRef: RefObject<FileNameSyncState>;
   folderPathRef: RefObject<string | undefined>;
-  markAllShotsDirty: () => void;
+  markShotsDirty: (shotIds: string[]) => void;
   maxEntries: number;
+  onLayerAssetsRestored?: (bitmapPaths: string[]) => void;
   projectRef: RefObject<Project>;
   scriptImportCheckIdRef: MutableRefObject<number>;
   selectShotsByIds: (shotIds: string[]) => void;
@@ -52,8 +85,9 @@ export const useProjectHistoryController = ({
   bitmapLayerWriteQueueRef,
   fileNameSyncStateRef,
   folderPathRef,
-  markAllShotsDirty,
+  markShotsDirty,
   maxEntries,
+  onLayerAssetsRestored,
   projectRef,
   scriptImportCheckIdRef,
   selectShotsByIds,
@@ -87,6 +121,12 @@ export const useProjectHistoryController = ({
         ? await readLayerAssetSnapshots(api, activeFolderPath, bitmapPaths)
         : [];
 
+    return createHistoryEntryFromLayerAssets(layerAssets);
+  };
+
+  const createHistoryEntryFromLayerAssets = (
+    layerAssets: LayerAssetSnapshot[] = []
+  ): ProjectHistoryEntry => {
     return {
       project: projectRef.current,
       selectedShotIds: selectedShotIdsRef.current,
@@ -125,10 +165,15 @@ export const useProjectHistoryController = ({
           return;
         }
 
-        const reciprocalEntry = await createHistoryEntry(
-          historyEntryAffectedBitmapPaths(entry)
+        const affectedBitmapPaths = historyEntryAffectedBitmapPaths(entry);
+        const dirtyShotIds = historyDirtyShotIds(
+          projectRef.current,
+          entry.project,
+          affectedBitmapPaths
         );
+        const reciprocalEntry = await createHistoryEntry(affectedBitmapPaths);
         await restoreHistoryLayerAssets(entry);
+        onLayerAssetsRestored?.(affectedBitmapPaths);
 
         if (direction === "undo") {
           setRedoStackSynced((current) =>
@@ -147,7 +192,7 @@ export const useProjectHistoryController = ({
         selectShotsByIds(entry.selectedShotIds);
         setFileNameSyncState(entry.fileNameSyncState);
         setWorkspaceSaveState("saving");
-        markAllShotsDirty();
+        markShotsDirty(dirtyShotIds);
         setAutosaveRevision((revision) => revision + 1);
         scriptImportCheckIdRef.current += 1;
         setScriptImportNeeded(false);
@@ -166,6 +211,7 @@ export const useProjectHistoryController = ({
     applyRedoEntry: () => applyHistoryEntry("redo"),
     applyUndoEntry: () => applyHistoryEntry("undo"),
     createHistoryEntry,
+    createHistoryEntryFromLayerAssets,
     recordUndoEntry,
     recordProjectUndoEntry: () =>
       recordUndoEntry({

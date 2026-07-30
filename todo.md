@@ -23,9 +23,10 @@
 - [ ] Manual dogfood keyboard copy/paste: copy/paste one storyboard with `Cmd/Ctrl+C` and `Cmd/Ctrl+V`, then copy/paste one layer below the current layer; confirm both paste actions show the short slide-out animation.
 - [ ] Manual dogfood large folder close flow on `/Users/xiali/Pictures/TEST2`: loading progress appears quickly, Save and Close exits, and Save error dialog only appears for real failures.
 - [ ] Revisit Photoshop dirty conflict UI only if users need non Image/base Photoshop layer edits to merge with simultaneous SWB local layer edits.
-- [ ] Revisit outside-card marquee affordance only if dense boards still feel hard to select after the `.is-marquee-selected` performance change.
+- [ ] Revisit outside-card marquee affordance only if dense boards still feel hard to select after the single-Canvas marquee feedback change.
 - [ ] Revisit a slightly wider layer drawer click target only if users still miss the current handle.
 - [ ] Revisit a true stage-level bitmap Select cursor affordance only if users still miss corner scaling after hit target enlargement.
+- [ ] If production storyboards begin using 8+ visible full-resolution bitmap layers per shot, add a revisioned flattened proxy/thumbnail cache. The optional `STORYBOARD_PERF_LAYER_COUNT=8 npm run smoke:performance` destructive fixture currently exceeds the 33ms scrolling budget; shrinking the Hot editor margin made decode bursts worse.
 
 ## PSD / Photoshop Future
 
@@ -37,6 +38,8 @@
 
 ## Completed Summary
 
+- [x] Dense marquee feedback now uses one clipped Canvas instead of per-card classes or dynamic SVG geometry; pointer-down caches all geometry, active drag avoids repeated viewport measurement, media tier publication freezes during edge-scroll, and release reconciles at most six tier changes per frame. Synthetic 250/130-shot and APFS-cloned C23 performance smokes pass in both views with 0 active editor churn and 0–1 active Layout.
+- [x] Large-board interaction performance now separates one-viewport Warm base-image preparation from a 25%-viewport Hot `SketchPad` range in both storyboard views, while preserving card/row layout and active-interaction pinning. Direct validated layer URLs, per-shot revisions, stable selection/render props, RAF cursor/strokes, and one layer read per edit remain in place. Default performance smoke covers 250-shot single-layer, 130-shot three-layer, and optional APFS-cloned real projects with media tiers, editor churn, visible decode readiness, scrolling, selection, first ink, passive reads, and heap stability.
 - [x] Updated bitmap smoke coverage for the Japanese storyboard UI: Action text checks the Japanese storyboard Action field instead of the retired card-back textarea, Import help checks current copy, and the smoke returns to the standard board before card-origin marquee coverage. `npm run smoke:bitmap` passed in a normal macOS Terminal session.
 - [x] Scene-wide Matte and Dialogue controls are reversible bitmap transactions. Expanded mode adds/removes `75px` above and below; embedded mode preserves dimensions. Add/Import/Pending inherit both switches, asset operations serialize with Save/autosave/bitmap writes, and rollback failures enter recovery-required state.
 - [x] The left ToolRail now includes Blur directly below Select, with a transient `1–50px` Gaussian radius, current-layer Apply, selection-mask compositing, bitmap history/Undo support, and locked/hidden layer protection.

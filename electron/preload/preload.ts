@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import { buildLayerAssetUrl } from "./layerAssetUrl.js";
 
 type BlankShotPreset = "16:9" | "1.85:1" | "9:16" | "2.39:1" | "1.43:1";
 
@@ -125,6 +126,8 @@ type AiApplyCandidatePayload = {
   candidateId: string;
 };
 
+let readLayerPngCalls = 0;
+
 const api = {
   openFolderByPath: (folderPath: string) =>
     ipcRenderer.invoke("workspace:openFolderByPath", folderPath),
@@ -176,8 +179,10 @@ const api = {
   },
   writeLayerPng: (payload: WriteLayerAssetPayload) =>
     ipcRenderer.invoke("layers:writePng", payload) as Promise<WriteLayerAssetPayload & { filePath: string }>,
-  readLayerPng: (payload: LayerAssetPayload) =>
-    ipcRenderer.invoke("layers:readPng", payload) as Promise<string | undefined>,
+  readLayerPng: (payload: LayerAssetPayload) => {
+    readLayerPngCalls += 1;
+    return ipcRenderer.invoke("layers:readPng", payload) as Promise<string | undefined>;
+  },
   deleteLayerPng: (payload: LayerAssetPayload) =>
     ipcRenderer.invoke("layers:deletePng", payload) as Promise<LayerAssetPayload>,
   copyLayerPng: (payload: CopyLayerPngPayload) =>
@@ -266,7 +271,10 @@ const api = {
     }>,
   openExternal: (url: string) =>
     ipcRenderer.invoke("app:openExternal", url) as Promise<void>,
-  assetUrl: (filePath: string) => `storyboard-img://asset?path=${encodeURIComponent(filePath)}`
+  assetUrl: (filePath: string) => `storyboard-img://asset?path=${encodeURIComponent(filePath)}`,
+  layerAssetUrl: (payload: LayerAssetPayload & { revision?: number | string }) =>
+    buildLayerAssetUrl(payload),
+  getRendererPerformanceCounters: () => ({ readLayerPngCalls })
 };
 
 contextBridge.exposeInMainWorld("storyboard", api);

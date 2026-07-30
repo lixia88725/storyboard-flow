@@ -67,6 +67,11 @@
   box-shadow: 0 0 0 2px rgba(255, 100, 45, 0.32);
 }
 
+.japanese-storyboard-view.is-marquee-selecting .japanese-storyboard-row.is-selected {
+  border-color: var(--slate-line);
+  box-shadow: var(--slate-shadow-card);
+}
+
 .japanese-storyboard-row.is-dragging {
   opacity: 0;
 }

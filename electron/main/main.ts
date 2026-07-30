@@ -360,7 +360,10 @@ const createWindow = async () => {
 app.whenReady().then(async () => {
   protocol.handle(
     "storyboard-img",
-    createStoryboardImageProtocolHandler({ fetchFileUrl: (url) => net.fetch(url) })
+    createStoryboardImageProtocolHandler({
+      fetchFileUrl: (url) => net.fetch(url),
+      resolveLayerAssetPath
+    })
   );
 
   registerIpcHandlers();

@@ -18,12 +18,28 @@ type MarqueePoint = {
 
 export type MarqueeShotRect = {
   shotId: string;
-  rect: {
-    left: number;
-    right: number;
-    top: number;
-    bottom: number;
-  };
+  rect: MarqueeBounds;
+};
+
+export type MarqueeBounds = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
+export type MarqueeOverlayRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+export type MarqueeViewportRect = MarqueeOverlayRect;
+
+export type MarqueeHitResult = {
+  shotIds: string[];
+  rects: MarqueeOverlayRect[];
 };
 
 const edgeThresholdPx = 64;
@@ -62,6 +78,19 @@ export const marqueeViewportRect = (box: MarqueeBox) => {
   };
 };
 
+export const marqueeOverlayBoxRect = (
+  box: MarqueeBox,
+  viewport: Pick<MarqueeViewportRect, "left" | "top">
+): MarqueeOverlayRect => {
+  const rect = marqueeViewportRect(box);
+  return {
+    left: rect.left - viewport.left,
+    top: rect.top - viewport.top,
+    width: rect.width,
+    height: rect.height
+  };
+};
+
 export const marqueeEdgeScrollDelta = ({
   pointerY,
   viewportTop = 0,
@@ -94,19 +123,35 @@ export const shotIdsInMarqueeBox = (box: MarqueeBox, shots: MarqueeShotRect[]) =
     .map(({ shotId }) => shotId);
 };
 
+export const marqueeHitsInBox = (
+  box: MarqueeBox,
+  shots: readonly MarqueeShotRect[],
+  currentScroll: { x: number; y: number },
+  viewport: Pick<MarqueeViewportRect, "left" | "top">
+): MarqueeHitResult => {
+  const left = Math.min(box.startX + box.startScrollX, box.currentX + box.currentScrollX);
+  const right = Math.max(box.startX + box.startScrollX, box.currentX + box.currentScrollX);
+  const top = Math.min(box.startY + box.startScrollY, box.currentY + box.currentScrollY);
+  const bottom = Math.max(box.startY + box.startScrollY, box.currentY + box.currentScrollY);
+  const shotIds: string[] = [];
+  const rects: MarqueeOverlayRect[] = [];
+
+  for (const shot of shots) {
+    const { rect } = shot;
+    if (rect.left >= right || rect.right <= left || rect.top >= bottom || rect.bottom <= top) {
+      continue;
+    }
+    shotIds.push(shot.shotId);
+    rects.push({
+      left: rect.left - currentScroll.x - viewport.left,
+      top: rect.top - currentScroll.y - viewport.top,
+      width: rect.right - rect.left,
+      height: rect.bottom - rect.top
+    });
+  }
+
+  return { shotIds, rects };
+};
+
 export const sameMarqueeSelection = (a: string[], b: string[]) =>
   a.length === b.length && a.every((id, index) => id === b[index]);
-
-export const marqueeDisplayedSelectionIds = (shotIds: string[]) => (shotIds.length > 1 ? shotIds : []);
-
-export const marqueeSelectionClassChanges = (previousShotIds: string[], nextShotIds: string[]) => {
-  const previousDisplayedShotIds = marqueeDisplayedSelectionIds(previousShotIds);
-  const nextDisplayedShotIds = marqueeDisplayedSelectionIds(nextShotIds);
-  const nextDisplayedShotIdSet = new Set(nextDisplayedShotIds);
-  const previousDisplayedShotIdSet = new Set(previousDisplayedShotIds);
-
-  return {
-    add: nextDisplayedShotIds.filter((shotId) => !previousDisplayedShotIdSet.has(shotId)),
-    remove: previousDisplayedShotIds.filter((shotId) => !nextDisplayedShotIdSet.has(shotId))
-  };
-};

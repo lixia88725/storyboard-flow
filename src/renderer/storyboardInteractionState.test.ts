@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { initialStoryboardInteractionState, sameLayerSelection } from "./storyboardInteractionState";
+import {
+  initialStoryboardInteractionState,
+  sameDeleteTarget,
+  sameLayerSelection
+} from "./storyboardInteractionState";
 
 describe("storyboardInteractionState", () => {
   it("uses the existing selection and drag defaults", () => {
@@ -22,5 +26,21 @@ describe("storyboardInteractionState", () => {
     expect(sameLayerSelection({ shotId: "shot-2", layerIds: ["a"] }, "shot-1", ["a"])).toBe(false);
     expect(sameLayerSelection({ shotId: "shot-1", layerIds: ["a", "b"] }, "shot-1", ["b", "a"])).toBe(false);
     expect(sameLayerSelection({ shotId: "shot-1", layerIds: ["a"] }, "shot-1", ["a", "b"])).toBe(false);
+  });
+
+  it("recognizes equivalent delete targets without relying on object identity", () => {
+    expect(sameDeleteTarget({ type: "shot" }, { type: "shot" })).toBe(true);
+    expect(
+      sameDeleteTarget(
+        { type: "layer", shotId: "shot-1", layerId: "paint" },
+        { type: "layer", shotId: "shot-1", layerId: "paint" }
+      )
+    ).toBe(true);
+    expect(
+      sameDeleteTarget(
+        { type: "layer", shotId: "shot-1", layerId: "paint" },
+        { type: "layer", shotId: "shot-2", layerId: "paint" }
+      )
+    ).toBe(false);
   });
 });

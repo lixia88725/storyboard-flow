@@ -68,7 +68,10 @@ import { getOnionSkinNeighbors } from "./onionSkin";
 import { ensureProjectBitmapMetadata } from "./projectBitmapMetadata";
 import { useProjectHistoryController } from "./projectHistoryController";
 import { markdownPathFromDroppedFiles } from "./markdownDrop";
-import { SelectionMarquee } from "./SelectionMarquee";
+import {
+  SelectionMarquee,
+  type MarqueeOverlayHandle
+} from "./SelectionMarquee";
 import { ParkingShelf } from "./ParkingShelf";
 import { AiDraftPanel } from "./ai/AiDraftPanel";
 import { applyAiProjectChange } from "./ai/aiProjectChangeController";
@@ -128,7 +131,10 @@ import {
 import { useWorkspaceMenuController } from "./workspaceMenuController";
 import { persistWorkspaceProject, useWorkspaceAutosaveController } from "./workspaceAutosaveController";
 import { useAppKeyboardShortcutsController } from "./appKeyboardShortcutsController";
-import { useLayerPanelController } from "./layerPanelController";
+import {
+  isLayerPanelOpenForShot,
+  useLayerPanelController
+} from "./layerPanelController";
 import { useLayerMetadataActionController } from "./layerMetadataActionController";
 import { useRightSidebarController } from "./rightSidebarController";
 import { useStoryboardDragSessionController } from "./storyboardDragSessionController";
@@ -148,10 +154,20 @@ import {
   WorkspaceTaskProgressBanner,
   type StoryboardScriptImportDraft
 } from "./WorkspaceOverlays";
+import { StoryboardMediaWindowProvider } from "./storyboardMediaWindow";
+import { createStoryboardMediaWindowInteractionController } from "./storyboardMediaWindowInteraction";
+import {
+  bumpShotBitmapRevisions,
+  bumpWorkspaceShotBitmapRevisions,
+  changedShotIdsForBitmapRevision,
+  shotIdsForBitmapPaths
+} from "./shotBitmapRevision";
+import { useStableEvent } from "./useStableEvent";
 
 const minSketchSoftness = 0;
 const maxSketchSoftness = 1;
 const maxUndoHistory = 60;
+const emptyDialogueList: Dialogue[] = [];
 
 type ProjectUpdate = Project | ((currentProject: Project) => Project);
 export const App = () => {
@@ -181,6 +197,9 @@ export const App = () => {
     setAutosaveRevision
   } = useWorkspaceLifecycleState();
   const [activeDialogue, setActiveDialogue] = useState<Dialogue | undefined>();
+  const [shotBitmapRevisionById, setShotBitmapRevisionById] = useState<
+    Record<string, number>
+  >({});
   const {
     activeDragType,
     setActiveDragType,
@@ -279,7 +298,11 @@ export const App = () => {
     checkForUpdates,
     openUpdateDownload
   } = useUpdateNoticeController({ setStatus });
-  const selectionMarqueeRef = useRef<HTMLDivElement | null>(null);
+  const selectionMarqueeRef = useRef<MarqueeOverlayHandle | null>(null);
+  const storyboardMediaWindowInteractionController = useMemo(
+    () => createStoryboardMediaWindowInteractionController(),
+    []
+  );
   const scriptImportCheckIdRef = useRef(0);
   const dirtyShotIdsRef = useRef<Set<string>>(new Set());
   const clipboardSelectionRef = useRef<ClipboardSelection | undefined>(undefined);
@@ -333,6 +356,20 @@ export const App = () => {
     () => new Map(orderedShots.map((shot) => [shot.id, shot])),
     [orderedShots]
   );
+  const selectedShotIdSet = useMemo(() => new Set(selectedShotIds), [selectedShotIds]);
+  const activeShotIdSet = useMemo(() => new Set(activeShotIds), [activeShotIds]);
+  const dialogueByShotId = useMemo(() => {
+    const grouped = new Map<string, Dialogue[]>();
+    for (const dialogue of [...project.dialogues].sort((a, b) => a.order - b.order)) {
+      const current = grouped.get(dialogue.shotId);
+      if (current) {
+        current.push(dialogue);
+      } else {
+        grouped.set(dialogue.shotId, [dialogue]);
+      }
+    }
+    return grouped;
+  }, [project.dialogues]);
   const renderedShotEntries = useMemo(() => {
     if (!isAnimationMode) {
       return orderedShots.map((shot, index) => ({ shot, index }));
@@ -493,6 +530,7 @@ export const App = () => {
 
   const { handleSelectionPointerDown } = useStoryboardMarqueeController({
     currentBoardScroll,
+    interactionController: storyboardMediaWindowInteractionController,
     scrollBoardBy,
     selectShotsByIds,
     deleteTargetRef,
@@ -504,7 +542,7 @@ export const App = () => {
     workspaceBoardScrollRef
   });
 
-  const { layerPanelPropsForShot } = useLayerPanelController({
+  const { isLayerPanelOpen, toggleLayerPanelForShot } = useLayerPanelController({
     primarySelectedShotId, selectSingleShot, setDeleteTarget, setSelectedBitmapLayerIds
   });
 
@@ -544,14 +582,32 @@ export const App = () => {
   });
   const {
     dirtyShotIds,
-    markAllShotsDirty,
     markShotsDirty,
     resetDirtyShots: resetTrackedDirtyShots
   } = createDirtyShotTracker({ dirtyShotIdsRef, projectRef });
+  const refreshChangedShotBitmapRevisions = useCallback(
+    (previousProject: Project, nextProject: Project) => {
+      const affectedShotIds = changedShotIdsForBitmapRevision(
+        previousProject,
+        nextProject
+      );
+      setShotBitmapRevisionById((current) =>
+        bumpShotBitmapRevisions(current, affectedShotIds)
+      );
+    },
+    []
+  );
+  const refreshRestoredBitmapPaths = useCallback((bitmapPaths: string[]) => {
+    const affectedShotIds = shotIdsForBitmapPaths(projectRef.current, bitmapPaths);
+    setShotBitmapRevisionById((current) =>
+      bumpShotBitmapRevisions(current, affectedShotIds)
+    );
+  }, []);
   const {
     applyRedoEntry,
     applyUndoEntry,
     createHistoryEntry,
+    createHistoryEntryFromLayerAssets,
     recordProjectUndoEntry,
     recordUndoEntry,
     resetHistoryStacks
@@ -560,8 +616,9 @@ export const App = () => {
     bitmapLayerWriteQueueRef,
     fileNameSyncStateRef,
     folderPathRef,
-    markAllShotsDirty,
+    markShotsDirty,
     maxEntries: maxUndoHistory,
+    onLayerAssetsRestored: refreshRestoredBitmapPaths,
     projectRef,
     scriptImportCheckIdRef,
     selectShotsByIds,
@@ -597,8 +654,13 @@ export const App = () => {
     markFileNamesUnsynced = true,
     recordUndo = true
   ) => {
+    const previousProject = projectRef.current;
     const nextProject =
-      typeof projectUpdate === "function" ? projectUpdate(projectRef.current) : projectUpdate;
+      typeof projectUpdate === "function" ? projectUpdate(previousProject) : projectUpdate;
+    const changedShotIds = changedShotIdsForBitmapRevision(
+      previousProject,
+      nextProject
+    );
 
     if (recordUndo) {
       recordProjectUndoEntry();
@@ -606,6 +668,9 @@ export const App = () => {
     const acceptedExternalEdits = projectAcceptedExternalEdits(nextProject);
 
     projectRef.current = nextProject;
+    setShotBitmapRevisionById((current) =>
+      bumpShotBitmapRevisions(current, changedShotIds)
+    );
     setProject(nextProject);
     setWorkspaceSaveState("saving");
     if (markFileNamesUnsynced) {
@@ -668,7 +733,7 @@ export const App = () => {
     projectRef,
     folderPath,
     bitmapLayerWriteQueueRef,
-    createHistoryEntry,
+    createHistoryEntryFromLayerAssets,
     recordUndoEntry,
     markShotsDirty,
     updateProject
@@ -780,6 +845,7 @@ export const App = () => {
       projectRef,
       runWithStatus: (label, action) => withStatus(label, action, setStatus),
       setProject: (nextProject) => {
+        refreshChangedShotBitmapRevisions(projectRef.current, nextProject);
         projectRef.current = nextProject;
         setProject(nextProject);
       },
@@ -860,6 +926,9 @@ export const App = () => {
     }
     folderPathRef.current = scan.folderPath;
     metadataPathRef.current = scan.metadataPath;
+    setShotBitmapRevisionById((current) =>
+      bumpWorkspaceShotBitmapRevisions(current, nextProject)
+    );
     setProject(nextProject);
     setFolderPath(scan.folderPath);
     setFolderInputValue(scan.folderPath);
@@ -1484,6 +1553,7 @@ export const App = () => {
             .map((shotId) => shotById.get(shotId))
             .filter((shot): shot is Shot => Boolean(shot))}
           folderPath={folderPath}
+          bitmapRevisionByShotId={shotBitmapRevisionById}
           variant="thumbnail"
         />
       ) : null}
@@ -1491,6 +1561,7 @@ export const App = () => {
         <ShotStackPreview
           shots={parkedShots.filter((shot) => activeParkedShotIds.includes(shot.id))}
           folderPath={folderPath}
+          bitmapRevisionByShotId={shotBitmapRevisionById}
           variant="thumbnail"
         />
       ) : null}
@@ -1570,7 +1641,8 @@ export const App = () => {
   const isDialogueOverlayDisabled =
     project.shots.length === 0 || isWorkspaceTaskRunning || isImportLocked;
 
-  const handleAiProjectChange = (nextProject: Project, nextStatus: string) =>
+  const handleAiProjectChange = (nextProject: Project, nextStatus: string) => {
+    refreshChangedShotBitmapRevisions(projectRef.current, nextProject);
     applyAiProjectChange({
       markShotsDirty,
       nextProject,
@@ -1581,6 +1653,64 @@ export const App = () => {
       setStatus,
       setWorkspaceSaveState
     });
+  };
+  const selectShotForCard = useStableEvent(
+    (shotId: string, event: React.MouseEvent<HTMLElement>) =>
+      handleShotSelect(shotId, event)
+  );
+  const focusShotForCanvas = useStableEvent((shotId: string) => {
+    selectSingleShot(shotId);
+    if (deleteTargetRef.current.type !== "shot") {
+      setDeleteTarget({ type: "shot" });
+    }
+    if (selectedBitmapLayerIdsRef.current) {
+      selectedBitmapLayerIdsRef.current = undefined;
+      setSelectedBitmapLayerIds(undefined);
+    }
+  });
+  const toggleLayerPanel = useStableEvent((shotId: string) =>
+    toggleLayerPanelForShot(shotId)
+  );
+  const addBitmapLayer = useStableEvent((shotId: string) => {
+    void handleAddBitmapLayer(shotId);
+  });
+  const removeBitmapLayer = useStableEvent((shotId: string, layerId: string) => {
+    void handleRemoveBitmapLayer(shotId, layerId);
+  });
+  const mergeBitmapLayers = useStableEvent(
+    (shotId: string, layerId: string, selectedLayerIds: string[]) => {
+      void handleMergeBitmapLayers(shotId, layerId, selectedLayerIds);
+    }
+  );
+  const mergeVisibleBitmapLayers = useStableEvent((shotId: string) => {
+    void handleMergeVisibleBitmapLayers(shotId);
+  });
+  const clearBitmapLayer = useStableEvent((shotId: string, layerId: string) => {
+    void handleClearBitmapLayer(shotId, layerId);
+  });
+  const selectBitmapLayer = useStableEvent(handleSelectLayer);
+  const updateBitmapLayer = useStableEvent(handleUpdateLayer);
+  const moveBitmapLayer = useStableEvent(handleMoveLayer);
+  const moveBitmapLayerGroup = useStableEvent(handleMoveLayerGroup);
+  const updateSelectedBitmapLayerIds = useStableEvent(handleSelectedBitmapLayerIdsChange);
+  const updateBitmapLayerGroupOpacity = useStableEvent(handleUpdateLayerGroupOpacity);
+  const createShotDialogue = useStableEvent(handleCreateDialogue);
+  const updateDialogueText = useStableEvent(handleDialogueText);
+  const blurDialogue = useStableEvent(handleDialogueBlur);
+  const paintBitmapStroke = useStableEvent(handleBitmapStroke);
+  const transformBitmapSelection = useStableEvent(handleBitmapSelectionTransform);
+  const fillBitmapLayer = useStableEvent(handleBitmapFill);
+  const updateShotScriptText = useStableEvent(handleShotScriptText);
+  const updateShotDialogueText = useStableEvent(handleShotDialogueText);
+  const closeSketchRadialMenu = useStableEvent(closeRadialToolMenu);
+  const selectTimelineShot = useStableEvent((shotId: string) => {
+    selectSingleShot(shotId);
+    setDeleteTarget({ type: "shot" });
+    if (selectedBitmapLayerIdsRef.current) {
+      selectedBitmapLayerIdsRef.current = undefined;
+      setSelectedBitmapLayerIds(undefined);
+    }
+  });
   const workspaceBoardScrollClassName = `workspace-board-scroll ${
     isSpacePanActive ? "is-space-pan-active" : ""
   } ${isBoardPanning ? "is-space-panning" : ""}`;
@@ -1705,102 +1835,108 @@ export const App = () => {
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
-            <div
-              className={workspaceBoardScrollClassName}
-              ref={workspaceBoardScrollRef}
-              onPointerDownCapture={handleBoardNavigationPointerDownCapture}
+            <StoryboardMediaWindowProvider
+              interactionController={storyboardMediaWindowInteractionController}
+              rootRef={workspaceBoardScrollRef}
+              scopeKey="storyboard"
             >
-              <SortableContext
-                items={storyboardSortableItemIds}
-                strategy={rectSortingStrategy}
+              <div
+                className={workspaceBoardScrollClassName}
+                ref={workspaceBoardScrollRef}
+                onPointerDownCapture={handleBoardNavigationPointerDownCapture}
               >
-                <section
-                  ref={boardGridRef}
-                  className="board-grid"
-                  style={boardZoomStyle}
-                  onPointerDown={handleSelectionPointerDown}
+                <SortableContext
+                  items={storyboardSortableItemIds}
+                  strategy={rectSortingStrategy}
                 >
-                  {renderedShotEntries.map((entry) => {
-                    const { shot, index } = entry;
-                    return (
-                      <ShotCard
-                        key={shot.id}
-                        shot={shot}
-                        index={index}
-                        project={project}
-                        folderPath={folderPath}
-                        isSelected={selectedShotIds.length > 1 && selectedShotIds.includes(shot.id)}
-                        isPrimarySelected={shot.id === primarySelectedShotId}
-                        isAnimationFocused={isAnimationMode && shot.id === primarySelectedShotId}
-                        isZoomScrubbing={isZoomScrubbing}
-                        disableSortableTransform={activeShotIds.length > 0}
-                        keepDraggingSourceVisible={activeShotIds.includes(shot.id)}
-                        activeDragType={activeDragType}
-                        activeSketchTool={activeSketchTool}
-                        brushColor={brushColor}
-                        brushOpacity={brushOpacity}
-                        brushSize={brushSize}
-                        brushSoftness={brushSoftness}
-                        eraserOpacity={eraserOpacity}
-                        eraserSize={eraserSize}
-                        eraserSoftness={eraserSoftness}
-                        onionSkinPreviousShot={
-                          isAnimationMode && shot.id === primarySelectedShotId
-                            ? onionSkinNeighbors.previous
-                            : undefined
-                        }
-                        onionSkinNextShot={
-                          isAnimationMode && shot.id === primarySelectedShotId
-                            ? onionSkinNeighbors.next
-                            : undefined
-                        }
-                        editingDialogueId={editingDialogueId}
-                        onSelect={(event) => handleShotSelect(shot.id, event)}
-                        onFocusShot={() => {
-                          selectSingleShot(shot.id);
-                          setDeleteTarget({ type: "shot" });
-                          setSelectedBitmapLayerIds(undefined);
-                        }}
-                        {...layerPanelPropsForShot(shot.id)}
-                        thumbnailRevision={autosaveRevision}
-                        onAddLayer={(shotId) => void handleAddBitmapLayer(shotId)}
-                        onRemoveLayer={(shotId, layerId) =>
-                          void handleRemoveBitmapLayer(shotId, layerId)
-                        }
-                        onMergeLayers={(shotId, layerId, selectedLayerIds) =>
-                          void handleMergeBitmapLayers(shotId, layerId, selectedLayerIds)
-                        }
-                        onMergeVisibleLayers={(shotId) => void handleMergeVisibleBitmapLayers(shotId)}
-                        onClearLayer={(shotId, layerId) => void handleClearBitmapLayer(shotId, layerId)}
-                        onSelectLayer={handleSelectLayer}
-                        onUpdateLayer={handleUpdateLayer}
-                        onMoveLayer={handleMoveLayer}
-                        onMoveLayerGroup={handleMoveLayerGroup}
-                        onSelectedLayerIdsChange={handleSelectedBitmapLayerIdsChange}
-                        onUpdateLayerGroupOpacity={handleUpdateLayerGroupOpacity}
-                        onCreateDialogue={handleCreateDialogue}
-                        onDialogueText={handleDialogueText}
-                        onDialogueBlur={handleDialogueBlur}
-                        onSketchStroke={(layerId, stroke, renderedDataUrl, pendingStrokes) =>
-                          handleBitmapStroke(shot, layerId, stroke, renderedDataUrl, pendingStrokes)
-                        }
-                        onSelectionTransform={(layerId, dataUrl) =>
-                          handleBitmapSelectionTransform(shot, layerId, dataUrl)
-                        }
-                        onBitmapSelectionChange={handleBitmapSelectionChange}
-                        onFill={(layerId, point, color) =>
-                          handleBitmapFill(shot, layerId, point, color)
-                        }
-                        onPickColor={setBrushColor}
-                        onSketchBeginInteraction={closeRadialToolMenu}
-                      />
-                    );
-                  })}
-                  {storyboardInsertionIndicatorElement}
-                  <SelectionMarquee ref={selectionMarqueeRef} />
-                </section>
-              </SortableContext>
-            </div>
+                  <section
+                    ref={boardGridRef}
+                    className="board-grid"
+                    style={boardZoomStyle}
+                    onPointerDown={handleSelectionPointerDown}
+                  >
+                    {renderedShotEntries.map((entry) => {
+                      const { shot, index } = entry;
+                      const previousOnionShot =
+                        isAnimationMode && shot.id === primarySelectedShotId
+                          ? onionSkinNeighbors.previous
+                          : undefined;
+                      const nextOnionShot =
+                        isAnimationMode && shot.id === primarySelectedShotId
+                          ? onionSkinNeighbors.next
+                          : undefined;
+                      return (
+                        <ShotCard
+                          key={shot.id}
+                          shot={shot}
+                          index={index}
+                          dialogues={dialogueByShotId.get(shot.id) ?? emptyDialogueList}
+                          folderPath={folderPath}
+                          isSelected={selectedShotIds.length > 1 && selectedShotIdSet.has(shot.id)}
+                          isPrimarySelected={shot.id === primarySelectedShotId}
+                          isAnimationFocused={isAnimationMode && shot.id === primarySelectedShotId}
+                          isZoomScrubbing={isZoomScrubbing}
+                          disableSortableTransform={activeShotIds.length > 0}
+                          keepDraggingSourceVisible={activeShotIdSet.has(shot.id)}
+                          activeDragType={activeDragType}
+                          activeSketchTool={activeSketchTool}
+                          brushColor={brushColor}
+                          brushOpacity={brushOpacity}
+                          brushSize={brushSize}
+                          brushSoftness={brushSoftness}
+                          eraserOpacity={eraserOpacity}
+                          eraserSize={eraserSize}
+                          eraserSoftness={eraserSoftness}
+                          onionSkinPreviousShot={previousOnionShot}
+                          onionSkinNextShot={nextOnionShot}
+                          onionSkinPreviousRevision={
+                            previousOnionShot
+                              ? shotBitmapRevisionById[previousOnionShot.id] ?? 0
+                              : undefined
+                          }
+                          onionSkinNextRevision={
+                            nextOnionShot
+                              ? shotBitmapRevisionById[nextOnionShot.id] ?? 0
+                              : undefined
+                          }
+                          editingDialogueId={editingDialogueId}
+                          onSelect={selectShotForCard}
+                          onFocusShot={focusShotForCanvas}
+                          isLayerPanelOpen={isLayerPanelOpenForShot(
+                            isLayerPanelOpen,
+                            shot.id,
+                            primarySelectedShotId
+                          )}
+                          onToggleLayerPanel={toggleLayerPanel}
+                          bitmapRevision={shotBitmapRevisionById[shot.id] ?? 0}
+                          onAddLayer={addBitmapLayer}
+                          onRemoveLayer={removeBitmapLayer}
+                          onMergeLayers={mergeBitmapLayers}
+                          onMergeVisibleLayers={mergeVisibleBitmapLayers}
+                          onClearLayer={clearBitmapLayer}
+                          onSelectLayer={selectBitmapLayer}
+                          onUpdateLayer={updateBitmapLayer}
+                          onMoveLayer={moveBitmapLayer}
+                          onMoveLayerGroup={moveBitmapLayerGroup}
+                          onSelectedLayerIdsChange={updateSelectedBitmapLayerIds}
+                          onUpdateLayerGroupOpacity={updateBitmapLayerGroupOpacity}
+                          onCreateDialogue={createShotDialogue}
+                          onDialogueText={updateDialogueText}
+                          onDialogueBlur={blurDialogue}
+                          onSketchStroke={paintBitmapStroke}
+                          onSelectionTransform={transformBitmapSelection}
+                          onBitmapSelectionChange={handleBitmapSelectionChange}
+                          onFill={fillBitmapLayer}
+                          onPickColor={setBrushColor}
+                          onSketchBeginInteraction={closeSketchRadialMenu}
+                        />
+                      );
+                    })}
+                    {storyboardInsertionIndicatorElement}
+                  </section>
+                </SortableContext>
+              </div>
+            </StoryboardMediaWindowProvider>
             {parkingShelfElement}
 
             {storyboardDragOverlay}
@@ -1815,64 +1951,61 @@ export const App = () => {
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
-            <div
-              className={workspaceBoardScrollClassName}
-              ref={workspaceBoardScrollRef}
-              onPointerDownCapture={handleBoardNavigationPointerDownCapture}
+            <StoryboardMediaWindowProvider
+              interactionController={storyboardMediaWindowInteractionController}
+              rootRef={workspaceBoardScrollRef}
+              scopeKey="japanese-storyboard"
             >
-              <SortableContext
-                items={japaneseStoryboardSortableItemIds}
-                strategy={verticalListSortingStrategy}
+              <div
+                className={workspaceBoardScrollClassName}
+                ref={workspaceBoardScrollRef}
+                onPointerDownCapture={handleBoardNavigationPointerDownCapture}
               >
-                <JapaneseStoryboardView
-                  ref={boardGridRef}
-                  activeSketchTool={activeSketchTool}
-                  brushColor={brushColor}
-                  brushOpacity={brushOpacity}
-                  brushSize={brushSize}
-                  brushSoftness={brushSoftness}
-                  eraserOpacity={eraserOpacity}
-                  eraserSize={eraserSize}
-                  eraserSoftness={eraserSoftness}
-                  folderPath={folderPath}
-                  isZoomScrubbing={isZoomScrubbing}
-                  marquee={
-                    <>
-                      {storyboardInsertionIndicatorElement}
-                      <SelectionMarquee ref={selectionMarqueeRef} />
-                    </>
-                  }
-                  onPointerDown={handleSelectionPointerDown}
-                  project={project}
-                  selectedShotIds={selectedShotIds}
-                  zoomLevel={zoomLevel}
-                  onActionText={handleShotScriptText}
-                  onDialogueText={handleShotDialogueText}
-                  onFill={(shot, layerId, point, color) =>
-                    handleBitmapFill(shot, layerId, point, color)
-                  }
-                  onFocusShot={(shotId) => {
-                    selectSingleShot(shotId);
-                    setDeleteTarget({ type: "shot" });
-                    setSelectedBitmapLayerIds(undefined);
-                  }}
-                  onPickColor={setBrushColor}
-                  onSelectShot={(shotId, event) => handleShotSelect(shotId, event)}
-                  onSelectionTransform={(shot, layerId, dataUrl) =>
-                    handleBitmapSelectionTransform(shot, layerId, dataUrl)
-                  }
-                  onBitmapSelectionChange={handleBitmapSelectionChange}
-                  onSketchBeginInteraction={closeRadialToolMenu}
-                  onSketchStroke={(shot, layerId, stroke, renderedDataUrl, pendingStrokes) =>
-                    handleBitmapStroke(shot, layerId, stroke, renderedDataUrl, pendingStrokes)
-                  }
-                />
-              </SortableContext>
-            </div>
+                <SortableContext
+                  items={japaneseStoryboardSortableItemIds}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <JapaneseStoryboardView
+                    ref={boardGridRef}
+                    activeSketchTool={activeSketchTool}
+                    brushColor={brushColor}
+                    brushOpacity={brushOpacity}
+                    brushSize={brushSize}
+                    brushSoftness={brushSoftness}
+                    eraserOpacity={eraserOpacity}
+                    eraserSize={eraserSize}
+                    eraserSoftness={eraserSoftness}
+                    folderPath={folderPath}
+                    bitmapRevisionByShotId={shotBitmapRevisionById}
+                    isZoomScrubbing={isZoomScrubbing}
+                    marquee={
+                      <>
+                        {storyboardInsertionIndicatorElement}
+                      </>
+                    }
+                    onPointerDown={handleSelectionPointerDown}
+                    project={project}
+                    selectedShotIds={selectedShotIds}
+                    zoomLevel={zoomLevel}
+                    onActionText={updateShotScriptText}
+                    onDialogueText={updateShotDialogueText}
+                    onFill={fillBitmapLayer}
+                    onFocusShot={focusShotForCanvas}
+                    onPickColor={setBrushColor}
+                    onSelectShot={selectShotForCard}
+                    onSelectionTransform={transformBitmapSelection}
+                    onBitmapSelectionChange={handleBitmapSelectionChange}
+                    onSketchBeginInteraction={closeSketchRadialMenu}
+                    onSketchStroke={paintBitmapStroke}
+                  />
+                </SortableContext>
+              </div>
+            </StoryboardMediaWindowProvider>
             {parkingShelfElement}
             {storyboardDragOverlay}
           </DndContext>
         )}
+        <SelectionMarquee ref={selectionMarqueeRef} />
         {isImportLocked ? (
           <button
             type="button"
@@ -1896,14 +2029,10 @@ export const App = () => {
       {isAnimationMode && orderedShots.length > 0 ? (
         <Timeline
           folderPath={folderPath}
-          thumbnailRevision={autosaveRevision}
+          thumbnailRevisionByShotId={shotBitmapRevisionById}
           shots={orderedShots}
           selectedShotIds={selectedShotIds}
-          onSelect={(shotId) => {
-            selectSingleShot(shotId);
-            setDeleteTarget({ type: "shot" });
-            setSelectedBitmapLayerIds(undefined);
-          }}
+          onSelect={selectTimelineShot}
         />
       ) : null}
 
@@ -1958,7 +2087,9 @@ export const App = () => {
             Onion Skin
           </label>
         ) : null}
-        <span ref={selectedShotCountLabelRef}>{selectedShotIds.length} selected</span>
+        <span className="selected-count" ref={selectedShotCountLabelRef}>
+          {selectedShotIds.length} selected
+        </span>
       </footer>
     </main>
   );

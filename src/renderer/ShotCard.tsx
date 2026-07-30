@@ -2,25 +2,28 @@ import { useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  memo,
   useCallback,
   useEffect,
   useRef,
   useState,
   type MouseEvent
 } from "react";
-import { dialoguesForShot } from "../shared/projectOps";
 import type {
   BitmapLayer,
   Dialogue,
-  Project,
   Shot,
   SketchStroke,
   SketchTool
 } from "../shared/types";
 import { LayerPanel } from "./LayerPanel";
 import { SketchPad } from "./SketchPad";
-import { canvasSizeForShot } from "./sketchRendering";
+import { ShotStaticMedia } from "./ShotStaticMedia";
 import { isDialogueDropZoneHighlighted, type DragData } from "./storyboardDnd";
+import {
+  shouldMountStoryboardEditor,
+  useStoryboardMediaWindow
+} from "./storyboardMediaWindow";
 
 const maxDialogueRows = 3;
 const dialogueGripDots = Array.from({ length: 9 }, (_item, index) => index);
@@ -33,7 +36,7 @@ const dialogueRowsForText = (text: string) =>
 export type ShotCardProps = {
   shot: Shot;
   index: number;
-  project: Project;
+  dialogues: Dialogue[];
   folderPath?: string;
   isSelected: boolean;
   isPrimarySelected: boolean;
@@ -52,12 +55,14 @@ export type ShotCardProps = {
   eraserSoftness: number;
   onionSkinPreviousShot?: Shot;
   onionSkinNextShot?: Shot;
+  onionSkinPreviousRevision?: number;
+  onionSkinNextRevision?: number;
   editingDialogueId?: string;
   isLayerPanelOpen: boolean;
-  thumbnailRevision: number;
-  onSelect: (event: MouseEvent) => void;
-  onFocusShot: () => void;
-  onToggleLayerPanel: () => void;
+  bitmapRevision: number;
+  onSelect: (shotId: string, event: MouseEvent<HTMLElement>) => void;
+  onFocusShot: (shotId: string) => void;
+  onToggleLayerPanel: (shotId: string) => void;
   onAddLayer: (shotId: string) => void;
   onRemoveLayer: (shotId: string, layerId: string) => void;
   onMergeLayers: (shotId: string, layerId: string, selectedLayerIds: string[]) => void;
@@ -92,26 +97,36 @@ export type ShotCardProps = {
   onDialogueText: (dialogueId: string, text: string) => void;
   onDialogueBlur: (dialogue: Dialogue) => void;
   onSketchStroke: (
+    shot: Shot,
     layerId: string,
     stroke: SketchStroke,
     renderedDataUrl?: string,
     pendingStrokes?: SketchStroke[]
   ) => Promise<string | undefined>;
-  onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onSelectionTransform: (
+    shot: Shot,
+    layerId: string,
+    dataUrl: string
+  ) => Promise<string | undefined>;
   onBitmapSelectionChange?: (
     shotId: string,
     layerId: string | undefined,
     points: { x: number; y: number }[] | undefined
   ) => void;
-  onFill: (layerId: string, point: { x: number; y: number }, color: string) => Promise<string | undefined>;
+  onFill: (
+    shot: Shot,
+    layerId: string,
+    point: { x: number; y: number },
+    color: string
+  ) => Promise<string | undefined>;
   onPickColor: (color: string) => void;
   onSketchBeginInteraction?: () => void;
 };
 
-export const ShotCard = ({
+export const ShotCard = memo(({
   shot,
   index,
-  project,
+  dialogues,
   folderPath,
   isSelected,
   isPrimarySelected,
@@ -130,9 +145,11 @@ export const ShotCard = ({
   eraserSoftness,
   onionSkinPreviousShot,
   onionSkinNextShot,
+  onionSkinPreviousRevision,
+  onionSkinNextRevision,
   editingDialogueId,
   isLayerPanelOpen,
-  thumbnailRevision,
+  bitmapRevision,
   onSelect,
   onFocusShot,
   onToggleLayerPanel,
@@ -158,8 +175,8 @@ export const ShotCard = ({
   onSketchBeginInteraction
 }: ShotCardProps) => {
   const cardRef = useRef<HTMLElement | null>(null);
-  const [isNearViewport, setIsNearViewport] = useState(index < 12);
   const [isLayerPanelRendered, setIsLayerPanelRendered] = useState(isLayerPanelOpen);
+  const [isSketchInteracting, setIsSketchInteracting] = useState(false);
   const sortable = useSortable({
     id: shot.id,
     data: { type: "shot", shotId: shot.id } satisfies DragData
@@ -168,13 +185,16 @@ export const ShotCard = ({
     id: `dialogue-zone-${shot.id}`,
     data: { type: "drop-zone", shotId: shot.id } satisfies DragData
   });
-  const dialogues = dialoguesForShot(project, shot.id);
   const isDialogueDropZoneOver = isDialogueDropZoneHighlighted({
     isOver: dropZone.isOver,
     activeDragType
   });
   const isLayerPanelVisible = isLayerPanelOpen || isLayerPanelRendered;
-  const shouldRenderMedia = isNearViewport || isPrimarySelected || isAnimationFocused || isLayerPanelVisible;
+  const mediaTier = useStoryboardMediaWindow(
+    cardRef,
+    isPrimarySelected || isAnimationFocused || isLayerPanelVisible || isSketchInteracting
+  );
+  const shouldRenderMedia = shouldMountStoryboardEditor(mediaTier);
   const style = {
     transform: disableSortableTransform ? undefined : CSS.Transform.toString(sortable.transform),
     transition: disableSortableTransform ? undefined : sortable.transition
@@ -186,32 +206,25 @@ export const ShotCard = ({
     },
     [sortable.setNodeRef]
   );
-
-  useEffect(() => {
-    if (index < 12) {
-      setIsNearViewport(true);
-    }
-  }, [index]);
-
-  useEffect(() => {
-    const element = cardRef.current;
-    if (!element || typeof IntersectionObserver === "undefined") {
-      setIsNearViewport(true);
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsNearViewport(true);
-        }
-      },
-      { rootMargin: "1200px 0px" }
-    );
-    observer.observe(element);
-
-    return () => observer.disconnect();
-  }, []);
+  const handleSketchStroke = useCallback(
+    (
+      layerId: string,
+      stroke: SketchStroke,
+      renderedDataUrl?: string,
+      pendingStrokes?: SketchStroke[]
+    ) => onSketchStroke(shot, layerId, stroke, renderedDataUrl, pendingStrokes),
+    [onSketchStroke, shot]
+  );
+  const handleSelectionTransform = useCallback(
+    (layerId: string, dataUrl: string) => onSelectionTransform(shot, layerId, dataUrl),
+    [onSelectionTransform, shot]
+  );
+  const handleFill = useCallback(
+    (layerId: string, point: { x: number; y: number }, color: string) =>
+      onFill(shot, layerId, point, color),
+    [onFill, shot]
+  );
+  const handleFocusShot = useCallback(() => onFocusShot(shot.id), [onFocusShot, shot.id]);
 
   useEffect(() => {
     if (isLayerPanelOpen) {
@@ -233,7 +246,8 @@ export const ShotCard = ({
       } ${keepDraggingSourceVisible ? "keep-dragging-source-visible" : ""}`}
       style={style}
       data-shot-id={shot.id}
-      onClick={onSelect}
+      data-media-tier={mediaTier}
+      onClick={(event) => onSelect(shot.id, event)}
     >
       <div
         className="shot-head"
@@ -254,6 +268,7 @@ export const ShotCard = ({
                 <SketchPad
                   shot={shot}
                   folderPath={folderPath}
+                  bitmapRevision={bitmapRevision}
                   tool={activeSketchTool}
                   brushColor={brushColor}
                   brushOpacity={brushOpacity}
@@ -264,22 +279,25 @@ export const ShotCard = ({
                   eraserSoftness={eraserSoftness}
                   onionSkinPreviousShot={onionSkinPreviousShot}
                   onionSkinNextShot={onionSkinNextShot}
+                  onionSkinPreviousRevision={onionSkinPreviousRevision}
+                  onionSkinNextRevision={onionSkinNextRevision}
                   isZoomScrubbing={isZoomScrubbing}
-                  onStroke={onSketchStroke}
-                  onSelectionTransform={onSelectionTransform}
+                  onStroke={handleSketchStroke}
+                  onSelectionTransform={handleSelectionTransform}
                   onBitmapSelectionChange={onBitmapSelectionChange}
-                  onFill={onFill}
+                  onFill={handleFill}
                   onPickColor={onPickColor}
-                  onFocusShot={onFocusShot}
+                  onFocusShot={handleFocusShot}
                   onBeginInteraction={onSketchBeginInteraction}
+                  onInteractionActiveChange={setIsSketchInteracting}
                 />
                 <LayerPanel
                   shot={shot}
                   folderPath={folderPath}
-                  thumbnailRevision={thumbnailRevision}
+                  thumbnailRevision={bitmapRevision}
                   isOpen={isLayerPanelOpen}
                   isRendered={isLayerPanelVisible}
-                  onToggle={onToggleLayerPanel}
+                  onToggle={() => onToggleLayerPanel(shot.id)}
                   onAddLayer={onAddLayer}
                   onRemoveLayer={onRemoveLayer}
                   onMergeLayers={onMergeLayers}
@@ -294,7 +312,12 @@ export const ShotCard = ({
                 />
               </>
             ) : (
-              <DeferredShotMedia shot={shot} />
+              <ShotStaticMedia
+                shot={shot}
+                folderPath={folderPath}
+                revision={bitmapRevision}
+                preload={mediaTier === "warm"}
+              />
             )}
           </div>
 
@@ -325,20 +348,9 @@ export const ShotCard = ({
       </div>
     </article>
   );
-};
+});
 
-const DeferredShotMedia = ({ shot }: { shot: Shot }) => {
-  const canvasSize = canvasSizeForShot(shot);
-
-  return (
-    <div className="sketch-panel" aria-hidden="true">
-      <div
-        className="image-stage"
-        style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}
-      />
-    </div>
-  );
-};
+ShotCard.displayName = "ShotCard";
 
 type DialogueCardProps = {
   dialogue: Dialogue;

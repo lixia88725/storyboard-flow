@@ -43,9 +43,9 @@
   left: 0;
   top: 0;
   z-index: 30;
+  overflow: hidden;
   pointer-events: none;
-  border: 1px solid var(--slate-good);
-  background: rgba(80, 191, 165, 0.14);
+  contain: strict;
   will-change: transform, width, height;
 }
 

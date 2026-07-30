@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DeleteTarget } from "./deleteTarget";
 import type { DragData, ParkingInsertionIndicator, StoryboardInsertionIndicator } from "./storyboardDnd";
 
@@ -25,6 +25,13 @@ export type StoryboardInteractionState = {
   selectedBitmapLayerIds: SelectedBitmapLayerIds | undefined;
 };
 
+export const sameDeleteTarget = (current: DeleteTarget, next: DeleteTarget): boolean =>
+  current.type === next.type &&
+  (current.type === "shot" ||
+    (next.type === "layer" &&
+      current.shotId === next.shotId &&
+      current.layerId === next.layerId));
+
 export const initialStoryboardInteractionState = (): StoryboardInteractionState => ({
   activeDragType: undefined,
   activeShotIds: [],
@@ -48,7 +55,7 @@ export const useStoryboardInteractionState = () => {
     useState(initialState.parkingInsertionIndicator);
   const [activeParkedShotIds, setActiveParkedShotIds] = useState(initialState.activeParkedShotIds);
   const [selectedShotIds, setSelectedShotIds] = useState(initialState.selectedShotIds);
-  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget>(initialState.deleteTarget);
+  const [deleteTarget, setDeleteTargetState] = useState<DeleteTarget>(initialState.deleteTarget);
   const [selectedBitmapLayerIds, setSelectedBitmapLayerIds] =
     useState<SelectedBitmapLayerIds | undefined>(initialState.selectedBitmapLayerIds);
   const selectedShotIdsRef = useRef(initialState.selectedShotIds);
@@ -57,6 +64,17 @@ export const useStoryboardInteractionState = () => {
   );
   const deleteTargetRef = useRef(initialState.deleteTarget);
   const shotSelectionAnchorIdRef = useRef<string | undefined>(undefined);
+  const setDeleteTarget = useCallback(
+    (value: DeleteTarget | ((current: DeleteTarget) => DeleteTarget)) => {
+      const current = deleteTargetRef.current;
+      const next = typeof value === "function" ? value(current) : value;
+      deleteTargetRef.current = next;
+      setDeleteTargetState((rendered) =>
+        sameDeleteTarget(rendered, next) ? rendered : next
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     selectedShotIdsRef.current = selectedShotIds;

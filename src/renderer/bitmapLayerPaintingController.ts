@@ -2,6 +2,7 @@ import type { MutableRefObject } from "react";
 import { bitmapLayersForShot, markBitmapLayerPainted } from "../shared/projectOps";
 import type { BitmapLayer, Project, Shot, SketchStroke } from "../shared/types";
 import type { BitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
+import type { LayerAssetSnapshot } from "./bitmapLayerHistory";
 import {
   createTransparentLayerDataUrl,
   drawStrokeOnBitmapLayer,
@@ -20,7 +21,7 @@ export type BitmapLayerPaintingControllerOptions<HistoryEntry> = {
   projectRef: MutableRefObject<Project>;
   folderPath: string | undefined;
   bitmapLayerWriteQueueRef: MutableRefObject<BitmapLayerWriteQueue>;
-  createHistoryEntry: (bitmapPaths?: string[]) => Promise<HistoryEntry>;
+  createHistoryEntryFromLayerAssets: (layerAssets?: LayerAssetSnapshot[]) => HistoryEntry;
   recordUndoEntry: (entry: HistoryEntry) => void;
   markShotsDirty: (shotIds: string[]) => void;
   updateProject: (
@@ -36,25 +37,26 @@ export const sourceDataUrlForBitmapLayer = async ({
   folderPath,
   shot,
   layer,
-  createBlankLayerDataUrl = createTransparentLayerDataUrl
+  createBlankLayerDataUrl = createTransparentLayerDataUrl,
+  preloadedLayer
 }: {
   api: StoryboardApi;
   folderPath: string;
   shot: Shot;
   layer: BitmapLayer;
   createBlankLayerDataUrl?: (width: number, height: number) => Promise<string>;
+  preloadedLayer?: { loaded: true; dataUrl?: string };
 }): Promise<string> => {
-  const blankDataUrl = await createBlankLayerDataUrl(layer.width, layer.height);
-  const layerDataUrl = await api
-    .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
-    .catch(() => undefined);
+  const layerDataUrl = preloadedLayer
+    ? preloadedLayer.dataUrl
+    : await api.readLayerPng({ folderPath, bitmapPath: layer.bitmapPath });
 
   if (layerDataUrl) {
     return layerDataUrl;
   }
 
   if (layer.cleared || layer.kind !== "image") {
-    return blankDataUrl;
+    return createBlankLayerDataUrl(layer.width, layer.height);
   }
 
   return api.assetUrl(shot.previewPath ?? shot.imagePath);
@@ -65,7 +67,7 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
   projectRef,
   folderPath,
   bitmapLayerWriteQueueRef,
-  createHistoryEntry,
+  createHistoryEntryFromLayerAssets,
   recordUndoEntry,
   markShotsDirty,
   updateProject,
@@ -94,13 +96,20 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
       }
 
       const normalizedRadius = normalizeGaussianBlurRadius(radius);
-      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
+      const previousDataUrl = await api.readLayerPng({
+        folderPath,
+        bitmapPath: currentLayer.bitmapPath
+      });
+      const undoEntry = createHistoryEntryFromLayerAssets([
+        { bitmapPath: currentLayer.bitmapPath, dataUrl: previousDataUrl }
+      ]);
       const dataUrl = await blurBitmapLayer(
         await sourceDataUrlForBitmapLayer({
           api,
           folderPath,
           shot: currentShot,
-          layer: currentLayer
+          layer: currentLayer,
+          preloadedLayer: { loaded: true, dataUrl: previousDataUrl }
         }),
         currentLayer,
         normalizedRadius,
@@ -146,11 +155,23 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
         return undefined;
       }
 
-      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
+      const previousDataUrl = await api.readLayerPng({
+        folderPath,
+        bitmapPath: currentLayer.bitmapPath
+      });
+      const undoEntry = createHistoryEntryFromLayerAssets([
+        { bitmapPath: currentLayer.bitmapPath, dataUrl: previousDataUrl }
+      ]);
       const dataUrl =
         renderedDataUrl ??
         (await drawStrokeOnBitmapLayer(
-          await sourceDataUrlForBitmapLayer({ api, folderPath, shot: currentShot, layer: currentLayer }),
+          await sourceDataUrlForBitmapLayer({
+            api,
+            folderPath,
+            shot: currentShot,
+            layer: currentLayer,
+            preloadedLayer: { loaded: true, dataUrl: previousDataUrl }
+          }),
           currentLayer,
           stroke,
           pendingStrokes
@@ -189,7 +210,13 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
         return undefined;
       }
 
-      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
+      const previousDataUrl = await api.readLayerPng({
+        folderPath,
+        bitmapPath: currentLayer.bitmapPath
+      });
+      const undoEntry = createHistoryEntryFromLayerAssets([
+        { bitmapPath: currentLayer.bitmapPath, dataUrl: previousDataUrl }
+      ]);
       await api.writeLayerPng({
         folderPath,
         bitmapPath: currentLayer.bitmapPath,
@@ -228,9 +255,21 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
         return undefined;
       }
 
-      const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
+      const previousDataUrl = await api.readLayerPng({
+        folderPath,
+        bitmapPath: currentLayer.bitmapPath
+      });
+      const undoEntry = createHistoryEntryFromLayerAssets([
+        { bitmapPath: currentLayer.bitmapPath, dataUrl: previousDataUrl }
+      ]);
       const dataUrl = await fillBitmapLayerAtPoint(
-        await sourceDataUrlForBitmapLayer({ api, folderPath, shot: currentShot, layer: currentLayer }),
+        await sourceDataUrlForBitmapLayer({
+          api,
+          folderPath,
+          shot: currentShot,
+          layer: currentLayer,
+          preloadedLayer: { loaded: true, dataUrl: previousDataUrl }
+        }),
         currentLayer,
         point,
         color

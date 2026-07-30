@@ -5,6 +5,9 @@ import type { SelectedBitmapLayerIds } from "./storyboardInteractionState";
 
 type StateSetter<T> = (value: T) => void;
 
+export const sameShotSelection = (current: readonly string[], next: readonly string[]): boolean =>
+  current.length === next.length && current.every((shotId, index) => shotId === next[index]);
+
 export type ShotSelectionControllerInput = {
   blurActiveFormControl: () => void;
   isEditableTarget: (target: EventTarget | null) => boolean;
@@ -36,18 +39,27 @@ export const createShotSelectionController = ({
   const selectSingleShot = (shotId: string | undefined) => {
     shotSelectionAnchorIdRef.current = shotId;
     const nextShotIds = shotId ? [shotId] : [];
+    if (sameShotSelection(selectedShotIdsRef.current, nextShotIds)) {
+      return;
+    }
     selectedShotIdsRef.current = nextShotIds;
     setSelectedShotIds(nextShotIds);
   };
 
   const clearSelectedShots = () => {
     shotSelectionAnchorIdRef.current = undefined;
+    if (selectedShotIdsRef.current.length === 0) {
+      return;
+    }
     selectedShotIdsRef.current = [];
     setSelectedShotIds([]);
   };
 
   const selectShotsByIds = (shotIds: string[]) => {
     shotSelectionAnchorIdRef.current = shotIds.at(-1);
+    if (sameShotSelection(selectedShotIdsRef.current, shotIds)) {
+      return;
+    }
     selectedShotIdsRef.current = shotIds;
     setSelectedShotIds(shotIds);
   };
@@ -61,6 +73,9 @@ export const createShotSelectionController = ({
       mode
     });
     shotSelectionAnchorIdRef.current = selection.anchorId;
+    if (sameShotSelection(selectedShotIdsRef.current, selection.selectedIds)) {
+      return;
+    }
     selectedShotIdsRef.current = selection.selectedIds;
     setSelectedShotIds(selection.selectedIds);
   };

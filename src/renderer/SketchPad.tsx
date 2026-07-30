@@ -1,5 +1,6 @@
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -8,7 +9,7 @@ import {
   type CSSProperties,
   type DragEvent as ReactDragEvent
 } from "react";
-import { Layer, Line, Stage } from "react-konva";
+import { Circle, Layer, Line, Stage } from "react-konva";
 import { bitmapLayersForShot, imageBitmapLayerId } from "../shared/projectOps";
 import type {
   BitmapLayer,
@@ -63,6 +64,7 @@ import {
 } from "./sketchRendering";
 import { nextStageResizeDecision, sameStageSize } from "./stageResize";
 import { canFillBitmapLayer, editableBitmapLayerForShot } from "./activeTargets";
+import { ShotLayerImageStack, bitmapLayerAssetSource } from "./ShotStaticMedia";
 
 type BitmapSelection = {
   mode: BitmapSelectionMode;
@@ -90,10 +92,6 @@ type PreparedBitmapTransform = {
 type PendingCommittedStroke = {
   layerId: string;
   stroke: SketchStroke;
-};
-type BrushCursorPreview = {
-  x: number;
-  y: number;
 };
 const blurActiveFormControl = () => {
   const activeElement = document.activeElement;
@@ -218,6 +216,7 @@ const buildOverlaySelection = (draft: BitmapSelectionDraft): BitmapSelection | u
 export type SketchPadProps = {
   shot: Shot;
   folderPath?: string;
+  bitmapRevision: number;
   tool: SketchTool;
   brushColor: string;
   brushOpacity: number;
@@ -228,6 +227,8 @@ export type SketchPadProps = {
   eraserSoftness: number;
   onionSkinPreviousShot?: Shot;
   onionSkinNextShot?: Shot;
+  onionSkinPreviousRevision?: number;
+  onionSkinNextRevision?: number;
   isZoomScrubbing: boolean;
   onStroke: (
     layerId: string,
@@ -245,11 +246,13 @@ export type SketchPadProps = {
   onPickColor: (color: string) => void;
   onFocusShot: () => void;
   onBeginInteraction?: () => void;
+  onInteractionActiveChange?: (active: boolean) => void;
 };
 
-export const SketchPad = ({
+export const SketchPad = memo(({
   shot,
   folderPath,
+  bitmapRevision,
   tool,
   brushColor,
   brushOpacity,
@@ -260,6 +263,8 @@ export const SketchPad = ({
   eraserSoftness,
   onionSkinPreviousShot,
   onionSkinNextShot,
+  onionSkinPreviousRevision = 0,
+  onionSkinNextRevision = 0,
   isZoomScrubbing,
   onStroke,
   onSelectionTransform,
@@ -267,7 +272,8 @@ export const SketchPad = ({
   onFill,
   onPickColor,
   onFocusShot,
-  onBeginInteraction
+  onBeginInteraction,
+  onInteractionActiveChange
 }: SketchPadProps) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [draftStroke, setDraftStroke] = useState<SketchStroke | undefined>();
@@ -281,6 +287,10 @@ export const SketchPad = ({
   const draftStrokeRef = useRef<SketchStroke | undefined>(undefined);
   const draftStrokeRenderFrameRef = useRef<number | undefined>(undefined);
   const pendingDraftStrokeRef = useRef<SketchStroke | undefined>(undefined);
+  const stageRectRef = useRef<DOMRect | undefined>(undefined);
+  const brushCursorPreviewRef = useRef<HTMLDivElement | null>(null);
+  const brushCursorFrameRef = useRef<number | undefined>(undefined);
+  const pendingBrushCursorPointRef = useRef<Point | undefined>(undefined);
   const pendingCommittedStrokesRef = useRef<PendingCommittedStroke[]>([]);
   const liveBitmapCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
   const liveBitmapLayerIdRef = useRef<string | undefined>(undefined);
@@ -312,7 +322,6 @@ export const SketchPad = ({
   const [selectionDraft, setSelectionDraft] = useState<BitmapSelectionDraft | undefined>();
   const [transformDraft, setTransformDraft] = useState<BitmapTransformDraft | undefined>();
   const [isTransformPreviewReady, setIsTransformPreviewReady] = useState(false);
-  const [brushCursorPreview, setBrushCursorPreview] = useState<BrushCursorPreview | undefined>();
   const sketchCursor = sketchCursorForTool(tool);
   const isBrushCursorPreviewTool = shouldShowBrushCursorPreviewForTool(tool);
   const cursorPreviewToolSize = brushCursorPreviewToolSize(tool, { brushSize, eraserSize });
@@ -330,17 +339,25 @@ export const SketchPad = ({
     setStageSize(size);
   }, []);
 
-  useEffect(() => {
-    draftStrokeRef.current = draftStroke;
-  }, [draftStroke]);
+  const refreshStageRect = () => {
+    const rect = imageStageRef.current?.getBoundingClientRect();
+    if (rect) {
+      stageRectRef.current = rect;
+    }
+    return rect;
+  };
 
   useEffect(
     () => () => {
       if (draftStrokeRenderFrameRef.current !== undefined) {
         window.cancelAnimationFrame(draftStrokeRenderFrameRef.current);
       }
+      if (brushCursorFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(brushCursorFrameRef.current);
+      }
+      onInteractionActiveChange?.(false);
     },
-    []
+    [onInteractionActiveChange]
   );
 
   useEffect(() => {
@@ -353,7 +370,7 @@ export const SketchPad = ({
     }
 
     if (!isBrushCursorPreviewTool) {
-      setBrushCursorPreview(undefined);
+      hideBrushCursorPreview();
     }
   }, [tool]);
 
@@ -376,37 +393,8 @@ export const SketchPad = ({
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const loadLayers = async () => {
-      const entries = await Promise.all(
-        bitmapLayers.map(async (layer) => {
-          if (layer.cleared) {
-            return [layer.id, undefined] as const;
-          }
-
-          const dataUrl = folderPath
-            ? await window.storyboard
-                .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
-                .catch(() => undefined)
-            : undefined;
-          return [layer.id, dataUrl] as const;
-        })
-      );
-
-      if (!cancelled) {
-        setLayerDataUrls(
-          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1])))
-        );
-      }
-    };
-
-    void loadLayers();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bitmapLayers, folderPath, shot]);
+    setLayerDataUrls({});
+  }, [bitmapRevision, shot.id]);
 
   useEffect(() => {
     const element = imageStageRef.current;
@@ -422,6 +410,7 @@ export const SketchPad = ({
       stageSizeFrameRef.current = window.requestAnimationFrame(() => {
         stageSizeFrameRef.current = undefined;
         const rect = element.getBoundingClientRect();
+        stageRectRef.current = rect;
         const decision = nextStageResizeDecision({
           currentSize: stageSizeRef.current,
           measuredSize: { width: rect.width, height: rect.height },
@@ -556,7 +545,12 @@ export const SketchPad = ({
 
     draftStrokeRenderFrameRef.current = window.requestAnimationFrame(() => {
       draftStrokeRenderFrameRef.current = undefined;
-      setDraftStroke(pendingDraftStrokeRef.current);
+      const pendingStroke = pendingDraftStrokeRef.current;
+      setDraftStroke(
+        pendingStroke
+          ? { ...pendingStroke, points: [...pendingStroke.points] }
+          : undefined
+      );
     });
   };
 
@@ -572,8 +566,12 @@ export const SketchPad = ({
   };
 
   const updateDrawingState = (drawing: boolean) => {
+    if (isDrawingRef.current === drawing) {
+      return;
+    }
     isDrawingRef.current = drawing;
     setIsDrawing(drawing);
+    onInteractionActiveChange?.(drawing);
   };
 
   const updateBitmapSelectionState = (selection: BitmapSelection | undefined) => {
@@ -608,7 +606,11 @@ export const SketchPad = ({
   };
 
   const layerSourceUrl = (layer: BitmapLayer) =>
-    layerDataUrls[layer.id] ?? (layer.kind === "image" && !layer.cleared ? imageSrc : undefined);
+    layerDataUrls[layer.id] ??
+    (!layer.cleared
+      ? bitmapLayerAssetSource({ folderPath, layer, revision: bitmapRevision })
+      : undefined) ??
+    (layer.kind === "image" && !layer.cleared ? imageSrc : undefined);
 
   const pickVisibleColor = async (position: Point) => {
     const canvas = document.createElement("canvas");
@@ -923,9 +925,7 @@ export const SketchPad = ({
     evt?: globalThis.PointerEvent;
     target: { getStage: () => { container: () => HTMLDivElement } | null };
   }) => {
-    const stage = event.target.getStage();
-    const container = stage?.container();
-    const rect = container?.getBoundingClientRect();
+    const rect = stageRectRef.current ?? refreshStageRect();
 
     if (!rect) {
       return [];
@@ -945,7 +945,7 @@ export const SketchPad = ({
   };
 
   const getSketchPointsFromPointerEvent = (pointerEvent: globalThis.PointerEvent) => {
-    const rect = imageStageRef.current?.getBoundingClientRect();
+    const rect = stageRectRef.current ?? refreshStageRect();
 
     if (!rect) {
       return [];
@@ -964,19 +964,40 @@ export const SketchPad = ({
       return;
     }
 
-    const rect = imageStageRef.current?.getBoundingClientRect();
+    const rect = stageRectRef.current ?? refreshStageRect();
     if (!rect) {
       return;
     }
 
-    setBrushCursorPreview({
+    pendingBrushCursorPointRef.current = {
       x: pointerEvent.clientX - rect.left,
       y: pointerEvent.clientY - rect.top
+    };
+    if (brushCursorFrameRef.current !== undefined) {
+      return;
+    }
+
+    brushCursorFrameRef.current = window.requestAnimationFrame(() => {
+      brushCursorFrameRef.current = undefined;
+      const point = pendingBrushCursorPointRef.current;
+      const cursor = brushCursorPreviewRef.current;
+      if (!point || !cursor) {
+        return;
+      }
+      cursor.style.transform = `translate3d(${point.x}px, ${point.y}px, 0) translate(-50%, -50%)`;
+      cursor.style.opacity = "1";
     });
   };
 
   const hideBrushCursorPreview = () => {
-    setBrushCursorPreview(undefined);
+    pendingBrushCursorPointRef.current = undefined;
+    if (brushCursorFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(brushCursorFrameRef.current);
+      brushCursorFrameRef.current = undefined;
+    }
+    if (brushCursorPreviewRef.current) {
+      brushCursorPreviewRef.current.style.opacity = "0";
+    }
   };
 
   const createStroke = (strokeTool: StrokeTool, position: Point): SketchStroke => {
@@ -1001,6 +1022,7 @@ export const SketchPad = ({
     onFocusShot();
     event.evt?.preventDefault();
     event.evt?.stopPropagation();
+    refreshStageRect();
     if (event.evt) {
       updateBrushCursorPreview(event.evt);
     }
@@ -1213,20 +1235,21 @@ export const SketchPad = ({
     }
 
     const previousPointOffset = currentStroke.points.length / 2;
+    const previousPointLength = currentStroke.points.length;
     const toolSize = currentStroke.tool === "eraser" ? eraserSize : brushSize;
     const canvasScale = canvasSize.width / sketchCanvasSize.width;
     const minPointDistance =
       currentStroke.tool === "eraser" ? Math.max(3, toolSize * canvasScale * 0.25) : 1;
-    const nextPoints = [...currentStroke.points];
+    const nextPoints = currentStroke.points;
     for (const position of positions) {
-      if (!shouldAppendStrokePoint({ ...currentStroke, points: nextPoints }, position, minPointDistance)) {
+      if (!shouldAppendStrokePoint(currentStroke, position, minPointDistance)) {
         continue;
       }
 
       nextPoints.push(position.x, position.y);
     }
 
-    if (nextPoints.length === currentStroke.points.length) {
+    if (nextPoints.length === previousPointLength) {
       return;
     }
 
@@ -1392,7 +1415,10 @@ export const SketchPad = ({
         className="image-stage"
         ref={imageStageRef}
         style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}`, cursor: sketchCursor }}
-        onPointerMove={(event) => updateBrushCursorPreview(event.nativeEvent)}
+        onPointerEnter={(event) => {
+          refreshStageRect();
+          updateBrushCursorPreview(event.nativeEvent);
+        }}
         onPointerLeave={hideBrushCursorPreview}
         onPointerCancel={hideBrushCursorPreview}
         onDragOver={handleFillDragOver}
@@ -1414,7 +1440,28 @@ export const SketchPad = ({
             return (
               <Fragment key={layer.id}>
                 {layerSrc && !isLiveBitmapLayer && !isTransformingLayer ? (
-                  <img src={layerSrc} alt="" draggable={false} style={layerStyle} />
+                  <img
+                    src={layerSrc}
+                    alt=""
+                    draggable={false}
+                    style={layerStyle}
+                    onLoad={(event) => {
+                      event.currentTarget.style.display = "";
+                      delete event.currentTarget.dataset.fallbackApplied;
+                    }}
+                    onError={(event) => {
+                      if (
+                        layer.kind === "image" &&
+                        !layer.cleared &&
+                        event.currentTarget.dataset.fallbackApplied !== "true"
+                      ) {
+                        event.currentTarget.dataset.fallbackApplied = "true";
+                        event.currentTarget.src = imageSrc;
+                      } else {
+                        event.currentTarget.style.display = "none";
+                      }
+                    }}
+                  />
                 ) : null}
                 <canvas
                   ref={(element) => {
@@ -1444,6 +1491,8 @@ export const SketchPad = ({
         <OnionSkinOverlay
           previousShot={onionSkinPreviousShot}
           nextShot={onionSkinNextShot}
+          previousRevision={onionSkinPreviousRevision}
+          nextRevision={onionSkinNextRevision}
           stageSize={stageSize}
           folderPath={folderPath}
         />
@@ -1460,6 +1509,7 @@ export const SketchPad = ({
         >
           {pendingCommittedStrokes.length > 0 || draftStroke ? (
             <Layer
+              listening={false}
               scaleX={stageSize.width / canvasSize.width}
               scaleY={stageSize.height / canvasSize.height}
             >
@@ -1470,7 +1520,23 @@ export const SketchPad = ({
                   : [])
               ].map(({ layerId, stroke }) => {
                 const previewLayer = bitmapLayers.find((layer) => layer.id === layerId) ?? activeDrawingLayer;
-                return (
+                return stroke.points.length === 2 ? (
+                  <Circle
+                    key={stroke.id}
+                    x={stroke.points[0]}
+                    y={stroke.points[1]}
+                    radius={stroke.size / 2}
+                    fill={stroke.color}
+                    opacity={liveStrokePreviewOpacity(stroke, previewLayer?.opacity)}
+                    listening={false}
+                    perfectDrawEnabled={false}
+                    shadowBlur={Math.max(0, stroke.size * (stroke.softness ?? 0))}
+                    shadowColor={stroke.color}
+                    globalCompositeOperation={
+                      stroke.tool === "eraser" ? "destination-out" : "source-over"
+                    }
+                  />
+                ) : (
                   <Line
                     key={stroke.id}
                     points={stroke.points}
@@ -1479,6 +1545,8 @@ export const SketchPad = ({
                     strokeWidth={stroke.size}
                     lineCap="round"
                     lineJoin="round"
+                    listening={false}
+                    perfectDrawEnabled={false}
                     shadowBlur={Math.max(0, stroke.size * (stroke.softness ?? 0))}
                     shadowColor={stroke.color}
                     globalCompositeOperation={
@@ -1490,30 +1558,43 @@ export const SketchPad = ({
             </Layer>
           ) : null}
         </Stage>
-        {brushCursorPreview && isBrushCursorPreviewTool ? (
+        {isBrushCursorPreviewTool ? (
           <div
+            ref={brushCursorPreviewRef}
             className="brush-cursor-preview"
             style={{
-              left: brushCursorPreview.x,
-              top: brushCursorPreview.y,
+              left: 0,
+              top: 0,
               width: cursorPreviewDiameter,
-              height: cursorPreviewDiameter
+              height: cursorPreviewDiameter,
+              opacity: 0
             }}
           />
         ) : null}
       </div>
     </div>
   );
-};
+});
+
+SketchPad.displayName = "SketchPad";
 
 type OnionSkinOverlayProps = {
   previousShot?: Shot;
   nextShot?: Shot;
+  previousRevision: number;
+  nextRevision: number;
   stageSize: CanvasSize;
   folderPath?: string;
 };
 
-const OnionSkinOverlay = ({ previousShot, nextShot, stageSize, folderPath }: OnionSkinOverlayProps) => {
+const OnionSkinOverlay = ({
+  previousShot,
+  nextShot,
+  previousRevision,
+  nextRevision,
+  stageSize,
+  folderPath
+}: OnionSkinOverlayProps) => {
   if (!previousShot && !nextShot) {
     return null;
   }
@@ -1521,10 +1602,22 @@ const OnionSkinOverlay = ({ previousShot, nextShot, stageSize, folderPath }: Oni
   return (
     <div className="onion-skin-overlay" aria-hidden="true">
       {previousShot ? (
-        <OnionSkinGhost shot={previousShot} tone="previous" stageSize={stageSize} folderPath={folderPath} />
+        <OnionSkinGhost
+          shot={previousShot}
+          tone="previous"
+          revision={previousRevision}
+          stageSize={stageSize}
+          folderPath={folderPath}
+        />
       ) : null}
       {nextShot ? (
-        <OnionSkinGhost shot={nextShot} tone="next" stageSize={stageSize} folderPath={folderPath} />
+        <OnionSkinGhost
+          shot={nextShot}
+          tone="next"
+          revision={nextRevision}
+          stageSize={stageSize}
+          folderPath={folderPath}
+        />
       ) : null}
     </div>
   );
@@ -1533,78 +1626,24 @@ const OnionSkinOverlay = ({ previousShot, nextShot, stageSize, folderPath }: Oni
 const OnionSkinGhost = ({
   shot,
   tone,
+  revision,
   stageSize,
   folderPath
 }: {
   shot: Shot;
   tone: "previous" | "next";
+  revision: number;
   stageSize: CanvasSize;
   folderPath?: string;
 }) => {
-  const imageSrc = window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath);
-  const bitmapLayers = useMemo(() => bitmapLayersForShot(shot), [shot]);
-  const [layerDataUrls, setLayerDataUrls] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadLayers = async () => {
-      if (!folderPath) {
-        return;
-      }
-
-      const entries = await Promise.all(
-        bitmapLayers.map(async (layer) => {
-          if (layer.cleared) {
-            return [layer.id, undefined] as const;
-          }
-
-          const dataUrl = await window.storyboard
-            .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
-            .catch(() => undefined);
-          return [layer.id, dataUrl] as const;
-        })
-      );
-
-      if (!cancelled) {
-        setLayerDataUrls(
-          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1])))
-        );
-      }
-    };
-
-    void loadLayers();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bitmapLayers, folderPath]);
-
   return (
     <div className={`onion-skin-ghost onion-skin-ghost-${tone}`}>
-      {bitmapLayers.length === 0 ? (
-        <img src={imageSrc} alt="" draggable={false} className="onion-skin-image" />
-      ) : null}
-      {bitmapLayers
-        .filter((layer) => layer.visible)
-        .map((layer) => {
-          const layerSrc =
-            layerDataUrls[layer.id] ?? (layer.kind === "image" && !layer.cleared ? imageSrc : undefined);
-
-          return layerSrc ? (
-            <img
-              key={layer.id}
-              src={layerSrc}
-              alt=""
-              draggable={false}
-              className="onion-skin-image"
-              style={{
-                opacity: layer.opacity,
-                mixBlendMode: cssBlendMode(layer.blendMode)
-              }}
-            />
-          ) : null;
-        })}
+      <ShotLayerImageStack
+        shot={shot}
+        folderPath={folderPath}
+        revision={revision}
+        className="onion-skin-image"
+      />
     </div>
   );
 };

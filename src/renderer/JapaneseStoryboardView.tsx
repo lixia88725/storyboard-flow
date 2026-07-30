@@ -2,16 +2,26 @@ import { sortedShots } from "../shared/projectOps";
 import type { Project, Shot, SketchStroke, SketchTool } from "../shared/types";
 import { shotDialogueText } from "./editableDialogueText";
 import { SketchPad } from "./SketchPad";
+import { ShotStaticMedia } from "./ShotStaticMedia";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS as DndCss } from "@dnd-kit/utilities";
 import {
   forwardRef,
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
   type CSSProperties,
   type MouseEvent,
   type PointerEventHandler,
   type ReactNode
 } from "react";
 import type { DragData } from "./storyboardDnd";
+import {
+  shouldMountStoryboardEditor,
+  useStoryboardMediaWindow
+} from "./storyboardMediaWindow";
 
 export type JapaneseStoryboardRow = {
   shot: Shot;
@@ -62,6 +72,7 @@ type JapaneseStoryboardViewProps = {
   eraserSize: number;
   eraserSoftness: number;
   folderPath?: string;
+  bitmapRevisionByShotId: Readonly<Record<string, number>>;
   isZoomScrubbing: boolean;
   marquee?: ReactNode;
   onPointerDown?: PointerEventHandler<HTMLElement>;
@@ -95,7 +106,7 @@ type JapaneseStoryboardViewProps = {
   ) => Promise<string | undefined>;
 };
 
-type JapaneseStoryboardRowViewProps = {
+export type JapaneseStoryboardRowViewProps = {
   activeSketchTool: SketchTool;
   brushColor: string;
   brushOpacity: number;
@@ -105,7 +116,9 @@ type JapaneseStoryboardRowViewProps = {
   eraserSize: number;
   eraserSoftness: number;
   folderPath?: string;
+  bitmapRevision: number;
   isZoomScrubbing: boolean;
+  isPrimarySelected: boolean;
   isSelected: boolean;
   row: JapaneseStoryboardRow;
   onActionText: (shotId: string, actionText: string) => void;
@@ -135,7 +148,39 @@ type JapaneseStoryboardRowViewProps = {
   ) => Promise<string | undefined>;
 };
 
-const JapaneseStoryboardRowView = ({
+export const sameJapaneseStoryboardRowViewProps = (
+  previous: JapaneseStoryboardRowViewProps,
+  next: JapaneseStoryboardRowViewProps
+): boolean =>
+  previous.activeSketchTool === next.activeSketchTool &&
+  previous.brushColor === next.brushColor &&
+  previous.brushOpacity === next.brushOpacity &&
+  previous.brushSize === next.brushSize &&
+  previous.brushSoftness === next.brushSoftness &&
+  previous.eraserOpacity === next.eraserOpacity &&
+  previous.eraserSize === next.eraserSize &&
+  previous.eraserSoftness === next.eraserSoftness &&
+  previous.folderPath === next.folderPath &&
+  previous.bitmapRevision === next.bitmapRevision &&
+  previous.isZoomScrubbing === next.isZoomScrubbing &&
+  previous.isPrimarySelected === next.isPrimarySelected &&
+  previous.isSelected === next.isSelected &&
+  previous.row.shot === next.row.shot &&
+  previous.row.shotNumber === next.row.shotNumber &&
+  previous.row.actionText === next.row.actionText &&
+  previous.row.dialogueText === next.row.dialogueText &&
+  previous.onActionText === next.onActionText &&
+  previous.onDialogueText === next.onDialogueText &&
+  previous.onFill === next.onFill &&
+  previous.onFocusShot === next.onFocusShot &&
+  previous.onPickColor === next.onPickColor &&
+  previous.onSelectShot === next.onSelectShot &&
+  previous.onSelectionTransform === next.onSelectionTransform &&
+  previous.onBitmapSelectionChange === next.onBitmapSelectionChange &&
+  previous.onSketchBeginInteraction === next.onSketchBeginInteraction &&
+  previous.onSketchStroke === next.onSketchStroke;
+
+const JapaneseStoryboardRowView = memo(({
   activeSketchTool,
   brushColor,
   brushOpacity,
@@ -145,7 +190,9 @@ const JapaneseStoryboardRowView = ({
   eraserSize,
   eraserSoftness,
   folderPath,
+  bitmapRevision,
   isZoomScrubbing,
+  isPrimarySelected,
   isSelected,
   row,
   onActionText,
@@ -159,6 +206,8 @@ const JapaneseStoryboardRowView = ({
   onSketchBeginInteraction,
   onSketchStroke
 }: JapaneseStoryboardRowViewProps) => {
+  const rowRef = useRef<HTMLElement | null>(null);
+  const [isSketchInteracting, setIsSketchInteracting] = useState(false);
   const {
     attributes,
     isDragging,
@@ -175,12 +224,48 @@ const JapaneseStoryboardRowView = ({
     transform: DndCss.Transform.toString(transform),
     transition
   };
+  const setRowNodeRef = useCallback(
+    (element: HTMLElement | null) => {
+      rowRef.current = element;
+      setNodeRef(element);
+    },
+    [setNodeRef]
+  );
+  const mediaTier = useStoryboardMediaWindow(
+    rowRef,
+    isPrimarySelected || isSketchInteracting
+  );
+  const shouldRenderMedia = shouldMountStoryboardEditor(mediaTier);
+  const handleSketchStroke = useCallback(
+    (
+      layerId: string,
+      stroke: SketchStroke,
+      renderedDataUrl?: string,
+      pendingStrokes?: SketchStroke[]
+    ) => onSketchStroke(row.shot, layerId, stroke, renderedDataUrl, pendingStrokes),
+    [onSketchStroke, row.shot]
+  );
+  const handleSelectionTransform = useCallback(
+    (layerId: string, dataUrl: string) =>
+      onSelectionTransform(row.shot, layerId, dataUrl),
+    [onSelectionTransform, row.shot]
+  );
+  const handleFill = useCallback(
+    (layerId: string, point: { x: number; y: number }, color: string) =>
+      onFill(row.shot, layerId, point, color),
+    [onFill, row.shot]
+  );
+  const handleFocusShot = useCallback(
+    () => onFocusShot(row.shot.id),
+    [onFocusShot, row.shot.id]
+  );
 
   return (
     <article
-      ref={setNodeRef}
+      ref={setRowNodeRef}
       className={japaneseStoryboardRowClassName({ isSelected, isDragging })}
       data-shot-id={row.shot.id}
+      data-media-tier={mediaTier}
       style={style}
       onClick={(event) => onSelectShot(row.shot.id, event)}
     >
@@ -196,30 +281,37 @@ const JapaneseStoryboardRowView = ({
         {row.shotNumber}
       </button>
       <div className="japanese-storyboard-picture">
-        <SketchPad
-          shot={row.shot}
-          folderPath={folderPath}
-          tool={activeSketchTool}
-          brushColor={brushColor}
-          brushOpacity={brushOpacity}
-          brushSize={brushSize}
-          brushSoftness={brushSoftness}
-          eraserOpacity={eraserOpacity}
-          eraserSize={eraserSize}
-          eraserSoftness={eraserSoftness}
-          isZoomScrubbing={isZoomScrubbing}
-          onStroke={(layerId, stroke, renderedDataUrl, pendingStrokes) =>
-            onSketchStroke(row.shot, layerId, stroke, renderedDataUrl, pendingStrokes)
-          }
-          onSelectionTransform={(layerId, dataUrl) =>
-            onSelectionTransform(row.shot, layerId, dataUrl)
-          }
-          onBitmapSelectionChange={onBitmapSelectionChange}
-          onFill={(layerId, point, color) => onFill(row.shot, layerId, point, color)}
-          onPickColor={onPickColor}
-          onFocusShot={() => onFocusShot(row.shot.id)}
-          onBeginInteraction={onSketchBeginInteraction}
-        />
+        {shouldRenderMedia ? (
+          <SketchPad
+            shot={row.shot}
+            folderPath={folderPath}
+            bitmapRevision={bitmapRevision}
+            tool={activeSketchTool}
+            brushColor={brushColor}
+            brushOpacity={brushOpacity}
+            brushSize={brushSize}
+            brushSoftness={brushSoftness}
+            eraserOpacity={eraserOpacity}
+            eraserSize={eraserSize}
+            eraserSoftness={eraserSoftness}
+            isZoomScrubbing={isZoomScrubbing}
+            onStroke={handleSketchStroke}
+            onSelectionTransform={handleSelectionTransform}
+            onBitmapSelectionChange={onBitmapSelectionChange}
+            onFill={handleFill}
+            onPickColor={onPickColor}
+            onFocusShot={handleFocusShot}
+            onBeginInteraction={onSketchBeginInteraction}
+            onInteractionActiveChange={setIsSketchInteracting}
+          />
+        ) : (
+          <ShotStaticMedia
+            shot={row.shot}
+            folderPath={folderPath}
+            revision={bitmapRevision}
+            preload={mediaTier === "warm"}
+          />
+        )}
       </div>
       <label className="japanese-storyboard-cell">
         <span>Action Notes</span>
@@ -239,7 +331,9 @@ const JapaneseStoryboardRowView = ({
       </label>
     </article>
   );
-};
+}, sameJapaneseStoryboardRowViewProps);
+
+JapaneseStoryboardRowView.displayName = "JapaneseStoryboardRowView";
 
 export const JapaneseStoryboardView = forwardRef<HTMLElement, JapaneseStoryboardViewProps>(({
   activeSketchTool,
@@ -251,6 +345,7 @@ export const JapaneseStoryboardView = forwardRef<HTMLElement, JapaneseStoryboard
   eraserSize,
   eraserSoftness,
   folderPath,
+  bitmapRevisionByShotId,
   isZoomScrubbing,
   marquee,
   onPointerDown,
@@ -268,6 +363,10 @@ export const JapaneseStoryboardView = forwardRef<HTMLElement, JapaneseStoryboard
   onSketchBeginInteraction,
   onSketchStroke
 }, ref) => {
+  const rows = useMemo(() => japaneseStoryboardRows(project), [project]);
+  const selectedShotIdSet = useMemo(() => new Set(selectedShotIds), [selectedShotIds]);
+  const primarySelectedShotId = selectedShotIds[0];
+
   return (
     <section
       ref={ref}
@@ -284,7 +383,7 @@ export const JapaneseStoryboardView = forwardRef<HTMLElement, JapaneseStoryboard
           <span>Action</span>
           <span>Dialogue</span>
         </div>
-        {japaneseStoryboardRows(project).map((row) => (
+        {rows.map((row) => (
           <JapaneseStoryboardRowView
             key={row.shot.id}
             activeSketchTool={activeSketchTool}
@@ -296,8 +395,10 @@ export const JapaneseStoryboardView = forwardRef<HTMLElement, JapaneseStoryboard
             eraserSize={eraserSize}
             eraserSoftness={eraserSoftness}
             folderPath={folderPath}
+            bitmapRevision={bitmapRevisionByShotId[row.shot.id] ?? 0}
             isZoomScrubbing={isZoomScrubbing}
-            isSelected={selectedShotIds.includes(row.shot.id)}
+            isPrimarySelected={primarySelectedShotId === row.shot.id}
+            isSelected={selectedShotIdSet.has(row.shot.id)}
             row={row}
             onActionText={onActionText}
             onDialogueText={onDialogueText}

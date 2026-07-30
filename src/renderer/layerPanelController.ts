@@ -69,15 +69,8 @@ export const useLayerPanelController = ({
     [primarySelectedShotId, selectSingleShot, setDeleteTarget, setSelectedBitmapLayerIds]
   );
 
-  const layerPanelPropsForShot = useCallback(
-    (shotId: string) => ({
-      isLayerPanelOpen: isLayerPanelOpenForShot(isLayerPanelOpen, shotId, primarySelectedShotId),
-      onToggleLayerPanel: () => toggleForShot(shotId)
-    }),
-    [isLayerPanelOpen, primarySelectedShotId, toggleForShot]
-  );
-
   return {
-    layerPanelPropsForShot
+    isLayerPanelOpen,
+    toggleLayerPanelForShot: toggleForShot
   };
 };

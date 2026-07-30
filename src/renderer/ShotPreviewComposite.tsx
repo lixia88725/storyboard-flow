@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { memo, useMemo, type CSSProperties } from "react";
 import { bitmapLayersForShot } from "../shared/projectOps";
 import type { Shot } from "../shared/types";
 import { canvasSizeForShot, cssBlendMode } from "./sketchRendering";
+import { bitmapLayerAssetSource } from "./ShotStaticMedia";
 
 type ShotPreviewLayerItem = {
   id: string;
@@ -38,7 +39,7 @@ export const shotPreviewLayerItems = (
         : [];
     });
 
-export const ShotPreviewComposite = ({
+export const ShotPreviewComposite = memo(({
   shot,
   folderPath,
   revision,
@@ -52,48 +53,31 @@ export const ShotPreviewComposite = ({
   const bitmapLayers = useMemo(() => bitmapLayersForShot(shot), [shot]);
   const canvasSize = useMemo(() => canvasSizeForShot(shot), [shot]);
   const fallbackSrc = window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath);
-  const [layerDataUrls, setLayerDataUrls] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadLayers = async () => {
-      setLayerDataUrls({});
-
-      const visibleLayers = bitmapLayers.filter((layer) => layer.visible);
-      if (!folderPath || visibleLayers.length === 0) {
-        return;
-      }
-
-      const entries = await Promise.all(
-        visibleLayers.map(async (layer) => {
+  const layerDataUrls = useMemo(
+    () =>
+      Object.fromEntries(
+        bitmapLayers.flatMap((layer) => {
           if (layer.cleared) {
-            return [layer.id, undefined] as const;
+            return [];
           }
-
-          const dataUrl = await window.storyboard
-            .readLayerPng({ folderPath, bitmapPath: layer.bitmapPath })
-            .catch(() => undefined);
-          return [layer.id, dataUrl] as const;
+          const source = bitmapLayerAssetSource({ folderPath, layer, revision });
+          return source ? [[layer.id, source]] : [];
         })
-      );
-
-      if (!cancelled) {
-        setLayerDataUrls(
-          Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1])))
-        );
-      }
-    };
-
-    void loadLayers();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bitmapLayers, folderPath, revision]);
+      ),
+    [bitmapLayers, folderPath, revision]
+  );
 
   if (bitmapLayers.length === 0) {
-    return <img className={className} src={fallbackSrc} alt="" draggable={false} />;
+    return (
+      <img
+        className={className}
+        src={fallbackSrc}
+        alt=""
+        draggable={false}
+        loading="lazy"
+        decoding="async"
+      />
+    );
   }
 
   return (
@@ -102,18 +86,42 @@ export const ShotPreviewComposite = ({
       style={{ aspectRatio: `${canvasSize.width} / ${canvasSize.height}` }}
       aria-hidden="true"
     >
-      {shotPreviewLayerItems(shot, { fallbackSrc, layerDataUrls }).map((layer) => (
-        <img
-          key={layer.id}
-          src={layer.src}
-          alt=""
-          draggable={false}
-          style={{
-            opacity: layer.opacity,
-            mixBlendMode: layer.mixBlendMode
-          }}
-        />
-      ))}
+      {shotPreviewLayerItems(shot, { fallbackSrc, layerDataUrls }).map((layer) => {
+        const bitmapLayer = bitmapLayers.find((item) => item.id === layer.id);
+        const layerFallback =
+          bitmapLayer?.kind === "image" && !bitmapLayer.cleared ? fallbackSrc : undefined;
+        return (
+          <img
+            key={layer.id}
+            src={layer.src}
+            alt=""
+            draggable={false}
+            loading="lazy"
+            decoding="async"
+            style={{
+              opacity: layer.opacity,
+              mixBlendMode: layer.mixBlendMode
+            }}
+            onLoad={(event) => {
+              event.currentTarget.style.display = "";
+              delete event.currentTarget.dataset.fallbackApplied;
+            }}
+            onError={(event) => {
+              if (
+                layerFallback &&
+                event.currentTarget.dataset.fallbackApplied !== "true"
+              ) {
+                event.currentTarget.dataset.fallbackApplied = "true";
+                event.currentTarget.src = layerFallback;
+              } else {
+                event.currentTarget.style.display = "none";
+              }
+            }}
+          />
+        );
+      })}
     </div>
   );
-};
+});
+
+ShotPreviewComposite.displayName = "ShotPreviewComposite";

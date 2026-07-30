@@ -292,6 +292,14 @@ declare global {
       }>;
       openExternal: (url: string) => Promise<void>;
       assetUrl: (filePath: string) => string;
+      layerAssetUrl: (payload: {
+        folderPath: string;
+        bitmapPath: string;
+        revision?: number | string;
+      }) => string;
+      getRendererPerformanceCounters: () => {
+        readLayerPngCalls: number;
+      };
     };
   }
 }

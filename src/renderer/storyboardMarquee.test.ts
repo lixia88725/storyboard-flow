@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   createMarqueeBox,
-  marqueeViewportRect,
-  marqueeDisplayedSelectionIds,
-  marqueeSelectionClassChanges,
   marqueeEdgeScrollDelta,
+  marqueeHitsInBox,
+  marqueeOverlayBoxRect,
+  marqueeViewportRect,
   sameMarqueeSelection,
   shotIdsInMarqueeBox,
   updateMarqueeBox
@@ -73,24 +73,64 @@ describe("storyboard marquee helpers", () => {
     expect(sameMarqueeSelection(["shot-a"], ["shot-a", "shot-b"])).toBe(false);
   });
 
-  it("matches storyboard card selection styling for marquee selections", () => {
-    expect(marqueeDisplayedSelectionIds([])).toEqual([]);
-    expect(marqueeDisplayedSelectionIds(["shot-a"])).toEqual([]);
-    expect(marqueeDisplayedSelectionIds(["shot-a", "shot-b"])).toEqual(["shot-a", "shot-b"]);
+  it("keeps the SVG box relative to the clipped workspace viewport", () => {
+    const started = createMarqueeBox({
+      clientX: 310,
+      clientY: 260,
+      scrollX: 0,
+      scrollY: 0
+    });
+    const moved = updateMarqueeBox(started, {
+      clientX: 120,
+      clientY: 100,
+      scrollX: 0,
+      scrollY: 0
+    });
+
+    expect(marqueeOverlayBoxRect(moved, { left: 80, top: 60 })).toEqual({
+      left: 40,
+      top: 40,
+      width: 190,
+      height: 160
+    });
   });
 
-  it("returns only the storyboard card selection classes that changed", () => {
-    expect(marqueeSelectionClassChanges(["shot-a", "shot-b"], ["shot-b", "shot-c"])).toEqual({
-      add: ["shot-c"],
-      remove: ["shot-a"]
-    });
-    expect(marqueeSelectionClassChanges(["shot-a"], ["shot-a", "shot-b"])).toEqual({
-      add: ["shot-a", "shot-b"],
-      remove: []
-    });
-    expect(marqueeSelectionClassChanges(["shot-a", "shot-b"], ["shot-c"])).toEqual({
-      add: [],
-      remove: ["shot-a", "shot-b"]
+  it("returns hit ids and viewport-relative SVG rectangles in one traversal", () => {
+    const box = updateMarqueeBox(
+      createMarqueeBox({
+        clientX: 100,
+        clientY: 100,
+        scrollX: 0,
+        scrollY: 0
+      }),
+      {
+        clientX: 320,
+        clientY: 760,
+        scrollX: 0,
+        scrollY: 500
+      }
+    );
+
+    expect(
+      marqueeHitsInBox(
+        box,
+        [
+          {
+            shotId: "shot-a",
+            rect: { left: 120, right: 300, top: 980, bottom: 1140 }
+          },
+          {
+            shotId: "shot-outside",
+            rect: { left: 400, right: 520, top: 980, bottom: 1140 }
+          }
+        ],
+        { x: 0, y: 500 },
+        { left: 80, top: 60 }
+      )
+    ).toEqual({
+      shotIds: ["shot-a"],
+      rects: [{ left: 40, top: 420, width: 180, height: 160 }]
     });
   });
+
 });

@@ -6,8 +6,9 @@
 
 - Workspace: `/Users/xiali/Documents/Storyboard-flow`
 - Branch: `main`
-- Handoff date: 2026-07-28
-- Most recent local commit: `724e345 Update bitmap smoke tests for Japanese storyboard UI`
+- Handoff date: 2026-07-30
+- Most recent local commit: `507defb Update bitmap smoke coverage for Japanese storyboard UI`
+- Worktree status: dirty. The large-scene media-window, direct layer URL, per-shot revision, marquee Canvas, performance smoke, and follow-up safety fixes described below are still uncommitted.
 - Product name: `Storyboard Flow`. `Storyboard Workbench` remains legacy/internal compatibility only.
 
 ## Must Preserve
@@ -34,6 +35,28 @@ Protected Save / Import / TIFF orchestration remains in `electron/main/main.ts`.
 
 ## Completed In This Session
 
+- Added large-scene interaction performance work for both storyboard views:
+  - one shared viewport-rooted media window keeps card/row layout intact while splitting a one-viewport Warm image range from a 25%-viewport Hot `SketchPad` range;
+  - Warm shots actively prepare only their base layer while additional full-resolution layers remain lazy, avoiding multi-layer decode storms;
+  - offscreen shots render a lazy/async static bitmap layer stack, while primary selection, animation focus, and open layer drawers stay pinned;
+  - drawing and bitmap Select interactions take a local mount lease so their editor cannot disappear during an active pointer session;
+  - layer display, Timeline, thumbnails, drag composites, and Onion Skin now stream validated PNG files through `storyboard-img://layer` instead of passive base64 IPC reads;
+  - per-shot bitmap revisions refresh only affected shot URLs and are restored correctly after Undo/Redo;
+  - selection Sets, stable handlers, memoized cards/rows/previews, and equal-value selection/delete-target guards reduce App-wide work;
+  - brush cursor movement is DOM/ref + RAF based, stage geometry is cached per stroke, and stroke points publish to Konva at most once per frame;
+  - bitmap edits reuse one layer read for both history and source pixels and only create a transparent source when the layer file is actually missing.
+- Added `npm run smoke:performance`, which creates 250-shot single-layer and 130-shot three-layer owned bitmap workspaces and measures both views at 50% zoom. It now records media tiers, editor churn, visible image readiness, view activation, scrolling, selection, marquee, first ink, passive reads, and heap stability. `STORYBOARD_PERF_LAYER_COUNT=8` is an optional destructive stress case; `STORYBOARD_PERF_FIXTURE=/path/to/project` adds an APFS-cloned real fixture under `/private/tmp`.
+- Reworked dense marquee selection for 120Hz interaction:
+  - one fixed Canvas overlay draws the green box, orange candidate outlines, and live count without per-card temporary classes;
+  - viewport and shot geometry are cached at pointer-down and remeasured only on resize;
+  - Warm/Hot observers keep recording during marquee edge-scroll, while editor tier publication is frozen;
+  - release reconciliation applies at most six tier changes per frame, prioritizing offscreen editor teardown before Hot mounts and Warm/Cold preloading;
+  - the performance smoke reports active-drag, edge-scroll, and release-reconcile phases separately.
+- Completed a review and follow-up safety pass on the uncommitted performance work:
+  - Delete-target equal-value short-circuiting now compares against rendered state before skipping the React update. Marquee preview and canvas focus can update the immediate ref without leaving the rendered target stuck on an old layer, so Delete cannot accidentally remove that stale layer after selecting shots.
+  - `focusShotForCanvas` no longer writes `deleteTargetRef` before calling the synchronized setter.
+  - bitmap Blur, Brush/Eraser stroke, Select transform, and Fill still reuse one PNG read for source pixels plus Undo, but a rejected read now aborts the edit. Only a successful `undefined` result means the asset is genuinely missing; permission, disk, or IPC failures cannot be converted into an empty layer or a destructive Undo snapshot.
+  - focused regression coverage verifies that a read failure performs no bitmap write, dirty marking, history recording, or project update.
 - Added the `1.85:1` blank-shot preset (`1998×1080`).
 - Made `Cmd+S` / `Ctrl+S` save globally, including while Action/Dialogue inputs have focus, with repeated-key Save single-flight protection.
 - Added `Z` + pen/mouse horizontal drag zoom while preserving `Z` + wheel, and fixed Space hand pan from Japanese storyboard Picture/Konva canvases.
@@ -59,11 +82,11 @@ Protected Save / Import / TIFF orchestration remains in `electron/main/main.ts`.
 
 ## Verification
 
-Rerun on 2026-07-26 immediately before the handoff commit:
+Rerun on 2026-07-30 during the performance work:
 
 ```bash
 npm run test
-# passed: 171 test files, 834 tests
+# passed after the review fixes: 175 test files, 860 tests
 
 npm run typecheck
 # passed
@@ -73,21 +96,50 @@ npm run check:preload
 
 npm run build
 # passed; only the known non-blocking Vite chunk-size warning remains
+
+npm run smoke:performance
+# synthetic 250-shot single-layer and 130-shot three-layer projects passed:
+# standard editor peak <= 46; Japanese peak <= 10;
+# marquee active/edge RAF p95 <= 9.2ms, active Layout <= 1;
+# active/edge editor churn 0; release tier changes <= 6 per frame;
+# passive layer reads 0, one read per stroke, first ink <= 16.1ms;
+# no pauses >100ms and heap growth <= 1.77%.
+
+STORYBOARD_PERF_FIXTURE=/Users/xiali/Desktop/C23temp \
+STORYBOARD_PERF_ONLY_FIXTURE=1 npm run smoke:performance
+# APFS-cloned C23 130-shot project passed in both views:
+# standard editor peak 46; Japanese peak 10;
+# marquee active RAF p95 9.1ms / 8.4ms, active Layout 1 / 0;
+# active/edge editor churn 0; release tier changes <= 6 per frame;
+# passive layer reads 0, one read per stroke, first ink 11.5ms / 17ms;
+# no pauses >100ms and heap growth <= 3.04%.
+
+npm run smoke:bitmap
+# rerun after the review fixes and passed in full, including drawing/eraser/Select,
+# Undo/Redo, layer actions, DND/marquee/zoom/Onion Skin, Save, reopen, Import,
+# and layered TIFF checks
 ```
 
 There is no `lint` script in `package.json`, so lint was skipped.
 
-`npm run smoke:bitmap` was run from a normal macOS Terminal session after the smoke updates and passed in full. The Codex-managed execution environment may abort Electron during macOS AppKit initialization before the app code runs; this is an environment limitation, not a Storyboard Flow failure.
+The post-review production build also passed. The only build diagnostic remains the known non-blocking Vite renderer chunk-size warning. `git diff --check` passed.
+
+The C23 performance run rewrote paths and drew only inside its `/private/tmp` APFS clone. The desktop source project was not modified, and smoke-owned temporary copies were cleaned after exit. A separate visual-check copy remains at `/private/tmp/storyboard-flow-c23-manual-20260730`.
+
+The optional `STORYBOARD_PERF_LAYER_COUNT=8` destructive fixture does not meet the 33ms scrolling budget with the current full-resolution layer stack. C23 has 122 one-layer shots, seven two-layer shots, and one three-layer shot. Keep the default three-layer pressure gate aligned with current production data; if 8+ layer scenes become common, implement a per-shot flattened proxy/thumbnail cache instead of shrinking the Hot margin.
 
 Earlier focused Electron checks in this same worktree also passed Z-drag zoom, Japanese Space pan, Blur (including masked transparent-layer replacement), Select rotation, and 24-shot zoom anchoring. These are now summarized here instead of keeping several obsolete per-feature verification blocks.
 
 ## Next Work
 
-1. Manually dogfood both matte modes with real production folders:
+1. Continue manual dogfood of Delete / copy-paste / group DND after a 60+ shot marquee selection in both views. Ordinary reverse marquee and final orange-border handoff were visually checked on the C23 temporary clone; Japanese reverse geometry and both views' edge-scroll remain automated.
+   - Include this regression sequence: select a bitmap layer, marquee-select several shots, press Delete, and confirm the selected shots—not the formerly active layer—become pending deletion.
+2. If production scenes begin using 8+ visible full-resolution layers per shot, add a revisioned flattened proxy/thumbnail cache and re-enable the eight-layer fixture as a hard performance gate.
+3. Manually dogfood both matte modes with real production folders:
    - toggle expanded `1080↔1230`;
    - toggle embedded without resizing;
    - verify Add/Import/Pending inherit Matte and Dialogue state;
    - Save, reopen, and inspect layered TIFF dimensions/layers.
-2. Manually verify Z-drag zoom with a real pen tablet and confirm Space pan, Blur, and Select rotation in both board views.
-3. After an explicit push, verify GitHub Actions tester releases, Windows/macOS packages, `update.json`, and the in-app update notice.
-4. Keep Save / Import / TIFF / `.storyboard-workbench` boundaries unchanged unless the user approves a separate migration plan.
+4. Manually verify Z-drag zoom with a real pen tablet and confirm Space pan, Blur, and Select rotation in both board views.
+5. After an explicit push, verify GitHub Actions tester releases, Windows/macOS packages, `update.json`, and the in-app update notice.
+6. Keep Save / Import / TIFF / `.storyboard-workbench` boundaries unchanged unless the user approves a separate migration plan.
