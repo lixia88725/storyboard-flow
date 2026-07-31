@@ -419,13 +419,15 @@ export const addImportedImages = (project: Project, images: ImportedImage[]): Pr
 export const addGeneratedShot = (
   project: Project,
   image: ImportedImage,
-  selectedShotId?: string
+  selectedShotId?: string,
+  placement: ShotPlacement = "after"
 ): Project => {
   const ordered = sortedShots(project.shots);
   const selectedIndex = selectedShotId
     ? ordered.findIndex((shot) => shot.id === selectedShotId)
     : -1;
-  const insertIndex = selectedIndex === -1 ? ordered.length : selectedIndex + 1;
+  const insertIndex =
+    selectedIndex === -1 ? ordered.length : placement === "after" ? selectedIndex + 1 : selectedIndex;
   const shotId = crypto.randomUUID();
   const width = image.width ?? 1920;
   const height = image.height ?? 1080;

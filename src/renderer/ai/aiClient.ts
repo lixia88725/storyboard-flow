@@ -19,6 +19,11 @@ export const createWindowAiClient = (storyboardApi: StoryboardApi): AiDraftClien
     storyboardApi.ai.updateResourceMetadata(folderPath, metadata),
   generateCandidate: (payload) => storyboardApi.ai.generateCandidate(payload),
   generateBatchCandidates: (payload) => storyboardApi.ai.generateBatchCandidates(payload),
+  listCandidates: (folderPath) => storyboardApi.ai.listCandidates(folderPath),
+  promoteCandidateToShot: (folderPath, candidateId) =>
+    storyboardApi.ai.promoteCandidateToShot(folderPath, candidateId),
+  rollbackPromotedCandidateShot: (folderPath, imagePath) =>
+    storyboardApi.ai.rollbackPromotedCandidateShot(folderPath, imagePath),
   copyRequestPreview: (payload) => storyboardApi.ai.copyRequestPreview(payload),
   discardCandidate: (folderPath, candidateId) =>
     storyboardApi.ai.discardCandidate(folderPath, candidateId),

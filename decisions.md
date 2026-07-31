@@ -311,11 +311,17 @@ Reason: JSON remains the transactional app source of truth, while the Markdown f
 
 Reason: 这是从文字分镜到 storyboard 结构的最小可用桥梁。它避免追加、覆盖、合并等高风险选择，也为未来 AI 只输出同类 Markdown 留出清晰边界。
 
-## Parked Shots Are Project State, Not Save Output
+## Pending Is A Visible Managed Workspace, Not Archive
 
-`project.parkedShots` 保存右侧待定区的完整 shot 数据。Parked shots 保留 image/layer assets 并写入 JSON，但不参与 root TIFF Save 输出、文件名同步、Timeline 或 `storyboard-script.md`，直到它们被恢复回 `project.shots`。
+`project.parkedShots` 保存右侧待定区的完整 shot 数据。手动放入 Pending 时，Storyboard Flow 先把当前 bitmap layer 状态物化到对应 TIFF，再把图片移动到项目根目录的可见 `Pending/` 文件夹并更新 shot path；恢复时图片移回项目根目录，最终交付命名仍由 Save 完成。AI candidates 同样把可见 PNG 放在 `Pending/`，内部 candidate metadata 继续留在 `.storyboard-workbench/ai-candidates/`。历史隐藏 AI candidates 和旧 parked shot paths 会迁移到可见 Pending。
 
-Reason: 待定区是创作过程中的临时搁置区，应保留内容但不改变主工作区顺序和交付文件夹输出。
+Pending 图片可由 Finder、Bridge 或其他软件查看和进行像素编辑；应用重新获得焦点时会继续检查 parked TIFF 的外部像素变化。外部改名或移动暂不属于受支持工作流。可见 Pending 文件的明确 Discard 使用系统垃圾箱。Parked shots 仍不参与 root TIFF Save 输出、文件名同步、Timeline 或 `storyboard-script.md`，直到恢复回 `project.shots`。
+
+手动 park/restore 的文件移动和 project JSON 更新使用可恢复事务：移动前写入 `.storyboard-workbench/pending-file-transaction.json`，先持久化更新后的 project JSON，再提交并清除事务记录；项目下次打开时按 JSON 所属关系恢复未完成移动。AI candidate 拖入画板时，新建的 root TIFF 在 shot、bitmap layer 和 project state 全部提交前只是临时文件；后续步骤失败必须删除该 TIFF 并保留原 candidate。
+
+`Archive/` 继续只保存 Import 时保留的原始文件备份，不混入活跃 Pending 素材。Pending 物化是用户明确停车动作产生的临时工作文件，不改变 Save 作为正式 TIFF 输出与最终命名边界。
+
+Reason: 专业影像工作流需要在 Finder/Bridge 中直接看到备用分镜，但活跃素材不能与不可变的 Import 备份混淆。停车前物化当前画面可以避免外部软件看到过期 TIFF；可回滚移动、稳定内部 metadata 和 Save 最终命名共同保护项目文件。
 
 ## Option / Alt Drag Copy Is Retired
 

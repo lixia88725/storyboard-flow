@@ -86,7 +86,12 @@ export const checkExternalChanges = async <TProject extends CheckExternalChanges
   );
   const knownChangedImagePaths = await changedKnownImagePaths(
     payload.project,
-    imagePaths,
+    [
+      ...imagePaths,
+      ...(parkedShots ?? [])
+        .map((shot) => shot.imagePath)
+        .filter((imagePath) => !imagePaths.includes(imagePath))
+    ],
     pendingDeletedPaths,
     reportProgress
   );

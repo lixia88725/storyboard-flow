@@ -1,5 +1,12 @@
 import type { AiIpcHandlers } from "../ipc/aiHandlers.js";
-import { applyAiCandidateAsLayer, discardAiCandidate } from "./candidates.js";
+import {
+  applyAiCandidateAsLayer,
+  discardAiCandidate,
+  listAiCandidates,
+  promoteAiCandidateToShot,
+  rollbackPromotedAiCandidateShot
+} from "./candidates.js";
+import { previewRootForFolder } from "../previewPaths.js";
 import { createComfyUiImageProvider } from "./comfyUiImageProvider.js";
 import { validateComfyUiServerUrl, validateComfyUiWorkflow } from "./comfyUiWorkflow.js";
 import {
@@ -34,7 +41,20 @@ export type AiAppHandlersOptions = {
   aiCredentialStore: () => AiCredentialStore;
   aiSettingsStore: () => AiSettingsStore;
   clipboardWriteText: (text: string) => void;
+  createImageRecords: (
+    imagePaths: string[],
+    previewRoot: string
+  ) => Promise<Array<{
+    imagePath: string;
+    previewPath?: string;
+    fileName: string;
+    width?: number;
+    height?: number;
+    fingerprint?: string;
+    swbMetadata?: unknown;
+  }>>;
   fetchComfyUiConnection?: FetchComfyUiConnection;
+  trashItem: (filePath: string) => Promise<void>;
 };
 
 export const testComfyUiConnection = async (
@@ -54,7 +74,9 @@ export const createAiAppHandlers = ({
   aiCredentialStore,
   aiSettingsStore,
   clipboardWriteText,
-  fetchComfyUiConnection = fetch
+  createImageRecords,
+  fetchComfyUiConnection = fetch,
+  trashItem
 }: AiAppHandlersOptions): AiIpcHandlers =>
   createAiMainHandlers({
     aiCredentialStore,
@@ -68,11 +90,27 @@ export const createAiAppHandlers = ({
     createOpenAiImageProvider,
     createSeedreamImageProvider,
     deleteAiResourceFile,
-    discardAiCandidate,
+    discardAiCandidate: (folderPath, candidateId) =>
+      discardAiCandidate(folderPath, candidateId, { trashItem }),
     generateAiBatchCandidates,
     generateAiCandidate,
     importAiResourceFiles,
+    listAiCandidates,
     listAiResources,
+    promoteAiCandidateToShot: async (folderPath, candidateId) => {
+      const imagePath = await promoteAiCandidateToShot(folderPath, candidateId);
+      try {
+        const [image] = await createImageRecords([imagePath], previewRootForFolder(folderPath));
+        if (!image) {
+          throw new Error("Could not read promoted AI Draft shot");
+        }
+        return image;
+      } catch (error) {
+        await rollbackPromotedAiCandidateShot(folderPath, imagePath);
+        throw error;
+      }
+    },
+    rollbackPromotedCandidateShot: rollbackPromotedAiCandidateShot,
     readAiCredentialStatus,
     readAiSettings,
     readOpenAiApiKey,

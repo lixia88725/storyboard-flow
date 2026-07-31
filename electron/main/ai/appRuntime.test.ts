@@ -71,7 +71,9 @@ describe("createAiAppHandlers", () => {
       aiCredentialStore: () => credentialStore,
       aiSettingsStore: () => settingsStore,
       clipboardWriteText: vi.fn(),
-      fetchComfyUiConnection
+      createImageRecords: vi.fn(async () => []),
+      fetchComfyUiConnection,
+      trashItem: vi.fn(async () => undefined)
     });
 
     await expect(handlers.testComfyUiConnection("http://127.0.0.1:8188")).resolves.toEqual({

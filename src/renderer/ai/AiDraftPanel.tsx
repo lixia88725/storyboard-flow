@@ -21,7 +21,7 @@ import {
 } from "./aiSettingsState";
 import { windowAiClient, type AiDraftClient } from "./aiClient";
 import { useAiDraftController } from "./useAiDraftController";
-import { useAiCandidateController } from "./useAiCandidateController";
+import { useAiCandidateController, type AiCandidate } from "./useAiCandidateController";
 import { useAiBatchGenerationController } from "./useAiBatchGenerationController";
 import { useAiResourcesController } from "./useAiResourcesController";
 import { AiCandidateSection } from "./AiCandidateSection";
@@ -37,6 +37,8 @@ type AiDraftPanelProps = {
   folderPath: string;
   project: Project;
   selectedShotIds: string[];
+  onCandidatesDiscarded?: (candidateIds: string[]) => void;
+  onCandidatesGenerated?: (candidates: AiCandidate[]) => void;
   onProjectChange: (project: Project, status: string) => void;
   client?: AiDraftClient;
 };
@@ -56,6 +58,8 @@ export const AiDraftPanel = ({
   folderPath,
   project,
   selectedShotIds,
+  onCandidatesDiscarded,
+  onCandidatesGenerated,
   onProjectChange,
   client
 }: AiDraftPanelProps) => {
@@ -137,6 +141,8 @@ export const AiDraftPanel = ({
     selection,
     setIsGenerating,
     setStatus,
+    onCandidatesDiscarded,
+    onCandidatesGenerated,
     onProjectChange
   });
   const {
@@ -162,6 +168,8 @@ export const AiDraftPanel = ({
     selection,
     setIsGenerating,
     setStatus,
+    onCandidatesDiscarded,
+    onCandidatesGenerated,
     onProjectChange
   });
   const visibleStatus = visibleAiStatusMessage(status);

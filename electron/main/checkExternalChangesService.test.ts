@@ -12,7 +12,7 @@ const project: CheckExternalChangesProject = {
   ],
   parkedShots: [
     {
-      imagePath: "/project/parked.tiff"
+      imagePath: "/project/Pending/parked.tiff"
     }
   ],
   pendingDeletedShots: [
@@ -27,7 +27,6 @@ describe("checkExternalChanges", () => {
     const reportProgress = vi.fn();
     const collectImagePaths = vi.fn(async () => [
       "/project/known.tiff",
-      "/project/parked.tiff",
       "/project/deleted.tiff",
       "/project/new.tiff"
     ]);
@@ -66,15 +65,15 @@ describe("checkExternalChanges", () => {
       kind: "open",
       label: "Checking external changes...",
       current: 0,
-      total: 4
+      total: 3
     });
     expect(changedKnownImagePaths).toHaveBeenCalledWith(
       project,
       [
         "/project/known.tiff",
-        "/project/parked.tiff",
         "/project/deleted.tiff",
-        "/project/new.tiff"
+        "/project/new.tiff",
+        "/project/Pending/parked.tiff"
       ],
       new Set(["/project/deleted.tiff"]),
       reportProgress

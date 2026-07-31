@@ -2,8 +2,10 @@
 
 ## P1
 
-- [ ] Manual dogfood single-shot AI Draft generation with OpenAI, Seedream, and ComfyUI: set provider credentials/settings from the GUI, generate one candidate, Apply as an `AI Draft` layer, Discard, and copy request preview.
-- [ ] Manual dogfood batch AI generation: select 5+ and 19+ shots, confirm batch size `1 / 4 / 16`, per-shot resource availability, crop-back candidates, Apply All, and Discard All.
+- [ ] Manual dogfood single-shot AI Draft generation with OpenAI, Seedream, and ComfyUI: generate repeatedly, Retry, Apply as an `AI Draft` layer, Discard, switch shot/sidebar/focus, reopen the project, and confirm all successful candidates remain in Pending until explicitly removed.
+- [ ] Manual dogfood batch AI generation: select 5+ and 19+ shots, confirm batch size `1 / 4 / 16`, per-shot resource availability, partial-failure behavior, crop-back candidates, Apply All, Discard All, and Pending persistence after reopen.
+- [ ] Manual dogfood visible Pending with Finder/Bridge: park dirty single- and multi-layer storyboards, confirm current pixels appear under project-root `Pending/`, edit parked TIFF pixels externally, restore to both board views, drag AI candidates before/after and into an empty board in both views, Save/reopen, and confirm external rename/move remains explicitly unsupported.
+- [ ] Manual dogfood Pending crash recovery on a disposable project by force-quitting around park and restore, then reopening and confirming project JSON and file location agree without duplicate or lost files.
 - [ ] Manual dogfood AI Resources: drag images into the AI panel, edit role/note in single-shot mode, delete resources, and confirm per-shot exclusions persist after project reload.
 - [ ] Manual dogfood board navigation: normal mouse wheel scrolls vertically, `Z` + mouse wheel and `Z` + pen/mouse horizontal drag keep the pointed detail inside a selected Picture stable without drawing/selecting, Space hand pan works from Picture/Konva canvases in both storyboard modes, can reveal an open layer drawer without unrelated empty horizontal space, and AI/Pending sidebars still behave normally.
 - [ ] Manual dogfood Blur in storyboard and Japanese storyboard modes: set `1–50px`, Apply to Image and paint layers, Undo/Redo, and confirm hidden/locked layers cannot be modified.
@@ -38,21 +40,8 @@
 
 ## Completed Summary
 
-- [x] Dense marquee feedback now uses one clipped Canvas instead of per-card classes or dynamic SVG geometry; pointer-down caches all geometry, active drag avoids repeated viewport measurement, media tier publication freezes during edge-scroll, and release reconciles at most six tier changes per frame. Synthetic 250/130-shot and APFS-cloned C23 performance smokes pass in both views with 0 active editor churn and 0–1 active Layout.
-- [x] Large-board interaction performance now separates one-viewport Warm base-image preparation from a 25%-viewport Hot `SketchPad` range in both storyboard views, while preserving card/row layout and active-interaction pinning. Direct validated layer URLs, per-shot revisions, stable selection/render props, RAF cursor/strokes, and one layer read per edit remain in place. Default performance smoke covers 250-shot single-layer, 130-shot three-layer, and optional APFS-cloned real projects with media tiers, editor churn, visible decode readiness, scrolling, selection, first ink, passive reads, and heap stability.
-- [x] Updated bitmap smoke coverage for the Japanese storyboard UI: Action text checks the Japanese storyboard Action field instead of the retired card-back textarea, Import help checks current copy, and the smoke returns to the standard board before card-origin marquee coverage. `npm run smoke:bitmap` passed in a normal macOS Terminal session.
-- [x] Scene-wide Matte and Dialogue controls are reversible bitmap transactions. Expanded mode adds/removes `75px` above and below; embedded mode preserves dimensions. Add/Import/Pending inherit both switches, asset operations serialize with Save/autosave/bitmap writes, and rollback failures enter recovery-required state.
-- [x] The left ToolRail now includes Blur directly below Select, with a transient `1–50px` Gaussian radius, current-layer Apply, selection-mask compositing, bitmap history/Undo support, and locked/hidden layer protection.
-- [x] Bitmap Select now supports Photoshop-style center rotation from an external transform handle, with live preview and bitmap history/Undo through the existing active-layer transform path.
-- [x] Storyboard zoom now anchors the selected Picture center or pointed detail across normal-grid column reflow and Japanese-row resizing; native scroll compensation preserves the focus where possible and keeps boundary-clamped anchors inside the board viewport without translating content under fixed tools.
-- [x] Storyboard Flow has the V1 local-first storyboard workflow: scene-folder projects, bitmap layers, Save/Import safety, Photoshop layered TIFF exchange, script Markdown sync, parking shelf, Copy/Paste, Merge, selection, animation/onion skin, and smoke coverage.
-- [x] GitHub Actions publishes tester releases from `main` to `lixia88725/storyboard-flow-releases`, including Windows portable zip, macOS Apple Silicon zip, and `update.json`.
-- [x] AI Draft MVP supports GUI-only OpenAI / Seedream / local ComfyUI settings, request preview copy, single-shot candidates, batch 4-up/remainder candidates, AI Resources, and candidate-first Apply.
-- [x] Architecture cleanup established focused renderer controllers, Electron runtime/service modules, CSS feature modules, preload sync checks, and AI controller/client boundaries.
-- [x] Product naming is `Storyboard Flow`; `Storyboard Workbench` remains legacy/internal compatibility only.
-- [x] Import-required warning UI and Save button state were polished without changing Save / Import / TIFF / `.storyboard-workbench` data behavior.
-- [x] The legacy per-shot Script face was replaced by a board-level Japanese storyboard sheet with drawing, Action/Dialogue editing, shared selection/DND, zoom, and animation-mode handoff.
-- [x] Drawing and navigation now include eyedropper, temporary eyedropper/eraser shortcuts, brush/eraser cursor rings, `Z` + wheel zoom, `Z` + pen/mouse horizontal drag zoom, Space hand pan across both storyboard modes, radial menu edit mode, and `9:16 Phone` blank shot preset.
+- [x] Visible Pending now stores recoverable manual parked TIFFs and persistent AI PNG candidates in project-root `Pending/`; AI candidates survive panel/project changes and can move into either storyboard view with rollback on failure.
+- [x] Stable V1 baseline includes local scene projects, bitmap layers, Save/Import safety, Photoshop TIFF exchange, script sync, both storyboard views, drawing/editing, animation/onion skin, AI Draft, and focused smoke coverage. Older per-feature completion notes are preserved by Git history instead of this active TODO.
 
 ## Out Of Scope For Current Scope
 

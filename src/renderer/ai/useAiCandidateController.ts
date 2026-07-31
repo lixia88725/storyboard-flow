@@ -28,6 +28,8 @@ export const useAiCandidateController = ({
   selection,
   setIsGenerating,
   setStatus,
+  onCandidatesDiscarded,
+  onCandidatesGenerated,
   onProjectChange
 }: {
   aiClient: AiDraftClient;
@@ -39,6 +41,8 @@ export const useAiCandidateController = ({
   selection: AiPanelSelectionState;
   setIsGenerating: (isGenerating: boolean) => void;
   setStatus: (status: string) => void;
+  onCandidatesDiscarded?: (candidateIds: string[]) => void;
+  onCandidatesGenerated?: (candidates: AiCandidate[]) => void;
   onProjectChange: (project: Project, status: string) => void;
 }) => {
   const [candidate, setCandidate] = useState<AiCandidate | undefined>();
@@ -67,6 +71,7 @@ export const useAiCandidateController = ({
         generationSettings
       });
       setCandidate(nextCandidate);
+      onCandidatesGenerated?.([nextCandidate]);
       setStatus("AI candidate ready");
     } catch (error) {
       setStatus(`AI generation failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -97,9 +102,16 @@ export const useAiCandidateController = ({
     if (!candidate) {
       return;
     }
-    await aiClient.discardCandidate(folderPath, candidate.id).catch(() => undefined);
-    setCandidate(undefined);
-    setStatus("AI candidate discarded");
+    try {
+      await aiClient.discardCandidate(folderPath, candidate.id);
+      onCandidatesDiscarded?.([candidate.id]);
+      setCandidate(undefined);
+      setStatus("AI candidate discarded");
+    } catch (error) {
+      setStatus(
+        `Could not discard AI candidate: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   };
 
   const applyCandidate = async () => {

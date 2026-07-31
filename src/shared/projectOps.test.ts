@@ -2439,6 +2439,25 @@ describe("project operations", () => {
     ]);
   });
 
+  it("inserts a generated shot before the drop target", () => {
+    const updated = addGeneratedShot(
+      makeProject(),
+      {
+        imagePath: "/tmp/ai_draft.tiff",
+        fileName: "ai_draft.tiff"
+      },
+      "shot-b",
+      "before"
+    );
+
+    expect(updated.shots.map((shot) => shot.fileName)).toEqual([
+      "a.png",
+      "ai_draft.tiff",
+      "b.png",
+      "c.png"
+    ]);
+  });
+
   it("defaults generated blank shots to a white Image layer with a selected transparent Drawing layer", () => {
     const updated = addGeneratedShot(createEmptyProject(), {
       imagePath: "/tmp/new_shot.tiff",

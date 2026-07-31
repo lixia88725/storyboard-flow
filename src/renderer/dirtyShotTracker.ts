@@ -23,11 +23,18 @@ export const createDirtyShotTracker = <Project extends DirtyShotProject>({
     markShotsDirty(projectRef.current.shots.map((shot) => shot.id));
   };
 
+  const clearShotsDirty = (shotIds: string[]) => {
+    for (const shotId of shotIds) {
+      dirtyShotIdsRef.current.delete(shotId);
+    }
+  };
+
   const resetDirtyShots = () => {
     dirtyShotIdsRef.current = new Set();
   };
 
   return {
+    clearShotsDirty,
     dirtyShotIds,
     markAllShotsDirty,
     markShotsDirty,

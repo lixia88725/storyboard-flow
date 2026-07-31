@@ -61,7 +61,10 @@ export type AiMainHandlersDependencies = {
   generateAiBatchCandidates: (input: GenerateAiBatchCandidatesInput) => unknown;
   generateAiCandidate: (input: GenerateAiCandidateInput) => unknown;
   importAiResourceFiles: (folderPath: string, sourceFilePaths: string[]) => unknown;
+  listAiCandidates: (folderPath: string) => unknown;
   listAiResources: (folderPath: string) => unknown;
+  promoteAiCandidateToShot: (folderPath: string, candidateId: string) => unknown;
+  rollbackPromotedCandidateShot: (folderPath: string, imagePath: string) => unknown;
   readAiCredentialStatus: (store: AiCredentialStore) => Promise<unknown>;
   readAiSettings: (store: AiSettingsStore) => Promise<{ comfyUi: ComfyUiSettings }>;
   readOpenAiApiKey: (store: AiCredentialStore) => Promise<string | undefined>;
@@ -152,6 +155,9 @@ export const createAiMainHandlers = (dependencies: AiMainHandlersDependencies): 
         provider: await createAiImageProvider(providerName)
       });
     },
+    listCandidates: dependencies.listAiCandidates,
+    promoteCandidateToShot: dependencies.promoteAiCandidateToShot,
+    rollbackPromotedCandidateShot: dependencies.rollbackPromotedCandidateShot,
     copyRequestPreview: async (payload) => {
       const typedPayload = payload as AiRequestPreviewPayload;
       const providerName = typedPayload.generationSettings?.provider ?? "openai";

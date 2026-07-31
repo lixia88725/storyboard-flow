@@ -102,7 +102,13 @@ import { createWorkspacePersistenceAppHandlers } from "./workspacePersistenceApp
 import { createWorkspaceScriptAppHandlers } from "./workspaceScriptAppRuntime.js";
 import { createWorkspaceFolderScanner } from "./workspaceScanService.js";
 import { createWorkspaceWatchAppHandlers } from "./workspaceWatchAppRuntime.js";
+import { createWorkspacePendingAppHandlers } from "./workspacePendingAppRuntime.js";
+import {
+  beginPendingFileTransaction,
+  recoverPendingFileTransaction
+} from "./pendingFileTransactionService.js";
 import { createAiAppHandlers } from "./ai/appRuntime.js";
+import { registerWorkspacePendingIpcHandlers } from "./ipc/workspacePendingHandlers.js";
 import { registerAiIpcHandlers } from "./ipc/aiHandlers.js";
 import { registerAppIpcHandlers } from "./ipc/appHandlers.js";
 import { registerImageIpcHandlers } from "./ipc/imageHandlers.js";
@@ -523,6 +529,27 @@ const registerIpcHandlers = () => {
 
   registerWorkspaceAssetIpcHandlers(ipcMain, createWorkspaceAssetAppHandlers({ uniquePath }));
 
+  registerWorkspacePendingIpcHandlers(
+    ipcMain,
+    createWorkspacePendingAppHandlers<Project>({
+      beginTransaction: beginPendingFileTransaction,
+      materializeShots: async (project, folderPath, shotIds) => {
+        const selectedShots = [...project.shots, ...(project.parkedShots ?? [])].filter((shot) =>
+          shotIds.has(shot.id)
+        );
+        const replacements = await writeSwbMetadataToTiffs(
+          { ...project, shots: selectedShots, parkedShots: undefined },
+          folderPath,
+          undefined,
+          { shotIds }
+        );
+        return replacements;
+      },
+      persistProject: writeProjectMetadata,
+      uniquePath
+    })
+  );
+
   registerImageIpcHandlers(ipcMain, createImageAppHandlers({ createImageRecords }));
 
   registerRecentIpcHandlers(
@@ -541,6 +568,16 @@ const registerIpcHandlers = () => {
       aiCredentialStore: userDataRuntime.aiCredentialStore,
       aiSettingsStore: userDataRuntime.aiSettingsStore,
       clipboardWriteText: (text) => clipboard.writeText(text),
+      createImageRecords,
+      trashItem: async (filePath) => {
+        const smokeTrashRoot = process.env.SWB_BITMAP_SMOKE_TRASH_ROOT;
+        if (smokeTrashRoot) {
+          assertPathInsideFolder(smokeTrashRoot, filePath);
+          await unlink(filePath);
+          return;
+        }
+        await shell.trashItem(filePath);
+      },
     })
   );
 
@@ -1761,7 +1798,7 @@ const createImageRecords = async (
   });
 };
 
-const scanFolder = createWorkspaceFolderScanner({
+const scanWorkspaceFolder = createWorkspaceFolderScanner({
   collectImagePaths,
   createImageRecords,
   ensureStoryboardScriptMarkdown,
@@ -1769,6 +1806,16 @@ const scanFolder = createWorkspaceFolderScanner({
   previewRootForFolder,
   readProject
 });
+
+const scanFolder = async (
+  folderPath: string,
+  onProgress?: WorkspaceTaskProgressReporter
+) => {
+  const metadataPath = metadataPathForFolder(folderPath);
+  const project = await readProject(metadataPath);
+  await recoverPendingFileTransaction(folderPath, project);
+  return scanWorkspaceFolder(folderPath, onProgress);
+};
 
 const readSwbMetadata = async (imagePath: string): Promise<SwbImageMetadata | undefined> => {
   const metadata = await sharp(imagePath, sharpSourceOptions).metadata();

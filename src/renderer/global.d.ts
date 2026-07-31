@@ -18,6 +18,16 @@ type WorkspaceTaskProgress = {
 
 type AiProviderName = "openai" | "seedream" | "comfyui";
 type AiBatchSize = 1 | 4 | 16;
+type AiCandidateMetadata = {
+  id: string;
+  shotId: string;
+  bitmapPath: string;
+  filePath: string;
+  width: number;
+  height: number;
+  prompt: string;
+  createdAt: string;
+};
 
 type ComfyUiSettings = {
   serverUrl: string;
@@ -107,6 +117,24 @@ declare global {
         fileName: string;
         previewPath: string;
       }>;
+      moveShotsToPending: (
+        payload: WorkspacePayload,
+        shotIds: string[]
+      ) => Promise<Array<{
+        shotId: string;
+        imagePath: string;
+        fileName: string;
+        baseFingerprint?: string;
+      }>>;
+      restoreShotsFromPending: (
+        payload: WorkspacePayload,
+        shotIds: string[]
+      ) => Promise<Array<{
+        shotId: string;
+        imagePath: string;
+        fileName: string;
+        baseFingerprint?: string;
+      }>>;
       mergeLayerDown: (payload: {
         folderPath: string;
         sourceBitmapPath: string;
@@ -255,6 +283,15 @@ declare global {
             createdAt: string;
           }>;
         }>;
+        listCandidates: (folderPath: string) => Promise<AiCandidateMetadata[]>;
+        promoteCandidateToShot: (
+          folderPath: string,
+          candidateId: string
+        ) => Promise<ImportedImage>;
+        rollbackPromotedCandidateShot: (
+          folderPath: string,
+          imagePath: string
+        ) => Promise<void>;
         copyRequestPreview: (payload: {
           folderPath: string;
           project: Project;

@@ -45,7 +45,12 @@ export const storyboardInsertionDragRequest = ({
   lastPointer: PointerPosition | undefined;
   selectedShotIds: string[];
 }): InsertionDragRequest => {
-  if ((activeData?.type !== "shot" && activeData?.type !== "parked-shot") || isAnimationMode) {
+  if (
+    (activeData?.type !== "shot" &&
+      activeData?.type !== "parked-shot" &&
+      activeData?.type !== "ai-candidate") ||
+    isAnimationMode
+  ) {
     return { type: "reset" };
   }
 
@@ -54,7 +59,10 @@ export const storyboardInsertionDragRequest = ({
     return { type: "clear" };
   }
 
-  if (activeData.type === "parked-shot" && !isPointerInsideBoard) {
+  if (
+    (activeData.type === "parked-shot" || activeData.type === "ai-candidate") &&
+    !isPointerInsideBoard
+  ) {
     return { type: "clear" };
   }
 

@@ -17,7 +17,10 @@ const createDependencies = () => ({
   generateAiBatchCandidates: vi.fn(async (payload) => ({ batch: payload })),
   generateAiCandidate: vi.fn(async (payload) => ({ candidate: payload })),
   importAiResourceFiles: vi.fn(),
+  listAiCandidates: vi.fn(async () => []),
   listAiResources: vi.fn(),
+  promoteAiCandidateToShot: vi.fn(async () => ({ fileName: "ai.tiff" })),
+  rollbackPromotedCandidateShot: vi.fn(async () => undefined),
   readAiCredentialStatus: vi.fn(async () => ({
     hasOpenAiApiKey: true,
     hasSeedreamApiKey: false
@@ -101,5 +104,24 @@ describe("createAiMainHandlers", () => {
       })
     );
     expect(deps.clipboardWriteText).toHaveBeenCalledWith("preview text");
+  });
+
+  it("delegates candidate listing and promotion", async () => {
+    const deps = createDependencies();
+    const handlers = createAiMainHandlers(deps);
+
+    await handlers.listCandidates("/project");
+    await handlers.promoteCandidateToShot("/project", "candidate-a");
+    await handlers.rollbackPromotedCandidateShot("/project", "/project/ai_draft_1_0.tiff");
+
+    expect(deps.listAiCandidates).toHaveBeenCalledWith("/project");
+    expect(deps.promoteAiCandidateToShot).toHaveBeenCalledWith(
+      "/project",
+      "candidate-a"
+    );
+    expect(deps.rollbackPromotedCandidateShot).toHaveBeenCalledWith(
+      "/project",
+      "/project/ai_draft_1_0.tiff"
+    );
   });
 });

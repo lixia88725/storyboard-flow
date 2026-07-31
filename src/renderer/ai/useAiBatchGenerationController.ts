@@ -73,6 +73,8 @@ export const useAiBatchGenerationController = ({
   selection,
   setIsGenerating,
   setStatus,
+  onCandidatesDiscarded,
+  onCandidatesGenerated,
   onProjectChange
 }: {
   aiClient: AiDraftClient;
@@ -87,6 +89,8 @@ export const useAiBatchGenerationController = ({
   selection: AiPanelSelectionState;
   setIsGenerating: (isGenerating: boolean) => void;
   setStatus: (status: string) => void;
+  onCandidatesDiscarded?: (candidateIds: string[]) => void;
+  onCandidatesGenerated?: (candidates: AiBatchCandidate[]) => void;
   onProjectChange: (project: Project, status: string) => void;
 }) => {
   const [batchCandidates, setBatchCandidates] = useState<AiBatchCandidate[]>([]);
@@ -123,6 +127,7 @@ export const useAiBatchGenerationController = ({
       }));
       setBatchCandidates(result.candidates);
       setBatchGroups(result.groups);
+      onCandidatesGenerated?.(result.candidates);
       clearSingleCandidate();
       setStatus(aiBatchGenerationReadyStatus(result.candidates, result.groups));
     } catch (error) {
@@ -153,9 +158,26 @@ export const useAiBatchGenerationController = ({
   };
 
   const discardBatchCandidates = async () => {
-    await Promise.all(
-      batchCandidates.map((item) => aiClient.discardCandidate(folderPath, item.id).catch(() => undefined))
-    );
+    const discardedIds: string[] = [];
+    const failures: string[] = [];
+    for (const item of batchCandidates) {
+      try {
+        await aiClient.discardCandidate(folderPath, item.id);
+        discardedIds.push(item.id);
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (discardedIds.length > 0) {
+      onCandidatesDiscarded?.(discardedIds);
+      setBatchCandidates((current) =>
+        current.filter((candidate) => !discardedIds.includes(candidate.id))
+      );
+    }
+    if (failures.length > 0) {
+      setStatus(`Could not discard ${failures.length} AI batch candidate(s): ${failures[0]}`);
+      return;
+    }
     clearBatchCandidates();
     setStatus("AI batch candidates discarded");
   };

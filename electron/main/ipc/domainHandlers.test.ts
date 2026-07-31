@@ -9,6 +9,7 @@ import { registerWorkspaceAssetIpcHandlers } from "./workspaceAssetHandlers";
 import { registerWorkspaceExternalChangesIpcHandlers } from "./workspaceExternalChangesHandlers";
 import { registerWorkspaceOpenIpcHandlers } from "./workspaceOpenHandlers";
 import { registerWorkspacePersistenceIpcHandlers } from "./workspacePersistenceHandlers";
+import { registerWorkspacePendingIpcHandlers } from "./workspacePendingHandlers";
 import { registerWorkspaceScriptIpcHandlers } from "./workspaceScriptHandlers";
 import { registerWorkspaceWatchIpcHandlers } from "./workspaceWatchHandlers";
 
@@ -68,6 +69,8 @@ describe("domain IPC handlers", () => {
     const { ipcMain, handlers } = fakeIpcMain();
     const getSettings = vi.fn(async () => ({ ok: true }));
     const generateCandidate = vi.fn(async (payload) => ({ payload }));
+    const listCandidates = vi.fn(async () => []);
+    const promoteCandidateToShot = vi.fn(async () => ({ fileName: "ai.tiff" }));
 
     registerAiIpcHandlers(ipcMain, {
       getSettings,
@@ -83,6 +86,8 @@ describe("domain IPC handlers", () => {
       updateResourceMetadata: vi.fn(),
       generateCandidate,
       generateBatchCandidates: vi.fn(),
+      listCandidates,
+      promoteCandidateToShot,
       copyRequestPreview: vi.fn(),
       discardCandidate: vi.fn(),
       applyCandidate: vi.fn()
@@ -90,10 +95,16 @@ describe("domain IPC handlers", () => {
 
     expect([...handlers.keys()]).toContain("ai:getSettings");
     expect([...handlers.keys()]).toContain("ai:generateCandidate");
+    expect([...handlers.keys()]).toContain("ai:listCandidates");
+    expect([...handlers.keys()]).toContain("ai:promoteCandidateToShot");
     await expect(handlers.get("ai:getSettings")?.({})).resolves.toEqual({ ok: true });
     await expect(handlers.get("ai:generateCandidate")?.({}, { shotId: "shot-1" })).resolves.toEqual({
       payload: { shotId: "shot-1" }
     });
+    await expect(handlers.get("ai:listCandidates")?.({}, "/project")).resolves.toEqual([]);
+    await expect(
+      handlers.get("ai:promoteCandidateToShot")?.({}, "/project", "candidate-a")
+    ).resolves.toEqual({ fileName: "ai.tiff" });
   });
 
   it("registers layer, settings, recent, and workspace watch IPC channels", () => {
@@ -157,6 +168,29 @@ describe("domain IPC handlers", () => {
       payload: { folderPath: "/project" }
     });
     expect(copyShotAssets).toHaveBeenCalledWith({ folderPath: "/project" });
+  });
+
+  it("registers visible Pending file IPC channels", async () => {
+    const { ipcMain, handlers } = fakeIpcMain();
+    const moveShotsToPending = vi.fn(async (payload, shotIds) => ({ payload, shotIds }));
+    const restoreShotsFromPending = vi.fn(async (payload, shotIds) => ({ payload, shotIds }));
+    const payload = { folderPath: "/project", project: { shots: [] } };
+
+    registerWorkspacePendingIpcHandlers(ipcMain, {
+      moveShotsToPending,
+      restoreShotsFromPending
+    });
+
+    expect([...handlers.keys()].sort()).toEqual([
+      "workspace:moveShotsToPending",
+      "workspace:restoreShotsFromPending"
+    ]);
+    await expect(
+      handlers.get("workspace:moveShotsToPending")?.({}, payload, ["shot-a"])
+    ).resolves.toEqual({ payload, shotIds: ["shot-a"] });
+    await expect(
+      handlers.get("workspace:restoreShotsFromPending")?.({}, payload, ["shot-a"])
+    ).resolves.toEqual({ payload, shotIds: ["shot-a"] });
   });
 
   it("registers workspace open IPC channel and handles missing and existing folders", async () => {

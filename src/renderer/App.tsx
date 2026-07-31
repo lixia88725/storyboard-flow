@@ -75,6 +75,7 @@ import {
 import { ParkingShelf } from "./ParkingShelf";
 import { AiDraftPanel } from "./ai/AiDraftPanel";
 import { applyAiProjectChange } from "./ai/aiProjectChangeController";
+import { useAiPendingCandidates } from "./ai/useAiPendingCandidates";
 import { useBoardViewState } from "./boardViewState";
 import { useStoryboardZoomController } from "./storyboardZoomController";
 import { RadialToolMenu } from "./RadialToolMenu";
@@ -141,6 +142,12 @@ import { useStoryboardDragSessionController } from "./storyboardDragSessionContr
 import { useStoryboardDragEndController } from "./storyboardDragEndController";
 import { createShotSelectionController } from "./shotSelectionController";
 import { useAddShotController } from "./addShotController";
+import { createAiCandidateShotController } from "./aiCandidateShotController";
+import {
+  createPendingShotFileController,
+  projectWithShotFileReferences,
+  shotFileIsInVisiblePending
+} from "./pendingShotFileController";
 import { visibleBoardViewMode, type BoardViewMode } from "./boardViewMode";
 import { useBoardPanController } from "./boardPanController";
 import { useZDragZoomController } from "./zDragZoomController";
@@ -289,6 +296,13 @@ export const App = () => {
     setStatus
   });
   const {
+    addCandidates: addAiPendingCandidates,
+    aiClient,
+    candidates: aiPendingCandidates,
+    discardCandidate: discardAiPendingCandidate,
+    removeCandidateIds: removeAiPendingCandidateIds
+  } = useAiPendingCandidates({ folderPath, setStatus });
+  const {
     toolRadialMenuConfig,
     persistToolRadialMenuConfig
   } = useToolRadialSettingsController({ setStatus });
@@ -341,6 +355,13 @@ export const App = () => {
   );
   const orderedShots = useMemo(() => sortedShots(project.shots), [project.shots]);
   const parkedShots = useMemo(() => sortedShots(project.parkedShots ?? []), [project.parkedShots]);
+  const aiCandidateSourceNames = useMemo(
+    () =>
+      Object.fromEntries(
+        [...orderedShots, ...parkedShots].map((shot) => [shot.id, shot.fileName])
+      ),
+    [orderedShots, parkedShots]
+  );
   const needsImageImport = useMemo(() => projectNeedsSwbImport(project), [project]);
   const needsSwbImport = needsImageImport || scriptImportNeeded;
   const hasSwbWarning = useMemo(() => projectHasSwbWarning(project), [project]) || scriptImportNeeded;
@@ -581,6 +602,7 @@ export const App = () => {
     workspaceSaveState
   });
   const {
+    clearShotsDirty,
     dirtyShotIds,
     markShotsDirty,
     resetDirtyShots: resetTrackedDirtyShots
@@ -1313,6 +1335,31 @@ export const App = () => {
     setWorkspaceTask,
     updateProject
   });
+  const promoteAiCandidateToStoryboard = useStableEvent(
+    createAiCandidateShotController({
+      aiClient,
+      createTransparentLayerDataUrl,
+      folderPath,
+      inheritSceneMatte: (baseProject, mode, shotIds) => {
+        const expectedProject = projectRef.current;
+        return (
+          sceneMatteInheritanceRef.current?.(baseProject, mode, shotIds, {
+            dialogueOverlayEnabled:
+              sceneDialogueOverlayEnabledForProject(expectedProject),
+            expectedProject,
+            markFileNamesUnsynced: true
+          }) ?? Promise.resolve(false)
+        );
+      },
+      markShotsDirty,
+      projectRef,
+      removeCandidateIds: removeAiPendingCandidateIds,
+      selectSingleShot,
+      setStatus,
+      updateProject,
+      writeLayerPng: window.storyboard.writeLayerPng
+    }).promoteCandidateToStoryboard
+  );
 
   const handleImportSwbFormat = async () => {
     if (!window.storyboard) {
@@ -1500,7 +1547,71 @@ export const App = () => {
     setDragPreviewShotIds
   });
 
+  const pendingShotFileController = useMemo(
+    () =>
+      createPendingShotFileController({
+        api: window.storyboard,
+        folderPath,
+        metadataPath
+      }),
+    [folderPath, metadataPath]
+  );
+  const moveShotFilesToPending = useCallback(
+    (currentProject: Project, shotIds: string[]) =>
+      bitmapLayerWriteQueueRef.current.runExclusive(() =>
+        pendingShotFileController.moveShotsToPending(currentProject, shotIds)
+      ),
+    [pendingShotFileController]
+  );
+  const restoreShotFilesFromPending = useCallback(
+    (currentProject: Project, shotIds: string[]) =>
+      bitmapLayerWriteQueueRef.current.runExclusive(() =>
+        pendingShotFileController.restoreShotsFromPending(currentProject, shotIds)
+      ),
+    [pendingShotFileController]
+  );
+
+  useEffect(() => {
+    if (!folderPath || !metadataPath) {
+      return;
+    }
+    const legacyParkedShotIds = (projectRef.current.parkedShots ?? [])
+      .filter((shot) => !shotFileIsInVisiblePending(folderPath, shot.imagePath))
+      .map((shot) => shot.id);
+    if (legacyParkedShotIds.length === 0) {
+      return;
+    }
+
+    const initialProject = projectRef.current;
+    void moveShotFilesToPending(initialProject, legacyParkedShotIds)
+      .then(async (projectWithVisibleFiles) => {
+        if (projectRef.current !== initialProject) {
+          await restoreShotFilesFromPending(
+            projectWithShotFileReferences(
+              projectRef.current,
+              projectWithVisibleFiles,
+              legacyParkedShotIds
+            ),
+            legacyParkedShotIds
+          );
+          return;
+        }
+        updateProject(projectWithVisibleFiles, false, false);
+        clearShotsDirty(legacyParkedShotIds);
+        resetHistoryStacks();
+        setStatus("Existing Pending storyboards moved into the visible Pending folder");
+      })
+      .catch((error) => {
+        setStatus(
+          `Could not migrate existing Pending storyboards: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      });
+  }, [folderPath, metadataPath, moveShotFilesToPending, parkedShots, restoreShotFilesFromPending]);
+
   const { handleDragEnd } = useStoryboardDragEndController({
+    clearShotsDirty,
     flushInsertionTargetsFromDragEnd,
     inheritSceneMatte: (baseProject, mode, shotIds, options) => {
       const expectedProject = projectRef.current;
@@ -1515,9 +1626,15 @@ export const App = () => {
     },
     isDragEndInsideParkingShelf: (event) =>
       dragEndInsideSelector(event, ".parking-shelf.is-open", lastPointerPositionRef.current),
+    isDragEndInsideStoryboard: (event) =>
+      dragEndInsideSelector(event, ".workspace-board-scroll", lastPointerPositionRef.current),
+    moveShotFilesToPending,
     projectRef,
+    promoteAiCandidateToStoryboard,
     queuePasteAnimation,
     resetActiveDragState,
+    resetHistoryStacks,
+    restoreShotFilesFromPending,
     selectedShotIdsRef,
     selectSingleShot,
     setDeleteTarget,
@@ -1526,7 +1643,10 @@ export const App = () => {
   });
 
   const showStoryboardInsertionIndicator = shouldShowStoryboardInsertionIndicator({
-    activeShotCount: activeShotIds.length + activeParkedShotIds.length,
+    activeShotCount:
+      activeShotIds.length +
+      activeParkedShotIds.length +
+      (activeDragType === "ai-candidate" ? 1 : 0),
     hasIndicator: Boolean(storyboardInsertionIndicator)
   });
   const storyboardInsertionIndicatorElement =
@@ -1715,12 +1835,23 @@ export const App = () => {
     isSpacePanActive ? "is-space-pan-active" : ""
   } ${isBoardPanning ? "is-space-panning" : ""}`;
   const parkingShelfElement = (
-    <SortableContext items={parkedShots.map((shot) => `parked-${shot.id}`)} strategy={rectSortingStrategy}>
+    <SortableContext
+      items={[
+        ...aiPendingCandidates.map((candidate) => `ai-candidate-${candidate.id}`),
+        ...parkedShots.map((shot) => `parked-${shot.id}`)
+      ]}
+      strategy={rectSortingStrategy}
+    >
       <ParkingShelf
         shots={parkedShots}
+        aiCandidates={aiPendingCandidates}
+        aiCandidateSourceNames={aiCandidateSourceNames}
         isOpen={isParkingShelfOpen}
         insertionIndicator={activeShotIds.length > 0 ? parkingInsertionIndicator : undefined}
         listRef={parkingListRef}
+        onDiscardAiCandidate={(candidateId) => {
+          void discardAiPendingCandidate(candidateId);
+        }}
       />
     </SortableContext>
   );
@@ -2022,6 +2153,8 @@ export const App = () => {
           folderPath={folderPath}
           project={project}
           selectedShotIds={selectedShotIds}
+          onCandidatesDiscarded={removeAiPendingCandidateIds}
+          onCandidatesGenerated={addAiPendingCandidates}
           onProjectChange={handleAiProjectChange}
         />
       ) : null}

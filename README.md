@@ -55,7 +55,7 @@ Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`
 - 内部状态自动保存到当前文件夹的 `.storyboard-workbench/storyboard.project.json`。
 - 分镜脚本文字同步到根目录 `storyboard-script.md`；软件内编辑会自动写入，外部修改需要点击 `Import` 导入。
 - numbered-list Markdown 文件可创建新的 SWB project：每个列表项变成一张 blank shot，正文写入该 shot 的 `scriptText`。
-- 右侧待定区保存 `parkedShots`，只保存在 JSON 中；待定 shot 不参与 Save 输出、文件名同步、Timeline 或 `storyboard-script.md`。
+- 右侧待定区保存 `parkedShots`。手动停车会先把最新图层物化到 TIFF，再把图片移动到项目根目录可见的 `Pending/`；恢复时移回项目根目录。待定 shot 不参与 Save 输出、文件名同步、Timeline 或 `storyboard-script.md`。
 - `Save` 是唯一会同步真实文件名和写工作 TIFF 像素的操作。
 - 选中 storyboard 后按 Delete/Backspace 会先在软件内移除卡片；点击 `Save` 后对应根目录图片进入系统垃圾箱，不进入 `Archive`。
 
@@ -125,7 +125,7 @@ Option/Alt drag 不再作为复制手势；按住 Option/Alt 拖动 storyboard�
 
 ## AI Draft
 
-AI Draft is an experimental candidate-first image generation flow. It supports GUI-only local provider settings for OpenAI, Seedream, and local ComfyUI. Generated results are stored as candidates first; Apply adds a visible top bitmap layer named `AI Draft`. It does not replace base art and does not change the Save / Import / TIFF filename boundary.
+AI Draft is an experimental candidate-first image generation flow. It supports GUI-only local provider settings for OpenAI, Seedream, and local ComfyUI. Generated PNG candidates are visible in the project-root `Pending/` folder; their internal metadata remains in `.storyboard-workbench/ai-candidates/`. Repeated generations accumulate and survive closing the AI panel or reopening the project. A candidate can be dragged into either storyboard view as a new shot; a successful drop removes that candidate from Pending, while a failed drop keeps it. Apply adds a visible top bitmap layer named `AI Draft` and keeps the Pending candidate. Explicit Discard sends the visible candidate to the system Trash. It does not replace base art and does not change the Save / Import / final TIFF filename boundary.
 
 `AI Resources/` is a visible project folder for reference images. Resource role/note metadata is stored beside the resources, and per-shot availability is stored in project AI metadata as exclusions. Single-shot mode edits resource role/note and shot availability. Multi-shot mode supports batch size `1 / 4 / 16`, uses contact sheets, then crops provider output back into one candidate per selected shot.
 

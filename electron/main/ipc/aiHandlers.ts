@@ -16,6 +16,9 @@ export type AiIpcHandlers = {
   updateResourceMetadata: (folderPath: string, metadata: unknown) => unknown;
   generateCandidate: (payload: unknown) => unknown;
   generateBatchCandidates: (payload: unknown) => unknown;
+  listCandidates: (folderPath: string) => unknown;
+  promoteCandidateToShot: (folderPath: string, candidateId: string) => unknown;
+  rollbackPromotedCandidateShot: (folderPath: string, imagePath: string) => unknown;
   copyRequestPreview: (payload: unknown) => unknown;
   discardCandidate: (folderPath: string, candidateId: string) => unknown;
   applyCandidate: (payload: unknown) => unknown;
@@ -54,6 +57,19 @@ export const registerAiIpcHandlers = (ipcMain: IpcMainLike, handlers: AiIpcHandl
   );
   ipcMain.handle("ai:generateBatchCandidates", async (_event, payload: unknown) =>
     handlers.generateBatchCandidates(payload)
+  );
+  ipcMain.handle("ai:listCandidates", async (_event, folderPath: string) =>
+    handlers.listCandidates(folderPath)
+  );
+  ipcMain.handle(
+    "ai:promoteCandidateToShot",
+    async (_event, folderPath: string, candidateId: string) =>
+      handlers.promoteCandidateToShot(folderPath, candidateId)
+  );
+  ipcMain.handle(
+    "ai:rollbackPromotedCandidateShot",
+    async (_event, folderPath: string, imagePath: string) =>
+      handlers.rollbackPromotedCandidateShot(folderPath, imagePath)
   );
   ipcMain.handle("ai:copyRequestPreview", async (_event, payload: unknown) =>
     handlers.copyRequestPreview(payload)

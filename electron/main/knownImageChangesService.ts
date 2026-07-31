@@ -54,6 +54,11 @@ export const changedKnownImagePaths = async (
         if (knownImageHasExternalChange(shot, fingerprint, metadata)) {
           changed.push(imagePath);
         }
+      } catch (error) {
+        const code = typeof error === "object" && error && "code" in error ? error.code : undefined;
+        if (code !== "ENOENT") {
+          throw error;
+        }
       } finally {
         checked += 1;
         onProgress?.({

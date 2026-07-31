@@ -126,6 +126,13 @@ type AiApplyCandidatePayload = {
   candidateId: string;
 };
 
+type PendingShotFile = {
+  shotId: string;
+  imagePath: string;
+  fileName: string;
+  baseFingerprint?: string;
+};
+
 let readLayerPngCalls = 0;
 
 const api = {
@@ -191,6 +198,10 @@ const api = {
     ipcRenderer.invoke("workspace:copyShotAssets", payload) as Promise<
       CopyShotAssetsPayload & { imagePath: string; fileName: string; previewPath: string }
     >,
+  moveShotsToPending: (payload: ProjectPayload, shotIds: string[]) =>
+    ipcRenderer.invoke("workspace:moveShotsToPending", payload, shotIds) as Promise<PendingShotFile[]>,
+  restoreShotsFromPending: (payload: ProjectPayload, shotIds: string[]) =>
+    ipcRenderer.invoke("workspace:restoreShotsFromPending", payload, shotIds) as Promise<PendingShotFile[]>,
   mergeLayerDown: (payload: MergeLayerDownPayload) =>
     ipcRenderer.invoke("layers:mergeDown", payload) as Promise<MergeLayerDownPayload & { targetFilePath: string }>,
   mergeVisibleLayers: (payload: MergeVisibleLayersPayload) =>
@@ -228,6 +239,12 @@ const api = {
       ipcRenderer.invoke("ai:generateCandidate", payload) as Promise<unknown>,
     generateBatchCandidates: (payload: AiGenerateBatchCandidatesPayload) =>
       ipcRenderer.invoke("ai:generateBatchCandidates", payload) as Promise<unknown>,
+    listCandidates: (folderPath: string) =>
+      ipcRenderer.invoke("ai:listCandidates", folderPath) as Promise<unknown>,
+    promoteCandidateToShot: (folderPath: string, candidateId: string) =>
+      ipcRenderer.invoke("ai:promoteCandidateToShot", folderPath, candidateId) as Promise<unknown>,
+    rollbackPromotedCandidateShot: (folderPath: string, imagePath: string) =>
+      ipcRenderer.invoke("ai:rollbackPromotedCandidateShot", folderPath, imagePath) as Promise<void>,
     copyRequestPreview: (payload: AiRequestPreviewPayload) =>
       ipcRenderer.invoke("ai:copyRequestPreview", payload) as Promise<{ text: string }>,
     discardCandidate: (folderPath: string, candidateId: string) =>

@@ -100,4 +100,18 @@ describe("knownImageChangesService", () => {
     expect(pixelFingerprint).not.toHaveBeenCalled();
     expect(readSwbMetadata).not.toHaveBeenCalled();
   });
+
+  it("skips a known Pending file that was renamed or removed externally", async () => {
+    const missingError = Object.assign(new Error("missing"), { code: "ENOENT" });
+    const pixelFingerprint = vi.fn(async () => {
+      throw missingError;
+    });
+
+    await expect(
+      changedKnownImagePaths(project, ["/project/parked.tif"], new Set(), {
+        pixelFingerprint,
+        readSwbMetadata: vi.fn()
+      })
+    ).resolves.toEqual([]);
+  });
 });

@@ -17,6 +17,7 @@ const mdEmbeddedMatteTargetRoot = path.join(
 const deleteRoot = path.join("/private/tmp", `swb-delete-smoke-${Date.now()}`);
 const clipboardRoot = path.join("/private/tmp", `swb-clipboard-smoke-${Date.now()}`);
 const denseMarqueeRoot = path.join("/private/tmp", `swb-dense-marquee-smoke-${Date.now()}`);
+const aiPendingRoot = path.join("/private/tmp", `swb-ai-pending-smoke-${Date.now()}`);
 const legacyRoot = path.join("/private/tmp", `swb-legacy-smoke-${Date.now()}`);
 const photoshopImportRoot = path.join("/private/tmp", `swb-photoshop-import-${Date.now()}`);
 const savedLayeredImportRoot = path.join("/private/tmp", `swb-saved-layered-import-${Date.now()}`);
@@ -505,6 +506,7 @@ try {
   await mkdir(deleteRoot, { recursive: true });
   await mkdir(clipboardRoot, { recursive: true });
   await mkdir(denseMarqueeRoot, { recursive: true });
+  await mkdir(aiPendingRoot, { recursive: true });
   const originalShotAPath = path.join(smokeRoot, "shot_a.png");
   const originalShotBPath = path.join(smokeRoot, "shot_b.png");
   const originalShotCPath = path.join(smokeRoot, "shot_c.png");
@@ -649,6 +651,7 @@ try {
     cwd: repoRoot,
     env: {
       ...process.env,
+      SWB_BITMAP_SMOKE_TRASH_ROOT: aiPendingRoot,
       SWB_USER_DATA_DIR: electronUserDataRoot,
       SWB_PYTHON_DEPS_DIR: photoshopPythonDepsDir
     },
@@ -678,15 +681,25 @@ try {
     );
 
     await evaluate(`
-    (async () => {
+    (() => {
       const input = document.querySelector('input[aria-label="Folder path"]');
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
       setter.call(input, ${JSON.stringify(folderPath)});
       input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.closest("form").requestSubmit();
       return input.value;
     })()
   `);
+    await waitFor(
+      () =>
+        evaluate(`
+          document.querySelector('input[aria-label="Folder path"]')?.value ===
+            ${JSON.stringify(folderPath)}
+        `),
+      `folder input value for ${folderPath}`
+    );
+    await evaluate(`
+      document.querySelector('input[aria-label="Folder path"]')?.closest("form")?.requestSubmit()
+    `);
 
     await waitFor(
       () =>
@@ -1487,6 +1500,14 @@ try {
 	  await dragStroke(send, parkDrag.startX, parkDrag.startY, parkDrag.endX, parkDrag.endY);
 	  const parkingAfterPark = await waitFor(async () => {
 	    const project = await readProjectMetadata(smokeRoot);
+	    const pendingPaths = project.parkedShots?.map((shot) => shot.imagePath) ?? [];
+	    const pendingFilesVisible =
+	      pendingPaths.length === 2 &&
+	      pendingPaths.every(
+	        (imagePath) =>
+	          path.dirname(imagePath) === path.join(smokeRoot, "Pending")
+	      ) &&
+	      (await Promise.all(pendingPaths.map(fileExists))).every(Boolean);
 	    const shelfOpen = await evaluate(`document.querySelector(".parking-shelf")?.classList.contains("is-open")`);
 	    const boardShotCount = await evaluate(`document.querySelectorAll("[data-shot-id]").length`);
 	    const parkedCardCount = await evaluate(`document.querySelectorAll("[data-parked-shot-id]").length`);
@@ -1496,9 +1517,16 @@ try {
 	      !project.pendingDeletedShots?.length &&
 	      shelfOpen &&
 	      boardShotCount === 1 &&
-	      parkedCardCount === 2
+	      parkedCardCount === 2 &&
+	      pendingFilesVisible
 	    ) {
-	      return { parkedCount: project.parkedShots.length, boardShotCount, parkedCardCount, noPendingDelete: true };
+	      return {
+	        parkedCount: project.parkedShots.length,
+	        boardShotCount,
+	        parkedCardCount,
+	        noPendingDelete: true,
+	        pendingFilesVisible
+	      };
 	    }
 	    throw new Error(JSON.stringify({
 	      shots: project.shots?.length,
@@ -1506,7 +1534,8 @@ try {
 	      pendingDeletedShots: project.pendingDeletedShots?.length ?? 0,
 	      shelfOpen,
 	      boardShotCount,
-	      parkedCardCount
+	      parkedCardCount,
+	      pendingFilesVisible
 	    }));
 	  }, "storyboards parked in right shelf");
 	  await waitFor(async () => {
@@ -1558,10 +1587,21 @@ try {
 	  }, "first parked storyboard restored");
 		  const parkingAfterRestore = await waitFor(async () => {
 		    const project = await readProjectMetadata(smokeRoot);
+		    const remainingPendingPath = project.parkedShots?.[0]?.imagePath;
+		    const restoredPathsAreRootFiles = project.shots?.every(
+		      (shot) => path.dirname(shot.imagePath) === smokeRoot
+		    );
 		    const selectedCount = await evaluate(`document.querySelectorAll(".shot-card.is-selected, .shot-card.is-animation-focus").length`);
 		    return project.shots?.length === 2 &&
-		      project.parkedShots?.length === 1
-		      ? { restoredCount: project.shots.length, remainingParkedCount: project.parkedShots.length, selectedCount }
+		      project.parkedShots?.length === 1 &&
+		      path.dirname(remainingPendingPath) === path.join(smokeRoot, "Pending") &&
+		      restoredPathsAreRootFiles
+		      ? {
+		          restoredCount: project.shots.length,
+		          remainingParkedCount: project.parkedShots.length,
+		          selectedCount,
+		          restoredPathsAreRootFiles
+		        }
 		      : undefined;
 		  }, "parked storyboard restored to board");
 		  const parkingWhilePinnedOpen = {
@@ -1583,7 +1623,13 @@ try {
 		  `).then((restoreDrag) => dragStroke(send, restoreDrag.startX, restoreDrag.startY, restoreDrag.endX, restoreDrag.endY));
 		  await waitFor(async () => {
 		    const project = await readProjectMetadata(smokeRoot);
-		    if (project.shots?.length === 3 && !project.parkedShots?.length) {
+		    const pendingFiles = await readdir(path.join(smokeRoot, "Pending")).catch(() => []);
+		    if (
+		      project.shots?.length === 3 &&
+		      !project.parkedShots?.length &&
+		      project.shots.every((shot) => path.dirname(shot.imagePath) === smokeRoot) &&
+		      !pendingFiles.some((fileName) => /\.(tif|tiff)$/i.test(fileName))
+		    ) {
 		      return project;
 		    }
 		    throw new Error(JSON.stringify({
@@ -3027,7 +3073,7 @@ try {
   );
   const layerListWheelPreservedZoom = await evaluate(`
     (() => {
-      const zoom = document.querySelector('input[type="range"]');
+      const zoom = document.querySelector('.bottom-bar input[type="range"]');
       const list = document.querySelector(".layer-list");
       const before = zoom.value;
       list.dispatchEvent(new WheelEvent("wheel", {
@@ -4112,6 +4158,217 @@ try {
     throw new Error("Legacy stroke migration did not create visible bitmap layer pixels");
   }
 
+  // Scenario: historical AI candidates remain in Pending and can be promoted
+  // into both storyboard views.
+  await showStoryboardBoard(evaluate);
+  await evaluate(`document.querySelector('.bottom-bar input[type="range"]')?.focus()`);
+  await dispatchKey(send, "Home", "Home", 36);
+  await waitFor(
+    () =>
+      evaluate(
+        `document.querySelector(".app-shell")?.classList.contains("is-animation-mode") === false`
+      ),
+    "AI Pending smoke grid mode"
+  );
+  await evaluate(
+    `window.storyboard.createFromStoryboardScript(${JSON.stringify({
+      sourceMarkdownPath: mdBootstrapSourcePath,
+      targetFolderPath: aiPendingRoot,
+      blankShotPreset: "16:9"
+    })})`
+  );
+  await openFolder(aiPendingRoot);
+  const aiPendingSourceProject = await readProjectMetadata(aiPendingRoot);
+  const aiCandidateRoot = path.join(
+    aiPendingRoot,
+    ".storyboard-workbench",
+    "ai-candidates"
+  );
+  await mkdir(aiCandidateRoot, { recursive: true });
+  const aiPendingCandidateIds = [
+    "ai-candidate-standard",
+    "ai-candidate-japanese"
+  ];
+  for (const [index, candidateId] of aiPendingCandidateIds.entries()) {
+    const candidatePath = path.join(aiCandidateRoot, `${candidateId}.png`);
+    await sharp({
+      create: {
+        width: 320,
+        height: 180,
+        channels: 4,
+        background: index === 0 ? "#4b7bec" : "#26de81"
+      }
+    })
+      .png()
+      .toFile(candidatePath);
+    await writeFile(
+      path.join(aiCandidateRoot, `${candidateId}.json`),
+      `${JSON.stringify(
+        {
+          id: candidateId,
+          shotId: aiPendingSourceProject.shots[index]?.id ?? `historical-source-${index}`,
+          bitmapPath: `.storyboard-workbench/ai-candidates/${candidateId}.png`,
+          filePath: candidatePath,
+          width: 320,
+          height: 180,
+          prompt: "AI Pending smoke candidate",
+          createdAt: `2026-07-31T0${index + 1}:00:00.000Z`
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+  }
+  await openFolder(legacyRoot);
+  await openFolder(aiPendingRoot);
+  await showStoryboardBoard(evaluate);
+  await evaluate(`
+    (() => {
+      const shelf = document.querySelector(".parking-shelf");
+      if (!shelf?.classList.contains("is-open")) {
+        document.querySelector('[aria-label="Toggle pending sidebar"]')?.click();
+      }
+      return true;
+    })()
+  `);
+  await waitFor(
+    () =>
+      evaluate(
+        `document.querySelector(".parking-shelf")?.classList.contains("is-open") === true`
+      ),
+    "AI Pending shelf open"
+  );
+  await delay(180);
+  await waitFor(
+    () =>
+      evaluate(`
+        document.querySelectorAll("[data-ai-candidate-id]").length === 2 &&
+        document.querySelector(".parking-panel header strong")?.textContent === "2"
+      `),
+    "historical AI candidates restored in Pending"
+  );
+  const migratedAiCandidateFiles = await readdir(path.join(aiPendingRoot, "Pending"));
+  if (
+    migratedAiCandidateFiles.filter((fileName) => /^AI_.*\.png$/i.test(fileName)).length !== 2 ||
+    (await readdir(aiCandidateRoot)).some((fileName) => fileName.endsWith(".png"))
+  ) {
+    throw new Error(
+      `Historical AI candidates were not migrated to visible Pending: ${JSON.stringify(
+        migratedAiCandidateFiles
+      )}`
+    );
+  }
+
+  const standardCandidateDrag = await evaluate(`
+    (() => {
+      const card = document.querySelector('[data-ai-candidate-id="ai-candidate-standard"]');
+      card?.scrollIntoView({ block: "center" });
+      const source = card?.getBoundingClientRect();
+      const target = document.querySelectorAll("[data-shot-id]")[1]?.getBoundingClientRect();
+      return source && target ? {
+        startX: Math.round(source.left + source.width / 2),
+        startY: Math.round(source.top + source.height / 2),
+        endX: Math.round(target.left + target.width * 0.25),
+        endY: Math.round(target.top + target.height / 2),
+        windowWidth: window.innerWidth,
+        windowHeight: window.innerHeight
+      } : null;
+    })()
+  `);
+  if (!standardCandidateDrag) {
+    throw new Error("Could not measure standard AI candidate drag");
+  }
+  await dragStroke(
+    send,
+    standardCandidateDrag.startX,
+    standardCandidateDrag.startY,
+    standardCandidateDrag.endX,
+    standardCandidateDrag.endY
+  );
+  const aiPendingAfterStandardDrop = await waitFor(async () => {
+    const project = await readProjectMetadata(aiPendingRoot);
+    const uiState = await evaluate(`
+      ({
+        pendingCount: document.querySelectorAll("[data-ai-candidate-id]").length,
+        status: document.querySelector(".status-popover-trigger")?.textContent ??
+          document.querySelector('[role="status"]')?.textContent ??
+          ""
+      })
+    `);
+    const tiffFiles = await findTiffFiles(aiPendingRoot);
+    const pendingCount = uiState.pendingCount;
+    return project.shots?.length === 3 && pendingCount === 1
+      ? { shotCount: project.shots.length, pendingCount }
+      : (() => {
+          throw new Error(
+            JSON.stringify({
+              shotCount: project.shots?.length ?? 0,
+              pendingCount,
+              status: uiState.status,
+              tiffCount: tiffFiles.length,
+              drag: standardCandidateDrag
+            })
+          );
+        })();
+  }, "AI candidate promoted in standard storyboard");
+
+  await showJapaneseStoryboardSheet(evaluate);
+  await waitFor(
+    () => evaluate(`Boolean(document.querySelector(".japanese-storyboard-view"))`),
+    "Japanese storyboard ready for AI candidate"
+  );
+  const japaneseCandidateDrag = await evaluate(`
+    (() => {
+      const card = document.querySelector('[data-ai-candidate-id="ai-candidate-japanese"]');
+      card?.scrollIntoView({ block: "center" });
+      const source = card?.getBoundingClientRect();
+      const target = document.querySelector(".japanese-storyboard-row")?.getBoundingClientRect();
+      return source && target ? {
+        startX: Math.round(source.left + source.width / 2),
+        startY: Math.round(source.top + source.height / 2),
+        endX: Math.round(target.left + target.width / 2),
+        endY: Math.round(target.top + target.height * 0.75)
+      } : null;
+    })()
+  `);
+  if (!japaneseCandidateDrag) {
+    throw new Error("Could not measure Japanese AI candidate drag");
+  }
+  await dragStroke(
+    send,
+    japaneseCandidateDrag.startX,
+    japaneseCandidateDrag.startY,
+    japaneseCandidateDrag.endX,
+    japaneseCandidateDrag.endY
+  );
+  const aiPendingAfterJapaneseDrop = await waitFor(async () => {
+    const project = await readProjectMetadata(aiPendingRoot);
+    const pendingCount = await evaluate(
+      `document.querySelectorAll("[data-ai-candidate-id]").length`
+    );
+    const tiffFiles = await findTiffFiles(aiPendingRoot);
+    return project.shots?.length === 4 && pendingCount === 0 && tiffFiles.length === 4
+      ? { shotCount: project.shots.length, pendingCount, tiffCount: tiffFiles.length }
+      : undefined;
+  }, "AI candidate promoted in Japanese storyboard");
+
+  await openFolder(aiPendingRoot);
+  const aiPendingAfterReopen = await waitFor(async () => {
+    const project = await readProjectMetadata(aiPendingRoot);
+    const pendingCount = await evaluate(
+      `document.querySelectorAll("[data-ai-candidate-id]").length`
+    );
+    return project.shots?.length === 4 && pendingCount === 0
+      ? { shotCount: project.shots.length, pendingCount }
+      : undefined;
+  }, "AI candidate promotion persisted after reopen");
+  const aiPendingChecks = {
+    afterStandardDrop: aiPendingAfterStandardDrop,
+    afterJapaneseDrop: aiPendingAfterJapaneseDrop,
+    afterReopen: aiPendingAfterReopen
+  };
+
   const finalProject = await readProjectMetadata(smokeRoot);
   const layerAssetConsistency = await assertNoUnreferencedLayerAssets(smokeRoot, finalProject);
 
@@ -4235,6 +4492,7 @@ try {
         animationChecks,
         animationAspectRatioChecks,
         addShotUiCount,
+        aiPendingChecks,
         layerAssetConsistency,
         legacyMigration: {
           layerIds: legacyProject.shots[0].layers.map((layer) => layer.id),
@@ -4247,7 +4505,11 @@ try {
     )
   );
 } finally {
-  electronProcess?.kill();
+  if (electronProcess && electronProcess.exitCode === null) {
+    const exited = new Promise((resolve) => electronProcess.once("exit", resolve));
+    electronProcess.kill();
+    await Promise.race([exited, delay(2000)]);
+  }
   await rm(smokeRoot, { recursive: true, force: true });
   await rm(scriptRoot, { recursive: true, force: true });
   await rm(mdBootstrapRoot, { recursive: true, force: true });
@@ -4255,6 +4517,7 @@ try {
   await rm(mdEmbeddedMatteTargetRoot, { recursive: true, force: true });
   await rm(deleteRoot, { recursive: true, force: true });
   await rm(clipboardRoot, { recursive: true, force: true });
+  await rm(aiPendingRoot, { recursive: true, force: true });
   await rm(legacyRoot, { recursive: true, force: true });
   await rm(photoshopImportRoot, { recursive: true, force: true });
   await rm(savedLayeredImportRoot, { recursive: true, force: true });

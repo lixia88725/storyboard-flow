@@ -34,6 +34,10 @@ const api = {
   deleteLayerPng: (payload) => ipcRenderer.invoke("layers:deletePng", payload),
   copyLayerPng: (payload) => ipcRenderer.invoke("layers:copyPng", payload),
   copyShotAssets: (payload) => ipcRenderer.invoke("workspace:copyShotAssets", payload),
+  moveShotsToPending: (payload, shotIds) =>
+    ipcRenderer.invoke("workspace:moveShotsToPending", payload, shotIds),
+  restoreShotsFromPending: (payload, shotIds) =>
+    ipcRenderer.invoke("workspace:restoreShotsFromPending", payload, shotIds),
   mergeLayerDown: (payload) => ipcRenderer.invoke("layers:mergeDown", payload),
   mergeVisibleLayers: (payload) => ipcRenderer.invoke("layers:mergeVisible", payload),
   createBlankShot: (folderPath, options) =>
@@ -57,6 +61,11 @@ const api = {
       ipcRenderer.invoke("ai:updateResourceMetadata", folderPath, metadata),
     generateCandidate: (payload) => ipcRenderer.invoke("ai:generateCandidate", payload),
     generateBatchCandidates: (payload) => ipcRenderer.invoke("ai:generateBatchCandidates", payload),
+    listCandidates: (folderPath) => ipcRenderer.invoke("ai:listCandidates", folderPath),
+    promoteCandidateToShot: (folderPath, candidateId) =>
+      ipcRenderer.invoke("ai:promoteCandidateToShot", folderPath, candidateId),
+    rollbackPromotedCandidateShot: (folderPath, imagePath) =>
+      ipcRenderer.invoke("ai:rollbackPromotedCandidateShot", folderPath, imagePath),
     copyRequestPreview: (payload) => ipcRenderer.invoke("ai:copyRequestPreview", payload),
     discardCandidate: (folderPath, candidateId) =>
       ipcRenderer.invoke("ai:discardCandidate", folderPath, candidateId),
