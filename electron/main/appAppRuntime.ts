@@ -14,7 +14,7 @@ type DestroyableWindow = {
 };
 
 const defaultUpdateManifestUrl =
-  "https://raw.githubusercontent.com/lixia88725/storyboard-flow-releases/main/update.json";
+  "https://raw.githubusercontent.com/lixia88725/storyboard-flow/updates/update.json";
 
 export type AppAppRuntimeOptions<Sender, Owner> = {
   arch: string;

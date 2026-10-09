@@ -99,10 +99,13 @@ run("/usr/libexec/PlistBuddy", [
   path.join(appDir, "Contents", "Info.plist")
 ]);
 
+await cp(path.join(repoRoot, "node_modules", "electron", "LICENSE"), path.join(appResources, "LICENSE"));
+await cp(path.join(repoRoot, "node_modules", "electron", "dist", "LICENSES.chromium.html"), path.join(appResources, "LICENSES.chromium.html"));
 await mkdir(path.join(packagedAppRoot, "electron", "preload"), { recursive: true });
 await mkdir(path.join(packagedAppRoot, "scripts"), { recursive: true });
 await mkdir(path.join(packagedAppRoot, "node_modules", "@img"), { recursive: true });
 
+await cp(path.join(repoRoot, "LICENSE"), path.join(packagedAppRoot, "LICENSE"));
 await cp(path.join(repoRoot, "dist"), path.join(packagedAppRoot, "dist"), { recursive: true });
 await cp(path.join(repoRoot, "dist-electron"), path.join(packagedAppRoot, "dist-electron"), {
   recursive: true
@@ -136,6 +139,7 @@ await writeFile(
       productName: "Storyboard Flow",
       version: packageVersion,
       private: true,
+      license: "MIT",
       type: "module",
       main: "dist-electron/main/main.js",
       dependencies: {
