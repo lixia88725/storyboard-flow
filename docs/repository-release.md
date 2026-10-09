@@ -84,6 +84,13 @@ or a claim that LGPL libraries have become MIT. Paid signing/notarization is not
 
 ## Self-verification evidence
 
+First hosted run `37945612058` at `099cdb20e0b48f8a22427e4500abcf88f2cd47e7`
+failed on Ubuntu: two unchanged baseline assertions assumed macOS shortcut labels
+and macOS native image rounding (900 tests passed, 2 failed). The same two files
+passed all 26 tests on local macOS. The workflow now restores the original full-suite
+macOS runner; no product code or assertions were weakened. Linux is not a supported
+delivery platform for this task. Windows native packaging remains independently required.
+
 Final local evidence is under `node_modules/.cache/repository-verification/` in this
 isolated worktree (ignored execution logs, not public repository material).
 Environment: macOS arm64, Node 26.8.2, local system Python 3.9; hosted workflow pins
