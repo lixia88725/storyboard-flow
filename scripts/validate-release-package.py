@@ -51,10 +51,17 @@ def validate_package(zip_path, version, license_bytes):
             raise ValueError("Corrupt ZIP member: " + bad)
 
 
-if __name__ == "__main__":
-    expected = os.environ["EXPECTED_ASSET"]
-    matches = list(Path(os.environ["STORYBOARD_FLOW_PACKAGE_DIR"]).rglob("*.zip"))
+def find_release_package(directory, expected):
+    # Embedded Python distributions contain their own ZIPs; only named release
+    # outputs belong to the delivery boundary, not archives inside the app.
+    matches = list(Path(directory).rglob("Storyboard-Flow-*.zip"))
     if len(matches) != 1 or matches[0].name != expected:
         raise ValueError("Expected exactly one platform ZIP")
-    validate_package(matches[0], os.environ["STORYBOARD_FLOW_VERSION"], Path("LICENSE").read_bytes())
+    return matches[0]
+
+
+if __name__ == "__main__":
+    expected = os.environ["EXPECTED_ASSET"]
+    package = find_release_package(os.environ["STORYBOARD_FLOW_PACKAGE_DIR"], expected)
+    validate_package(package, os.environ["STORYBOARD_FLOW_VERSION"], Path("LICENSE").read_bytes())
     print("Validated package contents, version and retained license notices: " + expected)

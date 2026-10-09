@@ -60,6 +60,23 @@ class PackageValidation(unittest.TestCase):
         with self.assertRaises(ValueError):
             validator.validate_package(self.fixture(True, omit="python/python.exe"), "0.1.31", b"project MIT")
 
+    def test_release_selection_ignores_embedded_python_archives(self):
+        target = self.fixture(True)
+        internal = target.parent / "timestamp" / "Storyboard Flow-Windows-x64" / "resources" / "python" / "python312.zip"
+        internal.parent.mkdir(parents=True)
+        internal.write_bytes(b"embedded runtime archive")
+        self.assertEqual(validator.find_release_package(target.parent, target.name), target)
+
+    def test_release_selection_rejects_duplicate_or_wrong_platform_outputs(self):
+        target = self.fixture(True)
+        duplicate = target.parent / "other-run" / target.name
+        duplicate.parent.mkdir()
+        duplicate.write_bytes(target.read_bytes())
+        with self.assertRaises(ValueError):
+            validator.find_release_package(target.parent, target.name)
+        with self.assertRaises(ValueError):
+            validator.find_release_package(target.parent, "Storyboard-Flow-macOS-arm64.zip")
+
 
 if __name__ == "__main__":
     unittest.main()

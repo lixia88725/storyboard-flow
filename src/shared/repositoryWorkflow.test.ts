@@ -33,7 +33,7 @@ describe("single-repository workflow contract", () => {
   });
   it("validates real ZIP-reader success and negative fixture boundaries", () => {
     const result = spawnSync("python3", ["scripts/test-release-package.py"], { encoding: "utf8" });
-    expect(result.stderr).toContain("Ran 4 tests");
+    expect(result.stderr).toContain("Ran 6 tests");
     expect(result.status, result.stderr).toBe(0);
   });
 });
