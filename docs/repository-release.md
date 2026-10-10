@@ -3,7 +3,13 @@
 ## Status and authority
 
 Infrastructure is implemented in the isolated `infra/public-repository` worktree at base
-`34192f4e5155059a1ac7962e69d50201d8207083`, **uncommitted, not pushed, not published**.
+`34192f4e5155059a1ac7962e69d50201d8207083`. Runtime implementation candidate
+`191e2de3979f727e58061d43bf9222cd0c9af35a` is committed and pushed; hosted run
+[37947605799](https://github.com/lixia88725/storyboard-flow/actions/runs/37947605799)
+passed full tests, build/typecheck, preload consistency, and both native platform
+packages, ZIP validation and artifact upload. Publication was deliberately skipped.
+Later handoff-only edits do not claim a different runtime candidate; the task PR
+records the final source/merge identity and preparation status.
 Requirements and subsequent CORS / preparation-gate changes are based on the initiating
 agent's supplied user-confirmation excerpts, not an independent reading of the original chat.
 This document supersedes the old cross-repository release instructions in README,
@@ -13,9 +19,12 @@ that other session's new product version or any GUI behavior.
 
 **Preparation is deliberately publication-disabled:** an unset or non-`true` repository
 variable `RELEASE_ENABLED` skips publication. Do not enable it for the old baseline.
-No repository visibility/settings changes, dispatches, remote writes, commits, merge,
-old-repository deletion, signing purchase, or notarization have been performed.
-The parent owns LICENSE and the privacy/history audit; this work preserves that file.
+The repository variable was explicitly set to `false` and read back. No software
+Release or old-repository deletion is part of preparation. Root LICENSE is MIT for
+owned code. Ordinary development identities/emails and absolute machine paths in
+history were explicitly approved for disclosure; no history rewrite is planned.
+Two limited secret screens found no checked common credential patterns. That is
+not a comprehensive privacy audit or permission to expose private business material.
 
 ## Pipeline contract
 
@@ -84,6 +93,21 @@ or a claim that LGPL libraries have become MIT. Paid signing/notarization is not
 
 ## Self-verification evidence
 
+The final runtime candidate's cloud run linked above succeeded on all required
+preparation gates. Windows x64 and Mac arm64 ZIPs were really built, checked and
+uploaded, not simulated. These artifacts contain the older product baseline and
+are verification artifacts, **not a new product release**. They expire after 14 days.
+The earlier Windows ZIP-selection defect counted embedded Python ZIPs as release
+outputs; two regression checks reproduced this, and the corrected selector keeps
+duplicate/wrong-platform rejection. Six Python fixture checks and 14 focused
+Vitest tests passed locally. The hosted full suite passed on this corrected source.
+
+Independent Reviewer session `20261009_223922_9f1c8e` reviewed the complete runtime
+diff plus incremental fixes. No unresolved fatal/major new implementation defect
+or mandatory code repair was found. Reviewer approved continuing gated preparation
+and recommended merge conditional on final cloud success and a real PR check.
+This is independent static review, not real release/API/GUI acceptance.
+
 First hosted run `37945612058` at `099cdb20e0b48f8a22427e4500abcf88f2cd47e7`
 failed on Ubuntu: two unchanged baseline assertions assumed macOS shortcut labels
 and macOS native image rounding (900 tests passed, 2 failed). The same two files
@@ -124,26 +148,31 @@ was removed. No fake executable/path file was supplied to make tests green. Pyth
 install succeeded to the isolated vendor target; pip printed unrelated global dependency
 resolver warnings. No global Python or npm/Hermes configuration was changed.
 
-**Not verified / blocked:** complete local Electron-dependent suite, actual macOS package,
-actual Windows package/ZIP validation, hosted fork PR and infra CI, real GitHub draft/upload/
-latest/update-branch permissions and digest behavior, public raw CORS fetch and packaged
-update UI. No smoke/GUI of the other session's code, privacy signoff, independent approval,
-merge or deployment is claimed. Overall acceptance is NOT PASS until gaps are closed.
+The preceding local table records earlier attempts, not the final cloud status.
+Cloud execution closes the local Electron-download blocker for the matching candidate;
+it does not repair or conceal the failed local attempts. Windows/Mac real user flows,
+first Release API/digests/retries, updates-branch writes, public renderer fetch and
+binary redistribution compliance remain first-new-version checks. Preparation is
+not whole-product or Windows GUI acceptance. PR/fork event separation has static
+evidence; an actual fork contribution has not been executed.
 
 ## Receiving-session checklist
 
-1. Parent reviews this dirty diff plus its MIT LICENSE and obtains independent reviewer
-   acceptance. No commits exist from this agent; the parent may create an eventual
-   infrastructure commit after authorization. The other session may then merge/cherry-pick
-   that commit into its candidate while preserving its active product changes. Do not
-   copy this worktree's old product files over the other session's new implementation.
-2. Keep `RELEASE_ENABLED` unset/false. With authorized push, use the infrastructure branch
-   to obtain hosted test/build/preload plus **both real package artifacts without release**.
-   Close the local Electron prerequisite and/or reuse matching hosted gate evidence honestly.
-3. Finish privacy/history/public-license and redistribution review, new-product full suite,
-   GUI/manual verification, and real Windows/macOS artifact validation. The parent's
-   high-confidence history screen is not an exhaustive privacy audit. Do not change
-   visibility or delete the old repository on the strength of this document.
+1. Read the task PR/final handoff for the exact merged infrastructure commit. Main
+   is advanced remotely without editing the active local main worktree. Fetch origin
+   and inspect your current dirty state before integration; never force-push an old
+   local main, blindly pull into mixed changes, stash/reset/clean, or copy whole old
+   files over new code. Integrate only the approved infrastructure diff. In particular,
+   preserve newer `package.json`, README and `appAppRuntime` behavior while retaining
+   MIT metadata, update URL, package-notice additions and CI wiring. Worktree isolation
+   does not isolate shared Git refs. Resolve any overlap deliberately.
+2. Keep `RELEASE_ENABLED=false` while preparing the new product. New-code PRs must pass
+   the `test` check (full tests/build/preload). Main pushes also build both ZIPs while
+   publication is disabled. Do not require the intentionally skipped PR package/publish
+   jobs as branch-protection checks. Reuse prior evidence only for unchanged inputs.
+3. Finish the new-product full suite, GUI/manual checks and actual Windows/Mac acquisition
+   and startup; inspect binary redistribution obligations for bundled dependencies.
+   Current prepared packages prove packaging only, not the other session's new product.
 4. Only after explicit authorization for the verified new product, set `RELEASE_ENABLED`
    to exactly `true`; a subsequent **new-code main push automatically publishes** after
    gates and both packages. Alternatively use validated main-only manual version dispatch.
@@ -151,7 +180,10 @@ merge or deployment is claimed. Overall acceptance is NOT PASS until gaps are cl
 5. Read back the exact tag/commit, complete non-draft release, three assets, latest marker,
    and updates branch; fetch the raw manifest from a packaged renderer and exercise the
    Download notice on both platforms. Verify URLs and versions before any old-repo deletion.
-6. Older installed builds still point to the old feed; changing the new client URL does
-   not migrate them retroactively. Parent must explicitly plan old-client notification,
-   retention/redirect and eventual deletion separately. Never depend on that old repository
-   for this new workflow, and never delete it while users/assets/unpushed work need it.
+6. The user says the only old user is himself and explicitly accepts breaking old
+   update/download links; no compatibility transition is required. Still preserve
+   needed old data/assets and verify the first real new-version release/feed before
+   deleting `storyboard-flow-releases`. Existing Git bundle backup is at
+   `/Users/pikachu/Developer/.backups-storyboard-repository/storyboard-flow-releases.bundle`;
+   Git bundles do not include Release ZIPs. Do not move old release-info tags into
+   source main as if they identified source commits.

@@ -9,3 +9,13 @@ src/.DS_Store
 npm-debug.log*
 vendor/python/photoshop-tiff/*
 !vendor/python/photoshop-tiff/requirements.txt
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.p12
+*.pfx
+release-artifacts/
+__pycache__/

@@ -23,9 +23,17 @@ npm run dev
 
 ## Release Automation
 
-`main` 分支已经接入 GitHub Actions 发布流程。`git push origin main` 会自动运行验证、构建 Windows portable zip 和 macOS Apple Silicon `.app` zip，把产物发布到公开仓库 `lixia88725/storyboard-flow-releases`，并更新该仓库的 `update.json`。源代码仓库仍是 `lixia88725/storyboard-flow`。
+项目采用单仓库 CI／发布流程：合并申请只运行测试、构建和 `check:preload`；推送到 `main` 后还会自动构建 Windows x64 便携 ZIP 和 macOS Apple Silicon `.app` ZIP。
+
+仓库变量 `RELEASE_ENABLED` 只有设为 `true` 才会发布到[本仓库的 Releases](https://github.com/lixia88725/storyboard-flow/releases)。准备阶段保持 `false`，不会把旧产品基线包装成新版本发布。完整双平台产物公开后，流程更新本仓库 `updates` 分支的 `update.json`，不反向提交 `main`。
+
+接入新版本、首次发布和旧仓库删除的前提见[仓库交接说明](docs/repository-release.md)。Releases 下载区在第一次新版本发布后才有新的安装包；不要把 CI 验证产物当正式交付。
 
 当前软件内更新不是静默自动安装：打包版 Storyboard Flow 会检查 `update.json`，有新版本时在右下角状态/信息面板提示，用户点击 `Download` 后手动下载替换。Windows 当前分发的是便携文件夹 zip；macOS 当前分发的是未 notarize 的 Apple Silicon `.app` zip。
+
+## License
+
+自有项目代码使用 [MIT](LICENSE)。第三方依赖保留各自的版权和许可，不被 MIT 声明替代。
 
 ## Developer Map
 
