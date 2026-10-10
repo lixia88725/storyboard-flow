@@ -6,7 +6,7 @@
 
 **正常Save第一块、内置AI移除、非冻结模块优化已在本机独立验收；现在暂停在换Session交接，PNG/多资产History安全工作尚未开始。** 模块优化最终Reviewer `20261009_214947_2c0004`（实核openai-codex/gpt-6.1-sol）确认累计队列可闭合、无必修。最终1789测试/0失败/0pending、212 testResults，完整build含两端typecheck、真实普通Electron 229wait通过。不是全产品/所有竞态/平台验收完成。
 
-用户最新原话：“我们先更新一下所有的交接文档吧，接下来我想换一个session开始这些工作。”本轮授权只更新交接资料，没有开始修代码、安装、迁移、提交或发布。此前“一口气做完”的授权已落实非冻结结构队列，不自动扩大为新PNG权限或History补偿方案。
+用户先要求更新交接并换Session，随后批准“先增加一个当前成果检查点”。现已在独立worktree提交/上传checkpoint分支；没有开始PNG/History修复、安装、迁移、合并或发版本。上传期间仓库由PRIVATE变PUBLIC，另一个infra分支合入远端main；暂停核对后用户明确选择“确认允许公开，保留检查点”。这不授权自动合并新main或后续发布。
 
 ## 下一会话的起点（建议，不是已批准实现方案）
 
@@ -19,7 +19,9 @@ Engineer建议：先核清旧PNG replacement失败保全及权限/别名/并发�
 
 ## 要保全的版本与成果
 
-- 本机项目：`/Users/pikachu/Developer/storyboard-flow`；`main`，HEAD `34192f4e5155059a1ac7962e69d50201d8207083` **加大量dirty/untracked成果**。HEAD不能恢复当前代码；未stage/commit/push/release，不reset/stash或按旧分支覆盖。另有`infra/public-repository` scratch worktree，本次只确认存在、不检查或处置其成果。
+- 本机主工作树仍是`/Users/pikachu/Developer/storyboard-flow`的`main`，HEAD `34192f4e5155059a1ac7962e69d50201d8207083`加大量dirty/untracked；主树未暂存或切分支，其他未选入检查点的资料/并行改动保留。不要reset/stash或按旧分支覆盖。
+- 已公开源码检查点：分支`checkpoint/module-optimization-20261009`，commit `2d53ec8406b33a33bd176f4517dc033ce80b8ffb`，[GitHub分支](https://github.com/lixia88725/storyboard-flow/tree/checkpoint/module-optimization-20261009)。GitHub SHA已读回匹配，436项已验收源逐件匹配提交；包括必要配置、核心交接和合成测试fixture，不包括原始私有证据/缓存/无关并行GLOSSARY改动。未建PR/合并/tag/Release，检查点不是平台可安装认证。
+- 同时发生的独立远端变化：main已为`5652997844c5f8347e68fa7cd9a89981b8c122c7`（合入`infra/public-repository`的PR）；涉及发布配置/包脚本等，不属于此checkpoint的基线，尚未合入本地主树。下一会话先核远端与本机差异，不自动pull/rebase/force-push，不沿用旧发布触发假设。仓库现PUBLIC已获用户确认保留checkpoint；当前观察不保证以后配置不变。
 - 已验收源身份：436项，manifest SHA256 `002337987cbbed4559b6dd3733e86828f307744a0a50d29b625bb2a7e8369034`；本次文档交接核对仍匹配。后续代码/相关输入变化须更新受影响证据；不因换Session机械重跑同版全门禁。
 - 产品聚焦故事板捕捉/绘画/整理/编排。内置AI的UI/Provider/凭据工厂/IPC已退役，普通Pending保留；Pending停放前TIFF物化、JSON/MD/ACK/非空继承/空板保自身设置不可因旧Save-only措辞取消。
 - App生产单路径、共享认证原语、有名`workspaceSession`及无消费者旧写模型清理已接受。主进程编排、owner/queue/renderer-main/磁盘隔离仍保留；不把所有optional、局部prepare/copy-only/测试Adapter强统一。
@@ -40,10 +42,10 @@ Engineer建议：先核清旧PNG replacement失败保全及权限/别名/并发�
 
 ## 本机证据、执行环境与缺口
 
-持久证据（仅此Mac可达，不是GitHub备份）：
+持久原始验收证据（仅此Mac可达，未上传GitHub；已上传的是源码检查点）：
 `/Users/pikachu/.hermes/profiles/engineer/evidence/storyboard-flow-module-optimization-20261009/continuous-accepted-evidence.zip`
 SHA256 `f98f93756a020bcd652ef25dba1c7f7c74699b0110bc6d66326f1dbc20a8db87`。`continuous-archive-manifest.json`列身份；ZIP内`cleanup-manifest.json`/`cleanup-candidate/`/`cleanup-review.txt`是最终版本，其他候选和原执行按需读。scratch会清理，持久ZIP优先；不能指望别的电脑凭本机路径获取。
 
 上次成功验证用了现有Python3.12、项目`vendor/python/photoshop-tiff`与owned TMPDIR；PATH优先`/opt/homebrew/opt/python@3.12/libexec/bin`，PYTHONPATH指项目vendor。下一次实际执行前核当前解释器/ABI/项目命令并选择新的owned scratch，不能直接复用旧probe或假定export延续，不授权安装。完整build已包含两端typecheck，不机械重复。
 
-AGENTS旧AI导航因保护审批超时未改；本次不重试或经CLAUDE绕过。普通文档不改变权限/产品契约。main push有公开发布副作用，未经另批不提交推送。此前Reviewer进程曾被agent_close终止，后续前台拿到真实结论；当前没有待审实现任务，后台启动/exit0不等持续施工或验收。
+AGENTS旧AI导航因保护审批超时未改，不经CLAUDE绕过。普通文档不改权限/产品契约；仅检查点上传获准，main合并/推送或发布仍需另核授权与最新自动化。此前Reviewer曾被agent_close终止，后续拿到真实结论；当前没有待审实现任务，后台启动/exit0不等持续施工或验收。

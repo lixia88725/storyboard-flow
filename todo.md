@@ -18,6 +18,8 @@
   - [x] 依据生产根退役十四旧写函数/私有helper及孤立model，保migration reader/bitmap/main保护及两个真实migration case；旧mode/无用类型/import和AI宣传清理，未合并IPC。
 - **后续Reviewer调用选择（用户新确认）：** 当前Opus 5.5审计照常完成，不中途换模型；之后派给Reviewer的审计使用全新Session，渠道为Codex subscription（`openai-codex`）、模型为6.1 Sol（启动前核准确ID），不复用Opus上下文，不因此重审已通过的同版成果。仅临时指定后续调用，不改Reviewer全局默认配置。
 - [ ] **之后回到核心安全收尾：** 下方第二块History与第三块PNG仍未完成；按实际写链确认PNG失败契约与History补偿的依赖，再决定实现先后。移除AI不能关闭这些风险。
+- [x] **当前源码checkpoint：** `checkpoint/module-optimization-20261009`，commit `2d53ec8406b33a33bd176f4517dc033ce80b8ffb`已上传并GitHub读回；436验收源/必要配置及合成fixture匹配。用户确认允许公开保留；不是合并/发版本或干净机器认证。原主树和无关改动保留，原始私有证据未上传。
+- **并行远端变化须先核：** main另已合入infra/public-repository为`5652997844c5f8347e68fa7cd9a89981b8c122c7`，本次未拉取或集成。后续同步前核当前发布配置与差异，不自动合并、rebase或覆盖；本机main仍旧HEAD+dirty。
 
 AI移除及本轮非冻结模块优化已在本机验收闭合；下面的数据安全、平台/交付及可选受保护导航尾项仍未完成。实质需求/权限/安全契约变化另确认；较大workflow/Skill/验收约定变化仍须独立审计及批准，不自动提交推送发布。
 
