@@ -62,6 +62,89 @@ class PermissionAdapter(unittest.TestCase):
         self.assertEqual(self.inspect(self.file), before)
         self.assertEqual(staged.read_bytes(), b'new synthetic bytes')
 
+    def test_failed_staging_write_preserves_original_bytes_and_metadata(self):
+        import importlib.util
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location('layer_file_safety', SCRIPT)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        before = self.inspect(self.file)
+        old = self.file.read_bytes()
+        real_write = os.write
+        def fail_after_prefix(fd, data):
+            real_write(fd, data[:5])
+            raise OSError(28, 'synthetic ENOSPC after partial staging write')
+        with patch.object(module.os, 'write', side_effect=fail_after_prefix):
+            result = module.protected_write(str(self.root), str(self.file), b'new complete replacement')
+        self.assertEqual(result['effect'], 'refused', result)
+        self.assertIn('ENOSPC', result['message'])
+        self.assertEqual(self.file.read_bytes(), old)
+        self.assertEqual(self.inspect(self.file), before)
+
+    def load_writer(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('layer_file_safety', SCRIPT)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_complete_replacement_and_fresh_publication_preserve_permissions(self):
+        module = self.load_writer()
+        before = self.inspect(self.file)
+        result = module.protected_write(str(self.root), str(self.file), b'complete new content')
+        self.assertEqual(result['effect'], 'committed', result)
+        self.assertEqual(self.file.read_bytes(), b'complete new content')
+        after = self.inspect(self.file)
+        fields = ['mode', 'uid', 'gid', 'flags', 'xattrs'] if sys.platform == 'darwin' else ['security', 'flags']
+        for field in fields:
+            self.assertEqual(after[field], before[field])
+        fresh = self.root / 'fresh.png'
+        result = module.protected_write(str(self.root), str(fresh), b'complete fresh content')
+        self.assertEqual(result['effect'], 'committed', result)
+        self.assertEqual(fresh.read_bytes(), b'complete fresh content')
+        self.assertEqual(self.inspect(fresh)['links'], 1)
+        self.assertEqual(list(self.root.glob('.layer-staging-*')), [])
+
+    def test_failed_close_and_failed_commit_preserve_original(self):
+        from unittest.mock import patch
+        for phase in ['close', 'replace']:
+            with self.subTest(phase=phase):
+                module = self.load_writer()
+                before = self.inspect(self.file)
+                old = self.file.read_bytes()
+                replacement = b'x' * 211
+                real_close = os.close
+                fired = False
+                def fail_stage_close(fd):
+                    nonlocal fired
+                    staged = not fired and os.fstat(fd).st_size == len(replacement)
+                    real_close(fd)
+                    if staged:
+                        fired = True
+                        raise OSError('synthetic staging close failure')
+                target = 'close' if phase == 'close' else 'replace'
+                effect = fail_stage_close if phase == 'close' else OSError('synthetic commit failure')
+                with patch.object(module.os, target, side_effect=effect):
+                    observed = module.protected_write(str(self.root), str(self.file), replacement)
+                self.assertEqual(observed['effect'], 'refused', observed)
+                self.assertEqual(self.file.read_bytes(), old)
+                self.assertEqual(self.inspect(self.file), before)
+
+    def test_fresh_arrival_is_not_overwritten(self):
+        from unittest.mock import patch
+        module = self.load_writer()
+        fresh = self.root / 'arrived.png'
+        real_link = os.link
+        def arrive_before_publish(source, target):
+            Path(target).write_bytes(b'independent arriving content')
+            return real_link(source, target)
+        with patch.object(module.os, 'link', side_effect=arrive_before_publish):
+            observed = module.protected_write(str(self.root), str(fresh), b'prepared content')
+        self.assertNotEqual(observed['effect'], 'committed', observed)
+        self.assertEqual(fresh.read_bytes(), b'independent arriving content')
+
     def test_windows_named_stream_is_special(self):
         if sys.platform != 'win32':
             self.skipTest('Windows-only stream control')

@@ -1,9 +1,9 @@
-"""Read-only layer permission probe. Unknown is never treated as ordinary.
+"""Finite permission inspection and staged layer writer. Unknown is never ordinary.
 
-macOS: query descriptor-bound volume capabilities and extended security through
-fgetattrlist, not the absence of human-readable ACL output. Other platforms remain
-unknown until their adapters are implemented and verified; this script alone is
-not production wiring or a supported-platform claim.
+macOS reads descriptor-bound volume capabilities and extended security through
+fgetattrlist; Windows reads inherited security descriptors, attributes and streams
+through system APIs. Unknown or non-local volumes are refused. These native
+checks alone do not certify app orchestration, external races or crash durability.
 """
 import base64
 import ctypes
@@ -43,10 +43,12 @@ def inspect_mac(file_path):
                 raise ValueError('unknown attribute result size')
             return buf.raw[:length]
 
-        volume = attributes(0x80000000, 0x80020000)
-        if len(volume) != 56 or not (struct.unpack_from('I', volume, 8)[0] & 0x20000):
+        volume = attributes(0x80000000, 0x80024000)
+        if len(volume) != 60 or struct.unpack_from('I', volume, 8)[0] & 0x24000 != 0x24000:
             raise ValueError('volume capabilities unavailable')
-        caps = struct.unpack_from('8I', volume, 24)
+        if not struct.unpack_from('I', volume, 24)[0] & 0x1000:
+            raise ValueError('non-local filesystem is outside the finite write contract')
+        caps = struct.unpack_from('8I', volume, 28)
         if not (caps[1] & caps[5] & 0x400):
             raise ValueError('extended security capability not confirmed')
         security = attributes(0x80400000, 0)
@@ -109,6 +111,12 @@ def inspect_mac(file_path):
 def inspect_windows(file_path):
     from ctypes import wintypes as w
     kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    drive_type = kernel.GetDriveTypeW
+    drive_type.argtypes = [w.LPCWSTR]
+    drive_type.restype = w.UINT
+    drive = os.path.splitdrive(os.path.abspath(file_path))[0]
+    if not drive or drive_type(drive + '\\') not in [2, 3]:
+        raise ValueError('non-local or unknown Windows volume is outside the finite write contract')
     advapi = ctypes.WinDLL('advapi32', use_last_error=True)
     class FileInfo(ctypes.Structure):
         _fields_ = [('attributes', w.DWORD), ('created', w.FILETIME),
@@ -135,7 +143,7 @@ def inspect_windows(file_path):
     free.argtypes = [ctypes.c_void_p]
     free.restype = ctypes.c_void_p
     # Descriptor-bound security read. Open reparse object itself, never its target.
-    handle = create(file_path, 0x20080, 7, None, 3, 0x02200000, None)
+    handle = create(file_path, 0x20088, 7, None, 3, 0x02200000, None)
     if handle == ctypes.c_void_p(-1).value:
         raise OSError(ctypes.get_last_error(), 'CreateFile permission inspection failed')
     sd = ctypes.c_void_p()
@@ -143,17 +151,33 @@ def inspect_windows(file_path):
         info = FileInfo()
         if not get_info(handle, ctypes.byref(info)):
             raise OSError(ctypes.get_last_error(), 'file identity inspection failed')
+        # NTFS extended attributes are not alternate data streams. Refuse them
+        # rather than silently discarding metadata during replacement.
+        class IoStatus(ctypes.Structure):
+            _fields_ = [('status', ctypes.c_void_p), ('information', ctypes.c_size_t)]
+        native = ctypes.WinDLL('ntdll', use_last_error=True)
+        query = native.NtQueryInformationFile
+        query.argtypes = [w.HANDLE, ctypes.POINTER(IoStatus), ctypes.c_void_p, w.DWORD, ctypes.c_int]
+        query.restype = w.LONG
+        io_status, ea_size = IoStatus(), w.DWORD()
+        status = query(handle, ctypes.byref(io_status), ctypes.byref(ea_size), ctypes.sizeof(ea_size), 7)
+        if status != 0:
+            raise ValueError('extended attribute size unavailable: NTSTATUS ' + hex(status & 0xffffffff))
         # Ordinary Windows files have inherited DACLs; rejecting all DACLs would
         # reject the normal platform. Explicit access-control entries are special.
+        # SACL (auditing) is deliberately not requested: reading it requires the
+        # freed SE_SECURITY_NAME privilege, which ordinary user sessions lack. A
+        # SACL grants no access, so this finite contract preserves owner/group/
+        # DACL/attributes and discloses that audit entries are outside its scope.
         owner, group, dacl, sacl = [ctypes.c_void_p() for _ in range(4)]
-        error = security(handle, 1, 0x17, ctypes.byref(owner), ctypes.byref(group),
+        error = security(handle, 1, 0x7, ctypes.byref(owner), ctypes.byref(group),
                          ctypes.byref(dacl), ctypes.byref(sacl), ctypes.byref(sd))
         if error:
             raise OSError(error, 'security descriptor inspection failed')
         if not sd.value or not dacl.value:
             raise ValueError('null security descriptor or DACL is not ordinary')
         explicit = False
-        for acl_pointer in [dacl, sacl]:
+        for acl_pointer in [dacl]:
             if not acl_pointer.value:
                 continue
             header = ctypes.string_at(acl_pointer, 8)
@@ -206,13 +230,13 @@ def inspect_windows(file_path):
         after = FileInfo()
         if not get_info(handle, ctypes.byref(after)) or bytes(info) != bytes(after):
             raise ValueError('file identity or metadata changed during inspection')
-        special = explicit or named_stream or bool(info.attributes & ~0xB0)
+        special = explicit or named_stream or ea_size.value != 0 or bool(info.attributes & ~0xB0)
         if not info.attributes & 0x10 and info.links != 1:
             special = True
         return dict(kind='special' if special else 'ordinary',
                     reason='explicit ACL, special attributes, links or named streams' if special else None,
                     dev=info.volume, ino=(info.index_high << 32) | info.index_low,
-                    flags=info.attributes, links=info.links, security=descriptor,
+                    flags=info.attributes, links=info.links, security=descriptor, ea_size=ea_size.value,
                     size=(info.size_high << 32) | info.size_low,
                     mtime=(info.modified.dwHighDateTime << 32) | info.modified.dwLowDateTime,
                     created=(info.created.dwHighDateTime << 32) | info.created.dwLowDateTime)
@@ -275,9 +299,169 @@ def prepare_windows(source, temporary):
     return staged
 
 
+def protected_write(root_path, file_path, data, mode="upsert"):
+    """Stage complete bytes, certify finite metadata, then publish once.
+
+    The caller owns a whole-operation queue. External writers, hostile parent
+    replacement and crash durability are not guaranteed. Never fall back to
+    truncating the old target. A committed result may retain an owned temp name.
+    """
+    from pathlib import Path
+    import tempfile
+    root = Path(os.path.abspath(root_path))
+    target = Path(os.path.abspath(file_path))
+    temporary = None
+    temporary_identity = None
+    committed = False
+    commit_attempted = False
+    errors = []
+    original = None
+    old_bytes = None
+    directories = []
+
+    def ordinary(p):
+        result = inspect(str(p))
+        if result.get('kind') != 'ordinary':
+            raise ValueError('safe PNG write refused: ' + str(result.get('reason')))
+        return result
+
+    def guard_directory(p):
+        if os.path.normcase(os.path.realpath(p)) != os.path.normcase(str(p)) or p.is_symlink():
+            raise ValueError('safe PNG write refused: parent alias')
+        if not p.is_dir():
+            raise ValueError('safe PNG write refused: parent is not a directory')
+        return ordinary(p)
+
+    def relevant_directory_metadata(value):
+        return {k: value[k] for k in ['dev', 'ino', 'mode', 'uid', 'gid', 'flags', 'xattrs', 'security'] if k in value}
+
+    def remove_owned_temporary():
+        if temporary is None:
+            return
+        current = os.lstat(temporary)
+        if (current.st_dev, current.st_ino) != temporary_identity or not stat.S_ISREG(current.st_mode):
+            raise ValueError('temporary identity changed; retained instead of deleting')
+        os.unlink(temporary)
+
+    try:
+        if mode not in ["upsert", "create-only"]:
+            raise ValueError("unsupported write contract")
+        if target == root or not target.is_relative_to(root):
+            raise ValueError('safe PNG write refused: target outside operation root')
+        directories.append((root, relevant_directory_metadata(guard_directory(root))))
+        current = root
+        for component in target.parent.relative_to(root).parts:
+            current = current / component
+            try:
+                os.mkdir(current)
+            except FileExistsError:
+                pass
+            directories.append((current, relevant_directory_metadata(guard_directory(current))))
+        try:
+            os.lstat(target)
+        except FileNotFoundError:
+            pass
+        else:
+            if mode == "create-only":
+                raise ValueError("create-only target already exists; retained")
+            original = ordinary(target)
+            old_bytes = target.read_bytes()
+            # Do not equate directory replacement permission with file write
+            # permission. No truncate/create flags, and close before committing.
+            authority = os.open(target, os.O_WRONLY | getattr(os, 'O_NOFOLLOW', 0))
+            os.close(authority)
+            if ordinary(target) != original:
+                raise ValueError('target changed during authorization')
+
+        fd, name = tempfile.mkstemp(prefix='.layer-staging-', dir=target.parent)
+        temporary = Path(name)
+        info = os.fstat(fd)
+        temporary_identity = (info.st_dev, info.st_ino)
+        try:
+            view = memoryview(data)
+            while view:
+                count = os.write(fd, view)
+                if count <= 0 or count > len(view):
+                    raise OSError('incomplete staging write')
+                view = view[count:]
+        except Exception as error:
+            errors.append(str(error))
+        try:
+            os.close(fd)
+        except Exception as error:
+            errors.append('staging close: ' + str(error))
+        if errors:
+            raise ValueError('; '.join(errors))
+        if temporary.read_bytes() != data:
+            raise ValueError('staged bytes differ from requested bytes')
+        if original:
+            prepared = prepare_mac(str(target), str(temporary)) if sys.platform == 'darwin' else prepare_windows(str(target), str(temporary))
+            if prepared.get('kind') != 'ordinary':
+                raise ValueError('metadata preparation refused: ' + str(prepared.get('reason')))
+        staged = ordinary(temporary)
+        if original:
+            fields = ['mode', 'uid', 'gid', 'flags', 'xattrs'] if sys.platform == 'darwin' else ['security', 'flags']
+            if any(staged[k] != original[k] for k in fields):
+                raise ValueError('staged permissions differ from original')
+        for directory, metadata in directories:
+            if relevant_directory_metadata(guard_directory(directory)) != metadata:
+                raise ValueError('parent identity or permissions changed')
+        temp_info = os.lstat(temporary)
+        if (temp_info.st_dev, temp_info.st_ino) != temporary_identity or temporary.read_bytes() != data:
+            raise ValueError('staging identity or bytes changed')
+        if original:
+            if ordinary(target) != original or target.read_bytes() != old_bytes:
+                raise ValueError('target identity, permissions or bytes changed')
+            commit_attempted = True
+            os.replace(temporary, target)
+            committed = True
+            temporary = None
+        else:
+            # Publish a closed complete file without replacing any directory
+            # entry that arrived since the earlier absence observation.
+            commit_attempted = True
+            os.link(temporary, target)
+            committed = True
+            try:
+                remove_owned_temporary()
+                temporary = None
+            except Exception as error:
+                errors.append('committed temporary cleanup: ' + str(error))
+        return dict(effect='committed', filePath=str(target),
+                    retainedTemporary=str(temporary) if temporary else None,
+                    warnings=errors)
+    except Exception as error:
+        if str(error) not in errors:
+            errors.append(str(error))
+        if temporary:
+            try:
+                remove_owned_temporary()
+                temporary = None
+            except Exception as cleanup_error:
+                errors.append('temporary cleanup: ' + str(cleanup_error))
+        unchanged = False
+        try:
+            if original:
+                unchanged = inspect(str(target)) == original and target.read_bytes() == old_bytes
+            else:
+                try:
+                    os.lstat(target)
+                except FileNotFoundError:
+                    unchanged = True
+        except Exception:
+            pass
+        return dict(effect='committed' if committed else ('refused' if not commit_attempted or unchanged else 'unknown'),
+                    message='; '.join(errors), retainedTemporary=str(temporary) if temporary else None)
+
+
 if __name__ == '__main__':
     try:
-        if len(sys.argv) == 2:
+        if len(sys.argv) == 2 and sys.argv[1] == '--write-stdin':
+            request = json.load(sys.stdin)
+            if not isinstance(request, dict) or not all(isinstance(request.get(k), str) for k in ['root', 'filePath', 'bytes']):
+                raise ValueError('invalid protected write request')
+            result = protected_write(request['root'], request['filePath'], base64.b64decode(request['bytes'], validate=True), request.get('mode', 'upsert'))
+        elif len(sys.argv) == 2:
             result = inspect(os.path.abspath(sys.argv[1]))
         elif len(sys.argv) == 4 and sys.argv[1] == '--prepare' and sys.platform in ['darwin', 'win32']:
             prepare = prepare_mac if sys.platform == 'darwin' else prepare_windows
