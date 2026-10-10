@@ -326,14 +326,17 @@ def protected_write(root_path, file_path, data, mode="upsert"):
         return result
 
     def guard_directory(p):
+        # A directory is only checked for alias/reparse identity here. File-level
+        # rules do not apply: directories legitimately carry directory attributes
+        # and non-inherited entries on ordinary Windows installations.
         if os.path.normcase(os.path.realpath(p)) != os.path.normcase(str(p)) or p.is_symlink():
             raise ValueError('safe PNG write refused: parent alias')
-        if not p.is_dir():
+        info = os.lstat(p)
+        if not stat.S_ISDIR(info.st_mode):
             raise ValueError('safe PNG write refused: parent is not a directory')
-        return ordinary(p)
-
-    def relevant_directory_metadata(value):
-        return {k: value[k] for k in ['dev', 'ino', 'mode', 'uid', 'gid', 'flags', 'xattrs', 'security'] if k in value}
+        if getattr(info, 'st_file_attributes', 0) & 0x400:
+            raise ValueError('safe PNG write refused: parent reparse point')
+        return {'dev': info.st_dev, 'ino': info.st_ino}
 
     def remove_owned_temporary():
         if temporary is None:
@@ -348,7 +351,7 @@ def protected_write(root_path, file_path, data, mode="upsert"):
             raise ValueError("unsupported write contract")
         if target == root or not target.is_relative_to(root):
             raise ValueError('safe PNG write refused: target outside operation root')
-        directories.append((root, relevant_directory_metadata(guard_directory(root))))
+        directories.append((root, guard_directory(root)))
         current = root
         for component in target.parent.relative_to(root).parts:
             current = current / component
@@ -356,7 +359,7 @@ def protected_write(root_path, file_path, data, mode="upsert"):
                 os.mkdir(current)
             except FileExistsError:
                 pass
-            directories.append((current, relevant_directory_metadata(guard_directory(current))))
+            directories.append((current, guard_directory(current)))
         try:
             os.lstat(target)
         except FileNotFoundError:
@@ -404,7 +407,7 @@ def protected_write(root_path, file_path, data, mode="upsert"):
             if any(staged[k] != original[k] for k in fields):
                 raise ValueError('staged permissions differ from original')
         for directory, metadata in directories:
-            if relevant_directory_metadata(guard_directory(directory)) != metadata:
+            if guard_directory(directory) != metadata:
                 raise ValueError('parent identity or permissions changed')
         temp_info = os.lstat(temporary)
         if (temp_info.st_dev, temp_info.st_ino) != temporary_identity or temporary.read_bytes() != data:
