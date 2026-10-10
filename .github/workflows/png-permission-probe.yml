@@ -1,0 +1,31 @@
+name: Synthetic layer permission adapter probe
+on:
+  push:
+    branches: [test/png-permission-adapter-20261010]
+    paths:
+      - scripts/layer-file-permissions.py
+      - scripts/test-layer-file-permissions.py
+      - .github/workflows/png-permission-probe.yml
+permissions:
+  contents: read
+jobs:
+  permissions:
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-14, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      SWB_PERMISSION_TEST_TMPDIR: ${{ runner.temp }}/owned-layer-permission-fixtures
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify native permission adapter on synthetic files only
+        run: python scripts/test-layer-file-permissions.py
