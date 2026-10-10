@@ -1,222 +1,155 @@
-name: Release Storyboard Flow
+name: CI and single-repository release
 
 on:
+  pull_request:
   push:
-    branches:
-      - main
-    tags:
-      - "v*.*.*"
+    branches: [main, infra/public-repository]
+    tags: ['v*.*.*']
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release, without v prefix"
+        description: 'Stable numeric version greater than 0.1.30 and latest, without v'
         required: true
         type: string
 
-env:
-  RELEASE_REPO: lixia88725/storyboard-flow-releases
+permissions:
+  contents: read
 
 jobs:
   test:
-    name: Test
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.12'
       - run: npm ci
-      - name: Install macOS Photoshop TIFF Python deps
-        run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
-      - run: npm run test
-      - run: npm run typecheck
+      - run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
+      - run: npm test
+      - run: npm run build
+      - run: npm run check:preload
 
-  prepare-release:
-    name: Prepare public release
+  metadata:
+    if: github.event_name != 'pull_request'
     needs: test
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.target.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve release metadata
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            version="${{ inputs.version }}"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            base_version="$(node -p "const v=require('./package.json').version.split('.'); v[0]+'.'+v[1]")"
-            version="${base_version}.${{ github.run_number }}"
-          fi
-          echo "STORYBOARD_FLOW_VERSION=$version" >> "$GITHUB_ENV"
-          echo "STORYBOARD_FLOW_TAG=v$version" >> "$GITHUB_ENV"
-      - name: Create empty public release
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
-        run: |
-          gh release delete "$STORYBOARD_FLOW_TAG" --repo "$RELEASE_REPO" --yes --cleanup-tag || true
-          gh release create "$STORYBOARD_FLOW_TAG" \
-            --repo "$RELEASE_REPO" \
-            --title "Storyboard Flow $STORYBOARD_FLOW_VERSION" \
-            --notes "Storyboard Flow $STORYBOARD_FLOW_VERSION"
-
-  package-windows:
-    name: Package Windows portable
-    needs: prepare-release
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Resolve version
-        shell: pwsh
-        run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $version = "${{ inputs.version }}"
-          } elseif ("${{ github.ref_type }}" -eq "tag") {
-            $version = $env:GITHUB_REF_NAME -replace '^v',''
-          } else {
-            $baseVersion = node -p "const v=require('./package.json').version.split('.'); v[0]+'.'+v[1]"
-            $version = "$baseVersion.${{ github.run_number }}"
-          }
-          "STORYBOARD_FLOW_VERSION=$version" >> $env:GITHUB_ENV
-          "STORYBOARD_FLOW_TAG=v$version" >> $env:GITHUB_ENV
-      - run: npm ci
-      - name: Install Windows Photoshop TIFF Python deps
-        shell: pwsh
-        run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
-      - name: Package Windows portable zip
-        shell: pwsh
+      - id: version
         env:
-          STORYBOARD_FLOW_PACKAGE_DIR: ${{ github.workspace }}\release-artifacts
-          STORYBOARD_FLOW_WINDOWS_PYTHON_DIR: ${{ env.pythonLocation }}
-        run: npm run package:windows
-      - name: Upload Windows release asset
-        shell: pwsh
+          INPUT_VERSION: ${{ inputs.version }}
+        run: node scripts/repository-release.mjs resolve
+      - id: target
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          $zipPath = Get-ChildItem -Path release-artifacts -Recurse -Filter *.zip | Select-Object -ExpandProperty FullName -First 1
-          if (-not $zipPath) {
-            throw "No release zip found"
-          }
-          gh release upload "$env:STORYBOARD_FLOW_TAG" "$zipPath" --repo "$env:RELEASE_REPO" --clobber
+          sha="$(git rev-parse HEAD)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+            git cat-file -e "$main_sha^{commit}"
+            git merge-base --is-ancestor "$sha" "$main_sha"
+          fi
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
 
-  package-macos:
-    name: Package macOS
-    needs: prepare-release
-    runs-on: macos-14
+  package:
+    needs: [test, metadata]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            platform: windows
+            arch: x64
+            asset: Storyboard-Flow-Windows-x64.zip
+          - runner: macos-14
+            platform: macos
+            arch: arm64
+            asset: Storyboard-Flow-macOS-arm64.zip
+    runs-on: ${{ matrix.runner }}
+    env:
+      STORYBOARD_FLOW_VERSION: ${{ needs.metadata.outputs.version }}
+      STORYBOARD_FLOW_PACKAGE_DIR: ${{ github.workspace }}/release-artifacts
+      STORYBOARD_FLOW_MAC_ARCH: arm64
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          architecture: ${{ matrix.arch }}
           cache: npm
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: Resolve version
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            version="${{ inputs.version }}"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            base_version="$(node -p "const v=require('./package.json').version.split('.'); v[0]+'.'+v[1]")"
-            version="${base_version}.${{ github.run_number }}"
-          fi
-          echo "STORYBOARD_FLOW_VERSION=$version" >> "$GITHUB_ENV"
-          echo "STORYBOARD_FLOW_TAG=v$version" >> "$GITHUB_ENV"
+          python-version: '3.12'
+          architecture: ${{ matrix.arch }}
+      - name: Assert native architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: node -e "if(process.arch !== process.env.EXPECTED_ARCH) process.exit(1)"
       - run: npm ci
-      - name: Install macOS Photoshop TIFF Python deps
-        run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
-      - name: Package macOS zip
+      - run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
+      - run: npm run package:${{ matrix.platform }}
+      - name: Validate ZIP contents and notices
         env:
-          STORYBOARD_FLOW_PACKAGE_DIR: ${{ github.workspace }}/release-artifacts
-        run: npm run package:macos
-      - name: Upload macOS release asset
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
-        run: |
-          zip_path="$(find release-artifacts -type f -name "*.zip" -print -quit)"
-          test -n "$zip_path"
-          gh release upload "$STORYBOARD_FLOW_TAG" "$zip_path" --repo "$RELEASE_REPO" --clobber
+          EXPECTED_ASSET: ${{ matrix.asset }}
+        run: python scripts/validate-release-package.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.platform }}
+          path: release-artifacts/**/${{ matrix.asset }}
+          if-no-files-found: error
+          retention-days: 14
 
   publish:
-    name: Publish release assets
-    needs:
-      - package-windows
-      - package-macos
+    # Unset/false is safe: preparation never publishes baseline code.
+    if: >-
+      vars.RELEASE_ENABLED == 'true' &&
+      github.repository == 'lixia88725/storyboard-flow' &&
+      (github.ref == 'refs/heads/main' ||
+       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')))
+    needs: [metadata, package]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+    concurrency:
+      group: storyboard-flow-release-publication
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
-      - name: Resolve release metadata
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            version="${{ inputs.version }}"
-          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            base_version="$(node -p "const v=require('./package.json').version.split('.'); v[0]+'.'+v[1]")"
-            version="${base_version}.${{ github.run_number }}"
-          fi
-          echo "STORYBOARD_FLOW_VERSION=$version" >> "$GITHUB_ENV"
-          echo "STORYBOARD_FLOW_TAG=v$version" >> "$GITHUB_ENV"
-      - name: Update public update.json
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: release-artifacts
+          merge-multiple: true
+      - name: Stage, verify, publish, then advance updates branch
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
-        shell: bash
-        run: |
-          release_url="https://github.com/$RELEASE_REPO/releases/tag/$STORYBOARD_FLOW_TAG"
-          asset_base="https://github.com/$RELEASE_REPO/releases/download/$STORYBOARD_FLOW_TAG"
-          asset_names="$(gh release view "$STORYBOARD_FLOW_TAG" --repo "$RELEASE_REPO" --json assets --jq '.assets[].name')"
-          windows_url="$asset_base/Storyboard-Flow-Windows-x64.zip"
-          macos_arm64_url=""
-          macos_x64_url=""
-
-          echo "$asset_names" | grep -Fx "Storyboard-Flow-Windows-x64.zip" >/dev/null
-          if echo "$asset_names" | grep -Fx "Storyboard-Flow-macOS-arm64.zip" >/dev/null; then
-            macos_arm64_url="$asset_base/Storyboard-Flow-macOS-arm64.zip"
-          fi
-          if echo "$asset_names" | grep -Fx "Storyboard-Flow-macOS-x64.zip" >/dev/null; then
-            macos_x64_url="$asset_base/Storyboard-Flow-macOS-x64.zip"
-          fi
-          export release_url windows_url macos_arm64_url macos_x64_url
-
-          mkdir release-repo
-          gh repo clone "$RELEASE_REPO" release-repo -- --depth 1
-          node -e '
-            const fs = require("fs");
-            const manifest = {
-              latest: process.env.STORYBOARD_FLOW_VERSION,
-              notes: `Storyboard Flow ${process.env.STORYBOARD_FLOW_VERSION}`,
-              releaseUrl: process.env.release_url,
-              downloads: {
-                windowsPortable: process.env.windows_url
-              }
-            };
-            if (process.env.macos_arm64_url) manifest.downloads.macosAppleSilicon = process.env.macos_arm64_url;
-            if (process.env.macos_x64_url) manifest.downloads.macosIntel = process.env.macos_x64_url;
-            fs.writeFileSync("release-repo/update.json", `${JSON.stringify(manifest, null, 2)}\n`);
-          '
-          node scripts/generate-release-readme.mjs release-repo/README.md
-          cd release-repo
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add update.json README.md
-          git commit -m "Update Storyboard Flow $STORYBOARD_FLOW_VERSION release info" || exit 0
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${RELEASE_REPO}.git"
-          git push
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ needs.metadata.outputs.sha }}
+          STORYBOARD_FLOW_VERSION: ${{ needs.metadata.outputs.version }}
+        run: node scripts/repository-release.mjs publish release-artifacts

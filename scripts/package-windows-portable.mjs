@@ -83,6 +83,7 @@ await mkdir(path.join(packagedAppRoot, "node_modules", "@img"), { recursive: tru
 await rm(path.join(appResources, "default_app.asar"), { force: true });
 await rename(path.join(appRoot, "electron.exe"), path.join(appRoot, `${appName}.exe`));
 
+await cp(path.join(repoRoot, "LICENSE"), path.join(packagedAppRoot, "LICENSE"));
 await cp(path.join(repoRoot, "dist"), path.join(packagedAppRoot, "dist"), { recursive: true });
 await cp(path.join(repoRoot, "dist-electron"), path.join(packagedAppRoot, "dist-electron"), {
   recursive: true
@@ -116,6 +117,7 @@ await writeFile(
       productName: "Storyboard Flow",
       version: packageVersion,
       private: true,
+      license: "MIT",
       type: "module",
       main: "dist-electron/main/main.js",
       dependencies: {

@@ -2,6 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import { createAppAppHandlers } from "./appAppRuntime.js";
 
 describe("createAppAppHandlers", () => {
+  it("uses the CORS-compatible single-repository updates manifest by default", () => {
+    const handlers = createAppAppHandlers({
+      arch: "arm64", platform: "darwin", getVersion: () => "0.1.31",
+      closeGuardWebContentsIds: new Set(), saveAndCloseRequests: new Map(),
+      openExternal: async () => undefined, ownerFromSender: () => undefined,
+      showOpenDialog: async () => ({ canceled: true, filePaths: [] })
+    });
+    expect(handlers.getInfo()).toEqual({
+      arch: "arm64", platform: "darwin", version: "0.1.31",
+      updateManifestUrl: "https://raw.githubusercontent.com/lixia88725/storyboard-flow/updates/update.json"
+    });
+  });
   it("returns app shell dependencies used by the IPC handler", async () => {
     const destroy = vi.fn();
     const saveAndCloseRequests = new Map([["request-1", { destroy }]]);

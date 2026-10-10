@@ -3,6 +3,7 @@
   "productName": "Storyboard Flow",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "main": "dist-electron/main/main.js",
   "scripts": {
