@@ -29,19 +29,23 @@ npm run dev
 
 ## Developer Map
 
+文档分工（不在本页重复进度）：本 README 面向用户运行与产品说明；[AGENTS.md](AGENTS.md) / [decisions.md](decisions.md) 保存开发稳定规则与决定；[context-handoff.md](context-handoff.md) 是当前接续入口；[todo.md](todo.md) 是唯一未完工作计划；[SYSTEM.md](docs/architecture/SYSTEM.md) 是直接维护的实际架构说明。旧Atlas/生成器和长报告在[docs/archive/](docs/archive/)；[work-plan.md](docs/architecture/research/work-plan.md)及旧closeout只作历史导航，不是另一份活动计划或当前认证。
+
 如果是接手开发，先读：
 
 1. `AGENTS.md`：Agent 工作规则、禁止事项、验证要求。
-2. `decisions.md`：长期架构决策，尤其是 `Current Architecture Map`。
-3. `context-handoff.md`：当前接手状态。
-4. `todo.md`：下一步工作。
+2. `context-handoff.md`：当前状态、版本、换Session起点与本机依赖；本机Workspace规则在仓库外`../AGENTS.md`，须实际读取。
+3. `todo.md`：只读与已批准实施的区别、下一完整工作块及验收条件。
+4. `docs/architecture/SYSTEM.md` / `decisions.md`：按任务查实际职责和相关决定，不默认通读历史。
+
+本次换Session的不可变交班快照：[CE-HANDOFF.md](research/codebase-design/CE-HANDOFF.md)。旧CE-HANDOFF/CE-HANDOFF-2保留历史现场，不自动覆盖当前交接；读取交接不授权执行旧脚本或安全方案。
 
 代码入口按层理解：
 
 - Shared project logic: `src/shared/projectOps.ts`
-- Renderer UI: `src/renderer/App.tsx`, `ShotCard.tsx`, `SketchPad.tsx`, `LayerPanel.tsx`, `src/renderer/ai/*`
+- Renderer UI: `src/renderer/App.tsx`, `ShotCard.tsx`, `SketchPad.tsx`, `LayerPanel.tsx`, `ParkingShelf.tsx`
 - Electron main/filesystem: `electron/main/main.ts`, `electron/main/*AppRuntime.ts`, `electron/main/*Service.ts`
-- AI providers and generation: `electron/main/ai/*`
+
 - Preload contract: `electron/preload/preload.ts`, `electron/preload/preload.cjs`
 - End-to-end smoke: `scripts/electron-bitmap-smoke.mjs`
 - Large-scene performance smoke: `scripts/electron-performance-smoke.mjs`
@@ -123,13 +127,11 @@ Option/Alt drag 不再作为复制手势；按住 Option/Alt 拖动 storyboard�
 
 下一阶段讨论方向是 PSD-first Photoshop interoperability：先验证 PSD raster layer import/export，再决定是否作为显式 Photoshop 交换工作流产品化。当前 PSD 支持尚未实现。
 
-## AI Draft
+## Product Scope
 
-AI Draft is an experimental candidate-first image generation flow. It supports GUI-only local provider settings for OpenAI, Seedream, and local ComfyUI. Generated PNG candidates are visible in the project-root `Pending/` folder; their internal metadata remains in `.storyboard-workbench/ai-candidates/`. Repeated generations accumulate and survive closing the AI panel or reopening the project. A candidate can be dragged into either storyboard view as a new shot; a successful drop removes that candidate from Pending, while a failed drop keeps it. Apply adds a visible top bitmap layer named `AI Draft` and keeps the Pending candidate. Explicit Discard sends the visible candidate to the system Trash. It does not replace base art and does not change the Save / Import / final TIFF filename boundary.
+软件专注捕捉、绘画、整理和编排故事板灵感。内置 AI 生成、Provider/凭据设置及 AI 候选 Apply/拖入功能已移除；普通 Pending 保留，用来停放暂时不用的故事板，再取回继续工作。绘画、图层、对白、排序、Import、Save 和 Undo/Redo 不随 AI 退役。
 
-`AI Resources/` is a visible project folder for reference images. Resource role/note metadata is stored beside the resources, and per-shot availability is stored in project AI metadata as exclusions. Single-shot mode edits resource role/note and shot availability. Multi-shot mode supports batch size `1 / 4 / 16`, uses contact sheets, then crops provider output back into one candidate per selected shot.
-
-ComfyUI support expects the user to run local ComfyUI and provide an API-format workflow exported from ComfyUI. Storyboard Flow validates placeholders, submits the workflow to the local server, and reuses the normal candidate/apply path. It does not install or manage ComfyUI.
+此次代码移除不执行个人素材或真实配置清理，也不另建 AI 工具或数据迁移。实际完成范围和剩余安全工作分别见 [当前交接](context-handoff.md) 与 [TODO](todo.md)。
 
 ## Storyboard And Animation Mode
 

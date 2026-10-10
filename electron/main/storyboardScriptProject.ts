@@ -1,5 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, mkdir, open, readFile, readdir, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { recoverFailedImport } from "./importRecovery.js";
+
 import path from "node:path";
 import sharp from "sharp";
 import { atomicWriteTextFile } from "./fileRenames.js";
@@ -34,6 +36,7 @@ type ImportedImage = {
 };
 
 type Project = {
+  pendingBake?: { version: 1; shots: Record<string, { state: "pending"; editToken: string; acceptedOutputIdentity: string }> };
   id: string;
   name: string;
   shots: Array<{
@@ -84,6 +87,8 @@ type FolderScanPayload = {
 };
 
 export type CreateProjectFromStoryboardScriptOptions = {
+  normalSave?: boolean;
+  normalSaveSource?: unknown;
   sourceMarkdownPath: string;
   targetFolderPath: string;
   blankShotPreset: BlankShotPreset;
@@ -102,7 +107,8 @@ export const inspectStoryboardScriptMarkdownFile = async (
 export const createProjectFromStoryboardScriptMarkdown = async ({
   sourceMarkdownPath,
   targetFolderPath,
-  blankShotPreset
+  blankShotPreset,
+  normalSave
 }: CreateProjectFromStoryboardScriptOptions): Promise<FolderScanPayload> => {
   await assertEmptyTargetFolder(targetFolderPath);
 
@@ -111,6 +117,8 @@ export const createProjectFromStoryboardScriptMarkdown = async ({
   if (entries.length === 0) {
     throw new Error("No numbered storyboard script entries found");
   }
+
+  if (normalSave) return createNormalProject(targetFolderPath, blankShotPreset, entries);
 
   const previewRoot = previewRootForFolder(targetFolderPath);
   const images: ImportedImage[] = [];
@@ -263,3 +271,107 @@ const writeProjectFiles = async (folderPath: string, project: Project): Promise<
 
 const metadataPathForFolder = (folderPath: string): string =>
   path.join(folderPath, ".storyboard-workbench", "storyboard.project.json");
+
+// New-project-only asset initialization. No existing asset is a completion witness:
+// every file is exclusively created, and every pending baseline hashes the actual TIFF.
+const createNormalProject = async (
+  folderPath: string, preset: BlankShotPreset, entries: string[]
+): Promise<FolderScanPayload> => {
+  const now = new Date().toISOString();
+  const project: Project = { id: randomUUID(), name: path.basename(folderPath) || "Untitled Storyboard",
+    shots: [], dialogues: [], createdAt: now, updatedAt: now, pendingBake: { version: 1, shots: {} } };
+  const images: ImportedImage[] = [];
+  const created: Array<{ filePath: string; hash: string; ino: number; dev: number }> = [];
+  const createdDirectories: Array<{ directory: string; ino: number; dev: number }> = [];
+  const root = path.resolve(folderPath);
+  const assertDirectoryChain = async (directory: string): Promise<void> => {
+    const resolved = path.resolve(directory);
+    if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) throw new Error("Storyboard directory escapes target");
+    const chain: string[] = [];
+    for (let current = resolved;; current = path.dirname(current)) {
+      chain.unshift(current);
+      if (current === path.dirname(current)) break;
+    }
+    for (const current of chain) {
+      const identity = await lstat(current);
+      if (!identity.isDirectory() || identity.isSymbolicLink()) throw new Error("Storyboard parent directory is not a real directory; symlink aliases are refused");
+      const receipt = createdDirectories.find(item => item.directory === current);
+      if (receipt && (identity.ino !== receipt.ino || identity.dev !== receipt.dev)) throw new Error("Created storyboard directory changed; retained for recovery");
+    }
+  };
+  const ensureDirectory = async (directory: string): Promise<void> => {
+    if (path.resolve(directory) === root) { await assertDirectoryChain(directory); return; }
+    await ensureDirectory(path.dirname(directory));
+    try {
+      await mkdir(directory);
+      const identity = await lstat(directory);
+      if (!identity.isDirectory() || identity.isSymbolicLink()) throw new Error("Created storyboard directory replaced by symlink or non-directory");
+      createdDirectories.push({ directory: path.resolve(directory), ino: identity.ino, dev: identity.dev });
+    }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
+    await assertDirectoryChain(directory);
+  };
+  const digest = (bytes: Buffer | string) => createHash("sha256").update(bytes).digest("hex");
+  const writeNew = async (filePath: string, bytes: Buffer | string) => {
+    await ensureDirectory(path.dirname(filePath));
+    await assertDirectoryChain(path.dirname(filePath));
+    const handle = await open(filePath, "wx");
+    try {
+      const identity = await handle.stat();
+      created.push({ filePath, hash: digest(bytes), ino: identity.ino, dev: identity.dev });
+      await handle.writeFile(bytes);
+    } finally { await handle.close(); }
+  };
+  const rollback = async () => {
+    const results = await Promise.allSettled(created.map(async item => {
+      let identity;
+      try { await assertDirectoryChain(path.dirname(item.filePath)); identity = await lstat(item.filePath); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
+      if (!identity.isFile() || identity.isSymbolicLink() || identity.ino !== item.ino || identity.dev !== item.dev || digest(await readFile(item.filePath)) !== item.hash) {
+        throw new Error("Created storyboard file changed; retained for recovery");
+      }
+      await unlink(item.filePath);
+    }));
+    const errors = results.filter((r): r is PromiseRejectedResult => r.status === "rejected").map(r => r.reason);
+    for (const item of [...createdDirectories].reverse()) {
+      try {
+        await assertDirectoryChain(item.directory);
+        const identity = await lstat(item.directory);
+        if (!identity.isDirectory() || identity.ino !== item.ino || identity.dev !== item.dev) throw new Error("Created storyboard directory changed; retained for recovery");
+        await rmdir(item.directory);
+      }
+      catch (error) {
+        // External additions and retained failed files remain; never recursively remove them.
+        if (!["ENOENT", "ENOTEMPTY"].includes((error as NodeJS.ErrnoException).code ?? "")) errors.push(error);
+      }
+    }
+    if (errors.length) throw new AggregateError(errors, `New storyboard asset rollback incomplete: ${errors.map(error => error instanceof Error ? error.message : String(error)).join("; ")}`);
+  };
+  try {
+    // Read/parse occurs before this boundary. Recheck the actual empty destination before first effect.
+    await assertEmptyTargetFolder(folderPath);
+    const size = blankShotPresets[preset] ?? blankShotPresets["16:9"];
+    for (const [index, scriptText] of entries.entries()) {
+      const imagePath = path.join(folderPath, `script_shot_${String(index + 1).padStart(4, "0")}_0.tiff`);
+      const bytes = await sharp({ create: { ...size, channels: 3, background: "#ffffff" } }).tiff().toBuffer();
+      await writeNew(imagePath, bytes);
+      const previewPath = path.join(previewRootForFolder(folderPath), `${randomUUID()}.png`);
+      const png = await sharp(imagePath).ensureAlpha().png().toBuffer();
+      await writeNew(previewPath, await sharp(imagePath).resize({ width: 640, height: 640, fit: "inside", withoutEnlargement: true }).png().toBuffer());
+      const image: ImportedImage = { imagePath, previewPath, fileName: path.basename(imagePath), ...size,
+        fingerprint: await pixelFingerprint(imagePath) };
+      const shot = createShotFromImage(image, index, scriptText);
+      await writeNew(path.join(folderPath, shot.layers![0].bitmapPath), png);
+      const actualHash = digest(await readFile(imagePath));
+      if (actualHash !== digest(bytes)) throw new Error("New blank TIFF changed before completion");
+      project.pendingBake!.shots[shot.id] = { state: "pending", editToken: randomUUID(), acceptedOutputIdentity: actualHash };
+      project.shots.push(shot); images.push(image);
+    }
+    // Reserve the required MD before any JSON write. An external script appearing here must
+    // not be overwritten, nor should its failed admission install meaningless project JSON.
+    await writeNew(path.join(folderPath, storyboardScriptFileName), serializeStoryboardScriptMarkdown(project));
+    await writeNew(metadataPathForFolder(folderPath), `${JSON.stringify(project, null, 2)}\n`);
+    return { folderPath, folderName: path.basename(folderPath), metadataPath: metadataPathForFolder(folderPath),
+      project, images, scriptImportNeeded: false, preserveProjectWithoutImageMerge: true };
+  } catch (error) { return recoverFailedImport(error, [{ rollback }]); }
+};

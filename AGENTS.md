@@ -13,11 +13,12 @@ Storyboard Flow is a local-first Electron desktop app for arranging storyboard i
 
 ## Context
 
-新 session 开始时请先阅读以下文档：
+首次接手先读本文件与 `context-handoff.md`（短现场入口）；再按任务读取 `todo.md`（唯一剩余工作/分块计划）、`docs/architecture/SYSTEM.md`（唯一活动架构说明）和 `decisions.md` 的相关决定。不默认通读旧日志、验收长报告或归档。
 
-- `decisions.md` — 架构决策与设计理由。
-- `context-handoff.md` — 上次 session 的进度与当前状态。
-- `todo.md` — 待办事项、已知问题与未来规划。
+- 交互教学图已退役归档，架构说明直接维护文字；活动状态只在交接中更新，完成证据按需查。
+- 不同 AI 客户端不一定自动加载本文件，引用也不会自动展开；接续须核验实际读取。`CLAUDE.md`是指向本文件的兼容符号链接，不另维护规则副本。
+- 本机 Developer Workspace通用约定位于 `../AGENTS.md`；从独立仓库启动不保证继承，需显式核验适用约定和当前授权。其他机器路径不保证存在，不能声称已加载或把文件路径当新权限。
+- 本轮只调整资料入口，以下技术、文件保护、禁止事项及完成标准未改变。旧Save-only/autosave-only措辞与已批准的Pending/Create/Import等例外冲突仍需按批准依据核对，不用架构说明或归档擅自改产品/权限/验收契约。
 
 ## Tech Stack
 
@@ -44,7 +45,7 @@ npm run smoke:bitmap
 
 ## Development Map
 
-- Current architecture map lives in `decisions.md`; use this section only as routing.
+- Whole-system map: `docs/architecture/SYSTEM.md` (directly maintained text); current state: `context-handoff.md`; remaining work/plan: `todo.md`; rationale: relevant `decisions.md` sections. Archived teaching material is not a runtime dependency or default reading requirement.
 - Project data behavior: start in `src/shared/projectOps.ts`, then update `src/shared/projectOps.test.ts`.
 - Renderer behavior: prefer focused helpers/controllers before adding inline logic to `src/renderer/App.tsx`. Keep card, canvas, layer drawer, AI panel, and pending shelf work in their owning renderer modules.
 - Electron behavior: keep protected Save / Import / TIFF orchestration in `electron/main/main.ts`; put isolated IPC, read-side, settings, and runtime glue in focused `electron/main/*AppRuntime.ts` or `electron/main/*Service.ts` files with tests.
@@ -91,9 +92,10 @@ Before claiming a change is complete, run:
 
 ```bash
 npm run test
-npm run typecheck
 npm run build
 ```
+
+`npm run build` currently starts with the complete `npm run typecheck` for both renderer and Electron. Keep that gate: a successful build on the same candidate and unchanged relevant inputs/configuration/environment supplies its typecheck evidence; retain the full build log instead of mechanically running standalone typecheck again. Standalone typecheck remains useful during development or diagnosis. Running only Vite or `build:electron` is not a substitute. If the build recipe changes, recheck coverage and run any missing type checks. All other applicable test, preload, packaging and real-behavior checks remain required.
 
 Run `npm run check:preload` whenever preload files change.
 

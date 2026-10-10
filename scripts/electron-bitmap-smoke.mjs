@@ -2,25 +2,29 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { copyFile, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+import { decodeNormalSaveImportResult } from "../dist-electron/shared/normalSaveImportIpc.js";
+import { previewPathForImage, previewRootForFolder } from "../dist-electron/main/previewPaths.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const smokeRoot = path.join("/private/tmp", `swb-bitmap-smoke-${Date.now()}`);
-const scriptRoot = path.join("/private/tmp", `swb-script-smoke-${Date.now()}`);
-const mdBootstrapRoot = path.join("/private/tmp", `swb-md-bootstrap-source-${Date.now()}`);
-const mdBootstrapTargetRoot = path.join("/private/tmp", `swb-md-bootstrap-target-${Date.now()}`);
+const smokeTmpRoot = os.tmpdir();
+const smokeRoot = path.join(smokeTmpRoot, `swb-bitmap-smoke-${Date.now()}`);
+const scriptRoot = path.join(smokeTmpRoot, `swb-script-smoke-${Date.now()}`);
+const scriptRootImportEvidenceRoot = `${scriptRoot}-import-evidence`;
+const mdBootstrapRoot = path.join(smokeTmpRoot, `swb-md-bootstrap-source-${Date.now()}`);
+const mdBootstrapTargetRoot = path.join(smokeTmpRoot, `swb-md-bootstrap-target-${Date.now()}`);
 const mdEmbeddedMatteTargetRoot = path.join(
-  "/private/tmp",
+  smokeTmpRoot,
   `swb-md-embedded-matte-target-${Date.now()}`
 );
-const deleteRoot = path.join("/private/tmp", `swb-delete-smoke-${Date.now()}`);
-const clipboardRoot = path.join("/private/tmp", `swb-clipboard-smoke-${Date.now()}`);
-const denseMarqueeRoot = path.join("/private/tmp", `swb-dense-marquee-smoke-${Date.now()}`);
-const aiPendingRoot = path.join("/private/tmp", `swb-ai-pending-smoke-${Date.now()}`);
-const legacyRoot = path.join("/private/tmp", `swb-legacy-smoke-${Date.now()}`);
-const photoshopImportRoot = path.join("/private/tmp", `swb-photoshop-import-${Date.now()}`);
-const savedLayeredImportRoot = path.join("/private/tmp", `swb-saved-layered-import-${Date.now()}`);
+const deleteRoot = path.join(smokeTmpRoot, `swb-delete-smoke-${Date.now()}`);
+const clipboardRoot = path.join(smokeTmpRoot, `swb-clipboard-smoke-${Date.now()}`);
+const denseMarqueeRoot = path.join(smokeTmpRoot, `swb-dense-marquee-smoke-${Date.now()}`);
+const legacyRoot = path.join(smokeTmpRoot, `swb-legacy-smoke-${Date.now()}`);
+const photoshopImportRoot = path.join(smokeTmpRoot, `swb-photoshop-import-${Date.now()}`);
+const savedLayeredImportRoot = path.join(smokeTmpRoot, `swb-saved-layered-import-${Date.now()}`);
 const port = String(9300 + Math.floor(Math.random() * 400));
 const electronBin = path.join(repoRoot, "node_modules", ".bin", "electron");
 const photoshopPythonDepsDir =
@@ -498,6 +502,7 @@ const dragPolyline = async (send, points) => {
 };
 
 let electronProcess;
+let storyboardSocket;
 
 try {
   // Fixture setup.
@@ -506,7 +511,6 @@ try {
   await mkdir(deleteRoot, { recursive: true });
   await mkdir(clipboardRoot, { recursive: true });
   await mkdir(denseMarqueeRoot, { recursive: true });
-  await mkdir(aiPendingRoot, { recursive: true });
   const originalShotAPath = path.join(smokeRoot, "shot_a.png");
   const originalShotBPath = path.join(smokeRoot, "shot_b.png");
   const originalShotCPath = path.join(smokeRoot, "shot_c.png");
@@ -651,7 +655,6 @@ try {
     cwd: repoRoot,
     env: {
       ...process.env,
-      SWB_BITMAP_SMOKE_TRASH_ROOT: aiPendingRoot,
       SWB_USER_DATA_DIR: electronUserDataRoot,
       SWB_PYTHON_DEPS_DIR: photoshopPythonDepsDir
     },
@@ -662,6 +665,7 @@ try {
   electronProcess.stderr.on("data", (chunk) => process.stderr.write(chunk));
 
   const { ws, send, evaluate } = await connectToStoryboardPage();
+  storyboardSocket = ws;
   await send("Page.enable");
   ws.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
@@ -670,8 +674,25 @@ try {
     }
   });
 
+  const focusChecks = await waitFor(() => evaluate(`(() => {
+    if (!document.querySelector('.app-shell')) return undefined;
+    return {
+      hasAiBridge: Object.prototype.hasOwnProperty.call(window.storyboard, 'ai'),
+      aiButtons: document.querySelectorAll('[aria-label="Toggle AI Draft panel"]').length,
+      aiPanels: document.querySelectorAll('.ai-draft-panel').length,
+      candidateCards: document.querySelectorAll('[data-ai-candidate-id]').length,
+      pendingButtons: document.querySelectorAll('[aria-label="Toggle pending sidebar"]').length
+    };
+  })()`), "focused App exposes ordinary Pending and no AI UI or bridge");
+  if (focusChecks.hasAiBridge || focusChecks.aiButtons || focusChecks.aiPanels || focusChecks.candidateCards || focusChecks.pendingButtons !== 1) {
+    throw new Error(`AI removal or ordinary Pending entry regressed: ${JSON.stringify(focusChecks)}`);
+  }
+
   // Scenario: open a normal image folder and verify basic rendering.
-  const openFolder = async (folderPath = smokeRoot) => {
+  const openFolder = async (folderPath = smokeRoot, { waitForMetadata = true } = {}) => {
+    if (!waitForMetadata && ![scriptRoot, deleteRoot, denseMarqueeRoot, smokeRoot, clipboardRoot, photoshopImportRoot, savedLayeredImportRoot].includes(folderPath)) {
+      throw new Error("Only explicitly selected preparations with explicit Import may defer the metadata wait");
+    }
     await waitFor(
       () =>
         evaluate(`
@@ -708,6 +729,8 @@ try {
       `),
       "shot stage"
     );
+
+    if (!waitForMetadata) return;
 
     await waitFor(async () => {
       const project = await readProjectMetadata(folderPath);
@@ -746,13 +769,14 @@ try {
   if (mdBootstrapInspection.entryCount !== 2 || mdBootstrapInspection.fileName !== "numbered-storyboard.md") {
     throw new Error(`Markdown storyboard inspection failed: ${JSON.stringify(mdBootstrapInspection)}`);
   }
-  const mdBootstrapScan = await evaluate(
+  const mdBootstrapScan = decodeNormalSaveImportResult(await evaluate(
     `window.storyboard.createFromStoryboardScript(${JSON.stringify({
       sourceMarkdownPath: mdBootstrapSourcePath,
       targetFolderPath: mdBootstrapTargetRoot,
-      blankShotPreset: "16:9"
+      blankShotPreset: "16:9",
+      normalSave: true
     })})`
-  );
+  ));
   if (mdBootstrapScan.folderPath !== mdBootstrapTargetRoot || mdBootstrapScan.images.length !== 2) {
     throw new Error(`Markdown storyboard project scan was incorrect: ${JSON.stringify(mdBootstrapScan)}`);
   }
@@ -974,13 +998,14 @@ try {
   }, "expanded matte disable redo");
 
   await mkdir(mdEmbeddedMatteTargetRoot, { recursive: true });
-  const embeddedMatteScan = await evaluate(
+  const embeddedMatteScan = decodeNormalSaveImportResult(await evaluate(
     `window.storyboard.createFromStoryboardScript(${JSON.stringify({
       sourceMarkdownPath: mdBootstrapSourcePath,
       targetFolderPath: mdEmbeddedMatteTargetRoot,
-      blankShotPreset: "16:9"
+      blankShotPreset: "16:9",
+      normalSave: true
     })})`
-  );
+  ));
   const embeddedMatteProject = await readProjectMetadata(mdEmbeddedMatteTargetRoot);
   if (
     embeddedMatteScan.folderPath !== mdEmbeddedMatteTargetRoot ||
@@ -1079,7 +1104,125 @@ try {
     throw new Error(`Markdown storyboard UI did not open imported script text: ${mdBootstrapUiScript}`);
   }
 
-  await openFolder(scriptRoot);
+  // This fixture remains three original PNGs until the actual normal UI Import.
+  // Read-only observation of committed React props/refs binds preview and publication
+  // to the current folder; no production state, API, writer or admission is replaced.
+  const scriptRootUiFacts = (observedFolder = scriptRoot) => evaluate(`
+    (() => {
+      const cards = Array.from(document.querySelectorAll('[data-shot-id]'));
+      const element = cards[0];
+      const key = element && Object.keys(element).find(k => k.startsWith('__reactFiber$'));
+      let fiber = key && element[key];
+      if (!fiber) return;
+      while (fiber.return) fiber = fiber.return;
+      fiber = fiber.stateNode.current;
+      const stack = [fiber], shots = new Map();
+      let currentProject;
+      while (stack.length) {
+        const node = stack.pop(), props = node.memoizedProps;
+        if (props?.shot && props.folderPath === ${JSON.stringify(observedFolder)}) shots.set(props.shot.id, props.shot);
+        for (let hook = node.memoizedState; hook && Object.hasOwn(hook, 'memoizedState'); hook = hook.next) {
+          const project = hook.memoizedState?.current;
+          if (Array.isArray(project?.shots) && project.shots.length === cards.length &&
+              project.shots.every(s => s.imagePath.startsWith(${JSON.stringify(observedFolder + path.sep)}))) currentProject = project;
+        }
+        if (node.child) stack.push(node.child);
+        if (node.sibling) stack.push(node.sibling);
+      }
+      return {
+        shots: cards.map(card => shots.get(card.getAttribute('data-shot-id'))),
+        pendingBake: currentProject?.pendingBake,
+        projectObserved: Boolean(currentProject),
+        previews: cards.map(card => {
+          const stage = card.querySelector('.image-stage');
+          const imgs = Array.from(stage?.querySelectorAll('img') ?? []);
+          const canvases = Array.from(stage?.querySelectorAll('canvas') ?? []);
+          return imgs.some(img => img.complete && img.naturalWidth > 0) || canvases.some(canvas => {
+            const context = canvas.getContext('2d');
+            return context && canvas.width > 0 && canvas.height > 0 &&
+              context.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data[3] > 0;
+          });
+        }),
+        visibleCards: cards.map(card => { const rect = card.getBoundingClientRect(); return rect.top < innerHeight && rect.bottom > 0; }),
+        importEnabled: Boolean(document.querySelector('.import-control button') && !document.querySelector('.import-control button').disabled),
+        importWarning: Boolean(document.querySelector('.import-warning')),
+        status: document.querySelector('.status-panel > span')?.textContent ?? ''
+      };
+    })()
+  `);
+  await mkdir(scriptRootImportEvidenceRoot, { recursive: true });
+  const scriptOriginalPaths = [scriptShotAPath, scriptShotBPath, scriptShotCPath];
+  const scriptOriginalFacts = await Promise.all(scriptOriginalPaths.map(async imagePath => {
+    const bytes = await readFile(imagePath);
+    const { data, info } = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    return { imagePath, fileName: path.basename(imagePath), hash: createHash('sha256').update(bytes).digest('hex'),
+      width: info.width, height: info.height, pixelHash: createHash('sha256').update(data).digest('hex') };
+  }));
+  await writeFile(path.join(scriptRootImportEvidenceRoot, 'originals.json'), JSON.stringify(scriptOriginalFacts, null, 2));
+  await openFolder(scriptRoot, { waitForMetadata: false });
+  await showStoryboardBoard(evaluate);
+  const scriptPreImportUi = await waitFor(async () => {
+    const facts = await scriptRootUiFacts();
+    await writeFile(path.join(scriptRootImportEvidenceRoot, 'readiness-last.json'), JSON.stringify({ facts: facts ?? null }, null, 2));
+    return facts?.projectObserved && facts.shots.length === 3 && facts.shots.every((shot, i) =>
+      shot?.imagePath === scriptOriginalPaths[i]) && facts.previews.every(Boolean) &&
+      facts.importEnabled && facts.importWarning ? facts : undefined;
+  }, "pristine scriptRoot current folder, three original previews and reachable Import");
+  await evaluate(`document.querySelector('button[aria-label="Workspace status"]')?.click()`);
+  const scriptPreImportStatus = (await scriptRootUiFacts()).status;
+  const scriptPreImportEntries = Object.values(scriptPreImportUi.pendingBake?.shots ?? {});
+  const scriptPreImportRootFiles = await readdir(scriptRoot);
+  const scriptPreImportHashes = await Promise.all(scriptOriginalPaths.map(hashFile));
+  const scriptPreImportMetadataAbsent = !await fileExists(projectMetadataPath(scriptRoot));
+  const scriptPreImportEvidence = { ui: scriptPreImportUi, status: scriptPreImportStatus,
+    rootFiles: scriptPreImportRootFiles, originalHashes: scriptPreImportHashes,
+    metadataAbsent: scriptPreImportMetadataAbsent,
+    noSyncedIdentity: scriptPreImportEntries.every(entry => entry.state !== 'synced' && !entry.acceptedOutputIdentity),
+    noSavedSuccess: !/^Saved\b/i.test(scriptPreImportStatus) };
+  await writeFile(path.join(scriptRootImportEvidenceRoot, 'pre-import.json'), JSON.stringify(scriptPreImportEvidence, null, 2));
+  if (!scriptPreImportMetadataAbsent || !scriptPreImportEvidence.noSyncedIdentity || !scriptPreImportEvidence.noSavedSuccess ||
+      scriptPreImportHashes.some((hash, i) => hash !== scriptOriginalFacts[i].hash) ||
+      scriptPreImportRootFiles.some(name => /\.tiff?$/i.test(name) || name === 'Archive') ||
+      await fileExists(scriptExternalShotAPath) || await fileExists(scriptExternalShotBPath)) {
+    throw new Error("Pristine scriptRoot was altered, falsely certified or external fixtures were prepared before explicit UI Import");
+  }
+  await evaluate(`document.querySelector('button[aria-label="Workspace status"]')?.click()`);
+  await evaluate(`document.querySelector('.import-control button').click()`);
+  const scriptInitialImportedProject = await waitFor(async () => {
+    const project = await readProjectMetadata(scriptRoot);
+    const ui = await scriptRootUiFacts();
+    const markdown = await readFile(path.join(scriptRoot, 'storyboard-script.md'), 'utf8');
+    return project.shots?.length === 3 && project.shots.every((shot, i) => shot.id === scriptPreImportUi.shots[i].id &&
+      shot.swb?.status === 'owned' && /\.tiff?$/i.test(shot.imagePath)) &&
+      ui?.shots.length === 3 && ui.shots.every((shot, i) => shot?.imagePath === project.shots[i].imagePath) &&
+      !ui.importWarning && !ui.importEnabled && markdown === '1. \n2. \n3. \n' ? project : undefined;
+  }, "scriptRoot normal UI Import required JSON/MD, three owned TIFFs and publication");
+  const scriptInitialImportMappings = await Promise.all(scriptInitialImportedProject.shots.map(async (shot, i) => {
+    const original = scriptOriginalFacts[i], entry = scriptInitialImportedProject.pendingBake?.shots[shot.id];
+    const archivePath = shot.swb.archivePath;
+    const output = await sharp(shot.imagePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const outputPixelHash = createHash('sha256').update(output.data).digest('hex');
+    const archiveHash = await hashFile(archivePath), outputHash = await hashFile(shot.imagePath);
+    const layerPaths = (shot.layers ?? []).map(layer => path.resolve(scriptRoot, layer.bitmapPath));
+    if (shot.sourceFileName !== original.fileName || shot.swb.sourcePath !== original.imagePath ||
+        path.dirname(path.dirname(archivePath)) !== path.join(scriptRoot, 'Archive') ||
+        path.basename(archivePath) !== original.fileName || archiveHash !== original.hash ||
+        await fileExists(original.imagePath) || path.dirname(shot.imagePath) !== scriptRoot ||
+        shot.fileName !== path.basename(shot.imagePath) || shot.order !== i ||
+        output.info.width !== original.width || output.info.height !== original.height || outputPixelHash !== original.pixelHash ||
+        entry?.state !== 'pending' || typeof entry.editToken !== 'string' || !entry.editToken ||
+        entry.acceptedOutputIdentity !== outputHash || !layerPaths.length ||
+        !(await Promise.all(layerPaths.map(fileExists))).every(Boolean)) {
+      throw new Error(`scriptRoot Import source/archive/output/identity mapping failed for ${original.fileName}`);
+    }
+    return { shotId: shot.id, order: shot.order, sourceFileName: shot.sourceFileName, sourcePath: shot.swb.sourcePath,
+      archivePath, archiveHash, imagePath: shot.imagePath, fileName: shot.fileName, outputHash, outputPixelHash,
+      width: output.info.width, height: output.info.height, layerPaths, state: entry.state };
+  }));
+  await writeFile(path.join(scriptRootImportEvidenceRoot, 'post-import.json'), JSON.stringify({
+    metadataPath: projectMetadataPath(scriptRoot), markdownPath: path.join(scriptRoot, 'storyboard-script.md'),
+    mappings: scriptInitialImportMappings, ui: await scriptRootUiFacts()
+  }, null, 2));
 
   // Scenario: Japanese storyboard Action field and root markdown sync/import.
   const scriptMarkdownPath = path.join(scriptRoot, "storyboard-script.md");
@@ -1206,8 +1349,55 @@ try {
   }, "external folder images import");
   await showStoryboardBoard(evaluate);
 
+  // These three call sites already explicitly Import; only their opening wait changes.
+  const rawOriginals = new Map();
+  const rawOpenBeforeExplicitImport = async (folder, count) => {
+    const paths = (await readdir(folder)).filter(name => /\.png$/i.test(name)).sort().map(name => path.join(folder, name));
+    if (paths.length !== count) throw new Error(`Unexpected original PNG count in ${folder}`);
+    const originals = await Promise.all(paths.map(async imagePath => ({ imagePath, hash: await hashFile(imagePath) })));
+    await openFolder(folder, { waitForMetadata: false });
+    await showStoryboardBoard(evaluate);
+    const ui = await waitFor(async () => {
+      const facts = await scriptRootUiFacts(folder);
+      await writeFile(path.join(scriptRootImportEvidenceRoot, `${path.basename(folder)}-readiness.json`), JSON.stringify(facts ?? null, null, 2));
+      return facts?.projectObserved && facts.shots.length === count && facts.shots.every(shot => paths.includes(shot?.imagePath)) &&
+        facts.importEnabled && facts.importWarning && facts.previews.some(Boolean) &&
+        facts.previews.every((ready, i) => ready || !facts.visibleCards[i]) ? facts : undefined;
+    }, `raw preview and original explicit Import reachable for ${folder}`);
+    const hashes = await Promise.all(paths.map(hashFile)), names = await readdir(folder);
+    const metadataAbsent = !await fileExists(projectMetadataPath(folder));
+    const entries = Object.values(ui.pendingBake?.shots ?? {});
+    await writeFile(path.join(scriptRootImportEvidenceRoot, `${path.basename(folder)}-pre-import.json`), JSON.stringify({ originals, hashes, names, metadataAbsent, ui }, null, 2));
+    if (!metadataAbsent || entries.length || hashes.some((hash, i) => hash !== originals[i].hash) ||
+        names.some(name => /\.tiff?$/i.test(name) || name === 'Archive')) throw new Error(`Raw originals altered or certified before explicit Import in ${folder}`);
+    rawOriginals.set(folder, { originals, ui });
+  };
+  const verifyOriginalExplicitImport = async folder => {
+    const { originals, ui: beforeUi } = rawOriginals.get(folder);
+    const project = await readProjectMetadata(folder);
+    const ui = await waitFor(async () => {
+      const facts = await scriptRootUiFacts(folder);
+      return facts?.shots.length === project.shots.length && facts.shots.every((shot, i) => shot?.imagePath === project.shots[i].imagePath) &&
+        !facts.importEnabled && !facts.importWarning ? facts : undefined;
+    }, `original explicit Import publication for ${folder}`);
+    const mappings = await Promise.all(project.shots.map(async (shot, i) => {
+      const original = originals.find(o => o.imagePath === shot.swb?.sourcePath);
+      const entry = project.pendingBake?.shots[shot.id], archivePath = shot.swb?.archivePath;
+      const archiveHash = await hashFile(archivePath), outputHash = await hashFile(shot.imagePath);
+      if (!original || shot.id !== beforeUi.shots[i].id || shot.order !== i || shot.sourceFileName !== path.basename(original.imagePath) ||
+          path.dirname(path.dirname(archivePath)) !== path.join(folder, 'Archive') || archiveHash !== original.hash ||
+          await fileExists(original.imagePath) || shot.swb.status !== 'owned' || !/\.tiff?$/i.test(shot.imagePath) ||
+          path.dirname(shot.imagePath) !== folder || shot.fileName !== path.basename(shot.imagePath) ||
+          entry?.state !== 'pending' || !entry.editToken || entry.acceptedOutputIdentity !== outputHash) throw new Error(`Original explicit Import mapping failed in ${folder}`);
+      return { shotId: shot.id, sourcePath: original.imagePath, sourceFileName: shot.sourceFileName, archivePath, archiveHash, imagePath: shot.imagePath, outputHash };
+    }));
+    const markdown = await readFile(path.join(folder, 'storyboard-script.md'), 'utf8');
+    if (project.shots.length !== originals.length || markdown !== project.shots.map((_, i) => `${i + 1}. \n`).join('')) throw new Error(`Original explicit Import required MD/count failed in ${folder}`);
+    await writeFile(path.join(scriptRootImportEvidenceRoot, `${path.basename(folder)}-post-import.json`), JSON.stringify({ mappings, ui, markdown }, null, 2));
+  };
+
   // Scenario: Delete removes selected storyboards in the app, Undo restores them, and Save moves files to Trash.
-  await openFolder(deleteRoot);
+  await rawOpenBeforeExplicitImport(deleteRoot, 3);
   await waitFor(
     () => evaluate(`!document.querySelector(".import-control button")?.disabled`),
     "delete smoke import button enabled"
@@ -1220,6 +1410,7 @@ try {
       ? project
       : undefined;
   }, "delete smoke imported images before editing");
+  await verifyOriginalExplicitImport(deleteRoot);
   const deleteInitialProject = await readProjectMetadata(deleteRoot);
   const deleteTargetPath = deleteInitialProject.shots[1].imagePath;
   const deleteTargetLayerDir = path.join(
@@ -1299,7 +1490,7 @@ try {
   }, "Save moved deleted storyboard file to Trash", 20000);
 
   // Scenario: dense-board marquee stays outside cards and edge-scrolls during drag.
-  await openFolder(denseMarqueeRoot);
+  await rawOpenBeforeExplicitImport(denseMarqueeRoot, 24);
   await waitFor(
     () => evaluate(`!document.querySelector(".import-control button")?.disabled`),
     "dense marquee import button enabled"
@@ -1312,6 +1503,7 @@ try {
       ? project
       : undefined;
   }, "dense marquee imported images before editing");
+  await verifyOriginalExplicitImport(denseMarqueeRoot);
   await evaluate(`
     (() => {
       const input = document.querySelector('input[type="range"]');
@@ -1403,7 +1595,7 @@ try {
     })()
   `);
 
-  await openFolder();
+  await rawOpenBeforeExplicitImport(smokeRoot, 3);
   await waitFor(
     () => evaluate(`!document.querySelector(".import-control button")?.disabled`),
     "main smoke import button enabled"
@@ -1416,6 +1608,7 @@ try {
       ? project
       : undefined;
   }, "main smoke imported images before editing");
+  await verifyOriginalExplicitImport(smokeRoot);
 
 		  // Scenario: drawing, erasing, undo/redo, layer drawer, and shortcuts.
 	  const exportTiffButtonVisible = await evaluate(`
@@ -1651,7 +1844,51 @@ try {
 		    "parking smoke zoom reset"
 		  );
 
-  await openFolder(clipboardRoot);
+  // Clipboard preparation alone adds one real UI Import; never auto-Import other folders.
+  await rawOpenBeforeExplicitImport(clipboardRoot, 3);
+  const clipboardOriginalPixels = await Promise.all(rawOriginals.get(clipboardRoot).originals.map(async original => {
+    const { data, info } = await sharp(original.imagePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    return { ...original, width: info.width, height: info.height, pixelHash: createHash("sha256").update(data).digest("hex") };
+  }));
+  await evaluate(`document.querySelector(".import-control button").click()`);
+  await waitFor(async () => {
+    const project = await readProjectMetadata(clipboardRoot);
+    return project.shots?.length === 3 && project.shots.every(shot => shot.swb?.status === "owned") ? project : undefined;
+  }, "clipboard explicit Import durable owned TIFF/JSON");
+  await verifyOriginalExplicitImport(clipboardRoot);
+  const clipboardImported = await readProjectMetadata(clipboardRoot);
+  const clipboardProtectedAssets = [];
+  for (const shot of clipboardImported.shots) {
+    const original = clipboardOriginalPixels.find(item => item.imagePath === shot.swb.sourcePath);
+    const { data, info } = await sharp(shot.imagePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    if (!original || info.width !== original.width || info.height !== original.height ||
+        createHash("sha256").update(data).digest("hex") !== original.pixelHash) throw new Error("Clipboard Import changed original dimensions/pixels");
+    for (const assetPath of [shot.swb.archivePath, shot.imagePath, ...shot.layers.map(layer => resolveLayerPath(clipboardRoot, layer.bitmapPath))]) {
+      clipboardProtectedAssets.push({ assetPath, hash: await hashFile(assetPath) });
+    }
+  }
+  const verifyClipboardAssets = async phase => {
+    const project = await readProjectMetadata(clipboardRoot);
+    const copied = project.shots.filter(shot => !clipboardImported.shots.some(source => source.id === shot.id));
+    const source = clipboardImported.shots[0];
+    if (copied.length !== 1) throw new Error("Clipboard copy did not create exactly one independent shot");
+    const target = copied[0], pairs = [[source.imagePath, target.imagePath]];
+    if (target.layers.length !== source.layers.length) throw new Error("Clipboard layer count differs from actual source");
+    for (let i = 0; i < source.layers.length; i++) {
+      const a = resolveLayerPath(clipboardRoot, source.layers[i].bitmapPath), b = resolveLayerPath(clipboardRoot, target.layers[i].bitmapPath);
+      if (!a.startsWith(path.join(clipboardRoot, ".storyboard-workbench", "layers") + path.sep) ||
+          !b.startsWith(path.join(clipboardRoot, ".storyboard-workbench", "layers", target.id) + path.sep)) throw new Error("Clipboard layers borrowed Archive/source namespace");
+      pairs.push([a, b]);
+    }
+    const identities = await Promise.all(pairs.map(async ([a, b]) => {
+      const [sa, sb, ha, hb] = await Promise.all([stat(a), stat(b), hashFile(a), hashFile(b)]);
+      if (a === b || (sa.dev === sb.dev && sa.ino === sb.ino) || ha !== hb || path.dirname(target.imagePath) !== clipboardRoot ||
+          !/\.tiff?$/i.test(target.imagePath)) throw new Error("Clipboard assets alias or do not match active TIFF/internal layers");
+      return { sourcePath: a, targetPath: b, sourceInode: sa.ino, targetInode: sb.ino, hash: ha };
+    }));
+    for (const asset of clipboardProtectedAssets) if (await hashFile(asset.assetPath) !== asset.hash) throw new Error(`Clipboard original asset changed: ${asset.assetPath}`);
+    await writeFile(path.join(scriptRootImportEvidenceRoot, `clipboard-${phase}-provenance.json`), JSON.stringify({ originals: clipboardOriginalPixels, protectedAssets: clipboardProtectedAssets, identities }, null, 2));
+  };
   const clipboardProjectLoaded = await waitFor(async () => {
     const project = await readProjectMetadata(clipboardRoot);
     const boardShotCount = await evaluate(`document.querySelectorAll("[data-shot-id]").length`);
@@ -1683,6 +1920,7 @@ try {
       boardShotCount
     }));
   }, "storyboard keyboard copy paste");
+  await verifyClipboardAssets("after-copy");
   const altDragBefore = await readProjectMetadata(clipboardRoot);
   const altDrag = await evaluate(`
     (() => {
@@ -1717,6 +1955,7 @@ try {
       movingShotStillPresent: project.shots.some((shot) => shot.id === altDrag.movingShotId)
     }));
   }, "Option drag does not copy storyboards");
+  await verifyClipboardAssets("after-option-drag");
   await openFolder(smokeRoot);
   await waitFor(async () => {
     const project = await readProjectMetadata(smokeRoot);
@@ -3056,11 +3295,40 @@ try {
 	    const project = await readProjectMetadata(smokeRoot);
 	    return project.shots?.[0]?.layers?.find((layer) => layer.id === secondPaintLayer.id)?.locked === false;
 	  }, "second paint layer unlocked after merge visible");
-	  await unlink(secondPaintLayerPath).catch((error) => {
-	    if (error.code !== "ENOENT") {
-	      throw error;
-    }
-  });
+  // Undo has just restored this referenced source. Do not remove it as old
+  // blank-layer fixture cleanup: subsequent gestures require intact assets.
+  // Missing referenced files are intentionally rejected by normal admission.
+  if (await layerAssetState(secondPaintLayerPath) !== mergeVisibleSourceStatesBefore[secondPaintLayer.id]) {
+    throw new Error("Merge Undo did not retain the second paint source for following gestures");
+  }
+  // Reset the synthetic green Merge input through the real Clear action. The
+  // old unlink accidentally depended on ensure repairing a referenced file;
+  // keeping its green pixels would invalidate the later white-background check.
+  await evaluate(`(() => {
+    document.querySelector('[data-layer-id="${secondPaintLayer.id}"]').click();
+    return true;
+  })()`);
+  await waitFor(() => evaluate(`document.querySelector('[data-layer-id="${secondPaintLayer.id}"]')?.classList.contains('is-active')`),
+    "synthetic Merge source active before reset");
+  await evaluate(`document.querySelector('button[aria-label="Clear current layer"]').click()`);
+  await waitFor(async () => {
+    const pixels = await sharp(secondPaintLayerPath).ensureAlpha().raw().toBuffer();
+    return pixels.every((value, index) => index % 4 !== 3 || value === 0);
+  }, "synthetic Merge source reset by real Clear before remaining gestures");
+  // The existing Photoshop importer intentionally skips fully empty layers.
+  // Give this retained layer real non-corner pixels via normal drawing, so the
+  // later Save/import round-trip genuinely verifies two independent layers.
+  await evaluate(`document.querySelector('button[aria-label="Brush"]').click()`);
+  await waitFor(() => evaluate(`document.querySelector('button[aria-label="Brush"]')?.classList.contains("selected")`),
+    "brush active for retained second-layer round-trip marker");
+  const markerRect = await evaluate(`(() => { const r = document.querySelector('[data-shot-id] .image-stage').getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`);
+  await dragStroke(send, markerRect.x + markerRect.width * 0.45, markerRect.y + markerRect.height * 0.55,
+    markerRect.x + markerRect.width * 0.55, markerRect.y + markerRect.height * 0.55);
+  await waitFor(async () => {
+    const pixels = await sharp(secondPaintLayerPath).ensureAlpha().raw().toBuffer();
+    return pixels[3] === 0 && pixels.some((value, index) => index % 4 === 3 && value > 0);
+  }, "second layer marker durable with transparent top-left");
   const layerRowsKeepFixedHeight = await waitFor(
     () =>
       evaluate(`
@@ -3603,7 +3871,8 @@ try {
   await copyFile(photoshopExportFiles[0], photoshopImportSourcePath);
   const photoshopImportSourceHash = await hashFile(photoshopImportSourcePath);
 
-  await openFolder(photoshopImportRoot);
+  await openFolder(photoshopImportRoot, { waitForMetadata: false });
+  if (await hashFile(photoshopImportSourcePath) !== photoshopImportSourceHash) throw new Error("Opening Photoshop input changed original bytes before Import");
   await waitFor(
     () =>
       evaluate(`
@@ -3872,7 +4141,23 @@ try {
   const savedLayeredImportSourcePath = path.join(savedLayeredImportRoot, "saved-layered.tiff");
   await copyFile(path.join(smokeRoot, firstSavedTiff), savedLayeredImportSourcePath);
   const savedLayeredImportSourceHash = await hashFile(savedLayeredImportSourcePath);
-  await openFolder(savedLayeredImportRoot);
+  await openFolder(savedLayeredImportRoot, { waitForMetadata: false });
+  if (await hashFile(savedLayeredImportSourcePath) !== savedLayeredImportSourceHash) throw new Error("Opening layered input changed original bytes before Import");
+  const foreignPreviewPath = previewPathForImage(savedLayeredImportSourcePath, previewRootForFolder(savedLayeredImportRoot));
+  const foreignBeforeImport = await waitFor(async () => {
+    const facts = await scriptRootUiFacts(savedLayeredImportRoot);
+    await writeFile(path.join(scriptRootImportEvidenceRoot, "foreign-layered-before-import.json"), JSON.stringify(facts ?? null, null, 2));
+    return facts?.projectObserved && facts.shots.length === 1 && facts.shots[0].imagePath === savedLayeredImportSourcePath &&
+      facts.shots[0].previewPath === foreignPreviewPath && facts.shots[0].swb?.status === "non-swb" &&
+      facts.previews.every(Boolean) && facts.importEnabled ? facts : undefined;
+  }, "new foreign folder actually published with decoded preview, not old shot stage");
+  if (Object.keys(foreignBeforeImport.pendingBake?.shots ?? {}).length || (await sharp(foreignPreviewPath).metadata()).width <= 0) {
+    throw new Error("Foreign preview falsely acquired output proof or failed decoding");
+  }
+  for (const protectedPath of [path.join(savedLayeredImportRoot, ".storyboard-workbench/storyboard.project.json"),
+    path.join(savedLayeredImportRoot, ".storyboard-workbench/layers"), path.join(savedLayeredImportRoot, "storyboard-script.md")]) {
+    if (await fileExists(protectedPath)) throw new Error(`Open adopted foreign assets before explicit Import: ${protectedPath}`);
+  }
   await waitFor(
     () =>
       evaluate(`
@@ -3901,6 +4186,24 @@ try {
       : undefined;
   }, "Save-produced Photoshop layered TIFF import", 20000);
   const savedLayeredImportedLayerNames = savedLayeredImportedProject.shots?.[0]?.layers?.map((layer) => layer.name) ?? [];
+  const importedLayeredShot = savedLayeredImportedProject.shots[0];
+  if (JSON.stringify(savedLayeredImportedLayerNames) !== JSON.stringify(savedPhotoshopLayerNames) || importedLayeredShot.layers.length !== 2 ||
+      savedLayeredImportedProject.pendingBake?.shots[importedLayeredShot.id]?.state !== "pending") {
+    throw new Error("Explicit layered Import did not preserve both Photoshop layers and pending output obligation");
+  }
+  for (let index = 0; index < 2; index++) {
+    const originalLayer = savedProject.shots[0].layers[index], importedLayer = importedLayeredShot.layers[index];
+    const originalPixels = await sharp(resolveLayerPath(smokeRoot, originalLayer.bitmapPath)).ensureAlpha().raw().toBuffer();
+    const importedPixels = await sharp(resolveLayerPath(savedLayeredImportRoot, importedLayer.bitmapPath)).ensureAlpha().raw().toBuffer();
+    // The existing TIFF exporter encodes opacity in alpha (float32 rounded to
+    // uint8) and imports that raster at opacity=1. Compare rendered layer inputs,
+    // not the pre-export alpha which would incorrectly apply opacity twice.
+    if (originalPixels.length !== importedPixels.length || importedLayer.opacity !== 1 ||
+        importedLayer.blendMode !== originalLayer.blendMode || !originalPixels.every((value, channel) =>
+          channel % 4 === 3 ? Math.abs(importedPixels[channel] - value * originalLayer.opacity) <= 1 : importedPixels[channel] === value)) {
+      throw new Error(`Layered Import pixel/opacity/blend mismatch at layer ${index}`);
+    }
+  }
   const savedLayeredImportSourceArchivedPath = await waitFor(
     () => findArchivedFileByHash(savedLayeredImportRoot, savedLayeredImportSourceHash),
     "archived Save-produced Photoshop layered TIFF source"
@@ -4130,244 +4433,30 @@ try {
     throw new Error(`Add Shot did not create a 1998x1080 TIFF: ${JSON.stringify(addedTheatricalTiff)}`);
   }
 
+  // User-approved safety alignment: no proved TIFF baseline for this PNG+stroke
+  // fixture. The former exact test and original failure are archived separately.
+  const legacyBefore = { sourceHash: await hashFile(legacyImagePath), projectHash: await hashFile(projectMetadataPath(legacyRoot)) };
   await openFolder(legacyRoot);
-  const legacyProject = await waitFor(async () => {
-    const project = await readProjectMetadata(legacyRoot);
-    const shot = project.shots?.[0];
-    return shot?.layers?.length === 2 && shot.layers.some((layer) => layer.id === "legacy-ink")
-      ? project
-      : undefined;
-  }, "legacy bitmap metadata autosave");
-  await exportPhotoshopTiffsViaDebugApi(legacyRoot);
-  await waitFor(async () => {
-    const files = await findPhotoshopExportFiles(legacyRoot);
-    return files.length === 1 ? files : undefined;
-  }, "legacy Photoshop TIFF export files");
-  const legacyImageLayerPath = await waitFor(
-    () => findShotLayerPath(legacyRoot, 0),
-    "legacy image layer asset"
-  );
-  const legacyPaintLayerPath = await waitFor(
-    () => findShotLayerPath(legacyRoot, 0, "legacy-ink"),
-    "legacy paint layer asset"
-  );
-  const legacyBaseHash = await hashFile(legacyImagePath);
-  const legacyImageLayerHash = await hashFile(legacyImageLayerPath);
-  const legacyPaintLayerHash = await hashFile(legacyPaintLayerPath);
-  if (legacyImageLayerHash === legacyBaseHash || legacyPaintLayerHash === paintBlankHash) {
-    throw new Error("Legacy stroke migration did not create visible bitmap layer pixels");
+  const legacyProtectionStatus = await waitFor(() => evaluate(`(() => {
+    const button = document.querySelector('button[aria-label="Workspace status"]');
+    if (button?.getAttribute("aria-expanded") !== "true") button?.click();
+    const text = document.querySelector('.status-panel')?.textContent ?? '';
+    const details = document.querySelector('.save-error-modal')?.textContent ?? '';
+    return text.includes('Open folder failed: output initialization incomplete') && text.includes('Workspace error') &&
+      details.includes('Legacy preview source is unknown; assets retained') && !text.includes('Workspace saved') ? { text, details } : undefined;
+  })()`), "unproved legacy Open explicitly incomplete, no false saved status");
+  const legacyAfter = { sourceHash: await hashFile(legacyImagePath), projectHash: await hashFile(projectMetadataPath(legacyRoot)) };
+  if (JSON.stringify(legacyBefore) !== JSON.stringify(legacyAfter) || (await scriptRootUiFacts(legacyRoot))?.projectObserved) {
+    throw new Error("Unproved legacy Open mutated or falsely published the unknown project");
   }
-
-  // Scenario: historical AI candidates remain in Pending and can be promoted
-  // into both storyboard views.
-  await showStoryboardBoard(evaluate);
-  await evaluate(`document.querySelector('.bottom-bar input[type="range"]')?.focus()`);
-  await dispatchKey(send, "Home", "Home", 36);
-  await waitFor(
-    () =>
-      evaluate(
-        `document.querySelector(".app-shell")?.classList.contains("is-animation-mode") === false`
-      ),
-    "AI Pending smoke grid mode"
-  );
-  await evaluate(
-    `window.storyboard.createFromStoryboardScript(${JSON.stringify({
-      sourceMarkdownPath: mdBootstrapSourcePath,
-      targetFolderPath: aiPendingRoot,
-      blankShotPreset: "16:9"
-    })})`
-  );
-  await openFolder(aiPendingRoot);
-  const aiPendingSourceProject = await readProjectMetadata(aiPendingRoot);
-  const aiCandidateRoot = path.join(
-    aiPendingRoot,
-    ".storyboard-workbench",
-    "ai-candidates"
-  );
-  await mkdir(aiCandidateRoot, { recursive: true });
-  const aiPendingCandidateIds = [
-    "ai-candidate-standard",
-    "ai-candidate-japanese"
-  ];
-  for (const [index, candidateId] of aiPendingCandidateIds.entries()) {
-    const candidatePath = path.join(aiCandidateRoot, `${candidateId}.png`);
-    await sharp({
-      create: {
-        width: 320,
-        height: 180,
-        channels: 4,
-        background: index === 0 ? "#4b7bec" : "#26de81"
-      }
-    })
-      .png()
-      .toFile(candidatePath);
-    await writeFile(
-      path.join(aiCandidateRoot, `${candidateId}.json`),
-      `${JSON.stringify(
-        {
-          id: candidateId,
-          shotId: aiPendingSourceProject.shots[index]?.id ?? `historical-source-${index}`,
-          bitmapPath: `.storyboard-workbench/ai-candidates/${candidateId}.png`,
-          filePath: candidatePath,
-          width: 320,
-          height: 180,
-          prompt: "AI Pending smoke candidate",
-          createdAt: `2026-07-31T0${index + 1}:00:00.000Z`
-        },
-        null,
-        2
-      )}\n`,
-      "utf8"
-    );
+  for (const forbidden of [".storyboard-workbench/layers", ".storyboard-workbench/previews", "storyboard-script.md", "Archive", "Photoshop TIFF Export"]) {
+    if (await fileExists(path.join(legacyRoot, forbidden))) throw new Error(`Unproved legacy Open created ${forbidden}`);
   }
-  await openFolder(legacyRoot);
-  await openFolder(aiPendingRoot);
-  await showStoryboardBoard(evaluate);
-  await evaluate(`
-    (() => {
-      const shelf = document.querySelector(".parking-shelf");
-      if (!shelf?.classList.contains("is-open")) {
-        document.querySelector('[aria-label="Toggle pending sidebar"]')?.click();
-      }
-      return true;
-    })()
-  `);
-  await waitFor(
-    () =>
-      evaluate(
-        `document.querySelector(".parking-shelf")?.classList.contains("is-open") === true`
-      ),
-    "AI Pending shelf open"
-  );
-  await delay(180);
-  await waitFor(
-    () =>
-      evaluate(`
-        document.querySelectorAll("[data-ai-candidate-id]").length === 2 &&
-        document.querySelector(".parking-panel header strong")?.textContent === "2"
-      `),
-    "historical AI candidates restored in Pending"
-  );
-  const migratedAiCandidateFiles = await readdir(path.join(aiPendingRoot, "Pending"));
-  if (
-    migratedAiCandidateFiles.filter((fileName) => /^AI_.*\.png$/i.test(fileName)).length !== 2 ||
-    (await readdir(aiCandidateRoot)).some((fileName) => fileName.endsWith(".png"))
-  ) {
-    throw new Error(
-      `Historical AI candidates were not migrated to visible Pending: ${JSON.stringify(
-        migratedAiCandidateFiles
-      )}`
-    );
-  }
-
-  const standardCandidateDrag = await evaluate(`
-    (() => {
-      const card = document.querySelector('[data-ai-candidate-id="ai-candidate-standard"]');
-      card?.scrollIntoView({ block: "center" });
-      const source = card?.getBoundingClientRect();
-      const target = document.querySelectorAll("[data-shot-id]")[1]?.getBoundingClientRect();
-      return source && target ? {
-        startX: Math.round(source.left + source.width / 2),
-        startY: Math.round(source.top + source.height / 2),
-        endX: Math.round(target.left + target.width * 0.25),
-        endY: Math.round(target.top + target.height / 2),
-        windowWidth: window.innerWidth,
-        windowHeight: window.innerHeight
-      } : null;
-    })()
-  `);
-  if (!standardCandidateDrag) {
-    throw new Error("Could not measure standard AI candidate drag");
-  }
-  await dragStroke(
-    send,
-    standardCandidateDrag.startX,
-    standardCandidateDrag.startY,
-    standardCandidateDrag.endX,
-    standardCandidateDrag.endY
-  );
-  const aiPendingAfterStandardDrop = await waitFor(async () => {
-    const project = await readProjectMetadata(aiPendingRoot);
-    const uiState = await evaluate(`
-      ({
-        pendingCount: document.querySelectorAll("[data-ai-candidate-id]").length,
-        status: document.querySelector(".status-popover-trigger")?.textContent ??
-          document.querySelector('[role="status"]')?.textContent ??
-          ""
-      })
-    `);
-    const tiffFiles = await findTiffFiles(aiPendingRoot);
-    const pendingCount = uiState.pendingCount;
-    return project.shots?.length === 3 && pendingCount === 1
-      ? { shotCount: project.shots.length, pendingCount }
-      : (() => {
-          throw new Error(
-            JSON.stringify({
-              shotCount: project.shots?.length ?? 0,
-              pendingCount,
-              status: uiState.status,
-              tiffCount: tiffFiles.length,
-              drag: standardCandidateDrag
-            })
-          );
-        })();
-  }, "AI candidate promoted in standard storyboard");
-
-  await showJapaneseStoryboardSheet(evaluate);
-  await waitFor(
-    () => evaluate(`Boolean(document.querySelector(".japanese-storyboard-view"))`),
-    "Japanese storyboard ready for AI candidate"
-  );
-  const japaneseCandidateDrag = await evaluate(`
-    (() => {
-      const card = document.querySelector('[data-ai-candidate-id="ai-candidate-japanese"]');
-      card?.scrollIntoView({ block: "center" });
-      const source = card?.getBoundingClientRect();
-      const target = document.querySelector(".japanese-storyboard-row")?.getBoundingClientRect();
-      return source && target ? {
-        startX: Math.round(source.left + source.width / 2),
-        startY: Math.round(source.top + source.height / 2),
-        endX: Math.round(target.left + target.width / 2),
-        endY: Math.round(target.top + target.height * 0.75)
-      } : null;
-    })()
-  `);
-  if (!japaneseCandidateDrag) {
-    throw new Error("Could not measure Japanese AI candidate drag");
-  }
-  await dragStroke(
-    send,
-    japaneseCandidateDrag.startX,
-    japaneseCandidateDrag.startY,
-    japaneseCandidateDrag.endX,
-    japaneseCandidateDrag.endY
-  );
-  const aiPendingAfterJapaneseDrop = await waitFor(async () => {
-    const project = await readProjectMetadata(aiPendingRoot);
-    const pendingCount = await evaluate(
-      `document.querySelectorAll("[data-ai-candidate-id]").length`
-    );
-    const tiffFiles = await findTiffFiles(aiPendingRoot);
-    return project.shots?.length === 4 && pendingCount === 0 && tiffFiles.length === 4
-      ? { shotCount: project.shots.length, pendingCount, tiffCount: tiffFiles.length }
-      : undefined;
-  }, "AI candidate promoted in Japanese storyboard");
-
-  await openFolder(aiPendingRoot);
-  const aiPendingAfterReopen = await waitFor(async () => {
-    const project = await readProjectMetadata(aiPendingRoot);
-    const pendingCount = await evaluate(
-      `document.querySelectorAll("[data-ai-candidate-id]").length`
-    );
-    return project.shots?.length === 4 && pendingCount === 0
-      ? { shotCount: project.shots.length, pendingCount }
-      : undefined;
-  }, "AI candidate promotion persisted after reopen");
-  const aiPendingChecks = {
-    afterStandardDrop: aiPendingAfterStandardDrop,
-    afterJapaneseDrop: aiPendingAfterJapaneseDrop,
-    afterReopen: aiPendingAfterReopen
-  };
+  if ((await findTiffFiles(legacyRoot)).length) throw new Error("Unproved legacy Open created working TIFFs");
+  const legacyProtectionChecks = { ...legacyAfter, unchanged: true, notPublished: true, status: legacyProtectionStatus };
+  await writeFile(path.join(scriptRootImportEvidenceRoot, "legacy-protection.json"), JSON.stringify({ before: legacyBefore, after: legacyProtectionChecks }, null, 2));
+  await evaluate(`Array.from(document.querySelectorAll('.save-error-modal button')).find(button => button.textContent.trim() === 'OK')?.click()`);
+  await waitFor(() => evaluate(`!document.querySelector('.save-error-modal')`), "deliberate legacy rejection dialog dismissed");
 
   const finalProject = await readProjectMetadata(smokeRoot);
   const layerAssetConsistency = await assertNoUnreferencedLayerAssets(smokeRoot, finalProject);
@@ -4377,6 +4466,7 @@ try {
   console.log(
     JSON.stringify(
       {
+        focusChecks,
         folderPath: smokeRoot,
         layerPath,
         beforeHash,
@@ -4492,32 +4582,38 @@ try {
         animationChecks,
         animationAspectRatioChecks,
         addShotUiCount,
-        aiPendingChecks,
         layerAssetConsistency,
-        legacyMigration: {
-          layerIds: legacyProject.shots[0].layers.map((layer) => layer.id),
-          legacyImageLayerHash,
-          legacyPaintLayerHash
-        }
+        legacyProtection: legacyProtectionChecks
       },
       null,
       2
     )
   );
 } finally {
-  if (electronProcess && electronProcess.exitCode === null) {
+  storyboardSocket?.close();
+  if (electronProcess && electronProcess.exitCode === null && electronProcess.signalCode === null) {
     const exited = new Promise((resolve) => electronProcess.once("exit", resolve));
     electronProcess.kill();
     await Promise.race([exited, delay(2000)]);
+    if (electronProcess.exitCode === null && electronProcess.signalCode === null) {
+      // Exact spawned test instance only. Forced fixture cleanup is never a
+      // native Close or Save-and-Close business PASS.
+      electronProcess.kill("SIGKILL");
+      await Promise.race([exited, delay(2000)]);
+    }
   }
+  // Helper processes can briefly inherit the child pipes. Do not keep the Node
+  // harness alive waiting for unrelated pipe EOF after the owned launch exits.
+  electronProcess?.stdout?.destroy();
+  electronProcess?.stderr?.destroy();
   await rm(smokeRoot, { recursive: true, force: true });
   await rm(scriptRoot, { recursive: true, force: true });
+  await rm(scriptRootImportEvidenceRoot, { recursive: true, force: true });
   await rm(mdBootstrapRoot, { recursive: true, force: true });
   await rm(mdBootstrapTargetRoot, { recursive: true, force: true });
   await rm(mdEmbeddedMatteTargetRoot, { recursive: true, force: true });
   await rm(deleteRoot, { recursive: true, force: true });
   await rm(clipboardRoot, { recursive: true, force: true });
-  await rm(aiPendingRoot, { recursive: true, force: true });
   await rm(legacyRoot, { recursive: true, force: true });
   await rm(photoshopImportRoot, { recursive: true, force: true });
   await rm(savedLayeredImportRoot, { recursive: true, force: true });

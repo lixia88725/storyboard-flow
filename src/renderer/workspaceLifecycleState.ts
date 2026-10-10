@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createProject } from "../shared/projectOps";
 import type { Project } from "../shared/types";
 
@@ -35,9 +35,19 @@ export const initialWorkspaceLifecycleState = (): WorkspaceLifecycleInitialState
   autosaveRevision: 0
 });
 
+export const publishWorkspaceProject = (
+  projectRef: { current: Project },
+  setProjectState: (project: Project) => void,
+  update: Project | ((project: Project) => Project)
+): void => {
+  const next = typeof update === "function" ? update(projectRef.current) : update;
+  projectRef.current = next;
+  setProjectState(next);
+};
+
 export const useWorkspaceLifecycleState = () => {
   const [initialState] = useState(() => initialWorkspaceLifecycleState());
-  const [project, setProject] = useState<Project>(initialState.project);
+  const [project, setProjectState] = useState<Project>(initialState.project);
   const [folderPath, setFolderPath] = useState<string | undefined>(initialState.folderPath);
   const [folderInputValue, setFolderInputValue] = useState(initialState.folderInputValue);
   const [metadataPath, setMetadataPath] = useState<string | undefined>(initialState.metadataPath);
@@ -57,9 +67,11 @@ export const useWorkspaceLifecycleState = () => {
   const workspaceSaveStateRef = useRef<WorkspaceSaveState>(workspaceSaveState);
   const fileNameSyncStateRef = useRef<FileNameSyncState>(fileNameSyncState);
 
-  useEffect(() => {
-    projectRef.current = project;
-  }, [project]);
+  // Setter is the Project owner publication point. No delayed project effect may
+  // reconcile an old render over a newer synchronous edit or ACK.
+  const setProject = useCallback((update: Project | ((project: Project) => Project)) => {
+    publishWorkspaceProject(projectRef, setProjectState, update);
+  }, []);
 
   useEffect(() => {
     folderPathRef.current = folderPath;

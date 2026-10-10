@@ -46,7 +46,8 @@ export const selectedShotDeleteStatus = (selectedCount: number): string =>
     : `${selectedCount} storyboards deleted; Save will move their files to Trash`;
 
 export const useDeleteActionController = ({
-  deleteTarget,
+  isImageImportLocked,
+  deleteTargetRef,
   handleRemoveBitmapLayer,
   projectRef,
   selectedShotIdsRef,
@@ -55,7 +56,8 @@ export const useDeleteActionController = ({
   setStatus,
   updateProject
 }: {
-  deleteTarget: DeleteTarget;
+  isImageImportLocked: () => boolean;
+  deleteTargetRef: { current: DeleteTarget };
   handleRemoveBitmapLayer: (shotId: string, layerId: string) => Promise<void>;
   projectRef: { current: Project };
   selectedShotIdsRef: { current: string[] };
@@ -65,6 +67,7 @@ export const useDeleteActionController = ({
   updateProject: (projectUpdate: ProjectUpdate) => void;
 }) => {
   const handleDeleteSelectedShots = () => {
+    if (isImageImportLocked()) return;
     const selectedIds = selectedShotIdsRef.current;
     const plan = selectedShotDeletePlan(projectRef.current, selectedIds);
 
@@ -79,11 +82,15 @@ export const useDeleteActionController = ({
   };
 
   const handleDeleteKeyPress = async () => {
-    const resolvedTarget = resolveDeleteTarget(projectRef.current, deleteTarget);
+    if (isImageImportLocked()) return;
+    const resolvedTarget = resolveDeleteTarget(projectRef.current, deleteTargetRef.current);
 
     if (resolvedTarget.type === "layer") {
       await handleRemoveBitmapLayer(resolvedTarget.shotId, resolvedTarget.layerId);
       const nextShot = projectRef.current.shots.find((shot) => shot.id === resolvedTarget.shotId);
+      // Removal may have been rejected at queue admission. Do not publish target changes
+      // for an operation that did not remove its layer (no queue return-contract change).
+      if (nextShot?.layers?.some((layer) => layer.id === resolvedTarget.layerId)) return;
       const nextLayer = nextShot ? activeVisibleBitmapLayerForShot(nextShot) : undefined;
       setDeleteTarget(
         nextShot && nextLayer

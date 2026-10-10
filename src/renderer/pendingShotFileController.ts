@@ -84,7 +84,7 @@ export const createPendingShotFileController = ({
   folderPath,
   metadataPath
 }: {
-  api: Window["storyboard"];
+  api: Pick<Window["storyboard"], "moveShotsToPending" | "restoreShotsFromPending">;
   folderPath: string | undefined;
   metadataPath: string | undefined;
 }) => {
@@ -96,6 +96,17 @@ export const createPendingShotFileController = ({
   };
 
   return {
+    normalSaveEffects: async (kind: "park" | "restore", project: Project, shotIds: string[]) => {
+      const workspace = { ...payload(project), normalSave: true };
+      const files = await (kind === "park" ? api.moveShotsToPending(workspace, shotIds) : api.restoreShotsFromPending(workspace, shotIds));
+      return files.map(file => {
+        const ack = file.normalSaveOutput;
+        const root = folderPath!.replaceAll("\\", "/").replace(/\/$/, ""), target = file.imagePath.replaceAll("\\", "/");
+        if (!ack || ack.shotId !== file.shotId || ack.targetPath !== file.imagePath || ack.fileName !== file.fileName ||
+          (kind === "park" ? !shotFileIsInVisiblePending(folderPath!, file.imagePath) : target !== `${root}/${file.fileName}`)) throw new Error("Pending did not return a matching namespace acknowledgement");
+        return ack;
+      });
+    },
     moveShotsToPending: async (project: Project, shotIds: string[]): Promise<Project> =>
       applyPendingShotFilePatches(
         project,

@@ -9,7 +9,9 @@ import {
 import { appendHistoryEntry, useSyncedHistoryStackController } from "./historyStackController";
 import type { FileNameSyncState, WorkspaceSaveState } from "./workspaceLifecycleState";
 import type { BitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
+import type { CompletedEffect } from "./normalSaveProjectOwner";
 import { shotIdsForBitmapPaths } from "./shotBitmapRevision";
+import { classifyPendingBake, pendingBakeForProject } from "../shared/pendingBake";
 
 export type ProjectHistoryEntry = {
   project: Project;
@@ -19,6 +21,87 @@ export type ProjectHistoryEntry = {
 };
 
 type HistoryDirection = "undo" | "redo";
+
+// Both stacks append at the end and applyHistoryEntry pops at(-1). A whole
+// Project snapshot has only entry-local PNGs: skipping a rejected step loses
+// asset dependencies needed by older entries. Keep only the provable suffix.
+export const preserveContiguousHistoryEntries = (
+  entries: ProjectHistoryEntry[], transform: (entry: ProjectHistoryEntry) => ProjectHistoryEntry | false
+): ProjectHistoryEntry[] => {
+  const retained: ProjectHistoryEntry[] = [];
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = transform(entries[index]);
+    if (!entry) break;
+    retained.push(entry);
+  }
+  return retained.reverse();
+};
+
+// Pending is a namespace operation, not an undoable physical move. Preserve
+// the contiguous compatible suffix by rebasing it; stop at the first moved-shot
+// source/scope that cannot be proved. Internal PNG paths do not move.
+export const rebasePendingHistoryEntries = (entries: ProjectHistoryEntry[], before: Project, after: Project,
+  ids: string[], update: (project: Project) => Project, verifiedSave = false): ProjectHistoryEntry[] => {
+  const shots = (p: Project) => [...p.shots, ...(p.parkedShots ?? [])];
+  return preserveContiguousHistoryEntries(entries, entry => {
+    if (verifiedSave) {
+      // Do not turn unsupported/raw-unknown or unproved deleted/parked history
+      // into a synced snapshot. Keep only the existing provable pop suffix.
+      const history = entry.project;
+      const layout = (p: Project) => JSON.stringify([p.shots.map(s => s.id).sort(),
+        (p.parkedShots ?? []).map(s => s.id).sort()]);
+      if (classifyPendingBake(history) !== "supported" ||
+          shots(history).some(s => pendingBakeForProject(history).shots[s.id].state === "unknown") ||
+          layout(history) !== layout(before)) return false;
+    }
+    if (ids.some(id => {
+      const a = shots(before).find(s => s.id === id), b = shots(entry.project).find(s => s.id === id);
+      return !a || !b || a.imagePath !== b.imagePath || a.swb?.sourcePath !== b.swb?.sourcePath ||
+        a.swb?.sourceKind !== b.swb?.sourceKind || a.swb?.status !== b.swb?.status ||
+        before.shots.some(s => s.id === id) !== entry.project.shots.some(s => s.id === id);
+    })) return false;
+    const transitioned = update(entry.project);
+    if (ids.some(id => !shots(transitioned).some(s => s.id === id) ||
+      transitioned.shots.some(s => s.id === id) !== after.shots.some(s => s.id === id))) return false;
+    const patchShot = (s: Shot): Shot => {
+      const target = ids.includes(s.id) && shots(after).find(t => t.id === s.id);
+      return target ? { ...s, imagePath: target.imagePath, fileName: target.fileName,
+        swb: s.swb && target.swb ? { ...s.swb, baseFingerprint: target.swb.baseFingerprint } : s.swb } : s;
+    };
+    const project = { ...transitioned, pendingBake: after.pendingBake, shots: transitioned.shots.map(patchShot), parkedShots: transitioned.parkedShots?.map(patchShot) };
+    return { ...entry, project, fileNameSyncState: "unsynced" as const,
+      selectedShotIds: entry.selectedShotIds.filter(id => project.shots.some(s => s.id === id)) };
+  });
+};
+
+// Each entry restores a whole Project, including shots absent from its PNG list.
+// A non-undoable presentation write invalidates entries unless their affected
+// shot metadata already matches the installed assets and they restore none of
+// the overwritten paths. This deliberately sacrifices uncertain old edits,
+// while preserving the provable near-current segment and subsequently recorded
+// history. Never bridge a rejected entry whose local PNGs older Project states need.
+export const invalidatePresentationHistoryEntries = (
+  entries: ProjectHistoryEntry[], after: Project, ids: readonly string[], paths: readonly string[]
+): ProjectHistoryEntry[] => {
+  const shots = (project: Project) => [...project.shots, ...(project.parkedShots ?? [])];
+  return preserveContiguousHistoryEntries(entries, entry => {
+    if (entry.layerAssets?.some(asset => paths.includes(asset.bitmapPath))) return false;
+    const dependencies = new Set([...ids,
+      ...[...shots(after), ...shots(entry.project)]
+        .filter(shot => shot.layers?.some(layer => paths.includes(layer.bitmapPath)))
+        .map(shot => shot.id)]);
+    const compatible = [...dependencies].every(id => {
+      const current = shots(after).find(shot => shot.id === id);
+      const historical = shots(entry.project).find(shot => shot.id === id);
+      return Boolean(current && historical) &&
+        after.shots.some(shot => shot.id === id) === entry.project.shots.some(shot => shot.id === id) &&
+        JSON.stringify(current) === JSON.stringify(historical) &&
+        JSON.stringify(after.dialogues.filter(dialogue => dialogue.shotId === id)) ===
+          JSON.stringify(entry.project.dialogues.filter(dialogue => dialogue.shotId === id));
+    });
+    return compatible ? entry : false;
+  });
+};
 
 export const historyEntryAffectedBitmapPaths = (entry: ProjectHistoryEntry): string[] =>
   entry.layerAssets?.map((snapshot) => snapshot.bitmapPath) ?? [];
@@ -37,19 +120,22 @@ export const historyDirtyShotIds = (
   restoredProject: Project,
   restoredBitmapPaths: readonly string[]
 ): string[] => {
-  const currentShotById = new Map(currentProject.shots.map((shot) => [shot.id, shot]));
+  const currentShots = [...currentProject.shots, ...(currentProject.parkedShots ?? [])];
+  const restoredShots = [...restoredProject.shots, ...(restoredProject.parkedShots ?? [])];
+  const currentShotById = new Map(currentShots.map((shot) => [shot.id, shot]));
   const dirtyShotIds = new Set([
     ...shotIdsForBitmapPaths(currentProject, restoredBitmapPaths),
     ...shotIdsForBitmapPaths(restoredProject, restoredBitmapPaths)
   ]);
 
-  for (const shot of restoredProject.shots) {
-    if (shotTiffInputsChanged(currentShotById.get(shot.id), shot)) {
+  for (const shot of restoredShots) {
+    if (shotTiffInputsChanged(currentShotById.get(shot.id), shot) ||
+        shot.layers?.some(layer => restoredBitmapPaths.includes(layer.bitmapPath))) {
       dirtyShotIds.add(shot.id);
     }
   }
 
-  return restoredProject.shots
+  return restoredShots
     .filter((shot) => dirtyShotIds.has(shot.id))
     .map((shot) => shot.id);
 };
@@ -61,6 +147,10 @@ export const historyAppliedStatus = (direction: HistoryDirection): string =>
   direction === "undo" ? "Undid last change" : "Redid last change";
 
 type UseProjectHistoryControllerOptions = {
+  captureWorkspace?: () => () => boolean;
+  captureEffectCompletion?: () => CompletedEffect;
+  isImageImportLocked: () => boolean;
+  getRecoveryRequiredMessage?: () => string | undefined;
   api: LayerAssetApi | undefined;
   bitmapLayerWriteQueueRef: MutableRefObject<BitmapLayerWriteQueue>;
   fileNameSyncStateRef: RefObject<FileNameSyncState>;
@@ -68,6 +158,8 @@ type UseProjectHistoryControllerOptions = {
   markShotsDirty: (shotIds: string[]) => void;
   maxEntries: number;
   onLayerAssetsRestored?: (bitmapPaths: string[]) => void;
+  publishProject?: (project: Project, outputShotIds: string[]) => boolean;
+  publishMetadataProject?: (project: Project, outputShotIds: string[]) => Promise<boolean>;
   projectRef: RefObject<Project>;
   scriptImportCheckIdRef: MutableRefObject<number>;
   selectShotsByIds: (shotIds: string[]) => void;
@@ -81,6 +173,10 @@ type UseProjectHistoryControllerOptions = {
 };
 
 export const useProjectHistoryController = ({
+  captureWorkspace,
+  captureEffectCompletion,
+  isImageImportLocked,
+  getRecoveryRequiredMessage,
   api,
   bitmapLayerWriteQueueRef,
   fileNameSyncStateRef,
@@ -88,6 +184,8 @@ export const useProjectHistoryController = ({
   markShotsDirty,
   maxEntries,
   onLayerAssetsRestored,
+  publishProject,
+  publishMetadataProject,
   projectRef,
   scriptImportCheckIdRef,
   selectShotsByIds,
@@ -116,12 +214,15 @@ export const useProjectHistoryController = ({
 
   const createHistoryEntry = async (bitmapPaths: string[] = []): Promise<ProjectHistoryEntry> => {
     const activeFolderPath = folderPathRef.current;
+    // Capture the metadata inputs synchronously with the read's origin. A caller
+    // still owns validating this entry before recording/committing after awaits.
+    const entry = createHistoryEntryFromLayerAssets();
     const layerAssets =
       api && activeFolderPath && bitmapPaths.length > 0
         ? await readLayerAssetSnapshots(api, activeFolderPath, bitmapPaths)
         : [];
 
-    return createHistoryEntryFromLayerAssets(layerAssets);
+    return { ...entry, layerAssets };
   };
 
   const createHistoryEntryFromLayerAssets = (
@@ -129,7 +230,7 @@ export const useProjectHistoryController = ({
   ): ProjectHistoryEntry => {
     return {
       project: projectRef.current,
-      selectedShotIds: selectedShotIdsRef.current,
+      selectedShotIds: [...selectedShotIdsRef.current],
       fileNameSyncState: fileNameSyncStateRef.current,
       layerAssets
     };
@@ -154,9 +255,20 @@ export const useProjectHistoryController = ({
     await restoreLayerAssetSnapshots(api, activeFolderPath, entry.layerAssets);
   };
 
+  const requireHistorySafe = (): boolean => {
+    const message = getRecoveryRequiredMessage?.() ??
+      (Object.values(projectRef.current.pendingBake?.shots ?? {}).some(state => state.state === "unknown")
+        ? "History blocked: Pending output namespace is unknown; reopen this workspace before continuing" : undefined);
+    if (message) setStatus(message);
+    return !message;
+  };
+
   const applyHistoryEntry = async (direction: HistoryDirection) => {
+    if (isImageImportLocked() || !requireHistorySafe()) return;
+    const isWorkspaceCurrent = captureWorkspace?.() ?? (() => true);
     try {
       await bitmapLayerWriteQueueRef.current.runExclusive(async () => {
+        if (!isWorkspaceCurrent() || isImageImportLocked() || !requireHistorySafe()) return;
         const sourceStackRef =
           direction === "undo" ? undoStackRef : redoStackRef;
         const entry = sourceStackRef.current.at(-1);
@@ -172,8 +284,23 @@ export const useProjectHistoryController = ({
           affectedBitmapPaths
         );
         const reciprocalEntry = await createHistoryEntry(affectedBitmapPaths);
-        await restoreHistoryLayerAssets(entry);
+        if (!isWorkspaceCurrent() || isImageImportLocked() || !requireHistorySafe()) return;
+        const completion = entry.layerAssets?.length ? captureEffectCompletion?.() : undefined;
+        // After the first restore IPC begins, finish history + metadata publication.
+        // Metadata-only history must not yield between admission and its first
+        // publication. With real assets, the first restore IPC is the linearization point.
+        if (api && folderPathRef.current && entry.layerAssets?.length) {
+          try { await restoreHistoryLayerAssets(entry); }
+          catch (error) { completion?.failed(error, dirtyShotIds); throw error; }
+        }
+        const metadataPublished = !entry.layerAssets?.length && publishMetadataProject
+          ? await publishMetadataProject(entry.project, dirtyShotIds) : undefined;
+        if (metadataPublished === false) throw new Error("History metadata publication refused");
         onLayerAssetsRestored?.(affectedBitmapPaths);
+        if (metadataPublished === undefined && publishProject && !publishProject(entry.project, dirtyShotIds)) {
+          await completion?.(entry.project, dirtyShotIds);
+          throw new Error("History output publication refused");
+        }
 
         if (direction === "undo") {
           setRedoStackSynced((current) =>
@@ -187,8 +314,10 @@ export const useProjectHistoryController = ({
           setRedoStackSynced((current) => current.slice(0, -1));
         }
 
-        setProject(entry.project);
-        projectRef.current = entry.project;
+        if (!publishProject) {
+          setProject(entry.project);
+          projectRef.current = entry.project;
+        }
         selectShotsByIds(entry.selectedShotIds);
         setFileNameSyncState(entry.fileNameSyncState);
         setWorkspaceSaveState("saving");
@@ -216,9 +345,17 @@ export const useProjectHistoryController = ({
     recordProjectUndoEntry: () =>
       recordUndoEntry({
         project: projectRef.current,
-        selectedShotIds: selectedShotIdsRef.current,
+        selectedShotIds: [...selectedShotIdsRef.current],
         fileNameSyncState: fileNameSyncStateRef.current
       }),
-    resetHistoryStacks
+    resetHistoryStacks,
+    invalidatePresentationHistory: (after: Project, ids: readonly string[], paths: readonly string[]) => {
+      setUndoStackSynced(entries => invalidatePresentationHistoryEntries(entries, after, ids, paths));
+      setRedoStackSynced(entries => invalidatePresentationHistoryEntries(entries, after, ids, paths));
+    },
+    rebasePendingHistory: (before: Project, after: Project, ids: string[], update: (project: Project) => Project, verifiedSave = false) => {
+      setUndoStackSynced(entries => rebasePendingHistoryEntries(entries, before, after, ids, update, verifiedSave));
+      setRedoStackSynced(entries => rebasePendingHistoryEntries(entries, before, after, ids, update, verifiedSave));
+    }
   };
 };

@@ -12,6 +12,7 @@ import type {
   SketchLayer,
   SketchStroke
 } from "./types";
+import { isStandaloneLayeredTiffSnapshot } from "../../electron/shared/standaloneLayeredInput";
 
 export type ShotPlacement = "before" | "after";
 export type StoryboardDirection = "left" | "right" | "up" | "down";
@@ -581,7 +582,9 @@ export const mergeFolderImages = (project: Project, images: ImportedImage[]): Pr
         includeDefaultSketchLayer: false
       })
     );
-  const keptShotIds = new Set(keptShots.map((shot) => shot.id));
+  const keptShotIds = new Set(
+    [...keptShots, ...(project.parkedShots ?? [])].map((shot) => shot.id)
+  );
 
   return normalizeDialogueOrder(
     normalizeShotOrder({
@@ -628,7 +631,9 @@ export const deleteShots = (project: Project, shotIds: string[]): Project => {
       existingPendingKeys.add(key);
       return true;
     });
-  const remainingShotIds = new Set(remainingShots.map((shot) => shot.id));
+  const remainingShotIds = new Set(
+    [...remainingShots, ...(project.parkedShots ?? [])].map((shot) => shot.id)
+  );
 
   return normalizeDialogueOrder({
     ...project,
@@ -760,7 +765,7 @@ export const parkShotGroup = (
 export const restoreParkedShotGroup = (
   project: Project,
   parkedShotIds: string[],
-  targetShotId: string,
+  targetShotId: string | { type: "empty-board" },
   placement: ShotPlacement = "before"
 ): Project => {
   const selected = new Set(parkedShotIds);
@@ -777,13 +782,14 @@ export const restoreParkedShotGroup = (
   }
 
   const ordered = sortedShots(project.shots);
+  const emptyBoard = typeof targetShotId !== "string" && targetShotId.type === "empty-board";
   const targetIndex = ordered.findIndex((shot) => shot.id === targetShotId);
 
-  if (targetIndex === -1) {
+  if (emptyBoard ? ordered.length !== 0 : targetIndex === -1) {
     return project;
   }
 
-  const insertIndex = placement === "after" ? targetIndex + 1 : targetIndex;
+  const insertIndex = emptyBoard ? 0 : placement === "after" ? targetIndex + 1 : targetIndex;
   const nextShots = [
     ...ordered.slice(0, insertIndex),
     ...moving,
@@ -976,262 +982,29 @@ export const copyDialogueToShot = (
   };
 };
 
-export const updateSketch = (
-  project: Project,
-  shotId: string,
-  strokes: SketchStroke[],
-  layerId?: string
-): Project => {
-  return {
-    ...project,
-    shots: project.shots.map((shot) => {
-      if (shot.id !== shotId) {
-        return shot;
-      }
 
-      const layers = sketchLayersForShot(shot);
-      const targetLayerId = layerId ?? shot.activeSketchLayerId ?? layers[0]?.id;
-      const targetLayer = layers.find((layer) => layer.id === targetLayerId) ?? layers[0];
-      if (!targetLayer) {
-        if (strokes.length === 0) {
-          return shot;
-        }
-        const nextLayers = [createDefaultSketchLayer(strokes)];
-        return {
-          ...shot,
-          activeLayerTarget: "sketch",
-          activeSketchLayerId: nextLayers[0].id,
-          sketchLayers: nextLayers
-        };
-      }
-      const nextLayers = layers.map((layer) =>
-        layer.id === targetLayer.id
-          ? {
-              ...layer,
-              strokes: [...strokes]
-            }
-          : layer
-      );
-      return {
-        ...shot,
-        activeLayerTarget: "sketch",
-        activeSketchLayerId: targetLayer.id,
-        sketchLayers: nextLayers
-      };
-    }),
-    updatedAt: now()
-  };
-};
 
-export const clearSketch = (project: Project, shotId: string, layerId?: string): Project => {
-  return updateSketch(project, shotId, [], layerId);
-};
 
-export const appendSketchStroke = (
-  project: Project,
-  shotId: string,
-  layerId: string,
-  stroke: SketchStroke
-): Project => {
-  const shot = project.shots.find((item) => item.id === shotId);
-  const layer = shot ? sketchLayersForShot(shot).find((item) => item.id === layerId) : undefined;
 
-  if (!layer) {
-    return project;
-  }
 
-  return updateSketch(project, shotId, [...layer.strokes, stroke], layer.id);
-};
 
-export const addSketchLayer = (project: Project, shotId: string, name = "Layer"): Project => {
-  return updateShotLayers(project, shotId, (shot, layers) => {
-    const nextOrder = layers.length;
-    const nextLayer: SketchLayer = {
-      id: `layer-${shotId}-${nextOrder}`,
-      name,
-      visible: true,
-      locked: false,
-      opacity: 1,
-      blendMode: "normal",
-      order: nextOrder,
-      strokes: []
-    };
-    const nextLayers = normalizeSketchLayerOrder([...layers, nextLayer]);
 
-    return {
-      layers: nextLayers,
-      activeSketchLayerId: nextLayer.id,
-      activeLayerTarget: "sketch"
-    };
-  });
-};
 
-export const removeSketchLayer = (
-  project: Project,
-  shotId: string,
-  layerId: string
-): Project => {
-  return updateShotLayers(project, shotId, (shot, layers) => {
-    if (layers.length <= 1) {
-      return { layers, activeSketchLayerId: layers[0]?.id };
-    }
 
-    const nextLayers = normalizeSketchLayerOrder(layers.filter((layer) => layer.id !== layerId));
-    if (nextLayers.length === layers.length) {
-      return { layers, activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id };
-    }
 
-    const activeSketchLayerId =
-      shot.activeSketchLayerId === layerId
-        ? nextLayers[
-            Math.max(
-              0,
-              Math.min(layers.findIndex((layer) => layer.id === layerId), nextLayers.length - 1)
-            )
-          ]?.id
-        : shot.activeSketchLayerId ?? nextLayers[0]?.id;
 
-    return { layers: nextLayers, activeSketchLayerId };
-  });
-};
 
-export const selectSketchLayer = (
-  project: Project,
-  shotId: string,
-  layerId: string
-): Project => {
-  return updateShotLayers(project, shotId, (shot, layers) => {
-    const targetLayer = layers.find((layer) => layer.id === layerId);
-    return {
-      layers,
-      activeSketchLayerId: targetLayer ? targetLayer.id : shot.activeSketchLayerId ?? layers[0]?.id,
-      activeLayerTarget: targetLayer ? "sketch" : shot.activeLayerTarget ?? "sketch"
-    };
-  });
-};
 
-export const updateSketchLayer = (
-  project: Project,
-  shotId: string,
-  layerId: string,
-  patch: Partial<Pick<SketchLayer, "name" | "visible" | "locked" | "opacity" | "blendMode">>
-): Project => {
-  return updateShotLayers(project, shotId, (shot, layers) => ({
-    layers: layers.map((layer) =>
-      layer.id === layerId
-        ? {
-            ...layer,
-            name: patch.name ?? layer.name,
-            visible: patch.visible ?? layer.visible,
-            locked: patch.locked ?? layer.locked,
-            opacity:
-              patch.opacity === undefined ? layer.opacity : Math.min(1, Math.max(0, patch.opacity)),
-            blendMode: patch.blendMode ?? layer.blendMode ?? "normal"
-          }
-        : layer
-    ),
-    activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id
-  }));
-};
 
-export const reorderSketchLayer = (
-  project: Project,
-  shotId: string,
-  layerId: string,
-  direction: "up" | "down"
-): Project => {
-  return updateShotLayers(project, shotId, (shot, layers) => {
-    const currentIndex = layers.findIndex((layer) => layer.id === layerId);
-    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
 
-    if (currentIndex === -1 || targetIndex < 0 || targetIndex >= layers.length) {
-      return { layers, activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id };
-    }
 
-    const nextLayers = [...layers];
-    const [moved] = nextLayers.splice(currentIndex, 1);
-    nextLayers.splice(targetIndex, 0, moved);
 
-    return {
-      layers: normalizeSketchLayerOrder(nextLayers),
-      activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id
-    };
-  });
-};
 
-export const moveSketchLayer = (
-  project: Project,
-  shotId: string,
-  layerId: string,
-  targetLayerId: string
-): Project => {
-  if (layerId === targetLayerId) {
-    return project;
-  }
 
-  return updateShotLayers(project, shotId, (shot, layers) => {
-    const fromIndex = layers.findIndex((layer) => layer.id === layerId);
-    const targetIndex = layers.findIndex((layer) => layer.id === targetLayerId);
 
-    if (fromIndex === -1 || targetIndex === -1) {
-      return { layers, activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id };
-    }
 
-    const nextLayers = [...layers];
-    const [movedLayer] = nextLayers.splice(fromIndex, 1);
-    const adjustedTargetIndex = fromIndex < targetIndex ? targetIndex - 1 : targetIndex;
-    nextLayers.splice(adjustedTargetIndex, 0, movedLayer);
 
-    return {
-      layers: normalizeSketchLayerOrder(nextLayers),
-      activeSketchLayerId: shot.activeSketchLayerId ?? layers[0]?.id
-    };
-  });
-};
 
-export const updateShotBaseVisibility = (
-  project: Project,
-  shotId: string,
-  visible: boolean
-): Project => {
-  return {
-    ...project,
-    shots: project.shots.map((shot) =>
-      shot.id === shotId ? { ...shot, baseVisible: visible } : shot
-    ),
-    updatedAt: now()
-  };
-};
-
-export const selectImageLayer = (project: Project, shotId: string): Project => {
-  return {
-    ...project,
-    shots: project.shots.map((shot) =>
-      shot.id === shotId ? { ...shot, activeLayerTarget: "image" } : shot
-    ),
-    updatedAt: now()
-  };
-};
-
-export const appendImageLayerEdit = (
-  project: Project,
-  shotId: string,
-  stroke: SketchStroke
-): Project => {
-  return {
-    ...project,
-    shots: project.shots.map((shot) =>
-      shot.id === shotId
-        ? {
-            ...shot,
-            activeLayerTarget: "image",
-            imageLayerEdits: [...(shot.imageLayerEdits ?? []), stroke]
-          }
-        : shot
-    ),
-    updatedAt: now()
-  };
-};
 
 export const bitmapLayerPath = (shotId: string, layerId: string): string =>
   `.storyboard-workbench/layers/${shotId}/${layerId}.png`;
@@ -1771,32 +1544,9 @@ export const markBitmapLayerPainted = (
   }));
 };
 
-export const clearImageLayerEdits = (project: Project, shotId: string): Project => {
-  return {
-    ...project,
-    shots: project.shots.map((shot) =>
-      shot.id === shotId ? { ...shot, imageLayerEdits: [] } : shot
-    ),
-    updatedAt: now()
-  };
-};
 
-export const deleteImageLayerContent = (project: Project, shotId: string): Project => {
-  return {
-    ...project,
-    shots: project.shots.map((shot) =>
-      shot.id === shotId
-        ? {
-            ...shot,
-            activeLayerTarget: "image",
-            baseVisible: false,
-            imageLayerEdits: []
-          }
-        : shot
-    ),
-    updatedAt: now()
-  };
-};
+
+
 
 export const createRenamePlan = (
   project: Project,
@@ -1960,36 +1710,7 @@ const updateBitmapLayers = (
   return didChange ? { ...project, shots, updatedAt: now() } : project;
 };
 
-const updateShotLayers = (
-  project: Project,
-  shotId: string,
-  update: (
-    shot: Shot,
-    layers: SketchLayer[]
-  ) => { layers: SketchLayer[]; activeSketchLayerId?: string; activeLayerTarget?: "image" | "sketch" }
-): Project => {
-  let didChange = false;
-  const shots = project.shots.map((shot) => {
-    if (shot.id !== shotId) {
-      return shot;
-    }
 
-    const currentLayers = sketchLayersForShot(shot);
-    const result = update(shot, currentLayers);
-    const nextLayers = normalizeSketchLayerOrder(result.layers);
-    didChange = true;
-
-    return {
-      ...shot,
-      activeLayerTarget: result.activeLayerTarget ?? shot.activeLayerTarget ?? "sketch",
-      activeSketchLayerId:
-        result.activeSketchLayerId ?? shot.activeSketchLayerId ?? nextLayers[0]?.id,
-      sketchLayers: nextLayers
-    };
-  });
-
-  return didChange ? { ...project, shots, updatedAt: now() } : project;
-};
 
 export const projectNeedsSwbImport = (project: Project): boolean => {
   return [...project.shots, ...(project.parkedShots ?? [])].some(
@@ -2143,14 +1864,6 @@ const swbStateForImportedImage = (image: ImportedImage): ShotSwbState => {
     baseFingerprint: image.fingerprint,
     statusMessage: "Import to convert this image into Storyboard Flow Format"
   };
-};
-
-const isStandaloneLayeredTiffSnapshot = (image: ImportedImage): boolean => {
-  return (
-    Boolean(image.swbMetadata) &&
-    image.fileName.toLowerCase().match(/\.tiff?$/u) !== null &&
-    (image.swbMetadata?.layers.filter((layer) => layer.kind !== "image").length ?? 0) > 0
-  );
 };
 
 const mergedSwbState = (shot: Shot, image: ImportedImage): ShotSwbState => {

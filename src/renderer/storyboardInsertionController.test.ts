@@ -7,10 +7,6 @@ import type { DragData } from "./storyboardDnd";
 
 const shotDrag = (shotId: string): DragData => ({ type: "shot", shotId });
 const parkedShotDrag = (shotId: string): DragData => ({ type: "parked-shot", shotId });
-const aiCandidateDrag = (candidateId: string): DragData => ({
-  type: "ai-candidate",
-  candidateId
-});
 const dialogueDrag = (): DragData => ({ type: "dialogue", shotId: "shot-a", dialogueId: "dialogue-a" });
 
 describe("storyboard insertion controller", () => {
@@ -36,35 +32,6 @@ describe("storyboard insertion controller", () => {
     expect(
       storyboardInsertionDragRequest({
         activeData: parkedShotDrag("parked-a"),
-        fallbackPointer: { x: 10, y: 20 },
-        isAnimationMode: false,
-        isPointerInsideBoard: false,
-        isPointerInsideParkingList: false,
-        lastPointer: undefined,
-        selectedShotIds: ["shot-a"]
-      })
-    ).toEqual({ type: "clear" });
-  });
-
-  it("queues an AI candidate insertion only while it is over the board", () => {
-    expect(
-      storyboardInsertionDragRequest({
-        activeData: aiCandidateDrag("candidate-a"),
-        fallbackPointer: { x: 10, y: 20 },
-        isAnimationMode: false,
-        isPointerInsideBoard: true,
-        isPointerInsideParkingList: false,
-        lastPointer: undefined,
-        selectedShotIds: ["shot-a"]
-      })
-    ).toEqual({
-      type: "queue",
-      pointer: { x: 10, y: 20 },
-      movingShotIds: []
-    });
-    expect(
-      storyboardInsertionDragRequest({
-        activeData: aiCandidateDrag("candidate-a"),
         fallbackPointer: { x: 10, y: 20 },
         isAnimationMode: false,
         isPointerInsideBoard: false,

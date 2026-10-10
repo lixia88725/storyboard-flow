@@ -1,8 +1,10 @@
 import path from "node:path";
+import { FileReplacementRecoveryIncompleteError } from "./fileRenames.js";
 
 export const visiblePendingFolderName = "Pending";
 
 export type PendingShotFile = {
+  normalSaveOutput?: import("../normalSaveTransport.js").NormalSaveOutputAck;
   shotId: string;
   imagePath: string;
   fileName: string;
@@ -24,6 +26,43 @@ export type PendingProject = {
 type ReversibleFileOperation = {
   commit?: () => Promise<void>;
   rollback: () => Promise<void>;
+};
+
+export class PendingRecoveryIncompleteError extends AggregateError {
+  readonly recoveryIncomplete = true;
+
+  constructor(error: unknown, rollbackError: unknown) {
+    super(
+      [error, rollbackError],
+      `Pending operation failed: ${error instanceof Error ? error.message : String(error)}; rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}; recovery incomplete. Retained files and journal require recovery before dependent restoration.`
+    );
+    this.name = "PendingRecoveryIncompleteError";
+  }
+}
+
+const recoverFailedPendingOperation = async (
+  error: unknown,
+  commitStarted: boolean,
+  operations: Array<ReversibleFileOperation | undefined>
+): Promise<never> => {
+  if (commitStarted) {
+    throw new AggregateError(
+      [error],
+      `${error instanceof Error ? error.message : String(error)}; Pending commit has started. Persisted file locations and remaining recovery artifacts are retained; automatic rollback was not attempted. Recovery is required before retrying.`
+    );
+  }
+  // An apply failure may return no handle while leaving replacements occupied.
+  if (
+    error instanceof FileReplacementRecoveryIncompleteError ||
+    error instanceof PendingRecoveryIncompleteError
+  ) throw error;
+  try {
+    for (const operation of operations) await operation?.rollback();
+  } catch (rollbackError) {
+    // Fail fast: especially do not clear the journal after failed restoration.
+    throw new PendingRecoveryIncompleteError(error, rollbackError);
+  }
+  throw error;
 };
 
 type PendingFileMove = { fromPath: string; toPath: string };
@@ -77,6 +116,7 @@ export const moveShotsToVisiblePending = async <Project extends PendingProject>(
     targets.push({ shotId: shot.id, imagePath, fileName: path.basename(imagePath) });
   }
 
+  let commitStarted = false;
   let materialized: ReversibleFileOperation | undefined;
   let moved: ReversibleFileOperation | undefined;
   let transaction: ReversibleFileOperation | undefined;
@@ -98,14 +138,14 @@ export const moveShotsToVisiblePending = async <Project extends PendingProject>(
       }))
     );
     await options.finalize?.(completed);
+    // Cleanup may already have deleted a backup when it rejects. Keep the
+    // persisted locations and journal; never enter the reversible catch chain.
+    commitStarted = true;
     await materialized?.commit?.();
     await transaction?.commit?.();
     return completed;
   } catch (error) {
-    await moved?.rollback();
-    await materialized?.rollback();
-    await transaction?.rollback();
-    throw error;
+    return recoverFailedPendingOperation(error, commitStarted, [moved, materialized, transaction]);
   }
 };
 
@@ -133,6 +173,7 @@ export const restoreShotsFromVisiblePending = async <Project extends PendingProj
     targets.push({ shotId: shot.id, imagePath, fileName: path.basename(imagePath) });
   }
 
+  let commitStarted = false;
   let moved: ReversibleFileOperation | undefined;
   let transaction: ReversibleFileOperation | undefined;
   try {
@@ -149,11 +190,10 @@ export const restoreShotsFromVisiblePending = async <Project extends PendingProj
       }))
     );
     await options.finalize?.(completed);
+    commitStarted = true;
     await transaction?.commit?.();
     return completed;
   } catch (error) {
-    await moved?.rollback();
-    await transaction?.rollback();
-    throw error;
+    return recoverFailedPendingOperation(error, commitStarted, [moved, transaction]);
   }
 };

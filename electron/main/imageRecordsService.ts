@@ -18,7 +18,9 @@ type ImageMetadata = {
 };
 
 export type ImageRecordsOptions<SwbMetadata> = {
-  createPreview: (imagePath: string, previewRoot: string) => Promise<string>;
+  createPreview: (imagePath: string, previewRoot: string, readOnly?: boolean) => Promise<string>;
+  readOnly?: boolean;
+  deferMissingPreviews?: boolean;
   onProgress?: WorkspaceTaskProgressReporter;
   pixelFingerprint: (imagePath: string) => Promise<string>;
   readImageMetadata: (imagePath: string) => Promise<ImageMetadata>;
@@ -39,7 +41,14 @@ export const createImageRecords = async <SwbMetadata>(
     async (imagePath) => {
       const extension = path.extname(imagePath).toLowerCase();
       const isTiff = extension === ".tif" || extension === ".tiff";
-      const previewPath = isTiff ? await options.createPreview(imagePath, previewRoot) : undefined;
+      let previewPath: string | undefined;
+      if (isTiff) {
+        try { previewPath = await (options.readOnly ? options.createPreview(imagePath, previewRoot, true) : options.createPreview(imagePath, previewRoot)); }
+        catch (error) {
+          if (!options.readOnly || !options.deferMissingPreviews) throw error;
+          // Read-only discovery reports absent cache; explicit phase two must admit it.
+        }
+      }
       const metadata = await options.readImageMetadata(imagePath);
       const swbMetadata = isTiff ? await options.readSwbMetadata(imagePath) : undefined;
 

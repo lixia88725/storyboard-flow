@@ -3,7 +3,7 @@ import { buildLayerAssetUrl } from "./layerAssetUrl.js";
 
 type BlankShotPreset = "16:9" | "1.85:1" | "9:16" | "2.39:1" | "1.43:1";
 
-type ProjectPayload = {
+type ProjectPayload = import("../normalSaveTransport.js").NormalSaveTransport & {
   project: unknown;
   folderPath: string;
   metadataPath: string;
@@ -70,63 +70,23 @@ type WorkspaceTaskProgress = {
   total: number;
 };
 
-type AiResourceMetadata = {
-  version: 1;
-  resources: Array<{
-    fileName: string;
-    role: string;
-    note: string;
-  }>;
-};
 
-type AiCredentialStatus = {
-  hasOpenAiApiKey: boolean;
-  hasSeedreamApiKey: boolean;
-  hasValidComfyUiSettings: boolean;
-  comfyUi: {
-    serverUrl: string;
-    workflowJson: string;
-    timeoutMs: number;
-  };
-};
 
-type AiProviderName = "openai" | "seedream" | "comfyui";
-type AiBatchSize = 1 | 4 | 16;
 
-type AiGenerateCandidatePayload = {
-  folderPath: string;
-  project: unknown;
-  shotId: string;
-  selectedShotContext?: string;
-  selectedResourceIds?: string[];
-  generationSettings?: {
-    provider?: AiProviderName;
-    model?: string;
-  };
-};
 
-type AiGenerateBatchCandidatesPayload = {
-  folderPath: string;
-  project: unknown;
-  shotIds: string[];
-  batchSize?: AiBatchSize;
-  selectedResourceIds?: string[];
-  resourceAssignments?: Record<string, string[]>;
-  generationSettings?: {
-    provider?: AiProviderName;
-    model?: string;
-  };
-};
 
-type AiRequestPreviewPayload = AiGenerateCandidatePayload | AiGenerateBatchCandidatesPayload;
 
-type AiApplyCandidatePayload = {
-  folderPath: string;
-  project: unknown;
-  candidateId: string;
-};
+
+
+
+
+
+
+
+
 
 type PendingShotFile = {
+  normalSaveOutput?: import("../normalSaveTransport.js").NormalSaveOutputAck;
   shotId: string;
   imagePath: string;
   fileName: string;
@@ -136,8 +96,8 @@ type PendingShotFile = {
 let readLayerPngCalls = 0;
 
 const api = {
-  openFolderByPath: (folderPath: string) =>
-    ipcRenderer.invoke("workspace:openFolderByPath", folderPath),
+  openFolderByPath: (folderPath: string, options?: import("../normalSaveTransport.js").NormalSaveOpenOptions) =>
+    ipcRenderer.invoke("workspace:openFolderByPath", folderPath, options),
   filePathForDroppedFile: (file: File) => webUtils.getPathForFile(file),
   selectFolder: () =>
     ipcRenderer.invoke("dialog:selectFolder") as Promise<string | undefined>,
@@ -147,10 +107,14 @@ const api = {
       entryCount: number;
     }>,
   createFromStoryboardScript: (payload: {
+    normalSave?: boolean;
+    normalSaveSource?: ProjectPayload;
     sourceMarkdownPath: string;
     targetFolderPath: string;
     blankShotPreset?: BlankShotPreset;
   }) => ipcRenderer.invoke("workspace:createFromStoryboardScript", payload),
+  readOutputIdentity: (imagePath: string, legacy?: { project: unknown; folderPath: string; shotId: string }) =>
+    ipcRenderer.invoke("workspace:readOutputIdentity", imagePath, legacy) as Promise<string>,
   autosaveWorkspace: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:autosave", payload) as Promise<ProjectPayload>,
   ensureLayerAssets: (payload: ProjectPayload) =>
@@ -186,6 +150,10 @@ const api = {
   },
   writeLayerPng: (payload: WriteLayerAssetPayload) =>
     ipcRenderer.invoke("layers:writePng", payload) as Promise<WriteLayerAssetPayload & { filePath: string }>,
+  cleanupMergedLayerSources: (payload: import("../main/mergeSourceCleanup.js").MergeCleanupPayload) =>
+    ipcRenderer.invoke("layers:cleanupMergeSources", payload) as Promise<{ deleted: string[]; retained: string[]; errors: string[] }>,
+  createLayerPng: (payload: import("../main/layerAssetService.js").CreateLayerAssetPayload) =>
+    ipcRenderer.invoke("layers:createPng", payload) as Promise<import("../main/layerAssetService.js").CreateLayerAssetResult>,
   readLayerPng: (payload: LayerAssetPayload) => {
     readLayerPngCalls += 1;
     return ipcRenderer.invoke("layers:readPng", payload) as Promise<string | undefined>;
@@ -212,46 +180,7 @@ const api = {
   getToolRadialMenu: () => ipcRenderer.invoke("settings:getToolRadialMenu") as Promise<unknown>,
   setToolRadialMenu: (config: unknown) =>
     ipcRenderer.invoke("settings:setToolRadialMenu", config) as Promise<unknown>,
-  ai: {
-    getSettings: () =>
-      ipcRenderer.invoke("ai:getSettings") as Promise<AiCredentialStatus>,
-    saveOpenAiApiKey: (apiKey: string) =>
-      ipcRenderer.invoke("ai:saveOpenAiApiKey", apiKey) as Promise<AiCredentialStatus>,
-    clearOpenAiApiKey: () =>
-      ipcRenderer.invoke("ai:clearOpenAiApiKey") as Promise<AiCredentialStatus>,
-    saveSeedreamApiKey: (apiKey: string) =>
-      ipcRenderer.invoke("ai:saveSeedreamApiKey", apiKey) as Promise<AiCredentialStatus>,
-    clearSeedreamApiKey: () =>
-      ipcRenderer.invoke("ai:clearSeedreamApiKey") as Promise<AiCredentialStatus>,
-    saveComfyUiSettings: (settings: { serverUrl: string; workflowJson: string; timeoutMs: number }) =>
-      ipcRenderer.invoke("ai:saveComfyUiSettings", settings) as Promise<AiCredentialStatus>,
-    testComfyUiConnection: (serverUrl: string) =>
-      ipcRenderer.invoke("ai:testComfyUiConnection", serverUrl) as Promise<{ ok: boolean; message: string }>,
-    listResources: (folderPath: string) =>
-      ipcRenderer.invoke("ai:listResources", folderPath) as Promise<unknown>,
-    importResources: (folderPath: string, sourceFilePaths: string[]) =>
-      ipcRenderer.invoke("ai:importResources", folderPath, sourceFilePaths) as Promise<unknown>,
-    deleteResource: (folderPath: string, fileName: string) =>
-      ipcRenderer.invoke("ai:deleteResource", folderPath, fileName) as Promise<unknown>,
-    updateResourceMetadata: (folderPath: string, metadata: AiResourceMetadata) =>
-      ipcRenderer.invoke("ai:updateResourceMetadata", folderPath, metadata) as Promise<unknown>,
-    generateCandidate: (payload: AiGenerateCandidatePayload) =>
-      ipcRenderer.invoke("ai:generateCandidate", payload) as Promise<unknown>,
-    generateBatchCandidates: (payload: AiGenerateBatchCandidatesPayload) =>
-      ipcRenderer.invoke("ai:generateBatchCandidates", payload) as Promise<unknown>,
-    listCandidates: (folderPath: string) =>
-      ipcRenderer.invoke("ai:listCandidates", folderPath) as Promise<unknown>,
-    promoteCandidateToShot: (folderPath: string, candidateId: string) =>
-      ipcRenderer.invoke("ai:promoteCandidateToShot", folderPath, candidateId) as Promise<unknown>,
-    rollbackPromotedCandidateShot: (folderPath: string, imagePath: string) =>
-      ipcRenderer.invoke("ai:rollbackPromotedCandidateShot", folderPath, imagePath) as Promise<void>,
-    copyRequestPreview: (payload: AiRequestPreviewPayload) =>
-      ipcRenderer.invoke("ai:copyRequestPreview", payload) as Promise<{ text: string }>,
-    discardCandidate: (folderPath: string, candidateId: string) =>
-      ipcRenderer.invoke("ai:discardCandidate", folderPath, candidateId) as Promise<void>,
-    applyCandidate: (payload: AiApplyCandidatePayload) =>
-      ipcRenderer.invoke("ai:applyCandidate", payload) as Promise<unknown>
-  },
+
   onOpenRecentFolder: (callback: (folderPath: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, folderPath: string) => callback(folderPath);
     ipcRenderer.on("recent:openFolder", listener);
@@ -277,8 +206,12 @@ const api = {
   },
   finishSaveAndClose: (payload: { requestId: string; saved: boolean }) =>
     ipcRenderer.invoke("app:finishSaveAndClose", payload) as Promise<void>,
-  updateCloseGuard: (payload: { hasUnsavedChanges: boolean }) =>
-    ipcRenderer.invoke("app:updateCloseGuard", payload) as Promise<void>,
+  updateCloseGuard: async (payload: { hasUnsavedChanges: boolean }) => {
+    if (ipcRenderer.sendSync("app:updateCloseGuardSync", payload) !== true) throw new Error("Close guard was not acknowledged");
+  },
+  updateBitmapQueueGuard: (payload: { busy: boolean; hasUnsavedChanges: boolean }) => {
+    if (ipcRenderer.sendSync("app:updateBitmapQueueGuard", payload) !== true) throw new Error("Bitmap queue guard was not acknowledged");
+  },
   getAppInfo: () =>
     ipcRenderer.invoke("app:getInfo") as Promise<{
       version: string;

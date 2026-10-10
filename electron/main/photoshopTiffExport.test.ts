@@ -655,6 +655,36 @@ describe("buildPhotoshopTiffExportPlan", () => {
     }
   });
 
+  it.each([[true, true], [false, true], [false, false]] as const)("keeps paint-visible=%s background-visible=%s records and preserves all-hidden fallback", async (visible, backgroundVisible) => {
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-native-visible-"));
+    try {
+      const background = path.join(folderPath, "background.png");
+      const drawing = path.join(folderPath, "drawing.png");
+      const outputPath = path.join(folderPath, "out.tiff");
+      const manifestPath = path.join(folderPath, "manifest.json");
+      await sharp({ create: { width: 2, height: 2, channels: 4, background: "white" } }).png().toFile(background);
+      await sharp({ create: { width: 2, height: 2, channels: 4, background: "red" } }).png().toFile(drawing);
+      await writeFile(manifestPath, JSON.stringify({ outputPath, width: 2, height: 2, documentName: "visibility-regression", layers: [
+        { name: "Image", path: background, opacity: 1, blendMode: "normal", visible: backgroundVisible, background: true },
+        { name: "Drawing", path: drawing, opacity: 0.5, blendMode: "normal", visible, background: false }
+      ] }));
+      await execFileAsync("python3", [path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py"), manifestPath], {
+        env: { ...process.env, SWB_PYTHON_DEPS_DIR: photoshopTiffDepsDir, PYTHONDONTWRITEBYTECODE: "1" }
+      });
+      const pixels = await sharp(outputPath).ensureAlpha().raw().toBuffer();
+      // Before this repair the native exporter composited every layer even
+      // when all were hidden. Keep that legacy all-hidden result unchanged.
+      expect([...pixels.subarray(0, 4)]).toEqual(visible || !backgroundVisible ? [255, 127, 127, 255] : [255, 255, 255, 255]);
+      const { stdout } = await execFileAsync("python3", ["-c",
+        "import sys,json; sys.path.insert(0,sys.argv[2]); from psdtags import TiffImageSourceData,PsdLayerFlag; layers=TiffImageSourceData.fromtiff(sys.argv[1]).layers; print(json.dumps({'count':len(layers),'hidden':[bool(l.flags & PsdLayerFlag.VISIBLE) for l in layers]}))",
+        outputPath, photoshopTiffDepsDir
+      ], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
+      expect(JSON.parse(stdout)).toEqual({ count: 2, hidden: [!backgroundVisible, !visible] });
+    } finally {
+      await rm(folderPath, { recursive: true, force: true });
+    }
+  });
+
   it("writes Photoshop TIFF layers with non-MacRoman Unicode names", async () => {
     const depsDir = photoshopTiffDepsDir;
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-unicode-"));

@@ -82,7 +82,21 @@ export const mergeBitmapLayerFilesToPng = async (
 
   await mkdir(path.dirname(targetFilePath), { recursive: true });
   await writeFile(targetFilePath, mergedPng);
-  await Promise.all(deleteFilePaths.map((filePath) => unlink(filePath)));
+  // Keep the caller (and its exclusive queue) pending until every started deletion settles.
+  const deletionErrors: unknown[] = [];
+  await Promise.all(deleteFilePaths.map(async (filePath) => {
+    try {
+      await unlink(filePath);
+    } catch (error) {
+      deletionErrors.push(error);
+    }
+  }));
+  if (deletionErrors.length === 1) throw deletionErrors[0];
+  if (deletionErrors.length > 1) {
+    const primary = deletionErrors[0];
+    const message = primary instanceof Error ? primary.message : String(primary);
+    throw new AggregateError(deletionErrors, `${message}; ${deletionErrors.length - 1} additional bitmap layer deletion failure(s) after merge`);
+  }
 };
 
 export const copyBitmapLayerFile = async (

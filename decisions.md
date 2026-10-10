@@ -134,6 +134,8 @@ Reason: 破坏性实测否定了最初的“双 SVG path”假设：在 Chromium
 
 ## Current Architecture Map
 
+> 本节保留各阶段的设计细节作为决定背景，不是当前源码/进度清单；实际职责与现行链以[直接维护的SYSTEM](docs/architecture/SYSTEM.md)为准，当前版本与暂停点见[主交接](context-handoff.md)。内置AI已退役，旧AI路径/Atlas和实验mode描述不构成恢复功能或重开任务的授权。本次交接只补导航说明，不改下文产品/安全决定。
+
 Storyboard Flow is a local-first Electron app with four major layers:
 
 1. Renderer UI and interaction layer

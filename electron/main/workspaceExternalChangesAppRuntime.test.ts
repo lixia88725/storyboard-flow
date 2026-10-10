@@ -7,6 +7,12 @@ const project: CheckExternalChangesProject = {
 };
 
 describe("createWorkspaceExternalChangesAppHandlers", () => {
+  it("normal Save automatic scan never ensures missing Markdown", async () => {
+    const ensure = vi.fn(async () => false), read = vi.fn(async () => true);
+    const handlers = createWorkspaceExternalChangesAppHandlers({ changedKnownImagePaths: async () => [], collectImagePaths: async () => [], createImageRecords: async () => [], ensureStoryboardScriptMarkdown: ensure, readStoryboardScriptImportState: read });
+    const result = await handlers.checkExternalChanges({ project, folderPath: "/project", metadataPath: "/project/p.json", normalSave: true }, { reportProgress: () => {} });
+    expect(ensure).not.toHaveBeenCalled(); expect(read).toHaveBeenCalledWith("/project", project); expect(result.scriptImportNeeded).toBe(true);
+  });
   it("wires external change checks through app runtime dependencies", async () => {
     const reportProgress = vi.fn();
     const changedKnownImagePaths = vi.fn(async () => ["/project/known.tiff"]);

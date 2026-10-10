@@ -13,8 +13,14 @@ export const withSuccessfulSaveArtifactCleanup = (
 ): AppliedFileReplacements => ({
   commit: async () => {
     await applied.commit();
-    await options.remove(options.tempFolderPath, { recursive: true, force: true });
-    await options.remove(options.backupFolderPath, { recursive: true, force: true });
+    // Backups may already be gone: cleanup failures must not trigger Save rollback.
+    for (const folderPath of [options.tempFolderPath, options.backupFolderPath]) {
+      try {
+        await options.remove(folderPath, { recursive: true, force: true });
+      } catch (error) {
+        console.warn(`Save committed; could not clean up artifact folder: ${folderPath}`, error);
+      }
+    }
   },
   rollback: () => applied.rollback()
 });

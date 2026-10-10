@@ -2,13 +2,22 @@ export type BitmapLayerWriteQueue = {
   enqueue: <T>(bitmapPath: string, task: () => Promise<T>) => Promise<T>;
   drain: (bitmapPath?: string) => Promise<void>;
   runExclusive: <T>(task: () => Promise<T>) => Promise<T>;
+  isBusy?: () => boolean;
 };
 
-export const createBitmapLayerWriteQueue = (): BitmapLayerWriteQueue => {
+export const createBitmapLayerWriteQueue = ({ onBusyChange }: {
+  // Main acknowledges protection synchronously before any task is scheduled.
+  // Queue lifetime, not React effect lifetime, owns this callback.
+  onBusyChange?: (busy: boolean) => void;
+} = {}): BitmapLayerWriteQueue => {
   const queues = new Map<string, Promise<unknown>>();
   let exclusiveTail: Promise<unknown> | undefined;
+  const isBusy = () => !!exclusiveTail || queues.size > 0;
+  const admit = () => { if (!isBusy()) onBusyChange?.(true); };
+  const releaseIfIdle = () => { if (!isBusy()) onBusyChange?.(false); };
 
   const enqueue = async <T>(bitmapPath: string, task: () => Promise<T>): Promise<T> => {
+    admit();
     const previous = queues.get(bitmapPath) ?? Promise.resolve();
     const exclusive = exclusiveTail;
     const next = exclusive
@@ -25,6 +34,7 @@ export const createBitmapLayerWriteQueue = (): BitmapLayerWriteQueue => {
     } finally {
       if (queues.get(bitmapPath) === queued) {
         queues.delete(bitmapPath);
+        releaseIfIdle();
       }
     }
   };
@@ -40,6 +50,7 @@ export const createBitmapLayerWriteQueue = (): BitmapLayerWriteQueue => {
   };
 
   const runExclusive = <T>(task: () => Promise<T>): Promise<T> => {
+    try { admit(); } catch (error) { return Promise.reject(error); }
     const previousExclusive = exclusiveTail;
     const pendingWrites = [...queues.values()];
     const action = (previousExclusive ?? Promise.resolve())
@@ -48,13 +59,14 @@ export const createBitmapLayerWriteQueue = (): BitmapLayerWriteQueue => {
       .then(task);
     const tracked = action.catch(() => undefined);
     exclusiveTail = tracked;
-    void tracked.finally(() => {
+    const completed = action.finally(() => {
       if (exclusiveTail === tracked) {
         exclusiveTail = undefined;
+        releaseIfIdle();
       }
     });
-    return action;
+    return completed;
   };
 
-  return { enqueue, drain, runExclusive };
+  return { enqueue, drain, runExclusive, isBusy };
 };

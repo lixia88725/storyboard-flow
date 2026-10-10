@@ -6,7 +6,8 @@ import type {
   ImportedImage,
   Project,
   RenamePlanItem,
-  WorkspacePayload
+  WorkspacePayload,
+  SaveWorkspacePayload
 } from "../shared/types";
 
 type WorkspaceTaskProgress = {
@@ -16,36 +17,17 @@ type WorkspaceTaskProgress = {
   total: number;
 };
 
-type AiProviderName = "openai" | "seedream" | "comfyui";
-type AiBatchSize = 1 | 4 | 16;
-type AiCandidateMetadata = {
-  id: string;
-  shotId: string;
-  bitmapPath: string;
-  filePath: string;
-  width: number;
-  height: number;
-  prompt: string;
-  createdAt: string;
-};
 
-type ComfyUiSettings = {
-  serverUrl: string;
-  workflowJson: string;
-  timeoutMs: number;
-};
 
-type AiSettingsStatus = {
-  hasOpenAiApiKey: boolean;
-  hasSeedreamApiKey: boolean;
-  hasValidComfyUiSettings: boolean;
-  comfyUi: ComfyUiSettings;
-};
+
+
+
+
 
 declare global {
   interface Window {
     storyboard: {
-      openFolderByPath: (folderPath: string) => Promise<FolderScanPayload>;
+      openFolderByPath: (folderPath: string, options?: import("../../electron/normalSaveTransport").NormalSaveOpenOptions) => Promise<FolderScanPayload>;
       filePathForDroppedFile: (file: File) => string;
       selectFolder: () => Promise<string | undefined>;
       inspectStoryboardScript: (sourceMarkdownPath: string) => Promise<{
@@ -53,20 +35,23 @@ declare global {
         entryCount: number;
       }>;
       createFromStoryboardScript: (payload: {
+        normalSave?: boolean;
+        normalSaveSource?: WorkspacePayload;
         sourceMarkdownPath: string;
         targetFolderPath: string;
         blankShotPreset?: BlankShotOptions["preset"];
-      }) => Promise<FolderScanPayload>;
+      }) => Promise<FolderScanPayload | import("../../electron/shared/normalSaveImportIpc").NormalSaveImportIpcResult<FolderScanPayload>>;
+      readOutputIdentity: (imagePath: string, legacy?: { project: Project; folderPath: string; shotId: string }) => Promise<string>;
       autosaveWorkspace: (payload: WorkspacePayload) => Promise<WorkspacePayload>;
       ensureLayerAssets: (payload: WorkspacePayload) => Promise<WorkspacePayload>;
       saveWorkspace: (
-        payload: WorkspacePayload & { renamePlan?: RenamePlanItem[] }
-      ) => Promise<WorkspacePayload>;
+        payload: SaveWorkspacePayload
+      ) => Promise<SaveWorkspacePayload>;
       exportPhotoshopTiffs: (payload: WorkspacePayload) => Promise<{
         exportFolderPath: string;
         exportedFiles: string[];
       }>;
-      importSwbFormat: (payload: ImportSwbFormatPayload) => Promise<FolderScanPayload>;
+      importSwbFormat: (payload: ImportSwbFormatPayload) => Promise<FolderScanPayload | import("../../electron/shared/normalSaveImportIpc").NormalSaveImportIpcResult<FolderScanPayload>>;
       checkStoryboardScript: (
         payload: WorkspacePayload
       ) => Promise<{ scriptImportNeeded: boolean }>;
@@ -83,6 +68,7 @@ declare global {
         dataUrl: string;
       }) => Promise<{ folderPath: string; bitmapPath: string; dataUrl: string; filePath: string }>;
       readLayerPng: (payload: { folderPath: string; bitmapPath: string }) => Promise<string | undefined>;
+      createLayerPng: (payload: import("../../electron/main/layerAssetService").CreateLayerAssetPayload) => Promise<import("../../electron/main/layerAssetService").CreateLayerAssetResult>;
       deleteLayerPng: (payload: {
         folderPath: string;
         bitmapPath: string;
@@ -121,6 +107,7 @@ declare global {
         payload: WorkspacePayload,
         shotIds: string[]
       ) => Promise<Array<{
+        normalSaveOutput?: import("../../electron/normalSaveTransport").NormalSaveOutputAck;
         shotId: string;
         imagePath: string;
         fileName: string;
@@ -130,6 +117,7 @@ declare global {
         payload: WorkspacePayload,
         shotIds: string[]
       ) => Promise<Array<{
+        normalSaveOutput?: import("../../electron/normalSaveTransport").NormalSaveOutputAck;
         shotId: string;
         imagePath: string;
         fileName: string;
@@ -180,139 +168,16 @@ declare global {
         }>;
         deleteBitmapPaths: string[];
         targetFilePath: string;
+        sourceIdentities?: import("../../electron/main/mergeSourceCleanup").MergeSourceIdentity[];
+        targetDataUrl?: string;
       }>;
+      cleanupMergedLayerSources: (payload: import("../../electron/main/mergeSourceCleanup").MergeCleanupPayload) =>
+        Promise<{ deleted: string[]; retained: string[]; errors: string[] }>;
       createBlankShot: (folderPath: string, options: BlankShotOptions) => Promise<ImportedImage>;
       getRecentFolders: () => Promise<string[]>;
       getToolRadialMenu: () => Promise<unknown>;
       setToolRadialMenu: (config: unknown) => Promise<unknown>;
-      ai: {
-        getSettings: () => Promise<AiSettingsStatus>;
-        saveOpenAiApiKey: (apiKey: string) => Promise<AiSettingsStatus>;
-        clearOpenAiApiKey: () => Promise<AiSettingsStatus>;
-        saveSeedreamApiKey: (apiKey: string) => Promise<AiSettingsStatus>;
-        clearSeedreamApiKey: () => Promise<AiSettingsStatus>;
-        saveComfyUiSettings: (settings: ComfyUiSettings) => Promise<AiSettingsStatus>;
-        testComfyUiConnection: (serverUrl: string) => Promise<{ ok: boolean; message: string }>;
-        listResources: (folderPath: string) => Promise<{
-          resourcesFolderPath: string;
-          metadataPath: string;
-          resources: Array<{
-            id: string;
-            fileName: string;
-            filePath: string;
-            role: string;
-            note: string;
-          }>;
-        }>;
-        importResources: (folderPath: string, sourceFilePaths: string[]) => Promise<{
-          resourcesFolderPath: string;
-          metadataPath: string;
-          importedFileNames: string[];
-          resources: Array<{
-            id: string;
-            fileName: string;
-            filePath: string;
-            role: string;
-            note: string;
-          }>;
-        }>;
-        deleteResource: (folderPath: string, fileName: string) => Promise<{
-          resourcesFolderPath: string;
-          metadataPath: string;
-          resources: Array<{
-            id: string;
-            fileName: string;
-            filePath: string;
-            role: string;
-            note: string;
-          }>;
-        }>;
-        updateResourceMetadata: (
-          folderPath: string,
-          metadata: {
-            version: 1;
-            resources: Array<{ fileName: string; role: string; note: string }>;
-          }
-        ) => Promise<unknown>;
-        generateCandidate: (payload: {
-          folderPath: string;
-          project: Project;
-          shotId: string;
-          selectedShotContext?: string;
-          selectedResourceIds?: string[];
-          generationSettings?: {
-            provider?: AiProviderName;
-            model?: string;
-          };
-        }) => Promise<{
-          id: string;
-          shotId: string;
-          bitmapPath: string;
-          filePath: string;
-          width: number;
-          height: number;
-          prompt: string;
-          createdAt: string;
-        }>;
-        generateBatchCandidates: (payload: {
-          folderPath: string;
-          project: Project;
-          shotIds: string[];
-          batchSize?: AiBatchSize;
-          selectedResourceIds?: string[];
-          resourceAssignments?: Record<string, string[]>;
-          generationSettings?: {
-            provider?: AiProviderName;
-            model?: string;
-          };
-        }) => Promise<{
-          groups: Array<{
-            index: number;
-            shotIds: string[];
-            candidateIds: string[];
-            error?: string;
-          }>;
-          candidates: Array<{
-            id: string;
-            shotId: string;
-            bitmapPath: string;
-            filePath: string;
-            width: number;
-            height: number;
-            prompt: string;
-            createdAt: string;
-          }>;
-        }>;
-        listCandidates: (folderPath: string) => Promise<AiCandidateMetadata[]>;
-        promoteCandidateToShot: (
-          folderPath: string,
-          candidateId: string
-        ) => Promise<ImportedImage>;
-        rollbackPromotedCandidateShot: (
-          folderPath: string,
-          imagePath: string
-        ) => Promise<void>;
-        copyRequestPreview: (payload: {
-          folderPath: string;
-          project: Project;
-          shotId?: string;
-          shotIds?: string[];
-          batchSize?: AiBatchSize;
-          selectedShotContext?: string;
-          selectedResourceIds?: string[];
-          resourceAssignments?: Record<string, string[]>;
-          generationSettings?: {
-            provider?: AiProviderName;
-            model?: string;
-          };
-        }) => Promise<{ text: string }>;
-        discardCandidate: (folderPath: string, candidateId: string) => Promise<void>;
-        applyCandidate: (payload: {
-          folderPath: string;
-          project: Project;
-          candidateId: string;
-        }) => Promise<{ project: Project; layer: BitmapLayer }>;
-      };
+
       onOpenRecentFolder: (callback: (folderPath: string) => void) => () => void;
       onRecentFoldersChanged: (
         callback: (folders: string[], reason?: string) => void
@@ -321,6 +186,7 @@ declare global {
       onSaveAndCloseRequested: (callback: (request: { requestId: string }) => void) => () => void;
       finishSaveAndClose: (payload: { requestId: string; saved: boolean }) => Promise<void>;
       updateCloseGuard: (payload: { hasUnsavedChanges: boolean }) => Promise<void>;
+      updateBitmapQueueGuard: (payload: { busy: boolean; hasUnsavedChanges: boolean }) => void;
       getAppInfo: () => Promise<{
         version: string;
         platform: NodeJS.Platform;

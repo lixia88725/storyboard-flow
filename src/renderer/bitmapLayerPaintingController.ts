@@ -3,6 +3,7 @@ import { bitmapLayersForShot, markBitmapLayerPainted } from "../shared/projectOp
 import type { BitmapLayer, Project, Shot, SketchStroke } from "../shared/types";
 import type { BitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import type { LayerAssetSnapshot } from "./bitmapLayerHistory";
+import type { CompletedEffect } from "./normalSaveProjectOwner";
 import {
   createTransparentLayerDataUrl,
   drawStrokeOnBitmapLayer,
@@ -18,10 +19,13 @@ type ProjectUpdate = Project | ((currentProject: Project) => Project);
 
 export type BitmapLayerPaintingControllerOptions<HistoryEntry> = {
   api: StoryboardApi | undefined;
+  captureWorkspace: () => () => boolean;
   projectRef: MutableRefObject<Project>;
   folderPath: string | undefined;
   bitmapLayerWriteQueueRef: MutableRefObject<BitmapLayerWriteQueue>;
   createHistoryEntryFromLayerAssets: (layerAssets?: LayerAssetSnapshot[]) => HistoryEntry;
+  // Original workspace/source bound while admitted, not a late callback reading current paths.
+  captureEffectCompletion: () => CompletedEffect;
   recordUndoEntry: (entry: HistoryEntry) => void;
   markShotsDirty: (shotIds: string[]) => void;
   updateProject: (
@@ -64,15 +68,44 @@ export const sourceDataUrlForBitmapLayer = async ({
 
 export const useBitmapLayerPaintingController = <HistoryEntry,>({
   api,
+  captureWorkspace,
   projectRef,
   folderPath,
   bitmapLayerWriteQueueRef,
   createHistoryEntryFromLayerAssets,
+  captureEffectCompletion,
   recordUndoEntry,
   markShotsDirty,
   updateProject,
   blurBitmapLayer = gaussianBlurBitmapLayer
 }: BitmapLayerPaintingControllerOptions<HistoryEntry>) => {
+  const enqueuePainting = (bitmapPath: string, effect: (scopedApi: StoryboardApi) => Promise<string | undefined>) => {
+    const isCurrent = captureWorkspace();
+    return bitmapLayerWriteQueueRef.current.enqueue(bitmapPath, async () => {
+      if (!api || !isCurrent()) return;
+      const scopedApi = { ...api, writeLayerPng: async (...args: Parameters<StoryboardApi["writeLayerPng"]>) => {
+        if (!isCurrent()) throw new Error("Painting workspace changed before PNG write");
+        const source = projectRef.current.shots.find(s => s.layers?.some(l => l.bitmapPath === args[0].bitmapPath));
+        const layer = source?.layers?.find(l => l.bitmapPath === args[0].bitmapPath);
+        const completion = captureEffectCompletion();
+        if (!source || !layer) throw new Error("Painting effect source is not current");
+        const { folderPath: writeFolder, bitmapPath: writePath } = args[0];
+        const sourceId = source?.id, layerId = layer?.id;
+        completion.prepareSinglePng?.({ ...args[0], shotId: sourceId!, layerId: layerId!,
+          read: () => api.readLayerPng({ folderPath: writeFolder, bitmapPath: writePath }),
+          update: p => markBitmapLayerPainted(p, sourceId!, layerId!) });
+        let result;
+        try { result = await api.writeLayerPng(...args); }
+        catch (error) { completion.failed(error, [source!.id]); throw error; }
+        if (!isCurrent()) {
+          await completion(p => markBitmapLayerPainted(p, source!.id, layer!.id), [source!.id]);
+          throw new Error("Painting workspace changed; PNG retained without stale publication");
+        }
+        return result;
+      } };
+      return effect(scopedApi);
+    });
+  };
   const handleBitmapBlur = async (
     shot: Shot,
     layerId: string,
@@ -88,7 +121,7 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
       return;
     }
 
-    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
+    return enqueuePainting(layer.bitmapPath, async (api) => {
       const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
       const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
       if (!canFillBitmapLayer(currentLayer)) {
@@ -137,7 +170,7 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
     layerId: string,
     stroke: SketchStroke,
     renderedDataUrl?: string,
-    pendingStrokes: SketchStroke[] = []
+    _pendingStrokes: SketchStroke[] = []
   ) => {
     if (!api || !folderPath) {
       return;
@@ -148,7 +181,7 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
       return;
     }
 
-    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
+    return enqueuePainting(layer.bitmapPath, async (api) => {
       const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
       const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
       if (!currentLayer || currentLayer.locked) {
@@ -173,8 +206,9 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
             preloadedLayer: { loaded: true, dataUrl: previousDataUrl }
           }),
           currentLayer,
-          stroke,
-          pendingStrokes
+          // The queue has already persisted earlier strokes into this source.
+          // Pending strokes belong to the UI preview, not this incremental write.
+          stroke
         ));
 
       await api.writeLayerPng({
@@ -203,7 +237,7 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
       return;
     }
 
-    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
+    return enqueuePainting(layer.bitmapPath, async (api) => {
       const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
       const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
       if (!currentLayer || currentLayer.locked) {
@@ -248,7 +282,7 @@ export const useBitmapLayerPaintingController = <HistoryEntry,>({
       return;
     }
 
-    return bitmapLayerWriteQueueRef.current.enqueue(layer.bitmapPath, async () => {
+    return enqueuePainting(layer.bitmapPath, async (api) => {
       const currentShot = projectRef.current.shots.find((item) => item.id === shot.id) ?? shot;
       const currentLayer = bitmapLayersForShot(currentShot).find((item) => item.id === layerId);
       if (!canFillBitmapLayer(currentLayer)) {

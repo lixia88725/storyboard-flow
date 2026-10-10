@@ -29,25 +29,20 @@ describe("App view mode rendering", () => {
   });
 
   it("applies the active scene matte after imported shots become owned", () => {
-    expect(appSource).toContain("const inheritedMatteMode = sceneMatteModeForProject(project)");
-    expect(appSource).toContain(
-      "const inheritedDialogueOverlayEnabled ="
-    );
-    expect(appSource).toContain(
-      "dialogueOverlayEnabled: inheritedDialogueOverlayEnabled"
-    );
-    expect(appSource).toContain("const importedProject = await loadFolderScan(");
-    expect(appSource).toContain("sceneMatteInheritanceRef.current?.(");
+    expect(appSource).toContain("const mode = sceneMatteModeForProject(scene)");
+    expect(appSource).toContain("dialogueOverlayEnabled: sceneDialogueOverlayEnabledForProject(scene)");
+    // The normal operation prepares inherited assets before its accepted
+    // publication, rather than using the retired post-load legacy callback.
+    expect(appSource).toContain("prepare: prepareNormalSaveImportMatte");
+    expect(appSource).toContain("published: normalSaveImageImportPublished");
   });
 
   it("serializes autosave and Save with bitmap presentation transactions", () => {
-    expect(appSource).toContain(
-      "bitmapLayerWriteQueueRef.current.runExclusive(async () => {"
-    );
-    expect(appSource).toContain(
-      "await persistWorkspaceWithoutAssetLock(projectToSave);"
-    );
-    expect(appSource).toContain("projectRef.current = result.project;");
+    // Canonical owner/adapter tests prove settlement and ACK, not these
+    // source anchors; this check only protects their App composition.
+    expect(appSource).toContain("queue: bitmapLayerWriteQueueRef.current");
+    expect(appSource).toContain("normalSaveAppAdapterRef.current!.autosave(projectToSave)");
+    expect(appSource).toContain("await normalSaveAppAdapterRef.current!.save()");
     expect(appSource).toContain(
       "if (workspaceRecoveryRequiredRef.current) {"
     );

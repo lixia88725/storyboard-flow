@@ -38,7 +38,9 @@ export const createAppAppHandlers = <Sender, Owner>({
   saveAndCloseRequests,
   showOpenDialog,
   updateManifestUrl = defaultUpdateManifestUrl
-}: AppAppRuntimeOptions<Sender, Owner>): AppIpcHandlers => ({
+}: AppAppRuntimeOptions<Sender, Owner>): AppIpcHandlers => {
+  const busySenders = new Set<number>();
+  return {
   selectFolder: (event) =>
     selectFolderPathForEvent({
       event: event as unknown as FolderSelectionEvent<Sender>,
@@ -46,7 +48,16 @@ export const createAppAppHandlers = <Sender, Owner>({
       showOpenDialog
     }),
   finishSaveAndClose: (payload) => finishSaveAndClose(saveAndCloseRequests, payload),
-  updateCloseGuard: (event, payload) => updateCloseGuard(closeGuardWebContentsIds, event, payload),
+  updateCloseGuard: (event, payload) => updateCloseGuard(closeGuardWebContentsIds, event, {
+    hasUnsavedChanges: busySenders.has(event.sender.id) || payload.hasUnsavedChanges
+  }),
+  updateBitmapQueueGuard: (event, payload) => {
+    if (payload.busy) busySenders.add(event.sender.id);
+    else busySenders.delete(event.sender.id);
+    updateCloseGuard(closeGuardWebContentsIds, event, {
+      hasUnsavedChanges: payload.busy || payload.hasUnsavedChanges
+    });
+  },
   getInfo: () =>
     getAppInfoForRenderer({
       arch,
@@ -55,4 +66,5 @@ export const createAppAppHandlers = <Sender, Owner>({
       version: getVersion()
     }),
   openExternal: (url) => openExternalUrl(url, openExternal)
-});
+  };
+};

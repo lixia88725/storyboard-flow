@@ -80,7 +80,7 @@ export const writeSwbImportWorkingTiff = async ({
   usePlaceholder: boolean;
 }): Promise<void> => {
   if (!usePlaceholder) {
-    await sharp(sourcePath, sharpSourceOptions).rotate().tiff().toFile(outputPath);
+    await sharp(sourcePath, sharpSourceOptions).rotate().tiff({ compression: "none" }).toFile(outputPath);
     return;
   }
 
@@ -92,7 +92,7 @@ export const writeSwbImportWorkingTiff = async ({
       background: { r: 0, g: 0, b: 0, alpha: 0 }
     }
   })
-    .tiff()
+    .tiff({ compression: "none" })
     .toFile(outputPath);
 };
 
