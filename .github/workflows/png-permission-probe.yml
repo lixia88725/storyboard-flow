@@ -18,7 +18,6 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       PYTHONDONTWRITEBYTECODE: '1'
-      SWB_PERMISSION_TEST_TMPDIR: ${{ runner.temp }}/owned-layer-permission-fixtures
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,4 +27,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verify native permission adapter on synthetic files only
+        env:
+          SWB_PERMISSION_TEST_TMPDIR: ${{ runner.temp }}/owned-layer-permission-fixtures
         run: python scripts/test-layer-file-permissions.py
