@@ -6,7 +6,7 @@
 
 - [x] 在公开基线 `2131f65423c8b67de7ccc0ba45daf5d9e217bf48` 的独立分支准备最新完整 522 源身份，保持既有测试断言和 full collection/exclude。
 - [x] 提供脱敏交接、源码 manifest、已知失败与权限范围；不上传私有 fixture/原始证据/依赖/构建缓存。
-- [ ] 上传执行者核精确暂存内容后 commit/push `checkpoint/data-safety-wip-20261012`，读回远端 SHA 与 522 文件哈希；本地准备不等于上传完成。
+- [x] 已提交并上传 `checkpoint/data-safety-wip-20261012`；源码提交 `d572cdfaf0ffb7e2d00a81f78c6f3b2b425f1877` 已从 GitHub 读回，522 文件与 manifest 全部匹配。后续仅更新交接文档，源码身份不变；未合并或发布。
 - [ ] 上传后更新本机私有交接并复盘；不因此启动产品修复或新增验收矩阵。
 
 ## 待后续授权的修复与验证

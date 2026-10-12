@@ -1,6 +1,6 @@
 # Data-safety source checkpoint — WIP / NOT ACCEPTED
 
-This is a source-preservation checkpoint, not a release, independent acceptance, or WholeMac PASS. Preparation is staged locally; upload completion requires the uploader's remote readback. No product repair, install, package rebuild, full-suite rerun, main merge, PR, tag, Release or workflow change occurred during preparation.
+This is a source-preservation checkpoint, not a release, independent acceptance, or WholeMac PASS. Source commit `d572cdfaf0ffb7e2d00a81f78c6f3b2b425f1877` was uploaded and read back from GitHub; all 522 source objects match the manifest. Subsequent documentation-only updates retain this source identity. No product repair, install, package rebuild, full-suite rerun, main merge, PR, tag, Release or workflow change occurred during preparation or upload.
 
 ## Identity and scope
 
@@ -68,4 +68,4 @@ Homebrew Python paths remain hardcoded in native tests/test composition (for exa
 
 Only the inherited `.github/workflows/release.yml` exists. It is unchanged: automatic push triggers are `main` and `v*.*.*` tags; manual dispatch can release as well. Its actions are checkout/setup-node/setup-python; later jobs install/build/package, publish release assets and update the release repository. A push solely to this checkpoint branch does not match those configured automatic triggers. No workflow is added or disabled; remote configuration must be rechecked if it changes.
 
-Next authorized work is checkpoint upload/readback, handoff update and retrospective. Future fixes/matrices and independent high-risk acceptance require their own current scope confirmation. See [current handoff](../../context-handoff.md) and [TODO](../../todo.md).
+Next authorized work is the retrospective. Future fixes/matrices and independent high-risk acceptance require their own current scope confirmation. See [current handoff](../../context-handoff.md) and [TODO](../../todo.md).

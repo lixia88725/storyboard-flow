@@ -2,12 +2,12 @@
 
 ## 当前目标与授权边界
 
-当前仅保全最新数据安全 WIP 源码，供上传检查点、交接更新与复盘；不是验收、正式发布或继续实现的授权。依据发起方提供的用户确认摘录，允许将必要源码及脱敏文档保存到已有 PUBLIC 仓库；本准备阶段只在独立 worktree 暂存，不 commit/push。
+当前目标是保全最新数据安全 WIP 源码、检查点上传、交接更新与复盘；不是验收、正式发布或继续实现的授权。依据发起方提供的用户确认摘录，必要源码及脱敏文档已提交到已有 PUBLIC 仓库的独立检查点分支；未合并 main，未发布安装包。
 
 - 目标分支：`checkpoint/data-safety-wip-20261012`。
 - 公开基线：`2131f65423c8b67de7ccc0ba45daf5d9e217bf48`；仅以此为父版本准备，不引入本机私有 dirty HEAD 历史。
 - 本机原 main 的 dirty/untracked 成果保持不变。远端 main 的并行变化未合入；不得自动 pull/rebase/merge、创建 PR/tag/Release、安装依赖或新增/禁用 CI。
-- 现状：**WIP / NOT ACCEPTED / 未合并**。此文档不声明上传完成；实际远端提交和读回由执行上传者另行确认。
+- 现状：**已上传源码检查点 / WIP / NOT ACCEPTED / 未合并**。源码提交 `d572cdfaf0ffb7e2d00a81f78c6f3b2b425f1877` 已从 GitHub 读回，522 项源码与清单全部匹配；文档后续更新不改变该源码身份。远端 main 保持原版本，读回时检查点分支 Actions 运行数为 0。
 
 ## 源码与证据身份
 
@@ -25,4 +25,4 @@
 4. before-first-Save 与其他 PNG producers 不完整，Windows 未完成，生产 quota 未批准；有限 fixture budget 不是产品默认配置。权限/存储契约不得扩写为新批准。
 5. 有硬编码 Homebrew Python、vendor/旧 spike fallback；没有安装或干净机器获取/运行验证，不声称跨机可运行。查看 README 的最短获取与检查说明。
 
-下一步仅完成获授权检查点上传和读回、更新本机私有交接、复盘；后续修复、矩阵和高风险独立验收另核授权。[TODO](todo.md)保留唯一待办，[SYSTEM](docs/architecture/SYSTEM.md)复用现有架构入口。
+下一步是复盘本轮实际执行证据，区分必要安全验证、重复工作、工具返工及执行偏差；不直接改动工作规则或重启实现。后续修复、矩阵和高风险独立验收另核授权。[TODO](todo.md)保留唯一待办，[SYSTEM](docs/architecture/SYSTEM.md)复用现有架构入口。
