@@ -125,12 +125,24 @@ export const applyFileMoves = async (
       applied.push(item);
     }
   } catch (error) {
-    await rollbackAppliedMoves(applied, ops);
+    try {
+      await rollbackAppliedMoves(applied, ops);
+    } catch (rollbackError) {
+      // No handle is returned on a failed apply. Existing Import/Save/Pending
+      // gates must nevertheless know not to restore dependent occupied paths.
+      throw new FileReplacementRecoveryIncompleteError([error, rollbackError]);
+    }
     throw error;
   }
 
   return {
-    rollback: () => rollbackAppliedMoves(applied, ops)
+    rollback: async () => {
+      try {
+        await rollbackAppliedMoves(applied, ops);
+      } catch (error) {
+        throw new FileReplacementRecoveryIncompleteError([error]);
+      }
+    }
   };
 };
 
@@ -138,9 +150,74 @@ const rollbackAppliedMoves = async (
   applied: FileMoveItem[],
   ops: FileMoveOps
 ): Promise<void> => {
-  for (const item of [...applied].reverse()) {
-    await ops.rename(item.toPath, item.fromPath).catch(() => undefined);
+  for (let index = applied.length - 1; index >= 0; index -= 1) {
+    const item = applied[index];
+    // These moves may share paths. A failed prerequisite must stop dependent
+    // recovery, not be swallowed or allow the next rename to overwrite it.
+    await ops.rename(item.toPath, item.fromPath);
+    applied.splice(index, 1);
   }
+};
+
+export type CreateOnlyMoveOps = {
+  mkdir: (directoryPath: string) => Promise<void>;
+  link: (fromPath: string, toPath: string) => Promise<void>;
+  unlink: (filePath: string) => Promise<void>;
+};
+
+/** Publish new files by hard link, so an entry that appeared after the
+ * availability check is never replaced — unlike rename, which clobbers it.
+ * The source name is then removed: leaving both names on one inode would let a
+ * later write through the staging path silently mutate the published asset.
+ * Rollback restores the source name and removes only this call's target. */
+export const applyFileCreateOnlyMoves = async (
+  moves: FileMoveItem[],
+  ops: CreateOnlyMoveOps
+): Promise<AppliedFileMoves> => {
+  const published: FileMoveItem[] = [];
+
+  try {
+    for (const item of moves.filter((move) => move.fromPath !== move.toPath)) {
+      await ops.mkdir(path.dirname(item.toPath));
+      await ops.link(item.fromPath, item.toPath);
+      try {
+        await ops.unlink(item.fromPath);
+      } catch (error) {
+        // Keep the ledger consistent: the target exists even though the source
+        // could not be released.
+        published.push(item);
+        throw error;
+      }
+      published.push(item);
+    }
+  } catch (error) {
+    const failures: unknown[] = [];
+    for (const item of [...published].reverse()) {
+      try {
+        await ops.link(item.toPath, item.fromPath);
+        await ops.unlink(item.toPath);
+      } catch (rollbackError) {
+        failures.push(rollbackError);
+      }
+    }
+    if (failures.length > 0) throw new FileReplacementRecoveryIncompleteError([error, ...failures]);
+    throw error;
+  }
+
+  return {
+    rollback: async () => {
+      const failures: unknown[] = [];
+      for (const item of [...published].reverse()) {
+        try {
+          await ops.link(item.toPath, item.fromPath);
+          await ops.unlink(item.toPath);
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (failures.length > 0) throw new FileReplacementRecoveryIncompleteError(failures);
+    }
+  };
 };
 
 export class FileReplacementRecoveryIncompleteError extends AggregateError {

@@ -11,6 +11,7 @@ import type {
   Project
 } from "../shared/types";
 import type { WorkspaceTask } from "./workspaceLifecycleState";
+import type { AssetIntentResult } from './assetIntentAdmission';
 import { withStatus } from "./statusAction";
 import { createShotPresentationController } from "./shotPresentationController";
 import { readLayerAssetSnapshots } from "./bitmapLayerHistory";
@@ -106,6 +107,14 @@ export type AddShotOperation = {
   registerBlankShot: (done: { shotId: string }) => void;
 };
 
+export type AddShotContinuation = {
+  projectRef: { current: Project };
+  admitAssetIntent?: <T>(assetId: string, bytes: Uint8Array, run: () => Promise<T>) => Promise<AssetIntentResult<T>>;
+  beginAddShotOperation?: () => AddShotOperation | undefined;
+  isImageImportLocked: () => boolean;
+  publishNewShot?: (update: (p: Project) => Project, shotId: string, isCurrent: () => boolean) => Promise<boolean>;
+};
+
 export type InitialAddShotContext =
   | {
       kind: "ready";
@@ -147,6 +156,7 @@ export const addShotInsertedShotId = (
 ): string | undefined => project.shots.find((shot) => shot.imagePath === imagePath)?.id;
 
 export const useAddShotController = ({
+  admitAssetIntent,
   beginAddShotOperation,
   isImageImportLocked,
   api,
@@ -169,6 +179,7 @@ export const useAddShotController = ({
   updateProject,
   publishNewShot
 }: {
+  admitAssetIntent?: <T>(assetId: string, bytes: Uint8Array, run: () => Promise<T>) => Promise<AssetIntentResult<T>>;
   beginAddShotOperation?: () => AddShotOperation | undefined;
   isImageImportLocked: () => boolean;
   api: StoryboardApi;
@@ -196,7 +207,7 @@ export const useAddShotController = ({
   // shot's folder; absent keeps the legacy raw open branch. The result is bound to the
   // identity set by THIS load plus whether the whole load (incl. auto-import/migration)
   // completed; the caller must not re-capture an unrelated workspace identity.
-  openOwnedFolder?: (folderPath: string) => Promise<AddShotWorkspace & { project?: Project; loaded: boolean } | undefined>;
+  openOwnedFolder?: (folderPath: string) => Promise<AddShotWorkspace & { project?: Project; loaded: boolean; continuation?: AddShotContinuation } | undefined>;
   primarySelectedShotId: string | undefined;
   projectRef: { current: Project };
   selectSingleShot: (shotId: string | undefined) => void;
@@ -206,7 +217,9 @@ export const useAddShotController = ({
   updateProject: (projectUpdate: ProjectUpdate, markFileNamesUnsynced?: boolean, recordUndo?: boolean) => void;
   publishNewShot?: (update: (p: Project) => Project, shotId: string, isCurrent: () => boolean) => Promise<boolean>;
 }) => {
+  const initialContinuation = { projectRef, admitAssetIntent, beginAddShotOperation, isImageImportLocked, publishNewShot };
   const handleAddShot = async () => {
+    let { projectRef, admitAssetIntent, beginAddShotOperation, isImageImportLocked, publishNewShot } = initialContinuation;
     if (isImageImportLocked()) return;
     let origin = captureWorkspace();
     const isCurrent = () => isCurrentWorkspace(origin);
@@ -259,6 +272,7 @@ export const useAddShotController = ({
           return;
         }
         origin = { identity: owned.identity, folderPath: owned.folderPath, metadataPath: owned.metadataPath };
+        if (owned.continuation) ({ projectRef, admitAssetIntent, beginAddShotOperation, isImageImportLocked, publishNewShot } = owned.continuation);
         opened = { folderPath: owned.folderPath, metadataPath: owned.metadataPath, project: owned.project };
       } else {
         const scan = await withStatus(
@@ -296,6 +310,7 @@ export const useAddShotController = ({
 
     // Blank TIFF creation is the first irreversible effect; once admitted, finish
     // its assets + metadata even if the image lock changes. Workspace identity still applies.
+    const admitted = async () => {
     if (isImageImportLocked()) return;
     // Capture THIS Add's own operation handle (never a shared latest ref) against the
     // workspace actually being produced; every following effect uses its bound api.
@@ -423,6 +438,8 @@ export const useAddShotController = ({
     markShotsDirty([nextShotId]);
     selectSingleShot(nextShotId);
     setStatus(`Added ${blankShotPreset} shot: ${image.fileName}`);
+    };
+    return admitAssetIntent ? withStatus('Add shot incomplete', () => admitAssetIntent('add-shot', new TextEncoder().encode(JSON.stringify({ blankShotPreset, insertAfterShotId: context.insertAfterShotId })), admitted), reportStatus) : admitted();
   };
 
   return { handleAddShot };

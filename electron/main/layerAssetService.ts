@@ -1,5 +1,7 @@
-import { lstat, realpath, open, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, realpath, open, readFile, stat, unlink } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { writeProtectedLayerFile } from "./protectedLayerFileWriter.js";
+import { recordProducerPng, beforeProducerPngDelete, recordProducerPngDelete } from './producerPngEffects.js';
 
 import path from "node:path";
 import sharp from "sharp";
@@ -131,8 +133,7 @@ export const writeLayerPng = async (
 ): Promise<WriteLayerAssetPayload & { filePath: string }> => {
   const filePath = resolveLayerAssetPath(payload.folderPath, payload.bitmapPath);
   const pngBuffer = pngBufferFromDataUrl(payload.dataUrl);
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, pngBuffer);
+  await writeProtectedLayerFile(payload.folderPath, filePath, pngBuffer);
   return { ...payload, filePath };
 };
 
@@ -186,7 +187,9 @@ export const createLayerPng = async (payload: CreateLayerAssetPayload): Promise<
     // wx is the only absence authority. No stat-then-write or ordinary rename.
     const handle = await open(filePath, "wx");
     attempted = true;
-    try { await handle.writeFile(bytes); } finally { await handle.close(); }
+    let created: Awaited<ReturnType<typeof handle.stat>>;
+    try { created = await handle.stat(); await handle.writeFile(bytes); } finally { await handle.close(); }
+    await recordProducerPng({ filePath, identity: { dev: String(created.dev), ino: String(created.ino) }, bytes, kind: 'created', originalAbsence: { project: structuredClone(project), shotId: payload.shotId, layerId: payload.layerId } });
     return { ok: true, folderPath: payload.folderPath, bitmapPath: payload.bitmapPath, dataUrl: payload.dataUrl, filePath };
   } catch (error) {
     return { ok: false, effect: attempted ? "unknown" : "refused", message: error instanceof Error ? error.message : String(error), filePath };
@@ -205,11 +208,13 @@ export const readLayerPng = async (payload: LayerAssetPayload): Promise<string |
 
 export const deleteLayerPng = async (payload: LayerAssetPayload): Promise<LayerAssetPayload> => {
   const filePath = resolveLayerAssetPath(payload.folderPath, payload.bitmapPath);
+  await beforeProducerPngDelete(filePath);
   await unlink(filePath).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== "ENOENT") {
       throw error;
     }
   });
+  await recordProducerPngDelete(filePath);
   return payload;
 };
 
@@ -218,7 +223,7 @@ export const copyLayerPng = async (
 ): Promise<CopyLayerPngPayload & { targetFilePath: string }> => {
   const sourcePath = resolveLayerAssetPath(payload.folderPath, payload.sourceBitmapPath);
   const targetPath = resolveLayerAssetPath(payload.folderPath, payload.targetBitmapPath);
-  await copyBitmapLayerFile(sourcePath, targetPath);
+  await copyBitmapLayerFile(sourcePath, targetPath, payload.folderPath);
   return { ...payload, targetFilePath: targetPath };
 };
 
@@ -236,6 +241,12 @@ export const mergeLayerDown = async (
     throw new Error(`Layer asset missing: ${payload.targetBitmapPath}`);
   }
 
+  const sourceIdentity = await lstat(sourcePath), targetIdentity = await lstat(targetPath);
+  if (!sourceIdentity.isFile() || !targetIdentity.isFile() || sourceIdentity.nlink !== 1 || targetIdentity.nlink !== 1 ||
+      sourceIdentity.dev === targetIdentity.dev && sourceIdentity.ino === targetIdentity.ino) {
+    throw new Error("Merge source and target must be distinct ordinary files; aliases refused");
+  }
+  const sourceBytes = await readFile(sourcePath);
   const width = Math.max(1, Math.round(payload.width));
   const height = Math.max(1, Math.round(payload.height));
   const targetInput = await sharp(targetPath)
@@ -243,7 +254,7 @@ export const mergeLayerDown = async (
     .ensureAlpha()
     .png()
     .toBuffer();
-  const sourceInput = await sharp(sourcePath)
+  const sourceInput = await sharp(sourceBytes)
     .resize({ width, height, fit: "fill" })
     .ensureAlpha()
     .png()
@@ -261,7 +272,12 @@ export const mergeLayerDown = async (
     }
   ]);
 
-  await writeFile(targetPath, mergedPng);
+  await writeProtectedLayerFile(payload.folderPath, targetPath, mergedPng);
+  const currentSource = await lstat(sourcePath);
+  if (currentSource.dev !== sourceIdentity.dev || currentSource.ino !== sourceIdentity.ino ||
+      !currentSource.isFile() || currentSource.nlink !== 1 || !(await readFile(sourcePath)).equals(sourceBytes)) {
+    throw new Error("[PNG_COMMITTED] Merge source changed; source retained after target commit");
+  }
   await unlink(sourcePath);
   return { ...payload, targetFilePath: targetPath };
 };
@@ -294,6 +310,7 @@ export const mergeVisibleLayers = async (
 
         return {
           filePath,
+          bytes: Buffer.from(sourceIdentities.find(identity => identity.bitmapPath === layer.bitmapPath)!.dataUrl.split(",")[1], "base64"),
           opacity: layer.opacity,
           blend: sharpBlendMode(layer.blendMode)
         };
@@ -302,7 +319,8 @@ export const mergeVisibleLayers = async (
     targetPath,
     payload.deleteBitmapPaths.map((bitmapPath) =>
       resolveLayerAssetPath(payload.folderPath, bitmapPath)
-    )
+    ),
+    payload.folderPath
   );
   return { ...payload, targetFilePath: targetPath, sourceIdentities,
     targetDataUrl: `data:image/png;base64,${(await readFile(targetPath)).toString("base64")}` };

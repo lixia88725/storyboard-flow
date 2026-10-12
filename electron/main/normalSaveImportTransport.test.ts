@@ -8,7 +8,7 @@ import { decodeNormalSaveImportResult, normalSaveImportFailure } from "../shared
 // custom Error, must leave the exposed API; renderer decoding is after BOTH boundaries.
 for (const filename of ["preload.cjs", "preload.ts"]) {
   it(`${filename} exposes recovery failure as plain data until the renderer consumer`, async () => {
-    const failure = normalSaveImportFailure({ message: "primary failure; rollback failure" });
+    const failure = normalSaveImportFailure({ message: "primary failure; rollback failure" }, ["/synthetic/owned-staging"]);
     let exposed: any;
     let ordinaryError = false;
     const electron = {
@@ -34,7 +34,8 @@ for (const filename of ["preload.cjs", "preload.ts"]) {
     const rendererData = structuredClone(data);
     expect(() => decodeNormalSaveImportResult(rendererData)).toThrow("primary failure; rollback failure");
     try { decodeNormalSaveImportResult(rendererData); } catch (error) {
-      expect(error).toMatchObject({ code: "IMPORT_RECOVERY_INCOMPLETE", recoveryIncomplete: true });
+      expect(error).toMatchObject({ code: "IMPORT_RECOVERY_INCOMPLETE", recoveryIncomplete: true,
+        retainedPaths: ["/synthetic/owned-staging"] });
     }
     ordinaryError = true;
     await expect(exposed.importSwbFormat({})).rejects.toThrow("ordinary Import failure");

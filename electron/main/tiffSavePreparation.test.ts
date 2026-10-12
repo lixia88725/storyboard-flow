@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import ts from "typescript";
 import { applyFileReplacements, replaceFileWithTemp, FileReplacementRecoveryIncompleteError, applyFileMoves } from "./fileRenames.js";
 import { recoverFailedSave } from "./saveRecovery.js";
+import { withLayerFileOperation } from "./layerFileOperationQueue.js";
 import { recoverFailedImport } from "./importRecovery.js";
 import { moveShotsToVisiblePending } from "./pendingShotFilesService.js";
 import { withSuccessfulSaveArtifactCleanup } from "./saveArtifacts.js";
@@ -15,6 +16,8 @@ import { flattenBitmapLayerBuffersToTiff } from "./bitmapLayers.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
 import { resolveLayerAssetPath, sharpBlendMode } from "./layerAssetService.js";
 import { writePhotoshopLayeredTiffsForInPlaceSave } from "./photoshopTiffExport.js";
+import * as preparation from "./tiffPreparation.js";
+import { removeOwnedFile } from "./ownedFileCreation.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -23,6 +26,7 @@ afterEach(async () => {
 // Execute the protected orchestration itself, without starting Electron. Synthetic
 // writers exercise real filesystem recovery, not TIFF encoding or pixel fidelity.
 const loadTiffWriter = async (bindings: Record<string, unknown>, helperNames: string[] = []) => {
+  bindings = { ...preparation, removeOwnedFile, ...bindings };
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8");
   const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
   const helpers = tree.statements.filter((statement) => ts.isVariableStatement(statement) && helperNames.includes(statement.declarationList.declarations[0].name.getText(tree))).map((statement) => statement.getText(tree)).join("\n");
@@ -149,7 +153,7 @@ it.each([false, true])("Pending finalization failure restores materialized TIFFs
   await f.originals();
   expect(await fs.readdir(path.join(f.root, "Pending"))).toEqual([]);
 });
-it.each([false, true])("actual Save persistence failure rolls back the new TIFF handle before Import; mixed=%s", async (mixed) => {
+it.each([false, true])("actual Save persistence uncertainty retains installed TIFFs and original backups; mixed=%s", async (mixed) => {
   const f = await fixture(mixed);
   const failure = new Error("Save persistence failed");
   const order: string[] = [];
@@ -157,6 +161,7 @@ it.each([false, true])("actual Save persistence failure rolls back the new TIFF 
   const block = source.slice(source.indexOf("const saveWorkspace ="), source.indexOf("const assertRenamePlanSafe ="));
   const compiled = ts.transpileModule(block, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const bindings = {
+    withLayerFileOperation,
     stagePendingDeletedShotFiles: async () => ({ project: f.project }),
     importProjectToSwbFormat: async () => ({ project: f.project, tiffWriteShotIds: [], rollback: async () => { order.push("import"); await f.originals(); } }),
     saveProgressShotIds: () => undefined, countSaveProgressShots: () => 2,
@@ -169,9 +174,14 @@ it.each([false, true])("actual Save persistence failure rolls back the new TIFF 
     writeProjectFiles: async () => { throw failure; }, recoverFailedSave
   };
   const save = new Function(...Object.keys(bindings), `${compiled}; return saveWorkspace;`)(...Object.values(bindings));
-  await expect(save({ project: f.project, folderPath: f.root, metadataPath: "synthetic-json" })).rejects.toBe(failure);
-  expect(order).toEqual(["tiff", "import"]);
-  await f.originals();
+  await expect(save({ project: f.project, folderPath: f.root, metadataPath: "synthetic-json" })).rejects.toMatchObject({ recoveryIncomplete: true, errors: expect.arrayContaining([failure]) });
+  expect(order).toEqual([]);
+  const operations = await fs.readdir(path.join(f.root, ".storyboard-workbench/save-tmp"));
+  expect(operations).toHaveLength(1);
+  for (const [index, shot] of f.project.shots.entries()) {
+    expect(await fs.readFile(shot.imagePath, "utf8")).toBe(`new-${shot.id}`);
+    expect(await fs.readFile(path.join(f.root, ".storyboard-workbench/save-tmp", operations[0], ".backups", `${index}.tiff`), "utf8")).toBe(`old-${shot.id}`);
+  }
 });
 it("repeated operations use distinct directories even with the same clock stamp", async () => {
   const f = await fixture(true);

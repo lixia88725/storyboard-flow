@@ -5,11 +5,14 @@ import path from "node:path";
 import sharp from "sharp";
 import ts from "typescript";
 import { randomUUID } from "node:crypto";
-import { pathExists } from "./pathSafety.js";
+import { pathExists, pathEntryExists } from "./pathSafety.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
 import { compatibleExternalEditImportMode, writeSwbImportWorkingTiff } from "./photoshopTiffImport.js";
 import { applyFileMoves } from "./fileRenames.js";
 import { createImportPathReservation } from "./importPaths.js";
+import { prepareImportStaging } from "./importPreparation";
+import { withLayerFileOperation } from "./layerFileOperationQueue.js";
+import { mapWithConcurrency } from "./mapWithConcurrency.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -38,12 +41,12 @@ const prepare = async (dir: string, shots: Array<{ id: string; imagePath: string
   expect(end).toBeGreaterThan(start);
   const unique = source.slice(source.indexOf("const uniquePath ="));
   const bindings = {
-    createImportPathReservation, path, pathExists, mkdir: fs.mkdir, randomUUID, sharp,
+    createImportPathReservation, prepareImportStaging, path, pathExists, pathEntryExists, mkdir: fs.mkdir, randomUUID, sharp, withLayerFileOperation, mapWithConcurrency,
     archiveStamp: () => "batch", compatibleExternalEditImportMode,
     isLikelyTiffPath: () => false, writeSwbImportWorkingTiff, pixelFingerprint,
     sharpSourceOptions: { unlimited: true }
   };
-  const code = ts.transpileModule(`${unique}\n${source.slice(start, end)}\nreturn prepared;\n};\nreturn importProjectToSwbFormat(project, folderPath, undefined, options);`, {
+  const code = ts.transpileModule(`${unique}\n${source.slice(start, end)}\nreturn prepared;\n});\n};\nreturn importProjectToSwbFormat(project, folderPath, undefined, options);`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
   }).outputText;
   const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor;

@@ -52,6 +52,7 @@ import {
 import { autosaveErrorReducer, type AutosaveErrorNotice } from "./autosaveError";
 import { pendingBakeForProject, initializeCompletedShot } from "../shared/pendingBake";
 import { createNormalSaveAppAdapter } from "./normalSaveAppAdapter";
+import { captureMountedCanvasCheckpoints } from "./mountedCanvasRecoveryCapture";
 import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import type { ClipboardSelection } from "./clipboardSelection";
 import { useClipboardActionController } from "./clipboardActionController";
@@ -66,6 +67,8 @@ import { isKeyboardEditableTarget } from "./keyboardShortcuts";
 import { getOnionSkinNeighbors } from "./onionSkin";
 import { ensureProjectBitmapMetadata } from "./projectBitmapMetadata";
 import { historyDirtyShotIds, useProjectHistoryController } from "./projectHistoryController";
+import { createWorkspaceSlots } from './workspaceSlots';
+import { WorkspaceCanvasSlotContext } from './workspaceCanvasSlotContext';
 import { markdownPathFromDroppedFiles } from "./markdownDrop";
 import {
   SelectionMarquee,
@@ -196,7 +199,7 @@ export const App = () => {
   const {
     project,
     setProject,
-    projectRef,
+    projectRef: activeViewProjectRef,
     folderPath,
     setFolderPath,
     folderPathRef,
@@ -218,9 +221,14 @@ export const App = () => {
     autosaveRevision,
     setAutosaveRevision
   } = useWorkspaceLifecycleState();
-  const { isImageImportLocked, setWorkspaceTask } = useImageImportAdmission(
+  const workspaceSlotsRef = useRef<ReturnType<typeof createWorkspaceSlots> | undefined>(undefined);
+  const renderSlot = workspaceSlotsRef.current?.active;
+  const renderAdapter = renderSlot?.adapter;
+  const projectRef = renderSlot?.projectRef ?? activeViewProjectRef;
+  const { isImageImportLocked: isLegacyImageImportLocked, setWorkspaceTask } = useImageImportAdmission(
     projectRef, workspaceTask, setWorkspaceTaskState
   );
+  const isImageImportLocked = () => !!workspaceSlotsRef.current?.closing || !!renderSlot && (renderSlot.readonly || renderSlot.lifecycle !== 'active') || isLegacyImageImportLocked();
   const [activeDialogue, setActiveDialogue] = useState<Dialogue | undefined>();
   const [shotBitmapRevisionById, setShotBitmapRevisionById] = useState<
     Record<string, number>
@@ -353,7 +361,7 @@ export const App = () => {
   const shotPresentationActionRef = useRef<Promise<void | boolean> | undefined>(undefined);
   const workspaceRecoveryRequiredRef = useRef<string | undefined>(undefined);
   const workspaceSession = createWorkspaceSession({
-    owner: () => normalSaveAppAdapterRef.current?.owner,
+    owner: () => renderAdapter?.owner ?? normalSaveAppAdapterRef.current?.owner,
     readRecovery: () => workspaceRecoveryRequiredRef.current,
     readDestination: () => ({ folderPath: folderPathRef.current, metadataPath: metadataPathRef.current }),
     readIdentity: () => aiApplyWorkspaceIdentityRef.current
@@ -624,7 +632,8 @@ export const App = () => {
 
   useWorkspaceCloseGuardController({
     bitmapQueueGuardInputRef,
-    normalSaveGuard: () => normalSaveAppAdapterRef.current!.owner.hasUnsavedWork(),
+    normalSaveGuard: () => workspaceSlotsRef.current?.hasHiddenWork() || (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.hasUnsavedWork(),
+    recoveryRequired: () => workspaceSlotsRef.current?.hasHiddenRecovery() || (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.recoveryRequired(),
     settleNormalSave: () => bitmapLayerWriteQueueRef.current.drain(),
     dirtyShotIdsRef,
     fileNameSyncState,
@@ -655,6 +664,13 @@ export const App = () => {
       bumpShotBitmapRevisions(current, affectedShotIds)
     );
   }, []);
+  const captureInstalledHistory = () => {
+    const slots = workspaceSlotsRef.current!, slot = renderSlot ?? slots.active;
+    const incarnation = slot.incarnation;
+    // Freeze invalidates publication scopes, not this original installed history.
+    // Both Open and Close drain producers before replacing/capturing its stacks.
+    return () => slots.isActive(slot) && slot.incarnation === incarnation && slot.projectRef === projectRef;
+  };
   const {
     applyRedoEntry,
     applyUndoEntry,
@@ -663,11 +679,14 @@ export const App = () => {
     recordProjectUndoEntry,
     recordUndoEntry,
     resetHistoryStacks,
+    captureHistoryData,
+    restoreHistoryData,
     rebasePendingHistory,
     invalidatePresentationHistory
   } = useProjectHistoryController({
-    captureWorkspace: workspaceSession.captureHistory,
-    captureEffectCompletion: () => normalSaveAppAdapterRef.current!.owner.captureEffectCompletion(),
+    captureInstalledHistory,
+    captureWorkspace: () => { const current = workspaceSession.captureHistory(), scope = workspaceSlotsRef.current!.captureScope(renderSlot); return () => scope() && current(); },
+    captureEffectCompletion: () => (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.captureEffectCompletion(),
     isImageImportLocked,
     getRecoveryRequiredMessage: () => workspaceRecoveryRequiredRef.current,
     api: window.storyboard,
@@ -677,8 +696,8 @@ export const App = () => {
     markShotsDirty,
     maxEntries: maxUndoHistory,
     onLayerAssetsRestored: refreshRestoredBitmapPaths,
-    publishProject: (p, ids) => normalSaveAppAdapterRef.current!.owner.publishEdit(p, ids),
-    publishMetadataProject: (p, ids) => normalSaveAppAdapterRef.current!.owner.publishMetadataHistory(p, ids),
+    publishProject: (p, ids) => (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.publishEdit(p, ids),
+    publishMetadataProject: (p, ids) => (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.publishMetadataHistory(p, ids),
     projectRef,
     scriptImportCheckIdRef,
     selectShotsByIds,
@@ -697,7 +716,7 @@ export const App = () => {
     ...window.storyboard,
     ensureLayerAssets: async (payload: import("../shared/types").WorkspacePayload): Promise<import("../shared/types").WorkspacePayload> => {
 
-      if (!await normalSaveAppAdapterRef.current!.ensureLayerAssets(payload)) throw new Error("Asset initialization incomplete; existing assets retained");
+      if (!await (renderAdapter ?? normalSaveAppAdapterRef.current!).ensureLayerAssets(payload)) throw new Error("Asset initialization incomplete; existing assets retained");
       return payload;
     }
   };
@@ -741,7 +760,7 @@ export const App = () => {
     };
   };
   const beginAddShotOperation = (): AddShotOperation | undefined => {
-    const operation = normalSaveAppAdapterRef.current!.owner.captureAddShotOperation({
+    const operation = (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.captureAddShotOperation({
       folderPath: folderPathRef.current, metadataPath: metadataPathRef.current
     });
     return { api: buildAddShotAssetApi(operation), registerBlankShot: (done) => { operation.registerBlankShot(done); } };
@@ -768,6 +787,7 @@ export const App = () => {
     markFileNamesUnsynced = true,
     recordUndo = true
   ) => {
+    if (renderSlot && (!workspaceSlotsRef.current!.isActive(renderSlot) || renderSlot.readonly || renderSlot.lifecycle !== 'active')) return;
     const previousProject = projectRef.current;
     const nextProject =
       typeof projectUpdate === "function" ? projectUpdate(previousProject) : projectUpdate;
@@ -782,7 +802,7 @@ export const App = () => {
 
     {
       // Dirty marks are UI-only. Register outputs on the actual next Project, not old P.
-      if (nextProject !== previousProject && !normalSaveAppAdapterRef.current!.owner.publishEdit(nextProject, historyDirtyShotIds(previousProject, nextProject, []))) {
+      if (nextProject !== previousProject && !(renderAdapter ?? normalSaveAppAdapterRef.current!).owner.publishEdit(nextProject, historyDirtyShotIds(previousProject, nextProject, []))) {
         setStatus("Edit incomplete; workspace is not ready");
         return;
       }
@@ -819,8 +839,15 @@ export const App = () => {
     handleMergeVisibleBitmapLayers,
     handleRemoveBitmapLayer
   } = useBitmapLayerActions({
-    captureEnsureScope: () => normalSaveAppAdapterRef.current!.owner.captureEffectAdmission(),
-    captureEffectCompletion: () => normalSaveAppAdapterRef.current!.owner.captureEffectCompletion(),
+    captureCompletedHistory: () => {
+      const isInstalled = captureInstalledHistory();
+      return entry => {
+        if (!isInstalled()) throw new Error('Completed bitmap original history replaced');
+        recordUndoEntry(entry);
+      };
+    },
+    captureEnsureScope: () => (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.captureEffectAdmission(),
+    captureEffectCompletion: () => (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.captureEffectCompletion(),
     isImageImportLocked,
     // Bind this render's destination as well as the existing load/Save generation.
     getWorkspaceIdentity: () => workspaceSession.identityForRender({ folderPath, metadataPath }),
@@ -849,6 +876,10 @@ export const App = () => {
     updateProject
   });
 
+  const admitAssetIntent = <T,>(assetId: string, bytes: Uint8Array, run: () => Promise<T>) => {
+    const slots = workspaceSlotsRef.current!;
+    return slots.submitAssetIntent(renderSlot ?? slots.active, assetId, bytes, run);
+  };
   const {
     handleBitmapBlur,
     handleBitmapFill,
@@ -856,8 +887,20 @@ export const App = () => {
     handleBitmapStroke
   } = useBitmapLayerPaintingController({
     api: window.storyboard,
-    captureWorkspace: () => workspaceSession.capturePainting({ folderPath, metadataPath }),
-    captureEffectCompletion: () => normalSaveAppAdapterRef.current!.owner.captureEffectCompletion(),
+    admitAssetIntent,
+    captureCompletedHistory: () => {
+      const slots = workspaceSlotsRef.current!, slot = renderSlot ?? slots.active;
+      const incarnation = slot.incarnation;
+      return entry => {
+        // Close/handoff revokes generation, not this installed history. Both
+        // paths drain producers BEFORE history replacement or view capture.
+        if (!slots.isActive(slot) || slot.incarnation !== incarnation || slot.projectRef !== projectRef)
+          throw new Error('Completed painting original history replaced');
+        recordUndoEntry(entry);
+      };
+    },
+    captureWorkspace: () => { const current = workspaceSession.capturePainting({ folderPath, metadataPath }), scope = workspaceSlotsRef.current!.captureScope(renderSlot); return () => scope() && current(); },
+    captureEffectCompletion: () => (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.captureEffectCompletion(),
     projectRef,
     folderPath,
     bitmapLayerWriteQueueRef,
@@ -925,44 +968,88 @@ export const App = () => {
   const normalSaveAppCallbacksRef = useRef(normalSaveAppCallbacks);
   normalSaveAppCallbacksRef.current = normalSaveAppCallbacks;
   const normalSaveAppAdapterRef = useRef<ReturnType<typeof createNormalSaveAppAdapter> | undefined>(undefined);
+  const lastCloseCaptureRef = useRef<unknown>(undefined);
   const readWorkspaceStatus = () => workspaceSession.status({
     metadataState: workspaceSaveState,
     message: status,
     project: projectRef.current
   });
-  if (!normalSaveAppAdapterRef.current) {
-    normalSaveAppAdapterRef.current = createNormalSaveAppAdapter({
-      projectRef, setProject, queue: bitmapLayerWriteQueueRef.current,
-      freshToken: () => crypto.randomUUID(), api: () => window.storyboard,
-      paths: () => ({ folderPath: folderPathRef.current, metadataPath: metadataPathRef.current }),
-      assertAdmission: () => normalSaveAppCallbacksRef.current.assertAdmission(),
-      assertImportAdmission: () => { if (workspaceRecoveryRequiredRef.current) throw new Error(workspaceRecoveryRequiredRef.current); },
-      onImportRecoveryRequired: (message, quiet) => {
-        message = workspaceRecoveryRequiredRef.current ?? message;
-        workspaceRecoveryRequiredRef.current = message;
-        workspaceSaveStateRef.current = "error";
-        if (quiet) return;
-        setWorkspaceSaveState("error");
-        setAutosaveError(current => autosaveErrorReducer(current, { type: "failed", message }));
-        setSaveErrorDialog(message);
+  const captureSlotView = () => ({ canvas: captureMountedCanvasCheckpoints(workspaceSlotsRef.current!.active.incarnation), history: captureHistoryData(),
+    selectedShotIds: [...selectedShotIdsRef.current], dirtyShotIds: [...dirtyShotIdsRef.current],
+    fileNameSyncState: fileNameSyncStateRef.current, workspaceSaveState: workspaceSaveStateRef.current,
+    recoveryMessage: workspaceRecoveryRequiredRef.current ?? null });
+  if (!workspaceSlotsRef.current) {
+    workspaceSlotsRef.current = createWorkspaceSlots({
+      initialProject: activeViewProjectRef.current, publishProject: setProject,
+      onOpenError: error => normalSaveAppCallbacksRef.current.onError(error),
+      observe: path => window.storyboard.observeWorkspace(path),
+      revokeScope: () => { aiApplyWorkspaceIdentityRef.current = {}; scriptImportCheckIdRef.current++; },
+      drain: () => bitmapLayerWriteQueueRef.current.drain(),
+      captureView: slot => {
+        if (!workspaceSlotsRef.current!.isActive(slot)) throw new Error('Only mounted original slot may be captured');
+        return captureSlotView();
       },
-      onError: error => normalSaveAppCallbacksRef.current.onError(error),
-      onSave: saved => normalSaveAppCallbacksRef.current.onSave(saved),
-      onPendingPublication: result => normalSaveAppCallbacksRef.current.onPendingPublication(result),
-      onSaveNamespace: namespace => rebasePendingHistory(namespace.before, namespace.after, namespace.ids, namespace.update, true),
-      captureSaveStatus: () => normalSaveAppCallbacksRef.current.captureSaveStatus(),
-      onAutosave: () => {
-        setWorkspaceSaveState("saved");
-        setAutosaveError(current => autosaveErrorReducer(current, { type: "saved" }));
-      }
+      certifyHandoff: async (slot, capture) => {
+        const certificate = await window.storyboard.certifyWorkspaceHandoff({ ...capture as object, ...slot.view as object });
+        if (!certificate) return false;
+        if (certificate !== true) return certificate;
+        const retained = await window.storyboard.readReadonlyRecovery(slot.root!.folderPath);
+        slot.view = { ...slot.view as object, pins: retained.assets };
+        return true;
+      },
+      publishActive: (slot, scan) => {
+        normalSaveAppAdapterRef.current = slot.adapter;
+        if (scan) publishNormalSaveFolderScan(scan, slot.projectRef.current, 'Folder opened; output compatibility checked', true, true);
+        else {
+          const view = slot.view as ReturnType<typeof captureSlotView>;
+          aiApplyWorkspaceIdentityRef.current = {};
+          folderPathRef.current = slot.root!.folderPath; metadataPathRef.current = slot.root!.metadataPath;
+          setFolderPath(slot.root!.folderPath); setMetadataPath(slot.root!.metadataPath); setFolderInputValue(slot.root!.folderPath);
+          restoreHistoryData(view.history); setSelectedShotIds([...view.selectedShotIds]);
+          selectedShotIdsRef.current = [...view.selectedShotIds]; dirtyShotIdsRef.current = new Set(view.dirtyShotIds);
+          setFileNameSyncState(view.fileNameSyncState); fileNameSyncStateRef.current = view.fileNameSyncState;
+          setWorkspaceSaveState(view.workspaceSaveState); workspaceSaveStateRef.current = view.workspaceSaveState;
+          workspaceRecoveryRequiredRef.current = slot.readonly ? view.recoveryMessage ?? 'Held workspace is read-only; original obligations remain' : undefined;
+          setStatus(slot.readonly ? 'Held workspace restored read-only; original Save remains incomplete' : 'Held workspace restored'); setWorkspaceTask(undefined);
+        }
+      },
+      adapterPorts: slot => ({ queue: bitmapLayerWriteQueueRef.current,
+        freshToken: () => crypto.randomUUID(), api: () => window.storyboard,
+        assertAdmission: () => {
+          if (workspaceSlotsRef.current?.closing || slot.lifecycle !== 'active') throw new Error('Workspace admission frozen');
+          if (slot.readonly || slot.recoveryMessage) throw new Error(slot.recoveryMessage ?? 'Held slot is read-only');
+          if (workspaceSlotsRef.current?.isActive(slot)) normalSaveAppCallbacksRef.current.assertAdmission();
+        },
+        assertImportAdmission: () => { if (workspaceSlotsRef.current?.closing || slot.lifecycle === 'freezing' || slot.readonly || slot.recoveryMessage) throw new Error(slot.recoveryMessage ?? 'Workspace admission frozen/read-only'); },
+        assertRequiredPersistence: () => { if (!slot.root) throw new Error('Original effect Root unavailable'); },
+        onImportRecoveryRequired: (message, quiet) => {
+          slot.recoveryMessage ??= message;
+          if (!workspaceSlotsRef.current?.isActive(slot)) return;
+          message = workspaceRecoveryRequiredRef.current ?? message;
+          workspaceRecoveryRequiredRef.current = message; workspaceSaveStateRef.current = 'error';
+          if (quiet) return;
+          setWorkspaceSaveState('error');
+          setAutosaveError(current => autosaveErrorReducer(current, { type: 'failed', message })); setSaveErrorDialog(message);
+        },
+        onError: error => { if (workspaceSlotsRef.current?.isActive(slot)) normalSaveAppCallbacksRef.current.onError(error); },
+        onSave: saved => { if (workspaceSlotsRef.current?.isActive(slot)) normalSaveAppCallbacksRef.current.onSave(saved); },
+        onPendingPublication: result => { if (workspaceSlotsRef.current?.isActive(slot)) normalSaveAppCallbacksRef.current.onPendingPublication(result); },
+        onSaveNamespace: namespace => { if (workspaceSlotsRef.current?.isActive(slot)) rebasePendingHistory(namespace.before, namespace.after, namespace.ids, namespace.update, true); },
+        captureSaveStatus: () => { const finish = normalSaveAppCallbacksRef.current.captureSaveStatus(); return () => { if (workspaceSlotsRef.current?.isActive(slot)) finish(); }; },
+        onAutosave: () => {
+          if (!workspaceSlotsRef.current?.isActive(slot)) return;
+          setWorkspaceSaveState('saved'); setAutosaveError(current => autosaveErrorReducer(current, { type: 'saved' }));
+        }
+      })
     });
+    normalSaveAppAdapterRef.current = workspaceSlotsRef.current.active.adapter;
   }
 
   const persistWorkspace = async (
     projectToSave: Project,
     activeFolderPath = folderPath,
     activeMetadataPath = metadataPath
-  ) => normalSaveAppAdapterRef.current!.autosave(projectToSave).then(() => undefined);
+  ) => (renderAdapter ?? normalSaveAppAdapterRef.current!).autosave(projectToSave).then(() => undefined);
 
   useWorkspaceAutosaveController({
     autosaveRevision,
@@ -976,12 +1063,16 @@ export const App = () => {
   });
 
   const refreshExternalImportState = async () => {
+    // Focus/debounce callbacks may outlive the editable incarnation. Do not
+    // enter Owner (and overwrite its lastError) for held/frozen/inactive slots.
+    const scope = workspaceSlotsRef.current!.captureScope(renderSlot);
+    if (!scope()) return;
     await refreshWorkspaceExternalImportState({
     api: window.storyboard,
     normalSaveRefresh: async (check, isCurrent) => {
-        const adapter = normalSaveAppAdapterRef.current!, completion = adapter.owner.scriptCompletion;
+        const adapter = (renderAdapter ?? normalSaveAppAdapterRef.current!), completion = adapter.owner.scriptCompletion;
         const accepted = await adapter.externalRefresh({
-          check, isCurrent, blankShotPreset, dirtyShotIds: dirtyShotIds(), prepare: prepareNormalSaveImportMatte, published: normalSaveImageImportPublished,
+          check, isCurrent: () => scope() && isCurrent(), blankShotPreset, dirtyShotIds: dirtyShotIds(), prepare: prepareNormalSaveImportMatte, published: normalSaveImageImportPublished,
           scriptPrepare: (...args) => prepareNormalSaveScriptMatte(...args), scriptPublished: (...args) => normalSaveScriptImportPublished(...args)
         });
         return { accepted, scriptImportNeeded: adapter.owner.scriptImportRemaining ? true :
@@ -997,7 +1088,7 @@ export const App = () => {
   };
 
   useWorkspaceExternalRefreshController({
-    folderPath,
+    folderPath: renderSlot?.readonly ? undefined : folderPath,
     focusRefreshKey: metadataPath,
     refreshExternalImportState
   });
@@ -1021,7 +1112,9 @@ export const App = () => {
     setWorkspaceSaveState(state); workspaceSaveStateRef.current = state;
     setFileNameSyncState("synced"); fileNameSyncStateRef.current = "synced";
     setScriptImportNeeded(Boolean(scan.scriptImportNeeded));
-    resetHistoryStacks(); selectSingleShot(loaded.shots[0]?.id);
+    if (scan.recoveryHistory) restoreHistoryData(scan.recoveryHistory);
+    else resetHistoryStacks();
+    selectSingleShot(loaded.shots[0]?.id);
     if (resetDirtyShots) resetTrackedDirtyShots();
     setStatus(nextStatus); setWorkspaceTask(undefined);
   };
@@ -1035,7 +1128,7 @@ export const App = () => {
 
       // Only completed owned operation snapshots reach this branch. Disk open uses
       // the reader form below, so no disk scan precedes old-I/O settlement.
-      const loaded = await normalSaveAppAdapterRef.current!.load(async () => scan,
+      const loaded = await (renderAdapter ?? normalSaveAppAdapterRef.current!).load(async () => scan,
         (result, p) => publishNormalSaveFolderScan(result, p, nextStatus, resetDirtyShots, clearRecoveryRequired),
         { blankShotPreset, dirtyShotIds: dirtyShotIds(), prepare: prepareNormalSaveImportMatte, published: normalSaveImageImportPublished,
           scriptPrepare: (...args) => prepareNormalSaveScriptMatte(...args), scriptPublished: (...args) => normalSaveScriptImportPublished(...args) });
@@ -1066,21 +1159,20 @@ export const App = () => {
 
       // Precise request scope: a newer open (same path or not) replaces the identity and rotates
       // the owner epoch, so this request's incomplete status must not be published into that new scope.
-      const adapter = normalSaveAppAdapterRef.current!;
-      let settled: { epoch: object; completed: boolean; project: Project } | undefined;
       try {
-        const loaded = await adapter.load(
-          () => window.storyboard.openFolderByPath(trimmedPath, { normalSave: true, initializePreviews: true }),
-          (scan, project) => publishNormalSaveFolderScan(scan, project, "Folder opened; output compatibility checked", true, true),
-          { blankShotPreset, dirtyShotIds: [], prepare: prepareNormalSaveImportMatte, published: normalSaveImageImportPublished,
-          scriptPrepare: (...args) => prepareNormalSaveScriptMatte(...args), scriptPublished: (...args) => normalSaveScriptImportPublished(...args) },
-          info => { settled = info; }
-        );
-        // A partial load (auto-import/migration refused) must not be presented as an opened,
-        // ready workspace: the UI status reflects the incomplete result instead.
-        if (!loaded && (!settled || adapter.owner.isRequestCurrent(settled.epoch))) setStatus("Open folder failed: output initialization incomplete");
+        await workspaceSlotsRef.current!.requestOpen(trimmedPath, async (slot, binding) => {
+          let scan: FolderScanPayload | undefined;
+          const loaded = await slot.adapter.load(
+            () => window.storyboard.openFolderByPath(binding.folderPath, { normalSave: true, initializePreviews: true }),
+            result => { scan = result; },
+            { blankShotPreset, dirtyShotIds: [],
+              prepare: (p, ids, current, workspace) => prepareNormalSaveImportMatte(p, ids, current, workspace, undefined, slot.adapter.owner.capture().project),
+              published: result => { scan = result; },
+              scriptPrepare: (...args) => prepareNormalSaveScriptMatte(...args), scriptPublished: result => { scan = result; } });
+          return loaded ? scan : undefined;
+        });
       } catch (error) {
-        if (!settled || adapter.owner.isRequestCurrent(settled.epoch)) setStatus(`Open folder failed: ${String(error)}`);
+        setStatus(`Open folder failed: ${String(error)}`); setWorkspaceTask(undefined);
       }
       return;
 
@@ -1178,24 +1270,27 @@ export const App = () => {
     }
 
 
-      const adapter = normalSaveAppAdapterRef.current!, draft = storyboardScriptImportDraft;
-      const request = adapter.owner.capture();
+      const draft = storyboardScriptImportDraft;
       const isCurrent = () => storyboardScriptImportDraftRef.current === draft;
       setWorkspaceTask({ kind: "import", label: "Creating storyboard from script...", current: draft.entryCount, total: draft.entryCount });
       try {
-        const created = await adapter.createFromScript({ sourceMarkdownPath: draft.sourceMarkdownPath, targetFolderPath,
-          blankShotPreset, isCurrent, published: (scan, project) => {
-            setStoryboardScriptImportDraft(undefined);
-            publishNormalSaveFolderScan(scan, project, "Created storyboard from script", true, true);
-          } });
+        const created = await workspaceSlotsRef.current!.requestOpen(targetFolderPath, async (slot, binding) => {
+          let scan: FolderScanPayload | undefined;
+          const accepted = await slot.adapter.createFromScript({ sourceMarkdownPath: draft.sourceMarkdownPath, targetFolderPath: binding.folderPath,
+            blankShotPreset, isCurrent, published: result => { scan = result; } });
+          return accepted ? scan : undefined;
+        }, { requireNew: true });
         if (created) {
+          const adapter = workspaceSlotsRef.current!.active.adapter;
+          setStoryboardScriptImportDraft(undefined);
+          setStatus('Created storyboard from script');
           const publishedEpoch = adapter.owner.capture().epoch;
           void window.storyboard.getRecentFolders?.().then(folders => {
             if (adapter.owner.isRequestCurrent(publishedEpoch)) setRecentFolders(folders);
           }).catch(() => undefined);
         }
       } finally {
-        if (isCurrent() && adapter.owner.isRequestCurrent(request.epoch)) setWorkspaceTask(undefined);
+        if (isCurrent()) setWorkspaceTask(undefined);
       }
       return;
 
@@ -1274,12 +1369,12 @@ export const App = () => {
 
 
       if (projectRef.current !== project) return false;
-      if (projectToSave !== project) normalSaveAppAdapterRef.current!.owner.publishEdit(projectToSave, []);
+      if (projectToSave !== project) (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.publishEdit(projectToSave, []);
       return runExclusiveWorkspaceAction(saveInFlightRef, async () => {
         const operation = {};
         setWorkspaceTask({ operation, kind: "save", label: "Preparing save...", current: 0, total: 0 } as WorkspaceTask & { operation: object });
         try {
-          return await normalSaveAppAdapterRef.current!.save();
+          return await (renderAdapter ?? normalSaveAppAdapterRef.current!).save();
         } finally {
           setWorkspaceTask(current => current && "operation" in current && current.operation === operation ? undefined : current);
         }
@@ -1292,24 +1387,73 @@ export const App = () => {
       return;
     }
 
-    return window.storyboard.onSaveAndCloseRequested(({ requestId }) => {
+    const unsubscribeCapture = window.storyboard.onPrepareCloseRequested(({ requestId }) => {
       void (async () => {
-        const saved = await handleSaveProject();
+        const root = document.getElementById("root");
+        if (root) root.inert = true;
+        let captureAvailable = false;
+        try {
+          // Outside exclusive: never drain the queue from inside its own owner.
+          const whole = await workspaceSlotsRef.current!.freezeForClose();
+          lastCloseCaptureRef.current = whole;
+          captureAvailable = whole.slots.every(slot => !(slot as {canvas?: {hasUnsettledGesture?: boolean}}).canvas?.hasUnsettledGesture);
+        } catch { /* Cancel; original canvas/Project/desired pins stay owned. */ }
+        const owner = (renderAdapter ?? normalSaveAppAdapterRef.current!).owner;
+        await window.storyboard.finishCloseCapture({ requestId, captureAvailable,
+          recoveryRequired: workspaceSlotsRef.current!.hasHiddenRecovery() || owner.recoveryRequired() ||
+            !!(lastCloseCaptureRef.current as ReturnType<ReturnType<typeof createWorkspaceSlots>['wholeCapture']> | undefined)?.slots.some(slot => {
+              const history = (slot as { history?: { undo?: unknown[]; redo?: unknown[] } }).history;
+              return !!history?.undo?.length || !!history?.redo?.length;
+            }), busy: bitmapLayerWriteQueueRef.current.isBusy?.() ?? true,
+          hasUnsavedChanges: workspaceSlotsRef.current!.hasHiddenWork() || owner.hasUnsavedWork(), capture: lastCloseCaptureRef.current });
+      })().catch(() => setStatus("Close cancelled: latest content could not be confirmed"));
+    });
+    const unsubscribeCancelled = window.storyboard.onCloseCancelled(({ reason }) => {
+      workspaceSlotsRef.current!.cancelClose();
+      const root = document.getElementById("root"); if (root) root.inert = false;
+      setStatus(reason);
+    });
+    const unsubscribeSave = window.storyboard.onSaveAndCloseRequested(({ requestId }) => {
+      void (async () => {
+        // Ordinary Save-and-Close remains an actual Save, not a frozen callback
+        // that always refuses. Main rechecks its own guard after the real ACK.
+        workspaceSlotsRef.current!.cancelClose();
+        const root = document.getElementById('root'); if (root) root.inert = false;
+        let saved = await handleSaveProject();
+        if (saved) {
+          // A Save receipt is not permission to destroy later cancelled intents.
+          // Freeze/drain again before the final success result; no replay or ACK borrowing.
+          try {
+            const whole = await workspaceSlotsRef.current!.freezeForClose();
+            const owner = (renderAdapter ?? normalSaveAppAdapterRef.current!).owner;
+            saved = !workspaceSlotsRef.current!.hasHiddenWork() && !owner.recoveryRequired() && !owner.hasUnsavedWork() &&
+              whole.slots.every(slot => !slot.content.retainedAssetIntents.length &&
+                !(slot as {canvas?: {hasUnsettledGesture?: boolean}}).canvas?.hasUnsettledGesture);
+          } catch { saved = false; }
+        }
         await window.storyboard.finishSaveAndClose({ requestId, saved });
         if (!saved) {
           setStatus("Save and Close cancelled because Save did not complete");
         }
       })();
     });
+    // inert does not block window/global keyboard listeners or retained callbacks.
+    const blockFrozenInput = (event: Event) => { if (workspaceSlotsRef.current!.closing) { event.preventDefault(); event.stopImmediatePropagation(); } };
+    for (const type of ['keydown','keyup','pointerdown','pointerup','input','change','drop']) window.addEventListener(type, blockFrozenInput, true);
+    return () => {
+      unsubscribeCapture(); unsubscribeCancelled(); unsubscribeSave();
+      for (const type of ['keydown','keyup','pointerdown','pointerup','input','change','drop']) window.removeEventListener(type, blockFrozenInput, true);
+    };
   }, [handleSaveProject]);
 
   const publishNewShot = async (update: (p: Project) => Project, shotId: string, isCurrent: () => boolean) => {
-        const published = await normalSaveAppAdapterRef.current!.owner.publishNewShot(update, shotId, isCurrent);
+        const published = await (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.publishNewShot(update, shotId, isCurrent);
         if (published) updateProject(projectRef.current, true, false);
         return published;
       };
 
   const { handleAddShot } = useAddShotController({
+    admitAssetIntent,
     publishNewShot,
     beginAddShotOperation,
     isImageImportLocked,
@@ -1336,27 +1480,48 @@ export const App = () => {
     // in one place, without the retired raw open branch. Only a
     // fully completed load is adopted and the result is bound to the identity THIS load set.
     openOwnedFolder: async (target) => {
-      const adapter = normalSaveAppAdapterRef.current!;
       let captured: FolderScanPayload | undefined;
-      let identityAtPublish: object | undefined;
       let settled: { epoch: object; completed: boolean; project: Project } | undefined;
-      const loaded = await adapter.load(
-        () => window.storyboard.openFolderByPath(target, { normalSave: true, initializePreviews: true }),
-        (scan, project) => {
-          captured = scan;
-          publishNormalSaveFolderScan(scan, project, "Folder opened; output compatibility checked", true, true);
-          identityAtPublish = aiApplyWorkspaceIdentityRef.current;
-        },
-        { blankShotPreset, dirtyShotIds: dirtyShotIds(), prepare: prepareNormalSaveImportMatte, published: normalSaveImageImportPublished,
-          scriptPrepare: (...args) => prepareNormalSaveScriptMatte(...args), scriptPublished: (...args) => normalSaveScriptImportPublished(...args) },
-        info => { settled = info; }
-      );
+      const loaded = await workspaceSlotsRef.current!.requestOpen(target, async (slot, binding) => {
+        const accepted = await slot.adapter.load(
+          () => window.storyboard.openFolderByPath(binding.folderPath, { normalSave: true, initializePreviews: true }),
+          scan => { captured = scan; },
+          { blankShotPreset, dirtyShotIds: [], prepare: (p, ids, current, workspace) => prepareNormalSaveImportMatte(p, ids, current, workspace, undefined, slot.adapter.owner.capture().project),
+            published: scan => { captured = scan; }, scriptPrepare: (...args) => prepareNormalSaveScriptMatte(...args), scriptPublished: scan => { captured = scan; } },
+          info => { settled = info; });
+        return accepted ? captured : undefined;
+      });
       // Adopt only a fully completed load whose OWN request epoch is still current, and return the
       // FINAL owner Project (post auto-import/migration) — never the initial scan snapshot, and
       // never a fresh ref re-captured after the await.
-      if (!loaded || !captured || !identityAtPublish || !settled || !settled.completed) return undefined;
+      const adapter = workspaceSlotsRef.current!.active.adapter;
+      const identityAtPublish = aiApplyWorkspaceIdentityRef.current;
+      if (!loaded || !captured || !settled || !settled.completed) return undefined;
       if (!adapter.owner.isRequestCurrent(settled.epoch)) return undefined;
-      return { identity: identityAtPublish, folderPath: captured.folderPath, metadataPath: captured.metadataPath, project: settled.project, loaded: true };
+      const slot = workspaceSlotsRef.current!.active;
+      const scope = workspaceSlotsRef.current!.captureScope(slot);
+      return { identity: identityAtPublish, folderPath: captured.folderPath, metadataPath: captured.metadataPath, project: slot.projectRef.current, loaded: true,
+        continuation: {
+          projectRef: slot.projectRef,
+          isImageImportLocked: () => !scope(),
+          admitAssetIntent: <T,>(assetId: string, bytes: Uint8Array, run: () => Promise<T>) => workspaceSlotsRef.current!.submitAssetIntent(slot, assetId, bytes, run),
+          beginAddShotOperation: () => {
+            if (!scope()) return undefined;
+            const operation = adapter.owner.captureAddShotOperation({ folderPath: slot.root!.folderPath, metadataPath: slot.root!.metadataPath });
+            return { api: buildAddShotAssetApi(operation), registerBlankShot: (done: {shotId:string}) => { operation.registerBlankShot(done); } };
+          },
+          publishNewShot: async (update: (p: Project) => Project, shotId: string, current: () => boolean) => {
+            const published = await adapter.owner.publishNewShot(update, shotId, () => scope() && current());
+            if (published && scope()) {
+              // The first Add's old render is rootless. Publish the same view
+              // invalidation as ordinary Add, without borrowing its old Owner/ref.
+              setWorkspaceSaveState('saving'); setFileNameSyncState('unsynced');
+              setAutosaveRevision(revision => revision + 1); scriptImportCheckIdRef.current++;
+              setScriptImportNeeded(false);
+            }
+            return published;
+          }
+        } };
     },
     primarySelectedShotId,
     projectRef,
@@ -1368,10 +1533,10 @@ export const App = () => {
   });
 
 
-  const prepareNormalSaveImportMatte = async (p: Project, ids: string[], isCurrent: () => boolean, operation: import("./normalSaveAppAdapter").NormalSaveImportWorkspace): Promise<Project> => {
+  const prepareNormalSaveImportMatte = async (p: Project, ids: string[], isCurrent: () => boolean, operation: import("./normalSaveAppAdapter").NormalSaveImportWorkspace, _onPreparedAssets?: (ids: readonly string[]) => void, originalProject?: Project): Promise<Project> => {
     // Derive scene configuration from the current original scene, excluding pristine
     // scanned shots that cannot yet carry its overlay. Never let the new image vote off.
-    const original = normalSaveAppAdapterRef.current!.owner.capture().project;
+    const original = originalProject ?? (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.capture().project;
     const scene = { ...original, shots: original.shots.filter(s => !ids.includes(s.id) || s.swb?.status !== "non-swb") };
     const mode = sceneMatteModeForProject(scene);
     if (!mode || !ids.length) return p;
@@ -1394,7 +1559,7 @@ export const App = () => {
     p: Project, newIds: string[], isCurrent: () => boolean, operation: import("./normalSaveAppAdapter").NormalSaveImportWorkspace,
     onPreparedAssets?: (ids: readonly string[]) => void
   ): Promise<Project> => {
-    const original = normalSaveAppAdapterRef.current!.owner.capture().project;
+    const original = (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.capture().project;
     // The new blank shots cannot carry the scene overlay yet; never let them vote the mode off.
     const scene = { ...original, shots: original.shots.filter(s => !newIds.includes(s.id)) };
     const mode = sceneMatteModeForProject(scene);
@@ -1467,7 +1632,7 @@ export const App = () => {
         total: [...project.shots, ...(project.parkedShots ?? [])].filter(shot => shot.swb?.status !== "owned").length || project.shots.length };
       setWorkspaceTask(task);
       try {
-        return await normalSaveAppAdapterRef.current!.imageImport({
+        return await (renderAdapter ?? normalSaveAppAdapterRef.current!).imageImport({
           blankShotPreset, dirtyShotIds: dirtyShotIds(),
           prepare: prepareNormalSaveImportMatte,
           published: normalSaveImageImportPublished,
@@ -1486,7 +1651,7 @@ export const App = () => {
       // merge → latest-Project merge + required JSON/MD → publication → release). It never
       // falls back to the legacy direct call + full folder rescan.
       setIsImportHelpOpen(false);
-      return normalSaveAppAdapterRef.current!.scriptImport({
+      return (renderAdapter ?? normalSaveAppAdapterRef.current!).scriptImport({
         blankShotPreset, dirtyShotIds: dirtyShotIds(),
         prepare: prepareNormalSaveScriptMatte,
         published: normalSaveScriptImportPublished
@@ -1507,7 +1672,7 @@ export const App = () => {
     handleCopySelection,
     handlePasteSelection
   } = useClipboardActionController({
-    captureEnsureScope: () => normalSaveAppAdapterRef.current!.owner.captureAssetScope(),
+    captureEnsureScope: () => (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.captureAssetScope(),
     isImageImportLocked,
     api: typeof window === "undefined" ? undefined : normalSaveAssetApi,
     captureWorkspace: workspaceSession.captureDestination,
@@ -1601,17 +1766,17 @@ export const App = () => {
 
   const pendingTransition = useCallback(
     (kind: "park" | "restore", update: (project: Project) => Project, shotIds: string[]) =>
-      normalSaveAppAdapterRef.current!.pending(kind, update, shotIds),
-    []
+      (renderAdapter ?? normalSaveAppAdapterRef.current!).pending(kind, update, shotIds),
+    [renderAdapter]
   );
   const { handleDragEnd } = useStoryboardDragEndController({
     pendingTransition,
     capturePendingScope: () => {
-      const adapter = normalSaveAppAdapterRef.current!, capture = adapter.owner.capture();
+      const adapter = (renderAdapter ?? normalSaveAppAdapterRef.current!), capture = adapter.owner.capture();
       const folder = folderPathRef.current, metadata = metadataPathRef.current;
       return () => adapter.owner.capture().epoch === capture.epoch && folderPathRef.current === folder && metadataPathRef.current === metadata;
     },
-    pendingVersion: () => normalSaveAppAdapterRef.current!.owner.capture().sequence,
+    pendingVersion: () => (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.capture().sequence,
     flushInsertionTargetsFromDragEnd,
     inheritSceneMatte: (baseProject, mode, shotIds, options) => {
       const expectedProject = projectRef.current;
@@ -1711,8 +1876,8 @@ export const App = () => {
     handleSetShotMatteMode
   } = createShotPresentationController({
     invalidatePresentationHistory: invalidatePresentationHistory,
-    captureEnsureScope: () => normalSaveAppAdapterRef.current!.owner.captureAssetScope(),
-    isEffectAdmissible: () => normalSaveAppAdapterRef.current!.owner.captureEffectAdmission()(),
+    captureEnsureScope: () => (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.captureAssetScope(),
+    isEffectAdmissible: () => (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.captureEffectAdmission()(),
     api: normalSaveAssetApi,
     bitmapLayerWriteQueueRef,
     createHistoryEntry,
@@ -1841,6 +2006,9 @@ export const App = () => {
     </SortableContext>
   );
   return (
+    <WorkspaceCanvasSlotContext.Provider value={{ incarnation: workspaceSlotsRef.current.active.incarnation, readonly: workspaceSlotsRef.current.active.readonly,
+      checkpoints: (workspaceSlotsRef.current.active.view as ReturnType<typeof captureSlotView> | undefined)?.canvas.captures,
+      pins: (workspaceSlotsRef.current.active.view as {pins?:{role:string;dataUrl:string}[]} | undefined)?.pins }}>
     <main
       className={appShellClassName}
       onContextMenu={openSketchCanvasContextMenu}
@@ -2202,5 +2370,6 @@ export const App = () => {
         </span>
       </footer>
     </main>
+    </WorkspaceCanvasSlotContext.Provider>
   );
 };

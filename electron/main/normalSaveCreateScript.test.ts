@@ -1,3 +1,4 @@
+import { appCallerAdapterScope, createAppRootActor } from "../../src/renderer/appCallerAdapterScope";
 import { afterEach, expect, it, vi } from "vitest";
 vi.mock("react", () => ({ useState: (v: unknown) => [v, () => {}], useRef: (v: unknown) => ({ current: v }),
   useEffect: (f: () => void) => f(), useCallback: (f: unknown) => f, useMemo: (f: () => unknown) => f() }));
@@ -115,15 +116,17 @@ it("real create rollback failure traverses registered result→renderer owner→
   const recovery = { current: undefined as string | undefined }, saveState = { current: "saved" };
   const recoveryBindings = { workspaceRecoveryRequiredRef: recovery, workspaceSaveStateRef: saveState, setWorkspaceSaveState: () => {},
     setAutosaveError: () => {}, setSaveErrorDialog: () => {}, autosaveErrorReducer };
-  const onRecovery = new Function(...Object.keys(recoveryBindings), ts.transpile(`return (${recoveryExpression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(recoveryBindings));
+  let onRecovery!: (message: string) => void;
   const ref = { current: createProject("old") }, queue = createBitmapLayerWriteQueue(), statuses: string[] = [];
   let writes = 0;
-  const adapter = createNormalSaveAppAdapter({ projectRef: ref, setProject: () => {}, queue, freshToken: () => "t",
+  const adapter = await createAppRootActor({ projectRef: ref, setProject: () => {}, queue, freshToken: () => "t",
     paths: () => ({ folderPath: options.targetFolderPath, metadataPath: path.join(options.targetFolderPath, ".storyboard-workbench/storyboard.project.json") }),
     assertAdmission: () => { if (recovery.current) throw new Error(recovery.current); }, assertImportAdmission: () => { if (recovery.current) throw new Error(recovery.current); },
-    onImportRecoveryRequired: onRecovery, onSave: () => {}, onError: () => {},
+    onImportRecoveryRequired: message => onRecovery(message), onSave: () => {}, onError: () => {},
     api: () => ({ createFromStoryboardScript: async p => structuredClone(await handlers.get("workspace:createFromStoryboardScript")!({}, p)),
       readOutputIdentity: async () => "a".repeat(64), saveWorkspace: async p => p, autosaveWorkspace: async () => { writes++; } }) });
+  const recoveryScope = appCallerAdapterScope({ ...recoveryBindings, normalSaveAppAdapterRef: { current: adapter } });
+  onRecovery = new Function(...Object.keys(recoveryScope), ts.transpile(`return (${recoveryExpression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(recoveryScope));
   const history = useProjectHistoryController({ isImageImportLocked: () => false, getRecoveryRequiredMessage: () => recovery.current,
     api: { readLayerPng: async () => { throw new Error("first asset effect forbidden"); }, writeLayerPng: async () => { writes++; }, deleteLayerPng: async () => { writes++; } } as never,
     bitmapLayerWriteQueueRef: { current: queue }, fileNameSyncStateRef: { current: "synced" }, folderPathRef: { current: options.targetFolderPath },
@@ -136,7 +139,7 @@ it("real create rollback failure traverses registered result→renderer owner→
   await history.applyUndoEntry(); expect(statuses.at(-1)).toBe(recovery.current);
   expect(await adapter.save()).toBe(false); expect(await adapter.autosave(ref.current)).toBe(false); expect(writes).toBe(0);
   let finish!: (value: unknown) => void; const closed = new Promise(resolve => { finish = resolve; });
-  const closeBindings = { handleSaveProject: () => adapter.save(), window: { storyboard: { finishSaveAndClose: async (value: unknown) => { finish(value); } } }, setStatus: () => {} };
+  const closeBindings = appCallerAdapterScope({ normalSaveAppAdapterRef: { current: adapter }, handleSaveProject: () => adapter.save(), window: { storyboard: { finishSaveAndClose: async (value: unknown) => { finish(value); } } }, setStatus: () => {} });
   new Function(...Object.keys(closeBindings), ts.transpile(`return (${closeExpression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(closeBindings))({ requestId: "b2-failed" });
   expect(await closed).toEqual({ requestId: "b2-failed", saved: false });
 });

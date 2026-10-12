@@ -1,8 +1,9 @@
+import os from "node:os";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { rm, mkdir, mkdtemp, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { onTestFinished, afterEach, describe, expect, it, vi } from "vitest";
 import { createProject } from "../shared/projectOps";
 import { initializeCompletedShot, pendingBakeForProject } from "../shared/pendingBake";
 import type { Project, Shot } from "../shared/types";
@@ -17,7 +18,7 @@ import { serializeStoryboardScriptMarkdown } from "../../electron/main/storyboar
 // Real owner + real PNG writer + real queue. The controllers are called with the same option shape
 // App supplies. No fake boolean state: every refusal is proven by zero writer calls and unchanged
 // on-disk bytes, every success by real encoded PNG bytes.
-const scratch = "/Users/pikachu/.hermes/profiles/engineer/cache/scratch/save-normal-spec-891fge5g/tmp";
+const scratch = process.env.TMPDIR ?? os.tmpdir();
 const hash = async (p: string) => createHash("sha256").update(await readFile(p)).digest("hex");
 const ops = { mkdir: async (p: string) => { await mkdir(p, { recursive: true }); }, rename, unlink, writeFile };
 const blue = { r: 0, g: 0, b: 255, alpha: 1 } as const;
@@ -28,6 +29,7 @@ const dataUrl = async (color: string | { r: number; g: number; b: number; alpha:
 
 async function fixture(options: { raw?: "unknown" | "future"; seedPending?: boolean } = {}) {
   const root = await mkdtemp(path.join(scratch, "effect-admission-"));
+  onTestFinished(async () => { await rm(root, { recursive: true, force: true }); });
   const metadataPath = path.join(root, ".storyboard-workbench/storyboard.project.json");
   const mdPath = path.join(root, "storyboard-script.md");
   const bitmapPath = ".storyboard-workbench/layers/s/image.png";
@@ -181,7 +183,9 @@ describe("normal Save effect admission (dynamic control state)", () => {
       pendingLoad = f.owner.load(async () => JSON.parse(await readFile(f.metadataPath, "utf8")));
       return result;
     };
+    const originalHistory: unknown[] = [];
     const actions = useBitmapLayerActions({ captureEnsureScope: () => f.owner.captureEffectAdmission(),
+      captureCompletedHistory: () => entry => { originalHistory.push(entry); },
       captureEffectCompletion: () => f.owner.captureEffectCompletion(),
       isImageImportLocked: () => false, projectRef: f.ref, folderPath: f.root,
       bitmapLayerWriteQueueRef: { current: f.queue },

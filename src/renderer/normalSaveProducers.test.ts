@@ -1,4 +1,5 @@
-import { readFile, mkdtemp, mkdir, rm, readdir } from "node:fs/promises";
+import { appCallerAdapterScope, createAppRootActor } from './appCallerAdapterScope';
+import { lstat, readFile, mkdtemp, mkdir, rm, readdir } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import ts from "typescript";
@@ -23,7 +24,7 @@ async function appUpdate(bindings: Record<string, unknown>) {
   const ast = ts.createSourceFile("App.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let decl: ts.VariableDeclaration | undefined;
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === "updateProject") decl = n; ts.forEachChild(n, walk); }; walk(ast);
-  return new Function(...Object.keys(bindings), ts.transpile(`const ${decl!.getText(ast)}; return updateProject;`))(...Object.values(bindings));
+  return new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`const ${decl!.getText(ast)}; return updateProject;`))(...Object.values(appCallerAdapterScope(bindings)));
 }
 async function actualEnsure() {
   const { shouldEnsureLayerAssetsForShot } = await import("../../electron/main/bitmapLayers");
@@ -36,7 +37,8 @@ async function actualEnsure() {
   const found: string[] = [];
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && names.has(n.name.getText(ast))) found.push(`const ${n.getText(ast)};`); ts.forEachChild(n, walk); }; walk(ast);
   expect(found).toHaveLength(names.size);
-  const ports = { shouldEnsureLayerAssetsForShot, pathExists, resolveLayerAssetPath, sketchLayersForShot, mkdir, path, sharp, writeFile, sharpSourceOptions: { unlimited: true } };
+  const { writeProtectedLayerFile } = await import("../../electron/main/protectedLayerFileWriter");
+  const ports = { shouldEnsureLayerAssetsForShot, pathExists, resolveLayerAssetPath, sketchLayersForShot, mkdir, path, sharp, writeFile, writeProtectedLayerFile, sharpSourceOptions: { unlimited: true } };
   return new Function(...Object.keys(ports), ts.transpile(found.join("\n") + "; return ensureProjectLayerAssets;"))(...Object.values(ports)) as (p: Project, folder: string) => Promise<void>;
 }
 async function actualRootIdentity() {
@@ -66,7 +68,7 @@ async function fixture() {
     await atomicWriteTextFile(path.join(folder, "storyboard-script.md"), serializeStoryboardScriptMarkdown(p), ops);
   } });
   const api = { readOutputIdentity: await actualRootIdentity(), autosaveWorkspace: (payload: any) => handlers.get("workspace:autosave")!(undefined, payload), saveWorkspace: async () => { throw new Error("not exercised"); } };
-  const adapter = createNormalSaveAppAdapter({ projectRef, setProject: p => { expect(projectRef.current).toBe(p); }, queue, freshToken: () => `new-${++token}`, api: () => api, paths: () => ({ folderPath: folder, metadataPath }), onSave: () => {}, onError: () => {} });
+  const adapter = await createAppRootActor({ projectRef, setProject: p => { expect(projectRef.current).toBe(p); }, queue, freshToken: () => `new-${++token}`, api: () => api, paths: () => ({ folderPath: folder, metadataPath }), onSave: () => {}, onError: () => {} });
   const noop = () => {};
   const update = await appUpdate({ projectRef, normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: adapter }, historyDirtyShotIds, changedShotIdsForBitmapRevision, bumpShotBitmapRevisions, recordProjectUndoEntry: noop, projectAcceptedExternalEdits: noop, setShotBitmapRevisionById: noop, setProject: noop, setWorkspaceSaveState: noop, setFileNameSyncState: noop, setAutosaveRevision: noop, scriptImportCheckIdRef: { current: 0 }, setScriptImportNeeded: noop });
   return { folder, metadataPath, projectRef, adapter, update, initial, api, queue, cleanup: () => rm(folder, { recursive: true, force: true }) };
@@ -162,7 +164,8 @@ it("actual Add caller initializes the completed blank root, not a renderer hash"
 it("actual shot Paste initializes actual copied root H0; layer Paste only advances target token", async () => {
   const f = await fixture(); try {
     const { useClipboardActionController } = await import("./clipboardActionController");
-    const { copyShotAssets } = await import("../../electron/main/copyShotAssetsService");
+    const { createWorkspaceAssetAppHandlers } = await import("../../electron/main/workspaceAssetAppRuntime");
+    const actualCopy = createWorkspaceAssetAppHandlers({ uniquePath: async (folder, name) => path.join(folder, name) });
     const { copyFile } = await import("node:fs/promises");
     const bitmap = f.projectRef.current.shots[0].layers![0].bitmapPath;
     await mkdir(path.dirname(path.join(f.folder, bitmap)), { recursive: true });
@@ -171,9 +174,7 @@ it("actual shot Paste initializes actual copied root H0; layer Paste only advanc
     const selection = { current: { type: "shot", shotId: "s" } as any };
     const target = { current: { type: "shot" } as any };
     const statuses: string[] = [];
-    const api = { ensureLayerAssets: async () => ({}), copyLayerPng: async (p: any) => { const to = path.join(f.folder, p.targetBitmapPath); await mkdir(path.dirname(to), { recursive: true }); await copyFile(path.join(f.folder, p.sourceBitmapPath), to); return p; }, copyShotAssets: (p: any) => copyShotAssets(p, {
-      assertPathInsideFolder: (folder, file) => { expect(file.startsWith(folder + path.sep)).toBe(true); }, copyFile, copyBitmapLayerFile: async (from, to) => { await mkdir(path.dirname(to), { recursive: true }); await copyFile(from, to); }, createId: () => "tmp", createPreview: async image => { const preview = image + ".png"; await sharp(image).png().toFile(preview); return preview; }, previewRootForFolder: folder => folder, rename, resolveLayerAssetPath: (folder, file) => path.join(folder, file), unlink, uniquePath: async (folder, name) => path.join(folder, name), workspaceCopyTemporaryFileName: (_name, id) => `.${id}.tiff`
-    }) };
+    const api = { ensureLayerAssets: async () => ({}), copyLayerPng: async (p: any) => { const to = path.join(f.folder, p.targetBitmapPath); await mkdir(path.dirname(to), { recursive: true }); await copyFile(path.join(f.folder, p.sourceBitmapPath), to); return p; }, copyShotAssets: (p: any) => actualCopy.copyShotAssets(p) };
     const c = useClipboardActionController({ isImageImportLocked: () => false, api: api as any, captureWorkspace: () => origin, isCurrentWorkspace: (r: object) => r === origin, bitmapLayerWriteQueueRef: { current: createBitmapLayerWriteQueue() }, clipboardSelectionRef: selection, createHistoryEntry: async () => ({}), createId: () => "pasted", deleteTargetRef: target, folderPath: f.folder, metadataPath: f.metadataPath, markShotsDirty: () => {}, projectRef: f.projectRef, queuePasteAnimation: () => {}, recordUndoEntry: () => {}, selectSingleShot: () => {}, selectedShotIdsRef: { current: ["s"] }, setClipboardSelection: () => {}, setDeleteTarget: (p: any) => target.current = p, setSelectedBitmapLayerIds: () => {}, setStatus: (s: string) => statuses.push(s), updateProject: f.update,
       publishNewShot: (update: (p: Project) => Project, id: string, current: () => boolean) => f.adapter.owner.publishNewShot(update, id, current)
     } as any);
@@ -350,7 +351,7 @@ async function appAddApi(storyboardApi: unknown, adapter: unknown, recoveryRef: 
   expect(decls.some(d => d.includes("beginAddShotOperation")), "App Add operation capture not found").toBe(true);
   const folderPathRef = { current: paths.folderPath }, metadataPathRef = { current: paths.metadataPath };
   const bindings = { window: { storyboard: storyboardApi }, normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: adapter }, workspaceRecoveryRequiredRef: recoveryRef, folderPathRef, metadataPathRef };
-  return new Function(...Object.keys(bindings), ts.transpile(`${decls.join("\n")} return { api: (${apiExpr}), beginAddShotOperation };`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings)) as { api: any; beginAddShotOperation: () => { api: any; registerBlankShot: (done: { shotId: string }) => void } | undefined };
+  return new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`${decls.join("\n")} return { api: (${apiExpr}), beginAddShotOperation };`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(appCallerAdapterScope(bindings))) as { api: any; beginAddShotOperation: () => { api: any; registerBlankShot: (done: { shotId: string }) => void } | undefined };
 }
 // Extract an actual App.tsx variable/expression (used to drive the real callers under test).
 async function appExpression(name: string) {
@@ -381,7 +382,7 @@ async function appOwnedOpenExpression() {
 }
 const waitFor = async (condition: () => boolean) => { for (let i = 0; i < 400; i++) { if (condition()) return; await new Promise(r => setTimeout(r, 5)); } throw new Error("waitFor timed out"); };
 const evalAppExpression = (expr: string, bindings: Record<string, unknown>) =>
-  new Function(...Object.keys(bindings), ts.transpile(`return (${expr});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings));
+  new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${expr});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(appCallerAdapterScope(bindings)));
 const transparentPng = async (width: number, height: number) => `data:image/png;base64,${(await sharp({ create: { width, height, channels: 4, background: "transparent" } }).png().toBuffer()).toString("base64")}`;
 const transparentPngSync = (buffer: Buffer) => `data:image/png;base64,${buffer.toString("base64")}`;
 it("actual App Add expanded matte wiring completes through real main files and publishes the pending root token", async () => {
@@ -877,17 +878,21 @@ it("actual App owned open returns the FINAL owner Project bound to its own reque
     const aiApply = { current: undefined as object | undefined };
     const errors: unknown[] = [];
     let publishedProject: Project | undefined;
+    const { createAppOpenCallerScope } = await import('../../electron/main/appOpenCallerScope.mjs');
     const api: any = {
       openFolderByPath: async (_p: string, _o: unknown) => ({ folderPath: f.folder, folderName: "P", metadataPath: f.metadataPath, images: [], project: f.initial }),
       autosaveWorkspace: async () => ({}), saveWorkspace: async () => ({}), readOutputIdentity: async (file: string) => hash(file)
     };
-    const adapter = createNormalSaveAppAdapter({ projectRef: f.projectRef, setProject: p => { f.projectRef.current = p; }, queue: createBitmapLayerWriteQueue(), freshToken: () => "t", api: () => api, paths: () => ({ folderPath: f.folder, metadataPath: f.metadataPath }), onSave: () => {}, onError: e => errors.push(e) });
+    const caller = await createAppOpenCallerScope({ projectRef: f.projectRef, setProject: () => {}, queue: createBitmapLayerWriteQueue(), freshToken: () => 't', api: () => api, paths: () => ({folderPath:f.folder,metadataPath:f.metadataPath}), onSave: () => {}, onError: (e: unknown) => errors.push(e) }, false, false,
+      {publishScan: (_scan: unknown, project: Project) => { publishedProject=project;aiApply.current={};caller.workspaceSlotsRef.current.active.adapter.owner.publishEdit((p: Project)=>({...p,name:'FINAL'}),[]); }});
+    const adapter = caller.renderAdapter;
     const expr = await appOwnedOpenExpression();
     const open = evalAppExpression(expr, {
+      ...caller,
       window: { storyboard: api }, normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: adapter },
       // The actual publish callback changes the owner Project AFTER onLoaded; success must return
       // that FINAL Project, not the snapshot handed to the callback.
-      publishNormalSaveFolderScan: (_scan: unknown, project: Project) => { publishedProject = project; aiApply.current = {}; adapter.owner.publishEdit(p => ({ ...p, name: "FINAL" }), []); },
+      publishNormalSaveFolderScan: (_scan: unknown, project: Project) => { publishedProject = project; aiApply.current = {}; adapter.owner.publishEdit((p: Project) => ({ ...p, name: "FINAL" }), []); },
       blankShotPreset: "16:9", dirtyShotIds: () => [], prepareNormalSaveImportMatte: async (p: Project) => p, normalSaveImageImportPublished: () => {}, aiApplyWorkspaceIdentityRef: aiApply
     }) as (target: string) => Promise<{ project?: Project; loaded: boolean; identity: object } | undefined>;
     const result = await open(f.folder);
@@ -912,7 +917,10 @@ it("actual App plain open does not publish an incomplete status into a supersede
     const adapter = createNormalSaveAppAdapter({ projectRef: f.projectRef, setProject: p => { f.projectRef.current = p; }, queue: createBitmapLayerWriteQueue(), freshToken: () => "t", api: () => api, paths: () => ({ folderPath: f.folder, metadataPath: f.metadataPath }), onSave: () => {}, onError: e => errors.push(e) });
     const statuses: string[] = [];
     const expr = await appExpression("handleOpenFolderByPath");
+    const { createAppOpenCallerScope } = await import('../../electron/main/appOpenCallerScope.mjs');
+    const caller = await createAppOpenCallerScope({projectRef:f.projectRef,setProject:()=>{},queue:createBitmapLayerWriteQueue(),freshToken:()=> 't',api:()=>api,paths:()=>({folderPath:f.folder,metadataPath:f.metadataPath}),onSave:()=>{},onError:(e:unknown)=>errors.push(e)});
     const open = evalAppExpression(expr, {
+      ...caller,
       window: { storyboard: api }, normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: adapter }, folderInputValue: f.folder,
       blankShotPreset: "16:9", prepareNormalSaveImportMatte: async (p: Project) => p, normalSaveImageImportPublished: () => {},
       publishNormalSaveFolderScan: () => {}, setWorkspaceTask: () => {}, setStatus: (s: string) => statuses.push(s)
@@ -945,7 +953,10 @@ it("actual App owned open with a failed load yields zero Add effects", async () 
     };
     const adapter = createNormalSaveAppAdapter({ projectRef: f.projectRef, setProject: p => { f.projectRef.current = p; }, queue: createBitmapLayerWriteQueue(), freshToken: () => "t", api: () => api, paths: () => ({ folderPath: f.folder, metadataPath: f.metadataPath }), onSave: () => {}, onError: e => errors.push(e) });
     const expr = await appOwnedOpenExpression();
+    const { createAppOpenCallerScope } = await import('../../electron/main/appOpenCallerScope.mjs');
+    const caller = await createAppOpenCallerScope({projectRef:f.projectRef,setProject:()=>{},queue:createBitmapLayerWriteQueue(),freshToken:()=> 't',api:()=>api,paths:()=>({folderPath:f.folder,metadataPath:f.metadataPath}),onSave:()=>{},onError:(e:unknown)=>errors.push(e)});
     const openOwnedFolder = evalAppExpression(expr, {
+      ...caller,
       window: { storyboard: api }, normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: adapter },
       publishNormalSaveFolderScan: () => { aiApply.current = {}; },
       blankShotPreset: "16:9", dirtyShotIds: () => [], prepareNormalSaveImportMatte: async (p: Project) => p, normalSaveImageImportPublished: () => {}, aiApplyWorkspaceIdentityRef: aiApply

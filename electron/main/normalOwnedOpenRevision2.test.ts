@@ -6,6 +6,8 @@ import ts from "typescript";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
 import { createWorkspaceFolderScanner } from "./workspaceScanService";
+import { assertPhysicalWorkspaceWriterTargets } from "./workspacePhysicalWriterGate";
+import { withLayerFileOperation } from "./layerFileOperationQueue";
 import { createWorkspaceOpenAppHandlers } from "./workspaceOpenAppRuntime";
 import { registerWorkspaceOpenIpcHandlers } from "./ipc/workspaceOpenHandlers";
 import { createImageRecords as createImportedImageRecords } from "./imageRecordsService";
@@ -17,7 +19,7 @@ import * as transaction from "./pendingFileTransactionService";
 import { createProject } from "../../src/shared/projectOps";
 vi.mock("node:fs/promises", async importOriginal => {
   const actual = await importOriginal<typeof fs>();
-  return { ...actual, mkdir: vi.fn(actual.mkdir), writeFile: vi.fn(actual.writeFile), rename: vi.fn(actual.rename), unlink: vi.fn(actual.unlink) };
+  return { ...actual, mkdir: vi.fn(actual.mkdir), open: vi.fn(actual.open), writeFile: vi.fn(actual.writeFile), rename: vi.fn(actual.rename), unlink: vi.fn(actual.unlink) };
 });
 const dirs: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(dirs.splice(0).map(p => fs.rm(p, { recursive: true, force: true }))); });
@@ -32,7 +34,7 @@ async function workspace() {
   const selected = ast.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(ast)));
   expect(selected).toHaveLength(names.length);
   const order: string[] = [];
-  const bindings = { path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
+  const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
     hasPendingFileTransaction: async (p: string) => { order.push("transaction-check"); return transaction.hasPendingFileTransaction(p); },
     createWorkspaceFolderScanner, metadataPathForFolder: () => metadataPath, previewRootForFolder: () => previewRoot,
     collectImagePaths: async () => { order.push("image-discovery"); return [image]; }, createImportedImageRecords, createPreview, pixelFingerprint,
@@ -44,7 +46,7 @@ async function workspace() {
   return { root, metadataPath, journal, previewRoot, image, md, order, open: (options?: unknown) => invoke({ sender: {} }, root, options) };
 }
 function watchWrites() {
-  return [vi.mocked(fs.mkdir).mockClear(), vi.spyOn(sharp.prototype, "toFile"), vi.mocked(fs.writeFile).mockClear(), vi.mocked(fs.rename).mockClear(), vi.mocked(fs.unlink).mockClear()];
+  return [vi.mocked(fs.mkdir).mockClear(), vi.mocked(fs.open).mockClear(), vi.mocked(fs.writeFile).mockClear(), vi.mocked(fs.rename).mockClear(), vi.mocked(fs.unlink).mockClear()];
 }
 async function snapshot(root: string): Promise<Record<string, string>> {
   const entries: Record<string, string> = {};

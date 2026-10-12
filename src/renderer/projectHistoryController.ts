@@ -22,6 +22,18 @@ export type ProjectHistoryEntry = {
 
 type HistoryDirection = "undo" | "redo";
 
+/** Explicit private-stack snapshot, not reconstruction from current Project JSON.
+ * Optional absent collections can be own undefined after namespace rebasing;
+ * encode their domain absence by omitting only those known optional fields. */
+export const captureProjectHistoryData = (undo: ProjectHistoryEntry[], redo: ProjectHistoryEntry[]) => {
+  const data = structuredClone({ undo, redo });
+  for (const entry of [...data.undo, ...data.redo]) {
+    if (entry.project.parkedShots === undefined) delete entry.project.parkedShots;
+    if (entry.project.pendingDeletedShots === undefined) delete entry.project.pendingDeletedShots;
+  }
+  return data;
+};
+
 // Both stacks append at the end and applyHistoryEntry pops at(-1). A whole
 // Project snapshot has only entry-local PNGs: skipping a rejected step loses
 // asset dependencies needed by older entries. Keep only the provable suffix.
@@ -149,6 +161,8 @@ export const historyAppliedStatus = (direction: HistoryDirection): string =>
 type UseProjectHistoryControllerOptions = {
   captureWorkspace?: () => () => boolean;
   captureEffectCompletion?: () => CompletedEffect;
+  // Installed private stacks survive Close freeze but not workspace replacement.
+  captureInstalledHistory?: () => () => boolean;
   isImageImportLocked: () => boolean;
   getRecoveryRequiredMessage?: () => string | undefined;
   api: LayerAssetApi | undefined;
@@ -175,6 +189,7 @@ type UseProjectHistoryControllerOptions = {
 export const useProjectHistoryController = ({
   captureWorkspace,
   captureEffectCompletion,
+  captureInstalledHistory,
   isImageImportLocked,
   getRecoveryRequiredMessage,
   api,
@@ -286,6 +301,25 @@ export const useProjectHistoryController = ({
         const reciprocalEntry = await createHistoryEntry(affectedBitmapPaths);
         if (!isWorkspaceCurrent() || isImageImportLocked() || !requireHistorySafe()) return;
         const completion = entry.layerAssets?.length ? captureEffectCompletion?.() : undefined;
+        const installedHistory = captureInstalledHistory?.();
+        const originalUndo = undoStackRef.current, originalRedo = redoStackRef.current;
+        let transitioned = false;
+        const transition = (requireInstalled = false) => {
+          if (transitioned) return;
+          if (requireInstalled && !installedHistory?.() ||
+              undoStackRef.current !== originalUndo || redoStackRef.current !== originalRedo ||
+              sourceStackRef.current.at(-1) !== entry) {
+            throw new Error('Completed restore original history unavailable or replaced');
+          }
+          if (direction === 'undo') {
+            setRedoStackSynced(appendHistoryEntry(originalRedo, reciprocalEntry, maxEntries));
+            setUndoStackSynced(originalUndo.slice(0, -1));
+          } else {
+            setUndoStackSynced(appendHistoryEntry(originalUndo, reciprocalEntry, maxEntries));
+            setRedoStackSynced(originalRedo.slice(0, -1));
+          }
+          transitioned = true;
+        };
         // After the first restore IPC begins, finish history + metadata publication.
         // Metadata-only history must not yield between admission and its first
         // publication. With real assets, the first restore IPC is the linearization point.
@@ -296,23 +330,17 @@ export const useProjectHistoryController = ({
         const metadataPublished = !entry.layerAssets?.length && publishMetadataProject
           ? await publishMetadataProject(entry.project, dirtyShotIds) : undefined;
         if (metadataPublished === false) throw new Error("History metadata publication refused");
-        onLayerAssetsRestored?.(affectedBitmapPaths);
         if (metadataPublished === undefined && publishProject && !publishProject(entry.project, dirtyShotIds)) {
-          await completion?.(entry.project, dirtyShotIds);
-          throw new Error("History output publication refused");
+          if (!completion) throw new Error('History output publication refused without original completion');
+          await completion(entry.project, dirtyShotIds, {
+            published: () => transition(true), afterDurable: async () => undefined
+          });
+          // Original PNG + exact reciprocal transition + bound ACK are finished.
+          // Do not turn this success into an arbitrary failure or publish stale UI.
+          return;
         }
-
-        if (direction === "undo") {
-          setRedoStackSynced((current) =>
-            appendHistoryEntry(current, reciprocalEntry, maxEntries)
-          );
-          setUndoStackSynced((current) => current.slice(0, -1));
-        } else {
-          setUndoStackSynced((current) =>
-            appendHistoryEntry(current, reciprocalEntry, maxEntries)
-          );
-          setRedoStackSynced((current) => current.slice(0, -1));
-        }
+        transition();
+        onLayerAssetsRestored?.(affectedBitmapPaths);
 
         if (!publishProject) {
           setProject(entry.project);
@@ -349,6 +377,11 @@ export const useProjectHistoryController = ({
         fileNameSyncState: fileNameSyncStateRef.current
       }),
     resetHistoryStacks,
+    captureHistoryData: () => captureProjectHistoryData(undoStackRef.current, redoStackRef.current),
+    restoreHistoryData: (data: { undo: ProjectHistoryEntry[]; redo: ProjectHistoryEntry[] }) => {
+      setUndoStackSynced(structuredClone(data.undo));
+      setRedoStackSynced(structuredClone(data.redo));
+    },
     invalidatePresentationHistory: (after: Project, ids: readonly string[], paths: readonly string[]) => {
       setUndoStackSynced(entries => invalidatePresentationHistoryEntries(entries, after, ids, paths));
       setRedoStackSynced(entries => invalidatePresentationHistoryEntries(entries, after, ids, paths));

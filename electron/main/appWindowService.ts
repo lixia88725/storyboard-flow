@@ -47,6 +47,7 @@ export type StoryboardWindowCloseOptions<Window extends CloseManagedWindow = Clo
   owner: Window | undefined;
   saveAndCloseRequests: Map<string, Window>;
   showMessageBoxSync: (owner: Window, options: MessageBoxSyncOptions) => number;
+  closeProtection?: { begin: (owner: Window) => void };
 };
 
 export const handleStoryboardWindowClose = <Window extends CloseManagedWindow>(
@@ -56,9 +57,14 @@ export const handleStoryboardWindowClose = <Window extends CloseManagedWindow>(
     createRequestId,
     owner,
     saveAndCloseRequests,
-    showMessageBoxSync
+    showMessageBoxSync, closeProtection
   }: StoryboardWindowCloseOptions<Window>
 ): void => {
+  if (owner && closeProtection) {
+    event.preventDefault();
+    closeProtection.begin(owner);
+    return;
+  }
   if (!owner || !closeGuardWebContentsIds.has(owner.webContents.id)) {
     return;
   }

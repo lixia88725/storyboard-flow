@@ -1,3 +1,4 @@
+import { decodeWorkspaceEffectResult, type WorkspaceEffectFailure } from "../shared/workspaceEffectIpc";
 import { serializeStoryboardScriptMarkdown } from "../../electron/main/storyboardScript";
 import { decodeNormalSaveImportResult } from "../../electron/shared/normalSaveImportIpc";
 import type { FolderScanPayload, Project, SaveWorkspacePayload, Shot, WorkspacePayload } from "../shared/types";
@@ -17,7 +18,8 @@ type Api = {
   checkExternalChanges?: Window["storyboard"]["checkExternalChanges"];
   moveShotsToPending?: Window["storyboard"]["moveShotsToPending"];
   restoreShotsFromPending?: Window["storyboard"]["restoreShotsFromPending"];
-  saveWorkspace: (payload: SaveWorkspacePayload) => Promise<SaveWorkspacePayload>;
+  saveWorkspace: (payload: SaveWorkspacePayload) => Promise<SaveWorkspacePayload | WorkspaceEffectFailure>;
+  acknowledgeSave?: (payload: {folderPath:string;nonce:string;project:Project}) => Promise<boolean>;
   autosaveWorkspace: (payload: WorkspacePayload) => Promise<unknown>;
   readOutputIdentity: (imagePath: string, legacy?: { project: Project; folderPath: string; shotId: string }) => Promise<string>;
 };
@@ -29,6 +31,7 @@ export const createNormalSaveAppAdapter = (ports: {
   api: () => Api;
   paths: () => { folderPath?: string; metadataPath?: string };
   assertAdmission?: () => void;
+  assertRequiredPersistence?: () => void;
   assertImportAdmission?: () => void;
   onImportRecoveryRequired?: (message: string, quiet?: boolean) => void;
   onSave: (saved: boolean) => void;
@@ -46,14 +49,36 @@ export const createNormalSaveAppAdapter = (ports: {
     if (!folderPath || !metadataPath) throw new Error("No current workspace");
     return { project, folderPath, metadataPath, normalSave: true };
   };
+  const persistWorkspace = async (payload: WorkspacePayload, api = ports.api()) => {
+    const result = await api.autosaveWorkspace(payload);
+    if (result && typeof result === 'object' && 'ordinaryPersistenceNonce' in result && result.ordinaryPersistenceNonce !== undefined) {
+      if (typeof result.ordinaryPersistenceNonce !== 'string' || !api.acknowledgeSave || !await api.acknowledgeSave({ folderPath: payload.folderPath, nonce: result.ordinaryPersistenceNonce, project: payload.project })) throw new Error('Ordinary exact persistence ACK refused');
+    }
+  };
   let legacyLoadFolderPath: string | undefined;
+  let saveCapability: {folderPath:string;metadataPath:string;nonce?:string;api:Api} | undefined;
   const owner = createNormalSaveProjectOwner({
     projectRef: ports.projectRef, setProject: ports.setProject, freshToken: ports.freshToken, queue: ports.queue,
     readIdentity: (shot: Shot) => ports.api().readOutputIdentity(shot.imagePath),
     readLegacyIdentity: (project, shot) => legacyLoadFolderPath
       ? ports.api().readOutputIdentity(shot.imagePath, { project, folderPath: legacyLoadFolderPath, shotId: shot.id })
       : Promise.resolve(undefined),
-    persist: project => ports.api().autosaveWorkspace(workspace(project)).then(() => undefined),
+    persist: async (project, required = false) => {
+      const cap=required ? saveCapability : undefined;
+      if (required) {
+        if (ports.assertRequiredPersistence) ports.assertRequiredPersistence();
+        else ports.assertAdmission?.();
+      }
+      const paths = cap ?? ports.paths();
+      if (!paths.folderPath || !paths.metadataPath) throw new Error("Original persistence Root unavailable");
+      const payload = required ? {project, folderPath:paths.folderPath, metadataPath:paths.metadataPath, normalSave:true} : workspace(project);
+      const api=cap?.api ?? ports.api();
+      await persistWorkspace({...payload, recoveryContent:owner.captureRecoveryContent(), recoverySaveNonce:cap?.folderPath===payload.folderPath?cap.nonce:undefined},api);
+      if(cap?.nonce){if(cap.folderPath!==payload.folderPath||!api.acknowledgeSave)throw new Error("Exact Save capability ACK unavailable");
+        if(!await api.acknowledgeSave({folderPath:cap.folderPath,nonce:cap.nonce,project}))throw new Error("Exact Save binding ACK refused");
+      }
+      if(saveCapability===cap)saveCapability=undefined;
+    },
     captureEffectPersistence: () => {
       ports.assertAdmission?.();
       const { folderPath, metadataPath } = ports.paths(), api = ports.api();
@@ -61,18 +86,22 @@ export const createNormalSaveAppAdapter = (ports: {
       // Captured BEFORE the first real effect. A queued load may rotate epoch, but cannot
       // adopt another workspace until this exact normal required-persistence call settles.
       return { folderPath, metadataPath, persist: async (project: Project) => {
-        ports.assertAdmission?.();
-        await api.autosaveWorkspace({ project, folderPath, metadataPath, normalSave: true });
+        // This admitted native effect still owes its original Root persistence.
+        // A later view/scope actor must not revoke that exact obligation.
+        if (ports.assertRequiredPersistence) ports.assertRequiredPersistence();
+        else ports.assertAdmission?.();
+        await persistWorkspace({ project, folderPath, metadataPath, normalSave: true },api);
       } };
     },
     outputWhenClean: true,
     onPendingPublication: result => ports.onPendingPublication?.(result),
     onSaveNamespace: namespace => ports.onSaveNamespace?.(namespace),
     output: async (project, ids) => {
-      const captured = workspace(project);
+      const captured = workspace(project), api = ports.api();
       const renamePlan = createRenamePlan(project, { allowDefaultNamingFields: true });
-      const result = await ports.api().saveWorkspace({ ...captured, project: applyRenamePlan(project, renamePlan), renamePlan, dirtyShotIds: ids, normalSave: true });
+      const result = decodeWorkspaceEffectResult(await api.saveWorkspace({ ...captured, project: applyRenamePlan(project, renamePlan), recoveryContent: owner.captureRecoveryContent(), renamePlan, dirtyShotIds: ids, normalSave: true }));
       if (!result.normalSaveOutputs) throw new Error("Save did not acknowledge actual outputs");
+      saveCapability={folderPath:captured.folderPath,metadataPath:captured.metadataPath,nonce:result.recoverySaveNonce,api};
       return { outputs: result.normalSaveOutputs, deletions: result.normalSaveDeletions ?? [] };
     }
   });
@@ -83,16 +112,17 @@ export const createNormalSaveAppAdapter = (ports: {
       return prepare(project, ids, isCurrent, { folderPath: paths.folderPath, metadataPath: paths.metadataPath,
         isWorkspaceCurrent: () => sameEpoch(c) && pendingScope(paths).isCurrent() }, onPreparedAssets);
     };
-  const pendingScope = (paths: ReturnType<typeof ports.paths>) => ({
+  const pendingScope = (paths: ReturnType<typeof ports.paths>, api = ports.api()) => ({
     isCurrent: () => {
       const now = ports.paths();
       return now.folderPath === paths.folderPath && now.metadataPath === paths.metadataPath;
     },
     persist: async (project: Project) => {
-      ports.assertAdmission?.();
+      if (ports.assertRequiredPersistence) ports.assertRequiredPersistence();
+      else ports.assertAdmission?.();
       if (!paths.folderPath || !paths.metadataPath) throw new Error("No current Pending workspace");
       const payload: SaveWorkspacePayload = { project, folderPath: paths.folderPath, metadataPath: paths.metadataPath, normalSave: true };
-      await ports.api().autosaveWorkspace(payload);
+      await persistWorkspace({...payload,recoveryContent:owner.captureRecoveryContent()},api);
     }
   });
   const pendingEffects = (kind: "park" | "restore", project: Project, ids: string[], paths = ports.paths()) => {
@@ -105,11 +135,13 @@ export const createNormalSaveAppAdapter = (ports: {
   type ScriptContinuation = { scriptPrepare?: ImportPrepare; scriptPublished?: (scan: FolderScanPayload, durable?: boolean, changedAssetShotIds?: string[]) => void; blankShotPreset: import("../shared/types").BlankShotPreset; dirtyShotIds: string[] };
   const importPersist = (paths: ReturnType<typeof ports.paths>, retainInput = false) => {
     let expected: string | null | undefined, started = false;
+    const api = ports.api();
     return async (project: Project, input?: string, observedInput?: string | null) => {
-      ports.assertImportAdmission?.();
+      if (ports.assertRequiredPersistence) ports.assertRequiredPersistence();
+      else ports.assertImportAdmission?.();
       if (!started) { expected = observedInput === undefined ? input : observedInput; started = true; }
-      await ports.api().autosaveWorkspace({ project, folderPath: paths.folderPath!, metadataPath: paths.metadataPath!, normalSave: true,
-        normalSaveScriptInput: retainInput ? input : undefined, normalSaveScriptExpectedInput: expected });
+      await persistWorkspace({ project, folderPath: paths.folderPath!, metadataPath: paths.metadataPath!, normalSave: true,
+        normalSaveScriptInput: retainInput ? input : undefined, normalSaveScriptExpectedInput: expected },api);
       expected = retainInput && input !== undefined ? input : serializeStoryboardScriptMarkdown(project);
     };
   };
@@ -135,8 +167,44 @@ export const createNormalSaveAppAdapter = (ports: {
     if (!accepted && owner.lastError && sameEpoch(c) && scope.isCurrent()) ports.onError(owner.lastError);
     return accepted;
   };
+  const settlements = new Set<Promise<boolean>>();
+  const trackSettlement = (operation: Promise<boolean>) => {
+    settlements.add(operation);
+    void operation.then(() => settlements.delete(operation), () => settlements.delete(operation));
+    return operation;
+  };
+  const saveAndPublish = async () => {
+    const c = owner.capture();
+    const finishStatus = ports.captureSaveStatus?.();
+    const saved = await owner.save();
+    if (sameEpoch(c)) {
+      if (owner.lastError) ports.onError(owner.lastError);
+      else {
+        if (saved) finishStatus?.();
+        ports.onSave(saved);
+      }
+    }
+    return saved;
+  };
+  const autosaveAndPublish = async (project: Project) => {
+    const c = owner.capture();
+    if (c.project !== project) return false;
+    try {
+      const saved = await owner.autosave();
+      const latest = owner.capture();
+      if (saved && sameEpoch(c) && c.sequence === latest.sequence && c.project === latest.project) ports.onAutosave?.();
+      return saved;
+    } catch (error) {
+      const latest = owner.capture();
+      if (sameEpoch(c) && c.sequence === latest.sequence && c.project === latest.project) ports.onError(error);
+      return false;
+    }
+  };
   return {
     owner,
+    // Queue drain settles native IO; adapter drain also settles its status publication.
+    // Close/handoff must not capture between exact ACK and the original Save callback.
+    drain: async () => { await Promise.all([...settlements]); },
     createFromScript: async (options: { sourceMarkdownPath: string; targetFolderPath: string;
       blankShotPreset: import("../shared/types").BlankShotPreset; isCurrent: () => boolean;
       published: (scan: FolderScanPayload, project: Project) => void }) => {
@@ -222,34 +290,8 @@ export const createNormalSaveAppAdapter = (ports: {
       }
       return accepted;
     },
-    save: async () => {
-      const c = owner.capture();
-      const finishStatus = ports.captureSaveStatus?.();
-      const saved = await owner.save();
-      if (sameEpoch(c)) {
-        if (owner.lastError) ports.onError(owner.lastError);
-        else {
-          if (saved) finishStatus?.();
-          ports.onSave(saved);
-        }
-      }
-      return saved;
-    },
-    autosave: async (project: Project) => {
-      const c = owner.capture();
-      if (c.project !== project) return false;
-      try {
-        const saved = await owner.autosave();
-        const latest = owner.capture();
-        if (saved && sameEpoch(c) && c.sequence === latest.sequence && c.project === latest.project) ports.onAutosave?.();
-        return saved;
-      }
-      catch (error) {
-        const latest = owner.capture();
-        if (sameEpoch(c) && c.sequence === latest.sequence && c.project === latest.project) ports.onError(error);
-        return false;
-      }
-    },
+    save: () => trackSettlement(saveAndPublish()),
+    autosave: (project: Project) => trackSettlement(autosaveAndPublish(project)),
     load: async (reader: () => Promise<FolderScanPayload>, publishScan: (scan: FolderScanPayload, project: Project) => void,
       autoImport?: { blankShotPreset: import("../shared/types").BlankShotPreset; dirtyShotIds: string[]; prepare: ImportPrepare; scriptPrepare?: ImportPrepare; scriptPublished?: (scan: FolderScanPayload, durable?: boolean, changedAssetShotIds?: string[]) => void; published: (scan: FolderScanPayload, durable?: boolean) => void },
       onSettled?: (info: { epoch: object; completed: boolean; project: Project }) => void) => {

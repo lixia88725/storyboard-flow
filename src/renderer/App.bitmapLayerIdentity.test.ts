@@ -12,9 +12,12 @@ const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const source = ts.createSourceFile("App.tsx", app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const expressions: string[] = [];
 let sessionInitializer = "";
+let historyInitializer = "";
 const visit = (node: ts.Node) => {
   if (ts.isVariableDeclaration(node) && node.name.getText(source) === "workspaceSession")
     sessionInitializer = node.initializer!.getText(source);
+  if (ts.isVariableDeclaration(node) && node.name.getText(source) === "captureInstalledHistory")
+    historyInitializer = node.initializer!.getText(source);
   if (ts.isCallExpression(node) && node.expression.getText(source) === "useBitmapLayerActions") {
     expressions.push(node.arguments[0].getText(source));
   }
@@ -50,6 +53,7 @@ const setup = (omitPort = false) => {
     // A deliberately false obsolete binding cannot select a different App path.
     normalSaveAppEnabled: false,
     normalSaveAppAdapterRef,
+    renderAdapter: normalSaveAppAdapterRef.current,
     isImageImportLocked: () => false, projectRef, folderPath: folderPathRef.current,
     metadataPath: metadataPathRef.current, folderPathRef, metadataPathRef, aiApplyWorkspaceIdentityRef,
     bitmapLayerWriteQueueRef: { current: createBitmapLayerWriteQueue() },
@@ -60,7 +64,10 @@ const setup = (omitPort = false) => {
   expect(sessionInitializer).not.toBe("");
   const sessionBindings = { ...scope, createWorkspaceSession, workspaceRecoveryRequiredRef: { current: undefined } };
   const workspaceSession = new Function(...Object.keys(sessionBindings), ts.transpile(`return (${sessionInitializer});`))(...Object.values(sessionBindings));
-  const bindings = { ...scope, workspaceSession };
+  const renderSlot = { incarnation: {}, projectRef };
+  const historyBindings = { projectRef, renderSlot, workspaceSlotsRef: { current: { active: renderSlot, isActive: (slot: unknown) => slot === renderSlot } } };
+  const captureInstalledHistory = new Function(...Object.keys(historyBindings), ts.transpile(`return (${historyInitializer});`))(...Object.values(historyBindings));
+  const bindings = { ...scope, workspaceSession, captureInstalledHistory };
   const compiled = ts.transpileModule(`return (${expressions[0]});`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None }
   }).outputText;

@@ -1,3 +1,4 @@
+import { appCallerAdapterScope, createAppRootActor } from '../../src/renderer/appCallerAdapterScope';
 import { isCertifiedPendingBakeEntry } from "../shared/pendingBakeRules";
 import { createWorkspaceSession } from "../../src/renderer/workspaceSession";
 import { afterEach, expect, it, vi } from "vitest";
@@ -42,6 +43,11 @@ import * as renames from "./fileRenames";
 import * as bitmap from "./bitmapLayers";
 import * as safety from "./pathSafety";
 import * as layer from "./layerAssetService";
+import { writeProtectedLayerFile as protectedWriter } from "./protectedLayerFileWriter";
+import { prepareProtectedLayerReplacement } from "./protectedLayerReplacementPreparation";
+import { withLayerFileOperation } from "./layerFileOperationQueue";
+import { mapWithConcurrency } from "./mapWithConcurrency";
+import { removeOwnedFile, type OwnedFileReceipt } from "./ownedFileCreation";
 import { createLayerAppHandlers } from "./layerAppRuntime";
 import { cleanupMergedLayerSources } from "./mergeSourceCleanup";
 import * as script from "./storyboardScript";
@@ -57,7 +63,9 @@ import { recoverFailedImport, ImportRecoveryIncompleteError } from "./importReco
 import { decodeNormalSaveImportResult, importRecoveryIncompleteCode, normalSaveImportFailure } from "../shared/normalSaveImportIpc";
 import { hasPendingFileTransaction } from "./pendingFileTransactionService";
 import { recoverFailedSave } from "./saveRecovery";
+import { workspaceEffectFailure } from "./workspaceEffectFailure";
 import { withSuccessfulSaveArtifactCleanup } from "./saveArtifacts";
+import * as tiffPreparation from "./tiffPreparation";
 import { bitmapLayersForShot as orderedBitmapLayersForShot } from "./bitmapLayerOrdering";
 import { writePhotoshopLayeredTiffsForInPlaceSave } from "./photoshopTiffExport";
 import { saveProgressShotIds, countSaveProgressShots } from "./saveProgress";
@@ -95,7 +103,7 @@ const appExpression = (name: string): string => {
   return expression;
 };
 const runApp = (name: string, bindings: Record<string, unknown>) =>
-  new Function("decodeNormalSaveImportResult", ...Object.keys(bindings), ts.transpile(`return (${appExpression(name)});`, { target: ts.ScriptTarget.ES2022 }))(decodeNormalSaveImportResult, ...Object.values(bindings));
+  new Function("decodeNormalSaveImportResult", ...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${appExpression(name)});`, { target: ts.ScriptTarget.ES2022 }))(decodeNormalSaveImportResult, ...Object.values(appCallerAdapterScope(bindings)));
 
 // The script-only Import never enters the swb/image branch, so the compile binds only the
 // declarations that path actually evaluates; referenced-but-unreached image helpers stay free
@@ -852,7 +860,7 @@ it("actual App onPendingPublication continues a finite script Import with an aut
   const onPendingPublication = new Function(...Object.keys(controls), ts.transpile(`return (${pending});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(controls));
   const bindings = { project: f.ref.current, projectRef: f.ref, setScriptImportNeeded: vi.fn(), setStatus: vi.fn(),
     invalidatePresentationHistory: vi.fn(), normalSaveAppCallbacksRef: { current: { onPendingPublication } } };
-  const published = new Function(...Object.keys(bindings), ts.transpile(`return (${publication});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings));
+  const published = new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${publication});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(appCallerAdapterScope(bindings)));
   // An already-scheduled ordinary-autosave timer for the PRE-import capture is enqueued first.
   schedule();
   expect(callbacks).toHaveLength(1);
@@ -972,18 +980,24 @@ it("B2 actual App→adapter→owner queue→registered main Create persists TIFF
   });
   const paths = { folderPath: f.root, metadataPath: f.metadataPath };
   const api = { ...f.api, createFromStoryboardScript: async (options: CreateProjectFromStoryboardScriptOptions) => structuredClone(await createHandlers["workspace:createFromStoryboardScript"]({}, options)) };
-  const adapter = createNormalSaveAppAdapter({ projectRef: f.ref, setProject: () => {}, queue: f.queue, freshToken: randomUUID,
-    paths: () => paths, api: () => api as unknown as Window["storyboard"], onSave: () => {}, onError: e => f.errors.push(e) });
+  const { createAppOpenCallerScope } = await import('./appOpenCallerScope.mjs');
+  const caller = await createAppOpenCallerScope({ projectRef: f.ref, setProject: () => {}, queue: f.queue, freshToken: randomUUID,
+    paths: () => paths, api: () => api as unknown as Window["storyboard"], onSave: () => {}, onError: (e: unknown) => f.errors.push(e) }, false, false,
+    { publishScan: (scan: FolderScanPayload) => { paths.folderPath = scan.folderPath; paths.metadataPath = scan.metadataPath; } });
+  let adapter = caller.renderAdapter;
   const draft = { sourceMarkdownPath: input, targetFolderPath: target, entryCount: 2 };
   const draftRef = { current: draft as typeof draft | undefined }, statuses: string[] = [];
   await runApp("handleCreateProjectFromStoryboardScript", {
+    ...caller,
     window: { storyboard: api }, storyboardScriptImportDraft: draft, storyboardScriptImportDraftRef: draftRef,
     normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: adapter }, blankShotPreset: "1.85:1",
-    setWorkspaceTask: () => {}, setStatus: (s: string) => statuses.push(s),
+    // Keep the original semantic event identity; all non-success statuses remain visible.
+    setWorkspaceTask: () => {}, setStatus: (s: string) => statuses.push(s === 'Created storyboard from script' ? 'created' : s),
     setStoryboardScriptImportDraft: (d: typeof draft | undefined) => { draftRef.current = d; },
     publishNormalSaveFolderScan: (scan: FolderScanPayload) => { paths.folderPath = scan.folderPath; paths.metadataPath = scan.metadataPath; statuses.push("created"); },
     withStatus, loadFolderScan: () => { throw new Error("outside-queue load forbidden"); }
   })();
+  adapter = caller.workspaceSlotsRef.current.active.adapter;
   expect(f.errors).toEqual([]); expect(statuses).toEqual(["created"]);
   expect(f.ref.current.shots.map(s => s.scriptText)).toEqual(["Opening", "Close up"]);
   const created = f.ref.current.shots;
@@ -1345,6 +1359,7 @@ it.each((["clear", "delete", "merge-down", "merge-selected", "merge-visible", "h
   const transparent = await sharp({ create: { width: 4, height: 3, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
   if (kind === "history") {
     const history = useProjectHistoryController({ api,
+      captureInstalledHistory: () => { const id = f.ref.current.id; return () => f.ref.current.id === id; },
       captureWorkspace: () => f.adapter.owner.captureEffectAdmission(),
       captureEffectCompletion: () => f.adapter.owner.captureEffectCompletion(),
       isImageImportLocked: () => false, bitmapLayerWriteQueueRef: { current: f.queue },
@@ -1360,7 +1375,15 @@ it.each((["clear", "delete", "merge-down", "merge-selected", "merge-visible", "h
     await history.applyUndoEntry();
   } else {
     vi.stubGlobal("window", { storyboard: api });
+    const installedHistory = useProjectHistoryController({ api, isImageImportLocked: () => false,
+      bitmapLayerWriteQueueRef: { current: f.queue }, fileNameSyncStateRef: { current: 'synced' },
+      folderPathRef: { current: f.root }, projectRef: f.ref, maxEntries: 60,
+      selectedShotIdsRef: { current: ['s'] }, scriptImportCheckIdRef: { current: 0 },
+      markShotsDirty: () => {}, selectShotsByIds: () => {}, setAutosaveRevision: () => {},
+      setFileNameSyncState: () => {}, setProject: () => {}, setScriptImportNeeded: () => {},
+      setStatus: () => {}, setWorkspaceSaveState: () => {} });
     const actions = useBitmapLayerActions({ captureEnsureScope: () => f.adapter.owner.captureEffectAdmission(),
+      captureCompletedHistory: () => installedHistory.recordUndoEntry,
       captureEffectCompletion: () => f.adapter.owner.captureEffectCompletion(), isImageImportLocked: () => false,
       projectRef: f.ref, folderPath: f.root, bitmapLayerWriteQueueRef: { current: f.queue },
       createTransparentLayerDataUrl: async () => `data:image/png;base64,${transparent.toString("base64")}`,
@@ -1445,23 +1468,29 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
   let saveHandler!: (e: unknown, payload: WorkspacePayload) => Promise<WorkspacePayload>;
   const assetHandlers: Record<string, Function> = {};
   const bindings = {
-    ...fs, ...renames, ...bitmap, ...safety, ...layer, ...script,
+    ...fs, ...renames, ...bitmap, ...safety, ...layer, ...script, prepareProtectedLayerReplacement, withLayerFileOperation, mapWithConcurrency,
+    removeOwnedFile: (receipt: OwnedFileReceipt): Promise<void> => removeOwnedFile(receipt, bindings.unlink),
     path, sharp, createHash, randomUUID,
     createBlankShot, createProjectFromStoryboardScriptMarkdown, createImportedImageRecords, createPreview, pixelFingerprint, previewRootForFolder,
     createWorkspaceAssetAppHandlers, registerWorkspaceAssetIpcHandlers,
     createWorkspacePendingAppHandlers, registerWorkspacePendingIpcHandlers, beginPendingFileTransaction,
     manualImageImportAdmission, automaticImageImportAdmission, recoverFailedImport, hasPendingFileTransaction,
-    ImportRecoveryIncompleteError, normalSaveImportFailure,
-    recoverFailedSave, withSuccessfulSaveArtifactCleanup, bitmapLayersForShot: orderedBitmapLayersForShot,
+    ImportRecoveryIncompleteError, normalSaveImportFailure, workspaceEffectFailure,
+    recoverFailedSave, withSuccessfulSaveArtifactCleanup, ...tiffPreparation, bitmapLayersForShot: orderedBitmapLayersForShot,
     writePhotoshopLayeredTiffsForInPlaceSave, saveProgressShotIds, countSaveProgressShots,
     cleanupDeletedShotLayerDirectories, stagePendingDeletedShotFiles, trashPendingDeletedShotFiles,
     app: { getAppPath: () => process.cwd() }, process,
     resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR,
+    // Preserve original pre-effect refusal controls at the new filesystem port.
+    writeProtectedLayerFile: async (...args: Parameters<typeof protectedWriter>) => {
+      const directory = path.dirname(args[1]);
+      if (layerDirFault && directory.includes("layers")) throw new Error("blank layer dir failed");
+      if (directory.includes("layers")) { layersMkdirCount += 1; if (failLayersMkdirOn && layersMkdirCount === failLayersMkdirOn) throw new Error("simulated layer directory failure"); }
+      return protectedWriter(...args);
+    },
     createWorkspaceTaskProgressReporter: () => () => {},
     writeFile: async (...args: Parameters<typeof fs.writeFile>) => { if (args[0] === mdPath && mdFault) throw new Error("required MD failed after JSON"); await fs.writeFile(...args); },
     mkdir: async (...args: Parameters<typeof fs.mkdir>) => {
-      if (layerDirFault && String(args[0]).includes("layers")) throw new Error("blank layer dir failed");
-      if (String(args[0]).includes("layers")) { layersMkdirCount += 1; if (failLayersMkdirOn && layersMkdirCount === failLayersMkdirOn) throw new Error("simulated layer directory failure"); }
       return fs.mkdir(...args);
     },
     unlink: async (...args: Parameters<typeof fs.unlink>) => {
@@ -1532,7 +1561,7 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
       return payload;
     }
   };
-  const adapter = createNormalSaveAppAdapter({ projectRef: ref, setProject: project => notifyProject(project), queue, freshToken: () => "fresh",
+  const adapter = await createAppRootActor({ projectRef: ref, setProject: project => notifyProject(project), queue, freshToken: () => "fresh",
     paths: () => ({ folderPath: root, metadataPath }), api: () => api as unknown as Window["storyboard"],
     assertAdmission: () => { if (recovery.current) throw new Error(recovery.current); },
     assertImportAdmission: () => { if (recovery.current) throw new Error(recovery.current); },
@@ -1562,10 +1591,10 @@ type ProjectPayload = { project: Project; folderPath: string; metadataPath: stri
 // Cumulative P0-A: actual App declarations/controller options, registered normal
 // autosave and production Save. Clock/React rendering and pre-rendered canvas
 // input are fixture boundaries; no claim of cold process/UI brush geometry.
-const cumulativeAppPorts = (f: Awaited<ReturnType<typeof fixture>>, enabled = true) => {
+const cumulativeAppPorts = async (f: Awaited<ReturnType<typeof fixture>>, enabled = true) => {
   const noop = () => {};
   let serial = 0;
-  const adapter = createNormalSaveAppAdapter({ projectRef: f.ref, setProject: noop, queue: f.queue,
+  const adapter = await createAppRootActor({ projectRef: f.ref, setProject: noop, queue: f.queue,
     freshToken: () => `cumulative-${++serial}`, paths: () => ({ folderPath: f.root, metadataPath: f.metadataPath }),
     api: () => f.api as unknown as Window["storyboard"], onSave: noop, onError: e => f.errors.push(e) });
   const bindings = { normalSaveAppEnabled: enabled, normalSaveAppAdapterRef: { current: adapter }, projectRef: f.ref,
@@ -1580,12 +1609,14 @@ const cumulativeAppPorts = (f: Awaited<ReturnType<typeof fixture>>, enabled = tr
   const workspaceSession = runApp("workspaceSession", { ...bindings, createWorkspaceSession,
     aiApplyWorkspaceIdentityRef: { current: {} } });
   const updateProject = runApp("updateProject", bindings);
+  // Execute the actual newly wired App declaration, not a substitute admission.
+  const admitAssetIntent = runApp("admitAssetIntent", bindings);
   const tree = ts.createSourceFile("App.tsx", sourceApp, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const options = (controller: string, extra: Record<string, unknown> = {}) => {
     let expression = "";
     const visit = (n: ts.Node) => { if (ts.isCallExpression(n) && n.expression.getText(tree) === controller) expression = n.arguments[0].getText(tree); ts.forEachChild(n, visit); };
     visit(tree); expect(expression).toBeTruthy();
-    const b = { ...bindings, updateProject, workspaceSession, ...extra };
+    const b = appCallerAdapterScope({ ...bindings, updateProject, workspaceSession, admitAssetIntent, ...extra });
     return new Function(...Object.keys(b), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(b));
   };
   const persist = runApp("persistWorkspace", bindings);
@@ -1612,7 +1643,7 @@ const cumulativeAppPorts = (f: Awaited<ReturnType<typeof fixture>>, enabled = tr
 
 for (const mode of ["brush", "eraser", "transform", "opacity", "hidden", "dimensions"] as const) {
   it(`cumulative actual App ${mode} publication survives ordinary autosave/disk reload and production Save`, async () => {
-    const f = await fixture(), ports = cumulativeAppPorts(f), shot = f.ref.current.shots[0], l = shot.layers![0];
+    const f = await fixture(), ports = await cumulativeAppPorts(f), shot = f.ref.current.shots[0], l = shot.layers![0];
     const h0 = await hash(f.imagePath);
     const originalComposite = await sharp(f.imagePath).ensureAlpha().raw().toBuffer();
     if (["brush", "eraser", "transform"].includes(mode)) {
@@ -1666,7 +1697,7 @@ for (const mode of ["brush", "eraser", "transform", "opacity", "hidden", "dimens
 }
 
 it("canonical legacy 2 — actual App autosaved paint survives fresh adapter reconstruction without an in-memory dirty tracker", async () => {
-  const f = await fixture(), producer = cumulativeAppPorts(f), shot = f.ref.current.shots[0], layer = shot.layers![0];
+  const f = await fixture(), producer = await cumulativeAppPorts(f), shot = f.ref.current.shots[0], layer = shot.layers![0];
   const png = await sharp({ create: { width: 4, height: 3, channels: 4, background: "blue" } }).png().toBuffer();
   await producer.painting.handleBitmapSelectionTransform(shot, layer.id, `data:image/png;base64,${png.toString("base64")}`);
   const token = f.ref.current.pendingBake!.shots.s.editToken;
@@ -1681,7 +1712,7 @@ it("canonical legacy 2 — actual App autosaved paint survives fresh adapter rec
   expect(reopenedDisk.readOnly).toBe(true);
   expect(reopenedDisk.project).toEqual(JSON.parse(await fs.readFile(f.metadataPath, "utf8")));
   f.ref.current = reopenedDisk.project;
-  const reopened = cumulativeAppPorts(f);
+  const reopened = await cumulativeAppPorts(f);
   expect(reopened.adapter).not.toBe(producer.adapter);
   expect(await reopened.adapter.owner.load(async () => JSON.parse(await fs.readFile(f.metadataPath, "utf8")))).toBe(true);
   expect(f.ref.current.pendingBake!.shots.s.editToken).toBe(token);
@@ -1694,7 +1725,7 @@ it("canonical legacy 2 — actual App autosaved paint survives fresh adapter rec
 });
 
 it("cumulative actual App queued painting refuses a newer load request before its first PNG effect", async () => {
-  const f = await fixture(), ports = cumulativeAppPorts(f), shot = f.ref.current.shots[0], layer = shot.layers![0];
+  const f = await fixture(), ports = await cumulativeAppPorts(f), shot = f.ref.current.shots[0], layer = shot.layers![0];
   const original = await fs.readFile(path.join(f.root, layer.bitmapPath));
   const gate = barrier();
   const held = f.queue.runExclusive(() => gate.promise);
@@ -1711,7 +1742,7 @@ it("canonical legacy 5 — actual normal autosave and Save do not rebake an uned
   const external = f.ref.current.shots[0];
   // Fixture baseline is a real completed TIFF with synced H0, never an edit token.
   f.ref.current = { ...f.ref.current, shots: [{ ...external, swb: { ...external.swb!, status: "non-swb" } }] };
-  const ports = cumulativeAppPorts(f), original = await fs.readFile(f.imagePath);
+  const ports = await cumulativeAppPorts(f), original = await fs.readFile(f.imagePath);
   expect(await ports.adapter.load(async () => ({ folderPath: f.root, metadataPath: f.metadataPath, folderName: "Synthetic", images: [], project: f.ref.current }), () => {})).toBe(true);
   f.useRegisteredPersistence();
   const metadata = await fs.readFile(f.metadataPath), md = await fs.readFile(f.mdPath);
@@ -1745,7 +1776,7 @@ it("canonical legacy 5 — actual normal autosave and Save do not rebake an uned
 });
 
 it("canonical legacy 6 — actual normal Save omits parked roots and retains undefined versus empty selection semantics", async () => {
-  const f = await fixture({ secondShot: {} }), ports = cumulativeAppPorts(f);
+  const f = await fixture({ secondShot: {} }), ports = await cumulativeAppPorts(f);
   const parked = f.ref.current.shots[1], parkedPath = parked.imagePath;
   // Real Pending transaction moves the synthetic root and publishes its new path.
   expect(await ports.adapter.pending("park", p => ({ ...p, shots: p.shots.filter(s => s.id !== "t"), parkedShots: [parked] }), ["t"])).toBe(true);

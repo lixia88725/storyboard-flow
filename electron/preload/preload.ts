@@ -119,8 +119,11 @@ const api = {
     ipcRenderer.invoke("workspace:autosave", payload) as Promise<ProjectPayload>,
   ensureLayerAssets: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:ensureLayerAssets", payload) as Promise<ProjectPayload>,
+  acknowledgeSave: (payload: {folderPath:string;nonce:string;project:ProjectPayload["project"]}) => ipcRenderer.invoke("recovery:ackSave", payload) as Promise<boolean>,
+  observeWorkspace: (folderPath: string) => ipcRenderer.invoke("recovery:observeWorkspace", folderPath) as Promise<{binding:string;folderPath:string;metadataPath:string}>,
+  certifyWorkspaceHandoff: (capture: unknown) => ipcRenderer.invoke("recovery:certifyHandoff", capture) as Promise<boolean | {mode:'ordinary-memory';readonly:false}>,
   saveWorkspace: (payload: ProjectPayload) =>
-    ipcRenderer.invoke("workspace:save", payload) as Promise<ProjectPayload>,
+    ipcRenderer.invoke("workspace:save", payload) as Promise<ProjectPayload | import("../shared/workspaceEffectIpc.js").WorkspaceEffectFailure>,
   exportPhotoshopTiffs: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:exportPhotoshopTiffs", payload) as Promise<{
       exportFolderPath: string;
@@ -164,12 +167,13 @@ const api = {
     ipcRenderer.invoke("layers:copyPng", payload) as Promise<CopyLayerPngPayload & { targetFilePath: string }>,
   copyShotAssets: (payload: CopyShotAssetsPayload) =>
     ipcRenderer.invoke("workspace:copyShotAssets", payload) as Promise<
-      CopyShotAssetsPayload & { imagePath: string; fileName: string; previewPath: string }
+      (CopyShotAssetsPayload & { imagePath: string; fileName: string; previewPath: string }) |
+      import("../shared/copyShotAssetsIpc.js").CopyShotAssetsFailure
     >,
   moveShotsToPending: (payload: ProjectPayload, shotIds: string[]) =>
-    ipcRenderer.invoke("workspace:moveShotsToPending", payload, shotIds) as Promise<PendingShotFile[]>,
+    ipcRenderer.invoke("workspace:moveShotsToPending", payload, shotIds) as Promise<PendingShotFile[] | import("../shared/workspaceEffectIpc.js").WorkspaceEffectFailure>,
   restoreShotsFromPending: (payload: ProjectPayload, shotIds: string[]) =>
-    ipcRenderer.invoke("workspace:restoreShotsFromPending", payload, shotIds) as Promise<PendingShotFile[]>,
+    ipcRenderer.invoke("workspace:restoreShotsFromPending", payload, shotIds) as Promise<PendingShotFile[] | import("../shared/workspaceEffectIpc.js").WorkspaceEffectFailure>,
   mergeLayerDown: (payload: MergeLayerDownPayload) =>
     ipcRenderer.invoke("layers:mergeDown", payload) as Promise<MergeLayerDownPayload & { targetFilePath: string }>,
   mergeVisibleLayers: (payload: MergeVisibleLayersPayload) =>
@@ -204,9 +208,22 @@ const api = {
     ipcRenderer.on("app:saveAndClose", listener);
     return () => ipcRenderer.removeListener("app:saveAndClose", listener);
   },
+  onPrepareCloseRequested: (callback: (request: { requestId: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, request: { requestId: string }) => callback(request);
+    ipcRenderer.on("app:prepareClose", listener);
+    return () => ipcRenderer.removeListener("app:prepareClose", listener);
+  },
+  onCloseCancelled: (callback: (request: { reason: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, request: { reason: string }) => callback(request);
+    ipcRenderer.on("app:closeCancelled", listener);
+    return () => ipcRenderer.removeListener("app:closeCancelled", listener);
+  },
+  readReadonlyRecovery: (folderPath: string) => ipcRenderer.invoke("recovery:readReadonly", folderPath) as Promise<{ state: 'protectedReadable'; revision: string; projectRaw: unknown; effectFacts: unknown; assets: { role: string; dataUrl: string }[] }>,
+  finishCloseCapture: (payload: { requestId: string; captureAvailable: boolean; recoveryRequired: boolean; busy: boolean; hasUnsavedChanges: boolean; capture?: unknown }) =>
+    ipcRenderer.invoke("app:finishCloseCapture", payload) as Promise<void>,
   finishSaveAndClose: (payload: { requestId: string; saved: boolean }) =>
     ipcRenderer.invoke("app:finishSaveAndClose", payload) as Promise<void>,
-  updateCloseGuard: async (payload: { hasUnsavedChanges: boolean }) => {
+  updateCloseGuard: async (payload: { hasUnsavedChanges: boolean; recoveryRequired?: boolean }) => {
     if (ipcRenderer.sendSync("app:updateCloseGuardSync", payload) !== true) throw new Error("Close guard was not acknowledged");
   },
   updateBitmapQueueGuard: (payload: { busy: boolean; hasUnsavedChanges: boolean }) => {

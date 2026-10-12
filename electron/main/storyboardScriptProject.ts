@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, open, readFile, readdir, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, open, readFile, readdir, rename, rmdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdirObserved as mkdir } from './workspaceInitialization.js';
 import { recoverFailedImport } from "./importRecovery.js";
 
 import path from "node:path";

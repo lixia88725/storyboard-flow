@@ -1,5 +1,6 @@
 import path from "node:path";
 import { FileReplacementRecoveryIncompleteError } from "./fileRenames.js";
+import { hasUnresolvedProtectedWrite } from "./protectedLayerFileWriter.js";
 
 export const visiblePendingFolderName = "Pending";
 
@@ -31,10 +32,10 @@ type ReversibleFileOperation = {
 export class PendingRecoveryIncompleteError extends AggregateError {
   readonly recoveryIncomplete = true;
 
-  constructor(error: unknown, rollbackError: unknown) {
+  constructor(error: unknown, rollbackError: unknown, readonly publicationOrCleanupStarted = false) {
     super(
-      [error, rollbackError],
-      `Pending operation failed: ${error instanceof Error ? error.message : String(error)}; rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}; recovery incomplete. Retained files and journal require recovery before dependent restoration.`
+      publicationOrCleanupStarted ? [error] : [error, rollbackError],
+      `Pending operation failed: ${error instanceof Error ? error.message : String(error)}; ${publicationOrCleanupStarted ? "automatic rollback stopped" : "rollback failed"}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}; recovery incomplete. Retained files and journal require recovery before dependent restoration.`
     );
     this.name = "PendingRecoveryIncompleteError";
   }
@@ -46,14 +47,14 @@ const recoverFailedPendingOperation = async (
   operations: Array<ReversibleFileOperation | undefined>
 ): Promise<never> => {
   if (commitStarted) {
-    throw new AggregateError(
-      [error],
-      `${error instanceof Error ? error.message : String(error)}; Pending commit has started. Persisted file locations and remaining recovery artifacts are retained; automatic rollback was not attempted. Recovery is required before retrying.`
-    );
+    throw new PendingRecoveryIncompleteError(error, new Error(
+      "Pending commit has started or metadata publication is uncertain. Persisted file locations and remaining recovery artifacts are retained; automatic rollback was not attempted. Recovery is required before retrying."
+    ), true);
   }
   // An apply failure may return no handle while leaving replacements occupied.
   if (
     error instanceof FileReplacementRecoveryIncompleteError ||
+    hasUnresolvedProtectedWrite(error) ||
     error instanceof PendingRecoveryIncompleteError
   ) throw error;
   try {
@@ -77,7 +78,7 @@ type PendingShotFilesOptions<Project extends PendingProject> = {
     moves: PendingFileMove[]
   ) => Promise<ReversibleFileOperation>;
   beginTransaction?: (moves: PendingFileMove[]) => Promise<ReversibleFileOperation>;
-  finalize?: (files: PendingShotFile[]) => Promise<void>;
+  finalize?: (files: PendingShotFile[], onPublicationStarted: () => void) => Promise<void>;
   uniquePath: (directory: string, fileName: string) => Promise<string>;
 };
 
@@ -137,7 +138,7 @@ export const moveShotsToVisiblePending = async <Project extends PendingProject>(
         baseFingerprint: await options.fingerprint(target.imagePath)
       }))
     );
-    await options.finalize?.(completed);
+    await options.finalize?.(completed, () => { commitStarted = true; });
     // Cleanup may already have deleted a backup when it rejects. Keep the
     // persisted locations and journal; never enter the reversible catch chain.
     commitStarted = true;
@@ -189,7 +190,7 @@ export const restoreShotsFromVisiblePending = async <Project extends PendingProj
         baseFingerprint: await options.fingerprint(target.imagePath)
       }))
     );
-    await options.finalize?.(completed);
+    await options.finalize?.(completed, () => { commitStarted = true; });
     commitStarted = true;
     await transaction?.commit?.();
     return completed;

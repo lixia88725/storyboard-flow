@@ -180,6 +180,9 @@ export type { NormalSaveOutputAck } from "../../electron/normalSaveTransport";
 export type SaveWorkspacePayload = WorkspacePayload & import("../../electron/normalSaveTransport").NormalSaveTransport & { renamePlan?: RenamePlanItem[] };
 
 export type WorkspacePayload = {
+  recoveryContent?: unknown;
+  ordinaryPersistenceNonce?: string;
+  recoverySaveNonce?: string;
   normalSaveScriptInput?: string;
   normalSaveScriptExpectedInput?: string | null;
   normalSave?: boolean;
@@ -193,7 +196,10 @@ export type WorkspacePayload = {
 
 export type ImportSwbFormatPayload = WorkspacePayload & import("../../electron/normalSaveTransport").NormalSaveTransport;
 
+export type RecoveryHistoryEntry = { project: Project; selectedShotIds: string[]; fileNameSyncState: 'synced' | 'unsynced'; layerAssets?: { bitmapPath: string; dataUrl?: string }[] };
 export type FolderScanPayload = import("../../electron/normalSaveTransport").NormalSaveTransport & {
+  // Inert private stacks returned only by Main's native-certified cold reader.
+  recoveryHistory?: { undo: RecoveryHistoryEntry[]; redo: RecoveryHistoryEntry[] };
   folderPath: string;
   folderName: string;
   metadataPath: string;

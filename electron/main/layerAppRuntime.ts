@@ -1,4 +1,16 @@
 import type { LayerIpcHandlers } from "./ipc/layerHandlers.js";
+import { withLayerFileOperation, layerFileOperationCommitted } from "./layerFileOperationQueue.js";
+
+const runLayerOperation = <T>(operation: () => Promise<T>): Promise<T> => withLayerFileOperation(async () => {
+  try { return await operation(); }
+  catch (error) {
+    if (layerFileOperationCommitted()) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`[PNG_COMMITTED] Layer files changed before this operation failed: ${message}`, { cause: error });
+    }
+    throw error;
+  }
+});
 import { cleanupMergedLayerSources, type MergeCleanupPayload } from "./mergeSourceCleanup.js";
 import {
   createLayerPng,
@@ -35,19 +47,19 @@ export const createLayerAppHandlers = ({
   readLayerPng: readLayerPngDependency = readLayerPng,
   writeLayerPng: writeLayerPngDependency = writeLayerPng
 }: LayerAppRuntimeOptions = {}): LayerIpcHandlers => ({
-  cleanupMergeSources: payload => cleanupMergedLayerSources(payload as MergeCleanupPayload),
-  createPng: (payload) => createLayerPngDependency(payload as CreateLayerAssetPayload),
-  writePng: (payload) => writeLayerPngDependency(payload as WriteLayerAssetPayload),
-  readPng: (payload) => readLayerPngDependency(payload as LayerAssetPayload),
-  deletePng: (payload) => deleteLayerPngDependency(payload as LayerAssetPayload),
-  copyPng: (payload) => copyLayerPngDependency(payload as CopyLayerPngPayload),
-  mergeDown: (payload) => mergeLayerDownDependency(payload as MergeLayerDownPayload),
+  cleanupMergeSources: payload => runLayerOperation(() => cleanupMergedLayerSources(payload as MergeCleanupPayload)),
+  createPng: (payload) => runLayerOperation(() => createLayerPngDependency(payload as CreateLayerAssetPayload)),
+  writePng: (payload) => runLayerOperation(() => writeLayerPngDependency(payload as WriteLayerAssetPayload)),
+  readPng: (payload) => runLayerOperation(() => readLayerPngDependency(payload as LayerAssetPayload)),
+  deletePng: (payload) => runLayerOperation(() => deleteLayerPngDependency(payload as LayerAssetPayload)),
+  copyPng: (payload) => runLayerOperation(() => copyLayerPngDependency(payload as CopyLayerPngPayload)),
+  mergeDown: (payload) => runLayerOperation(() => mergeLayerDownDependency(payload as MergeLayerDownPayload)),
   // A new-target IPC merge can be rejected after ACK by a P2 dependency
   // conflict. Retain its inputs for Undo/inspection. Existing in-place selected
   // merges and the low-level explicit deletion/drain primitive stay unchanged.
-  mergeVisible: (payload) => {
+  mergeVisible: (payload) => runLayerOperation(async () => {
     const merge = payload as MergeVisibleLayersPayload;
     const inPlace = merge.layers?.some(layer => layer.bitmapPath === merge.targetBitmapPath);
     return mergeVisibleLayersDependency(inPlace ? merge : { ...merge, deleteBitmapPaths: [] });
-  }
+  })
 });

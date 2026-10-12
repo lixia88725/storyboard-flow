@@ -7,7 +7,7 @@
 // the renderer consumer decodes it locally, after the last serialization boundary.
 export const importRecoveryIncompleteCode = "IMPORT_RECOVERY_INCOMPLETE";
 
-export type NormalSaveImportFailure = { code: string; message: string };
+export type NormalSaveImportFailure = { code: string; message: string; retainedPaths?: string[] };
 
 export type NormalSaveImportIpcResult<T> =
   | { ok: true; result: T }
@@ -18,18 +18,21 @@ export type NormalSaveImportIpcResult<T> =
 export class NormalSaveImportIpcError extends Error {
   readonly code: string;
   readonly recoveryIncomplete: boolean;
+  readonly retainedPaths: string[];
 
   constructor(failure: NormalSaveImportFailure) {
     super(failure.message);
     this.name = "NormalSaveImportIpcError";
     this.code = failure.code;
     this.recoveryIncomplete = failure.code === importRecoveryIncompleteCode;
+    this.retainedPaths = [...(failure.retainedPaths ?? [])];
   }
 }
 
-export const normalSaveImportFailure = (error: { message?: string }): NormalSaveImportIpcResult<never> => ({
+export const normalSaveImportFailure = (error: { message?: string }, retainedPaths: string[] = []): NormalSaveImportIpcResult<never> => ({
   ok: false,
-  error: { code: importRecoveryIncompleteCode, message: error.message ?? "Import recovery incomplete" }
+  error: { code: importRecoveryIncompleteCode, message: error.message ?? "Import recovery incomplete",
+    ...(retainedPaths.length ? { retainedPaths: [...new Set(retainedPaths)] } : {}) }
 });
 
 // Decodes the actual return envelope from the real main handler. A bare legacy payload (no

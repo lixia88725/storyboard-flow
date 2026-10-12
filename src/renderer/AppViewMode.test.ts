@@ -41,8 +41,10 @@ describe("App view mode rendering", () => {
     // Canonical owner/adapter tests prove settlement and ACK, not these
     // source anchors; this check only protects their App composition.
     expect(appSource).toContain("queue: bitmapLayerWriteQueueRef.current");
-    expect(appSource).toContain("normalSaveAppAdapterRef.current!.autosave(projectToSave)");
-    expect(appSource).toContain("await normalSaveAppAdapterRef.current!.save()");
+    // The render-captured slot wins over the mutable active-view fallback.
+    // normalSaveMainChain and normalSaveAppAdapter execute these actual callers.
+    expect(appSource).toContain("(renderAdapter ?? normalSaveAppAdapterRef.current!).autosave(projectToSave)");
+    expect(appSource).toContain("await (renderAdapter ?? normalSaveAppAdapterRef.current!).save()");
     expect(appSource).toContain(
       "if (workspaceRecoveryRequiredRef.current) {"
     );

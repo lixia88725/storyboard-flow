@@ -8,7 +8,8 @@ import {
   shell,
   type WebContents
 } from "electron";
-import { copyFile, mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { copyFile, link, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdirObserved as mkdir } from './workspaceInitialization.js';
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { automaticImageImportAdmission, manualImageImportAdmission } from "../shared/manualImageImportRules.js";
@@ -18,20 +19,26 @@ import {
   applyFileMoves,
   applyFileRenamePlan,
   applyFileReplacements,
+  applyFileCreateOnlyMoves,
   atomicWriteTextFile,
   type AppliedFileMoves,
   type AppliedFileRenamePlan,
   type AppliedFileReplacements
 } from "./fileRenames.js";
 import { recoverFailedSave } from "./saveRecovery.js";
+import { workspaceEffectFailure } from "./workspaceEffectFailure.js";
 import { recoverFailedImport, ImportRecoveryIncompleteError } from "./importRecovery.js";
-import { normalSaveImportFailure } from "../shared/normalSaveImportIpc.js";
+import { normalSaveImportFailure } from "./normalSaveImportFailure.js";
 import { createImportPathReservation } from "./importPaths.js";
+import { prepareImportStaging } from "./importPreparation.js";
 import {
   flattenBitmapLayerBuffersToTiff,
   shouldEnsureLayerAssetsForShot,
   type BitmapLayerComposite
 } from "./bitmapLayers.js";
+import { writeProtectedLayerFile } from "./protectedLayerFileWriter.js";
+import { prepareProtectedLayerReplacement } from "./protectedLayerReplacementPreparation.js";
+import { withLayerFileOperation } from "./layerFileOperationQueue.js";
 import { bitmapLayersForShot } from "./bitmapLayerOrdering.js";
 import { readTrustedLegacyOutputIdentity } from "./trustedLegacyOutputIdentity.js";
 import {
@@ -39,6 +46,14 @@ import {
   writePhotoshopLayeredTiffsForInPlaceSave
 } from "./photoshopTiffExport.js";
 import { withSuccessfulSaveArtifactCleanup } from "./saveArtifacts.js";
+import {
+  createSavePreparationDirectory,
+  removeSavePreparationDirectory,
+  hasIncompleteTiffPreparationEffect,
+  retainedTiffPreparationPaths,
+  TiffPreparationRecoveryIncompleteError,
+  type SavePreparationDirectoryReceipt
+} from "./tiffPreparation.js";
 import {
   buildPhotoshopTiffImportAssetPlan,
   compatibleExternalEditImportMode,
@@ -53,13 +68,13 @@ import {
 } from "./photoshopTiffImport.js";
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
 import { previewRootForFolder } from "./previewPaths.js";
-import { createPreview } from "./previewService.js";
+import { createPreview, type PreviewReceipt } from "./previewService.js";
 import { initializeNormalOpenPreviews } from "./normalOpenPreviewService.js";
 import {
   createRecentFoldersAppHandlers,
   createRecentFoldersAppRuntime
 } from "./recentFoldersAppRuntime.js";
-import { assertPathInsideFolder, ensureDirectory, pathExists } from "./pathSafety.js";
+import { assertPathInsideFolder, ensureDirectory, pathEntryExists, pathExists } from "./pathSafety.js";
 import { cleanupDeletedShotLayerDirectories } from "./deletedShotLayers.js";
 import {
   stagePendingDeletedShotFiles,
@@ -87,9 +102,11 @@ import {
 } from "./appWindowService.js";
 import { isWorkspaceTemporaryImagePath } from "./workspaceTemporaryPaths.js";
 import { createImageRecords as createImportedImageRecords } from "./imageRecordsService.js";
+import { mapWithConcurrency } from "./mapWithConcurrency.js";
 import { changedKnownImagePaths as findChangedKnownImagePaths } from "./knownImageChangesService.js";
 import { readProjectMetadata } from "./projectMetadataService.js";
 import { createBlankShot, type BlankShotPreset } from "./blankShotService.js";
+import { removeOwnedFile, type OwnedFileReceipt } from "./ownedFileCreation.js";
 import { createWorkspaceFolderWatchService } from "./workspaceFolderWatchService.js";
 import {
   createWorkspaceTaskProgressReporter,
@@ -98,6 +115,10 @@ import {
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
 import { createAppAppHandlers } from "./appAppRuntime.js";
+import { createRecoveryCloseBarrier } from "./recoveryCloseBarrier.js";
+import { createWorkspaceRetainedCloseService } from "./workspaceRetainedCloseService.js";
+import { createPreparedWorkspaceSave } from "./preparedWorkspaceSave.js";
+import { createWorkspacePhysicalWriterGate, assertPhysicalWorkspaceWriterTargets } from "./workspacePhysicalWriterGate.js";
 import { createImageAppHandlers } from "./imageAppRuntime.js";
 import { createLayerAppHandlers } from "./layerAppRuntime.js";
 import { createSettingsAppHandlers } from "./settingsAppRuntime.js";
@@ -326,13 +347,38 @@ type SwbImportResult = {
   importedShotIds: string[];
   tiffWriteShotIds: string[];
   rollback: () => Promise<void>;
+  commit?: () => Promise<void>;
 };
 
 type StoryboardScriptImportResult = {
   project: Project;
   rollback: () => Promise<void>;
+  rollbackPreviews?: () => Promise<void>;
+  rollbackCreatedFiles?: () => Promise<void>;
+  commit?: () => Promise<void>;
 };
 
+// Explicit finite configuration only. No test constants or unlimited production default.
+const retainedCloseService = createWorkspaceRetainedCloseService({
+  budget: process.env.SWB_RECOVERY_LIMITS ? JSON.parse(process.env.SWB_RECOVERY_LIMITS) : undefined,
+  python: process.env.SWB_PYTHON_PATH || "python3",
+  script: path.join(app.getAppPath(), "scripts/recovery-content-permissions.py")
+});
+const preparedSave = createPreparedWorkspaceSave({
+  ownerFromSender: sender => BrowserWindow.fromWebContents(sender) ?? undefined,
+  budget: process.env.SWB_RECOVERY_LIMITS ? JSON.parse(process.env.SWB_RECOVERY_LIMITS) : undefined,
+  python: process.env.SWB_PYTHON_PATH || "python3",
+  script: path.join(app.getAppPath(), "scripts/recovery-content-permissions.py")
+});
+const recoveryCloseBarrier = createRecoveryCloseBarrier({
+  // Only the explicitly prepared finite Save domain can certify this close.
+  // Unsupported producer inventories stay protected in RAM; no writer unlock.
+  certifyRetained: preparedSave.certifyRetained,
+  certifyRetainedSet: preparedSave.certifyRetainedSet,
+  requestId: randomUUID,
+  showMessageBox: (owner, options) => dialog.showMessageBox(owner as BrowserWindow, options),
+  cancelled: (owner, reason) => owner.webContents.send("app:closeCancelled", { reason })
+});
 const saveAndCloseRequests = new Map<string, BrowserWindow>();
 const closeGuardWebContentsIds = new Set<number>();
 const workspaceFolderWatchService = createWorkspaceFolderWatchService();
@@ -361,10 +407,15 @@ const createWindow = async () => {
   attachStoryboardWindowHandlers(mainWindow, {
     closeGuardWebContentsIds,
     createRequestId: randomUUID,
+    closeProtection: recoveryCloseBarrier,
     saveAndCloseRequests,
     showMessageBoxSync: (owner, options) => dialog.showMessageBoxSync(owner, options)
   });
 
+  const closingWindow = mainWindow;
+  closingWindow.webContents.on("did-start-navigation", (_event, _url, _inPlace, isMainFrame) => {
+    if (isMainFrame) { recoveryCloseBarrier.invalidateDocument(closingWindow); preparedSave.invalidateDocument(closingWindow.webContents); }
+  });
   await loadStoryboardWindowEntry(mainWindow, {
     appPath: app.getAppPath(),
     devServerUrl: process.env.VITE_DEV_SERVER_URL
@@ -398,7 +449,16 @@ app.on("window-all-closed", () => {
   }
 });
 
+const physicalWriterIpcMain = createWorkspacePhysicalWriterGate(ipcMain, { save: preparedSave.runIpc, persist: preparedSave.persist, ordinary: preparedSave.ordinary });
 const registerIpcHandlers = () => {
+  const ipcMain = physicalWriterIpcMain;
+  ipcMain.handle("recovery:readReadonly", (event, folderPath: string) => {
+    if (event.senderFrame !== event.sender.mainFrame) throw new Error("Recovery read requires current top frame");
+    return preparedSave.readReadonly(folderPath);
+  });
+  ipcMain.handle("recovery:ackSave", (event, payload) => preparedSave.acknowledge(event, payload));
+  ipcMain.handle("recovery:observeWorkspace", (event, folderPath) => preparedSave.observeWorkspace(event, folderPath));
+  ipcMain.handle("recovery:certifyHandoff", (event, capture) => preparedSave.certifyHandoff(event, capture));
   registerWorkspaceOpenIpcHandlers(
     ipcMain,
     createWorkspaceOpenAppHandlers({
@@ -413,6 +473,7 @@ const registerIpcHandlers = () => {
   const appHandlers = createAppAppHandlers({
       arch: process.arch,
       closeGuardWebContentsIds,
+      recoveryCloseBarrier,
       getVersion: () => app.getVersion(),
       openExternal: shell.openExternal,
       ownerFromSender: (sender: WebContents) => BrowserWindow.fromWebContents(sender) ?? undefined,
@@ -472,7 +533,8 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("workspace:save", async (event, payload: ProjectPayload) => {
-    return saveWorkspace(payload, createWorkspaceTaskProgressReporter(event.sender, "save"));
+    try { return await saveWorkspace(payload, createWorkspaceTaskProgressReporter(event.sender, "save")); }
+    catch (error) { return workspaceEffectFailure(error, "save"); }
   });
 
   ipcMain.handle("workspace:exportPhotoshopTiffs", async (_event, payload: ProjectPayload) => {
@@ -488,7 +550,7 @@ const registerIpcHandlers = () => {
     });
   });
 
-  ipcMain.handle("workspace:importSwbFormat", async (event, payload: ProjectPayload) => {
+  ipcMain.handle("workspace:importSwbFormat", async (event, payload: ProjectPayload) => withLayerFileOperation(async () => {
     const normalSaveImageOperation = payload.normalSaveImageImport || payload.normalSaveAutoImageImport;
     // Script text Import under normal Save: main may only materialize genuinely new blank
     // assets and return the parsed Project. The renderer owner is the sole writer of the final
@@ -528,6 +590,15 @@ const registerIpcHandlers = () => {
     let scriptImport: StoryboardScriptImportResult | undefined;
     let swbImport: SwbImportResult | undefined;
     let appliedTiffReplacements: AppliedFileReplacements | undefined;
+    const previewReceipts: PreviewReceipt[] = [];
+    let metadataPublicationStarted = false, irreversibleCommitStarted = false;
+    const commitImport = async () => {
+      irreversibleCommitStarted = true;
+      for (const preview of previewReceipts) await preview.commit();
+      await appliedTiffReplacements?.commit();
+      await swbImport?.commit?.();
+      await scriptImport?.commit?.();
+    };
     try {
       const imageImportNeeded = projectNeedsSwbImport(payload.project);
       scriptImport = normalSaveImageOperation ? { project: payload.project, rollback: async () => undefined } : await importStoryboardScriptMarkdown(
@@ -542,7 +613,9 @@ const registerIpcHandlers = () => {
         if (normalSaveImageOperation) throw new Error("Image Import has no actual image work");
         if (!normalSaveScriptOperation) {
           // Legacy direct script Import is unchanged: main writes JSON/MD and the App rescans.
+          metadataPublicationStarted = true;
           await writeProjectFiles(payload.metadataPath, payload.folderPath, scriptImport.project);
+          await commitImport();
           return {
             folderPath: payload.folderPath,
             folderName: path.basename(payload.folderPath),
@@ -560,33 +633,29 @@ const registerIpcHandlers = () => {
         const capturedIds = new Set([...payload.project.shots, ...(payload.project.parkedShots ?? [])].map(shot => shot.id));
         const newIds = scriptImport.project.shots.filter(shot => !capturedIds.has(shot.id)).map(shot => shot.id);
         if (newIds.length) {
-          // The internal PNGs this operation may create are owned by its own rollback. Planned
-          // layer paths are NOT all owned assets: only the paths that did not already exist are
-          // this operation's creation and may be removed; a pre-existing layer is never deleted.
-          const plannedLayerPaths = newIds.flatMap(id => {
-            const shot = scriptImport!.project.shots.find(candidate => candidate.id === id);
-            return (shot?.layers ?? []).map(layer => resolveLayerAssetPath(payload.folderPath, layer.bitmapPath));
-          });
-          const preexistingLayerPaths = new Set<string>();
-          for (const layerPath of plannedLayerPaths) if (await pathExists(layerPath)) preexistingLayerPaths.add(layerPath);
-          const ownedLayerPaths = plannedLayerPaths.filter(layerPath => !preexistingLayerPaths.has(layerPath));
+          // Cleanup authority comes from actual native create-only receipts,
+          // never from a planned name or a stat-based absence observation.
+          const ownedLayerFiles: OwnedFileReceipt[] = [];
           const previousRollback = scriptImport.rollback;
+          const rollbackPreviews = scriptImport.rollbackPreviews;
+          const rollbackCreatedFiles = scriptImport.rollbackCreatedFiles;
           scriptImport = { ...scriptImport, rollback: async () => {
+            await rollbackPreviews?.();
             // ENOENT is success (the file was never created or was already removed). Any other
             // failure is a real recovery error: do NOT swallow it, and do NOT continue to the
             // dependent TIFF/preview rollback as if cleanup had succeeded. Throwing here makes
             // recoverFailedImport surface the original error + this recovery error.
-            const results = await Promise.allSettled(ownedLayerPaths.map(layerPath =>
-              unlink(layerPath).catch((error: NodeJS.ErrnoException) => {
-                if (error.code !== "ENOENT") throw error;
-              })));
+            const results = await Promise.allSettled(ownedLayerFiles.map(receipt => removeOwnedFile(receipt)));
             const failed = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
             if (failed.length) throw new AggregateError(failed.map(result => result.reason),
               "Script Import internal layer rollback failed; dependent TIFF/preview recovery stopped");
-            await previousRollback();
+            await (rollbackCreatedFiles ?? previousRollback)();
           } };
-          await ensureProjectLayerAssets(scriptImport.project, payload.folderPath, { shotIds: new Set(newIds) });
+          await ensureProjectLayerAssets(scriptImport.project, payload.folderPath, {
+            shotIds: new Set(newIds), onCreated: receipt => { ownedLayerFiles.push(receipt); }
+          });
         }
+        await commitImport();
         return {
           folderPath: payload.folderPath,
           folderName: path.basename(payload.folderPath),
@@ -617,14 +686,17 @@ const registerIpcHandlers = () => {
       const importedProject = await createProjectPreviewsForShots(
         swbImport.project,
         payload.folderPath,
-        new Set(swbImport.importedShotIds)
+        new Set(swbImport.importedShotIds), receipt => { previewReceipts.push(receipt); }
       );
       const normalSaveImportEffects = normalSaveImageOperation ? await Promise.all((swbImport.normalSaveImportEffects ?? []).map(async e => ({
         ...e, outputHash: createHash("sha256").update(await readFile(e.targetPath)).digest("hex")
       }))) : undefined;
       // Owner persists latest metadata + H0 after matte; main does not install captured P.
-      if (!normalSaveImageOperation) await writeProjectFiles(payload.metadataPath, payload.folderPath, importedProject);
-      await appliedTiffReplacements?.commit();
+      if (!normalSaveImageOperation) {
+        metadataPublicationStarted = true;
+        await writeProjectFiles(payload.metadataPath, payload.folderPath, importedProject);
+      }
+      await commitImport();
       return {
         folderPath: payload.folderPath,
         folderName: path.basename(payload.folderPath),
@@ -639,12 +711,19 @@ const registerIpcHandlers = () => {
         preserveProjectWithoutImageMerge: true
       } satisfies FolderScanPayload;
     } catch (error) {
+      if (metadataPublicationStarted || irreversibleCommitStarted) {
+        return normalSaveImportFailure(new ImportRecoveryIncompleteError([error,
+          new Error("Import metadata publication or backup cleanup began; current assets and remaining backups retained, automatic rollback stopped")
+        ]));
+      }
       // A recovery-incomplete Import is a business fact that must cross IPC as a RETURNED
       // serializable discriminant (a thrown custom Error loses its properties/name across the
       // Electron boundary). recoverFailedImport either rethrows the original error or an
       // ImportRecoveryIncompleteError; only the latter becomes the envelope.
       try {
-        await recoverFailedImport(error, [appliedTiffReplacements, swbImport, scriptImport]);
+        await recoverFailedImport(error, [{ rollback: async () => {
+          for (const preview of [...previewReceipts].reverse()) await preview.rollback();
+        } }, appliedTiffReplacements, swbImport, scriptImport]);
         throw error;
       } catch (recoveryError) {
         if (recoveryError instanceof ImportRecoveryIncompleteError) {
@@ -653,7 +732,7 @@ const registerIpcHandlers = () => {
         throw recoveryError;
       }
     }
-  });
+  }));
 
   registerWorkspaceExternalChangesIpcHandlers(
     ipcMain,
@@ -714,7 +793,7 @@ const registerIpcHandlers = () => {
 const saveWorkspace = async (
   payload: ProjectPayload,
   onProgress?: WorkspaceTaskProgressReporter
-): Promise<ProjectPayload> => {
+): Promise<ProjectPayload> => withLayerFileOperation(async () => {
   let appliedRenamePlan: AppliedFileRenamePlan | undefined;
   let stagedPendingDeletedFiles: AppliedFileMoves | undefined;
   let swbImport: SwbImportResult | undefined;
@@ -722,6 +801,7 @@ const saveWorkspace = async (
   let savedProject: Project | undefined;
   let outputAcks: NonNullable<ProjectPayload["normalSaveOutputs"]> = [];
   let projectToSave = payload.project;
+  let publicationOrCleanupStarted = false;
   let savedShots = 0;
   let totalShots = payload.project.shots.length;
   const reportShotSaved = () => {
@@ -770,16 +850,13 @@ const saveWorkspace = async (
       saveShotIds
     );
     if (payload.normalSave) outputAcks = await normalSaveOutputAcks(payload, savedProject, saveShotIds);
+    publicationOrCleanupStarted = true;
     await writeProjectFiles(payload.metadataPath, payload.folderPath, savedProject);
     await appliedTiffReplacements?.commit();
-  } catch (error) {
-    return recoverFailedSave(error, {
-      appliedTiffReplacements,
-      swbImport,
-      appliedRenamePlan,
-      stagedPendingDeletedFiles
-    });
-  }
+    await swbImport.commit?.();
+
+  // Publication has begun: the remaining tail must retain installed assets
+  // and report typed incomplete facts rather than ordinary IPC rejection.
 
   if (!savedProject) {
     throw new Error("Save did not produce a project");
@@ -815,7 +892,16 @@ const saveWorkspace = async (
     return { ...payload, project: trashResult.project, normalSaveOutputs: outputAcks, normalSaveDeletions };
   }
   return { ...payload, project: trashResult.project };
-};
+  } catch (error) {
+    return recoverFailedSave(error, {
+      publicationOrCleanupStarted,
+      appliedTiffReplacements,
+      swbImport,
+      appliedRenamePlan,
+      stagedPendingDeletedFiles
+    });
+  }
+});
 
 const assertManualImageImportAdmission = async (payload: ProjectPayload) => {
   const admitted = manualImageImportAdmission(payload.project);
@@ -926,7 +1012,7 @@ const assertRenamePlanSafe = async (renamePlan: RenamePlanItem[]): Promise<void>
 const ensureProjectLayerAssets = async (
   project: Project,
   folderPath: string,
-  options: { includeExternalShots?: boolean; shotIds?: Set<string> } = {}
+  options: { includeExternalShots?: boolean; shotIds?: Set<string>; onCreated?: (receipt: OwnedFileReceipt) => void } = {}
 ): Promise<void> => {
   for (const shot of project.shots) {
     if (options.shotIds && !options.shotIds.has(shot.id)) {
@@ -943,20 +1029,18 @@ const ensureProjectLayerAssets = async (
         continue;
       }
 
-      await mkdir(path.dirname(filePath), { recursive: true });
-
       if (layer.kind === "image" && !layer.cleared) {
-        await createImageBitmapLayerPng(shot, filePath, layer.width, layer.height);
+        await createImageBitmapLayerPng(shot, filePath, layer.width, layer.height, folderPath, options.onCreated);
         continue;
       }
 
       const legacySketchLayer = sketchLayersForShot(shot).find((item) => item.id === layer.id);
       if (legacySketchLayer && legacySketchLayer.strokes.length > 0) {
-        await createPaintBitmapLayerPng(filePath, layer.width, layer.height, legacySketchLayer.strokes);
+        await createPaintBitmapLayerPng(filePath, layer.width, layer.height, legacySketchLayer.strokes, folderPath, options.onCreated);
         continue;
       }
 
-      await createTransparentLayerPng(filePath, layer.width, layer.height);
+      await createTransparentLayerPng(filePath, layer.width, layer.height, folderPath, options.onCreated);
     }
   }
 };
@@ -965,7 +1049,9 @@ const createImageBitmapLayerPng = async (
   shot: Project["shots"][number],
   filePath: string,
   width: number,
-  height: number
+  height: number,
+  folderPath: string,
+  onCreated?: (receipt: OwnedFileReceipt) => void
 ): Promise<void> => {
   let composited =
     shot.baseVisible === false
@@ -1012,14 +1098,16 @@ const createImageBitmapLayerPng = async (
     composited = composited.composite([{ input: overlay, blend: "over" }]);
   }
 
-  await composited.png().toFile(filePath);
+  await writeProtectedLayerFile(folderPath, filePath, await composited.png().toBuffer(), "create-only", onCreated);
 };
 
 const createPaintBitmapLayerPng = async (
   filePath: string,
   width: number,
   height: number,
-  strokes: NonNullable<Project["shots"][number]["sketchLayers"]>[number]["strokes"]
+  strokes: NonNullable<Project["shots"][number]["sketchLayers"]>[number]["strokes"],
+  folderPath: string,
+  onCreated?: (receipt: OwnedFileReceipt) => void
 ): Promise<void> => {
   let layerBuffer = await transparentLayerBuffer(width, height);
 
@@ -1039,7 +1127,7 @@ const createPaintBitmapLayerPng = async (
       .toBuffer();
   }
 
-  await writeFile(filePath, layerBuffer);
+  await writeProtectedLayerFile(folderPath, filePath, layerBuffer, "create-only", onCreated);
 };
 
 const transparentLayerBuffer = async (width: number, height: number): Promise<Buffer> => {
@@ -1058,9 +1146,11 @@ const transparentLayerBuffer = async (width: number, height: number): Promise<Bu
 const createTransparentLayerPng = async (
   filePath: string,
   width: number,
-  height: number
+  height: number,
+  folderPath: string,
+  onCreated?: (receipt: OwnedFileReceipt) => void
 ): Promise<void> => {
-  await sharp({
+  const bytes = await sharp({
     create: {
       width: Math.max(1, Math.round(width)),
       height: Math.max(1, Math.round(height)),
@@ -1069,7 +1159,8 @@ const createTransparentLayerPng = async (
     }
   })
     .png()
-    .toFile(filePath);
+    .toBuffer();
+  await writeProtectedLayerFile(folderPath, filePath, bytes, "create-only", onCreated);
 };
 
 const writeProjectMetadata = async (metadataPath: string, project: Project): Promise<void> => {
@@ -1190,8 +1281,9 @@ const importProjectToSwbFormat = async (
   onProgress?: WorkspaceTaskProgressReporter,
   options: { dirtyShotIds?: Set<string>; preserveDirtyShotLayers?: boolean; normalSaveImageImport?: boolean; normalSaveAutoImageImport?: boolean } = {}
 ): Promise<SwbImportResult> => {
+  return withLayerFileOperation(async () => {
   const archiveRoot = path.join(folderPath, "Archive", archiveStamp());
-  const tempRoot = path.join(folderPath, ".storyboard-workbench", "import-tmp", archiveStamp());
+  const tempRoot = path.join(folderPath, ".storyboard-workbench", "import-tmp", `${archiveStamp()}-${randomUUID()}`);
   const photoshopLayerRoot = path.join(tempRoot, "photoshop-layers");
   const finalLayerRoot = path.join(folderPath, ".storyboard-workbench", "layers");
   const importableShots = [...project.shots, ...(project.parkedShots ?? [])].filter(
@@ -1213,8 +1305,7 @@ const importProjectToSwbFormat = async (
   }
 
   onProgress?.({ kind: "import", current: 0, total: importableShots.length });
-  await mkdir(tempRoot, { recursive: true });
-
+  const prepared = await prepareImportStaging(tempRoot, async () => {
   const reserveImportPath = createImportPathReservation(uniquePath);
   const pathPlans = [];
   // Reserve the whole batch in shot order before concurrent TIFF preparation.
@@ -1244,8 +1335,8 @@ const importProjectToSwbFormat = async (
     pathPlans.push({ shot, compatibleExternalEdit, importMode, preserveDirtyLayers, duplicateExternalEdit, importShotId, targetPath, archivePath });
   }
 
-  const prepared = await Promise.all(
-    pathPlans.map(async ({ shot, compatibleExternalEdit, importMode, preserveDirtyLayers, duplicateExternalEdit, importShotId, targetPath, archivePath }) => {
+  return await mapWithConcurrency(
+    pathPlans, pathPlans.length, async ({ shot, compatibleExternalEdit, importMode, preserveDirtyLayers, duplicateExternalEdit, importShotId, targetPath, archivePath }) => {
       const sourceHash = options.normalSaveImageImport ? createHash("sha256").update(await readFile(shot.imagePath)).digest("hex") : "";
       const tempPath = path.join(tempRoot, `${importShotId}.tiff`);
       let importedLayers: NonNullable<Project["shots"][number]["layers"]> | undefined;
@@ -1323,23 +1414,38 @@ const importProjectToSwbFormat = async (
         importedLayerMoves,
         importWarnings
       };
-    })
+    }
   );
+  });
 
   let archivedOriginals: AppliedFileMoves | undefined;
   let importedTargets: AppliedFileMoves | undefined;
   let importedLayerTargets: AppliedFileMoves | undefined;
   let replacedLayerTargets: AppliedFileReplacements | undefined;
+  let layerCommitStarted = false;
+  // Shared paths have recovery prerequisites: a failed replacement or target
+  // evacuation must stop Archive restoration and every later dependent stage.
   const rollbackImportMoves = async () => {
-    await replacedLayerTargets?.rollback();
-    await importedLayerTargets?.rollback();
-    await importedTargets?.rollback();
-    await archivedOriginals?.rollback();
+    if (layerCommitStarted) throw new ImportRecoveryIncompleteError([
+      new Error(`Import PNG backup cleanup began; retained assets and remaining staging: ${tempRoot}`)
+    ]);
+    for (const applied of [replacedLayerTargets, importedLayerTargets, importedTargets, archivedOriginals]) {
+      await applied?.rollback();
+    }
   };
 
   try {
     if (options.normalSaveImageImport) for (const item of prepared) {
       if (createHash("sha256").update(await readFile(item.shot.imagePath)).digest("hex") !== item.sourceHash) throw new Error("Import source changed during preparation");
+    }
+    // Certify every old PNG before any archive/target move. A later protected
+    // target must not be discovered only after earlier originals were moved.
+    for (const item of prepared) {
+      for (const move of item.importedLayerMoves) {
+        if (item.compatibleExternalEdit && !item.duplicateExternalEdit && await pathEntryExists(move.toPath)) {
+          await prepareProtectedLayerReplacement(folderPath, move.toPath, move.fromPath);
+        }
+      }
     }
     await mkdir(archiveRoot, { recursive: true });
     const moveOps = {
@@ -1362,7 +1468,7 @@ const importProjectToSwbFormat = async (
     const createLayerMoves = [];
     for (const item of prepared) {
       for (const move of item.importedLayerMoves) {
-        if (item.compatibleExternalEdit && !item.duplicateExternalEdit && (await pathExists(move.toPath))) {
+        if (item.compatibleExternalEdit && !item.duplicateExternalEdit && (await pathEntryExists(move.toPath))) {
           replaceLayerMoves.push(move);
         } else {
           createLayerMoves.push(move);
@@ -1381,8 +1487,10 @@ const importProjectToSwbFormat = async (
     }
     const layerMoves = createLayerMoves;
     if (layerMoves.length > 0) {
-      await ensureLayerMoveDestinationsAvailable(layerMoves, pathExists);
-      importedLayerTargets = await applyFileMoves(layerMoves, moveOps);
+      await ensureLayerMoveDestinationsAvailable(layerMoves, pathEntryExists);
+      // Publish new layer assets without replacing any directory entry that
+      // appeared after the availability check; plain rename would clobber it.
+      importedLayerTargets = await applyFileCreateOnlyMoves(layerMoves, { mkdir: ensureDirectory, link, unlink });
     }
   } catch (error) {
     return recoverFailedImport(error, [{ rollback: rollbackImportMoves }]);
@@ -1461,8 +1569,13 @@ const importProjectToSwbFormat = async (
     tiffWriteShotIds: prepared
       .filter((item) => !item.compatibleExternalEdit || item.duplicateExternalEdit)
       .map((item) => item.importShotId),
-    rollback: rollbackImportMoves
+    rollback: () => withLayerFileOperation(rollbackImportMoves),
+    commit: () => withLayerFileOperation(async () => {
+      layerCommitStarted = true;
+      await replacedLayerTargets?.commit();
+    })
   };
+  });
 };
 
 const createGeneratedShotFromImage = (
@@ -1538,21 +1651,23 @@ const importStoryboardScriptMarkdown = async (
 
   const plan = frozenPlan ?? planStoryboardScriptImport(project, parseStoryboardScriptMarkdown(markdown));
   const previewRoot = previewRootForFolder(folderPath);
-  const createdPaths: string[] = [];
+  const createdFiles: OwnedFileReceipt[] = [];
+  const previews: PreviewReceipt[] = [];
   const newShots: Project["shots"] = [];
-  const rollbackCreatedPaths = async () => {
+  const rollbackPreviews = async () => {
+    for (const preview of [...previews].reverse()) await preview.rollback();
+  };
+  const rollbackCreatedFiles = async () => {
     const results = await Promise.allSettled(
-      createdPaths.map((filePath) =>
-        unlink(filePath).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== "ENOENT") {
-            throw error;
-          }
-        })
-      )
+      createdFiles.map(receipt => removeOwnedFile(receipt))
     );
     const failed = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (failed.length) throw new AggregateError(failed.map(result => result.reason),
       `Script Import blank TIFF/preview rollback failed: ${failed.map(result => String(result.reason)).join("; ")}`);
+  };
+  const rollbackCreatedPaths = async () => {
+    await rollbackPreviews();
+    await rollbackCreatedFiles();
   };
 
   try {
@@ -1561,14 +1676,12 @@ const importStoryboardScriptMarkdown = async (
         continue;
       }
 
-      const imagePath = await createBlankShot(folderPath, blankShotPreset);
-      createdPaths.push(imagePath);
-      const [image] = await createImageRecords([imagePath], previewRoot);
+      const imagePath = await createBlankShot(folderPath, blankShotPreset, receipt => { createdFiles.push(receipt); });
+      const [image] = await createImageRecords([imagePath], previewRoot, {
+        onPreviewReceipt: receipt => { previews.push(receipt); }
+      });
       if (!image) {
         throw new Error("Blank storyboard script shot did not produce an image record");
-      }
-      if (image.previewPath) {
-        createdPaths.push(image.previewPath);
       }
       newShots.push(createGeneratedShotFromImage(image, 0, item.scriptText));
     }
@@ -1579,7 +1692,10 @@ const importStoryboardScriptMarkdown = async (
 
   return {
     project: applyStoryboardScriptImportPlan(project, plan, newShots),
-    rollback: rollbackCreatedPaths
+    rollback: rollbackCreatedPaths,
+    rollbackPreviews,
+    rollbackCreatedFiles,
+    commit: async () => { for (const preview of previews) await preview.commit(); }
   };
 };
 
@@ -1604,79 +1720,109 @@ const writeSwbMetadataToTiffs = async (
   onShotWritten?: () => void,
   options: { shotIds?: Set<string>; beforeInstall?: () => Promise<void> } = {}
 ): Promise<AppliedFileReplacements | undefined> => {
-  await ensureProjectLayerAssets(project, folderPath, { shotIds: options.shotIds });
-  const shouldProcessShot = (shot: Project["shots"][number]) =>
-    !options.shotIds || options.shotIds.has(shot.id);
-  const layeredShotIds = new Set(
-    project.shots
-      .filter((shot) => shouldProcessShot(shot) && shouldWritePhotoshopLayeredTiffOnSave(shot))
-      .map((shot) => shot.id)
-  );
-
-  // One unique operation directory owns all preparation and recovery artifacts.
-  // Layer count changes the encoder, never the installation guarantee.
-  const saveStamp = `${archiveStamp()}-${randomUUID()}`;
-  const tempFolderPath = path.join(folderPath, ".storyboard-workbench", "save-tmp", saveStamp);
-  // Layered outputs retain legal .tiff filenames at the operation root.
-  // This internal directory has no TIFF extension and cannot be such an output.
-  const ordinaryFolderPath = path.join(tempFolderPath, ".ordinary");
-  const backupFolderPath = path.join(tempFolderPath, ".backups");
-  const replacements: Array<{ fromPath: string; toPath: string }> = [];
-  await mkdir(ordinaryFolderPath, { recursive: true });
-
-  for (const shot of project.shots) {
-    if (!shouldProcessShot(shot)) {
-      continue;
-    }
-
-    if (!shouldWriteSwbMetadata(shot)) {
-      onShotWritten?.();
-      continue;
-    }
-
-    if (layeredShotIds.has(shot.id)) {
-      continue;
-    }
-
-    const bakedPath = await bakeShotToWorkingTiff(shot, folderPath, path.join(ordinaryFolderPath, `${shot.id}-bake.tiff`));
-    const imagePath = bakedPath ?? shot.imagePath;
-    const metadata = await sharp(imagePath, sharpSourceOptions).metadata();
-    const fingerprint = await pixelFingerprint(imagePath);
-    const canvasWidth = shot.swb?.canvasWidth || metadata.width || 0;
-    const canvasHeight = shot.swb?.canvasHeight || metadata.height || 0;
-    const swbMetadata = swbMetadataForShot(project.id, shot, canvasWidth, canvasHeight, fingerprint);
-
-    const tempPath = path.join(ordinaryFolderPath, `${shot.id}-metadata.tiff`);
-    await sharp(imagePath, sharpSourceOptions).withXmp(swbMetadataXmp(swbMetadata)).tiff({ compression: "none" }).toFile(tempPath);
-    replacements.push({ fromPath: tempPath, toPath: shot.imagePath });
-    onShotWritten?.();
-  }
-
-  if (layeredShotIds.size > 0) {
-    const layeredWrite = await preparePhotoshopLayeredTiffsForSave(
-      { ...project, shots: project.shots.filter((shot) => layeredShotIds.has(shot.id)) },
-      folderPath,
-      saveStamp,
-      onShotWritten
+  const createdLayerFiles: OwnedFileReceipt[] = [];
+  let preparationDirectory: SavePreparationDirectoryReceipt | undefined;
+  try {
+    await ensureProjectLayerAssets(project, folderPath, {
+      shotIds: options.shotIds, onCreated: receipt => { createdLayerFiles.push(receipt); }
+    });
+    const shouldProcessShot = (shot: Project["shots"][number]) =>
+      !options.shotIds || options.shotIds.has(shot.id);
+    const layeredShotIds = new Set(
+      project.shots
+        .filter((shot) => shouldProcessShot(shot) && shouldWritePhotoshopLayeredTiffOnSave(shot))
+        .map((shot) => shot.id)
     );
-    replacements.push(...layeredWrite.replacements);
-  }
 
-  if (replacements.length === 0) {
-    await rm(tempFolderPath, { recursive: true, force: true });
-    return undefined;
+    // One unique operation directory owns all preparation and recovery artifacts.
+    // Layer count changes the encoder, never the installation guarantee.
+    const saveStamp = `${archiveStamp()}-${randomUUID()}`;
+    const tempFolderPath = path.join(folderPath, ".storyboard-workbench", "save-tmp", saveStamp);
+    preparationDirectory = await createSavePreparationDirectory(tempFolderPath);
+    // Layered outputs retain legal .tiff filenames at the operation root.
+    // This internal directory has no TIFF extension and cannot be such an output.
+    const ordinaryFolderPath = path.join(tempFolderPath, ".ordinary");
+    const backupFolderPath = path.join(tempFolderPath, ".backups");
+    const replacements: Array<{ fromPath: string; toPath: string }> = [];
+    await mkdir(ordinaryFolderPath, { recursive: true });
+
+    for (const shot of project.shots) {
+      if (!shouldProcessShot(shot)) {
+        continue;
+      }
+
+      if (!shouldWriteSwbMetadata(shot)) {
+        onShotWritten?.();
+        continue;
+      }
+
+      if (layeredShotIds.has(shot.id)) {
+        continue;
+      }
+
+      const bakedPath = await bakeShotToWorkingTiff(shot, folderPath, path.join(ordinaryFolderPath, `${shot.id}-bake.tiff`));
+      const imagePath = bakedPath ?? shot.imagePath;
+      const metadata = await sharp(imagePath, sharpSourceOptions).metadata();
+      const fingerprint = await pixelFingerprint(imagePath);
+      const canvasWidth = shot.swb?.canvasWidth || metadata.width || 0;
+      const canvasHeight = shot.swb?.canvasHeight || metadata.height || 0;
+      const swbMetadata = swbMetadataForShot(project.id, shot, canvasWidth, canvasHeight, fingerprint);
+
+      const tempPath = path.join(ordinaryFolderPath, `${shot.id}-metadata.tiff`);
+      await sharp(imagePath, sharpSourceOptions).withXmp(swbMetadataXmp(swbMetadata)).tiff({ compression: "none" }).toFile(tempPath);
+      replacements.push({ fromPath: tempPath, toPath: shot.imagePath });
+      onShotWritten?.();
+    }
+
+    if (layeredShotIds.size > 0) {
+      const layeredWrite = await preparePhotoshopLayeredTiffsForSave(
+        { ...project, shots: project.shots.filter((shot) => layeredShotIds.has(shot.id)) },
+        folderPath,
+        saveStamp,
+        onShotWritten
+      );
+      replacements.push(...layeredWrite.replacements);
+    }
+
+    if (replacements.length === 0) {
+      await removeSavePreparationDirectory(preparationDirectory, rm);
+      return undefined;
+    }
+    // Nothing above installs a root TIFF. All encoders must finish first.
+    await options.beforeInstall?.();
+    const applied = await applyFileReplacements(
+      replacements.map((replacement, index) => ({
+        tempPath: replacement.fromPath,
+        targetPath: replacement.toPath,
+        backupPath: path.join(backupFolderPath, `${index}.tiff`)
+      })),
+      { mkdir: ensureDirectory, rename, unlink }
+    );
+    return withSuccessfulSaveArtifactCleanup(applied, { tempFolderPath, backupFolderPath, preparationDirectory, remove: rm });
+  } catch (error) {
+    // Awaited codecs and the draining exporter have settled. Incomplete apply
+    // may own old TIFF backups: never delete that namespace or its dependents.
+    if (hasIncompleteTiffPreparationEffect(error)) {
+      throw new TiffPreparationRecoveryIncompleteError([error], [...new Set([
+        ...retainedTiffPreparationPaths(error),
+        ...(preparationDirectory ? [preparationDirectory.directoryPath] : []),
+        ...createdLayerFiles.map(receipt => receipt.filePath)
+      ])]);
+    }
+    const failures: unknown[] = [], retainedPaths: string[] = [];
+    if (preparationDirectory) {
+      try { await removeSavePreparationDirectory(preparationDirectory, rm); }
+      catch (cleanupError) { failures.push(cleanupError); retainedPaths.push(preparationDirectory.directoryPath); }
+    }
+    const results = await Promise.allSettled(createdLayerFiles.map(receipt => removeOwnedFile(receipt)));
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        failures.push(result.reason); retainedPaths.push(createdLayerFiles[index].filePath);
+      }
+    });
+    if (failures.length) throw new TiffPreparationRecoveryIncompleteError([error, ...failures], retainedPaths);
+    throw error;
   }
-  // Nothing above installs a root TIFF. All encoders must finish first.
-  await options.beforeInstall?.();
-  const applied = await applyFileReplacements(
-    replacements.map((replacement, index) => ({
-      tempPath: replacement.fromPath,
-      targetPath: replacement.toPath,
-      backupPath: path.join(backupFolderPath, `${index}.tiff`)
-    })),
-    { mkdir: ensureDirectory, rename, unlink }
-  );
-  return withSuccessfulSaveArtifactCleanup(applied, { tempFolderPath, backupFolderPath, remove: rm });
 };
 
 const preparePhotoshopLayeredTiffsForSave = async (
@@ -1713,7 +1859,8 @@ const preparePhotoshopLayeredTiffsForSave = async (
 const createProjectPreviewsForShots = async (
   project: Project,
   folderPath: string,
-  shotIds: Set<string>
+  shotIds: Set<string>,
+  onPreviewReceipt?: (receipt: PreviewReceipt) => void
 ): Promise<Project> => {
   if (shotIds.size === 0) {
     return project;
@@ -1722,14 +1869,16 @@ const createProjectPreviewsForShots = async (
   const previewRoot = previewRootForFolder(folderPath);
   const previewByShotId = new Map<string, string>();
 
-  await Promise.all(
-    project.shots.map(async (shot) => {
+  await mapWithConcurrency(
+    project.shots, project.shots.length, async (shot) => {
       if (!shotIds.has(shot.id) || !isLikelyTiffPath(shot.imagePath)) {
         return;
       }
 
-      previewByShotId.set(shot.id, await createPreview(shot.imagePath, previewRoot));
-    })
+      previewByShotId.set(shot.id, await (onPreviewReceipt
+        ? createPreview(shot.imagePath, previewRoot, false, onPreviewReceipt)
+        : createPreview(shot.imagePath, previewRoot)));
+    }
   );
 
   if (previewByShotId.size === 0) {
@@ -2076,12 +2225,14 @@ const createImageRecords = async (
     concurrency?: number;
     readOnly?: boolean;
     deferMissingPreviews?: boolean;
+    onPreviewReceipt?: (receipt: PreviewReceipt) => void;
   } = {}
 ): Promise<ImportedImage[]> => {
   return createImportedImageRecords(imagePaths, previewRoot, {
     createPreview,
     readOnly: options.readOnly,
     deferMissingPreviews: options.deferMissingPreviews,
+    onPreviewReceipt: options.onPreviewReceipt,
     onProgress: options.onProgress,
     pixelFingerprint,
     readImageMetadata: async (imagePath) => sharp(imagePath, sharpSourceOptions).metadata(),
@@ -2104,7 +2255,10 @@ const scanFolder = async (
   folderPath: string,
   onProgress?: WorkspaceTaskProgressReporter,
   options?: import("../normalSaveTransport.js").NormalSaveOpenOptions
-) => {
+) => withLayerFileOperation(async () => {
+  // Menu/dialog open reaches this function without a workspace invoke. It must
+  // not run ordinary preview/Pending recovery against a protected namespace.
+  await assertPhysicalWorkspaceWriterTargets([folderPath]);
   if (options?.normalSave === true) {
     const pendingTransaction = await hasPendingFileTransaction(folderPath);
     const scan = await scanWorkspaceFolder(folderPath, onProgress, true, options.initializePreviews === true);
@@ -2131,7 +2285,7 @@ const scanFolder = async (
   const project = await readProject(metadataPath);
   await recoverPendingFileTransaction(folderPath, project);
   return scanWorkspaceFolder(folderPath, onProgress);
-};
+});
 
 const readSwbMetadata = async (imagePath: string): Promise<SwbImageMetadata | undefined> => {
   const metadata = await sharp(imagePath, sharpSourceOptions).metadata();
@@ -2226,7 +2380,7 @@ const uniquePath = async (
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const candidateName = attempt === 0 ? fileName : `${baseName}_${attempt}${extension}`;
     const candidate = path.join(directory, candidateName);
-    if (!isReserved(candidate) && !(await pathExists(candidate))) {
+    if (!isReserved(candidate) && !(await pathEntryExists(candidate))) {
       return candidate;
     }
   }

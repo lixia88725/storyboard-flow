@@ -29,6 +29,7 @@ describe("domain IPC handlers", () => {
     const { ipcMain, handlers } = fakeIpcMain();
     const selectFolder = vi.fn(async (event) => ({ event }));
     const finishSaveAndClose = vi.fn((payload) => ({ payload }));
+    const finishCloseCapture = vi.fn((event, payload) => ({ event, payload }));
     const updateCloseGuard = vi.fn((event, payload) => ({ event, payload }));
     const getInfo = vi.fn(() => ({ version: "1.0.0" }));
     const openExternal = vi.fn(async (url) => ({ url }));
@@ -36,12 +37,15 @@ describe("domain IPC handlers", () => {
     registerAppIpcHandlers(ipcMain, {
       selectFolder,
       finishSaveAndClose,
+      finishCloseCapture,
+      updateBitmapQueueGuard: vi.fn(),
       updateCloseGuard,
       getInfo,
       openExternal
     });
 
     expect([...handlers.keys()].sort()).toEqual([
+      "app:finishCloseCapture",
       "app:finishSaveAndClose",
       "app:getInfo",
       "app:openExternal",
@@ -58,6 +62,11 @@ describe("domain IPC handlers", () => {
     expect(handlers.get("app:finishSaveAndClose")?.({}, { requestId: "r1", saved: true })).toEqual({
       payload: { requestId: "r1", saved: true }
     });
+    expect(finishSaveAndClose).toHaveBeenCalledWith({ requestId: "r1", saved: true }, {});
+    const caller = { sender: {}, senderFrame: {} };
+    const captured = { requestId: "r1", captureAvailable: true, recoveryRequired: true, busy: false, hasUnsavedChanges: true, capture: { revision: "R2" } };
+    expect(handlers.get("app:finishCloseCapture")?.(caller, captured)).toEqual({ event: caller, payload: captured });
+    expect(finishCloseCapture).toHaveBeenCalledWith(caller, captured);
     expect(handlers.get("app:updateCloseGuard")?.({ sender: "sender" }, { hasUnsavedChanges: true })).toEqual({
       event: { sender: "sender" },
       payload: { hasUnsavedChanges: true }

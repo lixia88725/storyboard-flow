@@ -80,7 +80,7 @@ it("actual App Pending callback delegates the whole transition rather than only 
   const visit = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(tree) === "pendingTransition") declaration = n; ts.forEachChild(n, visit); }; visit(tree);
   expect(declaration, "actual App Pending domain callback absent").toBeDefined();
   const pending = vi.fn(async () => false);
-  const callback = new Function("useCallback", "normalSaveAppAdapterRef", ts.transpile(`const ${declaration!.getText(tree)}; return pendingTransition;`))((fn: unknown) => fn, { current: { pending } });
+  const callback = new Function("renderAdapter", "useCallback", "normalSaveAppAdapterRef", ts.transpile(`const ${declaration!.getText(tree)}; return pendingTransition;`))({ pending }, (fn: unknown) => fn, { current: { pending } });
   const update = (p: any) => parkShotGroup(p, ["s"]);
   expect(await callback("park", update, ["s"])).toBe(false); expect(pending).toHaveBeenCalledWith("park", update, ["s"]);
 });

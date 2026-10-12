@@ -15,7 +15,10 @@ import { initializeCompletedShot } from "../../src/shared/pendingBake";
 import type { Project } from "../../src/shared/types";
 import { applyFileReplacements, applyFileRenamePlan, atomicWriteTextFile } from "./fileRenames";
 import { recoverFailedSave } from "./saveRecovery";
+import { withLayerFileOperation } from "./layerFileOperationQueue";
 import { withSuccessfulSaveArtifactCleanup } from "./saveArtifacts";
+import * as tiffPreparation from "./tiffPreparation";
+import { removeOwnedFile } from "./ownedFileCreation";
 import { bitmapLayersForShot } from "./bitmapLayerOrdering";
 import { flattenBitmapLayerBuffersToTiff } from "./bitmapLayers";
 import { pixelFingerprint } from "./imageFingerprintService";
@@ -67,7 +70,7 @@ async function fixture(fault?: "md" | "json" | "trash" | "cleanup") {
   const mdPath = path.join(root, "storyboard-script.md");
   const effects: string[] = [];
   let beforeEnsure: (() => Promise<void>) | undefined;
-  const bindings = {
+  const bindings = { ...tiffPreparation, removeOwnedFile, withLayerFileOperation,
     isCertifiedPendingBakeEntry, createWorkspacePendingAppHandlers, beginPendingFileTransaction,
     path, randomUUID, createHash, readFile: fs.readFile, mkdir: fs.mkdir, rm: fs.rm, unlink: fs.unlink,
     rename: async (from: string, to: string) => { if (fault === "json" && to === metadataPath) throw new Error("required JSON install failed"); await fs.rename(from, to); if (to === metadataPath) effects.push("json"); },
@@ -83,6 +86,9 @@ async function fixture(fault?: "md" | "json" | "trash" | "cleanup") {
     ensureProjectLayerAssets: async (p: Project) => { effects.push("ensure"); await beforeEnsure?.(); for (const s of p.shots) for (const l of s.layers ?? []) await fs.readFile(path.join(root, l.bitmapPath)); },
     sharp, bitmapLayersForShot, flattenBitmapLayerBuffersToTiff, pixelFingerprint, resolveLayerAssetPath, sharpBlendMode, assertPathInsideFolder,
     pathExists: async (p: string) => { try { await fs.stat(p); return true; } catch { return false; } },
+    pathEntryExists: async (p: string) => { try { await fs.lstat(p); return true; } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error;
+    } },
     app: { getAppPath: () => process.cwd() }, process,
     resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR,
     writePhotoshopLayeredTiffsForInPlaceSave,
@@ -120,6 +126,21 @@ async function fixture(fault?: "md" | "json" | "trash" | "cleanup") {
     setBeforeEnsure: (hook: () => Promise<void>) => { beforeEnsure = hook; },
     payload: { project: p, folderPath: root, metadataPath, dirtyShotIds: [], normalSave: true } };
 }
+
+it("actual Save retains installed TIFF and backups when required MD fails after JSON publication", async () => {
+  const f = await fixture("md");
+  await expect(f.save({ ...f.payload, dirtyShotIds: ["s"] })).rejects.toMatchObject({ recoveryIncomplete: true });
+  expect(f.effects).toContain("json");
+  expect(f.effects).not.toContain("import-rollback");
+  const written = JSON.parse(await fs.readFile(f.metadataPath, "utf8"));
+  expect(written.shots[0].swb.baseFingerprint).toBe(await pixelFingerprint(f.imagePath));
+  expect(await fs.readFile(f.imagePath)).not.toEqual(f.original);
+  const backupRoot = path.join(f.root, ".storyboard-workbench/save-tmp");
+  const backups = await fs.readdir(backupRoot, { recursive: true });
+  const backup = backups.find(name => name.endsWith(path.join(".backups", "0.tiff")));
+  expect(backup).toBeDefined();
+  expect(await fs.readFile(path.join(backupRoot, backup!))).toEqual(f.original);
+});
 
 it.each([false, true])("actual main staging/Trash/cleanup → plain adapter → owner retires deletion (last=%s)", async last => {
   const f = await fixture();
@@ -184,14 +205,14 @@ async function actualAppPending(adapter: ReturnType<typeof createNormalSaveAppAd
   let decl: ts.VariableDeclaration | undefined;
   const visit = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(tree) === "pendingTransition") decl = n; ts.forEachChild(n, visit); }; visit(tree);
   expect(decl).toBeDefined();
-  return new Function("useCallback", "normalSaveAppAdapterRef", ts.transpile(`const ${decl!.getText(tree)}; return pendingTransition;`))((fn: unknown) => fn, { current: adapter }) as typeof adapter.pending;
+  return new Function("renderAdapter", "useCallback", "normalSaveAppAdapterRef", ts.transpile(`const ${decl!.getText(tree)}; return pendingTransition;`))(adapter, (fn: unknown) => fn, { current: adapter }) as typeof adapter.pending;
 }
 async function actualAppAutosave(adapter: ReturnType<typeof createNormalSaveAppAdapter>, folderPath: string, metadataPath: string) {
   const text = await fs.readFile(new URL("../../src/renderer/App.tsx", import.meta.url), "utf8");
   const tree = ts.createSourceFile("App.tsx", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let declaration: ts.VariableDeclaration | undefined;
   const visit = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(tree) === "persistWorkspace") declaration = n; ts.forEachChild(n, visit); }; visit(tree);
-  return new Function("normalSaveAppEnabled", "normalSaveAppAdapterRef", "folderPath", "metadataPath", ts.transpile(`const ${declaration!.getText(tree)}; return persistWorkspace;`))(true, { current: adapter }, folderPath, metadataPath);
+  return new Function("renderAdapter", "normalSaveAppEnabled", "normalSaveAppAdapterRef", "folderPath", "metadataPath", ts.transpile(`const ${declaration!.getText(tree)}; return persistWorkspace;`))(adapter, true, { current: adapter }, folderPath, metadataPath);
 }
 async function actualAppPendingPublication(schedule: () => void) {
   const text = await fs.readFile(new URL("../../src/renderer/App.tsx", import.meta.url), "utf8");
@@ -535,8 +556,15 @@ it.each(["md", "trash", "cleanup"] as const)("actual main %s failure never retur
   expect(disk.pendingBake.shots.s.editToken).toBe("t1");
   expect(disk.pendingBake.shots.s.state).toBe("pending");
   if (fault === "md") {
-    expect(await fs.readFile(f.imagePath)).toEqual(f.original);
-    expect(f.effects).toContain("import-rollback");
+    // JSON already points at the installed output: keep it AND the byte-exact
+    // old backup, rather than restoring pixels inconsistent with published JSON.
+    expect(disk.shots[0].swb.baseFingerprint).toBe(await pixelFingerprint(f.imagePath));
+    const backupRoot = path.join(f.root, ".storyboard-workbench/save-tmp");
+    const backups = await fs.readdir(backupRoot, { recursive: true });
+    const backup = backups.find(name => name.endsWith(path.join(".backups", "0.tiff")));
+    expect(backup).toBeDefined();
+    expect(await fs.readFile(path.join(backupRoot, backup!))).toEqual(f.original);
+    expect(f.effects).not.toContain("import-rollback");
     expect(f.effects).not.toContain("synthetic-trash");
   } else {
     expect(await hash(f.imagePath)).not.toBe(disk.pendingBake.shots.s.acceptedOutputIdentity);

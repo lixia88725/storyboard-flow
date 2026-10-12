@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat, utimes } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, utimes } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
@@ -7,6 +7,29 @@ import { previewPathForImage } from "./previewPaths.js";
 import { createPreview } from "./previewService.js";
 
 describe("createPreview", () => {
+  it("returns a rollback receipt for a replaced preview instead of losing the old cache", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "preview-replacement-receipt-"));
+    const image = path.join(root, "source.tiff"), previews = path.join(root, ".storyboard-workbench/previews");
+    const receipts: Array<{ effect: string; rollback: () => Promise<void> }> = [];
+    try {
+      await sharp({ create: { width: 2, height: 2, channels: 4, background: "red" } }).tiff().toFile(image);
+      const preview = await createPreview(image, previews), old = await readFile(preview), identity = await stat(preview);
+      await sharp({ create: { width: 2, height: 2, channels: 4, background: "blue" } }).tiff().toFile(image);
+      await utimes(preview, new Date(1000), new Date(1000));
+      await createPreview(image, previews, false, receipt => { receipts.push(receipt); });
+      expect(receipts).toHaveLength(1);
+      expect(receipts[0].effect).toBe("replaced");
+      expect(await readFile(preview)).not.toEqual(old);
+      // A regenerated cache must be readable on the next real read-only open;
+      // copying old security metadata must not copy its stale freshness marker.
+      await expect(createPreview(image, previews, true)).resolves.toBe(preview);
+      await receipts[0].rollback();
+      expect(await readFile(preview)).toEqual(old);
+      expect((await stat(preview)).ino).toBe(identity.ino);
+      await receipts[0].rollback();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("writes a bounded png preview at the deterministic preview path", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "storyboard-flow-preview-"));
     const imagePath = path.join(root, "shot.tiff");

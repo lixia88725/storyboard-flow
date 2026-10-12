@@ -1,4 +1,5 @@
-import { access, lstat, mkdir, readFile, realpath } from "node:fs/promises";
+import { access, lstat, readFile, realpath } from "node:fs/promises";
+import { mkdirObserved as mkdir } from './workspaceInitialization.js';
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -7,6 +8,8 @@ import { manualImageImportAdmission, type ManualImportShot } from "../shared/man
 import { hasPendingFileTransaction } from "./pendingFileTransactionService.js";
 import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
 import { isFreshStandaloneLayeredTiffPreview } from "../shared/standaloneLayeredInput.js";
+import sharp from 'sharp';
+import { recordsDerivedPreview, recordDerivedPreview } from './derivedPreviewReceipt.js';
 
 type Image = { imagePath: string; fileName?: string; width?: number; height?: number; previewPath?: string; swbMetadata?: unknown };
 type Project = { shots: ManualImportShot[]; parkedShots?: ManualImportShot[]; pendingBake?: unknown };
@@ -116,5 +119,19 @@ export const initializeNormalOpenPreviews = async <S extends { folderPath: strin
  if (!scan.project) return { ...scan, images: refreshed };
  const previews = new Map(refreshed.map(i => [i.imagePath, i.previewPath]));
  const patch = (s: ManualImportShot) => ({ ...s, ...(previews.get(s.imagePath) ? { previewPath: previews.get(s.imagePath) } : {}) });
- return { ...scan, project: { ...scan.project, shots: scan.project.shots.map(patch), parkedShots: scan.project.parkedShots?.map(patch) } as NonNullable<S["project"]> };
+ const derived = { ...scan.project, shots: scan.project.shots.map(patch), parkedShots: scan.project.parkedShots?.map(patch) } as NonNullable<S["project"]>;
+ if (recordsDerivedPreview()) {
+  const receipts = [];
+  for (const shot of [...scan.project.shots, ...(scan.project.parkedShots ?? [])]) {
+   const preview = previews.get(shot.imagePath); if (!preview) throw new Error('Derived reader preview missing');
+   if (preview !== previewPathForImage(shot.imagePath, previewRoot) || await realpath(preview) !== preview || !(await lstat(preview)).isFile() || (await lstat(preview)).isSymbolicLink()) throw new Error('Derived reader preview alias');
+   const sourceBytes = await readFile(shot.imagePath), previewBytes = await readFile(preview);
+   const encoded = await sharp(sourceBytes, { unlimited: true }).rotate().resize({ width: 1800, height: 1200, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+   if (!encoded.equals(previewBytes)) throw new Error('Derived reader preview is not the actual source pixels');
+   receipts.push({ shotId: shot.id, source: shot.imagePath, sourceDigest: createHash('sha256').update(sourceBytes).digest('hex'), preview, previewDigest: createHash('sha256').update(previewBytes).digest('hex'), pixels: createHash('sha256').update(await sharp(previewBytes).ensureAlpha().raw().toBuffer()).digest('hex') });
+  }
+  await recheck();
+  await recordDerivedPreview({ root, original: scan.project, derived, images: receipts });
+ }
+ return { ...scan, project: derived };
 };

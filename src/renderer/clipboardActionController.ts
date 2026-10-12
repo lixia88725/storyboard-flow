@@ -16,6 +16,7 @@ import type { BitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import type { DeleteTarget } from "./deleteTarget";
 import type { SelectedBitmapLayerIds } from "./storyboardInteractionState";
 import { withStatus } from "./statusAction";
+import { decodeCopyShotAssetsResult } from "../shared/copyShotAssetsIpc";
 
 export type ClipboardWorkspace = {
   identity: object;
@@ -176,13 +177,13 @@ export const useClipboardActionController = <HistoryEntry,>({
 
       const copiedAssets = await withStatus(
         "Paste storyboard failed",
-        () =>
-          api.copyShotAssets({
+        async () =>
+          decodeCopyShotAssetsResult(await api.copyShotAssets({
             folderPath,
             sourceImagePath: sourceShot.imagePath,
             fileName: sourceShot.fileName,
             layerCopies: copyPlan.layerCopies
-          }),
+          })),
         scopedStatus
       );
 

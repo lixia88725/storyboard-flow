@@ -1,15 +1,17 @@
+import os from "node:os";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { rm, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { expect, it } from "vitest";
+import { onTestFinished, expect, it } from "vitest";
 import { createLayerAppHandlers } from "./layerAppRuntime";
 import { registerLayerIpcHandlers } from "./ipc/layerHandlers";
 import { createProject } from "../../src/shared/projectOps";
 
-const scratch = "/Users/pikachu/.hermes/profiles/engineer/cache/scratch/save-firstblock-integration-20261007/smoke-closeout/save-delete-ack-repair/add-layer-create-repair";
+const scratch = process.env.TMPDIR ?? os.tmpdir();
 async function fixture() {
   const folderPath = await mkdtemp(path.join(scratch, "exclusive-red-"));
+  onTestFinished(async () => { await rm(folderPath, { recursive: true, force: true }); });
   const bitmapPath = ".storyboard-workbench/layers/s/new.png";
   await mkdir(path.dirname(path.join(folderPath, bitmapPath)), { recursive: true });
   const png = await sharp({ create: { width: 2, height: 2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
@@ -55,8 +57,12 @@ it("unknown ownership refuses before creating final target", async () => {
   await expect(Promise.resolve().then(() => f.create())).rejects.toThrow(/unknown|certified/i);
   await expect(readFile(f.file)).rejects.toMatchObject({ code: "ENOENT" });
 });
-it("old actual brush replacement port remains replacement with same inode", async () => {
+it("approved finite brush replacement preserves complete bytes and ordinary permissions", async () => {
   const f = await fixture(); await writeFile(f.file, f.old); const before = await stat(f.file);
   await f.callbacks.get("layers:writePng")!({}, f.payload);
-  expect(await readFile(f.file)).toEqual(f.png); expect((await stat(f.file)).ino).toBe(before.ino);
+  expect(await readFile(f.file)).toEqual(f.png);
+  const after = await stat(f.file);
+  // The approved staging/replacement contract may change inode; the former
+  // same-inode control described the unsafe in-place writer, not new safety.
+  expect([after.mode, after.uid, after.gid]).toEqual([before.mode, before.uid, before.gid]);
 });

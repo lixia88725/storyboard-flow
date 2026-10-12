@@ -44,9 +44,12 @@ declare global {
       readOutputIdentity: (imagePath: string, legacy?: { project: Project; folderPath: string; shotId: string }) => Promise<string>;
       autosaveWorkspace: (payload: WorkspacePayload) => Promise<WorkspacePayload>;
       ensureLayerAssets: (payload: WorkspacePayload) => Promise<WorkspacePayload>;
+      acknowledgeSave: (payload: {folderPath:string;nonce:string;project:Project}) => Promise<boolean>;
+      observeWorkspace: (folderPath: string) => Promise<import('./workspaceSlots').WorkspaceRootObservation>;
+      certifyWorkspaceHandoff: (capture: unknown) => Promise<boolean | { mode: 'ordinary-memory'; readonly: false }>;
       saveWorkspace: (
         payload: SaveWorkspacePayload
-      ) => Promise<SaveWorkspacePayload>;
+      ) => Promise<SaveWorkspacePayload | import("../shared/workspaceEffectIpc").WorkspaceEffectFailure>;
       exportPhotoshopTiffs: (payload: WorkspacePayload) => Promise<{
         exportFolderPath: string;
         exportedFiles: string[];
@@ -102,7 +105,7 @@ declare global {
         imagePath: string;
         fileName: string;
         previewPath: string;
-      }>;
+      } | import("../shared/copyShotAssetsIpc").CopyShotAssetsFailure>;
       moveShotsToPending: (
         payload: WorkspacePayload,
         shotIds: string[]
@@ -112,7 +115,7 @@ declare global {
         imagePath: string;
         fileName: string;
         baseFingerprint?: string;
-      }>>;
+      }> | import("../shared/workspaceEffectIpc").WorkspaceEffectFailure>;
       restoreShotsFromPending: (
         payload: WorkspacePayload,
         shotIds: string[]
@@ -122,7 +125,7 @@ declare global {
         imagePath: string;
         fileName: string;
         baseFingerprint?: string;
-      }>>;
+      }> | import("../shared/workspaceEffectIpc").WorkspaceEffectFailure>;
       mergeLayerDown: (payload: {
         folderPath: string;
         sourceBitmapPath: string;
@@ -184,8 +187,12 @@ declare global {
       ) => () => void;
       onWorkspaceTaskProgress: (callback: (progress: WorkspaceTaskProgress) => void) => () => void;
       onSaveAndCloseRequested: (callback: (request: { requestId: string }) => void) => () => void;
+      onPrepareCloseRequested: (callback: (request: { requestId: string }) => void) => () => void;
+      onCloseCancelled: (callback: (request: { reason: string }) => void) => () => void;
+      readReadonlyRecovery: (folderPath: string) => Promise<import("../shared/readonlyRecovery").ReadonlyRecovery>;
+      finishCloseCapture: (payload: { requestId: string; captureAvailable: boolean; recoveryRequired: boolean; busy: boolean; hasUnsavedChanges: boolean; capture?: unknown }) => Promise<void>;
       finishSaveAndClose: (payload: { requestId: string; saved: boolean }) => Promise<void>;
-      updateCloseGuard: (payload: { hasUnsavedChanges: boolean }) => Promise<void>;
+      updateCloseGuard: (payload: { hasUnsavedChanges: boolean; recoveryRequired?: boolean }) => Promise<void>;
       updateBitmapQueueGuard: (payload: { busy: boolean; hasUnsavedChanges: boolean }) => void;
       getAppInfo: () => Promise<{
         version: string;

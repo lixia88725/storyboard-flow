@@ -1,51 +1,28 @@
-# 当前交接 — Storyboard Flow
+# 当前交接 — Storyboard Flow WIP 源码检查点
 
-本页只维护当前现场。接手先实际读取 `../AGENTS.md`（Workspace最新规则）与 `AGENTS.md`（项目规则），再读本页；按任务读TODO/SYSTEM/相关决定，不默认通读旧报告。`CLAUDE.md`仍指向`AGENTS.md`，不能当独立交接文件写入。
+## 当前目标与授权边界
 
-## 当前停在哪里
+当前仅保全最新数据安全 WIP 源码，供上传检查点、交接更新与复盘；不是验收、正式发布或继续实现的授权。依据发起方提供的用户确认摘录，允许将必要源码及脱敏文档保存到已有 PUBLIC 仓库；本准备阶段只在独立 worktree 暂存，不 commit/push。
 
-**正常Save第一块、内置AI移除、非冻结模块优化已在本机独立验收；现在暂停在换Session交接，PNG/多资产History安全工作尚未开始。** 模块优化最终Reviewer `20261009_214947_2c0004`（实核openai-codex/gpt-6.1-sol）确认累计队列可闭合、无必修。最终1789测试/0失败/0pending、212 testResults，完整build含两端typecheck、真实普通Electron 229wait通过。不是全产品/所有竞态/平台验收完成。
+- 目标分支：`checkpoint/data-safety-wip-20261012`。
+- 公开基线：`2131f65423c8b67de7ccc0ba45daf5d9e217bf48`；仅以此为父版本准备，不引入本机私有 dirty HEAD 历史。
+- 本机原 main 的 dirty/untracked 成果保持不变。远端 main 的并行变化未合入；不得自动 pull/rebase/merge、创建 PR/tag/Release、安装依赖或新增/禁用 CI。
+- 现状：**WIP / NOT ACCEPTED / 未合并**。此文档不声明上传完成；实际远端提交和读回由执行上传者另行确认。
 
-用户先要求更新交接并换Session，随后批准“先增加一个当前成果检查点”。现已在独立worktree提交/上传checkpoint分支；没有开始PNG/History修复、安装、迁移、合并或发版本。上传期间仓库由PRIVATE变PUBLIC，另一个infra分支合入远端main；暂停核对后用户明确选择“确认允许公开，保留检查点”。这不授权自动合并新main或后续发布。
+## 源码与证据身份
 
-## 下一会话的起点（建议，不是已批准实现方案）
+完整 **522** 项源码/测试/必要配置逐字节核对，公开身份文件为 [SOURCE-MANIFEST.json](research/data-safety/SOURCE-MANIFEST.json)，SHA256 `05fda907f9d878a47abb9812a331725e220ee8ee50686eeda857b0998bef3646`。
 
-Engineer建议：先核清旧PNG replacement失败保全及权限/别名/并发限制，再确认多资产History恢复对它的依赖，之后集中实际使用和平台交付。用户尚未选定具体写入策略或批准权限/存储契约改变。
+[检查点摘要](research/data-safety/SOURCE-CHECKPOINT.md)记录实现范围、完整八个失败身份、自测与咨询限制。累计补丁身份 `4d5a96bc92e3fb6ec74e327a7d38d515ec3516831f6c95ae957deb0b9ff41380` 指向旧 dirty 基线，不能直接应用到公开基线；本次按文件相对公开基线覆盖完整成果，不是只保存最后 12 个修订路径。
 
-- 唯一任务与验收计划在[TODO](todo.md)的“下一会话起点”和“数据安全工作块”；先核当前真实写链、历史材料是否仍可用，形成简短方案/一个完整可验收块，再请当前用户确认实施范围。
-- 起点：`electron/main/layerAssetService.ts`的`writeLayerPng`（当前仍直接writeFile旧目标）与独立`createLayerPng`（Add-only新文件）；`src/renderer/bitmapLayerHistory.ts`的`restoreLayerAssetSnapshots`及`projectHistoryController.ts`/`bitmapLayerWriteQueue.ts`。只定位，不把当前普通GREEN当失败保全已解决。
-- 旧PNG“95-byte→16 bytes”和History“11 RED”是历史发现，不是当前重新执行的计数。原计划定位：[归档PLAN](docs/archive/2026-10/handoff-before-simplification/research/core-closeout/PLAN.md)的History复现/保全清单和PNG权限决定段；旧命令可能过时，不能直接执行或以0 tests当PASS。
-- 本轮有限定位未找到原`l2h-history-red`文件，第一块与连续优化两个持久ZIP也无对应成员；**原probe/config当前可用性未知**。下一会话应先定位/恢复可信来源，不凭摘要制造RED，不假称已重测或证明材料不存在。
+复用最终同源本机自测：264 文件 / 1963 assertions / 1955 pass / **8 fail** / 0 pending，原 1959 身份全部保留；build（两端 typecheck）、preload parity、Node safety 11 tests 通过。真实 CJS/TS 有限 Add→Undo→Save→Close→冷 Redo own ACK→Close，以及 fresh 无额外 Save Close 已通过对应接缝。**不是全套 PASS、独立验收或所有 producer 证明。** 原始 GUI trace、私有 fixture、原始 JSON/log、依赖与构建输出不上传；摘要不是原始证据可公开下载的承诺。
 
-## 要保全的版本与成果
+## 必须保留的未完状态
 
-- 本机主工作树仍是`/Users/pikachu/Developer/storyboard-flow`的`main`，HEAD `34192f4e5155059a1ac7962e69d50201d8207083`加大量dirty/untracked；主树未暂存或切分支，其他未选入检查点的资料/并行改动保留。不要reset/stash或按旧分支覆盖。
-- 已公开源码检查点：分支`checkpoint/module-optimization-20261009`，commit `2d53ec8406b33a33bd176f4517dc033ce80b8ffb`，[GitHub分支](https://github.com/lixia88725/storyboard-flow/tree/checkpoint/module-optimization-20261009)。GitHub SHA已读回匹配，436项已验收源逐件匹配提交；包括必要配置、核心交接和合成测试fixture，不包括原始私有证据/缓存/无关并行GLOSSARY改动。未建PR/合并/tag/Release，检查点不是平台可安装认证。
-- 同时发生的独立远端变化：main已为`5652997844c5f8347e68fa7cd9a89981b8c122c7`（合入`infra/public-repository`的PR）；涉及发布配置/包脚本等，不属于此checkpoint的基线，尚未合入本地主树。下一会话先核远端与本机差异，不自动pull/rebase/force-push，不沿用旧发布触发假设。仓库现PUBLIC已获用户确认保留checkpoint；当前观察不保证以后配置不变。
-- 已验收源身份：436项，manifest SHA256 `002337987cbbed4559b6dd3733e86828f307744a0a50d29b625bb2a7e8369034`；本次文档交接核对仍匹配。后续代码/相关输入变化须更新受影响证据；不因换Session机械重跑同版全门禁。
-- 产品聚焦故事板捕捉/绘画/整理/编排。内置AI的UI/Provider/凭据工厂/IPC已退役，普通Pending保留；Pending停放前TIFF物化、JSON/MD/ACK/非空继承/空板保自身设置不可因旧Save-only措辞取消。
-- App生产单路径、共享认证原语、有名`workspaceSession`及无消费者旧写模型清理已接受。主进程编排、owner/queue/renderer-main/磁盘隔离仍保留；不把所有optional、局部prepare/copy-only/测试Adapter强统一。
-- 成功Merge/Undo不等一般多资产失败补偿；create-only Add不修旧PNG覆盖；有限single-PNG ACK恢复不等partial/crash事务；origin继续production false，不自动启用。用户未实际用此Mac上的软件工作，不能把保护原则说成已发现真实作品。
+1. 五个 retained-set native case 受 CLI-only injection adapter 的 import/stdin 阻塞影响，原 120s deadline 超时；三个 ordinary-observation case 因未提供 Python 参数却提前 spawn 而失败。属于引入的兼容/纯观察回归，本轮不修、不删测试、不改断言/timeout。
+2. 旧 517 源身份上的独立 custody 静态咨询提出 current canvas 历史版本重放、producer absence、cold receipt/current-version/document-origin 证明、committed cleanup-warning custody 缺口。522 有 absence/reader 自测修订，但未获独立复审，不宣布这些 findings 全部关闭；不要混淆另一轮已静态闭合的 cancel-intent / 私有 Close 信号 F1/F3。
+3. mounted 负例 harness 在 Electron 启动前因重复声明失败，TS 对应负例未跑；wrong-document/Root/history-byte/unknown-absence、0400/window/pins 扩展仍 NOT VERIFIED。
+4. before-first-Save 与其他 PNG producers 不完整，Windows 未完成，生产 quota 未批准；有限 fixture budget 不是产品默认配置。权限/存储契约不得扩写为新批准。
+5. 有硬编码 Homebrew Python、vendor/旧 spike fallback；没有安装或干净机器获取/运行验证，不声称跨机可运行。查看 README 的最短获取与检查说明。
 
-## 资料入口：不用读一整串旧交接
-
-| 目的 | 入口与需要知道的内容 |
-|---|---|
-| 本次换会话不可变快照 | [CE-HANDOFF](research/codebase-design/CE-HANDOFF.md)，记录此暂停点、来源/授权和本机依赖；旧CE-HANDOFF/CE-HANDOFF-2仅为第一块历史快照 |
-| 下一工作与完成条件 | [todo.md](todo.md)，唯一活动计划；PNG/History/平台及未批准事项不重复建台账 |
-| 模块职责和真实读写链 | [SYSTEM.md](docs/architecture/SYSTEM.md)，直接维护文字，不运行退役Atlas生成器 |
-| 决策理由 | [decisions.md](decisions.md)相关段；旧架构细节不是当前代码清单，实际职责以SYSTEM为准 |
-| 最近结构验收与源/构建身份 | [连续记录](research/codebase-design/CONTINUOUS-OPTIMIZATION.md)，各块固定输入、RED/返修/原执行/Reviewer、最终累计结论和持久ZIP |
-| 正常Save历史验收 | [短索引](research/core-closeout/save-normal-first-block/ENGINEER-SELF-VERIFICATION.md)，1970只属于当时版本；不因新会话重启旧复盘 |
-| 未完成安全历史线索 | [归档PLAN](docs/archive/2026-10/handoff-before-simplification/research/core-closeout/PLAN.md)，仅按具体问题查，不执行旧工具或当新授权 |
-| 冻结origin | [检查点](docs/architecture/research/isolated-origin-checkpoint-20261005/README.md)，不是生产保护或启用许可 |
-
-## 本机证据、执行环境与缺口
-
-持久原始验收证据（仅此Mac可达，未上传GitHub；已上传的是源码检查点）：
-`/Users/pikachu/.hermes/profiles/engineer/evidence/storyboard-flow-module-optimization-20261009/continuous-accepted-evidence.zip`
-SHA256 `f98f93756a020bcd652ef25dba1c7f7c74699b0110bc6d66326f1dbc20a8db87`。`continuous-archive-manifest.json`列身份；ZIP内`cleanup-manifest.json`/`cleanup-candidate/`/`cleanup-review.txt`是最终版本，其他候选和原执行按需读。scratch会清理，持久ZIP优先；不能指望别的电脑凭本机路径获取。
-
-上次成功验证用了现有Python3.12、项目`vendor/python/photoshop-tiff`与owned TMPDIR；PATH优先`/opt/homebrew/opt/python@3.12/libexec/bin`，PYTHONPATH指项目vendor。下一次实际执行前核当前解释器/ABI/项目命令并选择新的owned scratch，不能直接复用旧probe或假定export延续，不授权安装。完整build已包含两端typecheck，不机械重复。
-
-AGENTS旧AI导航因保护审批超时未改，不经CLAUDE绕过。普通文档不改权限/产品契约；仅检查点上传获准，main合并/推送或发布仍需另核授权与最新自动化。此前Reviewer曾被agent_close终止，后续拿到真实结论；当前没有待审实现任务，后台启动/exit0不等持续施工或验收。
+下一步仅完成获授权检查点上传和读回、更新本机私有交接、复盘；后续修复、矩阵和高风险独立验收另核授权。[TODO](todo.md)保留唯一待办，[SYSTEM](docs/architecture/SYSTEM.md)复用现有架构入口。

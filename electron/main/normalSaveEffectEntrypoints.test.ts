@@ -6,6 +6,7 @@ import { registerWorkspacePersistenceIpcHandlers } from "./ipc/workspacePersiste
 import { createWorkspacePendingAppHandlers } from "./workspacePendingAppRuntime.js";
 import { createProject } from "../../src/shared/projectOps";
 import { hasPendingFileTransaction } from "./pendingFileTransactionService.js";
+import { withLayerFileOperation } from "./layerFileOperationQueue.js";
 const source = await readFile(new URL("./main.ts", import.meta.url), "utf8");
 const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
 const compile = (text: string) => ts.transpileModule(text, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
@@ -31,7 +32,7 @@ const rejectedPayloads = () => [unknownPayload(), ...[
 it.each(["workspace:exportPhotoshopTiffs", "workspace:importSwbFormat"])("actual %s rejects unknown before ensure/Import/metadata/output", async channel => {
   const io = vi.fn(async () => { throw new Error("effect escaped admission"); });
   const invoke = handler(channel, { assertNormalSaveAdmission: (p: unknown) => admission(io)(p),
-    ensureProjectLayerAssets: io, exportPhotoshopLayeredTiffs: io, projectNeedsSwbImport: () => true,
+    ensureProjectLayerAssets: io, exportPhotoshopLayeredTiffs: io, projectNeedsSwbImport: () => true, withLayerFileOperation,
     importStoryboardScriptMarkdown: io, recoverFailedImport: async (e: unknown) => { throw e; } });
   for (const payload of rejectedPayloads()) {
     const before = JSON.stringify(payload);

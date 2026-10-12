@@ -1,10 +1,11 @@
+import os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { describe, expect, it } from "vitest";
+import { onTestFinished, describe, expect, it } from "vitest";
 import { createProject } from "../shared/projectOps";
 import { initializeCompletedShot } from "../shared/pendingBake";
 import type { Project } from "../shared/types";
@@ -19,11 +20,12 @@ import { saveProgressShotIds, countSaveProgressShots } from "../../electron/main
 import { registerWorkspacePersistenceIpcHandlers } from "../../electron/main/ipc/workspacePersistenceHandlers";
 
 const module = await import("./normalSaveProjectOwner").catch(() => undefined);
-const scratch = "/Users/pikachu/.hermes/profiles/engineer/cache/scratch/save-normal-spec-891fge5g/tmp";
+const scratch = process.env.TMPDIR ?? os.tmpdir();
 const hash = async (p: string) => createHash("sha256").update(await readFile(p)).digest("hex");
 const ops = { mkdir: async (p: string) => { await mkdir(p, { recursive: true }); }, rename, unlink, writeFile };
 async function fixture() {
   const folder = await mkdtemp(path.join(scratch, "normal-save-"));
+  onTestFinished(async () => { await rm(folder, { recursive: true, force: true }); });
   const metadata = path.join(folder, ".storyboard-workbench/storyboard.project.json");
   const bitmapPath = ".storyboard-workbench/layers/s/image.png";
   await mkdir(path.dirname(path.join(folder, bitmapPath)), { recursive: true });
@@ -64,7 +66,7 @@ async function fixture() {
       const result = await writePhotoshopLayeredTiffsForInPlaceSave({ ...p, shots: selected }, folder, {
         pythonPath: "/opt/homebrew/bin/python3.12", scriptPath: path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py"),
         saveStamp: `save-${outputs}`, env: { ...process.env, SWB_PYTHON_BIN: undefined,
-          SWB_PYTHON_DEPS_DIR: "/Users/pikachu/.hermes/profiles/engineer/cache/scratch/paste-core-gui-d2_rzs97/worktree/vendor/python/photoshop-tiff", PYTHONDONTWRITEBYTECODE: "1" }
+          SWB_PYTHON_DEPS_DIR: process.env.SWB_PYTHON_DEPS_DIR ?? path.join(process.cwd(), "vendor/python/photoshop-tiff"), PYTHONDONTWRITEBYTECODE: "1" }
       });
       const replacements = await applyFileReplacements(result.replacements.map((r, i) => ({
         tempPath: r.fromPath, targetPath: r.toPath, backupPath: path.join(result.tempFolderPath, `backup-${i}.tiff`) })), ops);
@@ -238,7 +240,7 @@ describe("original business assertions on real normal-autosave storage seam", ()
       const { stdout } = await promisify(execFile)("/opt/homebrew/bin/python3.12", ["-c",
         "import importlib.util,json,sys; sys.path.insert(0,sys.argv[3]); spec=importlib.util.spec_from_file_location('reader',sys.argv[2]); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); layers=m.read_image_source_data(__import__('pathlib').Path(sys.argv[1])).layers; print(json.dumps([{'name':m.layer_name(l),'visible':m.layer_visible(l),'opacity':int(l.opacity)} for l in layers]))",
         f.imagePath, path.join(process.cwd(), "scripts/photoshop-layered-tiff-import.py"),
-        "/Users/pikachu/.hermes/profiles/engineer/cache/scratch/paste-core-gui-d2_rzs97/worktree/vendor/python/photoshop-tiff"
+        process.env.SWB_PYTHON_DEPS_DIR ?? path.join(process.cwd(), "vendor/python/photoshop-tiff")
       ], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
       // Existing exporter folds opacity into pixels and writes PSD opacity=255.
       expect(JSON.parse(stdout)).toEqual([{ name: "Hidden", visible: false, opacity: 255 }]);

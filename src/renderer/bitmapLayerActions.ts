@@ -32,6 +32,7 @@ export const visibleLayerBelow = (
 export type BitmapLayerActionsOptions<HistoryEntry> = {
   captureEnsureScope?: () => () => boolean;
   captureEffectCompletion?: () => CompletedEffect;
+  captureCompletedHistory?: () => (entry: HistoryEntry) => void;
   isImageImportLocked: () => boolean;
   // Owner token changes on open/reload/Save/destination invalidation, including A→B→A.
   // Until the owner wires this port, object/metadata checks cannot detect origin ABA.
@@ -56,6 +57,7 @@ export type BitmapLayerActionsOptions<HistoryEntry> = {
 export const useBitmapLayerActions = <HistoryEntry,>({
   captureEnsureScope,
   captureEffectCompletion,
+  captureCompletedHistory,
   isImageImportLocked,
   getWorkspaceIdentity,
   projectRef,
@@ -93,13 +95,20 @@ export const useBitmapLayerActions = <HistoryEntry,>({
   // lock / project baseline checks keep their existing meaning, so an Import lock that arrives after
   // the asset write still publishes its own metadata/history. A refused effect is handed back, never
   // silently dropped.
-  const beginEffect = (update: BitmapLayerProjectUpdate, ids: readonly string[]) => {
+  const beginEffect = (update: BitmapLayerProjectUpdate, ids: readonly string[], undoEntry?: HistoryEntry) => {
     const ownerAdmissible = captureEnsureScope?.();
     const completion = captureEffectCompletion?.();
+    const originalHistory = captureCompletedHistory?.();
     return Object.assign(() => {
       // Ordinary publication must remain synchronous: no new load/publication await gap.
       if (!ownerAdmissible || ownerAdmissible()) return undefined;
-      return completion ? completion(update, ids) : Promise.resolve();
+      if (!completion) return Promise.reject(new Error('Original effect completion unavailable'));
+      return completion(update, ids, {
+        published: () => {
+          if (!originalHistory || undoEntry === undefined) throw new Error('Completed bitmap original history unavailable');
+          originalHistory(undoEntry);
+        }, afterDurable: async () => undefined
+      });
     }, { isCurrent: () => !!ownerAdmissible?.(), effect: async <T,>(write: () => Promise<T>): Promise<T> => {
       try { return await write(); }
       catch (error) { completion?.failed(error, ids); throw error; }
@@ -127,7 +136,7 @@ export const useBitmapLayerActions = <HistoryEntry,>({
       const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
       const dataUrl = await createTransparentLayerDataUrl(currentLayer.width, currentLayer.height);
       if (!isPreparedCurrent()) return;
-      const completed = beginEffect(p => clearBitmapLayer(p, shotId, layerId), [shotId]);
+      const completed = beginEffect(p => clearBitmapLayer(p, shotId, layerId), [shotId], undoEntry);
       await completed.effect(() => window.storyboard!.writeLayerPng({ folderPath, bitmapPath: currentLayer.bitmapPath, dataUrl }));
       const handoff = completed();
       if (handoff) { await handoff; return; }
@@ -172,7 +181,7 @@ export const useBitmapLayerActions = <HistoryEntry,>({
 
       const undoEntry = await createHistoryEntry([currentLayer.bitmapPath]);
       if (!isPreparedCurrent()) return;
-      const completed = beginEffect(p => deleteBitmapLayer(p, shotId, layerId), [shotId]);
+      const completed = beginEffect(p => deleteBitmapLayer(p, shotId, layerId), [shotId], undoEntry);
       await completed.effect(() => window.storyboard!.deleteLayerPng({
         folderPath,
         bitmapPath: currentLayer.bitmapPath
@@ -220,7 +229,7 @@ export const useBitmapLayerActions = <HistoryEntry,>({
         }
         const undoEntry = await createHistoryEntry([targetLayer.bitmapPath, sourceLayer.bitmapPath]);
         if (!isPreparedCurrent()) return;
-        const completed = beginEffect(p => mergeBitmapLayerDown(p, shotId, sourceLayer.id, targetLayer.id), [shotId]);
+        const completed = beginEffect(p => mergeBitmapLayerDown(p, shotId, sourceLayer.id, targetLayer.id), [shotId], undoEntry);
         await completed.effect(() => window.storyboard!.mergeLayerDown({
           folderPath,
           sourceBitmapPath: sourceLayer.bitmapPath,
@@ -291,7 +300,7 @@ export const useBitmapLayerActions = <HistoryEntry,>({
         }
         const undoEntry = await createHistoryEntry(selectedLayers.map((layer) => layer.bitmapPath));
         if (!isPreparedCurrent()) return;
-        const completed = beginEffect(p => mergeSelectedBitmapLayers(p, shotId, selectedLayers.map(l => l.id)), [shotId]);
+        const completed = beginEffect(p => mergeSelectedBitmapLayers(p, shotId, selectedLayers.map(l => l.id)), [shotId], undoEntry);
         await completed.effect(() => window.storyboard!.mergeVisibleLayers({
           folderPath,
           targetBitmapPath: targetLayer.bitmapPath,
@@ -394,7 +403,7 @@ export const useBitmapLayerActions = <HistoryEntry,>({
         }
         // This operation created an opaque new layer id before IO. Reuse its actual target
         // metadata, not a second mergeVisibleBitmapLayers call that would invent another id.
-        const completed = beginEffect(applyMerge, [shotId]);
+        const completed = beginEffect(applyMerge, [shotId], undoEntry);
         const mergeResult = await completed.effect(() => window.storyboard!.mergeVisibleLayers({
           folderPath,
           targetBitmapPath: mergedLayer.bitmapPath,
@@ -536,6 +545,7 @@ export const useBitmapLayerActions = <HistoryEntry,>({
       const dataUrl = await createTransparentLayerDataUrl(addedLayer.width, addedLayer.height);
       if (!isPreparedCurrent()) return;
       const completion = captureEffectCompletion?.();
+      const originalHistory = captureCompletedHistory?.();
       let result;
       try {
         result = await window.storyboard!.createLayerPng({ folderPath, bitmapPath: addedLayer.bitmapPath,
@@ -560,7 +570,17 @@ export const useBitmapLayerActions = <HistoryEntry,>({
       catch (error) { completion?.failed(error, [shotId]); throw error; }
       // A queued load cannot install its workspace while this exclusive task owns
       // the queue. Complete/persist the original obligation before releasing it.
-      if (!ownerCurrent()) { await completion?.(applyAdd, [shotId]); return; }
+      if (!ownerCurrent()) {
+        if (!completion) throw new Error('Original Add completion unavailable');
+        await completion(applyAdd, [shotId], {
+          published: before => {
+            const history = before === currentProject ? undoEntry : rebaseAddHistoryEntry?.(undoEntry, before);
+            if (!originalHistory || !history) throw new Error('Completed Add original history unavailable');
+            originalHistory(history);
+          }, afterDurable: async () => undefined
+        });
+        return;
+      }
       const history = projectRef.current === currentProject ? undoEntry : rebaseAddHistoryEntry?.(undoEntry, projectRef.current);
       if (!history) {
         const error = new Error("Add History rebase unavailable; completed asset retained");

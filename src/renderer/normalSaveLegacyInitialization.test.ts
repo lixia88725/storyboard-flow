@@ -37,7 +37,9 @@ it("dormant App autosave opts into the actual main sideeffect admission", async 
     api: () => ({ readOutputIdentity: async () => hash, autosaveWorkspace, saveWorkspace: async p => p }),
     paths: () => ({ folderPath: "/", metadataPath: "/p.json" }), onSave: () => {}, onError: () => {} });
   expect(await adapter.autosave(projectRef.current)).toBe(true);
-  expect(autosaveWorkspace.mock.calls).toEqual([[{ project: projectRef.current, folderPath: "/", metadataPath: "/p.json", normalSave: true }]]);
+  expect(autosaveWorkspace.mock.calls).toEqual([[{ project: projectRef.current, folderPath: "/", metadataPath: "/p.json", normalSave: true,
+    recoveryContent: { projectRaw: projectRef.current, sequence: 0, assetRevision: 0, desiredAssets: [], deletedDependencies: [], retainedAssetIntents: [], recoveryRequired: false,
+      effectFacts: { unsettled: false, receipt: [], deletions: [], remainingScript: null, error: null } }, recoverySaveNonce: undefined }]]);
 });
 it("load preserves explicit unknown/corrupt/future raw and never attempts a legacy proof for them", async () => {
   for (const raw of [{ version: 1, shots: { s: { state: "unknown" } } }, { version: 9, shots: {} }, "corrupt", { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: "bad" } } }]) {

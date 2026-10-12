@@ -17,6 +17,10 @@ const api = {
   autosaveWorkspace: (payload) => ipcRenderer.invoke("workspace:autosave", payload),
   ensureLayerAssets: (payload) => ipcRenderer.invoke("workspace:ensureLayerAssets", payload),
   /** @param {import("../normalSaveTransport").NormalSaveTransport & { project: unknown, folderPath: string, metadataPath: string, renamePlan?: unknown[], dirtyShotIds?: string[] }} payload */
+  // Forward incomplete effect envelopes as plain data; renderer decodes after contextBridge.
+  acknowledgeSave: (payload) => ipcRenderer.invoke("recovery:ackSave", payload),
+  observeWorkspace: (folderPath) => ipcRenderer.invoke("recovery:observeWorkspace", folderPath),
+  certifyWorkspaceHandoff: (capture) => ipcRenderer.invoke("recovery:certifyHandoff", capture),
   saveWorkspace: (payload) => ipcRenderer.invoke("workspace:save", payload),
   exportPhotoshopTiffs: (payload) => ipcRenderer.invoke("workspace:exportPhotoshopTiffs", payload),
   importSwbFormat: (payload) => ipcRenderer.invoke("workspace:importSwbFormat", payload),
@@ -73,6 +77,18 @@ const api = {
     ipcRenderer.on("app:saveAndClose", listener);
     return () => ipcRenderer.removeListener("app:saveAndClose", listener);
   },
+  onPrepareCloseRequested: (callback) => {
+    const listener = (_event, request) => callback(request);
+    ipcRenderer.on("app:prepareClose", listener);
+    return () => ipcRenderer.removeListener("app:prepareClose", listener);
+  },
+  onCloseCancelled: (callback) => {
+    const listener = (_event, request) => callback(request);
+    ipcRenderer.on("app:closeCancelled", listener);
+    return () => ipcRenderer.removeListener("app:closeCancelled", listener);
+  },
+  readReadonlyRecovery: (folderPath) => ipcRenderer.invoke("recovery:readReadonly", folderPath),
+  finishCloseCapture: (payload) => ipcRenderer.invoke("app:finishCloseCapture", payload),
   finishSaveAndClose: (payload) => ipcRenderer.invoke("app:finishSaveAndClose", payload),
   updateCloseGuard: async (payload) => {
     if (ipcRenderer.sendSync("app:updateCloseGuardSync", payload) !== true) throw new Error("Close guard was not acknowledged");

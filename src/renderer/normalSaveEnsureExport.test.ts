@@ -1,3 +1,4 @@
+import { appCallerAdapterScope } from './appCallerAdapterScope';
 import { expect, it, vi } from "vitest";
 import { createNormalSaveAppAdapter } from "./normalSaveAppAdapter";
 import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
@@ -24,8 +25,8 @@ it.each(["clean", "queued-P2"])("actual App presentation ensure caller uses the 
  const bindings: Record<string, any> = { window: { storyboard: api }, normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: f.adapter }, invalidatePresentationHistory: () => {}, bitmapLayerWriteQueueRef: { current: f.queue }, createHistoryEntry: async () => ({ project: f.ref.current }), folderPath: "/A", metadataPath: "/A/p.json", workspaceRecoveryRequiredRef: { current: undefined }, markShotsDirty: () => {}, projectRef: f.ref, recordUndoEntry: () => {}, setStatus: () => {}, shotPresentationActionRef: { current: undefined }, updateProject: () => {} };
  // When present, execute the actual App wrapper declaration as well as caller options.
  let wrapper = ""; const decl = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === "normalSaveAssetApi") wrapper = n.initializer!.getText(ast); ts.forEachChild(n, decl); }; decl(ast);
- if (wrapper) bindings.normalSaveAssetApi = new Function(...Object.keys(bindings), ts.transpile(`return (${wrapper});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings));
- const options = new Function(...Object.keys(bindings), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings));
+ if (wrapper) bindings.normalSaveAssetApi = new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${wrapper});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(appCallerAdapterScope(bindings)));
+ const options = new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(appCallerAdapterScope(bindings)));
  let release!: () => void, enter!: () => void;
  const entered = new Promise<void>(r => { enter = r; });
  const held = mode === "queued-P2" ? f.queue.runExclusive(() => new Promise<void>(r => { release = r; enter(); })) : undefined;
@@ -40,7 +41,7 @@ it("actual App Clipboard captureScope and existing Paste queue reject metadata-P
  const f = fixture(); await f.adapter.owner.load(f.ref.current);
  const app = await readFile(new URL("./App.tsx", import.meta.url), "utf8"), ast = ts.createSourceFile("App.tsx", app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX); let expression = "";
  const walk = (n: ts.Node) => { if (ts.isCallExpression(n) && n.expression.getText(ast) === "useClipboardActionController") { const option = n.arguments[0] as ts.ObjectLiteralExpression; expression = (option.properties.find(p => p.name?.getText(ast) === "captureEnsureScope") as ts.PropertyAssignment).initializer.getText(ast); } ts.forEachChild(n, walk); }; walk(ast);
- const captureEnsureScope = new Function("normalSaveAppEnabled", "normalSaveAppAdapterRef", ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(true, { current: f.adapter });
+ const captureEnsureScope = new Function("renderAdapter", "normalSaveAppEnabled", "normalSaveAppAdapterRef", ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(f.adapter, true, { current: f.adapter });
  const id = f.ref.current.shots[0].id, copied = vi.fn();
  const controller = useClipboardActionController({ captureEnsureScope, api: { ensureLayerAssets: f.effects, copyShotAssets: copied, copyLayerPng: copied }, captureWorkspace: () => ({ identity: {}, folderPath: "/A", metadataPath: "/A/p.json" }), isCurrentWorkspace: () => true, isImageImportLocked: () => false, bitmapLayerWriteQueueRef: { current: f.queue }, clipboardSelectionRef: { current: { type: "shot", shotId: id } }, projectRef: f.ref, selectedShotIdsRef: { current: [id] }, createId: () => "copied", createHistoryEntry: async () => ({}), deleteTargetRef: { current: { type: "shot" } }, folderPath: "/A", metadataPath: "/A/p.json", markShotsDirty: () => {}, queuePasteAnimation: () => {}, recordUndoEntry: () => {}, selectSingleShot: () => {}, setClipboardSelection: () => {}, setDeleteTarget: () => {}, setSelectedBitmapLayerIds: () => {}, setStatus: () => {}, updateProject: () => {} });
  let release!: () => void, enter!: () => void; const entered = new Promise<void>(r => { enter = r; }); const held = f.queue.runExclusive(() => new Promise<void>(r => { release = r; enter(); })); await entered;

@@ -253,6 +253,72 @@ describe("buildPhotoshopTiffExportPlan", () => {
     }
   });
 
+  it("drains a live exporter after a sibling progress failure without starting remaining jobs", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "swb-export-drain-"));
+    const gate = path.join(root, "release");
+    const scriptPath = path.join(root, "writer.mjs");
+    const firstFailure = new Error("synthetic progress failure");
+    let signalFailed!: () => void;
+    const failed = new Promise<void>((resolve) => { signalFailed = resolve; });
+    let finished = false;
+    let progress = 0;
+    let outcome: Promise<unknown> | undefined;
+    try {
+      // The exporter seam uses a synthetic codec, but actual child processes,
+      // output files and a held native descriptor. No user TIFF is involved.
+      await writeFile(scriptPath, [
+        "import { open, readFile, stat, writeFile } from 'node:fs/promises';",
+        "import path from 'node:path';",
+        "const manifest = JSON.parse(await readFile(process.argv[2], 'utf8'));",
+        "const root = process.env.DRAIN_ROOT;",
+        "const wait = async name => { const until = Date.now() + 5000; while (!await stat(path.join(root,name)).then(()=>true,()=>false)) { if(Date.now()>until) throw new Error('gate timeout'); await new Promise(r=>setTimeout(r,5)); } };",
+        "if(manifest.documentName === '0') await wait('started');",
+        "const fd = await open(manifest.outputPath,'w');",
+        "try { await fd.writeFile('partial'); if(manifest.documentName === '1') { await writeFile(path.join(root,'started'),'ready'); await wait('release'); await fd.writeFile('late-write'); } } finally { await fd.close(); }"
+      ].join("\n"));
+      const shots = [0, 1, 2].map((index) => ({
+        id: `shot-${index}`, imagePath: path.join(root, `${index}.tiff`),
+        fileName: `${index}.tiff`, order: index,
+        swb: { canvasWidth: 320, canvasHeight: 180 }, layers: [layer({})]
+      }));
+      for (const shot of shots) await writeFile(shot.imagePath, "original");
+      outcome = writePhotoshopLayeredTiffsForInPlaceSave({ name: "Synthetic", shots }, root, {
+        scriptPath, pythonPath: process.execPath, saveStamp: "drain", concurrency: 2,
+        env: { ...process.env, DRAIN_ROOT: root },
+        onJobWritten: () => {
+          if (progress++ === 0) { signalFailed(); throw firstFailure; }
+        }
+      }).then(() => undefined, (error: unknown) => error).finally(() => { finished = true; });
+      await Promise.race([failed, outcome.then(() => { throw new Error("export ended before the held writer was ready"); })]);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(finished).toBe(false);
+      expect(await stat(path.join(root, ".storyboard-workbench/save-tmp/drain/.manifests/shot-2.json"))
+        .then(() => true, () => false)).toBe(false);
+    } finally {
+      const returnedBeforeRelease = finished;
+      await writeFile(gate, "release");
+      if (outcome) {
+        const error = await outcome;
+        try {
+          // Even the known-broken baseline may have a child still running after
+          // its outer promise rejected. Drain our synthetic children before rm.
+          const deadline = Date.now() + 5000;
+          while (progress < (returnedBeforeRelease ? 3 : 2) && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+          }
+          expect(error).toBe(firstFailure);
+          expect(await stat(path.join(root, ".storyboard-workbench/save-tmp/drain/.manifests/shot-2.json"))
+            .then(() => true, () => false)).toBe(false);
+          expect(await readFile(path.join(root, "1.tiff"), "utf8")).toBe("original");
+        } finally {
+          await rm(root, { recursive: true, force: true });
+        }
+      } else {
+        await rm(root, { recursive: true, force: true });
+      }
+    }
+  }, 15000);
+
   it("injects per-shot XMP into in-place Photoshop TIFF save manifests", async () => {
     const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-photoshop-tiff-save-xmp-"));
 

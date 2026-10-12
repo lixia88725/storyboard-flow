@@ -5,6 +5,8 @@ import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import { useClipboardActionController } from "./clipboardActionController";
 import type { ClipboardSelection } from "./clipboardSelection";
 import type { DeleteTarget } from "./deleteTarget";
+import { registerWorkspaceAssetIpcHandlers } from "../../electron/main/ipc/workspaceAssetHandlers";
+import { CopyCleanupIncompleteError } from "../../electron/main/copyShotAssetsService";
 
 const layer = (
   shotId: string,
@@ -160,6 +162,30 @@ const setupController = ({
     undoEntries
   };
 };
+
+it("Copy incomplete effects cross the main result boundary and Paste refuses project/history/selection publication", async () => {
+  let invoke!: (event: unknown, payload: unknown) => Promise<unknown>;
+  const retained = [{ filePath: "/scene/retained.png", kind: "layer" as const, effect: "committed" as const }];
+  registerWorkspaceAssetIpcHandlers({ handle: (_name, listener) => { invoke = (event, payload) => listener(event as never, payload); } }, {
+    copyShotAssets: async () => { throw new CopyCleanupIncompleteError(new Error("preview failed"), [new Error("cleanup EPERM")], retained); }
+  });
+  const result = structuredClone(await invoke(undefined, {}));
+  expect(result).toMatchObject({ ok: false, error: { code: "COPY_RECOVERY_INCOMPLETE", retainedEffects: retained } });
+  const s = setupController({
+    project: projectWithShots([shot("a", 0, [layer("a", "paint", 0)])]),
+    clipboardSelection: { type: "shot", shotId: "a" }, selectedShotIds: ["a"]
+  });
+  const before = structuredClone(s.projectRef.current);
+  s.api.copyShotAssets.mockResolvedValueOnce(result as never);
+  await s.controller.handlePasteSelection();
+  expect(s.projectRef.current).toEqual(before);
+  expect(s.undoEntries).toEqual([]);
+  expect(s.queuedPasteAnimations).toEqual([]);
+  expect(s.selectedShotIdsByCall).toEqual([]);
+  expect(s.dirtyShotIds).toEqual([]);
+  expect(s.statuses.at(-1)).toContain("cleanup EPERM");
+  expect(s.statuses.at(-1)).toContain("/scene/retained.png");
+});
 
 describe("image Import Paste admission", () => {
   const setup = (kind: "shot" | "layer") => setupController({

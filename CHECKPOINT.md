@@ -1,22 +1,15 @@
 # Current source checkpoint — Storyboard Flow
 
-This is a **source checkpoint**, not a release or a claim that all safety/platform work is complete.
+**WIP SOURCE CHECKPOINT / NOT ACCEPTED / NOT A RELEASE.**
 
-Branch: `checkpoint/module-optimization-20261009`.
+Target branch: `checkpoint/data-safety-wip-20261012`.
+Public parent: `2131f65423c8b67de7ccc0ba45daf5d9e217bf48`.
+Preparation is local and staged only; the upload executor must record and read back the eventual commit. No main merge, PR, tag or Release is implied.
 
-## Included state
+The complete 522-source identity is [SOURCE-MANIFEST.json](research/data-safety/SOURCE-MANIFEST.json), SHA256 `05fda907f9d878a47abb9812a331725e220ee8ee50686eeda857b0998bef3646`. Existing source bytes are preserved exactly; [SOURCE-CHECKPOINT.md](research/data-safety/SOURCE-CHECKPOINT.md) records reused evidence, all eight failing test identities, independent-review limits and portability gaps.
 
-- Reviewed normal Save work, internal-AI retirement, ordinary Pending and non-frozen module optimization.
-- Accepted source manifest SHA256: `002337987cbbed4559b6dd3733e86828f307744a0a50d29b625bb2a7e8369034` (436 source/script inputs).
-- The corresponding local candidate passed 1789 assertions, full build/types and ordinary isolated Electron flows; final independent reviewer accepted the non-frozen structural queue.
-- Current source, build/test configuration, core handoff documentation and necessary synthetic test fixtures are included.
+Only source/tests/configuration and sanitized necessary documentation are added. No private fixture, raw GUI trace, raw report, credentials, dependency/vendor download, generated build or cache is added. Prohibited inherited fixture entries are removed from the final tree, not read or copied as candidate evidence. Previously public base history is retained, not rewritten; deletion does not make those old objects disappear from Git history.
 
-Raw private evidence archives, generated builds/vendor dependencies, caches, unneeded research material and unrelated parallel edits are not part of this upload. Local evidence paths in older handoffs are provenance pointers, not files obtainable from this branch. The historical handoff records pre-checkpoint Git state; this note describes the checkpoint itself.
+The inherited workflow is unchanged: pushes to `main`, version tags, or manual dispatch can build/publish releases and update the release repository. A push only to this checkpoint branch matches none of its configured automatic triggers; no additional workflow is introduced. Recheck remote automation before upload if it changes.
 
-## Remaining work / limits
-
-Old-PNG failed-write preservation, multi-asset History compensation, partial/crash guarantees, all race/device/platform matrices and clean-machine acquisition remain open. Source synchronization is not installer or Windows/macOS portability certification. Existing tests contain some machine-local fixture paths; clean-machine reproduction has not been certified for this checkpoint.
-
-The repository release workflow runs on main pushes/version tags, not this checkpoint branch. This checkpoint is not merged, tagged or published as a software release.
-
-Start from `context-handoff.md` and `todo.md`. The present scope is preserving accepted work; new PNG/History implementation and changes to permissions/storage contracts need a separately confirmed work block. `docs/architecture/SYSTEM.md` is the current architectural map.
+Start with [context-handoff.md](context-handoff.md) and [todo.md](todo.md). Acquisition/install/clean-machine behavior is not verified, production quota is not approved, Windows and full safety acceptance remain incomplete.

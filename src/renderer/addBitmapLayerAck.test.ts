@@ -1,19 +1,21 @@
-import { expect, it, vi, afterEach } from "vitest";
+import os from "node:os";
+import { onTestFinished, expect, it, vi, afterEach } from "vitest";
 import { useBitmapLayerActions } from "./bitmapLayerActions";
 import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import { createProject } from "../shared/projectOps";
 import type { Project } from "../shared/types";
 import { readLayerAssetSnapshots } from "./bitmapLayerHistory";
 import { readLayerPng } from "../../electron/main/layerAssetService";
-import { mkdtemp, mkdir, readFile } from "node:fs/promises";
+import { rm, mkdtemp, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
 
 // Actual Add producer/queue/History read port; React setters represented explicitly, not mounted.
-const folderPath = "/Users/pikachu/.hermes/profiles/engineer/cache/scratch/save-firstblock-integration-20261007/smoke-closeout/save-delete-ack-repair/add-layer-create-repair";
+const folderPath = process.env.TMPDIR ?? os.tmpdir();
 async function scenario() {
   const root = await mkdtemp(path.join(folderPath, "add-ack-red-"));
+  onTestFinished(async () => { await rm(root, { recursive: true, force: true }); });
   await mkdir(path.join(root, ".storyboard-workbench/layers/add-ack"), { recursive: true });
   await sharp({ create: { width: 2, height: 2, channels: 4, background: "white" } }).tiff({ compression: "none" }).toFile(path.join(root, "owned.tiff"));
   const transparent = await sharp({ create: { width: 2, height: 2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();

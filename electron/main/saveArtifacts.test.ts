@@ -4,6 +4,8 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { applyFileReplacements } from "./fileRenames.js";
 import { withSuccessfulSaveArtifactCleanup } from "./saveArtifacts.js";
+import { recoverFailedSave } from "./saveRecovery.js";
+import { createSavePreparationDirectory } from "./tiffPreparation.js";
 
 const prepareReplacement = async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "swb-save-cleanup-"));
@@ -14,7 +16,8 @@ const prepareReplacement = async () => {
   const backupPath = path.join(backupFolderPath, "shot.tiff");
   const oldBytes = Buffer.from("synthetic old TIFF bytes");
   const newBytes = Buffer.from("synthetic new TIFF bytes");
-  await mkdir(tempFolderPath);
+  const preparationDirectory = await createSavePreparationDirectory(tempFolderPath);
+  const backupDirectory = await createSavePreparationDirectory(backupFolderPath);
   await writeFile(targetPath, oldBytes);
   await writeFile(tempPath, newBytes);
   const applied = await applyFileReplacements([{ tempPath, targetPath, backupPath }], {
@@ -22,10 +25,29 @@ const prepareReplacement = async () => {
     rename,
     unlink
   });
-  return { root, tempFolderPath, backupFolderPath, targetPath, backupPath, oldBytes, newBytes, applied };
+  return { root, tempFolderPath, backupFolderPath, preparationDirectory, backupDirectory, targetPath, backupPath, oldBytes, newBytes, applied };
 };
 
 describe("withSuccessfulSaveArtifactCleanup", () => {
+  it("retains a different directory at the same artifact path before committing or deleting", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "swb-cleanup-identity-"));
+    const tempFolderPath = path.join(root, "owned"), backupFolderPath = path.join(tempFolderPath, ".backups");
+    const preparationDirectory = await createSavePreparationDirectory(tempFolderPath);
+    await rename(tempFolderPath, path.join(root, "retained-original"));
+    await mkdir(tempFolderPath);
+    await writeFile(path.join(tempFolderPath, "later-edit"), "do not delete");
+    const applied = { commit: vi.fn(async () => undefined), rollback: vi.fn(async () => undefined) };
+    const remove = vi.fn<typeof rm>(rm);
+    const wrapped = withSuccessfulSaveArtifactCleanup(applied, {
+      tempFolderPath, backupFolderPath, remove, preparationDirectory
+    } as any);
+    try {
+      await expect(wrapped.commit()).rejects.toMatchObject({ recoveryIncomplete: true, retainedPaths: [tempFolderPath] });
+      expect(applied.commit).not.toHaveBeenCalled();
+      expect(remove).not.toHaveBeenCalled();
+      expect(await readFile(path.join(tempFolderPath, "later-edit"), "utf8")).toBe("do not delete");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
   it.each(["tempFolderPath", "backupFolderPath"] as const)(
     "preserves committed TIFF bytes when %s cleanup fails instead of entering Save rollback",
     async (failedFolder) => {
@@ -40,29 +62,30 @@ describe("withSuccessfulSaveArtifactCleanup", () => {
       const wrapped = withSuccessfulSaveArtifactCleanup({ ...fixture.applied, rollback }, {
         tempFolderPath: fixture.tempFolderPath,
         backupFolderPath: fixture.backupFolderPath,
+        preparationDirectory: fixture.preparationDirectory,
+        backupDirectory: fixture.backupDirectory,
         remove
       });
       try {
         expect(await readFile(fixture.targetPath)).toEqual(fixture.newBytes);
         expect(await readFile(fixture.backupPath)).toEqual(fixture.oldBytes);
         let saveError: unknown;
-        // Match Save's catch: a rejected commit causes rollback, even after backups were deleted.
+        // Cleanup failure must be an explicit incomplete result, never success
+        // or a rollback after backup deletion has started.
         try {
           await wrapped.commit();
         } catch (error) {
           saveError = error;
-          await wrapped.rollback();
+          await expect(recoverFailedSave(error, { appliedTiffReplacements: wrapped })).rejects.toMatchObject({ recoveryIncomplete: true });
         }
         const targetBytes = await readFile(fixture.targetPath).catch(() => null);
         expect(targetBytes).toEqual(fixture.newBytes);
-        expect(saveError).toBeUndefined();
+        expect(saveError).toMatchObject({ recoveryIncomplete: true, retainedPaths: [fixture[failedFolder]] });
         expect(rollback).not.toHaveBeenCalled();
         expect(remove.mock.calls.map(([folder]) => folder)).toEqual([
           fixture.tempFolderPath, fixture.backupFolderPath
         ]);
-        expect(warning).toHaveBeenCalledWith(
-          expect.stringContaining(fixture[failedFolder]), cleanupError
-        );
+        expect(warning).not.toHaveBeenCalled();
         expect((await stat(fixture[failedFolder])).isDirectory()).toBe(true);
         const otherFolder = failedFolder === "tempFolderPath" ? "backupFolderPath" : "tempFolderPath";
         await expect(stat(fixture[otherFolder])).rejects.toMatchObject({ code: "ENOENT" });
@@ -74,29 +97,19 @@ describe("withSuccessfulSaveArtifactCleanup", () => {
     }
   );
   it("removes successful save temp and backup folders after replacement commit", async () => {
+    const fixture = await prepareReplacement();
     const applied = {
       commit: vi.fn(async () => undefined),
       rollback: vi.fn(async () => undefined)
     };
-    const remove = vi.fn(async () => undefined);
-
-    const wrapped = withSuccessfulSaveArtifactCleanup(applied, {
-      tempFolderPath: "/scene/.storyboard-workbench/save-tmp/save-123",
-      backupFolderPath: "/scene/.storyboard-workbench/save-backup/save-123",
-      remove
-    });
-
-    await wrapped.commit();
-
-    expect(applied.commit).toHaveBeenCalledOnce();
-    expect(remove).toHaveBeenCalledWith("/scene/.storyboard-workbench/save-tmp/save-123", {
-      recursive: true,
-      force: true
-    });
-    expect(remove).toHaveBeenCalledWith("/scene/.storyboard-workbench/save-backup/save-123", {
-      recursive: true,
-      force: true
-    });
+    const remove = vi.fn<typeof rm>(rm);
+    const wrapped = withSuccessfulSaveArtifactCleanup(applied, { ...fixture, remove });
+    try {
+      await wrapped.commit();
+      expect(applied.commit).toHaveBeenCalledOnce();
+      expect(remove).toHaveBeenCalledWith(fixture.tempFolderPath, { recursive: true, force: true });
+      expect(remove).toHaveBeenCalledWith(fixture.backupFolderPath, { recursive: true, force: true });
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
   });
 
   it("propagates underlying commit failure and still restores original bytes on rollback", async () => {
@@ -110,6 +123,8 @@ describe("withSuccessfulSaveArtifactCleanup", () => {
     }, {
       tempFolderPath: fixture.tempFolderPath,
       backupFolderPath: fixture.backupFolderPath,
+      preparationDirectory: fixture.preparationDirectory,
+      backupDirectory: fixture.backupDirectory,
       remove
     });
     try {
@@ -132,7 +147,8 @@ describe("withSuccessfulSaveArtifactCleanup", () => {
     const wrapped = withSuccessfulSaveArtifactCleanup({
       commit: async () => undefined,
       rollback: async () => { throw rollbackError; }
-    }, { tempFolderPath: "/synthetic/temp", backupFolderPath: "/synthetic/backup", remove });
+    }, { tempFolderPath: "/synthetic/temp", backupFolderPath: "/synthetic/backup", remove,
+      preparationDirectory: { directoryPath: "/synthetic/temp", identity: { dev: "unused", ino: "unused" } } });
     await expect(wrapped.rollback()).rejects.toBe(rollbackError);
     expect(remove).not.toHaveBeenCalled();
   });
@@ -147,6 +163,7 @@ describe("withSuccessfulSaveArtifactCleanup", () => {
     const wrapped = withSuccessfulSaveArtifactCleanup(applied, {
       tempFolderPath: "/scene/.storyboard-workbench/save-tmp/save-123",
       backupFolderPath: "/scene/.storyboard-workbench/save-backup/save-123",
+      preparationDirectory: { directoryPath: "/scene/.storyboard-workbench/save-tmp/save-123", identity: { dev: "unused", ino: "unused" } },
       remove
     });
 

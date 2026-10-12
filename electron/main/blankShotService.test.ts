@@ -1,11 +1,24 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { lstat, mkdtemp, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createBlankShot } from "./blankShotService.js";
 
 describe("blankShotService", () => {
+  it("does not follow a pre-existing dangling filename entry when creating a blank", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "blank-entry-ownership-"));
+    const occupied = path.join(root, "new_shot_123_0.tiff"), missing = path.join(root, "missing.tiff");
+    const clock = vi.spyOn(Date, "now").mockReturnValue(123);
+    try {
+      await symlink(missing, occupied);
+      const created = await createBlankShot(root);
+      expect(created).not.toBe(occupied);
+      expect((await lstat(occupied)).isSymbolicLink()).toBe(true);
+      await expect(lstat(missing)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { clock.mockRestore(); await rm(root, { recursive: true, force: true }); }
+  });
+
   it("creates unique blank TIFF shots for the selected preset", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "swb-blank-shot-"));
     const folderPath = path.join(root, "workspace");

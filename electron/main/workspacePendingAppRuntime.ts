@@ -97,7 +97,7 @@ export const createWorkspacePendingAppHandlers = <Project extends PendingProject
   persistProject,
   uniquePath
 }: WorkspacePendingAppRuntimeOptions<Project>): WorkspacePendingIpcHandlers => {
-  const finalize = async (payload: WorkspacePendingPayload<Project>, files: PendingShotFile[]) => {
+  const finalize = async (payload: WorkspacePendingPayload<Project>, files: PendingShotFile[], onPublicationStarted: () => void) => {
     if (payload.normalSave) {
       const project = payload.project as Project & { pendingBake?: { shots: Record<string, { editToken?: string }> } };
       for (const file of files) {
@@ -108,6 +108,7 @@ export const createWorkspacePendingAppHandlers = <Project extends PendingProject
           baseFingerprint: file.baseFingerprint, outputHash: createHash("sha256").update(await readFile(file.imagePath)).digest("hex") };
       }
     }
+    onPublicationStarted();
     await persistProject(payload.metadataPath, projectWithPendingFiles(payload.project, files));
   };
   const options = {
@@ -125,7 +126,7 @@ export const createWorkspacePendingAppHandlers = <Project extends PendingProject
       return moveShotsToVisiblePending(payload.folderPath, payload.project, shotIds, {
         ...options,
         beginTransaction: (moves) => beginTransaction(payload.folderPath, moves),
-        finalize: (files) => finalize(payload, files),
+        finalize: (files, onPublicationStarted) => finalize(payload, files, onPublicationStarted),
         materializeShots: (project, selectedShotIds) =>
           materializeShots(project, payload.folderPath, selectedShotIds)
       });
@@ -140,7 +141,7 @@ export const createWorkspacePendingAppHandlers = <Project extends PendingProject
         {
           ...options,
           beginTransaction: (moves) => beginTransaction(payload.folderPath, moves),
-          finalize: (files) => finalize(payload, files)
+          finalize: (files, onPublicationStarted) => finalize(payload, files, onPublicationStarted)
         }
       );
     }

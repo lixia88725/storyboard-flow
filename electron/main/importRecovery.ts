@@ -1,4 +1,5 @@
 import { FileReplacementRecoveryIncompleteError } from "./fileRenames.js";
+import { hasUnresolvedProtectedWrite } from "./protectedLayerFileWriter.js";
 
 type Rollback = { rollback: () => Promise<void> };
 
@@ -19,7 +20,7 @@ export const recoverFailedImport = async (
   steps: Array<Rollback | undefined>
 ): Promise<never> => {
   if (error instanceof ImportRecoveryIncompleteError) throw error;
-  if (error instanceof FileReplacementRecoveryIncompleteError) {
+  if (error instanceof FileReplacementRecoveryIncompleteError || hasUnresolvedProtectedWrite(error)) {
     throw new ImportRecoveryIncompleteError([error]);
   }
   try {

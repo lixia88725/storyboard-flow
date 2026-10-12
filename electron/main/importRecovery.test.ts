@@ -22,7 +22,8 @@ const mainCatch = async (marker: string, bindings: Record<string, unknown>) => {
   const body = source.slice(start + "} catch (error) {".length, end);
   const helper = await import("./importRecovery.js");
   const ipc = await import("../shared/normalSaveImportIpc.js");
-  const args = { appliedTiffReplacements: undefined, ...bindings, ...helper,
+  const args = { appliedTiffReplacements: undefined, metadataPublicationStarted: false,
+    irreversibleCommitStarted: false, previewReceipts: [], ...bindings, ...helper,
     normalSaveImportFailure: ipc.normalSaveImportFailure };
   const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor;
   return new AsyncFunction(...Object.keys(args), body)(...Object.values(args));
@@ -93,7 +94,7 @@ it.each([false, true])("actual Import inner/outer catches gate no-handle automat
     await f.archiveRollback();
   };
   const inner = await caught(() => mainCatch("\n  }\n\n  const applyPreparedImports", { error, rollbackImportMoves }));
-  const outerMarker = "\n    }\n  });\n\n  registerWorkspaceExternalChanges";
+  const outerMarker = "\n    }\n  }));\n\n  registerWorkspaceExternalChanges";
   const outerBindings = { error: inner, swbImport: undefined, scriptImport: { rollback: f.scriptRollback } };
   if (restoreFails) {
     // A recovery-incomplete Import crosses IPC as a RETURNED serializable envelope (never a thrown
@@ -138,7 +139,7 @@ it.each(["inner", "outer"])("actual Import %s catch preserves original and expli
   const inner = boundary === "inner"
     ? await caught(() => mainCatch("\n  }\n\n  const applyPreparedImports", { error: original, rollbackImportMoves }))
     : original;
-  const envelope = await mainCatch("\n    }\n  });\n\n  registerWorkspaceExternalChanges", {
+  const envelope = await mainCatch("\n    }\n  }));\n\n  registerWorkspaceExternalChanges", {
     error: inner, swbImport: boundary === "outer" ? { rollback: rollbackImportMoves } : undefined,
     scriptImport: { rollback: f.scriptRollback }
   }) as { ok: boolean; error: { code: string; message: string } };

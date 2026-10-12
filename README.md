@@ -1,5 +1,25 @@
 # Storyboard Flow
 
+> **WIP 源码检查点 — 未独立验收、不是正式发布。** 最新同源自测为 264 文件 / 1963 assertions / 1955 pass / **8 fail** / 0 pending；不要用于真实作品，也不要将已有 build 或有限 GUI 接缝通过当作全套安全认证。当前状态以 [交接](context-handoff.md)、[TODO](todo.md)和 [检查点摘要](research/data-safety/SOURCE-CHECKPOINT.md)为准，下方产品说明不构成最新验收结论。
+
+## 获取与最短检查路径
+
+上传完成后可获取目标分支（本文不声称本地暂存已上传）：
+
+```bash
+git clone --branch checkpoint/data-safety-wip-20261012 --single-branch https://github.com/lixia88725/storyboard-flow.git
+cd storyboard-flow
+# 在自行准备兼容依赖后：
+npm run build
+npm run check:preload
+npx --no-install vitest run --config vitest.full.config.ts
+node --test electron/main/saveWholeOperationSafety.test.cjs
+```
+
+522 个输入的精确身份见 [SOURCE-MANIFEST.json](research/data-safety/SOURCE-MANIFEST.json)。`vitest.full.config.ts` 保持实际验证时的完整 include 和被禁止 fixture 的单项 exclude；不要用默认短 collection 冒称复现了全套结果。已知八个失败完整列在摘要中，本轮不修、不跳过或延长 deadline。
+
+本轮没有 install、重新打包或干净机器运行验证。需要项目 Node/Electron/npm 依赖及兼容 Python 3.12 TIFF/native 依赖；vendor 下载和构建输出不随源码上传。部分 native tests/测试 composition 硬编码 Homebrew Python，部分 vendor/旧 spike fallback 仍存在，故这些步骤是入口说明，不是跨机成功保证。没有批准生产 recovery quota 数字；不会生成新的配置默认值。仅 checkpoint 分支 push 不匹配继承 workflow 的 main/version-tag 自动发布触发；不要 push main、打 tag 或手动 dispatch。
+
 Storyboard Flow 是一个本地优先的故事板工作台。V1 聚焦：打开一个本地图像文件夹、排序 storyboard、移动台词、绘制修改、管理轻量图层，并在需要时把软件内顺序和画面同步回真实 TIFF。
 
 ## Naming And Compatibility

@@ -2,7 +2,9 @@ import {
   Fragment,
   memo,
   useCallback,
+  useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -10,6 +12,8 @@ import {
   type DragEvent as ReactDragEvent
 } from "react";
 import { Circle, Layer, Line, Stage } from "react-konva";
+import { registerMountedCanvasCheckpoint } from "./mountedCanvasRecoveryCapture";
+import { WorkspaceCanvasSlotContext } from './workspaceCanvasSlotContext';
 import { bitmapLayersForShot, imageBitmapLayerId } from "../shared/projectOps";
 import type {
   BitmapLayer,
@@ -304,6 +308,19 @@ export const SketchPad = memo(({
   const transformDraftRef = useRef<BitmapTransformDraft | undefined>(undefined);
   const preparedTransformRef = useRef<PreparedBitmapTransform | undefined>(undefined);
   const transformPrepareRunRef = useRef(0);
+  const canvasSlot = useContext(WorkspaceCanvasSlotContext);
+  const heldCheckpoint = canvasSlot?.checkpoints?.find(c => c.shotId === shot.id);
+  useLayoutEffect(() => registerMountedCanvasCheckpoint(() => ({
+    folderPath, shotId: shot.id, pointerId: activePointerIdRef.current,
+    draft: draftStrokeRef.current ?? null, selection: selectionDraftRef.current ?? bitmapSelectionRef.current ?? null,
+    transform: transformDraftRef.current ?? null, pendingCommitted: pendingCommittedStrokesRef.current,
+    liveLayers: Object.entries(liveBitmapCanvasRefs.current).flatMap(([layerId, canvas]) =>
+      canvas && liveBitmapLayerIdRef.current === layerId ? [{ layerId, dataUrl: canvas.toDataURL("image/png") }] : []),
+    transformPixels: transformPreviewCanvasRef.current?.toDataURL("image/png"),
+    hasUnsettledGesture: isDrawingRef.current || !!draftStrokeRef.current || !!pendingDraftStrokeRef.current ||
+      !!selectionDraftRef.current || !!transformDraftRef.current || committingStrokeIdsRef.current.size > 0 ||
+      pendingCommittedStrokesRef.current.length > 0
+  }), canvasSlot?.incarnation), [folderPath, shot.id, canvasSlot?.incarnation]);
   const imageSrc = window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath);
   const canvasSize = useMemo(() => canvasSizeForShot(shot), [shot]);
   const bitmapLayers = useMemo(() => bitmapLayersForShot(shot), [shot]);
@@ -606,7 +623,9 @@ export const SketchPad = memo(({
   };
 
   const layerSourceUrl = (layer: BitmapLayer) =>
-    layerDataUrls[layer.id] ??
+    canvasSlot?.readonly ? (heldCheckpoint?.liveLayers.find(v => v.layerId === layer.id)?.dataUrl ??
+      canvasSlot.pins?.find(v => v.role === `desired/${shot.id}/${layer.id}`)?.dataUrl ??
+      canvasSlot.pins?.find(v => v.role === `original/${shot.id}/${layer.id}`)?.dataUrl) : layerDataUrls[layer.id] ??
     (!layer.cleared
       ? bitmapLayerAssetSource({ folderPath, layer, revision: bitmapRevision })
       : undefined) ??
@@ -891,9 +910,10 @@ export const SketchPad = memo(({
     }
 
     const writtenDataUrl = await onSelectionTransform(activeLayer.id, dataUrl);
-    if (writtenDataUrl) {
-      setLayerDataUrls((current) => ({ ...current, [activeLayer.id]: writtenDataUrl }));
-    }
+    // Absence includes completed original writes whose UI generation revoked.
+    // Do not continue publishing an old selection after that control-flow exit.
+    if (!writtenDataUrl) return;
+    setLayerDataUrls((current) => ({ ...current, [activeLayer.id]: writtenDataUrl }));
 
     if (transform.type === "rotate") {
       const center = bitmapSelectionCenter(transform.startBounds);

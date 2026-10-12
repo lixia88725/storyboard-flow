@@ -1,8 +1,9 @@
+import os from "node:os";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { rm, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { expect, it, afterEach, vi } from "vitest";
+import { onTestFinished, expect, it, afterEach, vi } from "vitest";
 import { createProject } from "../shared/projectOps";
 import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import { createNormalSaveProjectOwner } from "./normalSaveProjectOwner";
@@ -12,10 +13,11 @@ import { createLayerPng, readLayerPng } from "../../electron/main/layerAssetServ
 import type { CreateLayerAssetPayload, CreateLayerAssetResult } from "../../electron/main/layerAssetService";
 import { serializeStoryboardScriptMarkdown } from "../../electron/main/storyboardScript";
 import type { Project } from "../shared/types";
-const scratch = "/Users/pikachu/.hermes/profiles/engineer/cache/scratch/save-firstblock-integration-20261007/smoke-closeout/save-delete-ack-repair/add-layer-create-repair";
+const scratch = process.env.TMPDIR ?? os.tmpdir();
 const hash = async (file: string) => createHash("sha256").update(await readFile(file)).digest("hex");
 async function fixture() {
   const root = await mkdtemp(path.join(scratch, "owner-green-"));
+  onTestFinished(async () => { await rm(root, { recursive: true, force: true }); });
   await mkdir(path.join(root, ".storyboard-workbench/layers/s"), { recursive: true });
   const imagePath = path.join(root, "s.tiff"), bitmapPath = ".storyboard-workbench/layers/s/layer-image.png";
   const old = await sharp({ create: { width: 2, height: 2, channels: 4, background: "red" } }).png().toBuffer();
@@ -37,7 +39,10 @@ async function fixture() {
   const calls: CreateLayerAssetPayload[] = [];
   const api = { readLayerPng, createLayerPng: async (payload: CreateLayerAssetPayload) => { calls.push(payload); return create(payload); } } as unknown as NonNullable<Window["storyboard"]>;
   vi.stubGlobal("window", { storyboard: api });
-  const actions = useBitmapLayerActions({ projectRef: ref, folderPath: root, bitmapLayerWriteQueueRef: { current: queue },
+  // The original installed history obligation is separate from late UI publication.
+  const completedHistories: unknown[] = [];
+  const actions = useBitmapLayerActions<(typeof histories)[number]>({ projectRef: ref, folderPath: root, bitmapLayerWriteQueueRef: { current: queue },
+    captureCompletedHistory: () => entry => { completedHistories.push(entry); },
     captureEnsureScope: () => owner.captureEffectAdmission(), captureEffectCompletion: () => owner.captureEffectCompletion(), getWorkspaceIdentity: () => ref,
     isImageImportLocked: () => false, createTransparentLayerDataUrl: async () => `data:image/png;base64,${transparent.toString("base64")}`,
     createHistoryEntry: async paths => ({ project: ref.current, layerAssets: await readLayerAssetSnapshots(api, root, paths ?? []) }),

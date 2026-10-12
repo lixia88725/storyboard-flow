@@ -4,6 +4,7 @@ import { importRecoveryIncompleteCode } from "../../electron/shared/normalSaveIm
 import { acknowledgeBake, classifyPendingBake, initializeCompletedShot, pendingBakeForProject, type NormalSaveOutputAck } from "../shared/pendingBake";
 import { publishWorkspaceProject } from "./workspaceLifecycleState";
 import type { BitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
+import { createAssetIntentAdmission, type RetainedAssetIntent, type AssetOperationLease } from "./assetIntentAdmission";
 import type { NormalSaveCompletion, NormalSaveDeletionAck } from "../../electron/normalSaveTransport";
 export type { NormalSaveOutputAck } from "../shared/pendingBake";
 export type PendingPublication = { durable: boolean; namespace?: { before: Project; after: Project; ids: string[]; update: (project: Project) => Project } };
@@ -13,7 +14,11 @@ export type DurableEffectHooks = {
 };
 export type CompletedEffect = ((update: Project | ((project: Project) => Project), shotIds: readonly string[], hooks?: DurableEffectHooks) => Promise<void>) & {
   // An effect was attempted but has no complete ACK. Same-process barrier, not durable pending.
+  // Available only on a captured real effect; refuses until original History
+  // and bound persistence/ACK finish, then exits this exact admitted intent once.
+  exitWithoutPublication?: () => never;
   failed: (error: unknown, shotIds: readonly string[]) => void;
+  retainDesiredPng?: (target: { folderPath: string; bitmapPath: string; shotId: string; layerId: string; dataUrl: string }) => void;
   prepareSinglePng?: (target: { folderPath: string; bitmapPath: string; shotId: string; layerId: string;
     dataUrl: string; read: () => Promise<string | undefined>; update: (project: Project) => Project }) => void;
 };
@@ -25,7 +30,7 @@ export type NormalSaveOwnerPorts = {
   readIdentity: (shot: Shot) => Promise<string>;
   // Main may prove a finite legacy single-layer equivalence. Absence/failure stays unknown.
   readLegacyIdentity?: (project: Project, shot: Shot) => Promise<string | undefined>;
-  persist: (project: Project) => Promise<void>;
+  persist: (project: Project, required?: boolean) => Promise<void>;
   captureEffectPersistence?: () => { folderPath: string; metadataPath: string; persist: (project: Project) => Promise<void> };
   output: (project: Project, shotIds: string[]) => Promise<NormalSaveOutputAck[] | NormalSaveCompletion>;
   outputWhenClean?: boolean;
@@ -46,18 +51,37 @@ const importRecoveryIncomplete = (error: unknown): boolean => {
 /** App remains the sole owner: this module operates on its ref and synchronous state publication port.
  * Not enabled in App until every producer and effect admission is adapted. No IPC or new queue. */
 export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
+  let executingIntent: RetainedAssetIntent | undefined;
+  const completionSignals = new WeakMap<object, RetainedAssetIntent>();
+  const assetAdmission = createAssetIntentAdmission((signal, executing) => {
+    if (!signal || typeof signal !== 'object' || completionSignals.get(signal) !== executing) return false;
+    completionSignals.delete(signal);
+    return true;
+  });
+  let heldSaveAdmission: AssetOperationLease | undefined;
+  let saveAdmissionActive = false;
+  const submitAssetIntent = <T,>(intent: RetainedAssetIntent, run: () => Promise<T>) => assetAdmission.submit(intent, async executing => {
+    // Admission serializes producers through their complete required ACK.
+    executingIntent = executing;
+    try { return await run(); }
+    finally { executingIntent = undefined; }
+  });
   let epoch: object = {};
   let sequence = 0;
   let loading = false;
   // Receipt is intentionally process-local; never used to certify a reopened project.
   let receipt: { epoch: object; acks: NormalSaveOutputAck[]; deletions?: NormalSaveDeletionAck[] } | undefined;
   let lastError: unknown;
+  // Immutable desired versions survive writer rejection and UI finally cleanup. These are
+  // content pins only, never a permission certificate or cold replay capability.
+  const desiredAssets: { folderPath: string; bitmapPath: string; shotId: string; layerId: string; dataUrl: string; version: number }[] = [];
+  let assetRevision = 0;
   // A load request invalidates queued work immediately, but does not replace the workspace whose
   // admitted effect still owns the queue. Installation happens only after that effect settles.
   let installedWorkspace: object = epoch;
   // At most one completion can await required persistence in the existing exclusive queue.
   // This is not durable until its bound JSON/MD writer ACKs; a new reader cannot pass it.
-  let unsettledEffect: { persist: () => Promise<void>; recover?: () => Promise<void> } | undefined;
+  let unsettledEffect: { persist: () => Promise<void>; recover?: () => Promise<void>; failure?: unknown } | undefined;
   const capture = () => ({ epoch, sequence, project: ports.projectRef.current });
   type Capture = ReturnType<typeof capture>;
   // Private evidence of an actual owner-observed metadata Delete, not a history
@@ -124,7 +148,12 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
     const fact = unsettledEffect;
     if (!fact) return;
     await fact.persist();
-    if (unsettledEffect === fact) unsettledEffect = undefined;
+    if (unsettledEffect === fact) {
+      unsettledEffect = undefined;
+      // Only the actual failed effect's successful original persistence ACK
+      // consumes its associated intent. Other failures remain protected.
+      if (fact.failure !== undefined) assetAdmission.completeFailedIntent(fact.failure);
+    }
   };
   // Capture while this operation is admitted, BEFORE its real first effect. Caller invokes the
   // completion only after the full effect succeeds, supplying its actual metadata transformation.
@@ -132,9 +161,12 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
   const captureEffectCompletion = (): CompletedEffect => {
     if (!captureEffectAdmission()()) throw new Error("Effect completion capture refused: workspace not ready");
     const source = ports.projectRef.current, instance = installedWorkspace, effectEpoch = epoch;
+    const originalIntent = executingIntent;
+    let completedWithHistory = false, exitUsed = false;
     const binding = ports.captureEffectPersistence?.();
     if (!binding) throw new Error("Effect completion persistence binding unavailable");
     let used = false;
+    let desiredPin: (typeof desiredAssets)[number] | undefined;
     let single: (Parameters<NonNullable<CompletedEffect["prepareSinglePng"]>>[0] & {
       dependency: string; baseline: ReturnType<typeof pendingBakeForProject>["shots"][string]; root: Shot;
     }) | undefined;
@@ -145,7 +177,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
     };
     const block = (error: unknown, shotIds: readonly string[]) => {
       const previousFailure = unsettledEffect;
-      const fact: NonNullable<typeof unsettledEffect> = { persist: async () => { throw error; } };
+      const fact: NonNullable<typeof unsettledEffect> = { failure: error, persist: async () => { throw error; } };
       if (!previousFailure) unsettledEffect = fact;
       lastError = error;
       if (instance === installedWorkspace) {
@@ -210,7 +242,9 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
       }
       const project = { ...next, pendingBake: envelope };
       let durable = false;
+      let historyPublished = !hooks;
       const fact = { persist: async () => {
+        if (!historyPublished) throw new Error('Completed effect original history publication incomplete');
         if (!durable) { await binding.persist(project); durable = true; }
         if (hooks) {
           // A queued load already invalidated this request. Its original effect
@@ -222,13 +256,32 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
           }
           await hooks.afterDurable(project);
         }
+        // Retire only this operation's immutable desired version after the
+        // bound ACK and its original history/cleanup, never a newer paint pin.
+        if (desiredPin) {
+          const index = desiredAssets.indexOf(desiredPin);
+          if (index >= 0) desiredAssets.splice(index, 1);
+        }
       } };
       unsettledEffect = fact;
       // Still original installed A: new epoch is a queued request, NOT permission to publish to B.
       publish(project);
-      hooks?.published(latest, project);
+      try { hooks?.published(latest, project); historyPublished = true; }
+      catch (error) { lastError = error; throw error; }
       try { await settleEffectCompletion(); } catch (error) { lastError = error; throw error; }
-    }, { prepareSinglePng: (target: Parameters<NonNullable<CompletedEffect["prepareSinglePng"]>>[0]) => {
+      completedWithHistory = !!hooks && historyPublished && durable && !unsettledEffect;
+    }, { exitWithoutPublication: (): never => {
+      if (exitUsed || !completedWithHistory || !originalIntent || executingIntent !== originalIntent ||
+          originalIntent.workspace !== binding.folderPath || !desiredPin ||
+          originalIntent.assetId !== desiredPin.bitmapPath || desiredAssets.includes(desiredPin) ||
+          instance !== installedWorkspace || effectEpoch !== epoch || unsettledEffect) {
+        throw new Error('Painting workspace changed; PNG retained without stale publication: Exact intent completion authority unavailable');
+      }
+      exitUsed = true;
+      const signal = new Error('Original exact intent completed without stale publication');
+      completionSignals.set(signal, originalIntent);
+      throw signal;
+    }, prepareSinglePng: (target: Parameters<NonNullable<CompletedEffect["prepareSinglePng"]>>[0]) => {
       const shot = source.shots.find(s => s.id === target.shotId);
       const layer = shot?.layers?.find(l => l.id === target.layerId && l.bitmapPath === target.bitmapPath);
       if (used || single || target.folderPath !== binding.folderPath || !layer ||
@@ -247,6 +300,11 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
         single = { ...target, dependency: dependency(source, target.shotId)!,
           baseline: { ...baseline }, root: { ...shot! } };
       } catch { /* Missing/unproved expected bytes keep ordinary failure protection. */ }
+    }, retainDesiredPng: (target: { folderPath: string; bitmapPath: string; shotId: string; layerId: string; dataUrl: string }) => {
+      if (used || target.folderPath !== binding.folderPath || !source.shots.some(s => s.id === target.shotId &&
+          s.layers?.some(l => l.id === target.layerId && l.bitmapPath === target.bitmapPath))) throw new Error("Desired PNG source binding changed");
+      desiredPin = { ...target, version: ++assetRevision };
+      desiredAssets.push(desiredPin);
     }, failed: (error: unknown, shotIds: readonly string[]) => {
       if (used) return; // exact successful completion remains retryable after required persist failure
       used = true;
@@ -376,10 +434,10 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
     let effectStarted = false;
     let acknowledged: FolderScanPayload | undefined;
       try {
-        if (loading || !current(c) || !scope.isCurrent() || receipt || remainingScript) return false;
+        if (loading || !current(c) || !scope.isCurrent() || receipt || remainingScript || unsettledEffect) return false;
         const admitted = scope.automatic ? automaticImageImportAdmission(c.project, scope.dirtyShotIds) : manualImageImportAdmission(c.project);
         for (const a of admitted) if (!a.fresh && !a.external && await ports.readIdentity(a.shot) !== a.entry!.acceptedOutputIdentity) throw new Error("Import source changed");
-        if (!current(c) || !scope.isCurrent()) return false;
+        if (!current(c) || !scope.isCurrent() || unsettledEffect) return false;
         scope.admit?.();
         effectStarted = true;
         const scan = await effect(c.project), effects = scan.normalSaveImportEffects;
@@ -504,7 +562,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
               else factsProject.parkedShots = [...(factsProject.parkedShots ?? []), target];
             }
             publish(factsProject);
-            scope.recoveryRequired?.("Image Import incomplete after possible asset effects; assets retained, recovery required");
+            scope.recoveryRequired?.(`Image Import incomplete after possible asset effects; assets retained, recovery required: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
         return false;
@@ -838,6 +896,24 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
       return current(c);
     });
   };
+  const persistAdmittedAssets = () => ports.queue.runExclusive(async () => {
+    // Capture at execution, not before queued P2 naming edits. Metadata-only P2
+    // can advance during this ACK; Save recaptures it after producers settle.
+    const c = capture(), revision = assetRevision;
+    const assets = (p: Project) => JSON.stringify({pendingBake:p.pendingBake,
+      shots:allShots(p).map(s=>({id:s.id,imagePath:s.imagePath,swb:s.swb,layers:s.layers}))});
+    if (loading || !supported(c.project) || receipt || remainingScript || unsettledEffect) return false;
+    const binding = assets(c.project);
+    await ports.persist(c.project, true);
+    const completed = c.epoch === epoch && revision === assetRevision && !loading && !unsettledEffect && binding === assets(ports.projectRef.current);
+    if (completed) {
+      // These exact admitted versions' history/descriptor publication ran in
+      // the producer before this bound required ACK. No future version clears.
+      for (let i = desiredAssets.length - 1; i >= 0; i--)
+        if (desiredAssets[i].version <= revision) desiredAssets.splice(i, 1);
+    }
+    return completed;
+  });
   // Ensure/export only derive files, not Project metadata or output receipts.
   // Existing caller queue owns within-operation requests; never nest runExclusive.
   const executeDerivedAssets = async (c: Capture, effect: (project: Project) => Promise<unknown>, isCurrent: () => boolean) => {
@@ -1161,8 +1237,9 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
       }
     });
   };
-  const save = () => {
-    let c = capture();
+  const savePrepared = (initial = capture()) => {
+    let c = initial;
+    const instance = installedWorkspace;
     return ports.queue.runExclusive(async () => {
       try {
         const failed = unsettledEffect;
@@ -1188,14 +1265,14 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
           }) || retryReceipt.deletions?.some(ack => c.project.pendingDeletedShots?.some(s => s.id === ack.shotId) ||
             [...c.project.shots, ...(c.project.parkedShots ?? [])].some(s => s.id === ack.shotId) ||
             Object.hasOwn(envelope.shots, ack.shotId))) return false;
-          await ports.persist(c.project);
+          await ports.persist(c.project, true);
           if (c.epoch === epoch && receipt === retryReceipt) receipt = undefined;
           if (c.epoch === epoch) lastError = undefined;
           return current(c) && complete(c.project);
         }
         syncDeletionLifecycles(c.project);
         const capturedLifecycles = new Map(deletionLifecycles);
-        const output = ids.length || (c.project.pendingDeletedShots?.length ?? 0) || ports.outputWhenClean && c.project.shots.length
+        const output = ids.length || (c.project.pendingDeletedShots?.length ?? 0) || ports.outputWhenClean
           ? await ports.output(c.project, ids) : [];
         const acks = Array.isArray(output) ? output : output.outputs;
         const deletions = Array.isArray(output) ? [] : output.deletions;
@@ -1238,7 +1315,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
         }
         const final = capture();
         const persistedReceipt = receipt;
-        await ports.persist(final.project);
+        await ports.persist(final.project, true);
         // Durability of this completion is independent of edits published during I/O.
         // Only retire the exact receipt included in this ACK, never a later epoch's.
         if (final.epoch === epoch && receipt === persistedReceipt) receipt = undefined;
@@ -1246,12 +1323,54 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
         lastError = undefined;
         return complete(final.project);
       } catch (error) {
+        if (importRecoveryIncomplete(error) && instance === installedWorkspace && !unsettledEffect) {
+          // Main may have published names/JSON without a complete ACK. Never
+          // persist this old Project to "recover" or silently clear the barrier.
+          unsettledEffect = { persist: async () => { throw error; } };
+        }
         if (c.epoch === epoch) lastError = error;
         return false;
       }
     });
   };
-  const hasUnsavedWork = () => !!ports.queue.isBusy?.() || loading || !!receipt || !!remainingScript || !!unsettledEffect ||
+  const save = async () => {
+    // Freeze outside the exclusive queue: admitted producers need it to ACK.
+    if (saveAdmissionActive) return false;
+    saveAdmissionActive = true;
+    const initial = capture(), hadProducers = assetAdmission.retainedIntents().some(i => i.state === 'started');
+    let lease = heldSaveAdmission ?? assetAdmission.beginIdleOperation() ?? assetAdmission.beginRecoveryOperation(unsettledEffect?.failure);
+    try { if (!lease) lease = await assetAdmission.beginOperation(); }
+    catch (error) { lastError = error; saveAdmissionActive = false; return false; }
+    try { return await savePrepared(hadProducers ? capture() : initial); }
+    finally {
+      // Hold on incomplete Save; the existing exact-receipt retry may retire it.
+      // New producers remain retained outside the queue, not replayed as effects.
+      if (unsettledEffect || lastError) heldSaveAdmission = lease;
+      else { assetAdmission.completeOperation(lease); heldSaveAdmission = undefined; }
+      saveAdmissionActive = false;
+    }
+  };
+  const hasUnsavedWork = () => !!assetAdmission.retainedIntents().length || !!ports.queue.isBusy?.() || loading || !!receipt || !!remainingScript || !!unsettledEffect ||
     !!lastError || !supported(ports.projectRef.current) || !complete(ports.projectRef.current);
-  return { hasUnsavedWork, createFromScript, captureAssetScope, captureAddShotOperation, captureEffectAdmission, captureEffectCompletion, derivedAssets, publishEdit, publishMetadataHistory, publishNewShot, externalRefresh, imageImport, scriptImport, pending, autosave, load, save, capture, isRequestCurrent: (requestEpoch: object) => requestEpoch === epoch, get scriptCompletion() { return scriptCompletion; }, get scriptImportRemaining() { return !!remainingScript; }, get lastError() { return lastError; } };
+  // A known receipt awaiting this active Save's required ACK is busy, not an
+  // unknown failure. Close drains that queue; failed/abandoned receipts remain
+  // protected as soon as Save settles. Do not permanently latch ordinary success.
+  // Close has drained started producers. Revoked closures still own unique RAM
+  // bytes: a later Save ACK cannot complete them or authorize ordinary discard.
+  // Do not latch a started/waiting producer that can still finish normally.
+  const recoveryRequired = () => assetAdmission.retainedIntents().some(intent => intent.state === 'cancelled-before-effect' || intent.state === 'failed') ||
+    !!unsettledEffect || !!receipt && !saveAdmissionActive || !supported(ports.projectRef.current);
+  const captureRecoveryContent = () => ({
+    projectRaw: structuredClone(ports.projectRef.current),
+    sequence, assetRevision, desiredAssets: structuredClone(desiredAssets),
+    deletedDependencies: structuredClone([...deletedSources.values()].filter(v => v.epoch === epoch && v.projectId === ports.projectRef.current.id).map(v => v.shot)),
+    retainedAssetIntents: assetAdmission.retainedIntents(),
+    recoveryRequired: recoveryRequired(),
+    effectFacts: { unsettled: !!unsettledEffect, receipt: structuredClone(receipt?.acks ?? []),
+      deletions: structuredClone(receipt?.deletions ?? []), remainingScript: remainingScript
+        ? structuredClone({ input: remainingScript.input, plan: remainingScript.plan, dependency: remainingScript.dependency, imageCompleted: remainingScript.imageCompleted }) : null,
+      error: lastError instanceof Error ? { name: lastError.name, message: lastError.message, ...Object.fromEntries(["code","recoveryIncomplete","publicationOrCleanup","metadata","retainedPaths","sourceEffects"].flatMap(key => (lastError as any)[key] === undefined ? [] : [[key,(lastError as any)[key]]])) } : lastError === undefined ? null : structuredClone(lastError) }
+  });
+  return { suspendAssetAdmission: assetAdmission.suspend,
+ resumeAssetAdmission: assetAdmission.resume, persistAdmittedAssets, submitAssetIntent, captureRecoveryContent, recoveryRequired, hasUnsavedWork, createFromScript, captureAssetScope, captureAddShotOperation, captureEffectAdmission, captureEffectCompletion, derivedAssets, publishEdit, publishMetadataHistory, publishNewShot, externalRefresh, imageImport, scriptImport, pending, autosave, load, save, capture, isRequestCurrent: (requestEpoch: object) => requestEpoch === epoch, get scriptCompletion() { return scriptCompletion; }, get scriptImportRemaining() { return !!remainingScript; }, get lastError() { return lastError; } };
 };

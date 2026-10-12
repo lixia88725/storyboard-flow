@@ -22,6 +22,7 @@ import { assertPathInsideFolder, pathExists } from "./pathSafety";
 import { readProjectMetadata } from "./projectMetadataService";
 import * as transaction from "./pendingFileTransactionService";
 import { createNormalSaveAppAdapter } from "../../src/renderer/normalSaveAppAdapter";
+import { createAppOpenCallerScope } from './appOpenCallerScope.mjs';
 import { createBitmapLayerWriteQueue } from "../../src/renderer/bitmapLayerWriteQueue";
 import { createProject, mergeExternalImageChanges, mergeFolderImages } from "../../src/shared/projectOps";
 import type { Project } from "../../src/shared/types";
@@ -30,10 +31,18 @@ import * as importPorts from "./photoshopTiffImport";
 import * as bitmap from "./bitmapLayers";
 import * as safety from "./pathSafety";
 import * as layer from "./layerAssetService";
+import { writeProtectedLayerFile as protectedWriter } from "./protectedLayerFileWriter";
+import { prepareProtectedLayerReplacement } from "./protectedLayerReplacementPreparation";
+import { withLayerFileOperation } from "./layerFileOperationQueue";
+import { assertPhysicalWorkspaceWriterTargets } from "./workspacePhysicalWriterGate";
+import { mapWithConcurrency } from "./mapWithConcurrency";
 import * as script from "./storyboardScript";
 import { createImportPathReservation } from "./importPaths";
+import { prepareImportStaging } from "./importPreparation";
 import { recoverFailedImport } from "./importRecovery";
 import { withSuccessfulSaveArtifactCleanup } from "./saveArtifacts";
+import * as tiffPreparation from "./tiffPreparation";
+import { removeOwnedFile } from "./ownedFileCreation";
 import { previewPathForImage, previewRootForFolder } from "./previewPaths";
 import { bitmapLayersForShot } from "./bitmapLayerOrdering";
 import { randomUUID } from "node:crypto";
@@ -51,7 +60,7 @@ async function fixture() {
  const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8"), ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
  const names = ["scanWorkspaceFolder", "scanFolder", "ensureStoryboardScriptMarkdown", "readProject", "createImageRecords", "readSwbMetadata"];
  const selected = ast.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(ast)));
- const bindings = { isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, readTrustedLegacyOutputIdentity, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
+ const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, readTrustedLegacyOutputIdentity, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
   createWorkspaceFolderScanner, metadataPathForFolder: () => metadataPath, previewRootForFolder: () => previewRoot,
   collectImagePaths: async () => [image], createImportedImageRecords, createPreview, pixelFingerprint,
   initializeNormalOpenPreviews: async (...args: any[]) => (await import("./normalOpenPreviewService")).initializeNormalOpenPreviews(...args as Parameters<typeof import("./normalOpenPreviewService")["initializeNormalOpenPreviews"]>),
@@ -69,7 +78,7 @@ it("actual ensure and export reuse existing assets and formal exporter under ada
  const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8"), ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
  const declarations = ast.statements.filter(n => ts.isVariableStatement(n) && ["assertNormalSaveAdmission", "ensureProjectLayerAssets"].includes(n.declarationList.declarations[0].name.getText(ast))).map(n => n.getText(ast));
  const callbacks = new Map<string, any>(), persist = vi.fn(); let result: { exportedFiles: string[] } | undefined;
- const bindings = { isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, path, createHash, readFile: fs.readFile, mkdir: fs.mkdir, pathExists, resolveLayerAssetPath, assertPathInsideFolder, shouldEnsureLayerAssetsForShot, hasPendingFileTransaction: transaction.hasPendingFileTransaction, exportPhotoshopLayeredTiffs: async (...args: Parameters<typeof exportPhotoshopLayeredTiffs>) => (result = await exportPhotoshopLayeredTiffs(...args)), writeProjectFiles: persist, registerWorkspacePersistenceIpcHandlers, ipcMain: { handle: (name: string, fn: any) => { callbacks.set(name, fn); } } };
+ const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, path, createHash, readFile: fs.readFile, mkdir: fs.mkdir, pathExists, resolveLayerAssetPath, assertPathInsideFolder, shouldEnsureLayerAssetsForShot, hasPendingFileTransaction: transaction.hasPendingFileTransaction, exportPhotoshopLayeredTiffs: async (...args: Parameters<typeof exportPhotoshopLayeredTiffs>) => (result = await exportPhotoshopLayeredTiffs(...args)), writeProjectFiles: persist, registerWorkspacePersistenceIpcHandlers, ipcMain: { handle: (name: string, fn: any) => { callbacks.set(name, fn); } } };
  const calls: string[] = []; const walk = (n: ts.Node) => { if (ts.isCallExpression(n) && (n.expression.getText(ast) === "registerWorkspacePersistenceIpcHandlers" || n.expression.getText(ast) === "ipcMain.handle" && n.arguments[0]?.getText(ast) === JSON.stringify("workspace:exportPhotoshopTiffs"))) calls.push(n.getText(ast)); ts.forEachChild(n, walk); }; walk(ast);
  new Function(...Object.keys(bindings), ts.transpile(declarations.join("\n") + "\n" + calls.join(";\n") + ";", { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings));
  const ref = { current: p }, queue = createBitmapLayerWriteQueue(), errors: unknown[] = [], api = { ensureLayerAssets: (p: any) => callbacks.get("workspace:ensureLayerAssets")({}, p), exportPhotoshopTiffs: (p: any) => callbacks.get("workspace:exportPhotoshopTiffs")({}, p), autosaveWorkspace: persist, saveWorkspace: async (p: any) => p, readOutputIdentity: async (p: string) => hash(await fs.readFile(p)) };
@@ -90,7 +99,7 @@ it.each(["workspace:ensureLayerAssets", "workspace:exportPhotoshopTiffs"])("actu
  const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8"), ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
  const admission = ast.statements.find(n => ts.isVariableStatement(n) && n.declarationList.declarations[0].name.getText(ast) === "assertNormalSaveAdmission")!.getText(ast);
  const io = vi.fn(async () => { throw new Error("asset effect escaped transaction admission"); }), callbacks = new Map<string, any>();
- const bindings = { isCertifiedPendingBakeEntry, path, createHash, readFile: fs.readFile, resolveLayerAssetPath, assertPathInsideFolder, hasPendingFileTransaction: transaction.hasPendingFileTransaction, ensureProjectLayerAssets: io, exportPhotoshopLayeredTiffs: io, writeProjectFiles: io, registerWorkspacePersistenceIpcHandlers, ipcMain: { handle: (name: string, fn: any) => { callbacks.set(name, fn); } } };
+ const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, path, createHash, readFile: fs.readFile, resolveLayerAssetPath, assertPathInsideFolder, hasPendingFileTransaction: transaction.hasPendingFileTransaction, ensureProjectLayerAssets: io, exportPhotoshopLayeredTiffs: io, writeProjectFiles: io, registerWorkspacePersistenceIpcHandlers, ipcMain: { handle: (name: string, fn: any) => { callbacks.set(name, fn); } } };
  let call = "";
  const walk = (n: ts.Node) => { if (ts.isCallExpression(n) && (channel === "workspace:ensureLayerAssets" ? n.expression.getText(ast) === "registerWorkspacePersistenceIpcHandlers" : n.expression.getText(ast) === "ipcMain.handle" && n.arguments[0]?.getText(ast) === JSON.stringify(channel))) call = n.getText(ast); ts.forEachChild(n, walk); }; walk(ast);
  new Function(...Object.keys(bindings), ts.transpile(admission + "\n" + call + ";", { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings));
@@ -173,7 +182,7 @@ async function buildScanOpener(root: string, metadataPath: string, previewRoot: 
   const selected = ast.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(ast)));
   expect(selected).toHaveLength(names.length);
   const md = path.join(root, "storyboard-script.md");
-  const bindings = { isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, readTrustedLegacyOutputIdentity, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
+  const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, readTrustedLegacyOutputIdentity, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
     createWorkspaceFolderScanner, metadataPathForFolder: () => metadataPath, previewRootForFolder: () => previewRoot,
     collectImagePaths: async () => [image], createImportedImageRecords, createPreview, pixelFingerprint,
     initializeNormalOpenPreviews: async (...args: any[]) => { onPreviews?.(); return (await import("./normalOpenPreviewService")).initializeNormalOpenPreviews(...args as Parameters<typeof import("./normalOpenPreviewService")["initializeNormalOpenPreviews"]>); },
@@ -194,8 +203,9 @@ async function buildImportChain(metadataPath: string) {
   expect(block.length).toBeGreaterThan(0);
   let handler!: (event: unknown, payload: any) => Promise<any>;
   const bindings: Record<string, unknown> = { ...fs, ...renames, ...importPorts, ...bitmap, ...safety, ...layer, ...script, path, sharp, createHash, randomUUID, automaticImageImportAdmission, manualImageImportAdmission,
-    bitmapLayersForShot, pixelFingerprint, createImportPathReservation, recoverFailedImport, withSuccessfulSaveArtifactCleanup, previewRootForFolder, createPreview, writePhotoshopLayeredTiffsForInPlaceSave,
-    hasPendingFileTransaction: transaction.hasPendingFileTransaction,
+    bitmapLayersForShot, pixelFingerprint, createImportPathReservation, prepareImportStaging, recoverFailedImport, withSuccessfulSaveArtifactCleanup, ...tiffPreparation, removeOwnedFile, previewRootForFolder, createPreview, writePhotoshopLayeredTiffsForInPlaceSave,
+    hasPendingFileTransaction: transaction.hasPendingFileTransaction, writeProtectedLayerFile: protectedWriter,
+    withLayerFileOperation, mapWithConcurrency, prepareProtectedLayerReplacement,
     app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR,
     createWorkspaceTaskProgressReporter: () => undefined, ipcMain: { handle: (_name: string, fn: any) => { handler = fn; } } };
   const compiled = ts.transpileModule(selected.map(n => n.getText(tree)).join("\n") + block + "; return { persist: writeProjectFiles, ensure: ensureProjectLayerAssets, readMetadata: readSwbMetadata, exportProject: preparePhotoshopLayeredTiffsForSave };", { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
@@ -307,11 +317,11 @@ it("actual normal fresh open initializes only derived preview after readonly dis
  const f = await fixture(), original = await fs.readFile(f.image);
  const writer = vi.fn(), ref = { current: createProject("old") }, errors: unknown[] = [];
  const api = { openFolderByPath: (_p: string, options: unknown) => f.open(options), autosaveWorkspace: writer, saveWorkspace: writer, readOutputIdentity: async (p: string) => hash(await fs.readFile(p)) };
- const adapter = createNormalSaveAppAdapter({ projectRef: ref, setProject: () => {}, queue: createBitmapLayerWriteQueue(), paths: () => ({ folderPath: f.root, metadataPath: f.metadataPath }), api: () => api as any, freshToken: () => "unused", onSave: writer, onError: e => errors.push(e) });
+ const caller = await createAppOpenCallerScope({ projectRef: ref, setProject: () => {}, queue: createBitmapLayerWriteQueue(), paths: () => ({ folderPath: f.root, metadataPath: f.metadataPath }), api: () => api as any, freshToken: () => "unused", onSave: writer, onError: e => errors.push(e) });
  // Actual App open expression, not a new helper invoked instead of its caller.
  const app = await fs.readFile(new URL("../../src/renderer/App.tsx", import.meta.url), "utf8"), ast = ts.createSourceFile("App.tsx", app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX); let expression = "";
  const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === "handleOpenFolderByPath") expression = n.initializer!.getText(ast); ts.forEachChild(n, walk); }; walk(ast);
- const bindings = { window: { storyboard: api }, normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: adapter }, folderInputValue: f.root, blankShotPreset: "16:9", prepareNormalSaveImportMatte: writer, normalSaveImageImportPublished: writer, publishNormalSaveFolderScan: writer, setWorkspaceTask: vi.fn(), setStatus: vi.fn() };
+ const bindings = { ...caller, window: { storyboard: api }, normalSaveAppEnabled: true, folderInputValue: f.root, blankShotPreset: "16:9", prepareNormalSaveImportMatte: writer, normalSaveImageImportPublished: writer, publishNormalSaveFolderScan: writer, setWorkspaceTask: vi.fn(), setStatus: vi.fn() };
  await new Function(...Object.keys(bindings), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings))();
  expect(errors).toEqual([]); expect(ref.current.shots).toHaveLength(1);
  const shot = ref.current.shots[0]; expect(shot.layers?.[0].name).toBe("Image"); expect(shot.swb?.status).toBe("non-swb");

@@ -4,7 +4,7 @@ import { hasUnsavedWorkspaceChanges } from "./workspacePersistenceController";
 import type { FileNameSyncState, WorkspaceSaveState } from "./workspaceLifecycleState";
 
 export type WorkspaceCloseGuardApi = {
-  updateCloseGuard: (payload: { hasUnsavedChanges: boolean }) => Promise<void>;
+  updateCloseGuard: (payload: { hasUnsavedChanges: boolean; recoveryRequired?: boolean }) => Promise<void>;
 };
 
 export type WorkspaceCloseGuardInput = {
@@ -35,6 +35,7 @@ export const updateWorkspaceCloseGuard = (
 export const useWorkspaceCloseGuardController = ({
   bitmapQueueGuardInputRef,
   normalSaveGuard,
+  recoveryRequired,
   settleNormalSave,
   dirtyShotIdsRef,
   fileNameSyncState,
@@ -44,6 +45,7 @@ export const useWorkspaceCloseGuardController = ({
   bitmapQueueGuardInputRef: { current: () => { hasUnsavedChanges: boolean } };
   dirtyShotIdsRef: RefObject<Set<string>>;
   normalSaveGuard: () => boolean;
+  recoveryRequired?: () => boolean;
   settleNormalSave: () => Promise<void>;
   fileNameSyncState: FileNameSyncState;
   refreshKey: unknown;
@@ -63,16 +65,18 @@ export const useWorkspaceCloseGuardController = ({
     }
 
     let cancelled = false;
-    const update = () => updateWorkspaceCloseGuard(window.storyboard, {
+    const update = () => window.storyboard.updateCloseGuard({
+      recoveryRequired: recoveryRequired?.(),
+      ...workspaceCloseGuardPayload({
       normalHasUnsavedWork: normalSaveGuard(),
       dirtyShotCount: dirtyShotIdsRef.current?.size ?? 0,
       workspaceSaveState,
       fileNameSyncState
-    });
+    }) });
     void update();
     // A completed queue effect need not cause a render. Recheck its settled
     // truth, but never publish an old render's gate after P3/workspace changes.
     void settleNormalSave().then(() => { if (!cancelled) void update(); }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [dirtyShotIdsRef, fileNameSyncState, refreshKey, workspaceSaveState, normalSaveGuard, settleNormalSave]);
+  }, [dirtyShotIdsRef, fileNameSyncState, refreshKey, workspaceSaveState, normalSaveGuard, recoveryRequired, settleNormalSave]);
 };

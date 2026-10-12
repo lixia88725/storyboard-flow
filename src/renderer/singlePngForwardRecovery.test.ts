@@ -11,7 +11,7 @@ import { createNormalSaveProjectOwner } from "./normalSaveProjectOwner";
 import { useBitmapLayerPaintingController } from "./bitmapLayerPaintingController";
 import { createLayerAppHandlers } from "../../electron/main/layerAppRuntime";
 
-async function exercise(scenario = "match") {
+async function exercise(scenario = "match", admitted = false) {
   const folderPath = await mkdtemp(path.join(os.tmpdir(), "single-png-forward-"));
   const bitmapPath = ".storyboard-workbench/layers/s/drawing.png";
   const metadataPath = path.join(folderPath, ".storyboard-workbench/storyboard.project.json");
@@ -64,6 +64,9 @@ async function exercise(scenario = "match") {
     }
   } as unknown as Window["storyboard"];
   const painting = useBitmapLayerPaintingController({ api, folderPath, projectRef: ref,
+    admitAssetIntent: admitted ? (assetId, desiredBytes, run) => owner.submitAssetIntent({ workspace: folderPath, assetId, desiredBytes }, async () => {
+      const value = await run(); if (!await owner.persistAdmittedAssets()) throw new Error('Required ACK missing'); return value;
+    }) : undefined,
     bitmapLayerWriteQueueRef: { current: queue }, captureWorkspace: () => owner.captureEffectAdmission(),
     captureEffectCompletion: () => {
       const completion = owner.captureEffectCompletion();
@@ -131,4 +134,5 @@ async function exercise(scenario = "match") {
 }
 
 it("single PNG failed transport ACK retains protection until user Save verifies pre-effect target and persists pending", () => exercise());
+it.each(['match', 'wrong-bytes', 'epoch-change', 'external-root'])('admitted single PNG exact recovery: %s', scenario => exercise(scenario, true));
 it.each(["wrong-bytes", "corrupt", "external-root", "derived-change", "expected-missing", "epoch-change", "other-unknown", "autosave-only", "safe-metadata", "md-failure", "in-place-derived", "mid-read-change", "new-pending"])("single PNG bounded recovery: %s", scenario => exercise(scenario));

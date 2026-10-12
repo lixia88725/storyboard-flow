@@ -4,7 +4,8 @@ import path from "node:path";
 import os from "node:os";
 import ts from "typescript";
 import { applyFileReplacements } from "./fileRenames.js";
-import { recoverFailedImport, ImportRecoveryIncompleteError } from "./importRecovery.js";
+import { recoverFailedImport, ImportRecoveryIncompleteError } from "./importRecovery";
+import { withLayerFileOperation } from "./layerFileOperationQueue";
 import { normalSaveImportFailure } from "../shared/normalSaveImportIpc.js";
 
 const directories: string[] = [];
@@ -48,7 +49,7 @@ it.each(["preview", "persist", "success", "restore"])("actual Import TIFF handle
     }),
     createProjectPreviewsForShots: async () => { if (phase === "preview" || phase === "restore") throw failure; return project; },
     writeProjectFiles: async () => { order.push("persist"); if (phase === "persist") throw failure; },
-    recoverFailedImport, path, ImportRecoveryIncompleteError, normalSaveImportFailure
+    recoverFailedImport, path, ImportRecoveryIncompleteError, normalSaveImportFailure, withLayerFileOperation
   };
   new Function(...Object.keys(bindings), compiled)(...Object.values(bindings));
   const action = handler({ sender: {} }, { project, folderPath: root, metadataPath: path.join(root, "project.json") });
@@ -57,6 +58,14 @@ it.each(["preview", "persist", "success", "restore"])("actual Import TIFF handle
     expect(order).toEqual(["persist", "commit"]);
     expect(await fs.readFile(targetPath, "utf8")).toBe("new");
     await expect(fs.stat(backupPath)).rejects.toMatchObject({ code: "ENOENT" });
+  } else if (phase === "persist") {
+    // A requested metadata publisher can have installed JSON before failing MD.
+    // Without a no-effect receipt, preserve matching assets and backup, not a
+    // guessed rollback that can leave the installed JSON pointing at no TIFF.
+    await expect(action).resolves.toMatchObject({ ok: false, error: { code: "IMPORT_RECOVERY_INCOMPLETE" } });
+    expect(order).toEqual(["persist"]);
+    expect(await fs.readFile(targetPath, "utf8")).toBe("new");
+    expect(await fs.readFile(backupPath, "utf8")).toBe("old");
   } else if (phase === "restore") {
     // The recovery-incomplete fact is RETURNED as a serializable envelope, not thrown.
     await expect(action).resolves.toMatchObject({ ok: false, error: { code: "IMPORT_RECOVERY_INCOMPLETE" } });
@@ -64,7 +73,7 @@ it.each(["preview", "persist", "success", "restore"])("actual Import TIFF handle
     expect(await fs.readFile(backupPath, "utf8")).toBe("old");
   } else {
     await expect(action).rejects.toBe(failure);
-    expect(order).toEqual([...(phase === "persist" ? ["persist"] : []), "tiff", "import", "script"]);
+    expect(order).toEqual(["tiff", "import", "script"]);
     expect(await fs.readFile(targetPath, "utf8")).toBe("old");
   }
 });

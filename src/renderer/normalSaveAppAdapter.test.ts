@@ -5,6 +5,7 @@ import { createProject } from "../shared/projectOps";
 import { pendingBakeForProject } from "../shared/pendingBake";
 import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import { formatSaveFailureStatus } from "./saveErrors";
+import { createWorkspaceSlots } from './workspaceSlots';
 const mod = await import("./normalSaveAppAdapter").catch(() => undefined);
 const h0 = "0".repeat(64), h1 = "1".repeat(64);
 const p = () => ({ ...createProject("P"), naming: { sceneCode: "S", artistName: "A", version: "V" }, shots: [{ id: "s", imagePath: "/w/a.tiff", fileName: "a.tiff", order: 0, swb: { version: 1, status: "owned" as const, canvasWidth: 8, canvasHeight: 6 } }], pendingBake: { version: 1 as const, shots: { s: { state: "pending" as const, editToken: "t1", acceptedOutputIdentity: h0 } } } });
@@ -25,7 +26,7 @@ async function actualSave(f: ReturnType<typeof setup>, setWorkspaceTask: (value:
   const ast = ts.createSourceFile("App.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let decl: ts.VariableDeclaration | undefined;
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === "handleSaveProject") decl = n; ts.forEachChild(n, walk); }; walk(ast);
-  const bindings = { saveInFlightRef: { current: undefined }, window: { storyboard: f.api }, folderPath: "/w", metadataPath: "/w/project.json", workspaceRecoveryRequiredRef: { current: undefined }, needsSwbImport: false, project: f.projectRef.current, projectRef: f.projectRef, normalSaveAppAdapterRef: { current: f.adapter }, normalSaveAppEnabled: true,
+  const bindings = { renderAdapter: f.adapter, saveInFlightRef: { current: undefined }, window: { storyboard: f.api }, folderPath: "/w", metadataPath: "/w/project.json", workspaceRecoveryRequiredRef: { current: undefined }, needsSwbImport: false, project: f.projectRef.current, projectRef: f.projectRef, normalSaveAppAdapterRef: { current: f.adapter }, normalSaveAppEnabled: true,
     setWorkspaceTask, setStatus: () => {}, setSaveErrorDialog: () => {}, nudgeImportRequired: () => {}, defaultSaveNaming: {}, runExclusiveWorkspaceAction: async (_ref: unknown, fn: () => Promise<boolean>) => fn() };
   const compiled = ts.transpile(`const ${decl!.getText(ast)};`);
   return new Function(...Object.keys(bindings), `${compiled}; return handleSaveProject();`)(...Object.values(bindings));
@@ -59,6 +60,40 @@ it("actual App Save function returns true only after owner final persist, withou
   expect(f.events).toEqual(["persist:P", "saved:true"]);
   expect(f.projectRef.current.pendingBake.shots.s.state).toBe("synced");
 });
+it("typed incomplete Save blocks subsequent autosave, Save and derived writers without laundering the old Project", async () => {
+  const f = setup();
+  f.api.saveWorkspace = async () => ({ ok: false, error: {
+    code: "SAVE_RECOVERY_INCOMPLETE", message: "metadata publication incomplete", recoveryIncomplete: true,
+    publicationOrCleanup: "started", metadata: "unknown", retainedPaths: ["/w/owned-backup"]
+  } } as any);
+  expect(await f.adapter.save()).toBe(false);
+  const before = structuredClone(f.projectRef.current);
+  expect(await f.adapter.autosave(f.projectRef.current)).toBe(false);
+  expect(await f.adapter.save()).toBe(false);
+  expect(f.adapter.owner.captureEffectAdmission()()).toBe(false);
+  expect(f.projectRef.current).toEqual(before);
+  expect(f.events.some(event => event.startsWith("persist:") || event.startsWith("saved:"))).toBe(false);
+});
+it("typed incomplete Save refuses actual manual and automatic image Import before any asset effect", async () => {
+  const f = setup();
+  f.api.saveWorkspace = async () => ({ ok: false, error: {
+    code: "SAVE_RECOVERY_INCOMPLETE", message: "publication incomplete", recoveryIncomplete: true,
+    publicationOrCleanup: "started", metadata: "unknown", retainedPaths: ["/w/owned-backup"]
+  } } as any);
+  let imports = 0, publications = 0;
+  (f.api as any).importSwbFormat = async () => { imports++; throw new Error("Import must never start"); };
+  expect(await f.adapter.save()).toBe(false);
+  const before = structuredClone(f.projectRef.current);
+  const options = { blankShotPreset: {} as any, dirtyShotIds: [],
+    prepare: async (project: any) => project, published: () => { publications++; } };
+  expect(await f.adapter.imageImport(options)).toBe(false);
+  expect(await f.adapter.externalRefresh({ ...options, check: async project => ({ ...project,
+    shots: project.shots.map(shot => ({ ...shot, swb: { ...shot.swb!, status: "compatible-external-edit" as const } })) }) })).toBe(false);
+  expect(imports).toBe(0);
+  expect(publications).toBe(0);
+  expect(f.projectRef.current).toEqual(before);
+  expect(await f.adapter.autosave(f.projectRef.current)).toBe(false);
+});
 it("actual App Save returns false / Close blocked for t2 published while output waits", async () => {
   const f = setup(), gate = deferred(); const base = f.api.saveWorkspace;
   f.api.saveWorkspace = async payload => { await gate.promise; return base(payload); };
@@ -89,6 +124,17 @@ async function actualCaller(name: string, bindings: Record<string, unknown>, arg
   let publication: ts.VariableDeclaration | undefined;
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n)) { if (n.name.getText(ast) === name) decl = n; if (n.name.getText(ast) === "publishNormalSaveFolderScan") publication = n; } ts.forEachChild(n, walk); }; walk(ast);
   const helper = name === "handleOpenFolderByPath" || name === "loadFolderScan" ? `const ${publication!.getText(ast)};` : "";
+  bindings = { renderAdapter: (bindings.normalSaveAppAdapterRef as {current:unknown})?.current, ...bindings };
+  if (name === 'handleOpenFolderByPath') {
+    const publish = new Function(...Object.keys(bindings), ts.transpile(`${helper} return publishNormalSaveFolderScan;`, {target:ts.ScriptTarget.ES2022}))(...Object.values(bindings));
+    const queue = bindings.queue as ReturnType<typeof createBitmapLayerWriteQueue>;
+    const api = (bindings.window as any).storyboard;
+    bindings.workspaceSlotsRef = {current:createWorkspaceSlots({initialProject:createProject('Untitled'),
+      adapterPorts:()=>({queue,api:()=>api,freshToken:()=> 't',onSave:()=>{},onError:()=>{}}),
+      publishProject: p => { (bindings.projectRef as {current:unknown}).current=p; },
+      observe: async()=>({binding:'test-observation',folderPath:'/w',metadataPath:'/w/project.json'}),captureView:()=>({}),certifyHandoff:async()=>false,
+      drain:()=>queue.drain(),publishActive:(slot,scan)=>publish(scan,slot.projectRef.current,'Folder opened; output compatibility checked',true,true)})};
+  }
   return new Function(...Object.keys(bindings), ts.transpile(`${helper}const ${decl!.getText(ast)}; return ${name};`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings))(...args);
 }
 it("actual App open-folder caller defers disk reader until old queue settles, publishes newest ref before release", async () => {
@@ -96,12 +142,12 @@ it("actual App open-folder caller defers disk reader until old queue settles, pu
   const old = f.queue.runExclusive(() => gate.promise);
   const events: string[] = [];
   const open = actualCaller("handleOpenFolderByPath", {
-    normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: f.adapter }, folderInputValue: "/w",
+    normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: f.adapter }, queue: f.queue, projectRef: f.projectRef, folderInputValue: "/w",
     blankShotPreset: "16:9", prepareNormalSaveImportMatte: async (p: unknown) => p, normalSaveImageImportPublished: () => {},
     aiApplyWorkspaceIdentityRef: { current: {} }, scriptImportCheckIdRef: { current: 0 }, workspaceRecoveryRequiredRef: { current: undefined },
     pendingBakeForProject, workspaceSaveStateRef: { current: "saved" }, fileNameSyncStateRef: { current: "synced" }, setWorkspaceSaveState: () => {}, setFileNameSyncState: () => {},
     setScriptImportNeeded: () => {}, resetHistoryStacks: () => events.push("history-reset"), selectSingleShot: () => {}, resetTrackedDirtyShots: () => {},
-    window: { storyboard: { openFolderByPath: async () => { events.push("disk-read"); return { folderPath: "/w", metadataPath: "/w/project.json", folderName: "w", images: [], project: { ...p(), name: "disk-new" } }; } } },
+    window: { storyboard: { ...f.api, openFolderByPath: async () => { events.push("disk-read"); return { folderPath: "/w", metadataPath: "/w/project.json", folderName: "w", images: [], project: { ...p(), name: "disk-new" } }; } } },
     setStatus: (s: string) => events.push(s), setWorkspaceTask: () => {}, folderPathRef: { current: "/old" }, metadataPathRef: { current: "/old/project.json" }, setFolderPath: () => {}, setFolderInputValue: () => {}, setMetadataPath: () => {}, setShotBitmapRevisionById: () => {}, bumpWorkspaceShotBitmapRevisions: () => {}
   });
   await new Promise(r => setTimeout(r, 10)); expect(events).toEqual([]);

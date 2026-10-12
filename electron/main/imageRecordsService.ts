@@ -1,6 +1,7 @@
 import path from "node:path";
 import { mapWithConcurrency } from "./mapWithConcurrency.js";
 import type { WorkspaceTaskProgressReporter } from "./workspaceTaskProgress.js";
+import type { PreviewReceipt } from "./previewService.js";
 
 export type ImportedImageRecord<SwbMetadata> = {
   imagePath: string;
@@ -18,7 +19,8 @@ type ImageMetadata = {
 };
 
 export type ImageRecordsOptions<SwbMetadata> = {
-  createPreview: (imagePath: string, previewRoot: string, readOnly?: boolean) => Promise<string>;
+  createPreview: (imagePath: string, previewRoot: string, readOnly?: boolean, onReceipt?: (receipt: PreviewReceipt) => void) => Promise<string>;
+  onPreviewReceipt?: (receipt: PreviewReceipt) => void;
   readOnly?: boolean;
   deferMissingPreviews?: boolean;
   onProgress?: WorkspaceTaskProgressReporter;
@@ -43,7 +45,9 @@ export const createImageRecords = async <SwbMetadata>(
       const isTiff = extension === ".tif" || extension === ".tiff";
       let previewPath: string | undefined;
       if (isTiff) {
-        try { previewPath = await (options.readOnly ? options.createPreview(imagePath, previewRoot, true) : options.createPreview(imagePath, previewRoot)); }
+        try { previewPath = await (options.readOnly ? options.createPreview(imagePath, previewRoot, true) :
+          options.onPreviewReceipt ? options.createPreview(imagePath, previewRoot, false, options.onPreviewReceipt) :
+          options.createPreview(imagePath, previewRoot)); }
         catch (error) {
           if (!options.readOnly || !options.deferMissingPreviews) throw error;
           // Read-only discovery reports absent cache; explicit phase two must admit it.

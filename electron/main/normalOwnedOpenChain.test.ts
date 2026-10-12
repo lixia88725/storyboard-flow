@@ -6,12 +6,14 @@ import ts from "typescript";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
 import { createWorkspaceFolderScanner } from "./workspaceScanService";
+import { assertPhysicalWorkspaceWriterTargets } from "./workspacePhysicalWriterGate";
+import { withLayerFileOperation } from "./layerFileOperationQueue";
 import { createWorkspaceOpenAppHandlers } from "./workspaceOpenAppRuntime";
 import { registerWorkspaceOpenIpcHandlers } from "./ipc/workspaceOpenHandlers";
 import * as transaction from "./pendingFileTransactionService";
 import { readProjectMetadata } from "./projectMetadataService";
 import { manualImageImportAdmission } from "../shared/manualImageImportRules";
-import { createNormalSaveAppAdapter } from "../../src/renderer/normalSaveAppAdapter";
+import { createAppOpenCallerScope } from './appOpenCallerScope.mjs';
 import { createBitmapLayerWriteQueue } from "../../src/renderer/bitmapLayerWriteQueue";
 import { createProject } from "../../src/shared/projectOps";
 const dirs: string[] = [];
@@ -30,7 +32,7 @@ async function fixture(raw: unknown, both = false) {
   const selected = ast.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(ast)));
   expect(selected).toHaveLength(names.length);
   const effects: string[] = [];
-  const bindings = { path, readFile: fs.readFile, createHash, manualImageImportAdmission, readProjectMetadata,
+  const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, path, readFile: fs.readFile, createHash, manualImageImportAdmission, readProjectMetadata,
     ...transaction, recoverPendingFileTransaction: vi.fn(async (...args: Parameters<typeof transaction.recoverPendingFileTransaction>) => { effects.push("legacy-recovery"); return transaction.recoverPendingFileTransaction(...args); }),
     createWorkspaceFolderScanner, metadataPathForFolder: () => metadataPath, previewRootForFolder: () => path.join(root, "preview"), collectImagePaths: vi.fn(async () => []), createImageRecords: vi.fn(async () => []),
     storyboardScriptPathForFolder: () => md, storyboardScriptNeedsImport: () => false, writeStoryboardScriptMarkdown: async () => { effects.push("MD-write"); await fs.writeFile(md, "generated"); } };
@@ -73,10 +75,10 @@ it("actual App owned open reaches real handler scanner and refuses retained tran
   const f = await fixture({ version: 99, shots: {} }, true), protectedPaths = [f.fromPath, f.toPath, f.journal, f.metadataPath];
   const before = await Promise.all(protectedPaths.map(p => fs.readFile(p))), errors: unknown[] = [], writer = vi.fn();
   const ref = { current: createProject("old A") }, api = { openFolderByPath: (_p: string, options?: unknown) => f.open(options), importSwbFormat: writer, checkExternalChanges: writer, autosaveWorkspace: writer, saveWorkspace: writer, readOutputIdentity: writer };
-  const adapter = createNormalSaveAppAdapter({ projectRef: ref, setProject: () => {}, queue: createBitmapLayerWriteQueue(), paths: () => ({}), api: () => api, freshToken: () => "unused", onSave: writer, onError: e => errors.push(e) });
+  const caller = await createAppOpenCallerScope({ projectRef: ref, setProject: () => {}, queue: createBitmapLayerWriteQueue(), paths: () => ({ folderPath: f.root, metadataPath: f.metadataPath }), api: () => api, freshToken: () => "unused", onSave: writer, onError: e => errors.push(e) });
   const app = await fs.readFile(new URL("../../src/renderer/App.tsx", import.meta.url), "utf8"), ast = ts.createSourceFile("App.tsx", app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX); let expression = "";
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === "handleOpenFolderByPath") expression = n.initializer!.getText(ast); ts.forEachChild(n, walk); }; walk(ast);
-  const bindings = { window: { storyboard: api }, normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: adapter }, folderInputValue: f.root, blankShotPreset: "16:9", prepareNormalSaveImportMatte: writer, normalSaveImageImportPublished: writer, publishNormalSaveFolderScan: writer, setWorkspaceTask: vi.fn(), setStatus: vi.fn() };
+  const bindings = { ...caller, window: { storyboard: api }, normalSaveAppEnabled: true, folderInputValue: f.root, blankShotPreset: "16:9", prepareNormalSaveImportMatte: writer, normalSaveImageImportPublished: writer, publishNormalSaveFolderScan: writer, setWorkspaceTask: vi.fn(), setStatus: vi.fn() };
   await new Function(...Object.keys(bindings), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings))();
   expect(errors).toHaveLength(1); expect(String(errors[0])).toMatch(/Pending/); expect(writer).not.toHaveBeenCalled(); expect(ref.current.name).toBe("old A"); expect(f.effects).toEqual([]);
   expect(await Promise.all(protectedPaths.map(p => fs.readFile(p)))).toEqual(before); await expect(fs.stat(f.md)).rejects.toMatchObject({ code: "ENOENT" });

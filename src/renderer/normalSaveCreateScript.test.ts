@@ -1,3 +1,4 @@
+import { appCallerAdapterScope, createAppRootActor } from './appCallerAdapterScope';
 import { expect, it } from "vitest";
 import * as fs from "node:fs/promises";
 import ts from "typescript";
@@ -33,16 +34,19 @@ it("actual App Create callback routes through normal adapter and publishes insid
   const visit = (node: ts.Node) => { if (ts.isVariableDeclaration(node) && node.name.getText(tree) === "handleCreateProjectFromStoryboardScript") expression = node.initializer!.getText(tree); ts.forEachChild(node, visit); }; visit(tree);
   const events: string[] = [], draft = { sourceMarkdownPath: "/s.md", targetFolderPath: "/new", entryCount: 1 };
   const ref = { current: createProject("old") };
-  const adapter = createNormalSaveAppAdapter({ projectRef: ref, setProject: () => events.push("project"), queue: createBitmapLayerWriteQueue(),
-    freshToken: () => "t", paths: () => ({}), onSave: () => {}, onError: () => events.push("error"),
+  const adapter = await createAppRootActor({ projectRef: ref, setProject: () => events.push("project"), queue: createBitmapLayerWriteQueue(),
+    freshToken: () => "t", paths: () => ({folderPath:'/new',metadataPath:'/new/p.json'}), onSave: () => {}, onError: () => events.push("error"),
     api: () => ({ createFromStoryboardScript: async () => { events.push("main"); return { folderPath: "/new", folderName: "new", metadataPath: "/new/p.json", images: [], project: { ...createProject("new"), pendingBake: { version: 1, shots: {} } } }; },
-      autosaveWorkspace: async () => undefined, saveWorkspace: async p => p, readOutputIdentity: async () => "a".repeat(64) }) });
+      autosaveWorkspace: async () => undefined, saveWorkspace: async p => p, readOutputIdentity: async () => "a".repeat(64) }) }, {
+        // This existing pure fixture has synthetic paths/IO, not native proof.
+        observeWorkspace: async folderPath => ({binding:folderPath,folderPath,metadataPath:folderPath+'/p.json'}),
+        publishScan: () => events.push('publishScan') });
   const bindings = { window: { storyboard: { createFromStoryboardScript: async () => { throw new Error("legacy create bypass"); }, getRecentFolders: async () => [] } },
     storyboardScriptImportDraft: draft, storyboardScriptImportDraftRef: { current: draft }, normalSaveAppEnabled: true,
     normalSaveAppAdapterRef: { current: adapter }, blankShotPreset: "16:9", setWorkspaceTask: () => {}, setStatus: () => {},
     setStoryboardScriptImportDraft: () => {}, setRecentFolders: () => {}, withStatus, decodeNormalSaveImportResult,
     publishNormalSaveFolderScan: () => events.push("publishScan"), loadFolderScan: async () => { throw new Error("outside-queue load forbidden"); } };
-  await new Function(...Object.keys(bindings), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings))();
+  await new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(appCallerAdapterScope(bindings)))();
   expect(events).toEqual(["main", "project", "publishScan"]);
 });
 
