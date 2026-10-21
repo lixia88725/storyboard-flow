@@ -13,6 +13,14 @@ describe("single-repository workflow contract", () => {
     for (const command of ["npm ci", "npm test", "npm run build", "npm run check:preload"]) expect(job("test")).toContain(command);
     expect(job("metadata")).toContain("if: github.event_name != 'pull_request'");
   });
+  it("sets the runner temporary directory only after the test job starts", () => {
+    const test = job("test");
+    const jobConfiguration = test.split("    steps:")[0];
+    expect(jobConfiguration).not.toContain("runner.temp");
+    const prepareTemp = test.indexOf('printf \'TMPDIR=%s\\n\' "$RUNNER_TEMP" >> "$GITHUB_ENV"');
+    expect(prepareTemp).toBeGreaterThan(-1);
+    expect(prepareTemp).toBeLessThan(test.indexOf("run: npm test"));
+  });
   it("builds both native architectures after tests, publishes only gated main/tags, and pins target identity", () => {
     expect(workflow).toContain("branches: [main, infra/public-repository]");
     expect(job("package")).toContain("needs: [test, metadata]");

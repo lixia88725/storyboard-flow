@@ -21,8 +21,10 @@ jobs:
     env:
       SWB_PYTHON_DEPS_DIR: ${{ github.workspace }}/vendor/python/photoshop-tiff
       PYTHONDONTWRITEBYTECODE: '1'
-      TMPDIR: ${{ runner.temp }}
     steps:
+      - name: Set isolated test temporary directory
+        shell: bash
+        run: printf 'TMPDIR=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
