@@ -1,106 +1,60 @@
-# AGENTS.md
+# Storyboard Flow developer rules
 
-## Project
+## Project and naming
 
 Storyboard Flow is a local-first Electron desktop app for arranging storyboard images, moving dialogue between shots, drawing edits, and managing lightweight storyboard layers.
 
-## Naming Boundary
+Use `Storyboard Flow` in new product-facing text. `Storyboard Workbench` is a legacy name. Preserve `.storyboard-workbench`, `SWB`, `swb-*`, and `storyboard-workbench.local` as internal compatibility names unless a separately approved format migration changes them. New TIFF metadata writes `app: "Storyboard Flow"`; readers must continue accepting `app: "Storyboard Workbench"`.
 
-- The product name is `Storyboard Flow`. Use this name in UI copy, README/product docs, GitHub-facing text, window titles, and new user-visible messages.
-- `Storyboard Workbench` is a legacy name. Do not use it for new product-facing text.
-- `.storyboard-workbench`, `SWB`, `swb-*`, and `storyboard-workbench.local` are legacy/internal compatibility names for the current disk format, metadata namespace, tests, and environment variables. Keep them unless a separate format-migration plan explicitly changes them.
-- New TIFF metadata should write `app: "Storyboard Flow"`, but readers must continue accepting old `app: "Storyboard Workbench"` metadata so existing projects keep opening.
+## Context and authorization
 
-## Context
+Read this file, `context-handoff.md`, and `todo.md` first. Read relevant sections of `docs/architecture/SYSTEM.md` and `decisions.md` for the task. Documentation describes behavior, not new permission. Other machines need not have workstation-specific rules or tools. Check applicable local rules and task authorization explicitly.
 
-新 session 开始时请先阅读以下文档：
+Check Git/worktree status before editing and preserve existing work. Use an isolated worktree for concurrent changes. Do not reset or stash someone else's work. Read definitions and callers before changing contracts. Existing safety boundaries and approved scope take precedence over old notes; seek a decision on material conflicts rather than silently changing requirements.
 
-- `decisions.md` — 架构决策与设计理由。
-- `context-handoff.md` — 上次 session 的进度与当前状态。
-- `todo.md` — 待办事项、已知问题与未来规划。
+## Stack and routing
 
-## Tech Stack
+- Electron main/preload; React + TypeScript + Vite renderer; dnd-kit drag behavior; Canvas/react-konva drawing; sharp TIFF/PNG processing; Python TIFF/native permission helpers; Vitest tests.
+- Current drawing data is bitmap-layer based: `shots[].layers`, with PNGs under `.storyboard-workbench/layers/{shotId}/{layerId}.png`. Legacy `sketchLayers` and `imageLayerEdits` are migration inputs, not primary editing data.
+- Project ordering, dialogue, rename plans, layer metadata/locks and SWB import status: start at `src/shared/projectOps.ts` and its tests.
+- Renderer behavior belongs in focused controllers/helpers. Keep canvas work in `SketchPad.tsx` and its controllers; layer selection/merge/visibility/drag/opacity in `LayerPanel.tsx` and shared rules. Avoid adding orchestration inline to `App.tsx`.
+- High-risk Save/Import/TIFF orchestration remains in `electron/main/main.ts`; isolated IPC/read-side/runtime work goes in focused main services and runtimes with tests.
+- Preload changes update `electron/preload/preload.ts`, `electron/preload/preload.cjs` and `src/renderer/global.d.ts` together.
+- Cross-boundary changes require real connected checks. Inspect `scripts/electron-bitmap-smoke.mjs` before executing; it is not automatically safe for personal userData, Trash or clipboard.
+- Option/Alt drag copy is retired; normal drag moves/sorts. Do not reintroduce copy-on-drag without an explicit product decision.
+- Built-in AI generation/provider/candidate UI is retired. Do not recreate it as part of unrelated work. Ordinary Pending remains supported.
 
-- Electron main/preload process.
-- React + TypeScript + Vite renderer.
-- `dnd-kit` for shot and dialogue drag behavior.
-- Canvas / `react-konva` renderer code for bitmap drawing, live brush/eraser preview, and legacy sketch migration paths.
-- `sharp` in the Electron main process for TIFF preview generation, blank TIFF creation, bitmap layer initialization, metadata writing, and Save-time TIFF baking.
-- Vitest for pure logic tests.
+## File and data safety
 
-Current drawing data is bitmap-layer based. Layer metadata lives in `shots[].layers`; editable layer pixels live under `.storyboard-workbench/layers/{shotId}/{layerId}.png`. Brush, eraser, Select transform, and layer operations should write bitmap layer assets/metadata, not legacy stroke state. Legacy `sketchLayers` and `imageLayerEdits` are migration inputs only; do not add new drawing behavior that depends on them as primary data.
+Preserve user files unless an explicit user action requires changing them. Keep V1 Project/Shot/Dialogue/BitmapLayer and naming metadata understandable and local-first. Use two-stage renaming for working image filenames.
 
-## Commands
+Save is the operation for synchronizing real filenames and writing working TIFF pixels. Do not auto-rename real images during autosave. Existing explicitly approved Create/Import/Pending materialization paths remain exceptions described in the architecture; this does not grant new write paths.
 
-```bash
-npm install
+Storyboard deletion remains pending app state until Save; deleted root images go to system Trash, not Archive. Parked shots stay in JSON but do not participate in Save output, filename sync, Timeline or `storyboard-script.md`.
+
+Do not treat `.storyboard-workbench` assets as root image shots. Keep failures, recovery objects, History, custody pins and old assets intact. Unknown native restrictions must refuse safely rather than widening permissions. Recovery copies are non-executable; do not OS-open them. The default per-workspace recovery budget is 8GiB across actual/reserved partitions; reject new spending rather than automatically deleting recovery data. Do not turn a retained failure or cleanup into successful Save ACK. In-flight effects must settle; timeout is not cancellation.
+
+No SQLite, PDF export, cloud sync/collaboration, PSD-first workflow, Photoshop full-fidelity round-trip or format migration without separate approval. Do not install dependencies, access real media/credentials, change global configuration, terminate unrelated processes, commit, push, merge, publish or deploy merely because a script is available. These actions need appropriate task authority. Never place API keys in project files.
+
+## Tests and completion
+
+Use focused regression tests for behavior changes; keep necessary assertions. Run the complete allowed suite and `npm run build` before claiming an implementation complete. The build includes both renderer and Electron typechecks; retain the full log rather than mechanically repeating identical typecheck evidence. Vite-only or build:electron is insufficient.
+
+Commands (installation and execution still require task authorization):
+
+```sh
+npm ci
 npm run dev
 npm run test
 npm run typecheck
 npm run build
 npm run check:preload
+npm run prepare:package-resources
 npm run smoke:bitmap
 ```
 
-## Development Map
+`src/renderer/normalSaveMetadataHistory.test.ts` is not certified input: do not read, copy, hash, execute or publish it. Only certified fixtures may be used. `vitest.config.ts` explicitly excludes that path, and it is not distributed in the source candidate. Use the approved enumerated suite for restricted verification; do not broaden input discovery to unapproved fixtures.
 
-- Current architecture map lives in `decisions.md`; use this section only as routing.
-- Project data behavior: start in `src/shared/projectOps.ts`, then update `src/shared/projectOps.test.ts`.
-- Renderer behavior: prefer focused helpers/controllers before adding inline logic to `src/renderer/App.tsx`. Keep card, canvas, layer drawer, AI panel, and pending shelf work in their owning renderer modules.
-- Electron behavior: keep protected Save / Import / TIFF orchestration in `electron/main/main.ts`; put isolated IPC, read-side, settings, and runtime glue in focused `electron/main/*AppRuntime.ts` or `electron/main/*Service.ts` files with tests.
-- AI behavior: stay inside `electron/main/ai/*` and `src/renderer/ai/*`; use `aiClient.ts` as the renderer API boundary. AI output must remain candidate-first and additive.
-- Preload APIs: update `electron/preload/preload.ts`, `electron/preload/preload.cjs`, and renderer typings together, then run `npm run check:preload`.
-- Cross-boundary behavior: add or update `scripts/electron-bitmap-smoke.mjs` when behavior crosses renderer + Electron + filesystem boundaries.
+Run `check:preload` for preload changes. Packaging resource changes require `prepare:package-resources` with pre-existing compatible dependencies; do not silently install them. Build before smoke:bitmap because it uses dist/dist-electron. Preserve smoke scenarios when adding focused coverage. For UI changes verify the actual workflow and protected nearby paths when feasible; mark untested GUI behavior TODO: verify. Test doubles or green unit tests do not prove real GUI, platform, cross-machine or installer behavior.
 
-## Change Routing
-
-- Changing storyboard ordering, dialogue movement, rename plans, bitmap layer metadata, lock rules, or SWB import status: update `src/shared/projectOps.ts` first.
-- Changing drawing, erasing, Select transform, Onion Skin overlay, or live preview behavior: prefer a renderer helper test first, then wire through `src/renderer/SketchPad.tsx`.
-- Changing layer multi-select, Merge, visibility sweep, row drag, or opacity gestures: start in `src/shared/projectOps.ts` for project state and `src/renderer/LayerPanel.tsx` for UI.
-- Option/Alt drag copy is retired. Do not reintroduce storyboard, layer, or dialogue copy-on-drag without an explicit product decision; normal drag remains move/sort.
-- Changing parked shot behavior: preserve the rule that parked shots remain in JSON but do not participate in Save output, filename sync, Timeline, or `storyboard-script.md`.
-- Changing Save, Import, Archive, TIFF metadata, or working TIFF pixels: treat it as high risk, keep the patch small, and run `npm run build` before `npm run smoke:bitmap`.
-- Changing preload APIs: update TypeScript and CommonJS preload files together and run `npm run check:preload`.
-- Changing visual styling only: keep the change in `src/renderer/styles.css`; do not modify project data or Electron code.
-- Changing AI provider/settings/generation behavior: keep project files free of API keys, preserve candidate-first Apply, and avoid changing Save / Import / TIFF / `.storyboard-workbench` format boundaries unless explicitly requested.
-- Changing smoke coverage: preserve existing scenarios and only add focused helpers or assertions for the new behavior.
-
-## Code Standards
-
-- Prefer small pure functions for ordering, dialogue, layer, sketch, SWB format, and rename behavior.
-- Preserve user files unless an explicit user action requires changing them.
-- Use two-stage renaming when changing image filenames in a folder.
-- Keep V1 data structures understandable and local-first: `Project`, `Shot`, `Dialogue`, `BitmapLayer`, legacy migration stroke fields, SWB metadata, and naming metadata.
-- Avoid adding export, database, cloud, Photoshop layer round-trip, or file watching code unless specifically requested.
-- AI provider or AI UI work must stay inside the existing internal AI module boundaries unless the user explicitly approves a larger architecture change.
-- Treat `Save` as the only operation that may synchronize real image filenames or write working TIFF pixels.
-- Treat storyboard deletion as pending app state until `Save`; deleted root image files move to the system Trash, not `Archive`.
-
-## Prohibited Actions
-
-- Do not modify business code when the user asks only for documentation.
-- Do not auto-rename image files during autosave.
-- Do not treat `.storyboard-workbench/` cache files as user image shots.
-- Do not add SQLite, PDF export, cloud sync, or Photoshop integration to V1 without a new explicit plan.
-- Do not attempt Photoshop layer round-trip or Photoshop-compatible multi-layer TIFF writing without a separate explicit plan.
-- Do not use destructive file commands without explicit approval.
-
-## Completion Standard
-
-Before claiming a change is complete, run:
-
-```bash
-npm run test
-npm run typecheck
-npm run build
-```
-
-Run `npm run check:preload` whenever preload files change.
-
-Run `npm run prepare:package-resources` whenever packaging resources change. It requires populated `vendor/python/photoshop-tiff` from `npm run setup:photoshop-tiff-deps`.
-
-For renderer or Electron changes that affect built output, run `npm run build` before `npm run smoke:bitmap`; the smoke uses `dist` and `dist-electron`.
-
-For UI interaction changes, also perform a manual or automated app smoke test when feasible. Focus on the affected workflow plus nearby protected areas such as Save safety, bitmap drawing/layers, Import, Delete-to-Trash, animation/timeline, Onion Skin, shortcuts, and drag behavior.
-
-Mark any untested GUI behavior as `TODO: verify`, especially dnd-kit drag behavior that automated tooling cannot fully prove.
+Report implemented, self-tested, independently accepted and published states separately. Use independent review according to risk; self-tests are not independent acceptance. Missing required behavior evidence prevents an overall PASS. Keep exact candidate identity, commands, raw results, skips, failure boundaries and owned-resource cleanup in the task handoff. Do not delete assertions or shrink approved requirements to get green.

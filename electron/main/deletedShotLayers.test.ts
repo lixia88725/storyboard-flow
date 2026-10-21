@@ -25,6 +25,7 @@ describe("cleanupDeletedShotLayerDirectories", () => {
   });
 
   it("does not fail Save when cache cleanup fails", async () => {
+    const onCleaned = vi.fn();
     const remove = vi.fn(async () => {
       throw new Error("permission denied");
     });
@@ -36,8 +37,9 @@ describe("cleanupDeletedShotLayerDirectories", () => {
           { id: "deleted-a", imagePath: "/scene/a.tiff", fileName: "a.tiff" }
         ],
         nextPendingDeletedShots: [],
-        remove
+        remove, onCleaned
       })
     ).resolves.toBeUndefined();
+    expect(onCleaned).not.toHaveBeenCalled();
   });
 });

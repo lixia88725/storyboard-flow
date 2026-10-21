@@ -71,7 +71,6 @@ const boardPanBlockedTargetSelector = [
   ".radial-tool-menu",
   ".topbar",
   ".bottom-bar",
-  ".ai-draft-panel"
 ].join(", ");
 
 export const shouldStartBoardPan = ({

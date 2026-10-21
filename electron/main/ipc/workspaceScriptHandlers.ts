@@ -1,4 +1,6 @@
 import type { IpcMain } from "electron";
+import { ImportRecoveryIncompleteError } from "../importRecovery.js";
+import { normalSaveImportFailure } from "../../shared/normalSaveImportIpc.js";
 
 type IpcMainLike = Pick<IpcMain, "handle">;
 
@@ -38,9 +40,14 @@ export const registerWorkspaceScriptIpcHandlers = <
   );
 
   ipcMain.handle("workspace:createFromStoryboardScript", async (_event, payload: CreatePayload) => {
-    const scan = await handlers.createFromStoryboardScript(payload);
-    await handlers.addRecentFolder(scan.folderPath);
-    return scan;
+    try {
+      const scan = await handlers.createFromStoryboardScript(payload);
+      await handlers.addRecentFolder(scan.folderPath);
+      return scan;
+    } catch (error) {
+      if (error instanceof ImportRecoveryIncompleteError) return normalSaveImportFailure(error);
+      throw error;
+    }
   });
 
   ipcMain.handle("workspace:checkStoryboardScript", async (_event, payload: ProjectPayload) => ({

@@ -36,7 +36,10 @@ describe("createLayerAppHandlers", () => {
     });
     await expect(handlers.mergeVisible(payload)).resolves.toEqual({
       ...payload,
+      deleteBitmapPaths: [],
       targetFilePath: "/scene/visible.png"
     });
+    expect(mergeVisibleLayers).toHaveBeenCalledWith({ ...payload, deleteBitmapPaths: [] });
+    expect(payload).not.toHaveProperty("deleteBitmapPaths");
   });
 });

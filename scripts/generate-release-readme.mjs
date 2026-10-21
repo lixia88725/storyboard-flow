@@ -67,13 +67,13 @@ Storyboard Flow gives that folder a simple local workspace. Your images stay in 
 1. 打开一个装有 storyboard 图片的本地文件夹。
 2. 在 Storyboard Flow 里拖拽排序、移动台词、编辑每张图的文字说明。
 3. 用画笔、橡皮、选区和图层做临时修改。
-4. 需要时使用 AI Draft 生成候选图，确认后再添加为新图层。
+4. 暂时不用的故事板可放进 Pending，之后取回继续编排。
 5. 确认结果后点击 Save，同步真实文件名并写入最终 TIFF。
 
 1. Open a local folder containing storyboard images.
 2. Drag to reorder shots, move dialogue, and edit per-shot script text.
 3. Use brush, eraser, selection tools, and layers for quick revisions.
-4. Optionally use AI Draft to generate candidates, then apply approved results as new layers.
+4. Park temporarily unused storyboards in Pending and restore them when needed.
 5. Click Save when ready to sync real filenames and write final TIFF output.
 
 ## 当前能力 / Current Features
@@ -82,14 +82,14 @@ Storyboard Flow gives that folder a simple local workspace. Your images stay in 
 - 拖拽排序 storyboard，移动台词，编辑每张图的文字说明。
 - 画笔、橡皮、选区移动/缩放、图层显隐、锁定、透明度和合并。
 - 支持 Photoshop-readable layered TIFF 交换路径。
-- 支持 AI Draft 候选图：生成结果先作为候选，确认后才添加为新图层，不直接覆盖原图。
+- 普通 Pending 暂存故事板，保留素材和文字，之后可取回继续使用。
 - Save 是唯一会同步真实文件名和写入最终 TIFF 的动作。
 
 - Open a local image folder and keep project state beside the images.
 - Drag to reorder storyboards, move dialogue, and edit per-shot script text.
 - Brush, eraser, selection move/scale, layer visibility, lock, opacity, and merge.
 - Photoshop-readable layered TIFF exchange path.
-- AI Draft candidate flow: generated images stay as candidates until applied as a new layer, without replacing original artwork directly.
+- Ordinary Pending parking preserves storyboards and their text for later restoration.
 - Save is the only action that syncs real filenames and writes final TIFF pixels.
 
 ## 安装提示 / Install Notes

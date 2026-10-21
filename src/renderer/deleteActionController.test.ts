@@ -55,6 +55,7 @@ const setupController = ({
   project: Project;
   selectedShotIds: string[];
 }) => {
+  const importLockedRef = { current: false };
   const projectRef = { current: project };
   const selectedShotIdsRef = { current: selectedShotIds };
   const selectedShotIdsByCall: Array<string | undefined> = [];
@@ -76,7 +77,8 @@ const setupController = ({
   });
 
   const controller = useDeleteActionController({
-    deleteTarget,
+    isImageImportLocked: () => importLockedRef.current,
+    deleteTargetRef: { current: deleteTarget },
     handleRemoveBitmapLayer,
     projectRef,
     selectedShotIdsRef,
@@ -90,6 +92,7 @@ const setupController = ({
   });
 
   return {
+    importLockedRef,
     controller,
     deleteTargetsByCall,
     handleRemoveBitmapLayer,
@@ -100,6 +103,18 @@ const setupController = ({
 };
 
 describe("useDeleteActionController", () => {
+  it.each(["shot", "layer"])("blocks %s Delete entry while image Import locked", async (kind) => {
+    const s = setupController({ project: projectWithShots([shot("a", 0, [layer("image"), layer("paint")], "paint")]),
+      selectedShotIds: ["a"], deleteTarget: kind === "shot" ? { type: "shot" } : { type: "layer", shotId: "a", layerId: "paint" } });
+    s.importLockedRef.current = true;
+    const before = structuredClone(s.projectRef.current);
+    await s.controller.handleDeleteKeyPress();
+    s.controller.handleDeleteSelectedShots();
+    expect(s.projectRef.current).toEqual(before);
+    expect(s.handleRemoveBitmapLayer).not.toHaveBeenCalled();
+    expect(s.selectedShotIdsByCall).toEqual([]);
+    expect(s.deleteTargetsByCall).toEqual([]);
+  });
   it("deletes selected storyboards and selects the next remaining storyboard", () => {
     const { controller, deleteTargetsByCall, projectRef, selectedShotIdsByCall, statuses } =
       setupController({

@@ -1,4 +1,5 @@
 import type { MutableRefObject } from "react";
+import type { KeyboardShotSelection } from "./globalKeyboardController";
 import type { DeleteTarget } from "./deleteTarget";
 import { nextRangeSelection, type RangeSelectionMode } from "./rangeSelection";
 import type { SelectedBitmapLayerIds } from "./storyboardInteractionState";
@@ -13,6 +14,7 @@ export type ShotSelectionControllerInput = {
   isEditableTarget: (target: EventTarget | null) => boolean;
   orderedShotIds: string[];
   selectedShotIdsRef: MutableRefObject<string[]>;
+  selectedBitmapLayerIdsRef: MutableRefObject<SelectedBitmapLayerIds | undefined>;
   shotSelectionAnchorIdRef: MutableRefObject<string | undefined>;
   setDeleteTarget: StateSetter<DeleteTarget>;
   setSelectedBitmapLayerIds: StateSetter<SelectedBitmapLayerIds | undefined>;
@@ -31,6 +33,7 @@ export const createShotSelectionController = ({
   isEditableTarget,
   orderedShotIds,
   selectedShotIdsRef,
+  selectedBitmapLayerIdsRef,
   shotSelectionAnchorIdRef,
   setDeleteTarget,
   setSelectedBitmapLayerIds,
@@ -80,13 +83,29 @@ export const createShotSelectionController = ({
     setSelectedShotIds(selection.selectedIds);
   };
 
+  const focusShotSelection = () => {
+    // setDeleteTarget synchronizes its ref in useStoryboardInteractionState.
+    setDeleteTarget({ type: "shot" });
+    selectedBitmapLayerIdsRef.current = undefined;
+    setSelectedBitmapLayerIds(undefined);
+  };
+
+  const navigateShotSelection = (selection: KeyboardShotSelection) => {
+    shotSelectionAnchorIdRef.current = selection.anchorId;
+    if (sameShotSelection(selectedShotIdsRef.current, selection.selectedIds)) {
+      return;
+    }
+    focusShotSelection();
+    selectedShotIdsRef.current = selection.selectedIds;
+    setSelectedShotIds(selection.selectedIds);
+  };
+
   const handleShotSelect = (shotId: string, event: ShotSelectEvent) => {
     if (!isEditableTarget(event.target)) {
       blurActiveFormControl();
     }
 
-    setDeleteTarget({ type: "shot" });
-    setSelectedBitmapLayerIds(undefined);
+    focusShotSelection();
 
     if (event.shiftKey) {
       selectShotWithMode(shotId, "range");
@@ -104,6 +123,7 @@ export const createShotSelectionController = ({
   return {
     clearSelectedShots,
     handleShotSelect,
+    navigateShotSelection,
     selectSingleShot,
     selectShotsByIds,
     selectShotWithMode

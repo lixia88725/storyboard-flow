@@ -13,6 +13,13 @@ import {
 const execFileAsync = promisify(execFile);
 
 describe("preload sync", () => {
+  it("compares optional TypeScript parameter names with JavaScript while still detecting omitted arguments", () => {
+    const ts = `const api = {\n  readOutputIdentity: (imagePath: string, legacy?: unknown) => ipcRenderer.invoke("workspace:readOutputIdentity", imagePath, legacy)\n};`;
+    const cjs = `const api = {\n  readOutputIdentity: (imagePath, legacy) => ipcRenderer.invoke("workspace:readOutputIdentity", imagePath, legacy)\n};`;
+    const missing = `const api = {\n  readOutputIdentity: (imagePath) => ipcRenderer.invoke("workspace:readOutputIdentity", imagePath)\n};`;
+    expect(apiSignatures(ts)).toEqual(apiSignatures(cjs));
+    expect(apiSignatures(ts)).not.toEqual(apiSignatures(missing));
+  });
   it("keeps TypeScript and CommonJS preload APIs in sync", async () => {
     const scriptPath = path.resolve("scripts/check-preload-sync.mjs");
     const { stdout } = await execFileAsync("node", [scriptPath]);

@@ -15,6 +15,7 @@ const createHarness = () => {
     isEditableTarget: (target: EventTarget | null) => target === editableTarget,
     orderedShotIds: ["shot-1", "shot-2", "shot-3", "shot-4"],
     selectedShotIdsRef,
+    selectedBitmapLayerIdsRef: { current: undefined },
     shotSelectionAnchorIdRef,
     setDeleteTarget,
     setSelectedBitmapLayerIds,

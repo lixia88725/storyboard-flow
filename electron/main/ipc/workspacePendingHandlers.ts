@@ -1,4 +1,5 @@
 import type { IpcMain } from "electron";
+import { workspaceEffectFailure } from "../workspaceEffectFailure.js";
 
 type IpcMainLike = Pick<IpcMain, "handle">;
 
@@ -13,12 +14,16 @@ export const registerWorkspacePendingIpcHandlers = (
 ): void => {
   ipcMain.handle(
     "workspace:moveShotsToPending",
-    async (_event, payload: unknown, shotIds: string[]) =>
-      handlers.moveShotsToPending(payload, shotIds)
+    async (_event, payload: unknown, shotIds: string[]) => {
+      try { return await handlers.moveShotsToPending(payload, shotIds); }
+      catch (error) { return workspaceEffectFailure(error, "pending"); }
+    }
   );
   ipcMain.handle(
     "workspace:restoreShotsFromPending",
-    async (_event, payload: unknown, shotIds: string[]) =>
-      handlers.restoreShotsFromPending(payload, shotIds)
+    async (_event, payload: unknown, shotIds: string[]) => {
+      try { return await handlers.restoreShotsFromPending(payload, shotIds); }
+      catch (error) { return workspaceEffectFailure(error, "pending"); }
+    }
   );
 };

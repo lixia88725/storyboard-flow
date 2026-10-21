@@ -28,6 +28,7 @@ type ProjectUpdate = Project | ((currentProject: Project) => Project);
 
 type ShotPresentationControllerOptions = {
   api: Window["storyboard"] | undefined;
+  captureEnsureScope?: () => () => boolean;
   bitmapLayerWriteQueueRef: MutableRefObject<BitmapLayerWriteQueue>;
   createHistoryEntry: (bitmapPaths?: string[]) => Promise<ProjectHistoryEntry>;
   collapseBitmapLayer?: typeof collapseBitmapLayerFromMatte;
@@ -37,7 +38,11 @@ type ShotPresentationControllerOptions = {
   folderPath: string | undefined;
   getRecoveryRequiredMessage?: () => string | undefined;
   markShotsDirty: (shotIds: string[]) => void;
+  invalidatePresentationHistory?: (after: Project, shotIds: readonly string[], bitmapPaths: readonly string[]) => void;
   metadataPath: string | undefined;
+  // Live workspace admission re-checked immediately before publication. A scene transaction that
+  // already wrote overlay/expanded pixels must not report success after its publication is refused.
+  isEffectAdmissible?: () => boolean;
   onRecoveryRequired?: (message: string) => void;
   projectRef: MutableRefObject<Project>;
   recordUndoEntry: (entry: ProjectHistoryEntry) => void;
@@ -62,6 +67,7 @@ const restoreActionAssets = async (
 
 export const createShotPresentationController = ({
   api,
+  captureEnsureScope,
   bitmapLayerWriteQueueRef,
   createHistoryEntry,
   collapseBitmapLayer = collapseBitmapLayerFromMatte,
@@ -71,6 +77,8 @@ export const createShotPresentationController = ({
   folderPath,
   getRecoveryRequiredMessage,
   markShotsDirty,
+  isEffectAdmissible,
+  invalidatePresentationHistory,
   metadataPath,
   onRecoveryRequired,
   projectRef,
@@ -81,19 +89,22 @@ export const createShotPresentationController = ({
 }: ShotPresentationControllerOptions) => {
   const runPresentationTransaction = (
     action: () => Promise<void | boolean>
-  ): Promise<void | boolean> =>
-    runExclusiveWorkspaceAction(shotPresentationActionRef, () =>
-      bitmapLayerWriteQueueRef.current.runExclusive(action)
+  ): Promise<void | boolean> => {
+    const isCurrent = captureEnsureScope?.() ?? (() => true);
+    return runExclusiveWorkspaceAction(shotPresentationActionRef, () =>
+      bitmapLayerWriteQueueRef.current.runExclusive(() => isCurrent() ? action() : Promise.resolve(false))
     );
+  };
 
   const runHandledPresentationTransaction = async (
     label: string,
-    action: () => Promise<void | boolean>
+    action: () => Promise<void | boolean>,
+    isCurrent: () => boolean = () => true
   ): Promise<void | boolean> => {
     try {
       return await runPresentationTransaction(action);
     } catch (error) {
-      setStatus(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+      if (isCurrent()) setStatus(`${label}: ${error instanceof Error ? error.message : String(error)}`);
       return false;
     }
   };
@@ -102,25 +113,32 @@ export const createShotPresentationController = ({
     if (projectRef.current !== projectAtStart) {
       throw new Error("The storyboard changed while this scene transaction was running");
     }
+    if (isEffectAdmissible && !isEffectAdmissible()) {
+      throw new Error("The storyboard workspace changed before this scene transaction could publish");
+    }
   };
 
   const reportTransactionFailure = async (
     label: string,
     error: unknown,
-    entry: ProjectHistoryEntry
+    entry: ProjectHistoryEntry,
+    isCurrent: () => boolean = () => true,
+    isWorkspaceCurrent: () => boolean = isCurrent
   ): Promise<void> => {
     const originalMessage = error instanceof Error ? error.message : String(error);
     try {
       await restoreActionAssets(api!, folderPath!, entry);
-      setStatus(`${label}: ${originalMessage}`);
+      if (isCurrent()) setStatus(`${label}: ${originalMessage}`);
     } catch (rollbackError) {
       const rollbackMessage =
         rollbackError instanceof Error ? rollbackError.message : String(rollbackError);
       const recoveryMessage =
         `${label}: ${originalMessage}. Asset rollback also failed: ${rollbackMessage}. ` +
         "Close this workspace without saving and reopen it before continuing.";
-      onRecoveryRequired?.(recoveryMessage);
-      setStatus(recoveryMessage);
+      if (isWorkspaceCurrent()) {
+        onRecoveryRequired?.(recoveryMessage);
+        setStatus(recoveryMessage);
+      }
     }
   };
 
@@ -366,10 +384,13 @@ export const createShotPresentationController = ({
     options: {
       dialogueOverlayEnabled?: boolean;
       expectedProject?: Project;
+      isCurrent?: () => boolean;
+      isWorkspaceCurrent?: () => boolean;
       markFileNamesUnsynced?: boolean;
       recordUndo?: boolean;
     } = {}
   ): Promise<boolean> => {
+    if (options.isCurrent && !options.isCurrent()) return false;
     if (!requireWorkspace() || !api || !folderPath || !metadataPath) {
       return false;
     }
@@ -377,7 +398,12 @@ export const createShotPresentationController = ({
     const result = await runHandledPresentationTransaction(
       "Inherit scene presentation failed",
       async (): Promise<boolean> => {
+        if (options.isCurrent && !options.isCurrent()) return false;
         const workspaceProjectAtStart = projectRef.current;
+        const ensureInheritanceCurrent = () => {
+          if (options.isCurrent && !options.isCurrent()) throw new Error("Pending inheritance scope changed");
+          ensureProjectUnchanged(workspaceProjectAtStart);
+        };
         if (
           options.expectedProject &&
           workspaceProjectAtStart !== options.expectedProject
@@ -390,14 +416,14 @@ export const createShotPresentationController = ({
         const targetShotIds = new Set(shotIds);
         const targetShots = baseProject.shots.filter((shot) => targetShotIds.has(shot.id));
         if (targetShots.length === 0) {
-          ensureProjectUnchanged(workspaceProjectAtStart);
+          ensureInheritanceCurrent();
           updateProject(baseProject, false, false);
           return true;
         }
         if (!mode) {
           const matteShots = targetShots.filter((shot) => Boolean(matteForShot(shot)));
           if (matteShots.length === 0) {
-            ensureProjectUnchanged(workspaceProjectAtStart);
+            ensureInheritanceCurrent();
             updateProject(baseProject, false, false);
             return true;
           }
@@ -425,6 +451,7 @@ export const createShotPresentationController = ({
           const rollbackEntry = await createHistoryEntry([
             ...new Set([...expandedContentPaths, ...systemLayerPaths])
           ]);
+          if (options.isCurrent) ensureInheritanceCurrent();
           const sourceByPath = new Map(
             (rollbackEntry.layerAssets ?? []).map((snapshot) => [
               snapshot.bitmapPath,
@@ -463,20 +490,26 @@ export const createShotPresentationController = ({
                   matte.bottom,
                   targetHeight
                 );
+                if (options.isCurrent) ensureInheritanceCurrent();
                 await api.writeLayerPng({
                   folderPath,
                   bitmapPath: layer.bitmapPath,
                   dataUrl
                 });
+                if (options.isCurrent) ensureInheritanceCurrent();
               }
             }
             for (const bitmapPath of systemLayerPaths) {
               await api.deleteLayerPng({ folderPath, bitmapPath });
+              if (options.isCurrent) ensureInheritanceCurrent();
             }
 
-            ensureProjectUnchanged(workspaceProjectAtStart);
+            ensureInheritanceCurrent();
             if (options.recordUndo) {
               recordUndoEntry(rollbackEntry);
+            } else {
+              invalidatePresentationHistory?.(nextProject, matteShots.map(shot => shot.id),
+                [...new Set([...expandedContentPaths, ...systemLayerPaths])]);
             }
             markShotsDirty(matteShots.map((shot) => shot.id));
             updateProject(
@@ -489,7 +522,7 @@ export const createShotPresentationController = ({
             await reportTransactionFailure(
               "Inherit disabled scene matte failed",
               error,
-              rollbackEntry
+              rollbackEntry, options.isCurrent, options.isWorkspaceCurrent
             );
             return false;
           }
@@ -509,6 +542,7 @@ export const createShotPresentationController = ({
             folderPath,
             metadataPath
           });
+          if (options.isCurrent) ensureInheritanceCurrent();
         }
 
         const matteProject = applyProjectMatte(baseProject, mode, shotIds);
@@ -526,7 +560,7 @@ export const createShotPresentationController = ({
             Boolean(matteForShot(shot))
         );
         if (nextProject === baseProject) {
-          ensureProjectUnchanged(workspaceProjectAtStart);
+          ensureInheritanceCurrent();
           updateProject(baseProject, false, false);
           return true;
         }
@@ -575,6 +609,7 @@ export const createShotPresentationController = ({
             ...nextDialogueBitmapPaths
           ])
         ]);
+        if (options.isCurrent) ensureInheritanceCurrent();
         const sourceByPath = new Map(
           (rollbackEntry.layerAssets ?? []).map((snapshot) => [
             snapshot.bitmapPath,
@@ -596,11 +631,13 @@ export const createShotPresentationController = ({
                 throw new Error(`Could not read layer "${layer.name}" in ${shot.fileName}`);
               }
               const dataUrl = await expandBitmapLayer(sourceUrl, layer, 75, 75);
+              if (options.isCurrent) ensureInheritanceCurrent();
               await api.writeLayerPng({
                 folderPath,
                 bitmapPath: layer.bitmapPath,
                 dataUrl
               });
+              if (options.isCurrent) ensureInheritanceCurrent();
             }
           }
 
@@ -626,6 +663,7 @@ export const createShotPresentationController = ({
               bitmapPath: overlay.bitmapPath,
               dataUrl
             });
+            if (options.isCurrent) ensureInheritanceCurrent();
           }
 
           if (options.dialogueOverlayEnabled === true) {
@@ -655,16 +693,22 @@ export const createShotPresentationController = ({
                 bitmapPath: overlay.bitmapPath,
                 dataUrl
               });
+              if (options.isCurrent) ensureInheritanceCurrent();
             }
           } else if (options.dialogueOverlayEnabled === false) {
             for (const bitmapPath of existingDialogueBitmapPaths) {
               await api.deleteLayerPng({ folderPath, bitmapPath });
+              if (options.isCurrent) ensureInheritanceCurrent();
             }
           }
 
-          ensureProjectUnchanged(workspaceProjectAtStart);
+          ensureInheritanceCurrent();
           if (options.recordUndo) {
             recordUndoEntry(rollbackEntry);
+          } else {
+            invalidatePresentationHistory?.(nextProject, targetShots.map(shot => shot.id),
+              [...new Set([...expandedBitmapPaths, ...matteBitmapPaths,
+                ...existingDialogueBitmapPaths, ...nextDialogueBitmapPaths])]);
           }
           markShotsDirty(changedShots.map((shot) => shot.id));
           updateProject(
@@ -674,10 +718,10 @@ export const createShotPresentationController = ({
           );
           return true;
         } catch (error) {
-          await reportTransactionFailure("Inherit scene matte failed", error, rollbackEntry);
+          await reportTransactionFailure("Inherit scene matte failed", error, rollbackEntry, options.isCurrent, options.isWorkspaceCurrent);
           return false;
         }
-      }
+      }, options.isCurrent
     );
 
     return result === true;

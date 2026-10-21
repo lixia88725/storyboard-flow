@@ -18,7 +18,13 @@ permissions:
 jobs:
   test:
     runs-on: macos-14
+    env:
+      SWB_PYTHON_DEPS_DIR: ${{ github.workspace }}/vendor/python/photoshop-tiff
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
+      - name: Set isolated test temporary directory
+        shell: bash
+        run: printf 'TMPDIR=%s\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
@@ -32,8 +38,8 @@ jobs:
           python-version: '3.12'
       - run: npm ci
       - run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
-      - run: npm test
       - run: npm run build
+      - run: npm test
       - run: npm run check:preload
 
   metadata:

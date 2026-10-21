@@ -8,7 +8,7 @@ describe("previewPathForImage", () => {
     const longImagePath = path.join(
       "/Users/example/Documents/Codex",
       "2026-05-30",
-      "storyboard-workbench-users-xiali-documents-codex-3",
+      "storyboard-workbench-synthetic-deeply-nested-path-3",
       "work",
       "swb-dogfood-normal-folder",
       "project",

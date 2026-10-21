@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { bitmapLayersForShot, type ElectronBitmapLayer } from "./bitmapLayerOrdering.js";
 import { runPythonScript } from "./pythonRuntime.js";
+import { mapWithConcurrency } from "./mapWithConcurrency.js";
 
 type Project = {
   name: string;
@@ -166,7 +167,7 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
   const plan = buildPhotoshopTiffInPlaceSavePlan(project, folderPath, options.saveStamp);
   await mkdir(plan.manifestFolderPath, { recursive: true });
 
-  await runWithConcurrency(plan.jobs, options.concurrency ?? defaultInPlaceSaveConcurrency, async (job) => {
+  await mapWithConcurrency(plan.jobs, options.concurrency ?? defaultInPlaceSaveConcurrency, async (job) => {
     const manifestPath = path.join(plan.manifestFolderPath, `${job.shotId}.json`);
     const xmp = options.xmpByShotId?.[job.shotId];
     const swbMetadata = options.swbMetadataByShotId?.[job.shotId];
@@ -180,24 +181,6 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
     tempFolderPath: plan.tempFolderPath,
     replacements: plan.jobs.map((job) => ({ fromPath: job.outputPath, toPath: job.finalPath }))
   };
-};
-
-const runWithConcurrency = async <T>(
-  items: T[],
-  concurrency: number,
-  run: (item: T) => Promise<void>
-): Promise<void> => {
-  const limit = Math.max(1, Math.floor(concurrency));
-  let nextIndex = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (nextIndex < items.length) {
-      const item = items[nextIndex];
-      nextIndex += 1;
-      await run(item);
-    }
-  });
-
-  await Promise.all(workers);
 };
 
 const runPythonExporter = (

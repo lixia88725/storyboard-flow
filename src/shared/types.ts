@@ -102,22 +102,25 @@ export type PendingDeletedShot = {
   fileName: string;
 };
 
+export type PendingBakeShot = {
+  state: "pending" | "synced" | "unknown";
+  editToken?: string;
+  acceptedOutputIdentity?: string;
+};
+
+export type PendingBake = { version: 1; shots: Record<string, PendingBakeShot> };
+
 export type Project = {
+  pendingBake?: PendingBake;
   id: string;
   name: string;
   naming?: ProjectNaming;
-  ai?: ProjectAiState;
   shots: Shot[];
   parkedShots?: Shot[];
   dialogues: Dialogue[];
   pendingDeletedShots?: PendingDeletedShot[];
   createdAt: string;
   updatedAt: string;
-};
-
-export type ProjectAiState = {
-  projectContext?: string;
-  shotResourceExclusions?: Record<string, string[]>;
 };
 
 export type ProjectNaming = {
@@ -173,7 +176,16 @@ export type SwbImageMetadata = {
   }>;
 };
 
+export type { NormalSaveOutputAck } from "../../electron/normalSaveTransport";
+export type SaveWorkspacePayload = WorkspacePayload & import("../../electron/normalSaveTransport").NormalSaveTransport & { renamePlan?: RenamePlanItem[] };
+
 export type WorkspacePayload = {
+  recoveryContent?: unknown;
+  ordinaryPersistenceNonce?: string;
+  recoverySaveNonce?: string;
+  normalSaveScriptInput?: string;
+  normalSaveScriptExpectedInput?: string | null;
+  normalSave?: boolean;
   project: Project;
   folderPath: string;
   metadataPath: string;
@@ -182,9 +194,12 @@ export type WorkspacePayload = {
   preserveDirtyShotLayers?: boolean;
 };
 
-export type ImportSwbFormatPayload = WorkspacePayload;
+export type ImportSwbFormatPayload = WorkspacePayload & import("../../electron/normalSaveTransport").NormalSaveTransport;
 
-export type FolderScanPayload = {
+export type RecoveryHistoryEntry = { project: Project; selectedShotIds: string[]; fileNameSyncState: 'synced' | 'unsynced'; layerAssets?: { bitmapPath: string; dataUrl?: string }[] };
+export type FolderScanPayload = import("../../electron/normalSaveTransport").NormalSaveTransport & {
+  // Inert private stacks returned only by Main's native-certified cold reader.
+  recoveryHistory?: { undo: RecoveryHistoryEntry[]; redo: RecoveryHistoryEntry[] };
   folderPath: string;
   folderName: string;
   metadataPath: string;
@@ -193,6 +208,7 @@ export type FolderScanPayload = {
   importWarnings?: string[];
   scriptImportNeeded?: boolean;
   preserveProjectWithoutImageMerge?: boolean;
+  normalSaveOpenRecoveryRequired?: string;
 };
 
 export type RenamePlanItem = {

@@ -47,8 +47,7 @@ export const storyboardInsertionDragRequest = ({
 }): InsertionDragRequest => {
   if (
     (activeData?.type !== "shot" &&
-      activeData?.type !== "parked-shot" &&
-      activeData?.type !== "ai-candidate") ||
+      activeData?.type !== "parked-shot") ||
     isAnimationMode
   ) {
     return { type: "reset" };
@@ -60,7 +59,7 @@ export const storyboardInsertionDragRequest = ({
   }
 
   if (
-    (activeData.type === "parked-shot" || activeData.type === "ai-candidate") &&
+    activeData.type === "parked-shot" &&
     !isPointerInsideBoard
   ) {
     return { type: "clear" };

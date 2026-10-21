@@ -1,4 +1,5 @@
-import { rename } from "node:fs/promises";
+import { readFile, rename } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { applyFileMoves } from "./fileRenames.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
 import type { WorkspacePendingIpcHandlers } from "./ipc/workspacePendingHandlers.js";
@@ -11,12 +12,14 @@ import {
 } from "./pendingShotFilesService.js";
 
 type WorkspacePendingPayload<Project extends PendingProject> = {
+  normalSave?: boolean;
   folderPath: string;
   metadataPath: string;
   project: Project;
 };
 
 export type WorkspacePendingAppRuntimeOptions<Project extends PendingProject> = {
+  assertAdmission?: (payload: WorkspacePendingPayload<Project>) => unknown;
   materializeShots: (
     project: Project,
     folderPath: string,
@@ -88,11 +91,26 @@ const pendingShotIds = (shotIds: string[]): string[] => {
 };
 
 export const createWorkspacePendingAppHandlers = <Project extends PendingProject>({
+  assertAdmission,
   beginTransaction,
   materializeShots,
   persistProject,
   uniquePath
 }: WorkspacePendingAppRuntimeOptions<Project>): WorkspacePendingIpcHandlers => {
+  const finalize = async (payload: WorkspacePendingPayload<Project>, files: PendingShotFile[], onPublicationStarted: () => void) => {
+    if (payload.normalSave) {
+      const project = payload.project as Project & { pendingBake?: { shots: Record<string, { editToken?: string }> } };
+      for (const file of files) {
+        const source = [...project.shots, ...(project.parkedShots ?? [])].find(s => s.id === file.shotId);
+        if (!source) throw new Error("Pending source disappeared");
+        file.normalSaveOutput = { shotId: file.shotId, capturedToken: project.pendingBake?.shots[file.shotId]?.editToken,
+          sourcePath: source.imagePath, targetPath: file.imagePath, fileName: file.fileName,
+          baseFingerprint: file.baseFingerprint, outputHash: createHash("sha256").update(await readFile(file.imagePath)).digest("hex") };
+      }
+    }
+    onPublicationStarted();
+    await persistProject(payload.metadataPath, projectWithPendingFiles(payload.project, files));
+  };
   const options = {
     fingerprint: pixelFingerprint,
     moveFiles: (moves: Array<{ fromPath: string; toPath: string }>) =>
@@ -103,18 +121,19 @@ export const createWorkspacePendingAppHandlers = <Project extends PendingProject
   return {
     moveShotsToPending: async (unknownPayload, unknownShotIds) => {
       const payload = pendingPayload<Project>(unknownPayload);
+      if (assertAdmission) await assertAdmission(payload);
       const shotIds = pendingShotIds(unknownShotIds);
       return moveShotsToVisiblePending(payload.folderPath, payload.project, shotIds, {
         ...options,
         beginTransaction: (moves) => beginTransaction(payload.folderPath, moves),
-        finalize: (files) =>
-          persistProject(payload.metadataPath, projectWithPendingFiles(payload.project, files)),
+        finalize: (files, onPublicationStarted) => finalize(payload, files, onPublicationStarted),
         materializeShots: (project, selectedShotIds) =>
           materializeShots(project, payload.folderPath, selectedShotIds)
       });
     },
     restoreShotsFromPending: async (unknownPayload, unknownShotIds) => {
       const payload = pendingPayload<Project>(unknownPayload);
+      if (assertAdmission) await assertAdmission(payload);
       return restoreShotsFromVisiblePending(
         payload.folderPath,
         payload.project,
@@ -122,8 +141,7 @@ export const createWorkspacePendingAppHandlers = <Project extends PendingProject
         {
           ...options,
           beginTransaction: (moves) => beginTransaction(payload.folderPath, moves),
-          finalize: (files) =>
-            persistProject(payload.metadataPath, projectWithPendingFiles(payload.project, files))
+          finalize: (files, onPublicationStarted) => finalize(payload, files, onPublicationStarted)
         }
       );
     }

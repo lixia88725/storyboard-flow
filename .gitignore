@@ -19,3 +19,5 @@ vendor/python/photoshop-tiff/*
 *.pfx
 release-artifacts/
 __pycache__/
+private-full-cache/
+src/renderer/normalSaveMetadataHistory.test.ts

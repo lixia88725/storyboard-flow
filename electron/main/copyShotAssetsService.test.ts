@@ -4,17 +4,28 @@ import {
   copyShotAssets,
   type CopyShotAssetsServiceOptions
 } from "./copyShotAssetsService.js";
+import { ProtectedLayerWriteError } from "./protectedLayerFileWriter.js";
+
+// These adapters verify orchestration only. Physical ownership/refusal and
+// partial writes are covered by workspaceCopySafety/ownedFileCreation.
+const receipt = (filePath: string) => ({ filePath, identity: { dev: "1", ino: "1" } });
 
 const createOptions = (
   overrides: Partial<CopyShotAssetsServiceOptions> = {}
 ): CopyShotAssetsServiceOptions => ({
   assertPathInsideFolder: vi.fn(),
-  copyBitmapLayerFile: vi.fn(async () => undefined),
-  copyFile: vi.fn(async () => undefined),
+  copyBitmapLayerFile: vi.fn(async (_source, target, onCreated) => { onCreated(receipt(target)); }),
+  copyFile: vi.fn(async (_source, target, onCreated) => { onCreated(receipt(target)); }),
   createId: () => "copy-id",
-  createPreview: vi.fn(async () => "/project/.storyboard-workbench/previews/copy.png"),
+  createPreview: vi.fn(async (_image, _root, _readOnly, onReceipt) => {
+    const previewPath = "/project/.storyboard-workbench/previews/copy.png";
+    onReceipt({ previewPath, effect: "reused", retainedPaths: [], rollback: async () => {}, commit: async () => {} });
+    return previewPath;
+  }),
   previewRootForFolder: vi.fn(() => "/project/.storyboard-workbench/previews"),
-  rename: vi.fn(async () => undefined),
+  pathEntryExists: vi.fn(async () => false),
+  publishImage: vi.fn(async (_source, target, onPublished) => { const value = receipt(target); onPublished(value); return value; }),
+  removeOwnedFile: vi.fn(async () => undefined),
   resolveLayerAssetPath: (_folderPath, bitmapPath) => path.join("/project", bitmapPath),
   unlink: vi.fn(async () => undefined),
   uniquePath: vi
@@ -60,28 +71,28 @@ describe("copyShotAssets", () => {
 
     expect(options.copyFile).toHaveBeenCalledWith(
       "/project/source.tiff",
-      "/project/.storyboard-copy-copy-id.tiff"
+      "/project/.storyboard-copy-copy-id.tiff", expect.any(Function)
     );
     expect(options.copyBitmapLayerFile).toHaveBeenCalledWith(
       "/project/.storyboard-workbench/layers/shot-a/source.png",
-      "/project/.storyboard-workbench/layers/shot-b/target.png"
+      "/project/.storyboard-workbench/layers/shot-b/target.png", expect.any(Function)
     );
-    expect(options.rename).toHaveBeenCalledWith(
-      "/project/.storyboard-copy-copy-id.tiff",
-      "/project/copy-shot.tiff"
+    expect(options.publishImage).toHaveBeenCalledWith(
+      receipt("/project/.storyboard-copy-copy-id.tiff"),
+      "/project/copy-shot.tiff", expect.any(Function)
     );
     expect(options.createPreview).toHaveBeenCalledWith(
       "/project/copy-shot.tiff",
-      "/project/.storyboard-workbench/previews"
+      "/project/.storyboard-workbench/previews", false, expect.any(Function)
     );
   });
 
   it("removes copied assets and temporary image paths when a copy fails", async () => {
-    const copyError = new Error("copy failed");
+    const copyError = new ProtectedLayerWriteError("refused", "/project/.storyboard-workbench/layers/shot-b/target-b.png", "copy failed", null);
     const options = createOptions({
       copyBitmapLayerFile: vi
         .fn()
-        .mockResolvedValueOnce(undefined)
+        .mockImplementationOnce(async (_source, target, onCreated) => { onCreated(receipt(target)); })
         .mockRejectedValueOnce(copyError)
     });
 
@@ -106,10 +117,9 @@ describe("copyShotAssets", () => {
       )
     ).rejects.toThrow(copyError);
 
-    expect(options.unlink).toHaveBeenCalledWith("/project/copy-shot.tiff");
-    expect(options.unlink).toHaveBeenCalledWith("/project/.storyboard-copy-copy-id.tiff");
-    expect(options.unlink).toHaveBeenCalledWith(
-      "/project/.storyboard-workbench/layers/shot-b/target-a.png"
-    );
+    // The root target was never published, so deleting it is not authorized.
+    expect(options.removeOwnedFile).not.toHaveBeenCalledWith(expect.objectContaining(receipt("/project/copy-shot.tiff")));
+    expect(options.removeOwnedFile).toHaveBeenCalledWith(expect.objectContaining(receipt("/project/.storyboard-copy-copy-id.tiff")));
+    expect(options.removeOwnedFile).toHaveBeenCalledWith(expect.objectContaining(receipt("/project/.storyboard-workbench/layers/shot-b/target-a.png")));
   });
 });

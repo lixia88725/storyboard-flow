@@ -39,7 +39,7 @@ export const ipcChannels = (source) =>
   Array.from(
     new Set(
       Array.from(
-        source.matchAll(/ipcRenderer\.(?:invoke|on|removeListener)\("([^"]+)"/g),
+        source.matchAll(/ipcRenderer\.(?:invoke|sendSync|on|removeListener)\("([^"]+)"/g),
         (match) => match[1]
       )
     )
@@ -186,20 +186,23 @@ export const checkPreloadSync = ({ tsSource, cjsSource, globalSource }) => {
       "preload.ts",
       "global.d.ts"
     );
-    assertSame(
-      "global.d.ts ai API keys",
-      nestedApiKeys(tsSource, "ai"),
-      globalStoryboardNestedApiKeys(globalSource, "ai"),
-      "preload.ts",
-      "global.d.ts"
-    );
-    assertSame(
-      "global.d.ts ai API signatures",
-      nestedApiSignatures(tsSource, "ai"),
-      globalStoryboardNestedApiSignatures(globalSource, "ai"),
-      "preload.ts",
-      "global.d.ts"
-    );
+    const namespaces = Array.from(apiBlock(tsSource).matchAll(/^  ([A-Za-z][A-Za-z0-9_]*):\s*\{/gm), match => match[1]);
+    for (const namespace of namespaces) {
+      assertSame(
+        `global.d.ts ${namespace} API keys`,
+        nestedApiKeys(tsSource, namespace),
+        globalStoryboardNestedApiKeys(globalSource, namespace),
+        "preload.ts",
+        "global.d.ts"
+      );
+      assertSame(
+        `global.d.ts ${namespace} API signatures`,
+        nestedApiSignatures(tsSource, namespace),
+        globalStoryboardNestedApiSignatures(globalSource, namespace),
+        "preload.ts",
+        "global.d.ts"
+      );
+    }
   }
 };
 
@@ -243,7 +246,7 @@ const parameterNames = (paramsSource) =>
   splitTopLevelParams(paramsSource)
     .map((param) => param.trim())
     .filter(Boolean)
-    .map((param) => param.replace(/^\.\.\./, "").split(/[:=]/, 1)[0].trim());
+    .map((param) => param.replace(/^\.\.\./, "").split(/[:=]/, 1)[0].trim().replace(/\?$/, ""));
 
 const splitTopLevelParams = (paramsSource) => {
   const params = [];

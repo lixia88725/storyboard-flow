@@ -11,6 +11,7 @@ type CleanupDeletedShotLayerDirectoriesOptions = {
   previousPendingDeletedShots: PendingDeletedShotLike[];
   nextPendingDeletedShots: PendingDeletedShotLike[];
   remove?: typeof rm;
+  onCleaned?: (shotId: string) => void;
 };
 
 const deletedShotKey = (shot: PendingDeletedShotLike): string => `${shot.id}\n${shot.imagePath}`;
@@ -31,7 +32,8 @@ export const cleanupDeletedShotLayerDirectories = async ({
   folderPath,
   previousPendingDeletedShots,
   nextPendingDeletedShots,
-  remove = rm
+  remove = rm,
+  onCleaned
 }: CleanupDeletedShotLayerDirectoriesOptions): Promise<void> => {
   const remainingKeys = new Set(nextPendingDeletedShots.map(deletedShotKey));
 
@@ -45,6 +47,6 @@ export const cleanupDeletedShotLayerDirectories = async ({
       continue;
     }
 
-    await remove(directoryPath, { recursive: true, force: true }).catch(() => undefined);
+    await remove(directoryPath, { recursive: true, force: true }).then(() => { onCleaned?.(shot.id); }).catch(() => undefined);
   }
 };

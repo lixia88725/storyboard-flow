@@ -122,7 +122,18 @@ await cp(
   path.join(repoRoot, "scripts", "photoshop-layered-tiff-import.py"),
   path.join(packagedAppRoot, "scripts", "photoshop-layered-tiff-import.py")
 );
+await cp(
+  path.join(repoRoot, "scripts", "layer-file-permissions.py"),
+  path.join(packagedAppRoot, "scripts", "layer-file-permissions.py")
+);
 await cp(path.join(repoRoot, "dist-resources"), appResources, { recursive: true });
+for (const script of [
+  "recovery-origin-permissions.py", "recovery-claim-records.py",
+  "recovery-content-permissions.py", "recovery-origin-enrollment.py",
+  "recovery-project-permissions.py", "owned-stage-cleanup.py", "legacy-single-layer-proof.py"
+]) {
+  await cp(path.join(repoRoot, "scripts", script), path.join(packagedAppRoot, "scripts", script));
+}
 
 await copyNodeModule("sharp");
 await copyNodeModule("@img", sharpRuntimePackage);

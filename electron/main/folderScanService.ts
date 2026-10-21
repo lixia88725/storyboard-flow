@@ -10,6 +10,7 @@ export type FolderScanResult<Project, ImportedImage> = {
   importWarnings?: string[];
   scriptImportNeeded?: boolean;
   preserveProjectWithoutImageMerge?: boolean;
+  normalSaveOpenRecoveryRequired?: string;
 };
 
 export type FolderScanServiceOptions<Project, ImportedImage> = {
@@ -20,11 +21,14 @@ export type FolderScanServiceOptions<Project, ImportedImage> = {
     options?: {
       onProgress?: WorkspaceTaskProgressReporter;
       label?: string;
+      readOnly?: boolean;
+      deferMissingPreviews?: boolean;
     }
   ) => Promise<ImportedImage[]>;
   ensureStoryboardScriptMarkdown: (
     folderPath: string,
-    project: Project | undefined
+    project: Project | undefined,
+    readOnly?: boolean
   ) => Promise<boolean>;
   metadataPathForFolder: (folderPath: string) => string;
   previewRootForFolder: (folderPath: string) => string;
@@ -41,7 +45,9 @@ export const scanWorkspaceFolder = async <Project, ImportedImage>(
     metadataPathForFolder,
     previewRootForFolder,
     readProject
-  }: FolderScanServiceOptions<Project, ImportedImage>
+  }: FolderScanServiceOptions<Project, ImportedImage>,
+  readOnly = false,
+  deferMissingPreviews = false
 ): Promise<FolderScanResult<Project, ImportedImage>> => {
   const metadataPath = metadataPathForFolder(folderPath);
   const previewRoot = previewRootForFolder(folderPath);
@@ -55,7 +61,7 @@ export const scanWorkspaceFolder = async <Project, ImportedImage>(
       metadataPath,
       project,
       images: [],
-      scriptImportNeeded: await ensureStoryboardScriptMarkdown(folderPath, project),
+      scriptImportNeeded: await (readOnly ? ensureStoryboardScriptMarkdown(folderPath, project, true) : ensureStoryboardScriptMarkdown(folderPath, project)),
       preserveProjectWithoutImageMerge: true
     };
   }
@@ -76,8 +82,10 @@ export const scanWorkspaceFolder = async <Project, ImportedImage>(
     project,
     images: await createImageRecords(imagePaths, previewRoot, {
       onProgress,
-      label: "Preparing previews..."
+      label: "Preparing previews...",
+      ...(readOnly ? { readOnly: true } : {}),
+      ...(deferMissingPreviews ? { deferMissingPreviews: true } : {})
     }),
-    scriptImportNeeded: await ensureStoryboardScriptMarkdown(folderPath, project)
+    scriptImportNeeded: await (readOnly ? ensureStoryboardScriptMarkdown(folderPath, project, true) : ensureStoryboardScriptMarkdown(folderPath, project))
   };
 };

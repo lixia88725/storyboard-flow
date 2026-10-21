@@ -27,7 +27,7 @@ type TopbarProps = {
   hasSwbWarning: boolean;
   importHelpRef: RefObject<HTMLDivElement | null>;
   isAddShotMenuOpen: boolean;
-  isAiPanelVisible: boolean;
+
   isImportHelpOpen: boolean;
   isImportLocked: boolean;
   isImportNudging: boolean;
@@ -63,7 +63,7 @@ type TopbarProps = {
   handlePlaceDialogueOnMatte: () => Promise<unknown>;
   handleSaveProject: () => Promise<unknown>;
   handleSetShotMatteMode: (mode: ShotMatte["mode"]) => Promise<unknown>;
-  handleToggleAiPanel: () => void;
+
   handleTogglePendingShelf: () => void;
   nudgeImportRequired: () => void;
   updateProjectName: (name: string) => void;
@@ -79,7 +79,7 @@ export const Topbar = ({
   hasSwbWarning,
   importHelpRef,
   isAddShotMenuOpen,
-  isAiPanelVisible,
+
   isImportHelpOpen,
   isImportLocked,
   isImportNudging,
@@ -115,7 +115,7 @@ export const Topbar = ({
   handlePlaceDialogueOnMatte,
   handleSaveProject,
   handleSetShotMatteMode,
-  handleToggleAiPanel,
+
   handleTogglePendingShelf,
   nudgeImportRequired,
   updateProjectName,
@@ -367,16 +367,7 @@ export const Topbar = ({
       ) : null}
     </div>
     <div className="toolbar">
-      <button
-        type="button"
-        className={`ai-panel-toggle ${isAiPanelVisible ? "selected" : ""}`}
-        aria-label="Toggle AI Draft panel"
-        aria-expanded={isAiPanelVisible}
-        title="AI Draft"
-        onClick={handleToggleAiPanel}
-      >
-        AI
-      </button>
+
       <div className="add-shot-menu-container" ref={addShotMenuRef}>
         <div className="add-shot-split-button">
           <button
