@@ -3,7 +3,6 @@ import {
   addBitmapLayer,
   addDialogue,
   addImportedImages,
-  addSketchLayer,
   addGeneratedShot,
   applyProjectMatte,
   applyShotMatte,
@@ -11,7 +10,6 @@ import {
   bitmapLayersForShot,
   clearBitmapLayer,
   createImageBitmapLayer,
-  clearSketch,
   createRenamePlan,
   copyBitmapLayerToShot,
   copyDialogueToShot,
@@ -28,15 +26,9 @@ import {
   moveBitmapLayer,
   moveBitmapLayerGroup,
   parkShotGroup,
-  removeSketchLayer,
-  reorderSketchLayer,
-  moveSketchLayer,
   selectBitmapLayer,
-  selectSketchLayer,
   updateBitmapLayer,
   updateBitmapLayerGroupOpacity,
-  updateSketchLayer,
-  updateShotBaseVisibility,
   validateRenamePlan,
   mergeFolderImages,
   moveDialogueToShot,
@@ -53,12 +45,6 @@ import {
   reorderShots,
   reorderShotGroup,
   sketchLayersForShot,
-  appendSketchStroke,
-  appendImageLayerEdit,
-  clearImageLayerEdits,
-  deleteImageLayerContent,
-  selectImageLayer,
-  updateSketch,
   upsertDialogueOverlayBitmapLayer
 } from "./projectOps";
 import type { Project, SketchStroke } from "./types";
@@ -1322,6 +1308,21 @@ describe("project operations", () => {
     ]);
   });
 
+  it("restores a parked group into an explicitly empty board in Pending order", () => {
+    const original = addDialogue(makeProject(), "shot-b", "Second line", "dialogue-2");
+    const parked = parkShotGroup(original, ["shot-c", "shot-a", "shot-b"]);
+    const restored = restoreParkedShotGroup(parked, ["shot-c", "shot-a"], { type: "empty-board" });
+
+    expect(restored.shots.map((shot) => [shot.id, shot.order])).toEqual([["shot-a", 0], ["shot-c", 1]]);
+    expect(restored.parkedShots?.map((shot) => [shot.id, shot.order])).toEqual([["shot-b", 0]]);
+    expect(restored.dialogues).toEqual(original.dialogues);
+    expect(restored.pendingDeletedShots).toEqual(parked.pendingDeletedShots);
+    expect(parked.shots).toEqual([]);
+    expect(restoreParkedShotGroup(restored, ["shot-b"], { type: "empty-board" })).toBe(restored);
+    expect(restoreParkedShotGroup(parked, ["shot-a"], "missing")).toBe(parked);
+    expect(restoreParkedShotGroup(parked, ["missing"], { type: "empty-board" })).toBe(parked);
+  });
+
   it("restores parked storyboards into the main shot order", () => {
     const parked = parkShotGroup(addDialogue(makeProject(), "shot-b", "Second line", "dialogue-2"), ["shot-b", "shot-c"]);
 
@@ -1357,6 +1358,56 @@ describe("project operations", () => {
 
     expect(updated.shots.map((shot) => shot.imagePath)).toEqual(["/tmp/new.png"]);
     expect(updated.parkedShots?.map((shot) => shot.id)).toEqual(["shot-b"]);
+  });
+
+  it("preserves parked dialogues when deleting another shot and restoring", () => {
+    const project = addDialogue(makeProject(), "shot-b", "Deleted line", "dialogue-b");
+    const parked = parkShotGroup(project, ["shot-a"]);
+
+    const deleted = deleteShots(parked, ["shot-b"]);
+
+    expect(deleted.shots.map((shot) => shot.id)).toEqual(["shot-c"]);
+    expect(deleted.parkedShots).toEqual(parked.parkedShots);
+    expect(deleted.dialogues).toEqual(makeProject().dialogues);
+    expect(deleted.pendingDeletedShots?.map((shot) => shot.id)).toEqual(["shot-b"]);
+    expect(createRenamePlan(deleted).map((item) => item.shotId)).toEqual(["shot-c"]);
+
+    const reopened = mergeFolderImages(JSON.parse(JSON.stringify(deleted)), project.shots);
+    expect(reopened.shots.map((shot) => shot.id)).toEqual(["shot-c"]);
+    expect(reopened.pendingDeletedShots).toEqual(deleted.pendingDeletedShots);
+    expect(reopened.dialogues).toEqual(makeProject().dialogues);
+
+    const restored = restoreParkedShotGroup(reopened, ["shot-a"], "shot-c");
+    expect(restored.shots.map((shot) => shot.id)).toEqual(["shot-a", "shot-c"]);
+    expect(restored.parkedShots).toBeUndefined();
+    expect(restored.dialogues).toEqual(makeProject().dialogues);
+    expect(parked.dialogues).toEqual(project.dialogues);
+  });
+
+  it.each([false, true])("preserves parked dialogues through reopen and folder merge (scanned parked: %s)", (scanParked) => {
+    const project = addDialogue(
+      addDialogue(makeProject(), "shot-a", "Next parked line", "dialogue-a2"),
+      "shot-b", "Missing active line", "dialogue-b"
+    );
+    const parked = parkShotGroup(project, ["shot-a"]);
+    const images = scanParked
+      ? [project.shots[0], project.shots[2]]
+      : [project.shots[2]];
+    // Reopening loads saved JSON and merges the root folder scan.
+    const reopened = mergeFolderImages(JSON.parse(JSON.stringify(parked)), images);
+    const merged = mergeFolderImages(reopened, images);
+    const expectedDialogues = project.dialogues.filter((dialogue) => dialogue.shotId === "shot-a");
+
+    expect(merged.shots.map((shot) => shot.id)).toEqual(["shot-c"]);
+    expect(merged.parkedShots).toEqual(parked.parkedShots);
+    expect(merged.dialogues).toEqual(expectedDialogues);
+    expect(createRenamePlan(merged).map((item) => item.shotId)).toEqual(["shot-c"]);
+
+    const restored = restoreParkedShotGroup(merged, ["shot-a"], "shot-c");
+    expect(restored.shots.map((shot) => shot.id)).toEqual(["shot-a", "shot-c"]);
+    expect(restored.parkedShots).toBeUndefined();
+    expect(restored.dialogues).toEqual(expectedDialogues);
+    expect(parked.dialogues).toEqual(project.dialogues);
   });
 
   it("deletes selected shots, records pending deleted files, and removes their dialogues", () => {
@@ -1481,282 +1532,37 @@ describe("project operations", () => {
     ]);
   });
 
-  it("updates sketch layer strokes for one shot without touching other shots", () => {
-    const project = makeProject();
-    const stroke: SketchStroke = {
-      id: "stroke-1",
-      tool: "brush",
-      color: "#f15b2a",
-      size: 5,
-      points: [0, 0, 20, 20]
-    };
 
-    const updated = updateSketch(project, "shot-b", [stroke]);
 
-    expect(updated.shots.find((shot) => shot.id === "shot-b")?.sketchLayers?.[0].strokes).toEqual([
-      stroke
-    ]);
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[0].strokes).toEqual(
-      []
-    );
-  });
 
-  it("clears sketch layer strokes for one shot", () => {
-    const stroke: SketchStroke = {
-      id: "stroke-1",
-      tool: "brush",
-      color: "#f15b2a",
-      size: 5,
-      points: [0, 0, 20, 20]
-    };
-    const project = updateSketch(makeProject(), "shot-a", [stroke]);
 
-    const updated = clearSketch(project, "shot-a");
 
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[0].strokes).toEqual(
-      []
-    );
-  });
 
-  it("adds and selects a new sketch layer", () => {
-    const updated = addSketchLayer(makeProject(), "shot-a", "Ink");
-    const shot = updated.shots.find((item) => item.id === "shot-a");
 
-    expect(shot?.activeSketchLayerId).toBe("layer-shot-a-1");
-    expect(shot?.activeLayerTarget).toBe("sketch");
-    expect(shot?.sketchLayers).toMatchObject([
-      { id: "layer-default", name: "Drawing", order: 0 },
-      { id: "layer-shot-a-1", name: "Ink", order: 1, visible: true, locked: false, opacity: 1 }
-    ]);
-  });
 
-  it("updates sketch layer metadata without changing strokes", () => {
-    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
 
-    const updated = updateSketchLayer(project, "shot-a", "layer-shot-a-1", {
-      name: "Shadow",
-      visible: false,
-      locked: true,
-      opacity: 0.35,
-      blendMode: "multiply"
-    });
 
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[1]).toMatchObject({
-      name: "Shadow",
-      visible: false,
-      locked: true,
-      opacity: 0.35,
-      blendMode: "multiply",
-      strokes: []
-    });
-  });
 
-  it("appends strokes only to the active sketch layer", () => {
-    const strokeA: SketchStroke = {
-      id: "stroke-a",
-      tool: "brush",
-      color: "#111111",
-      size: 4,
-      points: [0, 0, 10, 10]
-    };
-    const strokeB: SketchStroke = {
-      id: "stroke-b",
-      tool: "brush",
-      color: "#222222",
-      size: 6,
-      points: [10, 10, 20, 20]
-    };
-    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
 
-    const updated = appendSketchStroke(project, "shot-a", "layer-shot-a-1", strokeA);
-    const locked = updateSketchLayer(updated, "shot-a", "layer-shot-a-1", { locked: true });
-    const appendedWhileLocked = appendSketchStroke(locked, "shot-a", "layer-shot-a-1", strokeB);
 
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[0].strokes).toEqual(
-      []
-    );
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[1].strokes).toEqual([
-      strokeA
-    ]);
-    expect(
-      appendedWhileLocked.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[1].strokes
-    ).toEqual([strokeA, strokeB]);
-  });
 
-  it("clears only the selected sketch layer", () => {
-    const strokeA: SketchStroke = {
-      id: "stroke-a",
-      tool: "brush",
-      color: "#111111",
-      size: 4,
-      points: [0, 0, 10, 10]
-    };
-    const strokeB: SketchStroke = {
-      id: "stroke-b",
-      tool: "brush",
-      color: "#222222",
-      size: 6,
-      points: [10, 10, 20, 20]
-    };
-    const withLayer = addSketchLayer(makeProject(), "shot-a", "Ink");
-    const withDefaultStroke = updateSketch(withLayer, "shot-a", [strokeA], "layer-default");
-    const withInkStroke = appendSketchStroke(withDefaultStroke, "shot-a", "layer-shot-a-1", strokeB);
 
-    const updated = clearSketch(withInkStroke, "shot-a", "layer-shot-a-1");
 
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[0].strokes).toEqual([
-      strokeA
-    ]);
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[1].strokes).toEqual(
-      []
-    );
-  });
 
-  it("removes a sketch layer and keeps at least one active layer", () => {
-    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
 
-    const updated = removeSketchLayer(project, "shot-a", "layer-shot-a-1");
 
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers).toHaveLength(1);
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.activeSketchLayerId).toBe(
-      "layer-default"
-    );
-  });
 
-  it("reorders sketch layers and normalizes their order values", () => {
-    const project = addSketchLayer(addSketchLayer(makeProject(), "shot-a", "Ink"), "shot-a", "FX");
 
-    const updated = reorderSketchLayer(project, "shot-a", "layer-shot-a-2", "up");
 
-    expect(
-      updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.map((layer) => [
-        layer.id,
-        layer.order
-      ])
-    ).toEqual([
-      ["layer-default", 0],
-      ["layer-shot-a-2", 1],
-      ["layer-shot-a-1", 2]
-    ]);
-  });
 
-  it("moves a sketch layer before a target layer by drag order", () => {
-    const project = addSketchLayer(addSketchLayer(makeProject(), "shot-a", "Ink"), "shot-a", "FX");
 
-    const updated = moveSketchLayer(project, "shot-a", "layer-shot-a-2", "layer-default");
 
-    expect(
-      updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.map((layer) => [
-        layer.id,
-        layer.order
-      ])
-    ).toEqual([
-      ["layer-shot-a-2", 0],
-      ["layer-default", 1],
-      ["layer-shot-a-1", 2]
-    ]);
-  });
 
-  it("selects an existing unlocked sketch layer", () => {
-    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
 
-    const updated = selectSketchLayer(project, "shot-a", "layer-default");
 
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.activeSketchLayerId).toBe(
-      "layer-default"
-    );
-  });
 
-  it("updates base image visibility without touching sketch layers", () => {
-    const project = updateSketchLayer(addSketchLayer(makeProject(), "shot-a", "Ink"), "shot-a", "layer-shot-a-1", {
-      name: "Ink"
-    });
 
-    const updated = updateShotBaseVisibility(project, "shot-a", false);
 
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.baseVisible).toBe(false);
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers).toHaveLength(2);
-    expect(updated.shots.find((shot) => shot.id === "shot-b")?.baseVisible).toBeUndefined();
-  });
-
-  it("selects the image layer without changing sketch layers", () => {
-    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
-
-    const updated = selectImageLayer(project, "shot-a");
-
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.activeLayerTarget).toBe("image");
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers).toHaveLength(2);
-  });
-
-  it("appends image layer edits without changing sketch layers", () => {
-    const stroke: SketchStroke = {
-      id: "image-stroke",
-      tool: "brush",
-      color: "#111111",
-      size: 4,
-      points: [0, 0, 10, 10]
-    };
-    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
-
-    const updated = appendImageLayerEdit(project, "shot-a", stroke);
-
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.imageLayerEdits).toEqual([stroke]);
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers?.[0].strokes).toEqual(
-      []
-    );
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.activeLayerTarget).toBe("image");
-  });
-
-  it("appends image layer eraser edits without changing sketch layers", () => {
-    const stroke: SketchStroke = {
-      id: "image-eraser",
-      tool: "eraser",
-      color: "#ffffff",
-      size: 18,
-      points: [0, 0, 10, 10]
-    };
-    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
-
-    const updated = appendImageLayerEdit(project, "shot-a", stroke);
-
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.imageLayerEdits).toEqual([stroke]);
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers).toHaveLength(2);
-  });
-
-  it("clears image layer edits without changing sketch layers", () => {
-    const stroke: SketchStroke = {
-      id: "image-stroke",
-      tool: "brush",
-      color: "#111111",
-      size: 4,
-      points: [0, 0, 10, 10]
-    };
-    const project = appendImageLayerEdit(addSketchLayer(makeProject(), "shot-a", "Ink"), "shot-a", stroke);
-
-    const updated = clearImageLayerEdits(project, "shot-a");
-
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.imageLayerEdits).toEqual([]);
-    expect(updated.shots.find((shot) => shot.id === "shot-a")?.sketchLayers).toHaveLength(2);
-  });
-
-  it("deletes image layer content without changing sketch layers", () => {
-    const stroke: SketchStroke = {
-      id: "image-stroke",
-      tool: "brush",
-      color: "#111111",
-      size: 4,
-      points: [0, 0, 10, 10]
-    };
-    const project = appendImageLayerEdit(addSketchLayer(makeProject(), "shot-a", "Ink"), "shot-a", stroke);
-
-    const updated = deleteImageLayerContent(project, "shot-a");
-    const shot = updated.shots.find((item) => item.id === "shot-a");
-
-    expect(shot?.baseVisible).toBe(false);
-    expect(shot?.imageLayerEdits).toEqual([]);
-    expect(shot?.activeLayerTarget).toBe("image");
-    expect(shot?.sketchLayers).toHaveLength(2);
-  });
 
   it("flattens visible sketch layers in order and applies layer opacity", () => {
     const strokeA: SketchStroke = {
@@ -1799,47 +1605,37 @@ describe("project operations", () => {
     ).toEqual([{ ...strokeB, opacity: 0.25 }]);
   });
 
-  it("merges a folder scan with saved metadata and preserves shot data", () => {
-    const project = updateSketch(makeProject(), "shot-b", [
-      {
-        id: "stroke-1",
-        tool: "brush",
-        color: "#f15b2a",
-        size: 5,
-        points: [0, 0, 20, 20]
-      }
-    ]);
 
+
+
+
+  it("merges a folder scan with saved metadata and preserves shot data", () => {
+    const project = makeProject();
+    const source = project.shots.find(shot => shot.id === "shot-b")!;
+    source.activeLayerTarget = "sketch";
+    source.activeSketchLayerId = "layer-default";
+    source.sketchLayers![0].strokes = [{ id: "stroke-1", tool: "brush", color: "#f15b2a", size: 5, points: [0, 0, 20, 20] }];
     const updated = mergeFolderImages(project, [
       { imagePath: "/tmp/b.png", fileName: "b.png" },
       { imagePath: "/tmp/d.png", fileName: "d.png" }
     ]);
-
     expect(updated.shots.map((shot) => [shot.imagePath, shot.order])).toEqual([
-      ["/tmp/b.png", 0],
-      ["/tmp/d.png", 1]
+      ["/tmp/b.png", 0], ["/tmp/d.png", 1]
     ]);
     expect(updated.shots[0].sketchLayers?.[0].strokes).toHaveLength(1);
     expect(updated.dialogues).toEqual([]);
   });
 
   it("adds bitmap layer metadata to legacy stroke shots during folder merge", () => {
-    const project = addSketchLayer(makeProject(), "shot-a", "Ink");
-
-    const updated = mergeFolderImages(project, [
-      {
-        imagePath: "/tmp/a.png",
-        fileName: "a.png",
-        width: 1920,
-        height: 1080,
-        fingerprint: "pixel-a"
-      }
-    ]);
+    const project = makeProject();
+    const source = project.shots.find(shot => shot.id === "shot-a")!;
+    source.sketchLayers = [...source.sketchLayers!, { ...defaultLayer(), id: "layer-shot-a-1", name: "Ink", order: 1 }];
+    source.activeSketchLayerId = "layer-shot-a-1";
+    source.activeLayerTarget = "sketch";
+    const updated = mergeFolderImages(project, [{ imagePath: "/tmp/a.png", fileName: "a.png", width: 1920, height: 1080, fingerprint: "pixel-a" }]);
     const shot = updated.shots[0];
-
     expect(bitmapLayersForShot(shot).map((layer) => [layer.id, layer.kind, layer.name])).toEqual([
-      ["layer-image", "image", "Image"],
-      ["layer-shot-a-1", "paint", "Ink"]
+      ["layer-image", "image", "Image"], ["layer-shot-a-1", "paint", "Ink"]
     ]);
     expect(shot.activeLayerId).toBe("layer-image");
     expect(shot.sketchLayers).toHaveLength(2);

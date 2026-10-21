@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createWorkspacePendingAppHandlers } from "./workspacePendingAppRuntime.js";
@@ -65,8 +65,9 @@ describe("workspace Pending runtime", () => {
     await expect(access(path.join(result.folderPath, "Pending", "shot.tiff"))).resolves.toBeUndefined();
   });
 
-  it("restores the original file when project metadata cannot be persisted", async () => {
+  it("retains relocated bytes and transaction when requested metadata publication is uncertain", async () => {
     const result = await setup({ persistFails: true });
+    const original = await readFile(result.imagePath);
 
     await expect(
       result.handlers.moveShotsToPending(
@@ -77,9 +78,12 @@ describe("workspace Pending runtime", () => {
         },
         ["shot-a"]
       )
-    ).rejects.toThrow("metadata write failed");
+    ).rejects.toMatchObject({ recoveryIncomplete: true, publicationOrCleanupStarted: true,
+      message: expect.stringContaining("metadata write failed") });
 
-    await expect(access(result.imagePath)).resolves.toBeUndefined();
-    expect(result.transaction.rollback).toHaveBeenCalledOnce();
+    expect(await readFile(path.join(result.folderPath, "Pending", "shot.tiff"))).toEqual(original);
+    await expect(access(result.imagePath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(result.transaction.rollback).not.toHaveBeenCalled();
+    expect(result.transaction.commit).not.toHaveBeenCalled();
   });
 });

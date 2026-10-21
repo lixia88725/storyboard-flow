@@ -10,21 +10,21 @@ passed full tests, build/typecheck, preload consistency, and both native platfor
 packages, ZIP validation and artifact upload. Publication was deliberately skipped.
 Later handoff-only edits do not claim a different runtime candidate; the task PR
 records the final source/merge identity and preparation status.
-Requirements and subsequent CORS / preparation-gate changes are based on the initiating
-agent's supplied user-confirmation excerpts, not an independent reading of the original chat.
+The CORS and preparation-gate behavior below describes the infrastructure contract;
+it does not grant permission to publish a new product candidate.
 This document supersedes the old cross-repository release instructions in README,
 `decisions.md`, and `todo.md` **only for the new workflow**; their product/data decisions remain.
-The actively edited main worktree was not read or modified. These tests do not verify
-that other session's new product version or any GUI behavior.
+Historical infrastructure tests do not verify a later integrated product version
+or any GUI behavior. Read the current integration and independent-review results.
 
 **Preparation is deliberately publication-disabled:** an unset or non-`true` repository
 variable `RELEASE_ENABLED` skips publication. Do not enable it for the old baseline.
 The repository variable was explicitly set to `false` and read back. No software
 Release or old-repository deletion is part of preparation. Root LICENSE is MIT for
-owned code. Ordinary development identities/emails and absolute machine paths in
-history were explicitly approved for disclosure; no history rewrite is planned.
-Two limited secret screens found no checked common credential patterns. That is
-not a comprehensive privacy audit or permission to expose private business material.
+owned code. Before publication, audit the exact outgoing source and documentation
+for credentials and private material. Historical checks or public Git history do
+not authorize new disclosure. A bounded secret screen is not a comprehensive
+privacy guarantee or permission to expose private business material.
 
 ## Pipeline contract
 
@@ -66,7 +66,7 @@ not a comprehensive privacy audit or permission to expose private business mater
 
 ## Versions and migration
 
-The historical floor supplied by the parent is **v0.1.30**. Main/infra automatic versions
+The historical version floor is **v0.1.30**. Main/infra automatic versions
 are deterministic `0.1.(30 + github.run_number)`; a reset run number of 1 therefore yields
 0.1.31. Every public version must exceed the legacy floor and existing stable versions.
 Reruns use the same automatic version and exact commit. Manual numeric versions/tags are
@@ -102,11 +102,9 @@ outputs; two regression checks reproduced this, and the corrected selector keeps
 duplicate/wrong-platform rejection. Six Python fixture checks and 14 focused
 Vitest tests passed locally. The hosted full suite passed on this corrected source.
 
-Independent Reviewer session `20261009_223922_9f1c8e` reviewed the complete runtime
-diff plus incremental fixes. No unresolved fatal/major new implementation defect
-or mandatory code repair was found. Reviewer approved continuing gated preparation
-and recommended merge conditional on final cloud success and a real PR check.
-This is independent static review, not real release/API/GUI acceptance.
+The historical infrastructure review was static and conditional on cloud gates
+and a real PR check. It was not real release/API/GUI acceptance, and it does not
+approve later integrated source or bypass a new candidate's required review.
 
 First hosted run `37945612058` at `099cdb20e0b48f8a22427e4500abcf88f2cd47e7`
 failed on Ubuntu: two unchanged baseline assertions assumed macOS shortcut labels
@@ -172,7 +170,7 @@ evidence; an actual fork contribution has not been executed.
    jobs as branch-protection checks. Reuse prior evidence only for unchanged inputs.
 3. Finish the new-product full suite, GUI/manual checks and actual Windows/Mac acquisition
    and startup; inspect binary redistribution obligations for bundled dependencies.
-   Current prepared packages prove packaging only, not the other session's new product.
+   Historical prepared packages prove packaging only, not the newly integrated product.
 4. Only after explicit authorization for the verified new product, set `RELEASE_ENABLED`
    to exactly `true`; a subsequent **new-code main push automatically publishes** after
    gates and both packages. Alternatively use validated main-only manual version dispatch.
@@ -180,10 +178,8 @@ evidence; an actual fork contribution has not been executed.
 5. Read back the exact tag/commit, complete non-draft release, three assets, latest marker,
    and updates branch; fetch the raw manifest from a packaged renderer and exercise the
    Download notice on both platforms. Verify URLs and versions before any old-repo deletion.
-6. The user says the only old user is himself and explicitly accepts breaking old
-   update/download links; no compatibility transition is required. Still preserve
-   needed old data/assets and verify the first real new-version release/feed before
-   deleting `storyboard-flow-releases`. Existing Git bundle backup is at
-   `/Users/pikachu/Developer/.backups-storyboard-repository/storyboard-flow-releases.bundle`;
-   Git bundles do not include Release ZIPs. Do not move old release-info tags into
+6. Deleting an old release repository or breaking existing update/download links
+   requires separate authorization. Preserve needed old data/assets and verify
+   the first real new-version release/feed before any deletion. A Git bundle
+   alone does not include Release ZIPs. Do not move old release-info tags into
    source main as if they identified source commits.

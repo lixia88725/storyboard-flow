@@ -220,7 +220,14 @@ def write_layered_tiff(manifest_path: Path) -> None:
         ],
     )
 
-    composite_layers = [(image, (0, 0)) for _layer, image, _background in loaded_layers]
+    composite_layers = [
+        (image, (0, 0)) for layer, image, _background in loaded_layers
+        if layer.get("visible", True)
+    ]
+    # Keep every PSD layer record, but exclude hidden layers from the composite.
+    # Preserve the existing all-hidden composite fallback in this bounded fix.
+    if not composite_layers:
+        composite_layers = [(image, (0, 0)) for _layer, image, _background in loaded_layers]
     composite = flatten_over_white(overlay(*composite_layers, shape=(height, width)))
     output = Path(manifest["outputPath"])
     output.parent.mkdir(parents=True, exist_ok=True)

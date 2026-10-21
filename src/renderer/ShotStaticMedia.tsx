@@ -55,9 +55,11 @@ export const ShotLayerImageStack = memo(
     preloadBase?: boolean;
   }) => {
     const fallbackSrc = window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath);
-    const layers = bitmapLayersForShot(shot).filter((layer) => layer.visible);
+    const bitmapLayers = bitmapLayersForShot(shot);
+    const layers = bitmapLayers.filter((layer) => layer.visible);
 
-    if (layers.length === 0) {
+    // Only legacy shots without bitmap layers may fall back to the original image.
+    if (bitmapLayers.length === 0) {
       return (
         <img
           className={className}

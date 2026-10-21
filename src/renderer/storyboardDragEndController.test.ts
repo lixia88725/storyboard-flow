@@ -4,6 +4,9 @@ import type { Project, Shot } from "../shared/types";
 import { useStoryboardDragEndController } from "./storyboardDragEndController";
 import type { DeleteTarget } from "./deleteTarget";
 import type { DragData, StoryboardInsertionTarget } from "./storyboardDnd";
+import { dragEndInsideSelector, isPointerInsideElement } from "./dragHitTesting";
+import { createShotPresentationController } from "./shotPresentationController";
+import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 
 const shot = (id: string, order: number): Shot =>
   ({
@@ -40,13 +43,15 @@ const dragEndEvent = ({
   overData?: DragData;
 }): DragEndEvent =>
   ({
-    active: { data: { current: activeData } },
+    active: { data: { current: activeData }, rect: { current: { translated: null, initial: null } } },
     over: overData ? { data: { current: overData } } : undefined
   }) as unknown as DragEndEvent;
 
 const setupController = ({
   isInsideParkingShelf = false,
   isInsideStoryboard = true,
+  pointerHitTest,
+  transitionResult = "accepted",
   parkingInsertionTarget,
   project,
   selectedShotIds = [],
@@ -54,6 +59,8 @@ const setupController = ({
 }: {
   isInsideParkingShelf?: boolean;
   isInsideStoryboard?: boolean;
+  pointerHitTest?: (event: DragEndEvent) => boolean;
+  transitionResult?: "accepted" | "incomplete" | "rejected";
   parkingInsertionTarget?: StoryboardInsertionTarget;
   project: Project;
   selectedShotIds?: string[];
@@ -66,8 +73,9 @@ const setupController = ({
   const selectedShotIdsByCall: Array<string | undefined> = [];
   const statuses: string[] = [];
   const resetActiveDragState = vi.fn();
-  const promoteAiCandidateToStoryboard = vi.fn(async () => undefined);
+  let version = 0;
   const inheritSceneMatte = vi.fn(async (baseProject: Project) => {
+    version++;
     projectRef.current = baseProject;
     return true;
   });
@@ -76,21 +84,29 @@ const setupController = ({
     parkingInsertionTarget
   }));
 
+  // This boundary stands in for the domain operation, not its IO/ACK policy.
+  // normalSavePending* and Electron smoke exercise the real adapter/runtime.
+  const pendingTransition = vi.fn(async (_kind: "park" | "restore", update: (p: Project) => Project, _ids: string[]) => {
+    if (transitionResult === "rejected") throw new Error("required persistence failed");
+    if (transitionResult === "incomplete") return false;
+    projectRef.current = update(projectRef.current);
+    version++;
+    return true;
+  });
   const controller = useStoryboardDragEndController({
-    clearShotsDirty: vi.fn(),
+    pendingTransition,
+    capturePendingScope: () => () => true,
+    pendingVersion: () => version,
     flushInsertionTargetsFromDragEnd,
     inheritSceneMatte,
     isDragEndInsideParkingShelf: () => isInsideParkingShelf,
     isDragEndInsideStoryboard: () => isInsideStoryboard,
-    moveShotFilesToPending: async (currentProject) => currentProject,
+    ...{ isDragEndPointerInsideStoryboard: pointerHitTest ?? (() => isInsideStoryboard) },
     projectRef,
-    promoteAiCandidateToStoryboard,
     queuePasteAnimation: (kind, sourceId, pastedId) => {
       pasteAnimations.push({ kind, sourceId, pastedId });
     },
     resetActiveDragState,
-    resetHistoryStacks: vi.fn(),
-    restoreShotFilesFromPending: async (currentProject) => currentProject,
     selectedShotIdsRef,
     selectSingleShot: (shotId) => selectedShotIdsByCall.push(shotId),
     setDeleteTarget: (target) => deleteTargets.push(target),
@@ -108,14 +124,89 @@ const setupController = ({
     inheritSceneMatte,
     pasteAnimations,
     projectRef,
-    promoteAiCandidateToStoryboard,
     resetActiveDragState,
+    pendingTransition,
     selectedShotIdsByCall,
     statuses
   };
 };
 
 describe("useStoryboardDragEndController", () => {
+  it.each([
+    { mode: "embedded" as const, dialogue: false },
+    { mode: "embedded" as const, dialogue: true },
+    { mode: "expanded" as const, dialogue: false },
+    { mode: "expanded" as const, dialogue: true }
+  ])("preserves $mode presentation with dialogue=$dialogue when restoring into no scene", async ({ mode, dialogue }) => {
+    const parked: Shot = {
+      ...shot("parked-a", 0),
+      presentation: { matte: { mode, top: 75, bottom: 75, ...(mode === "expanded" ? { sourceHeight: 1080 } : {}) } },
+      layers: dialogue ? [{ id: "layer-dialogue-overlay", kind: "paint", name: "Dialogue", visible: true,
+        locked: true, opacity: 1, blendMode: "normal", order: 0,
+        bitmapPath: ".storyboard-workbench/layers/parked-a/layer-dialogue-overlay.png", width: 1920, height: 1080 }] : []
+    };
+    const f = setupController({ project: projectWithShots({ shots: [], parkedShots: [parked] }) });
+    f.controller.handleDragEnd(dragEndEvent({ activeData: { type: "parked-shot", shotId: parked.id }, overData: { type: "empty-board" } }));
+    await vi.waitFor(() => expect(f.pendingTransition).toHaveBeenCalledOnce());
+    expect(f.inheritSceneMatte).not.toHaveBeenCalled();
+    expect(f.projectRef.current.shots[0].presentation).toEqual(parked.presentation);
+    expect(f.projectRef.current.shots[0].layers).toEqual(parked.layers);
+    expect(f.selectedShotIdsByCall).toEqual([parked.id]);
+    expect(f.deleteTargets).toEqual([{ type: "shot" }]);
+    expect(f.statuses.at(-1)).toBe("Storyboard restored from Pending");
+  });
+
+  it("does not enter real presentation asset deletion when restoring a matted shot into an empty board", async () => {
+    const parked: Shot = {
+      ...shot("parked-a", 0),
+      presentation: { matte: { mode: "embedded", top: 75, bottom: 75 } },
+      layers: ["layer-matte-overlay", "layer-dialogue-overlay"].map((id, order) => ({
+        id, kind: "paint", name: id, visible: true, locked: true, opacity: 1,
+        blendMode: "normal", order, bitmapPath: `.storyboard-workbench/layers/parked-a/${id}.png`, width: 1920, height: 1080
+      }))
+    };
+    const f = setupController({ project: projectWithShots({ shots: [], parkedShots: [parked] }) });
+    const writeLayerPng = vi.fn(), deleteLayerPng = vi.fn(), updateProject = vi.fn();
+    const presentation = createShotPresentationController({
+      api: { writeLayerPng, deleteLayerPng } as unknown as Window["storyboard"],
+      bitmapLayerWriteQueueRef: { current: createBitmapLayerWriteQueue() },
+      createHistoryEntry: async () => ({ project: f.projectRef.current, selectedShotIds: [], fileNameSyncState: "synced" }),
+      folderPath: "/scene", metadataPath: "/scene/p.json", projectRef: f.projectRef,
+      markShotsDirty: vi.fn(), recordUndoEntry: vi.fn(), setStatus: vi.fn(),
+      shotPresentationActionRef: { current: undefined }, updateProject
+    });
+    f.inheritSceneMatte.mockImplementation(p => presentation.handleInheritSceneMatte(p, undefined, [parked.id], { recordUndo: false }));
+    f.controller.handleDragEnd(dragEndEvent({ activeData: { type: "parked-shot", shotId: parked.id }, overData: { type: "empty-board" } }));
+    await vi.waitFor(() => expect(f.pendingTransition).toHaveBeenCalledOnce());
+    await Promise.resolve();
+    expect(f.inheritSceneMatte).not.toHaveBeenCalled();
+    expect(writeLayerPng).not.toHaveBeenCalled();
+    expect(deleteLayerPng).not.toHaveBeenCalled();
+    expect(updateProject).not.toHaveBeenCalled();
+    expect(f.projectRef.current.shots[0].presentation).toEqual(parked.presentation);
+    expect(f.selectedShotIdsByCall).toEqual([parked.id]);
+  });
+
+  it.each(["park", "restore"] as const)("keeps %s failure out of success UI for false and rejected domain results", async kind => {
+    for (const transitionResult of ["incomplete", "rejected"] as const) {
+      const project = projectWithShots({
+        shots: kind === "park" ? [shot("shot-a", 0)] : [],
+        parkedShots: kind === "restore" ? [shot("parked-a", 0)] : []
+      });
+      const f = setupController({ project, transitionResult, isInsideParkingShelf: kind === "park" });
+      f.controller.handleDragEnd(dragEndEvent({
+        activeData: { type: kind === "park" ? "shot" : "parked-shot", shotId: kind === "park" ? "shot-a" : "parked-a" },
+        overData: { type: kind === "park" ? "parking-zone" : "empty-board" }
+      }));
+      await vi.waitFor(() => expect(f.statuses.at(-1)).toContain("Could not"));
+      expect(f.projectRef.current).toBe(project);
+      expect(f.selectedShotIdsByCall).toEqual([]);
+      expect(f.deleteTargets).toEqual([]);
+      expect(f.inheritSceneMatte).not.toHaveBeenCalled();
+      expect(f.pendingTransition).toHaveBeenCalledOnce();
+    }
+  });
+
   it("moves selected storyboards into pending when dropped inside the pending shelf", async () => {
     const {
       controller,
@@ -156,6 +247,94 @@ describe("useStoryboardDragEndController", () => {
     expect(projectRef.current.shots.map((item) => item.id)).toEqual(["shot-a", "shot-c", "shot-b"]);
     expect(pasteAnimations).toEqual([{ kind: "shot", sourceId: "", pastedId: "" }]);
     expect(statuses).toEqual([]);
+  });
+
+  it("rejects an outside pointer even when the dragged rect overlaps the empty board", async () => {
+    const board = { getBoundingClientRect: () => ({ left: 80, right: 1300, top: 70, bottom: 900 }) } as HTMLElement;
+    const pointer = { x: 35, y: 50 };
+    const event = dragEndEvent({ activeData: { type: "parked-shot", shotId: "parked-a" }, overData: { type: "empty-board" } });
+    event.active.rect.current.translated = { left: 20, right: 220, top: 30, bottom: 150, width: 200, height: 120 } as typeof event.active.rect.current.translated;
+    vi.stubGlobal("HTMLElement", class {});
+    vi.stubGlobal("document", { querySelector: () => board, elementFromPoint: () => null });
+    try {
+      expect(dragEndInsideSelector(event, ".workspace-board-scroll", pointer)).toBe(true);
+      expect(isPointerInsideElement(board, pointer)).toBe(false);
+      const project = projectWithShots({ shots: [], parkedShots: [shot("parked-a", 0)] });
+      const setup = setupController({ project, pointerHitTest: () => isPointerInsideElement(board, pointer) });
+      setup.controller.handleDragEnd(event);
+      await Promise.resolve();
+      expect(setup.pendingTransition).not.toHaveBeenCalled();
+      expect(setup.projectRef.current).toBe(project);
+      expect(setup.statuses).toEqual([]);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it.each([
+    { pointer: undefined, restore: false, name: "missing point" },
+    { pointer: { x: NaN, y: 100 }, restore: false, name: "nonfinite point" },
+    { pointer: { x: 35, y: 50 }, restore: false, name: "outside point with stale target" },
+    { pointer: { x: 400, y: 300 }, restore: true, name: "inside point with stale target" }
+  ])("uses strict empty geometry for $name", async ({ pointer, restore }) => {
+    const board = { getBoundingClientRect: () => ({ left: 80, right: 1300, top: 70, bottom: 900 }) } as HTMLElement;
+    const project = projectWithShots({ shots: [], parkedShots: [shot("parked-a", 0)] });
+    const setup = setupController({
+      project,
+      storyboardInsertionTarget: { targetShotId: "stale-shot", placement: "before" },
+      pointerHitTest: () => pointer ? isPointerInsideElement(board, pointer) : false
+    });
+    setup.controller.handleDragEnd(dragEndEvent({ activeData: { type: "parked-shot", shotId: "parked-a" }, overData: { type: "empty-board" } }));
+    if (restore) {
+      await vi.waitFor(() => expect(setup.projectRef.current.shots.map(s => s.id)).toEqual(["parked-a"]));
+      expect(setup.pendingTransition).toHaveBeenCalledOnce();
+    } else {
+      await Promise.resolve();
+      expect(setup.pendingTransition).not.toHaveBeenCalled();
+      expect(setup.projectRef.current).toBe(project);
+      expect(setup.statuses).toEqual([]);
+    }
+  });
+
+  it("preserves nonempty drop-zone restoration even when the strict pointer check rejects", async () => {
+    const setup = setupController({ project: projectWithShots({ shots: [shot("shot-a", 0)], parkedShots: [shot("parked-a", 0)] }), pointerHitTest: () => false });
+    setup.controller.handleDragEnd(dragEndEvent({ activeData: { type: "parked-shot", shotId: "parked-a" }, overData: { type: "drop-zone", shotId: "shot-a" } }));
+    await vi.waitFor(() => expect(setup.pendingTransition).toHaveBeenCalledOnce());
+  });
+
+  it("restores from Pending into the explicit empty-board drop through the Pending domain", async () => {
+    const original = projectWithShots({ shots: [shot("shot-a", 0)] });
+    const parked = setupController({ project: original, isInsideParkingShelf: true });
+    parked.controller.handleDragEnd(dragEndEvent({ activeData: { type: "shot", shotId: "shot-a" } }));
+    await vi.waitFor(() => expect(parked.projectRef.current.shots).toEqual([]));
+    const restored = setupController({ project: parked.projectRef.current });
+    restored.controller.handleDragEnd(dragEndEvent({
+      activeData: { type: "parked-shot", shotId: "shot-a" },
+      overData: { type: "empty-board" }
+    }));
+    await vi.waitFor(() => expect(restored.projectRef.current.shots.map((item) => item.id)).toEqual(["shot-a"]));
+    expect(restored.projectRef.current.parkedShots).toBeUndefined();
+    expect(restored.projectRef.current.dialogues).toEqual(original.dialogues);
+    expect(restored.pendingTransition).toHaveBeenCalledWith("restore", expect.any(Function), ["shot-a"]);
+    expect(restored.selectedShotIdsByCall).toEqual(["shot-a"]);
+    expect(restored.statuses.at(-1)).toBe("Storyboard restored from Pending");
+  });
+
+  it.each([
+    { name: "outside board", shots: [], overData: { type: "empty-board" }, inside: false },
+    { name: "no explicit empty target", shots: [], overData: undefined, inside: true },
+    { name: "nonempty board", shots: [shot("shot-a", 0)], overData: { type: "empty-board" }, inside: true },
+    { name: "missing nonempty target", shots: [shot("shot-a", 0)], overData: { type: "shot", shotId: "missing" }, inside: true }
+  ])("rejects $name without file movement or a misleading restoring status", async ({ shots, overData, inside }) => {
+    const project = projectWithShots({ shots, parkedShots: [shot("parked-a", 0)] });
+    const setup = setupController({ project, isInsideStoryboard: inside });
+    setup.controller.handleDragEnd(dragEndEvent({
+      activeData: { type: "parked-shot", shotId: "parked-a" },
+      overData: overData as DragData | undefined
+    }));
+    await Promise.resolve();
+    expect(setup.projectRef.current).toBe(project);
+    expect(setup.pendingTransition).not.toHaveBeenCalled();
+    expect(setup.selectedShotIdsByCall).toEqual([]);
+    expect(setup.statuses).toEqual([]);
   });
 
   it("restores a parked storyboard before the target storyboard", async () => {
@@ -214,7 +393,10 @@ describe("useStoryboardDragEndController", () => {
       {
         dialogueOverlayEnabled: false,
         markFileNamesUnsynced: true,
-        recordUndo: false
+        recordUndo: false,
+        expectedProject: expect.any(Object),
+        isWorkspaceCurrent: expect.any(Function),
+        isCurrent: expect.any(Function)
       }
     );
     expect(selectedShotIdsByCall).toEqual(["parked-a"]);
@@ -251,7 +433,10 @@ describe("useStoryboardDragEndController", () => {
       {
         dialogueOverlayEnabled: false,
         markFileNamesUnsynced: true,
-        recordUndo: false
+        recordUndo: false,
+        expectedProject: expect.any(Object),
+        isWorkspaceCurrent: expect.any(Function),
+        isCurrent: expect.any(Function)
       }
     );
   });
@@ -332,45 +517,6 @@ describe("useStoryboardDragEndController", () => {
     );
 
     expect(projectRef.current.dialogues[0]).toMatchObject({ id: "dialogue-a", shotId: "shot-b" });
-  });
-
-  it("promotes an AI candidate at the requested storyboard insertion point", async () => {
-    const { controller, promoteAiCandidateToStoryboard } = setupController({
-      project: projectWithShots({ shots: [shot("shot-a", 0), shot("shot-b", 1)] }),
-      storyboardInsertionTarget: { targetShotId: "shot-b", placement: "before" }
-    });
-
-    controller.handleDragEnd(
-      dragEndEvent({
-        activeData: { type: "ai-candidate", candidateId: "candidate-a" }
-      })
-    );
-
-    await vi.waitFor(() => expect(promoteAiCandidateToStoryboard).toHaveBeenCalledOnce());
-    expect(promoteAiCandidateToStoryboard).toHaveBeenCalledWith(
-      "candidate-a",
-      "shot-b",
-      "before"
-    );
-  });
-
-  it("promotes an AI candidate as the first storyboard when the empty board receives the drop", async () => {
-    const { controller, promoteAiCandidateToStoryboard } = setupController({
-      project: projectWithShots({ shots: [] })
-    });
-
-    controller.handleDragEnd(
-      dragEndEvent({
-        activeData: { type: "ai-candidate", candidateId: "candidate-a" }
-      })
-    );
-
-    await vi.waitFor(() => expect(promoteAiCandidateToStoryboard).toHaveBeenCalledOnce());
-    expect(promoteAiCandidateToStoryboard).toHaveBeenCalledWith(
-      "candidate-a",
-      undefined,
-      "after"
-    );
   });
 
   it("only clears drag state when the active drag data is missing", () => {

@@ -18,6 +18,10 @@ permissions:
 jobs:
   test:
     runs-on: macos-14
+    env:
+      SWB_PYTHON_DEPS_DIR: ${{ github.workspace }}/vendor/python/photoshop-tiff
+      PYTHONDONTWRITEBYTECODE: '1'
+      TMPDIR: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@v4
         with:

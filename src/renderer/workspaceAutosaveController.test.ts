@@ -7,6 +7,36 @@ describe("workspaceAutosaveController", () => {
     vi.useRealTimers();
   });
 
+  it("does not report an old autosave failure into a different workspace", async () => {
+    vi.useFakeTimers();
+    let reject!: (error: Error) => void;
+    const folderPathRef = { current: "/A" };
+    const metadataPathRef = { current: "/A/project.json" };
+    const projectRef = { current: createProject("A") };
+    const setAutosaveError = vi.fn();
+    const setStatus = vi.fn();
+    const setWorkspaceSaveState = vi.fn();
+    registerWorkspaceAutosave({
+      autosaveRevision: 1, folderPathRef, metadataPathRef, projectRef, hasStoryboardApi: true,
+      persistWorkspace: () => new Promise<void>((_resolve, fail) => { reject = fail; }),
+      setAutosaveError, setStatus, setWorkspaceSaveState,
+      timers: {
+        setTimeout: (callback, delay) => globalThis.setTimeout(callback, delay) as unknown as number,
+        clearTimeout: (id) => globalThis.clearTimeout(id)
+      }
+    });
+    vi.advanceTimersByTime(600);
+    folderPathRef.current = "/B";
+    metadataPathRef.current = "/B/project.json";
+    projectRef.current = createProject("B");
+    setWorkspaceSaveState.mockClear();
+    reject(new Error("A disk full"));
+    await Promise.resolve();
+    expect(setAutosaveError).not.toHaveBeenCalled();
+    expect(setStatus).not.toHaveBeenCalled();
+    expect(setWorkspaceSaveState).not.toHaveBeenCalled();
+  });
+
   it("captures the active workspace refs and persists after the autosave delay", async () => {
     vi.useFakeTimers();
     const project = createProject();
@@ -97,6 +127,7 @@ describe("workspaceAutosaveController", () => {
       activeMetadataPath: "/project/.storyboard-workbench/project.json",
       api,
       now: () => new Date("2026-06-15T01:02:03.000Z"),
+      isCurrentWorkspace: () => true,
       projectToSave: project,
       scriptImportCheckIdRef,
       setAutosaveError,
@@ -125,6 +156,7 @@ describe("workspaceAutosaveController", () => {
 
     await persistWorkspaceProject({
       activeFolderPath: undefined,
+      isCurrentWorkspace: () => true,
       activeMetadataPath: "/project/.storyboard-workbench/project.json",
       api,
       projectToSave: createProject(),
@@ -148,6 +180,7 @@ describe("workspaceAutosaveController", () => {
     await expect(
       persistWorkspaceProject({
         activeFolderPath: "/project",
+        isCurrentWorkspace: () => true,
         activeMetadataPath: "/project/.storyboard-workbench/project.json",
         api: {
           autosaveWorkspace: vi.fn(async () => {

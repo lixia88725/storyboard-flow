@@ -55,7 +55,6 @@ const zDragZoomBlockedTargetSelector = [
   ".layer-panel",
   ".radial-tool-menu",
   ".bottom-bar",
-  ".ai-draft-panel"
 ].join(", ");
 
 export const zDragZoomPixelsPerStep = 10;

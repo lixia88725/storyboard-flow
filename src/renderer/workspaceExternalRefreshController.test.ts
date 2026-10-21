@@ -88,87 +88,48 @@ describe("workspaceExternalRefreshController", () => {
       importSwbFormat: vi.fn()
     };
 
+    const normalSaveRefresh = vi.fn(async () => false);
     await refreshWorkspaceExternalImportState({
-      api,
-      blankShotPreset: "16:9",
-      checkIdRef: { current: 0 },
-      dirtyShotIds: () => [],
-      folderPathRef: { current: "/scene" },
-      hasOnlyCompatibleExternalEdits: () => false,
-      loadFolderScan: vi.fn(),
+      api, normalSaveRefresh,
+      checkIdRef: { current: 0 }, folderPathRef: { current: "/scene" },
       metadataPathRef: { current: "/scene/.storyboard-workbench/storyboard.project.json" },
-      mergeExternalImageChanges: vi.fn(),
-      persistResolvedExternalProject: vi.fn(),
-      projectNeedsSwbImport: () => false,
-      projectRef: { current: { id: "project-1" } },
-      runWithStatus: async (_label, action) => action(),
-      setProject: vi.fn(),
-      setScriptImportNeeded: vi.fn(),
+      mergeExternalImageChanges: vi.fn(), setScriptImportNeeded: vi.fn(),
       workspaceSaveStateRef: { current: "saving" }
     });
 
+    expect(normalSaveRefresh).not.toHaveBeenCalled();
     expect(api.checkExternalChanges).not.toHaveBeenCalled();
     expect(api.importSwbFormat).not.toHaveBeenCalled();
   });
 
-  it("auto-imports compatible external edits and loads the imported scan", async () => {
+  it("delegates compatible scan handling to the owner domain and uses its script completion", async () => {
     const project = { id: "project-1", shots: [{ id: "shot-1" }] };
     const nextProject = { id: "project-1", shots: [{ id: "shot-1", external: true }] };
-    const importedScan = {
-      folderPath: "/scene",
-      metadataPath: "/scene/.storyboard-workbench/storyboard.project.json",
-      project: nextProject
-    };
     const api = {
-      checkExternalChanges: vi.fn(async () => ({
-        images: [{ fileName: "shot_0010.tiff" }],
-        scriptImportNeeded: true
-      })),
-      importSwbFormat: vi.fn(async () => importedScan)
+      checkExternalChanges: vi.fn(async () => ({ images: [{ fileName: "shot_0010.tiff" }], scriptImportNeeded: true })),
+      importSwbFormat: vi.fn()
     };
-    const loadFolderScan = vi.fn(async () => nextProject);
-    const setProject = vi.fn();
+    // Only the ownership-domain port is substituted in this unit test. Real
+    // automatic Import/persistence is covered by normalSaveImageImportChain.
+    const normalSaveRefresh = vi.fn(async (read: (p: typeof project) => Promise<typeof project>, isCurrent: () => boolean) => {
+      expect(isCurrent()).toBe(true);
+      expect(await read(project)).toBe(nextProject);
+      return { accepted: true, scriptImportNeeded: false };
+    });
     const setScriptImportNeeded = vi.fn();
-
     await refreshWorkspaceExternalImportState({
-      api,
-      blankShotPreset: "2.39:1",
-      checkIdRef: { current: 0 },
-      dirtyShotIds: () => ["shot-1"],
-      folderPathRef: { current: "/scene" },
-      hasOnlyCompatibleExternalEdits: (candidate) => candidate === nextProject,
-      loadFolderScan,
+      api, normalSaveRefresh,
+      checkIdRef: { current: 0 }, folderPathRef: { current: "/scene" },
       metadataPathRef: { current: "/scene/.storyboard-workbench/storyboard.project.json" },
-      mergeExternalImageChanges: vi.fn(() => nextProject),
-      persistResolvedExternalProject: vi.fn(),
-      projectNeedsSwbImport: () => false,
-      projectRef: { current: project },
-      runWithStatus: async (_label, action) => action(),
-      setProject,
-      setScriptImportNeeded,
+      mergeExternalImageChanges: () => nextProject, setScriptImportNeeded,
       workspaceSaveStateRef: { current: "saved" }
     });
-
     expect(api.checkExternalChanges).toHaveBeenCalledWith({
-      project,
-      folderPath: "/scene",
-      metadataPath: "/scene/.storyboard-workbench/storyboard.project.json"
+      project, folderPath: "/scene", metadataPath: "/scene/.storyboard-workbench/storyboard.project.json", normalSave: true
     });
-    expect(api.importSwbFormat).toHaveBeenCalledWith({
-      project: nextProject,
-      folderPath: "/scene",
-      metadataPath: "/scene/.storyboard-workbench/storyboard.project.json",
-      blankShotPreset: "2.39:1",
-      dirtyShotIds: ["shot-1"],
-      preserveDirtyShotLayers: true
-    });
-    expect(loadFolderScan).toHaveBeenCalledWith(
-      importedScan,
-      "Imported external Photoshop edits",
-      false,
-      true
-    );
-    expect(setProject).not.toHaveBeenCalled();
-    expect(setScriptImportNeeded).not.toHaveBeenCalled();
+    expect(normalSaveRefresh).toHaveBeenCalledOnce();
+    expect(api.importSwbFormat).not.toHaveBeenCalled();
+    expect(setScriptImportNeeded).toHaveBeenCalledWith(false);
   });
+
 });

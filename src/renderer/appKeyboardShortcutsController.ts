@@ -12,6 +12,7 @@ import {
 import {
   nextKeyboardShotSelection,
   useGlobalKeyboardController,
+  type KeyboardShotSelection,
   type KeyboardSelectionDirection
 } from "./globalKeyboardController";
 import type { SelectedBitmapLayerIds } from "./storyboardInteractionState";
@@ -41,6 +42,7 @@ export const zZoomCursorClassName = "is-z-zoom-active";
 
 export type AppKeyboardShortcutsControllerOptions = {
   activeSketchTool: SketchTool;
+  isImageImportLocked: () => boolean;
   isAddShotMenuOpen: boolean;
   isAnimationMode: boolean;
   isImportHelpOpen: boolean;
@@ -49,7 +51,7 @@ export type AppKeyboardShortcutsControllerOptions = {
   orderedShots: Shot[];
   selectedBitmapLayerIdsRef: MutableRefObject<SelectedBitmapLayerIds | undefined>;
   selectedShotIdsRef: MutableRefObject<string[]>;
-  shotSelectionAnchorIdRef: MutableRefObject<string | undefined>;
+  navigateShotSelection: (selection: KeyboardShotSelection) => void;
   measureGridColumns: () => number;
   hasOpenShortcutBlockingMenu: () => boolean;
   handleAddShot: () => MaybePromise;
@@ -76,7 +78,6 @@ export type AppKeyboardShortcutsControllerOptions = {
   setEraserSize: StateSetter<number>;
   setIsSpacePanActive: StateSetter<boolean>;
   setIsOnionSkinEnabled: StateSetter<boolean>;
-  setSelectedShotIds: StateSetter<string[]>;
   setStatus: (status: string) => void;
   zZoomActiveRef: MutableRefObject<boolean>;
 };
@@ -124,6 +125,7 @@ const setSpacePanActive = (
 };
 
 export const createAppKeyboardKeyDownHandler = ({
+  isImageImportLocked,
   activeSketchTool,
   isAddShotMenuOpen,
   isAnimationMode,
@@ -133,7 +135,7 @@ export const createAppKeyboardKeyDownHandler = ({
   orderedShots,
   selectedBitmapLayerIdsRef,
   selectedShotIdsRef,
-  shotSelectionAnchorIdRef,
+  navigateShotSelection,
   measureGridColumns,
   hasOpenShortcutBlockingMenu,
   handleAddShot,
@@ -153,7 +155,6 @@ export const createAppKeyboardKeyDownHandler = ({
   setEraserSize,
   setIsSpacePanActive,
   setIsOnionSkinEnabled,
-  setSelectedShotIds,
   setStatus,
   pendingEraserHoldRef,
   spacePanActiveRef,
@@ -161,18 +162,13 @@ export const createAppKeyboardKeyDownHandler = ({
   zZoomActiveRef
 }: AppKeyboardShortcutsHandlerOptions): ((event: KeyboardEvent) => void) => {
   const moveSelection = (direction: KeyboardSelectionDirection) => {
-    setSelectedShotIds((current) => {
-      const selection = nextKeyboardShotSelection({
-        currentSelectedIds: current,
-        direction,
-        gridColumns: measureGridColumns(),
-        isAnimationMode,
-        orderedShotIds: orderedShots.map((shot) => shot.id)
-      });
-      shotSelectionAnchorIdRef.current = selection.anchorId;
-      selectedShotIdsRef.current = selection.selectedIds;
-      return selection.selectedIds;
-    });
+    navigateShotSelection(nextKeyboardShotSelection({
+      currentSelectedIds: selectedShotIdsRef.current,
+      direction,
+      gridColumns: measureGridColumns(),
+      isAnimationMode,
+      orderedShotIds: orderedShots.map((shot) => shot.id)
+    }));
   };
 
   return (event: KeyboardEvent) => {
@@ -269,7 +265,7 @@ export const createAppKeyboardKeyDownHandler = ({
       event.preventDefault();
       if (clipboardAction === "copy") {
         handleCopySelection();
-      } else {
+      } else if (!isImageImportLocked()) {
         void handlePasteSelection();
       }
       return;
@@ -282,12 +278,13 @@ export const createAppKeyboardKeyDownHandler = ({
       !event.altKey
     ) {
       event.preventDefault();
-      void handleDeleteKeyPress();
+      if (!isImageImportLocked()) void handleDeleteKeyPress();
       return;
     }
 
     if (shortcutAction) {
       event.preventDefault();
+      if (["clearLayer", "mergeDown", "addShot", "undo", "redo"].includes(shortcutAction) && isImageImportLocked()) return;
 
       if (
         shortcutAction === "brush" ||
@@ -502,6 +499,7 @@ export const useAppKeyboardShortcutsController = (
   const handleGlobalKeyDown = useCallback(
     createAppKeyboardKeyDownHandler(handlerOptions),
     [
+      options.isImageImportLocked,
       options.activeSketchTool,
       options.isAddShotMenuOpen,
       options.isAnimationMode,
@@ -527,7 +525,7 @@ export const useAppKeyboardShortcutsController = (
       options.setEraserSize,
       options.setIsSpacePanActive,
       options.setIsOnionSkinEnabled,
-      options.setSelectedShotIds,
+      options.navigateShotSelection,
       options.setStatus,
       options.zZoomActiveRef
     ]

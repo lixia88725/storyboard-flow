@@ -46,6 +46,13 @@ describe("stagePendingDeletedShotFiles", () => {
 });
 
 describe("trashPendingDeletedShotFiles", () => {
+  it("reports only actual successful Trash, never missing-file disappearance", async () => {
+    const trashItem = vi.fn(async () => undefined);
+    const input = project();
+    const result = await trashPendingDeletedShotFiles(input, { pathExists: async p => p === "/scene/a.tiff", trashItem });
+    expect(result.trashed).toEqual([input.pendingDeletedShots![0]]);
+    expect(trashItem).toHaveBeenCalledExactlyOnceWith("/scene/a.tiff");
+  });
   it("clears pending deleted shots after Trash succeeds", async () => {
     const result = await trashPendingDeletedShotFiles(project(), {
       now: () => new Date("2026-06-06T02:00:00.000Z"),

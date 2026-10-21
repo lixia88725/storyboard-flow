@@ -40,6 +40,7 @@ export const persistWorkspaceProject = async ({
   activeFolderPath,
   activeMetadataPath,
   api,
+  isCurrentWorkspace,
   now = () => new Date(),
   projectToSave,
   scriptImportCheckIdRef,
@@ -50,6 +51,7 @@ export const persistWorkspaceProject = async ({
   activeFolderPath: string | undefined;
   activeMetadataPath: string | undefined;
   api: WorkspaceAutosaveApi | undefined;
+  isCurrentWorkspace: () => boolean;
   now?: () => Date;
   projectToSave: Project;
   scriptImportCheckIdRef: { current: number };
@@ -66,6 +68,11 @@ export const persistWorkspaceProject = async ({
     folderPath: activeFolderPath,
     metadataPath: activeMetadataPath
   });
+  // Disk completion belongs to the captured workspace, not whichever project
+  // happens to be displayed when IPC returns.
+  if (!isCurrentWorkspace()) {
+    return;
+  }
   scriptImportCheckIdRef.current += 1;
   setScriptImportNeeded(false);
   setWorkspaceSaveState("saved");
@@ -97,6 +104,11 @@ export const registerWorkspaceAutosave = ({
   setWorkspaceSaveState("saving");
   const timer = timers.setTimeout(() => {
     void persistWorkspace(projectToSave, activeFolderPath, activeMetadataPath).catch((error) => {
+      if (folderPathRef.current !== activeFolderPath ||
+          metadataPathRef.current !== activeMetadataPath ||
+          projectRef.current !== projectToSave) {
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       setWorkspaceSaveState("error");
       setAutosaveError((current) => autosaveErrorReducer(current, { type: "failed", message }));

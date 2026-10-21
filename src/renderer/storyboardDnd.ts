@@ -5,9 +5,9 @@ export type DragData =
   | { type: "shot"; shotId: string }
   | { type: "dialogue"; dialogueId: string; shotId: string }
   | { type: "drop-zone"; shotId: string }
+  | { type: "empty-board" }
   | { type: "parking-zone" }
-  | { type: "parked-shot"; shotId: string }
-  | { type: "ai-candidate"; candidateId: string };
+  | { type: "parked-shot"; shotId: string };
 
 export type StoryboardInsertionPlacement = "before" | "after";
 

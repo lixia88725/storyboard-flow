@@ -1,5 +1,7 @@
 import type { WorkspaceOpenIpcHandlers } from "./ipc/workspaceOpenHandlers.js";
 
+import type { NormalSaveOpenOptions } from "../normalSaveTransport.js";
+
 type FolderScanLike = {
   folderPath: string;
 };
@@ -9,7 +11,7 @@ export type WorkspaceOpenAppRuntimeOptions<Sender, Progress, FolderScan extends 
   createProgressReporter: (sender: Sender, mode: "open") => Progress;
   pathExists: (folderPath: string) => Promise<boolean>;
   removeRecentFolder: (folderPath: string) => unknown;
-  scanFolder: (folderPath: string, progress: Progress) => Promise<FolderScan>;
+  scanFolder: (folderPath: string, progress: Progress, options?: NormalSaveOpenOptions) => Promise<FolderScan>;
 };
 
 export const createWorkspaceOpenAppHandlers = <

@@ -6,7 +6,17 @@ import {
   createAppKeyboardWheelHandler,
   eraserHoldDelayMs
 } from "./appKeyboardShortcutsController";
-import type { Shot } from "../shared/types";
+import type { Project, Shot } from "../shared/types";
+import { createShotSelectionController } from "./shotSelectionController";
+import { useLayerMetadataActionController } from "./layerMetadataActionController";
+import { useDeleteActionController } from "./deleteActionController";
+import { useClipboardActionController } from "./clipboardActionController";
+import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
+import type { ClipboardSelection } from "./clipboardSelection";
+import type { DeleteTarget } from "./deleteTarget";
+import type { SelectedBitmapLayerIds } from "./storyboardInteractionState";
+import { addGeneratedShot, createProject } from "../shared/projectOps";
+import { useBitmapLayerActions, type BitmapLayerProjectUpdate } from "./bitmapLayerActions";
 
 const keyboardEvent = (key: string, options: Partial<KeyboardEvent> = {}) =>
   ({
@@ -45,6 +55,7 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
       typeof value === "function" ? value(selectedShotIdsRef.current) : value;
   });
   const options = {
+    isImageImportLocked: () => false,
     activeSketchTool: "brush" as const,
     isAddShotMenuOpen: false,
     isAnimationMode: false,
@@ -54,7 +65,10 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
     orderedShots: [shot("shot-1", 0), shot("shot-2", 1), shot("shot-3", 2)],
     selectedBitmapLayerIdsRef: { current: undefined },
     selectedShotIdsRef,
-    shotSelectionAnchorIdRef,
+    navigateShotSelection: ({ selectedIds, anchorId }: { selectedIds: string[]; anchorId: string | undefined }) => {
+      selectedShotIdsRef.current = selectedIds;
+      shotSelectionAnchorIdRef.current = anchorId;
+    },
     measureGridColumns: vi.fn(() => 2),
     hasOpenShortcutBlockingMenu: vi.fn(() => false),
     handleAddShot: vi.fn(),
@@ -94,7 +108,279 @@ const createHarness = (overrides: Partial<Parameters<typeof createAppKeyboardKey
   };
 };
 
+// State setters deliberately do not commit React state/effects in this harness.
+// Consecutive events must use the controllers' live refs, not a rerender.
+const createNavigationHarness = (isAnimationMode = false) => {
+  const selectedShotIdsRef = { current: ["shot-1"] };
+  const shotSelectionAnchorIdRef = { current: "shot-1" as string | undefined };
+  const deleteTargetRef = { current: { type: "layer", shotId: "shot-1", layerId: "paint" } as DeleteTarget };
+  const selectedBitmapLayerIdsRef = {
+    current: { shotId: "shot-1", layerIds: ["paint"] } as SelectedBitmapLayerIds | undefined
+  };
+  const setDeleteTarget = (target: DeleteTarget) => { deleteTargetRef.current = target; };
+  const setSelectedShotIds = vi.fn();
+  const selection = createShotSelectionController({
+    blurActiveFormControl: vi.fn(), isEditableTarget: () => false,
+    orderedShotIds: ["shot-1", "shot-2", "shot-3"],
+    selectedShotIdsRef, shotSelectionAnchorIdRef, selectedBitmapLayerIdsRef,
+    setDeleteTarget, setSelectedBitmapLayerIds: vi.fn(), setSelectedShotIds
+  });
+  const projectRef = { current: {
+    id: "project", name: "Project", createdAt: "2026-06-01", updatedAt: "2026-06-01",
+    dialogues: [], shots: [shot("shot-1", 0), shot("shot-2", 1), shot("shot-3", 2)].map((item) => ({
+      ...item, activeLayerId: "paint", layers: [{
+        id: "paint", name: "Paint", kind: "paint" as const, order: 0,
+        visible: true, locked: false, opacity: 1, blendMode: "normal" as const,
+        bitmapPath: `${item.id}/paint.png`, width: 10, height: 10
+      }]
+    }))
+  } as Project };
+  const layerActions = useLayerMetadataActionController({
+    markShotsDirty: vi.fn(), setDeleteTarget, shotSelectionAnchorIdRef,
+    updateProject: (update) => {
+      projectRef.current = typeof update === "function" ? update(projectRef.current) : update;
+    }
+  });
+  const handleRemoveBitmapLayer = vi.fn(async () => {});
+  const deletion = useDeleteActionController({
+    isImageImportLocked: () => false,
+    deleteTargetRef, projectRef, selectedShotIdsRef,
+    selectSingleShot: selection.selectSingleShot, setDeleteTarget,
+    setStatus: vi.fn(), handleRemoveBitmapLayer,
+    updateProject: (update) => {
+      projectRef.current = typeof update === "function" ? update(projectRef.current) : update;
+    }
+  });
+  const clipboardSelectionRef = { current: undefined as ClipboardSelection | undefined };
+  const clipboard = useClipboardActionController({
+    isImageImportLocked: () => false,
+    api: undefined, bitmapLayerWriteQueueRef: { current: createBitmapLayerWriteQueue() },
+    clipboardSelectionRef, createHistoryEntry: async () => undefined, deleteTargetRef,
+    folderPath: undefined, metadataPath: undefined, projectRef, selectedShotIdsRef,
+    markShotsDirty: vi.fn(), queuePasteAnimation: vi.fn(), recordUndoEntry: vi.fn(),
+    selectSingleShot: selection.selectSingleShot, setClipboardSelection: vi.fn(),
+    setDeleteTarget, setSelectedBitmapLayerIds: vi.fn(), setStatus: vi.fn(), updateProject: vi.fn()
+  });
+  const { handler } = createHarness({
+    selectedShotIdsRef, selectedBitmapLayerIdsRef,
+    isAnimationMode, orderedShots: projectRef.current.shots, navigateShotSelection: selection.navigateShotSelection,
+    handleDeleteKeyPress: deletion.handleDeleteKeyPress,
+    handleCopySelection: clipboard.handleCopySelection
+  });
+  return { handler, selection, layerActions, selectedShotIdsRef, shotSelectionAnchorIdRef,
+    deleteTargetRef, selectedBitmapLayerIdsRef, projectRef, handleRemoveBitmapLayer,
+    clipboardSelectionRef, setSelectedShotIds };
+};
+
+// U2-b exercises shared live entry + execution-point admission.
+// Exercise the real keyboard -> clear controller -> real queue path, with synthetic IPC.
+const createImportClearHarness = () => {
+  const project = addGeneratedShot(createProject("Synthetic U2-b"), {
+    imagePath: "/synthetic/u2b.tiff", fileName: "u2b.tiff", width: 2, height: 2
+  });
+  const activeShot = project.shots[0];
+  const activeLayer = activeShot.layers!.find((layer) => !layer.locked)!;
+  activeShot.activeLayerId = activeLayer.id;
+  const projectRef = { current: project };
+  const importLockedRef = { current: false };
+  const queue = createBitmapLayerWriteQueue();
+  const pixels = new Map([[activeLayer.bitmapPath, "original synthetic pixels"]]);
+  const writeLayerPng = vi.fn(async ({ bitmapPath, dataUrl }: { bitmapPath: string; dataUrl: string }) => {
+    pixels.set(bitmapPath, dataUrl);
+  });
+  vi.stubGlobal("window", { storyboard: { writeLayerPng } });
+  const createHistoryEntry = vi.fn(async () => "clear undo");
+  const recordUndoEntry = vi.fn();
+  const updateProject = vi.fn((update: BitmapLayerProjectUpdate) => {
+    projectRef.current = typeof update === "function" ? update(projectRef.current) : update;
+  });
+  const actions = useBitmapLayerActions({
+    isImageImportLocked: () => importLockedRef.current,
+    projectRef, folderPath: "/synthetic", bitmapLayerWriteQueueRef: { current: queue },
+    createTransparentLayerDataUrl: async () => "transparent synthetic pixels",
+    createHistoryEntry, recordUndoEntry, markShotsDirty: vi.fn(), updateProject, setStatus: vi.fn()
+  });
+  const pending: Promise<void>[] = [];
+  const h = createHarness({
+    isImageImportLocked: () => importLockedRef.current,
+    orderedShots: project.shots, selectedShotIdsRef: { current: [activeShot.id] },
+    handleClearBitmapLayer: (shotId, layerId) => {
+      const task = actions.handleClearBitmapLayer(shotId, layerId);
+      pending.push(task);
+      return task;
+    }
+  });
+  return { ...h, importLockedRef, queue, pending, projectRef, activeLayer, pixels,
+    writeLayerPng, createHistoryEntry, recordUndoEntry, updateProject };
+};
+
+describe("U2-b image Import execution gate", () => {
+  it.each([
+    ["v", { metaKey: true }, "handlePasteSelection"],
+    ["Delete", {}, "handleDeleteKeyPress"],
+    ["Backspace", {}, "handleDeleteKeyPress"],
+    ["Escape", {}, "handleClearBitmapLayer"],
+    ["e", { metaKey: true }, "handleMergeBitmapLayers"],
+    ["a", {}, "handleAddShot"],
+    ["z", { metaKey: true }, "applyUndoEntry"],
+    ["z", { ctrlKey: true, shiftKey: true }, "applyRedoEntry"]
+  ] as const)("blocks %s dispatch with the live image lock", (key, event, action) => {
+    let locked = false;
+    const target = addGeneratedShot(createProject("keyboard"), { imagePath: "/synthetic/k.tiff", fileName: "k.tiff", width: 2, height: 2 }).shots[0];
+    const h = createHarness({ isImageImportLocked: () => locked, orderedShots: [target], selectedShotIdsRef: { current: [target.id] } });
+    locked = true;
+    h.handler(keyboardEvent(key, event));
+    expect(h.options[action]).not.toHaveBeenCalled();
+    locked = false;
+    h.handler(keyboardEvent(key, event));
+    expect(h.options[action]).toHaveBeenCalledOnce();
+  });
+
+  it("preserves navigation Copy zoom and typing Save with image lock", () => {
+    const h = createHarness({ isImageImportLocked: () => true });
+    h.handler(keyboardEvent("ArrowRight"));
+    expect(h.selectedShotIdsRef.current).toEqual(["shot-2"]);
+    h.handler(keyboardEvent("c", { metaKey: true }));
+    expect(h.options.handleCopySelection).toHaveBeenCalledOnce();
+    h.handler(keyboardEvent("+", { metaKey: true }));
+    expect(h.options.handleStoryboardZoomShortcut).toHaveBeenCalledOnce();
+    h.handler(keyboardEvent("s", { metaKey: true, target: { closest: (selector: string) => selector === "input" ? { type: "text" } : null } as unknown as EventTarget }));
+    expect(h.options.handleSaveProject).toHaveBeenCalledOnce();
+  });
+  it("shared live gate blocks Clear while image Import is locked", async () => {
+    const h = createImportClearHarness();
+    h.importLockedRef.current = true;
+    const before = structuredClone(h.projectRef.current);
+    h.handler(keyboardEvent("Escape"));
+    await Promise.all(h.pending);
+    expect(h.writeLayerPng).not.toHaveBeenCalled();
+    expect(h.createHistoryEntry).not.toHaveBeenCalled();
+    expect(h.recordUndoEntry).not.toHaveBeenCalled();
+    expect(h.updateProject).not.toHaveBeenCalled();
+    expect(h.projectRef.current).toEqual(before);
+  });
+
+  it("shared live gate allows normal Clear after image Import unlocks", async () => {
+    const h = createImportClearHarness();
+    h.importLockedRef.current = true;
+    h.handler(keyboardEvent("Escape"));
+    h.importLockedRef.current = false;
+    h.handler(keyboardEvent("Escape"));
+    await Promise.all(h.pending);
+    expect(h.writeLayerPng).toHaveBeenCalledOnce();
+    expect(h.pixels.get(h.activeLayer.bitmapPath)).toBe("transparent synthetic pixels");
+    expect(h.recordUndoEntry).toHaveBeenCalledExactlyOnceWith("clear undo");
+    expect(h.updateProject).toHaveBeenCalledOnce();
+  });
+
+  it("must not perform Clear I/O or change metadata/history when image Import locks during queue wait", async () => {
+    const h = createImportClearHarness();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const blocker = h.queue.enqueue(h.activeLayer.bitmapPath, () => gate);
+    h.handler(keyboardEvent("Escape"));
+    expect(h.pending).toHaveLength(1);
+    expect(h.writeLayerPng).not.toHaveBeenCalled();
+    h.importLockedRef.current = true;
+    const before = structuredClone(h.projectRef.current);
+    release();
+    await Promise.all([blocker, ...h.pending]);
+    // Soft assertions retain all evidence of the same missing execution-point check.
+    expect.soft(h.writeLayerPng).not.toHaveBeenCalled();
+    expect.soft(h.createHistoryEntry).not.toHaveBeenCalled();
+    expect.soft(h.recordUndoEntry).not.toHaveBeenCalled();
+    expect.soft(h.updateProject).not.toHaveBeenCalled();
+    expect.soft(h.pixels.get(h.activeLayer.bitmapPath)).toBe("original synthetic pixels");
+    expect.soft(h.projectRef.current).toEqual(before);
+  });
+});
+
 describe("appKeyboardShortcutsController", () => {
+  it("navigates from layer A to shot B then immediately copies and deletes B without a render", () => {
+    const h = createNavigationHarness();
+    h.handler(keyboardEvent("ArrowRight"));
+    h.handler(keyboardEvent("c", { metaKey: true }));
+    expect(h.clipboardSelectionRef.current).toEqual({ type: "shot", shotId: "shot-2" });
+    expect(h.selectedShotIdsRef.current).toEqual(["shot-2"]);
+    expect(h.shotSelectionAnchorIdRef.current).toBe("shot-2");
+    expect(h.deleteTargetRef.current).toEqual({ type: "shot" });
+    expect(h.selectedBitmapLayerIdsRef.current).toBeUndefined();
+    h.handler(keyboardEvent("Delete"));
+    expect(h.handleRemoveBitmapLayer).not.toHaveBeenCalled();
+    expect(h.projectRef.current.shots.map((item) => item.id)).toEqual(["shot-1", "shot-3"]);
+  });
+  it.each([
+    ["ArrowRight", "shot-1", "shot-2", false],
+    ["ArrowLeft", "shot-2", "shot-1", false],
+    ["ArrowDown", "shot-1", "shot-3", false],
+    ["ArrowUp", "shot-3", "shot-1", false],
+    ["ArrowRight", "shot-1", "shot-2", true]
+  ] as const)("%s synchronously leaves layer focus (%s to %s; animation %s)", (key, from, to, animation) => {
+    const h = createNavigationHarness(animation);
+    h.selection.selectSingleShot(from);
+    h.layerActions.handleSelectLayer(from, "paint");
+    h.handler(keyboardEvent(key));
+    expect(h.selectedShotIdsRef.current).toEqual([to]);
+    expect(h.shotSelectionAnchorIdRef.current).toBe(to);
+    expect(h.deleteTargetRef.current).toEqual({ type: "shot" });
+    expect(h.selectedBitmapLayerIdsRef.current).toBeUndefined();
+  });
+
+  it("uses the live shot selection for repeated arrows before a render", () => {
+    const h = createNavigationHarness(true);
+    h.handler(keyboardEvent("ArrowRight"));
+    h.handler(keyboardEvent("ArrowRight", { repeat: true }));
+    h.handler(keyboardEvent("c", { ctrlKey: true }));
+    expect(h.clipboardSelectionRef.current).toEqual({ type: "shot", shotId: "shot-3" });
+  });
+
+  it.each([["ArrowLeft", false], ["ArrowDown", true]] as const)("keeps layer focus when %s does not move (animation %s)", (key, animation) => {
+    const h = createNavigationHarness(animation);
+    h.handler(keyboardEvent(key));
+    expect(h.selectedShotIdsRef.current).toEqual(["shot-1"]);
+    expect(h.selectedBitmapLayerIdsRef.current).toEqual({ shotId: "shot-1", layerIds: ["paint"] });
+    expect(h.setSelectedShotIds).not.toHaveBeenCalled();
+    h.handler(keyboardEvent("c", { metaKey: true }));
+    expect(h.clipboardSelectionRef.current).toEqual({ type: "layer", shotId: "shot-1", layerId: "paint" });
+  });
+
+  it("preserves explicit layer-row selection after navigation, including immediate Delete", () => {
+    const h = createNavigationHarness();
+    h.handler(keyboardEvent("ArrowRight"));
+    h.layerActions.handleSelectLayer("shot-2", "paint");
+    h.selection.selectSingleShot("shot-2");
+    h.handler(keyboardEvent("c", { metaKey: true }));
+    expect(h.clipboardSelectionRef.current).toEqual({ type: "layer", shotId: "shot-2", layerId: "paint" });
+    h.handler(keyboardEvent("Delete"));
+    expect(h.handleRemoveBitmapLayer).toHaveBeenCalledWith("shot-2", "paint");
+    expect(h.projectRef.current.shots).toHaveLength(3);
+  });
+
+  it("preserves Shift card ranges and collapses multi-selection with an unmodified arrow", () => {
+    const h = createNavigationHarness();
+    h.selection.handleShotSelect("shot-3", { ctrlKey: false, metaKey: false, shiftKey: true, target: null });
+    expect(h.selectedShotIdsRef.current).toEqual(["shot-1", "shot-2", "shot-3"]);
+    expect(h.shotSelectionAnchorIdRef.current).toBe("shot-1");
+    expect(h.selectedBitmapLayerIdsRef.current).toBeUndefined();
+    h.handler(keyboardEvent("ArrowRight", { shiftKey: true }));
+    expect(h.selectedShotIdsRef.current).toEqual(["shot-1", "shot-2", "shot-3"]);
+    h.handler(keyboardEvent("ArrowRight"));
+    expect(h.selectedShotIdsRef.current).toEqual(["shot-2"]);
+    expect(h.shotSelectionAnchorIdRef.current).toBe("shot-2");
+  });
+
+  it.each(["ArrowRight", "ArrowDown", "Delete", "c"])("leaves editable input %s to the input", (key) => {
+    const h = createNavigationHarness();
+    const target = { closest: (selector: string) => selector === "input" ? { type: "text" } : null } as unknown as EventTarget;
+    const event = keyboardEvent(key, { target, metaKey: key === "c" });
+    h.handler(event);
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(h.selectedShotIdsRef.current).toEqual(["shot-1"]);
+    expect(h.deleteTargetRef.current).toEqual({ type: "layer", shotId: "shot-1", layerId: "paint" });
+    expect(h.clipboardSelectionRef.current).toBeUndefined();
+    expect(h.handleRemoveBitmapLayer).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();

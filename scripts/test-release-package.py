@@ -32,6 +32,11 @@ class PackageValidation(unittest.TestCase):
             files.update({app + "node_modules/@img/sharp-darwin-arm64/LICENSE": b"Apache",
                           app + "node_modules/@img/sharp-libvips-darwin-arm64/versions.json": b"{}",
                           app + "node_modules/@img/sharp-libvips-darwin-arm64/README.md": b"libvips LGPLv3"})
+        for script in ["photoshop-layered-tiff-export.py", "photoshop-layered-tiff-import.py",
+                       "layer-file-permissions.py", "recovery-origin-permissions.py", "recovery-claim-records.py",
+                       "recovery-content-permissions.py", "recovery-origin-enrollment.py",
+                       "recovery-project-permissions.py", "owned-stage-cleanup.py", "legacy-single-layer-proof.py"]:
+            files[app + "scripts/" + script] = b"synthetic helper"
         if omit:
             files = {n: data for n, data in files.items() if omit not in n}
         directory = tempfile.TemporaryDirectory()
@@ -59,6 +64,13 @@ class PackageValidation(unittest.TestCase):
     def test_missing_python_runtime(self):
         with self.assertRaises(ValueError):
             validator.validate_package(self.fixture(True, omit="python/python.exe"), "0.1.31", b"project MIT")
+        for windows in [False, True]:
+            for script in ["photoshop-layered-tiff-export.py", "photoshop-layered-tiff-import.py",
+                           "layer-file-permissions.py", "recovery-origin-permissions.py", "recovery-claim-records.py",
+                           "recovery-content-permissions.py", "recovery-origin-enrollment.py",
+                           "recovery-project-permissions.py", "owned-stage-cleanup.py", "legacy-single-layer-proof.py"]:
+                with self.subTest(windows=windows, script=script), self.assertRaises(ValueError):
+                    validator.validate_package(self.fixture(windows, omit="scripts/" + script), "0.1.31", b"project MIT")
 
     def test_release_selection_ignores_embedded_python_archives(self):
         target = self.fixture(True)

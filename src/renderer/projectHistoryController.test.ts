@@ -1,5 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+// Hook lifecycle is synchronous here; queue and history/asset algorithms remain real.
+vi.mock("react", () => ({
+  useState: (initial: unknown) => [initial, vi.fn()],
+  useRef: (initial: unknown) => ({ current: initial }),
+  useEffect: (effect: () => void) => effect(),
+  useCallback: (fn: unknown) => fn
+}));
+import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import {
+  useProjectHistoryController,
   historyAppliedStatus,
   historyDirtyShotIds,
   historyEntryAffectedBitmapPaths,
@@ -42,6 +51,137 @@ const shot = (id: string, order: number): Shot => ({
 const projectWithShots = (): Project => ({
   ...createProject("History fixture"),
   shots: [shot("shot-a", 0), shot("shot-b", 1)]
+});
+
+const setupHistory = () => {
+  const projectRef = { current: projectWithShots() };
+  const locked = { current: false };
+  const isImageImportLocked = vi.fn(() => locked.current);
+  const queue = createBitmapLayerWriteQueue();
+  const pixels = new Map([[layer("shot-a").bitmapPath, "new pixels"]]);
+  const api = {
+    readLayerPng: vi.fn(async ({ bitmapPath }: { bitmapPath: string }) => pixels.get(bitmapPath)),
+    writeLayerPng: vi.fn(async ({ bitmapPath, dataUrl }: { bitmapPath: string; dataUrl: string }) => { pixels.set(bitmapPath, dataUrl); return {} as never; }),
+    deleteLayerPng: vi.fn(async ({ bitmapPath }: { bitmapPath: string }) => { pixels.delete(bitmapPath); return { folderPath: "/synthetic", bitmapPath }; })
+  };
+  const folderPathRef = { current: "/synthetic" };
+  const selectedShotIdsRef = { current: ["shot-a"] };
+  const fileNameSyncStateRef = { current: "unsynced" as const as "unsynced" | "synced" };
+  const setProject = vi.fn();
+  const markShotsDirty = vi.fn();
+  const selectShotsByIds = vi.fn();
+  const c = useProjectHistoryController({
+    isImageImportLocked, api, bitmapLayerWriteQueueRef: { current: queue },
+    fileNameSyncStateRef, folderPathRef,
+    maxEntries: 60, projectRef, scriptImportCheckIdRef: { current: 0 },
+    selectedShotIdsRef, selectShotsByIds, markShotsDirty, setProject,
+    setAutosaveRevision: vi.fn(), setFileNameSyncState: vi.fn(), setScriptImportNeeded: vi.fn(),
+    setStatus: vi.fn(), setWorkspaceSaveState: vi.fn()
+  });
+  c.recordUndoEntry({ ...entry([layer("shot-a").bitmapPath]), project: { ...projectRef.current, name: "previous" },
+    layerAssets: [{ bitmapPath: layer("shot-a").bitmapPath, dataUrl: "old pixels" }] });
+  return { c, api, locked, isImageImportLocked, queue, projectRef, folderPathRef,
+    selectedShotIdsRef, fileNameSyncStateRef, pixels, setProject, markShotsDirty, selectShotsByIds };
+};
+
+describe("image Import history admission", () => {
+  it("linearizes metadata-only history at the last lock check without an empty restore await gap", async () => {
+    const s = setupHistory();
+    s.c.resetHistoryStacks();
+    s.c.recordProjectUndoEntry();
+    let calls = 0;
+    s.isImageImportLocked.mockImplementation(() => {
+      if (++calls === 3) queueMicrotask(() => { s.locked.current = true; });
+      return s.locked.current;
+    });
+    const locksAtCommit: boolean[] = [];
+    s.setProject.mockImplementation(() => { locksAtCommit.push(s.locked.current); });
+    await s.c.applyUndoEntry();
+    expect(locksAtCommit).toEqual([false]);
+    expect(s.locked.current).toBe(true);
+    expect(s.api.writeLayerPng).not.toHaveBeenCalled();
+  });
+  it.each(["undo", "redo"] as const)("rejects locked %s without asset reads/writes, popping history or publishing", async (direction) => {
+    const s = setupHistory();
+    if (direction === "redo") { await s.c.applyUndoEntry(); vi.clearAllMocks(); }
+    s.locked.current = true;
+    const before = structuredClone(s.projectRef.current);
+    await (direction === "undo" ? s.c.applyUndoEntry() : s.c.applyRedoEntry());
+    expect(s.api.readLayerPng).not.toHaveBeenCalled();
+    expect(s.api.writeLayerPng).not.toHaveBeenCalled();
+    expect(s.setProject).not.toHaveBeenCalled();
+    expect(s.projectRef.current).toEqual(before);
+    s.locked.current = false;
+    await (direction === "undo" ? s.c.applyUndoEntry() : s.c.applyRedoEntry());
+    expect(s.setProject).toHaveBeenCalledOnce();
+  });
+  it.each(["undo", "redo"] as const)("rejects %s on real queue departure if image lock arrived", async (direction) => {
+    const s = setupHistory();
+    if (direction === "redo") { await s.c.applyUndoEntry(); vi.clearAllMocks(); }
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const blocker = s.queue.runExclusive(() => gate);
+    const task = direction === "undo" ? s.c.applyUndoEntry() : s.c.applyRedoEntry();
+    s.locked.current = true;
+    release();
+    await Promise.all([blocker, task]);
+    expect(s.api.readLayerPng).not.toHaveBeenCalled();
+    expect(s.api.writeLayerPng).not.toHaveBeenCalled();
+    expect(s.setProject).not.toHaveBeenCalled();
+    expect(s.markShotsDirty).not.toHaveBeenCalled();
+    expect(s.selectShotsByIds).not.toHaveBeenCalled();
+    s.locked.current = false;
+    await (direction === "undo" ? s.c.applyUndoEntry() : s.c.applyRedoEntry());
+    expect(s.setProject).toHaveBeenCalledOnce();
+  });
+  it.each(["undo", "redo"] as const)("finishes %s if image lock arrives after restore IPC begins", async (direction) => {
+    const s = setupHistory();
+    if (direction === "redo") { await s.c.applyUndoEntry(); vi.clearAllMocks(); }
+    s.api.writeLayerPng.mockImplementation(async ({ bitmapPath, dataUrl }) => {
+      s.locked.current = true; s.pixels.set(bitmapPath, dataUrl); return {} as never;
+    });
+    await (direction === "undo" ? s.c.applyUndoEntry() : s.c.applyRedoEntry());
+    expect(s.setProject).toHaveBeenCalledOnce();
+    expect(s.markShotsDirty).toHaveBeenCalledOnce();
+    expect(s.projectRef.current.name).toBe(direction === "undo" ? "previous" : "History fixture");
+    expect(s.pixels.get(layer("shot-a").bitmapPath)).toBe(direction === "undo" ? "old pixels" : "new pixels");
+    s.locked.current = false;
+    await (direction === "undo" ? s.c.applyRedoEntry() : s.c.applyUndoEntry());
+    expect(s.setProject).toHaveBeenCalledTimes(2);
+  });
+  it("rejects Undo after read-only reciprocal snapshot before restoring pixels", async () => {
+    const s = setupHistory();
+    s.api.readLayerPng.mockImplementation(async () => { s.locked.current = true; return "new pixels"; });
+    await s.c.applyUndoEntry();
+    expect(s.api.writeLayerPng).not.toHaveBeenCalled();
+    expect(s.setProject).not.toHaveBeenCalled();
+    s.locked.current = false;
+    s.api.readLayerPng.mockImplementation(async () => "new pixels");
+    await s.c.applyUndoEntry();
+    expect(s.projectRef.current.name).toBe("previous");
+  });
+});
+
+describe("projectHistoryController snapshot capture", () => {
+  it("captures project, selection and filename state before deferred PNG reads", async () => {
+    const s = setupHistory();
+    const originalProject = s.projectRef.current;
+    let release!: (pixels: string) => void;
+    s.api.readLayerPng.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+    const pending = s.c.createHistoryEntry([layer("shot-a").bitmapPath]);
+    s.projectRef.current = { ...originalProject, name: "new metadata" };
+    s.selectedShotIdsRef.current.push("shot-b");
+    s.fileNameSyncStateRef.current = "synced";
+    s.folderPathRef.current = "/other";
+    release("original pixels");
+    const captured = await pending;
+    expect(captured.project).toBe(originalProject);
+    expect(captured.selectedShotIds).toEqual(["shot-a"]);
+    expect(captured.fileNameSyncState).toBe("unsynced");
+    expect(captured.layerAssets).toEqual([{ bitmapPath: layer("shot-a").bitmapPath, dataUrl: "original pixels" }]);
+    expect(s.api.readLayerPng).toHaveBeenCalledWith({ folderPath: "/synthetic", bitmapPath: layer("shot-a").bitmapPath });
+    expect(s.setProject).not.toHaveBeenCalled();
+  });
 });
 
 describe("projectHistoryController", () => {

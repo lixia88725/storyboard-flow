@@ -16,6 +16,7 @@ type CheckExternalChangesPayload<TProject extends CheckExternalChangesProject> =
   project: TProject;
   folderPath: string;
   metadataPath: string;
+  normalSave?: boolean;
 };
 
 export type WorkspaceExternalChangesAppRuntimeOptions<
@@ -29,6 +30,7 @@ export type WorkspaceExternalChangesAppRuntimeOptions<
     mode: "open"
   ) => WorkspaceTaskProgressReporter;
   ensureStoryboardScriptMarkdown: CheckExternalChangesOptions<TProject>["ensureStoryboardScriptMarkdown"];
+  readStoryboardScriptImportState?: CheckExternalChangesOptions<TProject>["ensureStoryboardScriptMarkdown"];
   previewRootForFolder?: CheckExternalChangesOptions<TProject>["previewRootForFolder"];
 };
 
@@ -40,6 +42,7 @@ export const createWorkspaceExternalChangesAppHandlers = <
   createImageRecords,
   createProgressReporter = createWorkspaceTaskProgressReporter,
   ensureStoryboardScriptMarkdown,
+  readStoryboardScriptImportState = async () => true,
   previewRootForFolder: previewRootForFolderDependency = previewRootForFolder
 }: WorkspaceExternalChangesAppRuntimeOptions<TProject>): WorkspaceExternalChangesIpcHandlers<
   WorkspaceTaskProgressSender,
@@ -52,7 +55,7 @@ export const createWorkspaceExternalChangesAppHandlers = <
       changedKnownImagePaths,
       collectImagePaths: collectImagePathsDependency,
       createImageRecords,
-      ensureStoryboardScriptMarkdown,
+      ensureStoryboardScriptMarkdown: payload.normalSave ? readStoryboardScriptImportState : ensureStoryboardScriptMarkdown,
       previewRootForFolder: previewRootForFolderDependency,
       reportProgress
     })

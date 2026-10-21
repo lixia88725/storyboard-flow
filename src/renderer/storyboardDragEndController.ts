@@ -9,12 +9,10 @@ import {
   restoreParkedShotGroup,
   sceneDialogueOverlayEnabledForProject,
   sceneMatteModeForProject,
-  sortedShots,
-  type ShotPlacement
+  sortedShots
 } from "../shared/projectOps";
 import type { Project } from "../shared/types";
 import type { DeleteTarget } from "./deleteTarget";
-import { projectWithShotFileReferences } from "./pendingShotFileController";
 import {
   inferDropPlacementFromDragEnd,
   inferShotPlacement,
@@ -25,13 +23,16 @@ import {
 type ProjectUpdate = Project | ((currentProject: Project) => Project);
 
 export type StoryboardDragEndControllerOptions = {
-  clearShotsDirty: (shotIds: string[]) => void;
+  capturePendingScope: () => (() => boolean);
+  pendingVersion: () => number;
+  pendingTransition: (kind: "park" | "restore", update: (project: Project) => Project, shotIds: string[]) => Promise<boolean>;
   flushInsertionTargetsFromDragEnd: (event: DragEndEvent) => {
     storyboardInsertionTarget: StoryboardInsertionTarget | undefined;
     parkingInsertionTarget: StoryboardInsertionTarget | undefined;
   };
   isDragEndInsideParkingShelf: (event: DragEndEvent) => boolean;
   isDragEndInsideStoryboard: (event: DragEndEvent) => boolean;
+  isDragEndPointerInsideStoryboard: (event: DragEndEvent) => boolean;
   inheritSceneMatte: (
     baseProject: Project,
     mode: "expanded" | "embedded" | undefined,
@@ -40,18 +41,13 @@ export type StoryboardDragEndControllerOptions = {
       dialogueOverlayEnabled?: boolean;
       markFileNamesUnsynced?: boolean;
       recordUndo?: boolean;
+      isWorkspaceCurrent?: () => boolean;
+      expectedProject?: Project;
+      isCurrent?: () => boolean;
     }
   ) => Promise<boolean>;
   projectRef: { current: Project };
-  moveShotFilesToPending: (project: Project, shotIds: string[]) => Promise<Project>;
-  promoteAiCandidateToStoryboard: (
-    candidateId: string,
-    targetShotId: string | undefined,
-    placement: ShotPlacement
-  ) => Promise<void>;
   queuePasteAnimation: (kind: "shot" | "layer", sourceId: string, pastedId: string) => void;
-  resetHistoryStacks: () => void;
-  restoreShotFilesFromPending: (project: Project, shotIds: string[]) => Promise<Project>;
   resetActiveDragState: () => void;
   selectedShotIdsRef: { current: string[] };
   selectSingleShot: (shotId: string | undefined) => void;
@@ -65,18 +61,17 @@ export type StoryboardDragEndControllerOptions = {
 };
 
 export const useStoryboardDragEndController = ({
-  clearShotsDirty,
+  pendingTransition,
+  capturePendingScope,
+  pendingVersion,
   flushInsertionTargetsFromDragEnd,
   inheritSceneMatte,
   isDragEndInsideParkingShelf,
   isDragEndInsideStoryboard,
-  moveShotFilesToPending,
+  isDragEndPointerInsideStoryboard,
   projectRef,
-  promoteAiCandidateToStoryboard,
   queuePasteAnimation,
   resetActiveDragState,
-  resetHistoryStacks,
-  restoreShotFilesFromPending,
   selectedShotIdsRef,
   selectSingleShot,
   setDeleteTarget,
@@ -91,35 +86,26 @@ export const useStoryboardDragEndController = ({
     parkingInsertionTarget: StoryboardInsertionTarget | undefined
   ) => {
     const movingShotIds = movingShotIdsForDrag(activeShotId);
-    const initialProject = projectRef.current;
+    const isCurrent = capturePendingScope();
     setStatus("Moving storyboards to Pending...");
     try {
-      const parkedProject = parkShotGroup(
-        initialProject,
-        movingShotIds,
-        parkingInsertionTarget
-          ? {
-              targetParkedShotId: parkingInsertionTarget.targetShotId,
-              placement: parkingInsertionTarget.placement
-            }
-          : undefined
+      const accepted = await pendingTransition(
+        "park",
+        latest => parkShotGroup(latest, movingShotIds, parkingInsertionTarget ? {
+          targetParkedShotId: parkingInsertionTarget.targetShotId,
+          placement: parkingInsertionTarget.placement
+        } : undefined),
+        movingShotIds
       );
-      const projectWithPendingFiles = await moveShotFilesToPending(parkedProject, movingShotIds);
-      if (projectRef.current !== initialProject) {
-        await restoreShotFilesFromPending(
-          projectWithShotFileReferences(projectRef.current, projectWithPendingFiles, movingShotIds),
-          movingShotIds
-        );
-        throw new Error("the storyboard changed while Pending was being prepared");
-      }
-      updateProject(projectWithPendingFiles, true, false);
-      clearShotsDirty(movingShotIds);
-      resetHistoryStacks();
+      if (!accepted) throw new Error("Pending incomplete; output or persistence was not accepted");
+      if (!isCurrent()) return;
+      const projectWithPendingFiles = projectRef.current;
       const nextSelectedShot = sortedShots(projectWithPendingFiles.shots)[0];
       selectSingleShot(nextSelectedShot?.id);
       setDeleteTarget({ type: "shot" });
       setStatus(`${movingShotIds.length} storyboard${movingShotIds.length === 1 ? "" : "s"} moved to Pending`);
     } catch (error) {
+      if (!isCurrent()) return;
       setStatus(
         `Could not move storyboards to Pending: ${
           error instanceof Error ? error.message : String(error)
@@ -139,23 +125,6 @@ export const useStoryboardDragEndController = ({
     const overData = event.over?.data.current as DragData | undefined;
 
     if (!activeData) {
-      return;
-    }
-
-    if (activeData.type === "ai-candidate") {
-      const fallbackTargetShotId =
-        overData?.type === "shot" || overData?.type === "drop-zone"
-          ? overData.shotId
-          : undefined;
-      const targetShotId =
-        dragEndStoryboardInsertionTarget?.targetShotId ?? fallbackTargetShotId;
-      if (!targetShotId && !isDragEndInsideStoryboard(event)) {
-        return;
-      }
-      const placement =
-        dragEndStoryboardInsertionTarget?.placement ??
-        (targetShotId ? inferDropPlacementFromDragEnd(event) : "after");
-      void promoteAiCandidateToStoryboard(activeData.candidateId, targetShotId, placement);
       return;
     }
 
@@ -204,44 +173,55 @@ export const useStoryboardDragEndController = ({
 
     if (
       activeData.type === "parked-shot" &&
-      (dragEndStoryboardInsertionTarget || overData?.type === "shot" || overData?.type === "drop-zone")
+      (dragEndStoryboardInsertionTarget || overData?.type === "shot" || overData?.type === "drop-zone" || overData?.type === "empty-board")
     ) {
       const fallbackTargetShotId =
         overData?.type === "shot" || overData?.type === "drop-zone" ? overData.shotId : undefined;
-      const targetShotId = dragEndStoryboardInsertionTarget?.targetShotId ?? fallbackTargetShotId;
-      if (!targetShotId) {
+      const emptyBoardDrop = overData?.type === "empty-board";
+      // The explicit empty target never inherits a stale nonempty insertion id.
+      // Unlike existing shot drops, it requires the actual pointer, not rect overlap.
+      if (emptyBoardDrop && !isDragEndPointerInsideStoryboard(event)) {
         return;
       }
-      const placement = dragEndStoryboardInsertionTarget?.placement ?? inferDropPlacementFromDragEnd(event);
+      const targetShotId = emptyBoardDrop
+        ? undefined
+        : dragEndStoryboardInsertionTarget?.targetShotId ?? fallbackTargetShotId;
+      if (!targetShotId && !emptyBoardDrop) {
+        return;
+      }
+      const placement = emptyBoardDrop
+        ? "after"
+        : dragEndStoryboardInsertionTarget?.placement ?? inferDropPlacementFromDragEnd(event);
       const currentProject = projectRef.current;
-      const inheritedMatteMode = sceneMatteModeForProject(currentProject);
-      const inheritedDialogueOverlayEnabled =
-        sceneDialogueOverlayEnabledForProject(currentProject);
+      const isCurrent = capturePendingScope();
       const restorePendingStoryboard = async () => {
-        setStatus("Restoring storyboard from Pending...");
         try {
           const restoredProject = restoreParkedShotGroup(
             currentProject,
             [activeData.shotId],
-            targetShotId,
+            targetShotId ?? { type: "empty-board" },
             placement
           );
-          const projectWithRestoredFile = await restoreShotFilesFromPending(
-            restoredProject,
+          if (restoredProject === currentProject) {
+            return;
+          }
+          setStatus("Restoring storyboard from Pending...");
+          const accepted = await pendingTransition(
+            "restore",
+            latest => restoreParkedShotGroup(latest, [activeData.shotId], targetShotId ?? { type: "empty-board" }, placement),
             [activeData.shotId]
           );
-          if (projectRef.current !== currentProject) {
-            await moveShotFilesToPending(
-              projectWithShotFileReferences(
-                projectRef.current,
-                projectWithRestoredFile,
-                [activeData.shotId]
-              ),
-              [activeData.shotId]
-            );
-            throw new Error("the storyboard changed while Pending was being restored");
-          }
-          updateProject(projectWithRestoredFile, true, false);
+          if (!accepted) throw new Error("Pending restore incomplete; output or persistence was not accepted");
+          if (!isCurrent()) return;
+          const projectWithRestoredFile = projectRef.current;
+          // Read the latest destination scene, excluding the newly restored
+          // shot: its old presentation must not decide what it inherits.
+          const destinationScene = {
+            ...projectWithRestoredFile,
+            shots: projectWithRestoredFile.shots.filter(shot => shot.id !== activeData.shotId)
+          };
+          const inheritedMatteMode = sceneMatteModeForProject(destinationScene);
+          const inheritedDialogueOverlayEnabled = sceneDialogueOverlayEnabledForProject(destinationScene);
           const restoredShot = projectWithRestoredFile.shots.find(
             (shot) => shot.id === activeData.shotId
           );
@@ -252,18 +232,21 @@ export const useStoryboardDragEndController = ({
               )
           );
           const finishRestore = (status = "Storyboard restored from Pending") => {
-            resetHistoryStacks();
+            if (!isCurrent()) return;
             selectSingleShot(activeData.shotId);
             setDeleteTarget({ type: "shot" });
             setStatus(status);
           };
           if (
+            destinationScene.shots.length > 0 &&
             restoredShot &&
             ((inheritedMatteMode && !restoredShot.presentation?.matte) ||
               (!inheritedMatteMode && restoredShot.presentation?.matte) ||
               (Boolean(inheritedMatteMode) &&
                 inheritedDialogueOverlayEnabled !== restoredShotHasDialogueOverlay))
           ) {
+            const version = pendingVersion();
+            const inheritanceProject = projectRef.current;
             const inherited = await inheritSceneMatte(
               projectWithRestoredFile,
               inheritedMatteMode,
@@ -271,9 +254,13 @@ export const useStoryboardDragEndController = ({
               {
                 dialogueOverlayEnabled: inheritedDialogueOverlayEnabled,
                 markFileNamesUnsynced: true,
-                recordUndo: false
+                recordUndo: false,
+                expectedProject: inheritanceProject,
+                isWorkspaceCurrent: isCurrent,
+                isCurrent: () => isCurrent() && projectRef.current === inheritanceProject
               }
             );
+            if (!isCurrent() || pendingVersion() !== version + (inherited ? 1 : 0)) return;
             if (inherited) {
               finishRestore();
             } else {
@@ -285,6 +272,7 @@ export const useStoryboardDragEndController = ({
             finishRestore();
           }
         } catch (error) {
+          if (!isCurrent()) return;
           setStatus(
             `Could not restore storyboard from Pending: ${
               error instanceof Error ? error.message : String(error)

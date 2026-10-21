@@ -1,0 +1,36 @@
+import os from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { rm, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { onTestFinished, expect, it } from "vitest";
+
+const run = promisify(execFile);
+const scratch = process.env.TMPDIR ?? os.tmpdir();
+it("native permission probe distinguishes ordinary PNG from explicit and inherited ACLs without modifying files", async () => {
+  const dir = await mkdtemp(path.join(scratch, "layer-native-permissions-"));
+  onTestFinished(async () => { await rm(dir, { recursive: true, force: true }); });
+  const ordinary = path.join(dir, "ordinary.png");
+  await writeFile(ordinary, Buffer.from("owned synthetic bytes"));
+  const script = path.resolve("scripts/layer-file-permissions.py");
+  const inspect = async (file: string) => JSON.parse((await run("python3", [script, file], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } })).stdout);
+  const before = await inspect(ordinary);
+  expect(before.kind).toBe("ordinary");
+  const special = path.join(dir, "explicit.png");
+  await writeFile(special, Buffer.from("owned synthetic bytes"));
+  const user = (await run("/usr/bin/id", ["-un"])).stdout.trim();
+  await run("/bin/chmod", ["+a", `user:${user} allow read,write`, special]);
+  expect((await inspect(special)).kind).toBe("special");
+  const parent = path.join(dir, "inherited"); await mkdir(parent);
+  await run("/bin/chmod", ["+a", `user:${user} allow read,write,file_inherit,directory_inherit`, parent]);
+  const inherited = path.join(parent, "child.png"); await writeFile(inherited, Buffer.from("owned synthetic bytes"));
+  expect((await inspect(inherited)).kind).toBe("special");
+  expect((await inspect(path.join(dir, "missing.png"))).kind).toBe("unknown");
+  expect(await inspect(ordinary)).toEqual(before);
+  const staged = path.join(dir, "staged.png"); await writeFile(staged, Buffer.from("new synthetic bytes"));
+  const prepared = JSON.parse((await run("python3", [script, "--prepare", ordinary, staged], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } })).stdout);
+  expect(prepared.kind).toBe("ordinary");
+  expect(prepared.xattrs).toEqual(before.xattrs);
+  expect([prepared.mode, prepared.uid, prepared.gid, prepared.flags]).toEqual([before.mode, before.uid, before.gid, before.flags]);
+  expect(await inspect(ordinary)).toEqual(before);
+});

@@ -80,7 +80,7 @@ export const stagePendingDeletedShotFiles = async <ProjectT extends ProjectWithP
 export const trashPendingDeletedShotFiles = async <ProjectT extends ProjectWithPendingDeletedShots>(
   project: ProjectT,
   options: TrashDeletedShotFilesOptions = {}
-): Promise<{ project: ProjectT; error?: Error }> => {
+): Promise<{ project: ProjectT; error?: Error; trashed?: PendingDeletedShotLike[] }> => {
   const pending = project.pendingDeletedShots ?? [];
 
   if (pending.length === 0) {
@@ -91,6 +91,7 @@ export const trashPendingDeletedShotFiles = async <ProjectT extends ProjectWithP
   const trashItem = options.trashItem ?? shell.trashItem;
   const remaining: PendingDeletedShotLike[] = [];
   const failed: PendingDeletedShotLike[] = [];
+  const trashed: PendingDeletedShotLike[] = [];
 
   for (const shot of pending) {
     if (!(await pathExists(shot.imagePath))) {
@@ -99,6 +100,7 @@ export const trashPendingDeletedShotFiles = async <ProjectT extends ProjectWithP
 
     try {
       await trashItem(shot.imagePath);
+      trashed.push(shot);
     } catch {
       remaining.push(shot);
       failed.push(shot);
@@ -112,7 +114,7 @@ export const trashPendingDeletedShotFiles = async <ProjectT extends ProjectWithP
   };
 
   if (failed.length === 0) {
-    return { project: nextProject };
+    return { project: nextProject, trashed };
   }
 
   const fileList = failed.map((shot) => shot.fileName).join(", ");
