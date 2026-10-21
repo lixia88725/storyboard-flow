@@ -67,7 +67,8 @@ it("ICC normalization ignores only the clock stamp, not other profile metadata",
   const beforePixels = await sharp(imagePath).ensureAlpha().raw().toBuffer();
   const edit = path.join(f.folder, "mutate-icc.py");
   await writeFile(edit, `import sys,tifffile\np=sys.argv[1]\nwith tifffile.TiffFile(p) as tf:\n o=tf.pages[0].tags[34675].valueoffset\nwith open(p,'r+b') as f:\n f.seek(o+48); b=f.read(1); f.seek(o+48); f.write(bytes([b[0]^1]))\n`);
-  await runPythonScript({ scriptPath: edit, scriptArgs: [imagePath], errorPrefix: "ICC fixture edit" });
+  await runPythonScript({ scriptPath: edit, scriptArgs: [imagePath], errorPrefix: "ICC fixture edit",
+    env: { ...process.env, PYTHONPATH: [process.env.SWB_PYTHON_DEPS_DIR, process.env.PYTHONPATH].filter(Boolean).join(path.delimiter) } });
   expect(await sharp(imagePath).ensureAlpha().raw().toBuffer()).toEqual(beforePixels);
   const original = await readFile(imagePath);
   expect(await readTrustedLegacyOutputIdentity(f.project, "s", f.folder, options)).toBeUndefined();

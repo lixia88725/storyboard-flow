@@ -95,7 +95,10 @@ test('file-to-FIFO replacement is refused without waiting for a FIFO writer', as
   // Swap immediately after the original regular-file stat. Guard the old
   // blocking open in the fixture so RED cannot strand a native interpreter.
   // GREEN actually opens the new FIFO without a writer, then refuses its type.
-  await fs.writeFile(adapter, `import os,importlib.util\ns=importlib.util.spec_from_file_location('origin',${JSON.stringify(path.resolve('scripts/recovery-origin-permissions.py'))});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\noriginal=os.open\ndef substitute(name,flags,*a,**k):\n if name=='record':\n  parent=k['dir_fd']\n  os.rename(name,'record.retained',src_dir_fd=parent,dst_dir_fd=parent)\n  os.mkfifo(name,0o600,dir_fd=parent)\n  if not flags & os.O_NONBLOCK:raise RuntimeError('fixture prevented blocking FIFO open')\n return original(name,flags,*a,**k)\nm.os.open=substitute\nauthorize=m.authorize\n`, { mode: 0o600 });
+  // macOS Python builds can support openat/renameat but not mkfifoat.
+  // Only fixture creation uses the known synthetic path; production still opens
+  // relative to its held FD and must detect the changed naming identity.
+  await fs.writeFile(adapter, `import os,importlib.util\ns=importlib.util.spec_from_file_location('origin',${JSON.stringify(path.resolve('scripts/recovery-origin-permissions.py'))});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\noriginal=os.open\ndef substitute(name,flags,*a,**k):\n if name=='record':\n  parent=k['dir_fd']\n  os.rename(name,'record.retained',src_dir_fd=parent,dst_dir_fd=parent)\n  os.mkfifo(${JSON.stringify(path.join(folder, 'record'))},0o600)\n  if not flags & os.O_NONBLOCK:raise RuntimeError('fixture prevented blocking FIFO open')\n return original(name,flags,*a,**k)\nm.os.open=substitute\nauthorize=m.authorize\n`, { mode: 0o600 });
   const native = createNativeAuthorizationSession('python3', adapter, () => 65536);
   const attributes = fixtureAttributeBytes(path.dirname(folder)) + fixtureAttributeBytes(folder) + fixtureAttributeBytes(path.join(folder, 'record'));
   await expect(native.request({ phase: 'inventory', userData, workspaceKey: key, byteLimit: 32 + attributes, recordLimit: 20 })).rejects.toThrow('naming identity');
