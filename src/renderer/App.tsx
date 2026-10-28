@@ -91,6 +91,9 @@ import { JapaneseStoryboardView } from "./JapaneseStoryboardView";
 import { EmptyStoryboardDropZone } from "./EmptyStoryboardDropZone";
 import { IMPORT_REQUIRED_HELP } from "./importRequiredHelp";
 import { formatSaveFailureStatus } from "./saveErrors";
+import { formatWorkspaceOpenError } from "./workspaceOpenErrors";
+import { FolderImageBrowser } from './FolderImageBrowser';
+import type { FolderImages } from '../../electron/shared/folderImages';
 import { useStoryboardMarqueeController } from "./storyboardMarqueeController";
 import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
 import {
@@ -305,6 +308,8 @@ export const App = () => {
   const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
   const [autosaveError, setAutosaveError] = useState<AutosaveErrorNotice | undefined>();
   const [saveErrorDialog, setSaveErrorDialog] = useState<string | undefined>();
+  const [folderBrowser, setFolderBrowser] = useState<FolderImages | undefined>();
+  const folderOpenRequestRef = useRef(0);
   const [storyboardScriptImportDraft, setStoryboardScriptImportDraftState] =
     useState<StoryboardScriptImportDraft | undefined>();
   const storyboardScriptImportDraftRef = useRef<StoryboardScriptImportDraft | undefined>(undefined);
@@ -988,8 +993,8 @@ export const App = () => {
   if (!workspaceSlotsRef.current) {
     workspaceSlotsRef.current = createWorkspaceSlots({
       initialProject: activeViewProjectRef.current, publishProject: setProject,
-      onOpenError: error => normalSaveAppCallbacksRef.current.onError(error),
-      observe: path => window.storyboard.observeWorkspace(path),
+      onOpenError: error => { setStatus(formatWorkspaceOpenError(error)); setWorkspaceTask(undefined); },
+      observe: path => window.storyboard.observeWorkspace(path, { forEditing: true }),
       revokeScope: () => { aiApplyWorkspaceIdentityRef.current = {}; scriptImportCheckIdRef.current++; },
       drain: () => bitmapLayerWriteQueueRef.current.drain(),
       captureView: slot => {
@@ -1143,7 +1148,9 @@ export const App = () => {
 
   };
 
-  const handleOpenFolderByPath = async (pathOverride?: string) => {
+  const handleOpenFolderByPath = async (pathOverride?: string, importImages = false) => {
+    const openRequest = ++folderOpenRequestRef.current;
+    let inspection: FolderImages | undefined;
     if (!window.storyboard) {
       setStatus("Cannot open folder: Electron preload API is unavailable");
       return;
@@ -1167,7 +1174,15 @@ export const App = () => {
       // Precise request scope: a newer open (same path or not) replaces the identity and rotates
       // the owner epoch, so this request's incomplete status must not be published into that new scope.
       try {
-        await workspaceSlotsRef.current!.requestOpen(trimmedPath, async (slot, binding) => {
+        if (!importImages && window.storyboard.inspectFolderImages) {
+          inspection = await window.storyboard.inspectFolderImages(trimmedPath);
+          if (openRequest !== folderOpenRequestRef.current) return false;
+          if (inspection.browse) {
+            setFolderBrowser(inspection); setWorkspaceTask(undefined);
+            return false;
+          }
+        }
+        const opened = await workspaceSlotsRef.current!.requestOpen(trimmedPath, async (slot, binding) => {
           let scan: FolderScanPayload | undefined;
           const loaded = await slot.adapter.load(
             () => window.storyboard.openFolderByPath(binding.folderPath, { normalSave: true, initializePreviews: true }),
@@ -1176,17 +1191,30 @@ export const App = () => {
               prepare: (p, ids, current, workspace) => prepareNormalSaveImportMatte(p, ids, current, workspace, undefined, slot.adapter.owner.capture().project),
               published: result => { scan = result; },
               scriptPrepare: (...args) => prepareNormalSaveScriptMatte(...args), scriptPublished: result => { scan = result; } });
-          return loaded ? scan : undefined;
+          if (!loaded) return undefined;
+          if (importImages) {
+            const imported = await slot.adapter.imageImport({ blankShotPreset, dirtyShotIds: [],
+              prepare: (p, ids, current, workspace) => prepareNormalSaveImportMatte(p, ids, current, workspace, undefined, slot.adapter.owner.capture().project),
+              published: result => { scan = result; } });
+            if (!imported) return undefined;
+          }
+          return scan;
         });
+        if (openRequest !== folderOpenRequestRef.current) return false;
+        if (opened) setFolderBrowser(undefined);
+        else if (!importImages && inspection?.files.length) setFolderBrowser({ ...inspection, browse: true });
+        return opened;
       } catch (error) {
-        setStatus(`Open folder failed: ${String(error)}`); setWorkspaceTask(undefined);
+        if (openRequest !== folderOpenRequestRef.current) return false;
+        if (!importImages && inspection?.files.length) setFolderBrowser({ ...inspection, browse: true });
+        setStatus(formatWorkspaceOpenError(error)); setWorkspaceTask(undefined);
       }
       return;
 
   };
 
   useRecentFoldersController({
-    openFolder: handleOpenFolderByPath,
+    openFolder: async path => { await handleOpenFolderByPath(path); },
     setFolderInputValue,
     setRecentFolders,
     setStatus
@@ -2122,6 +2150,9 @@ export const App = () => {
       />
 
       <WorkspaceTaskProgressBanner workspaceTask={workspaceTask} />
+      {folderBrowser && <FolderImageBrowser key={folderBrowser.folderPath} folder={folderBrowser}
+        onClose={() => setFolderBrowser(undefined)}
+        onImport={async target => Boolean(await handleOpenFolderByPath(target, true))} />}
       {refreshNotice && <div role="status" data-refresh-status="true">{refreshNotice}</div>}
 
       <SaveErrorModal

@@ -21,6 +21,7 @@ export async function createAppOpenCallerScope(ports, preloaded = false, probeOp
   const adapter = await createAppRootActor(ports, {
     observeWorkspace: folder => main.observeWorkspace(event, folder), preloaded, probeOperation,
     publishScan: ui.publishScan,
+    setStatus: ui.setStatus,
     admitPreloaded: load => main.ordinary(event, 'workspace:openFolderByPath', ports.paths().folderPath, [ports.paths().folderPath], load),
     // These old fixtures mount no canvas or History. Empty UI capture is a
     // declared fixture boundary, never a replacement for native certification.

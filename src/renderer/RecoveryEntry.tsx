@@ -25,7 +25,8 @@ export const RecoveryEntry = () => {
  useEffect(()=>{if(folder)return;let cancelled=false;const ticket=entryTicket.current;void (async()=>{
   try{
    const target=startupResumeTarget(await window.storyboard.getRecentFolders());
-   if(!target||cancelled||entryTicket.current!==ticket)return;
+   if(cancelled||entryTicket.current!==ticket)return;
+   if(!target){setNormal(true);return;}
    // A protected workspace refuses ordinary writers before any effect; the
    // external-change check hits the same guard without writing, so it separates
    // "open normally" from "show the recovered content read-only".
@@ -37,7 +38,7 @@ export const RecoveryEntry = () => {
    setFolder(target);
    setIssue('This workspace is protected because an earlier session did not close cleanly. Showing it read-only; nothing on disk was changed.');
    await read(target);
-  }catch{/* stay */}
+  }catch{if(!cancelled&&entryTicket.current===ticket)setNormal(true);}
  })();return()=>{cancelled=true;};},[]);
  useEffect(()=>()=>{active.current=undefined;readTicket.current++;entryTicket.current++;},[]);
  const read=async (p:string)=>{entryTicket.current++;const ticket=++readTicket.current;setNormal(false);try{
@@ -77,6 +78,7 @@ export const RecoveryEntry = () => {
  },[normal,editing]);
  if(editing)return <PartialSaveEditor bootstrap={editing}/>;
  if(normal)return <App/>;
+ if(!folder)return <main style={{padding:24}}><p role="status">Opening workspace…</p></main>;
  if(recovery)return <main data-recovery-readonly="true" style={{padding:24,overflow:'auto',height:'100vh'}}>
   <h1>Storyboard Flow — Read-only Recovery</h1>
   <p>Unfinished operation remains protected. No Save, Import, preview generation or automatic repair is performed.</p>

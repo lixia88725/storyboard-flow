@@ -26,7 +26,7 @@ shared项目规则 ← Project/结果 ← Electron main/handlers/runtime/service
 | IPC边界 | `electron/preload/preload.ts`、实际CJS`preload.cjs`、`src/renderer/global.d.ts`同步；`electron/main/ipc/`→各AppRuntime/Service。contextIsolation开启、nodeIntegration关闭，但不能称完整文件系统沙箱。 |
 | 磁盘编排 | `electron/main/main.ts`保留打开/Save/Import/TIFF高风险组合；`saveRecovery.ts`、`fileRenames.ts`、`importRecovery.ts`、`importPaths.ts`负责限定恢复与路径预留，不是一般原子事务。 |
 | Add与Merge清源 | `layerAssetService.ts`提供旧writePng和独立createLayerPng；`layerAppRuntime.ts`/`ipc/layerHandlers.ts`接线；`mergeSourceCleanup.ts`核durable Project、History/引用、目标与来源身份再清源。 |
-| 正常Open/外来预览 | `normalOpenPreviewService.ts`与`electron/shared/standaloneLayeredInput.ts`；有限clean外来layered TIFF仅派生preview，显式Import才建立本地资产/身份。`trustedLegacyOutputIdentity.ts`是有限可信旧输出路径，不是任意XMP认证。 |
+| 正常Open/外来预览 | `electron/shared/workspaceFormat.ts`在普通编辑观察前识别不支持的旧测试项目，不冻结当前工作区；`normalOpenPreviewService.ts`与`electron/shared/standaloneLayeredInput.ts`负责外来预览。旧TIFF等价证明已退役；显式Import才建立外来图片本地资产/身份。 |
 | TIFF与Python | `photoshopTiffExport.ts`/`photoshopTiffImport.ts`、`scripts/photoshop-layered-tiff-{export,import}.py`和pythonRuntime；sharp与既有Python raster TIFF交换，不代表真实Photoshop全保真或平台打包通过。 |
 | Pending | renderer `storyboardDragEndController.ts`仅经必需域操作→normal adapter/owner→`pendingShotFileController.ts`→main Pending service/transaction；App不再装配旧文件回移/History reset后备路径。停车前物化当前TIFF再移动/持久化；load兼容仍归adapter。非空目的场景继承取ACK后最新peer设置，空板保自身黑边/对白。Pending不是Archive，journal不认证整套像素原子化。 |
 | 产品边界 | 内置AI生成、Provider/凭据设置、候选Apply/拖入已移除；普通Pending由`ParkingShelf.tsx`/`rightSidebarController.ts`与正常停车/恢复链负责，无AI加载或接口。 |
@@ -50,7 +50,9 @@ shared项目规则 ← Project/结果 ← Electron main/handlers/runtime/service
 
 ### Open与Import
 
-打开目录可能生成preview或执行限定恢复，不能当严格只读。外来有限layered TIFF可提供preview/Import入口，但无ownership/H0/synced；cache hit也做准入，异步结束重查前提。未知旧PNG+stroke保文件并明确拒绝自动改写；可信旧输出有独立正向链。显式Import按实际来源归档/提层/required持久化，不采信外来XMP路径为本地权限。
+正常编辑Open可能生成preview或执行限定恢复，不能当严格只读。外来有限layered TIFF可提供preview/Import入口，但无ownership/H0/synced；cache hit也做准入，异步结束重查前提。旧测试项目不再做等价证明或自动认证缺失状态。普通打开失败走状态提示，不污染当前Save状态；只读恢复不要求编辑格式预检。显式Import按实际来源归档/提层/required持久化，不采信外来XMP路径为本地权限。
+
+独立图片浏览由 `FolderImageBrowser.tsx` → preload → `ipc/folderImageBrowserHandlers.ts` → `folderImageBrowserService.ts` 承担：旧/不可编辑项目在工作区 observation 前进入只读浏览，正常Open失败也可退回根目录图片；不替换当前编辑slot，不写来源缓存。PNG/JPEG/TIFF/WebP/GIF/AVIF 的合成预览在内存生成。显式 Import 选择新目的地并创建唯一子目录，顺序复制为PNG，再在staging slot运行现有图片Import；只有成功才发布新项目。旧图层/对白/脚本不迁移。新目录准备仍检查物理写入目的地；TIFF preparation 的目录创建使用 `mkdirObserved` 通知既有观察器，不放松当前项目identity校验。
 
 ## 数据位置与保留边界
 

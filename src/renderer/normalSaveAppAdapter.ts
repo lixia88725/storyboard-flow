@@ -21,7 +21,7 @@ type Api = {
   saveWorkspace: (payload: SaveWorkspacePayload) => Promise<SaveWorkspacePayload | WorkspaceEffectFailure>;
   acknowledgeSave?: (payload: {folderPath:string;nonce:string;project:Project}) => Promise<boolean>;
   autosaveWorkspace: (payload: WorkspacePayload) => Promise<unknown>;
-  readOutputIdentity: (imagePath: string, legacy?: { project: Project; folderPath: string; shotId: string }) => Promise<string>;
+  readOutputIdentity: (imagePath: string) => Promise<string>;
 };
 export const createNormalSaveAppAdapter = (ports: {
   projectRef: { current: Project };
@@ -55,14 +55,10 @@ export const createNormalSaveAppAdapter = (ports: {
       if (typeof result.ordinaryPersistenceNonce !== 'string' || !api.acknowledgeSave || !await api.acknowledgeSave({ folderPath: payload.folderPath, nonce: result.ordinaryPersistenceNonce, project: payload.project })) throw new Error('Ordinary exact persistence ACK refused');
     }
   };
-  let legacyLoadFolderPath: string | undefined;
   let saveCapability: {folderPath:string;metadataPath:string;nonce?:string;api:Api} | undefined;
   const owner = createNormalSaveProjectOwner({
     projectRef: ports.projectRef, setProject: ports.setProject, freshToken: ports.freshToken, queue: ports.queue,
     readIdentity: (shot: Shot) => ports.api().readOutputIdentity(shot.imagePath),
-    readLegacyIdentity: (project, shot) => legacyLoadFolderPath
-      ? ports.api().readOutputIdentity(shot.imagePath, { project, folderPath: legacyLoadFolderPath, shotId: shot.id })
-      : Promise.resolve(undefined),
     persist: async (project, required = false) => {
       const cap=required ? saveCapability : undefined;
       if (required) {
@@ -301,7 +297,6 @@ export const createNormalSaveAppAdapter = (ports: {
         scan = await reader();
         if (scan.normalSaveOpenRecoveryRequired) throw new Error(scan.normalSaveOpenRecoveryRequired);
         if (!sameEpoch(request)) return createProject(scan.folderName);
-        legacyLoadFolderPath = scan.folderPath;
         let project = scan.project ?? createProject(scan.folderName);
         if (!scan.preserveProjectWithoutImageMerge && (!scan.project || scan.images.length > 0)) project = mergeFolderImages(project, scan.images);
         if (autoImport && scan.project && ports.api().checkExternalChanges) {

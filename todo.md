@@ -2,6 +2,8 @@
 
 This file records remaining scope, not permission to start it. This source integration does not promise that the entire application or all platforms have been accepted.
 
+- 2026-10-28 simplification/browser: legacy equivalence migration is retired, but old root images remain browsable. Explicit Import creates a new project outside the original folder. Isolated actual GUI browse→Import passed; expanded regression 166 files / 1393 tests passed. TODO: real destination chooser, converted-project drawing/Save/reopen, edited-current-project switching, and a clean full-suite run on final source in an environment permitted to read native memory metrics. Full-run failures and focused reruns are recorded in context-handoff.md. Keep native recovery/permission and Close simplification separate; their responsibilities still protect current projects and have not been proven redundant.
+
 - Independent acceptance of the integrated source and final GitHub delivery follow the existing task/release gates; source self-tests are not independent approval or publication.
 - Windows native owner/group/DACL/SACL/audit/integrity restrictions, clean-machine setup and cross-computer usage remain unverified. Safe refusal on unknown policy is not Windows support.
 - Actual installers, full Python/vendor portability and real Photoshop, Trash, clipboard and device workflows need separately scoped verification. Packaging source contracts and generated ZIP validator fixtures do not substitute for installing/running a package.

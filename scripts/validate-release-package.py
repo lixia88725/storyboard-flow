@@ -30,7 +30,7 @@ def validate_package(zip_path, version, license_bytes):
         for script in ["photoshop-layered-tiff-export.py", "photoshop-layered-tiff-import.py",
                        "layer-file-permissions.py", "recovery-origin-permissions.py", "recovery-claim-records.py",
                        "recovery-content-permissions.py", "recovery-origin-enrollment.py",
-                       "recovery-project-permissions.py", "owned-stage-cleanup.py", "legacy-single-layer-proof.py"]:
+                       "recovery-project-permissions.py", "owned-stage-cleanup.py"]:
             member = app + "scripts/" + script
             if member not in names or archive.getinfo(member).file_size == 0:
                 missing.append(member)

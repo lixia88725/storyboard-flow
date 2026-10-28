@@ -10,7 +10,6 @@ import { createWorkspaceFolderScanner } from "./workspaceScanService";
 import { createWorkspaceOpenAppHandlers } from "./workspaceOpenAppRuntime";
 import { registerWorkspaceOpenIpcHandlers } from "./ipc/workspaceOpenHandlers";
 import { createImageRecords as createImportedImageRecords } from "./imageRecordsService";
-import { readTrustedLegacyOutputIdentity } from "./trustedLegacyOutputIdentity";
 import { shouldEnsureLayerAssetsForShot } from "./bitmapLayers";
 import { exportPhotoshopLayeredTiffs, writePhotoshopLayeredTiffsForInPlaceSave } from "./photoshopTiffExport";
 import { createPreview } from "./previewService";
@@ -60,7 +59,7 @@ async function fixture() {
  const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8"), ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
  const names = ["scanWorkspaceFolder", "scanFolder", "ensureStoryboardScriptMarkdown", "readProject", "createImageRecords", "readSwbMetadata"];
  const selected = ast.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(ast)));
- const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, readTrustedLegacyOutputIdentity, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
+ const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
   createWorkspaceFolderScanner, metadataPathForFolder: () => metadataPath, previewRootForFolder: () => previewRoot,
   collectImagePaths: async () => [image], createImportedImageRecords, createPreview, pixelFingerprint,
   initializeNormalOpenPreviews: async (...args: any[]) => (await import("./normalOpenPreviewService")).initializeNormalOpenPreviews(...args as Parameters<typeof import("./normalOpenPreviewService")["initializeNormalOpenPreviews"]>),
@@ -106,14 +105,14 @@ it.each(["workspace:ensureLayerAssets", "workspace:exportPhotoshopTiffs"])("actu
  await expect(callbacks.get(channel)({}, { project: p, folderPath: f.root, metadataPath: f.metadataPath, normalSave: true })).rejects.toThrow(/Pending transaction/);
  expect(io).not.toHaveBeenCalled(); expect(await fs.readFile(journal)).toEqual(original);
 });
-it("actual finite legacy exporter equivalence admits missing preview without certifying or rewriting persisted metadata", async () => {
+it("retired legacy open preserves TIFF, editable pixels and metadata without generating a preview", async () => {
  const f = await fixture(), p = mergeFolderImages(createProject("Legacy real merge"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0];
  shot.swb = { ...shot.swb!, status: "owned", sourceKind: "photoshop-layered-tiff" }; shot.layers![0].locked = true;
  const asset = path.join(f.root, shot.layers![0].bitmapPath); await fs.mkdir(path.dirname(asset), { recursive: true }); await sharp(f.image).png().toFile(asset);
  const output = await writePhotoshopLayeredTiffsForInPlaceSave(p, f.root, { scriptPath: path.resolve("scripts/photoshop-layered-tiff-export.py"), saveStamp: "preview-fixture" }); await fs.copyFile(output.replacements[0].fromPath, f.image);
  await fs.writeFile(f.metadataPath, JSON.stringify(p)); const original = await fs.readFile(f.image), json = await fs.readFile(f.metadataPath), png = await fs.readFile(asset);
- const scan = await f.open({ normalSave: true, initializePreviews: true });
- expect((await sharp(scan.project.shots[0].previewPath).metadata()).format).toBe("png"); expect(scan.project.pendingBake).toBeUndefined();
+ await expect(f.open({ normalSave: true, initializePreviews: true })).rejects.toThrow('older test project');
+ await expect(fs.stat(f.previewRoot)).rejects.toMatchObject({ code: 'ENOENT' });
  expect(await fs.readFile(f.image)).toEqual(original); expect(await fs.readFile(f.metadataPath)).toEqual(json); expect(await fs.readFile(asset)).toEqual(png);
 });
 it("readonly discovery can report absent media without writing, while default readonly remains incomplete", async () => {
@@ -182,7 +181,7 @@ async function buildScanOpener(root: string, metadataPath: string, previewRoot: 
   const selected = ast.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(ast)));
   expect(selected).toHaveLength(names.length);
   const md = path.join(root, "storyboard-script.md");
-  const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, readTrustedLegacyOutputIdentity, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
+  const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
     createWorkspaceFolderScanner, metadataPathForFolder: () => metadataPath, previewRootForFolder: () => previewRoot,
     collectImagePaths: async () => [image], createImportedImageRecords, createPreview, pixelFingerprint,
     initializeNormalOpenPreviews: async (...args: any[]) => { onPreviews?.(); return (await import("./normalOpenPreviewService")).initializeNormalOpenPreviews(...args as Parameters<typeof import("./normalOpenPreviewService")["initializeNormalOpenPreviews"]>); },

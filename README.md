@@ -4,6 +4,8 @@ Storyboard Flow 是一个本地优先的故事板工作台。V1 聚焦：打开�
 
 ## Naming And Compatibility
 
+开发阶段只保证当前版本新建项目。缺少当前输出状态的旧测试项目不再自动校验或迁移；原文件保持不变，请选择新文件夹开始。普通图片的显式 Import 仍可使用。不要为绕过提示删除 `.storyboard-workbench`，其中包含可编辑图层。
+
 `Storyboard Flow` 是当前产品名，UI、README、GitHub 和新用户可见文案都应使用这个名字。
 
 `.storyboard-workbench/`、`SWB`、`swb-*` 和 `storyboard-workbench.local` 仍是当前内部格式和兼容层名称。它们暂时不改名，因为旧项目、旧 TIFF metadata、Photoshop round trip、smoke tests 和环境变量仍依赖这些标识。新写入的 TIFF metadata 使用 `app: "Storyboard Flow"`；读取逻辑继续兼容旧的 `app: "Storyboard Workbench"`。
@@ -63,7 +65,8 @@ Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`
 ## Workflow
 
 - 一个本地图像文件夹就是一场戏。
-- 顶部地址栏输入或选择最近文件夹后，应用扫描 `.png`、`.jpg`、`.jpeg`、`.tif`、`.tiff`。
+- 顶部地址栏输入或选择最近文件夹后，当前项目和普通 PNG/JPEG/TIFF 文件夹按原流程打开。不能直接编辑的旧项目会进入图片浏览，不再因旧项目校验而完全看不到图片。
+- 图片浏览支持根目录 PNG/JPEG/TIFF/WebP/GIF/AVIF，不扫描子目录或隐藏图层。点击 `Import to new project…`，选择原目录之外的存放位置，软件自动创建新文件夹并转换成可编辑项目。原文件不改动；仅导入图片当前可见画面（动画首帧），不迁移旧图层、对白和分镜文字。单个图片预览失败不影响其他图片显示。
 - 内部状态自动保存到当前文件夹的 `.storyboard-workbench/storyboard.project.json`。
 - 分镜脚本文字同步到根目录 `storyboard-script.md`；软件内编辑会自动写入，外部修改需要点击 `Import` 导入。
 - numbered-list Markdown 文件可创建新的 SWB project：每个列表项变成一张 blank shot，正文写入该 shot 的 `scriptText`。
@@ -111,7 +114,7 @@ Option/Alt drag 不再作为复制手势；按住 Option/Alt 拖动 storyboard�
 
 工具栏顶部的齿轮按钮显示当前固定快捷键清单，覆盖 Brush、Eraser、Select、Clear layer、Save、Add Shot、Onion Skin、左右切帧、Undo 和 Redo。快捷键暂不开放用户自定义，也不写入 Electron `userData`。`Escape` 默认用于 Clear layer；当菜单打开时，`Escape` 优先关闭菜单。
 
-`npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、拖动排序、图层缩略图、Select 移动/缩放、Add Shot、Save safety、Save 写入 Photoshop-readable layered TIFF、固定快捷键清单、混合画幅动画模式、Onion Skin 和重开恢复；它也覆盖旧 stroke 项目的 bitmap migration、Photoshop layered TIFF export/import round trip，并检查内部 layer PNG 没有 metadata 未引用的 orphan asset。
+`npm run smoke:bitmap` 会启动本地 Electron，并通过 CDP 验证普通 PNG 文件夹打开后，Image layer 和普通 paint layer 的绘制、擦除、清空/删除、undo / redo、opacity、blend mode、拖动排序、图层缩略图、Select 移动/缩放、Add Shot、Save safety、Save 写入 Photoshop-readable layered TIFF、固定快捷键清单、混合画幅动画模式、Onion Skin 和重开恢复；它也覆盖旧项目图片只读浏览、Photoshop layered TIFF export/import round trip，并检查内部 layer PNG 没有 metadata 未引用的 orphan asset。
 
 `npm run smoke:performance` 默认生成 250-shot 单层和 130-shot 三层两个 owned bitmap 临时 workspace，在普通与 Japanese storyboard 两种视图的 50% zoom 下测量视图激活、完整滚动、多选、marquee 和第一笔绘画。Marquee 会分别记录普通拖动、边缘滚动和松手恢复阶段，检查 active/edge editor churn 为 0、普通拖动 Layout 不超过 2、恢复阶段每帧 tier 变化不超过 6，并覆盖 20+ shot 密集圈选。它也检查 Cold/Warm/Hot 数量、编辑器峰值、可见图片解码、RAF p95、超过 100ms 的停顿、首笔可见延迟、被动 `readLayerPng` 调用、单次 stroke 读取次数和强制 GC 后的 heap 稳定性。`STORYBOARD_PERF_LAYER_COUNT=8` 可运行更激进的多图层诊断；普遍 8+ full-resolution layer 仍需要 flattened proxy/thumbnail cache。设置 `STORYBOARD_PERF_FIXTURE=/absolute/project/path` 时，会先用 APFS clone 把真实项目复制到 `/private/tmp`，只对临时副本执行绘画。
 

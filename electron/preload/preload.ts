@@ -113,14 +113,17 @@ const api = {
     targetFolderPath: string;
     blankShotPreset?: BlankShotPreset;
   }) => ipcRenderer.invoke("workspace:createFromStoryboardScript", payload),
-  readOutputIdentity: (imagePath: string, legacy?: { project: unknown; folderPath: string; shotId: string }) =>
-    ipcRenderer.invoke("workspace:readOutputIdentity", imagePath, legacy) as Promise<string>,
+  inspectFolderImages: (folderPath: string) => ipcRenderer.invoke('folderImages:inspect', folderPath) as Promise<import('../shared/folderImages.js').FolderImages>,
+  readFolderImagePreview: (request: import('../shared/folderImages.js').FolderImageRequest) => ipcRenderer.invoke('folderImages:preview', request) as Promise<import('../shared/folderImages.js').FolderImagePreview>,
+  copyFolderImagesForImport: (folderPath: string) => ipcRenderer.invoke('folderImages:importCopy', folderPath) as Promise<import('../shared/folderImages.js').FolderImageCopy | undefined>,
+  readOutputIdentity: (imagePath: string) =>
+    ipcRenderer.invoke("workspace:readOutputIdentity", imagePath) as Promise<string>,
   autosaveWorkspace: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:autosave", payload) as Promise<ProjectPayload>,
   ensureLayerAssets: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:ensureLayerAssets", payload) as Promise<ProjectPayload>,
   acknowledgeSave: (payload: {folderPath:string;nonce:string;project:ProjectPayload["project"]}) => ipcRenderer.invoke("recovery:ackSave", payload) as Promise<boolean>,
-  observeWorkspace: (folderPath: string) => ipcRenderer.invoke("recovery:observeWorkspace", folderPath) as Promise<{binding:string;folderPath:string;metadataPath:string}>,
+  observeWorkspace: (folderPath: string, options?: { forEditing?: boolean }) => ipcRenderer.invoke("recovery:observeWorkspace", folderPath, options) as Promise<{binding:string;folderPath:string;metadataPath:string}>,
   retryOwnedStage: (selector: import('../shared/ownedStageRetry.js').OwnedStageRetrySelector) => ipcRenderer.invoke("recovery:retryOwnedStage", selector) as Promise<import('../shared/ownedStageRetry.js').OwnedStageRetryResult>,
   certifyWorkspaceHandoff: (capture: unknown) => ipcRenderer.invoke("recovery:certifyHandoff", capture) as Promise<boolean | {mode:'ordinary-memory';readonly:false}>,
   saveWorkspace: (payload: ProjectPayload) =>

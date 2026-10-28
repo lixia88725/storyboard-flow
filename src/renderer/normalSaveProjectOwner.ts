@@ -33,8 +33,6 @@ export type NormalSaveOwnerPorts = {
   freshToken: () => string;
   queue: Pick<BitmapLayerWriteQueue, "runExclusive" | "isBusy">;
   readIdentity: (shot: Shot) => Promise<string>;
-  // Main may prove a finite legacy single-layer equivalence. Absence/failure stays unknown.
-  readLegacyIdentity?: (project: Project, shot: Shot) => Promise<string | undefined>;
   persist: (project: Project, required?: boolean) => Promise<void>;
   captureEffectPersistence?: () => { folderPath: string; metadataPath: string; persist: (project: Project) => Promise<void> };
   output: (project: Project, shotIds: string[]) => Promise<NormalSaveOutputAck[] | NormalSaveCompletion>;
@@ -1215,20 +1213,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
       const project = typeof input === "function" ? await input() : input;
       if (epoch !== requestEpoch) return false;
       const envelope = pendingBakeForProject(project);
-      // Do not reinterpret supported explicit unknown, corrupt, or future raw records.
-      // Only each active shot individually proved by main can leave missing-legacy unknown.
-      if (classifyPendingBake(project) === "missing" && ports.readLegacyIdentity) {
-        for (const shot of project.shots) {
-          try {
-            const hash = await ports.readLegacyIdentity(project, shot);
-            if (epoch !== requestEpoch) return false;
-            if (hash && /^[a-f0-9]{64}$/u.test(hash) && await ports.readIdentity(shot) === hash) {
-              envelope.shots[shot.id] = { state: "synced", acceptedOutputIdentity: hash };
-            }
-          } catch { /* Failed proof preserves unknown; no writer or recovery fallback. */ }
-          if (epoch !== requestEpoch) return false;
-        }
-      }
+      // Missing old output state stays unknown; legacy equivalence migration is retired.
       for (const shot of [...project.shots, ...(project.parkedShots ?? [])]) {
         const entry = envelope.shots[shot.id];
         if (entry.state !== "unknown" && !(autoImport && entry.state === "synced" && shot.swb?.status === "compatible-external-edit")) {
