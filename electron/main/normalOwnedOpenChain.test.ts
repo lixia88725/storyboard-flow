@@ -80,7 +80,8 @@ it("actual App owned open reaches real handler scanner and refuses retained tran
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === "handleOpenFolderByPath") expression = n.initializer!.getText(ast); ts.forEachChild(n, walk); }; walk(ast);
   const bindings = { ...caller, window: { storyboard: api }, normalSaveAppEnabled: true, folderInputValue: f.root, blankShotPreset: "16:9", prepareNormalSaveImportMatte: writer, normalSaveImageImportPublished: writer, publishNormalSaveFolderScan: writer, setWorkspaceTask: vi.fn(), setStatus: vi.fn() };
   await new Function(...Object.keys(bindings), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings))();
-  expect(errors).toHaveLength(1); expect(String(errors[0])).toMatch(/Pending/); expect(writer).not.toHaveBeenCalled(); expect(ref.current.name).toBe("old A"); expect(f.effects).toEqual([]);
+  expect(errors).toEqual([]); expect(bindings.setStatus).toHaveBeenCalledWith(expect.stringMatching(/Could not open folder:.*Pending/));
+  expect(writer).not.toHaveBeenCalled(); expect(ref.current.name).toBe("old A"); expect(f.effects).toEqual([]);
   expect(await Promise.all(protectedPaths.map(p => fs.readFile(p)))).toEqual(before); await expect(fs.stat(f.md)).rejects.toMatchObject({ code: "ENOENT" });
 });
 it.each(["preload.ts", "preload.cjs"])("actual %s forwards normal readonly options through IPC", async file => {

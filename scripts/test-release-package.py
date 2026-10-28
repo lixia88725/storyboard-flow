@@ -35,7 +35,7 @@ class PackageValidation(unittest.TestCase):
         for script in ["photoshop-layered-tiff-export.py", "photoshop-layered-tiff-import.py",
                        "layer-file-permissions.py", "recovery-origin-permissions.py", "recovery-claim-records.py",
                        "recovery-content-permissions.py", "recovery-origin-enrollment.py",
-                       "recovery-project-permissions.py", "owned-stage-cleanup.py", "legacy-single-layer-proof.py"]:
+                       "recovery-project-permissions.py", "owned-stage-cleanup.py"]:
             files[app + "scripts/" + script] = b"synthetic helper"
         if omit:
             files = {n: data for n, data in files.items() if omit not in n}
@@ -68,7 +68,7 @@ class PackageValidation(unittest.TestCase):
             for script in ["photoshop-layered-tiff-export.py", "photoshop-layered-tiff-import.py",
                            "layer-file-permissions.py", "recovery-origin-permissions.py", "recovery-claim-records.py",
                            "recovery-content-permissions.py", "recovery-origin-enrollment.py",
-                           "recovery-project-permissions.py", "owned-stage-cleanup.py", "legacy-single-layer-proof.py"]:
+                           "recovery-project-permissions.py", "owned-stage-cleanup.py"]:
                 with self.subTest(windows=windows, script=script), self.assertRaises(ValueError):
                     validator.validate_package(self.fixture(windows, omit="scripts/" + script), "0.1.31", b"project MIT")
 

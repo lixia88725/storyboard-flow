@@ -130,7 +130,7 @@ await cp(path.join(repoRoot, "dist-resources"), appResources, { recursive: true 
 for (const script of [
   "recovery-origin-permissions.py", "recovery-claim-records.py",
   "recovery-content-permissions.py", "recovery-origin-enrollment.py",
-  "recovery-project-permissions.py", "owned-stage-cleanup.py", "legacy-single-layer-proof.py"
+  "recovery-project-permissions.py", "owned-stage-cleanup.py"
 ]) {
   await cp(path.join(repoRoot, "scripts", script), path.join(packagedAppRoot, "scripts", script));
 }

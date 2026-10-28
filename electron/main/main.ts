@@ -41,7 +41,8 @@ import { createOwnedStageRetryService } from './ownedStageRetryService.js';
 import { prepareProtectedLayerReplacement } from "./protectedLayerReplacementPreparation.js";
 import { withLayerFileOperation } from "./layerFileOperationQueue.js";
 import { bitmapLayersForShot } from "./bitmapLayerOrdering.js";
-import { readTrustedLegacyOutputIdentity } from "./trustedLegacyOutputIdentity.js";
+import { assertEditableWorkspaceFormat } from "../shared/workspaceFormat.js";
+import { registerFolderImageBrowserHandlers } from './ipc/folderImageBrowserHandlers.js';
 import {
   exportPhotoshopLayeredTiffs,
   writePhotoshopLayeredTiffsForInPlaceSave
@@ -526,6 +527,16 @@ app.on("window-all-closed", () => {
 const physicalWriterIpcMain = createWorkspacePhysicalWriterGate(ipcMain, { save: preparedSave.runIpc, persist: preparedSave.persist, ordinary: preparedSave.ordinary });
 const registerIpcHandlers = () => {
   const ipcMain = physicalWriterIpcMain;
+  registerFolderImageBrowserHandlers(ipcMain, async event => {
+    const owner = BrowserWindow.fromWebContents(event.sender);
+    if (!owner || owner.isDestroyed()) throw new Error('Import window unavailable');
+    const result = await dialog.showOpenDialog(owner, {
+      title: 'Choose where to create the new Storyboard Flow project',
+      buttonLabel: 'Create project here', properties: ['openDirectory', 'createDirectory']
+    });
+    if (owner.isDestroyed() || owner.webContents !== event.sender) throw new Error('Import window changed');
+    return result.canceled ? undefined : result.filePaths[0];
+  });
   ipcMain.handle("recovery:readReadonly", (event, folderPath: string) => {
     if (event.senderFrame !== event.sender.mainFrame) throw new Error("Recovery read requires current top frame");
     return preparedSave.readReadonly(folderPath);
@@ -537,7 +548,15 @@ const registerIpcHandlers = () => {
   ipcMain.handle("recovery:stepHistoryAssets", (event,payload)=>preparedSave.stepHistoryAssets(event,payload));
   ipcMain.handle("recovery:compensateHistoryAssets", (event,payload)=>preparedSave.compensateHistoryAssets(event,payload));
   ipcMain.handle("recovery:ackSave", (event, payload) => preparedSave.acknowledge(event, payload));
-  ipcMain.handle("recovery:observeWorkspace", (event, folderPath) => preparedSave.observeWorkspace(event, folderPath));
+  ipcMain.handle("recovery:observeWorkspace", async (event, folderPath, options?: { forEditing?: boolean }) => {
+    // Reject unsupported projects before creating a recovery observation or freezing
+    // the currently edited workspace. Recovery-only readers keep their existing path.
+    if (options?.forEditing) {
+      if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath)) throw new Error('Invalid workspace folder');
+      assertEditableWorkspaceFormat(await readProjectMetadata<Project>(metadataPathForFolder(folderPath)));
+    }
+    return preparedSave.observeWorkspace(event, folderPath);
+  });
   ipcMain.handle("recovery:retryOwnedStage", (event, selector) => ownedStageRetryService.request(event, selector));
   ipcMain.handle("recovery:certifyHandoff", (event, capture) => preparedSave.certifyHandoff(event, capture));
   registerWorkspaceOpenIpcHandlers(
@@ -595,21 +614,8 @@ const registerIpcHandlers = () => {
     }
   );
 
-  ipcMain.handle("workspace:readOutputIdentity", async (_event, imagePath: string, legacy?: { project: Project; folderPath: string; shotId: string }) => {
+  ipcMain.handle("workspace:readOutputIdentity", async (_event, imagePath: string) => {
     if (typeof imagePath !== "string" || !path.isAbsolute(imagePath) || !/\.tiff?$/iu.test(imagePath)) throw new Error("Invalid working TIFF path");
-    if (legacy !== undefined) {
-      if (!legacy || typeof legacy.folderPath !== "string" || typeof legacy.shotId !== "string" ||
-          !legacy.project || !Array.isArray(legacy.project.shots) ||
-          legacy.project.shots.find(s => s.id === legacy.shotId)?.imagePath !== imagePath) throw new Error("Invalid legacy output proof request");
-      const identity = await readTrustedLegacyOutputIdentity(legacy.project, legacy.shotId, legacy.folderPath, {
-        exportScriptPath: path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-export.py"),
-        importScriptPath: path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-import.py"),
-        probeScriptPath: path.join(app.getAppPath(), "scripts/legacy-single-layer-proof.py"),
-        env: { ...process.env, SWB_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() }) }
-      });
-      if (!identity) throw new Error("Legacy output equivalence is unknown; original assets retained");
-      return identity;
-    }
     return createHash("sha256").update(await readFile(imagePath)).digest("hex");
   });
 
@@ -2345,15 +2351,7 @@ const scanFolder = async (
     const scan = await scanWorkspaceFolder(folderPath, onProgress, true, options.initializePreviews === true);
     if (options.initializePreviews === true) {
       if (pendingTransaction || options.recoverPending === true) throw new Error("Pending recovery and preview initialization require separate admission");
-      return initializeNormalOpenPreviews(scan, {
-        createImageRecords,
-        readLegacyIdentity: (project, shotId) => readTrustedLegacyOutputIdentity(project, shotId, folderPath, {
-          exportScriptPath: path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-export.py"),
-          importScriptPath: path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-import.py"),
-          probeScriptPath: path.join(app.getAppPath(), "scripts/legacy-single-layer-proof.py"),
-          env: { ...process.env, SWB_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() }) }
-        })
-      });
+      return initializeNormalOpenPreviews(scan, { createImageRecords });
     }
     if (!pendingTransaction) return scan;
     if (options.recoverPending === true) {

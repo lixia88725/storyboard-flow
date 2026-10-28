@@ -2,7 +2,20 @@ import {test,expect} from 'vitest';
 import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 import {createPreparedWorkspaceSave} from './preparedWorkspaceSave';
 import {mkdirObserved} from './workspaceInitialization';
+import {createSavePreparationDirectory} from './tiffPreparation';
 const fixture=async()=>{const root=await fs.mkdtemp(path.join(os.tmpdir(),'ordinary-observation-'));const frame={},sender={mainFrame:frame};const event={sender,senderFrame:frame} as any;const service=createPreparedWorkspaceSave({});return {root,event,service};};
+test('first TIFF Import preparation reports its own metadata-parent creation before final observation',async()=>{
+ const {root,event,service}=await fixture();
+ try{
+  const observed=await service.observeWorkspace(event,root);
+  const directory=path.join(root,'.storyboard-workbench','import-staging','own-operation');
+  const receipt=await service.ordinary(event,'workspace:importSwbFormat',{folderPath:root},[root],()=>createSavePreparationDirectory(directory));
+  expect(receipt.directoryPath).toBe(directory);
+  expect(await service.observeWorkspace(event,root)).toEqual(observed);
+  await fs.rename(path.join(root,'.storyboard-workbench'),path.join(root,'old-parent'));await fs.mkdir(path.join(root,'.storyboard-workbench'));
+  await expect(service.observeWorkspace(event,root)).rejects.toThrow('incarnation changed');
+ }finally{await fs.rm(root,{recursive:true,force:true});}
+});
 test('fresh observation is pure; actual reader initialization binds parent and subsequent replacement is refused',async()=>{
  const {root,event,service}=await fixture();const observed=await service.observeWorkspace(event,root);
  expect(await fs.readdir(root)).toEqual([]);

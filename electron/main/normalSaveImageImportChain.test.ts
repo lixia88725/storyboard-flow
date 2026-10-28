@@ -605,7 +605,8 @@ it.each(["A-to-B", "first-open", "rollback", "recovery"])("owned load actual App
       if (["rollback", "recovery"].includes(scenario) && writeNumber === 2 || scenario === "recovery" && writeNumber > 2) throw new Error("injected B PNG write failure");
       return layer.writeLayerPng(payload);
     }, deleteLayerPng: async (payload: Parameters<typeof layer.deleteLayerPng>[0]) => { deletesFrom.push(payload.folderPath); return layer.deleteLayerPng(payload); } };
-  const caller = await createAppOpenCallerScope({ projectRef: ref, setProject: () => {}, queue, freshToken: () => "load-fresh", paths: () => scenario === "first-open" ? { folderPath: b.root, metadataPath: b.metadataPath } : paths, api: () => api, onSave: () => {}, onError: e => errors.push(e) }, scenario !== "first-open", true);
+  const openStatus = vi.fn();
+  const caller = await createAppOpenCallerScope({ projectRef: ref, setProject: () => {}, queue, freshToken: () => "load-fresh", paths: () => scenario === "first-open" ? { folderPath: b.root, metadataPath: b.metadataPath } : paths, api: () => api, onSave: () => {}, onError: e => errors.push(e) }, scenario !== "first-open", true, { setStatus: openStatus });
   const app = await fs.readFile(new URL("../../src/renderer/App.tsx", import.meta.url), "utf8"), tree = ts.createSourceFile("App.tsx", app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const names = ["prepareNormalSaveImportMatte", "publishNormalSaveFolderScan", "handleOpenFolderByPath"], selected: string[] = [];
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && names.includes(n.name.getText(tree))) selected.push(`const ${n.getText(tree)};`); ts.forEachChild(n, walk); }; walk(tree);
@@ -627,7 +628,9 @@ it.each(["A-to-B", "first-open", "rollback", "recovery"])("owned load actual App
   expect(writesTo.length).toBeGreaterThan(0); expect(writesTo.every(root => root === b.root)).toBe(true); expect(deletesFrom.every(root => root === b.root)).toBe(true);
   expect(await Promise.all(protectedPaths.map(p => fs.readFile(p)))).toEqual(before);
   if (["rollback", "recovery"].includes(scenario)) {
-    expect(errors).toHaveLength(1); expect(ref.current.pendingBake!.shots.s.state).toBe("unknown");
+    expect(errors).toEqual([]); // Open failures report status, not the Save modal.
+    expect(openStatus).toHaveBeenCalledWith(expect.stringContaining(scenario === "rollback" ? "Import matte preparation incomplete" : "injected B PNG write failure"));
+    expect(ref.current.pendingBake!.shots.s.state).toBe("unknown");
     if (scenario === "rollback") for (const l of b.ref.current.shots[0].layers!) expect((await sharp(path.join(b.root, l.bitmapPath)).metadata()).height).toBe(3);
     else expect(bindings.workspaceRecoveryRequiredRef.current).toMatch(/rollback also failed/);
     return;

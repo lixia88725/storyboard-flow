@@ -6,7 +6,7 @@ const read = (name: string) => readFileSync(new URL('../../' + name, import.meta
 const nativeScripts = [
   'recovery-origin-permissions.py', 'recovery-claim-records.py',
   'recovery-content-permissions.py', 'recovery-origin-enrollment.py',
-  'recovery-project-permissions.py', 'owned-stage-cleanup.py', 'legacy-single-layer-proof.py'
+  'recovery-project-permissions.py', 'owned-stage-cleanup.py'
 ];
 test('CI passes the installed TIFF dependency directory to the full allowed suite', () => {
   const testJob = read('.github/workflows/release.yml').split('\n  test:\n')[1].split('\n  metadata:\n')[0];

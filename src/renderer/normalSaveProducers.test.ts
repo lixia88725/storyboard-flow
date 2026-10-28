@@ -971,7 +971,8 @@ it("actual App owned open with a failed load yields zero Add effects", async () 
       openOwnedFolder, publishNewShot: (u: (p: Project) => Project, id: string, cur: () => boolean) => f.adapter.owner.publishNewShot(u, id, cur)
     } as any);
     await c.handleAddShot();
-    expect(errors.length).toBeGreaterThan(0);      // the failed load was reported by the real adapter
+    expect(errors).toEqual([]); // Open failure must not become a Save failure.
+    expect(statuses.some(s => s.includes('synthetic open failure'))).toBe(true);
     expect(blankCalls, "blank TIFF created after a failed owned open").toBe(0);
     expect(f.projectRef.current.shots).toHaveLength(1);
     expect(statuses.some(s => /^Added/.test(s))).toBe(false);

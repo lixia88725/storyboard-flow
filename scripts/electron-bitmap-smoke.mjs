@@ -689,7 +689,7 @@ try {
   }
 
   // Scenario: open a normal image folder and verify basic rendering.
-  const openFolder = async (folderPath = smokeRoot, { waitForMetadata = true } = {}) => {
+  const openFolder = async (folderPath = smokeRoot, { waitForMetadata = true, expectOpened = true } = {}) => {
     if (!waitForMetadata && ![scriptRoot, deleteRoot, denseMarqueeRoot, smokeRoot, clipboardRoot, photoshopImportRoot, savedLayeredImportRoot].includes(folderPath)) {
       throw new Error("Only explicitly selected preparations with explicit Import may defer the metadata wait");
     }
@@ -721,6 +721,8 @@ try {
     await evaluate(`
       document.querySelector('input[aria-label="Folder path"]')?.closest("form")?.requestSubmit()
     `);
+
+    if (!expectOpened) return;
 
     await waitFor(
       () =>
@@ -3990,7 +3992,7 @@ try {
 
   await openFolder(smokeRoot);
 
-  // Scenario: Save safety, layered TIFF Save, reopen, animation, and legacy migration.
+  // Scenario: Save safety, layered TIFF Save, reopen, animation, and retired legacy input.
   await evaluate(`
     (async () => {
       const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -4433,18 +4435,22 @@ try {
     throw new Error(`Add Shot did not create a 1998x1080 TIFF: ${JSON.stringify(addedTheatricalTiff)}`);
   }
 
-  // User-approved safety alignment: no proved TIFF baseline for this PNG+stroke
-  // fixture. The former exact test and original failure are archived separately.
+  // Old project artwork remains browsable without migrating or writing its
+  // metadata. Closing the browser restores the current editable workspace.
   const legacyBefore = { sourceHash: await hashFile(legacyImagePath), projectHash: await hashFile(projectMetadataPath(legacyRoot)) };
-  await openFolder(legacyRoot);
+  const previousShotIds = await evaluate(`Array.from(document.querySelectorAll('[data-shot-id]')).map(node => node.dataset.shotId)`);
+  await openFolder(legacyRoot, { expectOpened: false });
   const legacyProtectionStatus = await waitFor(() => evaluate(`(() => {
-    const button = document.querySelector('button[aria-label="Workspace status"]');
-    if (button?.getAttribute("aria-expanded") !== "true") button?.click();
-    const text = document.querySelector('.status-panel')?.textContent ?? '';
-    const details = document.querySelector('.save-error-modal')?.textContent ?? '';
-    return text.includes('Open folder failed: output initialization incomplete') && text.includes('Workspace error') &&
-      details.includes('Legacy preview source is unknown; assets retained') && !text.includes('Workspace saved') ? { text, details } : undefined;
-  })()`), "unproved legacy Open explicitly incomplete, no false saved status");
+    const browser = document.querySelector('.folder-image-browser');
+    const text = browser?.textContent ?? '';
+    const modal = Boolean(document.querySelector('.save-error-modal'));
+    const images = [...(browser?.querySelectorAll('img') ?? [])];
+    return browser?.open && images.length > 0 && images.every(img => img.complete && img.naturalWidth > 0) && !modal ? { text, modal, previews: images.length } : undefined;
+  })()`), "old project displays image previews without Save-failure modal");
+  await evaluate(`Array.from(document.querySelectorAll('.folder-image-browser button')).find(button => button.textContent === 'Back to workspace')?.click()`);
+  await waitFor(() => evaluate(`!document.querySelector('.folder-image-browser')`), "close image browser");
+  const currentShotIds = await evaluate(`Array.from(document.querySelectorAll('[data-shot-id]')).map(node => node.dataset.shotId)`);
+  if (JSON.stringify(currentShotIds) !== JSON.stringify(previousShotIds)) throw new Error('Unsupported old project replaced the displayed project');
   const legacyAfter = { sourceHash: await hashFile(legacyImagePath), projectHash: await hashFile(projectMetadataPath(legacyRoot)) };
   if (JSON.stringify(legacyBefore) !== JSON.stringify(legacyAfter) || (await scriptRootUiFacts(legacyRoot))?.projectObserved) {
     throw new Error("Unproved legacy Open mutated or falsely published the unknown project");
@@ -4455,8 +4461,6 @@ try {
   if ((await findTiffFiles(legacyRoot)).length) throw new Error("Unproved legacy Open created working TIFFs");
   const legacyProtectionChecks = { ...legacyAfter, unchanged: true, notPublished: true, status: legacyProtectionStatus };
   await writeFile(path.join(scriptRootImportEvidenceRoot, "legacy-protection.json"), JSON.stringify({ before: legacyBefore, after: legacyProtectionChecks }, null, 2));
-  await evaluate(`Array.from(document.querySelectorAll('.save-error-modal button')).find(button => button.textContent.trim() === 'OK')?.click()`);
-  await waitFor(() => evaluate(`!document.querySelector('.save-error-modal')`), "deliberate legacy rejection dialog dismissed");
 
   const finalProject = await readProjectMetadata(smokeRoot);
   const layerAssetConsistency = await assertNoUnreferencedLayerAssets(smokeRoot, finalProject);

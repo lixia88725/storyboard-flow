@@ -41,11 +41,14 @@ declare global {
         targetFolderPath: string;
         blankShotPreset?: BlankShotOptions["preset"];
       }) => Promise<FolderScanPayload | import("../../electron/shared/normalSaveImportIpc").NormalSaveImportIpcResult<FolderScanPayload>>;
-      readOutputIdentity: (imagePath: string, legacy?: { project: Project; folderPath: string; shotId: string }) => Promise<string>;
+      inspectFolderImages: (folderPath: string) => Promise<import('../../electron/shared/folderImages').FolderImages>;
+      readFolderImagePreview: (request: import('../../electron/shared/folderImages').FolderImageRequest) => Promise<import('../../electron/shared/folderImages').FolderImagePreview>;
+      copyFolderImagesForImport: (folderPath: string) => Promise<import('../../electron/shared/folderImages').FolderImageCopy | undefined>;
+      readOutputIdentity: (imagePath: string) => Promise<string>;
       autosaveWorkspace: (payload: WorkspacePayload) => Promise<WorkspacePayload>;
       ensureLayerAssets: (payload: WorkspacePayload) => Promise<WorkspacePayload>;
       acknowledgeSave: (payload: {folderPath:string;nonce:string;project:Project}) => Promise<boolean>;
-      observeWorkspace: (folderPath: string) => Promise<import('./workspaceSlots').WorkspaceRootObservation>;
+      observeWorkspace: (folderPath: string, options?: { forEditing?: boolean }) => Promise<import('./workspaceSlots').WorkspaceRootObservation>;
       retryOwnedStage: (selector: import('../shared/ownedStageRetry').OwnedStageRetrySelector) => Promise<import('../shared/ownedStageRetry').OwnedStageRetryResult>;
       certifyWorkspaceHandoff: (capture: unknown) => Promise<boolean | { mode: 'ordinary-memory' | 'completed-terminal'; readonly: false }>;
       saveWorkspace: (

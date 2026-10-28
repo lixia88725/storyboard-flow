@@ -1,4 +1,5 @@
-import { lstat, mkdir, realpath, rm } from "node:fs/promises";
+import { lstat, realpath, rm } from "node:fs/promises";
+import { mkdirObserved as mkdir } from './workspaceInitialization.js';
 import path from "node:path";
 import { FileReplacementRecoveryIncompleteError } from "./fileRenames.js";
 import { hasUnresolvedProtectedWrite } from "./protectedLayerFileWriter.js";

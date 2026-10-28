@@ -13,13 +13,16 @@ const api = {
   // Keep plain business failures as data across contextBridge; renderer decodes them.
   createFromStoryboardScript: (payload) =>
     ipcRenderer.invoke("workspace:createFromStoryboardScript", payload),
-  readOutputIdentity: (imagePath, legacy) => ipcRenderer.invoke("workspace:readOutputIdentity", imagePath, legacy),
+  inspectFolderImages: (folderPath) => ipcRenderer.invoke('folderImages:inspect', folderPath),
+  readFolderImagePreview: (request) => ipcRenderer.invoke('folderImages:preview', request),
+  copyFolderImagesForImport: (folderPath) => ipcRenderer.invoke('folderImages:importCopy', folderPath),
+  readOutputIdentity: (imagePath) => ipcRenderer.invoke("workspace:readOutputIdentity", imagePath),
   autosaveWorkspace: (payload) => ipcRenderer.invoke("workspace:autosave", payload),
   ensureLayerAssets: (payload) => ipcRenderer.invoke("workspace:ensureLayerAssets", payload),
   /** @param {import("../normalSaveTransport").NormalSaveTransport & { project: unknown, folderPath: string, metadataPath: string, renamePlan?: unknown[], dirtyShotIds?: string[] }} payload */
   // Forward incomplete effect envelopes as plain data; renderer decodes after contextBridge.
   acknowledgeSave: (payload) => ipcRenderer.invoke("recovery:ackSave", payload),
-  observeWorkspace: (folderPath) => ipcRenderer.invoke("recovery:observeWorkspace", folderPath),
+  observeWorkspace: (folderPath, options) => ipcRenderer.invoke("recovery:observeWorkspace", folderPath, options),
   retryOwnedStage: (selector) => ipcRenderer.invoke("recovery:retryOwnedStage", selector),
   certifyWorkspaceHandoff: (capture) => ipcRenderer.invoke("recovery:certifyHandoff", capture),
   saveWorkspace: (payload) => ipcRenderer.invoke("workspace:save", payload),

@@ -10,6 +10,7 @@ import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
 import { isFreshStandaloneLayeredTiffPreview } from "../shared/standaloneLayeredInput.js";
 import sharp from 'sharp';
 import { recordsDerivedPreview, recordDerivedPreview } from './derivedPreviewReceipt.js';
+import { assertEditableWorkspaceFormat } from '../shared/workspaceFormat.js';
 
 type Image = { imagePath: string; fileName?: string; width?: number; height?: number; previewPath?: string; swbMetadata?: unknown };
 type Project = { shots: ManualImportShot[]; parkedShots?: ManualImportShot[]; pendingBake?: unknown };
@@ -25,8 +26,9 @@ const hash = async (p: string) => createHash("sha256").update(await readFile(p))
 // Called only by the explicit second phase while the App loader owns its queue.
 export const initializeNormalOpenPreviews = async <S extends { folderPath: string; metadataPath: string; project?: Project; images: Image[] }>(
  scan: S,
- ports: { createImageRecords: (paths: string[], root: string, options: { readOnly: boolean; deferMissingPreviews?: boolean }) => Promise<S["images"]>; readLegacyIdentity?: (project: NonNullable<S["project"]>, shotId: string) => Promise<string | undefined> }
+ ports: { createImageRecords: (paths: string[], root: string, options: { readOnly: boolean; deferMissingPreviews?: boolean }) => Promise<S["images"]> }
 ): Promise<S> => {
+ assertEditableWorkspaceFormat(scan.project);
  const root = scan.folderPath, previewRoot = previewRootForFolder(root), internal = path.dirname(previewRoot);
  const raw = await bytes(scan.metadataPath);
  if ((raw ? JSON.stringify(JSON.parse(raw.toString())) : undefined) !== (scan.project ? JSON.stringify(scan.project) : undefined)) throw new Error("Preview discovery project changed");
@@ -63,17 +65,7 @@ export const initializeNormalOpenPreviews = async <S extends { folderPath: strin
  };
  await assertFresh();
  if (scan.project) {
-  let admitted: ReturnType<typeof manualImageImportAdmission<ManualImportShot>>;
-  try { admitted = manualImageImportAdmission(scan.project); }
-  catch (error) {
-   if (scan.project.pendingBake !== undefined || !ports.readLegacyIdentity || scan.project.parkedShots?.length) throw error;
-   admitted = [];
-   for (const shot of scan.project.shots) {
-    const identity = await ports.readLegacyIdentity(scan.project, shot.id);
-    if (!identity || await hash(shot.imagePath) !== identity) throw new Error("Legacy preview source is unknown; assets retained");
-    admitted.push({ shot, fresh: false, external: false, entry: { state: "synced", acceptedOutputIdentity: identity } });
-   }
-  }
+  const admitted = manualImageImportAdmission(scan.project);
   for (const a of admitted) {
    // Preview generation is a derived display cache, not output-obligation certification.
    // Pending and compatible-external-edit sources keep their token/H0 and lifecycle
