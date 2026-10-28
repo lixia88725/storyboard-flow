@@ -38,6 +38,8 @@ shared项目规则 ← Project/结果 ← Electron main/handlers/runtime/service
 
 ### 编辑 → autosave → 重开 → 显式Save
 
+2026-10-28：生产 Main 开启 `automaticCheckpoints`，在首次已持久化 owned 项目上建立不烘焙 TIFF 的终态。`certifyEditableSet` 只接受所有 slot 的健康终态，复用完整保留和二次 capture 检查后静默 Close。Save 中 `prepareManagedSourceSave` 只处理 `.storyboard-flow/` 关联项目：先校验稳定 shot/source 映射，再在内部输出后按原格式同步根图片；原件首次备份、哈希收据和原生权限保留由独立服务处理。任何尾部失败走既有 `SaveRecoveryIncompleteError`，不发成功 ACK。自动保存不写根原图。
+
 1. 画笔/图层操作经bitmap queue处理内部PNG与History，owner记录相关待输出义务；纯metadata也有正常autosave接线。
 2. adapter→preload→main内部持久化Project/必要Markdown与正常义务；autosave不做正式文件名同步，metadata ACK不能冒TIFF已完成。
 3. 正常Open加载和校验实际资产/持久义务。来源未知、future/corrupt、缺资产或冲突不靠猜测变成synced。
@@ -52,7 +54,9 @@ shared项目规则 ← Project/结果 ← Electron main/handlers/runtime/service
 
 正常编辑Open可能生成preview或执行限定恢复，不能当严格只读。外来有限layered TIFF可提供preview/Import入口，但无ownership/H0/synced；cache hit也做准入，异步结束重查前提。旧测试项目不再做等价证明或自动认证缺失状态。普通打开失败走状态提示，不污染当前Save状态；只读恢复不要求编辑格式预检。显式Import按实际来源归档/提层/required持久化，不采信外来XMP路径为本地权限。
 
-独立图片浏览由 `FolderImageBrowser.tsx` → preload → `ipc/folderImageBrowserHandlers.ts` → `folderImageBrowserService.ts` 承担：旧/不可编辑项目在工作区 observation 前进入只读浏览，正常Open失败也可退回根目录图片；不替换当前编辑slot，不写来源缓存。PNG/JPEG/TIFF/WebP/GIF/AVIF 的合成预览在内存生成。显式 Import 选择新目的地并创建唯一子目录，顺序复制为PNG，再在staging slot运行现有图片Import；只有成功才发布新项目。旧图层/对白/脚本不迁移。新目录准备仍检查物理写入目的地；TIFF preparation 的目录创建使用 `mkdirObserved` 通知既有观察器，不放松当前项目identity校验。
+启动时 `RecoveryEntry` 先通过 `startupRecoveryMode` 只读识别旧目录，避免旧的 external-change probe 提前创建空 Markdown；当前项目的恢复探测仍经过原有保护入口。主界面只读图片预览由 `FolderImageBrowser.tsx` → preload → `ipc/folderImageBrowserHandlers.ts` → `folderImageBrowserService.ts` 承担：旧/不可编辑项目在工作区 observation 前进入只读浏览，正常Open失败也可退回根目录图片；不替换当前编辑slot，不写来源缓存。PNG/JPEG/TIFF/WebP/GIF/AVIF 的合成预览在内存生成。左上角现有 Import 经 `folderImageImportController.ts` 在原图片目录内创建独立 `.storyboard-flow/` 子目录，顺序复制为PNG，再在staging slot运行现有图片Import；只有成功才发布新项目。旧图层/对白/脚本不迁移。预览使用普通 section，不再弹出 modal；当前编辑视图保持挂载但 hidden/inert，Save/Add/遮幅等入口停用，window 级快捷键隔离，避免操作隐藏项目。复制和 staging Import 整体 busy 期间拒绝重复导入、切换和关闭；取消保留预览，staging 失败重试复用已准备目录。返回工作区恢复原地址和原编辑视图。不再显示 Destination 选择框。`managedFolderProject.ts` 校验子目录及准备完成标识，重复导入复用已准备目录，冲突/别名/不完整复制拒绝覆盖。原地址通过 inspection 映射到内部项目；地址栏/最近打开/项目名保留原目录，所有写入、History 和恢复仍绑定真实子目录。启动恢复探测跟随真实子目录。新目录准备仍检查物理写入目的地及父级恢复保护；TIFF preparation 的目录创建使用 `mkdirObserved` 通知既有观察器，不放松当前项目identity校验。
+
+旧目录转换时，以下 `<场景目录>` 是原图片目录内的 `.storyboard-flow/`；原图和原 `.storyboard-workbench/` 不改动。已经可编辑的项目仍使用原有场景目录。
 
 ## 数据位置与保留边界
 

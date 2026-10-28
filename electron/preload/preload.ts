@@ -187,6 +187,7 @@ const api = {
     ipcRenderer.invoke("layers:mergeVisible", payload) as Promise<MergeVisibleLayersPayload & { targetFilePath: string }>,
   createBlankShot: (folderPath: string, options: unknown) =>
     ipcRenderer.invoke("images:createBlankShot", folderPath, options),
+  rememberOpenedFolder: (folderPath: string) => ipcRenderer.invoke("recent:rememberOpenedFolder", folderPath) as Promise<void>,
   getRecentFolders: () => ipcRenderer.invoke("recent:getFolders") as Promise<string[]>,
   getToolRadialMenu: () => ipcRenderer.invoke("settings:getToolRadialMenu") as Promise<unknown>,
   setToolRadialMenu: (config: unknown) =>

@@ -487,7 +487,7 @@ def authorize(request):
     return {'authorized': True, 'plan': plan_png_write(request['root'], request['filePath'], request['length'], request['digest'], request['mode'], request['byteLimit'])}
 
 
-def protected_write(root_path, file_path, data, mode="upsert", operation=None, write_plan=None):
+def protected_write(root_path, file_path, data, mode="upsert", operation=None, write_plan=None, expected_digest=None, policy_source=None):
     """Stage complete bytes, certify finite metadata, then publish once.
 
     The caller owns a whole-operation queue. External writers, hostile parent
@@ -575,6 +575,21 @@ def protected_write(root_path, file_path, data, mode="upsert", operation=None, w
             if ordinary(target) != original:
                 raise ValueError('target changed during authorization')
 
+        # Explicit source-image Save uses a compare-and-replace receipt. Backup
+        # creation inherits the source restrictions, never a wider default mode.
+        import hashlib
+        if expected_digest is not None and (old_bytes is None or hashlib.sha256(old_bytes).hexdigest() != expected_digest):
+            raise ValueError('source image changed before Save')
+        backup_source = None
+        backup_policy = None
+        if policy_source is not None:
+            backup_source = Path(policy_source)
+            if mode != 'create-only' or not backup_source.is_relative_to(root) or backup_source == target or os.path.realpath(backup_source) != str(backup_source):
+                raise ValueError('invalid backup policy source')
+            backup_policy = ordinary(backup_source)
+            if backup_source.read_bytes() != data:
+                raise ValueError('backup source bytes changed')
+
         fd, name = tempfile.mkstemp(prefix='.layer-staging-', dir=target.parent)
         temporary = Path(name)
         info = os.fstat(fd)
@@ -601,14 +616,15 @@ def protected_write(root_path, file_path, data, mode="upsert", operation=None, w
             raise ValueError('; '.join(errors))
         if temporary.read_bytes() != data:
             raise ValueError('staged bytes differ from requested bytes')
-        if original:
-            prepared = prepare_mac(str(target), str(temporary)) if sys.platform == 'darwin' else prepare_windows(str(target), str(temporary))
+        if original or backup_policy:
+            policy_path = target if original else backup_source
+            prepared = prepare_mac(str(policy_path), str(temporary)) if sys.platform == 'darwin' else prepare_windows(str(policy_path), str(temporary))
             if prepared.get('kind') != 'ordinary':
                 raise ValueError('metadata preparation refused: ' + str(prepared.get('reason')))
         staged = ordinary(temporary)
-        if original:
+        if original or backup_policy:
             fields = ['mode', 'uid', 'gid', 'flags', 'xattrs'] if sys.platform == 'darwin' else ['security', 'flags']
-            if any(staged[k] != original[k] for k in fields):
+            if any(staged[k] != (original or backup_policy)[k] for k in fields):
                 raise ValueError('staged permissions differ from original')
         for directory, metadata in directories:
             if guard_directory(directory) != metadata:
@@ -626,6 +642,8 @@ def protected_write(root_path, file_path, data, mode="upsert", operation=None, w
             except Exception as error:
                 owned_before = None
                 owned_error = str(error)
+        if backup_source is not None and (ordinary(backup_source) != backup_policy or backup_source.read_bytes() != data):
+            raise ValueError('backup source changed before publication')
         if original:
             if ordinary(target) != original or target.read_bytes() != old_bytes:
                 raise ValueError('target identity, permissions or bytes changed')
@@ -715,7 +733,7 @@ if __name__ == '__main__':
             request = json.load(sys.stdin)
             if not isinstance(request, dict) or not all(isinstance(request.get(k), str) for k in ['root', 'filePath', 'bytes']):
                 raise ValueError('invalid protected write request')
-            result = protected_write(request['root'], request['filePath'], base64.b64decode(request['bytes'], validate=True), request.get('mode', 'upsert'), request.get('operation'), request.get('writePlan'))
+            result = protected_write(request['root'], request['filePath'], base64.b64decode(request['bytes'], validate=True), request.get('mode', 'upsert'), request.get('operation'), request.get('writePlan'), request.get('expectedDigest'), request.get('policySource'))
         elif len(sys.argv) == 2:
             result = inspect(os.path.abspath(sys.argv[1]))
         elif len(sys.argv) == 4 and sys.argv[1] == '--prepare' and sys.platform in ['darwin', 'win32']:

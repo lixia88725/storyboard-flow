@@ -1,3 +1,4 @@
+import { prepareManagedSourceSave } from './managedSourceSave';
 import { appCallerAdapterScope, createAppRootActor } from '../../src/renderer/appCallerAdapterScope';
 import { isCertifiedPendingBakeEntry } from "../shared/pendingBakeRules";
 import { createWorkspaceSession } from "../../src/renderer/workspaceSession";
@@ -1468,7 +1469,7 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
   let saveHandler!: (e: unknown, payload: WorkspacePayload) => Promise<WorkspacePayload>;
   const assetHandlers: Record<string, Function> = {};
   const bindings = {
-    ...fs, ...renames, ...bitmap, ...safety, ...layer, ...script, prepareProtectedLayerReplacement, withLayerFileOperation, mapWithConcurrency,
+    prepareManagedSourceSave, ...fs, ...renames, ...bitmap, ...safety, ...layer, ...script, prepareProtectedLayerReplacement, withLayerFileOperation, mapWithConcurrency,
     removeOwnedFile: (receipt: OwnedFileReceipt): Promise<void> => removeOwnedFile(receipt, bindings.unlink),
     path, sharp, createHash, randomUUID,
     createBlankShot, createProjectFromStoryboardScriptMarkdown, createImportedImageRecords, createPreview, pixelFingerprint, previewRootForFolder,

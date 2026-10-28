@@ -60,6 +60,7 @@ const api = {
   mergeVisibleLayers: (payload) => ipcRenderer.invoke("layers:mergeVisible", payload),
   createBlankShot: (folderPath, options) =>
     ipcRenderer.invoke("images:createBlankShot", folderPath, options),
+  rememberOpenedFolder: (folderPath) => ipcRenderer.invoke("recent:rememberOpenedFolder", folderPath),
   getRecentFolders: () => ipcRenderer.invoke("recent:getFolders"),
   getToolRadialMenu: () => ipcRenderer.invoke("settings:getToolRadialMenu"),
   setToolRadialMenu: (config) => ipcRenderer.invoke("settings:setToolRadialMenu", config),

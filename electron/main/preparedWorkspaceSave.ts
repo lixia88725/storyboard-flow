@@ -34,7 +34,7 @@ import { withImportFailureEvidence, type ImportFailureEvidence } from './importP
 
 type Event = Pick<IpcMainInvokeEvent,'sender'|'senderFrame'>;
 const recoveryProjectAbsence = (raw: unknown) => normalizeRecoveryProjectAbsence(raw, cloneControlled);
-type Options = {budget?:RecoveryBudget;memoryBudget?:ControlledMemoryBudget;memoryBudgetBytes?:number;memoryPressure?:MemoryPressurePolicy;memoryJSON?:JSONResourceLimits;python:string;script:string;accounting?:OriginWorkspaceAccounting;originEnrollment?:ReturnType<typeof createOriginEnrollment>;ownerFromSender?:(sender:Event["sender"])=>object|undefined};
+type Options = {automaticCheckpoints?:boolean;budget?:RecoveryBudget;memoryBudget?:ControlledMemoryBudget;memoryBudgetBytes?:number;memoryPressure?:MemoryPressurePolicy;memoryJSON?:JSONResourceLimits;python:string;script:string;accounting?:OriginWorkspaceAccounting;originEnrollment?:ReturnType<typeof createOriginEnrollment>;ownerFromSender?:(sender:Event["sender"])=>object|undefined};
 const hash=(v:Uint8Array|string)=>createHash('sha256').update(v).digest('hex');
 const identity=async(file:string)=>{const s=await fs.lstat(file,{bigint:true});if(s.isSymbolicLink()||(!s.isDirectory()&&(!s.isFile()||s.nlink!==1n)))throw new Error('Unsupported physical identity');return `${s.dev}:${s.ino}`;};
 
@@ -774,12 +774,18 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   for(const a of assets){const recorded=before.offer.assets.find(v=>v.assetId===a.assetId&&v.role===a.role);if(!recorded||!copyControlledBuffer(recorded.bytes).equals(copyControlledBuffer(a.bytes)))throw new Error('Ordinary before asset association changed');}
   await verifyOrdinaryBefore(e,l,before);return before;
  };
- const ordinaryOperation=async(e:Event,channel:string,payload:any,targets:readonly string[],execute:()=>Promise<any>)=>withLayerFileOperation(async()=>{
+ const ordinaryOperation=async(e:Event,channel:string,payload:any,targets:readonly string[],execute:()=>Promise<any>):Promise<any>=>withLayerFileOperation(async()=>{
   current(e);const roots=await protectedRoots(targets);
   if(!roots.length){
    const document=documentFor(e);const observed=[...observations.values()].filter(o=>o.sender===e.sender&&o.document===document&&targets.some(t=>t===o.folderPath||t.startsWith(o.folderPath+path.sep)));
    for(const o of observed)await authenticObservation(e,o);
    await assertPhysicalWorkspaceWriterTargets(targets);
+   // Pin a durable editable baseline before the first bitmap mutation. This
+   // does not bake TIFFs, rename files or clear pending output revisions.
+   if(options.automaticCheckpoints && channel.startsWith('layers:') && observed.length){
+    for(const o of observed)await checkpointEditable(e,o);
+    return ordinaryOperation(e,channel,payload,targets,execute);
+   }
    for(const o of observed)if(channel.startsWith('layers:')){
     try{await pinOrdinarySources(e,o,targets);}catch(error){o.preservationError=String(error);}
    }
@@ -788,7 +794,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
     // Binding was consumed at the original mkdir receipt, not by later existence.
     await authenticObservation(e,o);
    }};
-   try{const result=await withWorkspaceInitialization(observed.filter(o=>o.parentIdentity===null).map(o=>({parent:path.join(o.folderPath,'.storyboard-workbench'),created:async()=>{if(o.rootIdentity!==await identity(o.folderPath))throw new Error('Observed workspace incarnation changed');if(o.parentIdentity!==null)throw new Error('Observed parent creator receipt repeated');o.parentIdentity=await identity(path.join(o.folderPath,'.storyboard-workbench'));await authenticObservation(e,o);}})),execute);await finalize();for(const {o,fact} of facts){fact.state=result?.ok===false||result?.recoveryIncomplete?'failed':'settled';if(result?.project)o.project=cloneControlled(result.project);if(channel==='workspace:autosave'&&payload?.project)o.project=cloneControlled(payload.project);}return result;}
+   try{const result=await withWorkspaceInitialization(observed.filter(o=>o.parentIdentity===null).map(o=>({parent:path.join(o.folderPath,'.storyboard-workbench'),created:async()=>{if(o.rootIdentity!==await identity(o.folderPath))throw new Error('Observed workspace incarnation changed');if(o.parentIdentity!==null)throw new Error('Observed parent creator receipt repeated');o.parentIdentity=await identity(path.join(o.folderPath,'.storyboard-workbench'));await authenticObservation(e,o);}})),execute);await finalize();for(const {o,fact} of facts){fact.state=result?.ok===false||result?.recoveryIncomplete?'failed':'settled';if(result?.project)o.project=cloneControlled(result.project);if(channel==='workspace:autosave'&&payload?.project)o.project=cloneControlled(payload.project);}if(options.automaticCheckpoints&&channel==='workspace:autosave'&&payload?.project?.shots?.every((shot:any)=>shot.swb?.status==='owned'))for(const {o,fact} of facts)if(fact.state==='settled')await checkpointEditable(e,o);return result;}
    catch(error){
     for(const {fact} of facts){fact.state='failed';fact.error=String(error);fact.failure=historyErrorFacts(error);fact.nativeRefusal=error instanceof ProtectedLayerWriteError&&error.effect==='refused'&&error.retainedTemporary===null&&targets.includes(error.filePath);}
     // A real producer failure and a changed document/physical binding are two
@@ -1098,6 +1104,21 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   await retainExact(l,{...l.offer,revision:`completed:${l.nonce}`,projectRaw:l.result.project,effectFacts:{state:'completed-binding-persist-ack'},continuationState:{stage:'completed',outputs:l.result.normalSaveOutputs,terminal:{schema:'swb.current-terminal.v1',files,sourcePolicy:policy}}});
   // Consume the same cold current-terminal predicate before retiring live state.
   if(!await rootRetired(l.root))throw new Error('Current terminal cannot retire Root');l.stage='completed';return true;});
+ // Establish the same byte/native-policy certified terminal as persistence,
+ // while leaving pendingBake and working TIFF pixels exactly as they are.
+ const checkpointEditable=async(e:Event,o:Observation)=>{
+  await authenticObservation(e,o);
+  if(o.facts.some(f=>f.state!=='settled'||f.error||f.settlementError)||o.preservationError||importFailures.has(o.folderPath))throw new Error('Editable checkpoint has unfinished operations');
+  if(await hasRecovery(o.folderPath))throw new Error('Editable checkpoint cannot replace recovery evidence');
+  const project=parseControlledJSON(await readExact(o.metadataPath));
+  supported(project);
+  if((project as any).pendingDeletedShots?.length)throw new Error('Editable checkpoint requires settled source inventory');
+  if(!(await readExact(o.metadataPath)).equals(encodeControlledUTF8(`${stringifyControlledJSON(project,null,2)}\n`))||!(await readExact(path.join(o.folderPath,'storyboard-script.md'))).equals(encodeControlledUTF8(serializeStoryboardScriptMarkdown(project))))throw new Error('Editable checkpoint requires exact persisted project');
+  const payload={normalSave:true,folderPath:o.folderPath,metadataPath:o.metadataPath,project,recoveryContent:{projectRaw:project,sequence:0,assetRevision:0,desiredAssets:[],effectFacts:{receipt:[],deletions:[],remainingScript:null}}};
+  const output=await run(e,payload,async()=>({project,normalSaveOutputs:[]}));
+  await persist(e,{...payload,recoverySaveNonce:output.recoverySaveNonce},async()=>undefined);
+  await acknowledge(e,{folderPath:o.folderPath,nonce:output.recoverySaveNonce,project});
+ };
  const protectedInventory=(e:Event)=>{
   const roots=new Map<string,Lease|Observation>();
   for(const o of observations.values())if(o.sender===e.sender&&(o.facts.length||o.memory))roots.set(o.folderPath,o);
@@ -1403,6 +1424,22 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   if([...protectedInventory(e).keys()].some(root=>!verified.has(root)))throw new Error('Protected inventory changed during collection readback');
   return true;
  });
+ // Silent Close is only for Main-proven healthy terminals. Failure retention
+ // remains the separate, explicitly presented recovery route.
+ const certifyEditableSet=async(e:Event,raw:unknown)=>withLayerFileOperation(async()=>{
+  current(e);const collection=raw as any;
+  if(!Array.isArray(collection?.slots)||!collection.slots.length||collection.partialContinuation!==undefined)return false;
+  for(const c of collection.slots){
+   const root=c?.folderPath;
+   if(typeof root!=='string'||importFailures.has(root)||ordinaryFacts.has(root)||historyByRoot.has(root))return false;
+   const o=observations.get(c.binding);if(!o||o.folderPath!==root)return false;
+   await authenticObservation(e,o);
+   if(o.facts.some(f=>f.state!=='settled'||f.error||f.settlementError)||c.content?.effectFacts?.unsettled)return false;
+   const l=leases.get(root);if(l&&l.stage!=='completed')return false;
+   if(!await rootRetired(root))return false;
+  }
+  return certifyRetainedSet(e,raw);
+ });
  // Preservation only. Does not complete/retire any lease or issue a Close permit.
  const certifyOrdinaryMemory=async(e:Event,c:any)=>{
   configured();const o=observations.get(c?.binding);if(!o||o.folderPath!==c.folderPath)throw new Error('Ordinary handoff observation mismatch');await authenticObservation(e,o);
@@ -1491,7 +1528,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   }
  };
  const runIpc=async(e:Event,payload:any,execute:()=>Promise<any>)=>{let started=false;try{memoryBudget?.checkPressure();return await run(e,payload,async()=>{started=true;return execute();});}catch(error){return {ok:false,error:{code:'SAVE_RECOVERY_INCOMPLETE',message:`${started?'Save execution was not certified':'Recovery preparation refused before source effects (0)'}: ${error instanceof Error?error.message:String(error)}`,recoveryIncomplete:true,publicationOrCleanup:started?'started':'not-started',metadata:started?'unknown':'not-started',sourceEffects:started?'unknown':0,sidecarEffects:leases.get(payload?.folderPath)?.facts,retainedPaths:[]}};}};
- const api={inspectPartialSaveContinuation,beginPartialSaveContinuation,persistPartialSaveContinuation,verifyFailedOrigin,retryFailedOrigin,beginHistoryAssets,stepHistoryAssets,compensateHistoryAssets,ordinary,run,runIpc,persist,acknowledge,observeWorkspace,certifyHandoff,certifyRetained,certifyRetainedSet,readReadonly:(root:string)=>withLayerFileOperation(()=>readReadonly(root)),invalidateDocument:(sender:object)=>{documents.set(sender,{});for(const o of historyOperations.values())if(o.lease.sender===sender&&!o.preserved){o.invalidated=true;void withLayerFileOperation(()=>recoverHistory(o)).catch(error=>{o.state='failed';o.lease.facts={state:'history-invalidation-recovery-failed',error:String(error)};});}}};
+ const api={inspectPartialSaveContinuation,beginPartialSaveContinuation,persistPartialSaveContinuation,verifyFailedOrigin,retryFailedOrigin,beginHistoryAssets,stepHistoryAssets,compensateHistoryAssets,ordinary,run,runIpc,persist,acknowledge,observeWorkspace,certifyHandoff,certifyRetained,certifyRetainedSet,certifyEditableSet,readReadonly:(root:string)=>withLayerFileOperation(()=>readReadonly(root)),invalidateDocument:(sender:object)=>{documents.set(sender,{});for(const o of historyOperations.values())if(o.lease.sender===sender&&!o.preserved){o.invalidated=true;void withLayerFileOperation(()=>recoverHistory(o)).catch(error=>{o.state='failed';o.lease.facts={state:'history-invalidation-recovery-failed',error:String(error)};});}}};
  // One service budget spans all Roots and survives individual method returns.
  // Nested store/readback calls inherit the same owner rather than a new cap.
  // Context binding is not admission: revocation must remain unconditional;

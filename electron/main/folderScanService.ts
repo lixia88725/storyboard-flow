@@ -1,4 +1,5 @@
 import path from "node:path";
+import { sourceFolderForManagedProject } from "./managedFolderProject.js";
 import type { WorkspaceTaskProgressReporter } from "./workspaceTaskProgress.js";
 
 export type FolderScanResult<Project, ImportedImage> = {
@@ -49,6 +50,7 @@ export const scanWorkspaceFolder = async <Project, ImportedImage>(
   readOnly = false,
   deferMissingPreviews = false
 ): Promise<FolderScanResult<Project, ImportedImage>> => {
+  const displayFolderPath = await sourceFolderForManagedProject(folderPath);
   const metadataPath = metadataPathForFolder(folderPath);
   const previewRoot = previewRootForFolder(folderPath);
   const project = await readProject(metadataPath);
@@ -57,7 +59,7 @@ export const scanWorkspaceFolder = async <Project, ImportedImage>(
     onProgress?.({ kind: "open", label: "Loading storyboard...", current: 0, total: 0 });
     return {
       folderPath,
-      folderName: path.basename(folderPath),
+      folderName: path.basename(displayFolderPath),
       metadataPath,
       project,
       images: [],
@@ -77,7 +79,7 @@ export const scanWorkspaceFolder = async <Project, ImportedImage>(
 
   return {
     folderPath,
-    folderName: path.basename(folderPath),
+    folderName: path.basename(displayFolderPath),
     metadataPath,
     project,
     images: await createImageRecords(imagePaths, previewRoot, {

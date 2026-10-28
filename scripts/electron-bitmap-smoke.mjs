@@ -4445,9 +4445,9 @@ try {
     const text = browser?.textContent ?? '';
     const modal = Boolean(document.querySelector('.save-error-modal'));
     const images = [...(browser?.querySelectorAll('img') ?? [])];
-    return browser?.open && images.length > 0 && images.every(img => img.complete && img.naturalWidth > 0) && !modal ? { text, modal, previews: images.length } : undefined;
+    return browser && browser.tagName !== 'DIALOG' && !document.querySelector('.import-button').disabled && document.querySelector('.save-main-button').disabled && images.length > 0 && images.every(img => img.complete && img.naturalWidth > 0) && !modal ? { text, modal, previews: images.length } : undefined;
   })()`), "old project displays image previews without Save-failure modal");
-  await evaluate(`Array.from(document.querySelectorAll('.folder-image-browser button')).find(button => button.textContent === 'Back to workspace')?.click()`);
+  await evaluate(`Array.from(document.querySelectorAll('.folder-image-browser button')).find(button => button.textContent === '返回工作区')?.click()`);
   await waitFor(() => evaluate(`!document.querySelector('.folder-image-browser')`), "close image browser");
   const currentShotIds = await evaluate(`Array.from(document.querySelectorAll('[data-shot-id]')).map(node => node.dataset.shotId)`);
   if (JSON.stringify(currentShotIds) !== JSON.stringify(previousShotIds)) throw new Error('Unsupported old project replaced the displayed project');

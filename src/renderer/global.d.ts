@@ -184,6 +184,7 @@ declare global {
       cleanupMergedLayerSources: (payload: import("../../electron/main/mergeSourceCleanup").MergeCleanupPayload) =>
         Promise<{ deleted: string[]; retained: string[]; errors: string[] }>;
       createBlankShot: (folderPath: string, options: BlankShotOptions) => Promise<ImportedImage>;
+      rememberOpenedFolder: (folderPath: string) => Promise<void>;
       getRecentFolders: () => Promise<string[]>;
       getToolRadialMenu: () => Promise<unknown>;
       setToolRadialMenu: (config: unknown) => Promise<unknown>;

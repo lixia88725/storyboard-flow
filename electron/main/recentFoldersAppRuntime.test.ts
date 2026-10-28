@@ -66,3 +66,9 @@ describe("recentFoldersAppRuntime", () => {
     expect(flushChangedFolders).toHaveBeenCalledOnce();
   });
 });
+it('wires successful activation into the existing recent-folder writer', async () => {
+  const rememberFolder = vi.fn(async () => {});
+  const handlers = createRecentFoldersAppHandlers({ read: async () => [], flushChangedFolders: () => {}, rememberFolder });
+  await handlers.rememberFolder!('/scene');
+  expect(rememberFolder).toHaveBeenCalledExactlyOnceWith('/scene');
+});

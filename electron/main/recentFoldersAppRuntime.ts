@@ -44,12 +44,15 @@ export const createRecentFoldersAppRuntime = <ApplicationMenu = Electron.Menu>({
 export type RecentFoldersAppHandlersOptions = {
   read: () => Promise<string[]>;
   flushChangedFolders: () => void;
+  rememberFolder?: (folderPath: string) => Promise<void>;
 };
 
 export const createRecentFoldersAppHandlers = ({
   read,
-  flushChangedFolders
+  flushChangedFolders,
+  rememberFolder
 }: RecentFoldersAppHandlersOptions): RecentIpcHandlers => ({
+  ...(rememberFolder ? { rememberFolder } : {}),
   getFolders: async () => {
     const folders = await read();
     flushChangedFolders();

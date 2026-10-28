@@ -4,7 +4,7 @@ Storyboard Flow 是一个本地优先的故事板工作台。V1 聚焦：打开�
 
 ## Naming And Compatibility
 
-开发阶段只保证当前版本新建项目。缺少当前输出状态的旧测试项目不再自动校验或迁移；原文件保持不变，请选择新文件夹开始。普通图片的显式 Import 仍可使用。不要为绕过提示删除 `.storyboard-workbench`，其中包含可编辑图层。
+开发阶段只保证当前版本新建项目。缺少当前输出状态的旧测试项目不再自动校验或迁移；原文件保持不变，点击左上角 Import 可在当前文件夹内建立可编辑副本。普通图片的显式 Import 仍可使用。不要为绕过提示删除 `.storyboard-workbench`，其中包含可编辑图层。
 
 `Storyboard Flow` 是当前产品名，UI、README、GitHub 和新用户可见文案都应使用这个名字。
 
@@ -66,7 +66,7 @@ Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`
 
 - 一个本地图像文件夹就是一场戏。
 - 顶部地址栏输入或选择最近文件夹后，当前项目和普通 PNG/JPEG/TIFF 文件夹按原流程打开。不能直接编辑的旧项目会进入图片浏览，不再因旧项目校验而完全看不到图片。
-- 图片浏览支持根目录 PNG/JPEG/TIFF/WebP/GIF/AVIF，不扫描子目录或隐藏图层。点击 `Import to new project…`，选择原目录之外的存放位置，软件自动创建新文件夹并转换成可编辑项目。原文件不改动；仅导入图片当前可见画面（动画首帧），不迁移旧图层、对白和分镜文字。单个图片预览失败不影响其他图片显示。
+- 图片浏览支持根目录 PNG/JPEG/TIFF/WebP/GIF/AVIF，不扫描子目录或隐藏图层。点击左上角 `Import`，软件自动在原图片文件夹内的 `.storyboard-flow/` 建立可编辑项目，不再询问 Destination。地址栏和最近打开仍显示原文件夹；以后打开原文件夹，自动恢复内部项目。绘画自动保存到内部 PNG/项目记录；正常关闭等待持久化确认，不要求先点 Save。显式 Save 同时更新内部工作 TIFF 和对应根目录图片，保留原文件名及编码；首次覆盖前在 `.storyboard-flow/.original-images/` 保留原件。外部修改或无法确认的写入会保留现场并提示；仅导入图片当前可见画面（动画首帧），不迁移旧图层、对白和分镜文字。单个图片预览失败不影响其他图片显示。
 - 内部状态自动保存到当前文件夹的 `.storyboard-workbench/storyboard.project.json`。
 - 分镜脚本文字同步到根目录 `storyboard-script.md`；软件内编辑会自动写入，外部修改需要点击 `Import` 导入。
 - numbered-list Markdown 文件可创建新的 SWB project：每个列表项变成一张 blank shot，正文写入该 shot 的 `scriptText`。
@@ -76,10 +76,11 @@ Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`
 
 ## Save
 
-`Save` 会执行两件事：
+`Save` 会执行以下操作：
 
 - 按软件内 storyboard 顺序安全同步真实图片文件名。
 - 把当前 SWB 图层状态写入工作 TIFF：单层 shot 保存为普通单层 TIFF；多 bitmap layer shot 保存为 Photoshop-readable layered TIFF，并保留 SWB XMP metadata。
+- 从旧图片文件夹 Import 创建的内部项目，还会更新原文件夹的对应图片（保持原名与格式）；首次覆盖前保留原件备份。编辑过程自动保存到内部项目，正常关闭无需先点 Save。
 
 当前命名规则：
 

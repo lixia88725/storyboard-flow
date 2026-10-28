@@ -1,3 +1,4 @@
+import { prepareManagedSourceSave } from './managedSourceSave';
 import { afterEach, expect, it, vi } from "vitest";
 import * as fs from "node:fs/promises";
 import path from "node:path";
@@ -161,7 +162,7 @@ it.each([false, true])("actual Save persistence uncertainty retains installed TI
   const block = source.slice(source.indexOf("const saveWorkspace ="), source.indexOf("const assertRenamePlanSafe ="));
   const compiled = ts.transpileModule(block, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const bindings = {
-    withLayerFileOperation,
+    prepareManagedSourceSave, withLayerFileOperation,
     stagePendingDeletedShotFiles: async () => ({ project: f.project }),
     importProjectToSwbFormat: async () => ({ project: f.project, tiffWriteShotIds: [], rollback: async () => { order.push("import"); await f.originals(); } }),
     saveProgressShotIds: () => undefined, countSaveProgressShots: () => 2,

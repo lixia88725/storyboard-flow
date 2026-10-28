@@ -11,6 +11,7 @@ export const createRecoveryCloseBarrier = (ports: {
   requestId: () => string;
   showMessageBox: (window: RecoveryCloseWindow, options: MessageBoxOptions) => Promise<{ response: number }>;
   cancelled: (window: RecoveryCloseWindow, reason: string) => void;
+  certifyEditableSet?: (event: Pick<IpcMainInvokeEvent, "sender" | "senderFrame">, collection: unknown) => Promise<boolean>;
   certifyRetained?: (event: Pick<IpcMainInvokeEvent, "sender" | "senderFrame">, capture: unknown) => Promise<boolean>;
   certifyRetainedSet?: (event: Pick<IpcMainInvokeEvent, "sender" | "senderFrame">, collection: unknown) => Promise<boolean>;
 }) => {
@@ -111,6 +112,19 @@ export const createRecoveryCloseBarrier = (ports: {
         }
         p.retainedCapture = captured; p.stage = 'verify';
         p.window.webContents.send('app:prepareClose', {requestId: result.requestId, purpose: 'reload'}); return;
+      }
+      if (ports.certifyEditableSet && result.capture) {
+        const captured = JSON.stringify(result.capture);
+        p.stage = 'prompt';
+        let certified = false;
+        try { certified = await ports.certifyEditableSet(event, JSON.parse(captured)); } catch { /* Failure stays visible below. */ }
+        if (pending.get(result.requestId) !== p || !authentic(event, p) || busy.has(p.sender)) {
+          cancel(result.requestId, 'Close cancelled: content changed during persistence'); return;
+        }
+        if (certified) {
+          p.retainedCapture = captured; p.stage = 'verify';
+          p.window.webContents.send('app:prepareClose', { requestId: result.requestId }); return;
+        }
       }
       if (held.has(event.sender)) {
         const collection = result.capture !== null && typeof result.capture === "object" && Object.prototype.hasOwnProperty.call(result.capture, "slots");

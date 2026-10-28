@@ -10,7 +10,7 @@ const contexts = new WeakMap<object, Record<string, any>>();
 export function appCallerAdapterScope(bindings: Record<string, any>) {
   const adapter = bindings.renderAdapter ?? bindings.normalSaveAppAdapterRef?.current;
   const context = adapter && contexts.get(adapter) || bindings.projectRef && contexts.get(bindings.projectRef);
-  return { formatWorkspaceOpenError, setFolderBrowser: () => {}, folderOpenRequestRef: context?.folderOpenRequestRef ?? { current: 0 }, ...context, ...bindings, renderAdapter: adapter ?? context?.renderAdapter };
+  return { folderImport: { remember: () => {}, displayPath: (p: string) => p, read: () => ({ busy: false, folder: undefined }) }, formatWorkspaceOpenError, setFolderBrowser: () => {}, setFolderInputValue: () => {}, folderOpenRequestRef: context?.folderOpenRequestRef ?? { current: 0 }, ...context, ...bindings, renderAdapter: adapter ?? context?.renderAdapter };
 }
 
 /** Execute App's ACTUAL slot factory options. Only pre-existing fixture IPC/UI
@@ -51,6 +51,7 @@ export async function createAppRootActor(ports: Parameters<typeof createNormalSa
     captureSaveStatus: () => ports.captureSaveStatus?.() ?? noUI
   };
   const bindings = {
+    folderImport: { displayPath: (p: string) => p },
     activeViewProjectRef: ports.projectRef, workspaceSlotsRef,
     setProject: (p: typeof initial) => { ports.projectRef.current = p; ports.setProject(p); },
     window: { storyboard: Object.assign(ports.api(), { observeWorkspace: open?.observeWorkspace ?? (async (folderPath: string) => ({ binding: `fixture-observation:${folderPath}`, folderPath, metadataPath: paths.metadataPath! })) }) },

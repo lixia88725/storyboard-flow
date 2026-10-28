@@ -1,3 +1,4 @@
+import { prepareManagedSourceSave } from './managedSourceSave';
 import { isCertifiedPendingBakeEntry } from "../shared/pendingBakeRules";
 import { afterEach, expect, it, vi } from "vitest";
 import * as fs from "node:fs/promises";
@@ -70,7 +71,7 @@ async function fixture(fault?: "md" | "json" | "trash" | "cleanup") {
   const mdPath = path.join(root, "storyboard-script.md");
   const effects: string[] = [];
   let beforeEnsure: (() => Promise<void>) | undefined;
-  const bindings = { ...tiffPreparation, removeOwnedFile, withLayerFileOperation,
+  const bindings = { prepareManagedSourceSave, ...tiffPreparation, removeOwnedFile, withLayerFileOperation,
     isCertifiedPendingBakeEntry, createWorkspacePendingAppHandlers, beginPendingFileTransaction,
     path, randomUUID, createHash, readFile: fs.readFile, mkdir: fs.mkdir, rm: fs.rm, unlink: fs.unlink,
     rename: async (from: string, to: string) => { if (fault === "json" && to === metadataPath) throw new Error("required JSON install failed"); await fs.rename(from, to); if (to === metadataPath) effects.push("json"); },

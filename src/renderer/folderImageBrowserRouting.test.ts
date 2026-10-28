@@ -18,8 +18,9 @@ function fixture() {
   const requestOpen = vi.fn(async (..._args: any[]) => true);
   const setFolderBrowser = vi.fn(), setStatus = vi.fn();
   const bindings = {
+    folderImport: { remember: vi.fn(), displayPath: (p: string) => p, read: () => ({ busy: false }) },
     folderOpenRequestRef: { current: 0 }, window: { storyboard: { inspectFolderImages } },
-    folderInputValue: '/old', setStatus, setWorkspaceTask: vi.fn(), setFolderBrowser,
+    folderInputValue: '/old', setFolderInputValue: vi.fn(), setStatus, setWorkspaceTask: vi.fn(), setFolderBrowser,
     workspaceSlotsRef: { current: { requestOpen } }, formatWorkspaceOpenError,
     blankShotPreset: '16:9', prepareNormalSaveImportMatte: vi.fn(), prepareNormalSaveScriptMatte: vi.fn()
   };
@@ -65,4 +66,34 @@ it('explicit new-folder conversion imports inside the staging slot before public
   expect(f.inspectFolderImages).not.toHaveBeenCalled();
   expect(events).toEqual(['load', 'import', 'publish']);
   expect(f.setFolderBrowser).toHaveBeenLastCalledWith(undefined);
+});
+
+it('does not switch folders while conversion is still settling', async () => {
+  const f = fixture(); f.folderImport.read = () => ({ busy: true });
+  expect(await f.open('/other')).toBe(false);
+  expect(f.inspectFolderImages).not.toHaveBeenCalled();
+  expect(f.requestOpen).not.toHaveBeenCalled();
+});
+
+it('opens the managed child while retaining the source display path and does not re-import', async () => {
+  const f = fixture();
+  f.inspectFolderImages.mockResolvedValue({ ...inspection('/old', false), editableFolderPath: '/old/.storyboard-flow' } as any);
+  expect(await f.open('/old')).toBe(true);
+  expect(f.requestOpen).toHaveBeenCalledWith('/old/.storyboard-flow', expect.any(Function));
+  expect(f.folderImport.remember).toHaveBeenCalledWith('/old/.storyboard-flow', '/old');
+});
+it('does not offer a fresh conversion when an existing managed project refuses Open', async () => {
+  const f = fixture();
+  f.inspectFolderImages.mockResolvedValue({ ...inspection('/old', false), editableFolderPath: '/old/.storyboard-flow' } as any);
+  f.requestOpen.mockResolvedValue(false);
+  await f.open('/old'); expect(f.setFolderBrowser).toHaveBeenCalledWith(expect.objectContaining({ browse: true, issue: expect.stringContaining('暂时无法打开') }));
+});
+it('records a successfully activated held workspace for startup, never a refused open', async () => {
+  const f = fixture(), rememberOpenedFolder = vi.fn(async () => {});
+  Object.assign(f.window.storyboard, { rememberOpenedFolder });
+  f.inspectFolderImages.mockResolvedValue({ ...inspection('/old', false), editableFolderPath: '/old/.storyboard-flow' } as any);
+  await f.open('/old');
+  expect(rememberOpenedFolder).toHaveBeenCalledExactlyOnceWith('/old/.storyboard-flow');
+  f.requestOpen.mockResolvedValue(false); await f.open('/old');
+  expect(rememberOpenedFolder).toHaveBeenCalledTimes(1);
 });

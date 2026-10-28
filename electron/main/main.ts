@@ -1,3 +1,4 @@
+import { prepareManagedSourceSave } from './managedSourceSave.js';
 import {
   app,
   BrowserWindow,
@@ -42,6 +43,7 @@ import { prepareProtectedLayerReplacement } from "./protectedLayerReplacementPre
 import { withLayerFileOperation } from "./layerFileOperationQueue.js";
 import { bitmapLayersForShot } from "./bitmapLayerOrdering.js";
 import { assertEditableWorkspaceFormat } from "../shared/workspaceFormat.js";
+import { sourceFolderForManagedProject } from './managedFolderProject.js';
 import { registerFolderImageBrowserHandlers } from './ipc/folderImageBrowserHandlers.js';
 import {
   exportPhotoshopLayeredTiffs,
@@ -398,6 +400,7 @@ const originEnrollment = createOriginEnrollment({
 // the layer-file handlers, admitted against the measured policy in memoryPolicy.ts.
 const mainMemoryBudget = getMainMemoryBudget();
 const preparedSave = createPreparedWorkspaceSave({
+  automaticCheckpoints: true,
   ownerFromSender: sender => BrowserWindow.fromWebContents(sender) ?? undefined,
   budget: recoveryBudget,
   memoryBudget: mainMemoryBudget,
@@ -426,6 +429,7 @@ const ownedStageRetryService = createOwnedStageRetryService<Parameters<typeof pr
 const recoveryCloseBarrier = createRecoveryCloseBarrier({
   // Only the explicitly prepared finite Save domain can certify this close.
   // Unsupported producer inventories stay protected in RAM; no writer unlock.
+  certifyEditableSet: preparedSave.certifyEditableSet,
   certifyRetained: preparedSave.certifyRetained,
   certifyRetainedSet: preparedSave.certifyRetainedSet,
   requestId: randomUUID,
@@ -527,16 +531,7 @@ app.on("window-all-closed", () => {
 const physicalWriterIpcMain = createWorkspacePhysicalWriterGate(ipcMain, { save: preparedSave.runIpc, persist: preparedSave.persist, ordinary: preparedSave.ordinary });
 const registerIpcHandlers = () => {
   const ipcMain = physicalWriterIpcMain;
-  registerFolderImageBrowserHandlers(ipcMain, async event => {
-    const owner = BrowserWindow.fromWebContents(event.sender);
-    if (!owner || owner.isDestroyed()) throw new Error('Import window unavailable');
-    const result = await dialog.showOpenDialog(owner, {
-      title: 'Choose where to create the new Storyboard Flow project',
-      buttonLabel: 'Create project here', properties: ['openDirectory', 'createDirectory']
-    });
-    if (owner.isDestroyed() || owner.webContents !== event.sender) throw new Error('Import window changed');
-    return result.canceled ? undefined : result.filePaths[0];
-  });
+  registerFolderImageBrowserHandlers(ipcMain);
   ipcMain.handle("recovery:readReadonly", (event, folderPath: string) => {
     if (event.senderFrame !== event.sender.mainFrame) throw new Error("Recovery read requires current top frame");
     return preparedSave.readReadonly(folderPath);
@@ -868,6 +863,7 @@ const registerIpcHandlers = () => {
     ipcMain,
     createRecentFoldersAppHandlers({
       read: readRecentFolders,
+      rememberFolder: addRecentFolder,
       flushChangedFolders: recentFoldersRuntime.flushChangedFolders
     })
   );
@@ -898,6 +894,7 @@ const saveWorkspace = async (
 
   try {
     if (payload.normalSave) await assertNormalSaveAdmission(payload, false);
+    const publishSourceImages = await prepareManagedSourceSave(payload.folderPath, payload.project.shots);
     const stagedPending = await stagePendingDeletedShotFiles(payload.project, payload.folderPath);
     stagedPendingDeletedFiles = stagedPending.appliedMoves;
     projectToSave = stagedPending.project;
@@ -964,6 +961,8 @@ const saveWorkspace = async (
   if (trashResult.error) {
     throw trashResult.error;
   }
+
+  await publishSourceImages?.(trashResult.project.shots);
 
   if (payload.normalSave) {
     for (const ack of outputAcks) {
@@ -1353,7 +1352,7 @@ const readRecentFolders = async (): Promise<string[]> => {
 };
 
 const addRecentFolder = async (folderPath: string): Promise<void> => {
-  await recentFoldersRuntime.add(folderPath);
+  await recentFoldersRuntime.add(await sourceFolderForManagedProject(folderPath));
 };
 
 const removeRecentFolder = async (folderPath: string): Promise<void> => {

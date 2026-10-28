@@ -57,3 +57,23 @@ it('unsettled writer and malformed capture cancel/refuse without destroying cont
  await f.ipc.get('app:finishCloseCapture')!(f.event,f.result(id,{busy:true}));expect(f.destroyed).toBe(0);
 });
 
+
+it('healthy editable checkpoints close silently only after an unchanged second capture; failure still prompts', async () => {
+  let destroyed = 0, prompts = 0, healthy = true;
+  const sent: any[] = [];
+  const sender = { id: 19, mainFrame: {}, send: (_: string, payload: unknown) => sent.push(payload) };
+  const window = { webContents: sender, destroy: () => destroyed++ };
+  const event = { sender, senderFrame: sender.mainFrame } as never;
+  const barrier = createRecoveryCloseBarrier({ requestId: () => 'silent', cancelled: () => {},
+    certifyEditableSet: async () => healthy, certifyRetainedSet: async () => true,
+    showMessageBox: async () => { prompts++; return { response: 1 }; } });
+  const capture = { requestId: 'silent', captureAvailable: true, busy: false, recoveryRequired: true, hasUnsavedChanges: true, capture: { slots: [{ content: { sequence: 3 } }] } };
+  barrier.begin(window); await barrier.finishCapture(event, capture);
+  expect(prompts).toBe(0); expect(destroyed).toBe(0); expect(sent).toHaveLength(2);
+  await barrier.finishCapture(event, { ...capture, capture: { slots: [{ content: { sequence: 4 } }] } });
+  expect(destroyed).toBe(0);
+  barrier.begin(window); await barrier.finishCapture(event, capture); await barrier.finishCapture(event, capture);
+  expect(destroyed).toBe(1); expect(prompts).toBe(0);
+  healthy = false; barrier.begin(window); await barrier.finishCapture(event, capture);
+  expect(prompts).toBe(1); expect(destroyed).toBe(1);
+});

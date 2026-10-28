@@ -20,6 +20,7 @@ const blankShotPresets: Array<{ id: BlankShotPreset; label: string; detail: stri
 ];
 
 type TopbarProps = {
+  isFolderPreview?: boolean;
   addShotMenuRef: RefObject<HTMLDivElement | null>;
   blankShotPreset: BlankShotPreset;
   boardViewMode: BoardViewMode;
@@ -72,6 +73,7 @@ type TopbarProps = {
 };
 
 export const Topbar = ({
+  isFolderPreview = false,
   addShotMenuRef,
   blankShotPreset,
   boardViewMode,
@@ -126,10 +128,10 @@ export const Topbar = ({
     <div className="import-control" ref={importHelpRef}>
       <button
         type="button"
-        className={isImportNudging ? "import-button is-nudging" : "import-button"}
+        className={`import-button${isImportNudging ? " is-nudging" : ""}${isFolderPreview ? " is-conversion-required" : ""}`}
         onClick={() => void handleImportSwbFormat()}
         disabled={!needsSwbImport || isWorkspaceTaskRunning}
-        title="Import image or storyboard-script.md changes into Storyboard Flow"
+        title={isFolderPreview ? "导入到新文件夹并开始编辑" : "Import image or storyboard-script.md changes into Storyboard Flow"}
       >
         {workspaceTask?.kind === "import" ? "Importing..." : "Import"}
       </button>
@@ -179,7 +181,7 @@ export const Topbar = ({
             <span className="save-caret" aria-hidden="true" />
           </button>
         </div>
-        {isSaveMenuOpen ? (
+        {isSaveMenuOpen && !isFolderPreview ? (
           <div className="save-menu" aria-label="Save naming options">
             <label className="save-menu-field">
               <span>Project</span>
@@ -224,6 +226,7 @@ export const Topbar = ({
         <button
           type="button"
           className={boardViewMode === "storyboard" ? "selected" : ""}
+          disabled={isFolderPreview}
           aria-label="Show storyboard board"
           aria-pressed={boardViewMode === "storyboard"}
           title="Storyboard board"
@@ -234,6 +237,7 @@ export const Topbar = ({
         <button
           type="button"
           className={boardViewMode === "japaneseStoryboard" ? "selected" : ""}
+          disabled={isFolderPreview}
           aria-label="Show Japanese storyboard sheet"
           aria-pressed={boardViewMode === "japaneseStoryboard"}
           title="Japanese storyboard sheet"
@@ -254,7 +258,7 @@ export const Topbar = ({
                 ? "Turn off matte for every storyboard in this scene"
                 : "Configure matte for every storyboard in this scene"
             }
-            disabled={isMatteConfigurationDisabled}
+            disabled={isFolderPreview || isMatteConfigurationDisabled}
             onClick={() => {
               if (sceneMatteMode) {
                 setIsMatteMenuOpen(false);
@@ -278,13 +282,13 @@ export const Topbar = ({
                   : "Place dialogue on every storyboard in this scene"
                 : "Configure a matte before placing dialogue"
             }
-            disabled={isDialogueOverlayDisabled || !isSceneMatteConfigured}
+            disabled={isFolderPreview || isDialogueOverlayDisabled || !isSceneMatteConfigured}
             onClick={() => void handlePlaceDialogueOnMatte()}
           >
             <DialogueOverlayIcon />
           </button>
         </div>
-        {isMatteMenuOpen ? (
+        {isMatteMenuOpen && !isFolderPreview ? (
           <div className="matte-menu" aria-label="Storyboard matte mode">
             <button
               type="button"
@@ -327,11 +331,12 @@ export const Topbar = ({
           onSubmit={(event) => {
             event.preventDefault();
             setIsRecentMenuOpen(false);
-            void handleOpenFolderByPath();
+            if (!isWorkspaceTaskRunning) void handleOpenFolderByPath();
           }}
         >
           <input
             aria-label="Folder path"
+            disabled={isWorkspaceTaskRunning}
             value={folderInputValue}
             onChange={(event) => setFolderInputValue(event.target.value)}
             placeholder="/Users/name/Pictures/scene"
@@ -342,7 +347,7 @@ export const Topbar = ({
           className="address-recent-toggle"
           aria-label="Recent folders"
           aria-expanded={isRecentMenuOpen}
-          disabled={recentFolders.length === 0}
+          disabled={isWorkspaceTaskRunning || recentFolders.length === 0}
           onClick={() => setIsRecentMenuOpen((isOpen) => !isOpen)}
         >
           <span className="address-caret" aria-hidden="true" />
@@ -353,6 +358,7 @@ export const Topbar = ({
           {recentFolders.map((recentFolder) => (
             <button
               key={recentFolder}
+              disabled={isWorkspaceTaskRunning}
               type="button"
               onClick={() => {
                 setIsRecentMenuOpen(false);
@@ -396,7 +402,7 @@ export const Topbar = ({
             <span className="add-shot-caret" aria-hidden="true" />
           </button>
         </div>
-        {isAddShotMenuOpen ? (
+        {isAddShotMenuOpen && !isFolderPreview ? (
           <div className="add-shot-menu" aria-label="Add shot aspect ratio">
             {blankShotPresets.map((preset) => (
               <button
@@ -419,6 +425,7 @@ export const Topbar = ({
       <button
         type="button"
         className={`pending-shelf-toggle ${isParkingShelfOpen ? "selected" : ""}`}
+        disabled={isFolderPreview}
         aria-label="Toggle pending sidebar"
         aria-expanded={isParkingShelfOpen}
         title="Pending sidebar"

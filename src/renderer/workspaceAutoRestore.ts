@@ -10,3 +10,24 @@
  */
 export const startupResumeTarget = (recentFolders: readonly string[]): string | undefined =>
   recentFolders[0];
+
+// The legacy external-change probe may generate previews/script files. Old
+// folders must reach the read-only browser before that probe is even admitted.
+export const startupRecoveryMode = async (
+  target: string,
+  ports: {
+    inspect: (folder: string) => Promise<{ browse: boolean; editableFolderPath?: string }>;
+    probe: (folder: string) => Promise<unknown>;
+    isCurrent: () => boolean;
+  }
+): Promise<'normal' | 'recovery' | 'superseded'> => {
+  const inspection = await ports.inspect(target);
+  if (!ports.isCurrent()) return 'superseded';
+  if (inspection.browse) return 'normal';
+  try { await ports.probe(inspection.editableFolderPath ?? target); }
+  catch (error) {
+    if (!ports.isCurrent()) return 'superseded';
+    if (/protected by a recovery inventory/.test(String(error))) return 'recovery';
+  }
+  return ports.isCurrent() ? 'normal' : 'superseded';
+};

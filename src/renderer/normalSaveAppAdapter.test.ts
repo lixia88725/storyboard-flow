@@ -125,7 +125,7 @@ async function actualCaller(name: string, bindings: Record<string, unknown>, arg
   let publication: ts.VariableDeclaration | undefined;
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n)) { if (n.name.getText(ast) === name) decl = n; if (n.name.getText(ast) === "publishNormalSaveFolderScan") publication = n; } ts.forEachChild(n, walk); }; walk(ast);
   const helper = name === "handleOpenFolderByPath" || name === "loadFolderScan" ? `const ${publication!.getText(ast)};` : "";
-  bindings = { folderOpenRequestRef: { current: 0 }, setFolderBrowser: () => {}, formatWorkspaceOpenError, renderAdapter: (bindings.normalSaveAppAdapterRef as {current:unknown})?.current, ...bindings };
+  bindings = { folderImport: { remember: () => {}, displayPath: (p: string) => p, read: () => ({ busy: false, folder: undefined }) }, folderOpenRequestRef: { current: 0 }, setFolderBrowser: () => {}, setFolderInputValue: () => {}, formatWorkspaceOpenError, renderAdapter: (bindings.normalSaveAppAdapterRef as {current:unknown})?.current, ...bindings };
   if (name === 'handleOpenFolderByPath') {
     const publish = new Function(...Object.keys(bindings), ts.transpile(`${helper} return publishNormalSaveFolderScan;`, {target:ts.ScriptTarget.ES2022}))(...Object.values(bindings));
     const queue = bindings.queue as ReturnType<typeof createBitmapLayerWriteQueue>;

@@ -3,7 +3,7 @@ import type { PartialSaveBootstrap, PartialSaveEdit, ReadonlyRecovery } from '..
 import type { Project } from '../shared/types';
 import type { WorkspaceRootObservation } from './workspaceSlots';
 import { ownedStageRetryMessage } from './ownedStageRetryDisplay';
-import { startupResumeTarget } from './workspaceAutoRestore';
+import { startupRecoveryMode, startupResumeTarget } from './workspaceAutoRestore';
 import { App } from './App';
 /** Recovery presentation never mounts App/SketchPad, plans or writer controllers.
  * All retained descriptions are text; only certified raster data URLs are decoded. */
@@ -27,17 +27,19 @@ export const RecoveryEntry = () => {
    const target=startupResumeTarget(await window.storyboard.getRecentFolders());
    if(cancelled||entryTicket.current!==ticket)return;
    if(!target){setNormal(true);return;}
-   // A protected workspace refuses ordinary writers before any effect; the
-   // external-change check hits the same guard without writing, so it separates
-   // "open normally" from "show the recovered content read-only".
-   let blocked=false;
-   try{await window.storyboard.checkExternalChanges({folderPath:target,metadataPath:`${target}/.storyboard-workbench/storyboard.project.json`,project:{id:'probe',name:'probe',shots:[],dialogues:[]}} as any);}
-   catch(error){blocked=/protected by a recovery inventory/.test(String(error));}
-   if(cancelled||entryTicket.current!==ticket)return;
-   if(!blocked){setNormal(true);return;}
-   setFolder(target);
+   // Browse-only sources must not enter the old external-change probe: that
+   // path may create a missing Markdown mirror before App has opened anything.
+   let recoveryTarget=target;
+   const mode=await startupRecoveryMode(target,{
+    inspect:path=>window.storyboard.inspectFolderImages(path),
+    probe:path=>{recoveryTarget=path;return window.storyboard.checkExternalChanges({folderPath:path,metadataPath:`${path}/.storyboard-workbench/storyboard.project.json`,normalSave:true,project:{id:'probe',name:'probe',shots:[],dialogues:[]}} as any);},
+    isCurrent:()=>!cancelled&&entryTicket.current===ticket
+   });
+   if(mode==='superseded')return;
+   if(mode==='normal'){setNormal(true);return;}
+   setFolder(recoveryTarget);
    setIssue('This workspace is protected because an earlier session did not close cleanly. Showing it read-only; nothing on disk was changed.');
-   await read(target);
+   await read(recoveryTarget);
   }catch{if(!cancelled&&entryTicket.current===ticket)setNormal(true);}
  })();return()=>{cancelled=true;};},[]);
  useEffect(()=>()=>{active.current=undefined;readTicket.current++;entryTicket.current++;},[]);

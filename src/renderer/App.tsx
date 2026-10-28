@@ -93,6 +93,7 @@ import { IMPORT_REQUIRED_HELP } from "./importRequiredHelp";
 import { formatSaveFailureStatus } from "./saveErrors";
 import { formatWorkspaceOpenError } from "./workspaceOpenErrors";
 import { FolderImageBrowser } from './FolderImageBrowser';
+import { useFolderImageImportController } from './folderImageImportController';
 import type { FolderImages } from '../../electron/shared/folderImages';
 import { useStoryboardMarqueeController } from "./storyboardMarqueeController";
 import { measureStoryboardGridColumnsFromDom } from "./storyboardGridMeasurement";
@@ -233,7 +234,7 @@ export const App = () => {
   const { isImageImportLocked: isLegacyImageImportLocked, setWorkspaceTask } = useImageImportAdmission(
     projectRef, workspaceTask, setWorkspaceTaskState
   );
-  const isImageImportLocked = () => !!workspaceSlotsRef.current?.closing || !!renderSlot && (renderSlot.readonly || renderSlot.lifecycle !== 'active') || isLegacyImageImportLocked();
+  const isImageImportLocked = () => !!folderImport.read().folder || !!workspaceSlotsRef.current?.closing || !!renderSlot && (renderSlot.readonly || renderSlot.lifecycle !== 'active') || isLegacyImageImportLocked();
   const [activeDialogue, setActiveDialogue] = useState<Dialogue | undefined>();
   const [shotBitmapRevisionById, setShotBitmapRevisionById] = useState<
     Record<string, number>
@@ -308,7 +309,13 @@ export const App = () => {
   const [scriptImportNeeded, setScriptImportNeeded] = useState(false);
   const [autosaveError, setAutosaveError] = useState<AutosaveErrorNotice | undefined>();
   const [saveErrorDialog, setSaveErrorDialog] = useState<string | undefined>();
-  const [folderBrowser, setFolderBrowser] = useState<FolderImages | undefined>();
+  const { folder: folderBrowser, busy: folderImportBusy, message: folderImportMessage, controller: folderImport } = useFolderImageImportController({
+    copy: source => window.storyboard.copyFolderImagesForImport(source),
+    open: async (target, required) => Boolean(await handleOpenFolderByPath(target, required, true))
+  });
+  const setFolderBrowser = (folder: FolderImages | undefined) => {
+    if (folderImport.show(folder) && folder) setFolderInputValue(folder.folderPath);
+  };
   const folderOpenRequestRef = useRef(0);
   const [storyboardScriptImportDraft, setStoryboardScriptImportDraftState] =
     useState<StoryboardScriptImportDraft | undefined>();
@@ -1016,7 +1023,7 @@ export const App = () => {
           const view = slot.view as ReturnType<typeof captureSlotView>;
           aiApplyWorkspaceIdentityRef.current = {};
           folderPathRef.current = slot.root!.folderPath; metadataPathRef.current = slot.root!.metadataPath;
-          setFolderPath(slot.root!.folderPath); setMetadataPath(slot.root!.metadataPath); setFolderInputValue(slot.root!.folderPath);
+          setFolderPath(slot.root!.folderPath); setMetadataPath(slot.root!.metadataPath); setFolderInputValue(folderImport.displayPath(slot.root!.folderPath));
           restoreHistoryData(view.history); setSelectedShotIds([...view.selectedShotIds]);
           selectedShotIdsRef.current = [...view.selectedShotIds]; dirtyShotIdsRef.current = new Set(view.dirtyShotIds);
           setFileNameSyncState(view.fileNameSyncState); fileNameSyncStateRef.current = view.fileNameSyncState;
@@ -1075,6 +1082,7 @@ export const App = () => {
   });
 
   const refreshExternalImportState = async () => {
+    if (folderImport.read().folder) return;
     // Focus/debounce callbacks may outlive the editable incarnation. Do not
     // enter Owner (and overwrite its lastError) for held/frozen/inactive slots.
     const scope = workspaceSlotsRef.current!.captureScope(renderSlot);
@@ -1100,7 +1108,7 @@ export const App = () => {
   };
 
   useWorkspaceExternalRefreshController({
-    folderPath: renderSlot?.readonly ? undefined : folderPath,
+    folderPath: folderBrowser || renderSlot?.readonly ? undefined : folderPath,
     focusRefreshKey: metadataPath,
     refreshExternalImportState
   });
@@ -1116,7 +1124,7 @@ export const App = () => {
     aiApplyWorkspaceIdentityRef.current = {};
     scriptImportCheckIdRef.current += 1;
     folderPathRef.current = scan.folderPath; metadataPathRef.current = scan.metadataPath;
-    setFolderPath(scan.folderPath); setFolderInputValue(scan.folderPath); setMetadataPath(scan.metadataPath);
+    setFolderPath(scan.folderPath); setFolderInputValue(folderImport.displayPath(scan.folderPath)); setMetadataPath(scan.metadataPath);
     if (clearRecoveryRequired) workspaceRecoveryRequiredRef.current = undefined;
     setShotBitmapRevisionById(current => bumpWorkspaceShotBitmapRevisions(current, loaded));
     const obligations = Object.values(pendingBakeForProject(loaded).shots);
@@ -1148,7 +1156,8 @@ export const App = () => {
 
   };
 
-  const handleOpenFolderByPath = async (pathOverride?: string, importImages = false) => {
+  const handleOpenFolderByPath = async (pathOverride?: string, importImages = false, preparedImport = false) => {
+    if (folderImport.read().busy && !importImages && !preparedImport) return false;
     const openRequest = ++folderOpenRequestRef.current;
     let inspection: FolderImages | undefined;
     if (!window.storyboard) {
@@ -1182,7 +1191,9 @@ export const App = () => {
             return false;
           }
         }
-        const opened = await workspaceSlotsRef.current!.requestOpen(trimmedPath, async (slot, binding) => {
+        const workspacePath = inspection?.editableFolderPath ?? trimmedPath;
+        if (inspection?.editableFolderPath) folderImport.remember(workspacePath, inspection.folderPath);
+        const opened = await workspaceSlotsRef.current!.requestOpen(workspacePath, async (slot, binding) => {
           let scan: FolderScanPayload | undefined;
           const loaded = await slot.adapter.load(
             () => window.storyboard.openFolderByPath(binding.folderPath, { normalSave: true, initializePreviews: true }),
@@ -1201,12 +1212,20 @@ export const App = () => {
           return scan;
         });
         if (openRequest !== folderOpenRequestRef.current) return false;
-        if (opened) setFolderBrowser(undefined);
-        else if (!importImages && inspection?.files.length) setFolderBrowser({ ...inspection, browse: true });
+        setWorkspaceTask(undefined);
+        if (opened) {
+          setFolderBrowser(undefined);
+          setFolderInputValue(folderImport.displayPath(workspacePath));
+          // Held slots bypass Main's scan; successful activation must still
+          // remember the last workspace for a fresh process (display alias in Main).
+          try { await window.storyboard.rememberOpenedFolder?.(workspacePath); }
+          catch { if (openRequest === folderOpenRequestRef.current) setStatus('项目已打开，但未能更新最近打开记录。'); }
+        }
+        else if (!importImages && inspection?.files.length) setFolderBrowser({ ...inspection, browse: true, ...(inspection.editableFolderPath ? { issue: '已有可编辑项目暂时无法打开。文件已保留，请先处理项目恢复或文件问题。' } : {}) });
         return opened;
       } catch (error) {
         if (openRequest !== folderOpenRequestRef.current) return false;
-        if (!importImages && inspection?.files.length) setFolderBrowser({ ...inspection, browse: true });
+        if (!importImages && inspection?.files.length) setFolderBrowser({ ...inspection, browse: true, ...(inspection.editableFolderPath ? { issue: formatWorkspaceOpenError(error) } : {}) });
         setStatus(formatWorkspaceOpenError(error)); setWorkspaceTask(undefined);
       }
       return;
@@ -1447,13 +1466,17 @@ export const App = () => {
       return;
     }
 
-    const refreshBusy = () => !!saveInFlightRef.current || refreshTaskBusyRef.current ||
+    const refreshBusy = () => folderImport.read().busy || !!saveInFlightRef.current || refreshTaskBusyRef.current ||
       workspaceSlotsRef.current!.isBusy() || (bitmapLayerWriteQueueRef.current.isBusy?.() ?? true);
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (refreshBusy() || refreshRequestRef.current) { event.preventDefault(); event.returnValue = ''; }
     };
     window.addEventListener('beforeunload', beforeUnload);
     const unsubscribeCapture = window.storyboard.onPrepareCloseRequested(({ requestId, purpose }) => {
+      if (folderImport.read().busy) {
+        void window.storyboard.finishCloseCapture({ requestId, captureAvailable: false, recoveryRequired: false, busy: true, hasUnsavedChanges: true });
+        return;
+      }
       if (purpose === 'reload') {
         refreshRequestRef.current = requestId;
         setRefreshNotice('Waiting for Save/producer to finish before refreshing');
@@ -1463,6 +1486,7 @@ export const App = () => {
         if (root) root.inert = true;
         let captureAvailable = false;
         try {
+          if (purpose !== 'reload') await saveInFlightRef.current;
           // Outside exclusive: never drain the queue from inside its own owner.
           const whole = purpose === 'reload' ? await waitForRefreshSettlement({
             isBusy: refreshBusy,
@@ -1694,6 +1718,10 @@ export const App = () => {
     setStatus(durable ? "Imported storyboard script changes; output pending Save" : "Script Import completed; newer edits await autosave, Save incomplete");
   };
   const handleImportSwbFormat = async () => {
+    if (folderImport.read().folder) {
+      if (!isWorkspaceTaskRunning) await folderImport.importImages();
+      return;
+    }
     if (!window.storyboard) {
       setStatus("Cannot import: Electron preload API is unavailable");
       return;
@@ -2095,11 +2123,12 @@ export const App = () => {
       pins: (workspaceSlotsRef.current.active.view as {pins?:{role:string;dataUrl:string}[]} | undefined)?.pins }}>
     <main
       className={appShellClassName}
-      onContextMenu={openSketchCanvasContextMenu}
-      onDragOver={handleStoryboardScriptDragOver}
-      onDrop={(event) => void handleStoryboardScriptDrop(event)}
+      onContextMenu={folderBrowser ? undefined : openSketchCanvasContextMenu}
+      onDragOver={folderBrowser ? event => event.preventDefault() : handleStoryboardScriptDragOver}
+      onDrop={(event) => { if (folderBrowser) event.preventDefault(); else void handleStoryboardScriptDrop(event); }}
     >
       <Topbar
+        isFolderPreview={!!folderBrowser}
         addShotMenuRef={addShotMenuRef}
         blankShotPreset={blankShotPreset}
         boardViewMode={boardViewMode}
@@ -2112,23 +2141,23 @@ export const App = () => {
         handleSaveProject={handleSaveProject}
         handleSetShotMatteMode={handleSetShotMatteMode}
         handleTogglePendingShelf={handleTogglePendingShelf}
-        hasSwbWarning={hasSwbWarning}
+        hasSwbWarning={!folderBrowser && hasSwbWarning}
         importHelpRef={importHelpRef}
         isAddShotMenuOpen={isAddShotMenuOpen}
-        isImportHelpOpen={isImportHelpOpen}
-        isImportLocked={isImportLocked}
+        isImportHelpOpen={!folderBrowser && isImportHelpOpen}
+        isImportLocked={!!folderBrowser || isImportLocked}
         isImportNudging={isImportNudging}
         isMatteMenuOpen={isMatteMenuOpen}
         isParkingShelfOpen={isParkingShelfOpen}
         isRecentMenuOpen={isRecentMenuOpen}
         isSaveEmphasized={isSaveEmphasized || readWorkspaceStatus().state !== "saved"}
         isSaveMenuOpen={isSaveMenuOpen}
-        isWorkspaceTaskRunning={isWorkspaceTaskRunning}
+        isWorkspaceTaskRunning={folderImportBusy || isWorkspaceTaskRunning}
         isDialogueOverlayDisabled={isDialogueOverlayDisabled}
         isMatteConfigurationDisabled={isMatteConfigurationDisabled}
         isSceneDialogueOverlayConfigured={isSceneDialogueOverlayConfigured}
         isSceneMatteConfigured={isSceneMatteConfigured}
-        needsSwbImport={needsSwbImport}
+        needsSwbImport={folderBrowser ? folderBrowser.files.length > 0 && !folderBrowser.issue : needsSwbImport}
         nudgeImportRequired={nudgeImportRequired}
         project={project}
         sceneMatteMode={sceneMatteMode}
@@ -2151,8 +2180,8 @@ export const App = () => {
 
       <WorkspaceTaskProgressBanner workspaceTask={workspaceTask} />
       {folderBrowser && <FolderImageBrowser key={folderBrowser.folderPath} folder={folderBrowser}
-        onClose={() => setFolderBrowser(undefined)}
-        onImport={async target => Boolean(await handleOpenFolderByPath(target, true))} />}
+        busy={folderImportBusy || isWorkspaceTaskRunning} message={folderImportMessage}
+        onClose={() => { if (folderImport.show(undefined)) setFolderInputValue(folderImport.displayPath(folderPathRef.current ?? '')); }} />}
       {refreshNotice && <div role="status" data-refresh-status="true">{refreshNotice}</div>}
 
       <SaveErrorModal
@@ -2162,7 +2191,7 @@ export const App = () => {
 
       <StoryboardScriptImportModal
         draft={storyboardScriptImportDraft}
-        isWorkspaceTaskRunning={isWorkspaceTaskRunning}
+        isWorkspaceTaskRunning={folderImportBusy || isWorkspaceTaskRunning}
         onCancel={() => {
           setStoryboardScriptImportDraft(undefined);
           setWorkspaceTask(task => task?.kind === "import" ? undefined : task);
@@ -2171,6 +2200,7 @@ export const App = () => {
         onSelectTargetFolder={handleSelectStoryboardScriptTargetFolder}
       />
 
+      <div className="editable-workspace" hidden={!!folderBrowser} inert={!!folderBrowser}>
       <div className="workspace-layout">
         <ToolRail
           activeSketchTool={activeSketchTool}
@@ -2457,6 +2487,7 @@ export const App = () => {
           {selectedShotIds.length} selected
         </span>
       </footer>
+      </div>
     </main>
     </WorkspaceCanvasSlotContext.Provider>
   );
