@@ -22,3 +22,11 @@ Do not edit storyboard implementation during the running suite. Drawing/persiste
 own code independently, but must respect the shared verification slot. After code changes, all final
 required gates must identify the corrected candidate. Reports that label old code COMPLETE do not
 supersede the coordinator's CHANGES_REQUIRED review.
+
+## Resolved status
+
+The old storyboard run above has now completed with exit 1 (5 files / 13 tests failed with
+RAM_ADMISSION; log retained). It is no longer running and its lock was released. Storyboard's
+corrected candidate subsequently passed its agent gates. The coordinator's final combined candidate
+passed all 372 files / 2711 tests and the full build; see RECHECK.md for exact identities/evidence.
+Earlier RUNNING/NOT_RUN bullets are historical snapshots, not current work to restart.

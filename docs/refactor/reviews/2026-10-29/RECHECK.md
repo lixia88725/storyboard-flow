@@ -55,3 +55,29 @@ worktree deletion or naming migration. Windows, hard-link-less filesystems, cras
 large-raster performance, real drawing gestures and TIFF round-trip remain unverified.
 The assets-directory flush limitation remains open before any crash-durability acceptance.
 Names will be coordinated separately; .storyboard-flow-v2 remains the experimental directory for now.
+
+## Final coordinator acceptance
+
+**ACCEPTED: wave-one headless foundations and bounded three-core integration.**
+Production routing and product-wide acceptance remain out of scope.
+
+Frozen candidate: `72f4011f76ed4af82974dcb1870ff843cfcb2142`.
+
+| Gate | Result | Raw evidence |
+| --- | --- | --- |
+| Independent six-case recheck | all six resolved | `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers/.hermes/review-20261029/recheck.json` |
+| Combined focused | 13 files / 125 tests, exit 0 | `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers/.hermes/review-20261029/combined-focused.log` |
+| Complete allowed suite | 372 files / 2711 tests, exit 0; 1177.89 seconds Vitest duration | `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers/.hermes/review-20261029/combined-full.log` and `combined-full-receipt.json` |
+| Full build after complete suite | exit 0; 9.50 seconds; both typechecks, Vite and Electron | `/Users/xiali/Documents/Codex/2026-05-28/users-xiali-documents-codex-2026-05/appshot-bitmap-layers/.hermes/review-20261029/combined-final-build.log` and `combined-final-build-receipt.json` |
+| Candidate/cleanup checks | head unchanged and clean after both gates; runner exited and shared lock released; launchers retain original hashes/modes | receipt fields and coordinator checks |
+
+The earlier failed restricted-environment run remains a failure in its historical evidence.
+The complete combined suite above ran in the normal host execution environment without weakening
+native memory checks or excluding additional tests. No failures or skips in its final summary.
+The existing Vite bundle-size warning remains; no claimed performance improvement.
+
+All three Hermes worktrees and original commits remain intact. No agent is relaunched and no code
+is pushed or published. Successful fixture scopes clean their owned containers; the dedicated
+runner temp root and independent probe fixture are retained as local evidence, not scanned away.
+The next work is naming consolidation and contract/session design before production UI/TIFF wiring;
+no new worktree or migration is created by this acceptance.

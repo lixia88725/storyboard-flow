@@ -1,6 +1,7 @@
 # Hermes wave 1 worktrees
 
-Status: prepared; external Hermes agents have not been launched. The coordinator remains in the original main checkout.
+Status: wave-one implementation and correction deliveries have been reviewed and integrated on main. Keep all three worktrees for provenance; no next-wave assignment has been launched. See [RECHECK.md](reviews/2026-10-29/RECHECK.md).
+The assignments and start prompts below are historical wave-one setup instructions, not a request to restart completed work.
 
 ## Assignments
 

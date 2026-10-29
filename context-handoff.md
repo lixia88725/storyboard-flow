@@ -1,3 +1,19 @@
+## Hermes wave-one cores accepted — 2026-10-29
+
+- Coordinator main integrated exact corrected implementation snapshots: drawing 8374441,
+  storyboard 6ae4547, persistence bbbdf7d. Briefing commits/root reports were excluded; reports
+  are archived separately in docs/refactor/reviews/2026-10-29/accepted-lanes/.
+- All six independent review defects reproduced then verified fixed. Four new public-Interface
+  composition tests cover PNG/history/checkpoint/reopen, folder relocation/Pending, asset failure
+  and stale-baseline rejection. Main candidate 72f4011 passed 372 files / 2711 tests and full build;
+  both ran with unchanged HEAD and clean status. Details/raw logs: RECHECK.md in that review folder.
+- Accepted only as headless foundational modules. Production UI, TIFF/Save routing and launchers
+  unchanged; no push, agent relaunch, worktree removal, dependency install or naming migration.
+  Three worktrees remain available. Shared verification lock released; combined runner finished.
+- Next: separately coordinate naming and missing session/asset/composite-command contracts before
+  real UI integration. Windows, crash durability, real gestures and large-raster performance remain
+  unverified. Earlier failed checks and historical records below are retained, not superseded to PASS.
+
 ## Hermes refactor kickoff — 2026-10-29
 
 - User approved implementation, local commits and coordinator integration without push, then

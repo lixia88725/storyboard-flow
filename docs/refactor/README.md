@@ -1,6 +1,7 @@
 # Storyboard Flow refactor — Hermes wave 1
 
-Status: implementation assignments prepared; the new core is not connected to the app.
+Status: wave-one cores independently reviewed and integrated on main; 372 files / 2711 tests and full build passed on `72f4011`. The new core is not connected to the app.
+See [final recheck](reviews/2026-10-29/RECHECK.md) for evidence and remaining limits.
 User authority (2026-10-29): redesign the internal format without old-project compatibility,
 preserve current interactions, prepare isolated Hermes worktrees, allow local commits and
 coordinator integration. No push or release. The user launches Hermes and reports completion.
