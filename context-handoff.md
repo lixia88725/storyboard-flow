@@ -1,3 +1,17 @@
+## Naming and replacement launcher verified — 2026-10-29
+
+- Naming candidate `7db58ed` passed complete allowed tests (373 files / 2713 tests), full build,
+  preload sync, resource preparation and synthetic actual Electron Import/draw/Save/Close/reopen.
+  Raw logs/receipts and intermediate failures remain in `.hermes/naming/`; full details in
+  `docs/refactor/reviews/2026-10-29/NAMING.md`. Active naming policy is `docs/architecture/NAMING.md`.
+- User subsequently authorized rebuilding the launchers. One root `启动测试.command` now compiles
+  current source and directly launches Electron; old `scripts/test-launch.sh` removed, originals
+  backed up locally. Shell syntax, real dependency-only check and isolated lifecycle/error harness
+  passed. Finder double-click remains TODO: verify. Application code is unchanged after its tested SHA.
+- Main/local only; no push, disk-project migration, dependency install or agent relaunch. Historical
+  reports and the three Hermes source worktrees retained. Windows/installers/independent acceptance
+  remain unverified. Use new test projects; next Hermes work starts from unified main.
+
 ## Naming unification — 2026-10-29
 
 用户已批准全部统一为 Storyboard Flow。当前代码/环境变量/IPC/TIFF/恢复 schema 使用 Flow 命名；

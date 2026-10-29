@@ -8,7 +8,7 @@ Start this work at `docs/refactor/README.md` and its contract/testing pointers. 
 checkout is coordinator-owned. Historical handoff/todo files remain evidence for the existing
 runtime, not a task list for the refactor. Wave 1 adds isolated cores only; production wiring,
 legacy safety removal, dependency installation, SQLite/PSD work and publication are outside it.
-Preserve existing files and the latest launch scripts. This paragraph supersedes old-format
+Preserve existing files. On 2026-10-29 the user separately approved replacing the old launchers with one root `启动测试.command`; it builds current source before launching and never installs dependencies or clears user data. This paragraph supersedes old-format
 compatibility requirements only for the explicitly isolated new-format cores; remaining file,
 test-fixture and execution safeguards below still apply to existing code and data.
 
