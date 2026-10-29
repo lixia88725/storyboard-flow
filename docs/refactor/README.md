@@ -66,3 +66,11 @@ changed files, every acceptance case with evidence, tests/build exits, limitatio
 remaining integration work. A test double or a passing build is not GUI/platform acceptance.
 Return the branch, worktree path, DELIVERY.md path and commit SHA to the user. Stop after this
 wave; the user brings the result back to the coordinator.
+
+## Coordinator integration preparation
+
+While Hermes implements wave 1, main holds the source-informed
+[acceptance checklist](ACCEPTANCE.md) and [integration plan](INTEGRATION-PLAN.md).
+These are future integration proposals and NOT_RUN cases, not amendments to active lane
+contracts or evidence of completed behavior. They identify missing feature fields, composite
+commands, pixel asset ownership and Save/session concerns before production routing.
