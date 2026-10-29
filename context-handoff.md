@@ -1,3 +1,19 @@
+## Hermes refactor kickoff — 2026-10-29
+
+- User approved implementation, local commits and coordinator integration without push, then
+  chose Hermes as the external implementation agents. The user launches them and reports back;
+  no built-in agents or Hermes processes are started by the coordinator.
+- Existing 47 modified/untracked source files were backed up and committed unchanged as
+  `235145c22d66ce500a8ea60ef6e4e7a7f21aee2c`. Backup and hashes are in
+  `.worktrees/hermes-kickoff-20261029/`. Both latest launchers retain exact bytes and executable modes.
+- `docs/refactor/README.md` is the new work entrance. Shared candidate types and explicit lane
+  tasks cover image-document edits, storyboard/history and new-format internal checkpoints.
+  They do not yet replace production drawing, UI or Save. Old-project compatibility is not
+  required, but existing test data, failure evidence and runtime protections remain intact.
+- Lane-specific briefing commits remove old handoff entrances only in those worktrees. They
+  must not be integrated into main. Main retains historical records below. Coordinator reviews
+  implementation commits separately; delivery needs focused/full/build logs and exact SHAs.
+
 ## Old worktrees consolidated into original main — 2026-10-29
 
 - User explicitly authorized comparing/preserving both old worktrees and removing them after verification, with no discarded uncommitted work or push. Original checkout remains on `main` at `1c3ab7cca2283b471499b1ad0fd8d481ddbea2c4` (already one commit ahead of the locally recorded `origin/main`; no fetch, commit, merge or push in this cleanup).

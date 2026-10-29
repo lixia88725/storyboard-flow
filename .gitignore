@@ -1,5 +1,6 @@
 node_modules/
 .worktrees/
+.hermes/
 dist/
 dist-electron/
 dist-resources/

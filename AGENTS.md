@@ -1,5 +1,17 @@
 # Storyboard Flow developer rules
 
+## Active refactor authority — 2026-10-29
+
+The user approved a new-format refactor without compatibility for existing test projects,
+local baseline/implementation commits and coordinator integration, and Hermes-owned worktrees.
+Start this work at `docs/refactor/README.md` and its contract/testing pointers. The original main
+checkout is coordinator-owned. Historical handoff/todo files remain evidence for the existing
+runtime, not a task list for the refactor. Wave 1 adds isolated cores only; production wiring,
+legacy safety removal, dependency installation, SQLite/PSD work and publication are outside it.
+Preserve existing files and the latest launch scripts. This paragraph supersedes old-format
+compatibility requirements only for the explicitly isolated new-format cores; remaining file,
+test-fixture and execution safeguards below still apply to existing code and data.
+
 ## Project and naming
 
 Storyboard Flow is a local-first Electron desktop app for arranging storyboard images, moving dialogue between shots, drawing edits, and managing lightweight storyboard layers.

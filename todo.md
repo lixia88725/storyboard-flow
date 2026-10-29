@@ -2,6 +2,10 @@
 
 This file records remaining scope, not permission to start it. This source integration does not promise that the entire application or all platforms have been accepted.
 
+- Active Hermes refactor: follow `docs/refactor/README.md`, not the historical implementation
+  tasks below. Wave 1 delivers isolated cores; full feature integration, actual GUI and Mac/Windows
+  performance acceptance follow coordinator review. Keep this historical list on main only.
+
 - 2026-10-29 save/provenance/EPIPE repair: implemented in original and attached source worktrees. Real 31-shot draw/autosave/Save/Undo/Save/normal Close/fresh editable reopen passed, with zero unfinished-operation prompts. Exact restored PNG hash and raw evidence are in the newest context-handoff section. Final suite/build results recorded there. Large retained-project Save/Close preparation remains slow and needs separately measured performance work; do not bypass native/recovery checks to make it faster. Independent acceptance, installed-app packaging and other-platform/filesystem acceptance remain TODO: verify.
 
 - 2026-10-28 editable autosave/original Save: user approved silent healthy Close and explicit Save updating original root images with first backups. Implemented and self-tested: all 355 allowed files / 2541 tests covered across full invocation plus corrected caller-binding rerun, complete build, preload/resources, and actual isolated multi-project GUI (no Save → Close → editable reopen, explicit Save/root updates/exact backup, zero normal Close prompts). True failures remain protected. Details/limits in newest context-handoff.md section. This supersedes earlier unsaved-import Close-refusal and no-original-overwrite-on-Save notes. Independent acceptance and installed-app update remain TODO: verify.
