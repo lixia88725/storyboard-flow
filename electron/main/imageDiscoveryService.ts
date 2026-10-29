@@ -28,4 +28,4 @@ export const collectImagePaths = async (filePaths: string[]): Promise<string[]> 
 };
 
 export const metadataPathForFolder = (folderPath: string): string =>
-  path.join(folderPath, ".storyboard-workbench", "storyboard.project.json");
+  path.join(folderPath, ".storyboard-flow", "storyboard.project.json");

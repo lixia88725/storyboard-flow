@@ -64,7 +64,7 @@ test('recovery content inherits permissions and tags while preserving its own na
   // content must not require that historic source process to still be running.
   policy.expected.xattrs = { ...f.different.xattrs, [tag]:Buffer.from('retained').toString('base64') };
   policy.observed[0][1].xattrs = { ...policy.expected.xattrs };
-  const dir = path.join(f.root,'.storyboard-workbench','workspace-recovery-v1'); await fs.mkdir(dir,{recursive:true,mode:0o700});
+  const dir = path.join(f.root,'.storyboard-flow','workspace-recovery-v1'); await fs.mkdir(dir,{recursive:true,mode:0o700});
   const file = path.join(dir,'synthetic.json'); await fs.writeFile(file,'',{mode:0o600});
   const inspect = async () => (await native.request({phase:'captureMemoryPolicy',sources:[file],sourceByteLimit:1024})).sourcePolicy.observed[0][1];
   const before = await inspect();
@@ -106,9 +106,9 @@ print(json.dumps({'result':result,'sourceUnchanged':before==real(sys.argv[2]),'o
 test('legacy v3 policy fingerprints including provenance remain readable without rewriting records', async () => {
   const f = await fixture(), e = f.observed;
   const fingerprint = createHash('sha256').update(JSON.stringify([e.uid,e.gid,e.mode,e.flags,e.acl,Object.entries(e.xattrs).sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0)])).digest('hex');
-  const payload = { schema: 'swb.workspace-claim.v3', version: 3, workspaceKey: key, scopeId: 'legacy', claimId: 'old', ...plan,
+  const payload = { schema: 'flow.workspace-claim.v3', version: 3, workspaceKey: key, scopeId: 'legacy', claimId: 'old', ...plan,
     state: 'reserved', census: null, reservation: f.input.reservation, recordPolicyFingerprint: fingerprint, scopeEnd: null };
-  const name = createHash('sha256').update(JSON.stringify(['swb.workspace-claim-name.v1',key,'legacy','old'])).digest('hex');
+  const name = createHash('sha256').update(JSON.stringify(['flow.workspace-claim-name.v1',key,'legacy','old'])).digest('hex');
   await f.native('recovery-claim-records.py').request({ phase:'admit', userData:f.userData, workspaceKey:key, claimName:name,
     sourceMode:e.mode, sourceRestrictions:e, payload, byteLimit:budget.bytes, recordLimit:budget.records });
   const file = path.join(f.userData,'workspace-origin-v1',key,name+'.reserve'), before = await fs.readFile(file);

@@ -15,14 +15,14 @@ it("offers ordinary Pending without an AI action in the real topbar", () => {
     project: createProject("Focused storyboard"), blankShotPreset: "16:9", boardViewMode: "storyboard",
     folderInputValue: "", recentFolders: [], sceneMatteMode: undefined, workspaceTask: undefined,
     addShotMenuRef: ref, importHelpRef: ref, recentMenuRef: ref, matteMenuRef: ref, saveMenuRef: ref,
-    ...Object.fromEntries(["hasSwbWarning", "isAddShotMenuOpen", "isAiPanelVisible", "isImportHelpOpen",
+    ...Object.fromEntries(["hasFlowWarning", "isAddShotMenuOpen", "isAiPanelVisible", "isImportHelpOpen",
       "isImportLocked", "isImportNudging", "isMatteMenuOpen", "isParkingShelfOpen", "isRecentMenuOpen",
       "isSaveEmphasized", "isSaveMenuOpen", "isWorkspaceTaskRunning", "isDialogueOverlayDisabled",
-      "isMatteConfigurationDisabled", "isSceneDialogueOverlayConfigured", "isSceneMatteConfigured", "needsSwbImport"]
+      "isMatteConfigurationDisabled", "isSceneDialogueOverlayConfigured", "isSceneMatteConfigured", "needsFlowImport"]
       .map(key => [key, false])),
     ...Object.fromEntries(["setBlankShotPreset", "setBoardViewMode", "setFolderInputValue", "setIsAddShotMenuOpen",
       "setIsImportHelpOpen", "setIsMatteMenuOpen", "setIsRecentMenuOpen", "setIsSaveMenuOpen", "handleAddShot",
-      "handleImportSwbFormat", "handleOpenFolderByPath", "handleDisableSceneMatte", "handlePlaceDialogueOnMatte",
+      "handleImportFlowFormat", "handleOpenFolderByPath", "handleDisableSceneMatte", "handlePlaceDialogueOnMatte",
       "handleSaveProject", "handleSetShotMatteMode", "handleToggleAiPanel", "handleTogglePendingShelf",
       "nudgeImportRequired", "updateProjectName", "updateProjectNaming"].map(key => [key, noop]))
   } as unknown as Parameters<typeof Topbar>[0];

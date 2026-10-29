@@ -26,7 +26,7 @@ describe("stagePendingDeletedShotFiles", () => {
       [
         {
           fromPath: "/scene/a.tiff",
-          toPath: "/scene/.storyboard-workbench/delete-tmp/20260606T010203/shot-a.tiff"
+          toPath: "/scene/.storyboard-flow/delete-tmp/20260606T010203/shot-a.tiff"
         }
       ],
       expect.objectContaining({
@@ -37,7 +37,7 @@ describe("stagePendingDeletedShotFiles", () => {
     expect(result.project.pendingDeletedShots).toEqual([
       {
         id: "shot-a",
-        imagePath: "/scene/.storyboard-workbench/delete-tmp/20260606T010203/shot-a.tiff",
+        imagePath: "/scene/.storyboard-flow/delete-tmp/20260606T010203/shot-a.tiff",
         fileName: "a.tiff"
       },
       { id: "shot-b", imagePath: "/scene/b.tiff", fileName: "b.tiff" }

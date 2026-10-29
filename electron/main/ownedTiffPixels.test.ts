@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import sharp from "sharp";
-import { writeSwbImportWorkingTiff } from "./photoshopTiffImport.js";
+import { writeFlowImportWorkingTiff } from "./photoshopTiffImport.js";
 import { createBlankShot } from "./blankShotService.js";
 
 const dirs: string[] = [];
@@ -15,14 +15,14 @@ it("Import owned working output preserves rotated color/alpha and never changes 
   await sharp(rgba, { raw: { width: 2, height: 2, channels: 4 } }).withMetadata({ orientation: 6, density: 144 }).png().toFile(sourcePath);
   const original = await readFile(sourcePath);
   const expected = await sharp(sourcePath, { unlimited: true }).rotate().ensureAlpha().raw().toBuffer();
-  await writeSwbImportWorkingTiff({ sourcePath, outputPath, usePlaceholder: false });
+  await writeFlowImportWorkingTiff({ sourcePath, outputPath, usePlaceholder: false });
   expect(await sharp(outputPath).ensureAlpha().raw().toBuffer()).toEqual(expected);
   expect(await readFile(sourcePath)).toEqual(original);
 });
 it("Import placeholder remains exactly transparent", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "owned-placeholder-exact-")); dirs.push(dir);
   const outputPath = path.join(dir, "owned.tiff");
-  await writeSwbImportWorkingTiff({ sourcePath: "unused", outputPath, usePlaceholder: true });
+  await writeFlowImportWorkingTiff({ sourcePath: "unused", outputPath, usePlaceholder: true });
   expect(await sharp(outputPath).ensureAlpha().raw().toBuffer()).toEqual(Buffer.from([0,0,0,0]));
 });
 it("blank Add TIFF retains the existing exact white RGB and dimensions", async () => {

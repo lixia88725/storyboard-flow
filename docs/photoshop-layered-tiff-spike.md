@@ -16,7 +16,7 @@ Photoshop-readable layered TIFF per shot into
 `Photoshop TIFF Export/YYYYMMDDTHHMMSS/` for smoke and developer debugging.
 
 The export smoke verifies the generated TIFFs with `psdtags` readback. A live
-Photoshop 2026 check on `/private/tmp/swb-photoshop-export-validation/.../0010-shot.tiff`
+Photoshop 2026 check on `/private/tmp/flow-photoshop-export-validation/.../0010-shot.tiff`
 reported:
 
 - `layers=2`
@@ -28,7 +28,7 @@ reported:
 ## Evidence
 
 - Script: `scripts/photoshop-layered-tiff-spike.py`
-- Output: `/private/tmp/swb-photoshop-layered-spike.tiff`
+- Output: `/private/tmp/flow-photoshop-layered-spike.tiff`
 - Temporary Python dependency path used during the spike:
   `/private/tmp/psdtags-spike-deps`
 - `psdtags` readback:
@@ -50,7 +50,7 @@ layer remained named `Paint 1`.
 
 A sharp/libvips standard multi-page TIFF control file was generated at:
 
-`/private/tmp/swb-sharp-multipage-control.tiff`
+`/private/tmp/flow-sharp-multipage-control.tiff`
 
 sharp read it as:
 
@@ -70,11 +70,11 @@ The working TIFF uses Python `psdtags` + `tifffile` to write Photoshop-specific
 TIFF data:
 
 - `ImageSourceData` TIFF tag `37724`
-- optional XMP TIFF tag `700` for SWB metadata
+- optional XMP TIFF tag `700` for FLOW metadata
 - Photoshop layer records/channels inside that tag
 - ordinary white-backed composite image as the main TIFF image
 
-The internal working data remains `.storyboard-workbench/storyboard.project.json`
+The internal working data remains `.storyboard-flow/storyboard.project.json`
 plus PNG layer assets; Photoshop layered TIFF is the Save/Export exchange file,
 not the autosave transaction log.
 

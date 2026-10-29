@@ -79,8 +79,8 @@ still match the current image content, not merely a historical revision number.
 
 `electron/core/persistence/index.ts` exports `createProjectStore(): ProjectStoreV1`.
 Only synthetic, explicitly new roots are used. The candidate layout is:
-`.storyboard-flow-v2/project.json`, `assets/<sha256>.png`, `versions/<revision>.json` within that
-directory. This name is experimental; do not activate it in production or change old folders.
+`.storyboard-flow/checkpoints/project.json`, `assets/<sha256>.png`, `versions/<revision>.json` within that
+directory. This is the unified Flow namespace with a checkpoint role subdirectory; do not activate it in production or change old folders.
 The exact manifest is ProjectV1 encoded as UTF-8 JSON. Required assets are ALL images in the
 snapshot, including retained images. Prior versions and assets are retained; no automatic cleanup.
 

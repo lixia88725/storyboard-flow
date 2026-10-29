@@ -12,15 +12,15 @@ const options = { budget: { bytes: 16 * 1024 * 1024, records: 2000, assets: 64, 
 // adoption are not implied. All fixtures deliberately remain as failure evidence.
 async function fixture(service: ReturnType<typeof createPreparedWorkspaceSave>, event: any, producer = 'writePng') {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ordinary-preservation-'));
-  const bitmapPath = '.storyboard-workbench/layers/s/a.png', sourceBitmapPath = '.storyboard-workbench/layers/s/b.png';
+  const bitmapPath = '.storyboard-flow/layers/s/a.png', sourceBitmapPath = '.storyboard-flow/layers/s/b.png';
   const target = path.join(root, bitmapPath), source = path.join(root, sourceBitmapPath);
   const red = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'red' } }).png().toBuffer();
   const blue = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'blue' } }).png().toBuffer();
   await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
   await fs.writeFile(target, red, { mode: 0o400 }); await fs.writeFile(source, blue, { mode: 0o600 });
-  const project: any = { id: 'p-' + producer, name: producer, shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', swb: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: [{ id: 'a', kind: 'paint', bitmapPath, width: 2, height: 2 }, { id: 'b', kind: 'paint', bitmapPath: sourceBitmapPath, width: 2, height: 2 }] }], dialogues: [] };
+  const project: any = { id: 'p-' + producer, name: producer, shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', flow: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: [{ id: 'a', kind: 'paint', bitmapPath, width: 2, height: 2 }, { id: 'b', kind: 'paint', bitmapPath: sourceBitmapPath, width: 2, height: 2 }] }], dialogues: [] };
   await fs.writeFile(project.shots[0].imagePath, await sharp(red).tiff().toBuffer(), { mode: 0o600 });
-  const metadata = path.join(root, '.storyboard-workbench/storyboard.project.json');
+  const metadata = path.join(root, '.storyboard-flow/storyboard.project.json');
   await fs.writeFile(metadata, JSON.stringify(project, null, 2) + '\n', { mode: 0o600 });
   await fs.writeFile(path.join(root, 'storyboard-script.md'), serializeStoryboardScriptMarkdown(project), { mode: 0o600 });
   const observation = await service.observeWorkspace(event, root);
@@ -48,7 +48,7 @@ test('refused before-first-Save write and copy preserve both Roots, original fai
     expect(retained.continuationState).toMatchObject({ notExecutable: true, stage: 'failed' });
     expect(await fs.readFile(f.target)).toEqual(f.red);
     expect((await fs.stat(f.target)).mode & 0o777).toBe(0o400);
-    const ns = JSON.parse(await fs.readFile(path.join(f.root, '.storyboard-workbench/workspace-recovery-v1/namespace.json'), 'utf8'));
+    const ns = JSON.parse(await fs.readFile(path.join(f.root, '.storyboard-flow/workspace-recovery-v1/namespace.json'), 'utf8'));
     expect(ns.sourcePolicy.expected.mode).toBe(0o400);
     await expect(service.acknowledge(event, { folderPath: f.root, nonce: (retained.continuationState as any).nonce, project: f.project })).rejects.toThrow();
   }
@@ -61,9 +61,9 @@ for (const change of ['bytes', 'identity', 'history', 'document', 'extra-effect'
     if (change === 'identity') { await fs.rename(f.source, f.source + '.retained'); await fs.writeFile(f.source, f.blue, { mode: 0o600 }); }
     if (change === 'history') f.capture.history.undo[0].layerAssets[0].dataUrl = 'data:image/png;base64,' + f.blue.toString('base64');
     if (change === 'document') service.invalidateDocument(event.sender);
-    if (change === 'extra-effect') await service.ordinary(event, 'layers:writePng', { folderPath: f.root }, [f.source], () => writeLayerPng({ folderPath: f.root, bitmapPath: '.storyboard-workbench/layers/s/b.png', dataUrl: 'data:image/png;base64,' + f.blue.toString('base64') }));
+    if (change === 'extra-effect') await service.ordinary(event, 'layers:writePng', { folderPath: f.root }, [f.source], () => writeLayerPng({ folderPath: f.root, bitmapPath: '.storyboard-flow/layers/s/b.png', dataUrl: 'data:image/png;base64,' + f.blue.toString('base64') }));
     await expect(service.certifyRetainedSet(event, { slots: [f.capture] })).rejects.toThrow();
     expect(await fs.readFile(f.target)).toEqual(f.red);
-    await expect(fs.lstat(path.join(f.root, '.storyboard-workbench/workspace-recovery-v1'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.lstat(path.join(f.root, '.storyboard-flow/workspace-recovery-v1'))).rejects.toMatchObject({ code: 'ENOENT' });
   }, 120000);
 }

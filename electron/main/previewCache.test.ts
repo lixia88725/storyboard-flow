@@ -6,7 +6,7 @@ import { previewIsFresh } from "./previewCache.js";
 
 describe("previewIsFresh", () => {
   it("reuses previews that are newer than the source image", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "swb-preview-cache-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "flow-preview-cache-"));
     const sourcePath = path.join(root, "source.tiff");
     const previewPath = path.join(root, "preview.png");
     await writeFile(sourcePath, "source");
@@ -18,7 +18,7 @@ describe("previewIsFresh", () => {
   });
 
   it("regenerates previews when the source image is newer or the preview is missing", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "swb-preview-cache-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "flow-preview-cache-"));
     const sourcePath = path.join(root, "source.tiff");
     const previewPath = path.join(root, "preview.png");
     await writeFile(sourcePath, "source");

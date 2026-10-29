@@ -17,13 +17,13 @@ function actor(){const frame={},sender={mainFrame:frame};return {sender,senderFr
 async function fixture(label:string){
  const folder=await fs.mkdtemp(path.join(root,'native-'+label+'-'));
  onTestFinished(()=>fs.rm(folder,{recursive:true,force:true}));
- const metadata=path.join(folder,'.storyboard-workbench/storyboard.project.json');
- const png=path.join(folder,'.storyboard-workbench/layers/s/paint.png'),tiff=path.join(folder,'a.tiff'),script=path.join(folder,'storyboard-script.md');
+ const metadata=path.join(folder,'.storyboard-flow/storyboard.project.json');
+ const png=path.join(folder,'.storyboard-flow/layers/s/paint.png'),tiff=path.join(folder,'a.tiff'),script=path.join(folder,'storyboard-script.md');
  await fs.mkdir(path.dirname(png),{recursive:true,mode:0o700});
  const original=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer();
  const desired=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer();
  await fs.writeFile(png,original,{mode:0o400});await fs.writeFile(tiff,await sharp(original).tiff().toBuffer(),{mode:0o400});
- const project:any={id:'p',name:label,shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',order:0,swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'paint',kind:'paint',width:2,height:2,bitmapPath:path.relative(folder,png)}]}],dialogues:[]};
+ const project:any={id:'p',name:label,shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',order:0,flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'paint',kind:'paint',width:2,height:2,bitmapPath:path.relative(folder,png)}]}],dialogues:[]};
  await fs.writeFile(metadata,JSON.stringify(project),{mode:0o400});await fs.writeFile(script,serializeStoryboardScriptMarkdown(project),{mode:0o400});
  const content:any={projectRaw:project,desiredAssets:[{folderPath:folder,bitmapPath:path.relative(folder,png),shotId:'s',layerId:'paint',dataUrl:'data:image/png;base64,'+desired.toString('base64')}],sequence:7,assetRevision:3,effectFacts:{receipt:[],deletions:[],remainingScript:null}};
  const payload={folderPath:folder,metadataPath:metadata,normalSave:true,project,recoveryContent:content};
@@ -34,8 +34,8 @@ async function fixture(label:string){
   expect(effects).toBe(1);expect(result.ok).toBe(false);expect(result.error.message).toMatch(/EACCES|permission denied/);
  };
  const intact=async()=>{for(let i=0;i<files.length;i++){expect(await fs.readFile(files[i])).toEqual(before[i]);expect((await fs.stat(files[i])).mode&0o777).toBe(0o400);}await expect(assertPhysicalWorkspaceWriterTargets([png])).rejects.toThrow('protected');};
- const namespace=()=>fs.readFile(path.join(folder,'.storyboard-workbench/workspace-recovery-v1/namespace.json'),'utf8');
- const inventory=async()=>{const entries:any[]=[];const visit=async(file:string)=>{const st=await fs.lstat(file);entries.push([path.relative(folder,file),st.ino,st.mode,st.ctimeMs,st.size,st.isFile()?(await fs.readFile(file)).toString('base64'):null]);if(st.isDirectory())for(const name of (await fs.readdir(file)).sort())await visit(path.join(file,name));};await visit(path.join(folder,'.storyboard-workbench/workspace-recovery-v1'));return entries;};
+ const namespace=()=>fs.readFile(path.join(folder,'.storyboard-flow/workspace-recovery-v1/namespace.json'),'utf8');
+ const inventory=async()=>{const entries:any[]=[];const visit=async(file:string)=>{const st=await fs.lstat(file);entries.push([path.relative(folder,file),st.ino,st.mode,st.ctimeMs,st.size,st.isFile()?(await fs.readFile(file)).toString('base64'):null]);if(st.isDirectory())for(const name of (await fs.readdir(file)).sort())await visit(path.join(file,name));};await visit(path.join(folder,'.storyboard-flow/workspace-recovery-v1'));return entries;};
  return {folder,metadata,png,script,project,content,capture,desired,attempt,intact,namespace,inventory};
 }
 async function pair(){const A=await fixture('held-A'),B=await fixture('stage-B'),event=actor(),window={};let actualWindow:any=window;const service=createPreparedWorkspaceSave({...options,ownerFromSender:sender=>sender===event.sender?actualWindow:sender});await A.attempt(service,event);await B.attempt(service,event);return {A,B,event,service,set:{slots:[A.capture,B.capture]},changeWindow:()=>{actualWindow={};},restoreWindow:()=>{actualWindow=window;}};}
@@ -56,7 +56,7 @@ test('whole Close preserves real completed B terminal so fresh ordinary B remain
  const collection={slots:[A.capture,{...B.capture,workspaceSaveState:'saved'}]};
  expect(await service.certifyRetainedSet(event,collection)).toBe(true);
  const fresh=createPreparedWorkspaceSave(options),readonly=await fresh.readReadonly(B.folder);
- expect(readonly.continuationState).toMatchObject({stage:'completed',terminal:{schema:'swb.current-terminal.v1'}});
+ expect(readonly.continuationState).toMatchObject({stage:'completed',terminal:{schema:'flow.current-terminal.v1'}});
  await expect(assertPhysicalWorkspaceWriterTargets([B.png])).resolves.toBeUndefined();
  const other=actor();expect(await fresh.ordinary(other,'layers:writeBitmap',{},[B.png],async()=>{await fs.writeFile(B.png,B.desired);return {ok:true};})).toEqual({ok:true});
  // An unACKed ordinary effect must retain protection on another fresh process.
@@ -97,7 +97,7 @@ test('omitted A, duplicate and alias/unknown Roots refuse before any Root namesp
   if('bypassSet' in bad){await expect(service.certifyRetained(event,{...B.capture,...bad})).rejects.toThrow('Hidden unfinished');continue;}
   await expect(service.certifyRetainedSet(event,bad)).rejects.toThrow();expect(await Promise.all([A.inventory(),B.inventory()])).toEqual(before);
  }
- const clean=await fixture('unprepared-clean-C');await expect(service.certifyRetainedSet(event,{slots:[...set.slots,clean.capture]})).rejects.toThrow('no Main-owned');expect(await Promise.all([A.inventory(),B.inventory()])).toEqual(before);await expect(fs.access(path.join(clean.folder,'.storyboard-workbench/workspace-recovery-v1'))).rejects.toMatchObject({code:'ENOENT'});
+ const clean=await fixture('unprepared-clean-C');await expect(service.certifyRetainedSet(event,{slots:[...set.slots,clean.capture]})).rejects.toThrow('no Main-owned');expect(await Promise.all([A.inventory(),B.inventory()])).toEqual(before);await expect(fs.access(path.join(clean.folder,'.storyboard-flow/workspace-recovery-v1'))).rejects.toMatchObject({code:'ENOENT'});
  await expect(service.certifyRetained(event,{...B.capture,...set})).rejects.toThrow('Hidden unfinished');await A.intact();await B.intact();
 },120000);
 
@@ -105,7 +105,7 @@ test('all preflight authenticates frame/caller/window/document and metadata inod
  const {A,B,event,service,set,changeWindow,restoreWindow}=await pair();const before=await Promise.all([A.inventory(),B.inventory()]);
  for(const wrong of [{...event,senderFrame:{}},actor()]){await expect(service.certifyRetainedSet(wrong,set)).rejects.toThrow();expect(await Promise.all([A.inventory(),B.inventory()])).toEqual(before);}
  const moved=B.folder+'-old-inode';await fs.rename(B.folder,moved);await fs.mkdir(B.folder,{mode:0o700});await expect(service.certifyRetainedSet(event,set)).rejects.toThrow('binding mismatch');expect(await A.inventory()).toEqual(before[0]);await fs.rmdir(B.folder);await fs.rename(moved,B.folder);
- const old=path.join(B.folder,'.storyboard-workbench-old');await fs.rename(path.dirname(B.metadata),old);await fs.mkdir(path.dirname(B.metadata),{mode:0o700});await expect(service.certifyRetainedSet(event,set)).rejects.toThrow('binding mismatch');expect(await A.inventory()).toEqual(before[0]);await fs.rmdir(path.dirname(B.metadata));await fs.rename(old,path.dirname(B.metadata));
+ const old=path.join(B.folder,'.storyboard-flow-old');await fs.rename(path.dirname(B.metadata),old);await fs.mkdir(path.dirname(B.metadata),{mode:0o700});await expect(service.certifyRetainedSet(event,set)).rejects.toThrow('binding mismatch');expect(await A.inventory()).toEqual(before[0]);await fs.rmdir(path.dirname(B.metadata));await fs.rename(old,path.dirname(B.metadata));
  changeWindow();await expect(service.certifyRetainedSet(event,set)).rejects.toThrow('binding mismatch');restoreWindow();service.invalidateDocument(event.sender);await expect(service.certifyRetainedSet(event,set)).rejects.toThrow('binding mismatch');expect(await Promise.all([A.inventory(),B.inventory()])).toEqual(before);
 },120000);
 

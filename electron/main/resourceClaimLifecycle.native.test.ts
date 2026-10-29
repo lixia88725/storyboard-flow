@@ -17,10 +17,10 @@ type Restrictions = ReturnType<NonNullable<Parameters<typeof createRecoveryClaim
 test('real PreparedSave retains only after durable admission and closes its original scope before fresh admission', async () => {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'resource-lifecycle-root-')),userData=await fs.mkdtemp(path.join(os.tmpdir(),'resource-lifecycle-data-'));
   const python='python3',budget={bytes:4*1024*1024,records:1000,assets:16,jsonDepth:80};
-  const metadataPath=path.join(root,'.storyboard-workbench/storyboard.project.json'),bitmapPath='.storyboard-workbench/layers/s/a.png',imagePath=path.join(root,'s.tiff');
+  const metadataPath=path.join(root,'.storyboard-flow/storyboard.project.json'),bitmapPath='.storyboard-flow/layers/s/a.png',imagePath=path.join(root,'s.tiff');
   await fs.mkdir(path.dirname(path.join(root,bitmapPath)),{recursive:true,mode:0o700});
   const png=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer();
-  const project={id:'p',name:'resource lifecycle',shots:[{id:'s',imagePath,fileName:'s.tiff',swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'a',kind:'paint',bitmapPath,width:2,height:2}]}],dialogues:[]};
+  const project={id:'p',name:'resource lifecycle',shots:[{id:'s',imagePath,fileName:'s.tiff',flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'a',kind:'paint',bitmapPath,width:2,height:2}]}],dialogues:[]};
   const persist=async()=>{await fs.writeFile(metadataPath,JSON.stringify(project,null,2)+'\n',{mode:0o600});await fs.writeFile(path.join(root,'storyboard-script.md'),serializeStoryboardScriptMarkdown(project as any),{mode:0o600});return {};};
   await fs.writeFile(path.join(root,bitmapPath),png,{mode:0o600});await fs.writeFile(imagePath,await sharp(png).tiff().toBuffer(),{mode:0o600});await persist();
   const config={userData:()=>userData,python,script:path.resolve('scripts/recovery-origin-permissions.py'),
@@ -56,7 +56,7 @@ test('real PreparedSave retains only after durable admission and closes its orig
 // not a claim of additional RED-before-GREEN implementation cycles.
 test.each(['copy','plan','foreign-scope','source-change','control-funding'] as const)('durable reservation rejects %s before control or business effects',async mode=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'resource-binding-root-')),userData=await fs.mkdtemp(path.join(os.tmpdir(),'resource-binding-data-'));
-  await fs.mkdir(path.join(root,'.storyboard-workbench'),{mode:0o700});
+  await fs.mkdir(path.join(root,'.storyboard-flow'),{mode:0o700});
   const source=path.join(root,'contributor.png'),bytes=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer();await fs.writeFile(source,bytes,{mode:0o600});
   const python='python3',budget={bytes:mode==='control-funding'?65536:4*1024*1024,records:1000,assets:16,jsonDepth:80};
   const policy=(await createNativeAuthorizationSession(python,path.resolve('scripts/recovery-content-permissions.py'),()=>65536).request({phase:'capturePolicy',sources:[source],sourceByteLimit:budget.bytes})).sourcePolicy;
@@ -83,10 +83,10 @@ test('an exceeded Root cannot prevent a separately settled Root from receiving i
     claimWriter:(_root,restrictions)=>createRecoveryClaimRecords({userData:()=>userData,python,script:path.resolve('scripts/recovery-claim-records.py'),restrictions:()=>restrictions})});
   const roots=[];
   for(let index=0;index<2;index++){
-    const root=await fs.mkdtemp(path.join(os.tmpdir(),'resource-independent-root-'));await fs.mkdir(path.join(root,'.storyboard-workbench'),{mode:0o700});
+    const root=await fs.mkdtemp(path.join(os.tmpdir(),'resource-independent-root-'));await fs.mkdir(path.join(root,'.storyboard-flow'),{mode:0o700});
     const source=path.join(root,'source.json');await fs.writeFile(source,'{}',{mode:0o600});
     const policy=(await createNativeAuthorizationSession(python,path.resolve('scripts/recovery-content-permissions.py'),()=>65536).request({phase:'capturePolicy',sources:[source],sourceByteLimit:budget.bytes})).sourcePolicy;
-    roots.push({root,policy,file:path.join(root,'.storyboard-workbench/pending-file-transaction.json')});
+    roots.push({root,policy,file:path.join(root,'.storyboard-flow/pending-file-transaction.json')});
   }
   await expect(accounting.run(async()=>{
     const a=roots[0],qa=await accounting.quote(a.root,budget,1,1,a.policy);

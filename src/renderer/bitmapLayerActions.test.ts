@@ -240,7 +240,7 @@ const layer = (id: string, visible = true): BitmapLayer => ({
   id,
   name: id,
   kind: "paint",
-  bitmapPath: `.storyboard-workbench/layers/${id}.png`,
+  bitmapPath: `.storyboard-flow/layers/${id}.png`,
   visible,
   locked: false,
   opacity: 1,

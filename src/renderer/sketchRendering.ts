@@ -60,8 +60,8 @@ export const cssBlendMode = (blendMode: BitmapLayer["blendMode"] | undefined) =>
 };
 
 export const canvasSizeForShot = (shot: Shot): CanvasSize => {
-  const width = shot.swb?.canvasWidth;
-  const height = shot.swb?.canvasHeight;
+  const width = shot.flow?.canvasWidth;
+  const height = shot.flow?.canvasHeight;
 
   return width && height ? { width, height } : sketchCanvasSize;
 };

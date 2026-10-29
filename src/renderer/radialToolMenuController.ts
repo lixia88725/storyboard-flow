@@ -93,14 +93,14 @@ export const nextRadialSlotsConfig = (
 
 type UseRadialToolMenuControllerOptions = {
   activeSketchTool: SketchToolSettings["tool"];
-  needsSwbImport: boolean;
+  needsFlowImport: boolean;
   setStatus: (status: string) => void;
   closeAnimationMs?: number;
 };
 
 export const useRadialToolMenuController = ({
   activeSketchTool,
-  needsSwbImport,
+  needsFlowImport,
   setStatus,
   closeAnimationMs = defaultRadialToolMenuCloseAnimationMs
 }: UseRadialToolMenuControllerOptions) => {
@@ -164,7 +164,7 @@ export const useRadialToolMenuController = ({
         return;
       }
 
-      if (needsSwbImport) {
+      if (needsFlowImport) {
         setStatus("Import external changes before editing");
         return;
       }
@@ -182,7 +182,7 @@ export const useRadialToolMenuController = ({
     [
       activeSketchTool,
       closeRadialToolMenu,
-      needsSwbImport,
+      needsFlowImport,
       openRadialToolMenu,
       radialToolMenu,
       setStatus

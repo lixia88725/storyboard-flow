@@ -464,8 +464,8 @@ def plan_png_write(root_path, file_path, length, digest, mode, byte_limit):
     try:
         root_fd = os.open(root, flags);held.append(root_fd)
         parents = [{'path': str(root), 'native': directory(root_fd)}]
-        metadata_fd = os.open('.storyboard-workbench', flags, dir_fd=root_fd);held.append(metadata_fd)
-        edges.append((root_fd, '.storyboard-workbench', metadata_fd))
+        metadata_fd = os.open('.storyboard-flow', flags, dir_fd=root_fd);held.append(metadata_fd)
+        edges.append((root_fd, '.storyboard-flow', metadata_fd))
         metadata = directory(metadata_fd)
         parent_fd, parent_path, missing = root_fd, root, []
         for part in target.parent.relative_to(root).parts:
@@ -505,14 +505,14 @@ def plan_png_write(root_path, file_path, length, digest, mode, byte_limit):
         # the first time. Fund their census entries/raw attributes even though
         # they are not newly created directories. Root/metadata are anchors;
         # missing directories already have their separate creation envelopes.
-        containers = [parent for parent in parents[1:] if parent['path'] != str(root / '.storyboard-workbench')]
+        containers = [parent for parent in parents[1:] if parent['path'] != str(root / '.storyboard-flow')]
         container_bytes = sum(raw(parent['native']) for parent in containers)
         for parent, name, fd in edges:
             if not same_mac_stat(os.stat(name, dir_fd=parent, follow_symlinks=False), os.fstat(fd)):
                 raise ValueError('PNG plan naming changed')
         if os.path.realpath(root) != str(root) or not same_mac_stat(os.stat(root, follow_symlinks=False), os.fstat(root_fd)):
             raise ValueError('PNG plan Root changed')
-        return dict(schema='swb.native-png-plan.v1', root=str(root), filePath=str(target), length=length, digest=digest, mode=mode, byteLimit=byte_limit,
+        return dict(schema='flow.native-png-plan.v1', root=str(root), filePath=str(target), length=length, digest=digest, mode=mode, byteLimit=byte_limit,
                     parents=parents, metadata=metadata, missingDirectories=missing, target=target_info, originalDigest=original_digest,
                     stagePeak=stage_peak, containerPeakBytes=container_bytes, containerPeakRecords=len(containers),
                     peakBytes=aliases * stage_peak + len(missing) * 32768 + container_bytes,
@@ -776,7 +776,7 @@ def protected_write(root_path, file_path, data, mode="upsert", operation=None, w
                 if owned_metadata(target) != target_after or owned_metadata(temporary) != stage_after:
                     raise ValueError('owned publication changed during certification')
                 owned_receipt = bounded_owned_receipt(dict(
-                    schema='swb.owned-stage-publication.v1', operation=operation,
+                    schema='flow.owned-stage-publication.v1', operation=operation,
                     root=str(root), target=str(target), stage=str(temporary),
                     creation=expected_identity, stageBeforePublication=first,
                     targetAfterPublication=target_after, stageAfterPublication=stage_after,

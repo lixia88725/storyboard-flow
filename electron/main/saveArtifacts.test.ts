@@ -8,7 +8,7 @@ import { recoverFailedSave } from "./saveRecovery.js";
 import { createSavePreparationDirectory } from "./tiffPreparation.js";
 
 const prepareReplacement = async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "swb-save-cleanup-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "flow-save-cleanup-"));
   const tempFolderPath = path.join(root, "save-tmp");
   const backupFolderPath = path.join(root, "save-backup");
   const tempPath = path.join(tempFolderPath, "shot.tiff");
@@ -30,7 +30,7 @@ const prepareReplacement = async () => {
 
 describe("withSuccessfulSaveArtifactCleanup", () => {
   it("retains a different directory at the same artifact path before committing or deleting", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "swb-cleanup-identity-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "flow-cleanup-identity-"));
     const tempFolderPath = path.join(root, "owned"), backupFolderPath = path.join(tempFolderPath, ".backups");
     const preparationDirectory = await createSavePreparationDirectory(tempFolderPath);
     await rename(tempFolderPath, path.join(root, "retained-original"));
@@ -161,9 +161,9 @@ describe("withSuccessfulSaveArtifactCleanup", () => {
     const remove = vi.fn(async () => undefined);
 
     const wrapped = withSuccessfulSaveArtifactCleanup(applied, {
-      tempFolderPath: "/scene/.storyboard-workbench/save-tmp/save-123",
-      backupFolderPath: "/scene/.storyboard-workbench/save-backup/save-123",
-      preparationDirectory: { directoryPath: "/scene/.storyboard-workbench/save-tmp/save-123", identity: { dev: "unused", ino: "unused" } },
+      tempFolderPath: "/scene/.storyboard-flow/save-tmp/save-123",
+      backupFolderPath: "/scene/.storyboard-flow/save-backup/save-123",
+      preparationDirectory: { directoryPath: "/scene/.storyboard-flow/save-tmp/save-123", identity: { dev: "unused", ino: "unused" } },
       remove
     });
 

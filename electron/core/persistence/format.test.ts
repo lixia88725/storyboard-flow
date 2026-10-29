@@ -173,7 +173,7 @@ describe('checkpoint format on a real temporary project folder', () => {
     const paths = storePaths(root);
 
     // Decoys a real project folder would hold.
-    const legacy = path.join(root, '.storyboard-workbench');
+    const legacy = path.join(root, '.storyboard-flow');
     await fs.mkdir(legacy);
     const legacyFile = path.join(legacy, 'storyboard.project.json');
     const tiff = path.join(root, 'frame-0001.tif');
@@ -208,8 +208,10 @@ describe('checkpoint format on a real temporary project folder', () => {
 
     const outside = (await listTree(root)).filter(
       (entry) =>
-        !entry.startsWith('.storyboard-flow-v2') &&
-        !entry.startsWith('.storyboard-workbench') &&
+        entry !== '.storyboard-flow' &&
+        !entry.startsWith('.storyboard-flow/checkpoints/') &&
+        entry !== '.storyboard-flow/checkpoints' &&
+        entry !== '.storyboard-flow/storyboard.project.json' &&
         !['notes.txt', 'frame-0001.tif'].includes(entry)
     );
     expect(outside).toEqual([]);

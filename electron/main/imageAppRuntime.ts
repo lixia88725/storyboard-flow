@@ -9,7 +9,7 @@ type ImageAppRecord = {
   width?: number;
   height?: number;
   fingerprint?: string;
-  swbMetadata?: unknown;
+  flowMetadata?: unknown;
 };
 
 type CreateImageRecords = (

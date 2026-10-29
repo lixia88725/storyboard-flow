@@ -6,7 +6,7 @@ const project = {
     {
       id: "owned",
       imagePath: "/project/owned.tiff",
-      swb: {
+      flow: {
         status: "owned" as const,
         canvasWidth: 1920,
         canvasHeight: 1080,
@@ -22,7 +22,7 @@ const project = {
     {
       id: "parked",
       imagePath: "/project/parked.tif",
-      swb: {
+      flow: {
         status: "owned" as const,
         canvasWidth: 1920,
         canvasHeight: 1080,
@@ -32,8 +32,8 @@ const project = {
     {
       id: "external",
       imagePath: "/project/external.tiff",
-      swb: {
-        status: "non-swb" as const,
+      flow: {
+        status: "non-flow" as const,
         canvasWidth: 1920,
         canvasHeight: 1080
       }
@@ -42,11 +42,11 @@ const project = {
 };
 
 describe("knownImageChangesService", () => {
-  it("returns known SWB TIFF paths whose fingerprints or metadata changed", async () => {
+  it("returns known FLOW TIFF paths whose fingerprints or metadata changed", async () => {
     const pixelFingerprint = vi.fn(async (imagePath: string) =>
       imagePath === "/project/owned.tiff" ? "new-pixels" : "same-pixels"
     );
-    const readSwbMetadata = vi.fn(async (imagePath: string) => ({
+    const readFlowMetadata = vi.fn(async (imagePath: string) => ({
       shotId: imagePath === "/project/owned.tiff" ? "owned" : "parked",
       canvasWidth: 1920,
       canvasHeight: 1080,
@@ -67,7 +67,7 @@ describe("knownImageChangesService", () => {
         new Set(),
         {
           pixelFingerprint,
-          readSwbMetadata,
+          readFlowMetadata,
           onProgress
         }
       )
@@ -76,7 +76,7 @@ describe("knownImageChangesService", () => {
     expect(pixelFingerprint).toHaveBeenCalledTimes(2);
     expect(pixelFingerprint).toHaveBeenCalledWith("/project/owned.tiff");
     expect(pixelFingerprint).toHaveBeenCalledWith("/project/parked.tif");
-    expect(readSwbMetadata).toHaveBeenCalledTimes(2);
+    expect(readFlowMetadata).toHaveBeenCalledTimes(2);
     expect(onProgress).toHaveBeenCalledTimes(3);
     expect(onProgress).toHaveBeenLastCalledWith({
       kind: "open",
@@ -88,17 +88,17 @@ describe("knownImageChangesService", () => {
 
   it("skips pending-deleted known TIFF paths", async () => {
     const pixelFingerprint = vi.fn(async () => "new-pixels");
-    const readSwbMetadata = vi.fn(async () => undefined);
+    const readFlowMetadata = vi.fn(async () => undefined);
 
     await expect(
       changedKnownImagePaths(project, ["/project/owned.tiff"], new Set(["/project/owned.tiff"]), {
         pixelFingerprint,
-        readSwbMetadata
+        readFlowMetadata
       })
     ).resolves.toEqual([]);
 
     expect(pixelFingerprint).not.toHaveBeenCalled();
-    expect(readSwbMetadata).not.toHaveBeenCalled();
+    expect(readFlowMetadata).not.toHaveBeenCalled();
   });
 
   it("skips a known Pending file that was renamed or removed externally", async () => {
@@ -110,7 +110,7 @@ describe("knownImageChangesService", () => {
     await expect(
       changedKnownImagePaths(project, ["/project/parked.tif"], new Set(), {
         pixelFingerprint,
-        readSwbMetadata: vi.fn()
+        readFlowMetadata: vi.fn()
       })
     ).resolves.toEqual([]);
   });

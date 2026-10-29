@@ -18,13 +18,13 @@ test.each(['complete', 'reservation-refused', 'terminal-tail', 'content-terminal
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'main-cleanup-root-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'main-cleanup-data-'));
   const python = 'python3';
-  const bitmapPath = '.storyboard-workbench/layers/s/a.png', targetBitmapPath = '.storyboard-workbench/layers/s/new.png';
-  const target = path.join(root, targetBitmapPath), metadataPath = path.join(root, '.storyboard-workbench/storyboard.project.json'), scriptPath = path.join(root, 'storyboard-script.md');
+  const bitmapPath = '.storyboard-flow/layers/s/a.png', targetBitmapPath = '.storyboard-flow/layers/s/new.png';
+  const target = path.join(root, targetBitmapPath), metadataPath = path.join(root, '.storyboard-flow/storyboard.project.json'), scriptPath = path.join(root, 'storyboard-script.md');
   await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
   const bytes = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'blue' } }).png().toBuffer();
   await fs.writeFile(path.join(root, bitmapPath), bytes, { mode: 0o600 });
   await fs.writeFile(path.join(root, 's.tiff'), await sharp(bytes).tiff().toBuffer(), { mode: 0o600 });
-  const project = { id: 'p', name: 'explicit owned cleanup', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', swb: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: [{ id: 'a', kind: 'paint', bitmapPath, width: 2, height: 2 }] }], dialogues: [] };
+  const project = { id: 'p', name: 'explicit owned cleanup', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', flow: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: [{ id: 'a', kind: 'paint', bitmapPath, width: 2, height: 2 }] }], dialogues: [] };
   const persist = async () => { await fs.writeFile(metadataPath, JSON.stringify(project, null, 2) + '\n', { mode: 0o600 }); await fs.writeFile(scriptPath, serializeStoryboardScriptMarkdown(project as any), { mode: 0o600 }); return {}; };
   await persist();
   const budget = { bytes: 16 * 1024 * 1024, records: 2000, assets: 64, jsonDepth: 80 };
@@ -57,12 +57,12 @@ test.each(['complete', 'reservation-refused', 'terminal-tail', 'content-terminal
   const beforeJSON = await fs.readFile(metadataPath), beforeScript = await fs.readFile(scriptPath);
   const shim = path.join(root, 'publication-fault');
   await fs.writeFile(shim, `#!/usr/bin/env ${python}\nimport sys,importlib.util,json,base64,os\ns=importlib.util.spec_from_file_location('writer',sys.argv[3]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\noriginal=m.os.unlink\ndef fault(p,*a,**k):\n if os.path.basename(p).startswith('.layer-staging-'):raise PermissionError('fixture original final unlink denied')\n return original(p,*a,**k)\nm.os.unlink=fault\nr=json.load(sys.stdin)\nprint(json.dumps(m.protected_write(r['root'],r['filePath'],base64.b64decode(r['bytes']),r['mode'],r['operation'])))\n`, { mode: 0o700 });
-  const previous = process.env.SWB_PYTHON_BIN;
+  const previous = process.env.FLOW_PYTHON_BIN;
   let failure: any;
   try {
-    process.env.SWB_PYTHON_BIN = shim;
+    process.env.FLOW_PYTHON_BIN = shim;
     failure = await service.ordinary(event, 'layers:writePng', { folderPath: root }, [target], () => writeLayerPng({ folderPath: root, bitmapPath: targetBitmapPath, dataUrl: 'data:image/png;base64,' + bytes.toString('base64') })).catch(e => e);
-  } finally { if (previous === undefined) delete process.env.SWB_PYTHON_BIN; else process.env.SWB_PYTHON_BIN = previous; }
+  } finally { if (previous === undefined) delete process.env.FLOW_PYTHON_BIN; else process.env.FLOW_PYTHON_BIN = previous; }
   expect(failure).toMatchObject({ effect: 'committed', filePath: target });
   expect(failure.receiptError).toBeUndefined();
   const configured = configure();

@@ -12,25 +12,25 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 // The backend refuses aliased paths on purpose, and macOS reports the temp dir through
 // one (/var -> /private/var). Resolve it once so every smoke root below is canonical.
 const smokeTmpRoot = await realpath(os.tmpdir());
-const smokeRoot = path.join(smokeTmpRoot, `swb-bitmap-smoke-${Date.now()}`);
-const scriptRoot = path.join(smokeTmpRoot, `swb-script-smoke-${Date.now()}`);
+const smokeRoot = path.join(smokeTmpRoot, `flow-bitmap-smoke-${Date.now()}`);
+const scriptRoot = path.join(smokeTmpRoot, `flow-script-smoke-${Date.now()}`);
 const scriptRootImportEvidenceRoot = `${scriptRoot}-import-evidence`;
-const mdBootstrapRoot = path.join(smokeTmpRoot, `swb-md-bootstrap-source-${Date.now()}`);
-const mdBootstrapTargetRoot = path.join(smokeTmpRoot, `swb-md-bootstrap-target-${Date.now()}`);
+const mdBootstrapRoot = path.join(smokeTmpRoot, `flow-md-bootstrap-source-${Date.now()}`);
+const mdBootstrapTargetRoot = path.join(smokeTmpRoot, `flow-md-bootstrap-target-${Date.now()}`);
 const mdEmbeddedMatteTargetRoot = path.join(
   smokeTmpRoot,
-  `swb-md-embedded-matte-target-${Date.now()}`
+  `flow-md-embedded-matte-target-${Date.now()}`
 );
-const deleteRoot = path.join(smokeTmpRoot, `swb-delete-smoke-${Date.now()}`);
-const clipboardRoot = path.join(smokeTmpRoot, `swb-clipboard-smoke-${Date.now()}`);
-const denseMarqueeRoot = path.join(smokeTmpRoot, `swb-dense-marquee-smoke-${Date.now()}`);
-const legacyRoot = path.join(smokeTmpRoot, `swb-legacy-smoke-${Date.now()}`);
-const photoshopImportRoot = path.join(smokeTmpRoot, `swb-photoshop-import-${Date.now()}`);
-const savedLayeredImportRoot = path.join(smokeTmpRoot, `swb-saved-layered-import-${Date.now()}`);
+const deleteRoot = path.join(smokeTmpRoot, `flow-delete-smoke-${Date.now()}`);
+const clipboardRoot = path.join(smokeTmpRoot, `flow-clipboard-smoke-${Date.now()}`);
+const denseMarqueeRoot = path.join(smokeTmpRoot, `flow-dense-marquee-smoke-${Date.now()}`);
+const legacyRoot = path.join(smokeTmpRoot, `flow-legacy-smoke-${Date.now()}`);
+const photoshopImportRoot = path.join(smokeTmpRoot, `flow-photoshop-import-${Date.now()}`);
+const savedLayeredImportRoot = path.join(smokeTmpRoot, `flow-saved-layered-import-${Date.now()}`);
 const port = String(9300 + Math.floor(Math.random() * 400));
 const electronBin = path.join(repoRoot, "node_modules", ".bin", "electron");
 const photoshopPythonDepsDir =
-  process.env.SWB_PYTHON_DEPS_DIR ?? path.join(repoRoot, "vendor", "python", "photoshop-tiff");
+  process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(repoRoot, "vendor", "python", "photoshop-tiff");
 
 // Shared smoke helpers.
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -100,7 +100,7 @@ const layerAssetState = async (filePath) =>
 const resolveLayerPath = (folderPath, bitmapPath) => path.join(folderPath, bitmapPath);
 
 const projectMetadataPath = (folderPath) =>
-  path.join(folderPath, ".storyboard-workbench", "storyboard.project.json");
+  path.join(folderPath, ".storyboard-flow", "storyboard.project.json");
 
 const readProjectMetadata = async (folderPath) =>
   JSON.parse(await readFile(projectMetadataPath(folderPath), "utf8"));
@@ -172,7 +172,7 @@ const fileExists = async (filePath) =>
     .catch(() => false);
 
 const collectLayerAssetPaths = async (folderPath) => {
-  const layerRoot = path.join(folderPath, ".storyboard-workbench", "layers");
+  const layerRoot = path.join(folderPath, ".storyboard-flow", "layers");
   const results = [];
 
   const visit = async (directory) => {
@@ -582,7 +582,7 @@ try {
   }
   const originalShotAHash = await hashFile(originalShotAPath);
 
-  await mkdir(path.join(legacyRoot, ".storyboard-workbench"), { recursive: true });
+  await mkdir(path.join(legacyRoot, ".storyboard-flow"), { recursive: true });
   await sharp({
     create: {
       width: 320,
@@ -657,8 +657,8 @@ try {
     cwd: repoRoot,
     env: {
       ...process.env,
-      SWB_USER_DATA_DIR: electronUserDataRoot,
-      SWB_PYTHON_DEPS_DIR: photoshopPythonDepsDir
+      FLOW_USER_DATA_DIR: electronUserDataRoot,
+      FLOW_PYTHON_DEPS_DIR: photoshopPythonDepsDir
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -849,7 +849,7 @@ try {
     return shots.length === 2 &&
       shots.every(
         (shot) =>
-          shot.swb?.canvasHeight === 1230 &&
+          shot.flow?.canvasHeight === 1230 &&
           shot.presentation?.matte?.mode === "expanded" &&
           shot.layers?.at(-1)?.id === "layer-matte-overlay" &&
           shot.layers.at(-1)?.locked === true
@@ -938,7 +938,7 @@ try {
     return shots.length === 2 &&
       shots.every(
         (shot) =>
-          shot.swb?.canvasHeight === 1080 &&
+          shot.flow?.canvasHeight === 1080 &&
           !shot.presentation?.matte &&
           !shot.layers?.some(
             (layer) =>
@@ -969,7 +969,7 @@ try {
     return matteProject.shots?.length === 2 &&
       matteProject.shots.every(
         (shot) =>
-          shot.swb?.canvasHeight === 1230 &&
+          shot.flow?.canvasHeight === 1230 &&
           shot.presentation?.matte?.mode === "expanded" &&
           shot.layers?.some((layer) => layer.id === "layer-matte-overlay")
       )
@@ -989,7 +989,7 @@ try {
     return matteProject.shots?.length === 2 &&
       matteProject.shots.every(
         (shot) =>
-          shot.swb?.canvasHeight === 1080 &&
+          shot.flow?.canvasHeight === 1080 &&
           !shot.presentation?.matte &&
           !shot.layers?.some(
             (layer) =>
@@ -1051,7 +1051,7 @@ try {
     return shots.length === 2 &&
       shots.every(
         (shot) =>
-          shot.swb?.canvasHeight === 1080 &&
+          shot.flow?.canvasHeight === 1080 &&
           shot.presentation?.matte?.mode === "embedded" &&
           shot.layers?.at(-1)?.id === "layer-matte-overlay"
       )
@@ -1073,7 +1073,7 @@ try {
       (shot) => !embeddedOriginalShotIds.has(shot.id)
     );
     return matteProject.shots?.length === 3 &&
-      inheritedShot?.swb?.canvasHeight === 1080 &&
+      inheritedShot?.flow?.canvasHeight === 1080 &&
       inheritedShot.presentation?.matte?.mode === "embedded" &&
       inheritedShot.layers?.at(-2)?.id === "layer-matte-overlay" &&
       inheritedShot.layers?.at(-1)?.id === "layer-dialogue-overlay"
@@ -1087,7 +1087,7 @@ try {
     return shots.length === 3 &&
       shots.every(
         (shot) =>
-          shot.swb?.canvasHeight === 1080 &&
+          shot.flow?.canvasHeight === 1080 &&
           !shot.presentation?.matte &&
           !shot.layers?.some(
             (layer) =>
@@ -1197,18 +1197,18 @@ try {
     const ui = await scriptRootUiFacts();
     const markdown = await readFile(path.join(scriptRoot, 'storyboard-script.md'), 'utf8');
     return project.shots?.length === 3 && project.shots.every((shot, i) => shot.id === scriptPreImportUi.shots[i].id &&
-      shot.swb?.status === 'owned' && /\.tiff?$/i.test(shot.imagePath)) &&
+      shot.flow?.status === 'owned' && /\.tiff?$/i.test(shot.imagePath)) &&
       ui?.shots.length === 3 && ui.shots.every((shot, i) => shot?.imagePath === project.shots[i].imagePath) &&
       !ui.importWarning && !ui.importEnabled && markdown === '1. \n2. \n3. \n' ? project : undefined;
   }, "scriptRoot normal UI Import required JSON/MD, three owned TIFFs and publication");
   const scriptInitialImportMappings = await Promise.all(scriptInitialImportedProject.shots.map(async (shot, i) => {
     const original = scriptOriginalFacts[i], entry = scriptInitialImportedProject.pendingBake?.shots[shot.id];
-    const archivePath = shot.swb.archivePath;
+    const archivePath = shot.flow.archivePath;
     const output = await sharp(shot.imagePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const outputPixelHash = createHash('sha256').update(output.data).digest('hex');
     const archiveHash = await hashFile(archivePath), outputHash = await hashFile(shot.imagePath);
     const layerPaths = (shot.layers ?? []).map(layer => path.resolve(scriptRoot, layer.bitmapPath));
-    if (shot.sourceFileName !== original.fileName || shot.swb.sourcePath !== original.imagePath ||
+    if (shot.sourceFileName !== original.fileName || shot.flow.sourcePath !== original.imagePath ||
         path.dirname(path.dirname(archivePath)) !== path.join(scriptRoot, 'Archive') ||
         path.basename(archivePath) !== original.fileName || archiveHash !== original.hash ||
         await fileExists(original.imagePath) || path.dirname(shot.imagePath) !== scriptRoot ||
@@ -1219,7 +1219,7 @@ try {
         !(await Promise.all(layerPaths.map(fileExists))).every(Boolean)) {
       throw new Error(`scriptRoot Import source/archive/output/identity mapping failed for ${original.fileName}`);
     }
-    return { shotId: shot.id, order: shot.order, sourceFileName: shot.sourceFileName, sourcePath: shot.swb.sourcePath,
+    return { shotId: shot.id, order: shot.order, sourceFileName: shot.sourceFileName, sourcePath: shot.flow.sourcePath,
       archivePath, archiveHash, imagePath: shot.imagePath, fileName: shot.fileName, outputHash, outputPixelHash,
       width: output.info.width, height: output.info.height, layerPaths, state: entry.state };
   }));
@@ -1347,7 +1347,7 @@ try {
   const externalImageWarningProject = await waitFor(async () => {
     const project = await readProjectMetadata(scriptRoot);
     return project.shots?.length === scriptImportedProject.shots.length + 2 &&
-      project.shots.slice(-2).every((shot) => shot.swb?.status === "owned")
+      project.shots.slice(-2).every((shot) => shot.flow?.status === "owned")
       ? project
       : undefined;
   }, "external folder images import");
@@ -1385,12 +1385,12 @@ try {
         !facts.importEnabled && !facts.importWarning ? facts : undefined;
     }, `original explicit Import publication for ${folder}`);
     const mappings = await Promise.all(project.shots.map(async (shot, i) => {
-      const original = originals.find(o => o.imagePath === shot.swb?.sourcePath);
-      const entry = project.pendingBake?.shots[shot.id], archivePath = shot.swb?.archivePath;
+      const original = originals.find(o => o.imagePath === shot.flow?.sourcePath);
+      const entry = project.pendingBake?.shots[shot.id], archivePath = shot.flow?.archivePath;
       const archiveHash = await hashFile(archivePath), outputHash = await hashFile(shot.imagePath);
       if (!original || shot.id !== beforeUi.shots[i].id || shot.order !== i || shot.sourceFileName !== path.basename(original.imagePath) ||
           path.dirname(path.dirname(archivePath)) !== path.join(folder, 'Archive') || archiveHash !== original.hash ||
-          await fileExists(original.imagePath) || shot.swb.status !== 'owned' || !/\.tiff?$/i.test(shot.imagePath) ||
+          await fileExists(original.imagePath) || shot.flow.status !== 'owned' || !/\.tiff?$/i.test(shot.imagePath) ||
           path.dirname(shot.imagePath) !== folder || shot.fileName !== path.basename(shot.imagePath) ||
           entry?.state !== 'pending' || !entry.editToken || entry.acceptedOutputIdentity !== outputHash) throw new Error(`Original explicit Import mapping failed in ${folder}`);
       return { shotId: shot.id, sourcePath: original.imagePath, sourceFileName: shot.sourceFileName, archivePath, archiveHash, imagePath: shot.imagePath, outputHash };
@@ -1410,7 +1410,7 @@ try {
   await waitFor(async () => {
     const project = await readProjectMetadata(deleteRoot);
     return project.shots?.length === 3 &&
-      project.shots.every((shot) => shot.swb?.status === "owned")
+      project.shots.every((shot) => shot.flow?.status === "owned")
       ? project
       : undefined;
   }, "delete smoke imported images before editing");
@@ -1419,7 +1419,7 @@ try {
   const deleteTargetPath = deleteInitialProject.shots[1].imagePath;
   const deleteTargetLayerDir = path.join(
     deleteRoot,
-    ".storyboard-workbench",
+    ".storyboard-flow",
     "layers",
     deleteInitialProject.shots[1].id
   );
@@ -1503,7 +1503,7 @@ try {
   await waitFor(async () => {
     const project = await readProjectMetadata(denseMarqueeRoot);
     return project.shots?.length === 24 &&
-      project.shots.every((shot) => shot.swb?.status === "owned")
+      project.shots.every((shot) => shot.flow?.status === "owned")
       ? project
       : undefined;
   }, "dense marquee imported images before editing");
@@ -1608,7 +1608,7 @@ try {
   await waitFor(async () => {
     const project = await readProjectMetadata(smokeRoot);
     return project.shots?.length === 3 &&
-      project.shots.every((shot) => shot.swb?.status === "owned")
+      project.shots.every((shot) => shot.flow?.status === "owned")
       ? project
       : undefined;
   }, "main smoke imported images before editing");
@@ -1857,17 +1857,17 @@ try {
   await evaluate(`document.querySelector(".import-control button").click()`);
   await waitFor(async () => {
     const project = await readProjectMetadata(clipboardRoot);
-    return project.shots?.length === 3 && project.shots.every(shot => shot.swb?.status === "owned") ? project : undefined;
+    return project.shots?.length === 3 && project.shots.every(shot => shot.flow?.status === "owned") ? project : undefined;
   }, "clipboard explicit Import durable owned TIFF/JSON");
   await verifyOriginalExplicitImport(clipboardRoot);
   const clipboardImported = await readProjectMetadata(clipboardRoot);
   const clipboardProtectedAssets = [];
   for (const shot of clipboardImported.shots) {
-    const original = clipboardOriginalPixels.find(item => item.imagePath === shot.swb.sourcePath);
+    const original = clipboardOriginalPixels.find(item => item.imagePath === shot.flow.sourcePath);
     const { data, info } = await sharp(shot.imagePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     if (!original || info.width !== original.width || info.height !== original.height ||
         createHash("sha256").update(data).digest("hex") !== original.pixelHash) throw new Error("Clipboard Import changed original dimensions/pixels");
-    for (const assetPath of [shot.swb.archivePath, shot.imagePath, ...shot.layers.map(layer => resolveLayerPath(clipboardRoot, layer.bitmapPath))]) {
+    for (const assetPath of [shot.flow.archivePath, shot.imagePath, ...shot.layers.map(layer => resolveLayerPath(clipboardRoot, layer.bitmapPath))]) {
       clipboardProtectedAssets.push({ assetPath, hash: await hashFile(assetPath) });
     }
   }
@@ -1880,8 +1880,8 @@ try {
     if (target.layers.length !== source.layers.length) throw new Error("Clipboard layer count differs from actual source");
     for (let i = 0; i < source.layers.length; i++) {
       const a = resolveLayerPath(clipboardRoot, source.layers[i].bitmapPath), b = resolveLayerPath(clipboardRoot, target.layers[i].bitmapPath);
-      if (!a.startsWith(path.join(clipboardRoot, ".storyboard-workbench", "layers") + path.sep) ||
-          !b.startsWith(path.join(clipboardRoot, ".storyboard-workbench", "layers", target.id) + path.sep)) throw new Error("Clipboard layers borrowed Archive/source namespace");
+      if (!a.startsWith(path.join(clipboardRoot, ".storyboard-flow", "layers") + path.sep) ||
+          !b.startsWith(path.join(clipboardRoot, ".storyboard-flow", "layers", target.id) + path.sep)) throw new Error("Clipboard layers borrowed Archive/source namespace");
       pairs.push([a, b]);
     }
     const identities = await Promise.all(pairs.map(async ([a, b]) => {
@@ -3906,7 +3906,7 @@ try {
   const photoshopImportedProject = await waitFor(async () => {
     const project = await readProjectMetadata(photoshopImportRoot);
     const shot = project.shots?.[0];
-    return shot?.swb?.sourceKind === "photoshop-layered-tiff" ? project : undefined;
+    return shot?.flow?.sourceKind === "photoshop-layered-tiff" ? project : undefined;
   }, "Photoshop layered TIFF round-trip import", 20000);
   await waitFor(
     () =>
@@ -3940,7 +3940,7 @@ try {
     throw new Error(
       `Photoshop TIFF round-trip import did not preserve bitmap layers: ${JSON.stringify({
         shotCount: photoshopImportedProject.shots?.length,
-        sourceKind: photoshopImportedShot?.swb?.sourceKind,
+        sourceKind: photoshopImportedShot?.flow?.sourceKind,
         layerNames: photoshopImportedLayerNames,
         layerCount: photoshopImportedLayers.length,
         maxExpectedLayerCount: photoshopLayerNames.length,
@@ -4118,7 +4118,7 @@ try {
 	  await waitFor(async () => {
 	    const project = await readProjectMetadata(smokeRoot);
 	    const tiffFiles = await findTiffFiles(smokeRoot);
-	    return project.shots?.every((shot) => shot.swb?.status === "owned") && tiffFiles.length === 3;
+	    return project.shots?.every((shot) => shot.flow?.status === "owned") && tiffFiles.length === 3;
 	  }, "Save-owned TIFF and metadata");
 	  await waitFor(
 	    () => evaluate(`!document.querySelector(".workspace-task-progress")`),
@@ -4152,14 +4152,14 @@ try {
     const facts = await scriptRootUiFacts(savedLayeredImportRoot);
     await writeFile(path.join(scriptRootImportEvidenceRoot, "foreign-layered-before-import.json"), JSON.stringify(facts ?? null, null, 2));
     return facts?.projectObserved && facts.shots.length === 1 && facts.shots[0].imagePath === savedLayeredImportSourcePath &&
-      facts.shots[0].previewPath === foreignPreviewPath && facts.shots[0].swb?.status === "non-swb" &&
+      facts.shots[0].previewPath === foreignPreviewPath && facts.shots[0].flow?.status === "non-flow" &&
       facts.previews.every(Boolean) && facts.importEnabled ? facts : undefined;
   }, "new foreign folder actually published with decoded preview, not old shot stage");
   if (Object.keys(foreignBeforeImport.pendingBake?.shots ?? {}).length || (await sharp(foreignPreviewPath).metadata()).width <= 0) {
     throw new Error("Foreign preview falsely acquired output proof or failed decoding");
   }
-  for (const protectedPath of [path.join(savedLayeredImportRoot, ".storyboard-workbench/storyboard.project.json"),
-    path.join(savedLayeredImportRoot, ".storyboard-workbench/layers"), path.join(savedLayeredImportRoot, "storyboard-script.md")]) {
+  for (const protectedPath of [path.join(savedLayeredImportRoot, ".storyboard-flow/storyboard.project.json"),
+    path.join(savedLayeredImportRoot, ".storyboard-flow/layers"), path.join(savedLayeredImportRoot, "storyboard-script.md")]) {
     if (await fileExists(protectedPath)) throw new Error(`Open adopted foreign assets before explicit Import: ${protectedPath}`);
   }
   await waitFor(
@@ -4184,7 +4184,7 @@ try {
   const savedLayeredImportedProject = await waitFor(async () => {
     const project = await readProjectMetadata(savedLayeredImportRoot);
     const shot = project.shots?.[0];
-    return shot?.swb?.sourceKind === "photoshop-layered-tiff" &&
+    return shot?.flow?.sourceKind === "photoshop-layered-tiff" &&
       (shot.layers?.length ?? 0) > 0
       ? project
       : undefined;
@@ -4255,7 +4255,7 @@ try {
   );
 
   const expectedRatios = (await readProjectMetadata(smokeRoot)).shots.map((shot) =>
-    (shot.swb?.canvasWidth ?? 1) / (shot.swb?.canvasHeight ?? 1)
+    (shot.flow?.canvasWidth ?? 1) / (shot.flow?.canvasHeight ?? 1)
   );
   const animationSetupChecks = await evaluate(`
     (async () => {
@@ -4427,7 +4427,7 @@ try {
     return project.shots?.length === 4 && tiffFiles.length === 4 ? project : undefined;
   }, "Add Shot metadata and TIFF file");
   const addedTheatricalShot = addedShotProject.shots.find(
-    (shot) => shot.swb?.canvasWidth === 1998 && shot.swb?.canvasHeight === 1080
+    (shot) => shot.flow?.canvasWidth === 1998 && shot.flow?.canvasHeight === 1080
   );
   if (!addedTheatricalShot) {
     throw new Error(`Add Shot did not create 1.85:1 metadata: ${JSON.stringify(addedShotProject)}`);
@@ -4457,7 +4457,7 @@ try {
   if (JSON.stringify(legacyBefore) !== JSON.stringify(legacyAfter) || (await scriptRootUiFacts(legacyRoot))?.projectObserved) {
     throw new Error("Unproved legacy Open mutated or falsely published the unknown project");
   }
-  for (const forbidden of [".storyboard-workbench/layers", ".storyboard-workbench/previews", "storyboard-script.md", "Archive", "Photoshop TIFF Export"]) {
+  for (const forbidden of [".storyboard-flow/layers", ".storyboard-flow/previews", "storyboard-script.md", "Archive", "Photoshop TIFF Export"]) {
     if (await fileExists(path.join(legacyRoot, forbidden))) throw new Error(`Unproved legacy Open created ${forbidden}`);
   }
   if ((await findTiffFiles(legacyRoot)).length) throw new Error("Unproved legacy Open created working TIFFs");
@@ -4494,7 +4494,7 @@ try {
         },
 	        externalImageWarning: {
           shotCount: externalImageWarningProject.shots.length,
-          appendedStatuses: externalImageWarningProject.shots.slice(-2).map((shot) => shot.swb.status)
+          appendedStatuses: externalImageWarningProject.shots.slice(-2).map((shot) => shot.flow.status)
         },
         deleteShotChecks: {
           pendingIds: deletePendingProject.pendingDeletedShots.map((shot) => shot.id),
@@ -4568,7 +4568,7 @@ try {
           layerNames: photoshopImportedLayerNames,
           activeLayerId: photoshopImportedShot.activeLayerId,
           layerAssetChecks: photoshopImportedLayerAssetChecks,
-          sourceKind: photoshopImportedShot.swb.sourceKind
+          sourceKind: photoshopImportedShot.flow.sourceKind
         },
         saveConflictBlocked,
         saveConflictStatus,
@@ -4582,7 +4582,7 @@ try {
         },
         archivedShotAHash,
         savedFileNames: savedTiffFiles,
-        savedSwbStatuses: savedProject.shots.map((shot) => shot.swb.status),
+        savedFlowStatuses: savedProject.shots.map((shot) => shot.flow.status),
         reopenedLayerIds,
         reopenedPaintHash,
         animationChecks,

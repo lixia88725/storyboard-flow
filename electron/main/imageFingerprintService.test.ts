@@ -24,7 +24,7 @@ const writeImage = async (
 
 describe("imageFingerprintService", () => {
   it("creates stable pixel fingerprints that include image dimensions", async () => {
-    const folder = await mkdtemp(path.join(os.tmpdir(), "swb-image-fingerprint-"));
+    const folder = await mkdtemp(path.join(os.tmpdir(), "flow-image-fingerprint-"));
     const first = path.join(folder, "first.png");
     const samePixels = path.join(folder, "same-pixels.png");
     const differentPixels = path.join(folder, "different-pixels.png");

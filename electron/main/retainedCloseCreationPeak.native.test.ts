@@ -14,8 +14,8 @@ import { fixtureAttributeBytes } from './nativeAttributeMeter.fixture.js';
 test('legacy ordinary-close reserves actual copied source attributes without changing its v1 format or sources', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'legacy-close-peak-root-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'legacy-close-peak-data-'));
-  const metadata = path.join(root, '.storyboard-workbench');
-  const bitmapPath = '.storyboard-workbench/layers/s/l.png';
+  const metadata = path.join(root, '.storyboard-flow');
+  const bitmapPath = '.storyboard-flow/layers/s/l.png';
   await fs.mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true, mode: 0o700 });
   const pixels = randomBytes(100 * 100 * 4);
   const png = await sharp(pixels, { raw: { width: 100, height: 100, channels: 4 } }).png().toBuffer();
@@ -72,7 +72,7 @@ test('legacy ordinary-close reserves actual copied source attributes without cha
 test('legacy close refuses fresh source attribute growth after reserving instead of copying an unquoted policy', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'legacy-close-growth-root-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'legacy-close-growth-data-'));
-  const metadata = path.join(root, '.storyboard-workbench'), bitmapPath = '.storyboard-workbench/layers/s/l.png';
+  const metadata = path.join(root, '.storyboard-flow'), bitmapPath = '.storyboard-flow/layers/s/l.png';
   await fs.mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true, mode: 0o700 });
   const png = await sharp({ create: { width: 2, height: 2, channels: 4, background: '#123456' } }).png().toBuffer();
   const image = path.join(root, 'synthetic.png'), project = { shots: [{ id: 's', imagePath: image, layers: [{ id: 'l', bitmapPath }] }] };

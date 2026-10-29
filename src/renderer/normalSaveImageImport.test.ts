@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import ts from "typescript";
 import { readFile } from "node:fs/promises";
 import { createProject, ensureBitmapLayerMetadata } from "../shared/projectOps";
-import type { Project, FolderScanPayload, ImportSwbFormatPayload, WorkspacePayload } from "../shared/types";
+import type { Project, FolderScanPayload, ImportFlowFormatPayload, WorkspacePayload } from "../shared/types";
 import { createNormalSaveAppAdapter } from "./normalSaveAppAdapter";
 import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import { registerWorkspaceAutosave } from "./workspaceAutosaveController";
@@ -13,22 +13,22 @@ async function actualApp(bindings: Record<string, unknown>) {
   const text = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
   const tree = ts.createSourceFile("App.tsx", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let expression = "";
-  const visit = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(tree) === "handleImportSwbFormat") expression = n.initializer!.getText(tree); ts.forEachChild(n, visit); }; visit(tree);
+  const visit = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(tree) === "handleImportFlowFormat") expression = n.initializer!.getText(tree); ts.forEachChild(n, visit); }; visit(tree);
   return new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`const callback = ${expression}; return callback;`))(...Object.values(appCallerAdapterScope(bindings)));
 }
 async function fixture() {
-  const project: Project = { ...createProject("P"), shots: [{ id: "s", order: 0, imagePath: "/w/a.png", fileName: "a.png", swb: { version: 1, status: "non-swb", canvasWidth: 2, canvasHeight: 2 } }], pendingBake: { version: 1, shots: {} } };
+  const project: Project = { ...createProject("P"), shots: [{ id: "s", order: 0, imagePath: "/w/a.png", fileName: "a.png", flow: { version: 1, status: "non-flow", canvasWidth: 2, canvasHeight: 2 } }], pendingBake: { version: 1, shots: {} } };
   project.shots = project.shots.map(s => ensureBitmapLayerMetadata(s));
   const ref = { current: project }, queue = createBitmapLayerWriteQueue();
-  const imported: Project = { ...project, shots: [{ ...project.shots[0], imagePath: "/w/a.tiff", fileName: "a.tiff", swb: { ...project.shots[0].swb!, status: "owned", sourcePath: "/w/a.png", archivePath: "/w/Archive/a.png" } }] };
+  const imported: Project = { ...project, shots: [{ ...project.shots[0], imagePath: "/w/a.tiff", fileName: "a.tiff", flow: { ...project.shots[0].flow!, status: "owned", sourcePath: "/w/a.png", archivePath: "/w/Archive/a.png" } }] };
   const result: FolderScanPayload = { folderPath: "/w", folderName: "w", metadataPath: "/w/p.json", images: [], project: imported,
     normalSaveImportEffects: [{ sourceShotId: "s", shotId: "s", sourcePath: "/w/a.png", sourceHash: h, targetPath: "/w/a.tiff", outputHash: h, kind: "converted" }] } as FolderScanPayload;
-  const io = vi.fn(async (_payload: ImportSwbFormatPayload) => result), persist = vi.fn(async (_payload: WorkspacePayload) => undefined), published = vi.fn(), error = vi.fn();
-  const api = { importSwbFormat: io, autosaveWorkspace: persist, readOutputIdentity: vi.fn(async () => h), saveWorkspace: vi.fn() };
+  const io = vi.fn(async (_payload: ImportFlowFormatPayload) => result), persist = vi.fn(async (_payload: WorkspacePayload) => undefined), published = vi.fn(), error = vi.fn();
+  const api = { importFlowFormat: io, autosaveWorkspace: persist, readOutputIdentity: vi.fn(async () => h), saveWorkspace: vi.fn() };
   const adapter = await createAppRootActor({ projectRef: ref, setProject: () => {}, queue, api: () => api, paths: () => ({ folderPath: "/w", metadataPath: "/w/p.json" }), freshToken: () => "fresh", onSave: () => {}, onError: error });
   const run = async () => {
     const callback = await actualApp({ window: { storyboard: api }, normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: adapter },
-      project, folderPath: "/w", metadataPath: "/w/p.json", needsSwbImport: true, needsImageImport: true, blankShotPreset: "16:9", dirtyShotIds: () => [],
+      project, folderPath: "/w", metadataPath: "/w/p.json", needsFlowImport: true, needsImageImport: true, blankShotPreset: "16:9", dirtyShotIds: () => [],
       sceneMatteModeForProject: () => undefined, sceneDialogueOverlayEnabledForProject: () => false,
       withStatus: async (_label: string, task: () => Promise<unknown>) => task(), loadFolderScan: async (scan: FolderScanPayload) => scan.project,
       setStatus: vi.fn(), setWorkspaceTask: vi.fn(), setIsImportHelpOpen: vi.fn(), normalSaveImageImportPublished: published, prepareNormalSaveImportMatte: async (p: Project) => p });
@@ -93,18 +93,18 @@ it("ABA load retires Import error without new workspace UI", async () => {
   g.release(); expect(await task).toBe(false); await load; expect(f.error).not.toHaveBeenCalled(); expect(f.published).not.toHaveBeenCalled(); expect(f.ref.current.name).toBe("new A");
 });
 it("explicit preserve retains pending internal layers but accepts only actual source baseline", async () => {
-  const f = await fixture(); f.ref.current.shots[0].swb!.status = "compatible-external-edit";
+  const f = await fixture(); f.ref.current.shots[0].flow!.status = "compatible-external-edit";
   f.ref.current.pendingBake!.shots.s = { state: "pending", editToken: "old", acceptedOutputIdentity: "3".repeat(64) };
   f.result.normalSaveImportEffects![0].kind = "preserved"; f.result.normalSaveImportEffects![0].targetPath = "/w/a.png";
   f.result.project!.shots[0].imagePath = "/w/a.png";
-  expect(await f.adapter.imageImport(options())).toBe(true); expect(f.ref.current.shots[0].swb!.status).toBe("owned");
+  expect(await f.adapter.imageImport(options())).toBe(true); expect(f.ref.current.shots[0].flow!.status).toBe("owned");
   expect(f.ref.current.pendingBake!.shots.s).toMatchObject({ state: "pending", editToken: "old", acceptedOutputIdentity: h });
 });
 
 it("explicit duplicate keeps original pending and gives actual duplicate fresh H0 without certifying whole returned Project", async () => {
-  const f = await fixture(); f.ref.current.shots[0].swb!.status = "compatible-external-edit";
+  const f = await fixture(); f.ref.current.shots[0].flow!.status = "compatible-external-edit";
   f.ref.current.pendingBake!.shots.s = { state: "pending", editToken: "old", acceptedOutputIdentity: "3".repeat(64) };
-  f.result.project!.shots = [{ ...f.ref.current.shots[0], swb: { ...f.ref.current.shots[0].swb!, status: "owned" } }, { ...f.result.project!.shots[0], id: "duplicate" }];
+  f.result.project!.shots = [{ ...f.ref.current.shots[0], flow: { ...f.ref.current.shots[0].flow!, status: "owned" } }, { ...f.result.project!.shots[0], id: "duplicate" }];
   f.result.normalSaveImportEffects![0].shotId = "duplicate"; f.result.normalSaveImportEffects![0].kind = "accepted";
   expect(await f.adapter.imageImport(options())).toBe(true);
   expect(f.io.mock.calls[0][0].dirtyShotIds).toContain("s");
@@ -128,7 +128,7 @@ it("actual App Import publication uses finite history invalidation, never load/r
   const bindings = { project: (await fixture()).ref.current, projectRef: f.ref, invalidatePresentationHistory: invalidate,
     normalSaveAppCallbacksRef: { current: { onPendingPublication: onPublication } }, setStatus: vi.fn() };
   new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(appCallerAdapterScope(bindings)))(f.result);
-  expect(invalidate).toHaveBeenCalledWith(f.ref.current, ["s"], [".storyboard-workbench/layers/s/layer-image.png"]); expect(onPublication).toHaveBeenCalledWith({ durable: true });
+  expect(invalidate).toHaveBeenCalledWith(f.ref.current, ["s"], [".storyboard-flow/layers/s/layer-image.png"]); expect(onPublication).toHaveBeenCalledWith({ durable: true });
 });
 
 it("actual owner load preserves pristine missing-entry external admission for explicit user Import", async () => {
@@ -147,7 +147,7 @@ it("Import preparation uses latest dialogue input and rejects dependency changes
 
 it("actual main ACK followed by matte failure gates subsequent Save and autosave", async () => {
   const f = await fixture();
-  f.ref.current.shots[0].swb!.status = "compatible-external-edit";
+  f.ref.current.shots[0].flow!.status = "compatible-external-edit";
   f.ref.current.pendingBake!.shots.s = { state: "synced", acceptedOutputIdentity: h };
   expect(await f.adapter.imageImport({ ...options(), prepare: async () => { throw new Error("matte first write failed"); } })).toBe(false);
   expect(f.ref.current.pendingBake!.shots.s.state).toBe("unknown");

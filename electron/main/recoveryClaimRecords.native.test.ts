@@ -30,7 +30,7 @@ const fixture = async () => {
 const plan = { effectPeak: 40000, claimPeak: 32768, closePeak: 32768 };
 
 test('a predeclared failure handler runs without turning the original failed request into success', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}), fullBudget={...budget,assets:100000,jsonDepth:80}, failure=new Error('original declared failure');let handled=0;
   expect(await accounting.run(async()=>{
     await expect(accounting.reserve(f.sourceRoot,fullBudget,32768,1,async()=>{throw failure;},async error=>{expect(error).toBe(failure);handled++;})).rejects.toBe(failure);
@@ -39,7 +39,7 @@ test('a predeclared failure handler runs without turning the original failed req
 });
 
 test('scope drains the predeclared async handler with native census sessions still alive', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}), fullBudget={...budget,assets:100000,jsonDepth:80}, failure=new Error('handled with a final native read');
   let release!:()=>void,signal!:()=>void,finished=false,checked=false;
   const held=new Promise<void>(resolve=>{release=resolve;}),entered=new Promise<void>(resolve=>{signal=resolve;});
@@ -57,7 +57,7 @@ test('scope drains the predeclared async handler with native census sessions sti
 });
 
 test.each([false,true])('a rejected failure handler stays failed and body original error wins (%s)', async bodyFailure => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}),fullBudget={...budget,assets:100000,jsonDepth:80};
   const effectError=new Error('effect original'),handlerError=new Error('handler failed'),bodyError=new Error('body original');
   const outer=accounting.run(async()=>{
@@ -68,7 +68,7 @@ test.each([false,true])('a rejected failure handler stays failed and body origin
 });
 
 test('ordinary catch without a predeclared handler cannot confirm failed task settlement', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}),fullBudget={...budget,assets:100000,jsonDepth:80},failure=new Error('no disposition was registered');
   await expect(accounting.run(async()=>{
     await accounting.reserve(f.sourceRoot,fullBudget,32768,1,async()=>{throw failure;}).catch(error=>{expect(error).toBe(failure);});
@@ -77,9 +77,9 @@ test('ordinary catch without a predeclared handler cannot confirm failed task se
 });
 
 test('accounting run retains an unobserved failure that settled before its body returns', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}), fullBudget={...budget,assets:100000,jsonDepth:80};
-  const failure=new Error('synthetic early unobserved effect failure'),file=path.join(f.sourceRoot,'.storyboard-workbench','pending-file-transaction.json');
+  const failure=new Error('synthetic early unobserved effect failure'),file=path.join(f.sourceRoot,'.storyboard-flow','pending-file-transaction.json');
   let request!:Promise<void>;
   const outer=accounting.run(async()=>{
     request=accounting.reserve(f.sourceRoot,fullBudget,32768,1,async()=>{await fs.writeFile(file,'{}',{mode:0o600});throw failure;});
@@ -92,7 +92,7 @@ test('accounting run retains an unobserved failure that settled before its body 
 });
 
 test('accounting run retains an abandoned async rethrow rather than mistaking catch registration for recovery', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}), fullBudget={...budget,assets:100000,jsonDepth:80};
   const failure=new Error('synthetic rethrown effect failure');let chain!:Promise<void>,ready!:()=>void;
   const assigned=new Promise<void>(resolve=>{ready=resolve;});
@@ -106,7 +106,7 @@ test('accounting run retains an abandoned async rethrow rather than mistaking ca
 });
 
 test('accounting run does not lose an abandoned failure through native Promise assimilation', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}), fullBudget={...budget,assets:100000,jsonDepth:80};
   const failure=new Error('synthetic native promise transfer failure');let bridge!:Promise<void>,ready!:()=>void;
   const assigned=new Promise<void>(resolve=>{ready=resolve;});
@@ -123,7 +123,7 @@ test('accounting run does not lose an abandoned failure through native Promise a
 });
 
 test.each(['await-catch','catch-recover','finally-catch','all-settled'] as const)('explicitly handled reservation failure keeps normal Promise behavior (%s)', async mode => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}), fullBudget={...budget,assets:100000,jsonDepth:80}, failure=new Error('explicitly handled synthetic effect');
   expect(await accounting.run(async()=>{
     const request=accounting.reserve(f.sourceRoot,fullBudget,32768,1,async()=>{throw failure;},async error=>{expect(error).toBe(failure);});expect(request).toBeInstanceOf(Promise);
@@ -136,11 +136,11 @@ test.each(['await-catch','catch-recover','finally-catch','all-settled'] as const
 });
 
 test('actual accounting run drains an admitted unawaited effect before closing its native census sessions', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}), fullBudget={...budget,assets:100000,jsonDepth:80};
   let release!:()=>void, signal!:()=>void, finished=false;
   const held=new Promise<void>(resolve=>{release=resolve;}), started=new Promise<void>(resolve=>{signal=resolve;});
-  const file=path.join(f.sourceRoot,'.storyboard-workbench','pending-file-transaction.json');
+  const file=path.join(f.sourceRoot,'.storyboard-flow','pending-file-transaction.json');
   let effect!:Promise<string>;const outer=accounting.run(async()=>{
     effect=accounting.reserve(f.sourceRoot,fullBudget,32768,1,async()=>{signal();await held;await fs.writeFile(file,'{}',{mode:0o600});return 'settled';});
     void effect.catch(()=>{});await started;return 'outer-body-returned';
@@ -154,7 +154,7 @@ test('actual accounting run drains an admitted unawaited effect before closing i
 });
 
 test('closing accounting scope refuses a registered but not admitted request before its effect', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')});
   let request!:Promise<void>,effects=0;
   const outer=accounting.run(async()=>{request=accounting.reserve(f.sourceRoot,{...budget,assets:100000,jsonDepth:80},32768,1,async()=>{effects++;});return 'not-a-grant';});
@@ -162,11 +162,11 @@ test('closing accounting scope refuses a registered but not admitted request bef
 });
 
 test.each([false,true])('drain preserves effects and chooses the original error without early success (outerFailure=%s)', async outerFailure => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}), fullBudget={...budget,assets:100000,jsonDepth:80};
   let release!:()=>void, signal!:()=>void,lateEffects=0;
   const held=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{signal=resolve;});
-  const effectError=new Error('synthetic original effect failure'),outerError=new Error('synthetic original outer failure'),file=path.join(f.sourceRoot,'.storyboard-workbench','pending-file-transaction.json');
+  const effectError=new Error('synthetic original effect failure'),outerError=new Error('synthetic original outer failure'),file=path.join(f.sourceRoot,'.storyboard-flow','pending-file-transaction.json');
   let request!:Promise<void>;const outer=accounting.run(async()=>{
     request=accounting.reserve(f.sourceRoot,fullBudget,32768,1,async()=>{
       signal();await held;await expect(accounting.reserve(f.sourceRoot,fullBudget,32768,1,async()=>{lateEffects++;})).rejects.toThrow(/scope closing/);
@@ -180,7 +180,7 @@ test.each([false,true])('drain preserves effects and chooses the original error 
 });
 
 const lifecycleGroup = async (f: Awaited<ReturnType<typeof fixture>>, script?: string) => {
-  await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}), fullBudget={...budget,assets:100000,jsonDepth:80};
   const before=await accounting(f.sourceRoot,fullBudget), key=await originWorkspaceKey(f.sourceRoot), records=f.records(script);
   const input={workspaceKey:key,scopeId:'guarded-scope',claimId:'first',plan,allowance:budget,reservation:{records:1,before},lifecycle:true};
@@ -205,7 +205,7 @@ test('native lifecycle admission cannot append a late member after any scope ter
 test('fresh actual accountant grants the next finite write only after a complete native scope proof', async () => {
   const f=await fixture(), g=await lifecycleGroup(f);await g.records.closeScope({members:[g.a,g.b],census:g.census,allowance:budget});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py'),claimRecords:()=>f.records()}), fullBudget={...budget,assets:100000,jsonDepth:80};
-  const file=path.join(f.sourceRoot,'.storyboard-workbench','pending-file-transaction.json');
+  const file=path.join(f.sourceRoot,'.storyboard-flow','pending-file-transaction.json');
   expect(await accounting.reserve(f.sourceRoot,fullBudget,32768,1,async()=>{await fs.writeFile(file,'{}',{mode:0o600});return 'next-finite-write';})).toBe('next-finite-write');
   expect(await fs.readFile(file,'utf8')).toBe('{}');expect((await accounting(f.sourceRoot,fullBudget)).records).toBeGreaterThan(1);
   expect((await f.records().read(g.input)).every(row=>row.scopeComplete)).toBe(true);
@@ -243,7 +243,7 @@ test('partial scope terminal failure leaves every cold member uncertified and ca
 });
 
 test('v3 cold read authenticates mixed readonly/writable record policies and different raw attributes independently', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const python='python3', other=path.join(f.sourceRoot,'second.png');
   await fs.writeFile(other,await fs.readFile(f.source),{mode:0o600});
   execFileSync('/usr/bin/xattr',['-w','org.storyboard.claim-mixed','second-source',other]);
@@ -254,7 +254,7 @@ test('v3 cold read authenticates mixed readonly/writable record policies and dif
   const input={workspaceKey:key,scopeId:'mixed-scope',claimId:'first',plan,allowance:budget,reservation:{records:1,before},lifecycle:true};
   const a=await f.records().admit(input), b=await second().admit({...input,claimId:'second'});
   const rows=await second().read(input);expect(rows).toHaveLength(2);
-  for(const row of rows){expect((row.claim as any).schema).toBe('swb.workspace-claim.v3');expect((row.claim as any).recordPolicyFingerprint).toMatch(/^[a-f0-9]{64}$/);}
+  for(const row of rows){expect((row.claim as any).schema).toBe('flow.workspace-claim.v3');expect((row.claim as any).recordPolicyFingerprint).toMatch(/^[a-f0-9]{64}$/);}
   expect((rows[0].claim as any).recordPolicyFingerprint).not.toBe((rows[1].claim as any).recordPolicyFingerprint);
   const dir=path.join(f.userData,'workspace-origin-v1',key);
   expect((await fs.stat(path.join(dir,a.recordName))).mode&0o777).toBe(0o400);expect((await fs.stat(path.join(dir,b.recordName))).mode&0o777).toBe(0o600);
@@ -265,7 +265,7 @@ test('v3 cold read authenticates mixed readonly/writable record policies and dif
 });
 
 test('native closeScope binds both original reserves and cold authenticates their shared complete end', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}), fullBudget={...budget,assets:100000,jsonDepth:80};
   const before=await accounting(f.sourceRoot,fullBudget), key=await originWorkspaceKey(f.sourceRoot), records=f.records();
   const input={workspaceKey:key,scopeId:'complete-scope',claimId:'first',plan,allowance:budget,reservation:{records:1,before},lifecycle:true};
@@ -278,7 +278,7 @@ test('native closeScope binds both original reserves and cold authenticates thei
 });
 
 test('v2 claim cold-read preserves the actual joint baseline and effect record plan', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')});
   const before=await accounting(f.sourceRoot,{...budget,assets:100000,jsonDepth:80});
   const key=await originWorkspaceKey(f.sourceRoot), reservation={records:7,before};
@@ -287,13 +287,13 @@ test('v2 claim cold-read preserves the actual joint baseline and effect record p
   const fresh=await f.records().read(input);
   expect(fresh).toHaveLength(1);
   expect((fresh[0].claim as any).reservation).toEqual(reservation);
-  expect((fresh[0].claim as any).schema).toBe('swb.workspace-claim.v2');
+  expect((fresh[0].claim as any).schema).toBe('flow.workspace-claim.v2');
   expect((fresh[0].claim as any).version).toBe(2);
   expect(fresh[0].closed).toBeNull();
 });
 
 test.each([9,10])('v2 admission funds seven effect records plus its directory and two credentials (limit=%s)', async limit => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')});
   const before=await accounting(f.sourceRoot,{...budget,assets:100000,jsonDepth:80});
   const key=await originWorkspaceKey(f.sourceRoot), input={workspaceKey:key,scopeId:'records-scope',claimId:'records-claim',plan,allowance:{...budget,records:limit},reservation:{records:7,before}};
@@ -307,7 +307,7 @@ test.each([9,10])('v2 admission funds seven effect records plus its directory an
 });
 
 test('v2 terminal cannot change its baseline or record plan and consumes only the original close slot', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')});
   const before=await accounting(f.sourceRoot,{...budget,assets:100000,jsonDepth:80}), key=await originWorkspaceKey(f.sourceRoot);
   const reservation={records:7,before}, input={workspaceKey:key,scopeId:'v2-close-scope',claimId:'v2-close-claim',plan,allowance:budget,reservation};
@@ -323,7 +323,7 @@ test('v2 terminal cannot change its baseline or record plan and consumes only th
 });
 
 test('fresh actual accountant refuses an unclosed native claim before any new effect', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const options={userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py'),claimRecords:()=>f.records()};
   const accounting=createOriginWorkspaceAccounting(options), fullBudget={...budget,assets:100000,jsonDepth:80};
   const before=await accounting(f.sourceRoot,fullBudget), key=await originWorkspaceKey(f.sourceRoot);
@@ -335,18 +335,18 @@ test('fresh actual accountant refuses an unclosed native claim before any new ef
 });
 
 test('native empty-claim read permits the actual accountant effect without creating private directories', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py'),claimRecords:()=>f.records()});
-  const fullBudget={...budget,assets:100000,jsonDepth:80}, file=path.join(f.sourceRoot,'.storyboard-workbench','pending-file-transaction.json');
+  const fullBudget={...budget,assets:100000,jsonDepth:80}, file=path.join(f.sourceRoot,'.storyboard-flow','pending-file-transaction.json');
   expect(await accounting.reserve(f.sourceRoot,fullBudget,32768,1,async()=>{await fs.writeFile(file,'{}',{mode:0o600});return 'written';})).toBe('written');
   expect(await fs.readFile(file,'utf8')).toBe('{}');expect((await accounting(f.sourceRoot,fullBudget)).records).toBe(1);
   await expect(fs.stat(path.join(f.userData,'workspace-origin-v1'))).rejects.toMatchObject({code:'ENOENT'});
 });
 
 test('actual accountant rejects a Root changed after the real native private read', async () => {
-  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-workbench'),{mode:0o700});
+  const f=await fixture();await fs.mkdir(path.join(f.sourceRoot,'.storyboard-flow'),{mode:0o700});
   const wrapper=path.join(f.userData,'root-window-observer.py'), preserved=f.sourceRoot+'-preserved';
-  await fs.writeFile(wrapper,`import importlib.util, os\nspec=importlib.util.spec_from_file_location('claims_actual',${JSON.stringify(path.resolve('scripts/recovery-claim-records.py'))})\nm=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(m)\ndef authorize(request):\n result=m.authorize(request)\n os.rename(${JSON.stringify(f.sourceRoot)},${JSON.stringify(preserved)})\n os.mkdir(${JSON.stringify(f.sourceRoot)},0o700)\n os.mkdir(${JSON.stringify(path.join(f.sourceRoot,'.storyboard-workbench'))},0o700)\n return result\n`,{mode:0o600});
+  await fs.writeFile(wrapper,`import importlib.util, os\nspec=importlib.util.spec_from_file_location('claims_actual',${JSON.stringify(path.resolve('scripts/recovery-claim-records.py'))})\nm=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(m)\ndef authorize(request):\n result=m.authorize(request)\n os.rename(${JSON.stringify(f.sourceRoot)},${JSON.stringify(preserved)})\n os.mkdir(${JSON.stringify(f.sourceRoot)},0o700)\n os.mkdir(${JSON.stringify(path.join(f.sourceRoot,'.storyboard-flow'))},0o700)\n return result\n`,{mode:0o600});
   const accounting=createOriginWorkspaceAccounting({userData:()=>f.userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py'),claimRecords:()=>f.records(wrapper)});
   let effects=0;await expect(accounting.reserve(f.sourceRoot,{...budget,assets:100000,jsonDepth:80},32768,1,async()=>{effects++;})).rejects.toThrow(/incarnation changed/);
   expect(effects).toBe(0);expect((await fs.stat(path.join(preserved,'synthetic.png'))).mode&0o777).toBe(0o400);
@@ -357,7 +357,7 @@ test('real native claim admission persists, refuses a repeat byte-for-byte, and 
   const admitted = await f.records().admit({ workspaceKey, scopeId: 'scope-synthetic', claimId: 'claim-1', plan, allowance: budget });
   expect(admitted.census.bytes).toBeGreaterThan(0);
   const dir = path.join(f.userData, 'workspace-origin-v1', workspaceKey);
-  const name = createHash('sha256').update(JSON.stringify(['swb.workspace-claim-name.v1', workspaceKey, 'scope-synthetic', 'claim-1'])).digest('hex') + '.reserve';
+  const name = createHash('sha256').update(JSON.stringify(['flow.workspace-claim-name.v1', workspaceKey, 'scope-synthetic', 'claim-1'])).digest('hex') + '.reserve';
   const first = await fs.readFile(path.join(dir, name));
   expect(JSON.parse(first.toString('utf8')).state).toBe('reserved');
   expect((await fs.stat(path.join(dir, name))).mode & 0o777).toBe(0o400);
@@ -487,8 +487,8 @@ test('native cold claim read refuses when its workspace inventory changes during
 test.each([false,true])('fresh record setup tightens before every body write and preserves failed empty staging (failure=%s)', async failSetup => {
   const f=await fixture(), wrapper=path.join(f.sourceRoot,'record-setup-observer.py');
   await fs.writeFile(wrapper,`import importlib.util, os\nspec=importlib.util.spec_from_file_location('claims_actual',${JSON.stringify(path.resolve('scripts/recovery-claim-records.py'))})\nm=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(m)\ndef authorize(request):\n writes=[]\n real_write=os.write\n real_setup=m.enrollment.add_source_attributes\n def write(fd,data):\n  info=os.fstat(fd)\n  writes.append({'mode':info.st_mode & 0o777,'size':info.st_size})\n  return real_write(fd,data)\n def setup(fd,expected):\n  real_setup(fd,expected)\n  if ${failSetup?'True':'False'}: raise ValueError('synthetic setup refusal')\n os.write=write\n m.enrollment.add_source_attributes=setup\n result=m.authorize(request)\n result['bodyWrites']=writes\n return result\n`,{mode:0o600});
-  const payload={schema:'swb.workspace-claim.v1',version:1,workspaceKey,scopeId:'setup-scope',claimId:'setup-claim',...plan,state:'reserved',census:null};
-  const base=createHash('sha256').update(JSON.stringify(['swb.workspace-claim-name.v1',workspaceKey,payload.scopeId,payload.claimId])).digest('hex');
+  const payload={schema:'flow.workspace-claim.v1',version:1,workspaceKey,scopeId:'setup-scope',claimId:'setup-claim',...plan,state:'reserved',census:null};
+  const base=createHash('sha256').update(JSON.stringify(['flow.workspace-claim-name.v1',workspaceKey,payload.scopeId,payload.claimId])).digest('hex');
   const native=createNativeAuthorizationSession('python3',wrapper,()=>NATIVE_AUTHORIZATION_TRANSPORT_BYTES);
   const request={phase:'admit',userData:f.userData,workspaceKey,claimName:base,sourceMode:0o400,sourceRestrictions:f.restrictions(),payload,byteLimit:budget.bytes,recordLimit:budget.records};
   const file=path.join(f.userData,'workspace-origin-v1',workspaceKey,base+'.reserve');

@@ -12,7 +12,7 @@ export const recoveryProjectAbsence = (raw: unknown, clone: (value: unknown) => 
     if (!Array.isArray(project?.[collection])) continue;
     for (const shot of project[collection]) {
       omit(shot, ['presentation', 'imageLayerEdits']);
-      omit(shot?.swb, ['sourceKind']);
+      omit(shot?.flow, ['sourceKind']);
     }
   }
   return project;

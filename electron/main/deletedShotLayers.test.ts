@@ -18,7 +18,7 @@ describe("cleanupDeletedShotLayerDirectories", () => {
     });
 
     expect(remove).toHaveBeenCalledOnce();
-    expect(remove).toHaveBeenCalledWith("/scene/.storyboard-workbench/layers/deleted-a", {
+    expect(remove).toHaveBeenCalledWith("/scene/.storyboard-flow/layers/deleted-a", {
       recursive: true,
       force: true
     });

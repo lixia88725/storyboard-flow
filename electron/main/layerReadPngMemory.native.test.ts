@@ -12,7 +12,7 @@ const tight = () => createControlledMemoryBudget(16 * 1024 * 1024, {
 
 test('reading a layer PNG is refused before the base64 text is built when the live system is over its limit', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'layer-read-memory-'));
-  const relative = '.storyboard-workbench/layers/s/a.png';
+  const relative = '.storyboard-flow/layers/s/a.png';
   const file = path.join(root, relative);
   const png = await sharp({ create: { width: 64, height: 64, channels: 4, background: 'green' } }).png().toBuffer();
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -25,7 +25,7 @@ test('reading a layer PNG is refused before the base64 text is built when the li
 
 test('a roomy budget still returns the exact original data URL', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'layer-read-roomy-'));
-  const relative = '.storyboard-workbench/layers/s/a.png';
+  const relative = '.storyboard-flow/layers/s/a.png';
   const file = path.join(root, relative);
   const png = await sharp({ create: { width: 8, height: 8, channels: 4, background: 'blue' } }).png().toBuffer();
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -43,6 +43,6 @@ test('a roomy budget still returns the exact original data URL', async () => {
 test('a missing layer PNG still resolves to undefined without a memory refusal', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'layer-read-missing-'));
   await expect(
-    withControlledMemory(tight(), () => readLayerPng({ folderPath: root, bitmapPath: '.storyboard-workbench/layers/s/none.png' })),
+    withControlledMemory(tight(), () => readLayerPng({ folderPath: root, bitmapPath: '.storyboard-flow/layers/s/none.png' })),
   ).resolves.toBeUndefined();
 });

@@ -89,7 +89,7 @@ run("/usr/libexec/PlistBuddy", [
   "-c",
   `Set :CFBundleExecutable ${appName}`,
   "-c",
-  "Set :CFBundleIdentifier local.storyboard-flow",
+  "Set :CFBundleIdentifier local.storyboard-flow-project",
   "-c",
   "Set :CFBundleName Storyboard Flow",
   "-c",

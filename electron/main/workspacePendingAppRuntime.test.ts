@@ -47,7 +47,7 @@ describe("workspace Pending runtime", () => {
     await result.handlers.moveShotsToPending(
       {
         folderPath: result.folderPath,
-        metadataPath: path.join(result.folderPath, ".storyboard-workbench", "project.json"),
+        metadataPath: path.join(result.folderPath, ".storyboard-flow", "project.json"),
         project: result.project
       },
       ["shot-a"]
@@ -73,7 +73,7 @@ describe("workspace Pending runtime", () => {
       result.handlers.moveShotsToPending(
         {
           folderPath: result.folderPath,
-          metadataPath: path.join(result.folderPath, ".storyboard-workbench", "project.json"),
+          metadataPath: path.join(result.folderPath, ".storyboard-flow", "project.json"),
           project: result.project
         },
         ["shot-a"]

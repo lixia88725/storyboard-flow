@@ -31,9 +31,9 @@ const loadTiffWriter = async (bindings: Record<string, unknown>, helperNames: st
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8");
   const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
   const helpers = tree.statements.filter((statement) => ts.isVariableStatement(statement) && helperNames.includes(statement.declarationList.declarations[0].name.getText(tree))).map((statement) => statement.getText(tree)).join("\n");
-  const block = source.slice(source.indexOf("const writeSwbMetadataToTiffs ="), source.indexOf("const createProjectPreviewsForShots =")) + helpers;
+  const block = source.slice(source.indexOf("const writeFlowMetadataToTiffs ="), source.indexOf("const createProjectPreviewsForShots =")) + helpers;
   const compiled = ts.transpileModule(block, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
-  return new Function(...Object.keys(bindings), `${compiled}; return writeSwbMetadataToTiffs;`)(...Object.values(bindings));
+  return new Function(...Object.keys(bindings), `${compiled}; return writeFlowMetadataToTiffs;`)(...Object.values(bindings));
 };
 const fixture = async (layered = false, failWriter = false, rename = fs.rename) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "tiff-prepare-"));
@@ -55,7 +55,7 @@ const fixture = async (layered = false, failWriter = false, rename = fs.rename) 
     applyFileReplacements, replaceFileWithTemp, withSuccessfulSaveArtifactCleanup,
     ensureProjectLayerAssets: async () => undefined,
     shouldWritePhotoshopLayeredTiffOnSave: (shot: { id: string }) => shot.id === "layered",
-    shouldWriteSwbMetadata: () => true,
+    shouldWriteFlowMetadata: () => true,
     bakeShotToWorkingTiff: async () => undefined,
     sharpSourceOptions: {},
     sharp: (input: string) => { current = path.basename(input, ".tiff"); return {
@@ -63,13 +63,13 @@ const fixture = async (layered = false, failWriter = false, rename = fs.rename) 
       withXmp: () => ({ tiff: () => ({ toFile: (output: string) => write(output, current) }) })
     }; },
     pixelFingerprint: async () => "fingerprint",
-    swbMetadataForShot: () => ({}), swbMetadataXmp: () => "xmp",
+    flowMetadataForShot: () => ({}), flowMetadataXmp: () => "xmp",
     bitmapLayersForShot: () => [{ width: 1, height: 1 }],
     archiveStamp: () => "fixed-stamp",
     app: { getAppPath: () => root }, process,
     resolvePhotoshopTiffPythonDepsDir: () => root,
     writePhotoshopLayeredTiffsForInPlaceSave: async (p: typeof project, folder: string, options: { saveStamp: string; onJobWritten?: () => void }) => {
-      const tempFolderPath = path.join(folder, ".storyboard-workbench", "save-tmp", options.saveStamp);
+      const tempFolderPath = path.join(folder, ".storyboard-flow", "save-tmp", options.saveStamp);
       const replacements = [];
       for (const shot of p.shots) {
         const fromPath = path.join(tempFolderPath, shot.fileName);
@@ -99,7 +99,7 @@ it.each([false, true])("all layer counts return a reversible handle and keep pre
   for (const shot of f.shots) expect(await fs.readFile(shot.imagePath, "utf8")).toBe(`new-${shot.id}`);
   const operationDirs = new Set(f.outputs.map((file) => path.dirname(file).endsWith(`${path.sep}.ordinary`) ? path.dirname(path.dirname(file)) : path.dirname(file)));
   expect(operationDirs.size).toBe(1);
-  expect([...operationDirs][0]).toContain(path.join(f.root, ".storyboard-workbench", "save-tmp"));
+  expect([...operationDirs][0]).toContain(path.join(f.root, ".storyboard-flow", "save-tmp"));
   await handle.rollback();
   await handle.rollback();
   await f.originals();
@@ -125,7 +125,7 @@ it("no-handle incomplete installation restoration gates both Save and Import dep
   try { await f.writer(f.project, f.root); } catch (caught) { error = caught; }
   expect(error).toBeInstanceOf(FileReplacementRecoveryIncompleteError);
   const dependent = { rollback: vi.fn() };
-  await expect(recoverFailedSave(error, { swbImport: dependent })).rejects.toMatchObject({ recoveryIncomplete: true });
+  await expect(recoverFailedSave(error, { flowImport: dependent })).rejects.toMatchObject({ recoveryIncomplete: true });
   await expect(recoverFailedImport(error, [dependent])).rejects.toMatchObject({ recoveryIncomplete: true });
   expect(dependent.rollback).not.toHaveBeenCalled();
 });
@@ -139,7 +139,7 @@ it("dirty selection excludes unselected and parked roots and preserves progress"
   expect(await fs.readFile(f.shots[1].imagePath, "utf8")).toBe("old-layered");
   expect(await fs.readFile(parked.imagePath, "utf8")).toBe("parked-old");
   await handle.commit();
-  expect(await fs.readdir(path.join(f.root, ".storyboard-workbench", "save-tmp"))).toEqual([]);
+  expect(await fs.readdir(path.join(f.root, ".storyboard-flow", "save-tmp"))).toEqual([]);
 });
 it.each([false, true])("Pending finalization failure restores materialized TIFFs after reversing moves; mixed=%s", async (mixed) => {
   const f = await fixture(mixed);
@@ -164,24 +164,24 @@ it.each([false, true])("actual Save persistence uncertainty retains installed TI
   const bindings = {
     prepareManagedSourceSave, withLayerFileOperation,
     stagePendingDeletedShotFiles: async () => ({ project: f.project }),
-    importProjectToSwbFormat: async () => ({ project: f.project, tiffWriteShotIds: [], rollback: async () => { order.push("import"); await f.originals(); } }),
+    importProjectToFlowFormat: async () => ({ project: f.project, tiffWriteShotIds: [], rollback: async () => { order.push("import"); await f.originals(); } }),
     saveProgressShotIds: () => undefined, countSaveProgressShots: () => 2,
-    writeSwbMetadataToTiffs: async (...args: unknown[]) => {
+    writeFlowMetadataToTiffs: async (...args: unknown[]) => {
       const handle = await f.writer(...args);
       return { commit: handle.commit, rollback: async () => { order.push("tiff"); await handle.rollback(); } };
     },
     clearSavedImageLayerEdits: (project: unknown) => project,
-    syncSavedSwbBaseFingerprints: async (project: unknown) => project,
+    syncSavedFlowBaseFingerprints: async (project: unknown) => project,
     writeProjectFiles: async () => { throw failure; }, recoverFailedSave
   };
   const save = new Function(...Object.keys(bindings), `${compiled}; return saveWorkspace;`)(...Object.values(bindings));
   await expect(save({ project: f.project, folderPath: f.root, metadataPath: "synthetic-json" })).rejects.toMatchObject({ recoveryIncomplete: true, errors: expect.arrayContaining([failure]) });
   expect(order).toEqual([]);
-  const operations = await fs.readdir(path.join(f.root, ".storyboard-workbench/save-tmp"));
+  const operations = await fs.readdir(path.join(f.root, ".storyboard-flow/save-tmp"));
   expect(operations).toHaveLength(1);
   for (const [index, shot] of f.project.shots.entries()) {
     expect(await fs.readFile(shot.imagePath, "utf8")).toBe(`new-${shot.id}`);
-    expect(await fs.readFile(path.join(f.root, ".storyboard-workbench/save-tmp", operations[0], ".backups", `${index}.tiff`), "utf8")).toBe(`old-${shot.id}`);
+    expect(await fs.readFile(path.join(f.root, ".storyboard-flow/save-tmp", operations[0], ".backups", `${index}.tiff`), "utf8")).toBe(`old-${shot.id}`);
   }
 });
 it("repeated operations use distinct directories even with the same clock stamp", async () => {
@@ -209,14 +209,14 @@ it.each([
     oldBytes.push(await fs.readFile(imagePath));
     const layers = [];
     for (let layerIndex = 0; layerIndex <= index; layerIndex++) {
-      const bitmapPath = `.storyboard-workbench/layers/${id}/${layerIndex}.png`;
+      const bitmapPath = `.storyboard-flow/layers/${id}/${layerIndex}.png`;
       const asset = path.join(root, bitmapPath);
       await fs.mkdir(path.dirname(asset), { recursive: true });
       await sharp({ create: { width: 2, height: 2, channels: 4, background: id === "single" ? "#ff0000" : "#0000ff" } }).png().toFile(asset);
       if (outcome === "generation-failure" && id === "layered" && layerIndex === 1) await fs.unlink(asset);
       layers.push({ id: `${id}-${layerIndex}`, name: `Layer ${layerIndex}`, kind: "paint", bitmapPath, width: 2, height: 2, visible: true, locked: false, opacity: 1, blendMode: "normal", order: layerIndex });
     }
-    shots.push({ id, imagePath, fileName, order: index, layers, swb: { status: "owned", canvasWidth: 2, canvasHeight: 2 } });
+    shots.push({ id, imagePath, fileName, order: index, layers, flow: { status: "owned", canvasWidth: 2, canvasHeight: 2 } });
   }
   const writer = await loadTiffWriter({
     path, randomUUID, mkdir: fs.mkdir, rm: fs.rm, unlink: fs.unlink, rename: fs.rename, writeFile: fs.writeFile,
@@ -229,13 +229,13 @@ it.each([
     app: { getAppPath: () => process.cwd() }, process,
     resolvePhotoshopTiffPythonDepsDir: () => path.join(process.cwd(), "vendor/python/photoshop-tiff"),
     writePhotoshopLayeredTiffsForInPlaceSave
-  }, ["sharpSourceOptions", "swbFormatVersion", "swbXmpTag", "archiveStamp", "shouldWriteSwbMetadata", "shouldWritePhotoshopLayeredTiffOnSave", "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff", "sketchLayersForShot", "swbMetadataForShot", "swbMetadataXmp"]);
+  }, ["sharpSourceOptions", "flowFormatVersion", "flowXmpTag", "archiveStamp", "shouldWriteFlowMetadata", "shouldWritePhotoshopLayeredTiffOnSave", "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff", "sketchLayersForShot", "flowMetadataForShot", "flowMetadataXmp"]);
   const action = writer({ id: "project", name: "Synthetic", shots }, root);
   if (outcome === "generation-failure") {
     await expect(action).rejects.toThrow("Photoshop TIFF export failed");
   } else {
     const handle = await action;
-    const operationRoot = path.join(root, ".storyboard-workbench", "save-tmp");
+    const operationRoot = path.join(root, ".storyboard-flow", "save-tmp");
     const operations = await fs.readdir(operationRoot);
     expect(operations).toHaveLength(1);
     const operation = operations[0];
@@ -251,14 +251,14 @@ it.each([
         expect([...data.subarray(pixel, pixel + 3)]).toEqual(shot.id === "single" ? [255, 0, 0] : [0, 0, 255]);
       }
       const metadata = await sharp(shot.imagePath).metadata();
-      const encoded = metadata.xmp?.toString().match(/<swb:metadata>([^<]+)<\/swb:metadata>/u)?.[1];
+      const encoded = metadata.xmp?.toString().match(/<flow:metadata>([^<]+)<\/flow:metadata>/u)?.[1];
       expect(encoded).toBeDefined();
-      const swb = JSON.parse(Buffer.from(encoded!, "base64").toString());
-      expect(swb).toMatchObject({ app: "Storyboard Flow", shotId: shot.id, canvasWidth: 2, canvasHeight: 2 });
+      const flow = JSON.parse(Buffer.from(encoded!, "base64").toString());
+      expect(flow).toMatchObject({ app: "Storyboard Flow", shotId: shot.id, canvasWidth: 2, canvasHeight: 2 });
       // Preserve the existing single-layer fingerprint input (pre-XMP bake).
       const fingerprintInput = shot.id === "single" ? path.join(operationRoot, operation, ".ordinary", "single-bake.tiff") : shot.imagePath;
-      expect(swb.baseFingerprint).toBe(await pixelFingerprint(fingerprintInput));
-      expect(swb.layers).toHaveLength(shot.layers.length);
+      expect(flow.baseFingerprint).toBe(await pixelFingerprint(fingerprintInput));
+      expect(flow.layers).toHaveLength(shot.layers.length);
     }
     await handle[outcome]();
     if (outcome === "commit") {
@@ -277,7 +277,7 @@ it.each(["bitmap", "metadata-only", "legacy"])("owned single TIFF %s preserves e
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "tiff-exact-"));
   directories.push(root);
   const imagePath = path.join(root, "single.tiff");
-  const bitmapPath = ".storyboard-workbench/layers/single/base.png";
+  const bitmapPath = ".storyboard-flow/layers/single/base.png";
   const asset = path.join(root, bitmapPath);
   await fs.mkdir(path.dirname(asset), { recursive: true });
   // Include spatial color variation and alpha, not only saturated primaries.
@@ -288,7 +288,7 @@ it.each(["bitmap", "metadata-only", "legacy"])("owned single TIFF %s preserves e
   const sentinel = path.join(root, "unchanged.tiff");
   await fs.writeFile(sentinel, original);
   const layer = { id: "base", kind: "image", name: "Base", visible: true, locked: false, opacity: 1, blendMode: "normal", order: 0, bitmapPath, width: 2, height: 2 };
-  const shot = { id: "single", imagePath, fileName: "single.tiff", layers: mode === "bitmap" ? [layer] : [], swb: { status: "owned", canvasWidth: 2, canvasHeight: 2 },
+  const shot = { id: "single", imagePath, fileName: "single.tiff", layers: mode === "bitmap" ? [layer] : [], flow: { status: "owned", canvasWidth: 2, canvasHeight: 2 },
     ...(mode === "legacy" ? { sketchLayers: [{ id: "legacy", visible: true, opacity: 1, blendMode: "normal", strokes: [{ points: [0, 0] }] }] } : {}) };
   const writer = await loadTiffWriter({
     path, randomUUID, mkdir: fs.mkdir, rm: fs.rm, unlink: fs.unlink, rename: fs.rename, writeFile: fs.writeFile,
@@ -298,7 +298,7 @@ it.each(["bitmap", "metadata-only", "legacy"])("owned single TIFF %s preserves e
     sharp, bitmapLayersForShot, flattenBitmapLayerBuffersToTiff, pixelFingerprint,
     resolveLayerAssetPath, sharpBlendMode,
     pathExists: async (file: string) => { try { await fs.stat(file); return true; } catch { return false; } },
-  }, ["sharpSourceOptions", "swbFormatVersion", "swbXmpTag", "archiveStamp", "shouldWriteSwbMetadata", "shouldWritePhotoshopLayeredTiffOnSave", "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff", "sketchLayersForShot", "swbMetadataForShot", "swbMetadataXmp"]);
+  }, ["sharpSourceOptions", "flowFormatVersion", "flowXmpTag", "archiveStamp", "shouldWriteFlowMetadata", "shouldWritePhotoshopLayeredTiffOnSave", "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff", "sketchLayersForShot", "flowMetadataForShot", "flowMetadataXmp"]);
   const handle = await writer({ id: "project", shots: [shot, { ...shot, id: "untouched", imagePath: sentinel, fileName: "unchanged.tiff" }] }, root, undefined, { shotIds: new Set(["single"]) });
   const decode = (input: string | Buffer) => sharp(input).ensureAlpha().raw().toBuffer();
   // Bitmap output uses the established white matte; metadata-only and the
@@ -307,7 +307,7 @@ it.each(["bitmap", "metadata-only", "legacy"])("owned single TIFF %s preserves e
   expect(await decode(imagePath)).toEqual(expected);
   const metadata = await sharp(imagePath).metadata();
   expect([metadata.width, metadata.height]).toEqual([2, 2]);
-  const encoded = metadata.xmp!.toString().match(/<swb:metadata>([^<]+)<\/swb:metadata>/u)![1];
+  const encoded = metadata.xmp!.toString().match(/<flow:metadata>([^<]+)<\/flow:metadata>/u)![1];
   expect(JSON.parse(Buffer.from(encoded, "base64").toString())).toMatchObject({ app: "Storyboard Flow", shotId: "single", canvasWidth: 2, canvasHeight: 2 });
   expect(await fs.readFile(sentinel)).toEqual(original);
   await handle.rollback();

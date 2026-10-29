@@ -62,7 +62,7 @@ class Workspace(enroll.inventory_module.OriginDirectories):
             for index, row in enumerate(parents):
                 if index:
                     fd = self.open(fd, os.path.basename(row['path']), False)
-                if row['path'] == os.path.join(self.user_data, '.storyboard-workbench'):
+                if row['path'] == os.path.join(self.user_data, '.storyboard-flow'):
                     self.metadata_fd = fd
                 if helper.owned_restrictions(metadata(fd)) != helper.owned_restrictions(row['metadata']):
                     raise ValueError('Owned cleanup parent identity/restrictions changed')
@@ -78,7 +78,7 @@ class Workspace(enroll.inventory_module.OriginDirectories):
         if self.metadata_fd is None:
             raise ValueError('Owned cleanup metadata incarnation unavailable')
         root, metadata = os.fstat(self.root_fd), os.fstat(self.metadata_fd)
-        encoded = ['swb.workspace-origin-address.v1', self.user_data,
+        encoded = ['flow.workspace-origin-address.v1', self.user_data,
                    str(root.st_dev), str(root.st_ino), str(birthtime_ns(self.root_fd)),
                    str(metadata.st_dev), str(metadata.st_ino), str(birthtime_ns(self.metadata_fd))]
         key = hashlib.sha256(json.dumps(encoded, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
@@ -126,7 +126,7 @@ def validate_audit(value, name):
     intent = '.cleanup-intent' in name
     common = {'schema', 'version', 'operation', 'receiptFingerprint', 'capturedDigest', 'targetDigest'}
     fields = common | ({'beforeTarget'} if intent else {'stageAbsent', 'afterTarget', 'outcome'})
-    schema = 'swb.owned-stage-cleanup-intent.v1' if intent else 'swb.owned-stage-repair.v1'
+    schema = 'flow.owned-stage-cleanup-intent.v1' if intent else 'flow.owned-stage-repair.v1'
     if not isinstance(value, dict) or set(value) != fields or value['schema'] != schema or type(value['version']) is not int or value['version'] != 1:
         raise ValueError('Owned cleanup audit schema/fields')
     if not isinstance(value['operation'], str) or not enroll.OPERATION.fullmatch(value['operation']) or any(not isinstance(value[k], str) or not enroll.HEX.fullmatch(value[k]) for k in ('receiptFingerprint', 'capturedDigest', 'targetDigest')):
@@ -230,7 +230,7 @@ def postcondition(workspace, target_fd, proof, limit):
 
 def cleanup(directories, request, expected):
     proof, payload = request['publication'], request['payload']
-    if proof.get('schema') != 'swb.owned-stage-publication.v1' or proof.get('operation') != payload['operation'] or proof.get('publication') != {'method': 'link', 'targetWasAbsent': True}:
+    if proof.get('schema') != 'flow.owned-stage-publication.v1' or proof.get('operation') != payload['operation'] or proof.get('publication') != {'method': 'link', 'targetWasAbsent': True}:
         raise ValueError('Owned cleanup original publication required')
     if hashlib.sha256(json.dumps(proof, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest() != payload['receiptFingerprint'] or hashlib.sha256(proof['target'].encode()).hexdigest() != payload['targetDigest']:
         raise ValueError('Owned cleanup private publication association')
@@ -241,7 +241,7 @@ def cleanup(directories, request, expected):
         raise ValueError('Owned cleanup original exact pair required')
     # Private intent precedes deletion; its existence alone is not success.
     common = dict(operation=payload['operation'], receiptFingerprint=payload['receiptFingerprint'], capturedDigest=payload['capturedDigest'], targetDigest=payload['targetDigest'])
-    intent = dict(schema='swb.owned-stage-cleanup-intent.v1', version=1, **common, beforeTarget=proof['targetAfterPublication'])
+    intent = dict(schema='flow.owned-stage-cleanup-intent.v1', version=1, **common, beforeTarget=proof['targetAfterPublication'])
     intent_name = request['recordName'] + '.cleanup-intent'
     with Workspace(proof, request['workspaceKey']) as workspace:
         target_fd = workspace.open_file(os.path.basename(target))
@@ -323,7 +323,7 @@ def cleanup(directories, request, expected):
                 os.unlink(os.path.basename(stage), dir_fd=workspace.parent)
                 unlinked = True
             after = postcondition(workspace, target_fd, proof, request['sourceByteLimit'])
-            repair = dict(schema='swb.owned-stage-repair.v1', version=1, **common, stageAbsent=True, afterTarget=after, outcome='removed-owned-stage' if started else 'reconciled-previous-intent')
+            repair = dict(schema='flow.owned-stage-repair.v1', version=1, **common, stageAbsent=True, afterTarget=after, outcome='removed-owned-stage' if started else 'reconciled-previous-intent')
             write_repair(repair_fd, repair, expected)
             if read_audit(directories, repair_name, expected) != repair:
                 raise ValueError('Owned cleanup final repair readback')

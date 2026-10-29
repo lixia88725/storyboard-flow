@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { errnoCode, ProjectStoreError, errorMessage } from './errors.js';
 
-/** Experimental new-format store directory. Deliberately not the legacy
- * `.storyboard-workbench` layout and not activated in production. */
-export const STORE_DIRECTORY = '.storyboard-flow-v2';
+/** The new checkpoint core has a distinct role directory under the shared product
+ * namespace; the existing runtime's metadata/layers remain separate. */
+export const STORE_DIRECTORY = '.storyboard-flow/checkpoints';
 export const MANIFEST_NAME = 'project.json';
 export const ASSET_DIRECTORY = 'assets';
 export const VERSION_DIRECTORY = 'versions';
@@ -100,6 +100,7 @@ const bindDirectory = async (directory: string, create: boolean): Promise<boolea
 
 /** Create (or verify) the store, asset and version directories before writing. */
 export const ensureStoreDirectories = async (layout: StoreLayout): Promise<void> => {
+  await bindDirectory(path.dirname(layout.store), true);
   await bindDirectory(layout.store, true);
   await bindDirectory(layout.assets, true);
   await bindDirectory(layout.versions, true);
@@ -107,6 +108,8 @@ export const ensureStoreDirectories = async (layout: StoreLayout): Promise<void>
 
 /** Load-side check: the store must already exist as a real directory. */
 export const assertStoreDirectory = async (layout: StoreLayout): Promise<void> => {
+  const parentPresent = await bindDirectory(path.dirname(layout.store), false);
+  if (!parentPresent) throw new ProjectStoreError('not-found', `No checkpoint has been published in this folder: ${layout.root}`);
   const present = await bindDirectory(layout.store, false);
   if (!present) throw new ProjectStoreError('not-found', `No checkpoint has been published in this folder: ${layout.root}`);
 };

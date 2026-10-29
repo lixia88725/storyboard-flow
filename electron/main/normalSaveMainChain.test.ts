@@ -56,18 +56,18 @@ function actual(names: string[], bindings: Record<string, unknown>, result: stri
 async function fixture(fault?: "md" | "json" | "trash" | "cleanup") {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "normal-main-chain-")); directories.push(root);
   const fileName = "s.tiff", imagePath = path.join(root, fileName);
-  const bitmapPath = ".storyboard-workbench/layers/s/base.png";
+  const bitmapPath = ".storyboard-flow/layers/s/base.png";
   await fs.mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true });
   await sharp({ create: { width: 4, height: 3, channels: 4, background: "red" } }).png().toFile(path.join(root, bitmapPath));
   await sharp({ create: { width: 4, height: 3, channels: 4, background: "white" } }).tiff({ compression: "none" }).toFile(imagePath);
   const project = createProject("Synthetic");
-  project.shots = [{ id: "s", imagePath, fileName, order: 0, swb: { version: 1, status: "owned", canvasWidth: 4, canvasHeight: 3 }, layers: [{ id: "base", name: "Base", kind: "image", visible: true, locked: false, opacity: 0.5, order: 0, blendMode: "normal", bitmapPath, width: 4, height: 3 }] }];
+  project.shots = [{ id: "s", imagePath, fileName, order: 0, flow: { version: 1, status: "owned", canvasWidth: 4, canvasHeight: 3 }, layers: [{ id: "base", name: "Base", kind: "image", visible: true, locked: false, opacity: 0.5, order: 0, blendMode: "normal", bitmapPath, width: 4, height: 3 }] }];
   const p = initializeCompletedShot(project, "s", await hash(imagePath), "t1");
   const original = await fs.readFile(imagePath);
   const sentinel = path.join(root, "external-unedited.tiff"); await fs.writeFile(sentinel, original);
   p.shots.push({ ...p.shots[0], id: "untouched", imagePath: sentinel, fileName: "external-unedited.tiff", order: 1 });
   p.pendingBake!.shots.untouched = { state: "synced", acceptedOutputIdentity: await hash(sentinel) };
-  const metadataPath = path.join(root, ".storyboard-workbench/storyboard.project.json");
+  const metadataPath = path.join(root, ".storyboard-flow/storyboard.project.json");
   const mdPath = path.join(root, "storyboard-script.md");
   const effects: string[] = [];
   let beforeEnsure: (() => Promise<void>) | undefined;
@@ -91,20 +91,20 @@ async function fixture(fault?: "md" | "json" | "trash" | "cleanup") {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error;
     } },
     app: { getAppPath: () => process.cwd() }, process,
-    resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR,
+    resolvePhotoshopTiffPythonDepsDir: () => process.env.FLOW_PYTHON_DEPS_DIR,
     writePhotoshopLayeredTiffsForInPlaceSave,
     stagePendingDeletedShotFiles: async (p: Project) => { effects.push("stage"); return { project: p }; },
     assertRenamePlanSafe: async () => { effects.push("rename-preflight"); },
-    importProjectToSwbFormat: async (p: Project) => { effects.push("import-fixture"); return { project: p, tiffWriteShotIds: [], rollback: async () => { effects.push("import-rollback"); } }; },
+    importProjectToFlowFormat: async (p: Project) => { effects.push("import-fixture"); return { project: p, tiffWriteShotIds: [], rollback: async () => { effects.push("import-rollback"); } }; },
     saveProgressShotIds, countSaveProgressShots,
     clearSavedImageLayerEdits: (p: Project) => p,
-    syncSavedSwbBaseFingerprints: async (p: Project) => ({ ...p, shots: await Promise.all(p.shots.map(async s => ({ ...s, swb: { ...s.swb!, baseFingerprint: await pixelFingerprint(s.imagePath) } }))) }),
+    syncSavedFlowBaseFingerprints: async (p: Project) => ({ ...p, shots: await Promise.all(p.shots.map(async s => ({ ...s, flow: { ...s.flow!, baseFingerprint: await pixelFingerprint(s.imagePath) } }))) }),
 
     recoverFailedSave,
     trashPendingDeletedShotFiles: async (p: Project) => { effects.push("synthetic-trash"); return { project: p, error: fault === "trash" ? new Error("synthetic Trash failure") : undefined }; },
     cleanupDeletedShotLayerDirectories: async () => { effects.push("cleanup"); if (fault === "cleanup") throw new Error("cleanup failed"); }
   };
-  const helperNames = ["sharpSourceOptions", "swbFormatVersion", "swbXmpTag", "archiveStamp", "shouldWriteSwbMetadata", "shouldWritePhotoshopLayeredTiffOnSave", "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff", "sketchLayersForShot", "swbMetadataForShot", "swbMetadataXmp", "writeSwbMetadataToTiffs", "preparePhotoshopLayeredTiffsForSave", "saveWorkspace", "writeProjectFiles", "writeProjectMetadata", "writeStoryboardScriptMarkdown", "storyboardScriptPathForFolder"];
+  const helperNames = ["sharpSourceOptions", "flowFormatVersion", "flowXmpTag", "archiveStamp", "shouldWriteFlowMetadata", "shouldWritePhotoshopLayeredTiffOnSave", "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff", "sketchLayersForShot", "flowMetadataForShot", "flowMetadataXmp", "writeFlowMetadataToTiffs", "preparePhotoshopLayeredTiffsForSave", "saveWorkspace", "writeProjectFiles", "writeProjectMetadata", "writeStoryboardScriptMarkdown", "storyboardScriptPathForFolder"];
   // New admission/ACK helpers, if present, are executed rather than mocked.
   const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
   for (const name of ["assertNormalSaveAdmission", "normalSaveOutputAcks"]) {
@@ -134,9 +134,9 @@ it("actual Save retains installed TIFF and backups when required MD fails after 
   expect(f.effects).toContain("json");
   expect(f.effects).not.toContain("import-rollback");
   const written = JSON.parse(await fs.readFile(f.metadataPath, "utf8"));
-  expect(written.shots[0].swb.baseFingerprint).toBe(await pixelFingerprint(f.imagePath));
+  expect(written.shots[0].flow.baseFingerprint).toBe(await pixelFingerprint(f.imagePath));
   expect(await fs.readFile(f.imagePath)).not.toEqual(f.original);
-  const backupRoot = path.join(f.root, ".storyboard-workbench/save-tmp");
+  const backupRoot = path.join(f.root, ".storyboard-flow/save-tmp");
   const backups = await fs.readdir(backupRoot, { recursive: true });
   const backup = backups.find(name => name.endsWith(path.join(".backups", "0.tiff")));
   expect(backup).toBeDefined();
@@ -160,7 +160,7 @@ it.each([false, true])("actual main staging/Trash/cleanup → plain adapter → 
   expect((completion as { normalSaveDeletions: unknown }).normalSaveDeletions).toEqual([{ shotId: "s", sourcePath: f.imagePath }]);
   expect(f.effects.filter(s => s === "actual-trash-fixture")).toHaveLength(1);
   await expect(fs.stat(f.imagePath)).rejects.toHaveProperty("code", "ENOENT");
-  await expect(fs.stat(path.join(f.root, ".storyboard-workbench/layers/s"))).rejects.toHaveProperty("code", "ENOENT");
+  await expect(fs.stat(path.join(f.root, ".storyboard-flow/layers/s"))).rejects.toHaveProperty("code", "ENOENT");
   const disk = JSON.parse(await fs.readFile(f.metadataPath, "utf8"));
   expect(disk.pendingDeletedShots).toEqual([]); expect(disk.pendingBake.shots.s).toBeUndefined();
   expect(await fs.readFile(f.mdPath, "utf8")).toBe(serializeStoryboardScriptMarkdown(ref.current));
@@ -475,7 +475,7 @@ it("combined actual restore expanded inheritance prunes old metadata Undo and pr
   expect((await sharp(expandedBytes).metadata()).height).toBe(153);
   await h.controller.applyUndoEntry();
   expect(h.status).toHaveBeenLastCalledWith("Nothing to undo");
-  expect(projectRef.current.shots.find(s => s.id === "s")!.swb!.canvasHeight).toBe(153);
+  expect(projectRef.current.shots.find(s => s.id === "s")!.flow!.canvasHeight).toBe(153);
   expect(await fs.readFile(contentPath)).toEqual(expandedBytes);
   // New, recoverable metadata history remains live after finite pruning.
   h.controller.recordProjectUndoEntry(); const oldName = projectRef.current.name;
@@ -559,8 +559,8 @@ it.each(["md", "trash", "cleanup"] as const)("actual main %s failure never retur
   if (fault === "md") {
     // JSON already points at the installed output: keep it AND the byte-exact
     // old backup, rather than restoring pixels inconsistent with published JSON.
-    expect(disk.shots[0].swb.baseFingerprint).toBe(await pixelFingerprint(f.imagePath));
-    const backupRoot = path.join(f.root, ".storyboard-workbench/save-tmp");
+    expect(disk.shots[0].flow.baseFingerprint).toBe(await pixelFingerprint(f.imagePath));
+    const backupRoot = path.join(f.root, ".storyboard-flow/save-tmp");
     const backups = await fs.readdir(backupRoot, { recursive: true });
     const backup = backups.find(name => name.endsWith(path.join(".backups", "0.tiff")));
     expect(backup).toBeDefined();
@@ -585,7 +585,7 @@ it("actual installation rechecks whole TIFF after preparation and does not overw
 });
 it.each(["hidden", "occluded"])("actual %s raster-only external TIFF mutation preserves composite but whole identity blocks Save before any effect", async mode => {
   const f = await fixture();
-  const bitmapPath = ".storyboard-workbench/layers/s/under.png";
+  const bitmapPath = ".storyboard-flow/layers/s/under.png";
   const hiddenAsset = path.join(f.root, bitmapPath);
   await sharp({ create: { width: 4, height: 3, channels: 4, background: "blue" } }).png().toFile(hiddenAsset);
   const top = { ...f.p.shots[0].layers![0], kind: "paint" as const, opacity: 1, order: 1 };
@@ -593,12 +593,12 @@ it.each(["hidden", "occluded"])("actual %s raster-only external TIFF mutation pr
   f.p.shots[0].layers = [below, top];
   const prepare = async (p: Project, stamp: string) => writePhotoshopLayeredTiffsForInPlaceSave({ ...p, shots: [p.shots[0]] }, f.root, {
     pythonPath: "python3", scriptPath: path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py"),
-    saveStamp: stamp, env: { ...process.env, SWB_PYTHON_BIN: undefined }
+    saveStamp: stamp, env: { ...process.env, FLOW_PYTHON_BIN: undefined }
   });
   const baseline = await prepare(f.p, "baseline"); await fs.copyFile(baseline.replacements[0].fromPath, f.imagePath);
   const h0 = await hash(f.imagePath), composite = await pixelFingerprint(f.imagePath);
   f.p.pendingBake!.shots.s.acceptedOutputIdentity = h0;
-  const externalPath = ".storyboard-workbench/layers/external/under.png";
+  const externalPath = ".storyboard-flow/layers/external/under.png";
   await fs.mkdir(path.dirname(path.join(f.root, externalPath)), { recursive: true });
   await sharp({ create: { width: 4, height: 3, channels: 4, background: "#00ff00" } }).png().toFile(path.join(f.root, externalPath));
   const external = { ...f.p, shots: [{ ...f.p.shots[0], layers: [{ ...below, bitmapPath: externalPath }, top] }] };
@@ -606,7 +606,7 @@ it.each(["hidden", "occluded"])("actual %s raster-only external TIFF mutation pr
   expect(await hash(f.imagePath)).not.toBe(h0);
   expect(await pixelFingerprint(f.imagePath)).toBe(composite);
   const python = `import sys,importlib.util,json\nfrom pathlib import Path\nsys.path.insert(0,sys.argv[1])\nspec=importlib.util.spec_from_file_location('reader',sys.argv[2]); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\nlayers=m.read_image_source_data(Path(sys.argv[3])).layers\nprint(json.dumps([{'name':m.layer_name(l),'visible':m.layer_visible(l),'pixel':l.asarray()[0,0].tolist()} for l in layers]))`;
-  const inspected = await promisify(execFile)("python3", ["-c", python, process.env.SWB_PYTHON_DEPS_DIR!, path.join(process.cwd(), "scripts/photoshop-layered-tiff-import.py"), f.imagePath], { env: { ...process.env, SWB_PYTHON_BIN: undefined } });
+  const inspected = await promisify(execFile)("python3", ["-c", python, process.env.FLOW_PYTHON_DEPS_DIR!, path.join(process.cwd(), "scripts/photoshop-layered-tiff-import.py"), f.imagePath], { env: { ...process.env, FLOW_PYTHON_BIN: undefined } });
   expect(JSON.parse(inspected.stdout)).toContainEqual({ name: "Underlying", visible: mode === "occluded", pixel: [0, 255, 0, 255] });
   const before = await fs.readFile(f.imagePath), pngBefore = await fs.readFile(hiddenAsset), jsonBefore = JSON.stringify(f.p);
   await expect(f.save(f.payload)).rejects.toThrow("changed externally");
@@ -635,7 +635,7 @@ it("actual rename ACK maps old source to actual new target without claiming old 
   f.p.shots[0] = { ...f.p.shots[0], imagePath: finalPath, fileName: "renamed.tiff" };
   const renamePlan = [{ shotId: "s", fromPath: f.imagePath, temporaryPath: path.join(f.root, ".rename.tiff"), finalPath, finalFileName: "renamed.tiff" }];
   const result = await f.save({ ...f.payload, renamePlan });
-  expect(result.normalSaveOutputs).toEqual([{ shotId: "s", capturedToken: "t1", sourcePath: f.imagePath, targetPath: finalPath, outputHash: await hash(finalPath), fileName: "renamed.tiff", baseFingerprint: result.project.shots[0].swb?.baseFingerprint }]);
+  expect(result.normalSaveOutputs).toEqual([{ shotId: "s", capturedToken: "t1", sourcePath: f.imagePath, targetPath: finalPath, outputHash: await hash(finalPath), fileName: "renamed.tiff", baseFingerprint: result.project.shots[0].flow?.baseFingerprint }]);
   await expect(fs.stat(f.imagePath)).rejects.toMatchObject({ code: "ENOENT" });
   expect(result.project.shots[0].fileName).toBe("renamed.tiff");
   expect(await fs.readFile(f.sentinel)).toEqual(f.original);
@@ -661,7 +661,7 @@ it.each([undefined, []])("normal main preserves fallback selection %j and ACKs e
 it("actual main Save selects persisted pending even after dirty reset and returns output-bound ACK only after required phases", async () => {
   const f = await fixture();
   const result = await f.save(f.payload);
-  expect(result.normalSaveOutputs, "actual main Save did not ACK persisted pending outputs").toEqual([{ shotId: "s", capturedToken: "t1", sourcePath: f.imagePath, targetPath: f.imagePath, outputHash: await hash(f.imagePath), fileName: result.project.shots[0].fileName, baseFingerprint: result.project.shots[0].swb?.baseFingerprint }]);
+  expect(result.normalSaveOutputs, "actual main Save did not ACK persisted pending outputs").toEqual([{ shotId: "s", capturedToken: "t1", sourcePath: f.imagePath, targetPath: f.imagePath, outputHash: await hash(f.imagePath), fileName: result.project.shots[0].fileName, baseFingerprint: result.project.shots[0].flow?.baseFingerprint }]);
   const pixels = await sharp(f.imagePath).ensureAlpha().raw().toBuffer();
   expect([...pixels.subarray(0, 4)]).toEqual([255, 127, 127, 255]);
   expect(await fs.readFile(f.sentinel)).toEqual(f.original);

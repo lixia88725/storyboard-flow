@@ -10,7 +10,7 @@ import {
 } from "./tiffPreparation.js";
 
 export type ImportFailureEvidence = {
-  schema: 'swb.import-preparation-failure.v1'; candidatePath: string;
+  schema: 'flow.import-preparation-failure.v1'; candidatePath: string;
   code: string | null; syscall: string | null; path: string | null;
   message: string; preparationStarted: boolean; acknowledged: false;
 };
@@ -36,7 +36,7 @@ export const prepareImportStaging = async <T>(
     return await prepare();
   } catch (error) {
     const original = error as NodeJS.ErrnoException;
-    failureObserver.getStore()?.({ schema: 'swb.import-preparation-failure.v1', candidatePath: directoryPath,
+    failureObserver.getStore()?.({ schema: 'flow.import-preparation-failure.v1', candidatePath: directoryPath,
       code: original?.code ?? null, syscall: original?.syscall ?? null, path: original?.path ?? null,
       message: String(error), preparationStarted: receipt !== undefined, acknowledged: false });
     if (hasIncompletePreparationEffect(error)) {

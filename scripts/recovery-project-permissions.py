@@ -36,7 +36,7 @@ class ProjectDirectories(origin.OriginDirectories):
             for name in pathlib.Path(self.root).parts[1:]:
                 fd = self.open(fd, name, False)
             self.root_fd = fd
-            self.metadata_fd = self.open(fd, '.storyboard-workbench', False)
+            self.metadata_fd = self.open(fd, '.storyboard-flow', False)
             # Begin the complete parent read-window before any discovery.
             self.metadata_before = os.fstat(self.metadata_fd)
             self.metadata_info = origin.directory_info(self.metadata_fd, False)
@@ -144,7 +144,7 @@ def authorize(request):
         for name in sorted(selected):
             measure_entry(directories.metadata_fd, name, name)
 
-        excluded = {'.storyboard-workbench/' + name for name, _ in directories.namespaces} | {'.storyboard-workbench/layers'}
+        excluded = {'.storyboard-flow/' + name for name, _ in directories.namespaces} | {'.storyboard-flow/layers'}
         def layer_stages(fd, parent, name, relative, depth, outside_layers=False):
             nonlocal total, records, observed
             if depth > 12:
@@ -220,7 +220,7 @@ def authorize(request):
                 fingerprint.update(json.dumps([relative, origin.restrictions(info)], sort_keys=True, separators=(',', ':')).encode())
             # Metadata's raw material is always billed at entry; Root is an
             # identity anchor, not an extra recovery container/directory record.
-            if contains_stage and not (outside_layers and relative in ('', '.storyboard-workbench')):
+            if contains_stage and not (outside_layers and relative in ('', '.storyboard-flow')):
                 total += origin.attribute_bytes(info)
                 records += 1
                 if total > byte_limit or records > record_limit:

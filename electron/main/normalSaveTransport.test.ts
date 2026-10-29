@@ -9,9 +9,9 @@ const ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true)
 it("actual main ACK carries actual filename/fingerprint and renamed synced shot even when no bake selected", async () => {
   const stmt = ast.statements.find(s => ts.isVariableStatement(s) && s.declarationList.declarations.some(d => d.name.getText(ast) === "normalSaveOutputAcks"))!;
   const code = ts.transpile(stmt.getText(ast));
-  const actual = new Function("createHash", "readFile", "shouldWriteSwbMetadata", `${code}; return normalSaveOutputAcks;`)(
+  const actual = new Function("createHash", "readFile", "shouldWriteFlowMetadata", `${code}; return normalSaveOutputAcks;`)(
     () => ({ update: () => ({ digest: () => "1".repeat(64) }) }), async () => Buffer.from("fixture"), () => true);
-  const shot = { id: "s", imagePath: "/b.tiff", fileName: "b.tiff", swb: { status: "owned", baseFingerprint: "actual-fp" } };
+  const shot = { id: "s", imagePath: "/b.tiff", fileName: "b.tiff", flow: { status: "owned", baseFingerprint: "actual-fp" } };
   const result = await actual({ project: { shots: [shot], pendingBake: { shots: { s: { state: "synced" } } } }, renamePlan: [{ shotId: "s", fromPath: "/a.tiff", finalPath: "/b.tiff" }] }, { shots: [shot] }, new Set());
   expect(result).toEqual([{ shotId: "s", capturedToken: undefined, sourcePath: "/a.tiff", targetPath: "/b.tiff", outputHash: "1".repeat(64), fileName: "b.tiff", baseFingerprint: "actual-fp" }]);
 });

@@ -42,7 +42,7 @@ describe("checkExternalChanges", () => {
     const result = await checkExternalChanges(
       {
         folderPath: "/project",
-        metadataPath: "/project/.storyboard-workbench/project.json",
+        metadataPath: "/project/.storyboard-flow/project.json",
         project
       },
       {
@@ -50,7 +50,7 @@ describe("checkExternalChanges", () => {
         collectImagePaths,
         createImageRecords,
         ensureStoryboardScriptMarkdown,
-        previewRootForFolder: () => "/project/.storyboard-workbench/previews",
+        previewRootForFolder: () => "/project/.storyboard-flow/previews",
         reportProgress
       }
     );
@@ -80,7 +80,7 @@ describe("checkExternalChanges", () => {
     );
     expect(createImageRecords).toHaveBeenCalledWith(
       ["/project/new.tiff", "/project/known.tiff"],
-      "/project/.storyboard-workbench/previews",
+      "/project/.storyboard-flow/previews",
       {
         onProgress: reportProgress,
         label: "Preparing previews..."

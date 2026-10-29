@@ -16,8 +16,8 @@ const fixture = async () => {
   const png = await sharp({ create: { width: 12, height: 8, channels: 4, background: '#ee5511' } }).png().toBuffer();
   await writeFile(path.join(source, '2.png'), png);
   await sharp(png).tiff().toFile(path.join(source, '10.tiff'));
-  const internal = path.join(source, '.storyboard-workbench'); await mkdir(internal);
-  const json = JSON.stringify({ shots: [{ id: 'old', imagePath: path.join(source, '10.tiff'), swb: { status: 'owned' }, layers: [{ bitmapPath: '.storyboard-workbench/old.png' }] }], dialogues: [{ text: 'retained dialogue' }] });
+  const internal = path.join(source, '.storyboard-flow'); await mkdir(internal);
+  const json = JSON.stringify({ shots: [{ id: 'old', imagePath: path.join(source, '10.tiff'), flow: { status: 'owned' }, layers: [{ bitmapPath: '.storyboard-flow/old.png' }] }], dialogues: [{ text: 'retained dialogue' }] });
   await writeFile(path.join(internal, 'storyboard.project.json'), json);
   await writeFile(path.join(internal, 'old.png'), png);
   await writeFile(path.join(source, 'storyboard-script.md'), 'retained script');
@@ -115,8 +115,8 @@ it('resolves the original folder to a completed child and maps direct child acce
   const f = await fixture(), before = await f.snapshot();
   const child = await copyFolderImagesForImport(f.source, async () => {});
   expect((await inspectFolderImages(f.source)).browse).toBe(true);
-  await mkdir(path.join(child.folderPath, '.storyboard-workbench'));
-  await writeFile(path.join(child.folderPath, '.storyboard-workbench/storyboard.project.json'), JSON.stringify({ shots: [], pendingBake: { version: 1, shots: {} } }));
+  await mkdir(path.join(child.folderPath, '.storyboard-flow'));
+  await writeFile(path.join(child.folderPath, '.storyboard-flow/storyboard.project.json'), JSON.stringify({ shots: [], pendingBake: { version: 1, shots: {} } }));
   expect(await inspectFolderImages(f.source)).toMatchObject({ folderPath: f.source, editableFolderPath: child.folderPath, browse: false });
   expect(await inspectFolderImages(child.folderPath)).toMatchObject({ folderPath: f.source, files: ['2.png', '10.tiff'], editableFolderPath: child.folderPath, browse: false });
   expect(await sourceFolderForManagedProject(child.folderPath)).toBe(f.source);
@@ -155,7 +155,7 @@ it('failed partial copies remain visible as incomplete and cannot be silently ov
 
 it('does not overwrite a damaged existing child project or misreport it as editable', async () => {
   const f = await fixture(), child = await copyFolderImagesForImport(f.source, async () => {});
-  const internal = path.join(child.folderPath, '.storyboard-workbench'); await mkdir(internal);
+  const internal = path.join(child.folderPath, '.storyboard-flow'); await mkdir(internal);
   const metadata = path.join(internal, 'storyboard.project.json'); await writeFile(metadata, '{damaged project');
   const inspection = await inspectFolderImages(f.source);
   expect(inspection.browse).toBe(true); expect(inspection.issue).toBeTruthy();

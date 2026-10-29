@@ -14,23 +14,23 @@ describe("restoreLayerAssetSnapshots", () => {
 
     await restoreLayerAssetSnapshots(api, "/scene", [
       {
-        bitmapPath: ".storyboard-workbench/layers/shot-a/paint.png",
+        bitmapPath: ".storyboard-flow/layers/shot-a/paint.png",
         dataUrl: "data:image/png;base64,paint"
       },
       {
-        bitmapPath: ".storyboard-workbench/layers/shot-a/missing.png",
+        bitmapPath: ".storyboard-flow/layers/shot-a/missing.png",
         dataUrl: undefined
       }
     ]);
 
     expect(api.writeLayerPng).toHaveBeenCalledWith({
       folderPath: "/scene",
-      bitmapPath: ".storyboard-workbench/layers/shot-a/paint.png",
+      bitmapPath: ".storyboard-flow/layers/shot-a/paint.png",
       dataUrl: "data:image/png;base64,paint"
     });
     expect(api.deleteLayerPng).toHaveBeenCalledWith({
       folderPath: "/scene",
-      bitmapPath: ".storyboard-workbench/layers/shot-a/missing.png"
+      bitmapPath: ".storyboard-flow/layers/shot-a/missing.png"
     });
   });
 });
@@ -45,16 +45,16 @@ describe("readLayerAssetSnapshots", () => {
 
     await expect(
       readLayerAssetSnapshots(api, "/scene", [
-        ".storyboard-workbench/layers/shot-a/paint.png",
-        ".storyboard-workbench/layers/shot-a/missing.png"
+        ".storyboard-flow/layers/shot-a/paint.png",
+        ".storyboard-flow/layers/shot-a/missing.png"
       ])
     ).resolves.toEqual([
       {
-        bitmapPath: ".storyboard-workbench/layers/shot-a/paint.png",
+        bitmapPath: ".storyboard-flow/layers/shot-a/paint.png",
         dataUrl: "data:image/png;base64,paint"
       },
       {
-        bitmapPath: ".storyboard-workbench/layers/shot-a/missing.png",
+        bitmapPath: ".storyboard-flow/layers/shot-a/missing.png",
         dataUrl: undefined
       }
     ]);
@@ -70,8 +70,8 @@ describe("readLayerAssetSnapshots", () => {
     };
 
     const snapshots = await readLayerAssetSnapshots(api, "/scene", [
-      ".storyboard-workbench/layers/shot-a/paint.png",
-      ".storyboard-workbench/layers/shot-a/missing.png"
+      ".storyboard-flow/layers/shot-a/paint.png",
+      ".storyboard-flow/layers/shot-a/missing.png"
     ]);
 
     expect(Object.hasOwn(snapshots[0]!, "dataUrl")).toBe(true);

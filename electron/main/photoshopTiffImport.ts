@@ -59,7 +59,7 @@ export const compatibleExternalEditImportMode = ({
   return preserveDirtyShotLayers ? "preserve-dirty-layers" : "duplicate";
 };
 
-export const photoshopTiffNoLayersMarker = "SWB_PHOTOSHOP_TIFF_NO_LAYERS";
+export const photoshopTiffNoLayersMarker = "FLOW_PHOTOSHOP_TIFF_NO_LAYERS";
 const sharpSourceOptions = { unlimited: true } as const;
 
 export const isLikelyTiffPath = (filePath: string): boolean => {
@@ -71,7 +71,7 @@ export const isPhotoshopTiffNoLayersError = (error: unknown): boolean => {
   return error instanceof Error && error.message.includes(photoshopTiffNoLayersMarker);
 };
 
-export const writeSwbImportWorkingTiff = async ({
+export const writeFlowImportWorkingTiff = async ({
   sourcePath,
   outputPath,
   usePlaceholder
@@ -109,7 +109,7 @@ export const ensureLayerMoveDestinationsAvailable = async (
 };
 
 const bitmapLayerPath = (shotId: string, layerId: string): string =>
-  `.storyboard-workbench/layers/${shotId}/${layerId}.png`;
+  `.storyboard-flow/layers/${shotId}/${layerId}.png`;
 
 const isPathInside = (childPath: string, parentPath: string): boolean => {
   const relative = path.relative(parentPath, childPath);

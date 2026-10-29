@@ -7,14 +7,14 @@ import { cleanupMergedLayerSources } from "./mergeSourceCleanup";
 it("cleans only unreferenced exact merge inputs after matching disk metadata", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "durable-merge-cleanup-"));
   try {
-    const dir = ".storyboard-workbench/layers/s";
+    const dir = ".storyboard-flow/layers/s";
     await mkdir(path.join(root, dir), { recursive: true });
     const source = Buffer.from("captured source"), target = Buffer.from("complete target");
     const sourcePath = `${dir}/source.png`, targetPath = `${dir}/merged.png`;
     await writeFile(path.join(root, sourcePath), source);
     await writeFile(path.join(root, targetPath), target);
     const project = { id: "project", shots: [{ id: "s", layers: [{ bitmapPath: targetPath }] }] };
-    const metadata = path.join(root, ".storyboard-workbench/storyboard.project.json");
+    const metadata = path.join(root, ".storyboard-flow/storyboard.project.json");
     await writeFile(metadata, JSON.stringify(project));
     const run = cleanupMergedLayerSources;
     expect(run, "durable merge cleanup port missing").toBeTypeOf("function");
@@ -37,13 +37,13 @@ it("cleans only unreferenced exact merge inputs after matching disk metadata", a
 it("retains durable merged metadata and the remaining source on a second unlink failure", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "merge-cleanup-partial-"));
   try {
-    const dir = ".storyboard-workbench/layers/s";
+    const dir = ".storyboard-flow/layers/s";
     await mkdir(path.join(root, dir), { recursive: true });
     const targetPath = `${dir}/target.png`, sourcePaths = [`${dir}/a.png`, `${dir}/b.png`];
     const data = Buffer.from("complete captured bytes");
     for (const file of [targetPath, ...sourcePaths]) await writeFile(path.join(root, file), data);
     const project = { id: "p", shots: [{ id: "s", layers: [{ bitmapPath: targetPath }] }] };
-    const metadata = path.join(root, ".storyboard-workbench/storyboard.project.json");
+    const metadata = path.join(root, ".storyboard-flow/storyboard.project.json");
     const json = JSON.stringify(project);
     await writeFile(metadata, json);
     const sources = await Promise.all(sourcePaths.map(async bitmapPath => ({ bitmapPath,

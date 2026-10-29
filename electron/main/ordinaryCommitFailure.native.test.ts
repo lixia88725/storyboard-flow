@@ -16,25 +16,25 @@ const hash = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 async function finalUnlinkFault<T>(root: string, run: () => Promise<T>) {
   const shim = path.join(root, 'native-cleanup-adapter');
   await fs.writeFile(shim, `#!/usr/bin/env ${options.python}\nimport sys,importlib.util,json,base64,os\nspec=importlib.util.spec_from_file_location('writer',sys.argv[3]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)\noriginal=m.os.unlink\ndef fault(p,*a,**k):\n if os.path.basename(p).startswith('.layer-staging-'): raise PermissionError('ordinary fixture final owned-staging unlink denied')\n return original(p,*a,**k)\nm.os.unlink=fault\nr=json.load(sys.stdin)\nprint(json.dumps(m.protected_write(r['root'],r['filePath'],base64.b64decode(r['bytes']),r['mode'])))\n`, { mode: 0o700 });
-  const old = process.env.SWB_PYTHON_BIN;
-  process.env.SWB_PYTHON_BIN = shim;
+  const old = process.env.FLOW_PYTHON_BIN;
+  process.env.FLOW_PYTHON_BIN = shim;
   try { return await run(); }
-  finally { if (old === undefined) delete process.env.SWB_PYTHON_BIN; else process.env.SWB_PYTHON_BIN = old; }
+  finally { if (old === undefined) delete process.env.FLOW_PYTHON_BIN; else process.env.FLOW_PYTHON_BIN = old; }
 }
 
 for (const producer of ['writePng', 'copyPng', 'mergeVisible'] as const) {
   test(`ordinary ${producer} unminted target committed-cleanup failure retains real B without ordinary custody or ACK`, async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ordinary-commit-' + producer + '-'));
-    const paths = ['.storyboard-workbench/layers/s/a.png', '.storyboard-workbench/layers/s/b.png'];
-    const targetPath = '.storyboard-workbench/layers/s/new.png', target = path.join(root, targetPath);
+    const paths = ['.storyboard-flow/layers/s/a.png', '.storyboard-flow/layers/s/b.png'];
+    const targetPath = '.storyboard-flow/layers/s/new.png', target = path.join(root, targetPath);
     const red = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'red' } }).png().toBuffer();
     const blue = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'blue' } }).png().toBuffer();
     await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
     for (const p of paths) await fs.writeFile(path.join(root, p), blue, { mode: 0o600 });
     const tiff = await sharp(red).tiff().toBuffer();
     await fs.writeFile(path.join(root, 's.tiff'), tiff, { mode: 0o600 });
-    const project: any = { id: 'p', name: 'ordinary', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', swb: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: paths.map((bitmapPath, index) => ({ id: index ? 'b' : 'a', kind: 'paint', bitmapPath, width: 2, height: 2 })) }], dialogues: [] };
-    const metadata = path.join(root, '.storyboard-workbench/storyboard.project.json'), md = path.join(root, 'storyboard-script.md');
+    const project: any = { id: 'p', name: 'ordinary', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', flow: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: paths.map((bitmapPath, index) => ({ id: index ? 'b' : 'a', kind: 'paint', bitmapPath, width: 2, height: 2 })) }], dialogues: [] };
+    const metadata = path.join(root, '.storyboard-flow/storyboard.project.json'), md = path.join(root, 'storyboard-script.md');
     const writeMetadata = async () => { await fs.writeFile(metadata, JSON.stringify(project, null, 2) + '\n', { mode: 0o600 }); await fs.writeFile(md, serializeStoryboardScriptMarkdown(project), { mode: 0o600 }); return {}; };
     await writeMetadata();
     const frame = {}, event: any = { sender: { mainFrame: frame }, senderFrame: frame };

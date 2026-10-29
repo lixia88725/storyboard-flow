@@ -24,7 +24,7 @@ describe("createWorkspaceExternalChangesAppHandlers", () => {
       }))
     );
     const ensureStoryboardScriptMarkdown = vi.fn(async () => true);
-    const previewRootForFolder = vi.fn(() => "/project/.storyboard-workbench/previews");
+    const previewRootForFolder = vi.fn(() => "/project/.storyboard-flow/previews");
 
     const handlers = createWorkspaceExternalChangesAppHandlers({
       changedKnownImagePaths,
@@ -37,7 +37,7 @@ describe("createWorkspaceExternalChangesAppHandlers", () => {
     const result = await handlers.checkExternalChanges(
       {
         folderPath: "/project",
-        metadataPath: "/project/.storyboard-workbench/project.json",
+        metadataPath: "/project/.storyboard-flow/project.json",
         project
       },
       { reportProgress }
@@ -47,7 +47,7 @@ describe("createWorkspaceExternalChangesAppHandlers", () => {
     expect(previewRootForFolder).toHaveBeenCalledWith("/project");
     expect(createImageRecords).toHaveBeenCalledWith(
       ["/project/new.tiff", "/project/known.tiff"],
-      "/project/.storyboard-workbench/previews",
+      "/project/.storyboard-flow/previews",
       {
         onProgress: reportProgress,
         label: "Preparing previews..."

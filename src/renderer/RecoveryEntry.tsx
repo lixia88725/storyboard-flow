@@ -32,7 +32,7 @@ export const RecoveryEntry = () => {
    let recoveryTarget=target;
    const mode=await startupRecoveryMode(target,{
     inspect:path=>window.storyboard.inspectFolderImages(path),
-    probe:path=>{recoveryTarget=path;return window.storyboard.checkExternalChanges({folderPath:path,metadataPath:`${path}/.storyboard-workbench/storyboard.project.json`,normalSave:true,project:{id:'probe',name:'probe',shots:[],dialogues:[]}} as any);},
+    probe:path=>{recoveryTarget=path;return window.storyboard.checkExternalChanges({folderPath:path,metadataPath:`${path}/.storyboard-flow/storyboard.project.json`,normalSave:true,project:{id:'probe',name:'probe',shots:[],dialogues:[]}} as any);},
     isCurrent:()=>!cancelled&&entryTicket.current===ticket
    });
    if(mode==='superseded')return;
@@ -166,8 +166,8 @@ const PartialSaveEditor=({bootstrap}:{bootstrap:PartialSaveBootstrap})=>{
   const direct=state.edits[`${shotId}/${id}`]?.dataUrl??bootstrap.recovery.assets.find(a=>a.role===`desired/${shotId}/${id}`)?.dataUrl??bootstrap.recovery.assets.find(a=>a.role===`original/${shotId}/${id}`)?.dataUrl;
   if(direct)return direct;
   const shot=state.project.shots.find(s=>s.id===shotId),layer=shot?.layers?.find(l=>l.id===id);
-  const metadata=(bootstrap.recovery.original as any)?.metadataPath,marker='.storyboard-workbench/storyboard.project.json';
-  if(shot?.swb?.status==='owned'||layer?.kind!=='image'||typeof metadata!=='string'||!metadata.endsWith(marker))return undefined;
+  const metadata=(bootstrap.recovery.original as any)?.metadataPath,marker='.storyboard-flow/storyboard.project.json';
+  if(shot?.flow?.status==='owned'||layer?.kind!=='image'||typeof metadata!=='string'||!metadata.endsWith(marker))return undefined;
   const root=metadata.slice(0,-marker.length);
   if(!shot?.imagePath.startsWith(root))return undefined;
   return bootstrap.recovery.assets.find(a=>a.role===`import-source/${shot.imagePath.slice(root.length)}`)?.dataUrl;

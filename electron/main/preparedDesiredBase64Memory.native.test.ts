@@ -7,11 +7,11 @@ import { createPreparedWorkspaceSave } from './preparedWorkspaceSave';
 import { serializeStoryboardScriptMarkdown } from './storyboardScript';
 
 test('Prepared Save admits encoded desired PNG bytes before decoding a valid same-sized raster',async()=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'desired-base64-ram-root-')),bitmapPath='.storyboard-workbench/layers/s/a.png',file=path.join(root,bitmapPath),metadata=path.join(root,'.storyboard-workbench/storyboard.project.json'),script=path.join(root,'storyboard-script.md'),tiff=path.join(root,'s.tiff');
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'desired-base64-ram-root-')),bitmapPath='.storyboard-flow/layers/s/a.png',file=path.join(root,bitmapPath),metadata=path.join(root,'.storyboard-flow/storyboard.project.json'),script=path.join(root,'storyboard-script.md'),tiff=path.join(root,'s.tiff');
   await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});
   const png=await sharp({create:{width:1024,height:1024,channels:4,background:'blue'}}).png().toBuffer(),desired=await sharp({create:{width:1024,height:1024,channels:4,background:'green'}}).png({compressionLevel:0}).toBuffer();
   expect(png.length).toBeLessThan(65536);expect(desired.length).toBeGreaterThan(1024*1024);await fs.writeFile(file,png,{mode:0o600});await fs.writeFile(tiff,await sharp(png).tiff().toBuffer(),{mode:0o600});
-  const project={id:'p',name:'Desired encoded byte admission',shots:[{id:'s',imagePath:tiff,fileName:'s.tiff',swb:{status:'owned',canvasWidth:1024,canvasHeight:1024},layers:[{id:'a',kind:'paint',bitmapPath,width:1024,height:1024}]}],dialogues:[]};
+  const project={id:'p',name:'Desired encoded byte admission',shots:[{id:'s',imagePath:tiff,fileName:'s.tiff',flow:{status:'owned',canvasWidth:1024,canvasHeight:1024},layers:[{id:'a',kind:'paint',bitmapPath,width:1024,height:1024}]}],dialogues:[]};
   await fs.writeFile(metadata,JSON.stringify(project,null,2)+'\n',{mode:0o600});await fs.writeFile(script,serializeStoryboardScriptMarkdown(project as any),{mode:0o600});
   const files=[metadata,script,tiff,file],originals=await Promise.all(files.map(f=>fs.readFile(f))),names=(await fs.readdir(path.dirname(metadata))).sort(),base64=desired.toString('base64');
   const service=createPreparedWorkspaceSave({python:'python3',script:path.resolve('scripts/recovery-content-permissions.py'),budget:{bytes:32*1024*1024,records:1000,assets:16,jsonDepth:80},memoryBudgetBytes:1024*1024});

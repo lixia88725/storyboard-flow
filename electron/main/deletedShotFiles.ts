@@ -43,7 +43,7 @@ export const stagePendingDeletedShotFiles = async <ProjectT extends ProjectWithP
   const pathExists = options.pathExists ?? defaultPathExists;
   const uniquePath = options.uniquePath ?? defaultUniquePath(pathExists);
   const moveFiles = options.moveFiles ?? applyFileMoves;
-  const tempRoot = path.join(folderPath, ".storyboard-workbench", "delete-tmp", archiveStamp(options.now));
+  const tempRoot = path.join(folderPath, ".storyboard-flow", "delete-tmp", archiveStamp(options.now));
   const stagedShots: PendingDeletedShotLike[] = [];
   const moves = [];
 

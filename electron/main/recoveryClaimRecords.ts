@@ -17,7 +17,7 @@ export type ClaimScopeEnd = { memberCount: number; membersDigest: string; census
 export type ClaimAdmission = { recordName: string; census: ClaimCensus };
 export type RecordRestrictions = { uid: number; gid: number; mode: number; flags: number; acl: string | null; xattrs: Record<string, string> };
 type NativeRecordIdentity = { dev: string; ino: string; mtimeNs: string; ctimeNs: string };
-type OwnedAdmission = { identity: NativeRecordIdentity; userData: string; payload: ClaimRecord & { schema: 'swb.workspace-claim.v3'; version: 3; reservation: ClaimReservation; recordPolicyFingerprint: string; scopeEnd: null }; restrictions: RecordRestrictions; digest: string; terminalCensus?: ClaimCensus; state: 'ready' | 'closing' | 'closed' | 'unknown' };
+type OwnedAdmission = { identity: NativeRecordIdentity; userData: string; payload: ClaimRecord & { schema: 'flow.workspace-claim.v3'; version: 3; reservation: ClaimReservation; recordPolicyFingerprint: string; scopeEnd: null }; restrictions: RecordRestrictions; digest: string; terminalCensus?: ClaimCensus; state: 'ready' | 'closing' | 'closed' | 'unknown' };
 const ownedAdmissions = new WeakMap<ClaimAdmission, OwnedAdmission>();
 export type ClaimState = 'reserved' | 'closed' | 'exceeded';
 export type ClaimRecord = {
@@ -60,7 +60,7 @@ export const createRecoveryClaimRecords = (options: {
     if (lifecycle && reservation === undefined) throw new Error('Lifecycle claim requires its original reservation');
     const restrictions = lifecycle ? captured ?? restrictionsFor() : null;
     const recordPolicyFingerprint = restrictions && createHash('sha256').update(JSON.stringify([restrictions.uid, restrictions.gid, restrictions.mode, restrictions.flags, restrictions.acl, Object.entries(inheritedRecoveryAttributes(restrictions.xattrs)).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)])).digest('hex');
-    return { schema: lifecycle ? 'swb.workspace-claim.v3' : reservation === undefined ? 'swb.workspace-claim.v1' : 'swb.workspace-claim.v2', version: lifecycle ? 3 : reservation === undefined ? 1 : 2, workspaceKey, scopeId, claimId,
+    return { schema: lifecycle ? 'flow.workspace-claim.v3' : reservation === undefined ? 'flow.workspace-claim.v1' : 'flow.workspace-claim.v2', version: lifecycle ? 3 : reservation === undefined ? 1 : 2, workspaceKey, scopeId, claimId,
       effectPeak: plan.effectPeak, claimPeak: plan.claimPeak, closePeak: plan.closePeak, state, census,
       ...(reservation === undefined ? {} : { reservation: { records: reservation.records, before: { ...reservation.before } } }),
       ...(lifecycle ? { recordPolicyFingerprint, scopeEnd: null } : {}) };
@@ -190,6 +190,6 @@ export const createRecoveryClaimRecords = (options: {
   return adapter;
   async function requireName(workspaceKey: string, scopeId: string, claimId: string) {
     const { createHash } = await import('node:crypto');
-    return createHash('sha256').update(JSON.stringify(['swb.workspace-claim-name.v1', workspaceKey, scopeId, claimId])).digest('hex');
+    return createHash('sha256').update(JSON.stringify(['flow.workspace-claim-name.v1', workspaceKey, scopeId, claimId])).digest('hex');
   }
 };

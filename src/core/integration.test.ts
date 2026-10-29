@@ -84,7 +84,7 @@ describe('wave-one public interfaces composed with real checkpoint files', () =>
     expect(value(await store.loadCheckpoint(root)).project).toEqual(f.project);
     value(await store.saveCheckpoint(root, next, f.readAsset));
     expect(value(await store.loadCheckpoint(root)).project).toEqual(next);
-    expect(await fs.readdir(root)).toEqual(['.storyboard-flow-v2']);
+    expect(await fs.readdir(root)).toEqual(['.storyboard-flow']);
   });
 
   it('rejects a stale image baseline after branching history without publishing it', async () => {

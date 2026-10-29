@@ -1,4 +1,4 @@
-# Checkpoint format — `.storyboard-flow-v2` (wave 1 candidate)
+# Checkpoint format — `.storyboard-flow/checkpoints` (wave 1 candidate)
 
 Status: **experimental**. This layout is not activated anywhere in the application. The current
 Save/recovery path, TIFF writing and legacy project folders are untouched; nothing reads this
@@ -9,14 +9,14 @@ format in production. `electron/core/persistence/index.ts` exports the only publ
 
 ```
 <project folder>/                    caller-supplied root; must already exist, be canonical
-└── .storyboard-flow-v2/
+└── .storyboard-flow/checkpoints/
     ├── project.json                 head manifest: ProjectV1 as canonical UTF-8 JSON
     ├── assets/<sha256>.png          immutable PNG blob per distinct asset id
     └── versions/<revision>.json     immutable manifest copy per published revision
 ```
 
 * Directories are created with mode `0700`, files with `0600` (the process umask can only remove
-  bits). No other file or directory is created; nothing outside `.storyboard-flow-v2/` is written.
+  bits). The parent `.storyboard-flow/` directory is created or verified first; no unrelated file is changed; nothing outside `.storyboard-flow/checkpoints/` is written.
 * `assets/<sha256>.png` is the encoded PNG byte-for-byte, and `<sha256>` is the lowercase hex
   SHA-256 of exactly those bytes (the `AssetIdV1`). There is one file per distinct asset id, even
   when many layers and images share it.
@@ -55,7 +55,7 @@ format in production. `electron/core/persistence/index.ts` exports the only publ
    an aliased parent (`invalid-input` otherwise).
 3. **Queue** — an in-process queue keyed by the canonical root. Saves to the same root serialize,
    including across `createProjectStore()` instances; different roots are not coupled.
-4. **Store directories** — `.storyboard-flow-v2/`, `assets/`, `versions/` created or verified as
+4. **Store directories** — `.storyboard-flow/checkpoints/`, `assets/`, `versions/` created or verified as
    real directories. A symlink or non-directory with one of those names is `conflict`.
 5. **Existing head** — read, parse and fully validate. An unreadable or invalid head is never
    overwritten (`conflict`). Then: different project id → `conflict`; lower revision → `conflict`;

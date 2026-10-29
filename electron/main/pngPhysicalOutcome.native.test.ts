@@ -34,7 +34,7 @@ test('a genuine Native refusal is not replaced by a later physical accounting er
 
 // First-green protocol protection for the implemented readonly plan seam.
 test.each(['contents','attributes','parent'] as const)('a native PNG plan is readonly and stale %s refuse before staging',async change=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-plan-binding-')),file=path.join(root,'existing.png');await fs.mkdir(path.join(root,'.storyboard-workbench'),{mode:0o700});
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-plan-binding-')),file=path.join(root,'existing.png');await fs.mkdir(path.join(root,'.storyboard-flow'),{mode:0o700});
   const bytes=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer(),updated=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer();await fs.writeFile(file,bytes,{mode:0o600});
   const names=(await fs.readdir(root)).sort(),identity=await fs.stat(file,{bigint:true});
   const plan=await planProtectedPngWrite(root,file,updated,'upsert',4*1024*1024,'python3');
@@ -52,7 +52,7 @@ test.each(['contents','attributes','parent'] as const)('a native PNG plan is rea
 },120000);
 
 test('native PNG cost uses raw source attributes and separately funds missing directories and publication names',async()=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-raw-cost-')),file=path.join(root,'source.png');await fs.mkdir(path.join(root,'.storyboard-workbench'),{mode:0o700});
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-raw-cost-')),file=path.join(root,'source.png');await fs.mkdir(path.join(root,'.storyboard-flow'),{mode:0o700});
   const bytes=await sharp({create:{width:16,height:16,channels:4,background:'blue'}}).png({compressionLevel:0}).toBuffer();await fs.writeFile(file,bytes,{mode:0o600});
   const name='org.storyboard.png-raw-size',value='q'.repeat(32600);execFileSync('/usr/bin/xattr',['-w',name,value,file]);
   // The OS can attach additional metadata. Observe ALL actual raw material
@@ -68,7 +68,7 @@ test('native PNG cost uses raw source attributes and separately funds missing di
 },120000);
 
 test.each([false,true])('a native PNG plan funds newly accounted existing containers when final publication cleanup fails (large attributes=%s)',async largeAttributes=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-stage-container-cost-')),file=path.join(root,'.storyboard-workbench/layers/s/new.png');
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-stage-container-cost-')),file=path.join(root,'.storyboard-flow/layers/s/new.png');
   await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});
   if(largeAttributes)for(const directory of [path.dirname(file),path.dirname(path.dirname(file))])execFileSync('/usr/bin/xattr',['-w','org.storyboard.container-cost','q'.repeat(30000),directory]);
   const bytes=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer(),python='python3';
@@ -77,11 +77,11 @@ test.each([false,true])('a native PNG plan funds newly accounted existing contai
   const before=await inventory(),plan=await planProtectedPngWrite(root,file,bytes,'create-only',4*1024*1024,python);
   const shim=path.join(root,'publication-cleanup-fault');
   await fs.writeFile(shim,`#!/usr/bin/env ${python}\nimport sys,importlib.util,json,base64,os\ns=importlib.util.spec_from_file_location('writer',sys.argv[3]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\noriginal=m.os.unlink\ndef fault(p,*a,**k):\n if os.path.basename(p).startswith('.layer-staging-'):raise PermissionError('fixture final stage unlink denied')\n return original(p,*a,**k)\nm.os.unlink=fault\nr=json.load(sys.stdin)\nprint(json.dumps(m.protected_write(r['root'],r['filePath'],base64.b64decode(r['bytes']),r['mode'],r['operation'],r['writePlan'])))\n`,{mode:0o700});
-  const previous=process.env.SWB_PYTHON_BIN;let failure:any;
+  const previous=process.env.FLOW_PYTHON_BIN;let failure:any;
   try{
-    process.env.SWB_PYTHON_BIN=shim;
+    process.env.FLOW_PYTHON_BIN=shim;
     failure=await withProducerPngEffects({beforeWrite:async()=>{},beforeDelete:async()=>{},deleted:async()=>{},written:async()=>{},physicalWrite:(_request,execute)=>execute(plan)},()=>writeProtectedLayerFile(root,file,bytes,'create-only')).catch(error=>error);
-  }finally{if(previous===undefined)delete process.env.SWB_PYTHON_BIN;else process.env.SWB_PYTHON_BIN=previous;}
+  }finally{if(previous===undefined)delete process.env.FLOW_PYTHON_BIN;else process.env.FLOW_PYTHON_BIN=previous;}
   expect(failure).toMatchObject({effect:'committed',filePath:file});expect((await fs.stat(file)).nlink).toBe(2);
   expect(await fs.readFile(failure.retainedTemporary)).toEqual(bytes);
   const after=await inventory();
@@ -92,7 +92,7 @@ test.each([false,true])('a native PNG plan funds newly accounted existing contai
 
 test('replacement clone funds the larger old backing, preserves custom attributes, and truncates only the stage',async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-clone-shrink-')),file=path.join(root,'existing.png');
-  await fs.mkdir(path.join(root,'.storyboard-workbench'),{mode:0o700});
+  await fs.mkdir(path.join(root,'.storyboard-flow'),{mode:0o700});
   const old=await sharp({create:{width:256,height:256,channels:4,background:'blue'}}).png({compressionLevel:0}).toBuffer();
   const next=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer();
   await fs.writeFile(file,old,{mode:0o600});execFileSync('/usr/bin/xattr',['-w','org.storyboard.clone-test','keep',file]);

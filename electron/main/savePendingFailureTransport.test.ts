@@ -65,7 +65,7 @@ for (const filename of ["preload.cjs", "preload.ts"]) {
     expect(failure).toMatchObject({ ok: false, error: { code: "SAVE_RECOVERY_INCOMPLETE", metadata: "unknown", retainedPaths: ["/synthetic/owned-backups"] } });
     const h0 = "0".repeat(64);
     const project = { ...createProject("Synthetic"), naming: { sceneCode: "S", artistName: "A", version: "V" },
-      shots: [{ id: "s", imagePath: "/synthetic/s.tiff", fileName: "s.tiff", order: 0, swb: { version: 1, status: "owned" as const, canvasWidth: 8, canvasHeight: 6 } }],
+      shots: [{ id: "s", imagePath: "/synthetic/s.tiff", fileName: "s.tiff", order: 0, flow: { version: 1, status: "owned" as const, canvasWidth: 8, canvasHeight: 6 } }],
       pendingBake: { version: 1 as const, shots: { s: { state: "pending" as const, editToken: "t1", acceptedOutputIdentity: h0 } } } };
     const success = vi.fn(), status = vi.fn(), error = vi.fn();
     const ref = { current: project };

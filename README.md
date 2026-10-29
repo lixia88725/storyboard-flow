@@ -4,11 +4,11 @@ Storyboard Flow 是一个本地优先的故事板工作台。V1 聚焦：打开�
 
 ## Naming And Compatibility
 
-开发阶段只保证当前版本新建项目。缺少当前输出状态的旧测试项目不再自动校验或迁移；原文件保持不变，点击左上角 Import 可在当前文件夹内建立可编辑副本。普通图片的显式 Import 仍可使用。不要为绕过提示删除 `.storyboard-workbench`，其中包含可编辑图层。
+开发阶段只保证当前版本新建项目。缺少当前输出状态的旧测试项目不再自动校验或迁移；原文件保持不变，点击左上角 Import 可在当前文件夹内建立可编辑副本。普通图片的显式 Import 仍可使用。不要为绕过提示删除 `.storyboard-flow`，其中包含可编辑图层。
 
 `Storyboard Flow` 是当前产品名，UI、README、GitHub 和新用户可见文案都应使用这个名字。
 
-`.storyboard-workbench/`、`SWB`、`swb-*` 和 `storyboard-workbench.local` 仍是当前内部格式和兼容层名称。它们暂时不改名，因为旧项目、旧 TIFF metadata、Photoshop round trip、smoke tests 和环境变量仍依赖这些标识。新写入的 TIFF metadata 使用 `app: "Storyboard Flow"`；读取逻辑继续兼容旧的 `app: "Storyboard Workbench"`。
+代码、IPC、环境变量与新写入格式统一使用 Flow 命名；格式版本由元数据字段表达，不作为产品名称。内部数据目录为 `.storyboard-flow/`，导入生成的可编辑子项目为 `.storyboard-flow-project/`，新核心检查点为 `.storyboard-flow/checkpoints/`。这是开发阶段的格式命名切换，不迁移旧测试项目、旧 TIFF 元数据或旧恢复记录；已有文件保留。完整规则见 [命名规范](docs/architecture/NAMING.md)。
 
 ## Scripts
 
@@ -66,10 +66,10 @@ Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`
 
 - 一个本地图像文件夹就是一场戏。
 - 顶部地址栏输入或选择最近文件夹后，当前项目和普通 PNG/JPEG/TIFF 文件夹按原流程打开。不能直接编辑的旧项目会进入图片浏览，不再因旧项目校验而完全看不到图片。
-- 图片浏览支持根目录 PNG/JPEG/TIFF/WebP/GIF/AVIF，不扫描子目录或隐藏图层。点击左上角 `Import`，软件自动在原图片文件夹内的 `.storyboard-flow/` 建立可编辑项目，不再询问 Destination。地址栏和最近打开仍显示原文件夹；以后打开原文件夹，自动恢复内部项目。绘画自动保存到内部 PNG/项目记录；正常关闭等待持久化确认，不要求先点 Save。显式 Save 同时更新内部工作 TIFF 和对应根目录图片，保留原文件名及编码；首次覆盖前在 `.storyboard-flow/.original-images/` 保留原件。外部修改或无法确认的写入会保留现场并提示；仅导入图片当前可见画面（动画首帧），不迁移旧图层、对白和分镜文字。单个图片预览失败不影响其他图片显示。
-- 内部状态自动保存到当前文件夹的 `.storyboard-workbench/storyboard.project.json`。
+- 图片浏览支持根目录 PNG/JPEG/TIFF/WebP/GIF/AVIF，不扫描子目录或隐藏图层。点击左上角 `Import`，软件自动在原图片文件夹内的 `.storyboard-flow-project/` 建立可编辑项目，不再询问 Destination。地址栏和最近打开仍显示原文件夹；以后打开原文件夹，自动恢复内部项目。绘画自动保存到内部 PNG/项目记录；正常关闭等待持久化确认，不要求先点 Save。显式 Save 同时更新内部工作 TIFF 和对应根目录图片，保留原文件名及编码；首次覆盖前在 `.storyboard-flow-project/.original-images/` 保留原件。外部修改或无法确认的写入会保留现场并提示；仅导入图片当前可见画面（动画首帧），不迁移旧图层、对白和分镜文字。单个图片预览失败不影响其他图片显示。
+- 内部状态自动保存到当前文件夹的 `.storyboard-flow/storyboard.project.json`。
 - 分镜脚本文字同步到根目录 `storyboard-script.md`；软件内编辑会自动写入，外部修改需要点击 `Import` 导入。
-- numbered-list Markdown 文件可创建新的 SWB project：每个列表项变成一张 blank shot，正文写入该 shot 的 `scriptText`。
+- numbered-list Markdown 文件可创建新的 FLOW project：每个列表项变成一张 blank shot，正文写入该 shot 的 `scriptText`。
 - 右侧待定区保存 `parkedShots`。手动停车会先把最新图层物化到 TIFF，再把图片移动到项目根目录可见的 `Pending/`；恢复时移回项目根目录。待定 shot 不参与 Save 输出、文件名同步、Timeline 或 `storyboard-script.md`。
 - `Save` 是唯一会同步真实文件名和写工作 TIFF 像素的操作。
 - 选中 storyboard 后按 Delete/Backspace 会先在软件内移除卡片；点击 `Save` 后对应根目录图片进入系统垃圾箱，不进入 `Archive`。
@@ -79,7 +79,7 @@ Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`
 `Save` 会执行以下操作：
 
 - 按软件内 storyboard 顺序安全同步真实图片文件名。
-- 把当前 SWB 图层状态写入工作 TIFF：单层 shot 保存为普通单层 TIFF；多 bitmap layer shot 保存为 Photoshop-readable layered TIFF，并保留 SWB XMP metadata。
+- 把当前 FLOW 图层状态写入工作 TIFF：单层 shot 保存为普通单层 TIFF；多 bitmap layer shot 保存为 Photoshop-readable layered TIFF，并保留 FLOW XMP metadata。
 - 从旧图片文件夹 Import 创建的内部项目，还会更新原文件夹的对应图片（保持原名与格式）；首次覆盖前保留原件备份。编辑过程自动保存到内部项目，正常关闭无需先点 Save。
 
 当前命名规则：
@@ -89,17 +89,17 @@ Detailed routing and protected boundaries live in `AGENTS.md` and `decisions.md`
 项目名_场号_stb_艺术家名_版本号_0020.ext
 ```
 
-序号按 10 递增，方便后续手动插入中间号位。真实重命名前会先做 preflight，避免覆盖或临时文件冲突；如果两阶段重命名、SWB 导入移动或后续 metadata 写入中途失败，会尽力把已移动的文件恢复到原路径。
+序号按 10 递增，方便后续手动插入中间号位。真实重命名前会先做 preflight，避免覆盖或临时文件冲突；如果两阶段重命名、FLOW 导入移动或后续 metadata 写入中途失败，会尽力把已移动的文件恢复到原路径。
 
 ## Layers And Drawing
 
 当前绘图系统以 bitmap layer 为主数据：
 
-- 图层元数据保存在 `.storyboard-workbench/storyboard.project.json` 的 `shots[].layers`。
-- 每个可编辑图层是一张 PNG 工作层：`.storyboard-workbench/layers/{shotId}/{layerId}.png`。
+- 图层元数据保存在 `.storyboard-flow/storyboard.project.json` 的 `shots[].layers`。
+- 每个可编辑图层是一张 PNG 工作层：`.storyboard-flow/layers/{shotId}/{layerId}.png`。
 - 普通显示通过校验过的 `storyboard-img://layer` URL 直接流式读取 PNG，不会在打开或滚动时把整张 layer 转成 base64 IPC payload。
 - 两种 storyboard 视图把图片预热和完整编辑器分开：视口上下各一个 viewport 的 Warm 范围只主动准备 base layer，视口上下 25% 的 Hot 范围才挂载完整 `SketchPad`；离开 Hot 的 card/row 和布局保持存在，画面切换为 lazy/async 静态 bitmap layer stack。主选中、动画焦点、打开图层抽屉以及正在绘画/Select 的 shot 会保持 Hot。
-- 画笔、橡皮、清空和删除图层只写 `.storyboard-workbench/` 内部工作数据。
+- 画笔、橡皮、清空和删除图层只写 `.storyboard-flow/` 内部工作数据。
 - Select 工具支持 V1 lasso / rectangle 选区，对当前 active bitmap layer 做移动、角点缩放和顶部旋转手柄变换；旋转围绕选区中心实时预览，松手后与其他变换一样写回当前 layer PNG 并进入 undo / redo。选区本身不写入项目文件。
 - Blur 工具位于 Select 下方，可设置 `1–50px` Gaussian blur 半径并 Apply 到当前 visible/unlocked bitmap layer；若当前 active layer 保留了 Select 套索选区，只替换选区蒙版内的模糊像素，选区外保持不变；没有选区时模糊整层。每次 Apply 写回 layer PNG，进入 undo / redo，但不新增项目或 TIFF metadata 字段。
 - 顶部视图切换右侧提供遮幅和台词按钮。遮幅关闭时点击会打开二选一菜单，选择扩展所有画布（上下各增加 `75px`）或使用原图已有遮幅；开启后再次点击会关闭整场遮幅。黑边由每张图最上方锁定的透明 `Matte Overlay` bitmap layer 提供，普通绘画不会盖住它。台词按钮同样是场景开关：首次点击为所有分镜生成锁定的 `Dialogue Overlay`，再次点击统一移除；没有台词的分镜使用透明 overlay 保持状态一致。关闭 expanded 会裁回原高度并移除 Matte/Dialogue 系统层；关闭 existing 只移除系统层，原图自带黑边仍保留。新建、Import 完成或从 Pending 恢复的分镜会同时继承当前场景的遮幅模式和台词显示开关。
@@ -123,17 +123,17 @@ Option/Alt drag 不再作为复制手势；按住 Option/Alt 拖动 storyboard�
 
 `Save` 是正式写入入口：有多个 bitmap layer 的 shot 会直接写回当前场景文件夹中的 Photoshop-readable layered TIFF；只有单层内容的 shot 继续保存为普通单层 TIFF。主界面不再显示 `Export TIFF` 按钮，以降低用户心智负担；底层 export API 仍保留给 smoke 和开发调试使用，可另存 Photoshop-readable layered TIFF 到 `Photoshop TIFF Export/YYYYMMDDTHHMMSS/`。
 
-现有 `Import` 操作也会检测 Photoshop layered TIFF，并把 raster Photoshop layers 转换成 SWB-owned bitmap layers。源 TIFF 会移动到 `Archive/YYYY-MM-DD-HHMMSS/`，SWB 继续使用 `.storyboard-workbench/layers/*.png` 和 `storyboard.project.json` 作为内部工作数据。
+现有 `Import` 操作也会检测 Photoshop layered TIFF，并把 raster Photoshop layers 转换成 FLOW-owned bitmap layers。源 TIFF 会移动到 `Archive/YYYY-MM-DD-HHMMSS/`，FLOW 继续使用 `.storyboard-flow/layers/*.png` 和 `storyboard.project.json` 作为内部工作数据。
 
-如果用户在 Finder/Bridge 中向当前根目录新增图片，应用窗口重新获得焦点后会把新增路径追加为待 Import 的 `non-swb` shot，并点亮 Import 旁的黄色感叹号。已知 SWB TIFF 路径也会参与外部编辑检测：兼容的 Photoshop 保存结果可自动导入；如果同一 shot 在 SWB 里也有未 Save 的本地 layer 改动，自动导入只更新 root TIFF ownership 状态 / `baseFingerprint` 并保留现有 SWB layer metadata 和本地 layer PNG。用户手动点击 Import 时，dirty Photoshop 版本仍可作为副本 shot 导入。
+如果用户在 Finder/Bridge 中向当前根目录新增图片，应用窗口重新获得焦点后会把新增路径追加为待 Import 的 `non-flow` shot，并点亮 Import 旁的黄色感叹号。已知 FLOW TIFF 路径也会参与外部编辑检测：兼容的 Photoshop 保存结果可自动导入；如果同一 shot 在 FLOW 里也有未 Save 的本地 layer 改动，自动导入只更新 root TIFF ownership 状态 / `baseFingerprint` 并保留现有 FLOW layer metadata 和本地 layer PNG。用户手动点击 Import 时，dirty Photoshop 版本仍可作为副本 shot 导入。
 
-当前 Photoshop TIFF import/export 路径依赖 Python `psdtags + tifffile + imagecodecs + numpy`。依赖目录解析顺序是：`SWB_PYTHON_DEPS_DIR`、打包资源目录 `python-deps/photoshop-tiff`、开发目录 `vendor/python/photoshop-tiff`，最后才 fallback 到旧 spike 目录 `/private/tmp/psdtags-spike-deps`。开发环境可运行 `npm run setup:photoshop-tiff-deps` 安装到 `vendor/python/photoshop-tiff`。打包前运行 `npm run prepare:package-resources` 会把已安装的 `vendor/python/photoshop-tiff` 复制到 `dist-resources/python-deps/photoshop-tiff`；后续 installer/electron packager 配置必须把 `dist-resources` 内容放进 packaged app 的 resources 根目录，这样运行时的 `process.resourcesPath/python-deps/photoshop-tiff` 才能命中。`npm run smoke:bitmap` 会导出一组 Photoshop TIFF，用 `psdtags` 读回 layer names，并把其中一个导出的 layered TIFF 作为外部文件重新 Import，验证导入后的 SWB shot 有匹配数量的 bitmap layers、layer PNG assets 和 `swb.sourceKind: "photoshop-layered-tiff"`。
+当前 Photoshop TIFF import/export 路径依赖 Python `psdtags + tifffile + imagecodecs + numpy`。依赖目录解析顺序是：`FLOW_PYTHON_DEPS_DIR`、打包资源目录 `python-deps/photoshop-tiff`、开发目录 `vendor/python/photoshop-tiff`，最后才 fallback 到旧 spike 目录 `/private/tmp/psdtags-spike-deps`。开发环境可运行 `npm run setup:photoshop-tiff-deps` 安装到 `vendor/python/photoshop-tiff`。打包前运行 `npm run prepare:package-resources` 会把已安装的 `vendor/python/photoshop-tiff` 复制到 `dist-resources/python-deps/photoshop-tiff`；后续 installer/electron packager 配置必须把 `dist-resources` 内容放进 packaged app 的 resources 根目录，这样运行时的 `process.resourcesPath/python-deps/photoshop-tiff` 才能命中。`npm run smoke:bitmap` 会导出一组 Photoshop TIFF，用 `psdtags` 读回 layer names，并把其中一个导出的 layered TIFF 作为外部文件重新 Import，验证导入后的 FLOW shot 有匹配数量的 bitmap layers、layer PNG assets 和 `flow.sourceKind: "photoshop-layered-tiff"`。
 
-## SWB Format
+## FLOW Format
 
-非 SWB 图片可导入为 SWB-owned TIFF。导入会把原文件移动到 `Archive/YYYY-MM-DD-HHMMSS/`，工作 TIFF 由 Storyboard Flow 管理。
+非 FLOW 图片可导入为 FLOW-owned TIFF。导入会把原文件移动到 `Archive/YYYY-MM-DD-HHMMSS/`，工作 TIFF 由 Storyboard Flow 管理。
 
-`.storyboard-workbench/storyboard.project.json` 是主数据；TIFF XMP metadata 只是便携快照。兼容的外部 TIFF 像素编辑可以被接受为新的 base；Photoshop layered TIFF 是 Save/Export 的 Photoshop 交换写入格式，但不是 autosave 的内部事务格式。
+`.storyboard-flow/storyboard.project.json` 是主数据；TIFF XMP metadata 只是便携快照。兼容的外部 TIFF 像素编辑可以被接受为新的 base；Photoshop layered TIFF 是 Save/Export 的 Photoshop 交换写入格式，但不是 autosave 的内部事务格式。
 
 `docs/photoshop-layered-tiff-spike.md` 记录了最初的格式 spike：Python `psdtags + tifffile` 可以生成 Photoshop 2026 识别为多图层的 Photoshop-style layered TIFF；sharp/libvips 标准 multi-page TIFF 不能被 Photoshop 当作图层打开。
 

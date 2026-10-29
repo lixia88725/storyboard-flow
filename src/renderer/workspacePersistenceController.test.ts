@@ -11,7 +11,7 @@ import {
 } from "./workspacePersistenceController";
 import type { Project, Shot } from "../shared/types";
 
-const projectWithShotStatuses = (statuses: Array<NonNullable<Shot["swb"]>["status"]>): Project => ({
+const projectWithShotStatuses = (statuses: Array<NonNullable<Shot["flow"]>["status"]>): Project => ({
   id: "project-1",
   name: "Storyboard",
   shots: statuses.map((status, index) => ({
@@ -21,7 +21,7 @@ const projectWithShotStatuses = (statuses: Array<NonNullable<Shot["swb"]>["statu
     order: index,
     dialogues: [],
     layers: [],
-    swb: status
+    flow: status
       ? {
           version: 1,
           status,
@@ -66,13 +66,13 @@ describe("workspacePersistenceController", () => {
 
   it("runs autosave only when the workspace has an API and active paths after the initial revision", () => {
     expect(
-      shouldRunAutosave(0, "/scene", "/scene/.storyboard-workbench/storyboard.project.json", true)
+      shouldRunAutosave(0, "/scene", "/scene/.storyboard-flow/storyboard.project.json", true)
     ).toBe(false);
     expect(
-      shouldRunAutosave(1, "", "/scene/.storyboard-workbench/storyboard.project.json", true)
+      shouldRunAutosave(1, "", "/scene/.storyboard-flow/storyboard.project.json", true)
     ).toBe(false);
     expect(
-      shouldRunAutosave(1, "/scene", "/scene/.storyboard-workbench/storyboard.project.json", true)
+      shouldRunAutosave(1, "/scene", "/scene/.storyboard-flow/storyboard.project.json", true)
     ).toBe(true);
   });
 
@@ -122,7 +122,7 @@ describe("workspacePersistenceController", () => {
     ).toBe(false);
   });
 
-  it("auto-imports only compatible external edits and rejects non-swb or incompatible edits", () => {
+  it("auto-imports only compatible external edits and rejects non-flow or incompatible edits", () => {
     expect(hasOnlyCompatibleExternalEdits(projectWithShotStatuses(["compatible-external-edit"]))).toBe(true);
     expect(hasOnlyCompatibleExternalEdits(projectWithShotStatuses(["owned"]))).toBe(false);
     expect(
@@ -131,7 +131,7 @@ describe("workspacePersistenceController", () => {
       )
     ).toBe(false);
     expect(
-      hasOnlyCompatibleExternalEdits(projectWithShotStatuses(["compatible-external-edit", "non-swb"]))
+      hasOnlyCompatibleExternalEdits(projectWithShotStatuses(["compatible-external-edit", "non-flow"]))
     ).toBe(false);
   });
 

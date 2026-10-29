@@ -18,7 +18,7 @@ it("App no longer imports or selects the retired renderer mode", async () => {
 
 it.each([
   "persistWorkspace", "loadFolderScan", "handleOpenFolderByPath",
-  "handleCreateProjectFromStoryboardScript", "handleSaveProject", "handleImportSwbFormat"
+  "handleCreateProjectFromStoryboardScript", "handleSaveProject", "handleImportFlowFormat"
 ])("%s no longer exposes an unreachable legacy mode", async name => {
   const source = await readFile(new URL("./App.tsx", import.meta.url), "utf8");
   const tree = ts.createSourceFile("App.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);

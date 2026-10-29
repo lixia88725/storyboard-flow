@@ -30,11 +30,11 @@ export type OriginWorkspaceAccounting = typeof scanRecoveryWorkspace & {
  * device/inode conversion, no copying an address supplied by the renderer. */
 export const originWorkspaceKey = async (root: string): Promise<string> => {
   if (await fs.realpath(root) !== root) throw new Error('Origin accounting workspace alias');
-  const metadata = path.join(root, '.storyboard-workbench');
+  const metadata = path.join(root, '.storyboard-flow');
   if (await fs.realpath(metadata) !== metadata) throw new Error('Origin accounting metadata alias');
   const r = await fs.lstat(root, { bigint: true }), m = await fs.lstat(metadata, { bigint: true });
   if (!r.isDirectory() || r.isSymbolicLink() || !m.isDirectory() || m.isSymbolicLink() || r.birthtimeNs <= 0n || m.birthtimeNs <= 0n) throw new Error('Origin accounting physical incarnation unavailable');
-  return createHash('sha256').update(JSON.stringify(['swb.workspace-origin-address.v1', root, String(r.dev), String(r.ino), String(r.birthtimeNs), String(m.dev), String(m.ino), String(m.birthtimeNs)])).digest('hex');
+  return createHash('sha256').update(JSON.stringify(['flow.workspace-origin-address.v1', root, String(r.dev), String(r.ino), String(r.birthtimeNs), String(m.dev), String(m.ino), String(m.birthtimeNs)])).digest('hex');
 };
 
 export const createOriginWorkspaceAccounting = (options: { userData: () => string; python: string; script: string; claimRecords?: (root: string) => ReturnType<typeof createRecoveryClaimRecords>; claimWriter?: (root: string, restrictions: RecordRestrictions) => ReturnType<typeof createRecoveryClaimRecords> }): OriginWorkspaceAccounting => {
@@ -63,7 +63,7 @@ export const createOriginWorkspaceAccounting = (options: { userData: () => strin
     const scope = scopes.getStore();
     if (!scope || !scope.accepting || scope.closed || ![bytes, records].every(n => Number.isSafeInteger(n) && n >= 0)) throw new Error('Original open resource scope and finite producer plan required');
     recoveryPolicyKey(certificate);
-    if (certificate.schema !== 'swb.finite-source-policy' || certificate.version !== 1 || !Array.isArray(certificate.observed) || !certificate.observed.length) throw new Error('Main native contributor certificate required');
+    if (certificate.schema !== 'flow.finite-source-policy' || certificate.version !== 1 || !Array.isArray(certificate.observed) || !certificate.observed.length) throw new Error('Main native contributor certificate required');
     const key = await originWorkspaceKey(root), sources: string[] = [];
     for (const observation of certificate.observed) {
       const file = observation?.[0];

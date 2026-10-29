@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createOriginWorkspaceAccounting, type ReservationPhysicalControl } from './originWorkspaceAccounting';
 
 const fixture=async()=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'physical-control-root-')),userData=await fs.mkdtemp(path.join(os.tmpdir(),'physical-control-data-'));await fs.mkdir(path.join(root,'.storyboard-workbench'),{mode:0o700});
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'physical-control-root-')),userData=await fs.mkdtemp(path.join(os.tmpdir(),'physical-control-data-'));await fs.mkdir(path.join(root,'.storyboard-flow'),{mode:0o700});
   const accounting=createOriginWorkspaceAccounting({userData:()=>userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')});
   return {root,accounting,budget:{bytes:1024*1024,records:1000,assets:16,jsonDepth:80}};
 };

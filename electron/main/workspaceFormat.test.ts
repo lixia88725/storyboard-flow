@@ -10,7 +10,7 @@ import { createWorkspaceSlots } from '../../src/renderer/workspaceSlots';
 import { createBitmapLayerWriteQueue } from '../../src/renderer/bitmapLayerWriteQueue';
 
 it('allows empty/current projects and pristine external images without legacy migration', () => {
-  for (const p of [undefined, createProject('empty'), { shots: [{ id: 's', imagePath: '/s.png', swb: { status: 'non-swb' } }] },
+  for (const p of [undefined, createProject('empty'), { shots: [{ id: 's', imagePath: '/s.png', flow: { status: 'non-flow' } }] },
     { shots: [{ id: 's', imagePath: '/s.tiff' }], pendingBake: { version: 1, shots: {} } }]) {
     expect(() => assertEditableWorkspaceFormat(p)).not.toThrow();
   }
@@ -19,7 +19,7 @@ it('allows empty/current projects and pristine external images without legacy mi
 
 it('rejects legacy editable content, including parked shots, without changing metadata', () => {
   for (const key of ['shots', 'parkedShots'] as const) {
-    const p = { shots: [], [key]: [{ id: 'old', imagePath: '/old.tiff', swb: { status: 'owned' } }] };
+    const p = { shots: [], [key]: [{ id: 'old', imagePath: '/old.tiff', flow: { status: 'owned' } }] };
     const before = JSON.stringify(p);
     expect(() => assertEditableWorkspaceFormat(p)).toThrow(legacyWorkspaceMessage);
     expect(JSON.stringify(p)).toBe(before);
@@ -29,9 +29,9 @@ it('rejects legacy editable content, including parked shots, without changing me
 it('actual Main editing preflight rejects before observation and slot freezing; recovery reads remain available', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'workspace-format-'));
   try {
-    const metadataPathForFolder = (folder: string) => path.join(folder, '.storyboard-workbench/storyboard.project.json');
+    const metadataPathForFolder = (folder: string) => path.join(folder, '.storyboard-flow/storyboard.project.json');
     await mkdir(path.dirname(metadataPathForFolder(root)));
-    const original = JSON.stringify({ ...createProject('old'), shots: [{ id: 'old', imagePath: path.join(root, 'old.tiff'), swb: { status: 'owned' } }] });
+    const original = JSON.stringify({ ...createProject('old'), shots: [{ id: 'old', imagePath: path.join(root, 'old.tiff'), flow: { status: 'owned' } }] });
     await writeFile(metadataPathForFolder(root), original);
     const source = await readFile(new URL('./main.ts', import.meta.url), 'utf8');
     const ast = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true);

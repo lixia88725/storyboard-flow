@@ -29,7 +29,7 @@ const shot = (id: string, order: number, layers: BitmapLayer[]): Shot => ({
   order,
   layers,
   activeLayerId: layers[0]?.id,
-  swb: {
+  flow: {
     version: 1,
     status: "owned",
     canvasWidth: 100,
@@ -81,12 +81,12 @@ describe("clipboard selection", () => {
       pastedShotId: "pasted",
       layerCopies: [
         {
-          sourceBitmapPath: ".storyboard-workbench/layers/source/layer-a.png",
-          targetBitmapPath: ".storyboard-workbench/layers/pasted/layer-a.png"
+          sourceBitmapPath: ".storyboard-flow/layers/source/layer-a.png",
+          targetBitmapPath: ".storyboard-flow/layers/pasted/layer-a.png"
         },
         {
-          sourceBitmapPath: ".storyboard-workbench/layers/source/layer-b.png",
-          targetBitmapPath: ".storyboard-workbench/layers/pasted/layer-b.png"
+          sourceBitmapPath: ".storyboard-flow/layers/source/layer-b.png",
+          targetBitmapPath: ".storyboard-flow/layers/pasted/layer-b.png"
         }
       ]
     });

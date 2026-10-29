@@ -25,7 +25,7 @@ type TopbarProps = {
   blankShotPreset: BlankShotPreset;
   boardViewMode: BoardViewMode;
   folderInputValue: string;
-  hasSwbWarning: boolean;
+  hasFlowWarning: boolean;
   importHelpRef: RefObject<HTMLDivElement | null>;
   isAddShotMenuOpen: boolean;
 
@@ -42,7 +42,7 @@ type TopbarProps = {
   isMatteConfigurationDisabled: boolean;
   isSceneDialogueOverlayConfigured: boolean;
   isSceneMatteConfigured: boolean;
-  needsSwbImport: boolean;
+  needsFlowImport: boolean;
   project: Project;
   sceneMatteMode: ShotMatte["mode"] | undefined;
   recentFolders: string[];
@@ -58,7 +58,7 @@ type TopbarProps = {
   setIsRecentMenuOpen: Dispatch<SetStateAction<boolean>>;
   setIsSaveMenuOpen: Dispatch<SetStateAction<boolean>>;
   handleAddShot: () => Promise<unknown>;
-  handleImportSwbFormat: () => Promise<unknown>;
+  handleImportFlowFormat: () => Promise<unknown>;
   handleOpenFolderByPath: (pathOverride?: string) => Promise<unknown>;
   handleDisableSceneMatte: () => Promise<unknown>;
   handlePlaceDialogueOnMatte: () => Promise<unknown>;
@@ -78,7 +78,7 @@ export const Topbar = ({
   blankShotPreset,
   boardViewMode,
   folderInputValue,
-  hasSwbWarning,
+  hasFlowWarning,
   importHelpRef,
   isAddShotMenuOpen,
 
@@ -95,7 +95,7 @@ export const Topbar = ({
   isMatteConfigurationDisabled,
   isSceneDialogueOverlayConfigured,
   isSceneMatteConfigured,
-  needsSwbImport,
+  needsFlowImport,
   project,
   sceneMatteMode,
   recentFolders,
@@ -111,7 +111,7 @@ export const Topbar = ({
   setIsRecentMenuOpen,
   setIsSaveMenuOpen,
   handleAddShot,
-  handleImportSwbFormat,
+  handleImportFlowFormat,
   handleOpenFolderByPath,
   handleDisableSceneMatte,
   handlePlaceDialogueOnMatte,
@@ -129,13 +129,13 @@ export const Topbar = ({
       <button
         type="button"
         className={`import-button${isImportNudging ? " is-nudging" : ""}${isFolderPreview ? " is-conversion-required" : ""}`}
-        onClick={() => void handleImportSwbFormat()}
-        disabled={!needsSwbImport || isWorkspaceTaskRunning}
+        onClick={() => void handleImportFlowFormat()}
+        disabled={!needsFlowImport || isWorkspaceTaskRunning}
         title={isFolderPreview ? "导入到新文件夹并开始编辑" : "Import image or storyboard-script.md changes into Storyboard Flow"}
       >
         {workspaceTask?.kind === "import" ? "Importing..." : "Import"}
       </button>
-      {hasSwbWarning ? (
+      {hasFlowWarning ? (
         <button
           type="button"
           className={isImportNudging ? "import-warning is-nudging" : "import-warning"}

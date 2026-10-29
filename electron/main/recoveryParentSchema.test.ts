@@ -15,9 +15,9 @@ const offer = (revision: string) => ({ revision, projectRaw: { text: revision },
 
 test('inspection binds its seal digest to the exact seal whose content association was validated', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'recovery-seal-read-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const first = await createWorkspaceRecoveryStore({ authorize, budget }).retain(caller, root, offer('first'));
-  const sealPath = path.join(root, '.storyboard-workbench/workspace-recovery-v1/operations', first.operationId, 'generations', first.generationId, 'sealed.json');
+  const sealPath = path.join(root, '.storyboard-flow/workspace-recovery-v1/operations', first.operationId, 'generations', first.generationId, 'sealed.json');
   const verifiedBytes = await fs.readFile(sealPath);
   const expectedDigest = createHash('sha256').update(verifiedBytes).digest('hex');
   let reads = 0;
@@ -37,11 +37,11 @@ test('inspection binds its seal digest to the exact seal whose content associati
 for (const corruption of ['false', 'zero', 'empty-string', 'extra-field'] as const) {
   test(`cold inspection rejects ${corruption} parent instead of normalizing disk data into a valid chain`, async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'recovery-parent-schema-'));
-    await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+    await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
     const store = createWorkspaceRecoveryStore({ authorize, budget });
     let ack = await store.retain(caller, root, offer('first'));
     if (corruption === 'extra-field') ack = await store.retain(caller, root, offer('second'));
-    const dir = path.join(root, '.storyboard-workbench/workspace-recovery-v1/operations', ack.operationId, 'generations', ack.generationId);
+    const dir = path.join(root, '.storyboard-flow/workspace-recovery-v1/operations', ack.operationId, 'generations', ack.generationId);
     const contentPath = path.join(dir, 'content.json'), sealPath = path.join(dir, 'sealed.json');
     const content = JSON.parse(await fs.readFile(contentPath, 'utf8'));
     content.parent = corruption === 'false' ? false : corruption === 'zero' ? 0 : corruption === 'empty-string' ? '' : { ...content.parent, unrecognized: 'must refuse' };

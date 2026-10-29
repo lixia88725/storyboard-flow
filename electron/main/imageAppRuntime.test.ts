@@ -8,10 +8,10 @@ describe("createImageAppHandlers", () => {
       {
         imagePath: "/project/new_shot.tiff",
         fileName: "new_shot.tiff",
-        previewPath: "/project/.storyboard-workbench/previews/new_shot.png"
+        previewPath: "/project/.storyboard-flow/previews/new_shot.png"
       }
     ]);
-    const previewRootForFolder = vi.fn(() => "/project/.storyboard-workbench/previews");
+    const previewRootForFolder = vi.fn(() => "/project/.storyboard-flow/previews");
 
     const handlers = createImageAppHandlers({
       createBlankShot,
@@ -24,13 +24,13 @@ describe("createImageAppHandlers", () => {
     ).resolves.toEqual({
       imagePath: "/project/new_shot.tiff",
       fileName: "new_shot.tiff",
-      previewPath: "/project/.storyboard-workbench/previews/new_shot.png"
+      previewPath: "/project/.storyboard-flow/previews/new_shot.png"
     });
     expect(createBlankShot).toHaveBeenCalledWith("/project", "9:16");
     expect(previewRootForFolder).toHaveBeenCalledWith("/project");
     expect(createImageRecords).toHaveBeenCalledWith(
       ["/project/new_shot.tiff"],
-      "/project/.storyboard-workbench/previews"
+      "/project/.storyboard-flow/previews"
     );
   });
 

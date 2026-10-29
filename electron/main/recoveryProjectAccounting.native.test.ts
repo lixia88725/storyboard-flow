@@ -12,7 +12,7 @@ import {fixtureAttributeBytes} from './nativeAttributeMeter.fixture';
 test.each(['file','namespace-directory','metadata-directory'] as const)('project joint census charges real %s attribute material without mutating it',async target=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'project-attribute-root-'));
  const userData=await fs.mkdtemp(path.join(os.tmpdir(),'project-attribute-data-'));
- const metadata=path.join(root,'.storyboard-workbench'),namespace=path.join(metadata,'workspace-recovery-v1');
+ const metadata=path.join(root,'.storyboard-flow'),namespace=path.join(metadata,'workspace-recovery-v1');
  await fs.mkdir(namespace,{recursive:true,mode:0o700});
  const file=path.join(namespace,'partial');await fs.writeFile(file,'abc',{mode:0o600});
  const selected=target==='file'?file:target==='namespace-directory'?namespace:metadata;
@@ -31,7 +31,7 @@ test.each(['file','namespace-directory','metadata-directory'] as const)('project
 test('project census charges each retained hardlink name and refuses an attribute-inclusive cap without cleanup',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'project-alias-accounting-root-'));
  const userData=await fs.mkdtemp(path.join(os.tmpdir(),'project-alias-accounting-data-'));
- const metadata=path.join(root,'.storyboard-workbench'),namespace=path.join(metadata,'workspace-recovery-v1');
+ const metadata=path.join(root,'.storyboard-flow'),namespace=path.join(metadata,'workspace-recovery-v1');
  await fs.mkdir(namespace,{recursive:true,mode:0o700});
  const file=path.join(namespace,'partial'),alias=path.join(namespace,'partial-alias');
  await fs.writeFile(file,'abc',{mode:0o600});
@@ -49,7 +49,7 @@ test('project census charges each retained hardlink name and refuses an attribut
 test('fresh project attribute fingerprints do not reuse an earlier observation',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'project-attribute-fingerprint-root-'));
  const userData=await fs.mkdtemp(path.join(os.tmpdir(),'project-attribute-fingerprint-data-'));
- const namespace=path.join(root,'.storyboard-workbench/workspace-recovery-v2/policies');
+ const namespace=path.join(root,'.storyboard-flow/workspace-recovery-v2/policies');
  await fs.mkdir(namespace,{recursive:true,mode:0o700});
  const file=path.join(namespace,'orphan');await fs.writeFile(file,'abc',{mode:0o600});
  const accounting=createOriginWorkspaceAccounting({userData:()=>userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')});
@@ -64,7 +64,7 @@ test('fresh project attribute fingerprints do not reuse an earlier observation',
 test.each(['save-tmp','import-tmp','delete-tmp'])('joint census includes actual %s operation residue outside recovery namespaces without adopting or deleting it',async area=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'operation-residue-accounting-root-'));
  const userData=await fs.mkdtemp(path.join(os.tmpdir(),'operation-residue-accounting-data-'));
- const metadata=path.join(root,'.storyboard-workbench'),base=path.join(metadata,area),operation=path.join(base,'owned-synthetic-operation');
+ const metadata=path.join(root,'.storyboard-flow'),base=path.join(metadata,area),operation=path.join(base,'owned-synthetic-operation');
  const backups=path.join(operation,'.backups');await fs.mkdir(backups,{recursive:true,mode:0o700});
  const file=path.join(backups,'incomplete.tiff');await fs.writeFile(file,'abc',{mode:0o400});
  await promisify(execFile)('/usr/bin/xattr',['-w','org.storyboard.operation-residue','retained-material',operation]);
@@ -81,7 +81,7 @@ test.each(['save-tmp','import-tmp','delete-tmp'])('joint census includes actual 
 test.each(['pending-file-transaction.json','.storyboard.project.json.synthetic-orphan.tmp','.pending-file-transaction.json.synthetic-orphan.tmp'])('joint census bills known metadata recovery file %s as inert material',async name=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'metadata-residue-accounting-root-'));
  const userData=await fs.mkdtemp(path.join(os.tmpdir(),'metadata-residue-accounting-data-'));
- const metadata=path.join(root,'.storyboard-workbench');await fs.mkdir(metadata,{mode:0o700});
+ const metadata=path.join(root,'.storyboard-flow');await fs.mkdir(metadata,{mode:0o700});
  const file=path.join(metadata,name);await fs.writeFile(file,'abc',{mode:0o400});
  const expected=3+fixtureAttributeBytes(metadata)+fixtureAttributeBytes(file);
  const accounting=createOriginWorkspaceAccounting({userData:()=>userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')});
@@ -97,7 +97,7 @@ test.each(['pending-file-transaction.json','.storyboard.project.json.synthetic-o
 test.each([false,true])('joint census bills PNG stage and its publication alias without adopting it (linked=%s)',async linked=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-stage-accounting-root-'));
  const userData=await fs.mkdtemp(path.join(os.tmpdir(),'png-stage-accounting-data-'));
- const metadata=path.join(root,'.storyboard-workbench'),layers=path.join(metadata,'layers'),shot=path.join(layers,'synthetic-shot');
+ const metadata=path.join(root,'.storyboard-flow'),layers=path.join(metadata,'layers'),shot=path.join(layers,'synthetic-shot');
  await fs.mkdir(shot,{recursive:true,mode:0o700});
  const stage=path.join(shot,'.layer-staging-unrecognized-id'),target=path.join(shot,'layer.png');
  await fs.writeFile(stage,'abc',{mode:0o400});if(linked)await fs.link(stage,target);
@@ -116,7 +116,7 @@ test.each([false,true])('joint census bills PNG stage and its publication alias 
 test.each(['unlocated-alias','symlink','working-only'])('PNG staging discovery preserves and safely classifies %s',async kind=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-stage-guard-root-'));
  const userData=await fs.mkdtemp(path.join(os.tmpdir(),'png-stage-guard-data-'));
- const metadata=path.join(root,'.storyboard-workbench'),shot=path.join(metadata,'layers','synthetic-shot');
+ const metadata=path.join(root,'.storyboard-flow'),shot=path.join(metadata,'layers','synthetic-shot');
  await fs.mkdir(shot,{recursive:true,mode:0o700});
  const stage=path.join(shot,'.layer-staging-unrecognized-id'),external=path.join(userData,'synthetic-material');
  await fs.writeFile(external,'abc',{mode:0o600});

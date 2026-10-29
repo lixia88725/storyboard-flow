@@ -24,7 +24,7 @@ export const recoveryPolicyKey = (policy: any): string => {
   });
   // Fixed ASCII schema/field order and sorted canonical base64 pairs avoid
   // JS object integer-key ordering and Python JSON serialization differences.
-  const core = ['swb.recovery-policy.v2', 'darwin', expected.uid, expected.gid, expected.mode, expected.flags, 'verified-absent', attributes];
+  const core = ['flow.recovery-policy.v2', 'darwin', expected.uid, expected.gid, expected.mode, expected.flags, 'verified-absent', attributes];
   return createHash('sha256').update(JSON.stringify(core), 'utf8').digest('hex');
 };
 
@@ -35,7 +35,7 @@ export const intersectRecoveryPolicies = (policies: readonly any[]) => {
   if (!policies.length) throw new Error('Complete recovery contributors required');
   for (const policy of policies) {
     recoveryPolicyKey(policy);
-    if (policy.schema !== 'swb.finite-source-policy' || policy.version !== 1 || !Array.isArray(policy.observed) || !policy.observed.length) throw new Error('Unknown recovery contributor certificate');
+    if (policy.schema !== 'flow.finite-source-policy' || policy.version !== 1 || !Array.isArray(policy.observed) || !policy.observed.length) throw new Error('Unknown recovery contributor certificate');
   }
   const expected = structuredClone(policies[0].expected);
   const attributes = (v: any) => JSON.stringify(Object.entries(inheritedRecoveryAttributes(v)).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
@@ -46,5 +46,5 @@ export const intersectRecoveryPolicies = (policies: readonly any[]) => {
   }
   const observations = new Map<string, any>();
   for (const policy of policies) for (const observation of policy.observed) observations.set(JSON.stringify(observation), structuredClone(observation));
-  return { schema: 'swb.finite-source-policy', version: 1, expected, observed: [...observations.values()] };
+  return { schema: 'flow.finite-source-policy', version: 1, expected, observed: [...observations.values()] };
 };

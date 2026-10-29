@@ -26,15 +26,15 @@ const ops = { mkdir: async (p: string) => { await mkdir(p, { recursive: true });
 async function fixture() {
   const folder = await mkdtemp(path.join(scratch, "normal-save-"));
   onTestFinished(async () => { await rm(folder, { recursive: true, force: true }); });
-  const metadata = path.join(folder, ".storyboard-workbench/storyboard.project.json");
-  const bitmapPath = ".storyboard-workbench/layers/s/image.png";
+  const metadata = path.join(folder, ".storyboard-flow/storyboard.project.json");
+  const bitmapPath = ".storyboard-flow/layers/s/image.png";
   await mkdir(path.dirname(path.join(folder, bitmapPath)), { recursive: true });
   await sharp({ create: { width: 8, height: 6, channels: 4, background: "red" } }).png().toFile(path.join(folder, bitmapPath));
   const imagePath = path.join(folder, "s.tiff");
   await sharp({ create: { width: 8, height: 6, channels: 4, background: "white" } }).tiff({ compression: "none" }).toFile(imagePath);
   const project = createProject("normal-save");
   project.shots = [{ id: "s", imagePath, fileName: "s.tiff", order: 0,
-    swb: { version: 1, status: "owned", canvasWidth: 8, canvasHeight: 6 },
+    flow: { version: 1, status: "owned", canvasWidth: 8, canvasHeight: 6 },
     layers: [{ id: "image", kind: "image", name: "Image", visible: true, locked: false, opacity: 1,
       order: 0, blendMode: "normal", bitmapPath, width: 8, height: 6 }] }];
   let token = 0;
@@ -65,8 +65,8 @@ async function fixture() {
       const selected = p.shots.filter(s => ids.includes(s.id));
       const result = await writePhotoshopLayeredTiffsForInPlaceSave({ ...p, shots: selected }, folder, {
         pythonPath: "python3", scriptPath: path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py"),
-        saveStamp: `save-${outputs}`, env: { ...process.env, SWB_PYTHON_BIN: undefined,
-          SWB_PYTHON_DEPS_DIR: process.env.SWB_PYTHON_DEPS_DIR ?? path.join(process.cwd(), "vendor/python/photoshop-tiff"), PYTHONDONTWRITEBYTECODE: "1" }
+        saveStamp: `save-${outputs}`, env: { ...process.env, FLOW_PYTHON_BIN: undefined,
+          FLOW_PYTHON_DEPS_DIR: process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(process.cwd(), "vendor/python/photoshop-tiff"), PYTHONDONTWRITEBYTECODE: "1" }
       });
       const replacements = await applyFileReplacements(result.replacements.map((r, i) => ({
         tempPath: r.fromPath, targetPath: r.toPath, backupPath: path.join(result.tempFolderPath, `backup-${i}.tiff`) })), ops);
@@ -212,7 +212,7 @@ describe("original business assertions on real normal-autosave storage seam", ()
         await writeLayerPng({ folderPath: f.folder, bitmapPath: f.ref.current.shots[0].layers![0].bitmapPath,
           dataUrl: `data:image/png;base64,${png.toString("base64")}` });
         f.owner.publishEdit(p => ({ ...p, shots: p.shots.map(s => ({ ...s,
-          swb: { ...s.swb!, canvasHeight: 1230 }, layers: s.layers!.map(l => ({ ...l, height: 1230 })) })) }), ["s"]);
+          flow: { ...s.flow!, canvasHeight: 1230 }, layers: s.layers!.map(l => ({ ...l, height: 1230 })) })) }), ["s"]);
       } else f.edit(0.5);
       expect(await f.owner.autosave()).toBe(true);
       const disk = (await f.reopen())!;
@@ -240,7 +240,7 @@ describe("original business assertions on real normal-autosave storage seam", ()
       const { stdout } = await promisify(execFile)("python3", ["-c",
         "import importlib.util,json,sys; sys.path.insert(0,sys.argv[3]); spec=importlib.util.spec_from_file_location('reader',sys.argv[2]); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); layers=m.read_image_source_data(__import__('pathlib').Path(sys.argv[1])).layers; print(json.dumps([{'name':m.layer_name(l),'visible':m.layer_visible(l),'opacity':int(l.opacity)} for l in layers]))",
         f.imagePath, path.join(process.cwd(), "scripts/photoshop-layered-tiff-import.py"),
-        process.env.SWB_PYTHON_DEPS_DIR ?? path.join(process.cwd(), "vendor/python/photoshop-tiff")
+        process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(process.cwd(), "vendor/python/photoshop-tiff")
       ], { env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
       // Existing exporter folds opacity into pixels and writes PSD opacity=255.
       expect(JSON.parse(stdout)).toEqual([{ name: "Hidden", visible: false, opacity: 255 }]);
@@ -253,7 +253,7 @@ describe("original business assertions on real normal-autosave storage seam", ()
     const f = await fixture();
     try {
       const p = { ...f.ref.current, pendingBake: undefined };
-      p.shots = p.shots.map(s => ({ ...s, swb: { ...s.swb!, status: "non-swb" } }));
+      p.shots = p.shots.map(s => ({ ...s, flow: { ...s.flow!, status: "non-flow" } }));
       await f.owner.load(p);
       expect(await f.owner.save()).toBe(false); // conservative, no speculative external Import
       expect(f.outputs).toBe(0);

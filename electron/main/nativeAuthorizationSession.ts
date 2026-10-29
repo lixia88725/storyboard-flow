@@ -41,7 +41,7 @@ export const createNativeAuthorizationSession = (python: string, script: string,
     const named = [input.filePath, input.path, input.metadataPath].filter(v => typeof v === 'string');
     if (Array.isArray(input.sources)) named.push(...input.sources.filter((v: any) => typeof v === 'string'));
     if (!named.length) return '';
-    return `[${named.slice(0, 3).map(v => String(v).replace(/^.*\.storyboard-flow\//, '')).join(', ')}${named.length > 3 ? `, +${named.length - 3}` : ''}]`;
+    return `[${named.slice(0, 3).map(v => String(v).replace(/^.*\.storyboard-flow-project\//, '')).join(', ')}${named.length > 3 ? `, +${named.length - 3}` : ''}]`;
   };
   const finish = async <T>(operation: () => Promise<T>, close: () => Promise<void> | undefined): Promise<T> => {
     let failed = false;

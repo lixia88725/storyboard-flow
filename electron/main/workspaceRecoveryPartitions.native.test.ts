@@ -14,7 +14,7 @@ const offer = (revision: string) => ({ revision, projectRaw: {}, viewState: {}, 
 
 test('same-mode new contributors retain their own native certificate across a fresh reader without rewriting v1', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'native-same-mode-contributors-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const a = path.join(root, 'a.png'), b = path.join(root, 'b.png');
   await fs.writeFile(a, png, { flag: 'wx', mode: 0o600 });
   await fs.writeFile(b, png, { flag: 'wx', mode: 0o600 });
@@ -24,7 +24,7 @@ test('same-mode new contributors retain their own native certificate across a fr
     const original = (await session.request({ phase: 'capturePolicy', sources: [a], sourceByteLimit: budget.bytes })).sourcePolicy;
     await createWorkspaceRecoveryStore({ budget, sourcePolicy: original, authorize: async request => { await session.request({ ...request, sourcePolicy: original, sourceByteLimit: budget.bytes }); } }).retain(caller, root, offer('old'));
   });
-  const ns = path.join(root, '.storyboard-workbench/workspace-recovery-v1/namespace.json');
+  const ns = path.join(root, '.storyboard-flow/workspace-recovery-v1/namespace.json');
   const oldBytes = await fs.readFile(ns), oldStat = await fs.lstat(ns);
   const next = native();
   const contributors = await next.run(async () => {
@@ -46,7 +46,7 @@ test('same-mode new contributors retain their own native certificate across a fr
 
 test('native validates v1 at 0600 and stricter v2 at 0400 in the same operation and fresh reader', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'native-partitions-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const a = path.join(root, 'a.png'), b = path.join(root, 'b.png');
   await fs.writeFile(a, png, { flag: 'wx', mode: 0o600 });
   await fs.writeFile(b, png, { flag: 'wx', mode: 0o400 });
@@ -57,7 +57,7 @@ test('native validates v1 at 0600 and stricter v2 at 0400 in the same operation 
     const strict = (await session.request({ phase: 'capturePolicy', sources: [a, b], sourceByteLimit: budget.bytes })).sourcePolicy;
     const old = createWorkspaceRecoveryStore({ budget, sourcePolicy: wide, authorize: async request => { await session.request({ ...request, sourcePolicy: wide, sourceByteLimit: budget.bytes }); } });
     const first = await old.retain(caller, root, offer('old'));
-    const oldNs = path.join(root, '.storyboard-workbench/workspace-recovery-v1/namespace.json');
+    const oldNs = path.join(root, '.storyboard-flow/workspace-recovery-v1/namespace.json');
     const before = await fs.readFile(oldNs), originalStat = await fs.lstat(oldNs);
     const store = createWorkspaceRecoveryPartitions({ budget, sourcePolicy: strict, authorize: async request => { await session.request({ ...request, sourceByteLimit: budget.bytes }); } });
     const ack = await store.retain(caller, root, offer('strict'));
@@ -68,7 +68,7 @@ test('native validates v1 at 0600 and stricter v2 at 0400 in the same operation 
     expect(await fs.readFile(oldNs)).toEqual(before);
     const unchanged = await fs.lstat(oldNs);
     expect([unchanged.ino, unchanged.mode, unchanged.uid, unchanged.gid, unchanged.ctimeMs]).toEqual([originalStat.ino, originalStat.mode, originalStat.uid, originalStat.gid, originalStat.ctimeMs]);
-    const partitions = path.join(root, '.storyboard-workbench/workspace-recovery-v2/policies');
+    const partitions = path.join(root, '.storyboard-flow/workspace-recovery-v2/policies');
     const names = await fs.readdir(partitions);
     expect(names).toHaveLength(1);
     const newNs = await fs.lstat(path.join(partitions, names[0], 'namespace.json'));
@@ -84,8 +84,8 @@ test('native validates v1 at 0600 and stricter v2 at 0400 in the same operation 
     expect(state.ack?.revision).toBe('strict');
     expect(await store.readAsset(root, state.ack!.generationId, 'pixels')).toEqual(png);
     const forged = structuredClone(strict); forged.observed[0][1].links = 2;
-    const names = await fs.readdir(path.join(root, '.storyboard-workbench/workspace-recovery-v2/policies'));
-    const content = path.join(root, '.storyboard-workbench/workspace-recovery-v2/policies', names[0], 'operations', state.ack!.operationId, 'generations', state.ack!.generationId, 'content.json');
+    const names = await fs.readdir(path.join(root, '.storyboard-flow/workspace-recovery-v2/policies'));
+    const content = path.join(root, '.storyboard-flow/workspace-recovery-v2/policies', names[0], 'operations', state.ack!.operationId, 'generations', state.ack!.generationId, 'content.json');
     await expect(cold.request({ path: content, root, phase: 'readback', sources: [], sourcePolicy: forged, sourceByteLimit: budget.bytes })).rejects.toThrow(/source|certified/);
   });
   const main = createPreparedWorkspaceSave({ budget, python: 'python3', script: path.resolve('scripts/recovery-content-permissions.py') });

@@ -19,10 +19,10 @@ export type BitmapLayerFileComposite = Omit<BitmapLayerComposite, "input"> & {
 };
 
 export const shouldEnsureLayerAssetsForShot = (
-  shot: { swb?: { status?: string } },
+  shot: { flow?: { status?: string } },
   options: { includeExternalShots?: boolean } = {}
 ): boolean => {
-  return options.includeExternalShots !== false || shot.swb?.status === "owned";
+  return options.includeExternalShots !== false || shot.flow?.status === "owned";
 };
 
 export const applyBitmapLayerOpacity = async (
@@ -135,7 +135,7 @@ export const copyBitmapLayerFile = async (
 });
 
 const layerOperationRoot = async (filePath: string): Promise<string> => {
-  const marker = `${path.sep}.storyboard-workbench${path.sep}layers${path.sep}`;
+  const marker = `${path.sep}.storyboard-flow${path.sep}layers${path.sep}`;
   const index = filePath.indexOf(marker);
   if (index >= 0) return filePath.slice(0, index);
   // The generic low-level API also supports a new nested destination. Find an

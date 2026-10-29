@@ -17,10 +17,10 @@ const patchShotFile = (shot: Shot, patches: Map<string, PendingShotFilePatch>): 
     ...shot,
     imagePath: patch.imagePath,
     fileName: patch.fileName,
-    swb:
-      shot.swb && patch.baseFingerprint
-        ? { ...shot.swb, baseFingerprint: patch.baseFingerprint }
-        : shot.swb
+    flow:
+      shot.flow && patch.baseFingerprint
+        ? { ...shot.flow, baseFingerprint: patch.baseFingerprint }
+        : shot.flow
   };
 };
 
@@ -61,7 +61,7 @@ export const projectWithShotFileReferences = (
                 shotId: shot.id,
                 imagePath: source.imagePath,
                 fileName: source.fileName,
-                baseFingerprint: source.swb?.baseFingerprint
+                baseFingerprint: source.flow?.baseFingerprint
               }
             ]
           : [];

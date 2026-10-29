@@ -41,7 +41,7 @@ export const createWorkspaceRecoveryPartitions = (options: {
     if (!stat.isDirectory() || stat.isSymbolicLink() || await fs.realpath(file) !== file) throw new Error('Partition directory alias/type');
   };
   const preparationIdentity = async (root: string) => {
-    const metadata = path.join(root, '.storyboard-workbench');
+    const metadata = path.join(root, '.storyboard-flow');
     await directory(root); await directory(metadata);
     const r = await fs.lstat(root), m = await fs.lstat(metadata);
     return [r.dev, r.ino, m.dev, m.ino];
@@ -68,7 +68,7 @@ export const createWorkspaceRecoveryPartitions = (options: {
     try {
       const root = await fs.realpath(requested);
       if (root !== requested) throw new Error('Workspace partition alias');
-      const metadata = path.join(root, '.storyboard-workbench');
+      const metadata = path.join(root, '.storyboard-flow');
       await directory(root); await directory(metadata);
       await options.authorize({ path: metadata, root, phase: 'directory', sources: [], sourcePolicy: options.sourcePolicy });
       const inventory = await accounting(root, options.budget);
@@ -178,7 +178,7 @@ export const createWorkspaceRecoveryPartitions = (options: {
     const namespace = capture.reference.format === 'v1' ? 'workspace-recovery-v1' : `workspace-recovery-v2/policies/${capture.reference.policyKey}`;
     const assets = new Map<string, Buffer>();
     for (const asset of capture.content.assets) {
-      const file = path.join(root, '.storyboard-workbench', namespace, 'operations', capture.ack.operationId, 'generations', capture.ack.generationId, 'assets', asset.file);
+      const file = path.join(root, '.storyboard-flow', namespace, 'operations', capture.ack.operationId, 'generations', capture.ack.generationId, 'assets', asset.file);
       await options.authorize({ path: file, root, phase: 'readback', sources: [], sourcePolicy: capture.sourcePolicy });
       const bytes = await readSnapshotFile(file, options.budget.bytes);
       if (bytes.length !== asset.length || createHash('sha256').update(bytes).digest('hex') !== asset.digest) throw new Error('Retained asset changed during batch readback');

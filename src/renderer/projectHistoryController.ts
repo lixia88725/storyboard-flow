@@ -69,8 +69,8 @@ export const rebasePendingHistoryEntries = (entries: ProjectHistoryEntry[], befo
     }
     if (ids.some(id => {
       const a = shots(before).find(s => s.id === id), b = shots(entry.project).find(s => s.id === id);
-      return !a || !b || a.imagePath !== b.imagePath || a.swb?.sourcePath !== b.swb?.sourcePath ||
-        a.swb?.sourceKind !== b.swb?.sourceKind || a.swb?.status !== b.swb?.status ||
+      return !a || !b || a.imagePath !== b.imagePath || a.flow?.sourcePath !== b.flow?.sourcePath ||
+        a.flow?.sourceKind !== b.flow?.sourceKind || a.flow?.status !== b.flow?.status ||
         before.shots.some(s => s.id === id) !== entry.project.shots.some(s => s.id === id);
     })) return false;
     const transitioned = update(entry.project);
@@ -79,7 +79,7 @@ export const rebasePendingHistoryEntries = (entries: ProjectHistoryEntry[], befo
     const patchShot = (s: Shot): Shot => {
       const target = ids.includes(s.id) && shots(after).find(t => t.id === s.id);
       return target ? { ...s, imagePath: target.imagePath, fileName: target.fileName,
-        swb: s.swb && target.swb ? { ...s.swb, baseFingerprint: target.swb.baseFingerprint } : s.swb } : s;
+        flow: s.flow && target.flow ? { ...s.flow, baseFingerprint: target.flow.baseFingerprint } : s.flow } : s;
     };
     const project = { ...transitioned, pendingBake: after.pendingBake, shots: transitioned.shots.map(patchShot), parkedShots: transitioned.parkedShots?.map(patchShot) };
     return { ...entry, project, fileNameSyncState: "unsynced" as const,
@@ -126,7 +126,7 @@ const shotTiffInputsChanged = (previousShot: Shot | undefined, nextShot: Shot): 
   previousShot.imageLayerEdits !== nextShot.imageLayerEdits ||
   previousShot.baseVisible !== nextShot.baseVisible ||
   previousShot.presentation !== nextShot.presentation ||
-  previousShot.swb !== nextShot.swb;
+  previousShot.flow !== nextShot.flow;
 
 export const historyDirtyShotIds = (
   currentProject: Project,

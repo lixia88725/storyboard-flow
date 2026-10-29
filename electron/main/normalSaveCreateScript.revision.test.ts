@@ -32,12 +32,12 @@ it("revision rejects an observable parent symlink inserted after the empty check
   const options = await setup(), outside = path.join(path.dirname(options.targetFolderPath), "outside");
   await fs.mkdir(outside); let checks = 0;
   fault.afterReadDir = async p => {
-    if (p === options.targetFolderPath && ++checks === 2) await fs.symlink(outside, path.join(p, ".storyboard-workbench"));
+    if (p === options.targetFolderPath && ++checks === 2) await fs.symlink(outside, path.join(p, ".storyboard-flow"));
   };
   await expect(createProjectFromStoryboardScriptMarkdown(options)).rejects.toThrow(/directory|symlink/i);
   fault.afterReadDir = undefined;
   expect(await fs.readdir(outside)).toEqual([]);
-  expect((await fs.lstat(path.join(options.targetFolderPath, ".storyboard-workbench"))).isSymbolicLink()).toBe(true);
+  expect((await fs.lstat(path.join(options.targetFolderPath, ".storyboard-flow"))).isSymbolicLink()).toBe(true);
 });
 for (const replacement of ["symlink", "different-file", "different-directory"] as const) {
   it(`revision rollback retains a ${replacement} replacement rather than treating its path as a receipt`, async () => {
@@ -46,7 +46,7 @@ for (const replacement of ["symlink", "different-file", "different-directory"] a
     fault.beforeOpen = async p => {
       if (!p.endsWith("storyboard.project.json")) return;
       if (replacement === "different-directory") {
-        const directory = path.join(options.targetFolderPath, ".storyboard-workbench/layers");
+        const directory = path.join(options.targetFolderPath, ".storyboard-flow/layers");
         await fs.rename(directory, moved); await fs.mkdir(directory);
       } else {
         await fs.rename(leaf, moved);
@@ -56,7 +56,7 @@ for (const replacement of ["symlink", "different-file", "different-directory"] a
     };
     fault.openSuffix = "storyboard.project.json";
     await expect(createProjectFromStoryboardScriptMarkdown(options)).rejects.toThrow("recovery incomplete");
-    if (replacement === "different-directory") expect((await fs.lstat(path.join(options.targetFolderPath, ".storyboard-workbench/layers"))).isDirectory()).toBe(true);
+    if (replacement === "different-directory") expect((await fs.lstat(path.join(options.targetFolderPath, ".storyboard-flow/layers"))).isDirectory()).toBe(true);
     else expect((await fs.lstat(leaf)).isSymbolicLink()).toBe(replacement === "symlink");
   });
 }
@@ -65,12 +65,12 @@ it("revision rejects an observable layers parent alias before the Image PNG phas
   await fs.mkdir(outside);
   fault.beforeOpen = async p => {
     if (!p.endsWith("script_shot_0001_0.tiff")) return;
-    const internal = path.join(options.targetFolderPath, ".storyboard-workbench");
+    const internal = path.join(options.targetFolderPath, ".storyboard-flow");
     await fs.mkdir(internal); await fs.symlink(outside, path.join(internal, "layers"));
   };
   await expect(createProjectFromStoryboardScriptMarkdown(options)).rejects.toThrow(/directory|symlink/i);
   expect(await fs.readdir(outside)).toEqual([]);
-  expect((await fs.lstat(path.join(options.targetFolderPath, ".storyboard-workbench/layers"))).isSymbolicLink()).toBe(true);
+  expect((await fs.lstat(path.join(options.targetFolderPath, ".storyboard-flow/layers"))).isSymbolicLink()).toBe(true);
 });
 it("revision normal rollback cleans its own empty directories and the actual target can be reused", async () => {
   const options = await setup(); fault.openSuffix = "storyboard.project.json";
@@ -84,7 +84,7 @@ it("revision normal rollback cleans its own empty directories and the actual tar
 for (const admission of ["pre-existing", "appearing-at-json-open"] as const) {
   it(`normal Create preserves original same-name JSON bytes (${admission})`, async () => {
     const options = await setup();
-    const internal = path.join(options.targetFolderPath, ".storyboard-workbench");
+    const internal = path.join(options.targetFolderPath, ".storyboard-flow");
     const json = path.join(internal, "storyboard.project.json");
     // Deliberately noncanonical whitespace/bytes: semantic JSON equality is insufficient.
     const original = Buffer.from("{ \"outside\": true, \"value\": 7 }\r\n\t", "utf8");
@@ -103,7 +103,7 @@ for (const admission of ["pre-existing", "appearing-at-json-open"] as const) {
       expect(inserted).toBe(true);
     }
     expect(await fs.readFile(json)).toEqual(original);
-    expect(await fs.readdir(options.targetFolderPath)).toEqual([".storyboard-workbench"]);
+    expect(await fs.readdir(options.targetFolderPath)).toEqual([".storyboard-flow"]);
     expect(await fs.readdir(internal)).toEqual(["storyboard.project.json"]);
   });
 }

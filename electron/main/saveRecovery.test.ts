@@ -74,7 +74,7 @@ describe("Save recovery dependencies with real files", () => {
     });
     expect(handle).toBeUndefined();
     const reported = await caught(() => recoverFailedSave(error, {
-      appliedTiffReplacements: handle, swbImport: { rollback: importRollback },
+      appliedTiffReplacements: handle, flowImport: { rollback: importRollback },
       appliedRenamePlan: { rollback: renameRollback }, stagedPendingDeletedFiles: f.deleted
     }));
     if (restoreFails) {
@@ -121,7 +121,7 @@ describe("Save recovery dependencies with real files", () => {
       ? await caught(() => applied.commit()) : new Error("Save metadata failure");
     restoring = true;
     const reported = await caught(() => recoverFailedSave(saveError, {
-      appliedTiffReplacements: applied, swbImport: { rollback: importRollback },
+      appliedTiffReplacements: applied, flowImport: { rollback: importRollback },
       appliedRenamePlan: { rollback: renameRollback }, stagedPendingDeletedFiles: f.deleted
     }));
     expect(reported).toMatchObject({ recoveryIncomplete: true });
@@ -144,7 +144,7 @@ describe("Save recovery dependencies with real files", () => {
     await f.restored();
   });
 
-  it.each(["appliedTiffReplacements", "swbImport"] as const)("stops before rename and deletion when %s recovery rejects", async (step) => {
+  it.each(["appliedTiffReplacements", "flowImport"] as const)("stops before rename and deletion when %s recovery rejects", async (step) => {
     const f = await fixture();
     const handle = await applyFileRenamePlan(f.plan, f.ops);
     const renameRollback = vi.fn(() => handle.rollback());

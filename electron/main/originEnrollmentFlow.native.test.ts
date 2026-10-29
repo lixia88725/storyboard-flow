@@ -15,7 +15,7 @@ import { createWorkspaceRecoveryPartitions } from './workspaceRecoveryPartitions
 test('only original hot receipt can issue and a complete same-capture readback can seal for a fresh service', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-flow-root-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-flow-data-'));
-  const target = path.join(root, '.storyboard-workbench/layers/s/new.png');
+  const target = path.join(root, '.storyboard-flow/layers/s/new.png');
   await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
   const source = path.join(root, 'source.json'); await fs.writeFile(source, '{}', { mode: 0o600 });
   const python = 'python3';
@@ -23,11 +23,11 @@ test('only original hot receipt can issue and a complete same-capture readback c
   await fs.writeFile(shim, `#!/usr/bin/env ${python}\nimport sys,importlib.util,json,base64,os\ns=importlib.util.spec_from_file_location('writer',sys.argv[3]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\noriginal=m.os.unlink\ndef fault(p,*a,**k):\n if os.path.basename(p).startswith('.layer-staging-'):raise PermissionError('flow final unlink denied')\n return original(p,*a,**k)\nm.os.unlink=fault\nr=json.load(sys.stdin)\nprint(json.dumps(m.protected_write(r['root'],r['filePath'],base64.b64decode(r['bytes']),r['mode'],r['operation'])))\n`, { mode: 0o700 });
   const bytes = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'blue' } }).png().toBuffer();
   let producer: ProducerPngReceipt | undefined;
-  const previous = process.env.SWB_PYTHON_BIN;
+  const previous = process.env.FLOW_PYTHON_BIN;
   try {
-    process.env.SWB_PYTHON_BIN = shim;
+    process.env.FLOW_PYTHON_BIN = shim;
     await expect(withProducerPngEffects({ beforeWrite: async () => {}, written: async r => { producer = r; }, beforeDelete: async () => {}, deleted: async () => {} }, () => writeProtectedLayerFile(root, target, bytes, 'upsert'))).rejects.toMatchObject({ effect: 'committed' });
-  } finally { if (previous === undefined) delete process.env.SWB_PYTHON_BIN; else process.env.SWB_PYTHON_BIN = previous; }
+  } finally { if (previous === undefined) delete process.env.FLOW_PYTHON_BIN; else process.env.FLOW_PYTHON_BIN = previous; }
   const receipt = producer!.commitFailure!.ownedStageReceipt!;
   const budget = { bytes: 1048576, records: 1000, assets: 16, jsonDepth: 80 };
   const native = createNativeAuthorizationSession(python, path.resolve('scripts/recovery-content-permissions.py'), () => 65536);

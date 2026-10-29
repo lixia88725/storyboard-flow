@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-deps_dir = os.environ.get("SWB_PYTHON_DEPS_DIR")
+deps_dir = os.environ.get("FLOW_PYTHON_DEPS_DIR")
 if deps_dir:
     sys.path.insert(0, deps_dir)
 
@@ -105,17 +105,17 @@ def composite_fingerprint(image: numpy.ndarray) -> str:
     return digest.hexdigest()
 
 
-def swb_metadata_xmp(metadata: dict[str, Any], fingerprint: str) -> str:
+def flow_metadata_xmp(metadata: dict[str, Any], fingerprint: str) -> str:
     next_metadata = dict(metadata)
     next_metadata["baseFingerprint"] = fingerprint
     encoded = base64.b64encode(
         json.dumps(next_metadata, separators=(",", ":")).encode("utf8")
     ).decode("ascii")
     return f"""<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
-<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:swb="https://storyboard-workbench.local/ns/1.0/">
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:flow="https://storyboard-flow.local/ns/1.0/">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description rdf:about="">
-      <swb:metadata>{encoded}</swb:metadata>
+      <flow:metadata>{encoded}</flow:metadata>
     </rdf:Description>
   </rdf:RDF>
 </x:xmpmeta>
@@ -236,8 +236,8 @@ def write_layered_tiff(manifest_path: Path) -> None:
         (34675, 7, None, imagecodecs.cms_profile("srgb"), True),
     ]
     xmp = manifest.get("xmp")
-    if manifest.get("swbMetadata"):
-        xmp = swb_metadata_xmp(manifest["swbMetadata"], composite_fingerprint(composite))
+    if manifest.get("flowMetadata"):
+        xmp = flow_metadata_xmp(manifest["flowMetadata"], composite_fingerprint(composite))
     if xmp:
         extra_tags.append((700, 1, None, str(xmp).encode("utf8"), True))
 

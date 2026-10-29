@@ -38,7 +38,7 @@ afterEach(() => { expect(errors.splice(0)).toEqual([]); vi.unstubAllGlobals(); }
 const setup = () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const projectRef = { current: addGeneratedShot(createProject("synthetic"), { imagePath: "/synthetic/import.tiff", fileName: "import.tiff", width: 2, height: 2 }) };
-  projectRef.current.shots[0].swb = { version: 1, status: "non-swb", canvasWidth: 2, canvasHeight: 2 };
+  projectRef.current.shots[0].flow = { version: 1, status: "non-flow", canvasWidth: 2, canvasHeight: 2 };
   const setState = vi.fn();
   const root = host();
   let current!: ReturnType<typeof useImageImportAdmission>;
@@ -67,7 +67,7 @@ describe("App image Import live admission React contract", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const root = host();
     const projectRef = { current: addGeneratedShot(createProject("synthetic"), { imagePath: "/synthetic/import.tiff", fileName: "import.tiff", width: 2, height: 2 }) };
-    projectRef.current.shots[0].swb!.status = "non-swb";
+    projectRef.current.shots[0].flow!.status = "non-flow";
     let current!: ReturnType<typeof useImageImportAdmission>;
     function Probe() {
       const [state, setState] = React.useState<WorkspaceTask | undefined>();
@@ -99,7 +99,7 @@ describe("App image Import live admission React contract", () => {
       await h.render();
       expect(live()).toBe(true);
       // Script-only Import changes are deliberately outside this getter's inputs.
-      h.projectRef.current.shots[0].swb!.status = "owned";
+      h.projectRef.current.shots[0].flow!.status = "owned";
       expect(live()).toBe(false);
     } finally { await h.unmount(); }
   });

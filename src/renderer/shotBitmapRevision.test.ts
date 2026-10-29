@@ -17,7 +17,7 @@ const layer = (shotId: string): BitmapLayer => ({
   opacity: 1,
   blendMode: "normal",
   order: 0,
-  bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-image.png`,
+  bitmapPath: `.storyboard-flow/layers/${shotId}/layer-image.png`,
   width: 320,
   height: 180
 });
@@ -78,7 +78,7 @@ describe("shotBitmapRevision", () => {
     const project = projectWithShots();
     expect(
       shotIdsForBitmapPaths(project, [
-        ".storyboard-workbench/layers/shot-b/layer-image.png"
+        ".storyboard-flow/layers/shot-b/layer-image.png"
       ])
     ).toEqual(["shot-b"]);
   });

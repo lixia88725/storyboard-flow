@@ -14,10 +14,10 @@ const transparentPixelPng =
 
 describe("layerAssetService", () => {
   it("writes, reads, and deletes layer PNG assets inside the workspace folder", async () => {
-    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-layer-service-"));
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "flow-layer-service-"));
     const payload = {
       folderPath,
-      bitmapPath: ".storyboard-workbench/layers/shot-1/layer-1.png",
+      bitmapPath: ".storyboard-flow/layers/shot-1/layer-1.png",
       dataUrl: transparentPixelPng
     };
 
@@ -34,7 +34,7 @@ describe("layerAssetService", () => {
   });
 
   it("rejects layer asset paths outside the workspace folder", async () => {
-    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-layer-service-"));
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "flow-layer-service-"));
 
     expect(() => resolveLayerAssetPath(folderPath, "../escape.png")).toThrow(/stay under/);
   });

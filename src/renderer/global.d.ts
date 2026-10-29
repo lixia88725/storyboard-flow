@@ -2,7 +2,7 @@ import type {
   BlankShotOptions,
   BitmapLayer,
   FolderScanPayload,
-  ImportSwbFormatPayload,
+  ImportFlowFormatPayload,
   ImportedImage,
   Project,
   RenamePlanItem,
@@ -58,7 +58,7 @@ declare global {
         exportFolderPath: string;
         exportedFiles: string[];
       }>;
-      importSwbFormat: (payload: ImportSwbFormatPayload) => Promise<FolderScanPayload | import("../../electron/shared/normalSaveImportIpc").NormalSaveImportIpcResult<FolderScanPayload>>;
+      importFlowFormat: (payload: ImportFlowFormatPayload) => Promise<FolderScanPayload | import("../../electron/shared/normalSaveImportIpc").NormalSaveImportIpcResult<FolderScanPayload>>;
       checkStoryboardScript: (
         payload: WorkspacePayload
       ) => Promise<{ scriptImportNeeded: boolean }>;

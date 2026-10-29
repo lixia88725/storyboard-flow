@@ -50,7 +50,7 @@ export const acknowledgeBake = (captured: Project, current: Project, acks: Norma
     const ack = effects.get(shot.id);
     return !ack ? shot : { ...shot, imagePath: ack.targetPath,
       ...(ack.fileName !== undefined ? { fileName: ack.fileName } : {}),
-      ...(ack.baseFingerprint !== undefined && shot.swb ? { swb: { ...shot.swb, baseFingerprint: ack.baseFingerprint } } : {}) };
+      ...(ack.baseFingerprint !== undefined && shot.flow ? { flow: { ...shot.flow, baseFingerprint: ack.baseFingerprint } } : {}) };
   }) };
 };
 

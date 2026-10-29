@@ -15,7 +15,7 @@ import {
   storyboardScriptFileName
 } from "./storyboardScript.js";
 
-const swbFormatVersion = 1;
+const flowFormatVersion = 1;
 const sharpSourceOptions = { unlimited: true } as const;
 const blankShotPresets = {
   "16:9": { width: 1920, height: 1080 },
@@ -64,7 +64,7 @@ type Project = {
     activeLayerTarget?: "image" | "sketch";
     activeLayerId?: string;
     sketchLayers?: [];
-    swb?: {
+    flow?: {
       version: number;
       status: "owned";
       canvasWidth: number;
@@ -155,7 +155,7 @@ export const createProjectFromStoryboardScriptMarkdown = async ({
 
 const assertEmptyTargetFolder = async (folderPath: string): Promise<void> => {
   const entries = await readdir(folderPath);
-  if (entries.length > 0 || entries.includes(".storyboard-workbench")) {
+  if (entries.length > 0 || entries.includes(".storyboard-flow")) {
     throw new Error("Choose an empty folder for the storyboard script import");
   }
 };
@@ -242,13 +242,13 @@ const createShotFromImage = (
         opacity: 1,
         blendMode: "normal",
         order: 0,
-        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-image.png`,
+        bitmapPath: `.storyboard-flow/layers/${shotId}/layer-image.png`,
         width,
         height
       }
     ],
-    swb: {
-      version: swbFormatVersion,
+    flow: {
+      version: flowFormatVersion,
       status: "owned",
       canvasWidth: width,
       canvasHeight: height,
@@ -271,7 +271,7 @@ const writeProjectFiles = async (folderPath: string, project: Project): Promise<
 };
 
 const metadataPathForFolder = (folderPath: string): string =>
-  path.join(folderPath, ".storyboard-workbench", "storyboard.project.json");
+  path.join(folderPath, ".storyboard-flow", "storyboard.project.json");
 
 // New-project-only asset initialization. No existing asset is a completion witness:
 // every file is exclusively created, and every pending baseline hashes the actual TIFF.

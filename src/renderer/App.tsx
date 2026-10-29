@@ -29,8 +29,8 @@ import {
   matteOverlayBitmapLayerId,
   mergeExternalImageChanges,
   mergeFolderImages,
-  projectHasSwbWarning,
-  projectNeedsSwbImport,
+  projectHasFlowWarning,
+  projectNeedsFlowImport,
   sceneDialogueOverlayEnabledForProject,
   sceneMatteModeForProject,
   sortedShots,
@@ -196,7 +196,7 @@ export const useImageImportAdmission = (
     setWorkspaceTaskState(next);
   }, [setWorkspaceTaskState]);
   const isImageImportLocked = useCallback(
-    () => projectNeedsSwbImport(projectRef.current) && !workspaceTaskRef.current,
+    () => projectNeedsFlowImport(projectRef.current) && !workspaceTaskRef.current,
     [projectRef]
   );
   return { isImageImportLocked, setWorkspaceTask };
@@ -412,9 +412,9 @@ export const App = () => {
   const orderedShots = useMemo(() => sortedShots(project.shots), [project.shots]);
   const parkedShots = useMemo(() => sortedShots(project.parkedShots ?? []), [project.parkedShots]);
 
-  const needsImageImport = useMemo(() => projectNeedsSwbImport(project), [project]);
-  const needsSwbImport = needsImageImport || scriptImportNeeded;
-  const hasSwbWarning = useMemo(() => projectHasSwbWarning(project), [project]) || scriptImportNeeded;
+  const needsImageImport = useMemo(() => projectNeedsFlowImport(project), [project]);
+  const needsFlowImport = needsImageImport || scriptImportNeeded;
+  const hasFlowWarning = useMemo(() => projectHasFlowWarning(project), [project]) || scriptImportNeeded;
   const isWorkspaceTaskRunning = Boolean(workspaceTask);
   refreshTaskBusyRef.current = isWorkspaceTaskRunning;
   const isImportLocked = needsImageImport && !isWorkspaceTaskRunning;
@@ -498,7 +498,7 @@ export const App = () => {
     openSketchCanvasContextMenu
   } = useRadialToolMenuController({
     activeSketchTool,
-    needsSwbImport,
+    needsFlowImport,
     setStatus
   });
   const applyRadialPresetAndClose = useCallback(
@@ -951,7 +951,7 @@ export const App = () => {
     },
     assertAdmission: () => {
       if (workspaceRecoveryRequiredRef.current) throw new Error(workspaceRecoveryRequiredRef.current);
-      if (needsSwbImport) throw new Error("Import external changes before saving");
+      if (needsFlowImport) throw new Error("Import external changes before saving");
     },
     onError: (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
@@ -1381,7 +1381,7 @@ export const App = () => {
       return false;
     }
 
-    if (needsSwbImport) {
+    if (needsFlowImport) {
       const message = "Import external changes before saving";
       setStatus(message);
       setSaveErrorDialog(message);
@@ -1650,7 +1650,7 @@ export const App = () => {
     // Derive scene configuration from the current original scene, excluding pristine
     // scanned shots that cannot yet carry its overlay. Never let the new image vote off.
     const original = originalProject ?? (renderAdapter ?? normalSaveAppAdapterRef.current!).owner.capture().project;
-    const scene = { ...original, shots: original.shots.filter(s => !ids.includes(s.id) || s.swb?.status !== "non-swb") };
+    const scene = { ...original, shots: original.shots.filter(s => !ids.includes(s.id) || s.flow?.status !== "non-flow") };
     const mode = sceneMatteModeForProject(scene);
     if (!mode || !ids.length) return p;
     return prepareImportedImageMatte(p, mode, ids, {
@@ -1678,7 +1678,7 @@ export const App = () => {
     const mode = sceneMatteModeForProject(scene);
     if (!mode) return p;
     const dialogueOverlayEnabled = sceneDialogueOverlayEnabledForProject(scene);
-    const targetIds = p.shots.filter(shot => shot.swb?.status === "owned" &&
+    const targetIds = p.shots.filter(shot => shot.flow?.status === "owned" &&
       (newIds.includes(shot.id) || !matteForShot(shot) ||
         dialogueOverlayEnabled !== bitmapLayersForShot(shot).some(layer => layer.id === dialogueOverlayBitmapLayerId))
     ).map(shot => shot.id);
@@ -1722,7 +1722,7 @@ export const App = () => {
     setScriptImportNeeded(false);
     setStatus(durable ? "Imported storyboard script changes; output pending Save" : "Script Import completed; newer edits await autosave, Save incomplete");
   };
-  const handleImportSwbFormat = async () => {
+  const handleImportFlowFormat = async () => {
     if (folderImport.read().folder) {
       if (!isWorkspaceTaskRunning) await folderImport.importImages();
       return;
@@ -1737,7 +1737,7 @@ export const App = () => {
       return;
     }
 
-    if (!needsSwbImport) {
+    if (!needsFlowImport) {
       setStatus("All images are already in Storyboard Flow Format");
       return;
     }
@@ -1746,7 +1746,7 @@ export const App = () => {
       setIsImportHelpOpen(false);
       const operation = {};
       const task: WorkspaceTask & { operation: object } = { operation, kind: "import", label: "Importing workspace changes...", current: 0,
-        total: [...project.shots, ...(project.parkedShots ?? [])].filter(shot => shot.swb?.status !== "owned").length || project.shots.length };
+        total: [...project.shots, ...(project.parkedShots ?? [])].filter(shot => shot.flow?.status !== "owned").length || project.shots.length };
       setWorkspaceTask(task);
       try {
         return await (renderAdapter ?? normalSaveAppAdapterRef.current!).imageImport({
@@ -2139,14 +2139,14 @@ export const App = () => {
         boardViewMode={boardViewMode}
         folderInputValue={folderInputValue}
         handleAddShot={handleAddShot}
-        handleImportSwbFormat={handleImportSwbFormat}
+        handleImportFlowFormat={handleImportFlowFormat}
         handleDisableSceneMatte={handleDisableSceneMatte}
         handleOpenFolderByPath={handleOpenFolderByPath}
         handlePlaceDialogueOnMatte={handlePlaceDialogueOnMatte}
         handleSaveProject={handleSaveProject}
         handleSetShotMatteMode={handleSetShotMatteMode}
         handleTogglePendingShelf={handleTogglePendingShelf}
-        hasSwbWarning={!folderBrowser && hasSwbWarning}
+        hasFlowWarning={!folderBrowser && hasFlowWarning}
         importHelpRef={importHelpRef}
         isAddShotMenuOpen={isAddShotMenuOpen}
         isImportHelpOpen={!folderBrowser && isImportHelpOpen}
@@ -2162,7 +2162,7 @@ export const App = () => {
         isMatteConfigurationDisabled={isMatteConfigurationDisabled}
         isSceneDialogueOverlayConfigured={isSceneDialogueOverlayConfigured}
         isSceneMatteConfigured={isSceneMatteConfigured}
-        needsSwbImport={folderBrowser ? folderBrowser.files.length > 0 && !folderBrowser.issue : needsSwbImport}
+        needsFlowImport={folderBrowser ? folderBrowser.files.length > 0 && !folderBrowser.issue : needsFlowImport}
         nudgeImportRequired={nudgeImportRequired}
         project={project}
         sceneMatteMode={sceneMatteMode}
@@ -2447,8 +2447,8 @@ export const App = () => {
         autosaveError={autosaveError}
         checkForUpdates={checkForUpdates}
         fileNameSyncState={fileNameSyncState}
-        hasSwbWarning={hasSwbWarning}
-        needsSwbImport={needsSwbImport}
+        hasFlowWarning={hasFlowWarning}
+        needsFlowImport={needsFlowImport}
         openUpdateDownload={openUpdateDownload}
         parkedShotCount={parkedShots.length}
         setAutosaveError={setAutosaveError}

@@ -17,18 +17,18 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const fixture = async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'owned-cleanup-root-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'owned-cleanup-data-'));
-  const target = path.join(root, '.storyboard-workbench/layers/s/new.png');
+  const target = path.join(root, '.storyboard-flow/layers/s/new.png');
   await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
   const source = path.join(root, 'source.json'); await fs.writeFile(source, '{}', { mode: 0o600 });
   const bytes = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'blue' } }).png().toBuffer();
   const shim = path.join(root, 'native-publication-fault');
   await fs.writeFile(shim, `#!/usr/bin/env ${python}\nimport sys,importlib.util,json,base64,os\ns=importlib.util.spec_from_file_location('writer',sys.argv[3]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\noriginal=m.os.unlink\ndef fault(p,*a,**k):\n if os.path.basename(p).startswith('.layer-staging-'):raise PermissionError('owned cleanup original final unlink denied')\n return original(p,*a,**k)\nm.os.unlink=fault\nr=json.load(sys.stdin)\nprint(json.dumps(m.protected_write(r['root'],r['filePath'],base64.b64decode(r['bytes']),r['mode'],r['operation'])))\n`, { mode: 0o700 });
   let producer: ProducerPngReceipt | undefined;
-  const previous = process.env.SWB_PYTHON_BIN;
+  const previous = process.env.FLOW_PYTHON_BIN;
   try {
-    process.env.SWB_PYTHON_BIN = shim;
+    process.env.FLOW_PYTHON_BIN = shim;
     await expect(withProducerPngEffects({ beforeWrite: async () => {}, written: async r => { producer = r; }, beforeDelete: async () => {}, deleted: async () => {} }, () => writeProtectedLayerFile(root, target, bytes, 'upsert'))).rejects.toMatchObject({ effect: 'committed' });
-  } finally { if (previous === undefined) delete process.env.SWB_PYTHON_BIN; else process.env.SWB_PYTHON_BIN = previous; }
+  } finally { if (previous === undefined) delete process.env.FLOW_PYTHON_BIN; else process.env.FLOW_PYTHON_BIN = previous; }
   const publication = producer!.commitFailure!.ownedStageReceipt!;
   const budget = { bytes: 1048576, records: 1000, assets: 16, jsonDepth: 80 };
   const native = createNativeAuthorizationSession(python, path.resolve('scripts/recovery-content-permissions.py'), () => 65536);
@@ -42,7 +42,7 @@ const fixture = async () => {
     expect((await store.readAssets(root, ack.generationId)).get('failed')).toEqual(bytes);
     return { ...ack, format: 'v1', policyKey: null };
   });
-  const workspaceKey = await originWorkspaceKey(root), recordName = hash(JSON.stringify(['swb.workspace-origin-operation.v1', workspaceKey, publication.operation]));
+  const workspaceKey = await originWorkspaceKey(root), recordName = hash(JSON.stringify(['flow.workspace-origin-operation.v1', workspaceKey, publication.operation]));
   const folder = path.join(userData, 'workspace-origin-v1', workspaceKey);
   const payload = JSON.parse(await fs.readFile(path.join(folder, recordName + '.sealed'), 'utf8'));
   const cleanup = async (adapter = script) => accounting.reserve(root, budget, 65536, 3, async () => {
@@ -80,7 +80,7 @@ test('authenticated explicit cleanup removes only its own stage and persists exa
 
 test('partial repair write after unlink stays unknown and explicit retry reconciles without replaying deletion', async () => {
   const f = await fixture(), fault = path.join(f.root, 'audit-fault.py');
-  await fs.writeFile(fault, `import importlib.util\ns=importlib.util.spec_from_file_location('original',${JSON.stringify(script)});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\noriginal=m.write_repair\ndef fail(fd,value,expected):\n if value.get('schema')=='swb.owned-stage-repair.v1':\n  m.os.write(fd,b'{"schema":')\n  raise OSError('fixture partial audit write')\n return original(fd,value,expected)\nm.write_repair=fail\ndef authorize(r):return m.authorize(r)\n`, { mode: 0o600 });
+  await fs.writeFile(fault, `import importlib.util\ns=importlib.util.spec_from_file_location('original',${JSON.stringify(script)});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\noriginal=m.write_repair\ndef fail(fd,value,expected):\n if value.get('schema')=='flow.owned-stage-repair.v1':\n  m.os.write(fd,b'{"schema":')\n  raise OSError('fixture partial audit write')\n return original(fd,value,expected)\nm.write_repair=fail\ndef authorize(r):return m.authorize(r)\n`, { mode: 0o600 });
   const first = await f.cleanup(fault);
   expect(first.status).toBe('unknown');
   expect(await fs.readFile(f.target)).toEqual(f.bytes);
@@ -108,7 +108,7 @@ test('reconciliation audit-create refusal preserves unknown after a prior actual
 
 test('partial intent before deletion preserves the pair and an explicit new attempt never overwrites that partial', async () => {
   const f = await fixture(), fault = path.join(f.root, 'intent-fault.py');
-  await fs.writeFile(fault, `import importlib.util\ns=importlib.util.spec_from_file_location('original',${JSON.stringify(script)});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\noriginal=m.write_repair\ndef fail(fd,value,expected):\n if value.get('schema')=='swb.owned-stage-cleanup-intent.v1':\n  m.os.write(fd,b'{"schema":')\n  raise OSError('fixture partial intent write')\n return original(fd,value,expected)\nm.write_repair=fail\ndef authorize(r):return m.authorize(r)\n`, { mode: 0o600 });
+  await fs.writeFile(fault, `import importlib.util\ns=importlib.util.spec_from_file_location('original',${JSON.stringify(script)});m=importlib.util.module_from_spec(s);s.loader.exec_module(m)\noriginal=m.write_repair\ndef fail(fd,value,expected):\n if value.get('schema')=='flow.owned-stage-cleanup-intent.v1':\n  m.os.write(fd,b'{"schema":')\n  raise OSError('fixture partial intent write')\n return original(fd,value,expected)\nm.write_repair=fail\ndef authorize(r):return m.authorize(r)\n`, { mode: 0o600 });
   await expect(f.cleanup(fault)).rejects.toThrow('partial intent');
   expect((await fs.stat(f.target)).nlink).toBe(2);
   expect(await fs.readFile(f.stage)).toEqual(f.bytes);

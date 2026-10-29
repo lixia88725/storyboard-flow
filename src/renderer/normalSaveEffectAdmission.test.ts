@@ -30,16 +30,16 @@ const dataUrl = async (color: string | { r: number; g: number; b: number; alpha:
 async function fixture(options: { raw?: "unknown" | "future"; seedPending?: boolean } = {}) {
   const root = await mkdtemp(path.join(scratch, "effect-admission-"));
   onTestFinished(async () => { await rm(root, { recursive: true, force: true }); });
-  const metadataPath = path.join(root, ".storyboard-workbench/storyboard.project.json");
+  const metadataPath = path.join(root, ".storyboard-flow/storyboard.project.json");
   const mdPath = path.join(root, "storyboard-script.md");
-  const bitmapPath = ".storyboard-workbench/layers/s/image.png";
+  const bitmapPath = ".storyboard-flow/layers/s/image.png";
   await mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true });
   await sharp({ create: { width: 8, height: 6, channels: 4, background: "red" } }).png().toFile(path.join(root, bitmapPath));
   const imagePath = path.join(root, "s.tiff");
   await sharp({ create: { width: 8, height: 6, channels: 4, background: "white" } }).tiff({ compression: "none" }).toFile(imagePath);
   const base = createProject("effect-admission");
   base.shots = [{ id: "s", imagePath, fileName: "s.tiff", order: 0,
-    swb: { version: 1, status: "owned", canvasWidth: 8, canvasHeight: 6 },
+    flow: { version: 1, status: "owned", canvasWidth: 8, canvasHeight: 6 },
     layers: [{ id: "image", kind: "image", name: "Image", visible: true, locked: false, opacity: 1,
       order: 0, blendMode: "normal", bitmapPath, width: 8, height: 6 }] }];
   const pending = options.raw === "unknown" ? { shots: { s: { state: "unknown" as const } } }

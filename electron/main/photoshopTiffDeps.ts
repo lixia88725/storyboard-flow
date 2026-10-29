@@ -14,8 +14,8 @@ export const resolvePhotoshopTiffPythonDepsDir = ({
   resourcesPath?: string;
   pathExists?: (candidate: string) => boolean;
 }): string => {
-  if (env.SWB_PYTHON_DEPS_DIR) {
-    return env.SWB_PYTHON_DEPS_DIR;
+  if (env.FLOW_PYTHON_DEPS_DIR) {
+    return env.FLOW_PYTHON_DEPS_DIR;
   }
 
   const candidates = [

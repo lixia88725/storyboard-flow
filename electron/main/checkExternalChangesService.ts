@@ -23,7 +23,7 @@ export type CheckExternalChangesImportedImage = {
   width?: number;
   height?: number;
   fingerprint?: string;
-  swbMetadata?: unknown;
+  flowMetadata?: unknown;
 };
 
 export type CheckExternalChangesOptions<TProject extends CheckExternalChangesProject> = {

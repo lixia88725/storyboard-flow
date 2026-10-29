@@ -31,7 +31,7 @@ async function fixture() {
     archiveStamp: () => "fixed-second", uniquePath: async (dir: string, name: string) => path.join(dir, name),
     compatibleExternalEditImportMode: () => "replace", pathExists: async () => false,
     isLikelyTiffPath: () => false,
-    writeSwbImportWorkingTiff: async ({ outputPath }: { outputPath: string }) => {
+    writeFlowImportWorkingTiff: async ({ outputPath }: { outputPath: string }) => {
       staging = outputPath; await fs.writeFile(outputPath, "real partial staging bytes"); throw failure;
     },
     pixelFingerprint: async () => { throw failure; }
@@ -39,17 +39,17 @@ async function fixture() {
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8");
   const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
   const node = tree.statements.find(node => ts.isVariableStatement(node) &&
-    node.declarationList.declarations[0].name.getText(tree) === "importProjectToSwbFormat")!;
-  const code = ts.transpileModule(node.getText(tree) + ";return importProjectToSwbFormat;",
+    node.declarationList.declarations[0].name.getText(tree) === "importProjectToFlowFormat")!;
+  const code = ts.transpileModule(node.getText(tree) + ";return importProjectToFlowFormat;",
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const run = () => {
     const entries = Object.entries(bindings).filter(([name]) => name !== "default");
     return new Function(...entries.map(([name]) => name), code)(...entries.map(([, value]) => value))(
-    { shots: [{ id: "s", imagePath: sourcePath, fileName: "source.png", swb: { status: "non-swb" } }] }, root);
+    { shots: [{ id: "s", imagePath: sourcePath, fileName: "source.png", flow: { status: "non-flow" } }] }, root);
   };
   const invoke = async () => { try { await run(); throw new Error("unexpected success"); } catch (error) { return error; } };
   const stagingRoot = async () => {
-    const parent = path.join(root, ".storyboard-workbench/import-tmp");
+    const parent = path.join(root, ".storyboard-flow/import-tmp");
     const entries = await fs.readdir(parent); expect(entries).toHaveLength(1); return path.join(parent, entries[0]);
   };
   const unchanged = async () => {
@@ -62,19 +62,19 @@ async function fixture() {
 
 it.each(["encoding", "fingerprint"])("Import %s failure cleans authenticated staging and retains the primary error", async phase => {
   const f = await fixture();
-  if (phase === "fingerprint") f.bindings.writeSwbImportWorkingTiff = async ({ outputPath }: { outputPath: string }) => {
+  if (phase === "fingerprint") f.bindings.writeFlowImportWorkingTiff = async ({ outputPath }: { outputPath: string }) => {
     await fs.writeFile(outputPath, "encoded bytes");
   };
   try {
     expect(await f.invoke()).toBe(failure);
-    expect(await fs.readdir(path.join(f.root, ".storyboard-workbench/import-tmp"))).toEqual([]);
+    expect(await fs.readdir(path.join(f.root, ".storyboard-flow/import-tmp"))).toEqual([]);
     await f.unchanged();
   } finally { await f.dispose(); }
 });
 
 it("Import unknown production effect retains staging and reports both actual paths in the plain classifier", async () => {
   const f = await fixture(); let unknown!: ProtectedLayerWriteError;
-  f.bindings.writeSwbImportWorkingTiff = async ({ outputPath }: { outputPath: string }) => {
+  f.bindings.writeFlowImportWorkingTiff = async ({ outputPath }: { outputPath: string }) => {
     await fs.writeFile(outputPath, "unknown bytes");
     unknown = new ProtectedLayerWriteError("unknown", outputPath, "unknown encoding effect", path.join(f.root, "uncertain-temp.png"));
     throw unknown;
@@ -110,7 +110,7 @@ it("Import cleanup rejection preserves staging and reports the real namespace", 
 
 it("Import changed directory identity retains the replacement directory and displaced bytes", async () => {
   const f = await fixture(); let displaced = "";
-  f.bindings.writeSwbImportWorkingTiff = async ({ outputPath }: { outputPath: string }) => {
+  f.bindings.writeFlowImportWorkingTiff = async ({ outputPath }: { outputPath: string }) => {
     await fs.writeFile(outputPath, "owned bytes");
     const directory = path.dirname(outputPath); displaced = directory + "-displaced";
     await fs.rename(directory, displaced); await fs.mkdir(directory);

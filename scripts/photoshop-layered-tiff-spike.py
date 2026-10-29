@@ -124,7 +124,7 @@ def write_layered_tiff(output: Path) -> None:
     layers = [("Image", image, True), ("Paint 1", paint, False)]
 
     image_source_data = TiffImageSourceData(
-        name="SWB Photoshop Layered TIFF Spike",
+        name="FLOW Photoshop Layered TIFF Spike",
         psdformat=PsdFormat.LE32BIT,
         layers=PsdLayers(
             key=PsdKey.LAYER,
@@ -174,7 +174,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--output",
-        default="/private/tmp/swb-photoshop-layered-spike.tiff",
+        default="/private/tmp/flow-photoshop-layered-spike.tiff",
         help="Layered TIFF output path.",
     )
     args = parser.parse_args()

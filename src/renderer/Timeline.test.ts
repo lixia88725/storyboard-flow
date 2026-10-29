@@ -11,7 +11,7 @@ const layer = (overrides: Partial<BitmapLayer>): BitmapLayer => ({
   opacity: 1,
   blendMode: "normal",
   order: 0,
-  bitmapPath: ".storyboard-workbench/layers/shot-1/layer-image.png",
+  bitmapPath: ".storyboard-flow/layers/shot-1/layer-image.png",
   width: 1920,
   height: 1080,
   ...overrides
@@ -32,13 +32,13 @@ describe("Timeline", () => {
       id: "image",
       kind: "image",
       order: 0,
-      bitmapPath: ".storyboard-workbench/layers/shot-1/image.png"
+      bitmapPath: ".storyboard-flow/layers/shot-1/image.png"
     });
     const paintLayer = layer({
       id: "paint",
       kind: "paint",
       order: 1,
-      bitmapPath: ".storyboard-workbench/layers/shot-1/paint.png",
+      bitmapPath: ".storyboard-flow/layers/shot-1/paint.png",
       opacity: 0.75,
       blendMode: "multiply"
     });
@@ -72,13 +72,13 @@ describe("Timeline", () => {
             id: "hidden",
             kind: "image",
             visible: false,
-            bitmapPath: ".storyboard-workbench/layers/shot-1/hidden.png"
+            bitmapPath: ".storyboard-flow/layers/shot-1/hidden.png"
           }),
           layer({
             id: "cleared-paint",
             kind: "paint",
             cleared: true,
-            bitmapPath: ".storyboard-workbench/layers/shot-1/cleared-paint.png"
+            bitmapPath: ".storyboard-flow/layers/shot-1/cleared-paint.png"
           })
         ]),
         {

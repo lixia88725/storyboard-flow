@@ -16,7 +16,7 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const fixture = async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-enroll-root-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-enroll-userdata-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const key = await originWorkspaceKey(root);
   const source = path.join(root, 'source.json');
   await fs.writeFile(source, '{"synthetic":true}', { mode: 0o400 });
@@ -25,7 +25,7 @@ const fixture = async () => {
   const sourceRestrictions = { ...policy.sourcePolicy.expected, acl: null };
   const native = createNativeAuthorizationSession(python, script, () => 65536);
   const payload = (state: 'issued' | 'sealed', extra: Record<string, unknown> = {}) => ({
-    schema: 'swb.workspace-origin-enrollment', version: 1, workspaceKey: key,
+    schema: 'flow.workspace-origin-enrollment', version: 1, workspaceKey: key,
     operation: 'op-1', receiptFingerprint: hash('receipt'), targetDigest: hash('/target/a.png'),
     sourceMode: 0o400, state, capturedDigest: state === 'sealed' ? hash('captured') : null, ...extra
   });
@@ -33,7 +33,7 @@ const fixture = async () => {
     phase: 'issue', userData, workspaceKey: key, sourceMode: 0o400, sourceRestrictions, byteLimit: 131072, recordLimit: 1000, ...body, ...extra
   }));
   // One immutable issuance slot per physical workspace/original operation.
-  const recordName = (body: Record<string, unknown>) => hash(JSON.stringify(['swb.workspace-origin-operation.v1', body.workspaceKey, body.operation]));
+  const recordName = (body: Record<string, unknown>) => hash(JSON.stringify(['flow.workspace-origin-operation.v1', body.workspaceKey, body.operation]));
   const record = (name: string) => path.join(userData, 'workspace-origin-v1', key, name);
   return { root, userData, key, native, payload, issue, recordName, record, sourceRestrictions };
 };

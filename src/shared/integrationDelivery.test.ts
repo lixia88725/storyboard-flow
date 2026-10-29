@@ -10,7 +10,7 @@ const nativeScripts = [
 ];
 test('CI passes the installed TIFF dependency directory to the full allowed suite', () => {
   const testJob = read('.github/workflows/release.yml').split('\n  test:\n')[1].split('\n  metadata:\n')[0];
-  expect(testJob).toContain('SWB_PYTHON_DEPS_DIR: ${{ github.workspace }}/vendor/python/photoshop-tiff');
+  expect(testJob).toContain('FLOW_PYTHON_DEPS_DIR: ${{ github.workspace }}/vendor/python/photoshop-tiff');
   const prepareTemp = testJob.indexOf('printf \'TMPDIR=%s\\n\' "$RUNNER_TEMP" >> "$GITHUB_ENV"');
   expect(prepareTemp).toBeGreaterThan(-1);
   expect(prepareTemp).toBeLessThan(testJob.indexOf('run: npm run build'));

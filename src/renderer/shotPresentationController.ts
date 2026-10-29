@@ -167,7 +167,7 @@ export const createShotPresentationController = ({
         setStatus("This scene has no storyboards");
         return;
       }
-      if (shots.some((shot) => shot.swb?.status !== "owned")) {
+      if (shots.some((shot) => shot.flow?.status !== "owned")) {
         setStatus("Import every storyboard before configuring a scene matte");
         return;
       }
@@ -335,7 +335,7 @@ export const createShotPresentationController = ({
           }
           const targetHeight =
             matte.sourceHeight ??
-            Math.max(1, (shot.swb?.canvasHeight ?? 1) - matte.top - matte.bottom);
+            Math.max(1, (shot.flow?.canvasHeight ?? 1) - matte.top - matte.bottom);
           for (const layer of bitmapLayersForShot(shot)) {
             if (
               layer.id === matteOverlayBitmapLayerId ||
@@ -471,7 +471,7 @@ export const createShotPresentationController = ({
               }
               const targetHeight =
                 matte.sourceHeight ??
-                Math.max(1, (shot.swb?.canvasHeight ?? 1) - matte.top - matte.bottom);
+                Math.max(1, (shot.flow?.canvasHeight ?? 1) - matte.top - matte.bottom);
               for (const layer of bitmapLayersForShot(shot)) {
                 if (
                   layer.id === matteOverlayBitmapLayerId ||
@@ -527,7 +527,7 @@ export const createShotPresentationController = ({
             return false;
           }
         }
-        if (targetShots.some((shot) => shot.swb?.status !== "owned")) {
+        if (targetShots.some((shot) => shot.flow?.status !== "owned")) {
           setStatus("Import the new storyboard before inheriting the scene matte");
           return false;
         }
@@ -739,7 +739,7 @@ export const createShotPresentationController = ({
         setStatus("This scene has no storyboards");
         return;
       }
-      if (shots.some((shot) => shot.swb?.status !== "owned")) {
+      if (shots.some((shot) => shot.flow?.status !== "owned")) {
         setStatus("Import every storyboard before placing scene dialogue");
         return;
       }
@@ -753,7 +753,7 @@ export const createShotPresentationController = ({
           bitmapLayersForShot(shot).find(
             (layer) => layer.id === dialogueOverlayBitmapLayerId
           )?.bitmapPath ??
-          `.storyboard-workbench/layers/${shot.id}/${dialogueOverlayBitmapLayerId}.png`
+          `.storyboard-flow/layers/${shot.id}/${dialogueOverlayBitmapLayerId}.png`
       );
       const undoEntry = await createHistoryEntry(dialogueOverlayPaths);
       const isSceneDialogueVisible = shots.every((shot) =>

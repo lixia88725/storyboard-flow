@@ -7,9 +7,9 @@ import { createPreparedWorkspaceSave } from './preparedWorkspaceSave';
 import { serializeStoryboardScriptMarkdown } from './storyboardScript';
 
 test('Main applies independent JSON logical limits before parsing original metadata or publishing',async()=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'json-before-parse-root-')),rel='.storyboard-workbench/layers/s/a.png',file=path.join(root,rel),metadata=path.join(root,'.storyboard-workbench/storyboard.project.json'),script=path.join(root,'storyboard-script.md'),tiff=path.join(root,'s.tiff');
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'json-before-parse-root-')),rel='.storyboard-flow/layers/s/a.png',file=path.join(root,rel),metadata=path.join(root,'.storyboard-flow/storyboard.project.json'),script=path.join(root,'storyboard-script.md'),tiff=path.join(root,'s.tiff');
   await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});const png=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer();await fs.writeFile(file,png,{mode:0o600});await fs.writeFile(tiff,await sharp(png).tiff().toBuffer(),{mode:0o600});
-  const project={id:'p',name:'JSON pre-parse resource check',shots:[{id:'s',imagePath:tiff,fileName:'s.tiff',swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'a',kind:'paint',bitmapPath:rel,width:2,height:2}]}],dialogues:[]},text=JSON.stringify(project,null,2)+'\n';
+  const project={id:'p',name:'JSON pre-parse resource check',shots:[{id:'s',imagePath:tiff,fileName:'s.tiff',flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'a',kind:'paint',bitmapPath:rel,width:2,height:2}]}],dialogues:[]},text=JSON.stringify(project,null,2)+'\n';
   await fs.writeFile(metadata,text,{mode:0o600});await fs.writeFile(script,serializeStoryboardScriptMarkdown(project as any),{mode:0o600});
   const files=[metadata,script,tiff,file],originals=await Promise.all(files.map(f=>fs.readFile(f))),names=(await fs.readdir(path.dirname(metadata))).sort();
   const service=createPreparedWorkspaceSave({python:'python3',script:path.resolve('scripts/recovery-content-permissions.py'),budget:{bytes:4*1024*1024,records:1000,assets:16,jsonDepth:80},memoryBudgetBytes:16*1024*1024,memoryJSON:{maximumSourceBytes:1024*1024,maximumTokens:1,maximumStringSourceBytes:1024*1024,maximumNesting:81}});

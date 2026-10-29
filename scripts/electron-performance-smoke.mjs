@@ -99,7 +99,7 @@ const createSyntheticWorkspace = async ({
   layerCount = 1,
   projectName
 }) => {
-  const metadataRoot = path.join(folderPath, ".storyboard-workbench");
+  const metadataRoot = path.join(folderPath, ".storyboard-flow");
   const fixtureRoot = path.join(metadataRoot, "performance-fixture");
   const sourcePngPath = path.join(fixtureRoot, "source.png");
   const sourceTiffPath = path.join(fixtureRoot, "source.tiff");
@@ -124,7 +124,7 @@ const createSyntheticWorkspace = async ({
     const fileName = `performance_scene_artist_v001_${shotNumber}.tiff`;
     const imagePath = path.join(folderPath, fileName);
     const bitmapPath = path.join(
-      ".storyboard-workbench",
+      ".storyboard-flow",
       "layers",
       shotId,
       "layer-image.png"
@@ -137,7 +137,7 @@ const createSyntheticWorkspace = async ({
         const layerNumber = layerIndex + 1;
         const layerId = `layer-paint-${String(layerNumber).padStart(2, "0")}`;
         const paintBitmapPath = path.join(
-          ".storyboard-workbench",
+          ".storyboard-flow",
           "layers",
           shotId,
           `${layerId}.png`
@@ -191,7 +191,7 @@ const createSyntheticWorkspace = async ({
         },
         ...paintLayers
       ],
-      swb: {
+      flow: {
         version: 1,
         status: "owned",
         canvasWidth: 1998,
@@ -253,7 +253,7 @@ const cloneFixtureWorkspace = async (sourceRoot) => {
   await execFileAsync("/bin/cp", ["-cR", sourceRoot, cloneRoot]);
   const metadataPath = path.join(
     cloneRoot,
-    ".storyboard-workbench",
+    ".storyboard-flow",
     "storyboard.project.json"
   );
   const project = JSON.parse(await readFile(metadataPath, "utf8"));
@@ -1380,7 +1380,7 @@ try {
     cwd: repoRoot,
     env: {
       ...process.env,
-      SWB_USER_DATA_DIR: userDataRoot
+      FLOW_USER_DATA_DIR: userDataRoot
     },
     stdio: ["ignore", "pipe", "pipe"]
   });

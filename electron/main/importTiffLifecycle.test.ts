@@ -31,19 +31,19 @@ it.each(["preview", "persist", "success", "restore"])("actual Import TIFF handle
     }
   });
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8");
-  const block = source.slice(source.indexOf('  ipcMain.handle("workspace:importSwbFormat"'), source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
+  const block = source.slice(source.indexOf('  ipcMain.handle("workspace:importFlowFormat"'), source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
   const compiled = ts.transpileModule(block, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   let handler: (event: unknown, payload: unknown) => Promise<unknown> = async () => { throw new Error("missing handler"); };
   const project = { shots: [] };
   const bindings = {
     ipcMain: { handle: (_name: string, callback: typeof handler) => { handler = callback; } },
-    projectNeedsSwbImport: () => true,
+    projectNeedsFlowImport: () => true,
     importStoryboardScriptMarkdown: async () => ({ project, rollback: async () => { order.push("script"); } }),
-    importProjectToSwbFormat: async () => ({ project, tiffWriteShotIds: [], importedShotIds: [], rollback: async () => {
+    importProjectToFlowFormat: async () => ({ project, tiffWriteShotIds: [], importedShotIds: [], rollback: async () => {
       order.push("import"); expect(await fs.readFile(targetPath, "utf8")).toBe("old");
     } }),
     createWorkspaceTaskProgressReporter: () => undefined,
-    writeSwbMetadataToTiffs: async () => ({
+    writeFlowMetadataToTiffs: async () => ({
       rollback: async () => { order.push("tiff"); await handle.rollback(); },
       commit: async () => { order.push("commit"); await handle.commit(); }
     }),

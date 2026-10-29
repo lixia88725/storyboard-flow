@@ -14,7 +14,7 @@ const service=createPreparedWorkspaceSave({budget:{bytes:16*1024*1024,records:20
 const content=await service.readReadonly(root),project=content.projectRaw;
 assert.equal(content.continuationState.notExecutable,true);
 const frame={},event={sender:{mainFrame:frame},senderFrame:frame},denied={};let callbacks=0;
-const metadata=path.join(root,'.storyboard-workbench/storyboard.project.json');
+const metadata=path.join(root,'.storyboard-flow/storyboard.project.json');
 const assets=project.shots.flatMap(s=>(s.layers??[]).filter(l=>l.bitmapPath).map(l=>({bitmapPath:l.bitmapPath})));
 assert.ok(assets.length>0);
 const reject=async(name,run)=>{let failed=false;try{await run();}catch{failed=true;}assert.equal(failed,true,name+' must refuse');denied[name]=true;};

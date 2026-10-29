@@ -11,8 +11,8 @@ const run = promisify(execFile);
 async function fixture() {
   const folderPath = await mkdtemp(path.join(process.env.TMPDIR ?? os.tmpdir(), "layer-replacement-bridge-"));
   onTestFinished(async () => { await rm(folderPath, { recursive: true, force: true }); });
-  const sourceBitmapPath = ".storyboard-workbench/layers/s/source.png";
-  const targetBitmapPath = ".storyboard-workbench/layers/s/target.png";
+  const sourceBitmapPath = ".storyboard-flow/layers/s/source.png";
+  const targetBitmapPath = ".storyboard-flow/layers/s/target.png";
   const source = path.join(folderPath, sourceBitmapPath), target = path.join(folderPath, targetBitmapPath);
   await mkdir(path.dirname(target), { recursive: true });
   const [sourceBytes, targetBytes] = await Promise.all(["red", "blue"].map(background =>
@@ -47,7 +47,7 @@ it("Merge Visible rejects a differently-cased cleanup alias of its target", asyn
   catch { return skip(); } // N/A on a case-sensitive fixture filesystem.
   await expect(f.handlers.mergeVisible({ folderPath: f.folderPath, targetBitmapPath: f.targetBitmapPath, width: 2, height: 2,
     layers: [{ bitmapPath: f.sourceBitmapPath, opacity: 1, blendMode: "normal" }, { bitmapPath: f.targetBitmapPath, opacity: 1, blendMode: "normal" }],
-    deleteBitmapPaths: [".storyboard-workbench/layers/s/TARGET.PNG"] })).rejects.toThrow(/target|alias/);
+    deleteBitmapPaths: [".storyboard-flow/layers/s/TARGET.PNG"] })).rejects.toThrow(/target|alias/);
   expect(await readFile(f.target)).toEqual(f.targetBytes);
 });
 

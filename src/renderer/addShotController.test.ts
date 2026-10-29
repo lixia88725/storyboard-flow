@@ -15,7 +15,7 @@ const projectWithShots = (shotIds: string[]): Project =>
     shots: shotIds.map((id) => ({ id, imagePath: `${id}.tiff` }))
   }) as Project;
 
-const workspace = { identity: {}, folderPath: "/scene", metadataPath: "/scene/.storyboard-workbench/storyboard.project.json" };
+const workspace = { identity: {}, folderPath: "/scene", metadataPath: "/scene/.storyboard-flow/storyboard.project.json" };
 const ownership = { isImageImportLocked: () => false, captureWorkspace: () => workspace, isCurrentWorkspace: (request: AddShotWorkspace) => request === workspace };
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -120,7 +120,7 @@ describe("addShotController", () => {
     const matte = configureRealMatte(f);
     const sourceProject = projectWithShots(["shot-1", "shot-2"]);
     sourceProject.dialogues = [];
-    sourceProject.shots = sourceProject.shots.map((shot, order) => ({ ...shot, order, swb: { version: 1, status: "owned", canvasWidth: 1920, canvasHeight: 1080 } }));
+    sourceProject.shots = sourceProject.shots.map((shot, order) => ({ ...shot, order, flow: { version: 1, status: "owned", canvasWidth: 1920, canvasHeight: 1080 } }));
     f.projectRef.current = applyProjectMatte(sourceProject, mode);
     if (enabled) {
       for (const shot of f.projectRef.current.shots) {
@@ -157,7 +157,7 @@ describe("addShotController", () => {
     } else {
       expect(matte.writeLayerPng.mock.calls.some(([payload]) => payload.dataUrl === "data:image/png;base64,dialogue")).toBe(false);
     }
-    expect(added.swb?.canvasHeight).toBe(mode === "expanded" ? 1230 : 1080);
+    expect(added.flow?.canvasHeight).toBe(mode === "expanded" ? 1230 : 1080);
     expect(createMatteOverlay).toHaveBeenCalledTimes(1);
     expect(expandBitmapLayer.mock.calls.length > 0).toBe(mode === "expanded");
     expect(matte.writeLayerPng.mock.calls.every(([payload]) => payload.folderPath === "/scene" && payload.bitmapPath.includes(added.id))).toBe(true);
@@ -343,7 +343,7 @@ describe("addShotController", () => {
 
   it.each(["partial", "aba", "success"] as const)("first-shot owned open (%s) adopts only a completed load bound to its own identity", async (mode) => {
     const f = raceFixture();
-    const meta = "/scene/.storyboard-workbench/storyboard.project.json";
+    const meta = "/scene/.storyboard-flow/storyboard.project.json";
     let current: AddShotWorkspace = { identity: {}, folderPath: undefined, metadataPath: undefined };
     let created = 0;
     const options = {
@@ -395,7 +395,7 @@ describe("addShotController", () => {
     expect(
       initialAddShotContext({
         folderPath: "/scene",
-        metadataPath: "/scene/.storyboard-workbench/storyboard.project.json",
+        metadataPath: "/scene/.storyboard-flow/storyboard.project.json",
         primarySelectedShotId: "shot-2",
         project
       })
@@ -457,7 +457,7 @@ describe("addShotController", () => {
       inheritSceneMatte: vi.fn(async (project: Project) => project),
       loadFolderScan: vi.fn(),
       markShotsDirty: vi.fn(),
-      metadataPath: "/scene/.storyboard-workbench/storyboard.project.json",
+      metadataPath: "/scene/.storyboard-flow/storyboard.project.json",
       primarySelectedShotId: "shot-1",
       projectRef: { current: project },
       selectSingleShot: vi.fn(),
@@ -506,7 +506,7 @@ describe("addShotController", () => {
       inheritSceneMatte,
       loadFolderScan: vi.fn(),
       markShotsDirty: vi.fn(),
-      metadataPath: "/scene/.storyboard-workbench/storyboard.project.json",
+      metadataPath: "/scene/.storyboard-flow/storyboard.project.json",
       primarySelectedShotId: "shot-1",
       projectRef: { current: project },
       selectSingleShot: vi.fn(),
@@ -563,7 +563,7 @@ describe("addShotController", () => {
       inheritSceneMatte: vi.fn(async (project: Project) => project),
       loadFolderScan: vi.fn(),
       markShotsDirty: vi.fn(),
-      metadataPath: "/scene/.storyboard-workbench/storyboard.project.json",
+      metadataPath: "/scene/.storyboard-flow/storyboard.project.json",
       primarySelectedShotId: "shot-1",
       projectRef,
       selectSingleShot: vi.fn(),

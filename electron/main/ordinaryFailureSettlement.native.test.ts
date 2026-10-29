@@ -13,8 +13,8 @@ import { ProtectedLayerWriteError } from './protectedLayerFileWriter';
 for (const producer of ['writePng', 'copyPng', 'mergeDown'] as const) {
   test(`before first Save ${producer} keeps native primary failure when original document settlement also fails`, async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ordinary-settlement-'));
-    const sourceBitmapPath = '.storyboard-workbench/layers/s/source.png';
-    const targetBitmapPath = '.storyboard-workbench/layers/s/target.png';
+    const sourceBitmapPath = '.storyboard-flow/layers/s/source.png';
+    const targetBitmapPath = '.storyboard-flow/layers/s/target.png';
     const source = path.join(root, sourceBitmapPath), target = path.join(root, targetBitmapPath);
     const frame = {}, sender = { mainFrame: frame }, event: any = { sender, senderFrame: frame };
     const service = createPreparedWorkspaceSave({
@@ -46,7 +46,7 @@ for (const producer of ['writePng', 'copyPng', 'mergeDown'] as const) {
       expect(await fs.readFile(source)).toEqual(blue);
       const after = await fs.lstat(target);
       expect([after.dev, after.ino, after.mode, after.nlink]).toEqual([before.dev, before.ino, before.mode, before.nlink]);
-      await expect(fs.lstat(path.join(root, '.storyboard-workbench/workspace-recovery-v1'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(fs.lstat(path.join(root, '.storyboard-flow/workspace-recovery-v1'))).rejects.toMatchObject({ code: 'ENOENT' });
       expect(failure).toBe(primary);
       expect(failure).toMatchObject({ effect: 'refused', filePath: target, retainedTemporary: null, settlementError: expect.stringContaining('incarnation changed') });
       expect(failure.message).toContain('PNG_REFUSED');

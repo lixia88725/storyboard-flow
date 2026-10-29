@@ -6,7 +6,7 @@ import { preparePackageResources } from "./packageResources.js";
 
 describe("preparePackageResources", () => {
   it("copies installed Photoshop TIFF Python deps into package resources", async () => {
-    const repoRoot = await mkdtemp(path.join(os.tmpdir(), "swb-package-resources-"));
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), "flow-package-resources-"));
     const sourceDeps = path.join(repoRoot, "vendor", "python", "photoshop-tiff");
     await mkdir(path.join(sourceDeps, "psdtags"), { recursive: true });
     await writeFile(path.join(sourceDeps, "psdtags", "__init__.py"), "# psdtags\n");
@@ -23,7 +23,7 @@ describe("preparePackageResources", () => {
   });
 
   it("fails clearly when Photoshop TIFF Python deps are not installed", async () => {
-    const repoRoot = await mkdtemp(path.join(os.tmpdir(), "swb-package-resources-missing-"));
+    const repoRoot = await mkdtemp(path.join(os.tmpdir(), "flow-package-resources-missing-"));
     await mkdir(path.join(repoRoot, "vendor", "python", "photoshop-tiff"), { recursive: true });
 
     await expect(preparePackageResources({ repoRoot })).rejects.toThrow(

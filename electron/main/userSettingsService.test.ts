@@ -12,7 +12,7 @@ import {
 
 describe("userSettingsService", () => {
   it("reads and writes recent folders under userData", async () => {
-    const userDataPath = await mkdtemp(path.join(os.tmpdir(), "swb-user-settings-"));
+    const userDataPath = await mkdtemp(path.join(os.tmpdir(), "flow-user-settings-"));
 
     await expect(readRecentFolders(userDataPath)).resolves.toEqual([]);
     await writeRecentFolders(userDataPath, ["/tmp/a", "/tmp/b"]);
@@ -21,7 +21,7 @@ describe("userSettingsService", () => {
   });
 
   it("resets corrupt recent folders and reports the recovery", async () => {
-    const userDataPath = await mkdtemp(path.join(os.tmpdir(), "swb-user-settings-"));
+    const userDataPath = await mkdtemp(path.join(os.tmpdir(), "flow-user-settings-"));
     const settingsPath = path.join(userDataPath, "recent-folders.json");
     await writeFile(settingsPath, "{not json", "utf8");
 
@@ -33,7 +33,7 @@ describe("userSettingsService", () => {
   });
 
   it("reads and writes tool radial menu settings under userData", async () => {
-    const userDataPath = await mkdtemp(path.join(os.tmpdir(), "swb-user-settings-"));
+    const userDataPath = await mkdtemp(path.join(os.tmpdir(), "flow-user-settings-"));
     const config = { brush: [{ label: "Size", value: 12 }] };
 
     await expect(readToolRadialMenu(userDataPath)).resolves.toBeUndefined();

@@ -17,7 +17,7 @@ type CleanupDeletedShotLayerDirectoriesOptions = {
 const deletedShotKey = (shot: PendingDeletedShotLike): string => `${shot.id}\n${shot.imagePath}`;
 
 const layerDirectoryForShot = (folderPath: string, shotId: string): string | undefined => {
-  const layersRoot = path.join(folderPath, ".storyboard-workbench", "layers");
+  const layersRoot = path.join(folderPath, ".storyboard-flow", "layers");
   const directoryPath = path.join(layersRoot, shotId);
   const relativePath = path.relative(layersRoot, directoryPath);
 

@@ -5,9 +5,9 @@ import {createWorkspacePhysicalWriterGate} from './workspacePhysicalWriterGate';
 import {serializeStoryboardScriptMarkdown} from './storyboardScript';
 
 async function fixture(){
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'save-cap-')),metadata=path.join(root,'.storyboard-workbench/storyboard.project.json'),png=path.join(root,'.storyboard-workbench/layers/s/l.png'),tiff=path.join(root,'a.tiff');await fs.mkdir(path.dirname(png),{recursive:true,mode:0o700});
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'save-cap-')),metadata=path.join(root,'.storyboard-flow/storyboard.project.json'),png=path.join(root,'.storyboard-flow/layers/s/l.png'),tiff=path.join(root,'a.tiff');await fs.mkdir(path.dirname(png),{recursive:true,mode:0o700});
  const bytes=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer();await fs.writeFile(png,bytes,{mode:0o600});await fs.writeFile(tiff,await sharp(bytes).tiff().toBuffer(),{mode:0o600});
- const project={id:'p',name:'p',shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',order:0,swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'l',kind:'image',width:2,height:2,bitmapPath:path.relative(root,png)}]}],dialogues:[]};await fs.writeFile(metadata,JSON.stringify(project),{mode:0o600});
+ const project={id:'p',name:'p',shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',order:0,flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'l',kind:'image',width:2,height:2,bitmapPath:path.relative(root,png)}]}],dialogues:[]};await fs.writeFile(metadata,JSON.stringify(project),{mode:0o600});
  const frame={},sender={mainFrame:frame},event={sender,senderFrame:frame} as any;
  const payload={folderPath:root,metadataPath:metadata,normalSave:true,project,recoveryContent:{projectRaw:project,desiredAssets:[],sequence:1,assetRevision:0,effectFacts:{receipt:[],deletions:[],remainingScript:null}}};
  const options={budget:{bytes:1048576,records:100,assets:16,jsonDepth:40},python:'python3',script:path.join(process.cwd(),'scripts/recovery-content-permissions.py')};return {root,metadata,project,event,payload,options};

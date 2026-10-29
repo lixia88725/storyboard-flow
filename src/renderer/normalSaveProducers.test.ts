@@ -60,12 +60,12 @@ async function actualRootIdentity() {
 }
 async function fixture() {
   const folder = await mkdtemp(path.join(process.env.TMPDIR!, "m3a-producer-"));
-  const imagePath = path.join(folder, "s.tiff"), metadataPath = path.join(folder, ".storyboard-workbench/storyboard.project.json");
+  const imagePath = path.join(folder, "s.tiff"), metadataPath = path.join(folder, ".storyboard-flow/storyboard.project.json");
   await mkdir(path.dirname(metadataPath), { recursive: true });
   await sharp({ create: { width: 8, height: 6, channels: 4, background: "white" } }).tiff().toFile(imagePath);
-  await mkdir(path.join(folder, ".storyboard-workbench/layers/s"), { recursive: true });
-  await sharp({ create: { width: 8, height: 6, channels: 4, background: "red" } }).png().toFile(path.join(folder, ".storyboard-workbench/layers/s/l.png"));
-  let initial: Project = { ...createProject("P"), shots: [{ id: "s", order: 0, imagePath, fileName: "s.tiff", swb: { version: 1, status: "owned", canvasWidth: 8, canvasHeight: 6 }, layers: [{ id: "l", name: "Image", kind: "image", order: 0, bitmapPath: ".storyboard-workbench/layers/s/l.png", width: 8, height: 6, visible: true, opacity: 1, locked: false, blendMode: "normal" }] }] };
+  await mkdir(path.join(folder, ".storyboard-flow/layers/s"), { recursive: true });
+  await sharp({ create: { width: 8, height: 6, channels: 4, background: "red" } }).png().toFile(path.join(folder, ".storyboard-flow/layers/s/l.png"));
+  let initial: Project = { ...createProject("P"), shots: [{ id: "s", order: 0, imagePath, fileName: "s.tiff", flow: { version: 1, status: "owned", canvasWidth: 8, canvasHeight: 6 }, layers: [{ id: "l", name: "Image", kind: "image", order: 0, bitmapPath: ".storyboard-flow/layers/s/l.png", width: 8, height: 6, visible: true, opacity: 1, locked: false, blendMode: "normal" }] }] };
   initial = initializeCompletedShot(initial, "s", await hash(imagePath), "initial");
   const projectRef = { current: initial }, queue = createBitmapLayerWriteQueue(); let token = 0;
   const handlers = new Map<string, (...args: any[]) => Promise<any>>();
@@ -103,10 +103,10 @@ it("actual App pixel-only equal-value layers and resize publish new obligation b
     f.update((p: Project) => ({ ...p, shots: p.shots.map(s => ({ ...s, layers: [...s.layers!] })) }));
     const t = f.projectRef.current.pendingBake!.shots.s.editToken;
     expect(t).not.toBe("initial");
-    f.update((p: Project) => ({ ...p, shots: p.shots.map(s => ({ ...s, swb: { ...s.swb!, canvasWidth: 1230 } })) }));
+    f.update((p: Project) => ({ ...p, shots: p.shots.map(s => ({ ...s, flow: { ...s.flow!, canvasWidth: 1230 } })) }));
     expect(f.projectRef.current.pendingBake!.shots.s.editToken).not.toBe(t);
     expect(await f.adapter.autosave(f.projectRef.current)).toBe(true);
-    expect((await readProjectMetadata<Project>(f.metadataPath))!.shots[0].swb!.canvasWidth).toBe(1230);
+    expect((await readProjectMetadata<Project>(f.metadataPath))!.shots[0].flow!.canvasWidth).toBe(1230);
   } finally { await f.cleanup(); }
 });
 it("new-shot initialization reads actual root H0, merges edits during await and cancels scope without publishing", async () => {
@@ -159,7 +159,7 @@ it("actual Add caller initializes the completed blank root, not a renderer hash"
     await c.handleAddShot();
     const added = f.projectRef.current.shots.find(s => s.id !== "s")!;
     expect(added).toBeDefined();
-    expect(added.swb!.canvasHeight).toBe(1230);
+    expect(added.flow!.canvasHeight).toBe(1230);
     expect(f.projectRef.current.name).toBe("edited while Add awaited");
     expect((await sharp(added.imagePath).metadata()).height).toBe(1080);
     for (const layer of added.layers!) expect((await sharp(path.join(f.folder, layer.bitmapPath)).metadata()).height).toBe(1230);
@@ -267,7 +267,7 @@ it("actual scene matte/resize and caption callers publish tokens through real as
     const { writePhotoshopLayeredTiffsForInPlaceSave } = await import("../../electron/main/photoshopTiffExport");
     const dataUrl = (b: Buffer) => `data:image/png;base64,${b.toString("base64")}`;
     await sharp({ create: { width: 8, height: 1080, channels: 4, background: "red" } }).png().toFile(path.join(f.folder, f.initial.shots[0].layers![0].bitmapPath));
-    f.update((p: Project) => ({ ...p, dialogues: [{ id: "d", shotId: "s", order: 0, text: "Caption" }], shots: p.shots.map(s => ({ ...s, swb: { ...s.swb!, canvasHeight: 1080 }, layers: s.layers!.map(l => ({ ...l, height: 1080 })) })) }));
+    f.update((p: Project) => ({ ...p, dialogues: [{ id: "d", shotId: "s", order: 0, text: "Caption" }], shots: p.shots.map(s => ({ ...s, flow: { ...s.flow!, canvasHeight: 1080 }, layers: s.layers!.map(l => ({ ...l, height: 1080 })) })) }));
     // The existing controller has explicit raster ports: use real sharp PNGs at this boundary,
     // not fake filesystem ACKs. This does not certify browser typography/canvas rendering.
     const transparent = dataUrl(await sharp({ create: { width: 8, height: 1230, channels: 4, background: "transparent" } }).png().toBuffer());
@@ -279,7 +279,7 @@ it("actual scene matte/resize and caption callers publish tokens through real as
       folderPath: f.folder, metadataPath: f.metadataPath, projectRef: f.projectRef, markShotsDirty: () => {}, recordUndoEntry: () => {}, setStatus: () => {}, shotPresentationActionRef: { current: undefined }, updateProject: f.update });
     const before = f.projectRef.current.pendingBake!.shots.s.editToken;
     await c.handleSetShotMatteMode("expanded");
-    expect(f.projectRef.current.shots[0].swb!.canvasHeight).toBe(1230);
+    expect(f.projectRef.current.shots[0].flow!.canvasHeight).toBe(1230);
     expect(f.projectRef.current.pendingBake!.shots.s.editToken).not.toBe(before);
     const matteToken = f.projectRef.current.pendingBake!.shots.s.editToken;
     await c.handlePlaceDialogueOnMatte();
@@ -287,7 +287,7 @@ it("actual scene matte/resize and caption callers publish tokens through real as
     expect(f.projectRef.current.shots[0].layers!.at(-1)!.id).toBe("layer-dialogue-overlay");
     expect(await f.adapter.autosave(f.projectRef.current)).toBe(true);
     await f.adapter.owner.load(async () => (await readProjectMetadata<Project>(f.metadataPath))!);
-    expect(f.projectRef.current.shots[0].swb!.canvasHeight).toBe(1230);
+    expect(f.projectRef.current.shots[0].flow!.canvasHeight).toBe(1230);
     const output = await writePhotoshopLayeredTiffsForInPlaceSave(f.projectRef.current, f.folder, { saveStamp: "m3a-matte", scriptPath: path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py") });
     const dimensions = await sharp(output.replacements[0].fromPath).metadata();
     expect([dimensions.width, dimensions.height]).toEqual([8, 1230]);
@@ -297,7 +297,7 @@ it("actual scene matte/resize and caption callers publish tokens through real as
 it("actual common edit preserves baseline/extensions, but changed source lineage becomes unknown", async () => {
   const f = await fixture(); try {
     const before = f.projectRef.current.pendingBake!.shots.s;
-    f.update((p: Project) => ({ ...p, shots: p.shots.map(s => ({ ...s, swb: { ...s.swb!, sourcePath: "/different-origin.tiff" } })) }));
+    f.update((p: Project) => ({ ...p, shots: p.shots.map(s => ({ ...s, flow: { ...s.flow!, sourcePath: "/different-origin.tiff" } })) }));
     expect(f.projectRef.current.pendingBake!.shots.s.state).toBe("unknown");
     expect(f.projectRef.current.pendingBake!.shots.s.acceptedOutputIdentity).toBe(before.acceptedOutputIdentity);
     expect(await f.adapter.autosave(f.projectRef.current)).toBe(false);
@@ -467,7 +467,7 @@ it("actual App Add wiring does not publish a stale half-completion into a newer 
       createTransparentLayerDataUrl: transparentPng,
       folderPath: f.folder, metadataPath: f.metadataPath, primarySelectedShotId: "s", projectRef: f.projectRef, loadFolderScan: async () => undefined,
       inheritSceneMatte: async (p: Project, mode: "expanded" | "embedded", ids: string[], request: any) => prepareAddShotMatte(p, mode, ids, request, { api, queue: createBitmapLayerWriteQueue(), canvas: {
-        expandBitmapLayer: async (source, _layer, top, bottom) => { switched = true; current = { identity: {}, folderPath: other!, metadataPath: path.join(other!, ".storyboard-workbench/storyboard.project.json") }; await f.adapter.owner.load({ ...createProject("newer"), pendingBake: { version: 1 as const, shots: {} } }); return transparentPngSync((await sharp(Buffer.from(source.split(",")[1], "base64")).extend({ top, bottom, left: 0, right: 0, background: "transparent" }).png().toBuffer())); },
+        expandBitmapLayer: async (source, _layer, top, bottom) => { switched = true; current = { identity: {}, folderPath: other!, metadataPath: path.join(other!, ".storyboard-flow/storyboard.project.json") }; await f.adapter.owner.load({ ...createProject("newer"), pendingBake: { version: 1 as const, shots: {} } }); return transparentPngSync((await sharp(Buffer.from(source.split(",")[1], "base64")).extend({ top, bottom, left: 0, right: 0, background: "transparent" }).png().toBuffer())); },
         createMatteOverlay: () => overlay
       } }),
       markShotsDirty: () => {}, selectSingleShot: () => {}, setRecentFolders: () => {}, setStatus: (s: string) => statuses.push(s), setWorkspaceTask: () => {}, updateProject: f.update,
@@ -593,7 +593,7 @@ it("actual App Add operation handle never rebases to a newer ready workspace and
     const before = await readdir(f.folder);
     // The operation-bound api refuses before the underlying effect; createBlankShot is async now.
     await expect(op1.api.createBlankShot(f.folder, { preset: "16:9" })).rejects.toThrow(/instance changed/);
-    expect(() => op1.api.writeLayerPng({ folderPath: f.folder, bitmapPath: ".storyboard-workbench/layers/new/l.png", dataUrl: "data:image/png;base64,iVBORw0KGgo=" })).toThrow(/instance changed/);
+    expect(() => op1.api.writeLayerPng({ folderPath: f.folder, bitmapPath: ".storyboard-flow/layers/new/l.png", dataUrl: "data:image/png;base64,iVBORw0KGgo=" })).toThrow(/instance changed/);
     expect(() => op1.api.ensureLayerAssets({ project: { ...f.initial, shots: [{ ...f.initial.shots[0], id: "new" }] }, folderPath: f.folder, metadataPath: f.metadataPath })).toThrow(/instance changed/);
     expect(realCalls).toBe(0); expect(writes).toBe(0);
     expect(await readdir(f.folder)).toEqual(before);
@@ -623,9 +623,9 @@ it("actual App Add registers only its own recorded blank completion and refuses 
     const dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
     const layer = f.initial.shots[0].layers![0];
     // Wrong folder: the source is not the captured operation workspace.
-    expect(() => op.api.writeLayerPng({ folderPath: other, bitmapPath: ".storyboard-workbench/layers/new/l.png", dataUrl })).toThrow(/wrong folder/);
+    expect(() => op.api.writeLayerPng({ folderPath: other, bitmapPath: ".storyboard-flow/layers/new/l.png", dataUrl })).toThrow(/wrong folder/);
     // Unregistered new shot id: this operation has not registered a blank yet.
-    expect(() => op.api.writeLayerPng({ folderPath: f.folder, bitmapPath: ".storyboard-workbench/layers/new/l.png", dataUrl })).toThrow(/registered/);
+    expect(() => op.api.writeLayerPng({ folderPath: f.folder, bitmapPath: ".storyboard-flow/layers/new/l.png", dataUrl })).toThrow(/registered/);
     expect(() => op.api.ensureLayerAssets({ project: { ...f.initial, shots: [{ ...f.initial.shots[0], id: "new" }] }, folderPath: f.folder, metadataPath: f.metadataPath })).toThrow(/registered/);
     // (1) Register without any recorded completion is refused: a caller cannot forge the fact.
     expect(() => op.registerBlankShot({ shotId: "new" })).toThrow(/no blank completion/);
@@ -648,13 +648,13 @@ it("actual App Add registers only its own recorded blank completion and refuses 
     expect(() => op.registerBlankShot({ shotId: "again" })).toThrow(/already registered/);
     // Multiple new ids in one payload are refused.
     expect(() => op.api.ensureLayerAssets({ project: { ...f.initial, shots: [
-      { ...f.initial.shots[0], id: "new", imagePath: blank.imagePath, layers: [{ ...layer, bitmapPath: ".storyboard-workbench/layers/new/l.png" }] },
-      { ...f.initial.shots[0], id: "extra", imagePath: path.join(f.folder, "extra.tiff"), layers: [{ ...layer, bitmapPath: ".storyboard-workbench/layers/extra/l.png" }] }
+      { ...f.initial.shots[0], id: "new", imagePath: blank.imagePath, layers: [{ ...layer, bitmapPath: ".storyboard-flow/layers/new/l.png" }] },
+      { ...f.initial.shots[0], id: "extra", imagePath: path.join(f.folder, "extra.tiff"), layers: [{ ...layer, bitmapPath: ".storyboard-flow/layers/extra/l.png" }] }
     ] }, folderPath: f.folder, metadataPath: f.metadataPath })).toThrow(/only the registered new shot/);
     // A different (borrowed) image path is refused even for the registered id.
-    expect(() => op.api.ensureLayerAssets({ project: { ...f.initial, shots: [{ ...f.initial.shots[0], id: "new", imagePath: f.initial.shots[0].imagePath, layers: [{ ...layer, bitmapPath: ".storyboard-workbench/layers/new/l.png" }] }] }, folderPath: f.folder, metadataPath: f.metadataPath })).toThrow(/registered image path/);
+    expect(() => op.api.ensureLayerAssets({ project: { ...f.initial, shots: [{ ...f.initial.shots[0], id: "new", imagePath: f.initial.shots[0].imagePath, layers: [{ ...layer, bitmapPath: ".storyboard-flow/layers/new/l.png" }] }] }, folderPath: f.folder, metadataPath: f.metadataPath })).toThrow(/registered image path/);
     // A layer outside the registered shot's own directory is refused.
-    expect(() => op.api.ensureLayerAssets({ project: { ...f.initial, shots: [{ ...f.initial.shots[0], id: "new", imagePath: blank.imagePath, layers: [{ ...layer, bitmapPath: ".storyboard-workbench/layers/other/l.png" }] }] }, folderPath: f.folder, metadataPath: f.metadataPath })).toThrow(/own paths/);
+    expect(() => op.api.ensureLayerAssets({ project: { ...f.initial, shots: [{ ...f.initial.shots[0], id: "new", imagePath: blank.imagePath, layers: [{ ...layer, bitmapPath: ".storyboard-flow/layers/other/l.png" }] }] }, folderPath: f.folder, metadataPath: f.metadataPath })).toThrow(/own paths/);
     expect(writes).toBe(0);
   } finally { if (other) await rm(other, { recursive: true, force: true }); await f.cleanup(); }
 });
@@ -804,7 +804,7 @@ it.each(["unknown", "retained-transaction"] as const)("actual App Add first-shot
     const chooseApi: any = {
       selectFolder: async () => "/chosen",
       // A fallback here would have run the legacy recovery/preview path; it must never happen.
-      openFolderByPath: async () => { legacyOpens++; return { folderPath: "/chosen", folderName: "c", metadataPath: "/chosen/.storyboard-workbench/storyboard.project.json", images: [], ...(sourceState === "retained-transaction" ? { normalSaveOpenRecoveryRequired: "Pending transaction prevents open" } : {}) }; },
+      openFolderByPath: async () => { legacyOpens++; return { folderPath: "/chosen", folderName: "c", metadataPath: "/chosen/.storyboard-flow/storyboard.project.json", images: [], ...(sourceState === "retained-transaction" ? { normalSaveOpenRecoveryRequired: "Pending transaction prevents open" } : {}) }; },
       createBlankShot: async () => { effects++; throw new Error("must not create"); },
       writeLayerPng: async () => { effects++; }, readLayerPng: async () => undefined, ensureLayerAssets: async (payload: any) => { effects++; return payload; },
       getRecentFolders: async () => []
@@ -824,7 +824,7 @@ it.each(["unknown", "retained-transaction"] as const)("actual App Add first-shot
 
     // Flag-off keep: without the owned port the legacy raw branch is still used.
     let legacyOpens2 = 0, manualLoads2 = 0;
-    const legacyApi: any = { ...chooseApi, openFolderByPath: async () => { legacyOpens2++; return { folderPath: "/chosen", folderName: "c", metadataPath: "/chosen/.storyboard-workbench/storyboard.project.json", images: [] }; } };
+    const legacyApi: any = { ...chooseApi, openFolderByPath: async () => { legacyOpens2++; return { folderPath: "/chosen", folderName: "c", metadataPath: "/chosen/.storyboard-flow/storyboard.project.json", images: [] }; } };
     const c2 = useAddShotController({ isImageImportLocked: () => false, api: legacyApi, blankShotPreset: "16:9",
       captureWorkspace: () => origin, isCurrentWorkspace: (r: object) => r === origin, createTransparentLayerDataUrl: transparentPng,
       folderPath: undefined, metadataPath: undefined, primarySelectedShotId: undefined, projectRef: f.projectRef,

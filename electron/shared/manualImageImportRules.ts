@@ -1,6 +1,6 @@
 // Finite, explicit manual image Import admission; not Save/autoImport permission.
 import { isCertifiedPendingBakeEntry } from "./pendingBakeRules.js";
-export type ManualImportShot = { id: string; imagePath: string; layers?: unknown[]; sketchLayers?: { strokes: unknown[] }[]; imageLayerEdits?: unknown[]; swb?: { status: string } };
+export type ManualImportShot = { id: string; imagePath: string; layers?: unknown[]; sketchLayers?: { strokes: unknown[] }[]; imageLayerEdits?: unknown[]; flow?: { status: string } };
 // Automatic refresh is not a user Import decision: no fresh, dirty, preserve or duplicate.
 export const automaticImageImportAdmission = <S extends ManualImportShot>(project: { shots: S[]; parkedShots?: S[]; pendingBake?: unknown }, dirtyShotIds: string[] = []) => {
   const admitted = manualImageImportAdmission(project);
@@ -22,14 +22,14 @@ export const manualImageImportAdmission = <S extends ManualImportShot>(project: 
     // descriptor is eligible; main additionally proves that its PNG does not exist.
     const expected = {
       id: "layer-image", kind: "image", name: "Image", visible: true, locked: false, opacity: 1,
-      blendMode: "normal", order: 0, bitmapPath: `.storyboard-workbench/layers/${shot.id}/layer-image.png`,
-      width: (shot.swb as { canvasWidth?: number })?.canvasWidth, height: (shot.swb as { canvasHeight?: number })?.canvasHeight
+      blendMode: "normal", order: 0, bitmapPath: `.storyboard-flow/layers/${shot.id}/layer-image.png`,
+      width: (shot.flow as { canvasWidth?: number })?.canvasWidth, height: (shot.flow as { canvasHeight?: number })?.canvasHeight
     };
     const layer = shot.layers?.[0];
     const defaults = !shot.layers?.length || shot.layers.length === 1 && record(layer) &&
       Object.keys(layer).length === Object.keys(expected).length && Object.entries(expected).every(([key, value]) => layer[key] === value);
-    const fresh = !entry && shot.swb?.status === "non-swb" && defaults && !shot.imageLayerEdits?.length && !shot.sketchLayers?.some(l => l.strokes.length);
-    if (!fresh && (!entry || !["owned", "compatible-external-edit"].includes(shot.swb?.status ?? ""))) throw new Error("Import compatibility is unknown; internal assets and sources were preserved");
-    return { shot, fresh, external: shot.swb?.status === "compatible-external-edit", entry: entry as { state: "synced" | "pending"; acceptedOutputIdentity: string; editToken?: string } | undefined };
+    const fresh = !entry && shot.flow?.status === "non-flow" && defaults && !shot.imageLayerEdits?.length && !shot.sketchLayers?.some(l => l.strokes.length);
+    if (!fresh && (!entry || !["owned", "compatible-external-edit"].includes(shot.flow?.status ?? ""))) throw new Error("Import compatibility is unknown; internal assets and sources were preserved");
+    return { shot, fresh, external: shot.flow?.status === "compatible-external-edit", entry: entry as { state: "synced" | "pending"; acceptedOutputIdentity: string; editToken?: string } | undefined };
   });
 };

@@ -17,7 +17,7 @@ it.each(["park", "restore"] as const)("real Pending %s retains published locatio
     await fs.writeFile(source, old);
     const backup = path.join(root, "original.backup"), temp = path.join(root, "materialized.tiff");
     const rollback = vi.fn(), commit = vi.fn(), journalRollback = vi.fn();
-    const metadataPath = path.join(root, ".storyboard-workbench/project.json");
+    const metadataPath = path.join(root, ".storyboard-flow/project.json");
     const project = { shots: [{ id: "s", imagePath: source, fileName: "source.tiff" }] };
     const handlers = createWorkspacePendingAppHandlers({
       uniquePath: async (folder, name) => path.join(folder, name),

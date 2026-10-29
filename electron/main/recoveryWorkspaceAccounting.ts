@@ -11,7 +11,7 @@ export const scanRecoveryWorkspace = async (requested: string, budget: RecoveryB
   if (!Number.isSafeInteger(budget.bytes) || budget.bytes <= 0 || !Number.isSafeInteger(budget.records) || budget.records <= 0) throw new Error('Recovery accounting unknown budget');
   const root = await fs.realpath(requested);
   if (root !== requested) throw new Error('Recovery accounting workspace alias');
-  const metadata = path.join(root, '.storyboard-workbench');
+  const metadata = path.join(root, '.storyboard-flow');
   const parent = await fs.lstat(metadata, { bigint: true });
   if (!parent.isDirectory() || parent.isSymbolicLink() || await fs.realpath(metadata) !== metadata) throw new Error('Recovery accounting parent identity');
   const fingerprint = createHash('sha256');

@@ -8,10 +8,10 @@ import { createOriginWorkspaceAccounting } from './originWorkspaceAccounting';
 
 test('failed Save preserves its original failure result when the explicitly handled failure-retention task rejects',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'prepared-declared-retention-')),userData=await fs.mkdtemp(path.join(os.tmpdir(),'prepared-declared-data-'));
- const meta=path.join(root,'.storyboard-workbench/storyboard.project.json'),png=path.join(root,'.storyboard-workbench/layers/s/l.png'),tiff=path.join(root,'a.tiff');
+ const meta=path.join(root,'.storyboard-flow/storyboard.project.json'),png=path.join(root,'.storyboard-flow/layers/s/l.png'),tiff=path.join(root,'a.tiff');
  await fs.mkdir(path.dirname(png),{recursive:true,mode:0o700});
  const oldTiff=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).tiff().toBuffer(),oldPNG=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer();
- const project={id:'p',shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'l',kind:'image',width:2,height:2,bitmapPath:path.relative(root,png)}]}]};
+ const project={id:'p',shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'l',kind:'image',width:2,height:2,bitmapPath:path.relative(root,png)}]}]};
  const original=Buffer.from(JSON.stringify(project)+'\n');await fs.writeFile(meta,original,{mode:0o600});await fs.writeFile(png,oldPNG,{mode:0o600});await fs.writeFile(tiff,oldTiff,{mode:0o600});
  const accounting=createOriginWorkspaceAccounting({userData:()=>userData,python:'python3',script:path.resolve('scripts/recovery-origin-permissions.py')}),reserve=accounting.reserve;
  let failRetention=false,failures=0;const retentionError=new Error('synthetic failure at admitted retention effect entry');
@@ -27,20 +27,20 @@ test('failed Save preserves its original failure result when the explicitly hand
 
 test('preparation refuses unsupported deleted inventory before invoking original Save', async () => {
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'prepared-refuse-'));
- await fs.mkdir(path.join(root,'.storyboard-workbench'),{mode:0o700});
+ await fs.mkdir(path.join(root,'.storyboard-flow'),{mode:0o700});
  const frame={},sender={mainFrame:frame};let effects=0;
  const service=createPreparedWorkspaceSave({budget:{bytes:1048576,records:100,assets:16,jsonDepth:40},python:'python3',script:path.join(process.cwd(),'scripts/recovery-content-permissions.py')});
- await expect(service.run({sender,senderFrame:frame} as any,{folderPath:root,metadataPath:path.join(root,'.storyboard-workbench/storyboard.project.json'),normalSave:true,project:{shots:[],pendingDeletedShots:[{}]},recoveryContent:{projectRaw:{shots:[]},desiredAssets:[],effectFacts:{}}},async()=>{effects++;return {}; })).rejects.toThrow();
+ await expect(service.run({sender,senderFrame:frame} as any,{folderPath:root,metadataPath:path.join(root,'.storyboard-flow/storyboard.project.json'),normalSave:true,project:{shots:[],pendingDeletedShots:[{}]},recoveryContent:{projectRaw:{shots:[]},desiredAssets:[],effectFacts:{}}},async()=>{effects++;return {}; })).rejects.toThrow();
  expect(effects).toBe(0);
- expect(await fs.readdir(path.join(root,'.storyboard-workbench'))).toEqual([]);
+ expect(await fs.readdir(path.join(root,'.storyboard-flow'))).toEqual([]);
 });
 
 test('g1 full-byte readback precedes original effect and cold read survives source replacement',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'prepared-original-'));
- const meta=path.join(root,'.storyboard-workbench/storyboard.project.json'),png=path.join(root,'.storyboard-workbench/layers/s/l.png'),tiff=path.join(root,'a.tiff');
+ const meta=path.join(root,'.storyboard-flow/storyboard.project.json'),png=path.join(root,'.storyboard-flow/layers/s/l.png'),tiff=path.join(root,'a.tiff');
  await fs.mkdir(path.dirname(png),{recursive:true,mode:0o700});
  const oldTiff=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).tiff().toBuffer(),oldPNG=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer();
- const project={id:'p',shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'l',kind:'image',width:2,height:2,bitmapPath:path.relative(root,png)}]}],futureRaw:{unknown:42}};
+ const project={id:'p',shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'l',kind:'image',width:2,height:2,bitmapPath:path.relative(root,png)}]}],futureRaw:{unknown:42}};
  const json=Buffer.from(JSON.stringify(project)+'\n');
  await fs.writeFile(meta,json,{mode:0o600});await fs.writeFile(png,oldPNG,{mode:0o600});await fs.writeFile(tiff,oldTiff,{mode:0o600});
  const frame={},sender={mainFrame:frame};

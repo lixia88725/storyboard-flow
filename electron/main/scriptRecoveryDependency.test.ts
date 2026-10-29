@@ -15,7 +15,7 @@ import { createProject } from "../../src/shared/projectOps";
 it("actual outer Script recovery refuses PNG and TIFF deletion when shared preview recovery fails", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "script-recovery-dependency-"));
   try {
-    const image = path.join(root, "blank.tiff"), bitmapPath = ".storyboard-workbench/layers/new/paint.png";
+    const image = path.join(root, "blank.tiff"), bitmapPath = ".storyboard-flow/layers/new/paint.png";
     await sharp({ create: { width: 2, height: 2, channels: 4, background: "white" } }).tiff().toFile(image);
     const project = createProject("Synthetic");
     const next = { ...project, shots: [{ id: "new", imagePath: image, layers: [{ bitmapPath, kind: "paint", width: 2, height: 2 }] }] };
@@ -26,7 +26,7 @@ it("actual outer Script recovery refuses PNG and TIFF deletion when shared previ
     // receipt and identity-checked cleanup stay real. No real user files involved.
     const bindings = { ...fs, ...safety, path, sharp, withLayerFileOperation, recoverFailedImport, ImportRecoveryIncompleteError,
       normalSaveImportFailure, removeOwnedFile, hasPendingFileTransaction: async () => false,
-      assertNormalSaveAdmission: async () => {}, projectNeedsSwbImport: () => false,
+      assertNormalSaveAdmission: async () => {}, projectNeedsFlowImport: () => false,
       importStoryboardScriptMarkdown: async () => ({ project: next, rollbackPreviews: restorePreview,
         rollbackCreatedFiles: removeBlank, rollback: async () => { await restorePreview(); await removeBlank(); } }),
       resolveLayerAssetPath: (folder: string, relative: string) => path.join(folder, relative),
@@ -38,7 +38,7 @@ it("actual outer Script recovery refuses PNG and TIFF deletion when shared previ
     const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
     const selected = tree.statements.filter(n => ts.isVariableStatement(n) && ["ensureProjectLayerAssets", "createTransparentLayerPng"].includes(n.declarationList.declarations[0].name.getText(tree)));
     expect(selected).toHaveLength(2);
-    const outer = source.slice(source.indexOf('  ipcMain.handle("workspace:importSwbFormat"'), source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
+    const outer = source.slice(source.indexOf('  ipcMain.handle("workspace:importFlowFormat"'), source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
     const code = ts.transpileModule(selected.map(n => n.getText(tree)).join("\n") + outer, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
     const entries = Object.entries(bindings).filter(([key]) => key !== "default");
     new Function(...entries.map(([key]) => key), code)(...entries.map(([, value]) => value));

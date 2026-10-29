@@ -16,7 +16,7 @@ import { readLayerPng, writeLayerPng, deleteLayerPng } from '../../electron/main
 const deferred = () => { let release!: () => void; const promise = new Promise<void>(r => release = r); return { promise, release }; };
 const setup = async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'history-compensation-'));
-  const paths = ['.storyboard-workbench/layers/s/a.png', '.storyboard-workbench/layers/s/b.png'];
+  const paths = ['.storyboard-flow/layers/s/a.png', '.storyboard-flow/layers/s/b.png'];
   const red = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'red' } }).png().toBuffer();
   const blue = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'blue' } }).png().toBuffer();
   const tiff = await sharp(red).tiff().toBuffer();
@@ -24,10 +24,10 @@ const setup = async () => {
   await fs.mkdir(path.dirname(path.join(root, paths[0])), { recursive: true, mode: 0o700 });
   for (const file of paths) await fs.writeFile(path.join(root, file), red, { mode: 0o600 });
   await fs.writeFile(path.join(root, 's.tiff'), tiff, { mode: 0o600 });
-  const project: any = { id: 'p', name: 'current', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', order: 0, swb: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: paths.map((bitmapPath, i) => ({ id: i ? 'b' : 'a', kind: 'paint', width: 2, height: 2, bitmapPath })) }], dialogues: [], pendingBake: { version: 1, shots: { s: { state: 'synced', acceptedOutputIdentity: createHash('sha256').update(tiff).digest('hex') } } } };
+  const project: any = { id: 'p', name: 'current', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', order: 0, flow: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: paths.map((bitmapPath, i) => ({ id: i ? 'b' : 'a', kind: 'paint', width: 2, height: 2, bitmapPath })) }], dialogues: [], pendingBake: { version: 1, shots: { s: { state: 'synced', acceptedOutputIdentity: createHash('sha256').update(tiff).digest('hex') } } } };
   const ref = { current: project }, folderRef = { current: root }, queue = createBitmapLayerWriteQueue(), identity = { current: {} };
   const status = vi.fn(), select = vi.fn(), fileSync = vi.fn(), saveState = vi.fn(), dirty = vi.fn(), persist = vi.fn(async () => undefined);
-  const owner = createNormalSaveProjectOwner({ projectRef: ref, setProject: vi.fn(), freshToken: () => 'history-token', queue, readIdentity: async () => project.pendingBake.shots.s.acceptedOutputIdentity, persist, output: async () => [], captureEffectPersistence: () => ({ folderPath: root, metadataPath: path.join(root, '.storyboard-workbench/storyboard.project.json'), persist }) });
+  const owner = createNormalSaveProjectOwner({ projectRef: ref, setProject: vi.fn(), freshToken: () => 'history-token', queue, readIdentity: async () => project.pendingBake.shots.s.acceptedOutputIdentity, persist, output: async () => [], captureEffectPersistence: () => ({ folderPath: root, metadataPath: path.join(root, '.storyboard-flow/storyboard.project.json'), persist }) });
   const api = { readLayerPng: vi.fn(readLayerPng), writeLayerPng: vi.fn(writeLayerPng), deleteLayerPng: vi.fn(deleteLayerPng) };
   const history = useProjectHistoryController({
     captureWorkspace: () => { const token = identity.current; return () => token === identity.current; },

@@ -15,7 +15,7 @@ FIELDS = ['uid', 'gid', 'mode', 'flags', 'xattrs']
 
 def partition_key(certificate):
     """Identity only; full native observations are separately verified below."""
-    if not isinstance(certificate,dict) or set(certificate)!=set(['schema','version','expected','observed']) or certificate['schema']!='swb.finite-source-policy' or certificate['version']!=1:
+    if not isinstance(certificate,dict) or set(certificate)!=set(['schema','version','expected','observed']) or certificate['schema']!='flow.finite-source-policy' or certificate['version']!=1:
         raise ValueError('unknown partition source certificate')
     expected=certificate['expected']
     if not isinstance(expected,dict) or set(expected)!=set(FIELDS) or any(type(expected[k]) is not int or expected[k]<0 or expected[k]>9007199254740991 for k in ['uid','gid','mode','flags']) or expected['mode']>0o777 or expected['mode']&0o111 or expected['flags']!=0 or not isinstance(expected['xattrs'],dict):
@@ -27,7 +27,7 @@ def partition_key(certificate):
         if not raw or b'\x00' in raw or base64.b64encode(raw).decode('ascii')!=name or base64.b64encode(data).decode('ascii')!=value:
             raise ValueError('noncanonical partition attributes')
         attributes.append([name,value])
-    core=['swb.recovery-policy.v2','darwin',expected['uid'],expected['gid'],expected['mode'],expected['flags'],'verified-absent',attributes]
+    core=['flow.recovery-policy.v2','darwin',expected['uid'],expected['gid'],expected['mode'],expected['flags'],'verified-absent',attributes]
     return hashlib.sha256(json.dumps(core,separators=(',',':'),ensure_ascii=True).encode('ascii')).hexdigest()
 
 def policy(sources, byte_limit):
@@ -91,14 +91,14 @@ def authorize(request):
             info=helper.inspect_mac(source)
             if os.lstat(source)!=before or helper.inspect_mac(source)!=info: raise ValueError('memory source changed')
             observed.append((source,info))
-        return {'authorized':True,'sourcePolicy':{'schema':'swb.memory-observed.v1','observed':observed}}
+        return {'authorized':True,'sourcePolicy':{'schema':'flow.memory-observed.v1','observed':observed}}
     if request['phase']=='capturePolicy':
         expected,observed=policy(request['sources'],request['sourceByteLimit'])
-        return {'authorized':True,'sourcePolicy':{'schema':'swb.finite-source-policy','version':1,'expected':expected,'observed':observed}}
+        return {'authorized':True,'sourcePolicy':{'schema':'flow.finite-source-policy','version':1,'expected':expected,'observed':observed}}
     target=os.path.abspath(request['path']);root=os.path.realpath(request['root']);phase=request['phase']
     # Constrain writes to the fixed namespace and inspect actual parent chain.
-    namespace=os.path.join(root,'.storyboard-workbench','workspace-recovery-v1')
-    v2=os.path.join(root,'.storyboard-workbench','workspace-recovery-v2')
+    namespace=os.path.join(root,'.storyboard-flow','workspace-recovery-v1')
+    v2=os.path.join(root,'.storyboard-flow','workspace-recovery-v2')
     policies=os.path.join(v2,'policies')
     if target in [v2,policies]:
         if phase!='directory': raise ValueError('partition containers are directories only')
@@ -106,16 +106,16 @@ def authorize(request):
         key=pathlib.Path(os.path.relpath(target,policies)).parts[0]
         if not re.fullmatch(r'[a-f0-9]{64}',key) or partition_key(request.get('sourcePolicy'))!=key:
             raise ValueError('partition key/source policy mismatch')
-    elif target != os.path.join(root,'.storyboard-workbench') and not target.startswith(namespace+os.sep) and target!=namespace:
+    elif target != os.path.join(root,'.storyboard-flow') and not target.startswith(namespace+os.sep) and target!=namespace:
         raise ValueError('outside bound recovery namespace')
     info=helper.inspect_mac(target)
     if phase=='directory':
         if not stat.S_ISDIR(os.lstat(target).st_mode) or info['kind']!='ordinary':raise ValueError('unsafe namespace directory')
-        if target!=os.path.join(root,'.storyboard-workbench') and (info['mode']!=0o700 or info['uid']!=os.getuid()):raise ValueError('private namespace requires owner-only 0700')
+        if target!=os.path.join(root,'.storyboard-flow') and (info['mode']!=0o700 or info['uid']!=os.getuid()):raise ValueError('private namespace requires owner-only 0700')
         return {'authorized':True}
     certificate=request.get('sourcePolicy')
     if certificate is not None:
-        if set(certificate)!=set(['schema','version','expected','observed']) or certificate['schema']!='swb.finite-source-policy' or certificate['version']!=1:
+        if set(certificate)!=set(['schema','version','expected','observed']) or certificate['schema']!='flow.finite-source-policy' or certificate['version']!=1:
             raise ValueError('unknown source policy certificate')
         expected=certificate['expected'];observed=certificate['observed']
         partition_key(certificate)

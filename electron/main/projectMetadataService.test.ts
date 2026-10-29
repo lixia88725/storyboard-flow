@@ -9,7 +9,7 @@ describe("projectMetadataService", () => {
       throw error;
     });
 
-    await expect(readProjectMetadata("/project/.storyboard-workbench/storyboard.project.json", {
+    await expect(readProjectMetadata("/project/.storyboard-flow/storyboard.project.json", {
       readFile
     })).resolves.toBeUndefined();
   });
@@ -25,7 +25,7 @@ describe("projectMetadataService", () => {
     };
     const readFile = vi.fn(async () => JSON.stringify(project));
 
-    await expect(readProjectMetadata("/project/.storyboard-workbench/storyboard.project.json", {
+    await expect(readProjectMetadata("/project/.storyboard-flow/storyboard.project.json", {
       readFile
     })).resolves.toEqual(project);
   });
@@ -36,7 +36,7 @@ describe("projectMetadataService", () => {
       throw readError;
     });
 
-    await expect(readProjectMetadata("/project/.storyboard-workbench/storyboard.project.json", {
+    await expect(readProjectMetadata("/project/.storyboard-flow/storyboard.project.json", {
       readFile
     })).rejects.toThrow(readError);
   });

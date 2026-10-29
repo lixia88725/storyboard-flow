@@ -29,10 +29,10 @@ const rejectedPayloads = () => [unknownPayload(), ...[
   { version: 1, shots: { s: { state: "unknown" } } }, { version: 17, shots: {} }, "corrupt", { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: "bad" } } }
 ].map(raw => ({ ...unknownPayload(), project: { ...unknownPayload().project, pendingBake: raw } }))];
 
-it.each(["workspace:exportPhotoshopTiffs", "workspace:importSwbFormat"])("actual %s rejects unknown before ensure/Import/metadata/output", async channel => {
+it.each(["workspace:exportPhotoshopTiffs", "workspace:importFlowFormat"])("actual %s rejects unknown before ensure/Import/metadata/output", async channel => {
   const io = vi.fn(async () => { throw new Error("effect escaped admission"); });
   const invoke = handler(channel, { assertNormalSaveAdmission: (p: unknown) => admission(io)(p),
-    ensureProjectLayerAssets: io, exportPhotoshopLayeredTiffs: io, projectNeedsSwbImport: () => true, withLayerFileOperation,
+    ensureProjectLayerAssets: io, exportPhotoshopLayeredTiffs: io, projectNeedsFlowImport: () => true, withLayerFileOperation,
     importStoryboardScriptMarkdown: io, recoverFailedImport: async (e: unknown) => { throw e; } });
   for (const payload of rejectedPayloads()) {
     const before = JSON.stringify(payload);
@@ -60,7 +60,7 @@ it.each(["moveShotsToPending", "restoreShotsFromPending"] as const)("actual Pend
   registration("registerWorkspacePendingIpcHandlers", { ipcMain: {},
     registerWorkspacePendingIpcHandlers: (_ipc: unknown, handlers: typeof runtime) => { runtime = handlers; },
     createWorkspacePendingAppHandlers, beginPendingFileTransaction: io, writeProjectMetadata: io, uniquePath: io,
-    writeSwbMetadataToTiffs: io, assertNormalSaveAdmission: admission(io) });
+    writeFlowMetadataToTiffs: io, assertNormalSaveAdmission: admission(io) });
   for (const payload of rejectedPayloads()) {
     const before = JSON.stringify(payload);
     await expect(runtime[method](payload, ["s"])).rejects.toThrow(/compatibility is unknown/);

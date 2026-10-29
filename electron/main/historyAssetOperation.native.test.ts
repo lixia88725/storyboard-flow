@@ -25,13 +25,13 @@ const verifyFreshProcess=async(root:string,nonce:string,retained:unknown)=>{
  await fs.writeFile(path.join(root,'HISTORY-INERT-COLD-OS.json'),stdout,{flag:'wx'});
 };
 const fixture=async(holdNative=false,failCloseReadback=false,readOnlySecond:boolean|'both'=false)=>{
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'private-history-native-')),paths=['.storyboard-workbench/layers/s/a.png','.storyboard-workbench/layers/s/b.png'];
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'private-history-native-')),paths=['.storyboard-flow/layers/s/a.png','.storyboard-flow/layers/s/b.png'];
  const red=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer(),blue=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer(),tiff=await sharp(red).tiff().toBuffer(),url=(b:Buffer)=>'data:image/png;base64,'+b.toString('base64');
  await fs.mkdir(path.dirname(path.join(root,paths[0])),{recursive:true,mode:0o700});for(const p of paths)await fs.writeFile(path.join(root,p),red,{mode:0o600});await fs.writeFile(path.join(root,'s.tiff'),tiff,{mode:0o600});
  if(readOnlySecond)await fs.chmod(path.join(root,paths[1]),0o400);
  if(readOnlySecond==='both')await fs.chmod(path.join(root,paths[0]),0o400);
- const project:any={id:'p',name:'original',shots:[{id:'s',imagePath:path.join(root,'s.tiff'),fileName:'s.tiff',swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:paths.map((bitmapPath,i)=>({id:i?'b':'a',kind:'paint',bitmapPath,width:2,height:2}))}],dialogues:[],pendingBake:{version:1,shots:{s:{state:'synced',acceptedOutputIdentity:createHash('sha256').update(tiff).digest('hex')}}}};
- const metadata=path.join(root,'.storyboard-workbench/storyboard.project.json'),md=path.join(root,'storyboard-script.md');
+ const project:any={id:'p',name:'original',shots:[{id:'s',imagePath:path.join(root,'s.tiff'),fileName:'s.tiff',flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:paths.map((bitmapPath,i)=>({id:i?'b':'a',kind:'paint',bitmapPath,width:2,height:2}))}],dialogues:[],pendingBake:{version:1,shots:{s:{state:'synced',acceptedOutputIdentity:createHash('sha256').update(tiff).digest('hex')}}}};
+ const metadata=path.join(root,'.storyboard-flow/storyboard.project.json'),md=path.join(root,'storyboard-script.md');
  const write=async(p:any)=>{await fs.writeFile(metadata,JSON.stringify(p,null,2)+'\n',{mode:0o600});await fs.writeFile(md,serializeStoryboardScriptMarkdown(p),{mode:0o600});return {};};await write(project);
  const hold=path.join(root,'HOLD-NATIVE'),entered=path.join(root,'NATIVE-ENTERED'),release=path.join(root,'RELEASE-NATIVE'),wrapper=path.join(root,'native-wrapper.py');
  if(holdNative)await fs.writeFile(wrapper,`import importlib.util, pathlib, time
@@ -297,7 +297,7 @@ test('a known two-asset failed prefix preserves original/desired/actual with the
   const retained:any=await s.service.readReadonly(s.root);expect(retained.effectFacts.historyOperation).toMatchObject({operation,state:'failed',next:1,metadataStage:'failed',acknowledged:false});
   expect(retained.effectFacts.historyOperation.assets[1].restoreError).toContain('PNG_REFUSED');
   for(const buffer of [s.red,s.blue])expect(retained.assets.some((a:any)=>a.sourceDataUrl===s.url(buffer))).toBe(true);
-  const policyRoot=path.join(s.root,'.storyboard-workbench/workspace-recovery-v2/policies');
+  const policyRoot=path.join(s.root,'.storyboard-flow/workspace-recovery-v2/policies');
   const policies=await Promise.all((await fs.readdir(policyRoot)).map(async key=>JSON.parse(await fs.readFile(path.join(policyRoot,key,'namespace.json'),'utf8'))));
   const stricter=policies.find(p=>p.sourcePolicy.expected.mode===0o400);expect(stricter).toBeDefined();
   const contributors=stricter.sourcePolicy.observed.filter(([file]:[string,unknown])=>file===refused);
@@ -332,7 +332,7 @@ test('immediate original History failure retention already respects a newly read
   const {operation}=await s.begin();await s.service.stepHistoryAssets(s.event,{operation,index:0});const refused=path.join(s.root,s.paths[1]);await fs.chmod(refused,0o400);
   await expect(s.service.stepHistoryAssets(s.event,{operation,index:1})).rejects.toThrow('PNG_REFUSED');
   expect((await s.service.readReadonly(s.root)).revision).toBe('history-failed:'+operation);
-  const root=path.join(s.root,'.storyboard-workbench/workspace-recovery-v2/policies');
+  const root=path.join(s.root,'.storyboard-flow/workspace-recovery-v2/policies');
   const keys=await fs.readdir(root).catch(error=>{if(error.code==='ENOENT')return [];throw error;});
   const policies=await Promise.all(keys.map(async key=>JSON.parse(await fs.readFile(path.join(root,key,'namespace.json'),'utf8'))));
   expect(policies.some(p=>p.sourcePolicy.expected.mode===0o400&&p.sourcePolicy.observed.some(([file,info]:[string,{mode:number}])=>file===refused&&info.mode===0o400))).toBe(true);
@@ -361,7 +361,7 @@ test('stricter archived history does not block a genuine completed source, but c
   expect(await cold.acknowledge(s.event,{folderPath:s.root,nonce:persisted.ordinaryPersistenceNonce,project:s.project})).toBe(true);
   await fs.chmod(second,0o400);createPreparedWorkspaceSave(options);
   await expect(assertPhysicalWorkspaceWriterTargets([path.join(s.root,s.paths[0])])).rejects.toThrow('protected');
-  const policyRoot=path.join(s.root,'.storyboard-workbench/workspace-recovery-v2/policies');
+  const policyRoot=path.join(s.root,'.storyboard-flow/workspace-recovery-v2/policies');
   const namespaces=await Promise.all((await fs.readdir(policyRoot)).map(async key=>JSON.parse(await fs.readFile(path.join(policyRoot,key,'namespace.json'),'utf8'))));
   expect(namespaces.some(n=>n.sourcePolicy.expected.mode===0o400)).toBe(true);
  }finally{await s.cleanup();}
@@ -466,7 +466,7 @@ test.each(['stable observation','independent identical-byte replacement'] as con
   expect(await s.service.certifyRetainedSet(s.event,{slots:[capture]})).toBe(true);
   const retained:any=await s.service.readReadonly(s.root),facts=retained.effectFacts.historyOperation;
   expect(facts.metadataObservation).toMatchObject({kind:'original-callback-failure-observation',acknowledged:false,attemptedProject:target});
-  const json=facts.inventory.find((v:any)=>v.file==='.storyboard-workbench/storyboard.project.json'),md=facts.inventory.find((v:any)=>v.file==='storyboard-script.md');
+  const json=facts.inventory.find((v:any)=>v.file==='.storyboard-flow/storyboard.project.json'),md=facts.inventory.find((v:any)=>v.file==='storyboard-script.md');
   expect(Buffer.from(json.actual.bytes,'base64').toString()).toBe(JSON.stringify(target,null,2)+'\n');expect(Buffer.from(md.actual.bytes,'base64')).toEqual(beforeMD);
   await verifyFreshProcess(s.root,s.oldNonce,retained);
   expect(await fs.readFile(s.md)).toEqual(beforeMD);expect((await fs.stat(s.md)).mode&0o777).toBe(0o400);
@@ -497,7 +497,7 @@ test.each(['stable','narrower source','changed after observation'] as const)('a 
   expect(await fs.readFile(first)).toEqual(green);
   if(scenario==='narrower source'){
    expect((await fs.stat(first)).mode&0o777).toBe(0o400);
-   const policies=path.join(s.root,'.storyboard-workbench/workspace-recovery-v2/policies');
+   const policies=path.join(s.root,'.storyboard-flow/workspace-recovery-v2/policies');
    expect((await Promise.all((await fs.readdir(policies)).map(async key=>JSON.parse(await fs.readFile(path.join(policies,key,'namespace.json'),'utf8'))))).some(p=>p.sourcePolicy.expected.mode===0o400)).toBe(true);
   }
  }finally{await s.cleanup();}
@@ -547,7 +547,7 @@ test.each(['prepared-entry','ordinary-ack','ordinary-success'] as const)('a genu
 // refusing the whole close, and must not turn absence into a present value.
 test('History Close normalizes own-undefined renderer Project fields into durable JSON',async()=>{
  const s=await fixture();try{
-  const target={...s.project,name:'historical',shots:s.project.shots.map((shot:any)=>({...shot,presentation:undefined,imageLayerEdits:undefined,swb:{...shot.swb,sourceKind:undefined}}))};
+  const target={...s.project,name:'historical',shots:s.project.shots.map((shot:any)=>({...shot,presentation:undefined,imageLayerEdits:undefined,flow:{...shot.flow,sourceKind:undefined}}))};
   // The real renderer begins the History operation with its in-memory target
   // Project, so Main's own retained copy must be normalized too, not just JSON.
   const {operation}=await s.service.beginHistoryAssets(s.event,{folderPath:s.root,project:s.project,targetProject:target,assets:s.paths.map(bitmapPath=>({bitmapPath,dataUrl:s.url(s.blue)}))});

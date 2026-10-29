@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract Photoshop layered TIFF raster layers into SWB import assets."""
+"""Extract Photoshop layered TIFF raster layers into FLOW import assets."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-deps_dir = os.environ.get("SWB_PYTHON_DEPS_DIR")
+deps_dir = os.environ.get("FLOW_PYTHON_DEPS_DIR")
 if deps_dir:
     sys.path.insert(0, deps_dir)
 
@@ -25,7 +25,7 @@ SUPPORTED_BLEND_MODES = {
     PsdBlendMode.MULTIPLY: "multiply",
     PsdBlendMode.SCREEN: "screen",
 }
-NO_LAYERS_MARKER = "SWB_PHOTOSHOP_TIFF_NO_LAYERS"
+NO_LAYERS_MARKER = "FLOW_PHOTOSHOP_TIFF_NO_LAYERS"
 
 
 class NoPhotoshopLayersError(Exception):

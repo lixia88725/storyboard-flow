@@ -18,11 +18,11 @@ const createOptions = (
   copyFile: vi.fn(async (_source, target, onCreated) => { onCreated(receipt(target)); }),
   createId: () => "copy-id",
   createPreview: vi.fn(async (_image, _root, _readOnly, onReceipt) => {
-    const previewPath = "/project/.storyboard-workbench/previews/copy.png";
+    const previewPath = "/project/.storyboard-flow/previews/copy.png";
     onReceipt({ previewPath, effect: "reused", retainedPaths: [], rollback: async () => {}, commit: async () => {} });
     return previewPath;
   }),
-  previewRootForFolder: vi.fn(() => "/project/.storyboard-workbench/previews"),
+  previewRootForFolder: vi.fn(() => "/project/.storyboard-flow/previews"),
   pathEntryExists: vi.fn(async () => false),
   publishImage: vi.fn(async (_source, target, onPublished) => { const value = receipt(target); onPublished(value); return value; }),
   removeOwnedFile: vi.fn(async () => undefined),
@@ -48,8 +48,8 @@ describe("copyShotAssets", () => {
           fileName: "shot.tiff",
           layerCopies: [
             {
-              sourceBitmapPath: ".storyboard-workbench/layers/shot-a/source.png",
-              targetBitmapPath: ".storyboard-workbench/layers/shot-b/target.png"
+              sourceBitmapPath: ".storyboard-flow/layers/shot-a/source.png",
+              targetBitmapPath: ".storyboard-flow/layers/shot-b/target.png"
             }
           ]
         },
@@ -61,12 +61,12 @@ describe("copyShotAssets", () => {
       fileName: "copy-shot.tiff",
       layerCopies: [
         {
-          sourceBitmapPath: ".storyboard-workbench/layers/shot-a/source.png",
-          targetBitmapPath: ".storyboard-workbench/layers/shot-b/target.png"
+          sourceBitmapPath: ".storyboard-flow/layers/shot-a/source.png",
+          targetBitmapPath: ".storyboard-flow/layers/shot-b/target.png"
         }
       ],
       imagePath: "/project/copy-shot.tiff",
-      previewPath: "/project/.storyboard-workbench/previews/copy.png"
+      previewPath: "/project/.storyboard-flow/previews/copy.png"
     });
 
     expect(options.copyFile).toHaveBeenCalledWith(
@@ -74,8 +74,8 @@ describe("copyShotAssets", () => {
       "/project/.storyboard-copy-copy-id.tiff", expect.any(Function)
     );
     expect(options.copyBitmapLayerFile).toHaveBeenCalledWith(
-      "/project/.storyboard-workbench/layers/shot-a/source.png",
-      "/project/.storyboard-workbench/layers/shot-b/target.png", expect.any(Function)
+      "/project/.storyboard-flow/layers/shot-a/source.png",
+      "/project/.storyboard-flow/layers/shot-b/target.png", expect.any(Function)
     );
     expect(options.publishImage).toHaveBeenCalledWith(
       receipt("/project/.storyboard-copy-copy-id.tiff"),
@@ -83,12 +83,12 @@ describe("copyShotAssets", () => {
     );
     expect(options.createPreview).toHaveBeenCalledWith(
       "/project/copy-shot.tiff",
-      "/project/.storyboard-workbench/previews", false, expect.any(Function)
+      "/project/.storyboard-flow/previews", false, expect.any(Function)
     );
   });
 
   it("removes copied assets and temporary image paths when a copy fails", async () => {
-    const copyError = new ProtectedLayerWriteError("refused", "/project/.storyboard-workbench/layers/shot-b/target-b.png", "copy failed", null);
+    const copyError = new ProtectedLayerWriteError("refused", "/project/.storyboard-flow/layers/shot-b/target-b.png", "copy failed", null);
     const options = createOptions({
       copyBitmapLayerFile: vi
         .fn()
@@ -104,12 +104,12 @@ describe("copyShotAssets", () => {
           fileName: "shot.tiff",
           layerCopies: [
             {
-              sourceBitmapPath: ".storyboard-workbench/layers/shot-a/source.png",
-              targetBitmapPath: ".storyboard-workbench/layers/shot-b/target-a.png"
+              sourceBitmapPath: ".storyboard-flow/layers/shot-a/source.png",
+              targetBitmapPath: ".storyboard-flow/layers/shot-b/target-a.png"
             },
             {
-              sourceBitmapPath: ".storyboard-workbench/layers/shot-a/source.png",
-              targetBitmapPath: ".storyboard-workbench/layers/shot-b/target-b.png"
+              sourceBitmapPath: ".storyboard-flow/layers/shot-a/source.png",
+              targetBitmapPath: ".storyboard-flow/layers/shot-b/target-b.png"
             }
           ]
         },
@@ -120,6 +120,6 @@ describe("copyShotAssets", () => {
     // The root target was never published, so deleting it is not authorized.
     expect(options.removeOwnedFile).not.toHaveBeenCalledWith(expect.objectContaining(receipt("/project/copy-shot.tiff")));
     expect(options.removeOwnedFile).toHaveBeenCalledWith(expect.objectContaining(receipt("/project/.storyboard-copy-copy-id.tiff")));
-    expect(options.removeOwnedFile).toHaveBeenCalledWith(expect.objectContaining(receipt("/project/.storyboard-workbench/layers/shot-b/target-a.png")));
+    expect(options.removeOwnedFile).toHaveBeenCalledWith(expect.objectContaining(receipt("/project/.storyboard-flow/layers/shot-b/target-a.png")));
   });
 });

@@ -16,7 +16,7 @@ const layer = (
   opacity: 1,
   blendMode: "normal",
   order,
-  bitmapPath: `.storyboard-workbench/layers/shot-a/${id}.png`,
+  bitmapPath: `.storyboard-flow/layers/shot-a/${id}.png`,
   width: 100,
   height: 100,
   ...overrides

@@ -88,12 +88,12 @@ export const shouldAutosaveAfterLoad = (
 export const hasOnlyCompatibleExternalEdits = (project: Project): boolean => {
   let hasCompatibleEdit = false;
   for (const shot of [...project.shots, ...(project.parkedShots ?? [])]) {
-    if (shot.swb?.status === "compatible-external-edit") {
+    if (shot.flow?.status === "compatible-external-edit") {
       hasCompatibleEdit = true;
       continue;
     }
 
-    if (shot.swb?.status === "non-swb" || shot.swb?.status === "incompatible-external-edit") {
+    if (shot.flow?.status === "non-flow" || shot.flow?.status === "incompatible-external-edit") {
       return false;
     }
   }

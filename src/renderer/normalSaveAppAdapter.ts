@@ -14,7 +14,7 @@ type Api = {
   createFromStoryboardScript?: Window["storyboard"]["createFromStoryboardScript"];
   ensureLayerAssets?: Window["storyboard"]["ensureLayerAssets"];
   exportPhotoshopTiffs?: Window["storyboard"]["exportPhotoshopTiffs"];
-  importSwbFormat?: Window["storyboard"]["importSwbFormat"];
+  importFlowFormat?: Window["storyboard"]["importFlowFormat"];
   checkExternalChanges?: Window["storyboard"]["checkExternalChanges"];
   moveShotsToPending?: Window["storyboard"]["moveShotsToPending"];
   restoreShotsFromPending?: Window["storyboard"]["restoreShotsFromPending"];
@@ -43,8 +43,8 @@ export const createNormalSaveAppAdapter = (ports: {
   captureSaveStatus?: () => () => void;
   onError: (error: unknown) => void;
 }) => {
-  const importScan = async (payload: Parameters<Window["storyboard"]["importSwbFormat"]>[0]): Promise<FolderScanPayload> =>
-    decodeNormalSaveImportResult<FolderScanPayload>(await ports.api().importSwbFormat!(payload));
+  const importScan = async (payload: Parameters<Window["storyboard"]["importFlowFormat"]>[0]): Promise<FolderScanPayload> =>
+    decodeNormalSaveImportResult<FolderScanPayload>(await ports.api().importFlowFormat!(payload));
   const workspace = (project: Project): SaveWorkspacePayload => {
     ports.assertAdmission?.();
     const { folderPath, metadataPath } = ports.paths();
@@ -243,7 +243,7 @@ export const createNormalSaveAppAdapter = (ports: {
         return importScan({ project, folderPath: paths.folderPath!, metadataPath: paths.metadataPath!,
           blankShotPreset: options.blankShotPreset, dirtyShotIds: [...new Set([...options.dirtyShotIds, ...Object.entries(project.pendingBake?.shots ?? {}).filter(([, e]) => e.state === "pending").map(([id]) => id)])], normalSave: true, normalSaveImageImport: true });
       }, scopedPrepare(options.prepare, paths, c), { isCurrent: scope.isCurrent, published: options.published, recoveryRequired: ports.onImportRecoveryRequired, script: scriptStage(options, paths, c),
-        admit: () => { ports.assertImportAdmission?.(); if (!ports.api().importSwbFormat) throw new Error("Image Import API unavailable"); }, persist: importPersist(paths, true) });
+        admit: () => { ports.assertImportAdmission?.(); if (!ports.api().importFlowFormat) throw new Error("Image Import API unavailable"); }, persist: importPersist(paths, true) });
       if (!accepted && sameEpoch(c) && scope.isCurrent()) ports.onError(owner.lastError ?? new Error("Image Import incomplete"));
       return accepted;
     },
@@ -259,7 +259,7 @@ export const createNormalSaveAppAdapter = (ports: {
         return importScan({ project, folderPath: paths.folderPath, metadataPath: paths.metadataPath,
           blankShotPreset: options.blankShotPreset, dirtyShotIds: options.dirtyShotIds, normalSave: true, normalSaveScriptInput: input, normalSaveScriptPlan: plan });
       }, scopedPrepare(options.prepare, paths, c), { isCurrent: scope.isCurrent, published: options.published,
-        admit: () => { ports.assertImportAdmission?.(); if (!ports.api().importSwbFormat) throw new Error("Script Import API unavailable"); },
+        admit: () => { ports.assertImportAdmission?.(); if (!ports.api().importFlowFormat) throw new Error("Script Import API unavailable"); },
         recoveryRequired: ports.onImportRecoveryRequired,
         persist: importPersist(paths) });
       if (!accepted && owner.lastError && sameEpoch(c) && scope.isCurrent()) ports.onError(owner.lastError);
@@ -282,7 +282,7 @@ export const createNormalSaveAppAdapter = (ports: {
         project, folderPath: paths.folderPath!, metadataPath: paths.metadataPath!, blankShotPreset: options.blankShotPreset,
         dirtyShotIds: options.dirtyShotIds, normalSave: true, normalSaveAutoImageImport: true
       }), scopedPrepare(options.prepare, paths, c), { ...scope, dirtyShotIds: options.dirtyShotIds, published: options.published,
-        recoveryRequired: ports.onImportRecoveryRequired, script: scriptStage(options, paths, c), admit: () => { ports.assertImportAdmission?.(); if (!ports.api().importSwbFormat) throw new Error("Image Import API unavailable"); },
+        recoveryRequired: ports.onImportRecoveryRequired, script: scriptStage(options, paths, c), admit: () => { ports.assertImportAdmission?.(); if (!ports.api().importFlowFormat) throw new Error("Image Import API unavailable"); },
         persist: importPersist(paths, true) });
       if (!accepted && started && owner.lastError && sameEpoch(c) && scope.isCurrent()) ports.onError(owner.lastError);
       return accepted;

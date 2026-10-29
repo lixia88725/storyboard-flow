@@ -8,7 +8,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXM
 
 test('retains latest raw content and exact asset bytes without rewriting original workspace files', async () => {
   const root = await temporaryWorkspace('fixture-');
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   await fs.writeFile(path.join(root, 'original.bin'), Buffer.from('original version'));
   const authorize = async () => {}; // Synthetic test certificate only; not production permissions.
   const store = createWorkspaceRecoveryStore({ authorize, budget: { bytes: 100000, records: 100, assets: 10, jsonDepth: 20 } });
@@ -28,18 +28,18 @@ const budget = { bytes: 100000, records: 100, assets: 10, jsonDepth: 20 };
 const caller = { sender: {}, frame: {}, window: {}, document: {} };
 const authorize = async () => {};
 const offer = (revision = 'owner:1') => ({ revision, projectRaw: { text: revision }, viewState: { selected: 'A' }, scriptState: { input: { state: 'unobserved' } }, effectFacts: [{ effect: 'unknown' }], continuationState: { pending: true }, assets: [{ assetId: 'pixels', bytes: revision.endsWith(':2') ? png : previousPNG, role: 'desired', width: 1, height: 1, encoding: 'png' }], requiredAssetIds: ['pixels'] });
-const fixture = async () => { const root = await temporaryWorkspace('fixture-'); await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 }); return root; };
+const fixture = async () => { const root = await temporaryWorkspace('fixture-'); await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 }); return root; };
 
 test('absent recovery probes readability without allocating all unrelated metadata names', async () => {
   const root = await fixture();
-  await fs.writeFile(path.join(root, '.storyboard-workbench', 'unrelated'), 'preserve');
+  await fs.writeFile(path.join(root, '.storyboard-flow', 'unrelated'), 'preserve');
   // Filesystem allocation seam only; actual binding, streamed scanner and files
   // remain real. The policy port is the existing explicit synthetic certificate.
   const bulk = vi.spyOn(fs, 'readdir').mockRejectedValue(new Error('Unbounded bulk listing forbidden'));
   try {
     expect((await createWorkspaceRecoveryStore({ authorize, budget }).inspectReadonly(root)).state).toBe('protocolAbsent');
   } finally { bulk.mockRestore(); }
-  expect(await fs.readFile(path.join(root, '.storyboard-workbench', 'unrelated'), 'utf8')).toBe('preserve');
+  expect(await fs.readFile(path.join(root, '.storyboard-flow', 'unrelated'), 'utf8')).toBe('preserve');
 });
 
 test('retention and cold asset read never use a growth-following descriptor readFile', async () => {
@@ -67,7 +67,7 @@ test('existing recovery inventory also streams names instead of bulk allocation'
 test('an operation with no generation cannot disappear behind a valid old tip', async () => {
   const root = await fixture(); const store = createWorkspaceRecoveryStore({ authorize, budget });
   const ack = await store.retain(caller, root, offer());
-  const base = path.join(root, '.storyboard-workbench/workspace-recovery-v1/operations');
+  const base = path.join(root, '.storyboard-flow/workspace-recovery-v1/operations');
   const old = JSON.parse(await fs.readFile(path.join(base, ack.operationId, 'operation.json'), 'utf8'));
   await fs.mkdir(path.join(base, 'orphan'));
   await fs.mkdir(path.join(base, 'orphan/generations'));
@@ -79,7 +79,7 @@ for (const phase of ['created', 'written', 'closed', 'linked', 'sourceReleased',
   test(`partial new asset publication at ${phase} preserves old exact generation and original bytes`, async () => {
     const root = await fixture(); const store = createWorkspaceRecoveryStore({ authorize, budget });
     const old = await store.retain(caller, root, offer('owner:1'));
-    const oldDir = path.join(root, '.storyboard-workbench/workspace-recovery-v1/operations', old.operationId, 'generations', old.generationId);
+    const oldDir = path.join(root, '.storyboard-flow/workspace-recovery-v1/operations', old.operationId, 'generations', old.generationId);
     const original = await fs.readFile(path.join(oldDir, 'assets/pixels.bin'));
     const failing = createWorkspaceRecoveryStore({ authorize, budget, fault: async (at, file) => { if (at === phase && file.includes('/assets/')) throw new Error(`fault-${phase}`); } });
     await expect(failing.retain(caller, root, offer('owner:2'))).rejects.toThrow(`fault-${phase}`);
@@ -100,9 +100,9 @@ test('missing configuration and accumulated budget fail before a new namespace/e
   const root = await fixture();
   await expect(createWorkspaceRecoveryStore({}).retain(caller, root, offer())).rejects.toThrow('Recovery unavailable');
   await expect(createWorkspaceRecoveryStore({ authorize, budget: { ...budget, bytes: 20 } }).retain(caller, root, offer())).rejects.toThrow('budget');
-  expect(await fs.readdir(path.join(root, '.storyboard-workbench'))).toEqual([]);
+  expect(await fs.readdir(path.join(root, '.storyboard-flow'))).toEqual([]);
   const store = createWorkspaceRecoveryStore({ authorize, budget }); await store.retain(caller, root, offer());
-  const base = path.join(root, '.storyboard-workbench/workspace-recovery-v1/operations');
+  const base = path.join(root, '.storyboard-flow/workspace-recovery-v1/operations');
   const before = await fs.readdir(base);
   const small = createWorkspaceRecoveryStore({ authorize, budget: { ...budget, records: 10 } });
   await expect(small.retain(caller, root, offer('owner:2'))).rejects.toThrow('budget');
@@ -113,7 +113,7 @@ test('hard record quota reserves the publication source alias before any namespa
   const root = await fixture();
   const store = createWorkspaceRecoveryStore({ authorize, budget: { ...budget, records: 10 } });
   await expect(store.retain(caller, root, offer())).rejects.toThrow('budget');
-  expect(await fs.readdir(path.join(root, '.storyboard-workbench'))).toEqual([]);
+  expect(await fs.readdir(path.join(root, '.storyboard-flow'))).toEqual([]);
 });
 
 test('latest is unique content-parent chain, alias reads preserve physical binding and raw unknown facts', async () => {
@@ -131,7 +131,7 @@ test('copied physical root, corrupt assets, source hardlink and unknown namespac
   for (const change of ['copied', 'corrupt', 'hardlink', 'unknown'] as const) {
     const root = await fixture(), store = createWorkspaceRecoveryStore({ authorize, budget });
     const ack = await store.retain(caller, root, offer());
-    const base = path.join(root, '.storyboard-workbench/workspace-recovery-v1');
+    const base = path.join(root, '.storyboard-flow/workspace-recovery-v1');
     const asset = path.join(base, 'operations', ack.operationId, 'generations', ack.generationId, 'assets/pixels.bin');
     let target = root;
     if (change === 'copied') { target = `${root}-copy`; await fs.cp(root, target, { recursive: true }); }
@@ -145,7 +145,7 @@ test('copied physical root, corrupt assets, source hardlink and unknown namespac
 test('a new owned RAM generation can be certified while an old orphan stays protected and untouched', async () => {
   const root = await fixture(), store = createWorkspaceRecoveryStore({ authorize, budget });
   const first = await store.retain(caller, root, offer('owner:1'));
-  const base = path.join(root, '.storyboard-workbench/workspace-recovery-v1');
+  const base = path.join(root, '.storyboard-flow/workspace-recovery-v1');
   await fs.writeFile(path.join(base, 'orphan.json'), '{"unrecognized":"do not delete"}');
   const before = await fs.readFile(path.join(base, 'orphan.json'));
   const second = await store.retain(caller, root, offer('owner:2'));
@@ -184,6 +184,6 @@ test('nonexecuting asset reader rejects executable/opaque format and invalid ras
     const root = await fixture(), store = createWorkspaceRecoveryStore({ authorize, budget });
     const invalid = offer(); invalid.assets[0] = { ...invalid.assets[0], encoding, bytes: Buffer.from('MZnot-an-image') };
     await expect(store.retain(caller, root, invalid)).rejects.toThrow();
-    expect(await fs.readdir(path.join(root, '.storyboard-workbench'))).toEqual([]);
+    expect(await fs.readdir(path.join(root, '.storyboard-flow'))).toEqual([]);
   }
 });

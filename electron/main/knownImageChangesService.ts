@@ -5,8 +5,8 @@ import { knownImageHasExternalChange } from "./externalChanges.js";
 type KnownImageShot = {
   id: string;
   imagePath: string;
-  swb?: {
-    status?: "owned" | "non-swb" | "compatible-external-edit" | "incompatible-external-edit";
+  flow?: {
+    status?: "owned" | "non-flow" | "compatible-external-edit" | "incompatible-external-edit";
     canvasWidth?: number;
     canvasHeight?: number;
     baseFingerprint?: string;
@@ -18,11 +18,11 @@ type KnownImageProject = {
   parkedShots?: KnownImageShot[];
 };
 
-type SwbMetadata = Parameters<typeof knownImageHasExternalChange>[2];
+type FlowMetadata = Parameters<typeof knownImageHasExternalChange>[2];
 
 type KnownImageChangesOptions = {
   pixelFingerprint: (imagePath: string) => Promise<string>;
-  readSwbMetadata: (imagePath: string) => Promise<SwbMetadata>;
+  readFlowMetadata: (imagePath: string) => Promise<FlowMetadata>;
   onProgress?: WorkspaceTaskProgressReporter;
 };
 
@@ -30,7 +30,7 @@ export const changedKnownImagePaths = async (
   project: KnownImageProject,
   imagePaths: string[],
   pendingDeletedPaths: Set<string>,
-  { pixelFingerprint, readSwbMetadata, onProgress }: KnownImageChangesOptions
+  { pixelFingerprint, readFlowMetadata, onProgress }: KnownImageChangesOptions
 ): Promise<string[]> => {
   const pathByShot = new Map(
     [...project.shots, ...(project.parkedShots ?? [])]
@@ -45,12 +45,12 @@ export const changedKnownImagePaths = async (
     knownImagePaths.map(async (imagePath) => {
       const shot = pathByShot.get(imagePath);
       try {
-        if (!shot?.swb || shot.swb.status === "non-swb") {
+        if (!shot?.flow || shot.flow.status === "non-flow") {
           return;
         }
 
         const fingerprint = await pixelFingerprint(imagePath);
-        const metadata = await readSwbMetadata(imagePath);
+        const metadata = await readFlowMetadata(imagePath);
         if (knownImageHasExternalChange(shot, fingerprint, metadata)) {
           changed.push(imagePath);
         }

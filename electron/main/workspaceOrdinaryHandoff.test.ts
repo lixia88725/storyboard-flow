@@ -18,13 +18,13 @@ test('actual Main ordinary reader and native memory certificate preserve clean n
  const alias=path.join(base,'alias');await fs.symlink(A,alias);await load(alias);expect(slots.active).toBe(a);expect(a.readonly).toBe(false);expect(readers).toEqual([A,B]);expect(a.adapter.owner.publishEdit(p=>({...p,name:'A still editable'}),[])).toBe(true);expect(await fs.readdir(A)).toEqual([]);await queue.drain();
 },30000);
 test('actual failed B staging without a lease cannot be omitted in both A-only captures; A namespace and B bytes remain exact',async()=>{
- const {base,event,service}=await fixture(),A=path.join(base,'A'),B=path.join(base,'B');for(const root of [A,B])await fs.mkdir(path.join(root,'.storyboard-workbench'),{recursive:true});
- const project=createProject('A'),metadata=path.join(A,'.storyboard-workbench/storyboard.project.json');await fs.writeFile(metadata,JSON.stringify(project));
+ const {base,event,service}=await fixture(),A=path.join(base,'A'),B=path.join(base,'B');for(const root of [A,B])await fs.mkdir(path.join(root,'.storyboard-flow'),{recursive:true});
+ const project=createProject('A'),metadata=path.join(A,'.storyboard-flow/storyboard.project.json');await fs.writeFile(metadata,JSON.stringify(project));
  const content={projectRaw:project,sequence:1,assetRevision:0,desiredAssets:[],retainedAssetIntents:[],effectFacts:{receipt:[],deletions:[],remainingScript:null}};
  await service.run(event,{folderPath:A,metadataPath:metadata,normalSave:true,project,recoveryContent:content},async()=>({ok:false,error:{message:'actual result boundary failed'}}));
  const capture={folderPath:A,content,canvas:{hasUnsettledGesture:false,captures:[]},selectedShotIds:[],dirtyShotIds:[]};
  await service.observeWorkspace(event,B);await expect(service.ordinary(event,'workspace:openFolderByPath',B,[B],async()=>{await fs.writeFile(path.join(B,'stage.json'),'{"B":"retained"}');throw Error('B stage failed');})).rejects.toThrow('B stage failed');
- const before=await fs.readFile(path.join(A,'.storyboard-workbench/workspace-recovery-v1/namespace.json'));
+ const before=await fs.readFile(path.join(A,'.storyboard-flow/workspace-recovery-v1/namespace.json'));
  for(let i=0;i<2;i++)await expect(service.certifyRetainedSet(event,{slots:[capture]})).rejects.toThrow('omitted');
- expect(await fs.readFile(path.join(A,'.storyboard-workbench/workspace-recovery-v1/namespace.json'))).toEqual(before);expect(await fs.readFile(path.join(B,'stage.json'),'utf8')).toBe('{"B":"retained"}');expect(await fs.readFile(metadata,'utf8')).toBe(JSON.stringify(project));
+ expect(await fs.readFile(path.join(A,'.storyboard-flow/workspace-recovery-v1/namespace.json'))).toEqual(before);expect(await fs.readFile(path.join(B,'stage.json'),'utf8')).toBe('{"B":"retained"}');expect(await fs.readFile(metadata,'utf8')).toBe(JSON.stringify(project));
 },30000);

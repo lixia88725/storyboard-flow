@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 
 export const previewRootForFolder = (folderPath: string): string => {
-  return path.join(folderPath, ".storyboard-workbench", "previews");
+  return path.join(folderPath, ".storyboard-flow", "previews");
 };
 
 export const previewPathForImage = (imagePath: string, previewRoot: string): string => {

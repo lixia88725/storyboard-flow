@@ -7,9 +7,9 @@ import { createPreparedWorkspaceSave } from './preparedWorkspaceSave';
 import { serializeStoryboardScriptMarkdown } from './storyboardScript';
 
 const fixture=async()=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),'pressure-contract-root-')),rel='.storyboard-workbench/layers/s/a.png',file=path.join(root,rel),metadata=path.join(root,'.storyboard-workbench/storyboard.project.json'),script=path.join(root,'storyboard-script.md'),tiff=path.join(root,'s.tiff');
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'pressure-contract-root-')),rel='.storyboard-flow/layers/s/a.png',file=path.join(root,rel),metadata=path.join(root,'.storyboard-flow/storyboard.project.json'),script=path.join(root,'storyboard-script.md'),tiff=path.join(root,'s.tiff');
   await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});const png=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer();await fs.writeFile(file,png,{mode:0o600});await fs.writeFile(tiff,await sharp(png).tiff().toBuffer(),{mode:0o600});
-  const project={id:'p',name:'Pressure contract',shots:[{id:'s',imagePath:tiff,fileName:'s.tiff',swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'a',kind:'paint',bitmapPath:rel,width:2,height:2}]}],dialogues:[]};
+  const project={id:'p',name:'Pressure contract',shots:[{id:'s',imagePath:tiff,fileName:'s.tiff',flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'a',kind:'paint',bitmapPath:rel,width:2,height:2}]}],dialogues:[]};
   await fs.writeFile(metadata,JSON.stringify(project,null,2)+'\n',{mode:0o600});await fs.writeFile(script,serializeStoryboardScriptMarkdown(project as any),{mode:0o600});
   const files=[metadata,script,tiff,file],originals=await Promise.all(files.map(f=>fs.readFile(f))),frame={},event:any={sender:{mainFrame:frame},senderFrame:frame};
   const payload={folderPath:root,metadataPath:metadata,normalSave:true,project,recoveryContent:{projectRaw:project,sequence:1,assetRevision:0,desiredAssets:[],retainedAssetIntents:[],effectFacts:{receipt:[],deletions:[],remainingScript:null,unsettled:false}}};

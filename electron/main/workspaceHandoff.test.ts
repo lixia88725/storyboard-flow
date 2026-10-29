@@ -10,11 +10,11 @@ import {captureProjectHistoryData} from '../../src/renderer/projectHistoryContro
 const options={budget:{bytes:134217728,records:2000,assets:64,jsonDepth:80},python:'python3',script:path.resolve('scripts/recovery-content-permissions.py')};
 async function fixture(label:string){
  const folder=await fs.mkdtemp(path.join(process.env.TMPDIR!,'handoff-'+label+'-'));onTestFinished(()=>fs.rm(folder,{recursive:true,force:true}));
- const metadata=path.join(folder,'.storyboard-workbench/storyboard.project.json'),png=path.join(folder,'.storyboard-workbench/layers/s/paint.png'),tiff=path.join(folder,'a.tiff'),script=path.join(folder,'storyboard-script.md');
+ const metadata=path.join(folder,'.storyboard-flow/storyboard.project.json'),png=path.join(folder,'.storyboard-flow/layers/s/paint.png'),tiff=path.join(folder,'a.tiff'),script=path.join(folder,'storyboard-script.md');
  await fs.mkdir(path.dirname(png),{recursive:true,mode:0o700});
  const pngBytes=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer(),desired=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer(),history=await sharp({create:{width:2,height:2,channels:4,background:'yellow'}}).png().toBuffer();
  await fs.writeFile(png,pngBytes,{mode:0o600});await fs.writeFile(tiff,await sharp(pngBytes).tiff().toBuffer(),{mode:0o600});
- const project:any={...createProject(label),shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',order:0,swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'paint',kind:'paint',width:2,height:2,bitmapPath:path.relative(folder,png)}]}],pendingBake:{version:1,shots:{s:{state:'synced',acceptedOutputIdentity:'0'.repeat(64)}}}};
+ const project:any={...createProject(label),shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',order:0,flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'paint',kind:'paint',width:2,height:2,bitmapPath:path.relative(folder,png)}]}],pendingBake:{version:1,shots:{s:{state:'synced',acceptedOutputIdentity:'0'.repeat(64)}}}};
  await fs.writeFile(metadata,JSON.stringify(project),{mode:0o600});await fs.writeFile(script,serializeStoryboardScriptMarkdown(project),{mode:0o600});
  const historyData={undo:[{project:{...project,name:'History '+label},selectedShotIds:['s'],fileNameSyncState:'unsynced',layerAssets:[{bitmapPath:path.relative(folder,png),dataUrl:'data:image/png;base64,'+history.toString('base64')}]}],redo:[]};
  historyData.undo[0].project.parkedShots=undefined;

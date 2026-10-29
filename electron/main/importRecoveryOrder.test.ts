@@ -30,12 +30,12 @@ it.each(["working", "metadata"] as const)("actual Import retains dependent asset
   const bindings = { ...fs, ...renames, ...ports, ...safety, path, sharp, process, randomUUID, createHash,
     withLayerFileOperation, mapWithConcurrency, prepareProtectedLayerReplacement, recoverFailedImport,
     ImportRecoveryIncompleteError, normalSaveImportFailure, createImportPathReservation, prepareImportStaging, pixelFingerprint,
-    sharpSourceOptions: { unlimited: true }, swbFormatVersion: 1, archiveStamp: randomUUID,
+    sharpSourceOptions: { unlimited: true }, flowFormatVersion: 1, archiveStamp: randomUUID,
     uniquePath: async (dir: string, name: string) => path.join(dir, name), emptyDefaultSketchLayers: () => true,
-    projectNeedsSwbImport: () => true, assertNormalSaveAdmission: async () => {},
+    projectNeedsFlowImport: () => true, assertNormalSaveAdmission: async () => {},
     hasPendingFileTransaction: async () => false,
     importStoryboardScriptMarkdown: async () => ({ project, rollback: scriptRollback }),
-    createWorkspaceTaskProgressReporter: () => undefined, writeSwbMetadataToTiffs: async () => undefined,
+    createWorkspaceTaskProgressReporter: () => undefined, writeFlowMetadataToTiffs: async () => undefined,
     createProjectPreviewsForShots: async (p: unknown) => {
       if (failureMode === "working") throw new Error("synthetic preview failure");
       return p;
@@ -57,8 +57,8 @@ it.each(["working", "metadata"] as const)("actual Import retains dependent asset
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8");
   const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
   const node = tree.statements.find(node => ts.isVariableStatement(node) &&
-    node.declarationList.declarations[0].name.getText(tree) === "importProjectToSwbFormat")!;
-  const outer = source.slice(source.indexOf('  ipcMain.handle("workspace:importSwbFormat"'),
+    node.declarationList.declarations[0].name.getText(tree) === "importProjectToFlowFormat")!;
+  const outer = source.slice(source.indexOf('  ipcMain.handle("workspace:importFlowFormat"'),
     source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
   const compiled = ts.transpileModule(node.getText(tree) + "\n" + outer,
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;

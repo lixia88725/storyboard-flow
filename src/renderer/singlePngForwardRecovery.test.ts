@@ -13,8 +13,8 @@ import { createLayerAppHandlers } from "../../electron/main/layerAppRuntime";
 
 async function exercise(scenario = "match", admitted = false) {
   const folderPath = await mkdtemp(path.join(os.tmpdir(), "single-png-forward-"));
-  const bitmapPath = ".storyboard-workbench/layers/s/drawing.png";
-  const metadataPath = path.join(folderPath, ".storyboard-workbench/storyboard.project.json");
+  const bitmapPath = ".storyboard-flow/layers/s/drawing.png";
+  const metadataPath = path.join(folderPath, ".storyboard-flow/storyboard.project.json");
   const imagePath = path.join(folderPath, "s.tiff");
   const handlers = createLayerAppHandlers();
   const before = await sharp({ create: { width: 8, height: 6, channels: 4, background: "red" } }).png().toBuffer();
@@ -25,7 +25,7 @@ async function exercise(scenario = "match", admitted = false) {
   const hash = async (p: string) => createHash("sha256").update(await readFile(p)).digest("hex");
   const base = createProject("single-png-forward");
   base.shots = [{ id: "s", imagePath, fileName: "s.tiff", order: 0,
-    swb: { version: 1, status: "owned", canvasWidth: 8, canvasHeight: 6 },
+    flow: { version: 1, status: "owned", canvasWidth: 8, canvasHeight: 6 },
     layers: [{ id: "drawing", kind: "paint", name: "Drawing", bitmapPath,
       width: 8, height: 6, opacity: 1, blendMode: "normal", visible: true, locked: false, order: 0 }] }];
   const ref = { current: initializeCompletedShot(base, "s", await hash(imagePath), "baseline") };

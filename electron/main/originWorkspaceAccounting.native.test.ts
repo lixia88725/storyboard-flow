@@ -12,11 +12,11 @@ import { fixtureAttributeBytes } from './nativeAttributeMeter.fixture';
 test('real native origin residues participate in store quota before any project capture effect', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-joint-project-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-joint-appdata-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
-  const r = await fs.lstat(root, { bigint: true }), m = await fs.lstat(path.join(root, '.storyboard-workbench'), { bigint: true });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
+  const r = await fs.lstat(root, { bigint: true }), m = await fs.lstat(path.join(root, '.storyboard-flow'), { bigint: true });
   // Independent literal record layout for the v1 workspace address; exact IDs
   // include birth time so inode reuse is not treated as an original incarnation.
-  const key = createHash('sha256').update(JSON.stringify(['swb.workspace-origin-address.v1', root, String(r.dev), String(r.ino), String(r.birthtimeNs), String(m.dev), String(m.ino), String(m.birthtimeNs)])).digest('hex');
+  const key = createHash('sha256').update(JSON.stringify(['flow.workspace-origin-address.v1', root, String(r.dev), String(r.ino), String(r.birthtimeNs), String(m.dev), String(m.ino), String(m.birthtimeNs)])).digest('hex');
   const folder = path.join(userData, 'workspace-origin-v1', key);
   await fs.mkdir(folder, { recursive: true, mode: 0o700 });
   await fs.writeFile(path.join(folder, 'unfinished-origin'), Buffer.alloc(4096, 1), { mode: 0o600 });
@@ -32,7 +32,7 @@ test('real native origin residues participate in store quota before any project 
   const offer = { revision: 'quota-negative', projectRaw: {}, viewState: {}, scriptState: {}, effectFacts: {}, continuationState: {}, assets: [], requiredAssetIds: [] };
   await expect(store.retain(caller, root, offer)).rejects.toThrow('budget');
   expect(reads).toBeGreaterThan(0);
-  expect(await fs.readdir(path.join(root, '.storyboard-workbench'))).toEqual([]);
+  expect(await fs.readdir(path.join(root, '.storyboard-flow'))).toEqual([]);
   expect((await fs.stat(path.join(folder, 'unfinished-origin'))).size).toBe(4096);
   expect(await fs.readdir(folder)).toEqual(['unfinished-origin']);
   // Each query executes the same original native adapter; no permission cache.
@@ -43,9 +43,9 @@ test('real native origin residues participate in store quota before any project 
 test('legacy readonly store inspection cannot publish across a changed real outside inventory', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-readonly-project-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-readonly-appdata-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
-  const r = await fs.lstat(root, { bigint: true }), m = await fs.lstat(path.join(root, '.storyboard-workbench'), { bigint: true });
-  const key = createHash('sha256').update(JSON.stringify(['swb.workspace-origin-address.v1', root, String(r.dev), String(r.ino), String(r.birthtimeNs), String(m.dev), String(m.ino), String(m.birthtimeNs)])).digest('hex');
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
+  const r = await fs.lstat(root, { bigint: true }), m = await fs.lstat(path.join(root, '.storyboard-flow'), { bigint: true });
+  const key = createHash('sha256').update(JSON.stringify(['flow.workspace-origin-address.v1', root, String(r.dev), String(r.ino), String(r.birthtimeNs), String(m.dev), String(m.ino), String(m.birthtimeNs)])).digest('hex');
   const folder = path.join(userData, 'workspace-origin-v1', key), outside = path.join(folder, 'unsealed');
   await fs.mkdir(folder, { recursive: true, mode: 0o700 });
   await fs.writeFile(outside, 'a', { mode: 0o600 });
@@ -69,9 +69,9 @@ test('legacy readonly store inspection cannot publish across a changed real outs
 test.each(['one', 'batch'] as const)('legacy %s asset read cannot publish across an outside change after its initial inspection', async mode => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-asset-window-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-asset-userdata-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
-  const r = await fs.lstat(root, { bigint: true }), m = await fs.lstat(path.join(root, '.storyboard-workbench'), { bigint: true });
-  const key = createHash('sha256').update(JSON.stringify(['swb.workspace-origin-address.v1', root, String(r.dev), String(r.ino), String(r.birthtimeNs), String(m.dev), String(m.ino), String(m.birthtimeNs)])).digest('hex');
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
+  const r = await fs.lstat(root, { bigint: true }), m = await fs.lstat(path.join(root, '.storyboard-flow'), { bigint: true });
+  const key = createHash('sha256').update(JSON.stringify(['flow.workspace-origin-address.v1', root, String(r.dev), String(r.ino), String(r.birthtimeNs), String(m.dev), String(m.ino), String(m.birthtimeNs)])).digest('hex');
   const folder = path.join(userData, 'workspace-origin-v1', key), outside = path.join(folder, 'unsealed');
   await fs.mkdir(folder, { recursive: true, mode: 0o700 }); await fs.writeFile(outside, 'a', { mode: 0o600 });
   const accounting = createOriginWorkspaceAccounting({ userData: () => userData, python: 'python3', script: path.resolve('scripts/recovery-origin-permissions.py') });

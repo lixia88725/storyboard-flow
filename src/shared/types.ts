@@ -40,15 +40,15 @@ export type BitmapLayer = {
   cleared?: boolean;
 };
 
-export type ShotSwbStatus =
+export type ShotFlowStatus =
   | "owned"
-  | "non-swb"
+  | "non-flow"
   | "compatible-external-edit"
   | "incompatible-external-edit";
 
-export type ShotSwbState = {
+export type ShotFlowState = {
   version: number;
-  status: ShotSwbStatus;
+  status: ShotFlowStatus;
   canvasWidth: number;
   canvasHeight: number;
   baseFingerprint?: string;
@@ -85,7 +85,7 @@ export type Shot = {
   activeLayerTarget?: "image" | "sketch";
   imageLayerEdits?: SketchStroke[];
   baseVisible?: boolean;
-  swb?: ShotSwbState;
+  flow?: ShotFlowState;
   presentation?: ShotPresentation;
 };
 
@@ -136,7 +136,7 @@ export type ImportedImage = {
   width?: number;
   height?: number;
   fingerprint?: string;
-  swbMetadata?: SwbImageMetadata;
+  flowMetadata?: FlowImageMetadata;
 };
 
 export type BlankShotPreset = "16:9" | "1.85:1" | "9:16" | "2.39:1" | "1.43:1";
@@ -145,9 +145,9 @@ export type BlankShotOptions = {
   preset: BlankShotPreset;
 };
 
-export type SwbImageMetadata = {
-  app: "Storyboard Flow" | "Storyboard Workbench";
-  format: "swb-tiff";
+export type FlowImageMetadata = {
+  app: "Storyboard Flow";
+  format: "flow-tiff";
   version: number;
   projectId?: string;
   shotId: string;
@@ -194,7 +194,7 @@ export type WorkspacePayload = {
   preserveDirtyShotLayers?: boolean;
 };
 
-export type ImportSwbFormatPayload = WorkspacePayload & import("../../electron/normalSaveTransport").NormalSaveTransport;
+export type ImportFlowFormatPayload = WorkspacePayload & import("../../electron/normalSaveTransport").NormalSaveTransport;
 
 export type RecoveryHistoryEntry = { project: Project; selectedShotIds: string[]; fileNameSyncState: 'synced' | 'unsynced'; layerAssets?: { bitmapPath: string; dataUrl?: string }[] };
 export type FolderScanPayload = import("../../electron/normalSaveTransport").NormalSaveTransport & {

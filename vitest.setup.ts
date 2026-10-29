@@ -27,9 +27,9 @@ try {
 
 /**
  * The layered-TIFF helpers run through Python and look for their dependencies in
- * SWB_PYTHON_DEPS_DIR (see scripts/photoshop-layered-tiff-*.py). The packaged app
+ * FLOW_PYTHON_DEPS_DIR (see scripts/photoshop-layered-tiff-*.py). The packaged app
  * resolves that itself; a test run has no app bundle, so point the helpers at the
  * already-installed vendor tree when it exists. Nothing is installed here.
  */
 const depsDir = path.resolve("vendor/python/photoshop-tiff");
-if (existsSync(depsDir)) process.env.SWB_PYTHON_DEPS_DIR ??= depsDir;
+if (existsSync(depsDir)) process.env.FLOW_PYTHON_DEPS_DIR ??= depsDir;

@@ -16,7 +16,7 @@ test-fixture and execution safeguards below still apply to existing code and dat
 
 Storyboard Flow is a local-first Electron desktop app for arranging storyboard images, moving dialogue between shots, drawing edits, and managing lightweight storyboard layers.
 
-Use `Storyboard Flow` in new product-facing text. `Storyboard Workbench` is a legacy name. Preserve `.storyboard-workbench`, `SWB`, `swb-*`, and `storyboard-workbench.local` as internal compatibility names unless a separately approved format migration changes them. New TIFF metadata writes `app: "Storyboard Flow"`; readers must continue accepting `app: "Storyboard Workbench"`.
+The user approved complete naming unification on 2026-10-29. Use `Storyboard Flow` for the product, `Flow`/`flow` for code identifiers, and `FLOW_*` for environment variables. Current data uses `.storyboard-flow`, managed child projects use `.storyboard-flow-project`, and the standalone new core uses `.storyboard-flow/checkpoints`. TIFF uses `app: "Storyboard Flow"`, `format: "flow-tiff"` and the `flow:metadata` XMP tag. See `docs/architecture/NAMING.md` for exact scopes. Existing old-format folders are retained without migration; historical reports preserve their original names and evidence. This explicit approval supersedes the previous internal-name compatibility rule; it does not authorize changing personal files or deleting recovery data.
 
 ## Context and authorization
 
@@ -27,8 +27,8 @@ Check Git/worktree status before editing and preserve existing work. Use an isol
 ## Stack and routing
 
 - Electron main/preload; React + TypeScript + Vite renderer; dnd-kit drag behavior; Canvas/react-konva drawing; sharp TIFF/PNG processing; Python TIFF/native permission helpers; Vitest tests.
-- Current drawing data is bitmap-layer based: `shots[].layers`, with PNGs under `.storyboard-workbench/layers/{shotId}/{layerId}.png`. Legacy `sketchLayers` and `imageLayerEdits` are migration inputs, not primary editing data.
-- Project ordering, dialogue, rename plans, layer metadata/locks and SWB import status: start at `src/shared/projectOps.ts` and its tests.
+- Current drawing data is bitmap-layer based: `shots[].layers`, with PNGs under `.storyboard-flow/layers/{shotId}/{layerId}.png`. Legacy `sketchLayers` and `imageLayerEdits` are migration inputs, not primary editing data.
+- Project ordering, dialogue, rename plans, layer metadata/locks and FLOW import status: start at `src/shared/projectOps.ts` and its tests.
 - Renderer behavior belongs in focused controllers/helpers. Keep canvas work in `SketchPad.tsx` and its controllers; layer selection/merge/visibility/drag/opacity in `LayerPanel.tsx` and shared rules. Avoid adding orchestration inline to `App.tsx`.
 - High-risk Save/Import/TIFF orchestration remains in `electron/main/main.ts`; isolated IPC/read-side/runtime work goes in focused main services and runtimes with tests.
 - Preload changes update `electron/preload/preload.ts`, `electron/preload/preload.cjs` and `src/renderer/global.d.ts` together.
@@ -44,7 +44,7 @@ Save is the operation for synchronizing real filenames and writing working TIFF 
 
 Storyboard deletion remains pending app state until Save; deleted root images go to system Trash, not Archive. Parked shots stay in JSON but do not participate in Save output, filename sync, Timeline or `storyboard-script.md`.
 
-Do not treat `.storyboard-workbench` assets as root image shots. Keep failures, recovery objects, History, custody pins and old assets intact. Unknown native restrictions must refuse safely rather than widening permissions. Recovery copies are non-executable; do not OS-open them. The default per-workspace recovery budget is 8GiB across actual/reserved partitions; reject new spending rather than automatically deleting recovery data. Do not turn a retained failure or cleanup into successful Save ACK. In-flight effects must settle; timeout is not cancellation.
+Do not treat `.storyboard-flow` assets as root image shots. Keep failures, recovery objects, History, custody pins and old assets intact. Unknown native restrictions must refuse safely rather than widening permissions. Recovery copies are non-executable; do not OS-open them. The default per-workspace recovery budget is 8GiB across actual/reserved partitions; reject new spending rather than automatically deleting recovery data. Do not turn a retained failure or cleanup into successful Save ACK. In-flight effects must settle; timeout is not cancellation.
 
 No SQLite, PDF export, cloud sync/collaboration, PSD-first workflow, Photoshop full-fidelity round-trip or format migration without separate approval. Do not install dependencies, access real media/credentials, change global configuration, terminate unrelated processes, commit, push, merge, publish or deploy merely because a script is available. These actions need appropriate task authority. Never place API keys in project files.
 

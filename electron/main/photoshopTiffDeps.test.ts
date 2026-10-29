@@ -6,10 +6,10 @@ import {
 } from "./photoshopTiffDeps.js";
 
 describe("resolvePhotoshopTiffPythonDepsDir", () => {
-  it("uses SWB_PYTHON_DEPS_DIR when explicitly configured", () => {
+  it("uses FLOW_PYTHON_DEPS_DIR when explicitly configured", () => {
     expect(
       resolvePhotoshopTiffPythonDepsDir({
-        env: { SWB_PYTHON_DEPS_DIR: "/custom/deps" },
+        env: { FLOW_PYTHON_DEPS_DIR: "/custom/deps" },
         appPath: "/app",
         resourcesPath: "/resources",
         pathExists: () => true

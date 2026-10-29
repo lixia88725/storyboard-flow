@@ -20,7 +20,7 @@ export const createWorkspaceRetainedCloseService = (options: {
   return options.budget;
  };
  const sourcesFor = async (root: string, project: any) => {
-  const sources = [path.join(root,'.storyboard-workbench/storyboard.project.json')];
+  const sources = [path.join(root,'.storyboard-flow/storyboard.project.json')];
   if (!Array.isArray(project?.shots) || (project.parkedShots?.length ?? 0) || (project.pendingDeletedShots?.length ?? 0))
    throw new Error('Complete parked/deleted dependency capture is not implemented');
   for (const shot of project.shots) {
@@ -100,7 +100,7 @@ export const createWorkspaceRetainedCloseService = (options: {
  });
  const readReadonly = async (requested: string) => {
   configured();const root=await fs.realpath(requested);
-  const source=path.join(root,'.storyboard-workbench/storyboard.project.json');
+  const source=path.join(root,'.storyboard-flow/storyboard.project.json');
   const stat=await fs.lstat(source);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>configured().bytes)throw new Error('Metadata input unavailable');
   const project=JSON.parse(await fs.readFile(source,'utf8'));
   const store=storeFor(await sourcesFor(root,project)), state=await store.inspectReadonly(root);

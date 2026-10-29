@@ -9,12 +9,12 @@ import { createWorkspaceRecoveryPartitions } from './workspaceRecoveryPartitions
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVR4nGP4zyD3HwAFPAIdh7bqkQAAAABJRU5ErkJggg==', 'base64');
 const budget = { bytes: 100000, records: 200, assets: 10, jsonDepth: 20 };
 const caller = { sender: {}, frame: {}, window: {}, document: {} };
-const policy = (mode: number) => ({ schema: 'swb.finite-source-policy', version: 1, expected: { uid: process.getuid!(), gid: process.getgid!(), mode, flags: 0, xattrs: {} }, observed: [['synthetic-policy-source', {}]] });
+const policy = (mode: number) => ({ schema: 'flow.finite-source-policy', version: 1, expected: { uid: process.getuid!(), gid: process.getgid!(), mode, flags: 0, xattrs: {} }, observed: [['synthetic-policy-source', {}]] });
 const offer = (revision: string) => ({ revision, projectRaw: { text: revision }, viewState: {}, scriptState: {}, effectFacts: [], continuationState: {}, assets: [{ assetId: 'pixels', bytes: png, role: 'desired', width: 1, height: 1, encoding: 'png' }], requiredAssetIds: ['pixels'] });
 
 test('whole-chain verification reads every capture twice in one bounded batch, without caching native permissions', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-verify-chain-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const calls: string[] = [];
   let refuse = false;
   const store = createWorkspaceRecoveryPartitions({ budget, sourcePolicy: policy(0o600), authorize: async request => {
@@ -38,7 +38,7 @@ test('whole-chain verification reads every capture twice in one bounded batch, w
 // establish native metadata policy; the native adapter is checked separately.
 test('batch asset readback sandwiches the whole chain twice, not another nested whole-chain reader', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-batch-assets-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const calls: string[] = [];
   const store = createWorkspaceRecoveryPartitions({ budget, sourcePolicy: policy(0o600), authorize: async request => { calls.push(`${request.phase}:${request.path}`); } });
   await store.retain(caller, root, offer('first'));
@@ -48,13 +48,13 @@ test('batch asset readback sandwiches the whole chain twice, not another nested 
   const onePass = [...calls];
   calls.length = 0;
   expect(await store.readAssets(root, last.generationId)).toEqual(new Map([['pixels', png]]));
-  const selected = `readback:${path.join(root, '.storyboard-workbench/workspace-recovery-v1/operations', last.operationId, 'generations', last.generationId, 'assets/pixels.bin')}`;
+  const selected = `readback:${path.join(root, '.storyboard-flow/workspace-recovery-v1/operations', last.operationId, 'generations', last.generationId, 'assets/pixels.bin')}`;
   expect(calls.sort()).toEqual([...onePass, ...onePass, selected].sort());
 });
 
 test.each(['historical bytes', 'unknown inventory', 'between-pass inventory'] as const)('batch certification still refuses %s', async mode => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-verify-refuse-'));
-  const metadata = path.join(root, '.storyboard-workbench');
+  const metadata = path.join(root, '.storyboard-flow');
   await fs.mkdir(metadata, { mode: 0o700 });
   let armed = false, passes = 0;
   const store = createWorkspaceRecoveryPartitions({ budget, sourcePolicy: policy(0o600), authorize: async request => {
@@ -73,7 +73,7 @@ test.each(['historical bytes', 'unknown inventory', 'between-pass inventory'] as
 
 test('historical readback uses the complete batch boundary and only the exact original reference', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-batch-historical-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const calls: string[] = [];
   const store = createWorkspaceRecoveryPartitions({ budget, sourcePolicy: policy(0o600), authorize: async request => { calls.push(`${request.phase}:${request.path}`); } });
   const first = await store.retain(caller, root, offer('first'));
@@ -87,14 +87,14 @@ test('historical readback uses the complete batch boundary and only the exact or
   const retained = await store.readCapture(root, original.reference);
   expect(retained.content.projectRaw).toEqual({ text: 'first' });
   expect(retained.assets).toEqual(new Map([['pixels', png]]));
-  const selected = `readback:${path.join(root, '.storyboard-workbench/workspace-recovery-v1/operations', first.operationId, 'generations', first.generationId, 'assets/pixels.bin')}`;
+  const selected = `readback:${path.join(root, '.storyboard-flow/workspace-recovery-v1/operations', first.operationId, 'generations', first.generationId, 'assets/pixels.bin')}`;
   expect(calls.sort()).toEqual([...onePass, ...onePass, selected].sort());
   await expect(store.readCapture(root, { ...original.reference, sealDigest: '0'.repeat(64) })).rejects.toThrow();
 });
 
 test('Main source certification runs inside the same two-pass whole-chain boundary', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-source-boundary-'));
-  const metadata = path.join(root, '.storyboard-workbench');
+  const metadata = path.join(root, '.storyboard-flow');
   await fs.mkdir(metadata, { mode: 0o700 });
   const calls: string[] = [];
   const store = createWorkspaceRecoveryPartitions({ budget, sourcePolicy: policy(0o600), authorize: async request => { calls.push(`${request.phase}:${request.path}`); } });
@@ -123,7 +123,7 @@ test('Main source certification runs inside the same two-pass whole-chain bounda
 
 test('Main source and selected bytes share one revocable two-pass certification boundary', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-source-assets-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const calls: string[] = [];
   let refuse = false;
   const store = createWorkspaceRecoveryPartitions({ budget, sourcePolicy: policy(0o600), authorize: async request => {
@@ -144,7 +144,7 @@ test('Main source and selected bytes share one revocable two-pass certification 
     await expect(verified.readAssets({ ...selected.reference, sealDigest: '0'.repeat(64) })).rejects.toThrow();
     escaped = () => verified.readAssets(selected.reference);
   });
-  const selected = `readback:${path.join(root, '.storyboard-workbench/workspace-recovery-v1/operations', first.operationId, 'generations', first.generationId, 'assets/pixels.bin')}`;
+  const selected = `readback:${path.join(root, '.storyboard-flow/workspace-recovery-v1/operations', first.operationId, 'generations', first.generationId, 'assets/pixels.bin')}`;
   expect(calls.sort()).toEqual([...onePass, ...onePass, selected].sort());
   await expect(escaped!()).rejects.toThrow('closed');
   await expect(store.verifyCapturesReadonly(root, async verified => {
@@ -155,10 +155,10 @@ test('Main source and selected bytes share one revocable two-pass certification 
 
 test('a stricter complete capture appends after unchanged v1 and a fresh reader finds that global tip', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-chain-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const old = createWorkspaceRecoveryStore({ budget, sourcePolicy: policy(0o600), authorize: async () => {} });
   const first = await old.retain(caller, root, offer('old'));
-  const base = path.join(root, '.storyboard-workbench/workspace-recovery-v1');
+  const base = path.join(root, '.storyboard-flow/workspace-recovery-v1');
   const paths = ['namespace.json', `operations/${first.operationId}/operation.json`, `operations/${first.operationId}/generations/${first.generationId}/content.json`, `operations/${first.operationId}/generations/${first.generationId}/sealed.json`, `operations/${first.operationId}/generations/${first.generationId}/assets/pixels.bin`];
   const before = await Promise.all(paths.map(file => fs.readFile(path.join(base, file))));
   const store = createWorkspaceRecoveryPartitions({ sourcePolicy: policy(0o400), budget, authorize: async () => {} });
@@ -173,7 +173,7 @@ test('a stricter complete capture appends after unchanged v1 and a fresh reader 
 
 test('old captures consume the same workspace quota before any stricter partition is created', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-budget-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const old = createWorkspaceRecoveryStore({ budget, sourcePolicy: policy(0o600), authorize: async () => {} });
   await old.retain(caller, root, { ...offer('old'), projectRaw: { text: 'x'.repeat(12000) } });
   const count = async (dir: string): Promise<number> => {
@@ -184,16 +184,16 @@ test('old captures consume the same workspace quota before any stricter partitio
     }
     return bytes;
   };
-  const oldBytes = await count(path.join(root, '.storyboard-workbench/workspace-recovery-v1'));
+  const oldBytes = await count(path.join(root, '.storyboard-flow/workspace-recovery-v1'));
   const store = createWorkspaceRecoveryPartitions({ sourcePolicy: policy(0o400), budget: { ...budget, bytes: oldBytes + 32 }, authorize: async () => {} });
   await expect(store.retain(caller, root, offer('new'))).rejects.toThrow(/budget/i);
-  expect(await count(path.join(root, '.storyboard-workbench/workspace-recovery-v1'))).toBe(oldBytes);
-  await expect(fs.lstat(path.join(root, '.storyboard-workbench/workspace-recovery-v2'))).rejects.toMatchObject({ code: 'ENOENT' });
+  expect(await count(path.join(root, '.storyboard-flow/workspace-recovery-v1'))).toBe(oldBytes);
+  await expect(fs.lstat(path.join(root, '.storyboard-flow/workspace-recovery-v2'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 test.each(['new sources', 'new facade', 'new caller', 'same facade changed observations', 'sender', 'frame', 'window', 'metadata replacement', 'Root replacement'] as const)('namespace-absent residue cannot authenticate original preparation from %s', async mode => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-no-namespace-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const original = policy(0o600);
   let refuse = true, bytesStarted = 0;
   const authorize = async (request: { path: string; phase: string }) => {
@@ -204,28 +204,28 @@ test.each(['new sources', 'new facade', 'new caller', 'same facade changed obser
   };
   const first = createWorkspaceRecoveryPartitions({ budget, sourcePolicy: original, allowUnsealedStart: true, authorize });
   await expect(first.retain(caller, root, offer('original'))).rejects.toThrow('namespace unpublished');
-  await expect(fs.lstat(path.join(root, '.storyboard-workbench/workspace-recovery-v1/namespace.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(fs.lstat(path.join(root, '.storyboard-flow/workspace-recovery-v1/namespace.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   refuse = false; bytesStarted = 0;
   if (mode === 'same facade changed observations') original.observed.push(['changed-in-place', {}]);
   if (mode === 'metadata replacement') {
-    await fs.rename(path.join(root, '.storyboard-workbench'), path.join(root, 'original-metadata'));
-    await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+    await fs.rename(path.join(root, '.storyboard-flow'), path.join(root, 'original-metadata'));
+    await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   }
   if (mode === 'Root replacement') {
     await fs.rename(root, root + '-original');
-    await fs.mkdir(path.join(root, '.storyboard-workbench'), { recursive: true, mode: 0o700 });
+    await fs.mkdir(path.join(root, '.storyboard-flow'), { recursive: true, mode: 0o700 });
   }
   const sourcePolicy = mode === 'new sources' ? { ...original, observed: [...original.observed, ['different-same-mode-source', {}]] } : original;
   const next = mode === 'new sources' || mode === 'new facade' ? createWorkspaceRecoveryPartitions({ budget, sourcePolicy, allowUnsealedStart: true, authorize }) : first;
   const nextCaller = mode === 'new caller' ? { ...caller, document: {} } : ['sender', 'frame', 'window'].includes(mode) ? { ...caller, [mode]: {} } : caller;
   await expect(next.retain(nextCaller, root, offer('not-original'))).rejects.toThrow();
   expect(bytesStarted).toBe(0);
-  await expect(fs.lstat(path.join(root, '.storyboard-workbench/workspace-recovery-v1/namespace.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(fs.lstat(path.join(root, '.storyboard-flow/workspace-recovery-v1/namespace.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 test('the original live preparation can retain content after its own namespace publication failure', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-original-namespace-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   let refuse = true;
   const store = createWorkspaceRecoveryPartitions({ budget, sourcePolicy: policy(0o600), allowUnsealedStart: true,
     authorize: async request => { if (refuse && request.phase === 'beforeBytes' && request.path.includes('/namespace.json.staging-')) throw new Error('namespace unpublished'); } });
@@ -239,7 +239,7 @@ test('the original live preparation can retain content after its own namespace p
 
 test('unsealed v1 continuation cannot discard a new same-mode contributor certificate', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-partial-contributors-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const original = policy(0o600);
   const first = createWorkspaceRecoveryStore({ budget, sourcePolicy: original, authorize: async request => {
     if (request.phase === 'beforeBytes' && request.path.includes('/sealed.json.staging-')) throw new Error('synthetic seal refusal');
@@ -247,7 +247,7 @@ test('unsealed v1 continuation cannot discard a new same-mode contributor certif
   await expect(first.retain(caller, root, offer('partial'))).rejects.toThrow('synthetic seal refusal');
   expect(await first.inspectReadonly(root)).toMatchObject({ state: 'protectedIncomplete' });
   expect((await first.inspectReadonly(root)).ack).toBeUndefined();
-  const namespace = path.join(root, '.storyboard-workbench/workspace-recovery-v1/namespace.json');
+  const namespace = path.join(root, '.storyboard-flow/workspace-recovery-v1/namespace.json');
   const unchanged = await fs.readFile(namespace);
   const added = { ...original, observed: [...original.observed, ['new-same-mode-source', {}]] };
   let bytesStarted = 0;
@@ -256,12 +256,12 @@ test('unsealed v1 continuation cannot discard a new same-mode contributor certif
   await expect(next.retain(caller, root, offer('new-source'))).rejects.toThrow('Whole-workspace retention refused');
   expect(bytesStarted).toBe(0);
   expect(await fs.readFile(namespace)).toEqual(unchanged);
-  await expect(fs.lstat(path.join(root, '.storyboard-workbench/workspace-recovery-v2'))).rejects.toMatchObject({ code: 'ENOENT' });
+  await expect(fs.lstat(path.join(root, '.storyboard-flow/workspace-recovery-v2'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 test('a later broad source cannot widen retained strict content or its predecessor references', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-no-widen-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   await createWorkspaceRecoveryPartitions({ sourcePolicy: policy(0o400), budget, authorize: async () => {} }).retain(caller, root, offer('strict'));
   const sourceModes: number[] = [];
   const broader = createWorkspaceRecoveryPartitions({ sourcePolicy: policy(0o600), budget, authorize: async request => {
@@ -275,11 +275,11 @@ test('a later broad source cannot widen retained strict content or its predecess
 
 for (const corruption of ['global-extra-field', 'global-empty-string', 'global-seal', 'unknown-partition']) test(`cold whole-workspace certification rejects ${corruption} rather than choosing a partition winner`, async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-corrupt-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   await createWorkspaceRecoveryStore({ budget, sourcePolicy: policy(0o600), authorize: async () => {} }).retain(caller, root, offer('old'));
   const store = createWorkspaceRecoveryPartitions({ sourcePolicy: policy(0o400), budget, authorize: async () => {} });
   const ack = await store.retain(caller, root, offer('strict'));
-  const policies = path.join(root, '.storyboard-workbench/workspace-recovery-v2/policies'), names = await fs.readdir(policies);
+  const policies = path.join(root, '.storyboard-flow/workspace-recovery-v2/policies'), names = await fs.readdir(policies);
   const generation = path.join(policies, names[0], 'operations', ack.operationId, 'generations', ack.generationId);
   if (corruption === 'unknown-partition') await fs.mkdir(path.join(policies, 'unrecognized'), { mode: 0o700 });
   else {
@@ -298,10 +298,10 @@ for (const corruption of ['global-extra-field', 'global-empty-string', 'global-s
 
 test('a malformed oversized namespace is rejected by the metadata bootstrap limit, not loaded under the 8GiB disk quota', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partition-bootstrap-budget-'));
-  const metadata = path.join(root, '.storyboard-workbench'), base = path.join(metadata, 'workspace-recovery-v1');
+  const metadata = path.join(root, '.storyboard-flow'), base = path.join(metadata, 'workspace-recovery-v1');
   await fs.mkdir(base, { recursive: true, mode: 0o700 });
   const r = await fs.lstat(root), m = await fs.lstat(metadata);
-  const ns = { schema: 'swb.workspace-recovery-namespace', version: 1, binding: { root, rootIdentity: { dev: r.dev, ino: r.ino }, metadataIdentity: { dev: m.dev, ino: m.ino } }, sourcePolicy: policy(0o600), padding: 'x'.repeat(16 * 1024 * 1024) };
+  const ns = { schema: 'flow.workspace-recovery-namespace', version: 1, binding: { root, rootIdentity: { dev: r.dev, ino: r.ino }, metadataIdentity: { dev: m.dev, ino: m.ino } }, sourcePolicy: policy(0o600), padding: 'x'.repeat(16 * 1024 * 1024) };
   await fs.writeFile(path.join(base, 'namespace.json'), JSON.stringify(ns));
   const store = createWorkspaceRecoveryPartitions({ budget: { ...budget, bytes: 8 * 1024 * 1024 * 1024 }, authorize: async () => {} });
   const state = await store.inspectReadonly(root);

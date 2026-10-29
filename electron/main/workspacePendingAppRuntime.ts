@@ -69,10 +69,10 @@ const projectWithPendingFiles = <Project extends PendingProject>(
           ...shot,
           imagePath: file.imagePath,
           fileName: file.fileName,
-          swb:
-            shot.swb && file.baseFingerprint
-              ? { ...shot.swb, baseFingerprint: file.baseFingerprint }
-              : shot.swb
+          flow:
+            shot.flow && file.baseFingerprint
+              ? { ...shot.flow, baseFingerprint: file.baseFingerprint }
+              : shot.flow
         } as Shot)
       : shot;
   };

@@ -205,7 +205,7 @@ describe("domain IPC handlers", () => {
     const writeProjectFiles = vi.fn();
     const payload = {
       folderPath: "/project",
-      metadataPath: "/project/.storyboard-workbench/storyboard.project.json",
+      metadataPath: "/project/.storyboard-flow/storyboard.project.json",
       project: { shots: [] }
     };
 
@@ -242,7 +242,7 @@ describe("domain IPC handlers", () => {
     }));
     const payload = {
       folderPath: "/project",
-      metadataPath: "/project/.storyboard-workbench/storyboard.project.json",
+      metadataPath: "/project/.storyboard-flow/storyboard.project.json",
       project: { shots: [{ imagePath: "/project/shot-001.tiff" }] }
     };
 

@@ -43,6 +43,6 @@ it('does not publish a late protected result into a replacement entry', async ()
 
 it('checks recovery on the actual managed project, never the original source', async () => {
   const probe = vi.fn(async () => { throw Error('protected by a recovery inventory'); });
-  expect(await startupRecoveryMode('/old', { inspect: async () => ({ browse: false, editableFolderPath: '/old/.storyboard-flow' }), probe, isCurrent: () => true })).toBe('recovery');
-  expect(probe).toHaveBeenCalledExactlyOnceWith('/old/.storyboard-flow');
+  expect(await startupRecoveryMode('/old', { inspect: async () => ({ browse: false, editableFolderPath: '/old/.storyboard-flow-project' }), probe, isCurrent: () => true })).toBe('recovery');
+  expect(probe).toHaveBeenCalledExactlyOnceWith('/old/.storyboard-flow-project');
 });

@@ -7,7 +7,7 @@ import { scanRecoveryWorkspace } from './recoveryWorkspaceAccounting';
 const budget = { bytes: 1024, records: 20, assets: 8, jsonDepth: 80 };
 const fixture = async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'project-accounting-exact-'));
-  const base = path.join(root, '.storyboard-workbench/workspace-recovery-v1');
+  const base = path.join(root, '.storyboard-flow/workspace-recovery-v1');
   await fs.mkdir(base, { recursive: true, mode: 0o700 });
   const file = path.join(base, 'partial');
   await fs.writeFile(file, 'abc', { mode: 0o600 });

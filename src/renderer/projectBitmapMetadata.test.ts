@@ -8,7 +8,7 @@ const shot = (id: string): Shot => ({
   imagePath: `/project/${id}.tiff`,
   fileName: `${id}.tiff`,
   order: 0,
-  swb: {
+  flow: {
     version: 1,
     status: "owned",
     canvasWidth: 100,

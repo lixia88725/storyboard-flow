@@ -22,12 +22,12 @@ afterEach(async () => {
 });
 const fixture = async () => {
   const folderPath = await mkdtemp(path.join(process.env.TMPDIR!, "merge-settle-")); roots.push(folderPath);
-  const bitmapPaths = ["early", "late"].map((name) => `.storyboard-workbench/layers/shot/${name}.png`);
+  const bitmapPaths = ["early", "late"].map((name) => `.storyboard-flow/layers/shot/${name}.png`);
   const bytes = await sharp({ create: { width: 2, height: 2, channels: 4, background: { r: 100, g: 20, b: 30, alpha: 1 } } }).png().toBuffer();
   await mkdir(path.dirname(path.join(folderPath, bitmapPaths[0])), { recursive: true });
   for (const bitmapPath of bitmapPaths) await writeFile(path.join(folderPath, bitmapPath), bytes);
   return { folderPath, bitmapPaths, bytes, payload: {
-    folderPath, targetBitmapPath: ".storyboard-workbench/layers/shot/merged.png", width: 2, height: 2,
+    folderPath, targetBitmapPath: ".storyboard-flow/layers/shot/merged.png", width: 2, height: 2,
     layers: bitmapPaths.map((bitmapPath) => ({ bitmapPath, opacity: 1, blendMode: "normal" as const })),
     deleteBitmapPaths: bitmapPaths
   } };

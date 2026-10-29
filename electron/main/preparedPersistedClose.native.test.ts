@@ -11,15 +11,15 @@ import {serializeStoryboardScriptMarkdown} from './storyboardScript';
 // and persistence followed by missing Owner ACK. This is not GUI coverage.
 test('post-persist pre-ACK Close retains the actual renamed Project without granting Save success or writer rights', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'persisted-close-'));
-  const metadata = path.join(root, '.storyboard-workbench/storyboard.project.json');
-  const png = path.join(root, '.storyboard-workbench/layers/s/l.png');
+  const metadata = path.join(root, '.storyboard-flow/storyboard.project.json');
+  const png = path.join(root, '.storyboard-flow/layers/s/l.png');
   const before = path.join(root, 'new-shot.tiff'), after = path.join(root, 'named-shot.tiff');
   await fs.mkdir(path.dirname(png), {recursive: true, mode: 0o700});
   const bytes = await sharp({create: {width: 2, height: 2, channels: 4, background: 'blue'}}).png().toBuffer();
   const tiff = await sharp(bytes).tiff().toBuffer();
   await fs.writeFile(png, bytes, {mode: 0o600});
   await fs.writeFile(before, tiff, {mode: 0o600});
-  const original = {id: 'p', name: 'p', shots: [{id: 's', order: 0, imagePath: before, fileName: 'new-shot.tiff', swb: {status: 'owned', canvasWidth: 2, canvasHeight: 2}, layers: [{id: 'l', kind: 'image', width: 2, height: 2, bitmapPath: path.relative(root, png)}]}], dialogues: []};
+  const original = {id: 'p', name: 'p', shots: [{id: 's', order: 0, imagePath: before, fileName: 'new-shot.tiff', flow: {status: 'owned', canvasWidth: 2, canvasHeight: 2}, layers: [{id: 'l', kind: 'image', width: 2, height: 2, bitmapPath: path.relative(root, png)}]}], dialogues: []};
   await fs.writeFile(metadata, JSON.stringify(original), {mode: 0o600});
   const project = {...original, shots: [{...original.shots[0], imagePath: after, fileName: 'named-shot.tiff'}]};
   const content = (p: unknown) => ({projectRaw: p, sequence: 2, assetRevision: 0, desiredAssets: [], retainedAssetIntents: [], effectFacts: {receipt: [], deletions: [], remainingScript: null, unsettled: false}});

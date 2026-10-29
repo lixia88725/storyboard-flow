@@ -43,7 +43,7 @@ export type CreateLayerAssetResult =
 type CreateLayerSourceShot = {
   id: string;
   imagePath: string;
-  swb?: { status: string; canvasWidth: number; canvasHeight: number };
+  flow?: { status: string; canvasWidth: number; canvasHeight: number };
   layers?: Array<{ id: string; bitmapPath: string }>;
 };
 
@@ -98,7 +98,7 @@ export const resolveLayerAssetPath = (folderPath: string, bitmapPath: string): s
   }
 
   const normalized = path.normalize(bitmapPath);
-  const expectedPrefix = path.join(".storyboard-workbench", "layers");
+  const expectedPrefix = path.join(".storyboard-flow", "layers");
 
   if (
     normalized === expectedPrefix ||
@@ -170,17 +170,17 @@ export const createLayerPng = async (payload: CreateLayerAssetPayload): Promise<
       throw new Error("Create ownership unknown; certified source required");
     }
     const shot = project.shots.filter(s => s.id === payload.shotId);
-    if (shot.length !== 1 || shot[0].swb?.status !== "owned" ||
+    if (shot.length !== 1 || shot[0].flow?.status !== "owned" ||
         !Number.isInteger(payload.width) || !Number.isInteger(payload.height) || payload.width <= 0 || payload.height <= 0 ||
-        payload.width !== shot[0].swb.canvasWidth || payload.height !== shot[0].swb.canvasHeight ||
+        payload.width !== shot[0].flow.canvasWidth || payload.height !== shot[0].flow.canvasHeight ||
         !/^[A-Za-z0-9_-]+$/u.test(payload.shotId) || !/^[A-Za-z0-9_-]+$/u.test(payload.layerId) ||
-        payload.bitmapPath !== `.storyboard-workbench/layers/${payload.shotId}/${payload.layerId}.png` ||
+        payload.bitmapPath !== `.storyboard-flow/layers/${payload.shotId}/${payload.layerId}.png` ||
         [...project.shots, ...(project.parkedShots ?? [])].some(s => s.layers?.some(l => l.id === payload.layerId || l.bitmapPath === payload.bitmapPath))) {
       throw new Error("Create descriptor is not a new certified target");
     }
     for (const s of [...project.shots, ...(project.parkedShots ?? [])]) {
       const image = path.resolve(s.imagePath), relative = path.relative(root, image);
-      if (s.swb?.status !== "owned" || !/\.tiff?$/iu.test(image) || relative.startsWith("..") || path.isAbsolute(relative) ||
+      if (s.flow?.status !== "owned" || !/\.tiff?$/iu.test(image) || relative.startsWith("..") || path.isAbsolute(relative) ||
           (await lstat(image)).isSymbolicLink() || await realpath(image) !== image ||
           createHash("sha256").update(await readFile(image)).digest("hex") !== entries[s.id]?.acceptedOutputIdentity) {
         throw new Error("Create source is not certified or changed externally");

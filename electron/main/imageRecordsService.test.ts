@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createImageRecords } from "./imageRecordsService.js";
 
 describe("imageRecordsService", () => {
-  it("creates imported image records while only TIFF files get previews and SWB metadata", async () => {
+  it("creates imported image records while only TIFF files get previews and FLOW metadata", async () => {
     const createPreview = vi.fn(async (imagePath: string, previewRoot: string) =>
       `${previewRoot}/${imagePath.split("/").at(-1)}.png`
     );
@@ -11,7 +11,7 @@ describe("imageRecordsService", () => {
       height: imagePath.endsWith(".png") ? 480 : 1080
     }));
     const pixelFingerprint = vi.fn(async (imagePath: string) => `hash:${imagePath}`);
-    const readSwbMetadata = vi.fn(async (imagePath: string) => ({
+    const readFlowMetadata = vi.fn(async (imagePath: string) => ({
       shotId: imagePath.endsWith(".tiff") ? "shot-tiff" : "shot-tif"
     }));
     const onProgress = vi.fn();
@@ -19,13 +19,13 @@ describe("imageRecordsService", () => {
     await expect(
       createImageRecords(
         ["/project/flat.png", "/project/owned.tiff", "/project/legacy.tif"],
-        "/project/.storyboard-workbench/previews",
+        "/project/.storyboard-flow/previews",
         {
           createPreview,
           onProgress,
           pixelFingerprint,
           readImageMetadata,
-          readSwbMetadata,
+          readFlowMetadata,
           label: "Preparing previews...",
           concurrency: 1
         }
@@ -38,34 +38,34 @@ describe("imageRecordsService", () => {
         width: 640,
         height: 480,
         fingerprint: "hash:/project/flat.png",
-        swbMetadata: undefined
+        flowMetadata: undefined
       },
       {
         imagePath: "/project/owned.tiff",
-        previewPath: "/project/.storyboard-workbench/previews/owned.tiff.png",
+        previewPath: "/project/.storyboard-flow/previews/owned.tiff.png",
         fileName: "owned.tiff",
         width: 1920,
         height: 1080,
         fingerprint: "hash:/project/owned.tiff",
-        swbMetadata: {
+        flowMetadata: {
           shotId: "shot-tiff"
         }
       },
       {
         imagePath: "/project/legacy.tif",
-        previewPath: "/project/.storyboard-workbench/previews/legacy.tif.png",
+        previewPath: "/project/.storyboard-flow/previews/legacy.tif.png",
         fileName: "legacy.tif",
         width: 1920,
         height: 1080,
         fingerprint: "hash:/project/legacy.tif",
-        swbMetadata: {
+        flowMetadata: {
           shotId: "shot-tif"
         }
       }
     ]);
 
     expect(createPreview).toHaveBeenCalledTimes(2);
-    expect(readSwbMetadata).toHaveBeenCalledTimes(2);
+    expect(readFlowMetadata).toHaveBeenCalledTimes(2);
     expect(readImageMetadata).toHaveBeenCalledTimes(3);
     expect(pixelFingerprint).toHaveBeenCalledTimes(3);
     expect(onProgress).toHaveBeenLastCalledWith({

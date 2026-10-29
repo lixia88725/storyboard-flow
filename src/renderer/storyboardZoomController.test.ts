@@ -13,7 +13,7 @@ const shot: Shot = {
   imagePath: "shot-1.tiff",
   fileName: "shot-1.tiff",
   order: 1,
-  swb: {
+  flow: {
     version: 1,
     status: "owned",
     canvasWidth: 1920,

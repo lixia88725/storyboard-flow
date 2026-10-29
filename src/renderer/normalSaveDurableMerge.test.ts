@@ -10,7 +10,7 @@ it("publishes History once and cleans only after the exact required persistence 
   const hash = "1".repeat(64);
   const initial = createProject("durable merge");
   initial.shots = [{ id: "s", imagePath: "/owned/s.tiff", fileName: "s.tiff", order: 0,
-    swb: { version: 1, status: "owned", canvasWidth: 2, canvasHeight: 2 } }];
+    flow: { version: 1, status: "owned", canvasWidth: 2, canvasHeight: 2 } }];
   const ref = { current: initializeCompletedShot(initial, "s", hash, "initial") };
   const queue = createBitmapLayerWriteQueue();
   const events: string[] = [];

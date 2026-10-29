@@ -13,11 +13,11 @@ import { fixtureAttributeBytes } from './nativeAttributeMeter.fixture';
 const fixture = async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'joint-reservation-root-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'joint-reservation-data-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const key = await originWorkspaceKey(root), folder = path.join(userData, 'workspace-origin-v1', key);
   const accounting = createOriginWorkspaceAccounting({ userData: () => userData, python: 'python3', script: path.resolve('scripts/recovery-origin-permissions.py') });
   // Independent fixture baseline now includes the actual metadata container.
-  const metadataAttributes = fixtureAttributeBytes(path.join(root, '.storyboard-workbench'));
+  const metadataAttributes = fixtureAttributeBytes(path.join(root, '.storyboard-flow'));
   return { root, userData, folder, accounting, metadataAttributes };
 };
 const emptyResidueAttributes = async (f: Awaited<ReturnType<typeof fixture>>) => {
@@ -61,7 +61,7 @@ test('project capture must honor the same allocator refusal before any namespace
   const caller = { sender: {}, frame: {}, window: {}, document: {} };
   await expect(store.retain(caller, f.root, { revision: 'shared', projectRaw: {}, viewState: {}, scriptState: {}, effectFacts: {}, continuationState: {}, assets: [], requiredAssetIds: [] })).rejects.toThrow('joint reservation refused');
   expect(claims).toBe(1);
-  expect(await fs.readdir(path.join(f.root, '.storyboard-workbench'))).toEqual([]);
+  expect(await fs.readdir(path.join(f.root, '.storyboard-flow'))).toEqual([]);
 }, 120000);
 
 test('nested same-workspace reservation cannot borrow the still-spendable parent claim', async () => {
@@ -163,7 +163,7 @@ test('a first delayed over-peak observation stays protected even after the synth
 
 test('a complete joint over-cap census cannot be washed away by later synthetic cleanup', async () => {
   const f = await fixture(), attributes = await emptyResidueAttributes(f);
-  const project = path.join(f.root, '.storyboard-workbench/workspace-recovery-v1');
+  const project = path.join(f.root, '.storyboard-flow/workspace-recovery-v1');
   await fs.mkdir(project, { mode: 0o700 });
   await fs.writeFile(path.join(project, 'partial'), Buffer.alloc(128, 1), { mode: 0o600 });
   const projectAttributes = fixtureAttributeBytes(project) + fixtureAttributeBytes(path.join(project, 'partial'));
@@ -185,7 +185,7 @@ test('a complete joint over-cap census cannot be washed away by later synthetic 
 
 test.each(['active', 'already-reconciled', 'live-sibling'] as const)('a caught complete over-cap observation remains sticky through %s scope settlement', async state => {
   const f = await fixture(), attributes = await emptyResidueAttributes(f);
-  const project = path.join(f.root, '.storyboard-workbench/workspace-recovery-v1');
+  const project = path.join(f.root, '.storyboard-flow/workspace-recovery-v1');
   await fs.mkdir(project, { mode: 0o700 });
   await fs.writeFile(path.join(project, 'partial'), Buffer.alloc(128, 1), { mode: 0o600 });
   const projectAttributes = fixtureAttributeBytes(project) + fixtureAttributeBytes(path.join(project, 'partial'));
@@ -224,7 +224,7 @@ test.each(['active', 'already-reconciled', 'live-sibling'] as const)('a caught c
 // first-green cases protect the same public lifecycle, not a claimed new RED.
 test.each(['active', 'already-reconciled'] as const)('a caught complete joint record overrun stays protected through %s settlement', async state => {
   const f = await fixture(), attributes = await emptyResidueAttributes(f);
-  const project = path.join(f.root, '.storyboard-workbench/workspace-recovery-v1');
+  const project = path.join(f.root, '.storyboard-flow/workspace-recovery-v1');
   await fs.mkdir(project, { mode: 0o700 });
   await fs.writeFile(path.join(project, 'partial'), Buffer.alloc(128, 1), { mode: 0o600 });
   const budget = { bytes: 128 + attributes + 8192, records: 6, assets: 8, jsonDepth: 80 };
@@ -249,7 +249,7 @@ test.each(['active', 'already-reconciled'] as const)('a caught complete joint re
   // Quarantining this Root must not turn a sibling workspace into the same
   // failure or make its safe spending require retiring the failed workspace.
   const sibling = await fs.mkdtemp(path.join(os.tmpdir(), 'joint-reservation-sibling-'));
-  await fs.mkdir(path.join(sibling, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(sibling, '.storyboard-flow'), { mode: 0o700 });
   await f.accounting.reserve(sibling, { ...budget, records: 100 }, 1, 1, async () => { started = true; });
   expect(started).toBe(true);
   expect((await fs.stat(path.join(project, 'partial'))).size).toBe(128);

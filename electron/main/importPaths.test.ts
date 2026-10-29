@@ -7,7 +7,7 @@ import ts from "typescript";
 import { randomUUID } from "node:crypto";
 import { pathExists, pathEntryExists } from "./pathSafety.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
-import { compatibleExternalEditImportMode, writeSwbImportWorkingTiff } from "./photoshopTiffImport.js";
+import { compatibleExternalEditImportMode, writeFlowImportWorkingTiff } from "./photoshopTiffImport.js";
 import { applyFileMoves } from "./fileRenames.js";
 import { createImportPathReservation } from "./importPaths.js";
 import { prepareImportStaging } from "./importPreparation";
@@ -34,9 +34,9 @@ const fixture = async () => {
 
 // Execute the real main preparation entry without Electron startup, Python, or GUI.
 // Image conversion/fingerprinting and disk existence are real; stop before moves.
-const prepare = async (dir: string, shots: Array<{ id: string; imagePath: string; swb?: { status: string } }>, options = {}) => {
+const prepare = async (dir: string, shots: Array<{ id: string; imagePath: string; flow?: { status: string } }>, options = {}) => {
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8");
-  const start = source.indexOf("const importProjectToSwbFormat =");
+  const start = source.indexOf("const importProjectToFlowFormat =");
   const end = source.indexOf("  let archivedOriginals:", start);
   expect(start).toBeGreaterThan(0);
   expect(end).toBeGreaterThan(start);
@@ -44,10 +44,10 @@ const prepare = async (dir: string, shots: Array<{ id: string; imagePath: string
   const bindings = {
     createImportPathReservation, prepareImportStaging, path, pathExists, pathEntryExists, mkdir: fs.mkdir, randomUUID, sharp, withLayerFileOperation, mapWithConcurrency, defaultImportConcurrency,
     archiveStamp: () => "batch", compatibleExternalEditImportMode,
-    isLikelyTiffPath: () => false, writeSwbImportWorkingTiff, pixelFingerprint,
+    isLikelyTiffPath: () => false, writeFlowImportWorkingTiff, pixelFingerprint,
     sharpSourceOptions: { unlimited: true }
   };
-  const code = ts.transpileModule(`${unique}\n${source.slice(start, end)}\nreturn prepared;\n});\n};\nreturn importProjectToSwbFormat(project, folderPath, undefined, options);`, {
+  const code = ts.transpileModule(`${unique}\n${source.slice(start, end)}\nreturn prepared;\n});\n};\nreturn importProjectToFlowFormat(project, folderPath, undefined, options);`, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
   }).outputText;
   const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor;
@@ -99,7 +99,7 @@ it("reserves Archive basenames shared by source directories and avoids existing 
 
 it.each([false, true])("compatible external edit retains its exact path, preserve dirty layers=%s", async (preserveDirtyShotLayers) => {
   const f = await fixture();
-  const external = { ...await f.image("panel.tiff", "red"), swb: { status: "compatible-external-edit" } };
+  const external = { ...await f.image("panel.tiff", "red"), flow: { status: "compatible-external-edit" } };
   const fresh = await f.image("panel.png", "blue");
   const prepared = await prepare(f.dir, [fresh, external], {
     preserveDirtyShotLayers, dirtyShotIds: preserveDirtyShotLayers ? new Set([external.id]) : new Set()
@@ -112,7 +112,7 @@ it.each([false, true])("compatible external edit retains its exact path, preserv
 
 it("dirty external duplicate keeps the Photoshop naming convention and reserves it", async () => {
   const f = await fixture();
-  const external = { ...await f.image("panel.tiff", "red"), swb: { status: "compatible-external-edit" } };
+  const external = { ...await f.image("panel.tiff", "red"), flow: { status: "compatible-external-edit" } };
   const fresh = await f.image("panel-photoshop.png", "blue");
   const prepared = await prepare(f.dir, [external, fresh], { dirtyShotIds: new Set([external.id]) });
   expect(prepared.map((item) => path.basename(item.targetPath))).toEqual(["panel-photoshop.tiff", "panel-photoshop_1.tiff"]);

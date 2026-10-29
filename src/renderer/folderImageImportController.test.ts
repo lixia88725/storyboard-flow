@@ -81,10 +81,10 @@ describe('Import from an inline folder preview', () => {
 
 it('keeps the displayed source folder while opening an existing child without repeating Import', async () => {
   const open = vi.fn(async () => true);
-  const controller = createFolderImageImportController({ copy: async () => ({ folderPath: '/old/.storyboard-flow', count: 1, importRequired: false }), open }, vi.fn());
+  const controller = createFolderImageImportController({ copy: async () => ({ folderPath: '/old/.storyboard-flow-project', count: 1, importRequired: false }), open }, vi.fn());
   controller.show(folder); await controller.importImages();
-  expect(open).toHaveBeenCalledExactlyOnceWith('/old/.storyboard-flow', false);
-  expect(controller.displayPath('/old/.storyboard-flow')).toBe('/old');
+  expect(open).toHaveBeenCalledExactlyOnceWith('/old/.storyboard-flow-project', false);
+  expect(controller.displayPath('/old/.storyboard-flow-project')).toBe('/old');
   expect(controller.displayPath('/other')).toBe('/other');
 });
 

@@ -44,7 +44,7 @@ it("Copy never publishes over an occupied root destination or cleans that unowne
 
 it("workspace Copy owns the whole operation through failure cleanup and preserves a queued later edit", async () => {
   const root = await fs.mkdtemp(path.join(process.env.TMPDIR!, "copy-whole-operation-"));
-  const source = ".storyboard-workbench/layers/s/source.png", target = ".storyboard-workbench/layers/s/copy.png";
+  const source = ".storyboard-flow/layers/s/source.png", target = ".storyboard-flow/layers/s/copy.png";
   await fs.mkdir(path.dirname(path.join(root, source)), { recursive: true });
   const [bytes, edit] = await Promise.all(["red", "blue"].map(background => sharp({ create: { width: 2, height: 2, channels: 4, background } }).png().toBuffer()));
   await fs.writeFile(path.join(root, source), bytes);
@@ -74,7 +74,7 @@ it("workspace Copy owns the whole operation through failure cleanup and preserve
 
 it("workspace Copy refuses an existing layer destination without overwriting or cleaning it", async () => {
   const root = await fs.mkdtemp(path.join(process.env.TMPDIR!, "copy-existing-layer-"));
-  const source = ".storyboard-workbench/layers/s/source.png", target = ".storyboard-workbench/layers/s/existing.png";
+  const source = ".storyboard-flow/layers/s/source.png", target = ".storyboard-flow/layers/s/existing.png";
   await fs.mkdir(path.dirname(path.join(root, source)), { recursive: true });
   const [bytes, original] = await Promise.all(["red", "blue"].map(background => sharp({ create: { width: 2, height: 2, channels: 4, background } }).png().toBuffer()));
   await fs.writeFile(path.join(root, source), bytes);
@@ -93,7 +93,7 @@ it("workspace Copy refuses an existing layer destination without overwriting or 
 
 it("workspace Copy reports committed assets when cleanup itself fails", async () => {
   const root = await fs.mkdtemp(path.join(process.env.TMPDIR!, "copy-cleanup-failure-"));
-  const source = ".storyboard-workbench/layers/s/source.png", target = ".storyboard-workbench/layers/s/copy.png";
+  const source = ".storyboard-flow/layers/s/source.png", target = ".storyboard-flow/layers/s/copy.png";
   await fs.mkdir(path.dirname(path.join(root, source)), { recursive: true });
   const bytes = await sharp({ create: { width: 2, height: 2, channels: 4, background: "red" } }).png().toBuffer();
   await fs.writeFile(path.join(root, source), bytes);

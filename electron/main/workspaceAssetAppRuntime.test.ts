@@ -9,7 +9,7 @@ describe("createWorkspaceAssetAppHandlers", () => {
       fileName: "copy-shot.tiff",
       imagePath: "/scene/copy-shot.tiff",
       options,
-      previewPath: "/scene/.storyboard-workbench/previews/copy-shot.png"
+      previewPath: "/scene/.storyboard-flow/previews/copy-shot.png"
     }));
     const uniquePath = vi.fn(async (_directory: string, fileName: string) => `/scene/${fileName}`);
 
@@ -28,7 +28,7 @@ describe("createWorkspaceAssetAppHandlers", () => {
     await expect(handlers.copyShotAssets(payload)).resolves.toMatchObject({
       fileName: "copy-shot.tiff",
       imagePath: "/scene/copy-shot.tiff",
-      previewPath: "/scene/.storyboard-workbench/previews/copy-shot.png"
+      previewPath: "/scene/.storyboard-flow/previews/copy-shot.png"
     });
 
     expect(copyShotAssets).toHaveBeenCalledWith(

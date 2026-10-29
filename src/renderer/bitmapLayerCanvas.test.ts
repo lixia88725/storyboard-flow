@@ -23,7 +23,7 @@ const layer = (): BitmapLayer => ({
   opacity: 1,
   blendMode: "normal",
   order: 1,
-  bitmapPath: ".storyboard-workbench/layers/shot/layer.png",
+  bitmapPath: ".storyboard-flow/layers/shot/layer.png",
   width: 10,
   height: 8
 });

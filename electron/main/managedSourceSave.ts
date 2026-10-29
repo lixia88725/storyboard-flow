@@ -35,7 +35,7 @@ export const writeManagedSourceFile = async (root: string, filePath: string, byt
   const request = { root, filePath, bytes: bytes.toString('base64'), mode: options.createOnly ? 'create-only' : 'upsert', expectedDigest: options.expectedDigest, policySource: options.policySource };
   const result = await new Promise<any>((resolve, reject) => {
     // No timeout retry: the actual child must exit before effects can be settled.
-    const child = execFile(process.env.SWB_PYTHON_PATH || 'python3', ['-I', '-B', script, '--write-stdin'],
+    const child = execFile(process.env.FLOW_PYTHON_PATH || 'python3', ['-I', '-B', script, '--write-stdin'],
       { maxBuffer: 65536 }, (error, stdout, stderr) => {
         if (error) return reject(Error(`原图写入结果未确认，保留现场：${error.message}; ${stderr}`));
         try { resolve(JSON.parse(stdout)); } catch { reject(Error('原图写入回执无效，保留现场。')); }
@@ -49,7 +49,7 @@ export const writeManagedSourceFile = async (root: string, filePath: string, byt
   if (!(await read(filePath)).equals(bytes)) throw Error('原图保存后校验不一致，未确认保存成功。');
 };
 
-type Shot = { id: string; sourceFileName?: string; fileName: string; imagePath: string; swb?: { archivePath?: string; sourcePath?: string } };
+type Shot = { id: string; sourceFileName?: string; fileName: string; imagePath: string; flow?: { archivePath?: string; sourcePath?: string } };
 type Entry = { shotId: string; sourceName: string; originalHash: string | null; currentHash: string | null; pendingHash?: string };
 type Ledger = { version: 1; entries: Entry[] };
 const ledgerName = '.source-images.json';
@@ -61,11 +61,11 @@ const legacyMapping = async (source: string, folder: string, shots: Shot[]): Pro
   const names = (await fs.readdir(source, { withFileTypes: true })).filter(e => e.isFile() && /\.(png|jpe?g|tiff?|webp|gif|avif)$/i.test(e.name)).map(e => e.name);
   const result: ManagedSourceImage[] = [];
   for (const shot of shots) {
-    const inputName = [shot.sourceFileName, shot.swb?.sourcePath && path.basename(shot.swb.sourcePath)].find(name => name && /^\d{4,}-.*\.png$/i.test(name));
+    const inputName = [shot.sourceFileName, shot.flow?.sourcePath && path.basename(shot.flow.sourcePath)].find(name => name && /^\d{4,}-.*\.png$/i.test(name));
     if (!inputName) continue;
     const stem = path.parse(inputName.replace(/^\d+-/, '')).name;
     const candidates = names.filter(name => path.parse(name).name === stem);
-    const archived = shot.swb?.archivePath;
+    const archived = shot.flow?.archivePath;
     if (candidates.length !== 1 || !archived || !archived.startsWith(folder + path.sep)) throw Error('旧导入记录无法唯一对应原图，未覆盖任何原图。');
     const bytes = await read(path.join(source, candidates[0]));
     if (!(await sharp(bytes).rotate().png().toBuffer()).equals(await read(archived))) throw Error('原图在导入后已改变，未覆盖。');
@@ -86,7 +86,7 @@ export const prepareManagedSourceSave = async (folder: string, shots: Shot[]) =>
   const inputs = managed.images ?? await legacyMapping(source, folder, shots.filter(s => !ledger.entries.some(e => e.shotId === s.id)));
   for (const shot of shots) {
     if (ledger.entries.some(e => e.shotId === shot.id)) continue;
-    const sourceNames = [shot.sourceFileName, shot.swb?.sourcePath && path.basename(shot.swb.sourcePath)];
+    const sourceNames = [shot.sourceFileName, shot.flow?.sourcePath && path.basename(shot.flow.sourcePath)];
     const matches = inputs.filter(i => sourceNames.includes(i.inputName));
     if (matches.length > 1) throw Error('导入来源记录不一致，未覆盖。');
     const input = matches[0];

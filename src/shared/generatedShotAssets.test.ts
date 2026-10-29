@@ -14,7 +14,7 @@ describe("generated shot assets", () => {
 
     expect(generatedShotTransparentLayerAssets(shot)).toEqual([
       {
-        bitmapPath: `.storyboard-workbench/layers/${shot.id}/layer-drawing.png`,
+        bitmapPath: `.storyboard-flow/layers/${shot.id}/layer-drawing.png`,
         width: 1920,
         height: 1080
       }

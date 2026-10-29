@@ -7,7 +7,7 @@ type Rollback = { rollback: () => Promise<void> };
 type SaveRecoverySteps = {
   publicationOrCleanupStarted?: boolean;
   appliedTiffReplacements?: Rollback;
-  swbImport?: Rollback;
+  flowImport?: Rollback;
   appliedRenamePlan?: Rollback;
   stagedPendingDeletedFiles?: Rollback;
 };
@@ -34,7 +34,7 @@ export const recoverFailedSave = async (error: unknown, steps: SaveRecoverySteps
   }
   try {
     await steps.appliedTiffReplacements?.rollback();
-    await steps.swbImport?.rollback();
+    await steps.flowImport?.rollback();
     await steps.appliedRenamePlan?.rollback();
     await steps.stagedPendingDeletedFiles?.rollback();
   } catch (rollbackError) {

@@ -36,9 +36,9 @@ test('ordinary metadata ACK refreshes terminal; a producer fault revokes both li
 },60000);
 async function fixture(){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'main-path-'));onTestFinished(()=>fs.rm(root,{recursive:true,force:true}));
- const metadata=path.join(root,'.storyboard-workbench/storyboard.project.json'),png=path.join(root,'.storyboard-workbench/layers/s/l.png'),paint=path.join(root,'.storyboard-workbench/layers/s/paint.png'),tiff=path.join(root,'a.tiff');await fs.mkdir(path.dirname(png),{recursive:true,mode:0o700});
+ const metadata=path.join(root,'.storyboard-flow/storyboard.project.json'),png=path.join(root,'.storyboard-flow/layers/s/l.png'),paint=path.join(root,'.storyboard-flow/layers/s/paint.png'),tiff=path.join(root,'a.tiff');await fs.mkdir(path.dirname(png),{recursive:true,mode:0o700});
  const bytes=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer();for(const f of [png,paint])await fs.writeFile(f,bytes,{mode:0o600});await fs.writeFile(tiff,await sharp(bytes).tiff().toBuffer(),{mode:0o600});
- const project={id:'p',name:'p',shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',order:0,swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'l',kind:'image',width:2,height:2,bitmapPath:path.relative(root,png)},{id:'paint',kind:'paint',width:2,height:2,bitmapPath:path.relative(root,paint)}]}],dialogues:[]};await fs.writeFile(metadata,JSON.stringify(project),{mode:0o600});
+ const project={id:'p',name:'p',shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',order:0,flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'l',kind:'image',width:2,height:2,bitmapPath:path.relative(root,png)},{id:'paint',kind:'paint',width:2,height:2,bitmapPath:path.relative(root,paint)}]}],dialogues:[]};await fs.writeFile(metadata,JSON.stringify(project),{mode:0o600});
  const frame={},sender={mainFrame:frame},event={sender,senderFrame:frame} as any;
  const payload={folderPath:root,metadataPath:metadata,normalSave:true,project,recoveryContent:{projectRaw:project,desiredAssets:[],sequence:1,assetRevision:0,effectFacts:{receipt:[],deletions:[],remainingScript:null}}};
  const options={budget:{bytes:2097152,records:300,assets:32,jsonDepth:40},python:'python3',script:path.join(process.cwd(),'scripts/recovery-content-permissions.py')};return {root,metadata,paint,project,event,payload,options};
@@ -73,12 +73,12 @@ test.each(['sender','frame','window','document','metadata','Root'] as const)('na
  if(mode==='frame'){const frame={};f.event.sender.mainFrame=frame;event={sender:f.event.sender,senderFrame:frame} as any;}
  if(mode==='window')window={};
  if(mode==='document')service.invalidateDocument(f.event.sender);
- if(mode==='metadata'){await fs.rename(path.join(f.root,'.storyboard-workbench'),path.join(f.root,'original-metadata'));await fs.mkdir(path.join(f.root,'.storyboard-workbench'),{mode:0o700});}
- if(mode==='Root'){await fs.rename(f.root,f.root+'-original');await fs.mkdir(path.join(f.root,'.storyboard-workbench'),{recursive:true,mode:0o700});}
+ if(mode==='metadata'){await fs.rename(path.join(f.root,'.storyboard-flow'),path.join(f.root,'original-metadata'));await fs.mkdir(path.join(f.root,'.storyboard-flow'),{mode:0o700});}
+ if(mode==='Root'){await fs.rename(f.root,f.root+'-original');await fs.mkdir(path.join(f.root,'.storyboard-flow'),{recursive:true,mode:0o700});}
  await expect(service.certifyRetained(event,{folderPath:f.root,content:f.payload.recoveryContent,canvas:{hasUnsettledGesture:false,captures:[]},selectedShotIds:[],dirtyShotIds:['s'],fileNameSyncState:'unsynced',workspaceSaveState:'error'})).rejects.toThrow();
- await expect(fs.lstat(path.join(f.root,'.storyboard-workbench/workspace-recovery-v1/namespace.json'))).rejects.toMatchObject({code:'ENOENT'});
+ await expect(fs.lstat(path.join(f.root,'.storyboard-flow/workspace-recovery-v1/namespace.json'))).rejects.toMatchObject({code:'ENOENT'});
  const original=mode==='Root'?f.root+'-original':f.root;
- const base=path.join(original,mode==='metadata'?'original-metadata':'.storyboard-workbench','workspace-recovery-v1');
+ const base=path.join(original,mode==='metadata'?'original-metadata':'.storyboard-flow','workspace-recovery-v1');
  expect((await fs.readdir(base)).some(name=>name.startsWith('namespace.json.staging-'))).toBe(true);
 },30000);
 
@@ -171,7 +171,7 @@ test('original Main lease preserves content after namespace publication failure 
  onTestFinished(()=>spy.mockRestore());
  const result=await service.runIpc(f.event,f.payload,async()=>{effects++;return {};});spy.mockRestore();
  expect(fired).toBe(true);expect(effects).toBe(0);expect(result.error.sourceEffects).toBe(0);
- await expect(fs.lstat(path.join(f.root,'.storyboard-workbench/workspace-recovery-v1/namespace.json'))).rejects.toMatchObject({code:'ENOENT'});
+ await expect(fs.lstat(path.join(f.root,'.storyboard-flow/workspace-recovery-v1/namespace.json'))).rejects.toMatchObject({code:'ENOENT'});
  expect(await service.certifyRetained(f.event,{folderPath:f.root,content:f.payload.recoveryContent,canvas:{hasUnsettledGesture:false,captures:[]},selectedShotIds:[],dirtyShotIds:['s'],fileNameSyncState:'unsynced',workspaceSaveState:'error'})).toBe(true);
  const recovery=await createPreparedWorkspaceSave(f.options).readReadonly(f.root);
  expect(recovery.state).toBe('protectedIncomplete');expect(recovery.projectRaw).toEqual(f.project);expect(recovery.assets).toHaveLength(3);

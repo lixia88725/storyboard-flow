@@ -26,7 +26,7 @@ enrollment = _load('origin_enrollment', 'recovery-origin-enrollment.py')
 helper = enrollment.helper
 inventory_module = enrollment.inventory_module
 
-SCHEMA = 'swb.workspace-claim.v1'
+SCHEMA = 'flow.workspace-claim.v1'
 CLAIM_FIELDS = ('schema', 'version', 'workspaceKey', 'scopeId', 'claimId', 'effectPeak', 'claimPeak', 'closePeak', 'state', 'census')
 REQUEST_FIELDS = ('phase', 'userData', 'workspaceKey', 'claimName', 'sourceMode', 'sourceRestrictions', 'payload', 'byteLimit', 'recordLimit')
 OPERATION = re.compile(r'[\w-]{1,80}')
@@ -40,7 +40,7 @@ def canonical(payload):
 
 
 def claim_name(payload):
-    return hashlib.sha256(canonical(['swb.workspace-claim-name.v1', payload['workspaceKey'], payload['scopeId'], payload['claimId']])).hexdigest()
+    return hashlib.sha256(canonical(['flow.workspace-claim-name.v1', payload['workspaceKey'], payload['scopeId'], payload['claimId']])).hexdigest()
 
 
 def finite(value):
@@ -76,12 +76,12 @@ def validate(request):
     if type(request['sourceMode']) is not int or request['sourceMode'] not in (0o400, 0o600):
         raise ValueError('Claim source mode')
     payload = request['payload']
-    v2 = isinstance(payload, dict) and payload.get('schema') == 'swb.workspace-claim.v2'
-    v3 = isinstance(payload, dict) and payload.get('schema') == 'swb.workspace-claim.v3'
+    v2 = isinstance(payload, dict) and payload.get('schema') == 'flow.workspace-claim.v2'
+    v3 = isinstance(payload, dict) and payload.get('schema') == 'flow.workspace-claim.v3'
     fields = CLAIM_FIELDS + ('reservation', 'recordPolicyFingerprint', 'scopeEnd') if v3 else CLAIM_FIELDS + ('reservation',) if v2 else CLAIM_FIELDS
     if not isinstance(payload, dict) or tuple(sorted(payload)) != tuple(sorted(fields)):
         raise ValueError('Claim record fields')
-    if payload['schema'] != ('swb.workspace-claim.v3' if v3 else 'swb.workspace-claim.v2' if v2 else SCHEMA) or type(payload['version']) is not int or payload['version'] != (3 if v3 else 2 if v2 else 1) or payload['workspaceKey'] != workspace_key:
+    if payload['schema'] != ('flow.workspace-claim.v3' if v3 else 'flow.workspace-claim.v2' if v2 else SCHEMA) or type(payload['version']) is not int or payload['version'] != (3 if v3 else 2 if v2 else 1) or payload['workspaceKey'] != workspace_key:
         raise ValueError('Claim record schema/binding')
     if v2 or v3:
         reservation = payload['reservation']
@@ -261,7 +261,7 @@ def scope_binding(rows):
     members = []
     for row in rows:
         reserve = {k: v for k, v in row.items() if k not in ('closed', 'scopeComplete', 'reserveIdentity')}
-        if reserve['schema'] != 'swb.workspace-claim.v3':
+        if reserve['schema'] != 'flow.workspace-claim.v3':
             raise ValueError('Legacy member cannot certify a lifecycle scope')
         members.append([reserve['claimId'], hashlib.sha256(canonical(reserve)).hexdigest()])
     return len(members), hashlib.sha256(canonical(sorted(members))).hexdigest()
@@ -280,7 +280,7 @@ def certify_scope_groups(rows):
     for row in rows:
         groups.setdefault(row['scopeId'], []).append(row)
     for group in groups.values():
-        if not any(row['schema'] == 'swb.workspace-claim.v3' for row in group):
+        if not any(row['schema'] == 'flow.workspace-claim.v3' for row in group):
             continue
         count, digest = scope_binding(group)
         ends = [row['closed']['scopeEnd'] for row in group if row['closed'] is not None]
@@ -333,7 +333,7 @@ def authorize(request):
                     continue
                 terminal = read_claim(directories, closed, base, expected, request, terminal=True)
                 terminal_expected = {**{k: v for k, v in reserve.items() if k != 'reserveIdentity'}, 'state': terminal['state'], 'census': terminal['census']}
-                if reserve['schema'] == 'swb.workspace-claim.v3':
+                if reserve['schema'] == 'flow.workspace-claim.v3':
                     terminal_expected['scopeEnd'] = terminal['scopeEnd']
                 if terminal != terminal_expected:
                     raise ValueError('Claim immutable plan mismatch')
@@ -348,7 +348,7 @@ def authorize(request):
     # them. Closing consumes the original funded slot; it must never recreate
     # a missing original namespace or charge the entire effect a second time.
     if request['phase'] == 'admit':
-        if payload['schema'] == 'swb.workspace-claim.v3':
+        if payload['schema'] == 'flow.workspace-claim.v3':
             existing = authorize({**request, 'phase': 'read'})['claims']
             if any(row['scopeId'] == payload['scopeId'] and row['closed'] is not None for row in existing):
                 raise ValueError('Lifecycle scope closing or closed; late admission refused')
@@ -369,10 +369,10 @@ def authorize(request):
         if directories.workspace_fd is None:
             raise ValueError('Original claim namespace unavailable')
         original_identity = request.get('originalReserveIdentity')
-        if payload['schema'] == 'swb.workspace-claim.v3' and (not isinstance(original_identity, dict) or set(original_identity) != {'dev', 'ino', 'mtimeNs', 'ctimeNs'} or any(not isinstance(value, str) or re.fullmatch(r'[0-9]+', value) is None for value in original_identity.values())):
+        if payload['schema'] == 'flow.workspace-claim.v3' and (not isinstance(original_identity, dict) or set(original_identity) != {'dev', 'ino', 'mtimeNs', 'ctimeNs'} or any(not isinstance(value, str) or re.fullmatch(r'[0-9]+', value) is None for value in original_identity.values())):
             raise ValueError('Original reserve native identity required')
         read_record(directories, base + RESERVE_SUFFIX, canonical(reserve), expected, original_identity)
-        if payload['schema'] == 'swb.workspace-claim.v3':
+        if payload['schema'] == 'flow.workspace-claim.v3':
             observed = authorize({**{key: request[key] for key in REQUEST_FIELDS}, 'phase': 'read', 'payload': reserve})['claims']
             group = [row for row in observed if row['scopeId'] == payload['scopeId']]
             count, digest = scope_binding(group)
@@ -381,7 +381,7 @@ def authorize(request):
             if payload['scopeEnd']['memberCount'] != count or payload['scopeEnd']['membersDigest'] != digest:
                 raise ValueError('Scope end must bind every original reserve')
         current = inventory_module.inventory(directories, request['byteLimit'], request['recordLimit'])
-        if payload['schema'] == 'swb.workspace-claim.v3' and (not valid_census(request.get('expectedInventory')) or request['expectedInventory'] != {key: current[key] for key in ('bytes', 'records', 'fingerprint')}):
+        if payload['schema'] == 'flow.workspace-claim.v3' and (not valid_census(request.get('expectedInventory')) or request['expectedInventory'] != {key: current[key] for key in ('bytes', 'records', 'fingerprint')}):
             raise ValueError('Original terminal inventory changed before append')
         if current['bytes'] + payload['closePeak'] > request['byteLimit'] or current['records'] + 1 > request['recordLimit']:
             raise ValueError('Claim close admission/refusal')
@@ -401,7 +401,7 @@ def payload_for(payload, base, state=None, keep_census=True):
     """Rebuild the expected immutable reserve record from an incoming request."""
     if state is None:
         reserve = {**payload, 'state': 'reserved', 'census': None}
-        if payload['schema'] == 'swb.workspace-claim.v3':
+        if payload['schema'] == 'flow.workspace-claim.v3':
             reserve['scopeEnd'] = None
     else:
         reserve = {**payload, 'state': state, 'census': payload['census'] if keep_census else None}
@@ -418,7 +418,7 @@ def read_claim(directories, name, base, expected, request, terminal=False):
     """
     content, actual, native_identity = read_bytes(directories, name, expected, derive=True)
     value = json.loads(content.decode('utf8'))
-    v3 = isinstance(value, dict) and value.get('schema') == 'swb.workspace-claim.v3'
+    v3 = isinstance(value, dict) and value.get('schema') == 'flow.workspace-claim.v3'
     if not v3 and (expected is None or helper.inherited_restrictions(actual) != helper.inherited_restrictions(expected)):
         raise ValueError('Legacy claim complete native source restriction mismatch')
     # Apply the SAME strict shape, peak/floor, identity, native restriction and

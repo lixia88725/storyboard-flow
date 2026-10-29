@@ -18,7 +18,7 @@ describe("createLayerAppHandlers", () => {
       readLayerPng,
       writeLayerPng
     });
-    const payload = { folderPath: "/scene", bitmapPath: ".storyboard-workbench/layers/layer.png" };
+    const payload = { folderPath: "/scene", bitmapPath: ".storyboard-flow/layers/layer.png" };
 
     await expect(handlers.writePng(payload)).resolves.toEqual({
       ...payload,

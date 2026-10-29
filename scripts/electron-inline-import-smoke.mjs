@@ -14,11 +14,11 @@ const singleProject = process.argv.includes('--single-project');
 const switchLaunchContext = process.argv.includes('--switch-launch-context');
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Same platform alias as the other smoke scripts: the backend refuses /var-style spellings.
-const root = await mkdtemp(path.join(await realpath(os.tmpdir()), 'swb-inline-import-'));
+const root = await mkdtemp(path.join(await realpath(os.tmpdir()), 'flow-inline-import-'));
 const source = path.join(root, 'old-board'), otherSource = path.join(root, 'other-board');
-const managedName = '.storyboard-flow';
+const managedName = '.storyboard-flow-project';
 const userData = path.join(root, 'userData');
-const metadata = folder => path.join(folder, '.storyboard-workbench/storyboard.project.json');
+const metadata = folder => path.join(folder, '.storyboard-flow/storyboard.project.json');
 const hash = async file => createHash('sha256').update(await readFile(file)).digest('hex');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const wait = async (fn, label, timeout = 30000) => {
@@ -45,8 +45,8 @@ await writeFile(entry, `const {app, dialog, clipboard, shell} = require('electro
 for (const key of Object.keys(clipboard)) if (typeof clipboard[key] === 'function') clipboard[key] = () => { throw new Error('Test forbids clipboard access'); };
 shell.trashItem = async () => { throw new Error('Test forbids Trash access'); };
 const fs = require('node:fs');
-process.env.SWB_USER_DATA_DIR = ${JSON.stringify(userData)};
-process.env.SWB_PYTHON_DEPS_DIR = ${JSON.stringify(process.env.SWB_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff'))};
+process.env.FLOW_USER_DATA_DIR = ${JSON.stringify(userData)};
+process.env.FLOW_PYTHON_DEPS_DIR = ${JSON.stringify(process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff'))};
 process.env.VITE_DEV_SERVER_URL = '';
 fs.writeFileSync(${JSON.stringify(path.join(root, 'test-process.json'))}, JSON.stringify({pid:process.pid, entry:__filename}));
 const probe = ${JSON.stringify(path.join(root, 'creation-context-'))} + process.pid;
@@ -72,7 +72,7 @@ const launch = async () => {
   child = spawn(viaLaunchServices ? '/usr/bin/open' : process.platform === 'darwin' ? path.join(repo, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron') : path.join(repo, 'node_modules/.bin/electron'), viaLaunchServices
     ? ['-n','-W','-g','-a',path.join(repo,'node_modules/electron/dist/Electron.app'),'--args',...args] : args, {
     cwd: repo, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env,
-      SWB_USER_DATA_DIR: userData, SWB_PYTHON_DEPS_DIR: process.env.SWB_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff'), VITE_DEV_SERVER_URL: '' }
+      FLOW_USER_DATA_DIR: userData, FLOW_PYTHON_DEPS_DIR: process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff'), VITE_DEV_SERVER_URL: '' }
   });
   child.stdout.on('data', bytes => { if (/TEST_PROMPT (This workspace has an unfinished operation|Close without saving)/.test(String(bytes))) prompts++; process.stdout.write(bytes); });
   child.stderr.on('data', bytes => process.stderr.write(bytes));
@@ -140,7 +140,7 @@ try {
   const converted = await wait(async () => {
     const folder = path.join(source, managedName);
     const p = await project(folder);
-    return p.shots.length === 2 && p.shots.every(s => s.swb?.status === 'owned') &&
+    return p.shots.length === 2 && p.shots.every(s => s.flow?.status === 'owned') &&
       await evaluate(`!document.querySelector('.folder-image-browser') && !document.querySelector('.editable-workspace').inert && document.querySelectorAll('[data-shot-id]').length === 2`) ? folder : undefined;
   }, 'converted project published', 60000);
   console.log('CONVERTED', converted);
@@ -203,7 +203,7 @@ try {
   assert.equal(await hash(layer), painted);
   assert.equal(await evaluate(`document.querySelector('[aria-label="Folder path"]').value`), source);
   assert.deepEqual(await Promise.all(originals.map(hash)), afterSave);
-  assert.deepEqual((await readdir(source)).sort(), ['.storyboard-flow', '.storyboard-workbench', 'shot-1.png', 'shot-2.png']);
+  assert.deepEqual((await readdir(source)).sort(), ['.storyboard-flow', '.storyboard-flow-project', 'shot-1.png', 'shot-2.png']);
   assert.deepEqual(await readdir(path.dirname(metadata(source))), ['storyboard.project.json']);
   await close();
   const contexts = (await readFile(path.join(root,'creation-contexts.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);

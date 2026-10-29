@@ -26,7 +26,7 @@ it("Import drains a failed preparation batch before releasing the queue and neve
   const original = await fs.readFile(a);
   const originalB = await fs.readFile(b);
   const shot = (id: string, imagePath: string) => ({ id, imagePath, fileName: path.basename(imagePath),
-    order: 0, swb: { status: "compatible-external-edit", version: 1 }, layers: [] });
+    order: 0, flow: { status: "compatible-external-edit", version: 1 }, layers: [] });
   const project = { ...createProject("Synthetic"), shots: [shot("s", a), shot("t", b)] };
   let ready!: () => void, release!: () => void;
   const opened = new Promise<void>(resolve => { ready = resolve; });
@@ -40,10 +40,10 @@ it("Import drains a failed preparation batch before releasing the queue and neve
   const bindings = { ...fs, ...renames, ...ports, ...safety, path, sharp, process, randomUUID, createHash,
     withLayerFileOperation, mapWithConcurrency, prepareProtectedLayerReplacement,
     recoverFailedImport, ImportRecoveryIncompleteError, createImportPathReservation, prepareImportStaging, pixelFingerprint,
-    sharpSourceOptions: { unlimited: true }, swbFormatVersion: 1,
+    sharpSourceOptions: { unlimited: true }, flowFormatVersion: 1,
     archiveStamp: () => "fixed-production-second", uniquePath: async (dir: string, name: string) => path.join(dir, name),
     emptyDefaultSketchLayers: () => true, app: { getAppPath: () => process.cwd() },
-    resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR,
+    resolvePhotoshopTiffPythonDepsDir: () => process.env.FLOW_PYTHON_DEPS_DIR,
     // Decode is the fault seam. Descriptor writes, publication, main helper and
     // exclusive queue are production/native, not an alternative implementation.
     runPhotoshopTiffImporter: async (_python: unknown, _script: unknown, source: string, out: string, manifest: string) => {
@@ -64,9 +64,9 @@ it("Import drains a failed preparation batch before releasing the queue and neve
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8");
   const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
   const nodes = tree.statements.filter(node => ts.isVariableStatement(node) &&
-    node.declarationList.declarations[0].name.getText(tree) === "importProjectToSwbFormat");
+    node.declarationList.declarations[0].name.getText(tree) === "importProjectToFlowFormat");
   expect(nodes).toHaveLength(1);
-  const compiled = ts.transpileModule(nodes[0].getText(tree) + ";return importProjectToSwbFormat;",
+  const compiled = ts.transpileModule(nodes[0].getText(tree) + ";return importProjectToFlowFormat;",
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const entries = Object.entries(bindings).filter(([name]) => name !== "default");
   const run = new Function(...entries.map(([name]) => name), compiled)(...entries.map(([, value]) => value));
@@ -94,7 +94,7 @@ it("Import drains a failed preparation batch before releasing the queue and neve
     expect(assets).toHaveLength(2);
     expect(assets[1]).not.toBe(assets[0]);
     expect(await fs.lstat(assets[0]).then(() => "present", error => error.code)).toBe("ENOENT");
-    expect(await fs.readFile(path.join(root, ".storyboard-workbench/layers/s/layer-image.png"))).toEqual(green);
+    expect(await fs.readFile(path.join(root, ".storyboard-flow/layers/s/layer-image.png"))).toEqual(green);
     await second.rollback();
   } finally {
     release(); await importing; await successor;

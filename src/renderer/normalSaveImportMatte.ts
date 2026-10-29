@@ -43,7 +43,7 @@ export const prepareImportedImageMatte = async (
     updateProject: update => { local.current = typeof update === "function" ? update(local.current) : update; }
   });
   const assetKey = (shot: Project["shots"][number]) => JSON.stringify([shot.layers,
-    shot.sketchLayers, shot.imageLayerEdits, shot.presentation, shot.swb, shot.baseVisible]);
+    shot.sketchLayers, shot.imageLayerEdits, shot.presentation, shot.flow, shot.baseVisible]);
   // Report the shots whose asset bytes the prepare actually rewrote BEFORE the isCurrent check, so
   // the owner records a real effect across the owner-after-prepare boundary even when a late scene
   // edit makes the derive non-current and this function then throws.

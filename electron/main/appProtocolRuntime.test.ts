@@ -27,17 +27,17 @@ describe("createStoryboardImageProtocolHandler", () => {
     const response = await handler({
       url:
         "storyboard-img://layer?folderPath=%2Fscene&bitmapPath=" +
-        encodeURIComponent(".storyboard-workbench/layers/shot-a/layer-image.png") +
+        encodeURIComponent(".storyboard-flow/layers/shot-a/layer-image.png") +
         "&revision=4"
     });
 
     expect(response.status).toBe(200);
     expect(resolveLayerAssetPath).toHaveBeenCalledWith(
       "/scene",
-      ".storyboard-workbench/layers/shot-a/layer-image.png"
+      ".storyboard-flow/layers/shot-a/layer-image.png"
     );
     expect(fetchFileUrl).toHaveBeenCalledWith(
-      "file:///scene/.storyboard-workbench/layers/shot-a/layer-image.png"
+      "file:///scene/.storyboard-flow/layers/shot-a/layer-image.png"
     );
   });
 
@@ -69,7 +69,7 @@ describe("createStoryboardImageProtocolHandler", () => {
     const response = await handler({
       url:
         "storyboard-img://layer?folderPath=%2Fscene&bitmapPath=" +
-        encodeURIComponent(".storyboard-workbench/layers/shot-a/new-layer.png")
+        encodeURIComponent(".storyboard-flow/layers/shot-a/new-layer.png")
     });
 
     expect(response.status).toBe(404);

@@ -9,11 +9,11 @@ import { assertPhysicalWorkspaceWriterTargets } from './workspacePhysicalWriterG
 
 test('first import autosave creates an editable checkpoint without baking or clearing pending output; failure cannot close silently',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'editable-checkpoint-'));onTestFinished(()=>fs.rm(root,{recursive:true,force:true}));
- const metadata=path.join(root,'.storyboard-workbench/storyboard.project.json'),bitmap=path.join(root,'.storyboard-workbench/layers/s/paint.png'),image=path.join(root,'a.tiff');
+ const metadata=path.join(root,'.storyboard-flow/storyboard.project.json'),bitmap=path.join(root,'.storyboard-flow/layers/s/paint.png'),image=path.join(root,'a.tiff');
  await fs.mkdir(path.dirname(bitmap),{recursive:true,mode:0o700});
  const png=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer(),tiff=await sharp(png).tiff().toBuffer();
  await fs.writeFile(bitmap,png,{mode:0o600});await fs.writeFile(image,tiff,{mode:0o600});
- const project:any={id:'p',name:'checkpoint',shots:[{id:'s',fileName:'a.tiff',imagePath:image,order:0,swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'paint',kind:'paint',width:2,height:2,bitmapPath:path.relative(root,bitmap)}]}],dialogues:[]};
+ const project:any={id:'p',name:'checkpoint',shots:[{id:'s',fileName:'a.tiff',imagePath:image,order:0,flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'paint',kind:'paint',width:2,height:2,bitmapPath:path.relative(root,bitmap)}]}],dialogues:[]};
  const options={automaticCheckpoints:true,budget:{bytes:1048576,records:2000,assets:64,jsonDepth:80},python:'python3',script:path.resolve('scripts/recovery-content-permissions.py')};
  const service=createPreparedWorkspaceSave(options),frame={},event:any={sender:{mainFrame:frame},senderFrame:frame};
  const binding=await service.observeWorkspace(event,root),payload={folderPath:root,metadataPath:metadata,project};

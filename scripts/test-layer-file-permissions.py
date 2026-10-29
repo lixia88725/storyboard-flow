@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 SCRIPT = Path(__file__).with_name('layer-file-permissions.py')
-ROOT = Path(os.environ.get('SWB_PERMISSION_TEST_TMPDIR', tempfile.gettempdir()))
+ROOT = Path(os.environ.get('FLOW_PERMISSION_TEST_TMPDIR', tempfile.gettempdir()))
 
 
 class PermissionAdapter(unittest.TestCase):

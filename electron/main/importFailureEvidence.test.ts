@@ -18,7 +18,7 @@ test('only the original Import preparation emits its exact failed candidate and 
   await expect((evidence as any).withImportFailureEvidence((fact: any) => { facts.push(fact); }, () => prepareImportStaging(candidate, async () => { called = true; }))).rejects.toMatchObject({ code: 'EEXIST' });
   expect(called).toBe(false);
   expect(facts).toHaveLength(1);
-  expect(facts[0]).toMatchObject({ schema: 'swb.import-preparation-failure.v1', candidatePath: candidate, code: 'EEXIST', syscall: 'mkdir', preparationStarted: false, acknowledged: false });
+  expect(facts[0]).toMatchObject({ schema: 'flow.import-preparation-failure.v1', candidatePath: candidate, code: 'EEXIST', syscall: 'mkdir', preparationStarted: false, acknowledged: false });
   expect(facts[0].path).toBe(candidate);
   expect(await fs.readFile(path.join(candidate, 'preserved.json'))).toEqual(original);
   // No active original-Main observer: an old failure cannot be re-enrolled.

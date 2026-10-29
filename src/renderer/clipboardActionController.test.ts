@@ -53,7 +53,7 @@ const setupController = ({
   clipboardSelection,
   deleteTarget = { type: "shot" },
   folderPath = "/scene",
-  metadataPath = "/scene/.storyboard-workbench/project.json",
+  metadataPath = "/scene/.storyboard-flow/project.json",
   project,
   selectedShotIds = []
 }: {
@@ -506,7 +506,7 @@ describe("useClipboardActionController", () => {
     expect(api.ensureLayerAssets).toHaveBeenCalledWith({
       project: expect.objectContaining({ id: "project" }),
       folderPath: "/scene",
-      metadataPath: "/scene/.storyboard-workbench/project.json"
+      metadataPath: "/scene/.storyboard-flow/project.json"
     });
     expect(api.copyShotAssets).toHaveBeenCalledWith({
       folderPath: "/scene",

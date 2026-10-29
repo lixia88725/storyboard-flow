@@ -9,21 +9,21 @@ import * as origin from './ownedStagePublication';
 
 test('only original Main native producer receipts retain provenance; cold copies and mutations cannot enroll', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'owned-origin-live-'));
-  const target = path.join(root, '.storyboard-workbench/layers/s/new.png');
+  const target = path.join(root, '.storyboard-flow/layers/s/new.png');
   await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
   const bytes = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'blue' } }).png().toBuffer();
   const python = 'python3';
   const shim = path.join(root, 'original-native-unlink-fault');
   await fs.writeFile(shim, `#!/usr/bin/env ${python}\nimport sys,importlib.util,json,base64,os\nspec=importlib.util.spec_from_file_location('writer',sys.argv[3]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)\noriginal=m.os.unlink\ndef fault(p,*a,**k):\n if os.path.basename(p).startswith('.layer-staging-'): raise PermissionError('origin fixture final unlink denied')\n return original(p,*a,**k)\nm.os.unlink=fault\nr=json.load(sys.stdin)\nprint(json.dumps(m.protected_write(r['root'],r['filePath'],base64.b64decode(r['bytes']),r['mode'],r['operation'])))\n`, { mode: 0o700 });
-  const old = process.env.SWB_PYTHON_BIN;
+  const old = process.env.FLOW_PYTHON_BIN;
   let producer: ProducerPngReceipt | undefined, committed: any, error: any;
   try {
-    process.env.SWB_PYTHON_BIN = shim;
+    process.env.FLOW_PYTHON_BIN = shim;
     error = await withProducerPngEffects({ beforeWrite: async () => {}, written: async r => { producer = r; }, beforeDelete: async () => {}, deleted: async () => {} }, () => writeProtectedLayerFile(root, target, bytes, 'upsert', r => { committed = r; })).catch(e => e);
-  } finally { if (old === undefined) delete process.env.SWB_PYTHON_BIN; else process.env.SWB_PYTHON_BIN = old; }
+  } finally { if (old === undefined) delete process.env.FLOW_PYTHON_BIN; else process.env.FLOW_PYTHON_BIN = old; }
   expect(error).toMatchObject({ effect: 'committed', filePath: target });
   const hot = producer?.commitFailure?.ownedStageReceipt;
-  expect(hot).toMatchObject({ schema: 'swb.owned-stage-publication.v1', root, target });
+  expect(hot).toMatchObject({ schema: 'flow.owned-stage-publication.v1', root, target });
   expect(origin.hasOriginalOwnedStageProvenance(hot)).toBe(true);
   expect(origin.hasOriginalOwnedStageProvenance(committed.ownedStageReceipt)).toBe(true);
   expect(origin.hasOriginalOwnedStageProvenance(error.ownedStageReceipt)).toBe(true);

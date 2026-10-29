@@ -1,6 +1,6 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { autosaveErrorReducer, type AutosaveErrorNotice } from "./autosaveError";
-import { statusPanelToggleClassName, swbStatusLabel, updateCheckButtonLabel } from "./statusPanelController";
+import { statusPanelToggleClassName, flowStatusLabel, updateCheckButtonLabel } from "./statusPanelController";
 import type { UpdateNoticeState } from "./updateNoticeController";
 import type { FileNameSyncState, WorkspaceSaveState } from "./workspaceLifecycleState";
 import type { WorkspaceStatusPresentation } from "./workspaceStatusPresentation";
@@ -9,8 +9,8 @@ export type StatusPopoverProps = {
   autosaveError: AutosaveErrorNotice | undefined;
   checkForUpdates: (notifyWhenCurrent?: boolean) => void | Promise<void>;
   fileNameSyncState: FileNameSyncState;
-  hasSwbWarning: boolean;
-  needsSwbImport: boolean;
+  hasFlowWarning: boolean;
+  needsFlowImport: boolean;
   openUpdateDownload: (update: Extract<UpdateNoticeState, { status: "available" }>["update"]) => void;
   parkedShotCount: number;
   setAutosaveError: Dispatch<SetStateAction<AutosaveErrorNotice | undefined>>;
@@ -26,8 +26,8 @@ export const StatusPopover = ({
   autosaveError,
   checkForUpdates,
   fileNameSyncState,
-  hasSwbWarning,
-  needsSwbImport,
+  hasFlowWarning,
+  needsFlowImport,
   openUpdateDownload,
   parkedShotCount,
   setAutosaveError,
@@ -77,7 +77,7 @@ export const StatusPopover = ({
           <span>Workspace {presentation.state}</span>
           {presentation.state === "pending" ? <span>Internal metadata {presentation.metadataState}; working TIFF output pending Save</span> : null}
           <span>File names {fileNameSyncState}</span>
-          <span>{swbStatusLabel({ needsSwbImport, hasSwbWarning })}</span>
+          <span>{flowStatusLabel({ needsFlowImport, hasFlowWarning })}</span>
           <button type="button" className="status-panel-action" onClick={() => void checkForUpdates(true)}>
             {updateCheckButtonLabel(updateNotice.status)}
           </button>
@@ -88,7 +88,7 @@ export const StatusPopover = ({
         className={statusPanelToggleClassName({
           workspaceSaveState: presentation.state === "pending" ? "saving" : presentation.state,
           fileNameSyncState,
-          hasSwbWarning,
+          hasFlowWarning,
           updateNoticeStatus: updateNotice.status
         })}
         aria-label="Workspace status"

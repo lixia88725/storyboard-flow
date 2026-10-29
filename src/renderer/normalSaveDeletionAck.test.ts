@@ -10,7 +10,7 @@ import type { NormalSaveCompletion } from "../../electron/normalSaveTransport";
 function fixture(state: "pending" | "synced" = "pending", mixed = false) {
   const p = createProject("ack");
   p.shots = ["d", ...(mixed ? ["a"] : [])].map(id => ({ id, imagePath: `/owned/${id}.tiff`, fileName: `${id}.tiff`, order: 0,
-    swb: { version: 1, status: "owned", canvasWidth: 1, canvasHeight: 1 } }));
+    flow: { version: 1, status: "owned", canvasWidth: 1, canvasHeight: 1 } }));
   p.pendingBake = { version: 1, envelopeExtension: { keep: 3 }, shots: Object.fromEntries(p.shots.map(s => [s.id,
     { state, ...(state === "pending" ? { editToken: `t-${s.id}` } : {}), acceptedOutputIdentity: "a".repeat(64), extension: { keep: 1 } }])) } as Project["pendingBake"];
   const ref = { current: p }; let outputs = 0, persists = 0, fault = false, actualIdentity = "a".repeat(64);

@@ -70,7 +70,7 @@ import {
   defaultImportConcurrency,
   runPhotoshopTiffImporter,
   topmostImportedLayerId,
-  writeSwbImportWorkingTiff,
+  writeFlowImportWorkingTiff,
   type ImportedPhotoshopTiffManifest
 } from "./photoshopTiffImport.js";
 import { resolvePhotoshopTiffPythonDepsDir } from "./photoshopTiffDeps.js";
@@ -173,8 +173,8 @@ import {
 } from "./userSettingsService.js";
 import { createUserDataRuntime } from "./userDataRuntime.js";
 
-const swbFormatVersion = 1;
-const swbXmpTag = "swb:metadata";
+const flowFormatVersion = 1;
+const flowXmpTag = "flow:metadata";
 const sharpSourceOptions = { unlimited: true } as const;
 type PendingDeletedShot = {
   id: string;
@@ -244,9 +244,9 @@ type Project = {
       points: number[];
     }>;
     baseVisible?: boolean;
-    swb?: {
+    flow?: {
       version: number;
-      status: "owned" | "non-swb" | "compatible-external-edit" | "incompatible-external-edit";
+      status: "owned" | "non-flow" | "compatible-external-edit" | "incompatible-external-edit";
       canvasWidth: number;
       canvasHeight: number;
       baseFingerprint?: string;
@@ -302,12 +302,12 @@ type ImportedImage = {
   width?: number;
   height?: number;
   fingerprint?: string;
-  swbMetadata?: SwbImageMetadata;
+  flowMetadata?: FlowImageMetadata;
 };
 
-type SwbImageMetadata = {
-  app: "Storyboard Flow" | "Storyboard Workbench";
-  format: "swb-tiff";
+type FlowImageMetadata = {
+  app: "Storyboard Flow";
+  format: "flow-tiff";
   version: number;
   projectId?: string;
   shotId: string;
@@ -355,7 +355,7 @@ type RenamePlanItem = {
   finalFileName: string;
 };
 
-type SwbImportResult = {
+type FlowImportResult = {
   normalSaveImportEffects?: import("../normalSaveTransport.js").NormalSaveImportEffect[];
   project: Project;
   importedShotIds: string[];
@@ -373,31 +373,31 @@ type StoryboardScriptImportResult = {
 };
 
 // User-approved finite production capacity; explicit test limits may only reduce it.
-const recoveryBudget = resolveRecoveryBudget(process.env.SWB_RECOVERY_LIMITS);
+const recoveryBudget = resolveRecoveryBudget(process.env.FLOW_RECOVERY_LIMITS);
 const originAccounting = createOriginWorkspaceAccounting({
   userData: () => app.getPath('userData'),
-  python: process.env.SWB_PYTHON_PATH || 'python3',
+  python: process.env.FLOW_PYTHON_PATH || 'python3',
   script: path.join(app.getAppPath(), 'scripts/recovery-origin-permissions.py'),
   claimRecords: () => createRecoveryClaimRecords({
-    userData: () => app.getPath('userData'), python: process.env.SWB_PYTHON_PATH || 'python3',
+    userData: () => app.getPath('userData'), python: process.env.FLOW_PYTHON_PATH || 'python3',
     script: path.join(app.getAppPath(), 'scripts/recovery-claim-records.py')
   }),
   claimWriter: (_root, restrictions) => createRecoveryClaimRecords({
-    userData: () => app.getPath('userData'), python: process.env.SWB_PYTHON_PATH || 'python3',
+    userData: () => app.getPath('userData'), python: process.env.FLOW_PYTHON_PATH || 'python3',
     script: path.join(app.getAppPath(), 'scripts/recovery-claim-records.py'), restrictions: () => restrictions
   })
 });
 const retainedCloseService = createWorkspaceRetainedCloseService({
   budget: recoveryBudget,
   accounting: originAccounting,
-  python: process.env.SWB_PYTHON_PATH || "python3",
+  python: process.env.FLOW_PYTHON_PATH || "python3",
   script: path.join(app.getAppPath(), "scripts/recovery-content-permissions.py")
 });
 const originEnrollment = createOriginEnrollment({
   userData: () => app.getPath('userData'),
   accounting: originAccounting,
   budget: () => recoveryBudget,
-  python: process.env.SWB_PYTHON_PATH || 'python3',
+  python: process.env.FLOW_PYTHON_PATH || 'python3',
   script: path.join(app.getAppPath(), 'scripts/recovery-origin-enrollment.py')
 });
 // One Main-wide controlled backing pool shared by the recovery/save service and
@@ -410,7 +410,7 @@ const preparedSave = createPreparedWorkspaceSave({
   memoryBudget: mainMemoryBudget,
   accounting: originAccounting,
   originEnrollment,
-  python: process.env.SWB_PYTHON_PATH || "python3",
+  python: process.env.FLOW_PYTHON_PATH || "python3",
   script: path.join(app.getAppPath(), "scripts/recovery-content-permissions.py")
 });
 const ownedStageRetryService = createOwnedStageRetryService<Parameters<typeof preparedSave.verifyFailedOrigin>[0]>({
@@ -457,8 +457,8 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
-if (process.env.SWB_USER_DATA_DIR) {
-  app.setPath("userData", process.env.SWB_USER_DATA_DIR);
+if (process.env.FLOW_USER_DATA_DIR) {
+  app.setPath("userData", process.env.FLOW_USER_DATA_DIR);
 }
 
 app.setName("Storyboard Flow");
@@ -659,12 +659,12 @@ const registerIpcHandlers = () => {
       scriptPath: path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-export.py"),
       env: {
         ...process.env,
-        SWB_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() })
+        FLOW_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() })
       }
     });
   });
 
-  ipcMain.handle("workspace:importSwbFormat", async (event, payload: ProjectPayload) => withLayerFileOperation(async () => {
+  ipcMain.handle("workspace:importFlowFormat", async (event, payload: ProjectPayload) => withLayerFileOperation(async () => {
     const normalSaveImageOperation = payload.normalSaveImageImport || payload.normalSaveAutoImageImport;
     // Script text Import under normal Save: main may only materialize genuinely new blank
     // assets and return the parsed Project. The renderer owner is the sole writer of the final
@@ -702,7 +702,7 @@ const registerIpcHandlers = () => {
       throw new Error("Script Import external input changed; both inputs retained");
     }
     let scriptImport: StoryboardScriptImportResult | undefined;
-    let swbImport: SwbImportResult | undefined;
+    let flowImport: FlowImportResult | undefined;
     let appliedTiffReplacements: AppliedFileReplacements | undefined;
     const previewReceipts: PreviewReceipt[] = [];
     let metadataPublicationStarted = false, irreversibleCommitStarted = false;
@@ -710,11 +710,11 @@ const registerIpcHandlers = () => {
       irreversibleCommitStarted = true;
       for (const preview of previewReceipts) await preview.commit();
       await appliedTiffReplacements?.commit();
-      await swbImport?.commit?.();
+      await flowImport?.commit?.();
       await scriptImport?.commit?.();
     };
     try {
-      const imageImportNeeded = projectNeedsSwbImport(payload.project);
+      const imageImportNeeded = projectNeedsFlowImport(payload.project);
       scriptImport = normalSaveImageOperation ? { project: payload.project, rollback: async () => undefined } : await importStoryboardScriptMarkdown(
         payload.project,
         payload.folderPath,
@@ -781,7 +781,7 @@ const registerIpcHandlers = () => {
         } satisfies FolderScanPayload;
       }
 
-      swbImport = await importProjectToSwbFormat(
+      flowImport = await importProjectToFlowFormat(
         scriptImport.project,
         payload.folderPath,
         createWorkspaceTaskProgressReporter(event.sender, "import"),
@@ -791,18 +791,18 @@ const registerIpcHandlers = () => {
           normalSaveImageImport: normalSaveImageOperation, normalSaveAutoImageImport: payload.normalSaveAutoImageImport
         }
       );
-      appliedTiffReplacements = await writeSwbMetadataToTiffs(
-        swbImport.project,
+      appliedTiffReplacements = await writeFlowMetadataToTiffs(
+        flowImport.project,
         payload.folderPath,
         undefined,
-        { shotIds: new Set(swbImport.tiffWriteShotIds) }
+        { shotIds: new Set(flowImport.tiffWriteShotIds) }
       );
       const importedProject = await createProjectPreviewsForShots(
-        swbImport.project,
+        flowImport.project,
         payload.folderPath,
-        new Set(swbImport.importedShotIds), receipt => { previewReceipts.push(receipt); }
+        new Set(flowImport.importedShotIds), receipt => { previewReceipts.push(receipt); }
       );
-      const normalSaveImportEffects = normalSaveImageOperation ? await Promise.all((swbImport.normalSaveImportEffects ?? []).map(async e => ({
+      const normalSaveImportEffects = normalSaveImageOperation ? await Promise.all((flowImport.normalSaveImportEffects ?? []).map(async e => ({
         ...e, outputHash: createHash("sha256").update(await readFile(e.targetPath)).digest("hex")
       }))) : undefined;
       // Owner persists latest metadata + H0 after matte; main does not install captured P.
@@ -837,7 +837,7 @@ const registerIpcHandlers = () => {
       try {
         await recoverFailedImport(error, [{ rollback: async () => {
           for (const preview of [...previewReceipts].reverse()) await preview.rollback();
-        } }, appliedTiffReplacements, swbImport, scriptImport]);
+        } }, appliedTiffReplacements, flowImport, scriptImport]);
         throw error;
       } catch (recoveryError) {
         if (recoveryError instanceof ImportRecoveryIncompleteError) {
@@ -876,7 +876,7 @@ const registerIpcHandlers = () => {
         const selectedShots = [...project.shots, ...(project.parkedShots ?? [])].filter((shot) =>
           shotIds.has(shot.id)
         );
-        const replacements = await writeSwbMetadataToTiffs(
+        const replacements = await writeFlowMetadataToTiffs(
           { ...project, shots: selectedShots, parkedShots: undefined },
           folderPath,
           undefined,
@@ -911,7 +911,7 @@ const saveWorkspace = async (
 ): Promise<ProjectPayload> => withLayerFileOperation(async () => {
   let appliedRenamePlan: AppliedFileRenamePlan | undefined;
   let stagedPendingDeletedFiles: AppliedFileMoves | undefined;
-  let swbImport: SwbImportResult | undefined;
+  let flowImport: FlowImportResult | undefined;
   let appliedTiffReplacements: AppliedFileReplacements | undefined;
   let savedProject: Project | undefined;
   let outputAcks: NonNullable<ProjectPayload["normalSaveOutputs"]> = [];
@@ -939,28 +939,28 @@ const saveWorkspace = async (
       });
     }
 
-    swbImport = await importProjectToSwbFormat(projectToSave, payload.folderPath);
-    const swbProject = swbImport.project;
+    flowImport = await importProjectToFlowFormat(projectToSave, payload.folderPath);
+    const flowProject = flowImport.project;
     const pendingIds = payload.normalSave
       ? payload.project.shots.filter(s => payload.project.pendingBake?.shots[s.id]?.state === "pending").map(s => s.id)
       : [];
     const saveShotIds = saveProgressShotIds(
       payload.dirtyShotIds === undefined ? undefined : [...new Set([...payload.dirtyShotIds, ...pendingIds])],
-      swbImport.tiffWriteShotIds
+      flowImport.tiffWriteShotIds
     );
-    totalShots = countSaveProgressShots(swbProject, saveShotIds);
+    totalShots = countSaveProgressShots(flowProject, saveShotIds);
     savedShots = 0;
     onProgress?.({ kind: "save", current: 0, total: totalShots });
-    appliedTiffReplacements = await writeSwbMetadataToTiffs(
-      swbProject,
+    appliedTiffReplacements = await writeFlowMetadataToTiffs(
+      flowProject,
       payload.folderPath,
       reportShotSaved,
       { shotIds: saveShotIds,
         beforeInstall: payload.normalSave ? () => assertNormalSaveAdmission(payload, true) : undefined }
     );
-    savedProject = await syncSavedSwbBaseFingerprints(
+    savedProject = await syncSavedFlowBaseFingerprints(
       clearSavedImageLayerEdits(
-        swbProject,
+        flowProject,
         saveShotIds ? { shotIds: saveShotIds } : undefined
       ),
       saveShotIds
@@ -969,7 +969,7 @@ const saveWorkspace = async (
     publicationOrCleanupStarted = true;
     await writeProjectFiles(payload.metadataPath, payload.folderPath, savedProject);
     await appliedTiffReplacements?.commit();
-    await swbImport.commit?.();
+    await flowImport.commit?.();
 
   // Publication has begun: the remaining tail must retain installed assets
   // and report typed incomplete facts rather than ordinary IPC rejection.
@@ -1014,7 +1014,7 @@ const saveWorkspace = async (
     return recoverFailedSave(error, {
       publicationOrCleanupStarted,
       appliedTiffReplacements,
-      swbImport,
+      flowImport,
       appliedRenamePlan,
       stagedPendingDeletedFiles
     });
@@ -1027,14 +1027,14 @@ const assertManualImageImportAdmission = async (payload: ProjectPayload) => {
     assertPathInsideFolder(payload.folderPath, a.shot.imagePath);
     const hash = createHash("sha256").update(await readFile(a.shot.imagePath)).digest("hex");
     if (payload.normalSaveAutoImageImport && a.external) {
-      const metadata = await readSwbMetadata(a.shot.imagePath);
+      const metadata = await readFlowMetadata(a.shot.imagePath);
       const size = await sharp(a.shot.imagePath, sharpSourceOptions).metadata();
-      if (!metadata || metadata.shotId !== a.shot.id || size.width !== a.shot.swb?.canvasWidth || size.height !== a.shot.swb?.canvasHeight) {
+      if (!metadata || metadata.shotId !== a.shot.id || size.width !== a.shot.flow?.canvasWidth || size.height !== a.shot.flow?.canvasHeight) {
         throw new Error("Automatic Import TIFF identity is not compatible; both versions retained");
       }
     }
     if (!a.fresh && !a.external && hash !== a.entry!.acceptedOutputIdentity) throw new Error("Import source changed externally");
-    for (const layer of a.fresh ? [{ bitmapPath: `.storyboard-workbench/layers/${a.shot.id}/layer-image.png` }] : a.shot.layers ?? []) {
+    for (const layer of a.fresh ? [{ bitmapPath: `.storyboard-flow/layers/${a.shot.id}/layer-image.png` }] : a.shot.layers ?? []) {
       const file = resolveLayerAssetPath(payload.folderPath, (layer as { bitmapPath: string }).bitmapPath);
       if (!a.fresh) { await readFile(file); continue; }
       try { await readFile(file); } catch (error) {
@@ -1070,7 +1070,7 @@ const assertNormalSaveAdmission = async (payload: ProjectPayload, renamed: boole
   for (const shot of shots) {
     const entry = envelope?.shots[shot.id];
     const mapping = plan.find(r => r.shotId === shot.id);
-    if (!entry || shot.swb?.status !== "owned" || !/\.tiff?$/iu.test(shot.imagePath) ||
+    if (!entry || shot.flow?.status !== "owned" || !/\.tiff?$/iu.test(shot.imagePath) ||
         mapping && (mapping.finalPath !== shot.imagePath || mapping.finalFileName !== shot.fileName)) {
       throw new Error("Save source is not certified; Import/legacy initialization is required");
     }
@@ -1094,16 +1094,16 @@ const normalSaveOutputAcks = async (
   for (const captured of payload.project.shots) {
     if (selectedIds && !selectedIds.has(captured.id) && !payload.renamePlan?.some(r => r.shotId === captured.id && r.fromPath !== r.finalPath)) continue;
     const entry = payload.project.pendingBake?.shots[captured.id];
-    if (!entry || entry.state === "unknown" || !shouldWriteSwbMetadata(captured)) {
+    if (!entry || entry.state === "unknown" || !shouldWriteFlowMetadata(captured)) {
       throw new Error("Selected Save output is not certified");
     }
     const output = actual.shots.find(s => s.id === captured.id);
-    if (!output || output.imagePath !== captured.imagePath || output.swb?.status !== "owned") {
+    if (!output || output.imagePath !== captured.imagePath || output.flow?.status !== "owned") {
       throw new Error("Save output/source mapping changed; completion not accepted");
     }
     acks.push({ shotId: captured.id, capturedToken: entry.editToken,
       sourcePath: payload.renamePlan?.find(r => r.shotId === captured.id)?.fromPath ?? captured.imagePath,
-      targetPath: output.imagePath, fileName: output.fileName, baseFingerprint: output.swb?.baseFingerprint,
+      targetPath: output.imagePath, fileName: output.fileName, baseFingerprint: output.flow?.baseFingerprint,
       outputHash: createHash("sha256").update(await readFile(output.imagePath)).digest("hex") });
   }
   return acks;
@@ -1324,12 +1324,12 @@ const writeProjectFiles = async (
 const storyboardScriptPathForFolder = (folderPath: string): string =>
   path.join(folderPath, storyboardScriptFileName);
 
-const projectNeedsSwbImport = (project: Project): boolean => {
+const projectNeedsFlowImport = (project: Project): boolean => {
   return [...project.shots, ...(project.parkedShots ?? [])].some(
     (shot) =>
-      shot.swb?.status === "non-swb" ||
-      shot.swb?.status === "compatible-external-edit" ||
-      shot.swb?.status === "incompatible-external-edit"
+      shot.flow?.status === "non-flow" ||
+      shot.flow?.status === "compatible-external-edit" ||
+      shot.flow?.status === "incompatible-external-edit"
   );
 };
 
@@ -1393,19 +1393,19 @@ const removeRecentFolder = async (folderPath: string): Promise<void> => {
 
 const updateRecentFoldersMenu = recentFoldersRuntime.updateMenu;
 
-const importProjectToSwbFormat = async (
+const importProjectToFlowFormat = async (
   project: Project,
   folderPath: string,
   onProgress?: WorkspaceTaskProgressReporter,
   options: { dirtyShotIds?: Set<string>; preserveDirtyShotLayers?: boolean; normalSaveImageImport?: boolean; normalSaveAutoImageImport?: boolean } = {}
-): Promise<SwbImportResult> => {
+): Promise<FlowImportResult> => {
   return withLayerFileOperation(async () => {
   const archiveRoot = path.join(folderPath, "Archive", archiveStamp());
-  const tempRoot = path.join(folderPath, ".storyboard-workbench", "import-tmp", `${archiveStamp()}-${randomUUID()}`);
+  const tempRoot = path.join(folderPath, ".storyboard-flow", "import-tmp", `${archiveStamp()}-${randomUUID()}`);
   const photoshopLayerRoot = path.join(tempRoot, "photoshop-layers");
-  const finalLayerRoot = path.join(folderPath, ".storyboard-workbench", "layers");
+  const finalLayerRoot = path.join(folderPath, ".storyboard-flow", "layers");
   const importableShots = [...project.shots, ...(project.parkedShots ?? [])].filter(
-    (shot) => shot.swb?.status !== "owned"
+    (shot) => shot.flow?.status !== "owned"
   );
   let importedShots = 0;
   const reportShotImported = () => {
@@ -1428,7 +1428,7 @@ const importProjectToSwbFormat = async (
   const pathPlans = [];
   // Reserve the whole batch in shot order before concurrent TIFF preparation.
   for (const shot of importableShots) {
-    const compatibleExternalEdit = shot.swb?.status === "compatible-external-edit";
+    const compatibleExternalEdit = shot.flow?.status === "compatible-external-edit";
     const dirtyCompatibleExternalEdit = compatibleExternalEdit && options.dirtyShotIds?.has(shot.id) === true;
     const importMode = compatibleExternalEditImportMode({
       compatibleExternalEdit,
@@ -1463,7 +1463,7 @@ const importProjectToSwbFormat = async (
       let importWarnings: string[] = [];
 
       if (!compatibleExternalEdit && (await pathExists(targetPath))) {
-        throw new Error(`SWB import target already exists: ${targetPath}`);
+        throw new Error(`FLOW import target already exists: ${targetPath}`);
       }
 
       if (isLikelyTiffPath(shot.imagePath)) {
@@ -1479,7 +1479,7 @@ const importProjectToSwbFormat = async (
             manifestPath,
             {
               ...process.env,
-              SWB_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() })
+              FLOW_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() })
             }
           );
           const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as ImportedPhotoshopTiffManifest;
@@ -1502,7 +1502,7 @@ const importProjectToSwbFormat = async (
         }
       }
       if (!compatibleExternalEdit || duplicateExternalEdit) {
-        await writeSwbImportWorkingTiff({
+        await writeFlowImportWorkingTiff({
           sourcePath: shot.imagePath,
           outputPath: tempPath,
           usePlaceholder: Boolean(importedLayers)
@@ -1632,15 +1632,15 @@ const importProjectToSwbFormat = async (
         activeLayerTarget: "image" as const,
         ...(item.importedLayers ? { activeLayerId: topmostImportedLayerId(item.importedLayers) } : {}),
         importWarnings: item.importWarnings.length > 0 ? item.importWarnings : shot.importWarnings,
-        swb: {
-          version: swbFormatVersion,
+        flow: {
+          version: flowFormatVersion,
           status: "owned" as const,
           canvasWidth: item.width,
           canvasHeight: item.height,
           baseFingerprint: item.fingerprint,
-          sourcePath: item.compatibleExternalEdit ? shot.swb?.sourcePath : shot.imagePath,
-          archivePath: item.compatibleExternalEdit ? shot.swb?.archivePath : item.archivePath,
-          sourceKind: item.importedLayers ? "photoshop-layered-tiff" as const : shot.swb?.sourceKind
+          sourcePath: item.compatibleExternalEdit ? shot.flow?.sourcePath : shot.imagePath,
+          archivePath: item.compatibleExternalEdit ? shot.flow?.archivePath : item.archivePath,
+          sourceKind: item.importedLayers ? "photoshop-layered-tiff" as const : shot.flow?.sourceKind
         }
       };
       if (!item.duplicateExternalEdit) {
@@ -1650,14 +1650,14 @@ const importProjectToSwbFormat = async (
       return [
         {
           ...shot,
-          swb: shot.swb
+          flow: shot.flow
             ? {
-                ...shot.swb,
+                ...shot.flow,
                 status: "owned" as const,
                 baseFingerprint: item.fingerprint,
                 statusMessage: undefined
               }
-            : shot.swb
+            : shot.flow
         },
         {
           ...updatedShot,
@@ -1726,13 +1726,13 @@ const createGeneratedShotFromImage = (
         opacity: 1,
         blendMode: "normal",
         order: 0,
-        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-image.png`,
+        bitmapPath: `.storyboard-flow/layers/${shotId}/layer-image.png`,
         width,
         height
       }
     ],
-    swb: {
-      version: swbFormatVersion,
+    flow: {
+      version: flowFormatVersion,
       status: "owned",
       canvasWidth: width,
       canvasHeight: height,
@@ -1832,7 +1832,7 @@ const sketchLayersForShot = (
   return shot.sketchLayers ?? [];
 };
 
-const writeSwbMetadataToTiffs = async (
+const writeFlowMetadataToTiffs = async (
   project: Project,
   folderPath: string,
   onShotWritten?: () => void,
@@ -1855,7 +1855,7 @@ const writeSwbMetadataToTiffs = async (
     // One unique operation directory owns all preparation and recovery artifacts.
     // Layer count changes the encoder, never the installation guarantee.
     const saveStamp = `${archiveStamp()}-${randomUUID()}`;
-    const tempFolderPath = path.join(folderPath, ".storyboard-workbench", "save-tmp", saveStamp);
+    const tempFolderPath = path.join(folderPath, ".storyboard-flow", "save-tmp", saveStamp);
     preparationDirectory = await createSavePreparationDirectory(tempFolderPath);
     // Layered outputs retain legal .tiff filenames at the operation root.
     // This internal directory has no TIFF extension and cannot be such an output.
@@ -1869,7 +1869,7 @@ const writeSwbMetadataToTiffs = async (
         continue;
       }
 
-      if (!shouldWriteSwbMetadata(shot)) {
+      if (!shouldWriteFlowMetadata(shot)) {
         onShotWritten?.();
         continue;
       }
@@ -1882,12 +1882,12 @@ const writeSwbMetadataToTiffs = async (
       const imagePath = bakedPath ?? shot.imagePath;
       const metadata = await sharp(imagePath, sharpSourceOptions).metadata();
       const fingerprint = await pixelFingerprint(imagePath);
-      const canvasWidth = shot.swb?.canvasWidth || metadata.width || 0;
-      const canvasHeight = shot.swb?.canvasHeight || metadata.height || 0;
-      const swbMetadata = swbMetadataForShot(project.id, shot, canvasWidth, canvasHeight, fingerprint);
+      const canvasWidth = shot.flow?.canvasWidth || metadata.width || 0;
+      const canvasHeight = shot.flow?.canvasHeight || metadata.height || 0;
+      const flowMetadata = flowMetadataForShot(project.id, shot, canvasWidth, canvasHeight, fingerprint);
 
       const tempPath = path.join(ordinaryFolderPath, `${shot.id}-metadata.tiff`);
-      await sharp(imagePath, sharpSourceOptions).withXmp(swbMetadataXmp(swbMetadata)).tiff({ compression: "none" }).toFile(tempPath);
+      await sharp(imagePath, sharpSourceOptions).withXmp(flowMetadataXmp(flowMetadata)).tiff({ compression: "none" }).toFile(tempPath);
       replacements.push({ fromPath: tempPath, toPath: shot.imagePath });
       onShotWritten?.();
     }
@@ -1952,22 +1952,22 @@ const preparePhotoshopLayeredTiffsForSave = async (
   const scriptPath = path.join(app.getAppPath(), "scripts/photoshop-layered-tiff-export.py");
   const env = {
     ...process.env,
-    SWB_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() })
+    FLOW_PYTHON_DEPS_DIR: resolvePhotoshopTiffPythonDepsDir({ appPath: app.getAppPath() })
   };
-  const swbMetadataByShotId: Record<string, SwbImageMetadata> = {};
+  const flowMetadataByShotId: Record<string, FlowImageMetadata> = {};
 
   for (const shot of project.shots) {
     const layers = bitmapLayersForShot(shot);
-    const canvasWidth = shot.swb?.canvasWidth || layers[0]?.width || 0;
-    const canvasHeight = shot.swb?.canvasHeight || layers[0]?.height || 0;
-    swbMetadataByShotId[shot.id] = swbMetadataForShot(project.id, shot, canvasWidth, canvasHeight, "");
+    const canvasWidth = shot.flow?.canvasWidth || layers[0]?.width || 0;
+    const canvasHeight = shot.flow?.canvasHeight || layers[0]?.height || 0;
+    flowMetadataByShotId[shot.id] = flowMetadataForShot(project.id, shot, canvasWidth, canvasHeight, "");
   }
 
   const finalWrite = await writePhotoshopLayeredTiffsForInPlaceSave(project, folderPath, {
     scriptPath,
     saveStamp,
     env,
-    swbMetadataByShotId,
+    flowMetadataByShotId,
     onJobWritten: onShotWritten
   });
 
@@ -2012,17 +2012,17 @@ const createProjectPreviewsForShots = async (
   };
 };
 
-const shouldWriteSwbMetadata = (shot: Project["shots"][number]): boolean => {
+const shouldWriteFlowMetadata = (shot: Project["shots"][number]): boolean => {
   const extension = path.extname(shot.imagePath).toLowerCase();
   return (
     (extension === ".tif" || extension === ".tiff") &&
-    shot.swb?.status !== "non-swb" &&
-    shot.swb?.status !== "incompatible-external-edit"
+    shot.flow?.status !== "non-flow" &&
+    shot.flow?.status !== "incompatible-external-edit"
   );
 };
 
 const shouldWritePhotoshopLayeredTiffOnSave = (shot: Project["shots"][number]): boolean => {
-  return shouldWriteSwbMetadata(shot) && bitmapLayersForShot(shot).length > 1;
+  return shouldWriteFlowMetadata(shot) && bitmapLayersForShot(shot).length > 1;
 };
 
 const bakeShotToWorkingTiff = async (
@@ -2035,28 +2035,28 @@ const bakeShotToWorkingTiff = async (
     : bakeSketchOverlayToTiff(shot, tempPath);
 };
 
-const swbMetadataForShot = (
+const flowMetadataForShot = (
   projectId: string,
   shot: Project["shots"][number],
   canvasWidth: number,
   canvasHeight: number,
   baseFingerprint: string
-): SwbImageMetadata => {
+): FlowImageMetadata => {
   const bitmapLayers = bitmapLayersForShot(shot);
   const sketchLayers = sketchLayersForShot(shot);
 
   return {
     app: "Storyboard Flow",
-    format: "swb-tiff",
-    version: swbFormatVersion,
+    format: "flow-tiff",
+    version: flowFormatVersion,
     projectId,
     shotId: shot.id,
     canvasWidth,
     canvasHeight,
     baseFingerprint,
     updatedAt: new Date().toISOString(),
-    sourcePath: shot.swb?.sourcePath,
-    archivePath: shot.swb?.archivePath,
+    sourcePath: shot.flow?.sourcePath,
+    archivePath: shot.flow?.archivePath,
     presentation: shot.presentation,
     imageLayerEdits: [],
     sketchLayers,
@@ -2111,20 +2111,20 @@ const clearSavedImageLayerEdits = (
   updatedAt: new Date().toISOString()
 });
 
-const syncSavedSwbBaseFingerprints = async (
+const syncSavedFlowBaseFingerprints = async (
   project: Project,
   shotIds?: Set<string>
 ): Promise<Project> => {
   const shots = await Promise.all(
     project.shots.map(async (shot) => {
-      if ((shotIds && !shotIds.has(shot.id)) || !shouldWriteSwbMetadata(shot) || !shot.swb) {
+      if ((shotIds && !shotIds.has(shot.id)) || !shouldWriteFlowMetadata(shot) || !shot.flow) {
         return shot;
       }
 
       return {
         ...shot,
-        swb: {
-          ...shot.swb,
+        flow: {
+          ...shot.flow,
           baseFingerprint: await pixelFingerprint(shot.imagePath)
         }
       };
@@ -2141,8 +2141,8 @@ const shouldBakeShotImageEdits = (shot: Project["shots"][number]): boolean => {
   const extension = path.extname(shot.imagePath).toLowerCase();
   return (
     (extension === ".tif" || extension === ".tiff") &&
-    shot.swb?.status !== "non-swb" &&
-    shot.swb?.status !== "incompatible-external-edit" &&
+    shot.flow?.status !== "non-flow" &&
+    shot.flow?.status !== "incompatible-external-edit" &&
     (shot.baseVisible === false || (shot.imageLayerEdits?.length ?? 0) > 0)
   );
 };
@@ -2282,8 +2282,8 @@ const bakeBitmapLayersToTiff = async (
   }
 
   const imageMetadata = await sharp(shot.imagePath, sharpSourceOptions).metadata();
-  const width = shot.swb?.canvasWidth || imageMetadata.width;
-  const height = shot.swb?.canvasHeight || imageMetadata.height;
+  const width = shot.flow?.canvasWidth || imageMetadata.width;
+  const height = shot.flow?.canvasHeight || imageMetadata.height;
 
   if (!width || !height) {
     return undefined;
@@ -2360,7 +2360,7 @@ const changedKnownImagePaths = async (
 ): Promise<string[]> => {
   return findChangedKnownImagePaths(project, imagePaths, pendingDeletedPaths, {
     pixelFingerprint: statCachedPixelFingerprint,
-    readSwbMetadata,
+    readFlowMetadata,
     onProgress
   });
 };
@@ -2389,7 +2389,7 @@ const createImageRecords = async (
     onProgress: options.onProgress,
     pixelFingerprint,
     readImageMetadata: async (imagePath) => sharp(imagePath, sharpSourceOptions).metadata(),
-    readSwbMetadata,
+    readFlowMetadata,
     label: options.label,
     concurrency: options.concurrency
   });
@@ -2432,14 +2432,14 @@ const scanFolder = async (
   return scanWorkspaceFolder(folderPath, onProgress);
 });
 
-const readSwbMetadata = async (imagePath: string): Promise<SwbImageMetadata | undefined> => {
+const readFlowMetadata = async (imagePath: string): Promise<FlowImageMetadata | undefined> => {
   const metadata = await sharp(imagePath, sharpSourceOptions).metadata();
   const xmp = metadata.xmpAsString;
   if (!xmp) {
     return undefined;
   }
 
-  const match = new RegExp(`<${swbXmpTag}>([^<]+)</${swbXmpTag}>`).exec(xmp);
+  const match = new RegExp(`<${flowXmpTag}>([^<]+)</${flowXmpTag}>`).exec(xmp);
   if (!match) {
     return undefined;
   }
@@ -2448,11 +2448,11 @@ const readSwbMetadata = async (imagePath: string): Promise<SwbImageMetadata | un
     const parsed = JSON.parse(Buffer.from(match[1], "base64").toString("utf8"));
     if (
       parsed &&
-      (parsed.app === "Storyboard Flow" || parsed.app === "Storyboard Workbench") &&
-      parsed.format === "swb-tiff" &&
+      parsed.app === "Storyboard Flow" &&
+      parsed.format === "flow-tiff" &&
       typeof parsed.shotId === "string"
     ) {
-      return parsed as SwbImageMetadata;
+      return parsed as FlowImageMetadata;
     }
   } catch {
     return undefined;
@@ -2461,13 +2461,13 @@ const readSwbMetadata = async (imagePath: string): Promise<SwbImageMetadata | un
   return undefined;
 };
 
-const swbMetadataXmp = (metadata: SwbImageMetadata): string => {
+const flowMetadataXmp = (metadata: FlowImageMetadata): string => {
   const encoded = Buffer.from(JSON.stringify(metadata), "utf8").toString("base64");
   return `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
-<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:swb="https://storyboard-workbench.local/ns/1.0/">
+<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:flow="https://storyboard-flow.local/ns/1.0/">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description rdf:about="">
-      <${swbXmpTag}>${encoded}</${swbXmpTag}>
+      <${flowXmpTag}>${encoded}</${flowXmpTag}>
     </rdf:Description>
   </rdf:RDF>
 </x:xmpmeta>

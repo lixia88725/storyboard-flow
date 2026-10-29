@@ -44,7 +44,7 @@ export const assertPhysicalWorkspaceWriterTargets = async (targets: readonly str
       // lstat, not exists/stat: broken aliases, unknown files and empty partial
       // namespaces are all protection, never absence. No namespace bytes written.
       for (const namespace of ['workspace-recovery-v1', 'workspace-recovery-v2']) {
-        const marker=path.join(physical,'.storyboard-workbench',namespace);
+        const marker=path.join(physical,'.storyboard-flow',namespace);
         try { await fs.lstat(marker); if (existing === marker || existing.startsWith(marker + path.sep) || !retiredRoot || !await retiredRoot(physical)) throw new Error('Physical workspace is protected by a recovery inventory left by an earlier session that did not close cleanly; nothing on disk was changed. Use "Read recovery content only" to inspect and recover it.'); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
       }

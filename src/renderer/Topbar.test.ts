@@ -42,7 +42,7 @@ describe("Topbar", () => {
 
 it('offers one highlighted Import while disabling editing and hiding stale editing menus in preview', () => {
   const props = {
-    isFolderPreview: true, needsSwbImport: true, isImportLocked: true,
+    isFolderPreview: true, needsFlowImport: true, isImportLocked: true,
     isSaveMenuOpen: true, isMatteMenuOpen: true, isAddShotMenuOpen: true,
     project: createProject('Previous editable project'), recentFolders: [],
     folderInputValue: '/old', boardViewMode: 'storyboard'

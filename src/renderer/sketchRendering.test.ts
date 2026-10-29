@@ -21,9 +21,9 @@ const testImageData = (width: number, height: number, values?: number[]): ImageD
   }) as ImageData;
 
 describe("sketch rendering", () => {
-  it("calculates the shot aspect ratio from SWB canvas metadata", () => {
+  it("calculates the shot aspect ratio from FLOW canvas metadata", () => {
     const shot = {
-      swb: {
+      flow: {
         canvasWidth: 1920,
         canvasHeight: 1080
       }

@@ -367,9 +367,9 @@ export const useBitmapLayerActions = <HistoryEntry,>({
     // during IPC; layer membership/order, compositing/deletion inputs and canvas/source may not.
     const mergeDependencies = (p: Project) => {
       const s = p.shots.find(s => s.id === shotId);
-      return s && JSON.stringify({ imagePath: s.imagePath, sourcePath: s.swb?.sourcePath,
-        sourceKind: s.swb?.sourceKind, status: s.swb?.status,
-        canvasWidth: s.swb?.canvasWidth, canvasHeight: s.swb?.canvasHeight,
+      return s && JSON.stringify({ imagePath: s.imagePath, sourcePath: s.flow?.sourcePath,
+        sourceKind: s.flow?.sourceKind, status: s.flow?.status,
+        canvasWidth: s.flow?.canvasWidth, canvasHeight: s.flow?.canvasHeight,
         presentation: s.presentation, sketchLayers: s.sketchLayers, imageLayerEdits: s.imageLayerEdits,
         layers: bitmapLayersForShot(s).map(l => ({ id: l.id, bitmapPath: l.bitmapPath, kind: l.kind,
           visible: l.visible, locked: l.locked, opacity: l.opacity, blendMode: l.blendMode,
@@ -426,7 +426,7 @@ export const useBitmapLayerActions = <HistoryEntry,>({
           const targetBefore = snapshots?.find(s => s.bitmapPath === mergedLayer.bitmapPath);
           const originals = visibleLayers.map(l => snapshots?.find(s => s.bitmapPath === l.bitmapPath));
           const latestShot = latest.shots.find(s => s.id === shotId);
-          const sourceScope = (s: typeof shot) => s && JSON.stringify([s.imagePath, s.swb?.sourcePath, s.swb?.sourceKind, s.swb?.status]);
+          const sourceScope = (s: typeof shot) => s && JSON.stringify([s.imagePath, s.flow?.sourcePath, s.flow?.sourceKind, s.flow?.status]);
           const baseline = projectAtRequest.pendingBake?.shots[shotId]?.acceptedOutputIdentity;
           const unpublished = ![...latest.shots, ...(latest.parkedShots ?? [])]
             .some(s => s.layers?.some(l => l.bitmapPath === mergedLayer.bitmapPath));
@@ -530,7 +530,7 @@ export const useBitmapLayerActions = <HistoryEntry,>({
       }
       const dependency = (p: Project) => {
         const shot = p.shots.find(s => s.id === shotId);
-        return JSON.stringify([p.id, shot?.id, shot?.imagePath, shot?.swb, shot?.presentation,
+        return JSON.stringify([p.id, shot?.id, shot?.imagePath, shot?.flow, shot?.presentation,
           shot?.baseVisible, shot?.sketchLayers, shot?.imageLayerEdits,
           shot?.layers?.map(({ name: _name, ...layer }) => layer)]);
       };

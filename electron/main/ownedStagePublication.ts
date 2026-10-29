@@ -9,7 +9,7 @@ export type OwnedStageMetadata = {
   acl: string | null; xattrs: Record<string, string>;
 };
 export type OwnedStagePublicationReceipt = {
-  schema: 'swb.owned-stage-publication.v1'; operation: string;
+  schema: 'flow.owned-stage-publication.v1'; operation: string;
   root: string; target: string; stage: string; creation: { dev: string; ino: string };
   stageBeforePublication: OwnedStageMetadata;
   targetAfterPublication: OwnedStageMetadata; stageAfterPublication: OwnedStageMetadata;
@@ -52,7 +52,7 @@ export const authenticateOwnedStagePublication = (value: unknown, original: {
   const fail = (): never => { throw new Error('Original owned-stage publication receipt mismatch'); };
   if (!exact(value, ['schema', 'operation', 'root', 'target', 'stage', 'creation', 'stageBeforePublication', 'targetAfterPublication', 'stageAfterPublication', 'parents', 'bytes', 'publication'])) return fail();
   const v = value as OwnedStagePublicationReceipt;
-  if (Buffer.byteLength(JSON.stringify(v)) > 32768 || v.schema !== 'swb.owned-stage-publication.v1' || v.operation !== original.operation ||
+  if (Buffer.byteLength(JSON.stringify(v)) > 32768 || v.schema !== 'flow.owned-stage-publication.v1' || v.operation !== original.operation ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(v.operation) ||
       v.root !== original.root || v.target !== original.target || v.stage !== original.stage || typeof v.stage !== 'string' ||
       path.resolve(v.root) !== v.root || path.resolve(v.target) !== v.target || path.resolve(v.stage) !== v.stage ||

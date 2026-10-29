@@ -6,7 +6,7 @@ import { deriveWorkspaceStatusPresentation } from "./workspaceStatusPresentation
 
 const setup = () => {
   const project = createProject("status");
-  project.shots = [{ id: "s", order: 0, imagePath: "/owned.tiff", fileName: "owned.tiff", swb: { version: 1, status: "owned", canvasWidth: 2, canvasHeight: 2 }, layers: [] }];
+  project.shots = [{ id: "s", order: 0, imagePath: "/owned.tiff", fileName: "owned.tiff", flow: { version: 1, status: "owned", canvasWidth: 2, canvasHeight: 2 }, layers: [] }];
   project.pendingBake = { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: "a".repeat(64) } } };
   const ref = { current: project }; let failPersist = false;
   const queue = createBitmapLayerWriteQueue();

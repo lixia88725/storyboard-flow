@@ -95,7 +95,7 @@ describe('manifest validation', () => {
     expect(empty.ok).toBe(false);
     if (!empty.ok) expect(empty.error.code).toBe('not-found');
 
-    await fs.mkdir(storePaths(root).store);
+    await fs.mkdir(storePaths(root).store, { recursive: true });
     const withoutManifest = await store.loadCheckpoint(root);
     expect(withoutManifest.ok).toBe(false);
     if (!withoutManifest.ok) expect(withoutManifest.error.code).toBe('not-found');

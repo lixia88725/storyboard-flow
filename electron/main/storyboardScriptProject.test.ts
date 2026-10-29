@@ -7,8 +7,8 @@ import { createProjectFromStoryboardScriptMarkdown } from "./storyboardScriptPro
 
 describe("createProjectFromStoryboardScriptMarkdown", () => {
   it("creates a new project from numbered markdown entries in an empty folder", async () => {
-    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "swb-md-source-")), "script.md");
-    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "swb-md-project-"));
+    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "flow-md-source-")), "script.md");
+    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "flow-md-project-"));
     await writeFile(sourcePath, "1. Opening shot\n   Camera pushes in\n2. Close up\n3. \n", "utf8");
 
     const scan = await createProjectFromStoryboardScriptMarkdown({
@@ -24,19 +24,19 @@ describe("createProjectFromStoryboardScriptMarkdown", () => {
       ""
     ]);
     expect(scan.project?.shots).toHaveLength(3);
-    expect(scan.project?.shots.every((shot) => shot.swb?.status === "owned")).toBe(true);
+    expect(scan.project?.shots.every((shot) => shot.flow?.status === "owned")).toBe(true);
     expect(scan.images).toHaveLength(3);
     await expect(readFile(path.join(targetFolder, storyboardScriptFileName), "utf8")).resolves.toBe(
       "1. Opening shot\n   Camera pushes in\n2. Close up\n3. \n"
     );
     await expect(
-      readFile(path.join(targetFolder, ".storyboard-workbench", "storyboard.project.json"), "utf8")
+      readFile(path.join(targetFolder, ".storyboard-flow", "storyboard.project.json"), "utf8")
     ).resolves.toContain("Opening shot");
   });
 
   it("creates 9:16 phone blank shots from numbered markdown entries", async () => {
-    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "swb-md-phone-source-")), "script.md");
-    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "swb-md-phone-project-"));
+    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "flow-md-phone-source-")), "script.md");
+    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "flow-md-phone-project-"));
     await writeFile(sourcePath, "1. Vertical opening\n", "utf8");
 
     const scan = await createProjectFromStoryboardScriptMarkdown({
@@ -46,8 +46,8 @@ describe("createProjectFromStoryboardScriptMarkdown", () => {
     });
     const shot = scan.project?.shots[0];
 
-    expect(shot?.swb?.canvasWidth).toBe(1080);
-    expect(shot?.swb?.canvasHeight).toBe(1920);
+    expect(shot?.flow?.canvasWidth).toBe(1080);
+    expect(shot?.flow?.canvasHeight).toBe(1920);
     expect(shot?.layers?.[0]?.width).toBe(1080);
     expect(shot?.layers?.[0]?.height).toBe(1920);
     expect(scan.images[0]?.width).toBe(1080);
@@ -55,8 +55,8 @@ describe("createProjectFromStoryboardScriptMarkdown", () => {
   });
 
   it("creates 1.85:1 blank shots from numbered markdown entries", async () => {
-    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "swb-md-185-source-")), "script.md");
-    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "swb-md-185-project-"));
+    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "flow-md-185-source-")), "script.md");
+    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "flow-md-185-project-"));
     await writeFile(sourcePath, "1. Theatrical frame\n", "utf8");
 
     const scan = await createProjectFromStoryboardScriptMarkdown({
@@ -66,8 +66,8 @@ describe("createProjectFromStoryboardScriptMarkdown", () => {
     });
     const shot = scan.project?.shots[0];
 
-    expect(shot?.swb?.canvasWidth).toBe(1998);
-    expect(shot?.swb?.canvasHeight).toBe(1080);
+    expect(shot?.flow?.canvasWidth).toBe(1998);
+    expect(shot?.flow?.canvasHeight).toBe(1080);
     expect(shot?.layers?.[0]?.width).toBe(1998);
     expect(shot?.layers?.[0]?.height).toBe(1080);
     expect(scan.images[0]?.width).toBe(1998);
@@ -75,8 +75,8 @@ describe("createProjectFromStoryboardScriptMarkdown", () => {
   });
 
   it("rejects target folders that already contain files", async () => {
-    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "swb-md-source-")), "script.md");
-    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "swb-md-project-non-empty-"));
+    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "flow-md-source-")), "script.md");
+    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "flow-md-project-non-empty-"));
     await writeFile(sourcePath, "1. Shot\n", "utf8");
     await writeFile(path.join(targetFolder, "existing.txt"), "existing", "utf8");
 
@@ -90,10 +90,10 @@ describe("createProjectFromStoryboardScriptMarkdown", () => {
   });
 
   it("rejects target folders that already contain Storyboard Flow metadata", async () => {
-    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "swb-md-source-")), "script.md");
-    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "swb-md-project-swb-"));
+    const sourcePath = path.join(await mkdtemp(path.join(os.tmpdir(), "flow-md-source-")), "script.md");
+    const targetFolder = await mkdtemp(path.join(os.tmpdir(), "flow-md-project-flow-"));
     await writeFile(sourcePath, "1. Shot\n", "utf8");
-    await mkdir(path.join(targetFolder, ".storyboard-workbench"), { recursive: true });
+    await mkdir(path.join(targetFolder, ".storyboard-flow"), { recursive: true });
 
     await expect(
       createProjectFromStoryboardScriptMarkdown({

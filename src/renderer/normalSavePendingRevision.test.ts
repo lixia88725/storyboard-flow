@@ -31,7 +31,7 @@ const deferred = () => { let release!: () => void; const promise = new Promise<v
 async function dragFixture(kind: "park" | "restore") {
   const projectRef = { current: project() }, queue = createBitmapLayerWriteQueue(), gate = deferred(), entered = deferred();
   if (kind === "restore") { projectRef.current = parkShotGroup(projectRef.current, ["s"]) as any; projectRef.current.parkedShots![0].imagePath = "/w/Pending/a.tiff";
-    projectRef.current.shots = [{ id: "peer", imagePath: "/w/peer.tiff", fileName: "peer.tiff", order: 0, swb: { version: 1, status: "owned", canvasWidth: 4, canvasHeight: 3 } } as any];
+    projectRef.current.shots = [{ id: "peer", imagePath: "/w/peer.tiff", fileName: "peer.tiff", order: 0, flow: { version: 1, status: "owned", canvasWidth: 4, canvasHeight: 3 } } as any];
     (projectRef.current.pendingBake.shots as any).peer = { state: "synced", acceptedOutputIdentity: h0 };
   }
   let epoch = {};
@@ -91,7 +91,7 @@ export async function appCallbacks(rebasePendingHistory: (...args: any[]) => voi
   const visit = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(tree) === "normalSaveAppCallbacks") declaration = n; ts.forEachChild(n, visit); }; visit(tree);
   const state = { workspaceSaveState: "saved", fileNameSyncState: "synced", revision: 0 };
   const workspaceSaveStateRef = { current: "saved" }, fileNameSyncStateRef = { current: "synced" };
-  const bindings = { workspaceRecoveryRequiredRef: { current: undefined }, needsSwbImport: false,
+  const bindings = { workspaceRecoveryRequiredRef: { current: undefined }, needsFlowImport: false,
     setWorkspaceSaveState: (v: string) => { state.workspaceSaveState = v; }, workspaceSaveStateRef,
     setFileNameSyncState: (v: string) => { state.fileNameSyncState = v; }, fileNameSyncStateRef,
     setAutosaveRevision: (fn: (n: number) => number) => { state.revision = fn(state.revision); },

@@ -143,7 +143,7 @@ describe("useStoryboardDragEndController", () => {
       presentation: { matte: { mode, top: 75, bottom: 75, ...(mode === "expanded" ? { sourceHeight: 1080 } : {}) } },
       layers: dialogue ? [{ id: "layer-dialogue-overlay", kind: "paint", name: "Dialogue", visible: true,
         locked: true, opacity: 1, blendMode: "normal", order: 0,
-        bitmapPath: ".storyboard-workbench/layers/parked-a/layer-dialogue-overlay.png", width: 1920, height: 1080 }] : []
+        bitmapPath: ".storyboard-flow/layers/parked-a/layer-dialogue-overlay.png", width: 1920, height: 1080 }] : []
     };
     const f = setupController({ project: projectWithShots({ shots: [], parkedShots: [parked] }) });
     f.controller.handleDragEnd(dragEndEvent({ activeData: { type: "parked-shot", shotId: parked.id }, overData: { type: "empty-board" } }));
@@ -162,7 +162,7 @@ describe("useStoryboardDragEndController", () => {
       presentation: { matte: { mode: "embedded", top: 75, bottom: 75 } },
       layers: ["layer-matte-overlay", "layer-dialogue-overlay"].map((id, order) => ({
         id, kind: "paint", name: id, visible: true, locked: true, opacity: 1,
-        blendMode: "normal", order, bitmapPath: `.storyboard-workbench/layers/parked-a/${id}.png`, width: 1920, height: 1080
+        blendMode: "normal", order, bitmapPath: `.storyboard-flow/layers/parked-a/${id}.png`, width: 1920, height: 1080
       }))
     };
     const f = setupController({ project: projectWithShots({ shots: [], parkedShots: [parked] }) });
@@ -452,7 +452,7 @@ describe("useStoryboardDragEndController", () => {
         opacity: 1,
         blendMode: "normal" as const,
         order: 0,
-        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-matte-overlay.png`,
+        bitmapPath: `.storyboard-flow/layers/${shotId}/layer-matte-overlay.png`,
         width: 1920,
         height: 1080
       },
@@ -465,7 +465,7 @@ describe("useStoryboardDragEndController", () => {
         opacity: 1,
         blendMode: "normal" as const,
         order: 1,
-        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-dialogue-overlay.png`,
+        bitmapPath: `.storyboard-flow/layers/${shotId}/layer-dialogue-overlay.png`,
         width: 1920,
         height: 1080
       }

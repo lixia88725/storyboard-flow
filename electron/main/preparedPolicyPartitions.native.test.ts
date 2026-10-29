@@ -12,14 +12,14 @@ import { assertPhysicalWorkspaceWriterTargets } from './workspacePhysicalWriterG
 // encoder or actual Electron Close/editable cold lifecycle.
 test('Main retains a newly contributing 0400 layer after completed 0600 history and certifies its failed Save Close capture', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'prepared-partitions-'));
-  const metadata = path.join(root, '.storyboard-workbench/storyboard.project.json');
-  const bitmapPath = '.storyboard-workbench/layers/s/a.png';
+  const metadata = path.join(root, '.storyboard-flow/storyboard.project.json');
+  const bitmapPath = '.storyboard-flow/layers/s/a.png';
   await fs.mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true, mode: 0o700 });
   const red = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'red' } }).png().toBuffer();
   const blue = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'blue' } }).png().toBuffer();
   await fs.writeFile(path.join(root, bitmapPath), red, { mode: 0o600 });
   await fs.writeFile(path.join(root, 's.tiff'), await sharp(red).tiff({ compression: 'none' }).toBuffer(), { mode: 0o600 });
-  const project: any = { id: 'policy-p', name: 'policy', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', swb: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: [{ id: 'a', kind: 'paint', bitmapPath, width: 2, height: 2 }] }], dialogues: [] };
+  const project: any = { id: 'policy-p', name: 'policy', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', flow: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: [{ id: 'a', kind: 'paint', bitmapPath, width: 2, height: 2 }] }], dialogues: [] };
   const persist = async () => {
     await fs.writeFile(metadata, JSON.stringify(project, null, 2) + '\n', { mode: 0o600 });
     await fs.writeFile(path.join(root, 'storyboard-script.md'), serializeStoryboardScriptMarkdown(project), { mode: 0o600 });
@@ -34,9 +34,9 @@ test('Main retains a newly contributing 0400 layer after completed 0600 history 
   const prepared = await service.run(event, payload, async () => ({ project, normalSaveOutputs: [] }));
   await service.persist(event, { ...payload, recoverySaveNonce: prepared.recoverySaveNonce }, persist);
   await service.acknowledge(event, { folderPath: root, nonce: prepared.recoverySaveNonce, project });
-  const oldNs = path.join(root, '.storyboard-workbench/workspace-recovery-v1/namespace.json');
+  const oldNs = path.join(root, '.storyboard-flow/workspace-recovery-v1/namespace.json');
   const before = await fs.readFile(oldNs), previousJSON = await fs.readFile(metadata);
-  const strictPath = '.storyboard-workbench/layers/s/strict.png';
+  const strictPath = '.storyboard-flow/layers/s/strict.png';
   await fs.writeFile(path.join(root, strictPath), blue, { mode: 0o400 });
   const changed = structuredClone(project);
   changed.shots[0].layers.push({ id: 'strict', kind: 'paint', bitmapPath: strictPath, width: 2, height: 2 });
@@ -67,13 +67,13 @@ test('Main retains a newly contributing 0400 layer after completed 0600 history 
 // sufficient and the existing ordinary writer must remain protected throughout.
 const partialContinuationFixture = async (approvedFailure: boolean) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'partial-save-continuation-'));
-  const metadata = path.join(root, '.storyboard-workbench/storyboard.project.json');
-  const bitmapPath = '.storyboard-workbench/layers/s/a.png';
+  const metadata = path.join(root, '.storyboard-flow/storyboard.project.json');
+  const bitmapPath = '.storyboard-flow/layers/s/a.png';
   await fs.mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true, mode: 0o700 });
   const png = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'red' } }).png().toBuffer();
   await fs.writeFile(path.join(root, bitmapPath), png, { mode: 0o600 });
   await fs.writeFile(path.join(root, 's.tiff'), await sharp(png).tiff().toBuffer(), { mode: 0o600 });
-  const project: any = { id: 'partial-p', name: 'partial', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', swb: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: [{ id: 'a', kind: 'paint', bitmapPath, width: 2, height: 2 }] }], dialogues: [] };
+  const project: any = { id: 'partial-p', name: 'partial', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', flow: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: [{ id: 'a', kind: 'paint', bitmapPath, width: 2, height: 2 }] }], dialogues: [] };
   await fs.writeFile(metadata, JSON.stringify(project, null, 2) + '\n', { mode: 0o600 });
   await fs.writeFile(path.join(root, 'storyboard-script.md'), serializeStoryboardScriptMarkdown(project), { mode: 0o600 });
   const frame = {}, event: any = { sender: { mainFrame: frame }, senderFrame: frame };

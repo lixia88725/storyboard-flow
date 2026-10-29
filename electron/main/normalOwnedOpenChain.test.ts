@@ -20,12 +20,12 @@ const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(p => fs.rm(p, { recursive: true, force: true }))); });
 async function fixture(raw: unknown, both = false) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "normal-owned-open-")); dirs.push(root);
-  const fromPath = path.join(root, "s.tiff"), toPath = path.join(root, "Pending/s.tiff"), metadataPath = path.join(root, ".storyboard-workbench/storyboard.project.json"), journal = path.join(root, ".storyboard-workbench/pending-file-transaction.json"), md = path.join(root, "storyboard-script.md");
+  const fromPath = path.join(root, "s.tiff"), toPath = path.join(root, "Pending/s.tiff"), metadataPath = path.join(root, ".storyboard-flow/storyboard.project.json"), journal = path.join(root, ".storyboard-flow/pending-file-transaction.json"), md = path.join(root, "storyboard-script.md");
   await fs.mkdir(path.dirname(metadataPath), { recursive: true }); await fs.mkdir(path.dirname(toPath));
   await sharp({ create: { width: 4, height: 3, channels: 4, background: "red" } }).tiff({ compression: "none" }).toFile(toPath); if (both) await fs.writeFile(fromPath, "other-version");
   const hash = createHash("sha256").update(await fs.readFile(toPath)).digest("hex");
-  const bitmapPath = ".storyboard-workbench/layers/s/image.png"; await fs.mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true }); await sharp({ create: { width: 4, height: 3, channels: 4, background: "blue" } }).png().toFile(path.join(root, bitmapPath));
-  const p = { ...createProject("Synthetic"), shots: [{ id: "s", imagePath: fromPath, swb: { status: "owned" }, layers: [{ bitmapPath }] }], pendingBake: raw === "supported" ? { version: 1, shots: { s: { state: "pending", editToken: "t", acceptedOutputIdentity: hash } } } : raw };
+  const bitmapPath = ".storyboard-flow/layers/s/image.png"; await fs.mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true }); await sharp({ create: { width: 4, height: 3, channels: 4, background: "blue" } }).png().toFile(path.join(root, bitmapPath));
+  const p = { ...createProject("Synthetic"), shots: [{ id: "s", imagePath: fromPath, flow: { status: "owned" }, layers: [{ bitmapPath }] }], pendingBake: raw === "supported" ? { version: 1, shots: { s: { state: "pending", editToken: "t", acceptedOutputIdentity: hash } } } : raw };
   await fs.writeFile(metadataPath, JSON.stringify(p)); await fs.writeFile(journal, JSON.stringify({ version: 1, moves: [{ fromPath, toPath }] }));
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8"), ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
   const names = ["scanWorkspaceFolder", "scanFolder", "ensureStoryboardScriptMarkdown", "readProject"];
@@ -66,7 +66,7 @@ it.each(["both", "unknown", "future", "corrupt", "wrong-hash", "missing-layer"])
   const raw = mode === "unknown" ? { version: 1, shots: { s: { state: "unknown" } } } : mode === "future" ? { version: 99, shots: {} } : mode === "corrupt" ? { version: 1, shots: [] } : "supported";
   const f = await fixture(raw, mode === "both");
   if (mode === "wrong-hash") await fs.writeFile(f.toPath, "changed-external-bytes");
-  if (mode === "missing-layer") { const p = JSON.parse(await fs.readFile(f.metadataPath, "utf8")); p.shots[0].layers = [{ bitmapPath: ".storyboard-workbench/layers/s/missing.png" }]; await fs.writeFile(f.metadataPath, JSON.stringify(p)); }
+  if (mode === "missing-layer") { const p = JSON.parse(await fs.readFile(f.metadataPath, "utf8")); p.shots[0].layers = [{ bitmapPath: ".storyboard-flow/layers/s/missing.png" }]; await fs.writeFile(f.metadataPath, JSON.stringify(p)); }
   const protectedPaths = [f.toPath, f.metadataPath, f.journal, ...(mode === "both" ? [f.fromPath] : [])], before = await Promise.all(protectedPaths.map(p => fs.readFile(p)));
   await expect(f.open({ normalSave: true, recoverPending: true })).rejects.toThrow(/recovery|compatibility|assets|identity|ambiguous/i);
   expect(f.effects).toEqual([]); expect(await Promise.all(protectedPaths.map(p => fs.readFile(p)))).toEqual(before); await expect(fs.stat(f.md)).rejects.toMatchObject({ code: "ENOENT" });
@@ -74,7 +74,7 @@ it.each(["both", "unknown", "future", "corrupt", "wrong-hash", "missing-layer"])
 it("actual App owned open reaches real handler scanner and refuses retained transaction before all writer ports", async () => {
   const f = await fixture({ version: 99, shots: {} }, true), protectedPaths = [f.fromPath, f.toPath, f.journal, f.metadataPath];
   const before = await Promise.all(protectedPaths.map(p => fs.readFile(p))), errors: unknown[] = [], writer = vi.fn();
-  const ref = { current: createProject("old A") }, api = { openFolderByPath: (_p: string, options?: unknown) => f.open(options), importSwbFormat: writer, checkExternalChanges: writer, autosaveWorkspace: writer, saveWorkspace: writer, readOutputIdentity: writer };
+  const ref = { current: createProject("old A") }, api = { openFolderByPath: (_p: string, options?: unknown) => f.open(options), importFlowFormat: writer, checkExternalChanges: writer, autosaveWorkspace: writer, saveWorkspace: writer, readOutputIdentity: writer };
   const caller = await createAppOpenCallerScope({ projectRef: ref, setProject: () => {}, queue: createBitmapLayerWriteQueue(), paths: () => ({ folderPath: f.root, metadataPath: f.metadataPath }), api: () => api, freshToken: () => "unused", onSave: writer, onError: e => errors.push(e) });
   const app = await fs.readFile(new URL("../../src/renderer/App.tsx", import.meta.url), "utf8"), ast = ts.createSourceFile("App.tsx", app, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX); let expression = "";
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === "handleOpenFolderByPath") expression = n.initializer!.getText(ast); ts.forEachChild(n, walk); }; walk(ast);

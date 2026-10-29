@@ -10,7 +10,7 @@ import { createShotPresentationController } from "./shotPresentationController";
 const H = "a".repeat(64);
 function fixture() {
  const project = mergeFolderImages(createProject("real metadata"), [{ imagePath: "/A/a.tiff", fileName: "a.tiff", width: 4, height: 3 }]);
- const shot = project.shots[0]; shot.swb!.status = "owned";
+ const shot = project.shots[0]; shot.flow!.status = "owned";
  project.pendingBake = { version: 1, shots: { [shot.id]: { state: "synced", acceptedOutputIdentity: H } } };
  const ref = { current: project }, queue = createBitmapLayerWriteQueue(), effects = vi.fn(async (p: any) => p), persist = vi.fn(), errors: unknown[] = [];
  const adapter = createNormalSaveAppAdapter({ projectRef: ref, setProject: () => {}, queue, paths: () => ({ folderPath: "/A", metadataPath: "/A/p.json" }), api: () => ({ ensureLayerAssets: effects, exportPhotoshopTiffs: effects, saveWorkspace: effects, autosaveWorkspace: persist, readOutputIdentity: async () => H }) as any, freshToken: () => "t2", onSave: () => {}, onError: e => errors.push(e) });

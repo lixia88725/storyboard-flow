@@ -133,8 +133,8 @@ const api = {
       exportFolderPath: string;
       exportedFiles: string[];
     }>,
-  importSwbFormat: (payload: ProjectPayload) =>
-    ipcRenderer.invoke("workspace:importSwbFormat", payload),
+  importFlowFormat: (payload: ProjectPayload) =>
+    ipcRenderer.invoke("workspace:importFlowFormat", payload),
   checkStoryboardScript: (payload: ProjectPayload) =>
     ipcRenderer.invoke("workspace:checkStoryboardScript", payload) as Promise<{ scriptImportNeeded: boolean }>,
   checkExternalChanges: (payload: ProjectPayload) =>

@@ -24,7 +24,7 @@ const project = (): Project => ({
           opacity: 1,
           blendMode: "normal",
           order: 0,
-          bitmapPath: ".storyboard-workbench/layers/shot-1/layer-image.png",
+          bitmapPath: ".storyboard-flow/layers/shot-1/layer-image.png",
           width: 1920,
           height: 1080
         },
@@ -37,12 +37,12 @@ const project = (): Project => ({
           opacity: 1,
           blendMode: "normal",
           order: 1,
-          bitmapPath: ".storyboard-workbench/layers/shot-1/paint-1.png",
+          bitmapPath: ".storyboard-flow/layers/shot-1/paint-1.png",
           width: 1920,
           height: 1080
         }
       ],
-      swb: {
+      flow: {
         version: 1,
         status: "owned",
         canvasWidth: 1920,
@@ -65,7 +65,7 @@ const project = (): Project => ({
           opacity: 1,
           blendMode: "normal",
           order: 0,
-          bitmapPath: ".storyboard-workbench/layers/shot-2/layer-image.png",
+          bitmapPath: ".storyboard-flow/layers/shot-2/layer-image.png",
           width: 1920,
           height: 1080
         },
@@ -78,12 +78,12 @@ const project = (): Project => ({
           opacity: 1,
           blendMode: "normal",
           order: 1,
-          bitmapPath: ".storyboard-workbench/layers/shot-2/paint-2.png",
+          bitmapPath: ".storyboard-flow/layers/shot-2/paint-2.png",
           width: 1920,
           height: 1080
         }
       ],
-      swb: {
+      flow: {
         version: 1,
         status: "owned",
         canvasWidth: 1920,
@@ -141,7 +141,7 @@ const harness = () => {
     folderPath: "/scene",
     getRecoveryRequiredMessage: () => recoveryRequiredMessage,
     markShotsDirty,
-    metadataPath: "/scene/.storyboard-workbench/storyboard.project.json",
+    metadataPath: "/scene/.storyboard-flow/storyboard.project.json",
     onRecoveryRequired,
     projectRef,
     recordUndoEntry,
@@ -172,7 +172,7 @@ describe("shotPresentationController", () => {
 
     expect(result.api.ensureLayerAssets).toHaveBeenCalledOnce();
     expect(result.api.writeLayerPng).toHaveBeenCalledTimes(6);
-    expect(result.projectRef.current.shots.map((shot) => shot.swb?.canvasHeight)).toEqual([
+    expect(result.projectRef.current.shots.map((shot) => shot.flow?.canvasHeight)).toEqual([
       1230,
       1230
     ]);
@@ -204,7 +204,7 @@ describe("shotPresentationController", () => {
 
     expect(result.api.ensureLayerAssets).not.toHaveBeenCalled();
     expect(result.api.writeLayerPng).toHaveBeenCalledTimes(2);
-    expect(result.projectRef.current.shots.map((shot) => shot.swb?.canvasHeight)).toEqual([
+    expect(result.projectRef.current.shots.map((shot) => shot.flow?.canvasHeight)).toEqual([
       1080,
       1080
     ]);
@@ -253,7 +253,7 @@ describe("shotPresentationController", () => {
     );
     expect(result.api.writeLayerPng).toHaveBeenLastCalledWith({
       folderPath: "/scene",
-      bitmapPath: ".storyboard-workbench/layers/shot-2/layer-dialogue-overlay.png",
+      bitmapPath: ".storyboard-flow/layers/shot-2/layer-dialogue-overlay.png",
       dataUrl: "data:image/png;base64,dialogue"
     });
     expect(result.setStatus).toHaveBeenLastCalledWith(
@@ -283,7 +283,7 @@ describe("shotPresentationController", () => {
     vi.mocked(result.api.writeLayerPng)
       .mockResolvedValueOnce({
         folderPath: "/scene",
-        bitmapPath: ".storyboard-workbench/layers/shot-1/layer-dialogue-overlay.png",
+        bitmapPath: ".storyboard-flow/layers/shot-1/layer-dialogue-overlay.png",
         dataUrl: "data:image/png;base64,dialogue",
         filePath: "/layer.png"
       })
@@ -316,7 +316,7 @@ describe("shotPresentationController", () => {
     expect(result.api.writeLayerPng).toHaveBeenCalledTimes(4);
     expect(result.api.deleteLayerPng).toHaveBeenCalledTimes(4);
     expect(result.recordUndoEntry).toHaveBeenCalledOnce();
-    expect(result.projectRef.current.shots.map((shot) => shot.swb?.canvasHeight)).toEqual([
+    expect(result.projectRef.current.shots.map((shot) => shot.flow?.canvasHeight)).toEqual([
       1080,
       1080
     ]);

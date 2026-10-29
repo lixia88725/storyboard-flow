@@ -21,15 +21,15 @@ const hash=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
 const content=(p:any)=>({projectRaw:p,sequence:1,assetRevision:0,desiredAssets:[],retainedAssetIntents:[],effectFacts:{receipt:[],deletions:[],remainingScript:null,unsettled:false}});
 async function fixture(deleted=false){
  const folder=await fs.mkdtemp(path.join(os.tmpdir(),'cold-custody-semantic-'));
- const png=path.join(folder,'.storyboard-workbench/layers/s/base.png'),tiff=path.join(folder,'a.tiff'),metadata=path.join(folder,'.storyboard-workbench/storyboard.project.json'),md=path.join(folder,'storyboard-script.md');
+ const png=path.join(folder,'.storyboard-flow/layers/s/base.png'),tiff=path.join(folder,'a.tiff'),metadata=path.join(folder,'.storyboard-flow/storyboard.project.json'),md=path.join(folder,'storyboard-script.md');
  await fs.mkdir(path.dirname(png),{recursive:true,mode:0o700});
  const bytes=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer(),base=await sharp(bytes).tiff().toBuffer();
  await fs.writeFile(png,bytes,{mode:0o600});await fs.writeFile(tiff,base,{mode:0o600});
- const project:any={id:'p',name:'custody',shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',order:0,swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'base',kind:'paint',width:2,height:2,bitmapPath:path.relative(folder,png)}]}],dialogues:[],pendingBake:{version:1,shots:{s:{state:'synced',acceptedOutputIdentity:hash(base)}}}};
+ const project:any={id:'p',name:'custody',shots:[{id:'s',imagePath:tiff,fileName:'a.tiff',order:0,flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'base',kind:'paint',width:2,height:2,bitmapPath:path.relative(folder,png)}]}],dialogues:[],pendingBake:{version:1,shots:{s:{state:'synced',acceptedOutputIdentity:hash(base)}}}};
  const write=async(p:any)=>{await fs.writeFile(metadata,`${JSON.stringify(p,null,2)}\n`,{mode:0o600});await fs.writeFile(md,serializeStoryboardScriptMarkdown(p),{mode:0o600});return {};};await write(project);
  const e=event(),service=createPreparedWorkspaceSave(options),payload={folderPath:folder,metadataPath:metadata,normalSave:true,project,recoveryContent:content(project)};
  const output=await service.run(e,payload,async()=>({project,normalSaveOutputs:[]}));await service.persist(e,{...payload,recoverySaveNonce:output.recoverySaveNonce},()=>write(project));expect(await service.acknowledge(e,{folderPath:folder,nonce:output.recoverySaveNonce,project})).toBe(true);
- const bitmapPath='.storyboard-workbench/layers/s/added.png',target=path.join(folder,bitmapPath),dataUrl='data:image/png;base64,'+bytes.toString('base64');
+ const bitmapPath='.storyboard-flow/layers/s/added.png',target=path.join(folder,bitmapPath),dataUrl='data:image/png;base64,'+bytes.toString('base64');
  const added={...project,shots:[{...project.shots[0],layers:[...project.shots[0].layers,{id:'added',kind:'paint',width:2,height:2,bitmapPath}]}]};
  const ack=async(p:any)=>{const payload={folderPath:folder,metadataPath:metadata,project:p};const result=await service.ordinary(e,'workspace:autosave',payload,[metadata,md],()=>write(p));expect(await service.acknowledge(e,{folderPath:folder,nonce:result.ordinaryPersistenceNonce,project:p})).toBe(true);};
  expect((await service.ordinary(e,'layers:createPng',{},[target],()=>createLayerPng({folderPath:folder,bitmapPath,project,shotId:'s',layerId:'added',width:2,height:2,dataUrl}))).ok).toBe(true);await ack(added);
@@ -40,7 +40,7 @@ async function fixture(deleted=false){
  expect(await service.certifyRetainedSet(e,{slots:[capture]})).toBe(true);
  const coldOpen=async()=>{const cold=createPreparedWorkspaceSave(options),reader=event(),binding=await cold.observeWorkspace(reader,folder);const result=await cold.ordinary(reader,'workspace:openFolderByPath',{},[folder],async()=>({project:current}));return {cold,reader,binding,result};};
  const reseal=async(mutate:(c:any)=>void)=>{
-  const policy=JSON.parse(await fs.readFile(path.join(folder,'.storyboard-workbench/workspace-recovery-v1/namespace.json'),'utf8')).sourcePolicy;
+  const policy=JSON.parse(await fs.readFile(path.join(folder,'.storyboard-flow/workspace-recovery-v1/namespace.json'),'utf8')).sourcePolicy;
   const native=createNativeAuthorizationSession(options.python,options.script,()=>options.budget.bytes);
   await native.run(async()=>{
    const store=createWorkspaceRecoveryStore({budget:options.budget,sourcePolicy:policy,authorize:async request=>{await native.request({...request,sourcePolicy:policy,sourceByteLimit:options.budget.bytes});}});
@@ -61,7 +61,7 @@ test('cold genuine deleted custody adopts a fresh document, closes unchanged and
  const f=await fixture(true),opened=await f.coldOpen();expect(opened.result.recoveryHistory).toEqual(f.history);
  expect(await opened.cold.certifyRetainedSet(opened.reader,{slots:[{...f.capture,binding:opened.binding.binding}]})).toBe(true);
  await opened.cold.ordinary(opened.reader,'layers:writePng',{},[f.target],()=>writeLayerPng({folderPath:f.folder,bitmapPath:f.bitmapPath,dataUrl:f.dataUrl}));
- const metadata=path.join(f.folder,'.storyboard-workbench/storyboard.project.json'),md=path.join(f.folder,'storyboard-script.md');
+ const metadata=path.join(f.folder,'.storyboard-flow/storyboard.project.json'),md=path.join(f.folder,'storyboard-script.md');
  const persisted=await opened.cold.ordinary(opened.reader,'workspace:autosave',{folderPath:f.folder,metadataPath:metadata,project:f.added},[metadata,md],async()=>{await fs.writeFile(metadata,`${JSON.stringify(f.added,null,2)}\n`);await fs.writeFile(md,serializeStoryboardScriptMarkdown(f.added));return {};});
  await expect(opened.cold.acknowledge(opened.reader,{folderPath:f.folder,nonce:'old-ACK',project:f.added})).rejects.toThrow('ACK');
  expect(await opened.cold.acknowledge(opened.reader,{folderPath:f.folder,nonce:persisted.ordinaryPersistenceNonce,project:f.added})).toBe(true);
@@ -83,12 +83,12 @@ async function cleanupFault<T>(run:()=>Promise<T>):Promise<T>{
  // Runs the candidate native writer, faulting only its final owned-staging unlink.
  // Native metadata inspection and actual link/bytes publication are not mocked.
  await fs.writeFile(shim,`#!/usr/bin/env python3\nimport sys,importlib.util,json,base64,os\nspec=importlib.util.spec_from_file_location('writer',sys.argv[3]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)\noriginal=m.os.unlink\ndef fault(p,*a,**k):\n if os.path.basename(p).startswith('.layer-staging-'): raise PermissionError('custody fixture final unlink denied')\n return original(p,*a,**k)\nm.os.unlink=fault\nr=json.load(sys.stdin)\nprint(json.dumps(m.protected_write(r['root'],r['filePath'],base64.b64decode(r['bytes']),r['mode'])))\n`,{mode:0o700});
- const old=process.env.SWB_PYTHON_BIN;process.env.SWB_PYTHON_BIN=shim;
- try{return await run();}finally{if(old===undefined)delete process.env.SWB_PYTHON_BIN;else process.env.SWB_PYTHON_BIN=old;}
+ const old=process.env.FLOW_PYTHON_BIN;process.env.FLOW_PYTHON_BIN=shim;
+ try{return await run();}finally{if(old===undefined)delete process.env.FLOW_PYTHON_BIN;else process.env.FLOW_PYTHON_BIN=old;}
 }
 
 test('actual native committed cleanup failure reaches private receipt before throwing and preserves retention error too',async()=>{
- const root=await fs.mkdtemp(path.join(os.tmpdir(),'native-committed-receipt-')),target=path.join(root,'.storyboard-workbench/layers/s/new.png');await fs.mkdir(path.dirname(target),{recursive:true});
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'native-committed-receipt-')),target=path.join(root,'.storyboard-flow/layers/s/new.png');await fs.mkdir(path.dirname(target),{recursive:true});
  const bytes=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer(),receipts:any[]=[],retentionError=new Error('fixture retention also failed');
  const failure=await cleanupFault(()=>withProducerPngEffects({beforeWrite:async()=>{},beforeDelete:async()=>{},deleted:async()=>{},written:async r=>{receipts.push(r);throw retentionError;}},()=>writeProtectedLayerFile(root,target,bytes))).catch(e=>e);
  expect(receipts).toHaveLength(1);expect(receipts[0].bytes).toEqual(bytes);expect(receipts[0].commitFailure).toMatchObject({effect:'committed',warnings:['committed temporary cleanup: custody fixture final unlink denied']});

@@ -1,18 +1,18 @@
 import type { UpdateNoticeState } from "./updateNoticeController";
 import type { FileNameSyncState, WorkspaceSaveState } from "./workspaceLifecycleState";
 
-export const swbStatusLabel = ({
-  needsSwbImport,
-  hasSwbWarning
+export const flowStatusLabel = ({
+  needsFlowImport,
+  hasFlowWarning
 }: {
-  needsSwbImport: boolean;
-  hasSwbWarning: boolean;
+  needsFlowImport: boolean;
+  hasFlowWarning: boolean;
 }): string => {
-  if (needsSwbImport) {
-    return "SWB import needed";
+  if (needsFlowImport) {
+    return "FLOW import needed";
   }
 
-  return hasSwbWarning ? "SWB warning" : "SWB ready";
+  return hasFlowWarning ? "FLOW warning" : "FLOW ready";
 };
 
 export const updateCheckButtonLabel = (status: UpdateNoticeState["status"]): string =>
@@ -21,22 +21,22 @@ export const updateCheckButtonLabel = (status: UpdateNoticeState["status"]): str
 export const statusPanelNeedsAttention = ({
   workspaceSaveState,
   fileNameSyncState,
-  hasSwbWarning,
+  hasFlowWarning,
   updateNoticeStatus
 }: {
   workspaceSaveState: WorkspaceSaveState;
   fileNameSyncState: FileNameSyncState;
-  hasSwbWarning: boolean;
+  hasFlowWarning: boolean;
   updateNoticeStatus: UpdateNoticeState["status"];
 }): boolean =>
   workspaceSaveState === "error" ||
   fileNameSyncState === "unsynced" ||
-  hasSwbWarning ||
+  hasFlowWarning ||
   updateNoticeStatus === "available";
 
 export const statusPanelToggleClassName = (state: {
   workspaceSaveState: WorkspaceSaveState;
   fileNameSyncState: FileNameSyncState;
-  hasSwbWarning: boolean;
+  hasFlowWarning: boolean;
   updateNoticeStatus: UpdateNoticeState["status"];
 }): string => `status-toggle ${statusPanelNeedsAttention(state) ? "needs-attention" : ""}`;

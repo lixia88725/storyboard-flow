@@ -1,5 +1,5 @@
-type SwbState = {
-  status?: "owned" | "non-swb" | "compatible-external-edit" | "incompatible-external-edit";
+type FlowState = {
+  status?: "owned" | "non-flow" | "compatible-external-edit" | "incompatible-external-edit";
   canvasWidth?: number;
   canvasHeight?: number;
   baseFingerprint?: string;
@@ -7,10 +7,10 @@ type SwbState = {
 
 type KnownImageShot = {
   id: string;
-  swb?: SwbState;
+  flow?: FlowState;
 };
 
-type SwbMetadata = {
+type FlowMetadata = {
   shotId?: string;
   canvasWidth?: number;
   canvasHeight?: number;
@@ -20,18 +20,18 @@ type SwbMetadata = {
 export const knownImageHasExternalChange = (
   shot: KnownImageShot | undefined,
   fingerprint: string,
-  metadata: SwbMetadata | undefined
+  metadata: FlowMetadata | undefined
 ): boolean => {
-  if (!shot?.swb || shot.swb.status === "non-swb") {
+  if (!shot?.flow || shot.flow.status === "non-flow") {
     return false;
   }
 
-  const savedFingerprint = shot.swb.baseFingerprint ?? metadata?.baseFingerprint;
+  const savedFingerprint = shot.flow.baseFingerprint ?? metadata?.baseFingerprint;
   const metadataMismatch =
     metadata !== undefined &&
     (metadata.shotId !== shot.id ||
-      metadata.canvasWidth !== shot.swb.canvasWidth ||
-      metadata.canvasHeight !== shot.swb.canvasHeight);
+      metadata.canvasWidth !== shot.flow.canvasWidth ||
+      metadata.canvasHeight !== shot.flow.canvasHeight);
 
   if (!savedFingerprint) {
     return metadataMismatch;
@@ -39,8 +39,8 @@ export const knownImageHasExternalChange = (
 
   if (savedFingerprint && fingerprint === savedFingerprint) {
     return (
-      shot.swb.status === "compatible-external-edit" ||
-      shot.swb.status === "incompatible-external-edit"
+      shot.flow.status === "compatible-external-edit" ||
+      shot.flow.status === "incompatible-external-edit"
     );
   }
 

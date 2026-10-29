@@ -5,7 +5,7 @@ import path from 'node:path';
 const safeName = (v: unknown): v is string => typeof v === 'string' && !!v && v !== '.' && v !== '..' && path.basename(v) === v && !/[\\\0]/.test(v);
 
 // A new child project, not a rename/migration of the source's legacy metadata.
-export const managedProjectDirectory = '.storyboard-flow';
+export const managedProjectDirectory = '.storyboard-flow-project';
 export const managedProjectMarker = '.source-folder.json';
 export const managedProjectKind = 'Storyboard Flow folder project';
 

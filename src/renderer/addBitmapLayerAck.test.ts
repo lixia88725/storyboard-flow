@@ -16,12 +16,12 @@ const folderPath = process.env.TMPDIR ?? os.tmpdir();
 async function scenario() {
   const root = await mkdtemp(path.join(folderPath, "add-ack-red-"));
   onTestFinished(async () => { await rm(root, { recursive: true, force: true }); });
-  await mkdir(path.join(root, ".storyboard-workbench/layers/add-ack"), { recursive: true });
+  await mkdir(path.join(root, ".storyboard-flow/layers/add-ack"), { recursive: true });
   await sharp({ create: { width: 2, height: 2, channels: 4, background: "white" } }).tiff({ compression: "none" }).toFile(path.join(root, "owned.tiff"));
   const transparent = await sharp({ create: { width: 2, height: 2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
   const p = createProject("add-ack-red");
   p.shots = [{ id: "add-ack", imagePath: root + "/owned.tiff", fileName: "owned.tiff", order: 0,
-    swb: { version: 1, status: "owned", canvasWidth: 2, canvasHeight: 2 }, layers: [] }];
+    flow: { version: 1, status: "owned", canvasWidth: 2, canvasHeight: 2 }, layers: [] }];
   p.pendingBake = { version: 1, shots: { "add-ack": { state: "synced", acceptedOutputIdentity: createHash("sha256").update(await readFile(p.shots[0].imagePath)).digest("hex") } } };
   const ref = { current: p }; const publications: Project[] = [], histories: unknown[] = [];
   const createLayerPng = vi.fn(async () => { throw new Error("ACK lost after attempted write"); });

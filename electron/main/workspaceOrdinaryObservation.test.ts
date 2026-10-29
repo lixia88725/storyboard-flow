@@ -8,29 +8,29 @@ test('first TIFF Import preparation reports its own metadata-parent creation bef
  const {root,event,service}=await fixture();
  try{
   const observed=await service.observeWorkspace(event,root);
-  const directory=path.join(root,'.storyboard-workbench','import-staging','own-operation');
-  const receipt=await service.ordinary(event,'workspace:importSwbFormat',{folderPath:root},[root],()=>createSavePreparationDirectory(directory));
+  const directory=path.join(root,'.storyboard-flow','import-staging','own-operation');
+  const receipt=await service.ordinary(event,'workspace:importFlowFormat',{folderPath:root},[root],()=>createSavePreparationDirectory(directory));
   expect(receipt.directoryPath).toBe(directory);
   expect(await service.observeWorkspace(event,root)).toEqual(observed);
-  await fs.rename(path.join(root,'.storyboard-workbench'),path.join(root,'old-parent'));await fs.mkdir(path.join(root,'.storyboard-workbench'));
+  await fs.rename(path.join(root,'.storyboard-flow'),path.join(root,'old-parent'));await fs.mkdir(path.join(root,'.storyboard-flow'));
   await expect(service.observeWorkspace(event,root)).rejects.toThrow('incarnation changed');
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });
 test('fresh observation is pure; actual reader initialization binds parent and subsequent replacement is refused',async()=>{
  const {root,event,service}=await fixture();const observed=await service.observeWorkspace(event,root);
  expect(await fs.readdir(root)).toEqual([]);
- await service.ordinary(event,'workspace:openFolderByPath',root,[root],async()=>{await mkdirObserved(path.join(root,'.storyboard-workbench'));return {};});
+ await service.ordinary(event,'workspace:openFolderByPath',root,[root],async()=>{await mkdirObserved(path.join(root,'.storyboard-flow'));return {};});
  expect(await service.observeWorkspace(event,root)).toEqual(observed);
- await fs.rename(path.join(root,'.storyboard-workbench'),path.join(root,'old-parent'));await fs.mkdir(path.join(root,'.storyboard-workbench'));
+ await fs.rename(path.join(root,'.storyboard-flow'),path.join(root,'old-parent'));await fs.mkdir(path.join(root,'.storyboard-flow'));
  await expect(service.observeWorkspace(event,root)).rejects.toThrow('incarnation changed');
 });
 test('later parent existence without the actual creator receipt cannot finalize a fresh observation',async()=>{
  const {root,event,service}=await fixture();await service.observeWorkspace(event,root);
- await expect(service.ordinary(event,'workspace:openFolderByPath',root,[root],async()=>{await fs.mkdir(path.join(root,'.storyboard-workbench'));return {};})).rejects.toThrow('incarnation changed');
+ await expect(service.ordinary(event,'workspace:openFolderByPath',root,[root],async()=>{await fs.mkdir(path.join(root,'.storyboard-flow'));return {};})).rejects.toThrow('incarnation changed');
  await expect(service.observeWorkspace(event,root)).rejects.toThrow('incarnation changed');
 });
 test('unleased staged failure is Main inventory and cannot be omitted by either close capture',async()=>{
- const {root,event,service}=await fixture();await fs.mkdir(path.join(root,'.storyboard-workbench'));await service.observeWorkspace(event,root);
+ const {root,event,service}=await fixture();await fs.mkdir(path.join(root,'.storyboard-flow'));await service.observeWorkspace(event,root);
  await expect(service.ordinary(event,'workspace:openFolderByPath',root,[root],async()=>{await fs.writeFile(path.join(root,'stage-bytes'),'B');throw new Error('actual stage failed');})).rejects.toThrow('actual stage failed');
  for(let i=0;i<2;i++)await expect(service.certifyRetainedSet(event,{slots:[]})).rejects.toThrow();
  expect(await fs.readFile(path.join(root,'stage-bytes'),'utf8')).toBe('B');

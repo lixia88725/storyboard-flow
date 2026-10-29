@@ -16,7 +16,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createProject, ensureBitmapLayerMetadata, addImportedImages, sceneMatteModeForProject, sceneDialogueOverlayEnabledForProject, dialogueOverlayBitmapLayerId } from "../../src/shared/projectOps";
-import type { Project, FolderScanPayload, ImportSwbFormatPayload } from "../../src/shared/types";
+import type { Project, FolderScanPayload, ImportFlowFormatPayload } from "../../src/shared/types";
 import { prepareImportedImageMatte } from "../../src/renderer/normalSaveImportMatte";
 import { createNormalSaveAppAdapter } from "../../src/renderer/normalSaveAppAdapter";
 import { createBitmapLayerWriteQueue } from "../../src/renderer/bitmapLayerWriteQueue";
@@ -63,7 +63,7 @@ it("successful real compatible Import commits its old PNG backups instead of lea
   const f = await autoFixture();
   f.ref.current = mergeExternalImageChanges(f.ref.current, [f.image]);
   expect(await f.run()).toBe(true);
-  const entries = await fs.readdir(path.join(f.root, ".storyboard-workbench/import-tmp"), { recursive: true });
+  const entries = await fs.readdir(path.join(f.root, ".storyboard-flow/import-tmp"), { recursive: true });
   expect(entries.filter(entry => entry.includes("layer-backup") && entry.endsWith(".png"))).toEqual([]);
 });
 
@@ -76,14 +76,14 @@ it.skipIf(process.platform !== "darwin").each([0, 1])("compatible Import refuses
   const allOriginalBytes = await Promise.all(before.layers!.map(layer => fs.readFile(path.join(f.root, layer.bitmapPath))));
   const oldPng = await fs.readFile(oldFile);
   const externalLayers = await Promise.all(before.layers!.map(async (layer, i) => {
-    const bitmapPath = `.storyboard-workbench/layers/external/l${i}.png`;
+    const bitmapPath = `.storyboard-flow/layers/external/l${i}.png`;
     await fs.mkdir(path.dirname(path.join(f.root, bitmapPath)), { recursive: true });
     await sharp({ create: { width: 4, height: 3, channels: 4, background: i ? "yellow" : "green" } }).png().toFile(path.join(f.root, bitmapPath));
     return { ...layer, bitmapPath };
   }));
   const external = await writePhotoshopLayeredTiffsForInPlaceSave({ ...f.ref.current, shots: [{ ...before, layers: externalLayers }] }, f.root, { scriptPath: path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py"), saveStamp: "external", env: process.env });
   await fs.copyFile(external.replacements[0].fromPath, before.imagePath);
-  f.ref.current = { ...f.ref.current, shots: [{ ...before, swb: { ...before.swb!, status: "compatible-external-edit" } }], pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: f.ref.current.pendingBake!.shots.s.acceptedOutputIdentity } } } };
+  f.ref.current = { ...f.ref.current, shots: [{ ...before, flow: { ...before.flow!, status: "compatible-external-edit" } }], pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: f.ref.current.pendingBake!.shots.s.acceptedOutputIdentity } } } };
   const user = (await run("/usr/bin/id", ["-un"])).stdout.trim();
   await run("/bin/chmod", ["+a", `user:${user} deny write`, oldFile]);
   const probe = async () => JSON.parse((await run("python3", ["-B", path.resolve("scripts/layer-file-permissions.py"), oldFile])).stdout);
@@ -105,7 +105,7 @@ it.each(["manual", "automatic"] as const)("dual-needed %s image stage retains th
   await fs.writeFile(f.mdPath, markdown, "utf8");
   expect(script.storyboardScriptNeedsImport(f.ref.current, await fs.readFile(f.mdPath, "utf8"))).toBe(true);
   const imageProject = mergeExternalImageChanges(f.ref.current, [f.image]);
-  expect(imageProject.shots[0].swb!.status).toBe("compatible-external-edit");
+  expect(imageProject.shots[0].flow!.status).toBe("compatible-external-edit");
   f.io.mockClear();
   if (mode === "automatic") {
     f.checks.mockImplementation(async () => ({ images: [f.image], scriptImportNeeded: script.storyboardScriptNeedsImport(f.ref.current, await fs.readFile(f.mdPath, "utf8")) }));
@@ -117,7 +117,7 @@ it.each(["manual", "automatic"] as const)("dual-needed %s image stage retains th
   expect(f.errors).toEqual([]);
   expect(f.io.mock.calls.filter(([p]) => p.normalSaveImageImport || p.normalSaveAutoImageImport)).toHaveLength(1);
   expect(f.io.mock.calls.filter(([p]) => !p.normalSaveImageImport && !p.normalSaveAutoImageImport)).toHaveLength(1);
-  expect(f.ref.current.shots[0].swb!.status).toBe("owned");
+  expect(f.ref.current.shots[0].flow!.status).toBe("owned");
   // Original external input protection: it must be consumed, never replaced by old text.
   expect(f.ref.current.shots[0].scriptText).toBe("external script must survive image stage");
   expect(await fs.readFile(f.mdPath, "utf8")).toBe(markdown);
@@ -143,7 +143,7 @@ it.each([false, true])("early blank preview failure reports actual rollback inco
   let first = true;
   f.beforePersist(async () => { if (first) { first = false; f.setEarlyPreviewFault(incomplete); } });
   expect(await f.run()).toBe(false);
-  expect(f.ref.current.shots[0].swb!.status).toBe("owned");
+  expect(f.ref.current.shots[0].flow!.status).toBe("owned");
   if (incomplete) {
     expect(f.recovery.current).toMatch(/recovery required/);
     expect(f.errors.at(-1)).toMatchObject({ message: expect.stringMatching(/early blank preview failure.*rollback EPERM/) });
@@ -214,7 +214,7 @@ it("dual-needed script pre-effect failure retains completed image facts and inpu
     return io(payload);
   });
   expect(await f.run({ prepare: async p => { imagePrepareCount++; return p; }, scriptPublished })).toBe(false);
-  expect(f.ref.current.shots[0].swb!.status).toBe("owned");
+  expect(f.ref.current.shots[0].flow!.status).toBe("owned");
   expect(f.ref.current.pendingBake!.shots.s.state).toBe("pending");
   expect(f.recovery.current).toBeUndefined(); expect(f.adapter.owner.scriptImportRemaining).toBe(true);
   expect(f.errors[0]).toMatchObject({ message: expect.stringMatching(/Image Import completed, script Import incomplete/) });
@@ -257,7 +257,7 @@ it.each(["metadata", "text", "order", "dialogue", "canvas"] as const)("dual-need
     if (p.normalSaveImageImport) f.adapter.owner.publishEdit(project => {
       if (kind === "metadata") return { ...project, name: "latest safe P2" };
       if (kind === "dialogue") return { ...project, dialogues: [{ id: "d", shotId: "s", text: "new derived dependency", order: 0 }] };
-      if (kind === "canvas") return { ...project, shots: project.shots.map(s => ({ ...s, swb: { ...s.swb!, canvasHeight: 99 } })) };
+      if (kind === "canvas") return { ...project, shots: project.shots.map(s => ({ ...s, flow: { ...s.flow!, canvasHeight: 99 } })) };
       return { ...project, shots: project.shots.map(s => ({ ...s, ...(kind === "text" ? { scriptText: "new local text" } : { order: s.order + 1 }) })) };
     }, []);
     return scan;
@@ -299,7 +299,7 @@ it.each(["unknown", "future", "retained"] as const)("dual-needed %s admission re
   const f = await dualFixture();
   if (kind === "unknown") f.ref.current.pendingBake!.shots.s = { state: "unknown", opaque: "keep" } as any;
   if (kind === "future") f.ref.current.pendingBake = { version: 99, raw: "keep", shots: {} } as any;
-  if (kind === "retained") await fs.writeFile(path.join(f.root, ".storyboard-workbench/pending-file-transaction.json"), JSON.stringify({ version: 1, moves: [] }));
+  if (kind === "retained") await fs.writeFile(path.join(f.root, ".storyboard-flow/pending-file-transaction.json"), JSON.stringify({ version: 1, moves: [] }));
   const raw = JSON.stringify(f.ref.current.pendingBake), files = [f.mdPath, f.metadataPath, f.ref.current.shots[0].imagePath, path.join(f.root, f.ref.current.shots[0].layers![0].bitmapPath)], bytes = await Promise.all(files.map(p => fs.readFile(p)));
   expect(await f.run()).toBe(false);
   if (kind !== "retained") expect(JSON.stringify(f.ref.current.pendingBake)).toBe(raw);
@@ -328,7 +328,7 @@ it.each([false, true])("dual-needed actual new-blank PNG failure keeps completed
   let first = true;
   f.beforePersist(async () => { if (first) { first = false; f.setScriptLayerFault(rollback); } });
   expect(await f.run()).toBe(false);
-  expect(f.ref.current.shots[0].swb!.status).toBe("owned"); expect(await fs.readFile(f.mdPath, "utf8")).toBe(markdown);
+  expect(f.ref.current.shots[0].flow!.status).toBe("owned"); expect(await fs.readFile(f.mdPath, "utf8")).toBe(markdown);
   expect(f.adapter.owner.scriptImportRemaining).toBe(true);
   const imageCalls = f.io.mock.calls.filter(([p]) => p.normalSaveImageImport).length;
   if (rollback) {
@@ -402,7 +402,7 @@ it("dual-needed actual App partial publication and error/Close remain incomplete
 });
 it("automatic local pending conflict retains PNG TIFF Archive JSON MD and never calls Import", async () => {
   const f = await autoFixture(), s = f.ref.current.shots[0]; f.io.mockClear();
-  const files = [s.imagePath, path.join(f.root, s.layers![0].bitmapPath), s.swb!.archivePath!, f.metadataPath, f.mdPath];
+  const files = [s.imagePath, path.join(f.root, s.layers![0].bitmapPath), s.flow!.archivePath!, f.metadataPath, f.mdPath];
   const before = await Promise.all(files.map(p => fs.readFile(p)));
   f.adapter.owner.publishEdit(p => p, ["s"]); const token = f.ref.current.pendingBake!.shots.s.editToken;
   await f.refresh(); expect(f.io).not.toHaveBeenCalled(); expect(f.errors).toHaveLength(1);
@@ -431,7 +431,7 @@ it("automatic scan awaits old I/O and read-wait same-folder ABA never adopts sta
 it("automatic identical read-only scan leaves epoch sequence project refs and disk unchanged", async () => {
   const f = await autoFixture(), s = f.ref.current.shots[0];
   f.image.fingerprint = await pixelFingerprint(s.imagePath);
-  f.ref.current = { ...f.ref.current, shots: [{ ...s, swb: { ...s.swb!, baseFingerprint: f.image.fingerprint } }], pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: await hash(s.imagePath) } } } };
+  f.ref.current = { ...f.ref.current, shots: [{ ...s, flow: { ...s.flow!, baseFingerprint: f.image.fingerprint } }], pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: await hash(s.imagePath) } } } };
   f.io.mockClear();
   const c = f.adapter.owner.capture(), json = await fs.readFile(f.metadataPath), n = f.writes.length;
   await f.refresh(); expect(f.adapter.owner.capture()).toEqual(c); expect(f.io).not.toHaveBeenCalled(); expect(f.writes).toHaveLength(n);
@@ -453,7 +453,7 @@ it("automatic ACK then MD failure preserves P2 and actual assets and gates Save 
   await f.refresh();
   expect(controls.refs.workspaceSaveStateRef.current).toBe("error"); expect(controls.refs.setSaveErrorDialog).toHaveBeenCalled(); await controls.close(); expect(f.ref.current.name).toBe("P2"); expect(f.ref.current.pendingBake!.shots.s.state).toBe("unknown"); expect(f.recovery.current).toMatch(/Import incomplete/);
   expect(await fs.readFile(path.join(f.root, s.layers![0].bitmapPath))).not.toEqual(oldPng); expect(await fs.readFile(s.imagePath)).toEqual(tiff);
-  expect(await fs.readFile(s.swb!.archivePath!)).toEqual(f.original); expect(await fs.readFile(f.mdPath)).toEqual(md);
+  expect(await fs.readFile(s.flow!.archivePath!)).toEqual(f.original); expect(await fs.readFile(f.mdPath)).toEqual(md);
   expect(JSON.parse(await fs.readFile(f.metadataPath, "utf8")).pendingBake.shots.s.state).toBe("pending");
   const writes = f.writes.length; expect(await f.adapter.save()).toBe(false); expect(await f.adapter.autosave(f.ref.current)).toBe(false); expect(f.writes).toHaveLength(writes); expect(f.api.saveWorkspace).not.toHaveBeenCalled();
   const text = await fs.readFile(new URL("../../src/renderer/projectHistoryController.ts", import.meta.url), "utf8"), tree = ts.createSourceFile("history.ts", text, ts.ScriptTarget.Latest, true); const selected: string[] = [];
@@ -466,7 +466,7 @@ it("automatic admitted Import survives a newer watcher check without releasing u
   const f = await autoFixture(), held = barrier(), entered = barrier(); f.io.mockClear(); const io = f.io.getMockImplementation()!;
   f.io.mockImplementation(async payload => { entered.release(); await held.promise; return io(payload); });
   const first = f.refresh(); await entered.promise; const next = f.refresh(); held.release(); await first; await next;
-  expect(f.io).toHaveBeenCalledOnce(); expect(f.ref.current.shots[0].swb!.status).toBe("owned");
+  expect(f.io).toHaveBeenCalledOnce(); expect(f.ref.current.shots[0].flow!.status).toBe("owned");
   expect(f.ref.current.pendingBake!.shots.s.state).toBe("pending"); expect(f.published).toHaveBeenCalledTimes(2); expect(f.errors).toEqual([]);
 });
 it.each(["stable", "changed"])("automatic actual scene selectors use latest dialogue and finite dependency refusal: %s", async mode => {
@@ -505,7 +505,7 @@ async function actualErrorAndClose(f: Awaited<ReturnType<typeof fixture>>) {
   const runClose = new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${close});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(appCallerAdapterScope(bindings)));
   return { refs, close: async () => { runClose({ requestId: "automatic-import-close" }); await finished.promise; expect(finishSaveAndClose).toHaveBeenCalledWith({ requestId: "automatic-import-close", saved: false }); } };
 }
-it("actual main automatic rechecks TIFF SWB shot identity instead of trusting a compatible payload", async () => {
+it("actual main automatic rechecks TIFF FLOW shot identity instead of trusting a compatible payload", async () => {
   const f = await autoFixture(), s = f.ref.current.shots[0], png = path.join(f.root, s.layers![0].bitmapPath), before = await fs.readFile(png);
   const exported = await f.exportProject({ ...f.ref.current, shots: [{ ...s, id: "foreign-shot" }] }, "foreign");
   await fs.copyFile(exported.replacements[0].fromPath, s.imagePath);
@@ -517,13 +517,13 @@ async function autoFixture() {
   const f = await fixture("layered"); expect(await f.run()).toBe(true);
   const s = f.ref.current.shots[0];
   f.ref.current = { ...f.ref.current, pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: await hash(s.imagePath) } } } };
-  const externalPng = path.join(f.root, ".storyboard-workbench/layers/external/pixel.png");
+  const externalPng = path.join(f.root, ".storyboard-flow/layers/external/pixel.png");
   await fs.mkdir(path.dirname(externalPng), { recursive: true });
   await sharp({ create: { width: 4, height: 3, channels: 4, background: "green" } }).png().toFile(externalPng);
   const external = { ...f.ref.current, shots: [{ ...s, layers: s.layers!.map(l => ({ ...l, bitmapPath: path.relative(f.root, externalPng) })) }] };
   const result = await f.exportProject(external, "external");
   await fs.copyFile(result.replacements[0].fromPath, s.imagePath);
-  const image = { fileName: s.fileName, imagePath: s.imagePath, width: 4, height: 3, fingerprint: await pixelFingerprint(s.imagePath), swbMetadata: await f.readMetadata(s.imagePath) } as any;
+  const image = { fileName: s.fileName, imagePath: s.imagePath, width: 4, height: 3, fingerprint: await pixelFingerprint(s.imagePath), flowMetadata: await f.readMetadata(s.imagePath) } as any;
   const checks = vi.fn(async () => ({ images: [image], scriptImportNeeded: false }));
   const hooks = { prepare: async (p: Project, _ids: string[], _current: () => boolean) => p, published: (scan: FolderScanPayload, durable?: boolean) => f.published(scan, durable) };
   const app = await fs.readFile(new URL("../../src/renderer/App.tsx", import.meta.url), "utf8");
@@ -531,7 +531,7 @@ async function autoFixture() {
   let expression = "";
   const visit = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(tree) === "refreshExternalImportState") expression = n.initializer!.getText(tree); ts.forEachChild(n, visit); }; visit(tree);
   const bindings = { prepareNormalSaveScriptMatte: async (p: Project) => p, normalSaveScriptImportPublished: vi.fn(), normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: f.adapter }, window: { storyboard: { ...f.api, checkExternalChanges: checks } }, blankShotPreset: "16:9", scriptImportCheckIdRef: { current: 0 }, dirtyShotIds: () => [], folderPathRef: { current: f.root }, metadataPathRef: { current: f.metadataPath }, projectRef: f.ref,
-    refreshWorkspaceExternalImportState, mergeExternalImageChanges, hasOnlyCompatibleExternalEdits: (p: Project) => p.shots.some(s => s.swb?.status === "compatible-external-edit") && p.shots.every(s => ["owned", "compatible-external-edit"].includes(s.swb!.status)), loadFolderScan: vi.fn(), projectNeedsSwbImport: () => true, workspaceSaveStateRef: { current: "saved" }, setScriptImportNeeded: vi.fn(), setStatus: vi.fn(), withStatus: async (_: string, task: () => Promise<unknown>) => task(), prepareNormalSaveImportMatte: (p: Project, ids: string[], current: () => boolean) => hooks.prepare(p, ids, current), normalSaveImageImportPublished: (scan: FolderScanPayload, durable?: boolean) => hooks.published(scan, durable), setProject: vi.fn(), refreshChangedShotBitmapRevisions: vi.fn(), persistWorkspace: vi.fn() };
+    refreshWorkspaceExternalImportState, mergeExternalImageChanges, hasOnlyCompatibleExternalEdits: (p: Project) => p.shots.some(s => s.flow?.status === "compatible-external-edit") && p.shots.every(s => ["owned", "compatible-external-edit"].includes(s.flow!.status)), loadFolderScan: vi.fn(), projectNeedsFlowImport: () => true, workspaceSaveStateRef: { current: "saved" }, setScriptImportNeeded: vi.fn(), setStatus: vi.fn(), withStatus: async (_: string, task: () => Promise<unknown>) => task(), prepareNormalSaveImportMatte: (p: Project, ids: string[], current: () => boolean) => hooks.prepare(p, ids, current), normalSaveImageImportPublished: (scan: FolderScanPayload, durable?: boolean) => hooks.published(scan, durable), setProject: vi.fn(), refreshChangedShotBitmapRevisions: vi.fn(), persistWorkspace: vi.fn() };
   const refresh = new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(appCallerAdapterScope(bindings)));
   return { ...f, checks, refresh, bindings, image, hooks };
 }
@@ -542,7 +542,7 @@ it("actual App automatic compatible refresh owns scan Import ACK and required pe
   await f.refresh();
   expect(f.io).toHaveBeenCalledWith(expect.objectContaining({ normalSave: true, normalSaveAutoImageImport: true }));
   expect(f.io.mock.calls[0][0].normalSaveImageImport).toBeUndefined();
-  expect(f.errors).toEqual([]); expect(f.ref.current.shots[0].swb!.status).toBe("owned");
+  expect(f.errors).toEqual([]); expect(f.ref.current.shots[0].flow!.status).toBe("owned");
   expect(await hash(f.ref.current.shots[0].imagePath)).toBe(before);
   expect(f.ref.current.pendingBake!.shots.s).toMatchObject({ state: "pending", acceptedOutputIdentity: before });
   expect(JSON.parse(await fs.readFile(f.metadataPath, "utf8"))).toEqual(JSON.parse(JSON.stringify(f.ref.current)));
@@ -564,10 +564,10 @@ it("automatic different external layer structure is retained before PNG replacem
 });
 it("automatic flattened unchanged scan still detects whole TIFF byte conflict and does not Import", async () => {
   const f = await autoFixture(), originalShot = f.ref.current.shots[0], flattened = await pixelFingerprint(originalShot.imagePath);
-  f.ref.current = { ...f.ref.current, shots: [{ ...originalShot, swb: { ...originalShot.swb!, baseFingerprint: flattened } }], pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: await hash(originalShot.imagePath) } } } };
-  const hiddenPng = ".storyboard-workbench/layers/external/hidden.png";
+  f.ref.current = { ...f.ref.current, shots: [{ ...originalShot, flow: { ...originalShot.flow!, baseFingerprint: flattened } }], pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: await hash(originalShot.imagePath) } } } };
+  const hiddenPng = ".storyboard-flow/layers/external/hidden.png";
   await sharp({ create: { width: 4, height: 3, channels: 4, background: "red" } }).png().toFile(path.join(f.root, hiddenPng));
-  const occluded = { ...f.ref.current, shots: [{ ...originalShot, layers: originalShot.layers!.map((l, i) => ({ ...l, bitmapPath: i ? ".storyboard-workbench/layers/external/pixel.png" : hiddenPng })) }] };
+  const occluded = { ...f.ref.current, shots: [{ ...originalShot, layers: originalShot.layers!.map((l, i) => ({ ...l, bitmapPath: i ? ".storyboard-flow/layers/external/pixel.png" : hiddenPng })) }] };
   const output = await f.exportProject(occluded, "occluded");
   await fs.copyFile(output.replacements[0].fromPath, originalShot.imagePath);
   expect(await pixelFingerprint(originalShot.imagePath)).toBe(flattened);
@@ -652,7 +652,7 @@ async function fixture(kind: "png" | "tiff" | "layered" = "png") {
   let p: Project = { ...createProject("Synthetic"), shots: [{ ...scanned, id: "s", layers: undefined, order: 0 }], pendingBake: { version: 1, shots: {} } };
   if (kind === "layered") {
     const layers = await Promise.all(["red", "blue"].map(async (color, i) => {
-      const bitmapPath = `.storyboard-workbench/layers/fixture/${i}.png`; await fs.mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true });
+      const bitmapPath = `.storyboard-flow/layers/fixture/${i}.png`; await fs.mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true });
       await sharp({ create: { width: 4, height: 3, channels: 4, background: color } }).png().toFile(path.join(root, bitmapPath));
       return { id: `l${i}`, kind: i === 0 ? "image" as const : "paint" as const, name: color, bitmapPath, width: 4, height: 3, visible: true, locked: false, order: i, opacity: 1, blendMode: "normal" as const };
     }));
@@ -662,7 +662,7 @@ async function fixture(kind: "png" | "tiff" | "layered" = "png") {
   }
   // Real scan/load normalization supplies Image metadata before any internal PNG exists.
   p = { ...p, shots: p.shots.map(s => ensureBitmapLayerMetadata(s)) };
-  const original = await fs.readFile(imagePath), metadataPath = path.join(root, ".storyboard-workbench/storyboard.project.json"), mdPath = path.join(root, script.storyboardScriptFileName);
+  const original = await fs.readFile(imagePath), metadataPath = path.join(root, ".storyboard-flow/storyboard.project.json"), mdPath = path.join(root, script.storyboardScriptFileName);
   const recovery = { current: undefined as string | undefined };
   let fault = false, beforePersist: (() => Promise<void>) | undefined;
   let scriptLayerFault = false, scriptRollbackFault = false, earlyPreviewFault = false;
@@ -671,7 +671,7 @@ async function fixture(kind: "png" | "tiff" | "layered" = "png") {
   const cleanupStarted = vi.fn(), cleanupSettled = vi.fn();
   const writes: Project[] = [], errors: unknown[] = [];
   let errorSubscriber: (e: unknown) => void = () => {};
-  let handler!: (e: unknown, p: ImportSwbFormatPayload) => Promise<FolderScanPayload>;
+  let handler!: (e: unknown, p: ImportFlowFormatPayload) => Promise<FolderScanPayload>;
   const bindings = { ...fs, ...renames, ...importPorts, ...bitmap, ...safety, ...layer, ...script, ...tiffPreparation,
     removeOwnedFile: (receipt: OwnedFileReceipt): Promise<void> => removeOwnedFile(receipt, bindings.unlink),
     path, sharp, createHash, randomUUID, createBlankShot: async (...args: Parameters<typeof createBlankShot>) => {
@@ -694,7 +694,7 @@ async function fixture(kind: "png" | "tiff" | "layered" = "png") {
       } : undefined),
     writePhotoshopLayeredTiffsForInPlaceSave, hasPendingFileTransaction, prepareProtectedLayerReplacement,
     app: { getAppPath: () => process.cwd() }, process, withLayerFileOperation, mapWithConcurrency,
-    resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR,
+    resolvePhotoshopTiffPythonDepsDir: () => process.env.FLOW_PYTHON_DEPS_DIR,
     // Filesystem refusal injection moved with the public storage boundary;
     // every non-fault call executes the real native protected writer.
     writeProtectedLayerFile: async (...args: Parameters<typeof protectedWriter>) => {
@@ -716,23 +716,23 @@ async function fixture(kind: "png" | "tiff" | "layered" = "png") {
     },
     writeFile: async (...args: Parameters<typeof fs.writeFile>) => { if (args[0] === mdPath && fault) throw new Error("required MD failed after JSON"); await fs.writeFile(...args); }
   };
-  const names = ["sharpSourceOptions", "swbFormatVersion", "swbXmpTag", "readSwbMetadata", "archiveStamp", "uniquePath", "projectNeedsSwbImport", "assertNormalSaveAdmission", "importStoryboardScriptMarkdown", "createGeneratedShotFromImage", "createImageRecords", "assertManualImageImportAdmission", "importProjectToSwbFormat", "emptyDefaultSketchLayers", "createProjectPreviewsForShots", "ensureProjectLayerAssets", "createImageBitmapLayerPng", "createPaintBitmapLayerPng", "createTransparentLayerPng", "transparentLayerBuffer", "shouldWriteSwbMetadata", "shouldWritePhotoshopLayeredTiffOnSave", "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff", "sketchLayersForShot", "swbMetadataForShot", "swbMetadataXmp", "writeSwbMetadataToTiffs", "preparePhotoshopLayeredTiffsForSave", "writeProjectFiles", "writeProjectMetadata", "writeStoryboardScriptMarkdown", "storyboardScriptPathForFolder"];
+  const names = ["sharpSourceOptions", "flowFormatVersion", "flowXmpTag", "readFlowMetadata", "archiveStamp", "uniquePath", "projectNeedsFlowImport", "assertNormalSaveAdmission", "importStoryboardScriptMarkdown", "createGeneratedShotFromImage", "createImageRecords", "assertManualImageImportAdmission", "importProjectToFlowFormat", "emptyDefaultSketchLayers", "createProjectPreviewsForShots", "ensureProjectLayerAssets", "createImageBitmapLayerPng", "createPaintBitmapLayerPng", "createTransparentLayerPng", "transparentLayerBuffer", "shouldWriteFlowMetadata", "shouldWritePhotoshopLayeredTiffOnSave", "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff", "sketchLayersForShot", "flowMetadataForShot", "flowMetadataXmp", "writeFlowMetadataToTiffs", "preparePhotoshopLayeredTiffsForSave", "writeProjectFiles", "writeProjectMetadata", "writeStoryboardScriptMarkdown", "storyboardScriptPathForFolder"];
   const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
   const selected = tree.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(tree)));
   expect(selected).toHaveLength(names.length);
-  const block = source.slice(source.indexOf('  ipcMain.handle("workspace:importSwbFormat"'), source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
-  const compiled = ts.transpileModule(selected.map(n => n.getText(tree)).join("\n") + block + "; return { persist: writeProjectFiles, ensure: ensureProjectLayerAssets, admit: assertNormalSaveAdmission, readMetadata: readSwbMetadata, exportProject: preparePhotoshopLayeredTiffsForSave };", { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  const block = source.slice(source.indexOf('  ipcMain.handle("workspace:importFlowFormat"'), source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
+  const compiled = ts.transpileModule(selected.map(n => n.getText(tree)).join("\n") + block + "; return { persist: writeProjectFiles, ensure: ensureProjectLayerAssets, admit: assertNormalSaveAdmission, readMetadata: readFlowMetadata, exportProject: preparePhotoshopLayeredTiffsForSave };", { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const chain = new Function("isCertifiedPendingBakeEntry", ...Object.keys(bindings).filter(k => k !== "default"), compiled)(isCertifiedPendingBakeEntry, ...Object.entries(bindings).filter(([k]) => k !== "default").map(([, v]) => v));
-  const autosaveHandlers: Record<string, (event: unknown, payload: ImportSwbFormatPayload) => Promise<unknown>> = {};
-  registerWorkspacePersistenceIpcHandlers({ handle: (name: string, fn: (event: unknown, payload: ImportSwbFormatPayload) => Promise<unknown>) => { autosaveHandlers[name] = fn; } }, {
+  const autosaveHandlers: Record<string, (event: unknown, payload: ImportFlowFormatPayload) => Promise<unknown>> = {};
+  registerWorkspacePersistenceIpcHandlers({ handle: (name: string, fn: (event: unknown, payload: ImportFlowFormatPayload) => Promise<unknown>) => { autosaveHandlers[name] = fn; } }, {
     // Actual admission + writer/ensure bodies, not a substitute success port.
     assertAdmission: payload => payload.normalSave ? chain.admit(payload, false) : undefined,
     ensureProjectLayerAssets: (project, folderPath, options) => chain.ensure(project, folderPath, options),
     writeProjectFiles: (metadataPath, folderPath, project, input, expected) => chain.persist(metadataPath, folderPath, project, input, expected)
   });
   const ref = { current: p }, queue = createBitmapLayerWriteQueue(), published = vi.fn();
-  const io = vi.fn((payload: ImportSwbFormatPayload) => handler({ sender: {} }, payload));
-  const api = { importSwbFormat: io, readOutputIdentity: hash,
+  const io = vi.fn((payload: ImportFlowFormatPayload) => handler({ sender: {} }, payload));
+  const api = { importFlowFormat: io, readOutputIdentity: hash,
     ensureLayerAssets: async (payload: { project: Project; folderPath: string }) => { await chain.ensure(payload.project, payload.folderPath); return payload; },
     readLayerPng: layer.readLayerPng, writeLayerPng: layer.writeLayerPng, deleteLayerPng: layer.deleteLayerPng,
     saveWorkspace: vi.fn(async () => { throw new Error("not part of Import fixture"); }),
@@ -744,20 +744,20 @@ async function fixture(kind: "png" | "tiff" | "layered" = "png") {
     const text = await fs.readFile(new URL("../../src/renderer/App.tsx", import.meta.url), "utf8");
     const tree = ts.createSourceFile("App.tsx", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     let expression = "";
-    const visit = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(tree) === "handleImportSwbFormat") expression = n.initializer!.getText(tree); ts.forEachChild(n, visit); }; visit(tree);
+    const visit = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(tree) === "handleImportFlowFormat") expression = n.initializer!.getText(tree); ts.forEachChild(n, visit); }; visit(tree);
     const bindings = { window: { storyboard: api }, normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: adapter },
-      folderPath: root, metadataPath, project: ref.current, needsSwbImport: true, needsImageImport: ref.current.shots.some(s => s.swb?.status !== "owned"), scriptImportNeeded: true, blankShotPreset: "16:9", dirtyShotIds: () => [],
+      folderPath: root, metadataPath, project: ref.current, needsFlowImport: true, needsImageImport: ref.current.shots.some(s => s.flow?.status !== "owned"), scriptImportNeeded: true, blankShotPreset: "16:9", dirtyShotIds: () => [],
       prepareNormalSaveScriptMatte: extra.scriptPrepare ?? (async (p: Project) => p), normalSaveScriptImportPublished: extra.scriptPublished ?? vi.fn(),
       setWorkspaceTask: vi.fn(), setIsImportHelpOpen: () => {}, setStatus: () => {}, prepareNormalSaveImportMatte: extra.prepare ?? (async (p: Project) => p), normalSaveImageImportPublished: extra.published ?? published };
     return new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${expression});`))(...Object.values(appCallerAdapterScope(bindings)))();
   };
-  return { exportProject: (project: Project, stamp: string) => chain.exportProject(project, root, stamp) as ReturnType<typeof writePhotoshopLayeredTiffsForInPlaceSave>, readMetadata: chain.readMetadata as (p: string) => Promise<import("../../src/shared/types").SwbImageMetadata | undefined>, root, ref, io, api, adapter, queue, recovery, run, original, imagePath, metadataPath, mdPath, published, writes, errors, cleanupStarted, cleanupSettled, setSecondBlankFault: (gate: ReturnType<typeof barrier>) => { secondBlankFault = true; scriptRollbackFault = true; cleanupGate = gate; }, afterJson: (fn: () => Promise<void>) => { afterJson = fn; }, setEarlyPreviewFault: (rollback = false) => { earlyPreviewFault = true; scriptRollbackFault = rollback; }, clearEarlyPreviewFault: () => { earlyPreviewFault = false; }, setFault: () => { fault = true; }, setScriptLayerFault: (rollback = false) => { scriptLayerFault = true; scriptRollbackFault = rollback; }, beforePersist: (f: () => Promise<void>) => { beforePersist = f; }, onError: (fn: (e: unknown) => void) => { errorSubscriber = fn; } };
+  return { exportProject: (project: Project, stamp: string) => chain.exportProject(project, root, stamp) as ReturnType<typeof writePhotoshopLayeredTiffsForInPlaceSave>, readMetadata: chain.readMetadata as (p: string) => Promise<import("../../src/shared/types").FlowImageMetadata | undefined>, root, ref, io, api, adapter, queue, recovery, run, original, imagePath, metadataPath, mdPath, published, writes, errors, cleanupStarted, cleanupSettled, setSecondBlankFault: (gate: ReturnType<typeof barrier>) => { secondBlankFault = true; scriptRollbackFault = true; cleanupGate = gate; }, afterJson: (fn: () => Promise<void>) => { afterJson = fn; }, setEarlyPreviewFault: (rollback = false) => { earlyPreviewFault = true; scriptRollbackFault = rollback; }, clearEarlyPreviewFault: () => { earlyPreviewFault = false; }, setFault: () => { fault = true; }, setScriptLayerFault: (rollback = false) => { scriptLayerFault = true; scriptRollbackFault = rollback; }, beforePersist: (f: () => Promise<void>) => { beforePersist = f; }, onError: (fn: (e: unknown) => void) => { errorSubscriber = fn; } };
 }
 it.each(["png", "tiff", "layered"] as const)("actual main manual %s Import ACK establishes only completed H0 and required JSON/MD", async kind => {
   const f = await fixture(kind); const result = await f.run(); expect(f.errors).toEqual([]); expect(result).toBe(true);
-  const shot = f.ref.current.shots[0]; expect(shot.swb!.status).toBe("owned");
+  const shot = f.ref.current.shots[0]; expect(shot.flow!.status).toBe("owned");
   expect(f.ref.current.pendingBake!.shots.s).toEqual({ state: "pending", editToken: "fresh", acceptedOutputIdentity: await hash(shot.imagePath) });
-  expect(await fs.readFile(shot.swb!.archivePath!)).toEqual(f.original);
+  expect(await fs.readFile(shot.flow!.archivePath!)).toEqual(f.original);
   expect(JSON.parse(await fs.readFile(f.metadataPath, "utf8"))).toEqual(JSON.parse(JSON.stringify(f.ref.current)));
   expect(await fs.readFile(f.mdPath, "utf8")).toBe(script.serializeStoryboardScriptMarkdown(f.ref.current));
   expect(shot.layers!.length).toBeGreaterThan(0);
@@ -782,7 +782,7 @@ it("actual main unknown future raw admission leaves source and metadata byte unt
 it("actual main pending compatible external Import duplicates even without legacy dirty tracker", async () => {
   const f = await fixture("layered"); expect(await f.run()).toBe(true);
   const before = f.ref.current.shots[0], pngs = await Promise.all(before.layers!.map(l => fs.readFile(path.join(f.root, l.bitmapPath))));
-  f.ref.current = { ...f.ref.current, shots: [{ ...before, swb: { ...before.swb!, status: "compatible-external-edit" } }] };
+  f.ref.current = { ...f.ref.current, shots: [{ ...before, flow: { ...before.flow!, status: "compatible-external-edit" } }] };
   const scan = await f.io({ project: f.ref.current, folderPath: f.root, metadataPath: f.metadataPath, normalSave: true, normalSaveImageImport: true, dirtyShotIds: [] });
   expect(scan.project!.shots).toHaveLength(2); expect(scan.normalSaveImportEffects![0].shotId).not.toBe("s");
   expect(await Promise.all(before.layers!.map(l => fs.readFile(path.join(f.root, l.bitmapPath))))).toEqual(pngs);
@@ -790,7 +790,7 @@ it("actual main pending compatible external Import duplicates even without legac
 it("actual main explicit preserve policy preserves internal PNGs and returns only preserved effect", async () => {
   const f = await fixture("layered"); expect(await f.run()).toBe(true);
   const before = f.ref.current.shots[0], pngs = await Promise.all(before.layers!.map(l => fs.readFile(path.join(f.root, l.bitmapPath))));
-  f.ref.current = { ...f.ref.current, shots: [{ ...before, swb: { ...before.swb!, status: "compatible-external-edit" } }] };
+  f.ref.current = { ...f.ref.current, shots: [{ ...before, flow: { ...before.flow!, status: "compatible-external-edit" } }] };
   const scan = await f.io({ project: f.ref.current, folderPath: f.root, metadataPath: f.metadataPath, normalSave: true, normalSaveImageImport: true, dirtyShotIds: ["s"], preserveDirtyShotLayers: true });
   expect(scan.project!.shots).toHaveLength(1); expect(scan.normalSaveImportEffects![0].kind).toBe("preserved");
   expect(await Promise.all(before.layers!.map(l => fs.readFile(path.join(f.root, l.bitmapPath))))).toEqual(pngs);
@@ -823,11 +823,11 @@ it("actual App matte preparation holds Import queue without re-entry, real PNG c
     window: { storyboard: f.api }, bitmapLayerWriteQueueRef: { current: f.queue }, setStatus: () => {} };
   const prepare = new Function(...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${expression});`))(...Object.values(appCallerAdapterScope(bindings)));
   expect(await f.run({ prepare })).toBe(true);
-  const shot = f.ref.current.shots[0]; expect(shot.presentation!.matte!.mode).toBe("expanded"); expect(shot.swb!.canvasHeight).toBe(153);
+  const shot = f.ref.current.shots[0]; expect(shot.presentation!.matte!.mode).toBe("expanded"); expect(shot.flow!.canvasHeight).toBe(153);
   expect((await sharp(shot.imagePath).metadata()).height).toBe(3);
   for (const l of shot.layers!) expect((await sharp(path.join(f.root, l.bitmapPath)).metadata()).height).toBe(153);
   expect(f.ref.current.pendingBake!.shots.s).toMatchObject({ state: "pending", editToken: "fresh", acceptedOutputIdentity: await hash(shot.imagePath) });
-  expect(JSON.parse(await fs.readFile(f.metadataPath, "utf8")).shots[0].swb.canvasHeight).toBe(153);
+  expect(JSON.parse(await fs.readFile(f.metadataPath, "utf8")).shots[0].flow.canvasHeight).toBe(153);
 });
 it("actual JSON/MD late P2 persistence is latest before Import publication and queue release", async () => {
   const f = await fixture(); let entered!: () => void, release!: () => void;
@@ -901,7 +901,7 @@ it.each(["stable", "dialogue", "scene"] as const)("actual original scene dialogu
   const overlay = shot.layers!.find(l => l.id === dialogueOverlayBitmapLayerId)!;
   expect(overlay).toBeDefined(); expect(await fs.readFile(path.join(f.root, overlay.bitmapPath))).toEqual(Buffer.from(dialogue.split(",")[1], "base64"));
   expect(sceneDialogueOverlayEnabledForProject(f.ref.current)).toBe(true);
-  expect(await fs.readFile(shot.swb!.archivePath!)).toEqual(original);
+  expect(await fs.readFile(shot.flow!.archivePath!)).toEqual(original);
 });
 
 it.each(["matte", "MD"] as const)("real compatible PNG replacement then %s failure retains asset facts and P2 and gates writers", async failure => {
@@ -909,13 +909,13 @@ it.each(["matte", "MD"] as const)("real compatible PNG replacement then %s failu
   const before = f.ref.current.shots[0]; const oldJson = await fs.readFile(f.metadataPath), oldMd = await fs.readFile(f.mdPath);
   const oldPng = await fs.readFile(path.join(f.root, before.layers![0].bitmapPath));
   const externalLayers = await Promise.all(before.layers!.map(async (l, i) => {
-    const bitmapPath = `.storyboard-workbench/layers/external/l${i}.png`; await fs.mkdir(path.dirname(path.join(f.root, bitmapPath)), { recursive: true });
+    const bitmapPath = `.storyboard-flow/layers/external/l${i}.png`; await fs.mkdir(path.dirname(path.join(f.root, bitmapPath)), { recursive: true });
     await sharp({ create: { width: 4, height: 3, channels: 4, background: i ? "yellow" : "green" } }).png().toFile(path.join(f.root, bitmapPath));
     return { ...l, bitmapPath };
   }));
   const external = await writePhotoshopLayeredTiffsForInPlaceSave({ ...f.ref.current, shots: [{ ...before, layers: externalLayers }] }, f.root, { scriptPath: path.join(process.cwd(), "scripts/photoshop-layered-tiff-export.py"), saveStamp: "external", env: process.env });
   await fs.copyFile(external.replacements[0].fromPath, before.imagePath);
-  f.ref.current = { ...f.ref.current, shots: [{ ...before, swb: { ...before.swb!, status: "compatible-external-edit" } }], pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: f.ref.current.pendingBake!.shots.s.acceptedOutputIdentity } } } };
+  f.ref.current = { ...f.ref.current, shots: [{ ...before, flow: { ...before.flow!, status: "compatible-external-edit" } }], pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: f.ref.current.pendingBake!.shots.s.acceptedOutputIdentity } } } };
   const url = (b: Buffer) => `data:image/png;base64,${b.toString("base64")}`;
   const raster = url(await sharp({ create: { width: 4, height: 153, channels: 4, background: "transparent" } }).png().toBuffer());
   let attempted = 0; const rawWrite = f.api.writeLayerPng;
@@ -935,7 +935,7 @@ it.each(["matte", "MD"] as const)("real compatible PNG replacement then %s failu
   expect(f.ref.current.pendingBake!.shots.s.state).toBe("unknown");
   expect(await fs.readFile(path.join(f.root, before.layers![0].bitmapPath))).not.toEqual(oldPng);
   expect((await sharp(before.imagePath).metadata()).width).toBe(4);
-  expect(await fs.readFile(before.swb!.archivePath!)).toEqual(f.original);
+  expect(await fs.readFile(before.flow!.archivePath!)).toEqual(f.original);
   if (failure === "matte") expect(await fs.readFile(f.metadataPath)).toEqual(oldJson);
   else expect(JSON.parse(await fs.readFile(f.metadataPath, "utf8")).pendingBake.shots.s.state).toBe("pending");
   expect(await fs.readFile(f.mdPath)).toEqual(oldMd);
@@ -998,7 +998,7 @@ it("r4 shared queue History captured ready refuses snapshots when real dual Impo
   }, captureWorkspace: () => {
       const admissible = owner.captureEffectAdmission(); capturedReady = admissible();
       // Test-only negative control of cached-ready execution admission, same real transaction/queue.
-      return process.env.SWB_R4_NEGATIVE_HISTORY_READY === "1" ? (() => capturedReady) : admissible;
+      return process.env.FLOW_R4_NEGATIVE_HISTORY_READY === "1" ? (() => capturedReady) : admissible;
     },
     isImageImportLocked: () => false, bitmapLayerWriteQueueRef: { current: f.queue },
     fileNameSyncStateRef: { current: "unsynced" }, folderPathRef: { current: f.root },

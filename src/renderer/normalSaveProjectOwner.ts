@@ -118,13 +118,13 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
     return JSON.stringify([entry?.state, entry?.acceptedOutputIdentity, entry?.editToken]);
   };
   const deletedShotInputs = (s: Shot) => JSON.stringify([s.id, s.imagePath, s.fileName,
-    s.swb, s.layers, s.sketchLayers, s.imageLayerEdits, s.baseVisible, s.presentation,
+    s.flow, s.layers, s.sketchLayers, s.imageLayerEdits, s.baseVisible, s.presentation,
     s.activeLayerId, s.activeLayerTarget]);
   const scriptDependency = (p: Project) => JSON.stringify({ dialogues: p.dialogues,
     shots: p.shots.map(s => [s.id, s.scriptText, s.order, s.presentation,
       s.layers, s.sketchLayers, s.imageLayerEdits, s.baseVisible, s.activeLayerId, s.activeLayerTarget,
-      s.swb?.canvasWidth, s.swb?.canvasHeight, s.swb?.version, s.swb?.status,
-      s.swb?.sourceKind, s.swb?.sourcePath, s.swb?.baseFingerprint]) });
+      s.flow?.canvasWidth, s.flow?.canvasHeight, s.flow?.version, s.flow?.status,
+      s.flow?.sourceKind, s.flow?.sourcePath, s.flow?.baseFingerprint]) });
   // Keeps a completed image stage from being repeated or its still-unconsumed input erased.
   type ScriptPlan = NonNullable<FolderScanPayload["normalSaveScriptPlan"]>;
   let remainingScript: { epoch: object; input: string; plan: ScriptPlan; dependency: string; imageCompleted: boolean } | undefined;
@@ -197,7 +197,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
     }) | undefined;
     const dependency = (p: Project, id: string) => {
       const s = p.shots.find(s => s.id === id);
-      return s && JSON.stringify([s.id, s.imagePath, s.swb, s.presentation, s.baseVisible,
+      return s && JSON.stringify([s.id, s.imagePath, s.flow, s.presentation, s.baseVisible,
         s.imageLayerEdits, s.sketchLayers, s.layers?.map(({ name: _name, ...layer }) => layer)]);
     };
     const block = (error: unknown, shotIds: readonly string[]) => {
@@ -382,8 +382,8 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
     for (const shot of nextShots) {
       const source = [...previous.shots, ...(previous.parkedShots ?? [])].find(s => s.id === shot.id) ?? restoredSources?.get(shot.id);
       if (!source || source.imagePath !== shot.imagePath ||
-          source.swb?.sourcePath !== shot.swb?.sourcePath || source.swb?.sourceKind !== shot.swb?.sourceKind ||
-          source.swb?.status !== shot.swb?.status || !envelope.shots[shot.id]) {
+          source.flow?.sourcePath !== shot.flow?.sourcePath || source.flow?.sourceKind !== shot.flow?.sourceKind ||
+          source.flow?.status !== shot.flow?.status || !envelope.shots[shot.id]) {
         envelope.shots[shot.id] = { ...envelope.shots[shot.id], state: "unknown" };
       }
     }
@@ -391,7 +391,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
     for (const shot of nextShots) {
       const source = [...previous.shots, ...(previous.parkedShots ?? [])].find(s => s.id === shot.id);
       if (source && !previous.pendingBake?.shots[shot.id] && !shotIds.includes(shot.id) &&
-          source.imagePath === shot.imagePath && source.swb?.status === "non-swb" && shot.swb?.status === "non-swb") {
+          source.imagePath === shot.imagePath && source.flow?.status === "non-flow" && shot.flow?.status === "non-flow") {
         try {
           if (manualImageImportAdmission({ shots: [source] })[0].fresh && manualImageImportAdmission({ shots: [shot] })[0].fresh) delete envelope.shots[shot.id];
         } catch { /* Non-default internal metadata remains unknown. */ }
@@ -406,7 +406,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
     // witnesses. pendingDeletedShots itself is deliberately NOT a Shot list.
     if (supported(previous) && classifyPendingBake(previous) === "supported") {
       for (const shot of previous.shots) {
-        if (shot.swb?.status !== "owned" || !/\.tiff?$/iu.test(shot.imagePath) ||
+        if (shot.flow?.status !== "owned" || !/\.tiff?$/iu.test(shot.imagePath) ||
             [...next.shots, ...(next.parkedShots ?? [])].some(s => s.id === shot.id) ||
             next.pendingDeletedShots?.filter(s => s.id === shot.id && s.imagePath === shot.imagePath).length !== 1 ||
             !envelope.shots[shot.id] || envelope.shots[shot.id].state === "unknown") continue;
@@ -452,8 +452,8 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
     for (const shot of [...next.shots, ...(next.parkedShots ?? [])]) {
       const source = previousShots.find(s => s.id === shot.id) ?? sources.get(shot.id);
       if (!source || source.imagePath !== shot.imagePath ||
-          source.swb?.sourcePath !== shot.swb?.sourcePath || source.swb?.sourceKind !== shot.swb?.sourceKind ||
-          source.swb?.status !== shot.swb?.status || !c.project.pendingBake?.shots[shot.id]) return false;
+          source.flow?.sourcePath !== shot.flow?.sourcePath || source.flow?.sourceKind !== shot.flow?.sourceKind ||
+          source.flow?.status !== shot.flow?.status || !c.project.pendingBake?.shots[shot.id]) return false;
     }
     return publishEditWithSources(next, shotIds, sources);
   };
@@ -498,7 +498,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
         if (admitted.filter(a => a.fresh || a.external).some(a => !effects.some(e => e.sourceShotId === a.shot.id))) throw new Error("Import completion is missing");
         for (const e of effects) {
           const a = admitted.find(a => a.shot.id === e.sourceShotId), target = allShots(scan.project).find(s => s.id === e.shotId);
-          if (!a || e.sourcePath !== a.shot.imagePath || !/^[a-f0-9]{64}$/u.test(e.sourceHash) || !/^[a-f0-9]{64}$/u.test(e.outputHash) || !target || target.imagePath !== e.targetPath || target.swb?.status !== "owned" ||
+          if (!a || e.sourcePath !== a.shot.imagePath || !/^[a-f0-9]{64}$/u.test(e.sourceHash) || !/^[a-f0-9]{64}$/u.test(e.outputHash) || !target || target.imagePath !== e.targetPath || target.flow?.status !== "owned" ||
             !a.fresh && !a.external && e.sourceHash !== a.entry!.acceptedOutputIdentity || await ports.readIdentity(target) !== e.outputHash) throw new Error("Import output identity is unverified");
         }
         if (c.epoch !== epoch || !scope.isCurrent()) return false;
@@ -547,14 +547,14 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
             const a = admitted.find(a => a.shot.id === e.sourceShotId)!;
             if (!target || target.imagePath !== e.targetPath) throw new Error("Import matte changed output source");
             if (e.kind === "preserved" || e.shotId !== e.sourceShotId) {
-              const patchOriginal = (s: Shot): Shot => s.id === e.sourceShotId ? { ...s, swb: { ...s.swb!, status: "owned", baseFingerprint: target.swb?.baseFingerprint } } : s;
+              const patchOriginal = (s: Shot): Shot => s.id === e.sourceShotId ? { ...s, flow: { ...s.flow!, status: "owned", baseFingerprint: target.flow?.baseFingerprint } } : s;
               next = { ...next, shots: next.shots.map(patchOriginal), parkedShots: next.parkedShots?.map(patchOriginal) };
               envelope.shots[e.sourceShotId] = { ...envelope.shots[e.sourceShotId], acceptedOutputIdentity: e.kind === "preserved" ? e.outputHash : e.sourceHash };
               if (e.kind === "preserved") continue;
             }
             const beforeShot = a.shot, latestShot = allShots(latest).find(s => s.id === e.sourceShotId)!;
             if (e.shotId === e.sourceShotId && (beforeShot.layers !== latestShot.layers || beforeShot.sketchLayers !== latestShot.sketchLayers || beforeShot.imageLayerEdits !== latestShot.imageLayerEdits || beforeShot.presentation !== latestShot.presentation)) throw new Error("Import internal output changed during I/O");
-            const patch = (s: Shot): Shot => s.id === e.sourceShotId ? { ...s, imagePath: target.imagePath, fileName: target.fileName, previewPath: target.previewPath, sourceFileName: target.sourceFileName, presentation: target.presentation, activeLayerId: target.activeLayerId, activeLayerTarget: target.activeLayerTarget, swb: target.swb, layers: target.layers, sketchLayers: target.sketchLayers, imageLayerEdits: target.imageLayerEdits } : s;
+            const patch = (s: Shot): Shot => s.id === e.sourceShotId ? { ...s, imagePath: target.imagePath, fileName: target.fileName, previewPath: target.previewPath, sourceFileName: target.sourceFileName, presentation: target.presentation, activeLayerId: target.activeLayerId, activeLayerTarget: target.activeLayerTarget, flow: target.flow, layers: target.layers, sketchLayers: target.sketchLayers, imageLayerEdits: target.imageLayerEdits } : s;
             if (e.shotId === e.sourceShotId) next = { ...next, shots: next.shots.map(patch), parkedShots: next.parkedShots?.map(patch) };
             else {
               if (allShots(latest).some(s => s.id === e.shotId)) throw new Error("Import duplicate identity collision");
@@ -603,7 +603,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
               const e = facts.find(e => e.sourceShotId === s.id && e.shotId === s.id);
               const target = e && allShots(acknowledged!.project!).find(t => t.id === e.shotId);
               if (!target || !samePendingSource(c.project, latest, s.id)) return s;
-              return { ...s, imagePath: target.imagePath, fileName: target.fileName, swb: target.swb };
+              return { ...s, imagePath: target.imagePath, fileName: target.fileName, flow: target.flow };
             };
             for (const id of ids) if (envelope.shots[id]) envelope.shots[id] = { ...envelope.shots[id], state: "unknown" };
             const factsProject = { ...latest, pendingBake: envelope, shots: latest.shots.map(patchFacts), parkedShots: latest.parkedShots?.map(patchFacts) };
@@ -640,7 +640,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
         const envelope = pendingBakeForProject(c.project);
         let conflict = false;
         for (const shot of allShots(scanned)) {
-          if (shot.swb?.status === "compatible-external-edit") continue;
+          if (shot.flow?.status === "compatible-external-edit") continue;
           const entry = envelope.shots[shot.id];
           if (!entry) continue; // fresh scans are observable, never auto-imported
           let matches = false;
@@ -652,12 +652,12 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
           publish({ ...scanned, pendingBake: envelope });
           throw new Error("Working TIFF bytes changed outside compatible scan; both versions retained");
         }
-        // SWB scan normalization recreates objects/timestamps; a read-only observation
+        // FLOW scan normalization recreates objects/timestamps; a read-only observation
         // must not invalidate an admitted producer or create an autosave obligation.
         const meaning = (p: Project) => JSON.stringify({ ...p, updatedAt: undefined });
         if (meaning(scanned) === meaning(c.project)) return true;
         publish({ ...scanned, pendingBake: c.project.pendingBake });
-        if (!allShots(scanned).some(s => s.swb?.status === "compatible-external-edit")) return true;
+        if (!allShots(scanned).some(s => s.flow?.status === "compatible-external-edit")) return true;
         return await executeImageImport(capture(), effect, prepare, { ...scope, automatic: true });
       } catch (error) {
         if (c.epoch === epoch && scope.isCurrent()) lastError = error;
@@ -735,8 +735,8 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
       const dependency = (p: Project) => JSON.stringify({ dialogues: p.dialogues,
         scene: p.shots.map(s => [s.id, s.presentation, s.scriptText, s.order,
           s.layers, s.sketchLayers, s.imageLayerEdits, s.baseVisible, s.activeLayerId, s.activeLayerTarget,
-          s.swb?.canvasWidth, s.swb?.canvasHeight, s.swb?.version, s.swb?.status,
-          s.swb?.sourceKind, s.swb?.sourcePath, s.swb?.baseFingerprint]) });
+          s.flow?.canvasWidth, s.flow?.canvasHeight, s.flow?.version, s.flow?.status,
+          s.flow?.sourceKind, s.flow?.sourcePath, s.flow?.baseFingerprint]) });
       const merge = () => {
         const latest = ports.projectRef.current;
         if (c.epoch !== epoch || !scope.isCurrent()) throw new Error("Script import workspace changed");
@@ -781,19 +781,19 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
       // A prepare changes real pixels (scene matte / overlay expansion). It must run at most ONCE:
       // a P2/P3 during the required persistence re-merges the latest METADATA but reuses the
       // already-completed asset preparation, so the same internal PNG is never re-expanded.
-      // Track the derived field set, including SWB canvas dimensions but not the whole SWB record.
+      // Track the derived field set, including FLOW canvas dimensions but not the whole FLOW record.
       // Eligibility/provenance changes are rejected by the dependency check; other latest metadata
       // stays latest. Each overlay below contains only fields this prepare actually changed.
       const assetKey = (shot: Shot) => JSON.stringify([shot.layers, shot.sketchLayers, shot.imageLayerEdits,
-        shot.presentation, shot.swb?.canvasWidth, shot.swb?.canvasHeight, shot.baseVisible, shot.activeLayerId, shot.activeLayerTarget]);
+        shot.presentation, shot.flow?.canvasWidth, shot.flow?.canvasHeight, shot.baseVisible, shot.activeLayerId, shot.activeLayerTarget]);
       const applyPreparedAssets = (merged: Project): Project => {
         if (!preparedAssets) return merged;
         const overlay = (shot: Shot): Shot => {
           const prepared = preparedAssets!.get(shot.id);
           if (!prepared) return shot;
           const { before, after } = prepared;
-          // Overlay only fields actually derived by this prepare. SWB eligibility and provenance
-          // belong to latest metadata; never replace the entire SWB record with captured bytes.
+          // Overlay only fields actually derived by this prepare. FLOW eligibility and provenance
+          // belong to latest metadata; never replace the entire FLOW record with captured bytes.
           const next = { ...shot };
           for (const key of ["layers", "sketchLayers", "imageLayerEdits", "presentation", "baseVisible",
             "activeLayerId", "activeLayerTarget"] as const) {
@@ -802,8 +802,8 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
             }
           }
           for (const key of ["canvasWidth", "canvasHeight"] as const) {
-            if (before.swb?.[key] !== after.swb?.[key] && after.swb && next.swb) {
-              next.swb = { ...next.swb, [key]: after.swb[key] };
+            if (before.flow?.[key] !== after.flow?.[key] && after.flow && next.flow) {
+              next.flow = { ...next.flow, [key]: after.flow[key] };
             }
           }
           return next;
@@ -953,7 +953,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
     // can advance during this ACK; Save recaptures it after producers settle.
     const c = capture(), revision = assetRevision;
     const assets = (p: Project) => JSON.stringify({pendingBake:p.pendingBake,
-      shots:allShots(p).map(s=>({id:s.id,imagePath:s.imagePath,swb:s.swb,layers:s.layers}))});
+      shots:allShots(p).map(s=>({id:s.id,imagePath:s.imagePath,flow:s.flow,layers:s.layers}))});
     if (loading || !supported(c.project) || receipt || remainingScript || unsettledEffect) return false;
     const binding = assets(c.project);
     await ports.persist(c.project, true);
@@ -1007,7 +1007,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
   const captureAddShotOperation = (context: { folderPath?: string; metadataPath?: string }) => {
     const c = capture();
     const folderPath = context.folderPath, metadataPath = context.metadataPath;
-    const LAYER_PREFIX = ".storyboard-workbench/layers/";
+    const LAYER_PREFIX = ".storyboard-flow/layers/";
     // The one actual blank completion this operation produced, recorded by the operation's OWN
     // bound createBlankShot wrapper. Never a shared "latest" ref, and never a caller-supplied
     // argument: the caller keeps this handle locally so an interleaved newer Add cannot be
@@ -1088,8 +1088,8 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
   const allShots = (p: Project) => [...p.shots, ...(p.parkedShots ?? [])];
   const samePendingSource = (before: Project, latest: Project, id: string) => {
     const a = allShots(before).find(s => s.id === id), b = allShots(latest).find(s => s.id === id);
-    return !!a && !!b && a.imagePath === b.imagePath && a.swb?.sourcePath === b.swb?.sourcePath &&
-      a.swb?.sourceKind === b.swb?.sourceKind && a.swb?.status === b.swb?.status &&
+    return !!a && !!b && a.imagePath === b.imagePath && a.flow?.sourcePath === b.flow?.sourcePath &&
+      a.flow?.sourceKind === b.flow?.sourceKind && a.flow?.status === b.flow?.status &&
       before.shots.some(s => s.id === id) === latest.shots.some(s => s.id === id);
   };
   // Only Pending's existing materialize/move workflow. Not a general operation coordinator.
@@ -1146,7 +1146,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
         !allShots(transitioned).some(s => s.id === id))) throw new Error("Pending destination lifecycle changed");
       const patch = (shot: Shot): Shot => {
         const ack = byId.get(shot.id);
-        return ack ? { ...shot, imagePath: ack.targetPath, fileName: ack.fileName!, swb: shot.swb && ack.baseFingerprint ? { ...shot.swb, baseFingerprint: ack.baseFingerprint } : shot.swb } : shot;
+        return ack ? { ...shot, imagePath: ack.targetPath, fileName: ack.fileName!, flow: shot.flow && ack.baseFingerprint ? { ...shot.flow, baseFingerprint: ack.baseFingerprint } : shot.flow } : shot;
       };
       return { ...transitioned, pendingBake: envelope, shots: transitioned.shots.map(patch), parkedShots: transitioned.parkedShots?.map(patch) };
       };
@@ -1237,7 +1237,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
       // Missing old output state stays unknown; legacy equivalence migration is retired.
       for (const shot of [...project.shots, ...(project.parkedShots ?? [])]) {
         const entry = envelope.shots[shot.id];
-        if (entry.state !== "unknown" && !(autoImport && entry.state === "synced" && shot.swb?.status === "compatible-external-edit")) {
+        if (entry.state !== "unknown" && !(autoImport && entry.state === "synced" && shot.flow?.status === "compatible-external-edit")) {
           try {
             if (await ports.readIdentity(shot) !== entry.acceptedOutputIdentity) envelope.shots[shot.id] = { ...entry, state: "unknown" };
           } catch { envelope.shots[shot.id] = { ...entry, state: "unknown" }; }
@@ -1260,7 +1260,7 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
         // Already owns the reader domain: never re-enter runExclusive here.
         if (ids.length && !await executePending(capture(), p => p, ids, true, parkedMigration.effect, parkedMigration.scope)) return false;
       }
-      if (autoImport && allShots(ports.projectRef.current).some(s => s.swb?.status === "compatible-external-edit")) {
+      if (autoImport && allShots(ports.projectRef.current).some(s => s.flow?.status === "compatible-external-edit")) {
         completed = await executeImageImport(capture(), ...autoImport());
         return completed;
       }

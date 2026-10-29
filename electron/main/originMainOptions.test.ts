@@ -13,7 +13,7 @@ import { createRecoveryClaimRecords } from './recoveryClaimRecords';
 test('actual Main options connect the same native accountant and private origin bridge with lazy isolated userData', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-main-options-'));
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'origin-main-data-'));
-  await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
+  await fs.mkdir(path.join(root, '.storyboard-flow'), { mode: 0o700 });
   const source = await fs.readFile(new URL('./main.ts', import.meta.url), 'utf8');
   const ast = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true);
   const option = (name: string, factory: string) => {
@@ -28,7 +28,7 @@ test('actual Main options connect the same native accountant and private origin 
   const scope: Record<string, any> = { path, recoveryBudget, createRecoveryClaimRecords,
     mainMemoryBudget: createControlledMemoryBudget(MAIN_MEMORY_BUDGET_BYTES, { policy: MAIN_MEMORY_PRESSURE }, MAIN_MEMORY_JSON),
     app: { getPath: (name: string) => { expect(name).toBe('userData'); getters++; return userData; }, getAppPath: () => process.cwd() },
-    process: { env: { SWB_PYTHON_PATH: 'python3' } },
+    process: { env: { FLOW_PYTHON_PATH: 'python3' } },
     BrowserWindow: { fromWebContents: (sender: object) => sender } };
   const evaluate = (expression: string) => new Function(...Object.keys(scope), `return (${expression});`)(...Object.values(scope));
   const accountingOptions = evaluate(option('originAccounting', 'createOriginWorkspaceAccounting'));
@@ -45,7 +45,7 @@ test('actual Main options connect the same native accountant and private origin 
   await expect(prepared.readReadonly(root)).rejects.toThrow('No recovery namespace');
   expect(getters).toBeGreaterThan(0);
   expect(await fs.readdir(userData)).toEqual([]);
-  expect(await fs.readdir(path.join(root, '.storyboard-workbench'))).toEqual([]);
+  expect(await fs.readdir(path.join(root, '.storyboard-flow'))).toEqual([]);
   // This executes actual Main options/controller and native observation, not
   // Electron app startup or GUI lifecycle. No enrollment is caused by reading.
 }, 120000);

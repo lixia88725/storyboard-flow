@@ -12,7 +12,7 @@ import sharp from 'sharp';
 import { recordsDerivedPreview, recordDerivedPreview } from './derivedPreviewReceipt.js';
 import { assertEditableWorkspaceFormat } from '../shared/workspaceFormat.js';
 
-type Image = { imagePath: string; fileName?: string; width?: number; height?: number; previewPath?: string; swbMetadata?: unknown };
+type Image = { imagePath: string; fileName?: string; width?: number; height?: number; previewPath?: string; flowMetadata?: unknown };
 type Project = { shots: ManualImportShot[]; parkedShots?: ManualImportShot[]; pendingBake?: unknown };
 const stat = async (p: string) => {
  try { return await lstat(p); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw e; }
@@ -59,7 +59,7 @@ export const initializeNormalOpenPreviews = async <S extends { folderPath: strin
  // snapshot may receive a preview before explicit Import in a clean directory.
  const assertFresh = async () => {
   if (!scan.project && ((await stat(path.join(internal, "layers"))) ||
-      images.some(i => i.swbMetadata !== undefined && !isFreshStandaloneLayeredTiffPreview(i)))) {
+      images.some(i => i.flowMetadata !== undefined && !isFreshStandaloneLayeredTiffPreview(i)))) {
    throw new Error("Preview initialization source is unknown; explicit Import required");
   }
  };

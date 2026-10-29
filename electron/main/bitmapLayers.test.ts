@@ -26,7 +26,7 @@ describe("applyBitmapLayerOpacity", () => {
           opacity: undefined,
           blendMode: undefined,
           order: 2,
-          bitmapPath: ".storyboard-workbench/layers/shot-a/paint-top.png",
+          bitmapPath: ".storyboard-flow/layers/shot-a/paint-top.png",
           width: 320,
           height: 180
         },
@@ -39,7 +39,7 @@ describe("applyBitmapLayerOpacity", () => {
           opacity: 0.5,
           blendMode: "multiply",
           order: 99,
-          bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png",
+          bitmapPath: ".storyboard-flow/layers/shot-a/layer-image.png",
           width: 320,
           height: 180
         },
@@ -52,7 +52,7 @@ describe("applyBitmapLayerOpacity", () => {
           opacity: 0.75,
           blendMode: "screen",
           order: 1,
-          bitmapPath: ".storyboard-workbench/layers/shot-a/paint-bottom.png",
+          bitmapPath: ".storyboard-flow/layers/shot-a/paint-bottom.png",
           width: 320,
           height: 180
         }
@@ -73,16 +73,16 @@ describe("applyBitmapLayerOpacity", () => {
   });
 
   it("skips external shot layer assets only when external shots are excluded", () => {
-    expect(shouldEnsureLayerAssetsForShot({ swb: { status: "owned" } })).toBe(true);
-    expect(shouldEnsureLayerAssetsForShot({ swb: { status: "non-swb" } })).toBe(true);
-    expect(shouldEnsureLayerAssetsForShot({ swb: { status: "compatible-external-edit" } })).toBe(true);
-    expect(shouldEnsureLayerAssetsForShot({ swb: { status: "incompatible-external-edit" } })).toBe(true);
+    expect(shouldEnsureLayerAssetsForShot({ flow: { status: "owned" } })).toBe(true);
+    expect(shouldEnsureLayerAssetsForShot({ flow: { status: "non-flow" } })).toBe(true);
+    expect(shouldEnsureLayerAssetsForShot({ flow: { status: "compatible-external-edit" } })).toBe(true);
+    expect(shouldEnsureLayerAssetsForShot({ flow: { status: "incompatible-external-edit" } })).toBe(true);
     expect(shouldEnsureLayerAssetsForShot({})).toBe(true);
     expect(
-      shouldEnsureLayerAssetsForShot({ swb: { status: "owned" } }, { includeExternalShots: false })
+      shouldEnsureLayerAssetsForShot({ flow: { status: "owned" } }, { includeExternalShots: false })
     ).toBe(true);
     expect(
-      shouldEnsureLayerAssetsForShot({ swb: { status: "non-swb" } }, { includeExternalShots: false })
+      shouldEnsureLayerAssetsForShot({ flow: { status: "non-flow" } }, { includeExternalShots: false })
     ).toBe(false);
     expect(shouldEnsureLayerAssetsForShot({}, { includeExternalShots: false })).toBe(false);
   });
@@ -216,7 +216,7 @@ describe("applyBitmapLayerOpacity", () => {
   });
 
   it("merges layer files into a new target PNG and deletes only requested source files", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "swb-merge-visible-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "flow-merge-visible-"));
     const unlockedPath = path.join(root, "unlocked.png");
     const lockedPath = path.join(root, "locked.png");
     const targetPath = path.join(root, "merged", "target.png");
@@ -261,7 +261,7 @@ describe("applyBitmapLayerOpacity", () => {
   });
 
   it("copies a bitmap layer PNG into a new layer asset path", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "swb-copy-layer-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "flow-copy-layer-"));
     const sourcePath = path.join(root, "source.png");
     const targetPath = path.join(root, "nested", "target.png");
     const source = await sharp({

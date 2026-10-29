@@ -39,7 +39,7 @@ const pendingFixture = async (restore = false) => {
   const folder = await mkdtemp(path.join(os.tmpdir(), "pending-commit-"));
   fixtureFolders.push(folder);
   await mkdir(path.join(folder, "Pending"));
-  await mkdir(path.join(folder, ".storyboard-workbench"));
+  await mkdir(path.join(folder, ".storyboard-flow"));
   const shots = ["a", "b"].map((id) => ({ id, fileName: `${id}.tiff`, imagePath: path.join(folder, restore ? "Pending" : "", `${id}.tiff`) }));
   const replacements = shots.map((shot) => ({ targetPath: shot.imagePath, tempPath: `${shot.imagePath}.tmp`, backupPath: `${shot.imagePath}.backup` }));
   const oldBytes = Buffer.from([0, 1, 255, 17]);
@@ -48,9 +48,9 @@ const pendingFixture = async (restore = false) => {
     await writeFile(item.targetPath, oldBytes);
     await writeFile(item.tempPath, newBytes);
   }
-  const metadataPath = path.join(folder, ".storyboard-workbench", "storyboard.project.json");
+  const metadataPath = path.join(folder, ".storyboard-flow", "storyboard.project.json");
   await writeFile(metadataPath, JSON.stringify({ shots }));
-  const journalPath = path.join(folder, ".storyboard-workbench", "pending-file-transaction.json");
+  const journalPath = path.join(folder, ".storyboard-flow", "pending-file-transaction.json");
   const options = {
     beginTransaction: (moves: Array<{ fromPath: string; toPath: string }>) => beginPendingFileTransaction(folder, moves),
     finalize: async (files: Array<{ shotId: string; imagePath: string }>) => writeFile(metadataPath, JSON.stringify({ shots: shots.map((shot) => ({ ...shot, imagePath: files.find((file) => file.shotId === shot.id)!.imagePath })) })),

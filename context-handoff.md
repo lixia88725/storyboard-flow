@@ -1,3 +1,10 @@
+## Naming unification — 2026-10-29
+
+用户已批准全部统一为 Storyboard Flow。当前代码/环境变量/IPC/TIFF/恢复 schema 使用 Flow 命名；
+目录按角色分为 `.storyboard-flow`、`.storyboard-flow-project` 和 `.storyboard-flow/checkpoints`。
+详见 `docs/architecture/NAMING.md`。以下历史记录中的旧名称属于当时的候选，不再是当前命名规范。
+本次不迁移或删除原有文件，不重启已停止的 Hermes；命名验证结果见新交接记录。
+
 ## Hermes wave-one cores accepted — 2026-10-29
 
 - Coordinator main integrated exact corrected implementation snapshots: drawing 8374441,

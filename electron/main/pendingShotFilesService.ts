@@ -16,7 +16,7 @@ type PendingShot = {
   id: string;
   imagePath: string;
   fileName: string;
-  swb?: { baseFingerprint?: string };
+  flow?: { baseFingerprint?: string };
 };
 
 export type PendingProject = {

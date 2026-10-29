@@ -95,7 +95,7 @@ it.each([false, true])("actual Import inner/outer catches gate no-handle automat
   };
   const inner = await caught(() => mainCatch("\n  }\n\n  const applyPreparedImports", { error, rollbackImportMoves }));
   const outerMarker = "\n    }\n  }));\n\n  registerWorkspaceExternalChanges";
-  const outerBindings = { error: inner, swbImport: undefined, scriptImport: { rollback: f.scriptRollback } };
+  const outerBindings = { error: inner, flowImport: undefined, scriptImport: { rollback: f.scriptRollback } };
   if (restoreFails) {
     // A recovery-incomplete Import crosses IPC as a RETURNED serializable envelope (never a thrown
     // custom Error whose name/properties the boundary would drop).
@@ -140,7 +140,7 @@ it.each(["inner", "outer"])("actual Import %s catch preserves original and expli
     ? await caught(() => mainCatch("\n  }\n\n  const applyPreparedImports", { error: original, rollbackImportMoves }))
     : original;
   const envelope = await mainCatch("\n    }\n  }));\n\n  registerWorkspaceExternalChanges", {
-    error: inner, swbImport: boundary === "outer" ? { rollback: rollbackImportMoves } : undefined,
+    error: inner, flowImport: boundary === "outer" ? { rollback: rollbackImportMoves } : undefined,
     scriptImport: { rollback: f.scriptRollback }
   }) as { ok: boolean; error: { code: string; message: string } };
   // The recovery-incomplete fact is a returned serializable envelope carrying both underlying errors.

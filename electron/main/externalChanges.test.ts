@@ -3,7 +3,7 @@ import { knownImageHasExternalChange } from "./externalChanges.js";
 
 const ownedShot = {
   id: "shot-a",
-  swb: {
+  flow: {
     status: "owned" as const,
     canvasWidth: 1920,
     canvasHeight: 1080,
@@ -17,7 +17,7 @@ describe("knownImageHasExternalChange", () => {
       knownImageHasExternalChange(
         {
           id: "shot-a",
-          swb: {
+          flow: {
             status: "owned" as const,
             canvasWidth: 1920,
             canvasHeight: 1080
@@ -38,7 +38,7 @@ describe("knownImageHasExternalChange", () => {
       knownImageHasExternalChange(
         {
           id: "shot-a",
-          swb: {
+          flow: {
             status: "owned" as const,
             canvasWidth: 1920,
             canvasHeight: 1080
@@ -76,7 +76,7 @@ describe("knownImageHasExternalChange", () => {
     ).toBe(true);
   });
 
-  it("does not treat a copied SWB TIFF as externally changed when pixels match the project baseline", () => {
+  it("does not treat a copied FLOW TIFF as externally changed when pixels match the project baseline", () => {
     expect(
       knownImageHasExternalChange(ownedShot, "json-pixels", {
         shotId: "other-shot",
@@ -92,8 +92,8 @@ describe("knownImageHasExternalChange", () => {
       knownImageHasExternalChange(
         {
           ...ownedShot,
-          swb: {
-            ...ownedShot.swb,
+          flow: {
+            ...ownedShot.flow,
             status: "incompatible-external-edit" as const
           }
         },

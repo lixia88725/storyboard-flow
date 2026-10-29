@@ -7,7 +7,7 @@ import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryServic
 const tempRoots: string[] = [];
 
 const createTempRoot = async (): Promise<string> => {
-  const root = await mkdtemp(path.join(tmpdir(), "swb-image-discovery-"));
+  const root = await mkdtemp(path.join(tmpdir(), "flow-image-discovery-"));
   tempRoots.push(root);
   return root;
 };
@@ -37,6 +37,6 @@ describe("imageDiscoveryService", () => {
   });
 
   it("resolves the legacy project metadata path inside the workspace folder", () => {
-    expect(metadataPathForFolder("/scene")).toBe("/scene/.storyboard-workbench/storyboard.project.json");
+    expect(metadataPathForFolder("/scene")).toBe("/scene/.storyboard-flow/storyboard.project.json");
   });
 });

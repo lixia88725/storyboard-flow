@@ -4,13 +4,13 @@ import { previewPathForImage, previewRootForFolder } from "./previewPaths.js";
 
 describe("previewPathForImage", () => {
   it("keeps preview file names short for deeply nested image paths", () => {
-    const previewRoot = "/scene/.storyboard-workbench/previews";
+    const previewRoot = "/scene/.storyboard-flow/previews";
     const longImagePath = path.join(
       "/Users/example/Documents/Codex",
       "2026-05-30",
-      "storyboard-workbench-synthetic-deeply-nested-path-3",
+      "storyboard-flow-synthetic-deeply-nested-path-3",
       "work",
-      "swb-dogfood-normal-folder",
+      "flow-dogfood-normal-folder",
       "project",
       "03-cutaway.tiff"
     );
@@ -23,14 +23,14 @@ describe("previewPathForImage", () => {
   });
 
   it("uses different preview file names for different image paths", () => {
-    const previewRoot = "/scene/.storyboard-workbench/previews";
+    const previewRoot = "/scene/.storyboard-flow/previews";
 
     expect(previewPathForImage("/scene/a.tiff", previewRoot)).not.toBe(
       previewPathForImage("/scene/b.tiff", previewRoot)
     );
   });
 
-  it("resolves the preview cache root inside the SWB workspace folder", () => {
-    expect(previewRootForFolder("/scene")).toBe("/scene/.storyboard-workbench/previews");
+  it("resolves the preview cache root inside the FLOW workspace folder", () => {
+    expect(previewRootForFolder("/scene")).toBe("/scene/.storyboard-flow/previews");
   });
 });

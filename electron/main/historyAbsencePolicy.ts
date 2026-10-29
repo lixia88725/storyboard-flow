@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';import path from 'node:path';
  * rejects directories; never relax it to certify a missing History PNG. */
 export const inspectHistoryAbsenceParents=async(python:string,root:string,file:string,maxDepth:number)=>{
  const relative=path.relative(root,path.dirname(file));
- if(relative.startsWith('..')||path.isAbsolute(relative)||!relative.startsWith('.storyboard-workbench/layers/'))throw new Error('History absence parent outside layer inventory');
+ if(relative.startsWith('..')||path.isAbsolute(relative)||!relative.startsWith('.storyboard-flow/layers/'))throw new Error('History absence parent outside layer inventory');
  const segments=relative.split(path.sep);if(segments.length>maxDepth)throw new Error('History absence parent depth budget');
  const observed:any[]=[];let cursor=root;
  const script=fileURLToPath(new URL('../../scripts/layer-file-permissions.py',import.meta.url));
@@ -18,5 +18,5 @@ export const inspectHistoryAbsenceParents=async(python:string,root:string,file:s
   observed.push([cursor,info]);
  }
  try{await fs.lstat(file);throw new Error('History absence is not ENOENT');}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
- return {schema:'swb.history-absence-native.v1',observed};
+ return {schema:'flow.history-absence-native.v1',observed};
 };

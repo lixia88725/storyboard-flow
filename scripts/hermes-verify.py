@@ -61,7 +61,7 @@ def main():
         result['tempRoot'] = temp_root
         vendor = root / 'vendor' / 'python' / 'photoshop-tiff'
         if vendor.exists():
-            env['SWB_PYTHON_DEPS_DIR'] = str(vendor)
+            env['FLOW_PYTHON_DEPS_DIR'] = str(vendor)
         print(f'RUN {command}\nLOG {log_path}\nTEMP {temp_root}', flush=True)
         with log_path.open('w') as log:
             child = subprocess.Popen(command, cwd=root, env=env, stdout=log,

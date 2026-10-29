@@ -12,7 +12,7 @@ import { createBitmapLayerWriteQueue } from "./bitmapLayerWriteQueue";
 import { createShotPresentationController } from "./shotPresentationController";
 
 import { historyFixture } from "../../research/save-pending-revision2/history-fixture";
-export const project = () => ({ ...createProject("P"), shots: [{ id: "s", imagePath: "/w/a.tiff", fileName: "a.tiff", order: 0, swb: { version: 1, status: "owned", canvasWidth: 4, canvasHeight: 3 }, layers: [{ id: "base", kind: "image", name: "Base", visible: true, locked: false, opacity: 1, blendMode: "normal", order: 0, bitmapPath: ".storyboard-workbench/layers/s/base.png", width: 4, height: 3 }] }] } as any);
+export const project = () => ({ ...createProject("P"), shots: [{ id: "s", imagePath: "/w/a.tiff", fileName: "a.tiff", order: 0, flow: { version: 1, status: "owned", canvasWidth: 4, canvasHeight: 3 }, layers: [{ id: "base", kind: "image", name: "Base", visible: true, locked: false, opacity: 1, blendMode: "normal", order: 0, bitmapPath: ".storyboard-flow/layers/s/base.png", width: 4, height: 3 }] }] } as any);
 it("finite inheritance invalidation checks whole Project dependencies, not just snapshot paths, and preserves proven edits", async () => {
   const before = project(), after = applyProjectMatte(before, "expanded", ["s"]);
   const entry = (p: any, layerAssets: any[] = []) => ({ project: p, selectedShotIds: [], fileNameSyncState: "unsynced" as const, layerAssets });
@@ -82,7 +82,7 @@ it.each([false, true])("actual inheritance first PNG write then P2 rollback fail
       const tree = ts.createSourceFile("App.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       let admission!: ts.ArrowFunction;
       const visit = (node: ts.Node) => { if (ts.isPropertyAssignment(node) && node.name.getText(tree) === "assertAdmission" && ts.isArrowFunction(node.initializer)) admission = node.initializer; ts.forEachChild(node, visit); }; visit(tree);
-      const assertAdmission = new Function("workspaceRecoveryRequiredRef", "needsSwbImport", ts.transpile(`return (${admission.getText(tree)});`))(workspaceRecoveryRequiredRef, false);
+      const assertAdmission = new Function("workspaceRecoveryRequiredRef", "needsFlowImport", ts.transpile(`return (${admission.getText(tree)});`))(workspaceRecoveryRequiredRef, false);
       const { createNormalSaveAppAdapter } = await import("./normalSaveAppAdapter");
       projectRef.current = { ...projectRef.current, pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: "0".repeat(64) } } } };
       const saveWorkspace = vi.fn(), autosaveWorkspace = vi.fn();

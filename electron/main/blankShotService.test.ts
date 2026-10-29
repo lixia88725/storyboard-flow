@@ -20,7 +20,7 @@ describe("blankShotService", () => {
   });
 
   it("creates unique blank TIFF shots for the selected preset", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "swb-blank-shot-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "flow-blank-shot-"));
     const folderPath = path.join(root, "workspace");
 
     try {
@@ -40,7 +40,7 @@ describe("blankShotService", () => {
   });
 
   it("creates 9:16 phone blank TIFF shots", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "swb-blank-shot-phone-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "flow-blank-shot-phone-"));
     const folderPath = path.join(root, "workspace");
 
     try {
@@ -56,7 +56,7 @@ describe("blankShotService", () => {
   });
 
   it("creates 1.85:1 blank TIFF shots at 1998 by 1080", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "swb-blank-shot-185-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "flow-blank-shot-185-"));
     const folderPath = path.join(root, "workspace");
 
     try {

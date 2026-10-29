@@ -158,7 +158,7 @@ describe("createPixelFingerprintCache", () => {
 
 describe("createFilePixelFingerprintCache", () => {
   it("survives a restart: a second cache answers from the written file", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "swb-fingerprint-cache-"));
+    const directory = await mkdtemp(path.join(tmpdir(), "flow-fingerprint-cache-"));
     const filePath = path.join(directory, "nested", "fingerprints.json");
     try {
       const first = createFilePixelFingerprintCache({ filePath, debounceMs: 0 });
@@ -185,7 +185,7 @@ describe("createFilePixelFingerprintCache", () => {
   });
 
   it("ignores a truncated cache file instead of failing the scan", async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), "swb-fingerprint-cache-"));
+    const directory = await mkdtemp(path.join(tmpdir(), "flow-fingerprint-cache-"));
     const filePath = path.join(directory, "fingerprints.json");
     try {
       await writeFile(filePath, "{ not json");

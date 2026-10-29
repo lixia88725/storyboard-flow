@@ -14,7 +14,7 @@ const imageLayer = (overrides: Partial<BitmapLayer> = {}): BitmapLayer => ({
   id: "layer-image",
   name: "Image",
   kind: "image",
-  bitmapPath: ".storyboard-workbench/layers/shot-1/layer-image.png",
+  bitmapPath: ".storyboard-flow/layers/shot-1/layer-image.png",
   visible: true,
   locked: false,
   opacity: 1,
@@ -29,7 +29,7 @@ const shot = (overrides: Partial<Shot> = {}): Shot => ({
   id: "shot-1",
   fileName: "shot.tiff",
   imagePath: "/scene/shot.tiff",
-  previewPath: "/scene/.storyboard-workbench/previews/shot.png",
+  previewPath: "/scene/.storyboard-flow/previews/shot.png",
   order: 10,
   layers: [imageLayer()],
   ...overrides
@@ -230,7 +230,7 @@ describe("bitmapLayerPaintingController", () => {
         layer: imageLayer(),
         createBlankLayerDataUrl: vi.fn().mockResolvedValue("blank")
       })
-    ).resolves.toBe("asset:///scene/.storyboard-workbench/previews/shot.png");
+    ).resolves.toBe("asset:///scene/.storyboard-flow/previews/shot.png");
   });
 
   it("propagates layer read failures instead of treating existing pixels as missing", async () => {

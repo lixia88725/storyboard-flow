@@ -11,13 +11,13 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root
 const fixture = async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'reobserve-'));
   roots.push(root);
-  const metadata = path.join(root, '.storyboard-workbench/storyboard.project.json');
-  const png = path.join(root, '.storyboard-workbench/layers/s/a.png');
+  const metadata = path.join(root, '.storyboard-flow/storyboard.project.json');
+  const png = path.join(root, '.storyboard-flow/layers/s/a.png');
   await fs.mkdir(path.dirname(png), { recursive: true, mode: 0o700 });
   const bytes = await sharp({ create: { width: 4, height: 4, channels: 4, background: 'blue' } }).png().toBuffer();
   await fs.writeFile(png, bytes, { mode: 0o600 });
   await fs.writeFile(path.join(root, 's.tiff'), await sharp(bytes).tiff().toBuffer(), { mode: 0o600 });
-  const project = { id: 'p', name: 'Re-observe', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', swb: { status: 'owned', canvasWidth: 4, canvasHeight: 4 }, layers: [{ id: 'a', kind: 'paint', bitmapPath: '.storyboard-workbench/layers/s/a.png', width: 4, height: 4 }] }], dialogues: [] };
+  const project = { id: 'p', name: 'Re-observe', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', flow: { status: 'owned', canvasWidth: 4, canvasHeight: 4 }, layers: [{ id: 'a', kind: 'paint', bitmapPath: '.storyboard-flow/layers/s/a.png', width: 4, height: 4 }] }], dialogues: [] };
   await fs.writeFile(metadata, JSON.stringify(project, null, 2) + '\n', { mode: 0o600 });
   return { root };
 };

@@ -43,7 +43,7 @@ export const pythonCommandCandidates = ({
     return [{ executable: pythonPath }];
   }
 
-  const override = env.SWB_PYTHON_BIN?.trim();
+  const override = env.FLOW_PYTHON_BIN?.trim();
   if (override) {
     return [{ executable: override }];
   }

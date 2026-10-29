@@ -18,10 +18,10 @@ type Restrictions=ReturnType<NonNullable<Parameters<typeof createRecoveryClaimRe
 const fixture=async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-reservation-root-')),userData=await fs.mkdtemp(path.join(os.tmpdir(),'png-reservation-data-'));
   const python='python3',budget={bytes:4*1024*1024,records:1000,assets:16,jsonDepth:80};
-  const bitmapPath='.storyboard-workbench/layers/s/a.png',file=path.join(root,bitmapPath),metadataPath=path.join(root,'.storyboard-workbench/storyboard.project.json'),imagePath=path.join(root,'s.tiff');
+  const bitmapPath='.storyboard-flow/layers/s/a.png',file=path.join(root,bitmapPath),metadataPath=path.join(root,'.storyboard-flow/storyboard.project.json'),imagePath=path.join(root,'s.tiff');
   await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});
   const original=await sharp({create:{width:2,height:2,channels:4,background:'blue'}}).png().toBuffer(),updated=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer();
-  const project={id:'p',name:'physical PNG reservation',shots:[{id:'s',imagePath,fileName:'s.tiff',swb:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'a',kind:'paint',bitmapPath,width:2,height:2}]}],dialogues:[]};
+  const project={id:'p',name:'physical PNG reservation',shots:[{id:'s',imagePath,fileName:'s.tiff',flow:{status:'owned',canvasWidth:2,canvasHeight:2},layers:[{id:'a',kind:'paint',bitmapPath,width:2,height:2}]}],dialogues:[]};
   const persist=async()=>{await fs.writeFile(metadataPath,JSON.stringify(project,null,2)+'\n',{mode:0o600});await fs.writeFile(path.join(root,'storyboard-script.md'),serializeStoryboardScriptMarkdown(project as any),{mode:0o600});return {};};
   await fs.writeFile(file,original,{mode:0o600});await fs.writeFile(imagePath,await sharp(original).tiff().toBuffer(),{mode:0o600});await persist();
   const accounting=createOriginWorkspaceAccounting({userData:()=>userData,python,script:path.resolve('scripts/recovery-origin-permissions.py'),

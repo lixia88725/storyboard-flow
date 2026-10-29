@@ -18,17 +18,17 @@ const hash = async (file: string) => createHash("sha256").update(await readFile(
 async function fixture() {
   const root = await mkdtemp(path.join(scratch, "owner-green-"));
   onTestFinished(async () => { await rm(root, { recursive: true, force: true }); });
-  await mkdir(path.join(root, ".storyboard-workbench/layers/s"), { recursive: true });
-  const imagePath = path.join(root, "s.tiff"), bitmapPath = ".storyboard-workbench/layers/s/layer-image.png";
+  await mkdir(path.join(root, ".storyboard-flow/layers/s"), { recursive: true });
+  const imagePath = path.join(root, "s.tiff"), bitmapPath = ".storyboard-flow/layers/s/layer-image.png";
   const old = await sharp({ create: { width: 2, height: 2, channels: 4, background: "red" } }).png().toBuffer();
   const transparent = await sharp({ create: { width: 2, height: 2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
   await writeFile(path.join(root, bitmapPath), old); await sharp(old).tiff({ compression: "none" }).toFile(imagePath);
   const p = createProject("owned-add");
-  p.shots = [{ id: "s", imagePath, fileName: "s.tiff", order: 0, swb: { version: 1, status: "owned", canvasWidth: 2, canvasHeight: 2 },
+  p.shots = [{ id: "s", imagePath, fileName: "s.tiff", order: 0, flow: { version: 1, status: "owned", canvasWidth: 2, canvasHeight: 2 },
     layers: [{ id: "layer-image", kind: "image", name: "Image", bitmapPath, width: 2, height: 2, order: 0, visible: true, locked: false, opacity: 1, blendMode: "normal" }] }];
   p.pendingBake = { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: await hash(imagePath) } } };
   const ref = { current: p }, queue = createBitmapLayerWriteQueue(), histories: Array<{ project: Project; layerAssets: Awaited<ReturnType<typeof readLayerAssetSnapshots>> }> = [];
-  const metadata = path.join(root, ".storyboard-workbench/storyboard.project.json"), md = path.join(root, "storyboard-script.md");
+  const metadata = path.join(root, ".storyboard-flow/storyboard.project.json"), md = path.join(root, "storyboard-script.md");
   const persisted: Project[] = []; const persist = async (project: Project) => { await writeFile(metadata, JSON.stringify(project)); await writeFile(md, serializeStoryboardScriptMarkdown(project)); persisted.push(project); };
   let token = 0;
   const owner = createNormalSaveProjectOwner({ projectRef: ref, setProject: project => { ref.current = project; }, freshToken: () => `real-effect-${++token}`, queue,

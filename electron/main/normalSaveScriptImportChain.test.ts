@@ -20,7 +20,7 @@ import sharp from "sharp";
 import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createProject, ensureBitmapLayerMetadata, addImportedImages, addBitmapLayer, sceneMatteModeForProject, sceneDialogueOverlayEnabledForProject, bitmapLayersForShot, matteForShot, dialogueOverlayBitmapLayerId } from "../../src/shared/projectOps";
-import type { Project, FolderScanPayload, ImportSwbFormatPayload, WorkspacePayload, SaveWorkspacePayload } from "../../src/shared/types";
+import type { Project, FolderScanPayload, ImportFlowFormatPayload, WorkspacePayload, SaveWorkspacePayload } from "../../src/shared/types";
 import { withStatus } from "../../src/renderer/statusAction";
 import { createNormalSaveAppAdapter } from "../../src/renderer/normalSaveAppAdapter";
 import { createBitmapLayerWriteQueue } from "../../src/renderer/bitmapLayerWriteQueue";
@@ -92,7 +92,7 @@ const listLayerPngs = async (root: string): Promise<string[]> => {
       else if (full.endsWith(".png")) found.push(full.replace(root, ""));
     }
   };
-  await walk(path.join(root, ".storyboard-workbench", "layers"));
+  await walk(path.join(root, ".storyboard-flow", "layers"));
   return found.sort();
 };
 
@@ -106,21 +106,21 @@ const appExpression = (name: string): string => {
 const runApp = (name: string, bindings: Record<string, unknown>) =>
   new Function("decodeNormalSaveImportResult", ...Object.keys(appCallerAdapterScope(bindings)), ts.transpile(`return (${appExpression(name)});`, { target: ts.ScriptTarget.ES2022 }))(decodeNormalSaveImportResult, ...Object.values(appCallerAdapterScope(bindings)));
 
-// The script-only Import never enters the swb/image branch, so the compile binds only the
+// The script-only Import never enters the flow/image branch, so the compile binds only the
 // declarations that path actually evaluates; referenced-but-unreached image helpers stay free
 // variables (never evaluated), exactly like the existing image-import chain fixture.
 const scriptNames = [
-  "sharpSourceOptions", "swbFormatVersion", "swbXmpTag", "readSwbMetadata",
-  "projectNeedsSwbImport", "assertNormalSaveAdmission", "importStoryboardScriptMarkdown",
+  "sharpSourceOptions", "flowFormatVersion", "flowXmpTag", "readFlowMetadata",
+  "projectNeedsFlowImport", "assertNormalSaveAdmission", "importStoryboardScriptMarkdown",
   "createGeneratedShotFromImage", "createImageRecords", "writeProjectFiles", "writeProjectMetadata",
   "writeStoryboardScriptMarkdown", "storyboardScriptPathForFolder", "ensureStoryboardScriptMarkdown",
   "ensureProjectLayerAssets", "createImageBitmapLayerPng", "createPaintBitmapLayerPng",
   "createTransparentLayerPng", "transparentLayerBuffer", "sketchLayersForShot",
-  "archiveStamp", "shouldWriteSwbMetadata", "shouldWritePhotoshopLayeredTiffOnSave",
+  "archiveStamp", "shouldWriteFlowMetadata", "shouldWritePhotoshopLayeredTiffOnSave",
   "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff",
-  "swbMetadataForShot", "swbMetadataXmp", "writeSwbMetadataToTiffs", "preparePhotoshopLayeredTiffsForSave",
-  "saveWorkspace", "normalSaveOutputAcks", "assertRenamePlanSafe", "importProjectToSwbFormat",
-  "clearSavedImageLayerEdits", "syncSavedSwbBaseFingerprints", "shouldBakeShotImageEdits", "uniquePath"
+  "flowMetadataForShot", "flowMetadataXmp", "writeFlowMetadataToTiffs", "preparePhotoshopLayeredTiffsForSave",
+  "saveWorkspace", "normalSaveOutputAcks", "assertRenamePlanSafe", "importProjectToFlowFormat",
+  "clearSavedImageLayerEdits", "syncSavedFlowBaseFingerprints", "shouldBakeShotImageEdits", "uniquePath"
 ];
 
 it("script parser/merge is exact on the real production module (pure text and new-entry)", () => {
@@ -146,8 +146,8 @@ it("actual App script-only Import route triggers the owner only for a real scrip
     imageImport: vi.fn(() => { calls.push("imageImport"); return Promise.resolve(true); }),
     scriptImport: vi.fn(() => { calls.push("scriptImport"); return Promise.resolve(true); })
   };
-  const run = (flags: { normalSaveAppEnabled: boolean; needsSwbImport: boolean; needsImageImport: boolean; scriptImportNeeded: boolean }) => runApp("handleImportSwbFormat", {
-    window: { storyboard: { importSwbFormat: legacyImport } }, normalSaveAppAdapterRef: { current: adapter },
+  const run = (flags: { normalSaveAppEnabled: boolean; needsFlowImport: boolean; needsImageImport: boolean; scriptImportNeeded: boolean }) => runApp("handleImportFlowFormat", {
+    window: { storyboard: { importFlowFormat: legacyImport } }, normalSaveAppAdapterRef: { current: adapter },
     folderPath: "/w", metadataPath: "/w/p.json", project: createProject("w"),
     blankShotPreset: "16:9", dirtyShotIds: () => [], setIsImportHelpOpen: () => {}, setStatus: () => {},
     prepareNormalSaveImportMatte: async (p: Project) => p, prepareNormalSaveScriptMatte: async (p: Project) => p,
@@ -158,18 +158,18 @@ it("actual App script-only Import route triggers the owner only for a real scrip
     withStatus: async (_m: string, task: () => Promise<unknown>) => task(), loadFolderScan: async () => undefined,
     ...flags
   })();
-  await run({ normalSaveAppEnabled: true, needsSwbImport: true, needsImageImport: false, scriptImportNeeded: true });
+  await run({ normalSaveAppEnabled: true, needsFlowImport: true, needsImageImport: false, scriptImportNeeded: true });
   expect(calls).toEqual(["scriptImport"]);
   expect(legacyImport).not.toHaveBeenCalled();
   calls.length = 0;
-  await run({ normalSaveAppEnabled: true, needsSwbImport: true, needsImageImport: true, scriptImportNeeded: true });
+  await run({ normalSaveAppEnabled: true, needsFlowImport: true, needsImageImport: true, scriptImportNeeded: true });
   expect(calls).toEqual(["imageImport"]);
   calls.length = 0;
-  await run({ normalSaveAppEnabled: true, needsSwbImport: false, needsImageImport: false, scriptImportNeeded: false });
+  await run({ normalSaveAppEnabled: true, needsFlowImport: false, needsImageImport: false, scriptImportNeeded: false });
   expect(calls).toEqual([]);
   calls.length = 0;
   // The retired flag cannot select a bypass: the normal domain is the only route.
-  await run({ normalSaveAppEnabled: false, needsSwbImport: true, needsImageImport: false, scriptImportNeeded: true });
+  await run({ normalSaveAppEnabled: false, needsFlowImport: true, needsImageImport: false, scriptImportNeeded: true });
   expect(calls).toEqual(["scriptImport"]);
   expect(legacyImport).not.toHaveBeenCalled();
 });
@@ -181,7 +181,7 @@ it("normal App script Import decodes plain recovery failure without successful F
   const adapter = createNormalSaveAppAdapter({
     projectRef, setProject, queue: createBitmapLayerWriteQueue(), freshToken: () => "fresh",
     paths: () => ({ folderPath: "/synthetic", metadataPath: "/synthetic/p.json" }),
-    api: () => ({ importSwbFormat: async () => structuredClone(normalSaveImportFailure({ message: "primary; rollback" })),
+    api: () => ({ importFlowFormat: async () => structuredClone(normalSaveImportFailure({ message: "primary; rollback" })),
       readOutputIdentity: async () => "0".repeat(64), autosaveWorkspace: vi.fn(), saveWorkspace: vi.fn() }),
     onError: error => statuses.push(String(error)), onSave: () => {}
   });
@@ -189,10 +189,10 @@ it("normal App script Import decodes plain recovery failure without successful F
   // failed Import publication is forbidden by this protection contract.
   const initial = projectRef.current;
   setProject.mockClear();
-  const handle = runApp("handleImportSwbFormat", {
+  const handle = runApp("handleImportFlowFormat", {
     window: { storyboard: {} }, normalSaveAppAdapterRef: { current: adapter },
     folderPath: "/synthetic", metadataPath: "/synthetic/p.json", project: initial,
-    needsSwbImport: true, needsImageImport: false, scriptImportNeeded: true,
+    needsFlowImport: true, needsImageImport: false, scriptImportNeeded: true,
     blankShotPreset: "16:9", dirtyShotIds: () => [], setIsImportHelpOpen: () => {},
     prepareNormalSaveScriptMatte: async (p: Project) => p, normalSaveScriptImportPublished: published,
     loadFolderScan, setStatus: (s: string) => statuses.push(s)
@@ -324,12 +324,12 @@ it("actual script-only Import refused by a stale capture performs zero IO", asyn
 
 it("actual script-only Import refuses an in-flight Pending transaction before materializing any asset", async () => {
   const f = await fixture();
-  await fs.writeFile(path.join(f.root, ".storyboard-workbench", "pending-file-transaction.json"),
+  await fs.writeFile(path.join(f.root, ".storyboard-flow", "pending-file-transaction.json"),
     `${JSON.stringify({ version: 1, moves: [{ fromPath: path.join(f.root, "a.tiff"), toPath: path.join(f.root, "b.tiff") }] })}\n`, "utf8");
   const before = await fs.readFile(f.metadataPath);
   expect(await f.run()).toBe(false);
   // No asset effect: only the pre-existing a.tiff remains, and the on-disk JSON is untouched.
-  expect((await fs.readdir(f.root)).sort()).toEqual([".storyboard-workbench", "a.tiff", "storyboard-script.md"]);
+  expect((await fs.readdir(f.root)).sort()).toEqual([".storyboard-flow", "a.tiff", "storyboard-script.md"]);
   expect(await fs.readFile(f.metadataPath)).toEqual(before);
   expect(f.errors).toHaveLength(1);
 });
@@ -429,7 +429,7 @@ it("actual main late failure after materializing a new blank rolls back its asse
   expect(f.errors).toHaveLength(1);
   // The blank TIFF and its not-yet-created internal PNG are rolled back; the pristine workspace
   // and the on-disk Project are byte-unchanged (main never installed the captured P).
-  expect((await fs.readdir(f.root)).sort()).toEqual([".storyboard-workbench", "a.tiff", "storyboard-script.md"]);
+  expect((await fs.readdir(f.root)).sort()).toEqual([".storyboard-flow", "a.tiff", "storyboard-script.md"]);
   expect(await fs.readFile(f.metadataPath)).toEqual(before);
 });
 
@@ -600,7 +600,7 @@ it("actual main rolls back the first created PNG when the second new blank's lay
   // (the second path was never created, so its ENOENT is ignored); the blank TIFFs are gone too,
   // and the only remaining layer PNG is the pre-existing shot's own asset.
   const names = (await fs.readdir(f.root)).sort();
-  expect(names).toEqual([".storyboard-workbench", "a.tiff", "storyboard-script.md"]);
+  expect(names).toEqual([".storyboard-flow", "a.tiff", "storyboard-script.md"]);
   expect(await fs.readFile(f.metadataPath)).toEqual(before);
   expect(await listLayerPngs(f.root)).toEqual(beforePngs);
 });
@@ -688,7 +688,7 @@ it("both production preloads leave Import decoding to the renderer after context
   for (const filename of ["preload.cjs", "preload.ts"]) {
     const preload = await fs.readFile(new URL(`../preload/${filename}`, import.meta.url), "utf8");
     expect(preload).not.toContain("decodeNormalSaveImportResult");
-    expect(preload).toContain('ipcRenderer.invoke("workspace:importSwbFormat", payload)');
+    expect(preload).toContain('ipcRenderer.invoke("workspace:importFlowFormat", payload)');
   }
 });
 
@@ -709,41 +709,41 @@ it("a metadata P2 during persist keeps the prepared canvas height consistent wit
   const pngHeight = (await sharp(path.join(f.root, imageLayer.bitmapPath)).metadata()).height!;
   // The complete prepared asset fields travel with the asset: the persisted canvasHeight equals the
   // expanded layer height AND the real written PNG height, even after a metadata-only rebuild.
-  expect(created.swb!.canvasHeight).toBe(imageLayer.height);
-  expect(created.swb!.canvasHeight).toBe(pngHeight);
+  expect(created.flow!.canvasHeight).toBe(imageLayer.height);
+  expect(created.flow!.canvasHeight).toBe(pngHeight);
   expect(pngHeight).toBe(expands[0].inputHeight + expands[0].top + expands[0].bottom);
   const onDisk = JSON.parse(await fs.readFile(f.metadataPath, "utf8"));
   const onDiskCreated = onDisk.shots.find((shot: { id: string }) => shot.id !== "s");
-  expect(onDiskCreated.swb.canvasHeight).toBe(pngHeight);
+  expect(onDiskCreated.flow.canvasHeight).toBe(pngHeight);
   expect(onDisk.name).toBe("P2-metadata");
 });
 
-it("existing mismatch preserves non-derived SWB P2 fields through real PNG preparation", async () => {
+it("existing mismatch preserves non-derived FLOW P2 fields through real PNG preparation", async () => {
   const f = await fixture({ matteMode: "expanded", secondShot: {} });
   const raster = pngDataUrl(await sharp({ create: { width: 4, height: 153, channels: 4, background: "transparent" } }).png().toBuffer());
   const prepare = scriptMattePrepare({ raster, adapter: f.adapter, api: f.api, queue: f.queue, expandCapture: [] });
   const fields = { archivePath: "/synthetic/P2-archive", statusMessage: "P2-note", acceptedExternalEditAt: "P2-time" };
   let persists = 0;
   f.beforePersist(async () => { if (++persists === 1) f.adapter.owner.publishEdit(p => ({ ...p,
-    shots: p.shots.map(s => s.id === "t" ? { ...s, swb: { ...s.swb!, ...fields } } : s) }), []); });
+    shots: p.shots.map(s => s.id === "t" ? { ...s, flow: { ...s.flow!, ...fields } } : s) }), []); });
   expect(await f.run({ prepare }), `Import errors: ${f.errors.map(e => String(e)).join("; ")}`).toBe(true);
   expect(persists).toBe(2);
   const shot = f.ref.current.shots.find(s => s.id === "t")!;
-  expect(shot.swb).toMatchObject(fields);
+  expect(shot.flow).toMatchObject(fields);
   const png = shot.layers!.find(l => l.id === "layer-image")!;
-  expect(shot.swb!.canvasHeight).toBe((await sharp(path.join(f.root, png.bitmapPath)).metadata()).height);
-  expect(JSON.parse(await fs.readFile(f.metadataPath, "utf8")).shots.find((s: {id:string}) => s.id === "t").swb).toMatchObject(fields);
+  expect(shot.flow!.canvasHeight).toBe((await sharp(path.join(f.root, png.bitmapPath)).metadata()).height);
+  expect(JSON.parse(await fs.readFile(f.metadataPath, "utf8")).shots.find((s: {id:string}) => s.id === "t").flow).toMatchObject(fields);
 });
 
-for (const patchSwb of [{ status: "incompatible-external-edit" as const }, { version: 99 }, { sourceKind: "photoshop-layered-tiff" as const }, { baseFingerprint: "new-source" }, { sourcePath: "/synthetic/new-source" }, { canvasHeight: 999 }]) {
-  it(`existing mismatch rejects preparation eligibility/derived P2 change ${JSON.stringify(patchSwb)}`, async () => {
+for (const patchFlow of [{ status: "incompatible-external-edit" as const }, { version: 99 }, { sourceKind: "photoshop-layered-tiff" as const }, { baseFingerprint: "new-source" }, { sourcePath: "/synthetic/new-source" }, { canvasHeight: 999 }]) {
+  it(`existing mismatch rejects preparation eligibility/derived P2 change ${JSON.stringify(patchFlow)}`, async () => {
     const f = await fixture({ matteMode: "expanded", secondShot: {} });
     const raster = pngDataUrl(await sharp({ create: { width: 4, height: 153, channels: 4, background: "transparent" } }).png().toBuffer());
     const prepare = scriptMattePrepare({ raster, adapter: f.adapter, api: f.api, queue: f.queue, expandCapture: [] });
     f.beforePersist(async () => f.adapter.owner.publishEdit(p => ({ ...p,
-      shots: p.shots.map(s => s.id === "t" ? { ...s, swb: { ...s.swb!, ...patchSwb } } : s) }), []));
+      shots: p.shots.map(s => s.id === "t" ? { ...s, flow: { ...s.flow!, ...patchFlow } } : s) }), []));
     expect(await f.run({ prepare })).toBe(false);
-    expect(f.ref.current.shots.find(s => s.id === "t")!.swb).toMatchObject(patchSwb);
+    expect(f.ref.current.shots.find(s => s.id === "t")!.flow).toMatchObject(patchFlow);
     expect(f.recovery.current).toBeTruthy();
     expect(await f.adapter.save()).toBe(false);
   });
@@ -937,7 +937,7 @@ it("real History Undo/Redo restores mixed new/existing internal PNGs written by 
   for (const [id, rgba] of [["t", [0, 0, 255, 255]], [created.id, [255, 255, 255, 255]]] as const) {
     const shot = f.ref.current.shots.find(s => s.id === id)!;
     const { data, info } = await sharp(shot.imagePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-    expect([info.width, info.height]).toEqual([shot.swb!.canvasWidth, shot.swb!.canvasHeight]);
+    expect([info.width, info.height]).toEqual([shot.flow!.canvasWidth, shot.flow!.canvasHeight]);
     const center = (Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)) * 4;
     expect([...data.subarray(center, center + 4)]).toEqual(rgba);
   }
@@ -964,7 +964,7 @@ it("B2 main checks retained origin transaction before creating any target asset"
   const f = await fixture();
   const target = await fs.mkdtemp(path.join(os.tmpdir(), "b2-retained-")); dirs.push(target);
   const input = path.join(f.root, "input.md"); await fs.writeFile(input, "1. New shot\n");
-  await fs.writeFile(path.join(f.root, ".storyboard-workbench/pending-file-transaction.json"), JSON.stringify({ version: 1, moves: [] }));
+  await fs.writeFile(path.join(f.root, ".storyboard-flow/pending-file-transaction.json"), JSON.stringify({ version: 1, moves: [] }));
   await expect(f.mainCreate({ sourceMarkdownPath: input, targetFolderPath: target, blankShotPreset: "16:9", normalSave: true,
     normalSaveSource: { project: f.ref.current, folderPath: f.root, metadataPath: f.metadataPath, normalSave: true } })).rejects.toThrow();
   expect(await fs.readdir(target)).toEqual([]); expect(await fs.readFile(f.imagePath)).toEqual(f.originalTiff);
@@ -1033,7 +1033,7 @@ it("r4 shared queue History captured ready refuses snapshots after real Save ACK
     captureWorkspace: () => {
       const admissible = owner.captureEffectAdmission(); capturedReady = admissible();
       // Test-only negative control: reproduces cached-ready admission without changing production.
-      return process.env.SWB_R4_NEGATIVE_HISTORY_READY === "1" ? (() => capturedReady) : admissible;
+      return process.env.FLOW_R4_NEGATIVE_HISTORY_READY === "1" ? (() => capturedReady) : admissible;
     },
     isImageImportLocked: () => false, bitmapLayerWriteQueueRef: { current: f.queue },
     fileNameSyncStateRef: { current: "unsynced" }, folderPathRef: { current: f.root },
@@ -1438,7 +1438,7 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
   const presentation = options.matteMode
     ? { ...s0.presentation, matte: { mode: options.matteMode, barHeight: 0.1 } }
     : s0.presentation;
-  p = { ...p, shots: [{ ...s0, presentation, swb: { ...s0.swb!, status: "owned" as const } }] };
+  p = { ...p, shots: [{ ...s0, presentation, flow: { ...s0.flow!, status: "owned" as const } }] };
   p = { ...p, pendingBake: { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: await hash(imagePath) } } } };
   // A second owned shot with no scene matte: when the scene demands a matte this is an
   // existing-only mismatch that the prepare must still inherit for (newIds stays empty).
@@ -1449,11 +1449,11 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
     let t = ensureBitmapLayerMetadata({ ...scanned2, id: "t", order: 1, scriptText: "second line" });
     await fs.mkdir(path.dirname(path.join(root, t.layers![0].bitmapPath)), { recursive: true });
     await sharp({ create: { width: 4, height: 3, channels: 4, background: "blue" } }).png().toFile(path.join(root, t.layers![0].bitmapPath));
-    t = { ...t, presentation: options.secondShot.matteMode ? { ...t.presentation, matte: { mode: options.secondShot.matteMode, barHeight: 0.1 } } : t.presentation, swb: { ...t.swb!, status: "owned" as const } };
+    t = { ...t, presentation: options.secondShot.matteMode ? { ...t.presentation, matte: { mode: options.secondShot.matteMode, barHeight: 0.1 } } : t.presentation, flow: { ...t.flow!, status: "owned" as const } };
     p = { ...p, shots: [...p.shots, t], pendingBake: { version: 1, shots: { ...p.pendingBake!.shots, t: { state: "synced", acceptedOutputIdentity: await hash(imagePath2) } } } };
   }
   const originalTiff = await fs.readFile(imagePath);
-  const metadataPath = path.join(root, ".storyboard-workbench/storyboard.project.json");
+  const metadataPath = path.join(root, ".storyboard-flow/storyboard.project.json");
   const mdPath = path.join(root, script.storyboardScriptFileName);
   await fs.mkdir(path.dirname(metadataPath), { recursive: true });
   await fs.writeFile(metadataPath, `${JSON.stringify(p, null, 2)}\n`, "utf8");
@@ -1465,7 +1465,7 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
   let afterEffect: (() => Promise<void>) | undefined, lastScan: FolderScanPayload | undefined, layerDirFault = false;
   let failLayersMkdirOn = 0, layersMkdirCount = 0;
   let unlinkFault: ((filePath: string) => boolean) | undefined;
-  let handler!: (e: unknown, payload: ImportSwbFormatPayload) => Promise<FolderScanPayload>;
+  let handler!: (e: unknown, payload: ImportFlowFormatPayload) => Promise<FolderScanPayload>;
   let saveHandler!: (e: unknown, payload: WorkspacePayload) => Promise<WorkspacePayload>;
   const assetHandlers: Record<string, Function> = {};
   const bindings = {
@@ -1481,7 +1481,7 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
     writePhotoshopLayeredTiffsForInPlaceSave, saveProgressShotIds, countSaveProgressShots,
     cleanupDeletedShotLayerDirectories, stagePendingDeletedShotFiles, trashPendingDeletedShotFiles,
     app: { getAppPath: () => process.cwd() }, process,
-    resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR,
+    resolvePhotoshopTiffPythonDepsDir: () => process.env.FLOW_PYTHON_DEPS_DIR,
     // Preserve original pre-effect refusal controls at the new filesystem port.
     writeProtectedLayerFile: async (...args: Parameters<typeof protectedWriter>) => {
       const directory = path.dirname(args[1]);
@@ -1498,7 +1498,7 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
       if (unlinkFault?.(String(args[0]))) { const error = new Error("simulated unlink failure") as NodeJS.ErrnoException; error.code = "EPERM"; throw error; }
       return fs.unlink(...args);
     },
-    ipcMain: { handle: (name: string, fn: typeof handler) => { if (name === "workspace:save") saveHandler = fn; else if (name === "workspace:importSwbFormat") handler = fn; else assetHandlers[name] = fn; } }
+    ipcMain: { handle: (name: string, fn: typeof handler) => { if (name === "workspace:save") saveHandler = fn; else if (name === "workspace:importFlowFormat") handler = fn; else assetHandlers[name] = fn; } }
   };
   const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
   let createExpression = "";
@@ -1510,7 +1510,7 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
   if (!createExpression) throw new Error("production Create callback missing");
   const selected = tree.statements.filter(n => ts.isVariableStatement(n) && scriptNames.includes(n.declarationList.declarations[0].name.getText(tree)));
   expect(selected).toHaveLength(scriptNames.length);
-  const block = source.slice(source.indexOf('  ipcMain.handle("workspace:importSwbFormat"'), source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
+  const block = source.slice(source.indexOf('  ipcMain.handle("workspace:importFlowFormat"'), source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
   const pendingAndCopy = source.slice(source.indexOf("  registerWorkspaceAssetIpcHandlers("), source.indexOf("  registerImageIpcHandlers("));
   const compiled = ts.transpileModule(`${selected.map(n => n.getText(tree)).join("\n")}\n${source.slice(source.indexOf('  ipcMain.handle("workspace:save"'), source.indexOf('  ipcMain.handle("workspace:exportPhotoshopTiffs"'))}\n${block}\n${pendingAndCopy}\n; return { create: (${createExpression}), persist: writeProjectFiles, ensure: ensureProjectLayerAssets, admit: assertNormalSaveAdmission, readonly: ensureStoryboardScriptMarkdown, records: createImageRecords };`,
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
@@ -1536,7 +1536,7 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
   let notifyProject: (project: Project) => void = () => {};
   let requireRegistered = false;
   const api = {
-    importSwbFormat: vi.fn(async (payload: ImportSwbFormatPayload) => {
+    importFlowFormat: vi.fn(async (payload: ImportFlowFormatPayload) => {
       await effectFault?.();
       // Plain production main result: no preload-side Error is fabricated or decoded here.
       // The actual renderer adapter consumes and decodes this result after the bridge seam.
@@ -1568,7 +1568,7 @@ async function fixture(options: { matteMode?: "embedded" | "expanded"; secondSho
     assertImportAdmission: () => { if (recovery.current) throw new Error(recovery.current); },
     onImportRecoveryRequired: message => { recovery.current = message; }, onSave: () => {}, onError: e => errors.push(e) });
   return {
-    normalAutosaveAdmission,ensureRegisteredAssets:(payload:WorkspacePayload)=>autosaveHandlers["workspace:ensureLayerAssets"](undefined,payload),mainCreate: chain.create, root, ref, api, adapter, queue, recovery, errors, io: api.importSwbFormat, originalTiff, imagePath, metadataPath, mdPath, published, writes,
+    normalAutosaveAdmission,ensureRegisteredAssets:(payload:WorkspacePayload)=>autosaveHandlers["workspace:ensureLayerAssets"](undefined,payload),mainCreate: chain.create, root, ref, api, adapter, queue, recovery, errors, io: api.importFlowFormat, originalTiff, imagePath, metadataPath, mdPath, published, writes,
     get lastScan() { return lastScan; },
     onProject: (fn: (project: Project) => void) => { notifyProject = fn; },
     useRegisteredPersistence: () => { requireRegistered = true; },
@@ -1661,7 +1661,7 @@ for (const mode of ["brush", "eraser", "transform", "opacity", "hidden", "dimens
     } else {
       // Dimensions publication seam, NOT a GUI matte/resize controller proof.
       ports.updateProject((p: Project) => ({ ...p, shots: p.shots.map(s => ({ ...s,
-        swb: { ...s.swb!, canvasHeight: 1230 }, layers: s.layers!.map(x => ({ ...x, height: 1230 })) })) }), false);
+        flow: { ...s.flow!, canvasHeight: 1230 }, layers: s.layers!.map(x => ({ ...x, height: 1230 })) })) }), false);
     }
     expect(f.ref.current.pendingBake!.shots.s).toMatchObject({ state: "pending", editToken: "cumulative-1", acceptedOutputIdentity: h0 });
     await ports.ordinaryAutosave();
@@ -1687,7 +1687,7 @@ for (const mode of ["brush", "eraser", "transform", "opacity", "hidden", "dimens
     if (mode === "opacity") expect(saved.layers![0].opacity).toBe(0.5);
     if (mode === "hidden") expect(saved.layers![0].visible).toBe(false);
     const xmp = (await sharp(image).metadata()).xmpAsString!;
-    const encoded = /<swb:metadata>([^<]+)<\/swb:metadata>/.exec(xmp)![1];
+    const encoded = /<flow:metadata>([^<]+)<\/flow:metadata>/.exec(xmp)![1];
     const actualTiffMetadata = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
     expect(actualTiffMetadata.canvasHeight).toBe(mode === "dimensions" ? 1230 : 3);
     expect(actualTiffMetadata.layers[0]).toMatchObject({
@@ -1742,7 +1742,7 @@ it("canonical legacy 5 — actual normal autosave and Save do not rebake an uned
   const f = await fixture();
   const external = f.ref.current.shots[0];
   // Fixture baseline is a real completed TIFF with synced H0, never an edit token.
-  f.ref.current = { ...f.ref.current, shots: [{ ...external, swb: { ...external.swb!, status: "non-swb" } }] };
+  f.ref.current = { ...f.ref.current, shots: [{ ...external, flow: { ...external.flow!, status: "non-flow" } }] };
   const ports = await cumulativeAppPorts(f), original = await fs.readFile(f.imagePath);
   expect(await ports.adapter.load(async () => ({ folderPath: f.root, metadataPath: f.metadataPath, folderName: "Synthetic", images: [], project: f.ref.current }), () => {})).toBe(true);
   f.useRegisteredPersistence();

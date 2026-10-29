@@ -6,7 +6,7 @@ import type { Project } from "../shared/types";
 describe("normal Add asset preparation", () => {
   const fixture = (prepare: (payload: { project: Project }) => Promise<void>) => {
     const projectRef = { current: createProject("Owned rejected Add fixture") };
-    const workspace = { identity: {}, folderPath: "/owned", metadataPath: "/owned/.storyboard-workbench/storyboard.project.json" };
+    const workspace = { identity: {}, folderPath: "/owned", metadataPath: "/owned/.storyboard-flow/storyboard.project.json" };
     const workspaceRef = { current: workspace };
     const ensureLayerAssets = vi.fn(prepare);
     const publishNewShot = vi.fn(async () => true);
@@ -54,7 +54,7 @@ describe("normal Add asset preparation", () => {
 
   it("materializes the registered new shot image asset before pending publication and leaves existing shots outside the ensure payload", async () => {
     const projectRef = { current: createProject("Owned normal Add fixture") };
-    const workspace = { identity: {}, folderPath: "/owned", metadataPath: "/owned/.storyboard-workbench/storyboard.project.json" };
+    const workspace = { identity: {}, folderPath: "/owned", metadataPath: "/owned/.storyboard-flow/storyboard.project.json" };
     let prepared = false;
     const ensureLayerAssets = vi.fn(async (payload: { project: Project }) => {
       expect(payload.project.shots).toHaveLength(1);

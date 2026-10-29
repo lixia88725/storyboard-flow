@@ -9,7 +9,7 @@ import { createWorkspaceSlots } from './workspaceSlots';
 import { formatWorkspaceOpenError } from './workspaceOpenErrors';
 const mod = await import("./normalSaveAppAdapter").catch(() => undefined);
 const h0 = "0".repeat(64), h1 = "1".repeat(64);
-const p = () => ({ ...createProject("P"), naming: { sceneCode: "S", artistName: "A", version: "V" }, shots: [{ id: "s", imagePath: "/w/a.tiff", fileName: "a.tiff", order: 0, swb: { version: 1, status: "owned" as const, canvasWidth: 8, canvasHeight: 6 } }], pendingBake: { version: 1 as const, shots: { s: { state: "pending" as const, editToken: "t1", acceptedOutputIdentity: h0 } } } });
+const p = () => ({ ...createProject("P"), naming: { sceneCode: "S", artistName: "A", version: "V" }, shots: [{ id: "s", imagePath: "/w/a.tiff", fileName: "a.tiff", order: 0, flow: { version: 1, status: "owned" as const, canvasWidth: 8, canvasHeight: 6 } }], pendingBake: { version: 1 as const, shots: { s: { state: "pending" as const, editToken: "t1", acceptedOutputIdentity: h0 } } } });
 const deferred = () => { let release!: () => void; const promise = new Promise<void>(r => release = r); return { promise, release }; };
 function setup(onError?: (error: unknown) => void) {
   const projectRef = { current: p() }; let identity = h0; const events: string[] = []; let fault = false;
@@ -28,7 +28,7 @@ async function actualSave(f: ReturnType<typeof setup>, setWorkspaceTask: (value:
   const ast = ts.createSourceFile("App.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let decl: ts.VariableDeclaration | undefined;
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === "handleSaveProject") decl = n; ts.forEachChild(n, walk); }; walk(ast);
-  const bindings = { renderAdapter: f.adapter, saveInFlightRef: { current: undefined }, window: { storyboard: f.api }, folderPath: "/w", metadataPath: "/w/project.json", workspaceRecoveryRequiredRef: { current: undefined }, needsSwbImport: false, project: f.projectRef.current, projectRef: f.projectRef, normalSaveAppAdapterRef: { current: f.adapter }, normalSaveAppEnabled: true,
+  const bindings = { renderAdapter: f.adapter, saveInFlightRef: { current: undefined }, window: { storyboard: f.api }, folderPath: "/w", metadataPath: "/w/project.json", workspaceRecoveryRequiredRef: { current: undefined }, needsFlowImport: false, project: f.projectRef.current, projectRef: f.projectRef, normalSaveAppAdapterRef: { current: f.adapter }, normalSaveAppEnabled: true,
     setWorkspaceTask, setStatus: () => {}, setSaveErrorDialog: () => {}, nudgeImportRequired: () => {}, defaultSaveNaming: {}, runExclusiveWorkspaceAction: async (_ref: unknown, fn: () => Promise<boolean>) => fn() };
   const compiled = ts.transpile(`const ${decl!.getText(ast)};`);
   return new Function(...Object.keys(bindings), `${compiled}; return handleSaveProject();`)(...Object.values(bindings));
@@ -84,14 +84,14 @@ it("typed incomplete Save refuses actual manual and automatic image Import befor
     publicationOrCleanup: "started", metadata: "unknown", retainedPaths: ["/w/owned-backup"]
   } } as any);
   let imports = 0, publications = 0;
-  (f.api as any).importSwbFormat = async () => { imports++; throw new Error("Import must never start"); };
+  (f.api as any).importFlowFormat = async () => { imports++; throw new Error("Import must never start"); };
   expect(await f.adapter.save()).toBe(false);
   const before = structuredClone(f.projectRef.current);
   const options = { blankShotPreset: {} as any, dirtyShotIds: [],
     prepare: async (project: any) => project, published: () => { publications++; } };
   expect(await f.adapter.imageImport(options)).toBe(false);
   expect(await f.adapter.externalRefresh({ ...options, check: async project => ({ ...project,
-    shots: project.shots.map(shot => ({ ...shot, swb: { ...shot.swb!, status: "compatible-external-edit" as const } })) }) })).toBe(false);
+    shots: project.shots.map(shot => ({ ...shot, flow: { ...shot.flow!, status: "compatible-external-edit" as const } })) }) })).toBe(false);
   expect(imports).toBe(0);
   expect(publications).toBe(0);
   expect(f.projectRef.current).toEqual(before);

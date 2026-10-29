@@ -54,12 +54,12 @@ afterEach(async () => { vi.restoreAllMocks(); await Promise.all(dirs.splice(0).m
 const hash = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 async function fixture() {
  const root = await fs.mkdtemp(path.join(os.tmpdir(), "normal-open-preview-")); dirs.push(root);
- const metadataPath = path.join(root, ".storyboard-workbench/storyboard.project.json"), previewRoot = path.join(root, ".storyboard-workbench/previews"), image = path.join(root, "a.tiff"), md = path.join(root, "storyboard-script.md");
+ const metadataPath = path.join(root, ".storyboard-flow/storyboard.project.json"), previewRoot = path.join(root, ".storyboard-flow/previews"), image = path.join(root, "a.tiff"), md = path.join(root, "storyboard-script.md");
  await sharp({ create: { width: 4, height: 3, channels: 4, background: "red" } }).tiff({ compression: "none" }).toFile(image);
  const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8"), ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
- const names = ["scanWorkspaceFolder", "scanFolder", "ensureStoryboardScriptMarkdown", "readProject", "createImageRecords", "readSwbMetadata"];
+ const names = ["scanWorkspaceFolder", "scanFolder", "ensureStoryboardScriptMarkdown", "readProject", "createImageRecords", "readFlowMetadata"];
  const selected = ast.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(ast)));
- const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
+ const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.FLOW_PYTHON_DEPS_DIR, path, sharp, sharpSourceOptions: { unlimited: true }, flowXmpTag: "flow:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
   createWorkspaceFolderScanner, metadataPathForFolder: () => metadataPath, previewRootForFolder: () => previewRoot,
   collectImagePaths: async () => [image], createImportedImageRecords, createPreview, pixelFingerprint,
   initializeNormalOpenPreviews: async (...args: any[]) => (await import("./normalOpenPreviewService")).initializeNormalOpenPreviews(...args as Parameters<typeof import("./normalOpenPreviewService")["initializeNormalOpenPreviews"]>),
@@ -70,14 +70,14 @@ async function fixture() {
  return { root, metadataPath, previewRoot, image, md, open: (options?: unknown) => invoke({ sender: {} }, root, options) };
 }
 it("actual ensure and export reuse existing assets and formal exporter under adapter queue without JSON MD persistence or owner publication", async () => {
- const f = await fixture(), p = mergeFolderImages(createProject("Supported actual export"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0]; shot.swb!.status = "owned";
+ const f = await fixture(), p = mergeFolderImages(createProject("Supported actual export"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0]; shot.flow!.status = "owned";
  const asset = path.join(f.root, shot.layers![0].bitmapPath); await fs.mkdir(path.dirname(asset), { recursive: true }); await sharp(f.image).png().toFile(asset);
  p.pendingBake = { version: 1, shots: { [shot.id]: { state: "synced", acceptedOutputIdentity: hash(await fs.readFile(f.image)) } } };
  await fs.writeFile(f.metadataPath, JSON.stringify(p)); const protectedPaths = [f.image, asset, f.metadataPath], before = await Promise.all(protectedPaths.map(p => fs.readFile(p)));
  const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8"), ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
  const declarations = ast.statements.filter(n => ts.isVariableStatement(n) && ["assertNormalSaveAdmission", "ensureProjectLayerAssets"].includes(n.declarationList.declarations[0].name.getText(ast))).map(n => n.getText(ast));
  const callbacks = new Map<string, any>(), persist = vi.fn(); let result: { exportedFiles: string[] } | undefined;
- const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, path, createHash, readFile: fs.readFile, mkdir: fs.mkdir, pathExists, resolveLayerAssetPath, assertPathInsideFolder, shouldEnsureLayerAssetsForShot, hasPendingFileTransaction: transaction.hasPendingFileTransaction, exportPhotoshopLayeredTiffs: async (...args: Parameters<typeof exportPhotoshopLayeredTiffs>) => (result = await exportPhotoshopLayeredTiffs(...args)), writeProjectFiles: persist, registerWorkspacePersistenceIpcHandlers, ipcMain: { handle: (name: string, fn: any) => { callbacks.set(name, fn); } } };
+ const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.FLOW_PYTHON_DEPS_DIR, path, createHash, readFile: fs.readFile, mkdir: fs.mkdir, pathExists, resolveLayerAssetPath, assertPathInsideFolder, shouldEnsureLayerAssetsForShot, hasPendingFileTransaction: transaction.hasPendingFileTransaction, exportPhotoshopLayeredTiffs: async (...args: Parameters<typeof exportPhotoshopLayeredTiffs>) => (result = await exportPhotoshopLayeredTiffs(...args)), writeProjectFiles: persist, registerWorkspacePersistenceIpcHandlers, ipcMain: { handle: (name: string, fn: any) => { callbacks.set(name, fn); } } };
  const calls: string[] = []; const walk = (n: ts.Node) => { if (ts.isCallExpression(n) && (n.expression.getText(ast) === "registerWorkspacePersistenceIpcHandlers" || n.expression.getText(ast) === "ipcMain.handle" && n.arguments[0]?.getText(ast) === JSON.stringify("workspace:exportPhotoshopTiffs"))) calls.push(n.getText(ast)); ts.forEachChild(n, walk); }; walk(ast);
  new Function(...Object.keys(bindings), ts.transpile(declarations.join("\n") + "\n" + calls.join(";\n") + ";", { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings));
  const ref = { current: p }, queue = createBitmapLayerWriteQueue(), errors: unknown[] = [], api = { ensureLayerAssets: (p: any) => callbacks.get("workspace:ensureLayerAssets")({}, p), exportPhotoshopTiffs: (p: any) => callbacks.get("workspace:exportPhotoshopTiffs")({}, p), autosaveWorkspace: persist, saveWorkspace: async (p: any) => p, readOutputIdentity: async (p: string) => hash(await fs.readFile(p)) };
@@ -91,7 +91,7 @@ it("actual ensure and export reuse existing assets and formal exporter under ada
  expect(await adapter.ensureLayerAssets()).toBe(false); await expect(fs.stat(asset)).rejects.toMatchObject({ code: "ENOENT" }); expect(await fs.readFile(f.metadataPath)).toEqual(snapshot);
 });
 it.each(["workspace:ensureLayerAssets", "workspace:exportPhotoshopTiffs"])("actual %s rejects supported retained transaction before first effect", async channel => {
- const f = await fixture(), p = mergeFolderImages(createProject("Supported"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0]; shot.swb!.status = "owned";
+ const f = await fixture(), p = mergeFolderImages(createProject("Supported"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0]; shot.flow!.status = "owned";
  const asset = path.join(f.root, shot.layers![0].bitmapPath); await fs.mkdir(path.dirname(asset), { recursive: true }); await sharp(f.image).png().toFile(asset);
  p.pendingBake = { version: 1, shots: { [shot.id]: { state: "synced", acceptedOutputIdentity: hash(await fs.readFile(f.image)) } } };
  const journal = path.join(path.dirname(f.metadataPath), "pending-file-transaction.json"); await fs.writeFile(journal, JSON.stringify({ version: 1, moves: [] })); const original = await fs.readFile(journal);
@@ -107,7 +107,7 @@ it.each(["workspace:ensureLayerAssets", "workspace:exportPhotoshopTiffs"])("actu
 });
 it("retired legacy open preserves TIFF, editable pixels and metadata without generating a preview", async () => {
  const f = await fixture(), p = mergeFolderImages(createProject("Legacy real merge"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0];
- shot.swb = { ...shot.swb!, status: "owned", sourceKind: "photoshop-layered-tiff" }; shot.layers![0].locked = true;
+ shot.flow = { ...shot.flow!, status: "owned", sourceKind: "photoshop-layered-tiff" }; shot.layers![0].locked = true;
  const asset = path.join(f.root, shot.layers![0].bitmapPath); await fs.mkdir(path.dirname(asset), { recursive: true }); await sharp(f.image).png().toFile(asset);
  const output = await writePhotoshopLayeredTiffsForInPlaceSave(p, f.root, { scriptPath: path.resolve("scripts/photoshop-layered-tiff-export.py"), saveStamp: "preview-fixture" }); await fs.copyFile(output.replacements[0].fromPath, f.image);
  await fs.writeFile(f.metadataPath, JSON.stringify(p)); const original = await fs.readFile(f.image), json = await fs.readFile(f.metadataPath), png = await fs.readFile(asset);
@@ -117,7 +117,7 @@ it("retired legacy open preserves TIFF, editable pixels and metadata without gen
 });
 it("readonly discovery can report absent media without writing, while default readonly remains incomplete", async () => {
  const f = await fixture(), write = vi.spyOn(sharp.prototype, "toFile");
- const images = await createImportedImageRecords([f.image], f.previewRoot, { createPreview, readOnly: true, deferMissingPreviews: true, pixelFingerprint, readImageMetadata: p => sharp(p).metadata(), readSwbMetadata: async () => undefined });
+ const images = await createImportedImageRecords([f.image], f.previewRoot, { createPreview, readOnly: true, deferMissingPreviews: true, pixelFingerprint, readImageMetadata: p => sharp(p).metadata(), readFlowMetadata: async () => undefined });
  expect(images[0].previewPath).toBeUndefined(); expect(images[0].width).toBe(4); expect(write).not.toHaveBeenCalled();
  await expect(f.open({ normalSave: true })).rejects.toThrow(/preview/); expect(write).not.toHaveBeenCalled();
 });
@@ -132,7 +132,7 @@ it.each(["unknown", "future", "corrupt", "transaction", "recovery-requested", "m
  await fs.mkdir(path.dirname(f.metadataPath), { recursive: true });
  let protectedPath: string | undefined, protectedBytes: Buffer | undefined;
  if (["unknown", "future", "corrupt", "missing-layer", "pending"].includes(mode)) {
-  const p = mergeFolderImages(createProject("Actual scan merge"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0]; shot.swb!.status = "owned";
+  const p = mergeFolderImages(createProject("Actual scan merge"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0]; shot.flow!.status = "owned";
   p.pendingBake = mode === "future" ? { version: 99, shots: {} } as any : mode === "corrupt" ? { version: 1, shots: [] } as any : { version: 1, shots: { [shot.id]: mode === "unknown" ? { state: "unknown" } : mode === "pending" ? { state: "pending", editToken: "t", acceptedOutputIdentity: hash(original) } : { state: "synced", acceptedOutputIdentity: hash(original) } } };
   await fs.writeFile(f.metadataPath, JSON.stringify(p)); protectedPath = f.metadataPath;
  }
@@ -150,7 +150,7 @@ it.each(["unknown", "future", "corrupt", "transaction", "recovery-requested", "m
 });
 it("supported clean actual scan-merged project gets missing preview without changing JSON internal pixels or TIFF", async () => {
  const f = await fixture(), original = await fs.readFile(f.image);
- const p = mergeFolderImages(createProject("Supported"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0]; shot.swb!.status = "owned";
+ const p = mergeFolderImages(createProject("Supported"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0]; shot.flow!.status = "owned";
  const asset = path.join(f.root, shot.layers![0].bitmapPath); await fs.mkdir(path.dirname(asset), { recursive: true }); await sharp(f.image).png().toFile(asset);
  p.pendingBake = { version: 1, shots: { [shot.id]: { state: "synced", acceptedOutputIdentity: hash(original) } } };
  await fs.writeFile(f.metadataPath, JSON.stringify(p)); const json = await fs.readFile(f.metadataPath), png = await fs.readFile(asset);
@@ -161,14 +161,14 @@ it("supported clean actual scan-merged project gets missing preview without chan
 });
 it("actual open chain admits a normally autosaved pending project missing its derived preview, preserving token and H0", async () => {
  const f = await fixture(), original = await fs.readFile(f.image);
- const p = mergeFolderImages(createProject("Pending autosaved"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0]; shot.swb!.status = "owned";
+ const p = mergeFolderImages(createProject("Pending autosaved"), [{ imagePath: f.image, fileName: "a.tiff", width: 4, height: 3 }]), shot = p.shots[0]; shot.flow!.status = "owned";
  const asset = path.join(f.root, shot.layers![0].bitmapPath); await fs.mkdir(path.dirname(asset), { recursive: true }); await sharp(f.image).png().toFile(asset);
  p.pendingBake = { version: 1, shots: { [shot.id]: { state: "pending", editToken: "t1", acceptedOutputIdentity: hash(original) } } };
  await fs.writeFile(f.metadataPath, JSON.stringify(p)); const json = await fs.readFile(f.metadataPath), png = await fs.readFile(asset);
  const scan = await f.open({ normalSave: true, initializePreviews: true });
  expect((await sharp(scan.project.shots[0].previewPath).raw().toBuffer())[0]).toBe(255);
  expect(scan.project.pendingBake).toEqual(p.pendingBake);
- expect(scan.project.shots[0].swb!.status).toBe("owned");
+ expect(scan.project.shots[0].flow!.status).toBe("owned");
  expect(await fs.readFile(f.metadataPath)).toEqual(json); expect(await fs.readFile(asset)).toEqual(png); expect(await fs.readFile(f.image)).toEqual(original);
  await expect(fs.stat(f.md)).rejects.toMatchObject({ code: "ENOENT" });
 });
@@ -177,11 +177,11 @@ it("actual open chain admits a normally autosaved pending project missing its de
 async function buildScanOpener(root: string, metadataPath: string, previewRoot: string, image: string, onPreviews?: () => void) {
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8");
   const ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
-  const names = ["scanWorkspaceFolder", "scanFolder", "ensureStoryboardScriptMarkdown", "readProject", "createImageRecords", "readSwbMetadata"];
+  const names = ["scanWorkspaceFolder", "scanFolder", "ensureStoryboardScriptMarkdown", "readProject", "createImageRecords", "readFlowMetadata"];
   const selected = ast.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(ast)));
   expect(selected).toHaveLength(names.length);
   const md = path.join(root, "storyboard-script.md");
-  const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
+  const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, isCertifiedPendingBakeEntry, app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.FLOW_PYTHON_DEPS_DIR, path, sharp, sharpSourceOptions: { unlimited: true }, flowXmpTag: "flow:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
     createWorkspaceFolderScanner, metadataPathForFolder: () => metadataPath, previewRootForFolder: () => previewRoot,
     collectImagePaths: async () => [image], createImportedImageRecords, createPreview, pixelFingerprint,
     initializeNormalOpenPreviews: async (...args: any[]) => { onPreviews?.(); return (await import("./normalOpenPreviewService")).initializeNormalOpenPreviews(...args as Parameters<typeof import("./normalOpenPreviewService")["initializeNormalOpenPreviews"]>); },
@@ -191,36 +191,36 @@ async function buildScanOpener(root: string, metadataPath: string, previewRoot: 
   registerWorkspaceOpenIpcHandlers({ handle: (_name: string, fn: any) => { invoke = fn; } } as any, createWorkspaceOpenAppHandlers({ scanFolder, createProgressReporter: () => undefined, pathExists: async () => true, addRecentFolder: () => {}, removeRecentFolder: () => {} }));
   return (options?: unknown) => invoke({ sender: {} }, root, options);
 }
-// The actual main workspace:importSwbFormat handler, extracted and bound to real local ports.
+// The actual main workspace:importFlowFormat handler, extracted and bound to real local ports.
 async function buildImportChain(metadataPath: string) {
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8");
   const tree = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
-  const names = ["sharpSourceOptions", "swbFormatVersion", "swbXmpTag", "readSwbMetadata", "archiveStamp", "uniquePath", "projectNeedsSwbImport", "assertManualImageImportAdmission", "importProjectToSwbFormat", "emptyDefaultSketchLayers", "createProjectPreviewsForShots", "ensureProjectLayerAssets", "createImageBitmapLayerPng", "createPaintBitmapLayerPng", "createTransparentLayerPng", "transparentLayerBuffer", "shouldWriteSwbMetadata", "shouldWritePhotoshopLayeredTiffOnSave", "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff", "sketchLayersForShot", "swbMetadataForShot", "swbMetadataXmp", "writeSwbMetadataToTiffs", "preparePhotoshopLayeredTiffsForSave", "writeProjectFiles", "writeProjectMetadata", "writeStoryboardScriptMarkdown", "storyboardScriptPathForFolder"];
+  const names = ["sharpSourceOptions", "flowFormatVersion", "flowXmpTag", "readFlowMetadata", "archiveStamp", "uniquePath", "projectNeedsFlowImport", "assertManualImageImportAdmission", "importProjectToFlowFormat", "emptyDefaultSketchLayers", "createProjectPreviewsForShots", "ensureProjectLayerAssets", "createImageBitmapLayerPng", "createPaintBitmapLayerPng", "createTransparentLayerPng", "transparentLayerBuffer", "shouldWriteFlowMetadata", "shouldWritePhotoshopLayeredTiffOnSave", "bakeShotToWorkingTiff", "bakeBitmapLayersToTiff", "bakeSketchOverlayToTiff", "sketchLayersForShot", "flowMetadataForShot", "flowMetadataXmp", "writeFlowMetadataToTiffs", "preparePhotoshopLayeredTiffsForSave", "writeProjectFiles", "writeProjectMetadata", "writeStoryboardScriptMarkdown", "storyboardScriptPathForFolder"];
   const selected = tree.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(tree)));
   expect(selected).toHaveLength(names.length);
-  const block = source.slice(source.indexOf('  ipcMain.handle("workspace:importSwbFormat"'), source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
+  const block = source.slice(source.indexOf('  ipcMain.handle("workspace:importFlowFormat"'), source.indexOf("  registerWorkspaceExternalChangesIpcHandlers("));
   expect(block.length).toBeGreaterThan(0);
   let handler!: (event: unknown, payload: any) => Promise<any>;
   const bindings: Record<string, unknown> = { ...fs, ...renames, ...importPorts, ...bitmap, ...safety, ...layer, ...script, path, sharp, createHash, randomUUID, automaticImageImportAdmission, manualImageImportAdmission,
     bitmapLayersForShot, pixelFingerprint, createImportPathReservation, prepareImportStaging, recoverFailedImport, ImportRecoveryIncompleteError, withSuccessfulSaveArtifactCleanup, ...tiffPreparation, removeOwnedFile, previewRootForFolder, createPreview, writePhotoshopLayeredTiffsForInPlaceSave,
     hasPendingFileTransaction: transaction.hasPendingFileTransaction, writeProtectedLayerFile: protectedWriter,
     withLayerFileOperation, mapWithConcurrency, prepareProtectedLayerReplacement,
-    app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.SWB_PYTHON_DEPS_DIR,
+    app: { getAppPath: () => process.cwd() }, process, resolvePhotoshopTiffPythonDepsDir: () => process.env.FLOW_PYTHON_DEPS_DIR,
     createWorkspaceTaskProgressReporter: () => undefined, ipcMain: { handle: (_name: string, fn: any) => { handler = fn; } } };
-  const compiled = ts.transpileModule(selected.map(n => n.getText(tree)).join("\n") + block + "; return { persist: writeProjectFiles, ensure: ensureProjectLayerAssets, readMetadata: readSwbMetadata, exportProject: preparePhotoshopLayeredTiffsForSave };", { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  const compiled = ts.transpileModule(selected.map(n => n.getText(tree)).join("\n") + block + "; return { persist: writeProjectFiles, ensure: ensureProjectLayerAssets, readMetadata: readFlowMetadata, exportProject: preparePhotoshopLayeredTiffsForSave };", { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const chain = new Function(...Object.keys(bindings).filter(k => k !== "default"), compiled)(...Object.entries(bindings).filter(([k]) => k !== "default").map(([, v]) => v));
   return { io: (payload: any) => handler({ sender: {} }, payload), persist: chain.persist as (m: string, f: string, project: Project) => Promise<void>, ensure: chain.ensure as (project: Project, folder: string) => Promise<void>, readMetadata: chain.readMetadata as (p: string) => Promise<unknown>, exportProject: chain.exportProject as (project: Project, folder: string, saveStamp: string) => Promise<{ replacements: Array<{ fromPath: string }> }> };
 }
 
 it("actual missing-cache open runs the preview phase, then the real classifier, then the actual main guarded Import", async () => {
  const root = await fs.mkdtemp(path.join(os.tmpdir(), "normal-open-compat-")); dirs.push(root);
- const metadataPath = path.join(root, ".storyboard-workbench/storyboard.project.json");
- const previewRoot = path.join(root, ".storyboard-workbench/previews"), image = path.join(root, "a.tiff");
+ const metadataPath = path.join(root, ".storyboard-flow/storyboard.project.json");
+ const previewRoot = path.join(root, ".storyboard-flow/previews"), image = path.join(root, "a.tiff");
  // Write same-size/same-layer internal PNGs; an opaque top (paint) layer makes a change visible.
  const writeLayers = async (dir: string, base0: string, paint0: string) => {
   const out: any[] = [];
   for (const [i, spec] of [{ id: "layer-image", kind: "image" as const, name: "base" }, { id: "layer-0001", kind: "paint" as const, name: "paint" }].entries()) {
-   const bitmapPath = `.storyboard-workbench/layers/s/${spec.id}.png`;
+   const bitmapPath = `.storyboard-flow/layers/s/${spec.id}.png`;
    await fs.mkdir(path.dirname(path.join(dir, bitmapPath)), { recursive: true });
    await sharp({ create: { width: 4, height: 3, channels: 4, background: i ? paint0 : base0 } }).png().toFile(path.join(dir, bitmapPath));
    out.push({ ...spec, bitmapPath, width: 4, height: 3, visible: true, locked: false, order: i, opacity: 1, blendMode: "normal" as const });
@@ -229,7 +229,7 @@ it("actual missing-cache open runs the preview phase, then the real classifier, 
  };
  const layers = await writeLayers(root, "red", "blue");
  const base = { ...createProject("Compatible real"), pendingBake: { version: 1 as const, shots: {} },
-  shots: [{ id: "s", order: 0, imagePath: image, fileName: "a.tiff", swb: { version: 1 as const, status: "owned" as const, sourceKind: "photoshop-layered-tiff" as const, canvasWidth: 4, canvasHeight: 3 }, layers }] } as unknown as Project;
+  shots: [{ id: "s", order: 0, imagePath: image, fileName: "a.tiff", flow: { version: 1 as const, status: "owned" as const, sourceKind: "photoshop-layered-tiff" as const, canvasWidth: 4, canvasHeight: 3 }, layers }] } as unknown as Project;
  const chain = await buildImportChain(metadataPath);
  await fs.copyFile((await chain.exportProject(base, root, "owned")).replacements[0].fromPath, image);
  const h0 = hash(await fs.readFile(image)), h0fp = await pixelFingerprint(image);
@@ -245,7 +245,7 @@ it("actual missing-cache open runs the preview phase, then the real classifier, 
  expect(externalFp).not.toBe(h0fp); // the change is visible in the composite, not masked by an opaque layer
  expect(await fs.readFile(internalPng)).toEqual(internalBefore); // internal PNG bytes preserved
  // Disk Project stays owned/H0 with a real baseline fingerprint; it is NOT hand-marked compatible.
- const disk = { ...base, shots: [{ ...base.shots[0], swb: { ...base.shots[0].swb!, status: "owned" as const, baseFingerprint: h0fp } }],
+ const disk = { ...base, shots: [{ ...base.shots[0], flow: { ...base.shots[0].flow!, status: "owned" as const, baseFingerprint: h0fp } }],
   pendingBake: { version: 1 as const, shots: { s: { state: "synced" as const, acceptedOutputIdentity: h0 } } } } as Project;
  await fs.writeFile(metadataPath, JSON.stringify(disk));
  const json = await fs.readFile(metadataPath);
@@ -259,11 +259,11 @@ it("actual missing-cache open runs the preview phase, then the real classifier, 
  const { createWorkspaceExternalChangesAppHandlers } = await import("./workspaceExternalChangesAppRuntime");
  const { collectImagePaths } = await import("./imageDiscoveryService");
  const { changedKnownImagePaths } = await import("./knownImageChangesService");
- const readSwb = chain.readMetadata as (p: string) => Promise<unknown>;
+ const readFlow = chain.readMetadata as (p: string) => Promise<unknown>;
  const handlers = createWorkspaceExternalChangesAppHandlers<any>({
-  changedKnownImagePaths: (project, paths, deleted, onProgress) => changedKnownImagePaths(project, paths, deleted, { pixelFingerprint, readSwbMetadata: readSwb as any, onProgress }),
+  changedKnownImagePaths: (project, paths, deleted, onProgress) => changedKnownImagePaths(project, paths, deleted, { pixelFingerprint, readFlowMetadata: readFlow as any, onProgress }),
   collectImagePaths,
-  createImageRecords: (paths, pr, options) => createImportedImageRecords(paths, pr, { createPreview, pixelFingerprint, readImageMetadata: p => sharp(p).metadata(), readSwbMetadata: readSwb as any, onProgress: options?.onProgress, label: options?.label }),
+  createImageRecords: (paths, pr, options) => createImportedImageRecords(paths, pr, { createPreview, pixelFingerprint, readImageMetadata: p => sharp(p).metadata(), readFlowMetadata: readFlow as any, onProgress: options?.onProgress, label: options?.label }),
   ensureStoryboardScriptMarkdown: async () => false, readStoryboardScriptImportState: async () => false,
   previewRootForFolder: () => previewRoot
  });
@@ -277,7 +277,7 @@ it("actual missing-cache open runs the preview phase, then the real classifier, 
    afterOpen = { json: await fs.readFile(metadataPath), png: await fs.readFile(internalPng), previewPath: (await fs.stat(previewPath).catch(() => undefined)) ? previewPath : undefined };
    return scanned;
   },
-  importSwbFormat: (payload: any) => { imports++; return chain.io(payload); },
+  importFlowFormat: (payload: any) => { imports++; return chain.io(payload); },
   readOutputIdentity: async (file: string) => hash(await fs.readFile(file)),
   ensureLayerAssets: async (payload: any) => { await chain.ensure(payload.project, payload.folderPath); return payload; },
   // The classification observation lives in the ACTUAL adapter port the load calls.
@@ -297,14 +297,14 @@ it("actual missing-cache open runs the preview phase, then the real classifier, 
  expect(afterOpen?.png).toEqual(internalBefore);
  // The open preserved the persisted token/baseline and reported the disk as owned.
  expect(scanned.project.pendingBake).toEqual(disk.pendingBake);
- expect(scanned.project.shots[0].swb!.status).toBe("owned");
+ expect(scanned.project.shots[0].flow!.status).toBe("owned");
  // (3) The actual classifier port classified the visible external change (its own output, no hand mark).
  expect(observed!.images.map((i: any) => i.imagePath)).toEqual([image]);
- expect(mergeExternalImageChanges(disk, observed!.images).shots[0].swb!.status).toBe("compatible-external-edit");
+ expect(mergeExternalImageChanges(disk, observed!.images).shots[0].flow!.status).toBe("compatible-external-edit");
  // (4) The actual main guarded Import ran and consumed the real compatible TIFF pixels.
  expect(imports).toBe(1);
  expect(await fs.readFile(metadataPath)).not.toEqual(json);
- const owned = ref.current.shots.find(s => s.swb?.status === "owned");
+ const owned = ref.current.shots.find(s => s.flow?.status === "owned");
  expect(owned, "real guarded Import did not certify an owned shot").toBeDefined();
  expect(owned!.id).toBe("s");
  expect(ref.current.pendingBake!.shots[owned!.id]).toMatchObject({ state: "pending" });
@@ -323,7 +323,7 @@ it("actual normal fresh open initializes only derived preview after readonly dis
  const bindings = { ...caller, window: { storyboard: api }, normalSaveAppEnabled: true, folderInputValue: f.root, blankShotPreset: "16:9", prepareNormalSaveImportMatte: writer, normalSaveImageImportPublished: writer, publishNormalSaveFolderScan: writer, setWorkspaceTask: vi.fn(), setStatus: vi.fn() };
  await new Function(...Object.keys(bindings), ts.transpile(`return (${expression});`, { target: ts.ScriptTarget.ES2022 }))(...Object.values(bindings))();
  expect(errors).toEqual([]); expect(ref.current.shots).toHaveLength(1);
- const shot = ref.current.shots[0]; expect(shot.layers?.[0].name).toBe("Image"); expect(shot.swb?.status).toBe("non-swb");
+ const shot = ref.current.shots[0]; expect(shot.layers?.[0].name).toBe("Image"); expect(shot.flow?.status).toBe("non-flow");
  expect((await sharp(shot.previewPath).raw().toBuffer())[0]).toBe(255);
  expect(ref.current.pendingBake?.shots[shot.id]).toBeUndefined(); expect(await fs.readFile(f.image)).toEqual(original);
  await expect(fs.stat(f.metadataPath)).rejects.toMatchObject({ code: "ENOENT" }); await expect(fs.stat(f.md)).rejects.toMatchObject({ code: "ENOENT" });

@@ -24,7 +24,7 @@ const makeProject = (): Project => ({
           opacity: 1,
           blendMode: "normal",
           order: 0,
-          bitmapPath: ".storyboard-workbench/layers/shot-a/image.png",
+          bitmapPath: ".storyboard-flow/layers/shot-a/image.png",
           width: 100,
           height: 100
         },
@@ -37,7 +37,7 @@ const makeProject = (): Project => ({
           opacity: 1,
           blendMode: "normal",
           order: 1,
-          bitmapPath: ".storyboard-workbench/layers/shot-a/paint.png",
+          bitmapPath: ".storyboard-flow/layers/shot-a/paint.png",
           width: 100,
           height: 100
         }

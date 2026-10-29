@@ -18,7 +18,7 @@ type ProjectWithImagePaths = {
 };
 
 const journalPath = (folderPath: string): string =>
-  path.join(folderPath, ".storyboard-workbench", "pending-file-transaction.json");
+  path.join(folderPath, ".storyboard-flow", "pending-file-transaction.json");
 
 const errorCode = (error: unknown): unknown =>
   typeof error === "object" && error && "code" in error ? error.code : undefined;
@@ -141,7 +141,7 @@ export const recoverAdmittedNormalPendingFileTransaction = async (
   if (!transaction) return;
   if (!project || project.pendingBake === undefined) throw new Error("Pending recovery compatibility is unknown");
   const admitted = manualImageImportAdmission(project);
-  if (admitted.some(a => a.fresh || !a.entry || a.shot.swb?.status !== "owned")) throw new Error("Pending recovery compatibility is unknown");
+  if (admitted.some(a => a.fresh || !a.entry || a.shot.flow?.status !== "owned")) throw new Error("Pending recovery compatibility is unknown");
   const root = await realpath(folderPath);
   const safeFile = async (file: string) => {
     assertPathInsideFolder(folderPath, file);
@@ -154,7 +154,7 @@ export const recoverAdmittedNormalPendingFileTransaction = async (
     if (!shot.layers?.length) throw new Error("Pending recovery internal assets are missing");
     for (const raw of shot.layers) {
       const bitmapPath = (raw as { bitmapPath?: unknown })?.bitmapPath;
-      if (typeof bitmapPath !== "string" || !bitmapPath.startsWith(".storyboard-workbench/layers/")) throw new Error("Pending recovery assets are invalid");
+      if (typeof bitmapPath !== "string" || !bitmapPath.startsWith(".storyboard-flow/layers/")) throw new Error("Pending recovery assets are invalid");
       await safeFile(path.join(folderPath, bitmapPath)).catch(() => { throw new Error("Pending recovery internal assets are missing or unsafe"); });
     }
   }

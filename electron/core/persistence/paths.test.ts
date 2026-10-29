@@ -64,6 +64,7 @@ describe('root and store path policy', () => {
     const { project, assets } = await scene();
     const outside = sibling(root, '-outside');
     await fs.mkdir(outside);
+    await fs.mkdir(path.dirname(storePaths(root).store));
     await fs.symlink(outside, storePaths(root).store, 'dir');
 
     const saved = await store.saveCheckpoint(root, project, readerFor(assets));
@@ -73,7 +74,7 @@ describe('root and store path policy', () => {
 
     // Same for a linked assets directory inside a real store directory.
     const root2 = await temporaryWorkspace('persistence-assets-link-');
-    await fs.mkdir(storePaths(root2).store);
+    await fs.mkdir(storePaths(root2).store, { recursive: true });
     await fs.symlink(outside, storePaths(root2).assets, 'dir');
     const saved2 = await store.saveCheckpoint(root2, project, readerFor(assets));
     expect(saved2.ok).toBe(false);

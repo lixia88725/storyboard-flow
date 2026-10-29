@@ -30,7 +30,7 @@ inventory_module = _load('recovery_origin_permissions', 'recovery-origin-permiss
 
 DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 REGISTRY_NAME = 'workspace-origin-v1'
-SCHEMA = 'swb.workspace-origin-enrollment'
+SCHEMA = 'flow.workspace-origin-enrollment'
 FIELDS = ('schema', 'version', 'workspaceKey', 'operation', 'receiptFingerprint', 'targetDigest', 'sourceMode', 'state', 'capturedDigest')
 REQUEST_FIELDS = ('phase', 'userData', 'workspaceKey', 'recordName', 'sourceMode', 'sourceRestrictions', 'payload', 'byteLimit', 'recordLimit')
 OPERATION = re.compile(r'[\w-]{1,80}')
@@ -42,7 +42,7 @@ def canonical(payload):
 
 
 def operation_name(payload):
-    return hashlib.sha256(canonical(['swb.workspace-origin-operation.v1', payload['workspaceKey'], payload['operation']])).hexdigest()
+    return hashlib.sha256(canonical(['flow.workspace-origin-operation.v1', payload['workspaceKey'], payload['operation']])).hexdigest()
 
 
 def source_restrictions(request):

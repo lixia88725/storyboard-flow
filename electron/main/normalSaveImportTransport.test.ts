@@ -28,7 +28,7 @@ for (const filename of ["preload.cjs", "preload.ts"]) {
       if (name.includes("layerAssetUrl")) return { buildLayerAssetUrl: () => "" };
       throw new Error(`Unexpected preload dependency ${name}`);
     } });
-    const data = await exposed.importSwbFormat({ normalSave: true });
+    const data = await exposed.importFlowFormat({ normalSave: true });
     expect(data).toEqual(failure);
     // This is the explicit plain-data producer seam, not an actual contextBridge launch.
     const rendererData = structuredClone(data);
@@ -38,6 +38,6 @@ for (const filename of ["preload.cjs", "preload.ts"]) {
         retainedPaths: ["/synthetic/owned-staging"] });
     }
     ordinaryError = true;
-    await expect(exposed.importSwbFormat({})).rejects.toThrow("ordinary Import failure");
+    await expect(exposed.importFlowFormat({})).rejects.toThrow("ordinary Import failure");
   });
 }

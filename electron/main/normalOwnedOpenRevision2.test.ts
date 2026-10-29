@@ -26,15 +26,15 @@ afterEach(async () => { vi.restoreAllMocks(); await Promise.all(dirs.splice(0).m
 const hash = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 async function workspace() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "normal-owned-revision2-")); dirs.push(root);
-  const metadataPath = path.join(root, ".storyboard-workbench/storyboard.project.json"), journal = path.join(root, ".storyboard-workbench/pending-file-transaction.json"), previewRoot = path.join(root, ".storyboard-workbench/previews"), image = path.join(root, "a.tiff"), md = path.join(root, "storyboard-script.md");
+  const metadataPath = path.join(root, ".storyboard-flow/storyboard.project.json"), journal = path.join(root, ".storyboard-flow/pending-file-transaction.json"), previewRoot = path.join(root, ".storyboard-flow/previews"), image = path.join(root, "a.tiff"), md = path.join(root, "storyboard-script.md");
   await fs.mkdir(path.dirname(metadataPath), { recursive: true });
   await sharp({ create: { width: 4, height: 3, channels: 4, background: "red" } }).tiff({ compression: "none" }).toFile(image);
   const source = await fs.readFile(new URL("./main.ts", import.meta.url), "utf8"), ast = ts.createSourceFile("main.ts", source, ts.ScriptTarget.Latest, true);
-  const names = ["scanWorkspaceFolder", "scanFolder", "ensureStoryboardScriptMarkdown", "readProject", "createImageRecords", "readSwbMetadata"];
+  const names = ["scanWorkspaceFolder", "scanFolder", "ensureStoryboardScriptMarkdown", "readProject", "createImageRecords", "readFlowMetadata"];
   const selected = ast.statements.filter(n => ts.isVariableStatement(n) && names.includes(n.declarationList.declarations[0].name.getText(ast)));
   expect(selected).toHaveLength(names.length);
   const order: string[] = [];
-  const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, path, sharp, sharpSourceOptions: { unlimited: true }, swbXmpTag: "swb:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
+  const bindings = { withLayerFileOperation, assertPhysicalWorkspaceWriterTargets, path, sharp, sharpSourceOptions: { unlimited: true }, flowXmpTag: "flow:metadata", readFile: fs.readFile, readProjectMetadata, ...transaction,
     hasPendingFileTransaction: async (p: string) => { order.push("transaction-check"); return transaction.hasPendingFileTransaction(p); },
     createWorkspaceFolderScanner, metadataPathForFolder: () => metadataPath, previewRootForFolder: () => previewRoot,
     collectImagePaths: async () => { order.push("image-discovery"); return [image]; }, createImportedImageRecords, createPreview, pixelFingerprint,
@@ -98,10 +98,10 @@ it.each(["source-parent-alias", "multi-resolved-overlap", "existing-inode-alias"
   const ids = mode === "source-parent-alias" ? ["c"] : ["a", "c"];
   const shots = [];
   for (const id of ids) {
-    const bitmapPath = `.storyboard-workbench/layers/${id}/image.png`;
+    const bitmapPath = `.storyboard-flow/layers/${id}/image.png`;
     await fs.mkdir(path.dirname(path.join(f.root, bitmapPath)), { recursive: true });
     await sharp({ create: { width: 4, height: 3, channels: 4, background: "blue" } }).png().toFile(path.join(f.root, bitmapPath));
-    shots.push({ id, imagePath: id === "a" ? f.image : c, swb: { status: "owned" }, layers: [{ bitmapPath }] });
+    shots.push({ id, imagePath: id === "a" ? f.image : c, flow: { status: "owned" }, layers: [{ bitmapPath }] });
   }
   let moves = mode === "source-parent-alias" ? [{ fromPath: c, toPath: path.join(pending, "a.tiff") }] : [{ fromPath: f.image, toPath: path.join(pending, "b.tiff") }, { fromPath: c, toPath: path.join(pending, "a.tiff") }];
   if (mode === "existing-inode-alias") { await fs.link(f.image, path.join(pending, "d.tiff")); moves[1].toPath = path.join(pending, "d.tiff"); }
@@ -121,13 +121,13 @@ it("explicit recovery rejects missing case-only destination aliases before the f
   await fs.mkdir(pending);
   const shots = [], entries: Record<string, unknown> = {}, moves = [];
   for (const [id, leaf, color] of [["a", "b.tiff", "red"], ["c", "B.tiff", "green"]]) {
-    const source = path.join(f.root, `${id}.tiff`), target = path.join(pending, leaf), bitmapPath = `.storyboard-workbench/layers/${id}/image.png`;
+    const source = path.join(f.root, `${id}.tiff`), target = path.join(pending, leaf), bitmapPath = `.storyboard-flow/layers/${id}/image.png`;
     if (id === "c") await sharp({ create: { width: 4, height: 3, channels: 4, background: color } }).tiff({ compression: "none" }).toFile(source);
     entries[id] = { state: "pending", editToken: id, acceptedOutputIdentity: hash(await fs.readFile(source)) };
     await expect(fs.lstat(target)).rejects.toMatchObject({ code: "ENOENT" });
     await fs.mkdir(path.dirname(path.join(f.root, bitmapPath)), { recursive: true });
     await sharp({ create: { width: 4, height: 3, channels: 4, background: "blue" } }).png().toFile(path.join(f.root, bitmapPath));
-    shots.push({ id, imagePath: target, swb: { status: "owned" }, layers: [{ bitmapPath }] });
+    shots.push({ id, imagePath: target, flow: { status: "owned" }, layers: [{ bitmapPath }] });
     moves.push({ fromPath: source, toPath: target });
   }
   expect((entries.a as any).acceptedOutputIdentity).not.toBe((entries.c as any).acceptedOutputIdentity);
@@ -145,12 +145,12 @@ it("explicit recovery accepts a legitimate disjoint two-move plan and preserves 
   const f = await workspace(), pending = path.join(f.root, "Pending"); await fs.mkdir(pending);
   const shots = [], entries: Record<string, unknown> = {}, moves = [], protectedPaths = [];
   for (const id of ["a", "c"]) {
-    const imagePath = path.join(f.root, `${id}.tiff`), parked = path.join(pending, `${id}.tiff`), bitmapPath = `.storyboard-workbench/layers/${id}/image.png`;
+    const imagePath = path.join(f.root, `${id}.tiff`), parked = path.join(pending, `${id}.tiff`), bitmapPath = `.storyboard-flow/layers/${id}/image.png`;
     if (id === "c") await sharp({ create: { width: 4, height: 3, channels: 4, background: "green" } }).tiff({ compression: "none" }).toFile(imagePath);
     entries[id] = { state: "pending", editToken: id, acceptedOutputIdentity: hash(await fs.readFile(imagePath)) };
     await fs.rename(imagePath, parked); moves.push({ fromPath: imagePath, toPath: parked });
     await fs.mkdir(path.dirname(path.join(f.root, bitmapPath)), { recursive: true }); await sharp({ create: { width: 4, height: 3, channels: 4, background: "blue" } }).png().toFile(path.join(f.root, bitmapPath));
-    protectedPaths.push(path.join(f.root, bitmapPath)); shots.push({ id, imagePath, swb: { status: "owned" }, layers: [{ bitmapPath }] });
+    protectedPaths.push(path.join(f.root, bitmapPath)); shots.push({ id, imagePath, flow: { status: "owned" }, layers: [{ bitmapPath }] });
   }
   await fs.writeFile(f.metadataPath, JSON.stringify({ ...createProject("Synthetic legal"), shots, pendingBake: { version: 1, shots: entries } })); await fs.writeFile(f.journal, JSON.stringify({ version: 1, moves }));
   protectedPaths.push(f.metadataPath); const before = await Promise.all(protectedPaths.map(p => fs.readFile(p)));

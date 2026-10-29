@@ -54,7 +54,7 @@ describe("workspaceAutosaveController", () => {
       autosaveRevision: 1,
       folderPathRef: { current: "/project" },
       hasStoryboardApi: true,
-      metadataPathRef: { current: "/project/.storyboard-workbench/project.json" },
+      metadataPathRef: { current: "/project/.storyboard-flow/project.json" },
       persistWorkspace,
       projectRef: { current: project },
       setAutosaveError: vi.fn(),
@@ -71,7 +71,7 @@ describe("workspaceAutosaveController", () => {
     expect(persistWorkspace).toHaveBeenCalledWith(
       project,
       "/project",
-      "/project/.storyboard-workbench/project.json"
+      "/project/.storyboard-flow/project.json"
     );
   });
 
@@ -85,7 +85,7 @@ describe("workspaceAutosaveController", () => {
       autosaveRevision: 1,
       folderPathRef: { current: "/project" },
       hasStoryboardApi: true,
-      metadataPathRef: { current: "/project/.storyboard-workbench/project.json" },
+      metadataPathRef: { current: "/project/.storyboard-flow/project.json" },
       persistWorkspace: vi.fn(async () => {
         throw new Error("disk full");
       }),
@@ -124,7 +124,7 @@ describe("workspaceAutosaveController", () => {
 
     await persistWorkspaceProject({
       activeFolderPath: "/project",
-      activeMetadataPath: "/project/.storyboard-workbench/project.json",
+      activeMetadataPath: "/project/.storyboard-flow/project.json",
       api,
       now: () => new Date("2026-06-15T01:02:03.000Z"),
       isCurrentWorkspace: () => true,
@@ -138,7 +138,7 @@ describe("workspaceAutosaveController", () => {
     expect(api.autosaveWorkspace).toHaveBeenCalledWith({
       project: { ...project, updatedAt: "2026-06-15T01:02:03.000Z" },
       folderPath: "/project",
-      metadataPath: "/project/.storyboard-workbench/project.json"
+      metadataPath: "/project/.storyboard-flow/project.json"
     });
     expect(scriptImportCheckIdRef.current).toBe(4);
     expect(setScriptImportNeeded).toHaveBeenCalledWith(false);
@@ -157,7 +157,7 @@ describe("workspaceAutosaveController", () => {
     await persistWorkspaceProject({
       activeFolderPath: undefined,
       isCurrentWorkspace: () => true,
-      activeMetadataPath: "/project/.storyboard-workbench/project.json",
+      activeMetadataPath: "/project/.storyboard-flow/project.json",
       api,
       projectToSave: createProject(),
       scriptImportCheckIdRef: { current: 0 },
@@ -181,7 +181,7 @@ describe("workspaceAutosaveController", () => {
       persistWorkspaceProject({
         activeFolderPath: "/project",
         isCurrentWorkspace: () => true,
-        activeMetadataPath: "/project/.storyboard-workbench/project.json",
+        activeMetadataPath: "/project/.storyboard-flow/project.json",
         api: {
           autosaveWorkspace: vi.fn(async () => {
             throw new Error("disk full");

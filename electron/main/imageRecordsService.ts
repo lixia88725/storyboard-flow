@@ -3,14 +3,14 @@ import { mapWithConcurrency } from "./mapWithConcurrency.js";
 import type { WorkspaceTaskProgressReporter } from "./workspaceTaskProgress.js";
 import type { PreviewReceipt } from "./previewService.js";
 
-export type ImportedImageRecord<SwbMetadata> = {
+export type ImportedImageRecord<FlowMetadata> = {
   imagePath: string;
   previewPath?: string;
   fileName: string;
   width?: number;
   height?: number;
   fingerprint?: string;
-  swbMetadata?: SwbMetadata;
+  flowMetadata?: FlowMetadata;
 };
 
 type ImageMetadata = {
@@ -18,7 +18,7 @@ type ImageMetadata = {
   height?: number;
 };
 
-export type ImageRecordsOptions<SwbMetadata> = {
+export type ImageRecordsOptions<FlowMetadata> = {
   createPreview: (imagePath: string, previewRoot: string, readOnly?: boolean, onReceipt?: (receipt: PreviewReceipt) => void) => Promise<string>;
   onPreviewReceipt?: (receipt: PreviewReceipt) => void;
   readOnly?: boolean;
@@ -26,16 +26,16 @@ export type ImageRecordsOptions<SwbMetadata> = {
   onProgress?: WorkspaceTaskProgressReporter;
   pixelFingerprint: (imagePath: string) => Promise<string>;
   readImageMetadata: (imagePath: string) => Promise<ImageMetadata>;
-  readSwbMetadata: (imagePath: string) => Promise<SwbMetadata | undefined>;
+  readFlowMetadata: (imagePath: string) => Promise<FlowMetadata | undefined>;
   label?: string;
   concurrency?: number;
 };
 
-export const createImageRecords = async <SwbMetadata>(
+export const createImageRecords = async <FlowMetadata>(
   imagePaths: string[],
   previewRoot: string,
-  options: ImageRecordsOptions<SwbMetadata>
-): Promise<ImportedImageRecord<SwbMetadata>[]> => {
+  options: ImageRecordsOptions<FlowMetadata>
+): Promise<ImportedImageRecord<FlowMetadata>[]> => {
   let completed = 0;
   return mapWithConcurrency(
     imagePaths,
@@ -54,7 +54,7 @@ export const createImageRecords = async <SwbMetadata>(
         }
       }
       const metadata = await options.readImageMetadata(imagePath);
-      const swbMetadata = isTiff ? await options.readSwbMetadata(imagePath) : undefined;
+      const flowMetadata = isTiff ? await options.readFlowMetadata(imagePath) : undefined;
 
       return {
         imagePath,
@@ -63,7 +63,7 @@ export const createImageRecords = async <SwbMetadata>(
         width: metadata.width,
         height: metadata.height,
         fingerprint: await options.pixelFingerprint(imagePath),
-        swbMetadata
+        flowMetadata
       };
     },
     () => {

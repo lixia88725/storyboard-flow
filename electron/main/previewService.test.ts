@@ -9,7 +9,7 @@ import { createPreview } from "./previewService.js";
 describe("createPreview", () => {
   it("returns a rollback receipt for a replaced preview instead of losing the old cache", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "preview-replacement-receipt-"));
-    const image = path.join(root, "source.tiff"), previews = path.join(root, ".storyboard-workbench/previews");
+    const image = path.join(root, "source.tiff"), previews = path.join(root, ".storyboard-flow/previews");
     const receipts: Array<{ effect: string; rollback: () => Promise<void> }> = [];
     try {
       await sharp({ create: { width: 2, height: 2, channels: 4, background: "red" } }).tiff().toFile(image);
@@ -33,7 +33,7 @@ describe("createPreview", () => {
   it("writes a bounded png preview at the deterministic preview path", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "storyboard-flow-preview-"));
     const imagePath = path.join(root, "shot.tiff");
-    const previewRoot = path.join(root, ".storyboard-workbench", "previews");
+    const previewRoot = path.join(root, ".storyboard-flow", "previews");
 
     try {
       await sharp({
@@ -62,7 +62,7 @@ describe("createPreview", () => {
   it("reuses a fresh existing preview", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "storyboard-flow-preview-cache-"));
     const imagePath = path.join(root, "shot.tiff");
-    const previewRoot = path.join(root, ".storyboard-workbench", "previews");
+    const previewRoot = path.join(root, ".storyboard-flow", "previews");
 
     try {
       await sharp({

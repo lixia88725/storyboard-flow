@@ -11,7 +11,7 @@ import {
   isPhotoshopTiffNoLayersError,
   isLikelyTiffPath,
   topmostImportedLayerId,
-  writeSwbImportWorkingTiff
+  writeFlowImportWorkingTiff
 } from "./photoshopTiffImport.js";
 
 describe("photoshopTiffImport", () => {
@@ -23,7 +23,7 @@ describe("photoshopTiffImport", () => {
   });
 
   it("recognizes only the explicit no-Photoshop-layer importer marker as fallback-safe", () => {
-    expect(isPhotoshopTiffNoLayersError(new Error("SWB_PHOTOSHOP_TIFF_NO_LAYERS: no tag"))).toBe(true);
+    expect(isPhotoshopTiffNoLayersError(new Error("FLOW_PHOTOSHOP_TIFF_NO_LAYERS: no tag"))).toBe(true);
     expect(isPhotoshopTiffNoLayersError(new Error("ModuleNotFoundError: No module named 'psdtags'"))).toBe(false);
     expect(isPhotoshopTiffNoLayersError(new Error("Unexpected token in manifest JSON"))).toBe(false);
   });
@@ -32,15 +32,15 @@ describe("photoshopTiffImport", () => {
     await expect(
       ensureLayerMoveDestinationsAvailable(
         [
-          { fromPath: "/tmp/extracted/layer-image.png", toPath: "/scene/.storyboard-workbench/layers/shot-a/layer-image.png" },
-          { fromPath: "/tmp/extracted/layer-0001.png", toPath: "/scene/.storyboard-workbench/layers/shot-a/layer-0001.png" }
+          { fromPath: "/tmp/extracted/layer-image.png", toPath: "/scene/.storyboard-flow/layers/shot-a/layer-image.png" },
+          { fromPath: "/tmp/extracted/layer-0001.png", toPath: "/scene/.storyboard-flow/layers/shot-a/layer-0001.png" }
         ],
         async (filePath) => filePath.endsWith("layer-0001.png")
       )
     ).rejects.toThrow("Photoshop TIFF import layer asset already exists");
   });
 
-  it("builds SWB layer asset destinations under the temp import root", () => {
+  it("builds FLOW layer asset destinations under the temp import root", () => {
     const plan = buildPhotoshopTiffImportAssetPlan(
       {
         sourcePath: "/scene/paint.tiff",
@@ -68,18 +68,18 @@ describe("photoshopTiffImport", () => {
         warnings: []
       },
       "shot-a",
-      "/scene/.storyboard-workbench/import-tmp/stamp/layers",
+      "/scene/.storyboard-flow/import-tmp/stamp/layers",
       "/tmp/extracted"
     );
 
     expect(plan.moves).toEqual([
       {
         fromPath: "/tmp/extracted/0000-Image.png",
-        toPath: "/scene/.storyboard-workbench/import-tmp/stamp/layers/shot-a/layer-image.png"
+        toPath: "/scene/.storyboard-flow/import-tmp/stamp/layers/shot-a/layer-image.png"
       },
       {
         fromPath: "/tmp/extracted/0001-Paint.png",
-        toPath: "/scene/.storyboard-workbench/import-tmp/stamp/layers/shot-a/layer-0001.png"
+        toPath: "/scene/.storyboard-flow/import-tmp/stamp/layers/shot-a/layer-0001.png"
       }
     ]);
     expect(plan.layers.map((layer) => [layer.id, layer.kind, layer.name, layer.locked, layer.order])).toEqual([
@@ -98,15 +98,15 @@ describe("photoshopTiffImport", () => {
     ).toBe("preserve-dirty-layers");
   });
 
-  it("keeps the imported Image asset move when preserving dirty SWB layers", () => {
+  it("keeps the imported Image asset move when preserving dirty FLOW layers", () => {
     const moves = [
       {
         fromPath: "/tmp/extracted/0000-Image.png",
-        toPath: "/scene/.storyboard-workbench/import-tmp/stamp/layers/shot-a/layer-image.png"
+        toPath: "/scene/.storyboard-flow/import-tmp/stamp/layers/shot-a/layer-image.png"
       },
       {
         fromPath: "/tmp/extracted/0001-Paint.png",
-        toPath: "/scene/.storyboard-workbench/import-tmp/stamp/layers/shot-a/layer-0001.png"
+        toPath: "/scene/.storyboard-flow/import-tmp/stamp/layers/shot-a/layer-0001.png"
       }
     ];
 
@@ -125,7 +125,7 @@ describe("photoshopTiffImport", () => {
     ).toBe("duplicate");
   });
 
-  it("maps imported Photoshop layer metadata into SWB bitmap layers", () => {
+  it("maps imported Photoshop layer metadata into FLOW bitmap layers", () => {
     const layer = importedLayerToBitmapLayer(
       {
         name: "Multiply Paint",
@@ -149,15 +149,15 @@ describe("photoshopTiffImport", () => {
       opacity: 0.25,
       blendMode: "multiply",
       order: 3,
-      bitmapPath: ".storyboard-workbench/layers/shot-a/layer-0003.png",
+      bitmapPath: ".storyboard-flow/layers/shot-a/layer-0003.png",
       width: 320,
       height: 180
     });
-    expect(layer.bitmapPath).toBe(".storyboard-workbench/layers/shot-a/layer-0003.png");
+    expect(layer.bitmapPath).toBe(".storyboard-flow/layers/shot-a/layer-0003.png");
     expect(layer.bitmapPath).not.toContain("\\");
   });
 
-  it("sorts imported Photoshop layers before assigning SWB layer ids and move destinations", () => {
+  it("sorts imported Photoshop layers before assigning FLOW layer ids and move destinations", () => {
     const plan = buildPhotoshopTiffImportAssetPlan(
       {
         sourcePath: "/scene/paint.tiff",
@@ -192,7 +192,7 @@ describe("photoshopTiffImport", () => {
         warnings: []
       },
       "shot-a",
-      "/scene/.storyboard-workbench/import-tmp/stamp/layers",
+      "/scene/.storyboard-flow/import-tmp/stamp/layers",
       "/tmp/extracted"
     );
 
@@ -229,7 +229,7 @@ describe("photoshopTiffImport", () => {
           warnings: []
         },
         "../escape",
-        "/scene/.storyboard-workbench/import-tmp/stamp/layers",
+        "/scene/.storyboard-flow/import-tmp/stamp/layers",
         "/tmp/extracted"
       )
     ).toThrow("Import layer destination must stay under");
@@ -255,21 +255,21 @@ describe("photoshopTiffImport", () => {
           warnings: []
         },
         "shot-a",
-        "/scene/.storyboard-workbench/import-tmp/stamp/layers",
+        "/scene/.storyboard-flow/import-tmp/stamp/layers",
         "/tmp/extracted"
       )
     ).toThrow("Imported layer asset must stay under");
   });
 
   it("writes a placeholder working TIFF for already-extracted Photoshop layers", async () => {
-    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-import-placeholder-"));
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "flow-import-placeholder-"));
 
     try {
       const invalidSourcePath = path.join(folderPath, "source.tiff");
       const outputPath = path.join(folderPath, "working.tiff");
       await writeFile(invalidSourcePath, "not a readable tiff", "utf8");
 
-      await writeSwbImportWorkingTiff({
+      await writeFlowImportWorkingTiff({
         sourcePath: invalidSourcePath,
         outputPath,
         usePlaceholder: true

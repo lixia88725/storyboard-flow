@@ -9,7 +9,7 @@ import { MAIN_MEMORY_BUDGET_BYTES, MAIN_MEMORY_JSON, MAIN_MEMORY_PRESSURE } from
 
 test('the layer IPC handlers refuse an unfundable write before any layer-file effect', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'layer-handler-memory-'));
-  const relative = '.storyboard-workbench/layers/s/a.png';
+  const relative = '.storyboard-flow/layers/s/a.png';
   const file = path.join(root, relative);
   const old = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'blue' } }).png().toBuffer();
   const next = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'green' } }).png().toBuffer();

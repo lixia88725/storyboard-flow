@@ -92,7 +92,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
   };
   const bindingFor = async (requested: string): Promise<Binding> => {
     const root = await fs.realpath(requested);
-    const metadata = path.join(root, '.storyboard-workbench');
+    const metadata = path.join(root, '.storyboard-flow');
     return { root, rootIdentity: await identity(root, true), metadataIdentity: await identity(metadata, true) };
   };
   const checkBinding = async (binding: Binding) => {
@@ -154,14 +154,14 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
     requireEnabled();
     let binding: Binding;
     try { binding = await bindingFor(requested); } catch (error) { return { state: 'protectedIdentityConflict', issue: String(error) }; }
-    const base = path.join(binding.root, '.storyboard-workbench', namespace);
+    const base = path.join(binding.root, '.storyboard-flow', namespace);
     try {
       try { await fs.lstat(base); } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         let existingParent = path.dirname(base);
         for (;;) {
           try { await identity(existingParent, true); break; }
-          catch (parentError) { if ((parentError as NodeJS.ErrnoException).code !== 'ENOENT' || existingParent === path.join(binding.root, '.storyboard-workbench')) throw parentError; existingParent = path.dirname(existingParent); }
+          catch (parentError) { if ((parentError as NodeJS.ErrnoException).code !== 'ENOENT' || existingParent === path.join(binding.root, '.storyboard-flow')) throw parentError; existingParent = path.dirname(existingParent); }
         }
         await certify(existingParent, binding.root, 'directory');
         const parentDirectory = await fs.opendir(existingParent);
@@ -175,7 +175,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
       catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return {state:'protectedIncomplete',issue:'Missing namespace record; no sealed content'};throw error;}
       keys(ns, [...(sourcePolicy === undefined ? ['schema', 'version', 'binding'] : ['schema', 'version', 'binding', 'sourcePolicy']), ...(partition === undefined ? [] : ['policyKey'])]);
       if (sourcePolicy !== undefined && (partition === undefined ? !same(ns.sourcePolicy, sourcePolicy) : recoveryPolicyKey(ns.sourcePolicy) !== partition)) throw new Error('Immutable source policy mismatch');
-      if (ns.schema !== 'swb.workspace-recovery-namespace' || ns.version !== version || partition !== undefined && ns.policyKey !== partition) throw new Error('Unknown namespace schema');
+      if (ns.schema !== 'flow.workspace-recovery-namespace' || ns.version !== version || partition !== undefined && ns.policyKey !== partition) throw new Error('Unknown namespace schema');
       if (!same(ns.binding, binding)) return { state: 'protectedIdentityConflict', issue: 'Namespace physical binding mismatch' };
       const allowed = new Set(['namespace.json']); const dirs = new Set(['operations']);
       let pendingInventory = false;
@@ -192,7 +192,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
         try { await fs.lstat(path.join(opDir,'operation.json')); operation = (await json(path.join(opDir, 'operation.json'), binding.root)).value; }
         catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT'){pendingInventory=true;continue;}throw error;}
         keys(operation, ['schema', 'version', 'binding', 'operationId', 'producer']);
-        if (operation.schema !== 'swb.workspace-recovery-operation' || operation.version !== version || operation.producer !== 'close-content-preservation' || operation.operationId !== operationId || !same(operation.binding, binding)) throw new Error('Unsupported operation record');
+        if (operation.schema !== 'flow.workspace-recovery-operation' || operation.version !== version || operation.producer !== 'close-content-preservation' || operation.operationId !== operationId || !same(operation.binding, binding)) throw new Error('Unsupported operation record');
         let generationDirectory: Awaited<ReturnType<typeof fs.opendir>>;
         try { generationDirectory = await fs.opendir(path.join(opDir, 'generations')); }
         catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT'){pendingInventory=true;continue;}throw error;}
@@ -213,7 +213,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
           const retained = await json(path.join(dir, 'content.json'), binding.root);
           const content: Content = retained.value;
           keys(content, ['schema', 'version', 'binding', 'operationId', 'generationId', 'parent', 'revision', 'projectRaw', 'viewState', 'scriptState', 'effectFacts', 'continuationState', 'assets', 'requiredAssetIds', ...(partition === undefined ? [] : ['globalPrevious', 'sourcePolicy'])]);
-          if (content.schema !== 'swb.workspace-recovery-content' || content.version !== version || content.operationId !== operationId || content.generationId !== generationId || !same(content.binding, binding)) throw new Error('Content association mismatch');
+          if (content.schema !== 'flow.workspace-recovery-content' || content.version !== version || content.operationId !== operationId || content.generationId !== generationId || !same(content.binding, binding)) throw new Error('Content association mismatch');
           if (partition !== undefined && recoveryPolicyKey(content.sourcePolicy) !== partition) throw new Error('Capture contributor policy/partition mismatch');
           if (content.parent !== null) {
             if (typeof content.parent !== 'object' || Array.isArray(content.parent)) throw new Error('Invalid recovery content parent');
@@ -222,7 +222,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
           const sealedRecord = await json(path.join(dir, 'sealed.json'), binding.root);
           const seal = sealedRecord.value;
           keys(seal, ['schema', 'version', 'operationId', 'generationId', 'contentDigest']);
-          if (seal.schema !== 'swb.workspace-recovery-seal' || seal.version !== version || seal.operationId !== operationId || seal.generationId !== generationId || seal.contentDigest !== retained.digest) throw new Error('Seal association mismatch');
+          if (seal.schema !== 'flow.workspace-recovery-seal' || seal.version !== version || seal.operationId !== operationId || seal.generationId !== generationId || seal.contentDigest !== retained.digest) throw new Error('Seal association mismatch');
           if (!Array.isArray(content.assets) || content.assets.length > budget!.assets || !Array.isArray(content.requiredAssetIds)) throw new Error('Asset budget/schema');
           const ids = new Set<string>();
           for (const asset of content.assets) {
@@ -305,15 +305,15 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
     const binding = await bindingFor(requested), root = binding.root;
     const before = await inspect(root);
     if (before.state !== 'protocolAbsent' && before.state !== 'protectedReadable' && !(before.state === 'protectedIncomplete' && (before.ack && before.content || allowUnsealedStart))) throw new Error(`Retention refused: ${before.state} ${before.issue ?? ''}`);
-    const base = path.join(root, '.storyboard-workbench', namespace);
+    const base = path.join(root, '.storyboard-flow', namespace);
     const existing = before.state === 'protocolAbsent' ? { bytes: 0, files: [], directories: [] } : await inventory(base, root);
     const operationId = randomUUID(), generationId = randomUUID();
-    const content: Content = { ...detached, schema: 'swb.workspace-recovery-content', version, binding, operationId, generationId, ...(partition === undefined ? {} : { globalPrevious, sourcePolicy: capturePolicy }), parent: before.ack ? { operationId: before.ack.operationId, generationId: before.ack.generationId, sealDigest: before.ack.sealDigest } : null,
+    const content: Content = { ...detached, schema: 'flow.workspace-recovery-content', version, binding, operationId, generationId, ...(partition === undefined ? {} : { globalPrevious, sourcePolicy: capturePolicy }), parent: before.ack ? { operationId: before.ack.operationId, generationId: before.ack.generationId, sealDigest: before.ack.sealDigest } : null,
       assets: pinned.map(({ bytes, ...asset }) => ({ ...asset, file: `${asset.assetId}.bin`, length: bytes.length, digest: digest(bytes) })) };
     const contentBytes = boundedJSON(content, budget!.jsonDepth);
-    const seal = boundedJSON({ schema: 'swb.workspace-recovery-seal', version, operationId, generationId, contentDigest: digest(contentBytes) }, budget!.jsonDepth);
-    const op = boundedJSON({ schema: 'swb.workspace-recovery-operation', version, binding, operationId, producer: 'close-content-preservation' }, budget!.jsonDepth);
-    const ns = boundedJSON({ schema: 'swb.workspace-recovery-namespace', version, binding, ...(partition === undefined ? {} : {policyKey: partition}), ...(sourcePolicy === undefined ? {} : {sourcePolicy}) }, budget!.jsonDepth);
+    const seal = boundedJSON({ schema: 'flow.workspace-recovery-seal', version, operationId, generationId, contentDigest: digest(contentBytes) }, budget!.jsonDepth);
+    const op = boundedJSON({ schema: 'flow.workspace-recovery-operation', version, binding, operationId, producer: 'close-content-preservation' }, budget!.jsonDepth);
+    const ns = boundedJSON({ schema: 'flow.workspace-recovery-namespace', version, binding, ...(partition === undefined ? {} : {policyKey: partition}), ...(sourcePolicy === undefined ? {} : {sourcePolicy}) }, budget!.jsonDepth);
     const missing=(name:string)=>!existing.files.includes(name)&&!existing.directories.includes(name);
     const anchorBytes=before.state==='protocolAbsent'||missing('namespace.json')?ns.length:0;
     const anchorRecords=(before.state==='protocolAbsent'||missing('namespace.json')?1:0)+(before.state==='protocolAbsent'||missing('operations')?1:0);
@@ -339,7 +339,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
       if (!Number.isSafeInteger(attributeBytes)) throw new Error('Unknown recovery creation attribute budget');
       const filePeaks = [...pinned.map(asset => asset.bytes.length), contentBytes.length, seal.length, op.length, ...(anchorBytes ? [anchorBytes] : [])].map(bytes => Math.max(32768, bytes + attributeBytes));
       let newDirectories = 4 + Number(before.state === 'protocolAbsent') + Number(before.state === 'protocolAbsent' || missing('operations'));
-      if (partition !== undefined && before.state === 'protocolAbsent') for (const container of [path.join(root, '.storyboard-workbench/workspace-recovery-v2'), path.dirname(base)]) {
+      if (partition !== undefined && before.state === 'protocolAbsent') for (const container of [path.join(root, '.storyboard-flow/workspace-recovery-v2'), path.dirname(base)]) {
         try { await identity(container, true); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; newDirectories++; plannedContainers.add(container); }
       }
@@ -356,7 +356,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
     const materialize = async (): Promise<Ack> => {
     if (before.state === 'protocolAbsent') {
       if (partition !== undefined) {
-        for (const container of [path.join(root, '.storyboard-workbench/workspace-recovery-v2'), path.dirname(base)]) {
+        for (const container of [path.join(root, '.storyboard-flow/workspace-recovery-v2'), path.dirname(base)]) {
           try { await identity(container, true); await certify(container, root, 'directory'); }
           catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
@@ -410,7 +410,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
       };
       const state = await inspect(requested), capture = select(state), assets = new Map<string, Buffer>();
       for (const asset of capture.content.assets) {
-        const bytes = await read(path.join(binding.root, '.storyboard-workbench', namespace, 'operations', capture.ack.operationId, 'generations', capture.ack.generationId, 'assets', asset.file), binding.root);
+        const bytes = await read(path.join(binding.root, '.storyboard-flow', namespace, 'operations', capture.ack.operationId, 'generations', capture.ack.generationId, 'assets', asset.file), binding.root);
         if (bytes.length !== asset.length || digest(bytes) !== asset.digest) throw new Error('Historical retained asset changed during full readback');
         assets.set(asset.assetId, bytes);
       }
@@ -425,7 +425,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
       if ((state.state !== 'protectedReadable' && state.state !== 'protectedIncomplete') || state.content?.generationId !== generationId || !state.ack) throw new Error('Exact latest readable generation required');
       const content = state.content, result = new Map<string, Buffer>();
       for (const asset of content.assets) {
-        const bytes = await read(path.join(content.binding.root, '.storyboard-workbench', namespace, 'operations', content.operationId, 'generations', generationId, 'assets', asset.file), content.binding.root);
+        const bytes = await read(path.join(content.binding.root, '.storyboard-flow', namespace, 'operations', content.operationId, 'generations', generationId, 'assets', asset.file), content.binding.root);
         if (bytes.length !== asset.length || digest(bytes) !== asset.digest) throw new Error('Retained asset changed during batch readback');
         result.set(asset.assetId, bytes);
       }
@@ -441,7 +441,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
       if ((state.state !== 'protectedReadable' && state.state !== 'protectedIncomplete') || state.content?.generationId !== generationId) throw new Error('Exact latest readable generation required');
       const asset = state.content.assets.find(item => item.assetId === assetId);
       if (!asset) throw new Error('Unknown retained asset');
-      const bytes = await read(path.join(state.content.binding.root, '.storyboard-workbench', namespace, 'operations', state.content.operationId, 'generations', generationId, 'assets', asset.file), state.content.binding.root);
+      const bytes = await read(path.join(state.content.binding.root, '.storyboard-flow', namespace, 'operations', state.content.operationId, 'generations', generationId, 'assets', asset.file), state.content.binding.root);
       if (bytes.length !== asset.length || digest(bytes) !== asset.digest) throw new Error('Retained asset changed during single readback');
       const finalInventory = await accounting(binding.root, budget!); await checkBinding(binding);
       if (inventory.fingerprint !== finalInventory.fingerprint || inventory.bytes !== finalInventory.bytes || inventory.records !== finalInventory.records) throw new Error('Joint recovery inventory changed during asset readback');

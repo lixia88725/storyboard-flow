@@ -86,7 +86,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("real History and bitmap queue composition", () => {
   it("Paste pairs pre-copy PNG with latest metadata and preserves both through Undo/Redo", async () => {
     const s = setup();
-    const destination = `.storyboard-workbench/layers/${s.shot.id}/layer-pasted.png`;
+    const destination = `.storyboard-flow/layers/${s.shot.id}/layer-pasted.png`;
     s.pixels.set(destination, "pre-copy pixels");
     const target = s.shot.layers![1];
     const clipboard = useClipboardActionController({

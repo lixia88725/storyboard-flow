@@ -12,7 +12,7 @@ export const planProtectedPngWrite = async (root:string,filePath:string,bytes:Bu
   const result=await createNativeAuthorizationSession(python,fileURLToPath(new URL('../../scripts/layer-file-permissions.py',import.meta.url)),()=>NATIVE_AUTHORIZATION_TRANSPORT_BYTES)
     .request({phase:'planPng',root,filePath,length:bytes.length,digest,mode,byteLimit});
   const plan=result.plan;
-  if(result.authorized!==true||plan?.schema!=='swb.native-png-plan.v1'||plan.root!==root||plan.filePath!==filePath||plan.digest!==digest||plan.length!==bytes.length||plan.mode!==mode||plan.byteLimit!==byteLimit||![plan.peakBytes,plan.peakRecords,plan.stagePeak].every(n=>Number.isSafeInteger(n)&&n>0))throw new Error('Native PNG creation plan not certified');
+  if(result.authorized!==true||plan?.schema!=='flow.native-png-plan.v1'||plan.root!==root||plan.filePath!==filePath||plan.digest!==digest||plan.length!==bytes.length||plan.mode!==mode||plan.byteLimit!==byteLimit||![plan.peakBytes,plan.peakRecords,plan.stagePeak].every(n=>Number.isSafeInteger(n)&&n>0))throw new Error('Native PNG creation plan not certified');
   return plan;
 };
 

@@ -95,7 +95,7 @@ it("external MD appearing at persistence admission is retained with zero JSON in
   fault.beforeOpen = async p => { if (p === md) await fs.writeFile(md, "1. Outside-new\n"); };
   await expect(createProjectFromStoryboardScriptMarkdown(options)).rejects.toMatchObject({ code: "EEXIST" });
   expect(await fs.readFile(md, "utf8")).toBe("1. Outside-new\n");
-  await expect(fs.stat(path.join(options.targetFolderPath, ".storyboard-workbench/storyboard.project.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(fs.stat(path.join(options.targetFolderPath, ".storyboard-flow/storyboard.project.json"))).rejects.toMatchObject({ code: "ENOENT" });
   expect(await fs.readdir(options.targetFolderPath)).toEqual(["storyboard-script.md"]);
 });
 
@@ -120,7 +120,7 @@ it("real create rollback failure traverses registered result→renderer owner→
   const ref = { current: createProject("old") }, queue = createBitmapLayerWriteQueue(), statuses: string[] = [];
   let writes = 0;
   const adapter = await createAppRootActor({ projectRef: ref, setProject: () => {}, queue, freshToken: () => "t",
-    paths: () => ({ folderPath: options.targetFolderPath, metadataPath: path.join(options.targetFolderPath, ".storyboard-workbench/storyboard.project.json") }),
+    paths: () => ({ folderPath: options.targetFolderPath, metadataPath: path.join(options.targetFolderPath, ".storyboard-flow/storyboard.project.json") }),
     assertAdmission: () => { if (recovery.current) throw new Error(recovery.current); }, assertImportAdmission: () => { if (recovery.current) throw new Error(recovery.current); },
     onImportRecoveryRequired: message => onRecovery(message), onSave: () => {}, onError: () => {},
     api: () => ({ createFromStoryboardScript: async p => structuredClone(await handlers.get("workspace:createFromStoryboardScript")!({}, p)),
@@ -165,7 +165,7 @@ for (const filename of ["preload.cjs", "preload.ts"]) {
 }
 
 it("existing TIFF, existing metadata, and a script file cannot be used as an empty target or overwritten", async () => {
-  for (const name of ["script_shot_0001_0.tiff", ".storyboard-workbench", "storyboard-script.md"]) {
+  for (const name of ["script_shot_0001_0.tiff", ".storyboard-flow", "storyboard-script.md"]) {
     const options = await setup(); const target = path.join(options.targetFolderPath, name);
     await fs.writeFile(target, "outside-original");
     await expect(createProjectFromStoryboardScriptMarkdown(options)).rejects.toThrow("Choose an empty folder");

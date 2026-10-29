@@ -77,23 +77,23 @@ it('does not switch folders while conversion is still settling', async () => {
 
 it('opens the managed child while retaining the source display path and does not re-import', async () => {
   const f = fixture();
-  f.inspectFolderImages.mockResolvedValue({ ...inspection('/old', false), editableFolderPath: '/old/.storyboard-flow' } as any);
+  f.inspectFolderImages.mockResolvedValue({ ...inspection('/old', false), editableFolderPath: '/old/.storyboard-flow-project' } as any);
   expect(await f.open('/old')).toBe(true);
-  expect(f.requestOpen).toHaveBeenCalledWith('/old/.storyboard-flow', expect.any(Function));
-  expect(f.folderImport.remember).toHaveBeenCalledWith('/old/.storyboard-flow', '/old');
+  expect(f.requestOpen).toHaveBeenCalledWith('/old/.storyboard-flow-project', expect.any(Function));
+  expect(f.folderImport.remember).toHaveBeenCalledWith('/old/.storyboard-flow-project', '/old');
 });
 it('does not offer a fresh conversion when an existing managed project refuses Open', async () => {
   const f = fixture();
-  f.inspectFolderImages.mockResolvedValue({ ...inspection('/old', false), editableFolderPath: '/old/.storyboard-flow' } as any);
+  f.inspectFolderImages.mockResolvedValue({ ...inspection('/old', false), editableFolderPath: '/old/.storyboard-flow-project' } as any);
   f.requestOpen.mockResolvedValue(false);
   await f.open('/old'); expect(f.setFolderBrowser).toHaveBeenCalledWith(expect.objectContaining({ browse: true, issue: expect.stringContaining('暂时无法打开') }));
 });
 it('records a successfully activated held workspace for startup, never a refused open', async () => {
   const f = fixture(), rememberOpenedFolder = vi.fn(async () => {});
   Object.assign(f.window.storyboard, { rememberOpenedFolder });
-  f.inspectFolderImages.mockResolvedValue({ ...inspection('/old', false), editableFolderPath: '/old/.storyboard-flow' } as any);
+  f.inspectFolderImages.mockResolvedValue({ ...inspection('/old', false), editableFolderPath: '/old/.storyboard-flow-project' } as any);
   await f.open('/old');
-  expect(rememberOpenedFolder).toHaveBeenCalledExactlyOnceWith('/old/.storyboard-flow');
+  expect(rememberOpenedFolder).toHaveBeenCalledExactlyOnceWith('/old/.storyboard-flow-project');
   f.requestOpen.mockResolvedValue(false); await f.open('/old');
   expect(rememberOpenedFolder).toHaveBeenCalledTimes(1);
 });

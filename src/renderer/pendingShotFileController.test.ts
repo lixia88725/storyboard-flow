@@ -11,7 +11,7 @@ const shot = {
   imagePath: "/scene/shot-a.tiff",
   fileName: "shot-a.tiff",
   order: 0,
-  swb: {
+  flow: {
     version: 1,
     status: "owned",
     canvasWidth: 1920,
@@ -46,7 +46,7 @@ describe("pendingShotFileController", () => {
     expect(patched.parkedShots?.[0]).toMatchObject({
       imagePath: "/scene/Pending/shot-a.tiff",
       fileName: "shot-a.tiff",
-      swb: { baseFingerprint: "new" }
+      flow: { baseFingerprint: "new" }
     });
   });
 
@@ -68,7 +68,7 @@ describe("pendingShotFileController", () => {
     const controller = createPendingShotFileController({
       api: { moveShotsToPending, restoreShotsFromPending } as unknown as Window["storyboard"],
       folderPath: "/scene",
-      metadataPath: "/scene/.storyboard-workbench/storyboard.project.json"
+      metadataPath: "/scene/.storyboard-flow/storyboard.project.json"
     });
 
     const moved = await controller.moveShotsToPending(project, [shot.id]);

@@ -12,7 +12,7 @@ const scratch = process.env.TMPDIR ?? os.tmpdir();
 async function fixture() {
   const folderPath = await mkdtemp(path.join(scratch, "exclusive-red-"));
   onTestFinished(async () => { await rm(folderPath, { recursive: true, force: true }); });
-  const bitmapPath = ".storyboard-workbench/layers/s/new.png";
+  const bitmapPath = ".storyboard-flow/layers/s/new.png";
   await mkdir(path.dirname(path.join(folderPath, bitmapPath)), { recursive: true });
   const png = await sharp({ create: { width: 2, height: 2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
   const old = await sharp({ create: { width: 2, height: 2, channels: 4, background: "red" } }).png().toBuffer();
@@ -20,8 +20,8 @@ async function fixture() {
   await sharp(old).tiff({ compression: "none" }).toFile(imagePath);
   const project = createProject("exclusive-create");
   project.shots = [{ id: "s", fileName: "s.tiff", imagePath, order: 0,
-    swb: { version: 1, status: "owned", canvasWidth: 2, canvasHeight: 2 },
-    layers: [{ id: "image", kind: "image", name: "Image", order: 0, visible: true, locked: false, opacity: 1, blendMode: "normal", width: 2, height: 2, bitmapPath: ".storyboard-workbench/layers/s/image.png" }] }];
+    flow: { version: 1, status: "owned", canvasWidth: 2, canvasHeight: 2 },
+    layers: [{ id: "image", kind: "image", name: "Image", order: 0, visible: true, locked: false, opacity: 1, blendMode: "normal", width: 2, height: 2, bitmapPath: ".storyboard-flow/layers/s/image.png" }] }];
   await writeFile(path.join(folderPath, project.shots[0].layers![0].bitmapPath), old);
   project.pendingBake = { version: 1, shots: { s: { state: "synced", acceptedOutputIdentity: createHash("sha256").update(await readFile(imagePath)).digest("hex") } } };
   const callbacks = new Map<string, (...args: any[]) => any>();

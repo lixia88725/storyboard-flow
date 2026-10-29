@@ -23,7 +23,7 @@ export const cleanupMergedLayerSources = async (payload: MergeCleanupPayload,
   { remove = unlink }: { remove?: typeof unlink } = {}) => {
   const deleted: string[] = [], retained: string[] = [], errors: string[] = [];
   const root = path.resolve(payload.folderPath);
-  const metadata = path.join(root, ".storyboard-workbench/storyboard.project.json");
+  const metadata = path.join(root, ".storyboard-flow/storyboard.project.json");
   const validate = async (bitmapPath: string) => {
     const file = resolveLayerAssetPath(root, bitmapPath);
     if (await realpath(root) !== root) throw Error("Cleanup root alias refused");

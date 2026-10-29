@@ -275,25 +275,25 @@ describe("atomicWriteTextFile", () => {
       writes.delete(filePath);
     });
 
-    await atomicWriteTextFile("/scene/.storyboard-workbench/storyboard.project.json", "new metadata", {
+    await atomicWriteTextFile("/scene/.storyboard-flow/storyboard.project.json", "new metadata", {
       mkdir,
       writeFile,
       rename,
       unlink,
-      tempPath: "/scene/.storyboard-workbench/.storyboard.project.json.tmp"
+      tempPath: "/scene/.storyboard-flow/.storyboard.project.json.tmp"
     });
 
-    expect(mkdir).toHaveBeenCalledWith("/scene/.storyboard-workbench");
+    expect(mkdir).toHaveBeenCalledWith("/scene/.storyboard-flow");
     expect(writeFile).toHaveBeenCalledWith(
-      "/scene/.storyboard-workbench/.storyboard.project.json.tmp",
+      "/scene/.storyboard-flow/.storyboard.project.json.tmp",
       "new metadata",
       "utf8"
     );
     expect(rename).toHaveBeenCalledWith(
-      "/scene/.storyboard-workbench/.storyboard.project.json.tmp",
-      "/scene/.storyboard-workbench/storyboard.project.json"
+      "/scene/.storyboard-flow/.storyboard.project.json.tmp",
+      "/scene/.storyboard-flow/storyboard.project.json"
     );
-    expect(writes.get("/scene/.storyboard-workbench/storyboard.project.json")).toBe("new metadata");
+    expect(writes.get("/scene/.storyboard-flow/storyboard.project.json")).toBe("new metadata");
   });
 
   it("deletes the temp file when replacement fails", async () => {
@@ -492,7 +492,7 @@ describe("applyFileReplacements", () => {
         {
           tempPath: "/tmp/a.tiff",
           targetPath: "/scene/a.tiff",
-          backupPath: "/scene/.storyboard-workbench/save-backup/save-123/a.tiff"
+          backupPath: "/scene/.storyboard-flow/save-backup/save-123/a.tiff"
         }
       ],
       { mkdir, rename, unlink }
@@ -503,7 +503,7 @@ describe("applyFileReplacements", () => {
     await applied.rollback();
 
     expect(existingPaths.get("/scene/a.tiff")).toBe("original-a");
-    expect(existingPaths.has("/scene/.storyboard-workbench/save-backup/save-123/a.tiff")).toBe(false);
+    expect(existingPaths.has("/scene/.storyboard-flow/save-backup/save-123/a.tiff")).toBe(false);
     expect(existingPaths.get("/tmp/a.tiff")).toBe("new-a");
     expect(unlink).not.toHaveBeenCalled();
   });
@@ -538,12 +538,12 @@ describe("applyFileReplacements", () => {
           {
             tempPath: "/tmp/a.tiff",
             targetPath: "/scene/a.tiff",
-            backupPath: "/scene/.storyboard-workbench/save-backup/save-123/a.tiff"
+            backupPath: "/scene/.storyboard-flow/save-backup/save-123/a.tiff"
           },
           {
             tempPath: "/tmp/b.tiff",
             targetPath: "/scene/b.tiff",
-            backupPath: "/scene/.storyboard-workbench/save-backup/save-123/b.tiff"
+            backupPath: "/scene/.storyboard-flow/save-backup/save-123/b.tiff"
           }
         ],
         { mkdir, rename, unlink }
@@ -552,8 +552,8 @@ describe("applyFileReplacements", () => {
 
     expect(existingPaths.get("/scene/a.tiff")).toBe("original-a");
     expect(existingPaths.get("/scene/b.tiff")).toBe("original-b");
-    expect(existingPaths.has("/scene/.storyboard-workbench/save-backup/save-123/a.tiff")).toBe(false);
-    expect(existingPaths.has("/scene/.storyboard-workbench/save-backup/save-123/b.tiff")).toBe(false);
+    expect(existingPaths.has("/scene/.storyboard-flow/save-backup/save-123/a.tiff")).toBe(false);
+    expect(existingPaths.has("/scene/.storyboard-flow/save-backup/save-123/b.tiff")).toBe(false);
     expect(existingPaths.get("/tmp/a.tiff")).toBe("new-a");
     expect(unlink).not.toHaveBeenCalled();
   });

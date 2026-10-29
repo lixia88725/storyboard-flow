@@ -6,7 +6,7 @@ import {
 
 const payload = {
   folderPath: "/scene",
-  metadataPath: "/scene/.storyboard-workbench/storyboard.project.json",
+  metadataPath: "/scene/.storyboard-flow/storyboard.project.json",
   project: { shots: ["shot-1"] }
 };
 

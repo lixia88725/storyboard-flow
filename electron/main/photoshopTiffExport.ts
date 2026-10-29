@@ -13,7 +13,7 @@ type Project = {
     fileName: string;
     order: number;
     layers?: ElectronBitmapLayer[];
-    swb?: {
+    flow?: {
       canvasWidth: number;
       canvasHeight: number;
     };
@@ -35,7 +35,7 @@ export type PhotoshopTiffExportManifest = {
   height: number;
   documentName: string;
   xmp?: string;
-  swbMetadata?: unknown;
+  flowMetadata?: unknown;
   layers: PhotoshopTiffExportLayer[];
 };
 
@@ -111,7 +111,7 @@ export const buildPhotoshopTiffInPlaceSavePlan = (
   folderPath: string,
   saveStamp: string
 ): PhotoshopTiffInPlaceSavePlan => {
-  const tempFolderPath = path.join(folderPath, ".storyboard-workbench", "save-tmp", saveStamp);
+  const tempFolderPath = path.join(folderPath, ".storyboard-flow", "save-tmp", saveStamp);
   const manifestFolderPath = path.join(tempFolderPath, ".manifests");
   const sortedShots = [...project.shots].sort((a, b) => a.order - b.order);
 
@@ -164,7 +164,7 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
     pythonPath?: string;
     env?: NodeJS.ProcessEnv;
     xmpByShotId?: Record<string, string>;
-    swbMetadataByShotId?: Record<string, unknown>;
+    flowMetadataByShotId?: Record<string, unknown>;
     onJobWritten?: () => void;
     concurrency?: number;
   }
@@ -175,8 +175,8 @@ export const writePhotoshopLayeredTiffsForInPlaceSave = async (
   await mapWithConcurrency(plan.jobs, options.concurrency ?? defaultInPlaceSaveConcurrency, async (job) => {
     const manifestPath = path.join(plan.manifestFolderPath, `${job.shotId}.json`);
     const xmp = options.xmpByShotId?.[job.shotId];
-    const swbMetadata = options.swbMetadataByShotId?.[job.shotId];
-    const manifest = { ...job.manifest, ...(xmp ? { xmp } : {}), ...(swbMetadata ? { swbMetadata } : {}) };
+    const flowMetadata = options.flowMetadataByShotId?.[job.shotId];
+    const manifest = { ...job.manifest, ...(xmp ? { xmp } : {}), ...(flowMetadata ? { flowMetadata } : {}) };
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     await runPythonExporter(options.pythonPath, options.scriptPath, manifestPath, options.env);
     options.onJobWritten?.();
@@ -221,8 +221,8 @@ const buildPhotoshopTiffManifestForShot = (
   documentName: string
 ): PhotoshopTiffExportManifest => {
   const layers = bitmapLayersForShot(shot);
-  const width = shot.swb?.canvasWidth ?? layers[0]?.width;
-  const height = shot.swb?.canvasHeight ?? layers[0]?.height;
+  const width = shot.flow?.canvasWidth ?? layers[0]?.width;
+  const height = shot.flow?.canvasHeight ?? layers[0]?.height;
 
   if (!width || !height) {
     throw new Error(`Cannot export Photoshop TIFF for ${shot.fileName}: missing canvas size`);
@@ -254,7 +254,7 @@ const resolveLayerAssetPath = (folderPath: string, bitmapPath: string): string =
   }
 
   const normalized = path.normalize(bitmapPath);
-  const expectedPrefix = path.join(".storyboard-workbench", "layers");
+  const expectedPrefix = path.join(".storyboard-flow", "layers");
 
   if (
     normalized === expectedPrefix ||

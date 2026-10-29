@@ -85,21 +85,21 @@ describe("workspaceExternalRefreshController", () => {
   it("does not check external changes while the workspace is saving", async () => {
     const api = {
       checkExternalChanges: vi.fn(),
-      importSwbFormat: vi.fn()
+      importFlowFormat: vi.fn()
     };
 
     const normalSaveRefresh = vi.fn(async () => false);
     await refreshWorkspaceExternalImportState({
       api, normalSaveRefresh,
       checkIdRef: { current: 0 }, folderPathRef: { current: "/scene" },
-      metadataPathRef: { current: "/scene/.storyboard-workbench/storyboard.project.json" },
+      metadataPathRef: { current: "/scene/.storyboard-flow/storyboard.project.json" },
       mergeExternalImageChanges: vi.fn(), setScriptImportNeeded: vi.fn(),
       workspaceSaveStateRef: { current: "saving" }
     });
 
     expect(normalSaveRefresh).not.toHaveBeenCalled();
     expect(api.checkExternalChanges).not.toHaveBeenCalled();
-    expect(api.importSwbFormat).not.toHaveBeenCalled();
+    expect(api.importFlowFormat).not.toHaveBeenCalled();
   });
 
   it("delegates compatible scan handling to the owner domain and uses its script completion", async () => {
@@ -107,7 +107,7 @@ describe("workspaceExternalRefreshController", () => {
     const nextProject = { id: "project-1", shots: [{ id: "shot-1", external: true }] };
     const api = {
       checkExternalChanges: vi.fn(async () => ({ images: [{ fileName: "shot_0010.tiff" }], scriptImportNeeded: true })),
-      importSwbFormat: vi.fn()
+      importFlowFormat: vi.fn()
     };
     // Only the ownership-domain port is substituted in this unit test. Real
     // automatic Import/persistence is covered by normalSaveImageImportChain.
@@ -120,15 +120,15 @@ describe("workspaceExternalRefreshController", () => {
     await refreshWorkspaceExternalImportState({
       api, normalSaveRefresh,
       checkIdRef: { current: 0 }, folderPathRef: { current: "/scene" },
-      metadataPathRef: { current: "/scene/.storyboard-workbench/storyboard.project.json" },
+      metadataPathRef: { current: "/scene/.storyboard-flow/storyboard.project.json" },
       mergeExternalImageChanges: () => nextProject, setScriptImportNeeded,
       workspaceSaveStateRef: { current: "saved" }
     });
     expect(api.checkExternalChanges).toHaveBeenCalledWith({
-      project, folderPath: "/scene", metadataPath: "/scene/.storyboard-workbench/storyboard.project.json", normalSave: true
+      project, folderPath: "/scene", metadataPath: "/scene/.storyboard-flow/storyboard.project.json", normalSave: true
     });
     expect(normalSaveRefresh).toHaveBeenCalledOnce();
-    expect(api.importSwbFormat).not.toHaveBeenCalled();
+    expect(api.importFlowFormat).not.toHaveBeenCalled();
     expect(setScriptImportNeeded).toHaveBeenCalledWith(false);
   });
 

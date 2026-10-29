@@ -18,15 +18,15 @@ const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 
 test.each(['complete', 'complete historical', 'complete copy', 'complete merge', 'complete origin refused', 'legacy request', 'wrong operation', 'third link', 'changed mode', 'changed parent', 'unknown metadata', 'bad digest', 'missing ACL'] as const)('new native publication %s preserves stage and failure without granting Retry', async mode => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'owned-publication-'));
-  const bitmapPath = '.storyboard-workbench/layers/s/a.png', targetPath = '.storyboard-workbench/layers/s/new.png';
-  const secondBitmapPath = '.storyboard-workbench/layers/s/b.png';
-  const target = path.join(root, targetPath), metadata = path.join(root, '.storyboard-workbench/storyboard.project.json'), md = path.join(root, 'storyboard-script.md');
+  const bitmapPath = '.storyboard-flow/layers/s/a.png', targetPath = '.storyboard-flow/layers/s/new.png';
+  const secondBitmapPath = '.storyboard-flow/layers/s/b.png';
+  const target = path.join(root, targetPath), metadata = path.join(root, '.storyboard-flow/storyboard.project.json'), md = path.join(root, 'storyboard-script.md');
   const bytes = await sharp({ create: { width: 2, height: 2, channels: 4, background: 'blue' } }).png().toBuffer();
   await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
   await fs.writeFile(path.join(root, bitmapPath), bytes, { mode: 0o600 });
   await fs.writeFile(path.join(root, secondBitmapPath), bytes, { mode: 0o600 });
   await fs.writeFile(path.join(root, 's.tiff'), await sharp(bytes).tiff().toBuffer(), { mode: 0o600 });
-  const project = { id: 'p', name: 'owned publication', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', swb: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: [{ id: 'a', kind: 'paint', bitmapPath, width: 2, height: 2 }, { id: 'b', kind: 'paint', bitmapPath: secondBitmapPath, width: 2, height: 2 }] }], dialogues: [] };
+  const project = { id: 'p', name: 'owned publication', shots: [{ id: 's', imagePath: path.join(root, 's.tiff'), fileName: 's.tiff', flow: { status: 'owned', canvasWidth: 2, canvasHeight: 2 }, layers: [{ id: 'a', kind: 'paint', bitmapPath, width: 2, height: 2 }, { id: 'b', kind: 'paint', bitmapPath: secondBitmapPath, width: 2, height: 2 }] }], dialogues: [] };
   const persist = async () => { await fs.writeFile(metadata, JSON.stringify(project, null, 2) + '\n', { mode: 0o600 }); await fs.writeFile(md, serializeStoryboardScriptMarkdown(project as any), { mode: 0o600 }); return {}; };
   await persist();
   const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'owned-publication-appdata-'));
@@ -54,14 +54,14 @@ test.each(['complete', 'complete historical', 'complete copy', 'complete merge',
   const duringUnlink = mode === 'third link' ? "os.link(p,os.path.join(r['root'],'third-link'))" : mode === 'changed mode' ? 'os.chmod(p,0o400)' : mode === 'changed parent' ? 'os.chmod(os.path.dirname(p),0o500)' : 'pass';
   const afterPublication = mode === 'wrong operation' ? "v['ownedStageReceipt']['operation']='00000000-0000-4000-8000-000000000000'" : mode === 'bad digest' ? "v['ownedStageReceipt']['bytes']['digest']='0'*64" : mode === 'missing ACL' ? "del v['ownedStageReceipt']['targetAfterPublication']['acl']" : 'pass';
   await fs.writeFile(shim, adapter.replace("if os.path.basename(p).startswith('.layer-staging-'): raise PermissionError('owned publication fixture final unlink denied')", `if os.path.basename(p).startswith('.layer-staging-'):\n  ${duringUnlink}\n  raise PermissionError('owned publication fixture final unlink denied')`).replace("if r.get('operation') is not None: a.append(r['operation'])", mode === 'legacy request' ? 'pass' : "if r.get('operation') is not None: a.append(r['operation'])").replace('print(json.dumps(m.protected_write(*a)))', `${mode === 'unknown metadata' ? "def unavailable(p): raise PermissionError('fixture original metadata unavailable')\nm.owned_metadata=unavailable\n" : ''}v=m.protected_write(*a)\n${afterPublication}\nprint(json.dumps(v))`));
-  const old = process.env.SWB_PYTHON_BIN;
+  const old = process.env.FLOW_PYTHON_BIN;
   let failure: any;
   try {
-    process.env.SWB_PYTHON_BIN = shim;
+    process.env.FLOW_PYTHON_BIN = shim;
     const producer = mode === 'complete copy' ? 'copyPng' : mode === 'complete merge' ? 'mergeVisible' : 'writePng';
     const effect = () => mode === 'complete copy' ? copyLayerPng({ folderPath: root, sourceBitmapPath: bitmapPath, targetBitmapPath: targetPath }) : mode === 'complete merge' ? mergeVisibleLayers({ folderPath: root, targetBitmapPath: targetPath, width: 2, height: 2, layers: [bitmapPath, secondBitmapPath].map(bitmapPath => ({ bitmapPath, opacity: 1, blendMode: 'normal' as const })), deleteBitmapPaths: [] }) : writeLayerPng({ folderPath: root, bitmapPath: targetPath, dataUrl: 'data:image/png;base64,' + bytes.toString('base64') });
     failure = await service.ordinary(event, 'layers:' + producer, { folderPath: root }, [target], effect).catch(error => error);
-  } finally { if (old === undefined) delete process.env.SWB_PYTHON_BIN; else process.env.SWB_PYTHON_BIN = old; }
+  } finally { if (old === undefined) delete process.env.FLOW_PYTHON_BIN; else process.env.FLOW_PYTHON_BIN = old; }
   expect(failure).toMatchObject({ effect: 'committed', filePath: target });
   if (mode.startsWith('complete')) {
     const names = await fs.readdir(path.join(userData, 'workspace-origin-v1', await originWorkspaceKey(root)));
@@ -112,14 +112,14 @@ test.each(['complete', 'complete historical', 'complete copy', 'complete merge',
   const proof = facts?.ownedStageReceipt;
   expect(facts).toMatchObject({ effect: 'committed', digest: hash(actual), retainedTemporary: failure.retainedTemporary, nativeCertification: 'refused' });
   if (mode.startsWith('complete')) {
-  expect(proof).toMatchObject({ schema: 'swb.owned-stage-publication.v1', root, target, stage: failure.retainedTemporary, bytes: { length: actual.length, digest: hash(actual) }, publication: { method: 'link', targetWasAbsent: true } });
+  expect(proof).toMatchObject({ schema: 'flow.owned-stage-publication.v1', root, target, stage: failure.retainedTemporary, bytes: { length: actual.length, digest: hash(actual) }, publication: { method: 'link', targetWasAbsent: true } });
   expect(proof.operation).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   expect(proof).toEqual(failure.ownedStageReceipt);
   expect(proof.creation).toEqual(failure.identity);
   expect(proof.stageBeforePublication).toMatchObject({ ...proof.creation, links: 1, size: actual.length, mode: 0o600, flags: 0, acl: null, xattrs: {} });
   expect(proof.targetAfterPublication).toEqual(proof.stageAfterPublication);
   expect(proof.targetAfterPublication).toMatchObject({ ...proof.creation, links: 2, size: actual.length, mode: 0o600, flags: 0, acl: null, xattrs: {} });
-  expect(proof.parents.map((p: any) => p.path)).toEqual([root, path.join(root, '.storyboard-workbench'), path.join(root, '.storyboard-workbench/layers'), path.join(root, '.storyboard-workbench/layers/s')]);
+  expect(proof.parents.map((p: any) => p.path)).toEqual([root, path.join(root, '.storyboard-flow'), path.join(root, '.storyboard-flow/layers'), path.join(root, '.storyboard-flow/layers/s')]);
   for (const parent of proof.parents) expect(parent.metadata).toMatchObject({ dev: expect.any(String), ino: expect.any(String), uid: expect.any(Number), gid: expect.any(Number), mode: expect.any(Number), flags: expect.any(Number), acl: null, xattrs: {} });
   } else {
     expect(proof).toBeUndefined();

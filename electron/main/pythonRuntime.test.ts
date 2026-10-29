@@ -10,16 +10,16 @@ describe("pythonRuntime", () => {
       pythonCommandCandidates({
         pythonPath: "/custom/python",
         platform: "win32",
-        env: { SWB_PYTHON_BIN: "/env/python" }
+        env: { FLOW_PYTHON_BIN: "/env/python" }
       }).map(describePythonCommand)
     ).toEqual(["/custom/python"]);
   });
 
-  it("uses SWB_PYTHON_BIN before platform defaults", () => {
+  it("uses FLOW_PYTHON_BIN before platform defaults", () => {
     expect(
       pythonCommandCandidates({
         platform: "win32",
-        env: { SWB_PYTHON_BIN: "/env/python" }
+        env: { FLOW_PYTHON_BIN: "/env/python" }
       }).map(describePythonCommand)
     ).toEqual(["/env/python"]);
   });
@@ -57,7 +57,7 @@ describe("pythonRuntime", () => {
   });
 
   it("falls back to the next command when the first command is unavailable", async () => {
-    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-python-runtime-"));
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "flow-python-runtime-"));
 
     try {
       const scriptPath = path.join(folderPath, "writer.mjs");
@@ -89,7 +89,7 @@ describe("pythonRuntime", () => {
   });
 
   it("reports command attempts when no candidate works", async () => {
-    const folderPath = await mkdtemp(path.join(os.tmpdir(), "swb-python-runtime-error-"));
+    const folderPath = await mkdtemp(path.join(os.tmpdir(), "flow-python-runtime-error-"));
 
     try {
       const binPath = path.join(folderPath, "bin");

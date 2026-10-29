@@ -15,7 +15,7 @@ async function fixture() {
  const blue = await sharp({create:{width:8,height:8,channels:4,background:'blue'}}).tiff({compression:'deflate'}).toBuffer();
  await fs.writeFile(path.join(root,'one.png'),original,{mode:0o600});
  const {folderPath} = await copyFolderImagesForImport(root,async()=>{});
- const shot = { id:'stable', sourceFileName:'renamed.tiff', swb:{sourcePath:path.join(folderPath,'0001-one.png')}, fileName:'renamed.tiff', imagePath:path.join(folderPath,'renamed.tiff') };
+ const shot = { id:'stable', sourceFileName:'renamed.tiff', flow:{sourcePath:path.join(folderPath,'0001-one.png')}, fileName:'renamed.tiff', imagePath:path.join(folderPath,'renamed.tiff') };
  await fs.writeFile(shot.imagePath,blue,{mode:0o600});
  return {root,folderPath,shot,original,blue,target:path.join(root,'one.png'),backup:path.join(folderPath,'.original-images/one.png')};
 }
@@ -49,7 +49,7 @@ test('count-only older projects bind by archived pixels, and pending replacement
  const f=await fixture();
  const archived=path.join(f.folderPath,'Archive','input.png');await fs.mkdir(path.dirname(archived));await fs.copyFile(path.join(f.folderPath,'0001-one.png'),archived);
  const markerPath=path.join(f.folderPath,'.source-folder.json'),marker=JSON.parse(await fs.readFile(markerPath,'utf8'));delete marker.images;await fs.writeFile(markerPath,JSON.stringify(marker));
- const shot={...f.shot,swb:{...f.shot.swb,archivePath:archived}};
+ const shot={...f.shot,flow:{...f.shot.flow,archivePath:archived}};
  await (await prepareManagedSourceSave(f.folderPath,[shot]))!([shot]);
  const ledgerPath=path.join(f.folderPath,'.source-images.json'),ledger=JSON.parse(await fs.readFile(ledgerPath,'utf8'));
  ledger.entries[0].pendingHash=ledger.entries[0].currentHash;ledger.entries[0].currentHash=hash(f.original);await fs.writeFile(ledgerPath,JSON.stringify(ledger));

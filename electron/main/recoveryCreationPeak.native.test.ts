@@ -13,7 +13,7 @@ import {createNativeAuthorizationSession} from './nativeAuthorizationSession';
 test('joint-allocated native capture preserves real source attributes and publishes a readable generation',async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'native-creation-peak-root-'));
  const userData=await fs.mkdtemp(path.join(os.tmpdir(),'native-creation-peak-data-'));
- const metadata=path.join(root,'.storyboard-workbench');await fs.mkdir(metadata,{mode:0o700});
+ const metadata=path.join(root,'.storyboard-flow');await fs.mkdir(metadata,{mode:0o700});
  const source=path.join(metadata,'source.json');await fs.writeFile(source,'{}',{mode:0o600});
  const python='python3',script=path.resolve('scripts/recovery-content-permissions.py');
  await promisify(execFile)('/usr/bin/xattr',['-w','org.storyboard.creation-peak','x'.repeat(16384),source]);

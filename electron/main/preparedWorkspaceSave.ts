@@ -53,7 +53,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   return nativeSession.request({...request,sourceByteLimit:configured().bytes});
  };
  const storeFor=(sourcePolicy:any)=>createWorkspaceRecoveryPartitions({budget:configured(),sourcePolicy,allowUnsealedStart:sourcePolicy!==undefined,accounting,authorize:async request=>{await native(request);}});
- const hasRecovery=async(root:string)=>{for(const name of ['workspace-recovery-v1','workspace-recovery-v2']){try{await fs.lstat(path.join(root,'.storyboard-workbench',name));return true;}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}return false;};
+ const hasRecovery=async(root:string)=>{for(const name of ['workspace-recovery-v1','workspace-recovery-v2']){try{await fs.lstat(path.join(root,'.storyboard-flow',name));return true;}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}return false;};
  const current=(e:Event)=>{if(!e.sender||e.senderFrame!==e.sender.mainFrame)throw new Error('Current top-frame caller required');};
  const documents=new WeakMap<object,object>();
  const documentFor=(e:Event)=>{current(e);let d=documents.get(e.sender);if(!d){d={};documents.set(e.sender,d);}return d;};
@@ -65,7 +65,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  // later arbitrary parent. Only the original admitted reader/producer may bind it.
  type Preservation={operation:string;project:any;offer:RecoveryOffer;files:Map<string,Buffer>;parents:Map<string,string>;sourcePolicy:any};
  type Observation={binding:string;sender:object;frame:object;window:object;document:object;folderPath:string;metadataPath:string;rootIdentity:string;parentIdentity:string|null;facts:any[];project?:any;preservation?:Preservation;preservationError?:string;derived?:{receipt:DerivedPreviewReceipt;policy:any;seal:string};memory?:{capture:any;files:Map<string,Buffer>;sourcePolicy:any}};
- const parentIdentityFor=async(root:string)=>{try{const parent=path.join(root,'.storyboard-workbench');if(!(await fs.lstat(parent)).isDirectory())throw new Error('Workspace metadata parent is not a directory');return await identity(parent);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;return null;}};
+ const parentIdentityFor=async(root:string)=>{try{const parent=path.join(root,'.storyboard-flow');if(!(await fs.lstat(parent)).isDirectory())throw new Error('Workspace metadata parent is not a directory');return await identity(parent);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;return null;}};
  const authenticObservation=async(e:Event,o:Observation)=>{current(e);if(o.sender!==e.sender||o.frame!==e.senderFrame||o.window!==(options.ownerFromSender?.(e.sender)??e.sender)||o.document!==documentFor(e)||o.rootIdentity!==await identity(o.folderPath)||o.parentIdentity!==await parentIdentityFor(o.folderPath))throw new Error('Observed workspace incarnation changed');};
  const observations=new Map<string,Observation>();
  // A replacement document (renderer reload) may take over a workspace only when
@@ -90,10 +90,10 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   }
   const l=leases.get(root);
   if(l){if(l.document===document)await authentic(e,l);else if(l.stage!=='completed')throw new Error('Observed workspace incarnation changed');}
-  const o:Observation={binding:randomUUID(),sender:e.sender,frame:e.senderFrame!,window,document,folderPath:root,metadataPath:path.join(root,'.storyboard-workbench/storyboard.project.json'),rootIdentity,parentIdentity,facts:[]};observations.set(o.binding,o);
+  const o:Observation={binding:randomUUID(),sender:e.sender,frame:e.senderFrame!,window,document,folderPath:root,metadataPath:path.join(root,'.storyboard-flow/storyboard.project.json'),rootIdentity,parentIdentity,facts:[]};observations.set(o.binding,o);
   return {binding:o.binding,folderPath:o.folderPath,metadataPath:o.metadataPath};
  });
- const authentic=async(e:Event,l:Lease)=>{current(e);if(e.sender!==l.sender||e.senderFrame!==l.frame||(options.ownerFromSender&&options.ownerFromSender(e.sender)!==l.window)||documentFor(e)!==l.document||await identity(l.root)!==l.rootIdentity||await identity(path.join(l.root,'.storyboard-workbench'))!==l.parentIdentity)throw new Error('Save capability caller/document/physical binding mismatch');};
+ const authentic=async(e:Event,l:Lease)=>{current(e);if(e.sender!==l.sender||e.senderFrame!==l.frame||(options.ownerFromSender&&options.ownerFromSender(e.sender)!==l.window)||documentFor(e)!==l.document||await identity(l.root)!==l.rootIdentity||await identity(path.join(l.root,'.storyboard-flow'))!==l.parentIdentity)throw new Error('Save capability caller/document/physical binding mismatch');};
  const canonicalPath=async(root:string,file:string)=>{
   if(!path.isAbsolute(file)||file!==path.normalize(file)||!file.startsWith(root+path.sep)||file.includes('\0'))throw new Error('Save dependency outside physical root');
   let cursor=file;
@@ -113,7 +113,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   if(new Set([...shots,...pending].map((s:any)=>s.id)).size!==shots.length+pending.length)throw new Error('Ambiguous shot identity');
   let count=0;
   for(const s of shots){
-   if(!Number.isSafeInteger(s.swb?.canvasWidth)||!Number.isSafeInteger(s.swb?.canvasHeight)||s.swb.canvasWidth<=0||s.swb.canvasHeight<=0||s.swb.canvasWidth*s.swb.canvasHeight>Math.floor(configured().bytes/4)||!/^[\w-]{1,80}$/.test(s.id)||s.swb?.status!=='owned'||!/^.*\.tiff?$/iu.test(s.imagePath)||!Array.isArray(s.layers)||!s.layers.length||new Set(s.layers.map((l:any)=>l.id)).size!==s.layers.length||s.sketchLayers?.some((l:any)=>l.strokes?.length)||(s.imageLayerEdits?.length??0))throw new Error('Only finite owned ordinary bitmap TIFF is prepared');
+   if(!Number.isSafeInteger(s.flow?.canvasWidth)||!Number.isSafeInteger(s.flow?.canvasHeight)||s.flow.canvasWidth<=0||s.flow.canvasHeight<=0||s.flow.canvasWidth*s.flow.canvasHeight>Math.floor(configured().bytes/4)||!/^[\w-]{1,80}$/.test(s.id)||s.flow?.status!=='owned'||!/^.*\.tiff?$/iu.test(s.imagePath)||!Array.isArray(s.layers)||!s.layers.length||new Set(s.layers.map((l:any)=>l.id)).size!==s.layers.length||s.sketchLayers?.some((l:any)=>l.strokes?.length)||(s.imageLayerEdits?.length??0))throw new Error('Only finite owned ordinary bitmap TIFF is prepared');
    count+=1+s.layers.length;
    for(const l of s.layers)if(!Number.isSafeInteger(l.width)||!Number.isSafeInteger(l.height)||l.width<=0||l.height<=0||l.width*l.height>Math.floor(configured().bytes/4)||!/^[\w-]{1,80}$/.test(l.id)||!['image','paint'].includes(l.kind)||typeof l.bitmapPath!=='string'||!l.bitmapPath.endsWith('.png'))throw new Error('Unsupported finite bitmap layer');
   }
@@ -139,14 +139,14 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const pending=p.pendingDeletedShots??[];
   if(pending.length!==deleted.length||pending.some((d:any)=>deleted.filter((s:any)=>s.id===d.id&&s.imagePath===d.imagePath&&s.fileName===d.fileName).length!==1))throw new Error('Unfinished deleted-source dependencies cannot retire');
   supported({...p,shots:dependencyShots(p,deleted),parkedShots:[],pendingDeletedShots:[]});
-  const files=[path.join(root,'.storyboard-workbench/storyboard.project.json'),path.join(root,'storyboard-script.md')];
+  const files=[path.join(root,'.storyboard-flow/storyboard.project.json'),path.join(root,'storyboard-script.md')];
   for(const s of dependencyShots(p,deleted)){const parent=path.dirname(s.imagePath),pendingPath=path.join(root,'Pending'),parked=(p.parkedShots??[]).some((v:any)=>v.id===s.id),isDeleted=pending.some((v:any)=>v.id===s.id);if(parked?parent!==pendingPath:isDeleted?parent!==root&&parent!==pendingPath:parent!==root)throw new Error('Terminal TIFF outside finite lifecycle location');files.push(s.imagePath);for(const l of s.layers){const png=path.resolve(root,l.bitmapPath);if(path.relative(root,png)!==l.bitmapPath)throw new Error('Terminal bitmap alias');files.push(png);}}
   if(new Set(files).size!==files.length)throw new Error('Terminal dependency collision');return files;
  };
  const terminalSourcePolicy=(content:any,storagePolicy:any)=>{
   const pin=content.continuationState?.terminal?.sourcePolicy;
   if(pin===undefined)return storagePolicy; // legacy keeps its stricter equality rule
-  if(pin.schema!=='swb.finite-source-policy'||pin.version!==1||!Array.isArray(pin.observed)||!pin.observed.length)throw new Error('Unknown terminal source policy');
+  if(pin.schema!=='flow.finite-source-policy'||pin.version!==1||!Array.isArray(pin.observed)||!pin.observed.length)throw new Error('Unknown terminal source policy');
   recoveryPolicyKey(pin);return pin;
  };
  // These are transferable restriction comparisons across authenticated file
@@ -175,7 +175,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    // bounded identity/ctime/name inventory, rather than decoding every historic
    // raster/native attribute on every brush or Add IPC. Unknown growth refuses.
    if(live){
-    if(live.rootIdentity!==await identity(root)||live.parentIdentity!==await identity(path.join(root,'.storyboard-workbench')))return false;
+    if(live.rootIdentity!==await identity(root)||live.parentIdentity!==await identity(path.join(root,'.storyboard-flow')))return false;
     const inventory=await inventoryFingerprint(root);
     if(live.inventory!==inventory){
      // Only this Main's authenticated resource-terminal append can rebase the
@@ -198,7 +198,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    // This proves current bytes, not historical notification, and creates no
    // executable continuation or nonce. Completed strings alone are insufficient.
    const c=state.content!,completion=(c.continuationState as any)?.terminal;
-   if((c.continuationState as any)?.stage!=='completed'||(c.effectFacts as any)?.state!=='completed-binding-persist-ack'||!completion||completion.schema!=='swb.current-terminal.v1'||!Array.isArray(completion.files))return false;
+   if((c.continuationState as any)?.stage!=='completed'||(c.effectFacts as any)?.state!=='completed-binding-persist-ack'||!completion||completion.schema!=='flow.current-terminal.v1'||!Array.isArray(completion.files))return false;
    const files=terminalPaths(root,c.projectRaw,(c.continuationState as any)?.deletedDependencies??[]);
    if(completion.files.length!==files.length)return false;
    for(let i=0;i<files.length;i++){const d=completion.files[i];if(d.file!==path.relative(root,files[i])||!/^[a-f0-9]{64}$/.test(d.digest))return false;await canonicalPath(root,files[i]);if(hash(await readExact(files[i]))!==d.digest)return false;}
@@ -207,7 +207,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    // policy is authenticated storage data, not a grant of ordinary writer authority.
    const policy=(await native({phase:'capturePolicy',sources:files})).sourcePolicy;
    if(!terminalPolicyMatches(c,storagePolicy,policy))return false;
-   retired.set(root,{rootIdentity:await identity(root),parentIdentity:await identity(path.join(root,'.storyboard-workbench')),seal:state.ack!.sealDigest,inventory:await inventoryFingerprint(root),sourcePin:cloneControlled(completion.sourcePolicy)});return true;
+   retired.set(root,{rootIdentity:await identity(root),parentIdentity:await identity(path.join(root,'.storyboard-flow')),seal:state.ack!.sealDigest,inventory:await inventoryFingerprint(root),sourcePin:cloneControlled(completion.sourcePolicy)});return true;
   }catch{return false;}
  };
  installWorkspaceRetirementPredicate(root=>withControlledMemory(memoryBudget,()=>{memoryBudget?.checkPressure();return rootRetired(root);}));
@@ -218,7 +218,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    const c=tip.continuationState;
    if(c?.stage!=='continued-editing'||!isDeepStrictEqual(reference,c.failedBase?.reference))throw new Error('Import source reference binding');
    const original=await store.readCapture(root,reference);
-   if((original.content.continuationState as any)?.stage!=='failed'||(original.content.scriptState as any)?.importSourceReference!==undefined||!isDeepStrictEqual(original.content.effectFacts,tip.effectFacts)||(original.content.scriptState as any)?.imageImportFailure?.schema!=='swb.image-import-failure.v1')throw new Error('Import source reference is not the original failure');
+   if((original.content.continuationState as any)?.stage!=='failed'||(original.content.scriptState as any)?.importSourceReference!==undefined||!isDeepStrictEqual(original.content.effectFacts,tip.effectFacts)||(original.content.scriptState as any)?.imageImportFailure?.schema!=='flow.image-import-failure.v1')throw new Error('Import source reference is not the original failure');
    for(const a of original.content.assets){if(bytes.has(a.assetId)||a.role.startsWith('continued/'))throw new Error('Import source reference asset collision');const body=original.assets.get(a.assetId);if(!body)throw new Error('Import original source bytes unavailable');descriptors.push(a);bytes.set(a.assetId,body);}
   }
   return {descriptors,bytes};
@@ -235,7 +235,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  const partialSourceInventory=async(root:string)=>{
   const files:{file:string;identity:string;digest:string}[]=[],directories:{file:string;identity:string;names:string[]}[]=[];
   const buffers=new Map<string,Buffer>();let bytes=0,records=0;
-  const namesAt=async(dir:string)=>(await fs.readdir(dir)).filter(name=>dir!==path.join(root,'.storyboard-workbench')||!['workspace-recovery-v1','workspace-recovery-v2'].includes(name)).sort();
+  const namesAt=async(dir:string)=>(await fs.readdir(dir)).filter(name=>dir!==path.join(root,'.storyboard-flow')||!['workspace-recovery-v1','workspace-recovery-v2'].includes(name)).sort();
   const visit=async(dir:string,depth:number):Promise<void>=>{
    if(depth>configured().jsonDepth||++records>configured().records)throw new Error('Partial Save inventory bound');
    if(await fs.realpath(dir)!==dir||!(await fs.lstat(dir)).isDirectory())throw new Error('Partial Save directory alias/type');
@@ -254,7 +254,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const policy=(await native({phase:'capturePolicy',sources:[...buffers.keys()]})).sourcePolicy;
   for(const [file,body] of buffers)if(!(await readExact(file)).equals(body)||await identity(file)!==files.find(v=>v.file===path.relative(root,file))!.identity)throw new Error('Partial Save source changed during certification');
   for(const dir of directories)if(await identity(path.resolve(root,dir.file))!==dir.identity||!isDeepStrictEqual(await namesAt(path.resolve(root,dir.file)),dir.names))throw new Error('Partial Save inventory changed during certification');
-  return {record:{schema:'swb.partial-save-inventory.v1',rootIdentity:await identity(root),parentIdentity:await parentIdentityFor(root),files,directories,policy},buffers};
+  return {record:{schema:'flow.partial-save-inventory.v1',rootIdentity:await identity(root),parentIdentity:await parentIdentityFor(root),files,directories,policy},buffers};
  };
  type VerifiedContinuation=Parameters<NonNullable<Parameters<ReturnType<typeof storeFor>['verifyCapturesReadonly']>[1]>>[0];
  const certifyPartialSaveContinuation=(e:Event,selector:unknown,check?:(verified:VerifiedContinuation)=>Promise<void>)=>withLayerFileOperation(async()=>{
@@ -272,10 +272,10 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    const historyContinuation=(tip.scriptState as any)?.historyContinuation;
    const failed=c?.stage==='continued-editing'?c.failedBase:c?.stage==='history-preserved'?historyContinuation:c;
    const main=(tip.effectFacts as any)?.main,importFailure=(tip.scriptState as any)?.imageImportFailure;
-   const approvedImport=importFailure?.schema==='swb.image-import-failure.v1'&&isDeepStrictEqual(main,importFailure)&&importFailure.operation===failed?.nonce&&importFailure.acknowledged===false&&importFailure.preparation?.schema==='swb.import-preparation-failure.v1'&&importFailure.preparation.code==='EEXIST'&&importFailure.preparation.syscall==='mkdir'&&importFailure.preparation.preparationStarted===false;
+   const approvedImport=importFailure?.schema==='flow.image-import-failure.v1'&&isDeepStrictEqual(main,importFailure)&&importFailure.operation===failed?.nonce&&importFailure.acknowledged===false&&importFailure.preparation?.schema==='flow.import-preparation-failure.v1'&&importFailure.preparation.code==='EEXIST'&&importFailure.preparation.syscall==='mkdir'&&importFailure.preparation.preparationStarted===false;
    const historyFacts=(tip.effectFacts as any)?.historyOperation;
-   const approvedHistory=historyContinuation?.schema==='swb.history-continuation.v1'&&uuid(historyContinuation.operation)&&historyContinuation.operation===historyFacts?.operation&&historyContinuation.nonce===historyFacts?.ordinaryNonce&&historyContinuation.acknowledged===false&&historyFacts?.acknowledged===false&&historyFacts?.invalidated===false&&historyFacts?.metadataStage==='failed'&&(tip.effectFacts as any)?.state==='history-preserved'&&historyContinuation.p1===hash(stringifyControlledJSON(historyFacts));
-   if(state.state!=='protectedReadable'||!pin||pin.schema!=='swb.partial-save-inventory.v1'||!['failed','continued-editing','history-preserved'].includes(c?.stage)||c.notExecutable!==true||!uuid(failed?.nonce)||!/^[a-f0-9]{64}$/.test(failed.p1)||!partialSaveFailure(main)&&!approvedImport&&!approvedHistory)return;
+   const approvedHistory=historyContinuation?.schema==='flow.history-continuation.v1'&&uuid(historyContinuation.operation)&&historyContinuation.operation===historyFacts?.operation&&historyContinuation.nonce===historyFacts?.ordinaryNonce&&historyContinuation.acknowledged===false&&historyFacts?.acknowledged===false&&historyFacts?.invalidated===false&&historyFacts?.metadataStage==='failed'&&(tip.effectFacts as any)?.state==='history-preserved'&&historyContinuation.p1===hash(stringifyControlledJSON(historyFacts));
+   if(state.state!=='protectedReadable'||!pin||pin.schema!=='flow.partial-save-inventory.v1'||!['failed','continued-editing','history-preserved'].includes(c?.stage)||c.notExecutable!==true||!uuid(failed?.nonce)||!/^[a-f0-9]{64}$/.test(failed.p1)||!partialSaveFailure(main)&&!approvedImport&&!approvedHistory)return;
    if(approvedImport){importProjectSupported(tip.projectRaw,importFailure.candidateProject);await continuationAssets(observed.folderPath,store,state);}
    const view=tip.viewState as any;if(!Array.isArray(view?.history?.undo)||!Array.isArray(view?.history?.redo))return;
    const currentInventory=await partialSourceInventory(observed.folderPath);
@@ -329,7 +329,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    for(const shot of dependencyShots(project)){
     const relative=path.relative(observation.folderPath,shot.imagePath);
     if(path.isAbsolute(relative)||relative.startsWith('..')||relative.split(path.sep).some(part=>['workspace-recovery-v1','workspace-recovery-v2'].includes(part)))throw new Error('Continuation logical image outside Root');
-    for(const layer of shot.layers??[])if(!/^\.storyboard-workbench\/layers\/[\w-]{1,80}\/[\w-]{1,80}\.png$/.test(layer.bitmapPath))throw new Error('Continuation logical layer outside finite domain');
+    for(const layer of shot.layers??[])if(!/^\.storyboard-flow\/layers\/[\w-]{1,80}\/[\w-]{1,80}\.png$/.test(layer.bitmapPath))throw new Error('Continuation logical layer outside finite domain');
    }
   };
   logicalPaths(p.projectRaw);
@@ -376,22 +376,22 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  const exactKeys=(v:any,required:string[],optional:string[]=[])=>!!v&&typeof v==='object'&&!Array.isArray(v)&&required.every(k=>Object.prototype.hasOwnProperty.call(v,k))&&Object.keys(v).every(k=>required.includes(k)||optional.includes(k));
  const receiptSemantics=(l:Lease,r:any)=>{
   const fail=()=>{throw new Error('Cold custody receipt/policy/origin semantics');};
-  if(!exactKeys(r,['schema','version','rootIdentity','parentIdentity','document','producer','file','identity','digest','width','height','sourcePolicy'],['originalAbsence','deletionReceipt','commitFailure'])||r.schema!=='swb.producer-png-receipt.v1'||!uuid(r.version)||!uuid(r.document)||r.rootIdentity!==l.rootIdentity||r.parentIdentity!==l.parentIdentity||!['layers:createPng','layers:writePng'].includes(r.producer)||typeof r.file!=='string'||!/^\.storyboard-workbench\/layers\/[\w-]{1,80}\/[\w-]{1,80}\.png$/.test(r.file)||!/^[a-f0-9]{64}$/.test(r.digest)||typeof r.identity!=='string'||!/^\d+:\d+$/.test(r.identity)||!Number.isSafeInteger(r.width)||!Number.isSafeInteger(r.height)||r.width<=0||r.height<=0)fail();
+  if(!exactKeys(r,['schema','version','rootIdentity','parentIdentity','document','producer','file','identity','digest','width','height','sourcePolicy'],['originalAbsence','deletionReceipt','commitFailure'])||r.schema!=='flow.producer-png-receipt.v1'||!uuid(r.version)||!uuid(r.document)||r.rootIdentity!==l.rootIdentity||r.parentIdentity!==l.parentIdentity||!['layers:createPng','layers:writePng'].includes(r.producer)||typeof r.file!=='string'||!/^\.storyboard-flow\/layers\/[\w-]{1,80}\/[\w-]{1,80}\.png$/.test(r.file)||!/^[a-f0-9]{64}$/.test(r.digest)||typeof r.identity!=='string'||!/^\d+:\d+$/.test(r.identity)||!Number.isSafeInteger(r.width)||!Number.isSafeInteger(r.height)||r.width<=0||r.height<=0)fail();
   const p=r.sourcePolicy,fields=['uid','gid','mode','flags','xattrs'];
-  if(!exactKeys(p,['schema','version','expected','observed'])||p.schema!=='swb.finite-source-policy'||p.version!==1||!exactKeys(p.expected,fields)||!Array.isArray(p.observed)||p.observed.length!==1||!Array.isArray(p.observed[0])||p.observed[0].length!==2||p.observed[0][0]!==path.resolve(l.root,r.file))fail();
+  if(!exactKeys(p,['schema','version','expected','observed'])||p.schema!=='flow.finite-source-policy'||p.version!==1||!exactKeys(p.expected,fields)||!Array.isArray(p.observed)||p.observed.length!==1||!Array.isArray(p.observed[0])||p.observed[0].length!==2||p.observed[0][0]!==path.resolve(l.root,r.file))fail();
   const n=p.observed[0][1];
   if(!exactKeys(n,['kind','reason','dev','ino','uid','gid','mode','flags','links','size','mtime_ns','ctime_ns','xattrs'])||n.kind!=='ordinary'||n.reason!==null||n.flags!==0||n.links!==1||n.mode&0o7111||n.uid!==process.getuid?.()||!['dev','ino','uid','gid','mode','flags','links','size','mtime_ns','ctime_ns'].every(k=>Number.isInteger(n[k])&&n[k]>=0)||`${n.dev}:${n.ino}`!==r.identity||!exactKeys(n.xattrs,[])&&(!n.xattrs||typeof n.xattrs!=='object'||Array.isArray(n.xattrs)))fail();
   if(!fields.every(k=>stringifyControlledJSON(n[k])===stringifyControlledJSON(p.expected[k])))fail();
   for(const [key,value] of Object.entries(n.xattrs)){if(typeof value!=='string'||decodeControlledBase64(key).toString('base64')!==key||decodeControlledBase64(value).toString('base64')!==value||!decodeControlledBase64(key).length||decodeControlledBase64(key).includes(0))fail();}
   restrictCustody(l,p);
   if(r.originalAbsence!==undefined){const a=r.originalAbsence;
-   if(!exactKeys(a,['schema','version','document','rootIdentity','parentIdentity','file','project','shotId','layerId'])||r.producer!=='layers:createPng'||a.schema!=='swb.exclusive-original-absence.v1'||a.version!==r.version||a.document!==r.document||a.rootIdentity!==l.rootIdentity||a.parentIdentity!==l.parentIdentity||a.file!==r.file||a.file!==`.storyboard-workbench/layers/${a.shotId}/${a.layerId}.png`)fail();
+   if(!exactKeys(a,['schema','version','document','rootIdentity','parentIdentity','file','project','shotId','layerId'])||r.producer!=='layers:createPng'||a.schema!=='flow.exclusive-original-absence.v1'||a.version!==r.version||a.document!==r.document||a.rootIdentity!==l.rootIdentity||a.parentIdentity!==l.parentIdentity||a.file!==r.file||a.file!==`.storyboard-flow/layers/${a.shotId}/${a.layerId}.png`)fail();
    supported(a.project);const s=dependencyShots(a.project).find((s:any)=>s.id===a.shotId);
-   if(!s||a.project.id!==(l.offer.projectRaw as any).id||s.swb.canvasWidth!==r.width||s.swb.canvasHeight!==r.height||dependencyShots(a.project).some((s:any)=>s.layers.some((v:any)=>v.id===a.layerId||v.bitmapPath===a.file)))fail();
+   if(!s||a.project.id!==(l.offer.projectRaw as any).id||s.flow.canvasWidth!==r.width||s.flow.canvasHeight!==r.height||dependencyShots(a.project).some((s:any)=>s.layers.some((v:any)=>v.id===a.layerId||v.bitmapPath===a.file)))fail();
   }
   if(r.deletionReceipt!==undefined){const d=r.deletionReceipt;
    // Its historical document is an origin fact, not the fresh reader's authority.
-   if(!exactKeys(d,['schema','version','digest','file','rootIdentity','parentIdentity','document'])||d.schema!=='swb.producer-deleted-version.v1'||d.version!==r.version||d.digest!==r.digest||d.file!==r.file||d.rootIdentity!==l.rootIdentity||d.parentIdentity!==l.parentIdentity||!uuid(d.document))fail();
+   if(!exactKeys(d,['schema','version','digest','file','rootIdentity','parentIdentity','document'])||d.schema!=='flow.producer-deleted-version.v1'||d.version!==r.version||d.digest!==r.digest||d.file!==r.file||d.rootIdentity!==l.rootIdentity||d.parentIdentity!==l.parentIdentity||!uuid(d.document))fail();
   }
   if(r.commitFailure!==undefined){const f=r.commitFailure;if(!exactKeys(f,['effect','retainedTemporary','warnings'])||f.effect!=='committed'||f.retainedTemporary!==null&&typeof f.retainedTemporary!=='string'||!Array.isArray(f.warnings)||f.warnings.some((w:any)=>typeof w!=='string'))fail();}
  };
@@ -406,7 +406,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   try{const {store,state}=await readState(l.root),c=state.content!,record=(c.scriptState as any)?.producerCustody;
    if(record===undefined&&c.assets.some(a=>a.role.startsWith('custody/')))throw new Error('Cold custody record inventory omitted');
    if(record!==undefined){
-    if(state.state!=='protectedReadable'||!exactKeys(record,['schema','rootIdentity','parentIdentity','records','current'])||record.schema!=='swb.producer-png-custody.v1'||record.rootIdentity!==l.rootIdentity||record.parentIdentity!==l.parentIdentity||!Array.isArray(record.records)||!record.current||typeof record.current!=='object'||Array.isArray(record.current)||record.records.length>configured().records)throw new Error('Cold producer custody association');
+    if(state.state!=='protectedReadable'||!exactKeys(record,['schema','rootIdentity','parentIdentity','records','current'])||record.schema!=='flow.producer-png-custody.v1'||record.rootIdentity!==l.rootIdentity||record.parentIdentity!==l.parentIdentity||!Array.isArray(record.records)||!record.current||typeof record.current!=='object'||Array.isArray(record.current)||record.records.length>configured().records)throw new Error('Cold producer custody association');
     const bytes=await store.readAssets(l.root,state.ack!.generationId);
     for(const r of record.records){
      receiptSemantics(l,r);
@@ -426,7 +426,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  };
  const restrictCustody=(l:Lease,policy:any)=>{
   const expected=l.sourcePolicy.expected,actual=policy?.expected;
-  if(policy?.schema!=='swb.finite-source-policy'||policy.version!==1||!Array.isArray(policy.observed)||policy.observed.length!==1||!actual||Object.keys(expected).some(k=>k==='mode'?(expected.mode&actual.mode)!==expected.mode: stringifyControlledJSON(inheritedRecoveryRestrictions(expected)[k])!==stringifyControlledJSON(inheritedRecoveryRestrictions(actual)[k])))throw new Error('Producer source restrictions conflict with immutable storage policy');
+  if(policy?.schema!=='flow.finite-source-policy'||policy.version!==1||!Array.isArray(policy.observed)||policy.observed.length!==1||!actual||Object.keys(expected).some(k=>k==='mode'?(expected.mode&actual.mode)!==expected.mode: stringifyControlledJSON(inheritedRecoveryRestrictions(expected)[k])!==stringifyControlledJSON(inheritedRecoveryRestrictions(actual)[k])))throw new Error('Producer source restrictions conflict with immutable storage policy');
  };
  const currentCustody=async(l:Lease,file:string,value:Custody)=>{
   await canonicalPath(l.root,file);const rel=path.relative(l.root,file),s=value.current[rel];if(!s)return;
@@ -439,7 +439,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const value=await custodyFor(l);if(!value.records.length)return offer;
   if(value.records.length>configured().records||value.assets.length>configured().assets)throw new Error('Producer custody finite budget');
   const assets=[...offer.assets.filter(a=>!a.role.startsWith('custody/')),...value.assets.map(a=>({...a,bytes:copyControlledBuffer(a.bytes)}))];
-  return {...offer,scriptState:{...offer.scriptState as object,producerCustody:{schema:'swb.producer-png-custody.v1',rootIdentity:l.rootIdentity,parentIdentity:l.parentIdentity,records:cloneControlled(value.records),current:cloneControlled(value.current)}},assets,requiredAssetIds:assets.map(a=>a.assetId)};
+  return {...offer,scriptState:{...offer.scriptState as object,producerCustody:{schema:'flow.producer-png-custody.v1',rootIdentity:l.rootIdentity,parentIdentity:l.parentIdentity,records:cloneControlled(value.records),current:cloneControlled(value.current)}},assets,requiredAssetIds:assets.map(a=>a.assetId)};
  };
  const producerEffects=(e:Event,l:Lease,channel:string,physicalOnly=false)=>{
   const authenticate=()=>physicalOnly?historyPhysical({lease:l} as HOperation):authentic(e,l);
@@ -466,7 +466,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   beforeWrite:async(file:string)=>{await authenticate();const value=await custodyFor(l);await currentCustody(l,file,value);},
   written:async(receipt:ProducerPngReceipt)=>{
    await authenticate();const file=receipt.filePath,rel=path.relative(l.root,file);
-   if(!rel.startsWith('.storyboard-workbench/layers/')||!rel.endsWith('.png'))return;
+   if(!rel.startsWith('.storyboard-flow/layers/')||!rel.endsWith('.png'))return;
    if(receipt.commitFailure){
     // Failed fresh publication may leave target+owned staging hardlinked. It is
     // not ordinary/native-authorized custody. Pin the genuine committed B as an
@@ -477,7 +477,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
     const version=randomUUID(),asset=await raster(b,'failed-custody/'+version,'failed_custody_'+version);
     let nativeCertification='certified',nativeError:unknown;
     try{restrictCustody(l,(await native({phase:'capturePolicy',sources:[file]})).sourcePolicy);}catch(error){nativeCertification='refused';nativeError=error;}
-    const failure={schema:'swb.failed-producer-commit.v1',version,file:rel,identity:physical,digest:hash(b),width:asset.width,height:asset.height,...receipt.commitFailure,nativeCertification,nativeError:nativeError===undefined?null:String(nativeError)};
+    const failure={schema:'flow.failed-producer-commit.v1',version,file:rel,identity:physical,digest:hash(b),width:asset.width,height:asset.height,...receipt.commitFailure,nativeCertification,nativeError:nativeError===undefined?null:String(nativeError)};
     const offer:RecoveryOffer={...l.offer,revision:`producer-commit-failed:${version}`,assets:[...l.offer.assets,asset],requiredAssetIds:[...l.offer.requiredAssetIds,asset.assetId],effectFacts:{state:'ordinary-failed',owner:l.offer.effectFacts,producerCommitFailure:failure},continuationState:{stage:'ordinary-failed',notExecutable:true}};
     l.offer=offer;l.facts=failure;
     const original=receipt.commitFailure.ownedStageReceipt;
@@ -512,12 +512,12 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    const again=(await native({phase:'capturePolicy',sources:[file]})).sourcePolicy;
    if(stringifyControlledJSON(again)!==stringifyControlledJSON(policy)||await identity(file)!==before||!(await readExact(file)).equals(b))throw new Error('Producer changed during native receipt capture');
    let document=documentIds.get(l.document);if(!document){document=randomUUID();documentIds.set(l.document,document);}
-   const version=randomUUID(),record={schema:'swb.producer-png-receipt.v1',version,rootIdentity:l.rootIdentity,parentIdentity:l.parentIdentity,document,producer:channel,file:rel,identity:before,digest:hash(b),width:a.width,height:a.height,sourcePolicy:policy};
+   const version=randomUUID(),record={schema:'flow.producer-png-receipt.v1',version,rootIdentity:l.rootIdentity,parentIdentity:l.parentIdentity,document,producer:channel,file:rel,identity:before,digest:hash(b),width:a.width,height:a.height,sourcePolicy:policy};
    if(receipt.kind==='created'&&receipt.originalAbsence){
     const origin=receipt.originalAbsence,project=origin.project as any; supported(project);
     const shot=dependencyShots(project).find((s:any)=>s.id===origin.shotId);
-    if(!shot||dependencyShots(project).some((s:any)=>s.layers.some((a:any)=>a.id===origin.layerId||a.bitmapPath===rel))||rel!==`.storyboard-workbench/layers/${origin.shotId}/${origin.layerId}.png`)throw new Error('Original exclusive absence descriptor mismatch');
-    Object.assign(record,{originalAbsence:{schema:'swb.exclusive-original-absence.v1',version,document,rootIdentity:l.rootIdentity,parentIdentity:l.parentIdentity,file:rel,project:cloneControlled(project),shotId:origin.shotId,layerId:origin.layerId}});
+    if(!shot||dependencyShots(project).some((s:any)=>s.layers.some((a:any)=>a.id===origin.layerId||a.bitmapPath===rel))||rel!==`.storyboard-flow/layers/${origin.shotId}/${origin.layerId}.png`)throw new Error('Original exclusive absence descriptor mismatch');
+    Object.assign(record,{originalAbsence:{schema:'flow.exclusive-original-absence.v1',version,document,rootIdentity:l.rootIdentity,parentIdentity:l.parentIdentity,file:rel,project:cloneControlled(project),shotId:origin.shotId,layerId:origin.layerId}});
    }
    value.records.push(record);value.current[rel]={version,state:'present'};value.assets.push({...a,assetId:`custody_${version}`,role:`custody/${version}`});
    // Keep the genuine unsettled ordinary fact; this durable receipt is not ACK.
@@ -529,7 +529,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    try{await fs.lstat(file);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;
     const record=value.records.find(r=>r.version===s.version&&r.file===path.relative(l.root,file));if(!record)throw new Error('Deleted producer version missing');
     let document=documentIds.get(l.document);if(!document){document=randomUUID();documentIds.set(l.document,document);}
-    record.deletionReceipt={schema:'swb.producer-deleted-version.v1',version:record.version,digest:record.digest,file:record.file,rootIdentity:l.rootIdentity,parentIdentity:l.parentIdentity,document};
+    record.deletionReceipt={schema:'flow.producer-deleted-version.v1',version:record.version,digest:record.digest,file:record.file,rootIdentity:l.rootIdentity,parentIdentity:l.parentIdentity,document};
     s.state='deleted';await retainExact(l,l.offer);await authenticate();return;}throw new Error('Original producer deletion did not settle');
   }
  });};
@@ -543,9 +543,9 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   if(!value.current[rel])return false;
   return value.records.some(r=>{
    const a=r.originalAbsence,d=r.deletionReceipt;
-   if(!a||!d||a.schema!=='swb.exclusive-original-absence.v1'||d.schema!=='swb.producer-deleted-version.v1'||r.producer!=='layers:createPng'||a.version!==r.version||d.version!==r.version||d.digest!==r.digest||a.document!==r.document||a.rootIdentity!==l.rootIdentity||a.parentIdentity!==l.parentIdentity||d.rootIdentity!==l.rootIdentity||d.parentIdentity!==l.parentIdentity||a.file!==rel||d.file!==rel||r.file!==rel||a.project.id!==project.id)return false;
+   if(!a||!d||a.schema!=='flow.exclusive-original-absence.v1'||d.schema!=='flow.producer-deleted-version.v1'||r.producer!=='layers:createPng'||a.version!==r.version||d.version!==r.version||d.digest!==r.digest||a.document!==r.document||a.rootIdentity!==l.rootIdentity||a.parentIdentity!==l.parentIdentity||d.rootIdentity!==l.rootIdentity||d.parentIdentity!==l.parentIdentity||a.file!==rel||d.file!==rel||r.file!==rel||a.project.id!==project.id)return false;
    const original=dependencyShots(a.project).find((s:any)=>s.id===a.shotId),historic=dependencyShots(project).find((s:any)=>s.id===a.shotId);
-   return !!original&&!!historic&&original.imagePath===historic.imagePath&&original.swb.canvasWidth===historic.swb.canvasWidth&&original.swb.canvasHeight===historic.swb.canvasHeight&&rel===`.storyboard-workbench/layers/${a.shotId}/${a.layerId}.png`&&
+   return !!original&&!!historic&&original.imagePath===historic.imagePath&&original.flow.canvasWidth===historic.flow.canvasWidth&&original.flow.canvasHeight===historic.flow.canvasHeight&&rel===`.storyboard-flow/layers/${a.shotId}/${a.layerId}.png`&&
     !dependencyShots(a.project).some((s:any)=>s.layers.some((v:any)=>v.id===a.layerId||v.bitmapPath===rel))&&!dependencyShots(project).some((s:any)=>s.layers.some((v:any)=>v.id===a.layerId||v.bitmapPath===rel))&&value.assets.some(v=>v.role===`custody/${r.version}`&&hash(v.bytes)===r.digest);
   });
  };
@@ -572,7 +572,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  };
  const captureCurrentAssets=async(root:string,p:any,deleted:any[]=[],capturedFiles?:ReadonlyMap<string,{bytes:Buffer}>,reuseAssets:readonly RecoveryOffer['assets'][number][] = [])=>{
   terminalPaths(root,p,deleted);const assets:RecoveryOffer['assets']=[];
-  for(const s of dependencyShots(p,deleted))for(const d of [{file:s.imagePath,role:`original/${s.id}/base`,width:s.swb.canvasWidth,height:s.swb.canvasHeight},...s.layers.map((v:any)=>({file:path.resolve(root,v.bitmapPath),role:`original/${s.id}/${v.id}`,width:v.width,height:v.height}))]){await canonicalPath(root,d.file);const bytes=capturedFiles?capturedFiles.get(d.file)?.bytes:await readExact(d.file);if(!bytes)throw new Error('Missing captured raster dependency');const a=await raster(bytes,d.role,`asset_${assets.length}`);if(a.width!==d.width||a.height!==d.height)throw new Error('Current ordinary raster dimensions');const retained=reuseAssets.find(v=>v.assetId===a.assetId&&v.role===a.role);if(retained&&Buffer.compare(retained.bytes,a.bytes)===0)a.bytes=retained.bytes;assets.push(a);}
+  for(const s of dependencyShots(p,deleted))for(const d of [{file:s.imagePath,role:`original/${s.id}/base`,width:s.flow.canvasWidth,height:s.flow.canvasHeight},...s.layers.map((v:any)=>({file:path.resolve(root,v.bitmapPath),role:`original/${s.id}/${v.id}`,width:v.width,height:v.height}))]){await canonicalPath(root,d.file);const bytes=capturedFiles?capturedFiles.get(d.file)?.bytes:await readExact(d.file);if(!bytes)throw new Error('Missing captured raster dependency');const a=await raster(bytes,d.role,`asset_${assets.length}`);if(a.width!==d.width||a.height!==d.height)throw new Error('Current ordinary raster dimensions');const retained=reuseAssets.find(v=>v.assetId===a.assetId&&v.role===a.role);if(retained&&Buffer.compare(retained.bytes,a.bytes)===0)a.bytes=retained.bytes;assets.push(a);}
   return assets;
  };
  const protectedRoots=async(targets:readonly string[])=>{
@@ -590,7 +590,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const {store,state,storagePolicy}=await readState(root),c=state.content!;
   const bytes=await store.readAssets(root,state.ack!.generationId),assets=c.assets.map(a=>({...a,bytes:bytes.get(a.assetId)!}));
   const window=options.ownerFromSender?.(e.sender)??e.sender;if(!window)throw new Error('Actual ordinary window unavailable');
-  l={sender:e.sender,frame:e.senderFrame!,window,document:documentFor(e),root,rootIdentity:await identity(root),parentIdentity:await identity(path.join(root,'.storyboard-workbench')),nonce:randomUUID(),p1:hash(stringifyControlledJSON(c.projectRaw)),stage:'completed',sourcePolicy:storagePolicy,sourceAuthorityPolicy:terminalSourcePolicy(c,storagePolicy),offer:{...c,assets,requiredAssetIds:assets.map(a=>a.assetId)},facts:{},result:{project:c.projectRaw},latestSeal:state.ack!.sealDigest};
+  l={sender:e.sender,frame:e.senderFrame!,window,document:documentFor(e),root,rootIdentity:await identity(root),parentIdentity:await identity(path.join(root,'.storyboard-flow')),nonce:randomUUID(),p1:hash(stringifyControlledJSON(c.projectRaw)),stage:'completed',sourcePolicy:storagePolicy,sourceAuthorityPolicy:terminalSourcePolicy(c,storagePolicy),offer:{...c,assets,requiredAssetIds:assets.map(a=>a.assetId)},facts:{},result:{project:c.projectRaw},latestSeal:state.ack!.sealDigest};
   leases.set(root,l);return l;
  };
 
@@ -630,14 +630,14 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  const historyErrorFacts=(error:unknown)=>{const e=error as any;return JSON.parse(stringifyControlledJSON({message:String(error),effect:e?.effect,retainedTemporary:e?.retainedTemporary,identity:e?.identity,warnings:e?.warnings,receiptError:e?.receiptError===undefined?undefined:String(e.receiptError)}));};
  const verifyHistoryBefore=async(o:HOperation,bindingPersisted=false)=>{
   await historyPhysical(o);
-  for(const [file,before] of o.inventory){if(bindingPersisted&&[path.join(o.lease.root,'.storyboard-workbench/storyboard.project.json'),path.join(o.lease.root,'storyboard-script.md')].includes(file))continue;const now=await historyVersion(o.lease,file),a=o.assets.find(a=>a.file===file);
+  for(const [file,before] of o.inventory){if(bindingPersisted&&[path.join(o.lease.root,'.storyboard-flow/storyboard.project.json'),path.join(o.lease.root,'storyboard-script.md')].includes(file))continue;const now=await historyVersion(o.lease,file),a=o.assets.find(a=>a.file===file);
    if(a?.started){if(before.bytes===null?now.bytes!==null:now.bytes===null||!now.bytes.equals(before.bytes))throw new Error('History compensation before bytes/absence mismatch');
     if(!a.after||!sameHVersion(now,a.after))throw new Error('History compensated native identity changed');
    }else if(!sameHVersion(now,before))throw new Error('History untouched before version changed');
   }
  };
  const retainHistoryFailure=async(o:HOperation)=>{
-  const l=o.lease,facts={schema:'swb.history-operation-failure.v1',operation:o.id,project:o.project,assets:historyFacts(o),invalidated:o.invalidated};
+  const l=o.lease,facts={schema:'flow.history-operation-failure.v1',operation:o.id,project:o.project,assets:historyFacts(o),invalidated:o.invalidated};
   await historyPhysical(o);const present:string[]=[];
   for(const file of o.inventory.keys())if((await historyVersion(l,file)).bytes!==null)present.push(file);
   const currentPolicy=(await native({phase:'capturePolicy',sources:present})).sourcePolicy;
@@ -679,10 +679,10 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   supported(p.project);supported(p.targetProject);
   if(p.project.id!==p.targetProject.id||!Array.isArray(p.assets)||!p.assets.length||p.assets.length>configured().assets||new Set(p.assets.map((a:any)=>a.bitmapPath)).size!==p.assets.length)throw new Error('History finite inventory required');
   const paths=new Set([...terminalPaths(root,p.project),...terminalPaths(root,p.targetProject)]);
-  for(const a of p.assets){const file=path.resolve(root,a.bitmapPath);if(path.relative(root,file)!==a.bitmapPath||!a.bitmapPath.startsWith('.storyboard-workbench/layers/')||!a.bitmapPath.endsWith('.png')||!paths.has(file))throw new Error('History asset outside source/target inventory');}
+  for(const a of p.assets){const file=path.resolve(root,a.bitmapPath);if(path.relative(root,file)!==a.bitmapPath||!a.bitmapPath.startsWith('.storyboard-flow/layers/')||!a.bitmapPath.endsWith('.png')||!paths.has(file))throw new Error('History asset outside source/target inventory');}
   if(!await rootRetired(root))throw new Error('History Root not retired');
   const l=await ordinaryLease(e,root);await authentic(e,l);
-  const sourceShape=(p:any)=>dependencyShots(p).map((s:any)=>[s.id,s.imagePath,s.fileName,s.swb?.canvasWidth,s.swb?.canvasHeight,s.layers.map((a:any)=>[a.id,a.kind,a.bitmapPath,a.width,a.height])]);
+  const sourceShape=(p:any)=>dependencyShots(p).map((s:any)=>[s.id,s.imagePath,s.fileName,s.flow?.canvasWidth,s.flow?.canvasHeight,s.layers.map((a:any)=>[a.id,a.kind,a.bitmapPath,a.width,a.height])]);
   if(p.project.id!==l.result.project.id||stringifyControlledJSON(sourceShape(p.project))!==stringifyControlledJSON(sourceShape(l.result.project)))throw new Error('History original Project source inventory mismatch');
   const custody=await custodyFor(l),known=new Set([...terminalPaths(root,l.result.project),...l.sourcePolicy.observed.map((v:any)=>v[0]),...custody.records.map(v=>path.resolve(root,v.file))]);
   for(const file of paths)if(!known.has(file)&&file!==path.join(root,'storyboard-script.md'))throw new Error('History target inventory lacks authenticated provenance');
@@ -721,11 +721,11 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const o=historyByRoot.get(root);if(!o)return;
   await authentic(e,o.lease);if(o.invalidated||o.preserved)throw new Error('History original document cannot persist');
   if(o.state==='restored'){await verifyHistoryBefore(o,ordinaryFacts.get(root)?.stage==='persisted');
-   const shape=(p:any)=>dependencyShots(p).map((s:any)=>[s.id,s.imagePath,s.fileName,s.swb,s.layers]);
+   const shape=(p:any)=>dependencyShots(p).map((s:any)=>[s.id,s.imagePath,s.fileName,s.flow,s.layers]);
    if(project.id!==o.project.id||stringifyControlledJSON(shape(project))!==stringifyControlledJSON(shape(o.project)))throw new Error('History compensation original source Project mismatch');
   }else{
    if(o.state!=='active'||o.next!==o.assets.length)throw new Error('History effects not fully settled');
-   const shape=(p:any)=>dependencyShots(p).map((s:any)=>[s.id,s.imagePath,s.fileName,s.swb?.canvasWidth,s.swb?.canvasHeight,s.layers.map((a:any)=>[a.id,a.kind,a.bitmapPath,a.width,a.height])]);
+   const shape=(p:any)=>dependencyShots(p).map((s:any)=>[s.id,s.imagePath,s.fileName,s.flow?.canvasWidth,s.flow?.canvasHeight,s.layers.map((a:any)=>[a.id,a.kind,a.bitmapPath,a.width,a.height])]);
    if(project.id!==o.targetProject.id||stringifyControlledJSON(shape(project))!==stringifyControlledJSON(shape(o.targetProject)))throw new Error('History successful original target Project mismatch');
   }
  };
@@ -755,7 +755,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   for(const [file,b] of files)if(!paths.includes(file)&&/\.(png|tiff?)$/iu.test(file))assets.push(await raster(b,'ordinary-source/'+assets.length,'ordinary_source_'+assets.length));
   const sourceInventory=[...files].map(([file,b])=>({file:path.relative(o.folderPath,file),digest:hash(b),source:sourcePolicy.observed.find((v:any)=>v[0]===file),...(/\.(json|md)$/iu.test(file)?{bytes:b.toString('base64')}:{})}));
   await authenticObservation(e,o);
-  o.preservation={operation,project:cloneControlled(project),files,parents,sourcePolicy,offer:{revision:'ordinary-observed:'+operation,projectRaw:project,viewState:{},scriptState:{ordinaryPreservation:{schema:'swb.ordinary-source-inventory.v1',operation,sourceInventory,parents:[...parents].map(([dir,physical])=>({dir:path.relative(o.folderPath,dir),identity:physical}))},original:{metadataPath:o.metadataPath,metadataBytes:metadataBytes.toString('base64'),scriptPath:path.join(o.folderPath,'storyboard-script.md'),scriptBytes:files.get(path.join(o.folderPath,'storyboard-script.md'))!.toString('base64'),sourcePolicy}},effectFacts:{state:'ordinary-observed',operation},continuationState:{stage:'ordinary-observed',notExecutable:true},assets,requiredAssetIds:assets.map(a=>a.assetId)}};
+  o.preservation={operation,project:cloneControlled(project),files,parents,sourcePolicy,offer:{revision:'ordinary-observed:'+operation,projectRaw:project,viewState:{},scriptState:{ordinaryPreservation:{schema:'flow.ordinary-source-inventory.v1',operation,sourceInventory,parents:[...parents].map(([dir,physical])=>({dir:path.relative(o.folderPath,dir),identity:physical}))},original:{metadataPath:o.metadataPath,metadataBytes:metadataBytes.toString('base64'),scriptPath:path.join(o.folderPath,'storyboard-script.md'),scriptBytes:files.get(path.join(o.folderPath,'storyboard-script.md'))!.toString('base64'),sourcePolicy}},effectFacts:{state:'ordinary-observed',operation},continuationState:{stage:'ordinary-observed',notExecutable:true},assets,requiredAssetIds:assets.map(a=>a.assetId)}};
  };
  const verifyOrdinaryBefore=async(e:Event,l:Lease,before:OrdinaryBefore)=>{
   await authentic(e,l);
@@ -772,7 +772,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const policy=(await native({phase:'capturePolicy',sources:paths})).sourcePolicy;
   const before={offer:cloneControlled(l.offer),project:cloneControlled(l.result.project),files,parents,policy};
   const original=(before.offer.scriptState as any)?.original;
-  if(!original||!decodeControlledBase64(original.metadataBytes).equals(files.get(path.join(l.root,'.storyboard-workbench/storyboard.project.json'))!.bytes)||!decodeControlledBase64(original.scriptBytes).equals(files.get(path.join(l.root,'storyboard-script.md'))!.bytes))throw new Error('Ordinary before binding bytes changed');
+  if(!original||!decodeControlledBase64(original.metadataBytes).equals(files.get(path.join(l.root,'.storyboard-flow/storyboard.project.json'))!.bytes)||!decodeControlledBase64(original.scriptBytes).equals(files.get(path.join(l.root,'storyboard-script.md'))!.bytes))throw new Error('Ordinary before binding bytes changed');
   // Validate the already captured file versions without allocating a second
   // complete copy of the project. verifyOrdinaryBefore still re-reads every
   // file and authenticates identities, bytes and native policy before effects.
@@ -809,7 +809,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
     // Binding was consumed at the original mkdir receipt, not by later existence.
     await authenticObservation(e,o);
    }};
-   try{const result=await withWorkspaceInitialization(observed.filter(o=>o.parentIdentity===null).map(o=>({parent:path.join(o.folderPath,'.storyboard-workbench'),created:async()=>{if(o.rootIdentity!==await identity(o.folderPath))throw new Error('Observed workspace incarnation changed');if(o.parentIdentity!==null)throw new Error('Observed parent creator receipt repeated');o.parentIdentity=await identity(path.join(o.folderPath,'.storyboard-workbench'));await authenticObservation(e,o);}})),execute);await finalize();for(const {o,fact} of facts){fact.state=result?.ok===false||result?.recoveryIncomplete?'failed':'settled';if(result?.project)o.project=cloneControlled(result.project);if(channel==='workspace:autosave'&&payload?.project)o.project=cloneControlled(payload.project);}if(options.automaticCheckpoints&&channel==='workspace:autosave'&&payload?.project?.shots?.every((shot:any)=>shot.swb?.status==='owned'))for(const {o,fact} of facts)if(fact.state==='settled')await checkpointEditable(e,o);return result;}
+   try{const result=await withWorkspaceInitialization(observed.filter(o=>o.parentIdentity===null).map(o=>({parent:path.join(o.folderPath,'.storyboard-flow'),created:async()=>{if(o.rootIdentity!==await identity(o.folderPath))throw new Error('Observed workspace incarnation changed');if(o.parentIdentity!==null)throw new Error('Observed parent creator receipt repeated');o.parentIdentity=await identity(path.join(o.folderPath,'.storyboard-flow'));await authenticObservation(e,o);}})),execute);await finalize();for(const {o,fact} of facts){fact.state=result?.ok===false||result?.recoveryIncomplete?'failed':'settled';if(result?.project)o.project=cloneControlled(result.project);if(channel==='workspace:autosave'&&payload?.project)o.project=cloneControlled(payload.project);}if(options.automaticCheckpoints&&channel==='workspace:autosave'&&payload?.project?.shots?.every((shot:any)=>shot.flow?.status==='owned'))for(const {o,fact} of facts)if(fact.state==='settled')await checkpointEditable(e,o);return result;}
    catch(error){
     for(const {fact} of facts){fact.state='failed';fact.error=String(error);fact.failure=historyErrorFacts(error);fact.nativeRefusal=error instanceof ProtectedLayerWriteError&&error.effect==='refused'&&error.retainedTemporary===null&&targets.includes(error.filePath);}
     // A real producer failure and a changed document/physical binding are two
@@ -836,7 +836,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    try{const result=await withDerivedPreviewReceipt(async receipt=>{
     if(channel!=='workspace:openFolderByPath'||receipt.root!==root)throw new Error('Derived preview outside actual reader');
     const {state}=await readState(root),tip=state.content!,terminal=(tip.continuationState as any)?.terminal;
-    if(state.state!=='protectedReadable'||!terminal||terminal.schema!=='swb.current-terminal.v1'||stringifyControlledJSON(recoveryProjectAbsence(receipt.original))!==stringifyControlledJSON(recoveryProjectAbsence(tip.projectRaw)))throw new Error('Derived preview original current terminal mismatch');
+    if(state.state!=='protectedReadable'||!terminal||terminal.schema!=='flow.current-terminal.v1'||stringifyControlledJSON(recoveryProjectAbsence(receipt.original))!==stringifyControlledJSON(recoveryProjectAbsence(tip.projectRaw)))throw new Error('Derived preview original current terminal mismatch');
     for(const image of receipt.images){if(!terminal.files.some((f:any)=>f.file===path.relative(root,image.source)&&f.digest===image.sourceDigest))throw new Error('Derived preview terminal source mismatch');await canonicalPath(root,image.preview);if(hash(await readExact(image.preview))!==image.previewDigest)throw new Error('Derived preview receipt changed');}
     const policy=(await native({phase:'captureMemoryPolicy',sources:receipt.images.flatMap(i=>[i.source,i.preview])})).sourcePolicy;
     for(const {o} of facts){await authenticObservation(e,o);o.derived={receipt:cloneControlled(receipt),policy,seal:state.ack!.sealDigest};}
@@ -852,10 +852,10 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    }
    catch(error){for(const {fact} of facts){fact.state='failed';fact.error=String(error);}throw error;}
   }
-  for(const target of targets){if(target!==root&&!target.startsWith(root+path.sep))throw new Error('Ordinary destination outside exact Root');if(['/workspace-recovery-v1','/workspace-recovery-v2'].some(name=>target.includes(name)))throw new Error('Ordinary recovery-namespace target refused');await canonicalPath(root,target===root?path.join(root,'.storyboard-workbench'):target);}
+  for(const target of targets){if(target!==root&&!target.startsWith(root+path.sep))throw new Error('Ordinary destination outside exact Root');if(['/workspace-recovery-v1','/workspace-recovery-v2'].some(name=>target.includes(name)))throw new Error('Ordinary recovery-namespace target refused');await canonicalPath(root,target===root?path.join(root,'.storyboard-flow'):target);}
   const historyOperation=historyByRoot.get(root);
   if(historyOperation&&channel!=='workspace:autosave')throw new Error('History operation excludes ordinary producers');
-  if(channel==='workspace:autosave'){if(payload.folderPath!==root||payload.metadataPath!==path.join(root,'.storyboard-workbench/storyboard.project.json'))throw new Error('Ordinary persist binding mismatch');supported(payload.project);await historyPersistence(e,root,payload.project);}
+  if(channel==='workspace:autosave'){if(payload.folderPath!==root||payload.metadataPath!==path.join(root,'.storyboard-flow/storyboard.project.json'))throw new Error('Ordinary persist binding mismatch');supported(payload.project);await historyPersistence(e,root,payload.project);}
   let fact=ordinaryFacts.get(root);
   if(fact){await authentic(e,fact.lease);if(fact.stage!=='pending'&&!(channel==='workspace:autosave'&&historyOperation?.state==='restored'&&fact.stage==='failed'))throw new Error('Ordinary producer failed or awaiting exact ACK; Root protected');}
   else{
@@ -868,7 +868,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
     // or authorizing a legacy fast path from this observation.
     fact.sourcePin??=policy;
     const assets=await captureCurrentAssets(root,l.result.project,deleted,undefined,l.offer.assets);
-    const offer:RecoveryOffer={...l.offer,assets,requiredAssetIds:assets.map(a=>a.assetId),scriptState:{original:{...(l.offer.scriptState as any).original,metadataBytes:(await readExact(path.join(root,'.storyboard-workbench/storyboard.project.json'))).toString('base64'),scriptBytes:(await readExact(path.join(root,'storyboard-script.md'))).toString('base64'),sourcePolicy:policy}},revision:`ordinary-started:${fact.nonce}`,projectRaw:l.result.project,effectFacts:{state:'ordinary-unsettled',channels:[channel]},continuationState:{stage:'ordinary-unsettled',notExecutable:true,deletedDependencies:deleted}};
+    const offer:RecoveryOffer={...l.offer,assets,requiredAssetIds:assets.map(a=>a.assetId),scriptState:{original:{...(l.offer.scriptState as any).original,metadataBytes:(await readExact(path.join(root,'.storyboard-flow/storyboard.project.json'))).toString('base64'),scriptBytes:(await readExact(path.join(root,'storyboard-script.md'))).toString('base64'),sourcePolicy:policy}},revision:`ordinary-started:${fact.nonce}`,projectRaw:l.result.project,effectFacts:{state:'ordinary-unsettled',channels:[channel]},continuationState:{stage:'ordinary-unsettled',notExecutable:true,deletedDependencies:deleted}};
     await retainExact(l,offer);l.offer=offer;
     if(channel==='layers:writePng'&&targets.every(target=>target===root||terminalPaths(root,l.result.project,deleted).includes(target))){const before=await captureOrdinaryBefore(e,l);fact.attempt={before,active:0,callbacks:0,operations:0,signals:0,errors:[]};}
    }catch(error){fact.stage='failed';throw error;}
@@ -890,7 +890,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    const result=observed.outcome.value;await authentic(e,own.lease);
    if(result?.ok===false||result?.recoveryIncomplete===true){own.stage='failed';own.lease.facts={state:'ordinary-failed',channels:own.channels,result};return result;}
    if(channel==='workspace:autosave'){
-    if(payload.folderPath!==root||payload.metadataPath!==path.join(root,'.storyboard-workbench/storyboard.project.json'))throw new Error('Ordinary persist binding mismatch');supported(payload.project);
+    if(payload.folderPath!==root||payload.metadataPath!==path.join(root,'.storyboard-flow/storyboard.project.json'))throw new Error('Ordinary persist binding mismatch');supported(payload.project);
     const json=await readExact(payload.metadataPath),md=await readExact(path.join(root,'storyboard-script.md'));
     if(!json.equals(encodeControlledUTF8(`${stringifyControlledJSON(payload.project,null,2)}\n`))||!md.equals(encodeControlledUTF8(serializeStoryboardScriptMarkdown(payload.project))))throw new Error('Ordinary current JSON/MD readback mismatch');
     if(historyOperation){
@@ -911,7 +911,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
     try{
      await authentic(e,own.lease);await historyPhysical(historyOperation);
      const versions=new Map<string,HVersion>();
-     for(const file of [path.join(root,'.storyboard-workbench/storyboard.project.json'),path.join(root,'storyboard-script.md')])versions.set(file,await historyVersion(own.lease,file));
+     for(const file of [path.join(root,'.storyboard-flow/storyboard.project.json'),path.join(root,'storyboard-script.md')])versions.set(file,await historyVersion(own.lease,file));
      for(const [file,version] of versions)if(!sameHVersion(version,await historyVersion(own.lease,file)))throw new Error('Original failed metadata observation changed');
      await authentic(e,own.lease);
      // Observation of the failed ORIGINAL call only, never a publication
@@ -925,7 +925,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  type ImportPin={observation:Observation;inventory:Awaited<ReturnType<typeof partialSourceInventory>>;project:any;preparation:ImportFailureEvidence;nonce:string;p1:string;failure:any};
  const importFailures=new Map<string,ImportPin>();
  const ordinary=async(e:Event,channel:string,payload:any,targets:readonly string[],execute:()=>Promise<any>)=>withLayerFileOperation(async()=>{
-  if(channel!=='workspace:importSwbFormat'||payload?.normalSave!==true||payload.normalSaveImageImport!==true)return ordinaryOperation(e,channel,payload,targets,execute);
+  if(channel!=='workspace:importFlowFormat'||payload?.normalSave!==true||payload.normalSaveImageImport!==true)return ordinaryOperation(e,channel,payload,targets,execute);
   const o=[...observations.values()].find(v=>v.sender===e.sender&&v.document===documentFor(e)&&v.folderPath===payload.folderPath);
   let before:Awaited<ReturnType<typeof partialSourceInventory>>|undefined;
   // Unsupported inventories follow the original Import path, without new rights.
@@ -938,7 +938,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    if(o&&before&&facts.length===1)try{
     await authenticObservation(e,o);const preparation=facts[0];
     // Real exclusive-creation collision; never a no-effect or cleanup receipt.
-    if(preparation.code!=='EEXIST'||preparation.syscall!=='mkdir'||preparation.preparationStarted||!preparation.candidatePath.startsWith(path.join(o.folderPath,'.storyboard-workbench/import-tmp')+path.sep))throw new Error('Import failure not in certified finite domain');
+    if(preparation.code!=='EEXIST'||preparation.syscall!=='mkdir'||preparation.preparationStarted||!preparation.candidatePath.startsWith(path.join(o.folderPath,'.storyboard-flow/import-tmp')+path.sep))throw new Error('Import failure not in certified finite domain');
     const inventory=await partialSourceInventory(o.folderPath);
     const candidate=path.relative(o.folderPath,preparation.candidatePath),parent=path.dirname(candidate),leaf=path.basename(candidate);
     const priorCandidate=before.record.directories.some(d=>d.file===candidate);
@@ -952,12 +952,12 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  });
  const importProjectSupported=(project:any,original:any)=>{
   if(!project||project.id!==original.id||!Array.isArray(project.shots)||project.pendingDeletedShots?.length)throw new Error('Import continuation Project binding');
-  const external=dependencyShots(original).filter((s:any)=>s.swb?.status!=='owned');
-  const pending=dependencyShots(project).filter((s:any)=>s.swb?.status!=='owned');
+  const external=dependencyShots(original).filter((s:any)=>s.flow?.status!=='owned');
+  const pending=dependencyShots(project).filter((s:any)=>s.flow?.status!=='owned');
   if(new Set(pending.map((s:any)=>s.id)).size!==pending.length)throw new Error('Import candidate membership changed');
   const structural=(s:any)=>{const v=parseControlledJSON(encodeControlledUTF8(stringifyControlledJSON(s)));delete v.scriptText;return v;};
   for(const s of pending){const old=external.find((v:any)=>v.id===s.id);if(!old||!isDeepStrictEqual(structural(s),structural(old)))throw new Error('Import candidate source cannot be changed or reimported');}
-  supported({...project,shots:project.shots.filter((s:any)=>s.swb?.status==='owned'),parkedShots:(project.parkedShots??[]).filter((s:any)=>s.swb?.status==='owned')});
+  supported({...project,shots:project.shots.filter((s:any)=>s.flow?.status==='owned'),parkedShots:(project.parkedShots??[]).filter((s:any)=>s.flow?.status==='owned')});
  };
  const retainedImport=async(e:Event,c:any,pin:ImportPin)=>{
   const o=pin.observation;
@@ -965,8 +965,8 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   await validate();importProjectSupported(c.content?.projectRaw,pin.project);
   if(!c.history||!Array.isArray(c.history.undo)||!Array.isArray(c.history.redo)||c.history.undo.length+c.history.redo.length>configured().records||c.content.retainedAssetIntents?.length||c.content.desiredAssets?.length||c.canvas?.hasUnsettledGesture||!Array.isArray(c.canvas?.captures))throw new Error('Import settled view and dual History required');
   const layerSource=(shot:any,layer:any)=>{
-   if(shot.swb?.status==='owned')return path.resolve(o.folderPath,layer.bitmapPath);
-   // A non-SWB image has a virtual image-layer descriptor before Import.
+   if(shot.flow?.status==='owned')return path.resolve(o.folderPath,layer.bitmapPath);
+   // A non-FLOW image has a virtual image-layer descriptor before Import.
    // Authenticate its original image; never pretend that its uncreated PNG
    // exists, materialize it, or grant an ordinary layer-writer capability.
    if(shot.layers?.length!==1||layer.kind!=='image')throw new Error('Import virtual layer source unknown');
@@ -1002,12 +1002,12 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const assets:RecoveryOffer['assets']=[];
   for(const [file,bytes] of pin.inventory.buffers)if(/\.(png|tiff?)$/iu.test(file)){
    let role=`import-source/${path.relative(o.folderPath,file)}`;
-   for(const shot of dependencyShots(pin.project)){if(shot.swb?.status==='owned'&&shot.imagePath===file)role=`original/${shot.id}/base`;for(const layer of shot.layers??[])if(path.resolve(o.folderPath,layer.bitmapPath)===file)role=`original/${shot.id}/${layer.id}`;}
+   for(const shot of dependencyShots(pin.project)){if(shot.flow?.status==='owned'&&shot.imagePath===file)role=`original/${shot.id}/base`;for(const layer of shot.layers??[])if(path.resolve(o.folderPath,layer.bitmapPath)===file)role=`original/${shot.id}/${layer.id}`;}
    assets.push(await raster(bytes,role,`import_${assets.length}`));
   }
-  const metadata=path.join(o.folderPath,'.storyboard-workbench/storyboard.project.json'),script=path.join(o.folderPath,'storyboard-script.md'),metadataBytes=pin.inventory.buffers.get(metadata),scriptBytes=pin.inventory.buffers.get(script);
+  const metadata=path.join(o.folderPath,'.storyboard-flow/storyboard.project.json'),script=path.join(o.folderPath,'storyboard-script.md'),metadataBytes=pin.inventory.buffers.get(metadata),scriptBytes=pin.inventory.buffers.get(script);
   if(!metadataBytes||!scriptBytes)throw new Error('Import original metadata unavailable');
-  const main={schema:'swb.image-import-failure.v1',operation:pin.nonce,acknowledged:false,preparation:pin.preparation,failure:pin.failure,candidateProject:pin.project};
+  const main={schema:'flow.image-import-failure.v1',operation:pin.nonce,acknowledged:false,preparation:pin.preparation,failure:pin.failure,candidateProject:pin.project};
   const offer:RecoveryOffer={revision:`import-failed:${pin.nonce}`,projectRaw:c.content.projectRaw,viewState:{canvas:c.canvas,history:c.history,selectedShotIds:c.selectedShotIds,dirtyShotIds:c.dirtyShotIds,fileNameSyncState:c.fileNameSyncState,workspaceSaveState:c.workspaceSaveState},scriptState:{imageImportFailure:main,partialSaveInventory:pin.inventory.record,original:{metadataPath:metadata,metadataBytes:metadataBytes.toString('base64'),scriptPath:script,scriptBytes:scriptBytes.toString('base64')}},effectFacts:{main,owner:c.content.effectFacts},continuationState:{stage:'failed',notExecutable:true,nonce:pin.nonce,p1:pin.p1},assets,requiredAssetIds:assets.map(a=>a.assetId)};
   let sourcePolicy=pin.inventory.record.policy;
   if(await hasRecovery(o.folderPath))sourcePolicy=intersectRecoveryPolicies([sourcePolicy,(await readState(o.folderPath)).storagePolicy]);
@@ -1032,7 +1032,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    // cannot change silently while this admitted ordinary fact is in flight.
    if(!survivingSourceRestrictionsMatch(fact.sourcePin,policy))throw new Error('Ordinary admitted source restrictions changed');
   }
-  const offer:RecoveryOffer={...l.offer,revision:`ordinary-completed:${fact.nonce}`,projectRaw:p,scriptState:{original:{...(l.offer.scriptState as any).original,metadataBytes:(await readExact(paths[0])).toString('base64'),scriptBytes:(await readExact(paths[1])).toString('base64'),sourcePolicy:policy}},effectFacts:{state:'completed-binding-persist-ack',ordinaryChannels:fact.channels},continuationState:{stage:'completed',deletedDependencies:deleted,terminal:{schema:'swb.current-terminal.v1',files,sourcePolicy:policy}},assets,requiredAssetIds:assets.map(a=>a.assetId)};
+  const offer:RecoveryOffer={...l.offer,revision:`ordinary-completed:${fact.nonce}`,projectRaw:p,scriptState:{original:{...(l.offer.scriptState as any).original,metadataBytes:(await readExact(paths[0])).toString('base64'),scriptBytes:(await readExact(paths[1])).toString('base64'),sourcePolicy:policy}},effectFacts:{state:'completed-binding-persist-ack',ordinaryChannels:fact.channels},continuationState:{stage:'completed',deletedDependencies:deleted,terminal:{schema:'flow.current-terminal.v1',files,sourcePolicy:policy}},assets,requiredAssetIds:assets.map(a=>a.assetId)};
   await retainExact(l,offer);await authentic(e,l);
   ordinaryFacts.delete(l.root);l.offer=offer;l.result={project:p};
   if(!await rootRetired(l.root)){ordinaryFacts.set(l.root,fact);throw new Error('Ordinary terminal cannot retire Root');}
@@ -1054,10 +1054,10 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   supported({...payload.project,shots:dependencyShots(payload.project,deleted),parkedShots:[],pendingDeletedShots:[]});
   const mapped=cloneControlled(c.projectRaw);mapped.updatedAt=payload.project.updatedAt;for(const r of plan){const s=mapped.shots.find((v:any)=>v.id===r.shotId);if(!s||s.imagePath!==r.fromPath)throw new Error('Owner before-rename source mismatch');const target=payload.project.shots.find((v:any)=>v.id===r.shotId);s.imagePath=r.finalPath;s.fileName=r.finalFileName;s.sourceFileName=target.sourceFileName;}
   if(stringifyControlledJSON(mapped)!==stringifyControlledJSON(payload.project))throw new Error('Owner raw Project/P1 mismatch');
-  const metadata=path.join(root,'.storyboard-workbench/storyboard.project.json');if(payload.metadataPath!==metadata)throw new Error('Metadata binding mismatch');
+  const metadata=path.join(root,'.storyboard-flow/storyboard.project.json');if(payload.metadataPath!==metadata)throw new Error('Metadata binding mismatch');
   const paths=[metadata],assets:RecoveryOffer['assets']=[],versionInputs:any[]=[];
   await canonicalPath(root,metadata);
-  for(const marker of ["pending-file-transaction.json"]){try{await fs.lstat(path.join(root,".storyboard-workbench",marker));throw new Error("Uncovered Pending transaction inventory");}catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}}
+  for(const marker of ["pending-file-transaction.json"]){try{await fs.lstat(path.join(root,".storyboard-flow",marker));throw new Error("Uncovered Pending transaction inventory");}catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}}
   const originalJSON=await readExact(metadata);parseControlledJSON(originalJSON);
   const script=path.join(root,'storyboard-script.md');let scriptBytes:Buffer|null=null;try{await canonicalPath(root,script);scriptBytes=await readExact(script);paths.push(script);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
   for(const s of dependencyShots(payload.project,deleted)){
@@ -1065,7 +1065,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    const parent=path.dirname(s.imagePath),pending=path.join(root,'Pending');
    if(parked?parent!==pending:deleted?parent!==root&&parent!==pending:parent!==root)throw new Error('Shot source outside exact finite lifecycle location');
    const source=plan.find((r:any)=>r.shotId===s.id)?.fromPath??s.imagePath;
-   const dependencies=[{file:source,role:`original/${s.id}/base`,width:s.swb.canvasWidth,height:s.swb.canvasHeight},...s.layers.map((l:any)=>{const file=path.resolve(root,l.bitmapPath);if(l.bitmapPath!==path.relative(root,file))throw new Error('Layer source alias refused');return {file,role:`original/${s.id}/${l.id}`,width:l.width,height:l.height};})];
+   const dependencies=[{file:source,role:`original/${s.id}/base`,width:s.flow.canvasWidth,height:s.flow.canvasHeight},...s.layers.map((l:any)=>{const file=path.resolve(root,l.bitmapPath);if(l.bitmapPath!==path.relative(root,file))throw new Error('Layer source alias refused');return {file,role:`original/${s.id}/${l.id}`,width:l.width,height:l.height};})];
    for(const d of dependencies){paths.push(d.file);await canonicalPath(root,d.file);const b=await readExact(d.file);const asset=await raster(b,d.role,`asset_${assets.length}`);if(asset.width!==d.width||asset.height!==d.height)throw new Error('Input raster dimensions outside finite Save domain');assets.push(asset);versionInputs.push({file:d.file,identity:await identity(d.file),digest:hash(b)});}
   }
   if(new Set(paths).size!==paths.length)throw new Error('Aliased or duplicate Save dependency');for(const file of paths)await canonicalPath(root,file);
@@ -1103,22 +1103,22 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  });
  const persist=async(e:Event,payload:any,write:()=>Promise<any>)=>withLayerFileOperation(async()=>{
   const l=leases.get(payload.folderPath);if(payload.normalSave!==true||payload.normalSaveScriptInput!==undefined||payload.normalSaveScriptExpectedInput!==undefined)throw new Error('Binding persist outside ordinary Save domain');if(!l||typeof payload.recoverySaveNonce!=='string'||payload.recoverySaveNonce!==l.nonce||l.stage!=='output')throw new Error('Binding persist capability/stage mismatch');await authentic(e,l);
-  if(payload.metadataPath!==path.join(l.root,'.storyboard-workbench/storyboard.project.json'))throw new Error('Binding persist metadata mismatch');supported(payload.project);
+  if(payload.metadataPath!==path.join(l.root,'.storyboard-flow/storyboard.project.json'))throw new Error('Binding persist metadata mismatch');supported(payload.project);
   if(payload.project.shots.length!==l.result.project.shots.length||payload.project.shots.some((s:any)=>!l.result.project.shots.some((v:any)=>v.id===s.id&&v.imagePath===s.imagePath&&stringifyControlledJSON(v.layers)===stringifyControlledJSON(s.layers))))throw new Error('Binding persist outside prepared asset domain');
   try{const result=await write();await authentic(e,l);
-    const metadata=path.join(l.root,'.storyboard-workbench/storyboard.project.json'),script=path.join(l.root,'storyboard-script.md');for(const file of [metadata,script])await canonicalPath(l.root,file);
+    const metadata=path.join(l.root,'.storyboard-flow/storyboard.project.json'),script=path.join(l.root,'storyboard-script.md');for(const file of [metadata,script])await canonicalPath(l.root,file);
     if(!(await readExact(metadata)).equals(encodeControlledUTF8(`${stringifyControlledJSON(payload.project,null,2)}\n`))||!(await readExact(script)).equals(encodeControlledUTF8(serializeStoryboardScriptMarkdown(payload.project))))throw new Error('Exact binding JSON/MD readback mismatch');
     for(const ack of l.result.normalSaveOutputs??[])if(hash(await readExact(ack.targetPath))!==ack.outputHash)throw new Error('Output changed before final binding persist ACK');
     l.result={...l.result,project:cloneControlled(payload.project)};l.stage='persisted';return result;}catch(error){l.stage='failed';throw error;}
  });
  const acknowledge=async(e:Event,payload:any)=>withLayerFileOperation(async()=>{const ordinaryFact=ordinaryFacts.get(payload.folderPath);if(ordinaryFact)return acknowledgeOrdinary(e,payload,ordinaryFact);const l=leases.get(payload.folderPath);if(!l||payload.nonce!==l.nonce||l.stage!=='persisted')throw new Error('Owner ACK capability/stage mismatch');await authentic(e,l);if(hash(stringifyControlledJSON(payload.project))!==hash(stringifyControlledJSON(l.result.project)))throw new Error('Owner exact binding ACK mismatch');
-  if(!(await readExact(path.join(l.root,'.storyboard-workbench/storyboard.project.json'))).equals(encodeControlledUTF8(`${stringifyControlledJSON(l.result.project,null,2)}\n`))||!(await readExact(path.join(l.root,'storyboard-script.md'))).equals(encodeControlledUTF8(serializeStoryboardScriptMarkdown(l.result.project))))throw new Error('Current final binding changed before Owner ACK');
+  if(!(await readExact(path.join(l.root,'.storyboard-flow/storyboard.project.json'))).equals(encodeControlledUTF8(`${stringifyControlledJSON(l.result.project,null,2)}\n`))||!(await readExact(path.join(l.root,'storyboard-script.md'))).equals(encodeControlledUTF8(serializeStoryboardScriptMarkdown(l.result.project))))throw new Error('Current final binding changed before Owner ACK');
   for(const ack of l.result.normalSaveOutputs??[])if(hash(await readExact(ack.targetPath))!==ack.outputHash)throw new Error('Current output changed before Owner ACK');
   const files=[];for(const file of terminalPaths(l.root,l.result.project)){await canonicalPath(l.root,file);files.push({file:path.relative(l.root,file),digest:hash(await readExact(file))});}
   const policy=(await native({phase:'capturePolicy',sources:terminalPaths(l.root,l.result.project)})).sourcePolicy;
   if(restrictionSignature(policy.expected)!==restrictionSignature((l.sourceAuthorityPolicy??l.sourcePolicy).expected))throw new Error('Prepared source restrictions changed before ACK');
   if(!survivingSourceRestrictionsMatch(l.sourceAuthorityPolicy??l.sourcePolicy,policy))throw new Error('Prepared admitted source restrictions changed');
-  await retainExact(l,{...l.offer,revision:`completed:${l.nonce}`,projectRaw:l.result.project,effectFacts:{state:'completed-binding-persist-ack'},continuationState:{stage:'completed',outputs:l.result.normalSaveOutputs,terminal:{schema:'swb.current-terminal.v1',files,sourcePolicy:policy}}});
+  await retainExact(l,{...l.offer,revision:`completed:${l.nonce}`,projectRaw:l.result.project,effectFacts:{state:'completed-binding-persist-ack'},continuationState:{stage:'completed',outputs:l.result.normalSaveOutputs,terminal:{schema:'flow.current-terminal.v1',files,sourcePolicy:policy}}});
   // Consume the same cold current-terminal predicate before retiring live state.
   if(!await rootRetired(l.root))throw new Error('Current terminal cannot retire Root');l.stage='completed';return true;});
  // Establish the same byte/native-policy certified terminal as persistence,
@@ -1187,7 +1187,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  };
  const retainedOffer=async(e:Event,c:any,l:Lease,handoff=false):Promise<RecoveryOffer>=>{
   if(!['failed','output','persisted','completed'].includes(l.stage))throw new Error('No settled retained production Save operation');
-  await authentic(e,l);await canonicalPath(l.root,path.join(l.root,'.storyboard-workbench/workspace-recovery-v1'));
+  await authentic(e,l);await canonicalPath(l.root,path.join(l.root,'.storyboard-flow/workspace-recovery-v1'));
   if(handoff){const o=observations.get(c.binding);if(!o||o.sender!==e.sender||o.document!==documentFor(e)||o.folderPath!==l.root||o.rootIdentity!==l.rootIdentity||o.parentIdentity!==l.parentIdentity)throw new Error('Handoff original observation mismatch');}
   const fact=ordinaryFacts.get(l.root);
   if(fact&&fact.stage!=='failed')throw new Error('Ordinary source I/O or exact persistence ACK remains unsettled');
@@ -1205,7 +1205,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    // tip, exact JSON/MD and every TIFF/PNG digest, not renderer saved flags or a
    // cached live retirement. New/unpersisted bytes remain protected instead.
    const {state}=await readState(l.root),tip=state.content!,continuation=tip.continuationState as any;
-   if(state.state!=='protectedReadable'||state.ack!.sealDigest!==l.latestSeal||(tip.effectFacts as any)?.state!=='completed-binding-persist-ack'||continuation?.stage!=='completed'||!continuation.terminal||continuation.terminal.schema!=='swb.current-terminal.v1')throw new Error('Completed current ACK unavailable');
+   if(state.state!=='protectedReadable'||state.ack!.sealDigest!==l.latestSeal||(tip.effectFacts as any)?.state!=='completed-binding-persist-ack'||continuation?.stage!=='completed'||!continuation.terminal||continuation.terminal.schema!=='flow.current-terminal.v1')throw new Error('Completed current ACK unavailable');
    const files=terminalPaths(l.root,p,continuation.deletedDependencies??[]),receipts=continuation.terminal.files;
    if(!Array.isArray(receipts)||receipts.length!==files.length)throw new Error('Completed full inventory mismatch');
    for(let i=0;i<files.length;i++){
@@ -1234,7 +1234,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   await validate();
   if(c.content?.projectRaw?.id!==attempt.before.project.id||!c.history)throw new Error('Failed ordinary original Project/History unavailable');
   const {p,assets}=await retainedCapture(l,c,attempt.before.project,true,attempt.before.offer.assets);
-  const main={schema:'swb.failed-ordinary-no-effect.v1',operation:fact.nonce,stage:'failed',channels:[...fact.channels],callbackError:attempt.callbackError,operationErrors:[...attempt.errors],original:l.facts};
+  const main={schema:'flow.failed-ordinary-no-effect.v1',operation:fact.nonce,stage:'failed',channels:[...fact.channels],callbackError:attempt.callbackError,operationErrors:[...attempt.errors],original:l.facts};
   const sourcePolicy=intersectRecoveryPolicies([l.sourcePolicy,attempt.before.policy]);
   const lease:Lease={...l,sourcePolicy,facts:main};
   const beforeInventory=[...attempt.before.files].map(([file,v])=>({file:path.relative(l.root,file),identity:v.physical,digest:hash(v.bytes),...(/\.(json|md)$/iu.test(file)?{bytes:v.bytes.toString('base64')}:{})}));
@@ -1266,7 +1266,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   if(state.state!=='protectedReadable'||!state.content)throw new Error('Cold reader current terminal not certified');
   const tip=state.content,content=c.content;
   const terminal=(tip.continuationState as any)?.terminal,files=terminalPaths(o.folderPath,tip.projectRaw,(tip.continuationState as any)?.deletedDependencies??[]);
-  if((tip.effectFacts as any)?.state!=='completed-binding-persist-ack'||!terminal||terminal.schema!=='swb.current-terminal.v1'||terminal.files?.length!==files.length)throw new Error('Cold reader current terminal missing');
+  if((tip.effectFacts as any)?.state!=='completed-binding-persist-ack'||!terminal||terminal.schema!=='flow.current-terminal.v1'||terminal.files?.length!==files.length)throw new Error('Cold reader current terminal missing');
   for(let i=0;i<files.length;i++){await canonicalPath(o.folderPath,files[i]);if(terminal.files[i].file!==path.relative(o.folderPath,files[i])||hash(await readExact(files[i]))!==terminal.files[i].digest)throw new Error('Cold reader current terminal bytes changed');}
   const currentPolicy=(await native({phase:'capturePolicy',sources:files})).sourcePolicy;
   if(!terminalPolicyMatches(tip,storagePolicy,currentPolicy))throw new Error('Cold reader current source restrictions changed');
@@ -1334,7 +1334,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
       fact.channels.some(channel=>!['history:admit','workspace:autosave'].includes(channel))||
       o.assets.some(a=>a.started&&!a.after||a.unresolved&&!observedConflict(a)||a.compensationError&&!refusedCompensation(a)&&!observedConflict(a)||a.compensationStarted&&!a.compensationAcknowledged&&!refusedCompensation(a)||a.error&&(a.failure?.effect!=='refused'||a.failure.retainedTemporary!==null)))throw new Error('History Close original settled inventory unavailable');
    if(stage==='persisted'&&(!o.binding||o.binding.size!==2||!fact.project))throw new Error('History Close original persistence evidence unavailable');
-   if(metadataObservation&&(o.metadataObservation!==metadataObservation||metadataObservation.kind!=='original-callback-failure-observation'||metadataObservation.versions.size!==2||![path.join(l.root,'.storyboard-workbench/storyboard.project.json'),path.join(l.root,'storyboard-script.md')].every(file=>metadataObservation.versions.has(file))))throw new Error('History Close failed metadata observation unavailable');
+   if(metadataObservation&&(o.metadataObservation!==metadataObservation||metadataObservation.kind!=='original-callback-failure-observation'||metadataObservation.versions.size!==2||![path.join(l.root,'.storyboard-flow/storyboard.project.json'),path.join(l.root,'storyboard-script.md')].every(file=>metadataObservation.versions.has(file))))throw new Error('History Close failed metadata observation unavailable');
    if(stage!=='persisted'&&(o.binding||fact.channels.includes('workspace:autosave')&&!metadataObservation))throw new Error('History Close metadata publication unknown');
    if(o.state==='restored')await verifyHistoryBefore(o,stage==='persisted');
    for(const [file,before] of o.inventory){
@@ -1364,7 +1364,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    inventory.push({file:path.relative(l.root,file),before:await version(file,before,`history-close/${o.id}/before/${inventory.length}`),actual:await version(file,actual,`history-close/${o.id}/actual/${inventory.length}`)});
   }
   for(const [i,a] of o.assets.entries())if(a.desired!==null&&!assets.some(v=>Buffer.compare(v.bytes,a.desired!)===0))assets.push(await raster(a.desired,`history-close/${o.id}/desired/${i}`,`history_close_${o.id}_desired_${i}`));
-  const facts={schema:'swb.history-operation-preservation.v1',operation:o.id,project:o.project,targetProject:o.targetProject,persistedProject:fact!.project??null,...(metadataObservation?{metadataObservation:{kind:metadataObservation.kind,error:metadataObservation.error,attemptedProject:metadataObservation.attemptedProject,acknowledged:false}}:{}),state:o.state,next:o.next,metadataStage:stage,ordinaryNonce:fact!.nonce,channels:[...fact!.channels],acknowledged:false,invalidated:o.invalidated,assets:historyFacts(o),inventory};
+  const facts={schema:'flow.history-operation-preservation.v1',operation:o.id,project:o.project,targetProject:o.targetProject,persistedProject:fact!.project??null,...(metadataObservation?{metadataObservation:{kind:metadataObservation.kind,error:metadataObservation.error,attemptedProject:metadataObservation.attemptedProject,acknowledged:false}}:{}),state:o.state,next:o.next,metadataStage:stage,ordinaryNonce:fact!.nonce,channels:[...fact!.channels],acknowledged:false,invalidated:o.invalidated,assets:historyFacts(o),inventory};
   // History targets/Projects come from the renderer's in-memory snapshots, which may
   // carry own-undefined optional fields that JSON cannot represent. Normalize exactly
   // as the Import continuation does instead of refusing the whole close; absence
@@ -1390,7 +1390,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
     overlays.push(overlay);
    }
    archiveLease.sourcePolicy=intersectRecoveryPolicies([sourcePolicy,current.record.policy]);
-   scriptState={...scriptState as any,partialSaveInventory:current.record,historyContinuation:{schema:'swb.history-continuation.v1',operation:o.id,nonce:fact!.nonce,p1:hash(stringifyControlledJSON(facts)),acknowledged:false}};
+   scriptState={...scriptState as any,partialSaveInventory:current.record,historyContinuation:{schema:'flow.history-continuation.v1',operation:o.id,nonce:fact!.nonce,p1:hash(stringifyControlledJSON(facts)),acknowledged:false}};
    assets.push(...overlays);
   }catch{/* Unknown inventory grants no continuation; keep the original failure. */}
   const offer:RecoveryOffer={...l.offer,scriptState,revision:`history-close:${o.id}:${c.content.sequence}:${c.content.assetRevision}`,projectRaw:durable(p),
@@ -1509,7 +1509,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   if(!original)throw new Error('Exact failed publication association required');
   const {content,ack,assets:retained,storagePolicy}=await store.readCapture(observed.folderPath,original.reference);
   const failure=findFailure(content.effectFacts),proof=failure?.ownedStageReceipt;
-  if(failure?.schema!=='swb.failed-producer-commit.v1'||failure.version!==p.failedVersion||failure.effect!=='committed'||!proof||proof.root!==observed.folderPath||typeof failure.file!=='string'||proof.target!==path.resolve(observed.folderPath,failure.file)||proof.bytes?.digest!==failure.digest)throw new Error('Exact failed publication association required');
+  if(failure?.schema!=='flow.failed-producer-commit.v1'||failure.version!==p.failedVersion||failure.effect!=='committed'||!proof||proof.root!==observed.folderPath||typeof failure.file!=='string'||proof.target!==path.resolve(observed.folderPath,failure.file)||proof.bytes?.digest!==failure.digest)throw new Error('Exact failed publication association required');
   const asset=content.assets.find(a=>a.role===`failed-custody/${failure.version}`);
   if(!asset||!retained.get(asset.assetId)||hash(retained.get(asset.assetId)!)!==failure.digest)throw new Error('Exact failed B bytes unavailable');
   const capture:OriginCapture={...ack,format:content.version===2?'v2':'v1',policyKey:content.version===2?recoveryPolicyKey(storagePolicy):null};

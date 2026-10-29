@@ -52,7 +52,7 @@ test('optional-field normalization uses the supplied Main clone owner rather tha
 });
 
 test('default and Main-owned normalization preserve unknown undefined fields and null values',()=>{
-  const input={parkedShots:undefined,shots:[{presentation:undefined,unknown:undefined,swb:{sourceKind:undefined,other:null}}]},budget=createControlledMemoryBudget(1024);
+  const input={parkedShots:undefined,shots:[{presentation:undefined,unknown:undefined,flow:{sourceKind:undefined,other:null}}]},budget=createControlledMemoryBudget(1024);
   const plain:any=recoveryProjectAbsence(input),owned:any=withControlledMemory(budget,()=>recoveryProjectAbsence(input,cloneControlled));
-  expect(owned).toEqual(plain);expect(Object.hasOwn(owned,'parkedShots')).toBe(false);expect(Object.hasOwn(owned.shots[0],'presentation')).toBe(false);expect(Object.hasOwn(owned.shots[0],'unknown')).toBe(true);expect(owned.shots[0].swb.other).toBeNull();expect(Object.hasOwn(input,'parkedShots')).toBe(true);expect(Object.hasOwn(input.shots[0],'presentation')).toBe(true);
+  expect(owned).toEqual(plain);expect(Object.hasOwn(owned,'parkedShots')).toBe(false);expect(Object.hasOwn(owned.shots[0],'presentation')).toBe(false);expect(Object.hasOwn(owned.shots[0],'unknown')).toBe(true);expect(owned.shots[0].flow.other).toBeNull();expect(Object.hasOwn(input,'parkedShots')).toBe(true);expect(Object.hasOwn(input.shots[0],'presentation')).toBe(true);
 });

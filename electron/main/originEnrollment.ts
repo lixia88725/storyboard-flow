@@ -31,17 +31,17 @@ export const createOriginEnrollment = (options: {
   const native = createNativeAuthorizationSession(options.python, options.script, () => 65536);
   const cleanupNative = createNativeAuthorizationSession(options.python, path.join(path.dirname(options.script), 'owned-stage-cleanup.py'), () => 65536);
   const prepare = async (receipt: any, policy: any) => {
-    if (!receipt || receipt.schema !== 'swb.owned-stage-publication.v1' || typeof receipt.root !== 'string' || typeof receipt.target !== 'string'
+    if (!receipt || receipt.schema !== 'flow.owned-stage-publication.v1' || typeof receipt.root !== 'string' || typeof receipt.target !== 'string'
       || !path.isAbsolute(receipt.root) || path.normalize(receipt.root) !== receipt.root || !receipt.target.startsWith(receipt.root + path.sep)
       || path.normalize(receipt.target) !== receipt.target || typeof receipt.operation !== 'string' || !/^[\w-]{1,80}$/.test(receipt.operation)) throw new Error('Origin publication binding required');
     recoveryPolicyKey(policy);
-    if (policy.schema !== 'swb.finite-source-policy' || policy.version !== 1 || !Array.isArray(policy.observed) || !policy.observed.length) throw new Error('Main complete origin source policy required');
+    if (policy.schema !== 'flow.finite-source-policy' || policy.version !== 1 || !Array.isArray(policy.observed) || !policy.observed.length) throw new Error('Main complete origin source policy required');
     const workspaceKey = await originWorkspaceKey(receipt.root), sourceMode = policy.expected.mode & 0o600;
     if (![0o400, 0o600].includes(sourceMode)) throw new Error('Origin owner-only source mode unavailable');
     const sourceRestrictions = { ...structuredClone(policy.expected), acl: null };
-    const payload = { schema: 'swb.workspace-origin-enrollment', version: 1, workspaceKey, operation: receipt.operation,
+    const payload = { schema: 'flow.workspace-origin-enrollment', version: 1, workspaceKey, operation: receipt.operation,
       receiptFingerprint: hash(JSON.stringify(receipt)), targetDigest: hash(receipt.target), sourceMode, state: 'issued', capturedDigest: null as string | null };
-    const recordName = hash(JSON.stringify(['swb.workspace-origin-operation.v1', workspaceKey, receipt.operation]));
+    const recordName = hash(JSON.stringify(['flow.workspace-origin-operation.v1', workspaceKey, receipt.operation]));
     return { root: receipt.root as string, sourceRestrictions, sourcePolicy: structuredClone(policy), payload, recordName };
   };
   type Prepared = Awaited<ReturnType<typeof prepare>>;
@@ -95,7 +95,7 @@ export const createOriginEnrollment = (options: {
       const checked = async (result: any) => {
         if (result.status === 'unknown') return { status: 'unknown' as const, cleanupOutcome: ['stage-absent','stage-removed'].includes(result.cleanupOutcome) ? result.cleanupOutcome as 'stage-absent' | 'stage-removed' : 'unknown' as const, auditOutcome: 'unknown' as const, error: String(result.error || 'Cleanup outcome unknown') };
         const repair = result.repair;
-        if (!['repaired', 'reconciled', 'already-repaired'].includes(result.status) || !repair || repair.schema !== 'swb.owned-stage-repair.v1' || repair.version !== 1
+        if (!['repaired', 'reconciled', 'already-repaired'].includes(result.status) || !repair || repair.schema !== 'flow.owned-stage-repair.v1' || repair.version !== 1
           || repair.operation !== payload.operation || repair.receiptFingerprint !== payload.receiptFingerprint || repair.capturedDigest !== capturedDigest
           || repair.targetDigest !== payload.targetDigest || repair.stageAbsent !== true) throw new Error('Exact native repair receipt unavailable; effect unknown');
         observedRepair = repair;

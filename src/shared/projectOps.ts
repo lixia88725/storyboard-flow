@@ -8,7 +8,7 @@ import type {
   RenamePreflightResult,
   Shot,
   ShotMatte,
-  ShotSwbState,
+  ShotFlowState,
   SketchLayer,
   SketchStroke
 } from "./types";
@@ -33,7 +33,7 @@ export const defaultSaveNaming: ProjectNaming = {
   artistName: "artist",
   version: "v001"
 };
-export const swbFormatVersion = 1;
+export const flowFormatVersion = 1;
 export const defaultSketchLayerName = "Drawing";
 export const imageBitmapLayerId = "layer-image";
 export const imageBitmapLayerName = "Image";
@@ -152,10 +152,10 @@ const applyMatteToShot = (
 
   const layers = bitmapLayersForShot(shot);
   const sourceHeight =
-    shot.swb?.canvasHeight ??
+    shot.flow?.canvasHeight ??
     Math.max(0, ...layers.map((layer) => layer.height));
   const canvasWidth =
-    shot.swb?.canvasWidth ??
+    shot.flow?.canvasWidth ??
     Math.max(0, ...layers.map((layer) => layer.width));
   if (sourceHeight <= 0 || canvasWidth <= 0) {
     return shot;
@@ -212,13 +212,13 @@ const applyMatteToShot = (
   return {
     ...shot,
     layers: normalizeBitmapLayerOrder([...resizedLayers, matteOverlay]),
-    swb: shot.swb
+    flow: shot.flow
       ? {
-          ...shot.swb,
+          ...shot.flow,
           canvasHeight
         }
       : {
-          version: swbFormatVersion,
+          version: flowFormatVersion,
           status: "owned" as const,
           canvasWidth,
           canvasHeight
@@ -279,8 +279,8 @@ export const removeProjectMatte = (
     const targetHeight =
       matte.mode === "expanded"
         ? matte.sourceHeight ??
-          Math.max(1, (shot.swb?.canvasHeight ?? contentLayers[0]?.height ?? 1) - matte.top - matte.bottom)
-        : shot.swb?.canvasHeight ?? contentLayers[0]?.height ?? 1;
+          Math.max(1, (shot.flow?.canvasHeight ?? contentLayers[0]?.height ?? 1) - matte.top - matte.bottom)
+        : shot.flow?.canvasHeight ?? contentLayers[0]?.height ?? 1;
     const resizedLayers =
       matte.mode === "expanded"
         ? contentLayers.map((layer) => ({ ...layer, height: targetHeight }))
@@ -297,12 +297,12 @@ export const removeProjectMatte = (
       ...shot,
       layers: normalizeBitmapLayerOrder(resizedLayers),
       activeLayerId,
-      swb: shot.swb
+      flow: shot.flow
         ? {
-            ...shot.swb,
+            ...shot.flow,
             canvasHeight: targetHeight
           }
-        : shot.swb,
+        : shot.flow,
       presentation:
         Object.keys(remainingPresentation).length > 0
           ? remainingPresentation
@@ -324,8 +324,8 @@ export const upsertDialogueOverlayBitmapLayer = (
     }
 
     const layers = bitmapLayersForShot(shot);
-    const width = shot.swb?.canvasWidth ?? Math.max(0, ...layers.map((layer) => layer.width));
-    const height = shot.swb?.canvasHeight ?? Math.max(0, ...layers.map((layer) => layer.height));
+    const width = shot.flow?.canvasWidth ?? Math.max(0, ...layers.map((layer) => layer.width));
+    const height = shot.flow?.canvasHeight ?? Math.max(0, ...layers.map((layer) => layer.height));
     if (width <= 0 || height <= 0) {
       return shot;
     }
@@ -459,8 +459,8 @@ export const addGeneratedShot = (
         height
       }
     ],
-    swb: {
-      version: swbFormatVersion,
+    flow: {
+      version: flowFormatVersion,
       status: "owned",
       canvasWidth: width,
       canvasHeight: height,
@@ -502,11 +502,11 @@ export const mergeExternalImageChanges = (project: Project, images: ImportedImag
         previewPath: scanned.previewPath ?? shot.previewPath,
         fileName: scanned.fileName ?? shot.fileName,
         sketchLayers: sketchLayersForShot(shot),
-        swb: mergedSwbState(shot, scanned)
+        flow: mergedFlowState(shot, scanned)
       },
       scanned
     );
-    didChange = didChange || nextShot !== shot || nextShot.swb !== shot.swb;
+    didChange = didChange || nextShot !== shot || nextShot.flow !== shot.flow;
     return nextShot;
   });
   const parkedShots = (project.parkedShots ?? []).map((shot) => {
@@ -521,7 +521,7 @@ export const mergeExternalImageChanges = (project: Project, images: ImportedImag
         ...shot,
         previewPath: scanned.previewPath ?? shot.previewPath,
         fileName: scanned.fileName ?? shot.fileName,
-        swb: mergedSwbState(shot, scanned)
+        flow: mergedFlowState(shot, scanned)
       },
       scanned
     );
@@ -566,7 +566,7 @@ export const mergeFolderImages = (project: Project, images: ImportedImage[]): Pr
         previewPath: scanned?.previewPath ?? shot.previewPath,
         fileName: scanned?.fileName ?? shot.fileName,
         sketchLayers: sketchLayersForShot(shot),
-        swb: scanned ? mergedSwbState(shot, scanned) : shot.swb
+        flow: scanned ? mergedFlowState(shot, scanned) : shot.flow
       };
     })
     .map((shot) => {
@@ -858,16 +858,16 @@ export const duplicateShotAfter = (
     activeLayerId: sourceShot.activeLayerId
       ? layerIdMap.get(sourceShot.activeLayerId) ?? sourceShot.activeLayerId
       : sourceShot.activeLayerId,
-    swb: sourceShot.swb
+    flow: sourceShot.flow
       ? {
-          ...sourceShot.swb,
+          ...sourceShot.flow,
           status: "owned" as const,
-          sourcePath: sourceShot.swb.sourcePath,
-          archivePath: sourceShot.swb.archivePath,
+          sourcePath: sourceShot.flow.sourcePath,
+          archivePath: sourceShot.flow.archivePath,
           statusMessage: undefined,
           acceptedExternalEditAt: undefined
         }
-      : sourceShot.swb
+      : sourceShot.flow
   };
   const copiedDialogues = dialoguesForShot(project, sourceShot.id).map((dialogue, index) => ({
     ...dialogue,
@@ -1007,7 +1007,7 @@ export const copyDialogueToShot = (
 
 
 export const bitmapLayerPath = (shotId: string, layerId: string): string =>
-  `.storyboard-workbench/layers/${shotId}/${layerId}.png`;
+  `.storyboard-flow/layers/${shotId}/${layerId}.png`;
 
 export const createImageBitmapLayer = (
   shotId: string,
@@ -1060,7 +1060,7 @@ export const ensureBitmapLayerMetadata = (shot: Shot, image?: ImportedImage): Sh
       layers.length < (shot.layers?.length ?? 0) &&
       !layers.some((layer) => layer.kind === "image") &&
       scannedMetadataHasImageLayer(image)
-        ? [createImageBitmapLayer(shot.id, image?.width ?? shot.swb?.canvasWidth ?? 1920, image?.height ?? shot.swb?.canvasHeight ?? 1080), ...layers]
+        ? [createImageBitmapLayer(shot.id, image?.width ?? shot.flow?.canvasWidth ?? 1920, image?.height ?? shot.flow?.canvasHeight ?? 1080), ...layers]
         : layers;
 
     return {
@@ -1070,8 +1070,8 @@ export const ensureBitmapLayerMetadata = (shot: Shot, image?: ImportedImage): Sh
     };
   }
 
-  const width = image?.width ?? shot.swb?.canvasWidth ?? 1920;
-  const height = image?.height ?? shot.swb?.canvasHeight ?? 1080;
+  const width = image?.width ?? shot.flow?.canvasWidth ?? 1920;
+  const height = image?.height ?? shot.flow?.canvasHeight ?? 1080;
   const sketchLayers = sketchLayersForShot(shot).filter((layer) => !isEmptyDefaultSketchLayer(layer));
   const layers: BitmapLayer[] = [
     createImageBitmapLayer(shot.id, width, height),
@@ -1107,7 +1107,7 @@ const isEmptyDefaultSketchLayer = (layer: SketchLayer): boolean => {
 
 const scannedMetadataHasImageLayer = (image?: ImportedImage): boolean => {
   return Boolean(
-    image?.swbMetadata?.layers.some(
+    image?.flowMetadata?.layers.some(
       (layer) => layer.id === imageBitmapLayerId || layer.kind === "image"
     )
   );
@@ -1712,27 +1712,27 @@ const updateBitmapLayers = (
 
 
 
-export const projectNeedsSwbImport = (project: Project): boolean => {
+export const projectNeedsFlowImport = (project: Project): boolean => {
   return [...project.shots, ...(project.parkedShots ?? [])].some(
     (shot) =>
-      shot.swb?.status === "non-swb" ||
-      shot.swb?.status === "compatible-external-edit" ||
-      shot.swb?.status === "incompatible-external-edit"
+      shot.flow?.status === "non-flow" ||
+      shot.flow?.status === "compatible-external-edit" ||
+      shot.flow?.status === "incompatible-external-edit"
   );
 };
 
-export const projectHasSwbWarning = (project: Project): boolean => {
+export const projectHasFlowWarning = (project: Project): boolean => {
   return [...project.shots, ...(project.parkedShots ?? [])].some(
     (shot) =>
-      shot.swb?.status === "non-swb" ||
-      shot.swb?.status === "compatible-external-edit" ||
-      shot.swb?.status === "incompatible-external-edit"
+      shot.flow?.status === "non-flow" ||
+      shot.flow?.status === "compatible-external-edit" ||
+      shot.flow?.status === "incompatible-external-edit"
   );
 };
 
 export const projectAcceptedExternalEdits = (project: Project): boolean => {
   return [...project.shots, ...(project.parkedShots ?? [])].some((shot) =>
-    Boolean(shot.swb?.acceptedExternalEditAt)
+    Boolean(shot.flow?.acceptedExternalEditAt)
   );
 };
 
@@ -1813,8 +1813,8 @@ const createShotFromImportedImage = (
   }
 ): Shot => {
   const shotId = crypto.randomUUID();
-  const width = image.width ?? image.swbMetadata?.canvasWidth ?? 1920;
-  const height = image.height ?? image.swbMetadata?.canvasHeight ?? 1080;
+  const width = image.width ?? image.flowMetadata?.canvasWidth ?? 1920;
+  const height = image.height ?? image.flowMetadata?.canvasHeight ?? 1080;
 
   return {
     id: shotId,
@@ -1826,39 +1826,39 @@ const createShotFromImportedImage = (
     sketchLayers: options.includeDefaultSketchLayer ? [createDefaultSketchLayer([])] : [],
     activeLayerTarget: "image",
     activeLayerId: imageBitmapLayerId,
-    presentation: image.swbMetadata?.presentation,
+    presentation: image.flowMetadata?.presentation,
     layers: [createImageBitmapLayer(shotId, width, height)],
-    swb: swbStateForImportedImage(image)
+    flow: flowStateForImportedImage(image)
   };
 };
 
-const swbStateForImportedImage = (image: ImportedImage): ShotSwbState => {
+const flowStateForImportedImage = (image: ImportedImage): ShotFlowState => {
   if (isStandaloneLayeredTiffSnapshot(image)) {
     return {
-      version: swbFormatVersion,
-      status: "non-swb",
-      canvasWidth: image.swbMetadata?.canvasWidth ?? image.width ?? 0,
-      canvasHeight: image.swbMetadata?.canvasHeight ?? image.height ?? 0,
+      version: flowFormatVersion,
+      status: "non-flow",
+      canvasWidth: image.flowMetadata?.canvasWidth ?? image.width ?? 0,
+      canvasHeight: image.flowMetadata?.canvasHeight ?? image.height ?? 0,
       baseFingerprint: image.fingerprint,
       statusMessage: "Import to convert this Photoshop layered TIFF into Storyboard Flow Format"
     };
   }
 
-  if (image.swbMetadata) {
+  if (image.flowMetadata) {
     return {
-      version: image.swbMetadata.version,
+      version: image.flowMetadata.version,
       status: "owned",
-      canvasWidth: image.swbMetadata.canvasWidth,
-      canvasHeight: image.swbMetadata.canvasHeight,
-      baseFingerprint: image.swbMetadata.baseFingerprint,
-      sourcePath: image.swbMetadata.sourcePath,
-      archivePath: image.swbMetadata.archivePath
+      canvasWidth: image.flowMetadata.canvasWidth,
+      canvasHeight: image.flowMetadata.canvasHeight,
+      baseFingerprint: image.flowMetadata.baseFingerprint,
+      sourcePath: image.flowMetadata.sourcePath,
+      archivePath: image.flowMetadata.archivePath
     };
   }
 
   return {
-    version: swbFormatVersion,
-    status: "non-swb",
+    version: flowFormatVersion,
+    status: "non-flow",
     canvasWidth: image.width ?? 0,
     canvasHeight: image.height ?? 0,
     baseFingerprint: image.fingerprint,
@@ -1866,12 +1866,12 @@ const swbStateForImportedImage = (image: ImportedImage): ShotSwbState => {
   };
 };
 
-const mergedSwbState = (shot: Shot, image: ImportedImage): ShotSwbState => {
-  const existing = shot.swb;
-  const metadata = image.swbMetadata;
+const mergedFlowState = (shot: Shot, image: ImportedImage): ShotFlowState => {
+  const existing = shot.flow;
+  const metadata = image.flowMetadata;
 
-  if (!existing || existing.status === "non-swb") {
-    return swbStateForImportedImage(image);
+  if (!existing || existing.status === "non-flow") {
+    return flowStateForImportedImage(image);
   }
 
   if (!metadata) {
@@ -1886,7 +1886,7 @@ const mergedSwbState = (shot: Shot, image: ImportedImage): ShotSwbState => {
     return {
       ...existing,
       status: "incompatible-external-edit",
-      statusMessage: "SWB metadata is missing from this TIFF"
+      statusMessage: "FLOW metadata is missing from this TIFF"
     };
   }
 
@@ -1903,7 +1903,7 @@ const mergedSwbState = (shot: Shot, image: ImportedImage): ShotSwbState => {
     return {
       ...existing,
       status: "incompatible-external-edit",
-      statusMessage: "SWB shot id in TIFF does not match project metadata"
+      statusMessage: "FLOW shot id in TIFF does not match project metadata"
     };
   }
 

@@ -12,11 +12,11 @@ import { historyFixture } from "../../research/save-pending-revision2/history-fi
 async function chain(direction: "undo" | "redo", run: (f: any) => Promise<void>, namespaceGap = false) {
   const root = await mkdtemp(path.join(os.tmpdir(), "pending-revision3-"));
   try {
-    const bitmapPath = ".storyboard-workbench/layers/b/base.png";
+    const bitmapPath = ".storyboard-flow/layers/b/base.png";
     await mkdir(path.dirname(path.join(root, bitmapPath)), { recursive: true });
     const png = async (height: number, background: string) => sharp({ create: { width: 4, height, channels: 4, background } }).png().toBuffer();
     const small = await png(3, "red"), large = await png(153, "blue");
-    const shot = (id: string, height: number) => ({ id, order: id === "s" ? 0 : 1, imagePath: path.join(root, `${id}.tiff`), fileName: `${id}.tiff`, swb: { version: 1, status: "owned", canvasWidth: 4, canvasHeight: height }, layers: [{ id: "base", kind: "image", name: "Base", visible: true, locked: false, opacity: 1, blendMode: "normal", order: 0, bitmapPath: id === "b" ? bitmapPath : ".storyboard-workbench/layers/s/base.png", width: 4, height }] });
+    const shot = (id: string, height: number) => ({ id, order: id === "s" ? 0 : 1, imagePath: path.join(root, `${id}.tiff`), fileName: `${id}.tiff`, flow: { version: 1, status: "owned", canvasWidth: 4, canvasHeight: height }, layers: [{ id: "base", kind: "image", name: "Base", visible: true, locked: false, opacity: 1, blendMode: "normal", order: 0, bitmapPath: id === "b" ? bitmapPath : ".storyboard-flow/layers/s/base.png", width: 4, height }] });
     const state = (name: string, s: number, b: number) => ({ ...createProject(name), shots: [shot("s", s), shot("b", b)] } as any);
     const current = state("current", 153, 153), old = state("Eold", 153, 3), bad = state("Ebad", 3, 3), valid = state("Enew", 153, 153);
     if (direction === "redo") {
@@ -31,7 +31,7 @@ async function chain(direction: "undo" | "redo", run: (f: any) => Promise<void>,
       projectRef.current = p;
       for (const s of p.shots) {
         await mkdir(path.dirname(path.join(root, s.layers[0].bitmapPath)), { recursive: true });
-        await writeFile(path.join(root, s.layers[0].bitmapPath), s.swb.canvasHeight === 3 ? small : large);
+        await writeFile(path.join(root, s.layers[0].bitmapPath), s.flow.canvasHeight === 3 ? small : large);
       }
     };
     if (direction === "undo") {
@@ -55,12 +55,12 @@ async function chain(direction: "undo" | "redo", run: (f: any) => Promise<void>,
     const check = async () => {
       const bytes = await readFile(path.join(root, bitmapPath));
       const b = projectRef.current.shots.find((s: any) => s.id === "b");
-      expect((await sharp(bytes).metadata()).height).toBe(b.swb.canvasHeight);
+      expect((await sharp(bytes).metadata()).height).toBe(b.flow.canvasHeight);
       expect(b.layers[0].height).toBe(153);
       expect(await sharp(bytes).raw().toBuffer()).toEqual(await sharp(large).raw().toBuffer());
       const s = [...projectRef.current.shots, ...(projectRef.current.parkedShots ?? [])].find((shot: any) => shot.id === "s");
       const sBytes = await readFile(path.join(root, s.layers[0].bitmapPath));
-      expect((await sharp(sBytes).metadata()).height).toBe(s.swb.canvasHeight);
+      expect((await sharp(sBytes).metadata()).height).toBe(s.flow.canvasHeight);
       expect(await sharp(sBytes).raw().toBuffer()).toEqual(await sharp(large).raw().toBuffer());
     };
     await run({ h, projectRef, current: projectRef.current, bitmapPath, root, apply, check, large });

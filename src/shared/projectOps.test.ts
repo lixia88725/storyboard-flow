@@ -35,8 +35,8 @@ import {
   matteForShot,
   matteOverlayBitmapLayerId,
   projectAcceptedExternalEdits,
-  projectHasSwbWarning,
-  projectNeedsSwbImport,
+  projectHasFlowWarning,
+  projectNeedsFlowImport,
   removeProjectDialogueOverlay,
   removeProjectMatte,
   removeDialogue,
@@ -123,7 +123,7 @@ const makeBitmapProject = (): Project => ({
           opacity: 1,
           blendMode: "normal",
           order: 0,
-          bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png",
+          bitmapPath: ".storyboard-flow/layers/shot-a/layer-image.png",
           width: 1920,
           height: 1080
         }
@@ -146,12 +146,12 @@ describe("project operations", () => {
       opacity: 1,
       blendMode: "normal",
       order: 0,
-      bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png",
+      bitmapPath: ".storyboard-flow/layers/shot-a/layer-image.png",
       width: 1920,
       height: 1080
     });
     expect(bitmapLayerPath("shot-a", "paint-1")).toBe(
-      ".storyboard-workbench/layers/shot-a/paint-1.png"
+      ".storyboard-flow/layers/shot-a/paint-1.png"
     );
   });
 
@@ -159,7 +159,7 @@ describe("project operations", () => {
     const project = makeBitmapProject();
     project.shots[0] = {
       ...project.shots[0],
-      swb: {
+      flow: {
         version: 1,
         status: "owned",
         canvasWidth: 1920,
@@ -176,7 +176,7 @@ describe("project operations", () => {
           opacity: 1,
           blendMode: "normal",
           order: 1,
-          bitmapPath: ".storyboard-workbench/layers/shot-a/paint-1.png",
+          bitmapPath: ".storyboard-flow/layers/shot-a/paint-1.png",
           width: 1920,
           height: 1080
         }
@@ -186,7 +186,7 @@ describe("project operations", () => {
     const updated = applyShotMatte(project, "shot-a", "expanded");
     const shot = updated.shots[0];
 
-    expect(shot.swb?.canvasHeight).toBe(1230);
+    expect(shot.flow?.canvasHeight).toBe(1230);
     expect(bitmapLayersForShot(shot).map((layer) => layer.height)).toEqual([
       1230,
       1230,
@@ -212,7 +212,7 @@ describe("project operations", () => {
     const updated = applyShotMatte(project, "shot-a", "embedded");
 
     expect(bitmapLayersForShot(updated.shots[0])[0].height).toBe(1080);
-    expect(updated.shots[0].swb?.canvasHeight).toBe(1080);
+    expect(updated.shots[0].flow?.canvasHeight).toBe(1080);
     expect(matteForShot(updated.shots[0])).toEqual({
       mode: "embedded",
       top: 75,
@@ -350,7 +350,7 @@ describe("project operations", () => {
     const shot = updated.shots[0];
 
     expect(shot.presentation?.matte).toBeUndefined();
-    expect(shot.swb?.canvasHeight).toBe(1080);
+    expect(shot.flow?.canvasHeight).toBe(1080);
     expect(bitmapLayersForShot(shot).map((layer) => layer.id)).toEqual(["layer-image"]);
     expect(bitmapLayersForShot(shot)[0].height).toBe(1080);
     expect(shot.activeLayerId).toBe("layer-image");
@@ -365,7 +365,7 @@ describe("project operations", () => {
     const updated = removeProjectMatte(configured);
 
     expect(updated.shots[0].presentation?.matte).toBeUndefined();
-    expect(updated.shots[0].swb?.canvasHeight).toBe(1080);
+    expect(updated.shots[0].flow?.canvasHeight).toBe(1080);
     expect(bitmapLayersForShot(updated.shots[0]).map((layer) => layer.id)).toEqual([
       "layer-image"
     ]);
@@ -389,7 +389,7 @@ describe("project operations", () => {
       ["paint-1", "paint", 1]
     ]);
     expect(shot.layers?.[1]).toMatchObject({
-      bitmapPath: ".storyboard-workbench/layers/shot-a/paint-1.png",
+      bitmapPath: ".storyboard-flow/layers/shot-a/paint-1.png",
       visible: true,
       locked: false,
       opacity: 1,
@@ -421,8 +421,8 @@ describe("project operations", () => {
       "layer-shot-a-2"
     ]);
     expect(bitmapLayersForShot(shot).map((layer) => layer.bitmapPath)).toEqual([
-      ".storyboard-workbench/layers/shot-a/layer-shot-a-1.png",
-      ".storyboard-workbench/layers/shot-a/layer-shot-a-2.png"
+      ".storyboard-flow/layers/shot-a/layer-shot-a-1.png",
+      ".storyboard-flow/layers/shot-a/layer-shot-a-2.png"
     ]);
     expect(shot.activeLayerId).toBe("layer-shot-a-2");
   });
@@ -437,7 +437,7 @@ describe("project operations", () => {
       opacity: 0.42,
       blendMode: "multiply" as const,
       order: 1,
-      bitmapPath: ".storyboard-workbench/layers/shot-a/paint-source.png",
+      bitmapPath: ".storyboard-flow/layers/shot-a/paint-source.png",
       width: 800,
       height: 450
     };
@@ -470,7 +470,7 @@ describe("project operations", () => {
       locked: true,
       opacity: 0.42,
       blendMode: "multiply",
-      bitmapPath: ".storyboard-workbench/layers/shot-b/paint-copy.png",
+      bitmapPath: ".storyboard-flow/layers/shot-b/paint-copy.png",
       width: 800,
       height: 450
     });
@@ -499,7 +499,7 @@ describe("project operations", () => {
     expect(layers.map((layer) => layer.id)).toEqual(["layer-image", "paint-copy", "paint-top"]);
     expect(layers[1]).toMatchObject({
       name: "Top Paint",
-      bitmapPath: ".storyboard-workbench/layers/shot-a/paint-copy.png"
+      bitmapPath: ".storyboard-flow/layers/shot-a/paint-copy.png"
     });
     expect(updated.shots[0].activeLayerId).toBe("paint-copy");
   });
@@ -528,7 +528,7 @@ describe("project operations", () => {
         {
           ...makeBitmapProject().shots[0],
           scriptText: "Shot A script",
-          swb: {
+          flow: {
             version: 1,
             status: "compatible-external-edit",
             canvasWidth: 1920,
@@ -570,13 +570,13 @@ describe("project operations", () => {
       previewPath: "/tmp/a-copy-preview.png",
       fileName: "a-copy.tif",
       scriptText: "Shot A script",
-      swb: {
+      flow: {
         status: "owned",
         statusMessage: undefined
       }
     });
     expect(bitmapLayersForShot(copiedShot).map((layer) => layer.bitmapPath)).toEqual([
-      ".storyboard-workbench/layers/shot-copy/layer-image.png"
+      ".storyboard-flow/layers/shot-copy/layer-image.png"
     ]);
     expect(updated.dialogues).toEqual(
       expect.arrayContaining([
@@ -621,7 +621,7 @@ describe("project operations", () => {
     ]);
   });
 
-  it("restores Image metadata from scanned SWB TIFF metadata when duplicate paint layers corrupted it", () => {
+  it("restores Image metadata from scanned FLOW TIFF metadata when duplicate paint layers corrupted it", () => {
     const paintLayer = {
       id: "layer-shot-a-1",
       kind: "paint" as const,
@@ -631,7 +631,7 @@ describe("project operations", () => {
       opacity: 1,
       blendMode: "normal" as const,
       order: 0,
-      bitmapPath: ".storyboard-workbench/layers/shot-a/layer-shot-a-1.png",
+      bitmapPath: ".storyboard-flow/layers/shot-a/layer-shot-a-1.png",
       width: 1920,
       height: 1080
     };
@@ -642,7 +642,7 @@ describe("project operations", () => {
           ...makeBitmapProject().shots[0],
           layers: [paintLayer, { ...paintLayer, order: 1 }],
           activeLayerId: paintLayer.id,
-          swb: {
+          flow: {
             version: 1,
             status: "owned",
             canvasWidth: 1920,
@@ -660,9 +660,9 @@ describe("project operations", () => {
         width: 1920,
         height: 1080,
         fingerprint: "pixel-a",
-        swbMetadata: {
-          app: "Storyboard Workbench",
-          format: "swb-tiff",
+        flowMetadata: {
+          app: "Storyboard Flow",
+          format: "flow-tiff",
           version: 1,
           shotId: "shot-a",
           canvasWidth: 1920,
@@ -751,7 +751,7 @@ describe("project operations", () => {
               opacity: 0.35,
               blendMode: "multiply" as const,
               order: 1,
-              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-bottom.png",
+              bitmapPath: ".storyboard-flow/layers/shot-a/paint-bottom.png",
               width: 1920,
               height: 1080
             },
@@ -764,7 +764,7 @@ describe("project operations", () => {
               opacity: 1,
               blendMode: "normal" as const,
               order: 2,
-              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-hidden.png",
+              bitmapPath: ".storyboard-flow/layers/shot-a/paint-hidden.png",
               width: 1920,
               height: 1080
             },
@@ -777,7 +777,7 @@ describe("project operations", () => {
               opacity: 0.5,
               blendMode: "screen" as const,
               order: 3,
-              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-top.png",
+              bitmapPath: ".storyboard-flow/layers/shot-a/paint-top.png",
               width: 1920,
               height: 1080
             }
@@ -923,7 +923,7 @@ describe("project operations", () => {
       locked: false,
       opacity: 1,
       blendMode: "normal",
-      bitmapPath: ".storyboard-workbench/layers/shot-a/layer-shot-a-4.png"
+      bitmapPath: ".storyboard-flow/layers/shot-a/layer-shot-a-4.png"
     });
     expect(merged.shots[0].activeLayerId).toBe("layer-shot-a-4");
   });
@@ -996,7 +996,7 @@ describe("project operations", () => {
               opacity: 1,
               blendMode: "normal" as const,
               order: 1,
-              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-a.png",
+              bitmapPath: ".storyboard-flow/layers/shot-a/paint-a.png",
               width: 1920,
               height: 1080
             },
@@ -1009,7 +1009,7 @@ describe("project operations", () => {
               opacity: 0.5,
               blendMode: "normal" as const,
               order: 2,
-              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-locked.png",
+              bitmapPath: ".storyboard-flow/layers/shot-a/paint-locked.png",
               width: 1920,
               height: 1080
             },
@@ -1022,7 +1022,7 @@ describe("project operations", () => {
               opacity: 1,
               blendMode: "normal" as const,
               order: 3,
-              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-b.png",
+              bitmapPath: ".storyboard-flow/layers/shot-a/paint-b.png",
               width: 1920,
               height: 1080
             },
@@ -1035,7 +1035,7 @@ describe("project operations", () => {
               opacity: 1,
               blendMode: "normal" as const,
               order: 4,
-              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-target.png",
+              bitmapPath: ".storyboard-flow/layers/shot-a/paint-target.png",
               width: 1920,
               height: 1080
             }
@@ -1080,7 +1080,7 @@ describe("project operations", () => {
               opacity: 0.65,
               blendMode: "normal" as const,
               order: 1,
-              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-a.png",
+              bitmapPath: ".storyboard-flow/layers/shot-a/paint-a.png",
               width: 1920,
               height: 1080
             },
@@ -1093,7 +1093,7 @@ describe("project operations", () => {
               opacity: 0.5,
               blendMode: "normal" as const,
               order: 2,
-              bitmapPath: ".storyboard-workbench/layers/shot-a/paint-locked.png",
+              bitmapPath: ".storyboard-flow/layers/shot-a/paint-locked.png",
               width: 1920,
               height: 1080
             }
@@ -1175,7 +1175,7 @@ describe("project operations", () => {
         opacity: 1,
         blendMode: "normal",
         order: 0,
-        bitmapPath: ".storyboard-workbench/layers/shot-a/layer-image.png",
+        bitmapPath: ".storyboard-flow/layers/shot-a/layer-image.png",
         width: 1920,
         height: 1080,
         cleared: true
@@ -1641,7 +1641,7 @@ describe("project operations", () => {
     expect(shot.sketchLayers).toHaveLength(2);
   });
 
-  it("marks newly scanned non-SWB images as needing import", () => {
+  it("marks newly scanned non-FLOW images as needing import", () => {
     const updated = mergeFolderImages(makeProject(), [
       {
         imagePath: "/tmp/a.png",
@@ -1652,16 +1652,16 @@ describe("project operations", () => {
       }
     ]);
 
-    expect(updated.shots[0].swb).toMatchObject({
-      status: "non-swb",
+    expect(updated.shots[0].flow).toMatchObject({
+      status: "non-flow",
       canvasWidth: 1920,
       canvasHeight: 1080,
       baseFingerprint: "pixel-a"
     });
-    expect(projectNeedsSwbImport(updated)).toBe(true);
+    expect(projectNeedsFlowImport(updated)).toBe(true);
   });
 
-  it("marks standalone multi-layer SWB TIFF snapshots as needing Photoshop import", () => {
+  it("marks standalone multi-layer FLOW TIFF snapshots as needing Photoshop import", () => {
     const updated = mergeFolderImages(createEmptyProject(), [
       {
         imagePath: "/tmp/a.tiff",
@@ -1669,9 +1669,9 @@ describe("project operations", () => {
         width: 1920,
         height: 1080,
         fingerprint: "pixel-a",
-        swbMetadata: {
-          app: "Storyboard Workbench",
-          format: "swb-tiff",
+        flowMetadata: {
+          app: "Storyboard Flow",
+          format: "flow-tiff",
           version: 1,
           shotId: "shot-a",
           canvasWidth: 1920,
@@ -1686,14 +1686,14 @@ describe("project operations", () => {
       }
     ]);
 
-    expect(updated.shots[0].swb).toMatchObject({
-      status: "non-swb",
+    expect(updated.shots[0].flow).toMatchObject({
+      status: "non-flow",
       statusMessage: "Import to convert this Photoshop layered TIFF into Storyboard Flow Format"
     });
-    expect(projectNeedsSwbImport(updated)).toBe(true);
+    expect(projectNeedsFlowImport(updated)).toBe(true);
   });
 
-  it("restores saved matte presentation metadata when an SWB TIFF is discovered", () => {
+  it("restores saved matte presentation metadata when an FLOW TIFF is discovered", () => {
     const updated = addImportedImages(createEmptyProject(), [
       {
         imagePath: "/tmp/a.tiff",
@@ -1701,9 +1701,9 @@ describe("project operations", () => {
         width: 1920,
         height: 1230,
         fingerprint: "pixel-a",
-        swbMetadata: {
+        flowMetadata: {
           app: "Storyboard Flow",
-          format: "swb-tiff",
+          format: "flow-tiff",
           version: 1,
           shotId: "shot-a",
           canvasWidth: 1920,
@@ -1770,7 +1770,7 @@ describe("project operations", () => {
         opacity: 1,
         blendMode: "normal",
         order: 0,
-        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-image.png`,
+        bitmapPath: `.storyboard-flow/layers/${shotId}/layer-image.png`,
         width: 1920,
         height: 1080
       }
@@ -1802,7 +1802,7 @@ describe("project operations", () => {
         opacity: 1,
         blendMode: "normal",
         order: 0,
-        bitmapPath: `.storyboard-workbench/layers/${shotId}/layer-image.png`,
+        bitmapPath: `.storyboard-flow/layers/${shotId}/layer-image.png`,
         width: 1920,
         height: 1080
       }
@@ -1815,7 +1815,7 @@ describe("project operations", () => {
       shots: [
         {
           ...makeProject().shots[0],
-          swb: {
+          flow: {
             version: 1,
             status: "owned",
             canvasWidth: 1920,
@@ -1834,9 +1834,9 @@ describe("project operations", () => {
         width: 1920,
         height: 1080,
         fingerprint: "new-pixels",
-        swbMetadata: {
-          app: "Storyboard Workbench",
-          format: "swb-tiff",
+        flowMetadata: {
+          app: "Storyboard Flow",
+          format: "flow-tiff",
           version: 1,
           shotId: "shot-a",
           canvasWidth: 1920,
@@ -1848,11 +1848,11 @@ describe("project operations", () => {
       }
     ]);
 
-    expect(updated.shots[0].swb).toMatchObject({
+    expect(updated.shots[0].flow).toMatchObject({
       status: "compatible-external-edit",
       baseFingerprint: "old-pixels"
     });
-    expect(projectNeedsSwbImport(updated)).toBe(true);
+    expect(projectNeedsFlowImport(updated)).toBe(true);
     expect(projectAcceptedExternalEdits(updated)).toBe(false);
   });
 
@@ -1862,7 +1862,7 @@ describe("project operations", () => {
       shots: [
         {
           ...makeProject().shots[0],
-          swb: {
+          flow: {
             version: 1,
             status: "owned",
             canvasWidth: 1920,
@@ -1880,9 +1880,9 @@ describe("project operations", () => {
         width: 1920,
         height: 1080,
         fingerprint: "new-pixels",
-        swbMetadata: {
-          app: "Storyboard Workbench",
-          format: "swb-tiff",
+        flowMetadata: {
+          app: "Storyboard Flow",
+          format: "flow-tiff",
           version: 1,
           shotId: "shot-a",
           canvasWidth: 1920,
@@ -1895,7 +1895,7 @@ describe("project operations", () => {
     ]);
 
     expect(updated.shots).toHaveLength(project.shots.length);
-    expect(updated.shots[0].swb?.status).toBe("compatible-external-edit");
+    expect(updated.shots[0].flow?.status).toBe("compatible-external-edit");
   });
 
   it("keeps parked external edits importable instead of hiding the warning state", () => {
@@ -1908,7 +1908,7 @@ describe("project operations", () => {
           imagePath: "/tmp/parked.tiff",
           fileName: "parked.tiff",
           order: 0,
-          swb: {
+          flow: {
             version: 1,
             status: "owned",
             canvasWidth: 1920,
@@ -1926,9 +1926,9 @@ describe("project operations", () => {
         width: 1920,
         height: 1080,
         fingerprint: "new-pixels",
-        swbMetadata: {
-          app: "Storyboard Workbench",
-          format: "swb-tiff",
+        flowMetadata: {
+          app: "Storyboard Flow",
+          format: "flow-tiff",
           version: 1,
           shotId: "shot-parked",
           canvasWidth: 1920,
@@ -1940,9 +1940,9 @@ describe("project operations", () => {
       }
     ]);
 
-    expect(updated.parkedShots?.[0].swb?.status).toBe("compatible-external-edit");
-    expect(projectNeedsSwbImport(updated)).toBe(true);
-    expect(projectHasSwbWarning(updated)).toBe(true);
+    expect(updated.parkedShots?.[0].flow?.status).toBe("compatible-external-edit");
+    expect(projectNeedsFlowImport(updated)).toBe(true);
+    expect(projectHasFlowWarning(updated)).toBe(true);
   });
 
   it("does not let TIFF metadata override the project fingerprint baseline", () => {
@@ -1951,7 +1951,7 @@ describe("project operations", () => {
       shots: [
         {
           ...makeProject().shots[0],
-          swb: {
+          flow: {
             version: 1,
             status: "owned",
             canvasWidth: 1920,
@@ -1970,9 +1970,9 @@ describe("project operations", () => {
         width: 1920,
         height: 1080,
         fingerprint: "saved-tiff-pixels",
-        swbMetadata: {
-          app: "Storyboard Workbench",
-          format: "swb-tiff",
+        flowMetadata: {
+          app: "Storyboard Flow",
+          format: "flow-tiff",
           version: 1,
           shotId: "shot-a",
           canvasWidth: 1920,
@@ -1984,11 +1984,11 @@ describe("project operations", () => {
       }
     ]);
 
-    expect(updated.shots[0].swb).toMatchObject({
+    expect(updated.shots[0].flow).toMatchObject({
       status: "compatible-external-edit",
       baseFingerprint: "old-json-pixels"
     });
-    expect(projectNeedsSwbImport(updated)).toBe(true);
+    expect(projectNeedsFlowImport(updated)).toBe(true);
   });
 
   it("keeps owned status when project fingerprint is newer than stale TIFF metadata", () => {
@@ -1997,7 +1997,7 @@ describe("project operations", () => {
       shots: [
         {
           ...makeProject().shots[0],
-          swb: {
+          flow: {
             version: 1,
             status: "owned",
             canvasWidth: 1920,
@@ -2016,9 +2016,9 @@ describe("project operations", () => {
         width: 1920,
         height: 1080,
         fingerprint: "imported-pixels",
-        swbMetadata: {
-          app: "Storyboard Workbench",
-          format: "swb-tiff",
+        flowMetadata: {
+          app: "Storyboard Flow",
+          format: "flow-tiff",
           version: 1,
           shotId: "shot-a",
           canvasWidth: 1920,
@@ -2030,28 +2030,28 @@ describe("project operations", () => {
       }
     ]);
 
-    expect(updated.shots[0].swb).toMatchObject({
+    expect(updated.shots[0].flow).toMatchObject({
       status: "owned",
       baseFingerprint: "imported-pixels"
     });
-    expect(projectNeedsSwbImport(updated)).toBe(false);
-    expect(projectHasSwbWarning(updated)).toBe(false);
+    expect(projectNeedsFlowImport(updated)).toBe(false);
+    expect(projectHasFlowWarning(updated)).toBe(false);
   });
 
-  it("repairs copied SWB TIFFs whose embedded shot id still points at the source shot", () => {
+  it("repairs copied FLOW TIFFs whose embedded shot id still points at the source shot", () => {
     const project: Project = {
       ...makeProject(),
       shots: [
         {
           ...makeProject().shots[0],
           id: "shot-copy",
-          swb: {
+          flow: {
             version: 1,
             status: "incompatible-external-edit",
             canvasWidth: 1920,
             canvasHeight: 1080,
             baseFingerprint: "copied-pixels",
-            statusMessage: "SWB shot id in TIFF does not match project metadata"
+            statusMessage: "FLOW shot id in TIFF does not match project metadata"
           }
         }
       ],
@@ -2065,9 +2065,9 @@ describe("project operations", () => {
         width: 1920,
         height: 1080,
         fingerprint: "copied-pixels",
-        swbMetadata: {
-          app: "Storyboard Workbench",
-          format: "swb-tiff",
+        flowMetadata: {
+          app: "Storyboard Flow",
+          format: "flow-tiff",
           version: 1,
           shotId: "source-shot",
           canvasWidth: 1920,
@@ -2079,13 +2079,13 @@ describe("project operations", () => {
       }
     ]);
 
-    expect(updated.shots[0].swb).toMatchObject({
+    expect(updated.shots[0].flow).toMatchObject({
       status: "owned",
       baseFingerprint: "copied-pixels",
       statusMessage: undefined
     });
-    expect(projectNeedsSwbImport(updated)).toBe(false);
-    expect(projectHasSwbWarning(updated)).toBe(false);
+    expect(projectNeedsFlowImport(updated)).toBe(false);
+    expect(projectHasFlowWarning(updated)).toBe(false);
   });
 
   it("keeps parked shots owned when project fingerprint is newer than stale TIFF metadata", () => {
@@ -2098,7 +2098,7 @@ describe("project operations", () => {
           imagePath: "/tmp/parked.tiff",
           fileName: "parked.tiff",
           order: 0,
-          swb: {
+          flow: {
             version: 1,
             status: "owned",
             canvasWidth: 1920,
@@ -2116,9 +2116,9 @@ describe("project operations", () => {
         width: 1920,
         height: 1080,
         fingerprint: "imported-pixels",
-        swbMetadata: {
-          app: "Storyboard Workbench",
-          format: "swb-tiff",
+        flowMetadata: {
+          app: "Storyboard Flow",
+          format: "flow-tiff",
           version: 1,
           shotId: "shot-parked",
           canvasWidth: 1920,
@@ -2130,21 +2130,21 @@ describe("project operations", () => {
       }
     ]);
 
-    expect(updated.parkedShots?.[0].swb).toMatchObject({
+    expect(updated.parkedShots?.[0].flow).toMatchObject({
       status: "owned",
       baseFingerprint: "imported-pixels"
     });
-    expect(projectNeedsSwbImport(updated)).toBe(false);
-    expect(projectHasSwbWarning(updated)).toBe(false);
+    expect(projectNeedsFlowImport(updated)).toBe(false);
+    expect(projectHasFlowWarning(updated)).toBe(false);
   });
 
-  it("keeps owned status when SWB metadata is missing but pixels match the project baseline", () => {
+  it("keeps owned status when FLOW metadata is missing but pixels match the project baseline", () => {
     const project: Project = {
       ...makeProject(),
       shots: [
         {
           ...makeProject().shots[0],
-          swb: {
+          flow: {
             version: 1,
             status: "owned",
             canvasWidth: 1920,
@@ -2166,8 +2166,8 @@ describe("project operations", () => {
       }
     ]);
 
-    expect(updated.shots[0].swb?.status).toBe("owned");
-    expect(projectNeedsSwbImport(updated)).toBe(false);
+    expect(updated.shots[0].flow?.status).toBe("owned");
+    expect(projectNeedsFlowImport(updated)).toBe(false);
   });
 
   it("marks changed TIFF dimensions as incompatible external edits", () => {
@@ -2176,7 +2176,7 @@ describe("project operations", () => {
       shots: [
         {
           ...makeProject().shots[0],
-          swb: {
+          flow: {
             version: 1,
             status: "owned",
             canvasWidth: 1920,
@@ -2195,9 +2195,9 @@ describe("project operations", () => {
         width: 1280,
         height: 720,
         fingerprint: "new-pixels",
-        swbMetadata: {
-          app: "Storyboard Workbench",
-          format: "swb-tiff",
+        flowMetadata: {
+          app: "Storyboard Flow",
+          format: "flow-tiff",
           version: 1,
           shotId: "shot-a",
           canvasWidth: 1920,
@@ -2209,10 +2209,10 @@ describe("project operations", () => {
       }
     ]);
 
-    expect(updated.shots[0].swb).toMatchObject({
+    expect(updated.shots[0].flow).toMatchObject({
       status: "incompatible-external-edit"
     });
-    expect(projectNeedsSwbImport(updated)).toBe(true);
+    expect(projectNeedsFlowImport(updated)).toBe(true);
   });
 
   it("inserts a generated shot after the selected shot", () => {
@@ -2275,7 +2275,7 @@ describe("project operations", () => {
         opacity: 1,
         blendMode: "normal",
         order: 0,
-        bitmapPath: `.storyboard-workbench/layers/${shot.id}/layer-image.png`,
+        bitmapPath: `.storyboard-flow/layers/${shot.id}/layer-image.png`,
         width: 1920,
         height: 1080
       },
@@ -2288,7 +2288,7 @@ describe("project operations", () => {
         opacity: 1,
         blendMode: "normal",
         order: 1,
-        bitmapPath: `.storyboard-workbench/layers/${shot.id}/layer-drawing.png`,
+        bitmapPath: `.storyboard-flow/layers/${shot.id}/layer-drawing.png`,
         width: 1920,
         height: 1080
       }
