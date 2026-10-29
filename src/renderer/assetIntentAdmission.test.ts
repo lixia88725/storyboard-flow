@@ -60,3 +60,47 @@ test('failed admitted producer settles and its unique desired bytes remain prote
   expect(await outcome).toBe('producer write unknown'); expect(await prepare).toContain('fully settle');
   expect(admission.retainedIntents().map(intent => [...intent.desiredBytes])).toEqual([[90]]);
 });
+
+// The main process refuses an allocation before writing anything, so a RAM refusal is a moment of
+// pressure, not a damaged workspace: the intent retries and admission stays open.
+const ramRefusal = new Error('Error invoking remote method \'layers:writePng\': MemoryAdmissionError: RAM_ADMISSION: controlled memory budget cannot fund this allocation; existing data retained');
+
+test('RAM refusal retries the same intent instead of freezing admission', async () => {
+  const admission = createAssetIntentAdmission(undefined, { transientRetryDelaysMs: [1, 1] });
+  let calls = 0;
+  const result = await admission.submit({ workspace: 'A', assetId: 'paint', desiredBytes: new Uint8Array([7]) }, async retained => {
+    calls += 1; expect([...retained.desiredBytes]).toEqual([7]);
+    if (calls < 3) throw ramRefusal;
+    return 'written';
+  });
+  expect(result).toBe('written'); expect(calls).toBe(3);
+  // admission is still open: a Save can prepare and complete afterwards
+  const lease = await admission.beginOperation(); admission.completeOperation(lease);
+  expect(admission.retainedIntents()).toHaveLength(0);
+});
+
+test('Save arriving during a RAM retry waits for the intent instead of failing', async () => {
+  const admission = createAssetIntentAdmission(undefined, { transientRetryDelaysMs: [5, 5] });
+  let calls = 0; const entered = deferred();
+  const producer = admission.submit({ workspace: 'A', assetId: 'paint', desiredBytes: new Uint8Array([1]) }, async () => {
+    calls += 1; if (calls === 1) { entered.resolve(); throw ramRefusal; }
+  });
+  await entered.promise;
+  const lease = await admission.beginOperation(); expect(calls).toBeGreaterThan(1);
+  admission.completeOperation(lease); await producer;
+});
+
+test('exhausted RAM retries still protect the workspace, and other errors never retry', async () => {
+  const exhausting = createAssetIntentAdmission(undefined, { transientRetryDelaysMs: [1] });
+  let ramCalls = 0;
+  await expect(exhausting.submit({ workspace: 'A', assetId: 'paint', desiredBytes: new Uint8Array([2]) },
+    async () => { ramCalls += 1; throw ramRefusal; })).rejects.toThrow('RAM_ADMISSION');
+  expect(ramCalls).toBe(2);
+  await expect(exhausting.beginOperation()).rejects.toThrow('frozen/protected');
+
+  const plain = createAssetIntentAdmission(undefined, { transientRetryDelaysMs: [1] });
+  let diskCalls = 0;
+  await expect(plain.submit({ workspace: 'A', assetId: 'paint', desiredBytes: new Uint8Array([3]) },
+    async () => { diskCalls += 1; throw new Error('producer write unknown'); })).rejects.toThrow('producer write unknown');
+  expect(diskCalls).toBe(1);
+});

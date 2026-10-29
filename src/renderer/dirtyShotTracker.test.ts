@@ -26,6 +26,16 @@ describe("dirtyShotTracker", () => {
     expect(tracker.dirtyShotIds()).toEqual(["shot-1", "shot-2"]);
   });
 
+  it("clears only the shot ids a settled Save owns", () => {
+    const dirtyShotIdsRef = { current: new Set<string>(["shot-1", "shot-2", "shot-3"]) };
+    const projectRef = { current: { shots: [] } };
+    const tracker = createDirtyShotTracker({ dirtyShotIdsRef, projectRef });
+
+    tracker.clearShotsDirty(["shot-1", "shot-3"]);
+
+    expect(tracker.dirtyShotIds()).toEqual(["shot-2"]);
+  });
+
   it("resets dirty shots by replacing the tracked set", () => {
     const originalSet = new Set<string>(["shot-1"]);
     const dirtyShotIdsRef = { current: originalSet };

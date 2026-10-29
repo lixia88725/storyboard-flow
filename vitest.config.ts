@@ -6,6 +6,7 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "electron/**/*.test.ts"],
     exclude: ["src/renderer/normalSaveMetadataHistory.test.ts"],
     maxWorkers: 1,
-    minWorkers: 1
+    minWorkers: 1,
+    setupFiles: ["./vitest.setup.ts"]
   }
 });

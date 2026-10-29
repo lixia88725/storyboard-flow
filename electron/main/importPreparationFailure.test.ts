@@ -5,6 +5,7 @@ import ts from "typescript";
 import { randomUUID } from "node:crypto";
 import { withLayerFileOperation } from "./layerFileOperationQueue";
 import { mapWithConcurrency } from "./mapWithConcurrency";
+import { defaultImportConcurrency } from "./photoshopTiffImport";
 import { createImportPathReservation } from "./importPaths";
 import { recoverFailedImport, ImportRecoveryIncompleteError } from "./importRecovery";
 import { ProtectedLayerWriteError } from "./protectedLayerFileWriter";
@@ -25,7 +26,7 @@ async function fixture() {
   await fs.writeFile(oldPng, "old layer bytes");
   let staging = "";
   const bindings: Record<string, unknown> = { ...fs, path, process, randomUUID,
-    withLayerFileOperation, mapWithConcurrency, createImportPathReservation, prepareImportStaging,
+    withLayerFileOperation, mapWithConcurrency, defaultImportConcurrency, createImportPathReservation, prepareImportStaging,
     recoverFailedImport, ImportRecoveryIncompleteError,
     archiveStamp: () => "fixed-second", uniquePath: async (dir: string, name: string) => path.join(dir, name),
     compatibleExternalEditImportMode: () => "replace", pathExists: async () => false,

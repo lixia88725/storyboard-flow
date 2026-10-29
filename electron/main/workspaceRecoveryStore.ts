@@ -104,7 +104,12 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
   };
   const json = async (file: string, root: string) => {
     const bytes = await read(file, root);
-    const value: any = parseControlledJSON(bytes);
+    let value: any;
+    try { value = parseControlledJSON(bytes); }
+    catch (error) {
+      // "protectedUninspectable" used to hide which record was unreadable; name it.
+      throw new Error(`Recovery record ${file} unreadable (${bytes.length} bytes): ${String(error)}`);
+    }
     if (!boundedJSON(value, budget!.jsonDepth).equals(bytes)) throw new Error('Noncanonical/duplicate-key JSON');
     return { value, digest: digest(bytes) };
   };
@@ -264,6 +269,7 @@ export const createWorkspaceRecoveryStore = ({ authorize, budget, fault, sources
     await fs.mkdir(target, { mode: 0o700 }); await identity(target, true); await certify(target, root, 'directory');
   };
   const publish = async (target: string, bytes: Buffer, root: string, binding: Binding) => {
+    if (!bytes.length) throw new Error(`Refusing to publish an empty recovery record: ${target}`);
     await checkBinding(binding);
     const source = `${target}.staging-${randomUUID()}`;
     const handle = await fs.open(source, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);

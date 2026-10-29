@@ -3,6 +3,9 @@ import sharp from "sharp";
 
 const sharpSourceOptions = { unlimited: true } as const;
 
+/** Changing how this hash is computed invalidates every cached entry: bump
+ * `pixelFingerprintCacheVersion` in `pixelFingerprintCache.ts` in the same commit. */
+
 export const pixelFingerprint = async (imagePath: string): Promise<string> => {
   const { data, info } = await sharp(imagePath, sharpSourceOptions)
     .rotate()

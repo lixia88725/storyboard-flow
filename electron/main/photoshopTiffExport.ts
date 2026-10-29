@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { availableParallelism } from "node:os";
 import path from "node:path";
 import { bitmapLayersForShot, type ElectronBitmapLayer } from "./bitmapLayerOrdering.js";
 import { runPythonScript } from "./pythonRuntime.js";
@@ -71,7 +72,11 @@ export type PhotoshopTiffInPlaceSavePlan = {
 };
 
 export const photoshopTiffExportRootName = "Photoshop TIFF Export";
-const defaultInPlaceSaveConcurrency = 2;
+// Every job spawns a Python process that decodes and re-encodes a full board frame, so this is
+// CPU work, not I/O. Measured on a real 304-shot board: 2 in flight cost 522 ms per shot, 4 cost
+// 302 ms, and it flattens around 6. Stay at half the cores (max 4) so the canvas keeps a core
+// while saving — over-subscribing here trades a faster Save for a laggier brush.
+const defaultInPlaceSaveConcurrency = Math.max(2, Math.min(4, Math.floor(availableParallelism() / 2)));
 
 export const buildPhotoshopTiffExportPlan = (
   project: Project,

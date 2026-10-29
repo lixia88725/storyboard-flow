@@ -47,8 +47,11 @@ def finite(value):
     return type(value) is int and 0 < value <= 9007199254740991
 
 
-def policy_fingerprint(expected):
-    return hashlib.sha256(canonical([expected[k] for k in ('uid', 'gid', 'mode', 'flags', 'acl')] + [sorted(expected['xattrs'].items())])).hexdigest()
+def policy_fingerprint(expected, legacy=False):
+    # New record policies describe transferable restrictions, not the source's
+    # process marker. Old immutable v3 records keep their original full hash.
+    attributes = expected['xattrs'] if legacy else helper.inherited_xattrs(expected['xattrs'])
+    return hashlib.sha256(canonical([expected[k] for k in ('uid', 'gid', 'mode', 'flags', 'acl')] + [sorted(attributes.items())])).hexdigest()
 
 
 def valid_census(value):
@@ -119,7 +122,7 @@ def validate(request):
     expected = enrollment.source_restrictions(request)
     attributes = inventory_module.attribute_bytes(expected)
     if v3:
-        if payload['recordPolicyFingerprint'] != policy_fingerprint(expected):
+        if payload['recordPolicyFingerprint'] not in (policy_fingerprint(expected), policy_fingerprint(expected, legacy=True)):
             raise ValueError('Claim record complete policy fingerprint mismatch')
         end = payload['scopeEnd']
         if request['phase'] != 'close':
@@ -309,6 +312,11 @@ def authorize(request):
                         base = entry.name[:-len(suffix)]
                         if not HEX.fullmatch(base):
                             raise ValueError('Unknown claim namespace residue')
+                        # Empty is ambiguous: failed setup and later truncation
+                        # look identical. Keep the evidence and refuse; a cold
+                        # reader cannot certify that no resource effect occurred.
+                        if suffix == RESERVE_SUFFIX and entry.stat(follow_symlinks=False).st_size == 0:
+                            raise ValueError('Incomplete empty claim reserve retained: ' + entry.name)
                         (claims if suffix == RESERVE_SUFFIX else terminals).add(base)
             if terminals - claims:
                 raise ValueError('Claim terminal without reserve')
@@ -411,7 +419,7 @@ def read_claim(directories, name, base, expected, request, terminal=False):
     content, actual, native_identity = read_bytes(directories, name, expected, derive=True)
     value = json.loads(content.decode('utf8'))
     v3 = isinstance(value, dict) and value.get('schema') == 'swb.workspace-claim.v3'
-    if not v3 and actual != expected:
+    if not v3 and (expected is None or helper.inherited_restrictions(actual) != helper.inherited_restrictions(expected)):
         raise ValueError('Legacy claim complete native source restriction mismatch')
     # Apply the SAME strict shape, peak/floor, identity, native restriction and
     # lifecycle contract to input and cold bytes. The filename fixes the phase.

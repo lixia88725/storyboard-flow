@@ -13,6 +13,7 @@ import { createImportPathReservation } from "./importPaths.js";
 import { prepareImportStaging } from "./importPreparation";
 import { withLayerFileOperation } from "./layerFileOperationQueue.js";
 import { mapWithConcurrency } from "./mapWithConcurrency.js";
+import { defaultImportConcurrency } from "./photoshopTiffImport.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -41,7 +42,7 @@ const prepare = async (dir: string, shots: Array<{ id: string; imagePath: string
   expect(end).toBeGreaterThan(start);
   const unique = source.slice(source.indexOf("const uniquePath ="));
   const bindings = {
-    createImportPathReservation, prepareImportStaging, path, pathExists, pathEntryExists, mkdir: fs.mkdir, randomUUID, sharp, withLayerFileOperation, mapWithConcurrency,
+    createImportPathReservation, prepareImportStaging, path, pathExists, pathEntryExists, mkdir: fs.mkdir, randomUUID, sharp, withLayerFileOperation, mapWithConcurrency, defaultImportConcurrency,
     archiveStamp: () => "batch", compatibleExternalEditImportMode,
     isLikelyTiffPath: () => false, writeSwbImportWorkingTiff, pixelFingerprint,
     sharpSourceOptions: { unlimited: true }

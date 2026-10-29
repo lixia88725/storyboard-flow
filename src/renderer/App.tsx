@@ -981,7 +981,11 @@ export const App = () => {
       setFileNameSyncState("synced");
       fileNameSyncStateRef.current = "synced";
       setStatus("Saved and synced file names");
-      // Do not clear history or a newer producer's dirty state.
+      // Do not clear history. Dirty state is cleared per shot by clearSavedShots, and only for
+      // the shots this Save settled — a newer stroke re-marks its own shot.
+    },
+    clearSavedShots: (shotIds: string[]) => {
+      clearShotsDirty(shotIds);
     }
   };
   const normalSaveAppCallbacksRef = useRef(normalSaveAppCallbacks);
@@ -1052,6 +1056,7 @@ export const App = () => {
         },
         onError: error => { if (workspaceSlotsRef.current?.isActive(slot)) normalSaveAppCallbacksRef.current.onError(error); },
         onSave: saved => { if (workspaceSlotsRef.current?.isActive(slot)) normalSaveAppCallbacksRef.current.onSave(saved); },
+        clearSavedShots: shotIds => { if (workspaceSlotsRef.current?.isActive(slot)) normalSaveAppCallbacksRef.current.clearSavedShots?.(shotIds); },
         onPendingPublication: result => { if (workspaceSlotsRef.current?.isActive(slot)) normalSaveAppCallbacksRef.current.onPendingPublication(result); },
         onSaveNamespace: namespace => { if (workspaceSlotsRef.current?.isActive(slot)) rebasePendingHistory(namespace.before, namespace.after, namespace.ids, namespace.update, true); },
         captureSaveStatus: () => { const finish = normalSaveAppCallbacksRef.current.captureSaveStatus(); return () => { if (workspaceSlotsRef.current?.isActive(slot)) finish(); }; },

@@ -89,3 +89,25 @@ test.each([false,true])('a native PNG plan funds newly accounted existing contai
   expect(after.records-before.records).toBeLessThanOrEqual(plan.peakRecords);
   expect(after.bytes-before.bytes).toBeLessThanOrEqual(plan.peakBytes);
 },120000);
+
+test('replacement clone funds the larger old backing, preserves custom attributes, and truncates only the stage',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'png-clone-shrink-')),file=path.join(root,'existing.png');
+  await fs.mkdir(path.join(root,'.storyboard-workbench'),{mode:0o700});
+  const old=await sharp({create:{width:256,height:256,channels:4,background:'blue'}}).png({compressionLevel:0}).toBuffer();
+  const next=await sharp({create:{width:2,height:2,channels:4,background:'red'}}).png().toBuffer();
+  await fs.writeFile(file,old,{mode:0o600});execFileSync('/usr/bin/xattr',['-w','org.storyboard.clone-test','keep',file]);
+  const before=await fs.stat(file,{bigint:true});
+  const names=execFileSync('/usr/bin/xattr',[file],{encoding:'utf8'}).trim().split('\n').filter(Boolean);
+  const raw=names.reduce((sum,key)=>sum+Buffer.byteLength(key)+Buffer.from(execFileSync('/usr/bin/xattr',['-p','-x',key,file],{encoding:'utf8'}).replace(/\s/g,''),'hex').length,0);
+  const plan=await planProtectedPngWrite(root,file,next,'upsert',4*1024*1024,'python3');
+  expect(plan.stagePeak).toBe(old.length+raw);expect(plan.peakBytes).toBe(plan.stagePeak);
+  const underfunded={...plan,stagePeak:32768,peakBytes:32768};
+  const run=(quote:typeof plan)=>withProducerPngEffects({beforeWrite:async()=>{},beforeDelete:async()=>{},deleted:async()=>{},written:async()=>{},physicalWrite:(_request,execute)=>execute(quote)},()=>writeProtectedLayerFile(root,file,next));
+  await expect(run(underfunded)).rejects.toMatchObject({effect:'refused'});
+  expect(await fs.readFile(file)).toEqual(old);expect((await fs.stat(file,{bigint:true})).ino).toBe(before.ino);
+  await expect(run(plan)).resolves.toMatchObject({effect:'committed'});
+  expect(await fs.readFile(file)).toEqual(next);expect((await fs.stat(file,{bigint:true})).ino).not.toBe(before.ino);
+  expect(execFileSync('/usr/bin/xattr',['-p','org.storyboard.clone-test',file],{encoding:'utf8'}).trim()).toBe('keep');
+  expect((await fs.stat(file)).mode&0o777).toBe(0o600);
+  expect((await fs.readdir(root)).filter(name=>name.startsWith('.layer-staging-'))).toEqual([]);
+},120000);

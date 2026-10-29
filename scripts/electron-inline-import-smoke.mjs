@@ -4,15 +4,17 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
 const singleProject = process.argv.includes('--single-project');
+const switchLaunchContext = process.argv.includes('--switch-launch-context');
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const root = await mkdtemp(path.join(os.tmpdir(), 'swb-inline-import-'));
+// Same platform alias as the other smoke scripts: the backend refuses /var-style spellings.
+const root = await mkdtemp(path.join(await realpath(os.tmpdir()), 'swb-inline-import-'));
 const source = path.join(root, 'old-board'), otherSource = path.join(root, 'other-board');
 const managedName = '.storyboard-flow';
 const userData = path.join(root, 'userData');
@@ -43,10 +45,18 @@ await writeFile(entry, `const {app, dialog, clipboard, shell} = require('electro
 for (const key of Object.keys(clipboard)) if (typeof clipboard[key] === 'function') clipboard[key] = () => { throw new Error('Test forbids clipboard access'); };
 shell.trashItem = async () => { throw new Error('Test forbids Trash access'); };
 const fs = require('node:fs');
+process.env.SWB_USER_DATA_DIR = ${JSON.stringify(userData)};
+process.env.SWB_PYTHON_DEPS_DIR = ${JSON.stringify(process.env.SWB_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff'))};
+process.env.VITE_DEV_SERVER_URL = '';
+fs.writeFileSync(${JSON.stringify(path.join(root, 'test-process.json'))}, JSON.stringify({pid:process.pid, entry:__filename}));
+const probe = ${JSON.stringify(path.join(root, 'creation-context-'))} + process.pid;
+fs.writeFileSync(probe, 'synthetic process-context probe');
+const nativeMarker = require('node:child_process').spawnSync('/usr/bin/xattr', ['-px','com.apple.provenance',probe], {encoding:'utf8'});
+fs.appendFileSync(${JSON.stringify(path.join(root, 'creation-contexts.jsonl'))}, JSON.stringify({pid:process.pid, marker:nativeMarker.status===0 ? nativeMarker.stdout.trim() : null})+'\\n');
 app.setAppPath(${JSON.stringify(repo)});
 app.on('browser-window-created', (_event, window) => { window.webContents.setBackgroundThrottling(false); window.on('show', () => window.hide()); window.hide(); });
 dialog.showOpenDialog = async () => { throw Error('Import must not ask for a destination'); };
-dialog.showMessageBox = async (_owner, options) => { console.log('TEST_PROMPT', options.message); return { response: 0 }; };
+dialog.showMessageBox = async (_owner, options) => { fs.appendFileSync(${JSON.stringify(path.join(root, 'prompts.jsonl'))}, JSON.stringify(options.message)+'\\n'); console.log('TEST_PROMPT', options.message); return { response: 0 }; };
 dialog.showMessageBoxSync = () => 0;
 app.on('window-all-closed', () => app.quit());
 import(${JSON.stringify(path.join(repo, 'dist-electron/main/main.js'))});
@@ -54,11 +64,15 @@ import(${JSON.stringify(path.join(repo, 'dist-electron/main/main.js'))});
 
 let child, ws, evaluate, send;
 let prompts = 0;
+let launchCount = 0;
 const launch = async () => {
   const port = 9500 + Math.floor(Math.random() * 400);
-  child = spawn(path.join(repo, 'node_modules/.bin/electron'), [`--remote-debugging-port=${port}`, entry], {
+  const viaLaunchServices = switchLaunchContext && launchCount++ === 0;
+  const args = [`--remote-debugging-port=${port}`, entry];
+  child = spawn(viaLaunchServices ? '/usr/bin/open' : process.platform === 'darwin' ? path.join(repo, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron') : path.join(repo, 'node_modules/.bin/electron'), viaLaunchServices
+    ? ['-n','-W','-g','-a',path.join(repo,'node_modules/electron/dist/Electron.app'),'--args',...args] : args, {
     cwd: repo, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env,
-      SWB_USER_DATA_DIR: userData, SWB_PYTHON_DEPS_DIR: path.join(repo, 'vendor/python/photoshop-tiff'), VITE_DEV_SERVER_URL: '' }
+      SWB_USER_DATA_DIR: userData, SWB_PYTHON_DEPS_DIR: process.env.SWB_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff'), VITE_DEV_SERVER_URL: '' }
   });
   child.stdout.on('data', bytes => { if (/TEST_PROMPT (This workspace has an unfinished operation|Close without saving)/.test(String(bytes))) prompts++; process.stdout.write(bytes); });
   child.stderr.on('data', bytes => process.stderr.write(bytes));
@@ -72,7 +86,12 @@ const launch = async () => {
     if (!waiter) return; pending.delete(result.id);
     if (result.error) waiter.reject(new Error(JSON.stringify(result.error))); else waiter.resolve(result.result);
   });
-  send = (method, params = {}) => new Promise((resolve, reject) => { pending.set(++id, { resolve, reject }); ws.send(JSON.stringify({ id, method, params })); });
+  send = (method, params = {}) => new Promise((resolve, reject) => {
+    const requestId = ++id;
+    const timeout = setTimeout(() => { pending.delete(requestId); reject(new Error(`CDP timed out: ${method}`)); }, 30000);
+    pending.set(requestId, { resolve: value => { clearTimeout(timeout); resolve(value); }, reject: error => { clearTimeout(timeout); reject(error); } });
+    ws.send(JSON.stringify({ id:requestId, method, params }));
+  });
   evaluate = async expression => {
     const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
     if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
@@ -108,6 +127,8 @@ const close = async () => {
   await evaluate(`window.close()`);
   await wait(() => child.exitCode !== null, 'normal retained close', 180000);
   assert.equal(child.exitCode, 0); ws.close();
+  prompts = (await readFile(path.join(root,'prompts.jsonl'),'utf8').catch(error => { if(error.code==='ENOENT') return ''; throw error; }))
+    .split('\n').filter(Boolean).map(JSON.parse).filter(message => /This workspace has an unfinished operation|Close without saving/.test(message)).length;
 };
 try {
   console.log('EVIDENCE_ROOT', root);
@@ -185,7 +206,13 @@ try {
   assert.deepEqual((await readdir(source)).sort(), ['.storyboard-flow', '.storyboard-workbench', 'shot-1.png', 'shot-2.png']);
   assert.deepEqual(await readdir(path.dirname(metadata(source))), ['storyboard.project.json']);
   await close();
+  const contexts = (await readFile(path.join(root,'creation-contexts.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+  const distinctProvenanceContexts = contexts.some(context => context.marker !== contexts[0].marker);
+  // LaunchServices may keep the caller's responsible-process attribution.
+  // Record that fact rather than claiming the GUI exercised marker drift.
+  // Different-marker native I/O is verified separately by the native regression.
   await writeFile(path.join(root, 'result.json'), JSON.stringify({ passed:true, mode:singleProject ? 'single-project' : 'multi-project', source, converted, originalsUpdatedOnlyOnSave:true, firstBackupsPreserved:true, normalClosePrompts:prompts, paintedLayer:painted,
+    switchLaunchContext, creationContexts:contexts, distinctProvenanceContexts,
     checks:['inline preview','no destination picker','source address and recents','same source resumes child without duplicate import','toolbar Import','owned layers','draw then close without Save and reopen editable','hidden workspace keyboard isolation','return dirty project',...(singleProject ? [] : ['Import while prior project dirty','hidden unsaved Import closes durably without Save']),'Save','normal retained close','fresh-process reopen'],
     skips:singleProject ? ['second Import while another project is dirty and subsequent multi-project close'] : [],
     limits:['message responses supplied by test entry; destination picker forbidden','synthetic images only','no clipboard or Trash','not independent acceptance'] }, null, 2));
@@ -199,5 +226,12 @@ try {
   throw error;
 } finally {
   ws?.close();
+  if (switchLaunchContext && child && child.exitCode === null) {
+    const owned = JSON.parse(await readFile(path.join(root,'test-process.json'),'utf8'));
+    if (owned.entry === entry && Number.isInteger(owned.pid)) {
+      try { process.kill(owned.pid,'SIGTERM'); console.log('CLEANUP stopped test-owned Electron', owned.pid); }
+      catch (error) { if (error.code !== 'ESRCH') throw error; }
+    }
+  }
   if (child && child.exitCode === null) { child.kill('SIGTERM'); console.log('CLEANUP stopped test-owned Electron', child.pid); }
 }

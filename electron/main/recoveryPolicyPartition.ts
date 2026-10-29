@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
 
+/** Cross-file inheritance only. Full observations, immutable partition keys,
+ * byte accounting and same-file tamper checks retain every attribute. */
+export const inheritedRecoveryAttributes = (attributes: Record<string, string>): Record<string, string> =>
+  Object.fromEntries(Object.entries(attributes).filter(([name]) => name !== Buffer.from('com.apple.provenance').toString('base64')));
+
+export const inheritedRecoveryRestrictions = (info: any) => ({ ...info, xattrs: inheritedRecoveryAttributes(info.xattrs) });
+
 // A partition identity is not a policy certificate or authority. Native still
 // verifies the full source observations and actual destination on every request.
 export const recoveryPolicyKey = (policy: any): string => {
@@ -31,7 +38,7 @@ export const intersectRecoveryPolicies = (policies: readonly any[]) => {
     if (policy.schema !== 'swb.finite-source-policy' || policy.version !== 1 || !Array.isArray(policy.observed) || !policy.observed.length) throw new Error('Unknown recovery contributor certificate');
   }
   const expected = structuredClone(policies[0].expected);
-  const attributes = (v: any) => JSON.stringify(Object.keys(v).sort().map(key => [key, v[key]]));
+  const attributes = (v: any) => JSON.stringify(Object.entries(inheritedRecoveryAttributes(v)).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
   for (const policy of policies.slice(1)) {
     const actual = policy.expected;
     if (['uid', 'gid', 'flags'].some(field => expected[field] !== actual[field]) || attributes(expected.xattrs) !== attributes(actual.xattrs)) throw new Error('Incompatible recovery contributor restrictions');

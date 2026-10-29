@@ -53,6 +53,27 @@ const importRecoveryIncomplete = (error: unknown): boolean => {
 
 /** App remains the sole owner: this module operates on its ref and synchronous state publication port.
  * Not enabled in App until every producer and effect admission is adapted. No IPC or new queue. */
+/** A Save must see every shot's accepted output identity unchanged. The reads are independent,
+ * so they run a few at a time instead of one after another. */
+const identityReadConcurrency = 8;
+const allShotIdentitiesHold = async <Shot extends { id: string }>(
+  shots: ReadonlyArray<Shot>,
+  accepted: Record<string, { acceptedOutputIdentity?: string } | undefined>,
+  readIdentity: (shot: Shot) => Promise<string>
+): Promise<boolean> => {
+  let next = 0;
+  let holds = true;
+  const worker = async () => {
+    while (holds && next < shots.length) {
+      const shot = shots[next];
+      next += 1;
+      if (await readIdentity(shot) !== accepted[shot.id]?.acceptedOutputIdentity) holds = false;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(identityReadConcurrency, shots.length) }, worker));
+  return holds;
+};
+
 export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
   let executingIntent: RetainedAssetIntent | undefined;
   const completionSignals = new WeakMap<object, RetainedAssetIntent>();
@@ -1271,9 +1292,10 @@ export const createNormalSaveProjectOwner = (ports: NormalSaveOwnerPorts) => {
         if (loading || !current(c) || !supported(c.project) || remainingScript) return false;
         const envelope = pendingBakeForProject(c.project);
         const ids = c.project.shots.filter(s => envelope.shots[s.id].state === "pending").map(s => s.id);
-        for (const shot of c.project.shots) {
-          if (await ports.readIdentity(shot) !== envelope.shots[shot.id].acceptedOutputIdentity) return false;
-        }
+        // Every shot's content identity, but these reads are independent: doing 304 of them one
+        // at a time cost seconds per Save on a real board. Bounded so a cold cache does not open
+        // hundreds of file reads at once; order is irrelevant to a content hash.
+        if (!(await allShotIdentitiesHold(c.project.shots, envelope.shots, ports.readIdentity))) return false;
         if (!current(c)) return false;
         if (receipt && (ids.length === 0 || receipt.deletions?.length)) {
           const retryReceipt = receipt;

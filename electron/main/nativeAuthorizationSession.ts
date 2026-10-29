@@ -29,6 +29,20 @@ export const createNativeAuthorizationSession = (python: string, script: string,
   const transportLimit = () => Math.min(byteLimit(), NATIVE_AUTHORIZATION_TRANSPORT_BYTES);
   type Session = { request: (input: unknown) => Promise<any>; close: () => Promise<void> };
   const sessions = new AsyncLocalStorage<{ worker?: Session }>();
+  // A refused adapter request must name its phase; the bare reason ("Expecting value: line 1
+  // column 1") is what made this failure take three sessions to locate.
+  const phaseOf = (input: any): string => {
+    const label = input && typeof input === 'object' ? (input.phase ?? input.kind ?? input.op ?? input.request) : typeof input;
+    return label === undefined ? 'unknown phase' : String(label);
+  };
+  // Name the files an adapter was asked about, so a bare Python reason still points somewhere.
+  const describe = (input: any): string => {
+    if (!input || typeof input !== 'object') return '';
+    const named = [input.filePath, input.path, input.metadataPath].filter(v => typeof v === 'string');
+    if (Array.isArray(input.sources)) named.push(...input.sources.filter((v: any) => typeof v === 'string'));
+    if (!named.length) return '';
+    return `[${named.slice(0, 3).map(v => String(v).replace(/^.*\.storyboard-flow\//, '')).join(', ')}${named.length > 3 ? `, +${named.length - 3}` : ''}]`;
+  };
   const finish = async <T>(operation: () => Promise<T>, close: () => Promise<void> | undefined): Promise<T> => {
     let failed = false;
     try { return await operation(); }
@@ -76,7 +90,7 @@ for line in sys.stdin:
     let buffer = '', failure: Error | undefined, hasExited = false;
     const stderr = createBoundedNativeDiagnostic();
     const worker = {};
-    const pending: { resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }[] = [];
+    const pending: { input: unknown; resolve: (value: any) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }[] = [];
     const fail = (error: Error) => { failure ??= error; for (const p of pending.splice(0)) { clearTimeout(p.timer); p.reject(failure); } };
     const stopUnknown = (error: Error) => {
       if (!hasExited) { markNativeWorkerUnsettled(worker); child.kill(); }
@@ -100,17 +114,27 @@ for line in sys.stdin:
         const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
         const p = pending.shift(); if (!p) { stopUnknown(new Error('Unsolicited native response; effect unknown')); return; }
         clearTimeout(p.timer);
-        try { const result = JSON.parse(line); if (result.authorized !== true) throw new Error(result.reason || 'Native policy refused'); p.resolve(result); } catch (e) { p.reject(e instanceof Error ? e : new Error(String(e))); }
+        try {
+          const result = JSON.parse(line);
+          if (result.authorized !== true) throw new Error(`Native refused at ${phaseOf(p.input)} ${describe(p.input)}: ${result.reason || 'policy refused'}`);
+          p.resolve(result);
+        } catch (e) { p.reject(e instanceof Error ? e : new Error(String(e))); }
       }
     });
     return {
       request: (input: unknown): Promise<any> => new Promise((resolve, reject) => {
         if (failure) { reject(failure); return; }
+        // A non-object request serialises to `undefined`/`null`, and the adapter answers with a bare
+        // "Expecting value: line 1 column 1 (char 0)" that names nothing. Refuse it with a trace instead.
+        if (input === undefined || input === null) {
+          reject(new Error(`Native request missing (expected an object); adapter ${script}`));
+          return;
+        }
         const encoded = JSON.stringify(input) + '\n';
         if (Buffer.byteLength(encoded) > transportLimit()) { reject(new Error('Native request budget')); return; }
         const timer = setTimeout(() => stopUnknown(new Error('Native request deadline exceeded; effect unknown')), requestTimeoutMs);
         timer.unref();
-        pending.push({ resolve, reject, timer });
+        pending.push({ input, resolve, reject, timer });
         child.stdin.write(encoded, error => { if (error) stopUnknown(error); });
       }),
       close: async () => {

@@ -33,3 +33,34 @@ test('real ordinary PNG before-capture funds its native typed-backing clone befo
     expect(captured).toBeGreaterThan(0);expect(await fs.readFile(file)).toEqual(green);expect(budget.usage().pendingBytes).toBe(0);
   });
 },120000);
+
+// Deliberately retain snapshot allocations until the turn ends: admission must
+// not depend on the garbage collector having already reclaimed comparison copies.
+// The old path exceeds this budget before the PNG effect; the optimized path
+// still pays for its independent before-snapshot and exact native readbacks.
+test('ordinary painting validates a large source within its bounded memory budget',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'ordinary-clone-ram-')),userData=await fs.mkdtemp(path.join(os.tmpdir(),'ordinary-clone-userdata-')),bitmapPath='.storyboard-workbench/layers/s/a.png',file=path.join(root,bitmapPath),metadata=path.join(root,'.storyboard-workbench/storyboard.project.json'),script=path.join(root,'storyboard-script.md'),tiff=path.join(root,'s.tiff'),python='python3';
+  await fs.mkdir(path.dirname(file),{recursive:true,mode:0o700});const blue=await sharp({create:{width:256,height:256,channels:4,background:'blue'}}).png().toBuffer(),green=await sharp({create:{width:256,height:256,channels:4,background:'green'}}).png().toBuffer();await fs.writeFile(file,blue,{mode:0o600});await fs.writeFile(tiff,await sharp(blue).tiff({compression:'none'}).toBuffer(),{mode:0o600});
+  const project={id:'p',name:'Ordinary clone',shots:[{id:'s',imagePath:tiff,fileName:'s.tiff',swb:{status:'owned',canvasWidth:256,canvasHeight:256},layers:[{id:'a',kind:'paint',bitmapPath,width:256,height:256}]}],dialogues:[]};
+  const persist=async()=>{await fs.writeFile(metadata,JSON.stringify(project,null,2)+'\n',{mode:0o600});await fs.writeFile(script,serializeStoryboardScriptMarkdown(project as any),{mode:0o600});return {};};await persist();
+  const accounting=createOriginWorkspaceAccounting({userData:()=>userData,python,script:path.resolve('scripts/recovery-origin-permissions.py'),claimRecords:()=>createRecoveryClaimRecords({userData:()=>userData,python,script:path.resolve('scripts/recovery-claim-records.py')}),claimWriter:(_root,restrictions)=>createRecoveryClaimRecords({userData:()=>userData,python,script:path.resolve('scripts/recovery-claim-records.py'),restrictions:()=>restrictions})});
+  // External private Main memory owner makes its pending ledger observable;
+  // production Native/claim/Store/producer ports are real, not replaced.
+  const service=createPreparedWorkspaceSave({accounting,python,script:path.resolve('scripts/recovery-content-permissions.py'),budget:{bytes:8*1024*1024,records:2000,assets:32,jsonDepth:80}}),actualBudget=createControlledMemoryBudget(18_000_000),held:Buffer[]=[],track=(reservation:ReturnType<typeof actualBudget.reserve>)=>({...reservation,adopt:(buffer:Buffer)=>{held.push(buffer);return reservation.adopt(buffer);},adoptMany:(buffers:readonly Buffer[])=>{held.push(...buffers);return reservation.adoptMany(buffers);}}),budget={...actualBudget,allocate:(bytes:number)=>{const buffer=actualBudget.allocate(bytes);held.push(buffer);return buffer;},reserve:(bytes:number)=>track(actualBudget.reserve(bytes)),reserveBackings:(bytes:number)=>track(actualBudget.reserveBackings(bytes))},frame={},event:any={sender:{mainFrame:frame},senderFrame:frame};
+  const payload={folderPath:root,metadataPath:metadata,normalSave:true,project,recoveryContent:{projectRaw:project,sequence:1,assetRevision:0,desiredAssets:[],retainedAssetIntents:[],effectFacts:{receipt:[],deletions:[],remainingScript:null,unsettled:false}}};
+  // Establish the existing checkpoint under its own budget. This regression
+  // measures a single ordinary edit, not GC timing across unrelated setup work.
+  await withControlledMemory(createControlledMemoryBudget(128*1024*1024),async()=>{
+    const saved=await service.run(event,payload,async()=>({project,normalSaveOutputs:[]}));await service.persist(event,{...payload,recoverySaveNonce:saved.recoverySaveNonce},persist);await service.acknowledge(event,{folderPath:root,nonce:saved.recoverySaveNonce,project});
+  });
+  await withControlledMemory(budget,async()=>{
+    const native=globalThis.structuredClone;let captured=0;const clone=vi.spyOn(globalThis,'structuredClone').mockImplementation((value:any)=>{
+      if(Array.isArray(value?.assets)&&value.assets.some((a:any)=>a.bytes instanceof Uint8Array)){
+        captured++;expect(budget.usage().pendingBytes).toBeGreaterThan(0);expect(readFileSync(file)).toEqual(blue);
+      }
+      return native(value);
+    });
+    try{await service.ordinary(event,'layers:writePng',{folderPath:root,bitmapPath,dataUrl:'data:image/png;base64,'+green.toString('base64')},[root,file],()=>writeLayerPng({folderPath:root,bitmapPath,dataUrl:'data:image/png;base64,'+green.toString('base64')}));}finally{clone.mockRestore();}
+    expect(budget.usage().usedBytes).toBeLessThanOrEqual(18_000_000);expect(captured).toBeGreaterThan(0);expect(await fs.readFile(file)).toEqual(green);expect(budget.usage().pendingBytes).toBe(0);
+  });
+},120000);

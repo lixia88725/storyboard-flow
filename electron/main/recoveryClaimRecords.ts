@@ -1,6 +1,7 @@
 import { createNativeAuthorizationSession, NATIVE_AUTHORIZATION_TRANSPORT_BYTES } from './nativeAuthorizationSession.js';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import { inheritedRecoveryAttributes } from './recoveryPolicyPartition.js';
 
 /** Main-private persistent resource claims. Capacity/lifecycle ONLY.
  *
@@ -58,7 +59,7 @@ export const createRecoveryClaimRecords = (options: {
     if (reservation !== undefined && (!finite(reservation?.records) || !finite(reservation?.before?.bytes) || !finite(reservation?.before?.records) || !hex(reservation?.before?.fingerprint))) throw new Error('Complete claim reservation baseline required');
     if (lifecycle && reservation === undefined) throw new Error('Lifecycle claim requires its original reservation');
     const restrictions = lifecycle ? captured ?? restrictionsFor() : null;
-    const recordPolicyFingerprint = restrictions && createHash('sha256').update(JSON.stringify([restrictions.uid, restrictions.gid, restrictions.mode, restrictions.flags, restrictions.acl, Object.entries(restrictions.xattrs).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)])).digest('hex');
+    const recordPolicyFingerprint = restrictions && createHash('sha256').update(JSON.stringify([restrictions.uid, restrictions.gid, restrictions.mode, restrictions.flags, restrictions.acl, Object.entries(inheritedRecoveryAttributes(restrictions.xattrs)).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)])).digest('hex');
     return { schema: lifecycle ? 'swb.workspace-claim.v3' : reservation === undefined ? 'swb.workspace-claim.v1' : 'swb.workspace-claim.v2', version: lifecycle ? 3 : reservation === undefined ? 1 : 2, workspaceKey, scopeId, claimId,
       effectPeak: plan.effectPeak, claimPeak: plan.claimPeak, closePeak: plan.closePeak, state, census,
       ...(reservation === undefined ? {} : { reservation: { records: reservation.records, before: { ...reservation.before } } }),

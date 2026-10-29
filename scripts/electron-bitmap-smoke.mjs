@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, realpath, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -9,7 +9,9 @@ import { decodeNormalSaveImportResult } from "../dist-electron/shared/normalSave
 import { previewPathForImage, previewRootForFolder } from "../dist-electron/main/previewPaths.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const smokeTmpRoot = os.tmpdir();
+// The backend refuses aliased paths on purpose, and macOS reports the temp dir through
+// one (/var -> /private/var). Resolve it once so every smoke root below is canonical.
+const smokeTmpRoot = await realpath(os.tmpdir());
 const smokeRoot = path.join(smokeTmpRoot, `swb-bitmap-smoke-${Date.now()}`);
 const scriptRoot = path.join(smokeTmpRoot, `swb-script-smoke-${Date.now()}`);
 const scriptRootImportEvidenceRoot = `${scriptRoot}-import-evidence`;

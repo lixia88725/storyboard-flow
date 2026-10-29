@@ -19,7 +19,8 @@ function setup(onError?: (error: unknown) => void) {
   expect(mod, "actual App adapter missing").toBeDefined();
   const adapter = mod!.createNormalSaveAppAdapter({ projectRef, setProject: (next: any) => { expect(projectRef.current).toBe(next); }, queue,
     api: () => api, paths: () => ({ folderPath: "/w", metadataPath: "/w/project.json" }), freshToken: () => "t2",
-    onSave: (saved: boolean) => events.push(`saved:${saved}`), onError: (error: unknown) => { events.push(`error:${String(error)}`); onError?.(error); } });
+    onSave: (saved: boolean) => events.push(`saved:${saved}`), clearSavedShots: (shotIds: string[]) => events.push(`clear:${shotIds.join(",")}`),
+    onError: (error: unknown) => { events.push(`error:${String(error)}`); onError?.(error); } });
   return { adapter, projectRef, api, events, queue, set fault(v: boolean) { fault = v; } };
 }
 async function actualSave(f: ReturnType<typeof setup>, setWorkspaceTask: (value: any) => void = () => {}) {
@@ -47,7 +48,7 @@ it("Save rejection retains the actionable conflict status instead of a generic i
   let decl: ts.VariableDeclaration | undefined;
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === "normalSaveAppCallbacks") decl = n; ts.forEachChild(n, walk); }; walk(ast);
   const ui: string[] = [];
-  const bindings = { workspaceSaveStateRef: { current: "saved" }, setWorkspaceSaveState: () => {}, setAutosaveError: () => {}, setSaveErrorDialog: () => {}, setStatus: (s: string) => ui.push(s), setWorkspaceTask: () => {}, formatSaveFailureStatus };
+  const bindings = { workspaceSaveStateRef: { current: "saved" }, setWorkspaceSaveState: () => {}, setAutosaveError: () => {}, setSaveErrorDialog: () => {}, setStatus: (s: string) => ui.push(s), setWorkspaceTask: () => {}, formatSaveFailureStatus, clearShotsDirty: () => {} };
   const callbacks = new Function(...Object.keys(bindings), ts.transpile(`const ${decl!.getText(ast)}; return normalSaveAppCallbacks;`))(...Object.values(bindings));
   const f = setup(callbacks.onError);
   f.api.saveWorkspace = async () => { throw new Error("Temporary rename file already exists: /w/.storyboard-renaming-s.tiff"); };
@@ -58,7 +59,8 @@ it("Save rejection retains the actionable conflict status instead of a generic i
 });
 it("actual App Save function returns true only after owner final persist, without resetting history", async () => {
   const f = setup(); expect(await actualSave(f)).toBe(true);
-  expect(f.events).toEqual(["persist:P", "saved:true"]);
+  // Persist, then release the settled shot, then publish: history is untouched.
+  expect(f.events).toEqual(["persist:P", "clear:s", "saved:true"]);
   expect(f.projectRef.current.pendingBake.shots.s.state).toBe("synced");
 });
 it("typed incomplete Save blocks subsequent autosave, Save and derived writers without laundering the old Project", async () => {
@@ -197,7 +199,7 @@ it("actual App autosave caller and actual error UI callbacks ignore old same-fol
   let decl: ts.VariableDeclaration | undefined;
   const walk = (n: ts.Node) => { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === "normalSaveAppCallbacks") decl = n; ts.forEachChild(n, walk); }; walk(ast);
   const ui: string[] = [];
-  const bindings = { workspaceSaveStateRef: { current: "saved" }, setWorkspaceSaveState: (s: string) => ui.push(s), setAutosaveError: () => {}, setSaveErrorDialog: (s: string) => ui.push(s), setStatus: (s: string) => ui.push(s), setWorkspaceTask: () => {}, formatSaveFailureStatus };
+  const bindings = { workspaceSaveStateRef: { current: "saved" }, setWorkspaceSaveState: (s: string) => ui.push(s), setAutosaveError: () => {}, setSaveErrorDialog: (s: string) => ui.push(s), setStatus: (s: string) => ui.push(s), setWorkspaceTask: () => {}, formatSaveFailureStatus, clearShotsDirty: () => {} };
   const callbacks = new Function(...Object.keys(bindings), ts.transpile(`const ${decl!.getText(ast)}; return normalSaveAppCallbacks;`))(...Object.values(bindings));
   const f = setup(callbacks.onError), gate = deferred(), started = deferred();
   f.api.autosaveWorkspace = async () => { started.release(); await gate.promise; throw new Error("old epoch"); };
@@ -208,6 +210,20 @@ it("actual App autosave caller and actual error UI callbacks ignore old same-fol
   f.api.autosaveWorkspace = async () => { throw new Error("current epoch"); };
   await actualCaller("persistWorkspace", { normalSaveAppEnabled: true, normalSaveAppAdapterRef: { current: f.adapter }, folderPath: "/w", metadataPath: "/w/project.json" }, [f.projectRef.current]);
   expect(ui).toEqual(["error", "current epoch", "Save failed: current epoch"]);
+});
+it("a settled Save releases exactly the shots it wrote, after the final persist", async () => {
+  const f = setup();
+  expect(await actualSave(f)).toBe(true);
+  expect(f.events).toEqual(["persist:P", "clear:s", "saved:true"]);
+});
+it("an incomplete Save keeps its dirty retry list instead of releasing it", async () => {
+  const f = setup();
+  f.api.saveWorkspace = async () => ({ ok: false, error: {
+    code: "SAVE_RECOVERY_INCOMPLETE", message: "metadata publication incomplete", recoveryIncomplete: true,
+    publicationOrCleanup: "started", metadata: "unknown", retainedPaths: ["/w/owned-backup"]
+  } } as any);
+  expect(await f.adapter.save()).toBe(false);
+  expect(f.events.some(event => event.startsWith("clear:"))).toBe(false);
 });
 // The normal App path is now unconditional; no obsolete switch may select a bypass.
 it("does not expose the retired App mode switch", () => { expect(mod).not.toHaveProperty("normalSaveAppEnabled"); });

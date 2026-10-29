@@ -71,22 +71,31 @@ def source_restrictions(request):
 
 def certify_record(fd, expected):
     info = helper.inspect_mac_fd(fd, include_acl=True, attribute_budget=32768)
-    if info['kind'] != 'ordinary' or info['links'] != 1 or any(info[k] != expected[k] for k in expected):
+    actual_policy, source_policy = helper.inherited_restrictions(info), helper.inherited_restrictions(expected)
+    if info['kind'] != 'ordinary' or info['links'] != 1 or any(actual_policy[k] != source_policy[k] for k in expected):
         raise ValueError('Origin complete native source restriction mismatch')
     return info
 
 
 def add_source_attributes(fd, expected):
-    # Copy complete attributes onto this NEW file only. Never remove unexpected
+    # Copy transferable attributes onto this NEW file only. Never remove unexpected
     # attributes, modify ownership/mode/flags, or accept an unknown ACL.
     current = helper.inspect_mac_fd(fd, include_acl=True, attribute_budget=32768)
-    if current['kind'] != 'ordinary' or any(name not in expected['xattrs'] or expected['xattrs'][name] != data for name, data in current['xattrs'].items()):
-        raise ValueError('Origin new file incompatible native attributes')
+    current_attributes = helper.inherited_xattrs(current['xattrs'])
+    source_attributes = helper.inherited_xattrs(expected['xattrs'])
+    if current['kind'] != 'ordinary' or any(name not in source_attributes or source_attributes[name] != data for name, data in current_attributes.items()):
+        # Name the offending attributes: a bare refusal here costs a whole debug round, and the
+        # answer (an extra kernel-added xattr vs a differing value) points at different fixes.
+        import base64 as _b64
+        unexpected = sorted(_b64.b64decode(n).decode('utf8', 'replace') for n in current_attributes if n not in source_attributes)
+        mismatched = sorted(_b64.b64decode(n).decode('utf8', 'replace') for n, d in current_attributes.items() if n in source_attributes and source_attributes[n] != d)
+        raise ValueError('Origin new file incompatible native attributes '
+                         f"(kind={current['kind']}, links={current.get('links')}, unexpected={unexpected}, mismatched={mismatched})")
     lib = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
     set_x = lib.fsetxattr
     set_x.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_int]
     set_x.restype = ctypes.c_int
-    for name, encoded in expected['xattrs'].items():
+    for name, encoded in source_attributes.items():
         if name in current['xattrs']:
             continue
         raw, data = base64.b64decode(name), base64.b64decode(encoded)

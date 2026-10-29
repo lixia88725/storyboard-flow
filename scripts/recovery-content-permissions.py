@@ -1,8 +1,9 @@
 """Bounded Mac nonexecuting content metadata adapter; no source mutation.
 Only ordinary regular PNG/TIFF/JSON provenance sources are supported. ACL/flags,
 links, executables and unknown objects refuse rather than weakening restrictions.
-Derived sources must have identical complete metadata except mode, whose access
-bits are intersected. This is not a Windows adapter or executable trust proof.
+Derived sources must have identical inheritable metadata except mode, whose
+access bits are intersected. Full source observations remain exact. This is not
+a Windows adapter or executable trust proof.
 """
 import base64, ctypes, hashlib, importlib.util, json, os, pathlib, re, stat, sys
 
@@ -68,7 +69,7 @@ def policy(sources, byte_limit):
     expected={k:observed[0][1][k] for k in FIELDS}
     for _,info in observed[1:]:
         for k in FIELDS:
-            if k!='mode' and info[k]!=expected[k]:
+            if k!='mode' and helper.inherited_restrictions(info)[k]!=helper.inherited_restrictions(expected)[k]:
                 raise ValueError('incompatible multi-source restriction intersection')
         expected['mode'] &= info['mode']
     return expected,observed
@@ -128,7 +129,7 @@ def authorize(request):
             if not isinstance(source,str) or not os.path.isabs(source) or '\x00' in source or not isinstance(old,dict) or set(old)!=fields or any(type(old[k]) is not int or old[k]<0 for k in numeric) or old['kind']!='ordinary' or old['reason'] is not None or old['flags']!=0 or old['links']!=1 or old['uid']!=os.getuid() or old['mode']>0o777 or old['mode'] & 0o7111:
                 raise ValueError('unsupported certified source identity/links/restrictions')
             for k in FIELDS:
-                if k!='mode' and old[k]!=rebuilt[k]:raise ValueError('certificate intersection conflict')
+                if k!='mode' and helper.inherited_restrictions(old)[k]!=helper.inherited_restrictions(rebuilt)[k]:raise ValueError('certificate intersection conflict')
             rebuilt['mode'] &= old['mode']
         if rebuilt!=expected:raise ValueError('certificate intersection mismatch')
     else:
@@ -136,29 +137,22 @@ def authorize(request):
     if info['kind']!='ordinary' or info['uid']!=expected['uid'] or info['gid']!=expected['gid']:
         raise ValueError('unsafe recovery destination identity/owner/group')
     if phase=='beforeBytes':
-        # Destination contains zero bytes. Apply every source xattr without a
-        # whitelist and ACL via native copyfile, then exact comparison. Never
-        # clear destination/source attributes to force equivalence.
+        # Destination contains zero bytes. Copy transferable source attributes;
+        # leave its own system provenance intact. ACL absence and zero flags were
+        # verified above. Never remove unexpected attributes to force a match.
         if info['size']!=0:raise ValueError('metadata setup requires empty owned staging')
         lib=ctypes.CDLL('/usr/lib/libSystem.B.dylib',use_errno=True)
-        copy=lib.fcopyfile;copy.argtypes=[ctypes.c_int,ctypes.c_int,ctypes.c_void_p,ctypes.c_uint32];copy.restype=ctypes.c_int
         df=os.open(target,os.O_RDWR|os.O_NOFOLLOW)
         try:
-            if certificate is None:
-                sf=os.open(observed[0][0],os.O_RDONLY|os.O_NOFOLLOW)
-                try:
-                    if copy(sf,df,None,5)!=0:raise OSError(ctypes.get_errno(),'metadata copy failed')
-                finally:os.close(sf)
-            else:
-                put=lib.fsetxattr;put.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t,ctypes.c_uint32,ctypes.c_int];put.restype=ctypes.c_int
-                for key,value in expected['xattrs'].items():
-                    name=base64.b64decode(key,validate=True);data=base64.b64decode(value,validate=True)
-                    if b'\x00' in name or not name:raise ValueError('invalid xattr name')
-                    if put(df,name,data,len(data),0,0)!=0:raise OSError(ctypes.get_errno(),'certified xattr copy failed')
+            put=lib.fsetxattr;put.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_void_p,ctypes.c_size_t,ctypes.c_uint32,ctypes.c_int];put.restype=ctypes.c_int
+            for key,value in helper.inherited_xattrs(expected['xattrs']).items():
+                name=base64.b64decode(key,validate=True);data=base64.b64decode(value,validate=True)
+                if b'\x00' in name or not name:raise ValueError('invalid xattr name')
+                if put(df,name,data,len(data),0,0)!=0:raise OSError(ctypes.get_errno(),'certified xattr copy failed')
             os.fchmod(df,expected['mode'])
         finally:os.close(df)
         info=helper.inspect_mac(target)
-    if info['kind']!='ordinary' or any(info[k]!=expected[k] for k in FIELDS):raise ValueError('content metadata not exact source intersection')
+    if info['kind']!='ordinary' or any(helper.inherited_restrictions(info)[k]!=helper.inherited_restrictions(expected)[k] for k in FIELDS):raise ValueError('content metadata not exact source intersection')
     if certificate is None:
         for source,old in observed:
             if helper.inspect_mac(source)!=old:raise ValueError('source metadata/identity changed')

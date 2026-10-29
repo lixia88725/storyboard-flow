@@ -47,7 +47,15 @@ async function actualRootIdentity() {
   let handler: ts.Expression | undefined;
   const walk = (n: ts.Node) => { if (ts.isCallExpression(n) && n.arguments[0]?.getText(ast) === '"workspace:readOutputIdentity"') handler = n.arguments[1]; ts.forEachChild(n, walk); }; walk(ast);
   expect(handler).toBeDefined();
-  const call = new Function("path", "createHash", "readFile", ts.transpile(`const handler = ${handler!.getText(ast)}; return handler;`))(path, createHash, readFile);
+  // The handler answers through the stat-cached wrapper; bind the real one so this still
+  // exercises the actual byte hash (a fresh cache is a cold cache).
+  const { createPixelFingerprintCache, createStatCachedPixelFingerprint } = await import("../../electron/main/pixelFingerprintCache");
+  const statCachedOutputIdentity = createStatCachedPixelFingerprint({
+    pixelFingerprint: async (imagePath: string) => createHash("sha256").update(await readFile(imagePath)).digest("hex"),
+    cache: createPixelFingerprintCache({})
+  });
+  const call = new Function("path", "createHash", "readFile", "statCachedOutputIdentity",
+    ts.transpile(`const handler = ${handler!.getText(ast)}; return handler;`))(path, createHash, readFile, statCachedOutputIdentity);
   return (imagePath: string) => call(undefined, imagePath) as Promise<string>;
 }
 async function fixture() {

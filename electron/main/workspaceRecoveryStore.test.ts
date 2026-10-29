@@ -1,3 +1,4 @@
+import { temporaryWorkspace } from '../../test/temporaryWorkspace';
 import { test, expect, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -6,7 +7,7 @@ import { createWorkspaceRecoveryStore } from './workspaceRecoveryStore';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVR4nGP4zyD3HwAFPAIdh7bqkQAAAABJRU5ErkJggg==', 'base64');
 
 test('retains latest raw content and exact asset bytes without rewriting original workspace files', async () => {
-  const root = await fs.mkdtemp(path.resolve('fixture-'));
+  const root = await temporaryWorkspace('fixture-');
   await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 });
   await fs.writeFile(path.join(root, 'original.bin'), Buffer.from('original version'));
   const authorize = async () => {}; // Synthetic test certificate only; not production permissions.
@@ -27,7 +28,7 @@ const budget = { bytes: 100000, records: 100, assets: 10, jsonDepth: 20 };
 const caller = { sender: {}, frame: {}, window: {}, document: {} };
 const authorize = async () => {};
 const offer = (revision = 'owner:1') => ({ revision, projectRaw: { text: revision }, viewState: { selected: 'A' }, scriptState: { input: { state: 'unobserved' } }, effectFacts: [{ effect: 'unknown' }], continuationState: { pending: true }, assets: [{ assetId: 'pixels', bytes: revision.endsWith(':2') ? png : previousPNG, role: 'desired', width: 1, height: 1, encoding: 'png' }], requiredAssetIds: ['pixels'] });
-const fixture = async () => { const root = await fs.mkdtemp(path.resolve('fixture-')); await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 }); return root; };
+const fixture = async () => { const root = await temporaryWorkspace('fixture-'); await fs.mkdir(path.join(root, '.storyboard-workbench'), { mode: 0o700 }); return root; };
 
 test('absent recovery probes readability without allocating all unrelated metadata names', async () => {
   const root = await fixture();

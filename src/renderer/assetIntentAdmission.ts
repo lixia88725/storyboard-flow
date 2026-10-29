@@ -12,10 +12,24 @@ export const isCancelledBeforeEffect = (value: unknown): value is typeof cancell
   !!value && typeof value === 'object' && 'status' in value && value.status === 'cancelled-before-effect';
 export type AssetIntentResult<T> = T | typeof cancelledBeforeEffect | typeof completedWithoutPublication;
 
+// A RAM admission refusal means the main process declined the allocation *before* any byte was
+// written ("existing data retained"), so the workspace is intact and the intent is still worth
+// executing. Treating it like a damaged workspace froze admission for the rest of the session,
+// which is how one low-memory moment turned into "Save failed" forever. Retry on the next beats
+// instead; Save waits on the in-flight intent rather than refusing to prepare. This mirrors the
+// reference storyboard tool, which skips work it cannot do right now and picks it up later.
+const defaultTransientRetryDelaysMs = Object.freeze([200, 400, 800, 1600]);
+export const isTransientAdmissionRefusal = (error: unknown): boolean =>
+  error instanceof Error && error.message.includes('RAM_ADMISSION:');
+
 // A small scheduling seam, not a command log. run must encompass first effect,
 // descriptor publication and required persistence ACK. Calling from inside that
 // same run/queue to beginOperation is forbidden: freeze occurs outside exclusive.
-export const createAssetIntentAdmission = (consumeCompletion?: (signal: unknown, executing: RetainedAssetIntent) => boolean) => {
+export const createAssetIntentAdmission = (
+  consumeCompletion?: (signal: unknown, executing: RetainedAssetIntent) => boolean,
+  options?: { transientRetryDelaysMs?: readonly number[] }
+) => {
+  const transientRetryDelaysMs = options?.transientRetryDelaysMs ?? defaultTransientRetryDelaysMs;
   type Intent = { retained: RetainedAssetIntent; run: (value: RetainedAssetIntent) => Promise<unknown>; resolve: (value: unknown) => void; reject: (reason: unknown) => void; failure?: unknown; state: 'waiting' | 'started' | 'failed' | 'cancelled-before-effect' };
   const intents = new Set<Intent>();
   const started = new Set<Promise<unknown>>();
@@ -32,7 +46,16 @@ export const createAssetIntentAdmission = (consumeCompletion?: (signal: unknown,
       if (protectedFailure) throw new Error('Earlier producer failed: desired intent retained without effects');
       intent.state = 'started';
       const executing = detach(intent.retained);
-      return intent.run(executing).then(result => {
+      // Same `executing` object across retries: the owner's private completion signal is bound to
+      // this exact object, and a refused allocation wrote nothing, so replaying it is safe.
+      const attempt = (retry: number): Promise<unknown> =>
+        intent.run(executing).catch(error => {
+          if (!isTransientAdmissionRefusal(error) || retry >= transientRetryDelaysMs.length) throw error;
+          console.warn(`[admission] transient refusal for ${intent.retained.assetId}, retry ${retry + 1} in ${transientRetryDelaysMs[retry]} ms`, error);
+          return new Promise<void>(resolve => setTimeout(resolve, transientRetryDelaysMs[retry]))
+            .then(() => attempt(retry + 1));
+        });
+      return attempt(0).then(result => {
         // Public display values are never receipts. Only the owner's private
         // one-shot signal can authorize this exact executing object.
         if (isCompletedWithoutPublication(result)) throw new Error('Uncertified intent completion result');
@@ -49,6 +72,8 @@ export const createAssetIntentAdmission = (consumeCompletion?: (signal: unknown,
       else intents.delete(intent);
       intent.resolve(result);
     }, error => {
+      // A frozen workspace is the most expensive state in this file; it must leave a trace.
+      console.error(`[admission] producer ${intent.retained.assetId} failed; workspace protected`, error);
       intent.state = 'failed'; intent.failure = error; protectedFailure = error; intent.reject(error);
     }).finally(() => { started.delete(action); });
   };

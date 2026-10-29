@@ -21,7 +21,13 @@ it("actual main read-only identity handler hashes whole bytes and rejects invali
     if (ts.isCallExpression(n) && n.expression.getText(ast) === "ipcMain.handle" && n.arguments[0]?.getText(ast) === '"workspace:readOutputIdentity"') fn = n.arguments[1];
     ts.forEachChild(n, walk);
   }; walk(ast);
-  const handler = new Function("path", "createHash", "readFile", ts.transpile(`const handler = ${fn!.getText(ast)}; return handler;`))(path, createHash, readFile);
+  const { createPixelFingerprintCache, createStatCachedPixelFingerprint } = await import("./pixelFingerprintCache");
+  const statCachedOutputIdentity = createStatCachedPixelFingerprint({
+    pixelFingerprint: async (imagePath: string) => createHash("sha256").update(await readFile(imagePath)).digest("hex"),
+    cache: createPixelFingerprintCache({})
+  });
+  const handler = new Function("path", "createHash", "readFile", "statCachedOutputIdentity",
+    ts.transpile(`const handler = ${fn!.getText(ast)}; return handler;`))(path, createHash, readFile, statCachedOutputIdentity);
   const dir = await mkdtemp(path.join(os.tmpdir(), "normal-main-chain-identity-"));
   try {
     const file = path.join(dir, "fixture.tiff"); const bytes = Buffer.from("synthetic whole-file hash fixture"); await writeFile(file, bytes);

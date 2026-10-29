@@ -8,7 +8,7 @@ import sharp from 'sharp';
 import type { IpcMainInvokeEvent } from 'electron';
 import { type RecoveryBudget, type RecoveryOffer } from './workspaceRecoveryStore.js';
 import { createWorkspaceRecoveryPartitions } from './workspaceRecoveryPartitions.js';
-import { intersectRecoveryPolicies } from './recoveryPolicyPartition.js';
+import { intersectRecoveryPolicies, inheritedRecoveryAttributes, inheritedRecoveryRestrictions } from './recoveryPolicyPartition.js';
 import { scanRecoveryWorkspace } from './recoveryWorkspaceAccounting.js';
 import type { OriginWorkspaceAccounting, ReservationFailureHandler, ReservationPhysicalControl } from './originWorkspaceAccounting.js';
 import { isDeepStrictEqual } from 'node:util';
@@ -149,14 +149,18 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   if(pin.schema!=='swb.finite-source-policy'||pin.version!==1||!Array.isArray(pin.observed)||!pin.observed.length)throw new Error('Unknown terminal source policy');
   recoveryPolicyKey(pin);return pin;
  };
- const sourceRestrictionSignature=(policy:any)=>stringifyControlledJSON(policy.observed.map(([file,info]:[string,any])=>[file,info.kind,info.links,info.uid,info.gid,info.mode,info.flags,info.xattrs]).sort((a:any,b:any)=>a[0].localeCompare(b[0])));
+ // These are transferable restriction comparisons across authenticated file
+ // replacements, not raw same-file snapshots. Custody, inventory and native
+ // observations still bind complete identities/bytes/attributes independently.
+ const restrictionSignature=(info:any)=>stringifyControlledJSON(inheritedRecoveryRestrictions(info));
+ const sourceRestrictionSignature=(policy:any)=>stringifyControlledJSON(policy.observed.map(([file,info]:[string,any])=>[file,info.kind,info.links,info.uid,info.gid,info.mode,info.flags,inheritedRecoveryAttributes(info.xattrs)]).sort((a:any,b:any)=>a[0].localeCompare(b[0])));
  const survivingSourceRestrictionsMatch=(beforePolicy:any,currentPolicy:any)=>{
   const current=new Map<string,any>(currentPolicy.observed),before=beforePolicy.observed.filter(([file]:[string,unknown])=>current.has(file));
   return sourceRestrictionSignature({observed:before})===sourceRestrictionSignature({observed:before.map(([file]:[string,unknown])=>[file,current.get(file)])});
  };
  const terminalPolicyMatches=(content:any,storagePolicy:any,currentPolicy:any)=>{
   const pin=terminalSourcePolicy(content,storagePolicy);
-  if(recoveryPolicyKey(intersectRecoveryPolicies([storagePolicy,currentPolicy]))!==recoveryPolicyKey(storagePolicy)||stringifyControlledJSON(pin.expected)!==stringifyControlledJSON(currentPolicy.expected))return false;
+  if(recoveryPolicyKey(intersectRecoveryPolicies([storagePolicy,currentPolicy]))!==recoveryPolicyKey(storagePolicy)||restrictionSignature(pin.expected)!==restrictionSignature(currentPolicy.expected))return false;
   if(content.continuationState?.terminal?.sourcePolicy===undefined)return true;
   // Bind cold restrictions to the actual final ACK, not archive access bits.
   // Inodes/bytes remain governed by custody and the exact terminal inventory.
@@ -184,7 +188,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
      // reread historical rasters; it prevents ordinary or prepared Save from
      // laundering a source change into a replacement completed pin.
      const currentPolicy=(await native({phase:'capturePolicy',sources:live.sourcePin.observed.map(([file]:[string,unknown])=>file)})).sourcePolicy;
-     return stringifyControlledJSON(currentPolicy.expected)===stringifyControlledJSON(live.sourcePin.expected)&&sourceRestrictionSignature(currentPolicy)===sourceRestrictionSignature(live.sourcePin);
+     return restrictionSignature(currentPolicy.expected)===restrictionSignature(live.sourcePin.expected)&&sourceRestrictionSignature(currentPolicy)===sourceRestrictionSignature(live.sourcePin);
     }
     // Missing-pin legacy captures retain the full cold validation below on
     // EVERY admission, including strict storage/current equality. A successful
@@ -356,7 +360,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    if(verified.state.ack?.sealDigest!==ack.sealDigest||!isDeepStrictEqual(verified.state.content?.projectRaw,offer.projectRaw)||!isDeepStrictEqual(verified.state.content?.viewState,offer.viewState))throw new Error('Continuation exact generation readback unavailable');
    const selected=verified.captures.find(c=>c.ack.sealDigest===ack.sealDigest)!;
    const reread=await verified.readAssets(selected.reference);
-   for(const asset of assets)if(!reread.get(asset.assetId)?.equals(copyControlledBuffer(asset.bytes)))throw new Error('Continuation full asset readback mismatch');
+   for(const asset of assets)if(!reread.get(asset.assetId)?.equals(asset.bytes))throw new Error('Continuation full asset readback mismatch');
   })).eligible)throw new Error('Continuation exact generation readback unavailable');
   await authenticObservation(e,observation);
   session.revision=revision;session.seal=ack.sealDigest;
@@ -422,7 +426,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  };
  const restrictCustody=(l:Lease,policy:any)=>{
   const expected=l.sourcePolicy.expected,actual=policy?.expected;
-  if(policy?.schema!=='swb.finite-source-policy'||policy.version!==1||!Array.isArray(policy.observed)||policy.observed.length!==1||!actual||Object.keys(expected).some(k=>k==='mode'?(expected.mode&actual.mode)!==expected.mode: stringifyControlledJSON(expected[k])!==stringifyControlledJSON(actual[k])))throw new Error('Producer source restrictions conflict with immutable storage policy');
+  if(policy?.schema!=='swb.finite-source-policy'||policy.version!==1||!Array.isArray(policy.observed)||policy.observed.length!==1||!actual||Object.keys(expected).some(k=>k==='mode'?(expected.mode&actual.mode)!==expected.mode: stringifyControlledJSON(inheritedRecoveryRestrictions(expected)[k])!==stringifyControlledJSON(inheritedRecoveryRestrictions(actual)[k])))throw new Error('Producer source restrictions conflict with immutable storage policy');
  };
  const currentCustody=async(l:Lease,file:string,value:Custody)=>{
   await canonicalPath(l.root,file);const rel=path.relative(l.root,file),s=value.current[rel];if(!s)return;
@@ -532,7 +536,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
  const custodyAuthenticates=async(l:Lease,file:string,dataUrl:unknown,currentOnly=false)=>{
   const value=await custodyFor(l);await currentCustody(l,file,value);const rel=path.relative(l.root,file);
   if(!value.current[rel]||typeof dataUrl!=='string'||!/^data:image\/png;base64,[A-Za-z0-9+/]*={0,2}$/.test(dataUrl))return false;
-  const bytes=decodeControlledBase64(dataUrl.split(',')[1]);return value.records.some(r=>r.file===rel&&(!currentOnly||value.current[rel].state==='present'&&value.current[rel].version===r.version)&&r.digest===hash(bytes)&&value.assets.some(a=>a.role===`custody/${r.version}`&&copyControlledBuffer(a.bytes).equals(bytes)));
+  const bytes=decodeControlledBase64(dataUrl.split(',')[1]);return value.records.some(r=>r.file===rel&&(!currentOnly||value.current[rel].state==='present'&&value.current[rel].version===r.version)&&r.digest===hash(bytes)&&value.assets.some(a=>a.role===`custody/${r.version}`&&Buffer.compare(a.bytes,bytes)===0));
  };
  const custodyAuthenticatesAbsence=async(l:Lease,file:string,project:any)=>{
   const value=await custodyFor(l);await currentCustody(l,file,value);const rel=path.relative(l.root,file);
@@ -561,14 +565,14 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const ack=await store.retain({sender:l.sender,frame:l.frame,window:l.window,document:l.document},l.root,offer,onFailure);
   const state=await store.inspectReadonly(l.root);if(!['protectedReadable','protectedIncomplete'].includes(state.state)||state.ack?.sealDigest!==ack.sealDigest||state.ack.revision!==offer.revision)throw new Error('Prepared generation exact readback unavailable');
   const retained=await store.readAssets(l.root,ack.generationId);
-  for(const a of offer.assets)if(!retained.get(a.assetId)?.equals(copyControlledBuffer(a.bytes)))throw new Error('Prepared asset full-byte readback mismatch');
+  for(const a of offer.assets)if(!retained.get(a.assetId)?.equals(a.bytes))throw new Error('Prepared asset full-byte readback mismatch');
   l.latestSeal=ack.sealDigest;
   if((offer.effectFacts as any)?.state==='completed-binding-persist-ack'&&!ordinaryFacts.has(l.root)&&!await rootRetired(l.root))throw new Error('Retained current terminal cannot retire Root');
   return {...ack,format:state.content?.version===2?'v2':'v1',policyKey:state.content?.version===2?recoveryPolicyKey(state.storagePolicy):null};
  };
- const captureCurrentAssets=async(root:string,p:any,deleted:any[]=[])=>{
+ const captureCurrentAssets=async(root:string,p:any,deleted:any[]=[],capturedFiles?:ReadonlyMap<string,{bytes:Buffer}>,reuseAssets:readonly RecoveryOffer['assets'][number][] = [])=>{
   terminalPaths(root,p,deleted);const assets:RecoveryOffer['assets']=[];
-  for(const s of dependencyShots(p,deleted))for(const d of [{file:s.imagePath,role:`original/${s.id}/base`,width:s.swb.canvasWidth,height:s.swb.canvasHeight},...s.layers.map((v:any)=>({file:path.resolve(root,v.bitmapPath),role:`original/${s.id}/${v.id}`,width:v.width,height:v.height}))]){await canonicalPath(root,d.file);const a=await raster(await readExact(d.file),d.role,`asset_${assets.length}`);if(a.width!==d.width||a.height!==d.height)throw new Error('Current ordinary raster dimensions');assets.push(a);}
+  for(const s of dependencyShots(p,deleted))for(const d of [{file:s.imagePath,role:`original/${s.id}/base`,width:s.swb.canvasWidth,height:s.swb.canvasHeight},...s.layers.map((v:any)=>({file:path.resolve(root,v.bitmapPath),role:`original/${s.id}/${v.id}`,width:v.width,height:v.height}))]){await canonicalPath(root,d.file);const bytes=capturedFiles?capturedFiles.get(d.file)?.bytes:await readExact(d.file);if(!bytes)throw new Error('Missing captured raster dependency');const a=await raster(bytes,d.role,`asset_${assets.length}`);if(a.width!==d.width||a.height!==d.height)throw new Error('Current ordinary raster dimensions');const retained=reuseAssets.find(v=>v.assetId===a.assetId&&v.role===a.role);if(retained&&Buffer.compare(retained.bytes,a.bytes)===0)a.bytes=retained.bytes;assets.push(a);}
   return assets;
  };
  const protectedRoots=async(targets:readonly string[])=>{
@@ -769,9 +773,20 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const before={offer:cloneControlled(l.offer),project:cloneControlled(l.result.project),files,parents,policy};
   const original=(before.offer.scriptState as any)?.original;
   if(!original||!decodeControlledBase64(original.metadataBytes).equals(files.get(path.join(l.root,'.storyboard-workbench/storyboard.project.json'))!.bytes)||!decodeControlledBase64(original.scriptBytes).equals(files.get(path.join(l.root,'storyboard-script.md'))!.bytes))throw new Error('Ordinary before binding bytes changed');
-  // The existing before capture must describe these actual file versions too.
-  const assets=await captureCurrentAssets(l.root,before.project,(l.offer.continuationState as any)?.deletedDependencies??[]);
-  for(const a of assets){const recorded=before.offer.assets.find(v=>v.assetId===a.assetId&&v.role===a.role);if(!recorded||!copyControlledBuffer(recorded.bytes).equals(copyControlledBuffer(a.bytes)))throw new Error('Ordinary before asset association changed');}
+  // Validate the already captured file versions without allocating a second
+  // complete copy of the project. verifyOrdinaryBefore still re-reads every
+  // file and authenticates identities, bytes and native policy before effects.
+  const assets=await captureCurrentAssets(l.root,before.project,(l.offer.continuationState as any)?.deletedDependencies??[],files);
+  const capturedFiles=new Map<Uint8Array,{bytes:Buffer;physical:string}>([...files.values()].map(value=>[value.bytes,value]));
+  for(const a of assets){
+   const recorded=before.offer.assets.find(v=>v.assetId===a.assetId&&v.role===a.role);
+   if(!recorded||Buffer.compare(recorded.bytes,a.bytes)!==0)throw new Error('Ordinary before asset association changed');
+   // Both snapshots are Main-owned and already paid for. Once their exact
+   // bytes agree, the physical inventory may share the independent offer clone.
+   // No alias to the live lease or renderer escapes, and no charge is released
+   // before the superseded backing is actually collected.
+   capturedFiles.get(a.bytes)!.bytes=Buffer.from(recorded.bytes.buffer,recorded.bytes.byteOffset,recorded.bytes.byteLength);
+  }
   await verifyOrdinaryBefore(e,l,before);return before;
  };
  const ordinaryOperation=async(e:Event,channel:string,payload:any,targets:readonly string[],execute:()=>Promise<any>):Promise<any>=>withLayerFileOperation(async()=>{
@@ -847,12 +862,12 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    if(!await rootRetired(root))throw new Error('Physical workspace is protected by a recovery inventory left by an earlier session that did not close cleanly; nothing on disk was changed. Use "Read recovery content only" to inspect and recover it.');
    const l=await ordinaryLease(e,root);readerLeases.delete(l);fact={lease:l,nonce:randomUUID(),stage:'pending',channels:[],sourcePin:retired.get(root)?.sourcePin};ordinaryFacts.set(root,fact);retired.delete(root);
    try{const deleted=(l.offer.continuationState as any)?.deletedDependencies??[],paths=terminalPaths(root,l.result.project,deleted);
-    const policy=(await native({phase:'capturePolicy',sources:paths})).sourcePolicy;if(stringifyControlledJSON(policy.expected)!==stringifyControlledJSON((l.sourceAuthorityPolicy??l.sourcePolicy).expected))throw new Error('Ordinary source restriction intersection changed');
+    const policy=(await native({phase:'capturePolicy',sources:paths})).sourcePolicy;if(restrictionSignature(policy.expected)!==restrictionSignature((l.sourceAuthorityPolicy??l.sourcePolicy).expected))throw new Error('Ordinary source restriction intersection changed');
     // Legacy has no historical final pin. Bind this NEW operation to its
     // actual pre-effect Native observation, without updating the old terminal
     // or authorizing a legacy fast path from this observation.
     fact.sourcePin??=policy;
-    const assets=await captureCurrentAssets(root,l.result.project,deleted);
+    const assets=await captureCurrentAssets(root,l.result.project,deleted,undefined,l.offer.assets);
     const offer:RecoveryOffer={...l.offer,assets,requiredAssetIds:assets.map(a=>a.assetId),scriptState:{original:{...(l.offer.scriptState as any).original,metadataBytes:(await readExact(path.join(root,'.storyboard-workbench/storyboard.project.json'))).toString('base64'),scriptBytes:(await readExact(path.join(root,'storyboard-script.md'))).toString('base64'),sourcePolicy:policy}},revision:`ordinary-started:${fact.nonce}`,projectRaw:l.result.project,effectFacts:{state:'ordinary-unsettled',channels:[channel]},continuationState:{stage:'ordinary-unsettled',notExecutable:true,deletedDependencies:deleted}};
     await retainExact(l,offer);l.offer=offer;
     if(channel==='layers:writePng'&&targets.every(target=>target===root||terminalPaths(root,l.result.project,deleted).includes(target))){const before=await captureOrdinaryBefore(e,l);fact.attempt={before,active:0,callbacks:0,operations:0,signals:0,errors:[]};}
@@ -1003,12 +1018,14 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const l=fact.lease;await authentic(e,l);
   await historyPersistence(e,l.root,payload.project);
   if(fact.stage!=='persisted'||payload.nonce!==fact.nonce||hash(stringifyControlledJSON(payload.project))!==hash(stringifyControlledJSON(fact.project)))throw new Error('Ordinary exact persistence ACK mismatch');
-  const p=fact.project,deleted=fact.deleted??[],files=[],assets:RecoveryOffer['assets']=[];
+  const p=fact.project,deleted=fact.deleted??[],files=[];
   const paths=terminalPaths(l.root,p,deleted);
   for(const file of paths){await canonicalPath(l.root,file);const bytes=await readExact(file);files.push({file:path.relative(l.root,file),digest:hash(bytes)});}
   if(!(await readExact(paths[0])).equals(encodeControlledUTF8(`${stringifyControlledJSON(p,null,2)}\n`))||!(await readExact(paths[1])).equals(encodeControlledUTF8(serializeStoryboardScriptMarkdown(p))))throw new Error('Ordinary binding changed before ACK');
-  for(const s of dependencyShots(p,deleted)){for(const d of [{file:s.imagePath,role:`original/${s.id}/base`,width:s.swb.canvasWidth,height:s.swb.canvasHeight},...s.layers.map((v:any)=>({file:path.resolve(l.root,v.bitmapPath),role:`original/${s.id}/${v.id}`,width:v.width,height:v.height}))]){const a=await raster(await readExact(d.file),d.role,`asset_${assets.length}`);if(a.width!==d.width||a.height!==d.height)throw new Error('Ordinary current raster dimensions');assets.push(a);}}
-  const policy=(await native({phase:'capturePolicy',sources:paths})).sourcePolicy;if(stringifyControlledJSON(policy.expected)!==stringifyControlledJSON((l.sourceAuthorityPolicy??l.sourcePolicy).expected))throw new Error('Ordinary source restrictions changed');
+  // Unchanged rasters can share the already owned immutable bytes after a full
+  // fresh read and comparison. Changed PNGs retain their newly captured backing.
+  const assets=await captureCurrentAssets(l.root,p,deleted,undefined,l.offer.assets);
+  const policy=(await native({phase:'capturePolicy',sources:paths})).sourcePolicy;if(restrictionSignature(policy.expected)!==restrictionSignature((l.sourceAuthorityPolicy??l.sourcePolicy).expected))throw new Error('Ordinary source restrictions changed');
   if(fact.sourcePin){
    // Add/remove/rename membership still follows the original producer,
    // custody and terminal inventory rules. An existing source's restrictions
@@ -1099,7 +1116,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   for(const ack of l.result.normalSaveOutputs??[])if(hash(await readExact(ack.targetPath))!==ack.outputHash)throw new Error('Current output changed before Owner ACK');
   const files=[];for(const file of terminalPaths(l.root,l.result.project)){await canonicalPath(l.root,file);files.push({file:path.relative(l.root,file),digest:hash(await readExact(file))});}
   const policy=(await native({phase:'capturePolicy',sources:terminalPaths(l.root,l.result.project)})).sourcePolicy;
-  if(stringifyControlledJSON(policy.expected)!==stringifyControlledJSON((l.sourceAuthorityPolicy??l.sourcePolicy).expected))throw new Error('Prepared source restrictions changed before ACK');
+  if(restrictionSignature(policy.expected)!==restrictionSignature((l.sourceAuthorityPolicy??l.sourcePolicy).expected))throw new Error('Prepared source restrictions changed before ACK');
   if(!survivingSourceRestrictionsMatch(l.sourceAuthorityPolicy??l.sourcePolicy,policy))throw new Error('Prepared admitted source restrictions changed');
   await retainExact(l,{...l.offer,revision:`completed:${l.nonce}`,projectRaw:l.result.project,effectFacts:{state:'completed-binding-persist-ack'},continuationState:{stage:'completed',outputs:l.result.normalSaveOutputs,terminal:{schema:'swb.current-terminal.v1',files,sourcePolicy:policy}}});
   // Consume the same cold current-terminal predicate before retiring live state.
@@ -1337,7 +1354,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
   const version=async(file:string,v:HVersion,role:string)=>{
    const certification=historyCertification(v);if(v.bytes===null)return {certification};
    if(/\.(json|md)$/iu.test(file))return {certification,bytes:v.bytes.toString('base64')};
-   let asset=assets.find(a=>copyControlledBuffer(a.bytes).equals(v.bytes!));
+   let asset=assets.find(a=>Buffer.compare(a.bytes,v.bytes!)===0);
    if(!asset){asset=await raster(v.bytes,role,`history_close_${o.id}_${assets.length}`);assets.push(asset);}
    return {certification,assetId:asset.assetId};
   };
@@ -1346,7 +1363,7 @@ export const createPreparedWorkspaceSave=(options:Options)=>{
    const actual=actualVersion(file,before);
    inventory.push({file:path.relative(l.root,file),before:await version(file,before,`history-close/${o.id}/before/${inventory.length}`),actual:await version(file,actual,`history-close/${o.id}/actual/${inventory.length}`)});
   }
-  for(const [i,a] of o.assets.entries())if(a.desired!==null&&!assets.some(v=>copyControlledBuffer(v.bytes).equals(a.desired!)))assets.push(await raster(a.desired,`history-close/${o.id}/desired/${i}`,`history_close_${o.id}_desired_${i}`));
+  for(const [i,a] of o.assets.entries())if(a.desired!==null&&!assets.some(v=>Buffer.compare(v.bytes,a.desired!)===0))assets.push(await raster(a.desired,`history-close/${o.id}/desired/${i}`,`history_close_${o.id}_desired_${i}`));
   const facts={schema:'swb.history-operation-preservation.v1',operation:o.id,project:o.project,targetProject:o.targetProject,persistedProject:fact!.project??null,...(metadataObservation?{metadataObservation:{kind:metadataObservation.kind,error:metadataObservation.error,attemptedProject:metadataObservation.attemptedProject,acknowledged:false}}:{}),state:o.state,next:o.next,metadataStage:stage,ordinaryNonce:fact!.nonce,channels:[...fact!.channels],acknowledged:false,invalidated:o.invalidated,assets:historyFacts(o),inventory};
   // History targets/Projects come from the renderer's in-memory snapshots, which may
   // carry own-undefined optional fields that JSON cannot represent. Normalize exactly

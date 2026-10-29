@@ -35,6 +35,8 @@ export const createNormalSaveAppAdapter = (ports: {
   assertImportAdmission?: () => void;
   onImportRecoveryRequired?: (message: string, quiet?: boolean) => void;
   onSave: (saved: boolean) => void;
+  /** Ids this settled Save owns again: it wrote them, or deliberately adopted them. */
+  clearSavedShots?: (shotIds: string[]) => void;
   onAutosave?: () => void;
   onPendingPublication?: (result: PendingPublication) => void;
   onSaveNamespace?: (namespace: NonNullable<PendingPublication["namespace"]>) => void;
@@ -56,6 +58,8 @@ export const createNormalSaveAppAdapter = (ports: {
     }
   };
   let saveCapability: {folderPath:string;metadataPath:string;nonce?:string;api:Api} | undefined;
+  // Settled by the Save in flight; only a Save that completes releases them.
+  let settledShotIds = new Set<string>();
   const owner = createNormalSaveProjectOwner({
     projectRef: ports.projectRef, setProject: ports.setProject, freshToken: ports.freshToken, queue: ports.queue,
     readIdentity: (shot: Shot) => ports.api().readOutputIdentity(shot.imagePath),
@@ -97,6 +101,9 @@ export const createNormalSaveAppAdapter = (ports: {
       const renamePlan = createRenamePlan(project, { allowDefaultNamingFields: true });
       const result = decodeWorkspaceEffectResult(await api.saveWorkspace({ ...captured, project: applyRenamePlan(project, renamePlan), recoveryContent: owner.captureRecoveryContent(), renamePlan, dirtyShotIds: ids, normalSave: true }));
       if (!result.normalSaveOutputs) throw new Error("Save did not acknowledge actual outputs");
+      // The requested ids are what main actually settled: written, or adopted after a compatible
+      // external edit. A shot main skipped on purpose still settles here.
+      for (const shotId of ids) settledShotIds.add(shotId);
       saveCapability={folderPath:captured.folderPath,metadataPath:captured.metadataPath,nonce:result.recoverySaveNonce,api};
       return { outputs: result.normalSaveOutputs, deletions: result.normalSaveDeletions ?? [] };
     }
@@ -172,11 +179,17 @@ export const createNormalSaveAppAdapter = (ports: {
   const saveAndPublish = async () => {
     const c = owner.capture();
     const finishStatus = ports.captureSaveStatus?.();
+    settledShotIds = new Set();
     const saved = await owner.save();
     if (sameEpoch(c)) {
       if (owner.lastError) ports.onError(owner.lastError);
       else {
-        if (saved) finishStatus?.();
+        if (saved) {
+          finishStatus?.();
+          // A Save that settled owns these shots again. An incomplete one must not clear them:
+          // the dirty set is its retry list, and a stroke made during the Save re-marks its own.
+          if (settledShotIds.size > 0) ports.clearSavedShots?.([...settledShotIds]);
+        }
         ports.onSave(saved);
       }
     }

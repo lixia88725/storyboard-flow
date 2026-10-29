@@ -1,3 +1,4 @@
+import { teeDiagnosticOutput } from './diagnosticOutput.js';
 import { prepareManagedSourceSave } from './managedSourceSave.js';
 import {
   app,
@@ -10,6 +11,7 @@ import {
   type WebContents
 } from "electron";
 import { copyFile, link, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { mkdirObserved as mkdir } from './workspaceInitialization.js';
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -65,6 +67,7 @@ import {
   importedLayerMovesForImportMode,
   isPhotoshopTiffNoLayersError,
   isLikelyTiffPath,
+  defaultImportConcurrency,
   runPhotoshopTiffImporter,
   topmostImportedLayerId,
   writeSwbImportWorkingTiff,
@@ -119,6 +122,7 @@ import {
 } from "./workspaceTaskProgress.js";
 import { collectImagePaths, metadataPathForFolder } from "./imageDiscoveryService.js";
 import { pixelFingerprint } from "./imageFingerprintService.js";
+import { createFilePixelFingerprintCache, createStatCachedPixelFingerprint } from "./pixelFingerprintCache.js";
 import { createAppAppHandlers } from "./appAppRuntime.js";
 import { createRecoveryCloseBarrier } from "./recoveryCloseBarrier.js";
 import { createWorkspaceRetainedCloseService } from "./workspaceRetainedCloseService.js";
@@ -458,6 +462,28 @@ if (process.env.SWB_USER_DATA_DIR) {
 }
 
 app.setName("Storyboard Flow");
+let mainLog: { write: (chunk: any) => void } | undefined;
+// The app had no log file, so every diagnosis of a failure dialog started with "please paste your
+// terminal". Tee this process's own stdout/stderr (Electron prints "Error occurred in handler for
+// 'x'" there) into userData, rotated once at 2 MB. Best effort: logging must never break startup.
+{
+  const logDirectory = app.getPath("userData");
+  const logPath = path.join(logDirectory, "main.log");
+  try {
+    mkdirSync(logDirectory, { recursive: true });
+    const previous = logPath + ".1";
+    if (existsSync(logPath) && statSync(logPath).size > 2 * 1024 * 1024) {
+      rmSync(previous, { force: true });
+      renameSync(logPath, previous);
+    }
+    const stream = createWriteStream(logPath, { flags: "a" });
+    mainLog = stream;
+    stream.on("error", () => undefined);
+    stream.write(`\n=== ${new Date().toISOString()} pid ${process.pid} ===\n`);
+    teeDiagnosticOutput(process.stdout, stream);
+    teeDiagnosticOutput(process.stderr, stream);
+  } catch { /* no log file, no startup failure */ }
+}
 
 // One instance per workspace: a second instance would be a second writer on the
 // same files. A late launch only focuses the existing window.
@@ -487,6 +513,12 @@ const createWindow = async () => {
   });
 
   const closingWindow = mainWindow;
+  // The renderer is where a rejected asset intent actually explains itself ("the paint write
+  // failed because ..."). Without this tee that reason only ever existed inside DevTools.
+  closingWindow.webContents.on('console-message', event => {
+    const line = `${event.level}: ${event.message}`;
+    try { mainLog?.write(line + "\n"); } catch { /* logging must never throw */ }
+  });
   closingWindow.webContents.on('will-prevent-unload', event => {
     if (recoveryCloseBarrier.consumeReloadPermission(closingWindow)) event.preventDefault();
     else recoveryCloseBarrier.beginReload(closingWindow);
@@ -611,7 +643,7 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle("workspace:readOutputIdentity", async (_event, imagePath: string) => {
     if (typeof imagePath !== "string" || !path.isAbsolute(imagePath) || !/\.tiff?$/iu.test(imagePath)) throw new Error("Invalid working TIFF path");
-    return createHash("sha256").update(await readFile(imagePath)).digest("hex");
+    return statCachedOutputIdentity(imagePath);
   });
 
   ipcMain.handle("workspace:save", async (event, payload: ProjectPayload) => {
@@ -1422,7 +1454,7 @@ const importProjectToSwbFormat = async (
   }
 
   return await mapWithConcurrency(
-    pathPlans, pathPlans.length, async ({ shot, compatibleExternalEdit, importMode, preserveDirtyLayers, duplicateExternalEdit, importShotId, targetPath, archivePath }) => {
+    pathPlans, defaultImportConcurrency, async ({ shot, compatibleExternalEdit, importMode, preserveDirtyLayers, duplicateExternalEdit, importShotId, targetPath, archivePath }) => {
       const sourceHash = options.normalSaveImageImport ? createHash("sha256").update(await readFile(shot.imagePath)).digest("hex") : "";
       const tempPath = path.join(tempRoot, `${importShotId}.tiff`);
       let importedLayers: NonNullable<Project["shots"][number]["layers"]> | undefined;
@@ -2285,6 +2317,41 @@ const bakeBitmapLayersToTiff = async (
   return tempPath;
 };
 
+// Opening a folder must not decode every storyboard image. The pixel
+// fingerprint (a full sharp decode) is only recomputed when the file's
+// size/mtime/ctime/inode changed since the fingerprint was recorded, so an
+// untouched folder answers from the cache while any external edit still gets a
+// real fingerprint. Cached fingerprints are keyed by absolute path and are
+// discarded on a fingerprint-algorithm version change.
+const pixelFingerprintCache = createFilePixelFingerprintCache({
+  filePath: path.join(userDataPath(), "pixel-fingerprint-cache.json")
+});
+const statCachedPixelFingerprint = createStatCachedPixelFingerprint({
+  pixelFingerprint,
+  cache: pixelFingerprintCache
+});
+// `workspace:readOutputIdentity` answers with a hash of the whole file, and the Save owner asks
+// for one identity per shot before every Save — a full read of the entire board each time. The
+// value is still the byte hash (nothing downstream changes), but an unchanged file answers from
+// cached stat alone.
+const outputIdentityCache = createFilePixelFingerprintCache({
+  filePath: path.join(userDataPath(), "output-identity-cache.json")
+});
+const statCachedOutputIdentity = createStatCachedPixelFingerprint({
+  pixelFingerprint: async (imagePath: string) =>
+    createHash("sha256").update(await readFile(imagePath)).digest("hex"),
+  cache: outputIdentityCache
+});
+// Best-effort only, and deliberately passive: the close-content-preservation barrier above owns
+// the quit sequence, and calling preventDefault()/app.quit() from here re-entered it mid-flight
+// and left sealed-but-unretired recovery operations behind, which locks the workspace read-only on
+// the next start. These caches are an optimisation that is also flushed on a debounce while the
+// app runs, so a truncated final rename costs a few cache entries and nothing else.
+app.on("before-quit", () => {
+  void pixelFingerprintCache.flush().catch(() => undefined);
+  void outputIdentityCache.flush().catch(() => undefined);
+});
+
 const changedKnownImagePaths = async (
   project: Project,
   imagePaths: string[],
@@ -2292,7 +2359,7 @@ const changedKnownImagePaths = async (
   onProgress?: WorkspaceTaskProgressReporter
 ): Promise<string[]> => {
   return findChangedKnownImagePaths(project, imagePaths, pendingDeletedPaths, {
-    pixelFingerprint,
+    pixelFingerprint: statCachedPixelFingerprint,
     readSwbMetadata,
     onProgress
   });

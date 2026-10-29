@@ -14,6 +14,26 @@ import struct
 import sys
 
 
+def inherited_xattrs(attributes):
+    """Attributes transferable between DIFFERENT non-executable files.
+
+    macOS assigns provenance to the creating process. Never copy, remove or
+    rewrite that marker to impersonate the source. Keep the complete native
+    observations (including this attribute) for same-file stability and budgets.
+    This is deliberately not used by inspect_mac or same-file publication checks.
+    """
+    marker = base64.b64encode(b'com.apple.provenance').decode('ascii')
+    if marker in attributes:
+        encoded = attributes[marker]
+        if not isinstance(encoded, str) or base64.b64encode(base64.b64decode(encoded, validate=True)).decode('ascii') != encoded:
+            raise ValueError('Noncanonical system provenance attribute')
+    return {name: value for name, value in attributes.items() if name != marker}
+
+
+def inherited_restrictions(info):
+    return {**info, 'xattrs': inherited_xattrs(info['xattrs'])}
+
+
 class Attrlist(ctypes.Structure):
     _fields_ = [("bitmapcount", ctypes.c_uint16), ("reserved", ctypes.c_uint16),
                 ("common", ctypes.c_uint32), ("volume", ctypes.c_uint32),
@@ -29,7 +49,7 @@ def same_mac_stat(left, right):
         'st_flags', 'st_mtime_ns', 'st_ctime_ns'))
 
 
-def inspect_mac(file_path, include_acl=False, attribute_budget=None, descriptor=None, _directory_retries=2, _directory_pin=None):
+def inspect_mac(file_path, include_acl=False, attribute_budget=None, descriptor=None, _directory_retries=2, _directory_pin=None, _created_file_retries=0, _created_file_pin=None):
     lib = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
     get = lib.fgetattrlist
     get.argtypes = [ctypes.c_int, ctypes.POINTER(Attrlist), ctypes.c_void_p,
@@ -116,6 +136,9 @@ def inspect_mac(file_path, include_acl=False, attribute_budget=None, descriptor=
         directory_pin = (tuple(getattr(before, key) for key in ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_flags')), acl, xattrs)
         if _directory_pin is not None and directory_pin != _directory_pin:
             raise ValueError('directory restrictions changed during inspection')
+        created_file_pin = (tuple(getattr(before, key) for key in ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink', 'st_size', 'st_flags', 'st_mtime_ns')), acl, inherited_xattrs(xattrs))
+        if _created_file_pin is not None and created_file_pin != _created_file_pin:
+            raise ValueError('created staging restrictions changed during inspection')
         if not same_mac_stat(before, after) or not same_mac_stat(named, before):
             fields = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink', 'st_size', 'st_flags', 'st_mtime_ns', 'st_ctime_ns')
             changed = [key for key in fields if getattr(before, key) != getattr(after, key) or getattr(before, key) != getattr(named, key)]
@@ -123,10 +146,18 @@ def inspect_mac(file_path, include_acl=False, attribute_budget=None, descriptor=
             # Main reads their native policy (for example a sibling journal).
             # Never accept a mixed snapshot: restart the complete bounded native
             # observation, with the original FD/name checks still in force.
-            # Identity/type/owner/mode/flags changes and ALL regular-file changes
+            # Identity/type/owner/mode/flags changes and source-file changes
             # remain immediate refusals. Continuous churn exhausts this bound.
             if stat.S_ISDIR(before.st_mode) and _directory_retries > 0 and set(changed) <= {'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns'}:
                 return inspect_mac(file_path, include_acl, attribute_budget, fd, _directory_retries - 1, _directory_pin or directory_pin)
+            # Only the writer's newly created staging file may settle a ctime
+            # race. Restart the WHOLE observation on the same held FD, pinning
+            # identity, content stat, ACL and every transferable attribute.
+            # Source inspections keep zero retries; final observations retain
+            # exact ctime and all attributes for later publication checks.
+            if stat.S_ISREG(before.st_mode) and _created_file_retries > 0 and set(changed) == {'st_ctime_ns'}:
+                return inspect_mac(file_path, include_acl, attribute_budget, fd, _directory_retries, _directory_pin,
+                                   _created_file_retries - 1, _created_file_pin or created_file_pin)
             location = file_path
             if location is None:
                 import fcntl
@@ -152,13 +183,13 @@ def inspect_mac(file_path, include_acl=False, attribute_budget=None, descriptor=
             os.close(fd)
 
 
-def inspect_mac_fd(fd, include_acl=False, attribute_budget=None):
+def inspect_mac_fd(fd, include_acl=False, attribute_budget=None, created_file=False):
     """Complete bounded native observation on a live caller-owned descriptor.
 
     Does not certify any pathname, mint provenance or cache permission.
     Registry callers must independently bind every naming-chain component.
     """
-    return inspect_mac(None, include_acl, attribute_budget, descriptor=fd)
+    return inspect_mac(None, include_acl, attribute_budget, descriptor=fd, _created_file_retries=2 if created_file else 0)
 
 
 def inspect_windows(file_path):
@@ -299,10 +330,10 @@ def inspect_windows(file_path):
         close(handle)
 
 
-def inspect(file_path):
+def inspect(file_path, created_file=False):
     try:
         if sys.platform == 'darwin':
-            return inspect_mac(file_path)
+            return inspect_mac(file_path, _created_file_retries=2 if created_file else 0)
         if sys.platform == 'win32':
             # The prototype below only queries selected descriptor fields.
             # User declined any audit/security exception. Do not certify a file
@@ -316,29 +347,39 @@ def inspect(file_path):
 
 def prepare_mac(source, temporary):
     original = inspect(source)
-    staged = inspect(temporary)
+    staged = inspect(temporary, created_file=True)
     if original.get('kind') != 'ordinary' or staged.get('kind') != 'ordinary':
         return dict(kind='unknown', reason='source or staging metadata is not ordinary')
     if source == temporary or (original['dev'], original['ino']) == (staged['dev'], staged['ino']):
         return dict(kind='unknown', reason='source and staging must be distinct')
-    read_fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
-    write_fd = os.open(temporary, os.O_RDWR | os.O_NOFOLLOW)
+    # Metadata syscalls do not need a writable data descriptor. In particular,
+    # an exact clone of a read-only original is a valid read-only first backup.
+    write_fd = os.open(temporary, os.O_RDONLY | os.O_NOFOLLOW)
     try:
-        # Metadata only; bytes are already prepared by the caller. This never
-        # writes to the source. All results must be rechecked before commit.
+        # The original and stage have no ACL/special flags. Copy only their
+        # transferable restrictions, never ask copyfile to overwrite a kernel
+        # provenance marker (that request can itself churn the stage's ctime).
+        # All native observations and final source checks remain complete.
+        if (staged['uid'], staged['gid']) != (original['uid'], original['gid']):
+            os.fchown(write_fd, original['uid'], original['gid'])
+        if staged['mode'] != original['mode']:
+            os.fchmod(write_fd, original['mode'])
         lib = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
-        copy = lib.fcopyfile
-        copy.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
-        copy.restype = ctypes.c_int
-        if copy(read_fd, write_fd, None, 7) != 0:
-            raise OSError(ctypes.get_errno(), 'metadata preparation failed')
+        put = lib.fsetxattr
+        put.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_int]
+        put.restype = ctypes.c_int
+        for key, value in inherited_xattrs(original['xattrs']).items():
+            if staged['xattrs'].get(key) == value:
+                continue
+            name, data = base64.b64decode(key, validate=True), base64.b64decode(value, validate=True)
+            if put(write_fd, name, data, len(data), 0, 0) != 0:
+                raise OSError(ctypes.get_errno(), 'metadata preparation failed')
     finally:
         os.close(write_fd)
-        os.close(read_fd)
     if inspect(source) != original:
         return dict(kind='unknown', reason='source changed during metadata preparation')
-    after = inspect(temporary)
-    if any(after.get(k) != original.get(k) for k in ['mode', 'uid', 'gid', 'flags', 'xattrs']):
+    after = inspect(temporary, created_file=True)
+    if after.get('kind') != 'ordinary' or any(inherited_restrictions(after).get(k) != inherited_restrictions(original).get(k) for k in ['mode', 'uid', 'gid', 'flags', 'xattrs']):
         return dict(kind='unknown', reason='prepared metadata differs from source')
     return after
 
@@ -458,7 +499,7 @@ def plan_png_write(root_path, file_path, length, digest, mode, byte_limit):
                     raise ValueError('PNG plan target changed')
                 original_digest = hashed.hexdigest()
         attributes = raw(target_info) if target_info is not None else raw(parents[-1]['native'])
-        stage_peak = max(32768, length + attributes)
+        stage_peak = max(32768, max(length, target_info['size'] if target_info is not None else 0) + attributes)
         aliases = 1 if target_info is not None else 2
         # A retained stage makes its existing containers recovery material for
         # the first time. Fund their census entries/raw attributes even though
@@ -510,7 +551,7 @@ def protected_write(root_path, file_path, data, mode="upsert", operation=None, w
     owned_error = None
 
     def ordinary(p):
-        result = inspect(str(p))
+        result = inspect(str(p), created_file=(temporary is not None and p == temporary))
         if result.get('kind') != 'ordinary':
             raise ValueError('safe PNG write refused: ' + str(result.get('reason')))
         return result
@@ -570,8 +611,16 @@ def protected_write(root_path, file_path, data, mode="upsert", operation=None, w
             old_bytes = target.read_bytes()
             # Do not equate directory replacement permission with file write
             # permission. No truncate/create flags, and close before committing.
-            authority = os.open(target, os.O_WRONLY | getattr(os, 'O_NOFOLLOW', 0))
-            os.close(authority)
+            if sys.platform == 'darwin':
+                # Opening O_WRONLY alone makes macOS update this file's system
+                # provenance and ctime, even without writing any content. Query
+                # effective access without that side effect; the full native
+                # identity/restriction comparison below still remains exact.
+                if not os.access(target, os.W_OK, effective_ids=True, follow_symlinks=False):
+                    raise PermissionError('target write permission denied')
+            else:
+                authority = os.open(target, os.O_WRONLY | getattr(os, 'O_NOFOLLOW', 0))
+                os.close(authority)
             if ordinary(target) != original:
                 raise ValueError('target changed during authorization')
 
@@ -590,22 +639,59 @@ def protected_write(root_path, file_path, data, mode="upsert", operation=None, w
             if backup_source.read_bytes() != data:
                 raise ValueError('backup source bytes changed')
 
-        fd, name = tempfile.mkstemp(prefix='.layer-staging-', dir=target.parent)
-        temporary = Path(name)
-        info = os.fstat(fd)
-        temporary_identity = (info.st_dev, info.st_ino)
+        cloned_stage = False
+        if sys.platform == 'darwin' and (original is not None or backup_policy is not None):
+            # Creating an empty file on Desktop can introduce a new com.apple.macl
+            # grant. Clone the original instead: the OS preserves its attributes,
+            # while writes affect only the new inode. Do not strip access grants.
+            # clonefile is atomic and refuses an existing destination. A failed
+            # call establishes no ownership, so never remove that candidate name.
+            import uuid
+            clone_source = target if original is not None else backup_source
+            clone_policy = original if original is not None else backup_policy
+            candidate = target.parent / ('.layer-staging-' + str(uuid.uuid4()))
+            clone = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True).clonefile
+            clone.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
+            clone.restype = ctypes.c_int
+            if clone(os.fsencode(clone_source), os.fsencode(candidate), 1) != 0:
+                import errno
+                failure = ctypes.get_errno()
+                if failure not in (errno.ENOTSUP, errno.ENOSYS):
+                    raise OSError(failure, 'native replacement clone refused')
+                # Other local volumes may not support cloning. Retain the
+                # existing staged writer and all exact metadata checks there.
+                # Permission/I/O failures never select this fallback.
+            else:
+                cloned_stage = True
+                temporary = candidate
+                info = os.lstat(temporary)
+                temporary_identity = (info.st_dev, info.st_ino)
+                if not stat.S_ISREG(info.st_mode) or temporary_identity == (clone_policy['dev'], clone_policy['ino']):
+                    raise ValueError('native replacement clone identity refused')
+                fd = os.open(temporary, (os.O_RDONLY if backup_policy is not None else os.O_WRONLY) | os.O_NOFOLLOW)
+        if not cloned_stage:
+            fd, name = tempfile.mkstemp(prefix='.layer-staging-', dir=target.parent)
+            temporary = Path(name)
+            info = os.fstat(fd)
+            temporary_identity = (info.st_dev, info.st_ino)
         try:
             if write_plan is not None:
-                stage = inspect_mac_fd(fd, include_acl=True, attribute_budget=32768)
+                stage = inspect_mac_fd(fd, include_acl=True, attribute_budget=32768, created_file=True)
                 material = (len(base64.b64decode(stage['acl'], validate=True)) if stage['acl'] is not None else 0) + sum(len(base64.b64decode(k, validate=True)) + len(base64.b64decode(v, validate=True)) for k, v in stage['xattrs'].items())
-                if stage['kind'] != 'ordinary' or max(32768, len(data) + material) > write_plan['stagePeak']:
-                    raise ValueError('Native empty PNG staging exceeds original plan')
-            view = memoryview(data)
-            while view:
-                count = os.write(fd, view)
-                if count <= 0 or count > len(view):
-                    raise OSError('incomplete staging write')
-                view = view[count:]
+                if stage['kind'] != 'ordinary' or max(32768, max(len(data), os.fstat(fd).st_size) + material) > write_plan['stagePeak']:
+                    raise ValueError('Native PNG staging exceeds original plan')
+            if (os.fstat(fd).st_dev, os.fstat(fd).st_ino) != temporary_identity:
+                raise ValueError('staging descriptor identity changed')
+            # A first backup already contains the exact source bytes. Keep its
+            # read-only mode intact; no writable open or rewrite is necessary.
+            if not (cloned_stage and backup_policy is not None):
+                os.ftruncate(fd, 0)
+                view = memoryview(data)
+                while view:
+                    count = os.write(fd, view)
+                    if count <= 0 or count > len(view):
+                        raise OSError('incomplete staging write')
+                    view = view[count:]
         except Exception as error:
             errors.append(str(error))
         try:
@@ -624,7 +710,9 @@ def protected_write(root_path, file_path, data, mode="upsert", operation=None, w
         staged = ordinary(temporary)
         if original or backup_policy:
             fields = ['mode', 'uid', 'gid', 'flags', 'xattrs'] if sys.platform == 'darwin' else ['security', 'flags']
-            if any(staged[k] != (original or backup_policy)[k] for k in fields):
+            stage_policy = inherited_restrictions(staged) if sys.platform == 'darwin' else staged
+            source_policy = inherited_restrictions(original or backup_policy) if sys.platform == 'darwin' else (original or backup_policy)
+            if any(stage_policy[k] != source_policy[k] for k in fields):
                 raise ValueError('staged permissions differ from original')
         for directory, metadata in directories:
             if guard_directory(directory) != metadata:
