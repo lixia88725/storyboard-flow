@@ -1,4 +1,14 @@
 # Storyboard Flow developer rules
+## Active parallel batch 3 — 2026-10-30
+
+User explicitly authorized three new Codex worktree sessions: Board and Drawing on
+gpt-6.1-terra, TIFF Formats on gpt-6.1-sol; coordinator stays on original main.
+Read docs/refactor/batch3/PLAN.md and the assigned lane task before editing.
+This supersedes earlier no-new-agent/remaining-tools stop clauses only for these tasks.
+Scoped implementation, synthetic tests and local commits are authorized; no push,
+default production routing, old-code deletion, dependencies or personal media changes.
+Shared contracts and file ownership follow the batch plan; report cross-lane needs
+instead of editing another lane. Prior milestones below remain historical evidence.
 
 ## Active G2 authority — 2026-10-30
 
