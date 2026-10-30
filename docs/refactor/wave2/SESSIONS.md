@@ -1,5 +1,26 @@
 # Codex wave-two sessions
 
+## Wave-two batch 1 accepted — 2026-10-30
+
+Coordinator integrated exact Session, Pixels and Assets source snapshots on main
+`124ac1a80f3ec7729d5559bb105f3c4dc1abff27`. Combined complete suite passed **376 files /
+2821 tests**; complete build passed with both typechecks. Both receipts show the same
+SHA and clean status before/after. Real isolated Electron Canvas passed five cases;
+real Session/Pixels/Depot/checkpoint composition passed eight, including text during
+paint, Undo/Redo, failure/retry and folder relocation with the old root unavailable.
+
+See `docs/refactor/reviews/2026-10-30/WAVE2-BATCH1.md` for exact lane SHAs and raw logs.
+Pixels' incomplete original full-suite evidence is retained; main's complete combined
+run closes its verification gap on byte-identical source. The abandoned verification
+lock was preserved after confirming both owner and child had exited; no process killed.
+Drawing ran on GPT-6.1-Terra after the user's model switch; the other lanes used Sol.
+
+Three agents are finished; their clean managed worktrees and delivery evidence remain
+available, with no new tasks dispatched. Accepted as G1 foundations only: production UI,
+TIFF Save and application Close still use their existing paths. Next work is G2 adapters
+and connected UI verification, followed by measured performance/platform acceptance.
+No push, dependency installation, user media access or worktree deletion in this batch.
+
 ## Implementation batch 1 — dispatched 2026-10-30
 
 User approved implementation. All three existing sessions were resumed using `gpt-6.1-sol`
