@@ -1,3 +1,13 @@
+## Batch 3 coordinator review in progress — 2026-10-30
+
+Verified lane full/build receipts and clean checkouts; no main integration yet. TIFF
+17 real public-interface tests independently reran successfully. Board resumed to add
+Session insertion using existing depot read/put and bound receipt validation. Drawing
+resumed for a sparse-RGBA validation regression/fix found during source review.
+See docs/refactor/reviews/2026-10-30/batch3/REVIEW-1.md. Prior green candidate checks do
+not certify these new changes or combined integration. Retain all three worktrees;
+no cleanup, push or production routing. Session atomic merge adoption remains open.
+
 ## Parallel batch 3 dispatched — 2026-10-30
 
 User authorized three new Codex worktree sessions: Board and Drawing on GPT-6.1-Terra,
