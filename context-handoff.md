@@ -1,3 +1,16 @@
+## Wave-two worktrees retired — 2026-10-30
+
+User authorized clean consolidation before coordinator-owned G2 wiring. All three
+completed managed checkouts were fully archived and verified, then removed. Git now
+lists only the original main checkout. Final lane commits remain on
+`codex/archive-wave2-session`, `codex/archive-wave2-pixels`, and
+`codex/archive-wave2-assets`, plus a verified local Git bundle. Ignored evidence and
+symlinks are retained in `.hermes/archive/2026-10-30-wave2/`; no source work was lost.
+See `docs/refactor/reviews/2026-10-30/WAVE2-RETIREMENT.md` for audit and recovery details.
+Old worktree paths below are historical; do not resume their completed tasks.
+Coordinator's next task is G2 UI integration on main, without new parallel worktrees.
+This cleanup does not claim G2 implementation or actual application acceptance.
+
 ## Wave-two batch 1 accepted — 2026-10-30
 
 Coordinator integrated exact Session, Pixels and Assets source snapshots on main

@@ -1,4 +1,15 @@
-# Storyboard Flow refactor — Hermes wave 1
+# Storyboard Flow refactor
+
+Current status (2026-10-30): wave-two batch 1 Session/Pixels/Assets foundations are
+integrated and independently accepted; 376 files / 2821 tests and full build passed.
+All three completed wave-two worktrees are now archived and retired; only original
+main remains. See [acceptance](reviews/2026-10-30/WAVE2-BATCH1.md) and
+[retirement](reviews/2026-10-30/WAVE2-RETIREMENT.md). Next: coordinator-owned G2 UI
+integration per [current gates](wave2/COORDINATOR-GATES.md), without new parallel lanes.
+Production UI is not yet connected to the new cores. The wave-one material below is
+historical; do not restart its tasks or treat its old status as current.
+
+## Historical wave-one assignment
 
 2026-10-30: wave-one worktrees retired after verified full archives; only original main remains.
 Branches and local evidence are preserved. See [retirement record](reviews/2026-10-30/WORKTREE-RETIREMENT.md).
