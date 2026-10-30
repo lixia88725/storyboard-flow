@@ -1,3 +1,19 @@
+## Batch 3 modules integrated and verified — 2026-10-30
+
+Coordinator integrated exact reviewed Board, Drawing and TIFF source on main
+`ff9de85a6e291cb9813bc4c967ebe75a69ca00bc`. Full allowed suite: **381 files / 2872 tests**;
+complete build passed with clean unchanged candidate receipts. Actual isolated Electron
+Canvas passed 12 cases. Cross-module synthetic Canvas PNG -> TIFF -> depot -> Session
+insert/Undo/Redo -> checkpoint/reopen -> TIFF preserved exact raw pixels and Unicode text.
+Board insertion and Drawing sparse-RGBA review findings are resolved. Bounded module
+integration accepted; see docs/refactor/reviews/2026-10-30/batch3/ACCEPTANCE.md.
+
+All three worktrees and raw evidence remain intact, no push or production routing.
+Next: coordinator Session adoption of fill/clear/atomic merge and existing UI commands,
+then TIFF Save/Pending/lifecycle gates. No new GUI wiring in this integration; Windows,
+installers and representative large-project performance remain unverified. Prior batch
+review-in-progress entries below are historical and superseded by this acceptance.
+
 ## Batch 3 coordinator review in progress — 2026-10-30
 
 Verified lane full/build receipts and clean checkouts; no main integration yet. TIFF
