@@ -43,7 +43,8 @@ export function FlowEditor() {
       off = api.onClose(id => { void (async () => {
         try {
           if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) throw new Error('Finish the current stroke before closing');
-          await outputWork.current;
+          while (outputWork.current) await outputWork.current;
+          if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) throw new Error('Finish the current stroke before closing');
           const result = required(await owner.request({ kind: 'freeze' }));
           const closed = await api.finishClose(id, result.snapshot.project);
           if (!closed.ok) throw new Error(closed.message);

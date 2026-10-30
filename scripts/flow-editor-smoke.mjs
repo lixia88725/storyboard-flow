@@ -213,8 +213,19 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   await mouse('mouseUp',canvas.x+canvas.width*.5,canvas.y+canvas.height*.5);
   await wait(()=>read().images.image0.layers[2].assetId!==original,'reopened eraser');
   await button('Undo');await wait(()=>read().images.image0.layers[2].assetId===original,'restore exact reopened pixels');
+  // A new stroke begun while Close awaits Save must keep the window editable.
+  await js('Array.from(document.querySelectorAll("button")).find(e=>e.textContent==="Save TIFF").click()');
+  win.close();await delay(30);
+  await mouse('mouseDown',canvas.x+canvas.width*.45,canvas.y+canvas.height*.5);
+  await wait(()=>js('Array.from(document.querySelectorAll("span")).find(e=>e.getAttribute("aria-label")==="TIFF output status").textContent!=="Saving TIFF…"'),'Save settles with new gesture');
+  await delay(100);assert.equal(win.isDestroyed(),false);
+  assert.equal(await js('document.querySelector("[data-flow-editor]").dataset.phase'),'active');
+  await mouse('mouseUp',canvas.x+canvas.width*.45,canvas.y+canvas.height*.5);
+  await wait(()=>read().images.image0.layers[2].assetId!==original,'stroke after close request');
+  await button('Undo');await wait(()=>read().images.image0.layers[2].assetId===original,'restore after close request');
  }
  fs.writeFileSync(${JSON.stringify(path.join(run,phase+'.png'))},(await win.webContents.capturePage()).toPNG());
+ if(phase==='reopen')await js('Array.from(document.querySelectorAll("button")).find(e=>e.textContent==="Save TIFF").click()');
  win.close();
 }).catch(async error=>{if(win&&!win.isDestroyed()){fs.writeFileSync(${JSON.stringify(path.join(run,phase+'-failure.png'))},(await win.webContents.capturePage()).toPNG());console.error(await js('document.body.innerText'));}fs.writeFileSync(${JSON.stringify(path.join(run,phase+'-failure.txt'))},String(error.stack||error));console.error(error);app.exit(1)});
 `);
@@ -239,5 +250,5 @@ const outputPixels=await sharp(finalTiff.image.layers[2].png).ensureAlpha().raw(
 const savedPixels=await sharp(await final.readAsset(final.project.images.image0.layers[2].assetId)).ensureAlpha().raw().toBuffer();
 if(!outputPixels.equals(savedPixels))throw Error('TIFF pixels disagree with saved editor');
 if(!(await readFile(path.join(root,'.storyboard-flow/originals/shot0.tif'))).equals(Buffer.from(original)))throw Error('Original backup changed');
-await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['Chinese text','real drag reorder','SketchPad pointer stroke','LayerPanel opacity drag','Undo twice','Redo twice','checkpoint','certified normal Close','new-process reopen','close while pointer active refused','reopened eraser and exact Undo','Japanese view shares script/order','view switch creates no revision','multiline dialogue Undo/Redo','Japanese pointer drawing and exact Undo','view switch during stroke refused','dialogue shared with grid and fresh reopen','DOM fill drop real Canvas and exact Undo','clear layer exact Undo','merge one image revision and one Undo','delete shot preserves assets and Undo','Japanese fill persisted and reopened editable','new blank shot one Undo Redo and reopen','initial Shift range selection','group drag preserves board order','selection shared with Japanese view','group move to end one Undo','group delete preserves assets one Undo','dialogue transfer stable identity Undo Redo','empty board creation default size and Undo','new shot editable and exact white pixels after reopen','explicit TIFF Save and Undo Save','immutable original backup','final TIFF pixels equal reopened editable pixels']},null,2));
+await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['Chinese text','real drag reorder','SketchPad pointer stroke','LayerPanel opacity drag','Undo twice','Redo twice','checkpoint','certified normal Close','new-process reopen','close while pointer active refused','reopened eraser and exact Undo','Japanese view shares script/order','view switch creates no revision','multiline dialogue Undo/Redo','Japanese pointer drawing and exact Undo','view switch during stroke refused','dialogue shared with grid and fresh reopen','DOM fill drop real Canvas and exact Undo','clear layer exact Undo','merge one image revision and one Undo','delete shot preserves assets and Undo','Japanese fill persisted and reopened editable','new blank shot one Undo Redo and reopen','initial Shift range selection','group drag preserves board order','selection shared with Japanese view','group move to end one Undo','group delete preserves assets one Undo','dialogue transfer stable identity Undo Redo','empty board creation default size and Undo','new shot editable and exact white pixels after reopen','explicit TIFF Save and Undo Save','immutable original backup','final TIFF pixels equal reopened editable pixels','Close waits for Save','stroke begun while Close awaits Save keeps editor active']},null,2));
 console.log('PASS real editor workflow; evidence:',run);
