@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
 import { SortableContext, useSortable, rectSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -23,6 +23,7 @@ const unavailable = () => { throw new Error('This tool is not connected in this 
 export function FlowEditor() {
   const [flow, setFlow] = useState<FlowSession>();
   const [issue, setIssue] = useState('');
+  const gestures = useRef(0);
   useEffect(() => {
     const api = window.flowEditor!;
     let off: (() => void) | undefined, cancelled = false;
@@ -35,7 +36,7 @@ export function FlowEditor() {
         checkpoint: p => api.checkpoint(p), clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number) } }));
       off = api.onClose(id => { void (async () => {
         try {
-          if (captureMountedCanvasCheckpoints().hasUnsettledGesture) throw new Error('Finish the current stroke before closing');
+          if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) throw new Error('Finish the current stroke before closing');
           const result = required(await owner.request({ kind: 'freeze' }));
           const closed = await api.finishClose(id, result.snapshot.project);
           if (!closed.ok) throw new Error(closed.message);
@@ -47,16 +48,17 @@ export function FlowEditor() {
     }).catch(error => setIssue(String(error)));
     return () => { cancelled = true; off?.(); window.removeEventListener('beforeunload', beforeUnload); };
   }, []);
-  return flow ? <Editor flow={flow} issue={issue} setIssue={setIssue} /> : <main><p role="status">{issue || 'Opening project…'}</p></main>;
+  return flow ? <Editor flow={flow} issue={issue} setIssue={setIssue} gestures={gestures} /> : <main><p role="status">{issue || 'Opening project…'}</p></main>;
 }
-function Editor({ flow, issue, setIssue }: { flow: FlowSession; issue: string; setIssue: (s: string) => void }) {
+function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number } }) {
   const [snapshot, setSnapshot] = useState(() => flow.snapshot());
   const [layers, setLayers] = useState<Record<string, string>>({});
-  const [, setSelected] = useState(snapshot.project.shots[0]?.id);
+  const [selected, setSelected] = useState(snapshot.project.shots[0]?.id);
   const [panel, setPanel] = useState<string>();
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
   const [color, setColor] = useState('#dd3344');
   const [size, setSize] = useState(20);
+  const [opacityPreview, setOpacityPreview] = useState<Record<string, number>>({});
   const [urls, setUrls] = useState<Record<string, string>>({});
   const cache = useMemo(() => new Map<string, string>(), []);
   const loads = useMemo(() => new Map<string, Promise<string>>(), []);
@@ -88,6 +90,11 @@ function Editor({ flow, issue, setIssue }: { flow: FlowSession; issue: string; s
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [flow]);
   const shots = projectShots(snapshot.project, layers);
+  // Gesture feedback only, never sent to persistence or installed as another Project.
+  for (const shot of shots) for (const layer of shot.layers ?? []) {
+    const preview = opacityPreview[`${shot.id}/${layer.id}`];
+    if (preview !== undefined) layer.opacity = preview;
+  }
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const rejectTool = () => setIssue('This operation is not connected yet');
   const active = snapshot.phase === 'active';
@@ -105,7 +112,7 @@ function Editor({ flow, issue, setIssue }: { flow: FlowSession; issue: string; s
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active: from, over }) => {
         if (over && from.id !== over.id) act({ kind: 'board', command: { kind: 'moveShots', shotIds: [String(from.id)], destination: 'active', beforeId: String(over.id) } });
       }}><SortableContext items={snapshot.project.shots.map(s => s.id)} strategy={rectSortingStrategy}>
-      <div className="flow-editor-grid">{shots.slice(0, snapshot.project.shots.length).map(shot => <Card key={shot.id} shot={shot} disabled={!active}>
+      <div className="flow-editor-grid">{shots.slice(0, snapshot.project.shots.length).map(shot => <Card key={shot.id} shot={shot} selected={selected === shot.id} disabled={!active}>
         <SketchPad shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0}
           eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false} onFocusShot={() => setSelected(shot.id)}
           onStroke={async (layerId, stroke) => {
@@ -117,6 +124,13 @@ function Editor({ flow, issue, setIssue }: { flow: FlowSession; issue: string; s
         <textarea aria-label={`Script ${shot.id}`} value={shot.scriptText} disabled={!active} onChange={e => act({ kind: 'board', command: { kind: 'setScriptText', shotId: shot.id, text: e.target.value } })} />
         <button disabled={!active} onClick={() => { setSelected(shot.id); setPanel(panel === shot.id ? undefined : shot.id); }}>Layers</button>
         <LayerPanel shot={shot} folderPath="flow" thumbnailRevision={snapshot.project.revision} isOpen={panel === shot.id} isRendered={panel === shot.id}
+          onLayerOpacityGesture={(shotId, layerId, opacity, phase) => {
+            const key = `${shotId}/${layerId}`;
+            if (phase === 'preview') { gestures.current = 1; setOpacityPreview(current => ({ ...current, [key]: opacity })); }
+            else void request({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch: { opacity } } }).catch(() => {}).finally(() => {
+              gestures.current = 0; setOpacityPreview(current => { const next = { ...current }; delete next[key]; return next; });
+            });
+          }}
           structuralEditsEnabled={false} onToggle={() => setPanel(undefined)} onAddLayer={rejectTool} onRemoveLayer={rejectTool} onMergeLayers={rejectTool} onMergeVisibleLayers={rejectTool} onClearLayer={rejectTool}
           onSelectLayer={(id, layerId) => setLayers(current => ({ ...current, [id]: layerId }))}
           onUpdateLayer={(shotId, layerId, patch) => act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch } })}
@@ -130,9 +144,9 @@ function Editor({ flow, issue, setIssue }: { flow: FlowSession; issue: string; s
     </main>
   </MediaSourceContext.Provider>;
 }
-function Card({ shot, disabled, children }: { shot: Shot; disabled: boolean; children: React.ReactNode }) {
+function Card({ shot, disabled, selected, children }: { shot: Shot; disabled: boolean; selected: boolean; children: React.ReactNode }) {
   const sortable = useSortable({ id: shot.id, disabled });
-  return <article className="shot-card" data-shot-id={shot.id} ref={sortable.setNodeRef} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }}>
+  return <article className={`shot-card ${selected ? 'is-selected' : ''}`} data-shot-id={shot.id} ref={sortable.setNodeRef} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }}>
     <button aria-label={`Move ${shot.id}`} {...sortable.attributes} {...sortable.listeners}>{shot.fileName}</button>{children}
   </article>;
 }

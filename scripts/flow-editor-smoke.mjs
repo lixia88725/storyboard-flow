@@ -61,7 +61,7 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   const painted=read().images.image0.layers[2].assetId;
   await js('Array.from(document.querySelector("[data-shot-id=shot0]").querySelectorAll("button")).find(e=>e.textContent==="Layers").click()');await delay(200);
   const row=await rect('[data-shot-id="shot0"] .layer-row[data-layer-id="layer2"]');
-  await mouse('mouseDown',row.x+row.width*.8,row.y+row.height-3);await mouse('mouseMove',row.x+row.width*.5,row.y+row.height-3);await mouse('mouseUp',row.x+row.width*.5,row.y+row.height-3);
+  await mouse('mouseDown',row.x+row.width*.8,row.y+row.height-3);await mouse('mouseMove',row.x+row.width*.65,row.y+row.height-3);await mouse('mouseMove',row.x+row.width*.55,row.y+row.height-3);await mouse('mouseMove',row.x+row.width*.5,row.y+row.height-3);await mouse('mouseUp',row.x+row.width*.5,row.y+row.height-3);
   await wait(()=>read().images.image0.layers[2].opacity<.8,'opacity');
   const opacity=read().images.image0.layers[2].opacity;
   await button('Undo');await wait(()=>read().images.image0.layers[2].opacity===1,'undo opacity');

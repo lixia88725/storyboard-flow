@@ -41,6 +41,14 @@ describe('dedicated editor root and Close certification',()=>{
    expect(await runtime.certifyClose(project)).toBe(false);
   }finally{await fs.rm(root,{recursive:true,force:true});}
  });
+ it('does not certify a replacement directory even when its checkpoint and PNGs match',async()=>{
+  const {root,project}=await fixture();const moved=root+'-original';
+  try{
+   const runtime=await openFlowEditorRuntime(root);
+   await fs.rename(root,moved);await fs.cp(moved,root,{recursive:true});
+   expect(await runtime.certifyClose(project)).toBe(false);
+  }finally{await fs.rm(root,{recursive:true,force:true});await fs.rm(moved,{recursive:true,force:true});}
+ });
  it('refuses a directory without a checkpoint and returns a private bootstrap',async()=>{
   const {root,project}=await fixture();
   try{

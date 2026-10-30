@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { openFlowAssetDepot } from '../core/persistence/depot.js';
@@ -8,6 +9,7 @@ export async function openFlowEditorRuntime(root: string) {
   const store = createProjectStore();
   const loaded = await store.loadCheckpoint(root);
   if (!loaded.ok) throw new Error(loaded.error.message);
+  const rootIdentity = await fs.lstat(root, { bigint: true });
   const projectId = loaded.value.project.id;
   const sessionId = randomUUID();
   const depot = await openFlowAssetDepot({ root, sessionId, maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024 });
@@ -36,11 +38,18 @@ export async function openFlowEditorRuntime(root: string) {
       if (sealed || pending || !project || project.id !== projectId) return false;
       sealed = true;
       try {
+        const binding = await fs.lstat(root, { bigint: true });
+        if (!binding.isDirectory() || binding.isSymbolicLink() || binding.dev !== rootIdentity.dev || binding.ino !== rootIdentity.ino) {
+          sealed = false; return false;
+        }
         const disk = await store.loadCheckpoint(root);
         // Full strict load checks every referenced asset before permission to close.
         if (!disk.ok || !isDeepStrictEqual(disk.value.project, project)) { sealed = false; return false; }
         const assets = new Set(Object.values(disk.value.project.images).flatMap(image => image.layers.map(layer => layer.assetId)));
-        for (const id of assets) await disk.value.readAsset(id);
+        for (const id of assets) {
+          const retained = await depot.value.read(id);
+          if (!retained.ok) throw new Error(retained.error.message);
+        }
         return true;
       } catch { sealed = false; return false; }
     }

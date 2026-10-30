@@ -32,6 +32,7 @@ type LayerRowGesture = {
   startY: number;
   intent?: LayerRowDragIntent;
   initialOpacities: Record<string, number>;
+  opacity?: number;
 };
 type LayerRowGestureVisual = {
   layerIds: string[];
@@ -45,6 +46,7 @@ type BlendMenuState = {
 
 export type LayerPanelProps = {
   structuralEditsEnabled?: boolean;
+  onLayerOpacityGesture?: (shotId: string, layerId: string, opacity: number, phase: "preview" | "commit") => void;
   shot?: Shot;
   folderPath?: string;
   thumbnailRevision: number;
@@ -85,6 +87,7 @@ export type LayerPanelProps = {
 
 export const LayerPanel = ({
   structuralEditsEnabled = true,
+  onLayerOpacityGesture,
   shot,
   folderPath,
   thumbnailRevision,
@@ -251,11 +254,10 @@ export const LayerPanel = ({
           gesture.initialOpacities
         );
       } else {
-        onUpdateLayer(
-          shot.id,
-          gesture.layerId,
-          { opacity: layerOpacityFromClientX(clientX, rect.left, rect.width) }
-        );
+        const opacity = layerOpacityFromClientX(clientX, rect.left, rect.width);
+        gesture.opacity = opacity;
+        if (onLayerOpacityGesture) onLayerOpacityGesture(shot.id, gesture.layerId, opacity, "preview");
+        else onUpdateLayer(shot.id, gesture.layerId, { opacity });
       }
     };
 
@@ -306,6 +308,9 @@ export const LayerPanel = ({
         }, 0);
       }
 
+      if (gesture.intent === "opacity" && gesture.opacity !== undefined && onLayerOpacityGesture) {
+        onLayerOpacityGesture(shot.id, gesture.layerId, gesture.opacity, "commit");
+      }
       if (gesture.intent === "reorder") {
         const targetRow = layerRowFromPoint(upEvent.clientX, upEvent.clientY, new Set(gesture.movableLayerIds));
         const targetLayerId = targetRow?.dataset.layerId;
