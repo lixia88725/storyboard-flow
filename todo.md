@@ -1,3 +1,25 @@
+## G3 explicit TIFF Save slice — 2026-10-31
+
+Implementation ff1a159 plus Close-wait correction 7d152ea connects explicit TIFF Save
+in the isolated editor, with first-original backups, native CAS writes, per-file retry
+ledger and captured-revision status. Close waits for Save and rechecks active strokes.
+Self-tests: full suite 383 files / 2890 tests passed; clean final build and 36 real
+Electron scenarios passed. Full-suite receipt spans ff1a159 -> 7d152ea (UI/smoke-only
+correction); it is not an unchanged-HEAD receipt. Exact evidence and limits:
+docs/refactor/reviews/2026-10-31/G3-TIFF-SAVE.md.
+
+G3 is NOT COMPLETE and independent acceptance remains open. Missing: actual TIFF
+import/bootstrap UI, A/B acceptance, ordered naming, removed/parked output lifecycle,
+Pending and production shell routing. Existing source names remain; new outputs use
+shot-ID names. Bound membership changes currently refuse Save. No default App/launcher
+switch, personal files, dependencies, worktree removal or push.
+
+Pending recommendation (not approved): project-owned membership and automatic
+checkpoint; file effects only on explicit Save. User asked for PD2 evidence and the
+simplest/resource-efficient design. PD2 Idea Bin is a reference/group/state-based
+cross-document library; the document does not specify drag-time TIFF moves. Existing
+Pending file behavior remains unchanged until the product decision is made.
+
 ## G2 Board editing workflow — 2026-10-30
 
 Candidate `9cdfda3d59990f92ff4cb5139b4d8116139f1a89` adds queued blank-shot creation,
