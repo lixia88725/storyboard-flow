@@ -470,3 +470,13 @@ Non-goal: bitmap layer 重构不代表完整 Photoshop 图层 round-trip。Photo
 当前 scope 刻意不包含 PDF/image-sequence export、SQLite、云同步、PSD-first 工作流和复杂绘图工具。AI Draft 已进入 MVP，但仍必须保持 candidate-first、local-first、Save 边界不变。
 
 Reason: 产品目标是一个可用的最小分镜排列工具，后续可扩展。
+
+## New-format Pending defers TIFF effects to Save — 2026-10-31
+
+User approved Pending as project-owned membership with automatic checkpoint, and explicit
+Save as the file-effect boundary. In the isolated new-format editor, drag/restore/Undo only
+change membership/order; PNG assets remain in the project store. Successful Save places
+parked TIFFs in project/Pending/ and active TIFFs in the project root. First originals stay
+under .storyboard-flow/originals/. Membership-only moves reuse TIFF bytes and do not encode
+pixels. This supersedes the immediate materialization/move rule above for this new path,
+not the unchanged production runtime. See docs/refactor/PENDING.md for protocol and limits.

@@ -12,7 +12,7 @@ import { JapaneseStoryboardView } from '../JapaneseStoryboardView';
 import { shotDialogueText } from '../editableDialogueText';
 import { SketchPad } from '../SketchPad';
 import { LayerPanel } from '../LayerPanel';
-import { ShotStaticMedia } from '../ShotStaticMedia';
+import { FlowPending, pendingDropId } from './FlowPending';
 import { captureMountedCanvasCheckpoints } from '../mountedCanvasRecoveryCapture';
 import { projectView, dialogueCommand, projectShots, pixelStroke, settledStrokePreview } from './adapter';
 import type { Shot, SketchStroke } from '../../shared/types';
@@ -172,6 +172,12 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
   };
   const dialogueTransfers = (shotId: string) => <DialogueTransfers shotId={shotId} dialogues={snapshot.project.dialogues} disabled={!active}
     onMove={(id, targetShotId, beforeId) => act({ kind: 'board', command: { kind: 'moveDialogues', dialogueIds: [id], targetShotId, ...(beforeId ? { beforeId } : {}) } })} />;
+  const moveShots = (shotIds: string[], destination: 'active' | 'pending', beforeId?: string) => {
+    if (!active || gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) {
+      setIssue('Finish the current stroke before moving shots'); return;
+    }
+    act({ kind: 'board', command: { kind: 'moveShots', shotIds, destination, ...(beforeId ? { beforeId } : {}) } });
+  };
   const switchView = () => {
     if (gestures.current || flow.snapshot().pending || captureMountedCanvasCheckpoints().hasUnsettledGesture) {
       setIssue('Finish the current edit before switching views'); return;
@@ -193,6 +199,7 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
         <button disabled={!active || savingTiff} onClick={() => { void saveTiff().catch(() => {}); }}>Save TIFF</button>
         <span aria-label="TIFF output status">{savingTiff ? 'Saving TIFF…' : savedTiffRevision === snapshot.project.revision ? 'TIFF saved' : 'TIFF not saved for current edit'}</span>
         <button disabled={!active} onClick={newShot}>New shot</button>
+        <button disabled={!active || !selectedIds.length} onClick={() => moveShots(selectedIds, 'pending')}>Move to Pending</button>
         <button disabled={!active || !selectedIds.length} onClick={() => act({ kind: 'board', command: { kind: 'removeShots', shotIds: selectedIds } })}>Delete shot</button>
         <button disabled={!active || !selectedIds.length} onClick={() => act({ kind: 'board', command: { kind: 'moveShots', shotIds: selectedIds, destination: 'active' } })}>Move to end</button>
         <button disabled={!active || !selected || !snapshot.project.shots.some(s => s.id === selected)} onClick={() => {
@@ -202,8 +209,14 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
       </header>
       <p role="status">{issue || snapshot.lastError?.message || (snapshot.checkpoint?.revision === snapshot.project.revision ? 'Editable project saved' : 'Saving editable project…')}</p>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active: from, over }) => {
-        const ids = draggedShots(flow.snapshot().project.shots.map(s => s.id), selectedIds, String(from.id));
-        if (active && over && !ids.includes(String(over.id))) act({ kind: 'board', command: { kind: 'moveShots', shotIds: ids, destination: 'active', beforeId: String(over.id) } });
+        if (!over) return;
+        const project = flow.snapshot().project, sourceId = String(from.id), targetId = String(over.id);
+        const parked = project.parkedShots.some(s => s.id === sourceId);
+        const ids = parked ? [sourceId] : draggedShots(project.shots.map(s => s.id), selectedIds, sourceId);
+        if (ids.includes(targetId)) return;
+        if (targetId === pendingDropId) moveShots(ids, 'pending');
+        else if (project.parkedShots.some(s => s.id === targetId)) moveShots(ids, 'pending', targetId);
+        else if (project.shots.some(s => s.id === targetId)) moveShots(ids, 'active', targetId);
       }}><SortableContext items={snapshot.project.shots.map(s => s.id)} strategy={japanese ? verticalListSortingStrategy : rectSortingStrategy}>
       {japanese ? <fieldset className="flow-editor-sheet" disabled={!active}>
         <JapaneseStoryboardView project={view} selectedShotIds={selectedIds} zoomLevel={100}
@@ -240,8 +253,9 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
             if (ids.length !== 1) { rejectTool(); return; }
             act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId: ids[0], patch: { opacity: Math.max(0, Math.min(1, initial[ids[0]] + delta)) } } });
           }} />
-      </Card>)}</div>}</SortableContext></DndContext>
-      <aside aria-label="Pending"><h2>Pending</h2>{shots.slice(snapshot.project.shots.length).map(shot => <div key={shot.id} className="flow-pending"><span>{shot.fileName}</span><ShotStaticMedia shot={shot} folderPath="flow" revision={snapshot.project.revision} /></div>)}</aside>
+      </Card>)}</div>}</SortableContext>
+      <FlowPending shots={shots.slice(snapshot.project.shots.length)} disabled={!active} revision={snapshot.project.revision} onRestore={id => moveShots([id], 'active')} />
+      </DndContext>
     </main>
   </MediaSourceContext.Provider>;
 }

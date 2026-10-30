@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -41,7 +41,7 @@ describe('new TIFF output native Save protocol',()=>{
   it('refuses external edits and lifecycle changes without replacing files',async()=>{
     const {root,p,png,source,output}=await fixture();const file=path.join(root,'original.tif');
     await fs.writeFile(file,'external');await expect(output.save(p,async()=>png)).rejects.toThrow('outside Flow');expect(await fs.readFile(file,'utf8')).toBe('external');
-    await fs.writeFile(file,source);p.parkedShots=p.shots;p.shots=[];
+    await fs.writeFile(file,source);p.shots=[];
     await expect(output.save(p,async()=>png)).rejects.toThrow('lifecycle');expect(await fs.readFile(file)).toEqual(Buffer.from(source));
   },60000);
   it('snapshots before await and admits no output when pixel preparation fails',async()=>{
@@ -78,6 +78,66 @@ describe('new TIFF output native Save protocol',()=>{
     await expect(output.save(p,async()=>png)).rejects.toThrow('Missing original backup');
     expect(await fs.readFile(file)).toEqual(saved);
     await fs.writeFile(backup,original);
+  },60000);
+
+  it('keeps edits logical until Save, writes Pending TIFF, restores on a later Save and retains assets/originals',async()=>{
+    const {root,p,png,source,output,c}=await fixture();
+    const rootFile=path.join(root,'original.tif'), parkedFile=path.join(root,'Pending/original.tif');
+    const image=structuredClone(p.images);
+    p.parkedShots=p.shots;p.shots=[];p.revision++;
+    expect(await fs.readFile(rootFile)).toEqual(Buffer.from(source));
+    await expect(fs.stat(parkedFile)).rejects.toMatchObject({code:'ENOENT'});
+    const receipt=await output.save(p,async()=>png);
+    expect(receipt.files[0].name).toBe('Pending/original.tif');
+    await expect(fs.stat(rootFile)).rejects.toMatchObject({code:'ENOENT'});
+    expect(value(await c.decode(await fs.readFile(parkedFile))).text?.shotId).toBe('shot');
+    expect(p.images).toEqual(image);
+    await output.save(p,async()=>png);
+    p.shots=p.parkedShots;p.parkedShots=[];p.revision++;
+    await expect(fs.stat(rootFile)).rejects.toMatchObject({code:'ENOENT'});
+    await (await openFlowTiffSave(root,p.id,c)).save(p,async()=>png);
+    await expect(fs.stat(parkedFile)).rejects.toMatchObject({code:'ENOENT'});
+    expect(await fs.readFile(path.join(root,'.storyboard-flow/originals/shot.tif'))).toEqual(Buffer.from(source));
+  },60000);
+  it('does not overwrite unrelated Pending destinations, and retries after the collision is resolved',async()=>{
+    const {root,p,png,output}=await fixture();
+    await fs.mkdir(path.join(root,'Pending'));const target=path.join(root,'Pending/original.tif');
+    await fs.writeFile(target,'foreign');p.parkedShots=p.shots;p.shots=[];
+    await expect(output.save(p,async()=>png)).rejects.toThrow();
+    expect(await fs.readFile(target,'utf8')).toBe('foreign');
+    await fs.unlink(target);expect((await output.save(p,async()=>png)).files[0].name).toBe('Pending/original.tif');
+  },60000);
+  it.each([false,true])('recovers a persisted move after link publication (source released=%s)',async(released)=>{
+    const {root,p,png,output,c}=await fixture();await output.save(p,async()=>png);
+    const source=path.join(root,'original.tif'),target=path.join(root,'Pending/original.tif');
+    const ledgerPath=path.join(root,'.storyboard-flow/tiff-output.json');
+    const ledger=JSON.parse(await fs.readFile(ledgerPath,'utf8')), entry=ledger.entries[0];
+    const stat=await fs.lstat(source,{bigint:true});
+    entry.move={from:'active',to:'parked',digest:entry.current,dev:String(stat.dev),ino:String(stat.ino)};
+    delete ledger.saved;await fs.writeFile(ledgerPath,JSON.stringify(ledger));
+    await fs.mkdir(path.dirname(target));await fs.link(source,target);if(released)await fs.unlink(source);
+    p.parkedShots=p.shots;p.shots=[];
+    await (await openFlowTiffSave(root,p.id,c)).save(p,async()=>png);
+    expect((await fs.stat(target)).nlink).toBe(1);await expect(fs.stat(source)).rejects.toMatchObject({code:'ENOENT'});
+    expect(JSON.parse(await fs.readFile(ledgerPath,'utf8')).entries[0].move).toBeUndefined();
+  },60000);
+  it('refuses an aliased Pending directory without touching its files',async()=>{
+    const {root,p,png,output}=await fixture();
+    const other=await temporaryWorkspace('flow-output-alias-');
+    await fs.symlink(other,path.join(root,'Pending'));p.parkedShots=p.shots;p.shots=[];
+    await expect(output.save(p,async()=>png)).rejects.toThrow();expect(await fs.readdir(other)).toEqual([]);
+  },60000);
+
+  it('does not read pixels or encode again for unchanged Save or membership-only moves',async()=>{
+    const {root,p,png,output,c}=await fixture();await output.save(p,async()=>png);
+    const encoding=vi.spyOn(c,'encode'), reader=vi.fn(async()=>png);
+    const originalInode=(await fs.stat(path.join(root,'original.tif'))).ino;
+    await output.save(p,reader);p.parkedShots=p.shots;p.shots=[];p.revision++;
+    await output.save(p,reader);
+    expect(encoding).not.toHaveBeenCalled();expect(reader).not.toHaveBeenCalled();
+    expect((await fs.stat(path.join(root,'Pending/original.tif'))).ino).toBe(originalInode);
+    p.parkedShots[0].scriptText='new text';await output.save(p,reader);
+    expect(encoding).toHaveBeenCalledTimes(1);expect(reader).toHaveBeenCalled();
   },60000);
 
 });

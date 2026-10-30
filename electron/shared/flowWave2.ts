@@ -45,7 +45,7 @@ export type FlowBoardCommand =
   | { kind: 'setScriptText'; shotId: string; text: string }
   | { kind: 'setDialogues'; shotId: string; dialogues: DialogueV1[] }
   /** Preserve board order of selection; omit beforeId to append. */
-  | { kind: 'moveShots'; shotIds: string[]; destination: 'active'; beforeId?: string }
+  | { kind: 'moveShots'; shotIds: string[]; destination: 'active' | 'pending'; beforeId?: string }
   | { kind: 'removeShots'; shotIds: string[] }
   /** Preserve existing dialogue order; beforeId is an unselected dialogue on the active target, or omit to append. */
   | { kind: 'moveDialogues'; dialogueIds: string[]; targetShotId: string; beforeId?: string };

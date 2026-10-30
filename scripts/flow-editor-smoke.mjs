@@ -36,7 +36,7 @@ for(const phase of ['edit','reopen']){
  const userData=path.join(run,phase+'-userData');await mkdir(userData);
  const driver=path.join(run,phase+'.cjs');
  await writeFile(driver,`
-const {app,BrowserWindow,clipboard,shell}=require('electron');
+const {app,BrowserWindow,clipboard,shell,ipcMain}=require('electron');
 const fs=require('node:fs');const assert=require('node:assert/strict');
 for(const key of Object.keys(clipboard))if(typeof clipboard[key]==='function')clipboard[key]=()=>{throw Error('Clipboard forbidden')};
 shell.trashItem=()=>{throw Error('Trash forbidden')};
@@ -46,6 +46,11 @@ const manifest=${JSON.stringify(path.join(root,'.storyboard-flow/checkpoints/pro
 const read=()=>JSON.parse(fs.readFileSync(manifest,'utf8'));
 async function wait(fn,label){for(let i=0;i<300;i++){try{const v=await fn();if(v)return v}catch{}await delay(50)}throw Error('Timed out: '+label)}
 const js=code=>win.webContents.executeJavaScript(code);
+let saveReplyGate,releaseSaveReply;
+const registerHandle=ipcMain.handle.bind(ipcMain);
+ipcMain.handle=(channel,handler)=>registerHandle(channel,channel==='flow-editor:saveTiff'?async(...args)=>{
+ const gate=saveReplyGate;const result=await handler(...args);if(gate)await gate;return result;
+}:handler);
 async function rect(selector){return js('(()=>{const e=document.querySelector('+JSON.stringify(selector)+');e.scrollIntoView({block:"center"});const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()')}
 async function mouse(type,x,y){win.webContents.sendInputEvent({type,x:Math.round(x),y:Math.round(y),button:'left',clickCount:1});await delay(60)}
 async function click(selector){const r=await rect(selector);await mouse('mouseDown',r.x+r.width/2,r.y+r.height/2);await mouse('mouseUp',r.x+r.width/2,r.y+r.height/2)}
@@ -56,6 +61,7 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
  win.webContents.on('console-message',e=>console.log('renderer',e.message));
  await wait(()=>js('!!document.querySelector("[data-flow-editor]")'),'editor');
  await wait(()=>js('document.querySelectorAll(".image-stage img").length>0 && Array.from(document.querySelectorAll(".image-stage img")).every(x=>x.complete&&x.naturalWidth>0)'),'images');
+ await wait(()=>js('document.querySelector("[role=status]").textContent==="Editable project saved"'),'initial checkpoint settled');
  if(phase==='edit'){
   await js('Array.from(document.querySelectorAll("button")).find(e=>e.getAttribute("aria-label")==="Move shot2").dispatchEvent(new MouseEvent("click",{bubbles:true,shiftKey:true}))');
   await wait(()=>js('document.querySelectorAll(".flow-editor-grid .shot-card.is-selected").length===3'),'initial Shift range');
@@ -197,8 +203,40 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   // Restore text placement for previous reopen assertions; the new blank remains saved.
   await button('Undo');await wait(()=>read().dialogues.find(d=>d.id===moving.id).shotId==='shot0','dialogue placement restore');
   await button('Save TIFF');await wait(()=>js('Array.from(document.querySelectorAll("span")).find(e=>e.getAttribute("aria-label")==="TIFF output status").textContent==="TIFF saved"'),'final TIFF Save');
+  const beforePending=read(), pendingBytes=fs.readFileSync(${JSON.stringify(path.join(root,'shot2.tif'))});
+  const pendingAssets=JSON.stringify(beforePending.images);
+  const pendingSource=await rect('[aria-label="Move shot2"]');
+  await mouse('mouseDown',pendingSource.x+20,pendingSource.y+10);
+  await mouse('mouseMove',pendingSource.x+40,pendingSource.y+10);
+  const pendingTarget=await rect('[aria-label="Pending"]');
+  await mouse('mouseMove',pendingTarget.x+pendingTarget.width-30,pendingTarget.y+60);
+  await mouse('mouseUp',pendingTarget.x+pendingTarget.width-30,pendingTarget.y+60);
+  await wait(()=>read().parkedShots.some(s=>s.id==='shot2'),'pointer drop into Pending');
+  assert.equal(JSON.stringify(read().images),pendingAssets);
+  assert.deepEqual(fs.readFileSync(${JSON.stringify(path.join(root,'shot2.tif'))}),pendingBytes);
+  assert.equal(fs.existsSync(${JSON.stringify(path.join(root,'Pending/shot2.tif'))}),false);
+  await button('Undo');await wait(()=>read().shots.some(s=>s.id==='shot2'),'Pending one Undo');
+  assert.deepEqual(read().shots,beforePending.shots);
+  await button('Redo');await wait(()=>read().parkedShots.some(s=>s.id==='shot2'),'Pending Redo');
+  await button('Save TIFF');await wait(()=>js('Array.from(document.querySelectorAll("span")).find(e=>e.getAttribute("aria-label")==="TIFF output status").textContent==="TIFF saved"'),'Pending TIFF Save');
+  assert.equal(fs.existsSync(${JSON.stringify(path.join(root,'shot2.tif'))}),false);
+  assert.ok(fs.existsSync(${JSON.stringify(path.join(root,'Pending/shot2.tif'))}));
+  await button('Japanese view');
+  await js('Array.from(document.querySelectorAll("button")).find(e=>e.getAttribute("aria-label")==="Restore shot2").click()');
+  await wait(()=>read().shots.some(s=>s.id==='shot2'),'restore Pending in Japanese view');
+  assert.equal(fs.existsSync(${JSON.stringify(path.join(root,'shot2.tif'))}),false);
+  await button('Save TIFF');await wait(()=>js('Array.from(document.querySelectorAll("span")).find(e=>e.getAttribute("aria-label")==="TIFF output status").textContent==="TIFF saved"'),'restore TIFF Save');
+  assert.ok(fs.existsSync(${JSON.stringify(path.join(root,'shot2.tif'))}));
+  assert.equal(fs.existsSync(${JSON.stringify(path.join(root,'Pending/shot2.tif'))}),false);
+  await button('Undo');await wait(()=>read().parkedShots.some(s=>s.id==='shot2'),'Undo restore keeps logical Pending');
+  assert.ok(fs.existsSync(${JSON.stringify(path.join(root,'shot2.tif'))}));
+  await button('Grid view');
+  await button('Save TIFF');await wait(()=>js('Array.from(document.querySelectorAll("span")).find(e=>e.getAttribute("aria-label")==="TIFF output status").textContent==="TIFF saved"'),'Pending final Save');
   fs.writeFileSync(${JSON.stringify(path.join(run,'expected.json'))},JSON.stringify(read()));
  }else{
+  assert.ok(read().parkedShots.some(s=>s.id==='shot2'));
+  assert.ok(fs.existsSync(${JSON.stringify(path.join(root,'Pending/shot2.tif'))}));
+  assert.equal(fs.existsSync(${JSON.stringify(path.join(root,'shot2.tif'))}),false);
   assert.deepEqual(read(),JSON.parse(fs.readFileSync(${JSON.stringify(path.join(run,'expected.json'))},'utf8')));
   assert.equal(await js('Array.from(document.querySelectorAll("textarea")).find(e=>e.getAttribute("aria-label")==="Script shot0").value'),'镜头中文测试');
   assert.equal(await js('document.querySelector("[data-shot-id]").dataset.shotId'),'shot1');
@@ -213,10 +251,13 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   await mouse('mouseUp',canvas.x+canvas.width*.5,canvas.y+canvas.height*.5);
   await wait(()=>read().images.image0.layers[2].assetId!==original,'reopened eraser');
   await button('Undo');await wait(()=>read().images.image0.layers[2].assetId===original,'restore exact reopened pixels');
+  // Hold the actual Save reply so this ordering test does not depend on codec speed.
+  saveReplyGate=new Promise(resolve=>releaseSaveReply=resolve);
   // A new stroke begun while Close awaits Save must keep the window editable.
   await js('Array.from(document.querySelectorAll("button")).find(e=>e.textContent==="Save TIFF").click()');
   win.close();await delay(30);
   await mouse('mouseDown',canvas.x+canvas.width*.45,canvas.y+canvas.height*.5);
+  releaseSaveReply();saveReplyGate=undefined;
   await wait(()=>js('Array.from(document.querySelectorAll("span")).find(e=>e.getAttribute("aria-label")==="TIFF output status").textContent!=="Saving TIFF…"'),'Save settles with new gesture');
   await delay(100);assert.equal(win.isDestroyed(),false);
   assert.equal(await js('document.querySelector("[data-flow-editor]").dataset.phase'),'active');
@@ -225,8 +266,12 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   await button('Undo');await wait(()=>read().images.image0.layers[2].assetId===original,'restore after close request');
  }
  fs.writeFileSync(${JSON.stringify(path.join(run,phase+'.png'))},(await win.webContents.capturePage()).toPNG());
- if(phase==='reopen')await js('Array.from(document.querySelectorAll("button")).find(e=>e.textContent==="Save TIFF").click()');
- win.close();
+ if(phase==='reopen'){
+  saveReplyGate=new Promise(resolve=>releaseSaveReply=resolve);
+  await js('Array.from(document.querySelectorAll("button")).find(e=>e.textContent==="Save TIFF").click()');
+  win.close();await delay(100);assert.equal(win.isDestroyed(),false);
+  releaseSaveReply();saveReplyGate=undefined;
+ }else win.close();
 }).catch(async error=>{if(win&&!win.isDestroyed()){fs.writeFileSync(${JSON.stringify(path.join(run,phase+'-failure.png'))},(await win.webContents.capturePage()).toPNG());console.error(await js('document.body.innerText'));}fs.writeFileSync(${JSON.stringify(path.join(run,phase+'-failure.txt'))},String(error.stack||error));console.error(error);app.exit(1)});
 `);
  const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
@@ -250,5 +295,5 @@ const outputPixels=await sharp(finalTiff.image.layers[2].png).ensureAlpha().raw(
 const savedPixels=await sharp(await final.readAsset(final.project.images.image0.layers[2].assetId)).ensureAlpha().raw().toBuffer();
 if(!outputPixels.equals(savedPixels))throw Error('TIFF pixels disagree with saved editor');
 if(!(await readFile(path.join(root,'.storyboard-flow/originals/shot0.tif'))).equals(Buffer.from(original)))throw Error('Original backup changed');
-await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['Chinese text','real drag reorder','SketchPad pointer stroke','LayerPanel opacity drag','Undo twice','Redo twice','checkpoint','certified normal Close','new-process reopen','close while pointer active refused','reopened eraser and exact Undo','Japanese view shares script/order','view switch creates no revision','multiline dialogue Undo/Redo','Japanese pointer drawing and exact Undo','view switch during stroke refused','dialogue shared with grid and fresh reopen','DOM fill drop real Canvas and exact Undo','clear layer exact Undo','merge one image revision and one Undo','delete shot preserves assets and Undo','Japanese fill persisted and reopened editable','new blank shot one Undo Redo and reopen','initial Shift range selection','group drag preserves board order','selection shared with Japanese view','group move to end one Undo','group delete preserves assets one Undo','dialogue transfer stable identity Undo Redo','empty board creation default size and Undo','new shot editable and exact white pixels after reopen','explicit TIFF Save and Undo Save','immutable original backup','final TIFF pixels equal reopened editable pixels','Close waits for Save','stroke begun while Close awaits Save keeps editor active']},null,2));
+await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['Chinese text','real drag reorder','SketchPad pointer stroke','LayerPanel opacity drag','Undo twice','Redo twice','checkpoint','certified normal Close','new-process reopen','close while pointer active refused','reopened eraser and exact Undo','Japanese view shares script/order','view switch creates no revision','multiline dialogue Undo/Redo','Japanese pointer drawing and exact Undo','view switch during stroke refused','dialogue shared with grid and fresh reopen','DOM fill drop real Canvas and exact Undo','clear layer exact Undo','merge one image revision and one Undo','delete shot preserves assets and Undo','Japanese fill persisted and reopened editable','new blank shot one Undo Redo and reopen','initial Shift range selection','group drag preserves board order','selection shared with Japanese view','group move to end one Undo','group delete preserves assets one Undo','dialogue transfer stable identity Undo Redo','empty board creation default size and Undo','new shot editable and exact white pixels after reopen','explicit TIFF Save and Undo Save','immutable original backup','final TIFF pixels equal reopened editable pixels','Close waits for Save','stroke begun while Close awaits Save keeps editor active','actual Pending pointer drop without file effects','Pending one Undo Redo preserves assets','Save moves TIFF to visible Pending','Japanese restore waits for Save to move TIFF','Undo restore and Save repark TIFF','Pending survives new-process reopen']},null,2));
 console.log('PASS real editor workflow; evidence:',run);

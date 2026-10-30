@@ -99,8 +99,8 @@ describe('FlowSession public Interface', () => {
 
   it('restricts edits to active shots, preserves Pending, rejects fabricated results/pixel edits', async () => {
     const { session } = setup(); const before = session.snapshot().project;
-    for (const input of [text('x', 'p'), { kind: 'board', command: { kind: 'moveShots', shotIds: ['p'], destination: 'active' } },
-      { kind: 'board', command: { kind: 'moveShots', shotIds: ['a'], destination: 'pending' } },
+    for (const input of [text('x', 'p'), { kind: 'board', command: { kind: 'moveShots', shotIds: ['missing'], destination: 'active' } },
+      { kind: 'board', command: { kind: 'moveShots', shotIds: ['a'], destination: 'unknown' } },
       { kind: 'layer', shotId: 'p', edit: { kind: 'setLayer', layerId: 'layer', patch: { opacity: 0.2 } } },
       { kind: 'layer', shotId: 'a', edit: { kind: 'replacePixels', layerId: 'layer', assetId: initialAsset } },
       { kind: 'board', command: { kind: 'applyImageEdit', result: {} } }])
@@ -109,6 +109,36 @@ describe('FlowSession public Interface', () => {
     await success(session.request({ kind: 'board', command: { kind: 'moveShots', shotIds: ['a'], destination: 'active' } }));
     expect(session.snapshot().project.shots.map(shot => shot.id)).toEqual(['b', 'a']);
     expect(session.snapshot().project.parkedShots).toEqual(before.parkedShots);
+  });
+
+  it('moves Pending membership through one history entry without pixel work and checkpoints it', async () => {
+    const { session, operations, inputs, saved, advance } = setup();
+    const before = session.snapshot().project;
+    await success(session.request({ kind: 'board', command: { kind: 'moveShots', shotIds: ['a', 'b'], destination: 'pending', beforeId: 'p' } }));
+    expect(session.snapshot().project.shots).toEqual([]);
+    expect(session.snapshot().project.parkedShots.map(s => s.id)).toEqual(['a','b','p']);
+    expect(session.snapshot().project.images).toEqual(before.images);
+    expect(operations).toEqual([]);expect(inputs).toEqual([]);
+    await advance(1000);expect(saved.at(-1)?.parkedShots.map(s=>s.id)).toEqual(['a','b','p']);
+    await success(session.request({kind:'undo'}));
+    expect(session.snapshot().project.shots).toEqual(before.shots);
+    await success(session.request({kind:'redo'}));
+    await success(session.request({kind:'board',command:{kind:'moveShots',shotIds:['a'],destination:'active'}}));
+    expect(session.snapshot().project.shots.map(s=>s.id)).toEqual(['a']);
+    await success(session.request({kind:'undo'}));expect(session.snapshot().project.shots).toEqual([]);
+    expect(operations).toEqual([]);expect(inputs).toEqual([]);
+  });
+
+  it('finishes queued paint before parking and Undo restores the painted shot without file work', async () => {
+    const slow=deferred<FlowResult<FlowPixelOutput>>();const {session,operations}=setup({pixels:{produce:()=>slow.promise}});
+    const drawing=session.request(paint());
+    const parking=session.request({kind:'board',command:{kind:'moveShots',shotIds:['a'],destination:'pending'}});
+    await ticks();expect(session.snapshot().project.shots.some(s=>s.id==='a')).toBe(true);
+    slow.resolve(painted);await success(drawing);await success(parking);
+    const asset=session.snapshot().project.images.i_a.layers[0].assetId;
+    expect(asset).not.toBe(initialAsset);expect(session.snapshot().project.parkedShots.some(s=>s.id==='a')).toBe(true);
+    await success(session.request({kind:'undo'}));expect(session.snapshot().project.shots.some(s=>s.id==='a')).toBe(true);
+    expect(session.snapshot().project.images.i_a.layers[0].assetId).toBe(asset);expect(operations).toHaveLength(1);
   });
 
   it('keeps slow paint plus intervening text as two actual ordered history entries', async () => {

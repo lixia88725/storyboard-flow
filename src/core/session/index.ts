@@ -179,8 +179,8 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
   };
   const board = (request: { command: Exclude<Extract<FlowSessionRequest, { kind: 'board' }>['command'], { kind: 'insertShot' }> }): FlowResult<boolean> => {
     const project = current(), command = request.command;
-    const ids = command.kind === 'moveShots' ? [...command.shotIds, ...(command.beforeId ? [command.beforeId] : [])] :
-      command.kind === 'removeShots' ? command.shotIds : command.kind === 'moveDialogues' ? [command.targetShotId] : [command.shotId];
+    if (command.kind === 'moveShots') return installed(history.apply(command));
+    const ids = command.kind === 'removeShots' ? command.shotIds : command.kind === 'moveDialogues' ? [command.targetShotId] : [command.shotId];
     if (ids.some(shotId => !project.shots.some(shot => shot.id === shotId))) return failure('not-found', 'Only active shots may be edited/reordered');
     return installed(history.apply(command));
   };

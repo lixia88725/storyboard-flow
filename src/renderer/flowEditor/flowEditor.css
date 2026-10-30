@@ -13,3 +13,7 @@
 .flow-dialogue-transfers { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; min-height: 30px; border: 1px dashed #777; }
 .flow-dialogue-transfers button { cursor: grab; max-width: 100%; white-space: pre-wrap; }
 .flow-dialogue-transfers span { opacity: .65; font-size: 12px; }
+
+.flow-pending-shelf { border: 2px dashed #777; padding: 16px; margin-top: 24px; min-height: 160px; }
+.flow-pending-shelf.is-over { border-color: #e98249; background: #39322d; }
+.flow-pending-shelf .flow-pending { display: inline-block; vertical-align: top; margin: 8px; }

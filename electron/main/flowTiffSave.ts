@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { outputPath, settleOutputMove, type OutputMove } from './flowOutputMove.js';
 import { snapshotProject } from '../core/persistence/validate.js';
 import type { AssetReaderV1, ProjectV1 } from '../shared/refactorV1.js';
 import type { TiffCodec } from '../core/formats/index.js';
@@ -12,7 +13,7 @@ const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const digest = (s: unknown): s is string => typeof s === 'string' && /^[a-f0-9]{64}$/.test(s);
 const leaf = (s: unknown): s is string => typeof s === 'string' && /^[^\\/\0]+\.tiff?$/i.test(s) && !s.startsWith('.');
 const id = (s: unknown): s is string => typeof s === 'string' && /^[\w-]{1,80}$/.test(s);
-type Entry = { shotId: string; name: string; original: string | null; current: string | null; pending?: string };
+type Entry = { shotId: string; name: string; original: string | null; current: string | null; pending?: string; location?: 'active' | 'parked'; move?: OutputMove; content?: string };
 type Ledger = { version: 1; projectId: string; entries: Entry[]; saved?: { revision: number; projectHash: string } };
 export type TiffSaveReceipt = { projectId: string; revision: number; projectHash: string; files: { shotId: string; name: string; digest: string }[] };
 const read = async (file: string, limit = 128 * 1024 * 1024): Promise<Buffer> => {
@@ -47,7 +48,14 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
     if (!bytes) return { ledger: { version: 1, projectId, entries: [] }, bytes };
     const ledger: Ledger = JSON.parse(bytes.toString());
     if (ledger.version !== 1 || ledger.projectId !== projectId || !Array.isArray(ledger.entries) || ledger.entries.length > 10000 ||
-        ledger.entries.some(e => !e || !id(e.shotId) || !leaf(e.name) || e.original !== null && !digest(e.original) || e.current !== null && !digest(e.current) || e.pending !== undefined && !digest(e.pending)) ||
+        ledger.entries.some(e => !e || !id(e.shotId) || !leaf(e.name) ||
+          e.original !== null && !digest(e.original) || e.current !== null && !digest(e.current) ||
+          e.pending !== undefined && !digest(e.pending) || e.content !== undefined && !digest(e.content) ||
+          e.location !== undefined && !['active', 'parked'].includes(e.location) ||
+          e.move !== undefined && (!e.move || !['active', 'parked'].includes(e.move.from) ||
+            !['active', 'parked'].includes(e.move.to) || e.move.from === e.move.to ||
+            e.move.from !== (e.location ?? 'active') || !digest(e.move.digest) || e.move.digest !== e.current ||
+            !/^\d+$/.test(e.move.dev) || !/^\d+$/.test(e.move.ino))) ||
         new Set(ledger.entries.map(e => e.shotId)).size !== ledger.entries.length || new Set(ledger.entries.map(e => e.name.toLowerCase())).size !== ledger.entries.length)
       throw Error('Invalid TIFF output ledger');
     return { ledger, bytes };
@@ -79,38 +87,52 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
       return serialized(async () => {
         if (captured.id !== projectId) throw Error('Different project');
         let { ledger, bytes } = await load();
-        // Membership changes need the separate output/Trash/Pending transaction;
+        const allShots = [...captured.shots, ...captured.parkedShots];
+        // Deletion still needs the separate output/Trash transaction;
         // refuse rather than silently leave a deleted shot on disk and claim success.
-        if (ledger.entries.some(e => !captured.shots.some(s => s.id === e.shotId))) throw Error('Output membership changed; lifecycle transaction required');
-        for (const shot of captured.shots) {
+        if (ledger.entries.some(e => !allShots.some(s => s.id === e.shotId))) throw Error('Output membership changed; lifecycle transaction required');
+        for (const shot of allShots) {
           if (!ledger.entries.some(e => e.shotId === shot.id)) {
             const name = `${shot.id}.tif`;
             if (ledger.entries.some(e => e.name.toLowerCase() === name.toLowerCase())) throw Error('Output name collision');
-            ledger.entries.push({ shotId: shot.id, name, original: null, current: null });
+            ledger.entries.push({ shotId: shot.id, name, original: null, current: null, location: captured.parkedShots.some(s => s.id === shot.id) ? 'parked' : 'active' });
           }
+        }
+        // Finish a previously published move before interpreting paths or preparing
+        // a new Save. This only completes the recorded intent, never a new edit.
+        for (const entry of ledger.entries) if (entry.move) {
+          await settleOutputMove(root, entry.name, entry.move, bind);
+          entry.location = entry.move.to; delete entry.move;
+          bytes = await persist(ledger, bytes);
         }
         const preflight = async () => {
           await bind();
           for (const entry of ledger.entries) {
-            const content = await optionalRead(path.join(root, entry.name)); const actual = content && hash(content);
+            const content = await optionalRead(outputPath(root, entry.name, entry.location ?? 'active')); const actual = content && hash(content);
             if (actual !== entry.current && actual !== entry.pending) throw Error(`TIFF changed outside Flow: ${entry.name}`);
           }
         };
         await preflight();
         // Finish every codec/read failure before replacing any output file.
-        const candidates: { entry: Entry; bytes: Buffer; digest: string }[] = [];
+        const candidates: { entry: Entry; bytes?: Buffer; digest: string; content: string }[] = [];
         let total = 0;
-        for (const shot of captured.shots) {
-          const encoded = await codec.encode({ image: captured.images[shot.imageId], text: { projectId, projectName: captured.name,
-            shotId: shot.id, shotName: shot.name, scriptText: shot.scriptText, dialogues: captured.dialogues.filter(d => d.shotId === shot.id) } }, reader);
+        for (const shot of allShots) {
+          const input = { image: captured.images[shot.imageId], text: { projectId, projectName: captured.name,
+            shotId: shot.id, shotName: shot.name, scriptText: shot.scriptText, dialogues: captured.dialogues.filter(d => d.shotId === shot.id) } };
+          const entry = ledger.entries.find(e => e.shotId === shot.id)!;
+          const content = hash(Buffer.from(JSON.stringify(input)));
+          if (entry.content === content && entry.current && !entry.pending) {
+            candidates.push({ entry, digest: entry.current, content }); continue;
+          }
+          const encoded = await codec.encode(input, reader);
           if (!encoded.ok) throw Error(encoded.error.message);
           const output = Buffer.from(encoded.value); total += output.length;
           if (total > 512 * 1024 * 1024) throw Error('Prepared TIFF batch exceeds 512 MiB');
-          candidates.push({ entry: ledger.entries.find(e => e.shotId === shot.id)!, bytes: output, digest: hash(output) });
+          candidates.push({ entry, bytes: output, digest: hash(output), content });
         }
         await preflight(); bytes = await persist(ledger, bytes);
         for (const candidate of candidates) {
-          const e = candidate.entry, target = path.join(root, e.name);
+          const e = candidate.entry, target = outputPath(root, e.name, e.location ?? 'active');
           await bind();
           if (e.original) {
             const backup = path.join(root, '.storyboard-flow', 'originals', `${e.shotId}.tif`);
@@ -123,15 +145,27 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           }
           const current = await optionalRead(target), actual = current && hash(current);
           if (actual !== e.current && actual !== e.pending) throw Error('Output changed during Save');
-          e.pending = candidate.digest; delete ledger.saved; bytes = await persist(ledger, bytes);
-          if (actual !== candidate.digest) { await bind(); await writeManagedSourceFile(root, target, candidate.bytes, actual === null ? { createOnly: true } : { expectedDigest: actual }); }
-          if (hash(await read(target)) !== candidate.digest) throw Error('TIFF readback mismatch');
-          e.current = candidate.digest; delete e.pending; bytes = await persist(ledger, bytes);
+          if (candidate.bytes) {
+            e.pending = candidate.digest; delete ledger.saved; bytes = await persist(ledger, bytes);
+            if (actual !== candidate.digest) { await bind(); await writeManagedSourceFile(root, target, candidate.bytes, actual === null ? { createOnly: true } : { expectedDigest: actual }); }
+            if (hash(await read(target)) !== candidate.digest) throw Error('TIFF readback mismatch');
+            e.current = candidate.digest; e.content = candidate.content; delete e.pending; bytes = await persist(ledger, bytes);
+          }
+          const destination = captured.parkedShots.some(s => s.id === e.shotId) ? 'parked' : 'active';
+          if (destination !== (e.location ?? 'active')) {
+            const identity = await fs.lstat(target, { bigint: true });
+            delete ledger.saved;
+            e.move = { from: e.location ?? 'active', to: destination, digest: candidate.digest, dev: String(identity.dev), ino: String(identity.ino) };
+            bytes = await persist(ledger, bytes);
+            await settleOutputMove(root, e.name, e.move, bind);
+            e.location = destination; delete e.move;
+            bytes = await persist(ledger, bytes);
+          }
         }
         await preflight();
         const projectHash = hash(Buffer.from(JSON.stringify(captured)));
         ledger.saved = { revision: captured.revision, projectHash }; await persist(ledger, bytes);
-        return { projectId, revision: captured.revision, projectHash, files: candidates.map(c => ({ shotId: c.entry.shotId, name: c.entry.name, digest: c.digest })) };
+        return { projectId, revision: captured.revision, projectHash, files: candidates.map(c => ({ shotId: c.entry.shotId, name: path.relative(root, outputPath(root, c.entry.name, c.entry.location ?? 'active')), digest: c.digest })) };
       });
     }
   };
