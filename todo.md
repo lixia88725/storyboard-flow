@@ -1,3 +1,21 @@
+## G2 Board editing workflow — 2026-10-30
+
+Candidate `9cdfda3d59990f92ff4cb5139b4d8116139f1a89` adds queued blank-shot creation,
+shared Cmd/Ctrl/Shift selection, grouped reorder/end/delete and stable-ID dialogue
+transfers to the isolated grid/Japanese editor. Each Board action is one history entry.
+New shots inherit active dimensions; empty board defaults to 1920x1080 opaque white.
+Full allowed suite **382 files / 2885 tests**, complete build and 31 isolated two-process
+Electron GUI cases pass. Receipts show clean unchanged candidate. New blank is drawable,
+Undo restores exact pixels, and reopened PNG is verified opaque white. Details:
+docs/refactor/reviews/2026-10-30/G2-BOARD-EDITOR.md.
+
+Implemented/self-tested only; independent acceptance remains open. Group drag/drawing
+use actual pointer events; modifier selection/dialogue transfers use DOM events, not
+OS-level dialogue drag proof. Default App/launcher and production TIFF remain unchanged.
+Next: TIFF source binding, explicit Save/first backups and Pending lifecycle; structural
+layer tools, blur/selection transforms and complete shell parity still remain. Windows,
+scale and installers unverified. No new worktrees, cleanup, dependencies or push.
+
 ## G2 pixel tools and shot deletion — 2026-10-30
 
 Candidate `0a09ea605c99b9c83a1dc086660236c649104f8a` connects fill/clear/bounded merge
