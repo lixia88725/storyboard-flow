@@ -59,3 +59,8 @@ and npm run build on recorded candidate. Coordinate expensive native suites acro
 run preload/resource/isolated actual GUI checks where affected. Public-interface tests do not prove
 actual drawing, Save, Windows or thousand-image performance. Coordinator independently reviews,
 checks combined behavior, integrates scoped commits locally, then retires finished worktrees.
+
+## Coordinator review baseline
+
+See [COORDINATOR-GATES.md](COORDINATOR-GATES.md) for existing-feature coverage, cross-module
+invariants and staged acceptance. This is a review baseline; no GUI gate is marked passed by it.
