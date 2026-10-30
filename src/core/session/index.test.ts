@@ -420,3 +420,53 @@ describe('FlowSession public Interface', () => {
     expect(undone.value.project.revision).toBe(3);
   });
 });
+
+describe('dialogue commands through the Session', () => {
+  const dialogue = (shotId: string, text: string, id = 'd') => ({
+    kind: 'board' as const, command: { kind: 'setDialogues' as const, shotId, dialogues: [{ id, shotId, text }] }
+  });
+  it('keeps concurrent dialogue edits through paint, then undoes each operation independently', async () => {
+    const pending = deferred<FlowResult<FlowPixelOutput>>();
+    const { session } = setup({ pixels: { produce: () => pending.promise }, maxHistoryEntries: 10 });
+    await success(session.request(dialogue('b', 'other', 'other')));
+    const painting = session.request(paint());
+    await ticks();
+    const input = dialogue('a', '中文');
+    const editing = session.request(input);
+    input.command.dialogues[0].text = 'caller mutation';
+    await success(editing);
+    expect(session.snapshot().project.dialogues.map(d => d.text)).toEqual(['other', '中文']);
+    pending.resolve(painted); await success(painting);
+    await success(session.request({ kind: 'undo' }));
+    expect(session.snapshot().project.images.i_a.layers[0].assetId).toBe(initialAsset);
+    expect(session.snapshot().project.dialogues.map(d => d.text)).toEqual(['other', '中文']);
+    await success(session.request({ kind: 'undo' }));
+    expect(session.snapshot().project.dialogues.map(d => d.text)).toEqual(['other']);
+    await success(session.request({ kind: 'redo' }));
+    expect(session.snapshot().project.dialogues.map(d => d.text)).toEqual(['other', '中文']);
+  });
+  it('rejects parked targets, foreign bindings and duplicate IDs without changing project', async () => {
+    const { session } = setup();
+    await success(session.request(dialogue('b', 'other', 'other')));
+    const before = session.snapshot().project;
+    expect(await session.request(dialogue('p', 'parked'))).toMatchObject({ ok: false });
+    expect(await session.request(dialogue('a', 'collision', 'other'))).toMatchObject({ ok: false });
+    const foreign = dialogue('a', 'foreign'); foreign.command.dialogues[0].shotId = 'b';
+    expect(await session.request(foreign)).toMatchObject({ ok: false });
+    expect(session.snapshot().project).toEqual(before);
+  });
+  it('does not let dialogue overtake an Undo queued behind painting', async () => {
+    const pending = deferred<FlowResult<FlowPixelOutput>>();
+    const { session } = setup({ pixels: { produce: () => pending.promise } });
+    const painting = session.request(paint()); await ticks();
+    const undo = session.request({ kind: 'undo' });
+    const editing = session.request(dialogue('a', 'after undo'));
+    await ticks(); expect(session.snapshot().project.dialogues).toEqual([]);
+    pending.resolve(painted);
+    await success(painting); await success(undo); await success(editing);
+    expect(session.snapshot().project.images.i_a.layers[0].assetId).toBe(initialAsset);
+    expect(session.snapshot().project.dialogues[0].text).toBe('after undo');
+    await success(session.request({ kind: 'undo' }));
+    expect(session.snapshot().project.dialogues).toEqual([]);
+  });
+});

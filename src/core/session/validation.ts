@@ -28,6 +28,8 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
         const command = value.command;
         if (shape(command, ['kind', 'shotId', 'text']) && command.kind === 'setScriptText' && id(command.shotId) && typeof command.text === 'string')
           return { ok: true, value: value as FlowSessionRequest };
+        if (shape(command, ['kind', 'shotId', 'dialogues']) && command.kind === 'setDialogues' && id(command.shotId) && Array.isArray(command.dialogues))
+          return { ok: true, value: value as FlowSessionRequest };
         if (shape(command, ['kind', 'shotIds', 'destination'], ['beforeId']) && command.kind === 'moveShots' && command.destination === 'active' &&
             Array.isArray(command.shotIds) && command.shotIds.length > 0 && Array.from(command.shotIds).every(id) && new Set(command.shotIds).size === command.shotIds.length &&
             (!Object.hasOwn(command, 'beforeId') || id(command.beforeId))) return { ok: true, value: value as FlowSessionRequest };

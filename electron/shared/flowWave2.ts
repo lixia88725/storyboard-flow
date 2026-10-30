@@ -1,7 +1,7 @@
 /** Coordinator-owned first wave-2 implementation contract. No production IPC or TIFF yet.
  * Semantics and exclusions: docs/refactor/wave2/IMPLEMENTATION-1.md. */
 import type { AssetIdV1, AssetReaderV1, CheckpointReceiptV1, CoreErrorCodeV1,
-  ImageDocumentV1, ImageEditV1, ProjectV1, ResultV1 } from './refactorV1.js';
+  DialogueV1, ImageDocumentV1, ImageEditV1, ProjectV1, ResultV1 } from './refactorV1.js';
 
 export type FlowFailure = {
   code: CoreErrorCodeV1 | 'resource-limit' | 'unavailable' | 'busy' | 'closed';
@@ -32,6 +32,7 @@ export type FlowAssetDepotOptions = {
 };
 export type FlowBoardCommand =
   | { kind: 'setScriptText'; shotId: string; text: string }
+  | { kind: 'setDialogues'; shotId: string; dialogues: DialogueV1[] }
   | { kind: 'moveShots'; shotIds: string[]; destination: 'active'; beforeId?: string };
 export type FlowLayerEdit = Exclude<ImageEditV1, { kind: 'replacePixels' }>;
 export type FlowSessionRequest =

@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
-import { SortableContext, useSortable, rectSortingStrategy } from '@dnd-kit/sortable';
+import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { FlowSession, FlowSessionRequest } from '../../../electron/shared/flowWave2';
 import { createFlowSession } from '../../core/session';
 import { createFlowPixels } from '../drawing';
 import { MediaSourceContext, type MediaSource } from '../mediaSource';
+import { JapaneseStoryboardView } from '../JapaneseStoryboardView';
+import { shotDialogueText } from '../editableDialogueText';
 import { SketchPad } from '../SketchPad';
 import { LayerPanel } from '../LayerPanel';
 import { ShotStaticMedia } from '../ShotStaticMedia';
 import { captureMountedCanvasCheckpoints } from '../mountedCanvasRecoveryCapture';
-import { projectShots, pixelStroke, settledStrokePreview } from './adapter';
-import type { Shot } from '../../shared/types';
+import { projectView, dialogueCommand, projectShots, pixelStroke, settledStrokePreview } from './adapter';
+import type { Shot, SketchStroke } from '../../shared/types';
 import './flowEditor.css';
 
 const required = <T,>(r: { ok: true; value: T } | { ok: false; error: { message: string } }): T => {
@@ -55,6 +57,7 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
   const [layers, setLayers] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState(snapshot.project.shots[0]?.id);
   const [panel, setPanel] = useState<string>();
+  const [japanese, setJapanese] = useState(false);
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
   const [color, setColor] = useState('#dd3344');
   const [size, setSize] = useState(20);
@@ -98,9 +101,26 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const rejectTool = () => setIssue('This operation is not connected yet');
   const active = snapshot.phase === 'active';
+  const view = projectView(snapshot.project, shots);
+  const script = (shotId: string, text: string) => act({ kind: 'board', command: { kind: 'setScriptText', shotId, text } });
+  const dialogue = (shotId: string, text: string) => act({ kind: 'board', command: dialogueCommand(flow.snapshot().project, shotId, text) });
+  const stroke = async (shot: Shot, layerId: string, input: SketchStroke) => {
+    const result = await request({ kind: 'paint', shotId: shot.id, layerId, stroke: pixelStroke(input) });
+    const currentShot = result.snapshot.project.shots.find(s => s.id === shot.id)!;
+    return settledStrokePreview(() => flow.snapshot().project, shot.id, layerId,
+      result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId, source);
+  };
+  const switchView = () => {
+    if (gestures.current || flow.snapshot().pending || captureMountedCanvasCheckpoints().hasUnsettledGesture) {
+      setIssue('Finish the current edit before switching views'); return;
+    }
+    setJapanese(value => !value);
+  };
+
   return <MediaSourceContext.Provider value={media}>
     <main className="flow-editor" data-flow-editor="true" data-revision={snapshot.project.revision} data-phase={snapshot.phase}>
       <header className="topbar"><strong>Storyboard Flow</strong><span>{snapshot.project.name}</span>
+        <button disabled={!active} onClick={switchView}>{japanese ? 'Grid view' : 'Japanese view'}</button>
         <button disabled={!active} aria-pressed={tool === 'brush'} onClick={() => setTool('brush')}>Brush</button>
         <button disabled={!active} aria-pressed={tool === 'eraser'} onClick={() => setTool('eraser')}>Eraser</button>
         <input aria-label="Brush color" type="color" value={color} onChange={e => setColor(e.target.value)} />
@@ -111,17 +131,21 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
       <p role="status">{issue || snapshot.lastError?.message || (snapshot.checkpoint?.revision === snapshot.project.revision ? 'Editable project saved' : 'Saving editable project…')}</p>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active: from, over }) => {
         if (over && from.id !== over.id) act({ kind: 'board', command: { kind: 'moveShots', shotIds: [String(from.id)], destination: 'active', beforeId: String(over.id) } });
-      }}><SortableContext items={snapshot.project.shots.map(s => s.id)} strategy={rectSortingStrategy}>
+      }}><SortableContext items={snapshot.project.shots.map(s => s.id)} strategy={japanese ? verticalListSortingStrategy : rectSortingStrategy}>
+      {japanese ? <fieldset className="flow-editor-sheet" disabled={!active}>
+        <JapaneseStoryboardView project={view} selectedShotIds={selected ? [selected] : []} zoomLevel={100}
+          activeSketchTool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0}
+          eraserSize={size} eraserOpacity={1} eraserSoftness={0} folderPath="flow" isZoomScrubbing={false}
+          bitmapRevisionByShotId={Object.fromEntries(shots.map(s => [s.id, snapshot.project.revision]))}
+          onActionText={script} onDialogueText={dialogue} onFocusShot={setSelected} onSelectShot={setSelected}
+          onPickColor={setColor} onFill={unavailable} onSelectionTransform={unavailable} onSketchStroke={stroke} />
+      </fieldset> :
       <div className="flow-editor-grid">{shots.slice(0, snapshot.project.shots.length).map(shot => <Card key={shot.id} shot={shot} selected={selected === shot.id} disabled={!active}>
         <SketchPad shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0}
           eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false} onFocusShot={() => setSelected(shot.id)}
-          onStroke={async (layerId, stroke) => {
-            const result = await request({ kind: 'paint', shotId: shot.id, layerId, stroke: pixelStroke(stroke) });
-            const currentShot = result.snapshot.project.shots.find(s => s.id === shot.id)!;
-            return settledStrokePreview(() => flow.snapshot().project, shot.id, layerId,
-              result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId, source);
-          }} onSelectionTransform={unavailable} onFill={unavailable} onPickColor={setColor} />
-        <textarea aria-label={`Script ${shot.id}`} value={shot.scriptText} disabled={!active} onChange={e => act({ kind: 'board', command: { kind: 'setScriptText', shotId: shot.id, text: e.target.value } })} />
+          onStroke={(layerId, input) => stroke(shot, layerId, input)} onSelectionTransform={unavailable} onFill={unavailable} onPickColor={setColor} />
+        <textarea aria-label={`Script ${shot.id}`} value={shot.scriptText} disabled={!active} onChange={e => script(shot.id, e.target.value)} />
+        <textarea aria-label={`Dialogue ${shot.id}`} value={shotDialogueText(view, shot.id)} disabled={!active} onChange={e => dialogue(shot.id, e.target.value)} />
         <button disabled={!active} onClick={() => { setSelected(shot.id); setPanel(panel === shot.id ? undefined : shot.id); }}>Layers</button>
         <LayerPanel shot={shot} folderPath="flow" thumbnailRevision={snapshot.project.revision} isOpen={panel === shot.id} isRendered={panel === shot.id}
           onLayerOpacityGesture={(shotId, layerId, opacity, phase) => {
@@ -139,7 +163,7 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
             if (ids.length !== 1) { rejectTool(); return; }
             act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId: ids[0], patch: { opacity: Math.max(0, Math.min(1, initial[ids[0]] + delta)) } } });
           }} />
-      </Card>)}</div></SortableContext></DndContext>
+      </Card>)}</div>}</SortableContext></DndContext>
       <aside aria-label="Pending"><h2>Pending</h2>{shots.slice(snapshot.project.shots.length).map(shot => <div key={shot.id} className="flow-pending"><span>{shot.fileName}</span><ShotStaticMedia shot={shot} folderPath="flow" revision={snapshot.project.revision} /></div>)}</aside>
     </main>
   </MediaSourceContext.Provider>;

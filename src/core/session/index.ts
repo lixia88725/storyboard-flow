@@ -175,7 +175,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
   };
   const board = (request: Extract<FlowSessionRequest, { kind: 'board' }>): FlowResult<boolean> => {
     const project = current(), command = request.command;
-    const ids = command.kind === 'setScriptText' ? [command.shotId] : [...command.shotIds, ...(command.beforeId ? [command.beforeId] : [])];
+    const ids = command.kind !== 'moveShots' ? [command.shotId] : [...command.shotIds, ...(command.beforeId ? [command.beforeId] : [])];
     if (ids.some(shotId => !project.shots.some(shot => shot.id === shotId))) return failure('not-found', 'Only active shots may be edited/reordered');
     return installed(history.apply(command));
   };
@@ -288,7 +288,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
         resolve(outcome); notify();
       } };
       if (request.kind === 'freeze') { phase = 'freezing'; freezePromise = promise; cancelTimer(); }
-      if (request.kind === 'board' && request.command.kind === 'setScriptText' && painting && queue.every(task => task.request.kind === 'paint')) {
+      if (request.kind === 'board' && request.command.kind !== 'moveShots' && painting && queue.every(task => task.request.kind === 'paint')) {
         try { task.finish(board(request)); } catch (error) { task.finish(unexpected(error, 'none')); }
       } else { queue.push(task); void pump(); }
       notify();

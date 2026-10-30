@@ -6,3 +6,6 @@
 .flow-editor .flow-pending { width: 240px; }
 .flow-editor[data-phase="freezing"] .flow-editor-grid,
 .flow-editor[data-phase="frozen"] .flow-editor-grid { pointer-events: none; }
+
+.flow-editor-sheet { border: 0; padding: 0; margin: 0; min-width: 0; }
+.flow-editor-sheet:disabled { pointer-events: none; }
