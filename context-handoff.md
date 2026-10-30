@@ -1,3 +1,12 @@
+## Wave-one worktrees archived — 2026-10-30
+
+User approved retirement. The three completed Hermes checkouts were fully archived and verified,
+then removed; their branches/commits remain. Git now lists only original main. The cleanup-backup
+and kickoff directories were relocated intact into `.hermes/archive/2026-10-30-wave1/` alongside
+lane archives and audit manifests. Historical paths below refer to the pre-retirement locations.
+Details: `docs/refactor/reviews/2026-10-30/WORKTREE-RETIREMENT.md`.
+No agents restarted or next-wave worktrees created. Prepare new tasks/contracts before reopening lanes.
+
 ## Naming and replacement launcher verified — 2026-10-29
 
 - Naming candidate `7db58ed` passed complete allowed tests (373 files / 2713 tests), full build,

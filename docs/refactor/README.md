@@ -1,5 +1,9 @@
 # Storyboard Flow refactor — Hermes wave 1
 
+2026-10-30: wave-one worktrees retired after verified full archives; only original main remains.
+Branches and local evidence are preserved. See [retirement record](reviews/2026-10-30/WORKTREE-RETIREMENT.md).
+Next-wave contracts/tasks are not yet assigned.
+
 Status: wave-one cores independently reviewed and integrated on main; 372 files / 2711 tests and full build passed on `72f4011`. The new core is not connected to the app.
 See [final recheck](reviews/2026-10-29/RECHECK.md) for evidence and remaining limits.
 User authority (2026-10-29): redesign the internal format without old-project compatibility,
