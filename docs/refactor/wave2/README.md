@@ -64,3 +64,10 @@ checks combined behavior, integrates scoped commits locally, then retires finish
 
 See [COORDINATOR-GATES.md](COORDINATOR-GATES.md) for existing-feature coverage, cross-module
 invariants and staged acceptance. This is a review baseline; no GUI gate is marked passed by it.
+
+## Reviewed proposals
+
+The three lane proposals are now collected here: [Session](SESSION.md),
+[Drawing/Assets](DRAWING-ASSETS.md), [Formats/Save](FORMATS-SAVE.md).
+[DESIGN-REVIEW.md](DESIGN-REVIEW.md) contains coordinator precedence decisions, especially
+Undo ordering and output-only failures. Proposals are not a frozen runtime contract.
