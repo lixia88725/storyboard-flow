@@ -1,3 +1,19 @@
+## G2 pixel tools and shot deletion — 2026-10-30
+
+Candidate `0a09ea605c99b9c83a1dc086660236c649104f8a` connects fill/clear/bounded merge
+through the sole Session queue and one atomic image/history publication. The isolated
+editor uses SketchPad fill drops in grid/Japanese views, LayerPanel merge, clear-current
+layer and single-shot deletion. Full suite **381 files / 2879 tests**, complete build
+and 22 actual two-process Electron scenarios passed on the frozen clean candidate.
+See docs/refactor/reviews/2026-10-30/G2-PIXEL-TOOLS.md for receipts and limits.
+
+Implemented/self-tested only, independent acceptance remains open. Default production
+App and launcher remain unchanged. Merge only supports the documented contiguous,
+visible, unlocked subset; unsupported cases refuse. Remaining Board insertion/multi-
+selection/dialogue-drag UI, structural layer tools, blur/selection transforms, TIFF
+Save/first backups and Pending lifecycle still need implementation/verification.
+No new worktrees, cleanup, dependencies or push; all three prior worktrees retained.
+
 ## Batch 3 modules integrated and verified — 2026-10-30
 
 Coordinator integrated exact reviewed Board, Drawing and TIFF source on main
