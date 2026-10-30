@@ -10,7 +10,7 @@ import { SketchPad } from '../SketchPad';
 import { LayerPanel } from '../LayerPanel';
 import { ShotStaticMedia } from '../ShotStaticMedia';
 import { captureMountedCanvasCheckpoints } from '../mountedCanvasRecoveryCapture';
-import { projectShots, pixelStroke } from './adapter';
+import { projectShots, pixelStroke, settledStrokePreview } from './adapter';
 import type { Shot } from '../../shared/types';
 import './flowEditor.css';
 
@@ -76,7 +76,7 @@ function Editor({ flow, issue, setIssue }: { flow: FlowSession; issue: string; s
   useEffect(() => () => { for (const url of cache.values()) URL.revokeObjectURL(url); }, [cache]);
   const media: MediaSource = useMemo(() => ({ assetUrl: id => urls[id] ?? '', layerAssetUrl: ({ bitmapPath }) => urls[bitmapPath.split('/').at(-1)!] ?? '' }), [urls]);
   const request = async (r: FlowSessionRequest) => {
-    try { return required(await flow.request(r)); } catch (error) { setIssue(String(error)); throw error; }
+    try { const result = required(await flow.request(r)); setIssue(''); return result; } catch (error) { setIssue(String(error)); throw error; }
   };
   const act = (r: FlowSessionRequest) => { void request(r).catch(() => {}); };
   useEffect(() => {
@@ -111,7 +111,8 @@ function Editor({ flow, issue, setIssue }: { flow: FlowSession; issue: string; s
           onStroke={async (layerId, stroke) => {
             const result = await request({ kind: 'paint', shotId: shot.id, layerId, stroke: pixelStroke(stroke) });
             const currentShot = result.snapshot.project.shots.find(s => s.id === shot.id)!;
-            return source(result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId);
+            return settledStrokePreview(() => flow.snapshot().project, shot.id, layerId,
+              result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId, source);
           }} onSelectionTransform={unavailable} onFill={unavailable} onPickColor={setColor} />
         <textarea aria-label={`Script ${shot.id}`} value={shot.scriptText} disabled={!active} onChange={e => act({ kind: 'board', command: { kind: 'setScriptText', shotId: shot.id, text: e.target.value } })} />
         <button disabled={!active} onClick={() => { setSelected(shot.id); setPanel(panel === shot.id ? undefined : shot.id); }}>Layers</button>

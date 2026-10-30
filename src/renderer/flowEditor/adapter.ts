@@ -16,3 +16,15 @@ export function pixelStroke(stroke: SketchStroke): FlowStroke {
   return { tool: stroke.tool, color: stroke.color, size: stroke.size, opacity: stroke.opacity ?? 1,
     softness: stroke.softness ?? 0, points: [...stroke.points] };
 }
+
+/** SketchPad caches a returned preview. A delayed read must not override intervening Undo. */
+export async function settledStrokePreview(
+  current: () => ProjectV1, shotId: string, layerId: string, assetId: string,
+  read: (assetId: string) => Promise<string>
+): Promise<string | undefined> {
+  const url = await read(assetId);
+  const project = current();
+  const shot = project.shots.find(item => item.id === shotId);
+  const layer = shot && project.images[shot.imageId]?.layers.find(item => item.id === layerId);
+  return layer?.assetId === assetId ? url : undefined;
+}
