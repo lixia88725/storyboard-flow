@@ -28,6 +28,7 @@ export function FlowEditor() {
   const [flow, setFlow] = useState<FlowSession>();
   const [issue, setIssue] = useState('');
   const gestures = useRef(0);
+  const outputWork = useRef<Promise<void> | undefined>(undefined);
   useEffect(() => {
     const api = window.flowEditor!;
     let off: (() => void) | undefined, cancelled = false;
@@ -42,6 +43,7 @@ export function FlowEditor() {
       off = api.onClose(id => { void (async () => {
         try {
           if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) throw new Error('Finish the current stroke before closing');
+          await outputWork.current;
           const result = required(await owner.request({ kind: 'freeze' }));
           const closed = await api.finishClose(id, result.snapshot.project);
           if (!closed.ok) throw new Error(closed.message);
@@ -53,9 +55,9 @@ export function FlowEditor() {
     }).catch(error => setIssue(String(error)));
     return () => { cancelled = true; off?.(); window.removeEventListener('beforeunload', beforeUnload); };
   }, []);
-  return flow ? <Editor flow={flow} issue={issue} setIssue={setIssue} gestures={gestures} /> : <main><p role="status">{issue || 'Opening project…'}</p></main>;
+  return flow ? <Editor flow={flow} issue={issue} setIssue={setIssue} gestures={gestures} outputWork={outputWork} /> : <main><p role="status">{issue || 'Opening project…'}</p></main>;
 }
-function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number } }) {
+function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: { current: Promise<void> | undefined }; flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number } }) {
   const [snapshot, setSnapshot] = useState(() => flow.snapshot());
   const [layers, setLayers] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState(snapshot.project.shots[0]?.id);
@@ -68,6 +70,8 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
     setSelected(id); if (!event.shiftKey) selectionAnchor.current = id;
   };
   const [panel, setPanel] = useState<string>();
+  const [savingTiff, setSavingTiff] = useState(false);
+  const [savedTiffRevision, setSavedTiffRevision] = useState<number>();
   const [japanese, setJapanese] = useState(false);
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
   const [color, setColor] = useState('#dd3344');
@@ -139,6 +143,25 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
     const ids = selectedIds.length >= 2 ? selectedIds : image.layers.slice(Math.max(0, index - 1), index + 1).map(l => l.id);
     act({ kind: 'pixelTool', shotId, tool: { kind: 'merge', layerIds: ids } });
   };
+  const saveTiff = async () => {
+    if (savingTiff || outputWork.current) return;
+    if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture || flow.snapshot().pending) {
+      setIssue('Finish the current edit before saving TIFF'); return;
+    }
+    const captured = flow.snapshot().project;
+    setSavingTiff(true);
+    const work = (async () => {
+      try {
+        const receipt = required(await window.flowEditor!.saveTiff(captured));
+        if (receipt.projectId !== captured.id || receipt.revision !== captured.revision) throw Error('TIFF Save receipt mismatch');
+        setSavedTiffRevision(receipt.revision); setIssue('');
+      } catch (error) { setIssue(String(error)); throw error; }
+      finally { setSavingTiff(false); }
+    })();
+    outputWork.current = work;
+    try { await work; } finally { if (outputWork.current === work) outputWork.current = undefined; }
+  };
+
   const newShot = () => {
     const project = flow.snapshot().project, anchor = project.shots.find(s => s.id === selected);
     const image = anchor ? project.images[anchor.imageId] : project.shots[0] ? project.images[project.shots[0].imageId] : undefined;
@@ -166,6 +189,8 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
         <input aria-label="Brush size" type="range" min="1" max="100" value={size} onChange={e => setSize(Number(e.target.value))} />
         <button disabled={!active} onClick={() => act({ kind: 'undo' })}>Undo</button><button disabled={!active} onClick={() => act({ kind: 'redo' })}>Redo</button>
         <button disabled={!active} onClick={() => act({ kind: 'checkpoint' })}>Checkpoint</button>
+        <button disabled={!active || savingTiff} onClick={() => { void saveTiff().catch(() => {}); }}>Save TIFF</button>
+        <span aria-label="TIFF output status">{savingTiff ? 'Saving TIFF…' : savedTiffRevision === snapshot.project.revision ? 'TIFF saved' : 'TIFF not saved for current edit'}</span>
         <button disabled={!active} onClick={newShot}>New shot</button>
         <button disabled={!active || !selectedIds.length} onClick={() => act({ kind: 'board', command: { kind: 'removeShots', shotIds: selectedIds } })}>Delete shot</button>
         <button disabled={!active || !selectedIds.length} onClick={() => act({ kind: 'board', command: { kind: 'moveShots', shotIds: selectedIds, destination: 'active' } })}>Move to end</button>

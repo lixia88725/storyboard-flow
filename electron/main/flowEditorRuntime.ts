@@ -1,3 +1,7 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { openFlowTiffSave } from './flowTiffSave.js';
+import { createTiffCodec } from '../core/formats/index.js';
 import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
@@ -14,6 +18,11 @@ export async function openFlowEditorRuntime(root: string) {
   const sessionId = randomUUID();
   const depot = await openFlowAssetDepot({ root, sessionId, maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024 });
   if (!depot.ok) throw new Error(depot.error.message);
+  const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const output = await openFlowTiffSave(root, projectId, createTiffCodec({
+    scriptPath: path.join(repo, 'electron/core/formats/codec.py'),
+    depsDir: process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff')
+  }));
   let sealed = false, pending = 0;
   const busy = () => ({ ok: false as const, error: { code: 'busy' as const, message: 'Editor is closing', effect: 'none' as const } });
   return {
@@ -23,6 +32,17 @@ export async function openFlowEditorRuntime(root: string) {
       if (sealed) return busy();
       pending++;
       try { return await depot.value.put(input); } finally { pending--; }
+    },
+    async saveTiff(project: ProjectV1) {
+      if (sealed) return busy();
+      pending++;
+      try {
+        const value = await output.save(project, async id => {
+          const asset = await depot.value.read(id); if (!asset.ok) throw Error(asset.error.message); return asset.value;
+        });
+        return { ok: true as const, value };
+      } catch (error) { return { ok: false as const, error: { message: error instanceof Error ? error.message : String(error) } }; }
+      finally { pending--; }
     },
     async checkpoint(project: ProjectV1) {
       if (sealed) return busy();

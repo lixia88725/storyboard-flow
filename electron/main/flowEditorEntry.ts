@@ -24,7 +24,7 @@ app.whenReady().then(async () => {
     if (!documentUrl || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== documentUrl)
       throw new Error('Current editor document required');
   };
-  for (const name of ['open', 'read', 'put', 'checkpoint'] as const) {
+  for (const name of ['open', 'read', 'put', 'checkpoint', 'saveTiff'] as const) {
     ipcMain.handle(`flow-editor:${name}`, (event, input) => { caller(event); return (runtime[name] as (value: unknown) => unknown)(input); });
   }
   ipcMain.handle('flow-editor:finish-close', async (event, id, project) => {

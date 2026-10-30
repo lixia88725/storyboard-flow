@@ -7,6 +7,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import sharp from 'sharp';
 import {openFlowAssetDepot} from '../dist-electron/core/persistence/depot.js';
+import {createTiffCodec} from '../dist-electron/core/formats/index.js';
+import {openFlowTiffSave} from '../dist-electron/main/flowTiffSave.js';
 import {createProjectStore} from '../dist-electron/core/persistence/index.js';
 const require=createRequire(import.meta.url),repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const run=await mkdtemp(path.join(await realpath(os.tmpdir()),'flow-editor-smoke-')),root=path.join(run,'project');await mkdir(root);
@@ -24,6 +26,11 @@ for(let i=0;i<5;i++){
  project.images[imageId]={id:imageId,revision:0,width:640,height:360,layers:Array.from({length:3},(_,l)=>({id:'layer'+l,name:'Layer '+l,kind:l?'paint':'image',visible:true,locked:false,opacity:1,blendMode:'normal',width:640,height:360,assetId:blobs[l?1:0]}))};
 }
 get(await createProjectStore().saveCheckpoint(root,project,async id=>get(await depot.read(id))));
+const codec=createTiffCodec({scriptPath:path.join(repo,'electron/core/formats/codec.py'),depsDir:path.join(repo,'vendor/python/photoshop-tiff')});
+const original=get(await codec.encode({image:project.images.image0,text:null},async id=>get(await depot.read(id))));
+const sourceFile=path.join(root,'artist-original.tif');await writeFile(sourceFile,original);
+const sourceHash=(await import('node:crypto')).createHash('sha256').update(original).digest('hex');
+await (await openFlowTiffSave(root,project.id,codec)).bindSources(project,[{shotId:'shot0',name:'artist-original.tif',digest:sourceHash}]);
 const identity={head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),status:execFileSync('git',['status','--short'],{encoding:'utf8'}).trim(),run};
 for(const phase of ['edit','reopen']){
  const userData=path.join(run,phase+'-userData');await mkdir(userData);
@@ -62,6 +69,10 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   await mouse('mouseDown',canvas.x+canvas.width*.4,canvas.y+canvas.height*.5);await mouse('mouseMove',canvas.x+canvas.width*.6,canvas.y+canvas.height*.5);await mouse('mouseUp',canvas.x+canvas.width*.6,canvas.y+canvas.height*.5);
   await wait(()=>read().images.image0.layers[2].assetId!==${JSON.stringify(blobs[1])},'paint');
   const painted=read().images.image0.layers[2].assetId;
+  await button('Save TIFF');await wait(()=>js('Array.from(document.querySelectorAll("span")).find(e=>e.getAttribute("aria-label")==="TIFF output status").textContent==="TIFF saved"'),'first TIFF Save');
+  const firstTiff=fs.readFileSync(${JSON.stringify(path.join(root,'artist-original.tif'))});
+  assert.deepEqual(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/originals/shot0.tif'))}),Buffer.from(${JSON.stringify(Buffer.from(original).toString('base64'))},'base64'));
+
   await js('Array.from(document.querySelector("[data-shot-id=shot0]").querySelectorAll("button")).find(e=>e.textContent==="Layers").click()');await delay(200);
   const row=await rect('[data-shot-id="shot0"] .layer-row[data-layer-id="layer2"]');
   await mouse('mouseDown',row.x+row.width*.8,row.y+row.height-3);await mouse('mouseMove',row.x+row.width*.65,row.y+row.height-3);await mouse('mouseMove',row.x+row.width*.55,row.y+row.height-3);await mouse('mouseMove',row.x+row.width*.5,row.y+row.height-3);await mouse('mouseUp',row.x+row.width*.5,row.y+row.height-3);
@@ -69,6 +80,8 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   const opacity=read().images.image0.layers[2].opacity;
   await button('Undo');await wait(()=>read().images.image0.layers[2].opacity===1,'undo opacity');
   await button('Undo');await wait(()=>read().images.image0.layers[2].assetId===${JSON.stringify(blobs[1])},'undo paint');
+  await button('Save TIFF');await wait(()=>js('Array.from(document.querySelectorAll("span")).find(e=>e.getAttribute("aria-label")==="TIFF output status").textContent==="TIFF saved"'),'Undo TIFF Save');
+  assert.notDeepEqual(fs.readFileSync(${JSON.stringify(path.join(root,'artist-original.tif'))}),firstTiff);
   await button('Redo');await button('Redo');
   await wait(()=>{const p=read();return p.images.image0.layers[2].assetId===painted&&p.images.image0.layers[2].opacity===opacity},'redo');
   const revision=read().revision;
@@ -183,6 +196,7 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   assert.equal(await js('Array.from(document.querySelectorAll("textarea")).find(e=>e.getAttribute("aria-label")==="Dialogue shot1").value'),moving.text);
   // Restore text placement for previous reopen assertions; the new blank remains saved.
   await button('Undo');await wait(()=>read().dialogues.find(d=>d.id===moving.id).shotId==='shot0','dialogue placement restore');
+  await button('Save TIFF');await wait(()=>js('Array.from(document.querySelectorAll("span")).find(e=>e.getAttribute("aria-label")==="TIFF output status").textContent==="TIFF saved"'),'final TIFF Save');
   fs.writeFileSync(${JSON.stringify(path.join(run,'expected.json'))},JSON.stringify(read()));
  }else{
   assert.deepEqual(read(),JSON.parse(fs.readFileSync(${JSON.stringify(path.join(run,'expected.json'))},'utf8')));
@@ -220,5 +234,10 @@ if(!blankShot)throw Error('New shot missing after reopen');
 const blankImage=final.project.images[blankShot.imageId];
 const blankPixels=await sharp(await final.readAsset(blankImage.layers[0].assetId)).ensureAlpha().raw().toBuffer();
 if(!blankPixels.every(v=>v===255))throw Error('New blank pixels not opaque white');
-await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['Chinese text','real drag reorder','SketchPad pointer stroke','LayerPanel opacity drag','Undo twice','Redo twice','checkpoint','certified normal Close','new-process reopen','close while pointer active refused','reopened eraser and exact Undo','Japanese view shares script/order','view switch creates no revision','multiline dialogue Undo/Redo','Japanese pointer drawing and exact Undo','view switch during stroke refused','dialogue shared with grid and fresh reopen','DOM fill drop real Canvas and exact Undo','clear layer exact Undo','merge one image revision and one Undo','delete shot preserves assets and Undo','Japanese fill persisted and reopened editable','new blank shot one Undo Redo and reopen','initial Shift range selection','group drag preserves board order','selection shared with Japanese view','group move to end one Undo','group delete preserves assets one Undo','dialogue transfer stable identity Undo Redo','empty board creation default size and Undo','new shot editable and exact white pixels after reopen']},null,2));
+const finalTiff=get(await codec.decode(await readFile(sourceFile)));
+const outputPixels=await sharp(finalTiff.image.layers[2].png).ensureAlpha().raw().toBuffer();
+const savedPixels=await sharp(await final.readAsset(final.project.images.image0.layers[2].assetId)).ensureAlpha().raw().toBuffer();
+if(!outputPixels.equals(savedPixels))throw Error('TIFF pixels disagree with saved editor');
+if(!(await readFile(path.join(root,'.storyboard-flow/originals/shot0.tif'))).equals(Buffer.from(original)))throw Error('Original backup changed');
+await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['Chinese text','real drag reorder','SketchPad pointer stroke','LayerPanel opacity drag','Undo twice','Redo twice','checkpoint','certified normal Close','new-process reopen','close while pointer active refused','reopened eraser and exact Undo','Japanese view shares script/order','view switch creates no revision','multiline dialogue Undo/Redo','Japanese pointer drawing and exact Undo','view switch during stroke refused','dialogue shared with grid and fresh reopen','DOM fill drop real Canvas and exact Undo','clear layer exact Undo','merge one image revision and one Undo','delete shot preserves assets and Undo','Japanese fill persisted and reopened editable','new blank shot one Undo Redo and reopen','initial Shift range selection','group drag preserves board order','selection shared with Japanese view','group move to end one Undo','group delete preserves assets one Undo','dialogue transfer stable identity Undo Redo','empty board creation default size and Undo','new shot editable and exact white pixels after reopen','explicit TIFF Save and Undo Save','immutable original backup','final TIFF pixels equal reopened editable pixels']},null,2));
 console.log('PASS real editor workflow; evidence:',run);
