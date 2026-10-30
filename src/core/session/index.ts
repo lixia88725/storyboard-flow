@@ -4,7 +4,7 @@ import type {
 } from '../../../electron/shared/flowWave2';
 import type { AssetReaderV1, CheckpointReceiptV1, ProjectEditResultV1, ProjectV1, ResultV1 } from '../../../electron/shared/refactorV1';
 import { applyImageEdit } from '../drawing';
-import { createProjectHistory, type ProjectHistoryV1 } from '../storyboard';
+import { applyStoryboardEdit, createProjectHistory, type ProjectHistoryV1 } from '../storyboard';
 import { codes, copy, failure, id, positive, record, same, snapshotRequest, validFailure } from './validation';
 
 type Task = { request: FlowSessionRequest; finish: (result: FlowResult<boolean>) => void };
@@ -173,11 +173,45 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
     }
     return { ok: true, value: result.value.changed };
   };
-  const board = (request: Extract<FlowSessionRequest, { kind: 'board' }>): FlowResult<boolean> => {
+  const board = (request: { command: Exclude<Extract<FlowSessionRequest, { kind: 'board' }>['command'], { kind: 'insertShot' }> }): FlowResult<boolean> => {
     const project = current(), command = request.command;
-    const ids = command.kind !== 'moveShots' ? [command.shotId] : [...command.shotIds, ...(command.beforeId ? [command.beforeId] : [])];
+    const ids = command.kind === 'moveShots' ? [...command.shotIds, ...(command.beforeId ? [command.beforeId] : [])] :
+      command.kind === 'removeShots' ? command.shotIds : command.kind === 'moveDialogues' ? [command.targetShotId] : [command.shotId];
     if (ids.some(shotId => !project.shots.some(shot => shot.id === shotId))) return failure('not-found', 'Only active shots may be edited/reordered');
     return installed(history.apply(command));
+  };
+  const insert = async (command: Extract<Extract<FlowSessionRequest, { kind: 'board' }>['command'], { kind: 'insertShot' }>): Promise<FlowResult<boolean>> => {
+    const baseline = current(), baselineGeneration = generation;
+    const validated = applyStoryboardEdit(baseline, command);
+    if (!validated.ok) return { ok: false, error: { ...validated.error, effect: 'none' } };
+    let admitted = false;
+    const account = (error: FlowFailure): FlowResult<never> => ({ ok: false, error: {
+      ...error, effect: error.effect === 'unknown' ? 'unknown' : admitted ? 'retained' : error.effect
+    } });
+    for (const assetId of new Set(command.image.layers.map(layer => layer.assetId))) {
+      if (operationSerial >= Number.MAX_SAFE_INTEGER) return account({ code: 'resource-limit', message: 'Operation sequence exhausted', effect: 'none' });
+      let bytes;
+      try { bytes = dependencyResult(await read(assetId), 'none'); }
+      catch (error) { const failed = unexpected(error, 'none'); return failed.ok ? failure('io-failure', 'Unexpected read result') : account(failed.error); }
+      if (!bytes.ok) return account(bytes.error);
+      if (!(bytes.value instanceof Uint8Array) || !positive(bytes.value.byteLength))
+        return account({ code: 'io-failure', message: 'Asset reader returned invalid bytes', effect: 'none' });
+      const png = bytes.value.slice(), byteLength = png.byteLength, operationId = `insert_${incarnation}_${++operationSerial}`;
+      let stored;
+      try { stored = dependencyResult(await put({ operationId, png, width: command.image.width, height: command.image.height }), 'unknown'); }
+      catch (error) { const failed = unexpected(error, 'unknown'); return failed.ok ? failure('io-failure', 'Unexpected put result', 'unknown') : account(failed.error); }
+      if (!stored.ok) return account(stored.error);
+      admitted = true;
+      const receipt = stored.value;
+      if (!receipt || receipt.sessionId !== sessionId || receipt.operationId !== operationId || receipt.assetId !== assetId ||
+          receipt.width !== command.image.width || receipt.height !== command.image.height || receipt.byteLength !== byteLength ||
+          !['synced', 'skipped'].includes(receipt.directorySync))
+        return failure('conflict', 'Asset receipt does not match inserted asset', 'unknown');
+    }
+    if (generation !== baselineGeneration || !same(current(), baseline))
+      return failure('conflict', 'Insertion baseline or control generation changed', admitted ? 'retained' : 'none');
+    const result = installed(history.apply(command));
+    return result.ok ? result : account(result.error);
   };
   const paint = async (request: Extract<FlowSessionRequest, { kind: 'paint' }>): Promise<FlowResult<boolean>> => {
     const project = current(), shot = project.shots.find(shot => shot.id === request.shotId);
@@ -216,7 +250,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
   };
   const execute = async (request: FlowSessionRequest): Promise<FlowResult<boolean>> => {
     switch (request.kind) {
-      case 'board': return board(request);
+      case 'board': return request.command.kind === 'insertShot' ? insert(request.command) : board({ command: request.command });
       case 'layer': {
         const project = current(), shot = project.shots.find(shot => shot.id === request.shotId);
         if (!shot) return failure('not-found', 'Active shot not found');
@@ -288,8 +322,8 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
         resolve(outcome); notify();
       } };
       if (request.kind === 'freeze') { phase = 'freezing'; freezePromise = promise; cancelTimer(); }
-      if (request.kind === 'board' && request.command.kind !== 'moveShots' && painting && queue.every(task => task.request.kind === 'paint')) {
-        try { task.finish(board(request)); } catch (error) { task.finish(unexpected(error, 'none')); }
+      if (request.kind === 'board' && (request.command.kind === 'setScriptText' || request.command.kind === 'setDialogues') && painting && queue.every(task => task.request.kind === 'paint')) {
+        try { task.finish(board({ command: request.command })); } catch (error) { task.finish(unexpected(error, 'none')); }
       } else { queue.push(task); void pump(); }
       notify();
       return promise;

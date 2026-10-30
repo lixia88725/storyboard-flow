@@ -62,6 +62,8 @@ export type StoryboardEditV1 =
   | { kind: 'removeShots'; shotIds: string[] }
   | { kind: 'setScriptText'; shotId: string; text: string }
   | { kind: 'setDialogues'; shotId: string; dialogues: DialogueV1[] }
+  /** Move selected dialogues in their existing order to an active target, before an unselected target dialogue or at its end. */
+  | { kind: 'moveDialogues'; dialogueIds: string[]; targetShotId: string; beforeId?: string }
   | { kind: 'applyImageEdit'; result: ImageEditResultV1 };
 export type ProjectEditResultV1 = { before: ProjectV1; after: ProjectV1; changed: boolean; changes: ChangeSetV1 };
 export type CoreErrorCodeV1 = 'invalid-input' | 'not-found' | 'locked' | 'conflict' | 'unsupported-version' | 'missing-asset' | 'io-failure';

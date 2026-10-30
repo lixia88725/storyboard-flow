@@ -1,7 +1,7 @@
 /** Coordinator-owned first wave-2 implementation contract. No production IPC or TIFF yet.
  * Semantics and exclusions: docs/refactor/wave2/IMPLEMENTATION-1.md. */
 import type { AssetIdV1, AssetReaderV1, CheckpointReceiptV1, CoreErrorCodeV1,
-  DialogueV1, ImageDocumentV1, ImageEditV1, ProjectV1, ResultV1 } from './refactorV1.js';
+  DialogueV1, ImageDocumentV1, ImageEditV1, ProjectV1, ResultV1, ShotV1 } from './refactorV1.js';
 
 export type FlowFailure = {
   code: CoreErrorCodeV1 | 'resource-limit' | 'unavailable' | 'busy' | 'closed';
@@ -31,9 +31,15 @@ export type FlowAssetDepotOptions = {
   root: string; sessionId: string; maxPixels: number; maxPngBytes: number;
 };
 export type FlowBoardCommand =
+  /** Insert into active board after Session revalidates each referenced depot asset. */
+  | { kind: 'insertShot'; shot: ShotV1; image: ImageDocumentV1; index: number }
   | { kind: 'setScriptText'; shotId: string; text: string }
   | { kind: 'setDialogues'; shotId: string; dialogues: DialogueV1[] }
-  | { kind: 'moveShots'; shotIds: string[]; destination: 'active'; beforeId?: string };
+  /** Preserve board order of selection; omit beforeId to append. */
+  | { kind: 'moveShots'; shotIds: string[]; destination: 'active'; beforeId?: string }
+  | { kind: 'removeShots'; shotIds: string[] }
+  /** Preserve existing dialogue order; beforeId is an unselected dialogue on the active target, or omit to append. */
+  | { kind: 'moveDialogues'; dialogueIds: string[]; targetShotId: string; beforeId?: string };
 export type FlowLayerEdit = Exclude<ImageEditV1, { kind: 'replacePixels' }>;
 export type FlowSessionRequest =
   | { kind: 'board'; command: FlowBoardCommand }

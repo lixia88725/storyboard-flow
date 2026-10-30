@@ -30,7 +30,7 @@ const validImage = (image: unknown): image is ImageDocumentV1 => {
   if (!shape(image, ['id', 'revision', 'width', 'height', 'layers']) || !id(image.id) || !revision(image.revision) ||
       !dimension(image.width) || !dimension(image.height) || !Array.isArray(image.layers) || image.layers.length === 0) return false;
   const ids = new Set<string>();
-  return image.layers.every(layer => {
+  return Array.from(image.layers).every(layer => {
     if (!shape(layer, ['id', 'name', 'kind', 'visible', 'locked', 'opacity', 'blendMode', 'width', 'height', 'assetId']) ||
         !id(layer.id) || ids.has(layer.id) || !text(layer.name) || !['image', 'paint'].includes(layer.kind as string) ||
         typeof layer.visible !== 'boolean' || typeof layer.locked !== 'boolean' ||
@@ -89,7 +89,7 @@ const result = (before: ProjectV1, after: ProjectV1, changes: ChangeSetV1): Resu
   return ok({ before, after: { ...after, revision: before.revision + 1 }, changed: true, changes });
 };
 const validIds = (ids: unknown): ids is string[] => Array.isArray(ids) && ids.length > 0 &&
-  ids.every(id) && new Set(ids).size === ids.length;
+  Array.from(ids).every(id) && new Set(ids).size === ids.length;
 
 export function applyStoryboardEdit(project: ProjectV1, edit: StoryboardEditV1): ResultV1<ProjectEditResultV1> {
   if (!record(project)) return fail('invalid-input', 'Invalid project');
@@ -135,6 +135,30 @@ export function applyStoryboardEdit(project: ProjectV1, edit: StoryboardEditV1):
       return result(project, { ...project, shots: project.shots.filter(s => !selected.has(s.id)),
         parkedShots: project.parkedShots.filter(s => !selected.has(s.id)),
         dialogues: project.dialogues.filter(d => !selected.has(d.shotId)) }, change);
+    }
+    case 'moveDialogues': {
+      if (!shape(edit, ['kind', 'dialogueIds', 'targetShotId'], ['beforeId']) || !validIds(edit.dialogueIds) ||
+          !id(edit.targetShotId) || !project.shots.some(s => s.id === edit.targetShotId))
+        return fail('invalid-input', 'Invalid dialogue selection or active target');
+      const selected = new Set(edit.dialogueIds);
+      const moving = project.dialogues.filter(d => selected.has(d.id));
+      if (moving.length !== selected.size || moving.some(d => !project.shots.some(s => s.id === d.shotId)))
+        return fail('invalid-input', 'Dialogue selection must belong to active shots');
+      const target = project.dialogues.filter(d => d.shotId === edit.targetShotId);
+      if (own(edit, 'beforeId') && (!id(edit.beforeId) || selected.has(edit.beforeId) || !target.some(d => d.id === edit.beforeId)))
+        return fail('invalid-input', 'Invalid dialogue destination anchor');
+      const rest = project.dialogues.filter(d => !selected.has(d.id));
+      const remainingTarget = rest.filter(d => d.shotId === edit.targetShotId);
+      const ordered = moving.map(d => ({ ...d, shotId: edit.targetShotId }));
+      const targetOrder = [...remainingTarget];
+      targetOrder.splice(edit.beforeId === undefined ? targetOrder.length : targetOrder.findIndex(d => d.id === edit.beforeId), 0, ...ordered);
+      if (moving.every(d => d.shotId === edit.targetShotId) && same(target, targetOrder)) return result(project, project, change);
+      let index = edit.beforeId === undefined
+        ? (remainingTarget.length ? rest.findIndex(d => d.id === remainingTarget[remainingTarget.length - 1].id) + 1 : rest.length)
+        : rest.findIndex(d => d.id === edit.beforeId);
+      rest.splice(index, 0, ...ordered);
+      change.shotIds = [...new Set([...moving.map(d => d.shotId), edit.targetShotId])]; change.text = true;
+      return result(project, { ...project, dialogues: rest }, change);
     }
     case 'setScriptText': {
       if (!shape(edit, ['kind', 'shotId', 'text']) || !id(edit.shotId) || !text(edit.text)) return fail('invalid-input', 'Invalid script edit');

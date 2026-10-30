@@ -5,6 +5,7 @@ import type { FlowAssetReceipt, FlowFailure, FlowPixelOutput, FlowResult, FlowSe
 import type { AssetReaderV1, CheckpointReceiptV1, ProjectV1, ResultV1 } from '../../../electron/shared/refactorV1';
 import { createFlowSession } from './index';
 import { createProjectStore } from '../../../electron/core/persistence/index';
+import { openFlowAssetDepot } from '../../../electron/core/persistence/depot';
 import { temporaryWorkspace } from '../../../test/temporaryWorkspace';
 
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -468,5 +469,168 @@ describe('dialogue commands through the Session', () => {
     expect(session.snapshot().project.dialogues[0].text).toBe('after undo');
     await success(session.request({ kind: 'undo' }));
     expect(session.snapshot().project.dialogues).toEqual([]);
+  });
+});
+
+describe('active board transactions', () => {
+  it('removes active shots atomically, retains assets, and restores exact content through undo and redo', async () => {
+    const { session, blobs } = setup();
+    await success(session.request({ kind: 'board', command: { kind: 'setDialogues', shotId: 'a', dialogues: [{ id: 'd', shotId: 'a', text: 'line' }] } }));
+    const before = session.snapshot().project;
+    await success(session.request({ kind: 'board', command: { kind: 'removeShots', shotIds: ['b', 'a'] } }));
+    expect(session.snapshot().project.shots).toEqual([]);
+    expect(session.snapshot().project.dialogues).toEqual([]);
+    expect(session.snapshot().project.images).toEqual(before.images);
+    expect(blobs.has(initialAsset)).toBe(true);
+    await success(session.request({ kind: 'undo' }));
+    expect({ ...session.snapshot().project, revision: before.revision }).toEqual(before);
+    await success(session.request({ kind: 'redo' }));
+    expect(session.snapshot().project.shots).toEqual([]);
+    expect(await session.request({ kind: 'board', command: { kind: 'removeShots', shotIds: ['p'] } })).toMatchObject({ ok: false });
+  });
+
+  it('moves dialogues in original order as one history entry, rejecting invalid selections without mutation', async () => {
+    const p = project(); p.dialogues = [
+      { id: 'd1', shotId: 'a', text: 'one' }, { id: 'd2', shotId: 'a', text: 'two' },
+      { id: 'd3', shotId: 'b', text: 'three' }, { id: 'dp', shotId: 'p', text: 'parked' }
+    ];
+    const { session } = setup({ project: p });
+    const cmd = (dialogueIds: string[], targetShotId: string, beforeId?: string) => ({ kind: 'board' as const,
+      command: { kind: 'moveDialogues' as const, dialogueIds, targetShotId, ...(beforeId ? { beforeId } : {}) } });
+    for (const input of [cmd(['d1', 'd1'], 'b'), cmd(['d1', 'missing'], 'b'), cmd(['dp'], 'a'), cmd(['d1'], 'p'), cmd(['d1'], 'b', 'd2'), cmd(['d1'], 'a', 'd1')])
+      expect(await session.request(input)).toMatchObject({ ok: false });
+    expect(session.snapshot().project).toEqual(p);
+    expect((await success(session.request(cmd(['d2'], 'a')))).changed).toBe(false);
+    expect(await session.request({ kind: 'undo' })).toMatchObject({ ok: false });
+    await success(session.request(cmd(['d2', 'd1'], 'b', 'd3')));
+    expect(session.snapshot().project.dialogues).toEqual([
+      { id: 'd1', shotId: 'b', text: 'one' }, { id: 'd2', shotId: 'b', text: 'two' },
+      { id: 'd3', shotId: 'b', text: 'three' }, { id: 'dp', shotId: 'p', text: 'parked' }
+    ]);
+    await success(session.request({ kind: 'undo' }));
+    expect(session.snapshot().project.dialogues).toEqual(p.dialogues);
+    await success(session.request({ kind: 'redo' }));
+    expect(session.snapshot().project.dialogues.map(d => d.shotId)).toEqual(['b', 'b', 'b', 'p']);
+  });
+
+  it('queues membership and dialogue moves behind paint, snapshots inputs, and respects freeze', async () => {
+    const slow = deferred<FlowResult<FlowPixelOutput>>(); const p = project();
+    p.dialogues = [{ id: 'd', shotId: 'a', text: 'line' }];
+    const { session } = setup({ project: p, pixels: { produce: () => slow.promise } });
+    const drawing = session.request(paint());
+    const command = { kind: 'board' as const, command: { kind: 'moveDialogues' as const, dialogueIds: ['d'], targetShotId: 'b' } };
+    const moving = session.request(command); command.command.dialogueIds[0] = 'missing';
+    const removing = session.request({ kind: 'board', command: { kind: 'removeShots', shotIds: ['a'] } });
+    const freezing = session.request({ kind: 'freeze' });
+    expect(session.snapshot().project).toEqual(p);
+    expect(await session.request(text('blocked'))).toMatchObject({ ok: false, error: { code: 'busy' } });
+    slow.resolve(painted); await success(drawing); await success(moving); await success(removing); await success(freezing);
+    expect(session.snapshot().project.dialogues).toEqual([{ id: 'd', shotId: 'b', text: 'line' }]);
+    expect(session.snapshot()).toMatchObject({ phase: 'frozen', checkpoint: { revision: 3 } });
+  });
+});
+
+
+describe('board real checkpoint composition', () => {
+  it('removes one shot, restores it and reopens using a real depot and synthetic PNG', async () => {
+    const root = await temporaryWorkspace('flow-board-');
+    const png = await sharp({ create: { width: 4, height: 3, channels: 4, background: '#123456ff' } }).png().toBuffer();
+    const p = project(); for (const image of Object.values(p.images)) image.layers[0].assetId = hash(png);
+    const store = createProjectStore();
+    expect((await store.saveCheckpoint(root, p, async () => png)).ok).toBe(true);
+    const depot = value(await openFlowAssetDepot({ root, sessionId: 'session', maxPixels: 100, maxPngBytes: 10000 }));
+    const harness = setup();
+    const session = value(createFlowSession({ ...harness.options, project: p, assets: depot, checkpoint: (p, read) => store.saveCheckpoint(root, p, read) }));
+    await success(session.request({ kind: 'board', command: { kind: 'removeShots', shotIds: ['a'] } }));
+    await success(session.request({ kind: 'undo' }));
+    await success(session.request({ kind: 'freeze' }));
+    const reopened = await store.loadCheckpoint(root);
+    expect(reopened.ok).toBe(true); if (!reopened.ok) throw Error(reopened.error.message);
+    expect(reopened.value.project).toEqual(session.snapshot().project);
+    expect(Buffer.from(await reopened.value.readAsset(hash(png)))).toEqual(png);
+  });
+});
+
+describe('Session insertion admission', () => {
+  const insertion = (assetId = initialAsset) => {
+    const image = structuredClone(project().images.i_a); image.id = 'i_new'; image.layers[0].assetId = assetId;
+    return { kind: 'board' as const, command: { kind: 'insertShot' as const,
+      shot: { id: 'new', imageId: 'i_new', name: 'New', scriptText: '' }, image, index: 1 } };
+  };
+  it('rejects malformed, colliding and missing assets without installing history', async () => {
+    const harness = setup(); const read = vi.fn(harness.options.assets.read);
+    const session = value(createFlowSession({ ...harness.options, assets: { ...harness.options.assets, read } }));
+    const before = session.snapshot().project;
+    const invalid = insertion(); invalid.command.index = 20;
+    expect(await session.request(invalid)).toMatchObject({ ok: false, error: { code: 'invalid-input' } });
+    const sparse = insertion(); sparse.command.image.layers = Array(1);
+    expect(await session.request(sparse)).toMatchObject({ ok: false, error: { code: 'invalid-input' } });
+    expect(read).not.toHaveBeenCalled();
+    const fabricated = { ...insertion(), receipt: { assetId: initialAsset } };
+    expect(await session.request(fabricated as unknown as Parameters<FlowSession['request']>[0])).toMatchObject({ ok: false });
+    const missing = insertion('f'.repeat(64));
+    expect(await session.request(missing)).toMatchObject({ ok: false, error: { code: 'missing-asset', effect: 'none' } });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(session.snapshot().project).toEqual(before);
+    expect(await session.request({ kind: 'undo' })).toMatchObject({ ok: false, error: { code: 'not-found' } });
+  });
+  it.each(['sessionId', 'operationId', 'assetId', 'width', 'height', 'byteLength', 'directorySync'] as const)(
+    'rejects a mismatched %s receipt without publishing', async field => {
+      const harness = setup(); const base = harness.options.assets;
+      const session = value(createFlowSession({ ...harness.options, assets: { ...base, async put(input) {
+        const result = await base.put(input); if (!result.ok) return result;
+        const bad = { ...result.value, [field]: field === 'width' || field === 'height' || field === 'byteLength' ? 99 : 'forged' };
+        return { ok: true, value: bad as FlowAssetReceipt };
+      } } }));
+      const before = session.snapshot().project;
+      expect(await session.request(insertion())).toMatchObject({ ok: false, error: { code: 'conflict', effect: 'unknown' } });
+      expect(session.snapshot().project).toEqual(before);
+      expect(await session.request({ kind: 'undo' })).toMatchObject({ ok: false, error: { code: 'not-found' } });
+    });
+  it('reports retained partial admission and leaves project/checkpoint/history untouched', async () => {
+    const harness = setup(); const first = initialAsset, second = hash(Uint8Array.of(8));
+    harness.blobs.set(second, Uint8Array.of(8)); let puts = 0;
+    const base = harness.options.assets;
+    const session = value(createFlowSession({ ...harness.options, assets: { ...base, async put(input) {
+      if (++puts === 2) return error('io-failure'); return base.put(input);
+    } } }));
+    await success(session.request({ kind: 'checkpoint' })); const before = session.snapshot();
+    const cmd = insertion(first); cmd.command.image.layers.push({ ...cmd.command.image.layers[0], id: 'layer2', assetId: second });
+    expect(await session.request(cmd)).toMatchObject({ ok: false, error: { code: 'io-failure', effect: 'retained' } });
+    expect(session.snapshot().project).toEqual(before.project); expect(session.snapshot().checkpoint).toEqual(before.checkpoint);
+    expect(await session.request({ kind: 'undo' })).toMatchObject({ ok: false });
+  });
+  it('snapshots input during await and serializes undo and freeze behind insertion', async () => {
+    const harness = setup(); const gate = deferred<FlowResult<Uint8Array>>(); const base = harness.options.assets;
+    const session = value(createFlowSession({ ...harness.options, assets: { ...base, read: () => gate.promise } }));
+    const cmd = insertion(); const pending = session.request(cmd);
+    cmd.command.shot.name = 'mutated'; cmd.command.image.layers[0].assetId = 'f'.repeat(64); cmd.command.index = 999;
+    const undo = session.request({ kind: 'undo' }); const freeze = session.request({ kind: 'freeze' });
+    await ticks(); expect(session.snapshot().project.shots.map(s => s.id)).toEqual(['a', 'b']);
+    gate.resolve({ ok: true, value: initialBytes }); await success(pending); await success(undo); await success(freeze);
+    expect(session.snapshot().project.shots.map(s => s.id)).toEqual(['a', 'b']);
+    expect(session.snapshot()).toMatchObject({ phase: 'frozen', checkpoint: { revision: 2 } });
+  });
+  it('validates real depot dimensions and preserves insertion across undo, redo and checkpoint reopen', async () => {
+    const root = await temporaryWorkspace('flow-insert-');
+    const original = await sharp({ create: { width: 4, height: 3, channels: 4, background: '#203040ff' } }).png().toBuffer();
+    const fresh = await sharp({ create: { width: 4, height: 3, channels: 4, background: '#abcdef88' } }).png().toBuffer();
+    const p = project(); for (const image of Object.values(p.images)) image.layers[0].assetId = hash(original);
+    const store = createProjectStore(); expect((await store.saveCheckpoint(root, p, async () => original)).ok).toBe(true);
+    const depot = value(await openFlowAssetDepot({ root, sessionId: 'session', maxPixels: 100, maxPngBytes: 10000 }));
+    value(await depot.put({ operationId: 'external_admission', png: fresh, width: 4, height: 3 }));
+    const harness = setup(); const session = value(createFlowSession({ ...harness.options, project: p, assets: depot,
+      checkpoint: (project, read) => store.saveCheckpoint(root, project, read) }));
+    const wrong = insertion(hash(fresh)); wrong.command.image.width = 5; wrong.command.image.layers[0].width = 5;
+    expect(await session.request(wrong)).toMatchObject({ ok: false });
+    expect(session.snapshot().project).toEqual(p);
+    expect(await session.request({ kind: 'undo' })).toMatchObject({ ok: false });
+    await success(session.request(insertion(hash(fresh))));
+    expect(session.snapshot().project.shots.map(s => s.id)).toEqual(['a', 'new', 'b']);
+    await success(session.request({ kind: 'undo' })); expect(session.snapshot().project.shots.map(s => s.id)).toEqual(['a', 'b']);
+    await success(session.request({ kind: 'redo' })); await success(session.request({ kind: 'freeze' }));
+    const loaded = await store.loadCheckpoint(root); expect(loaded.ok).toBe(true); if (!loaded.ok) throw Error(loaded.error.message);
+    expect(loaded.value.project).toEqual(session.snapshot().project);
+    expect(Buffer.from(await loaded.value.readAsset(hash(fresh)))).toEqual(fresh);
   });
 });
