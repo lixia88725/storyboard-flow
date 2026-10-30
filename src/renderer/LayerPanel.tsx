@@ -44,6 +44,7 @@ type BlendMenuState = {
 };
 
 export type LayerPanelProps = {
+  structuralEditsEnabled?: boolean;
   shot?: Shot;
   folderPath?: string;
   thumbnailRevision: number;
@@ -83,6 +84,7 @@ export type LayerPanelProps = {
 };
 
 export const LayerPanel = ({
+  structuralEditsEnabled = true,
   shot,
   folderPath,
   thumbnailRevision,
@@ -271,6 +273,7 @@ export const LayerPanel = ({
         if (initialTarget instanceof HTMLInputElement) {
           initialTarget.blur();
         }
+        if (intent === "reorder" && !structuralEditsEnabled) return;
         gesture.intent = intent;
         setRowGestureVisual({
           layerIds: gesture.movableLayerIds,
@@ -598,7 +601,7 @@ export const LayerPanel = ({
                     onMergeVisibleLayers(shot.id);
                   }
                 }}
-                disabled={!shot || visibleLayers.length < 2}
+                disabled={!structuralEditsEnabled || !shot || visibleLayers.length < 2}
                 title="Merge visible layers"
                 aria-label="Merge visible layers"
               >
@@ -612,7 +615,7 @@ export const LayerPanel = ({
                   }
                 }}
                 disabled={
-                  !shot ||
+                  !structuralEditsEnabled || !shot ||
                   !activeLayer ||
                   (selectedMergeLayers.length >= 2
                     ? !isMultiLayerMerge
@@ -632,7 +635,7 @@ export const LayerPanel = ({
                     onAddLayer(shot.id);
                   }
                 }}
-                disabled={!shot}
+                disabled={!structuralEditsEnabled || !shot}
                 title="Add layer"
                 aria-label="Add layer"
               >
@@ -645,7 +648,7 @@ export const LayerPanel = ({
                     onRemoveLayer(shot.id, activeLayer.id);
                   }
                 }}
-                disabled={!shot || !activeLayer || activeLayer.locked || layers.length <= 1}
+                disabled={!structuralEditsEnabled || !shot || !activeLayer || activeLayer.locked || layers.length <= 1}
                 title="Delete current layer"
                 aria-label="Delete current layer"
               >

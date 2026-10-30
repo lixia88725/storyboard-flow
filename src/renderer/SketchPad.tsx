@@ -1,3 +1,4 @@
+import { useMediaSource } from './mediaSource';
 import {
   Fragment,
   memo,
@@ -321,7 +322,8 @@ export const SketchPad = memo(({
       !!selectionDraftRef.current || !!transformDraftRef.current || committingStrokeIdsRef.current.size > 0 ||
       pendingCommittedStrokesRef.current.length > 0
   }), canvasSlot?.incarnation), [folderPath, shot.id, canvasSlot?.incarnation]);
-  const imageSrc = window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath);
+  const media = useMediaSource();
+  const imageSrc = media.assetUrl(shot.previewPath ?? shot.imagePath);
   const canvasSize = useMemo(() => canvasSizeForShot(shot), [shot]);
   const bitmapLayers = useMemo(() => bitmapLayersForShot(shot), [shot]);
   const activeLayer = useMemo(
@@ -627,7 +629,7 @@ export const SketchPad = memo(({
       canvasSlot.pins?.find(v => v.role === `desired/${shot.id}/${layer.id}`)?.dataUrl ??
       canvasSlot.pins?.find(v => v.role === `original/${shot.id}/${layer.id}`)?.dataUrl) : layerDataUrls[layer.id] ??
     (!layer.cleared
-      ? bitmapLayerAssetSource({ folderPath, layer, revision: bitmapRevision })
+      ? bitmapLayerAssetSource({ folderPath, layer, revision: bitmapRevision, media })
       : undefined) ??
     (layer.kind === "image" && !layer.cleared ? imageSrc : undefined);
 

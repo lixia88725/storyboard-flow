@@ -1,0 +1,137 @@
+import { useEffect, useMemo, useState } from 'react';
+import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
+import { SortableContext, useSortable, rectSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import type { FlowSession, FlowSessionRequest } from '../../../electron/shared/flowWave2';
+import { createFlowSession } from '../../core/session';
+import { createFlowPixels } from '../drawing';
+import { MediaSourceContext, type MediaSource } from '../mediaSource';
+import { SketchPad } from '../SketchPad';
+import { LayerPanel } from '../LayerPanel';
+import { ShotStaticMedia } from '../ShotStaticMedia';
+import { captureMountedCanvasCheckpoints } from '../mountedCanvasRecoveryCapture';
+import { projectShots, pixelStroke } from './adapter';
+import type { Shot } from '../../shared/types';
+import './flowEditor.css';
+
+const required = <T,>(r: { ok: true; value: T } | { ok: false; error: { message: string } }): T => {
+  if (!r.ok) throw new Error(r.error.message); return r.value;
+};
+const beforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+const unavailable = () => { throw new Error('This tool is not connected in this editor yet'); };
+
+export function FlowEditor() {
+  const [flow, setFlow] = useState<FlowSession>();
+  const [issue, setIssue] = useState('');
+  useEffect(() => {
+    const api = window.flowEditor!;
+    let off: (() => void) | undefined, cancelled = false;
+    window.addEventListener('beforeunload', beforeUnload);
+    void api.open().then(({ project, sessionId }) => {
+      if (cancelled) return;
+      const owner = required(createFlowSession({ project, sessionId, incarnation: crypto.randomUUID(),
+        maxHistoryEntries: 60, maxPendingRequests: 32, assets: api,
+        pixels: createFlowPixels({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxPoints: 100_000 }),
+        checkpoint: p => api.checkpoint(p), clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number) } }));
+      off = api.onClose(id => { void (async () => {
+        try {
+          if (captureMountedCanvasCheckpoints().hasUnsettledGesture) throw new Error('Finish the current stroke before closing');
+          const result = required(await owner.request({ kind: 'freeze' }));
+          const closed = await api.finishClose(id, result.snapshot.project);
+          if (!closed.ok) throw new Error(closed.message);
+          window.removeEventListener('beforeunload', beforeUnload);
+        } catch (error) { setIssue(String(error)); await api.finishClose(id, null); }
+      })(); });
+      setFlow(owner);
+      void owner.request({ kind: 'checkpoint' }).then(result => { if (!result.ok) setIssue(result.error.message); });
+    }).catch(error => setIssue(String(error)));
+    return () => { cancelled = true; off?.(); window.removeEventListener('beforeunload', beforeUnload); };
+  }, []);
+  return flow ? <Editor flow={flow} issue={issue} setIssue={setIssue} /> : <main><p role="status">{issue || 'Opening project…'}</p></main>;
+}
+function Editor({ flow, issue, setIssue }: { flow: FlowSession; issue: string; setIssue: (s: string) => void }) {
+  const [snapshot, setSnapshot] = useState(() => flow.snapshot());
+  const [layers, setLayers] = useState<Record<string, string>>({});
+  const [, setSelected] = useState(snapshot.project.shots[0]?.id);
+  const [panel, setPanel] = useState<string>();
+  const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
+  const [color, setColor] = useState('#dd3344');
+  const [size, setSize] = useState(20);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const cache = useMemo(() => new Map<string, string>(), []);
+  const loads = useMemo(() => new Map<string, Promise<string>>(), []);
+  useEffect(() => flow.subscribe(() => setSnapshot(flow.snapshot())), [flow]);
+  const source = async (id: string): Promise<string> => {
+    if (cache.has(id)) return cache.get(id)!;
+    if (!loads.has(id)) loads.set(id, window.flowEditor!.read(id).then(result => {
+      const bytes = new Uint8Array(required(result));
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+      cache.set(id, url); setUrls(Object.fromEntries(cache)); return url;
+    }).finally(() => loads.delete(id)));
+    return loads.get(id)!;
+  };
+  useEffect(() => {
+    for (const image of Object.values(snapshot.project.images)) for (const layer of image.layers) void source(layer.assetId).catch(error => setIssue(String(error)));
+  }, [snapshot.project]);
+  useEffect(() => () => { for (const url of cache.values()) URL.revokeObjectURL(url); }, [cache]);
+  const media: MediaSource = useMemo(() => ({ assetUrl: id => urls[id] ?? '', layerAssetUrl: ({ bitmapPath }) => urls[bitmapPath.split('/').at(-1)!] ?? '' }), [urls]);
+  const request = async (r: FlowSessionRequest) => {
+    try { return required(await flow.request(r)); } catch (error) { setIssue(String(error)); throw error; }
+  };
+  const act = (r: FlowSessionRequest) => { void request(r).catch(() => {}); };
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !(event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement)) {
+        event.preventDefault(); act({ kind: event.shiftKey ? 'redo' : 'undo' });
+      }
+    };
+    window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
+  }, [flow]);
+  const shots = projectShots(snapshot.project, layers);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const rejectTool = () => setIssue('This operation is not connected yet');
+  const active = snapshot.phase === 'active';
+  return <MediaSourceContext.Provider value={media}>
+    <main className="flow-editor" data-flow-editor="true" data-revision={snapshot.project.revision} data-phase={snapshot.phase}>
+      <header className="topbar"><strong>Storyboard Flow</strong><span>{snapshot.project.name}</span>
+        <button disabled={!active} aria-pressed={tool === 'brush'} onClick={() => setTool('brush')}>Brush</button>
+        <button disabled={!active} aria-pressed={tool === 'eraser'} onClick={() => setTool('eraser')}>Eraser</button>
+        <input aria-label="Brush color" type="color" value={color} onChange={e => setColor(e.target.value)} />
+        <input aria-label="Brush size" type="range" min="1" max="100" value={size} onChange={e => setSize(Number(e.target.value))} />
+        <button disabled={!active} onClick={() => act({ kind: 'undo' })}>Undo</button><button disabled={!active} onClick={() => act({ kind: 'redo' })}>Redo</button>
+        <button disabled={!active} onClick={() => act({ kind: 'checkpoint' })}>Checkpoint</button>
+      </header>
+      <p role="status">{issue || snapshot.lastError?.message || (snapshot.checkpoint?.revision === snapshot.project.revision ? 'Editable project saved' : 'Saving editable project…')}</p>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active: from, over }) => {
+        if (over && from.id !== over.id) act({ kind: 'board', command: { kind: 'moveShots', shotIds: [String(from.id)], destination: 'active', beforeId: String(over.id) } });
+      }}><SortableContext items={snapshot.project.shots.map(s => s.id)} strategy={rectSortingStrategy}>
+      <div className="flow-editor-grid">{shots.slice(0, snapshot.project.shots.length).map(shot => <Card key={shot.id} shot={shot} disabled={!active}>
+        <SketchPad shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0}
+          eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false} onFocusShot={() => setSelected(shot.id)}
+          onStroke={async (layerId, stroke) => {
+            const result = await request({ kind: 'paint', shotId: shot.id, layerId, stroke: pixelStroke(stroke) });
+            const currentShot = result.snapshot.project.shots.find(s => s.id === shot.id)!;
+            return source(result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId);
+          }} onSelectionTransform={unavailable} onFill={unavailable} onPickColor={setColor} />
+        <textarea aria-label={`Script ${shot.id}`} value={shot.scriptText} disabled={!active} onChange={e => act({ kind: 'board', command: { kind: 'setScriptText', shotId: shot.id, text: e.target.value } })} />
+        <button disabled={!active} onClick={() => { setSelected(shot.id); setPanel(panel === shot.id ? undefined : shot.id); }}>Layers</button>
+        <LayerPanel shot={shot} folderPath="flow" thumbnailRevision={snapshot.project.revision} isOpen={panel === shot.id} isRendered={panel === shot.id}
+          structuralEditsEnabled={false} onToggle={() => setPanel(undefined)} onAddLayer={rejectTool} onRemoveLayer={rejectTool} onMergeLayers={rejectTool} onMergeVisibleLayers={rejectTool} onClearLayer={rejectTool}
+          onSelectLayer={(id, layerId) => setLayers(current => ({ ...current, [id]: layerId }))}
+          onUpdateLayer={(shotId, layerId, patch) => act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch } })}
+          onMoveLayer={rejectTool} onMoveLayerGroup={rejectTool} onSelectedLayerIdsChange={() => {}}
+          onUpdateLayerGroupOpacity={(shotId, ids, delta, initial) => {
+            if (ids.length !== 1) { rejectTool(); return; }
+            act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId: ids[0], patch: { opacity: Math.max(0, Math.min(1, initial[ids[0]] + delta)) } } });
+          }} />
+      </Card>)}</div></SortableContext></DndContext>
+      <aside aria-label="Pending"><h2>Pending</h2>{shots.slice(snapshot.project.shots.length).map(shot => <div key={shot.id} className="flow-pending"><span>{shot.fileName}</span><ShotStaticMedia shot={shot} folderPath="flow" revision={snapshot.project.revision} /></div>)}</aside>
+    </main>
+  </MediaSourceContext.Provider>;
+}
+function Card({ shot, disabled, children }: { shot: Shot; disabled: boolean; children: React.ReactNode }) {
+  const sortable = useSortable({ id: shot.id, disabled });
+  return <article className="shot-card" data-shot-id={shot.id} ref={sortable.setNodeRef} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }}>
+    <button aria-label={`Move ${shot.id}`} {...sortable.attributes} {...sortable.listeners}>{shot.fileName}</button>{children}
+  </article>;
+}

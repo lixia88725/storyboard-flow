@@ -1,3 +1,4 @@
+import { useMediaSource } from './mediaSource';
 import { memo } from "react";
 import type { BitmapLayer, Shot } from "../shared/types";
 import { bitmapLayerAssetSource } from "./ShotStaticMedia";
@@ -15,13 +16,14 @@ export const BitmapLayerThumbnail = memo(({
   folderPath,
   revision
 }: BitmapLayerThumbnailProps) => {
+  const media = useMediaSource();
   const fallbackImageSrc =
     layer.kind === "image" && !layer.cleared
-      ? window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath)
+      ? media.assetUrl(shot.previewPath ?? shot.imagePath)
       : undefined;
   const thumbnailSrc = layer.cleared
     ? undefined
-    : bitmapLayerAssetSource({ folderPath, layer, revision }) ?? fallbackImageSrc;
+    : bitmapLayerAssetSource({ folderPath, layer, revision, media }) ?? fallbackImageSrc;
 
   return (
     <div

@@ -226,3 +226,6 @@ declare global {
 }
 
 export {};
+
+// Dedicated new-format window; absent in the normal production preload.
+declare global { interface Window { flowEditor?: import("../../electron/shared/flowEditor").FlowEditorBridge } }

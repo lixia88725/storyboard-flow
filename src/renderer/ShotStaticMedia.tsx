@@ -1,3 +1,4 @@
+import { useMediaSource, type MediaSource } from './mediaSource';
 import { memo, type CSSProperties, type SyntheticEvent } from "react";
 import { bitmapLayersForShot } from "../shared/projectOps";
 import type { BitmapLayer, Shot } from "../shared/types";
@@ -6,14 +7,16 @@ import { canvasSizeForShot, cssBlendMode } from "./sketchRendering";
 export const bitmapLayerAssetSource = ({
   folderPath,
   layer,
-  revision
+  revision,
+  media
 }: {
   folderPath: string | undefined;
   layer: BitmapLayer;
   revision: number;
+  media?: MediaSource;
 }): string | undefined =>
   folderPath
-    ? window.storyboard.layerAssetUrl({
+    ? (media ?? window.storyboard).layerAssetUrl({
         folderPath,
         bitmapPath: layer.bitmapPath,
         revision
@@ -54,7 +57,8 @@ export const ShotLayerImageStack = memo(
     className?: string;
     preloadBase?: boolean;
   }) => {
-    const fallbackSrc = window.storyboard.assetUrl(shot.previewPath ?? shot.imagePath);
+    const media = useMediaSource();
+    const fallbackSrc = media.assetUrl(shot.previewPath ?? shot.imagePath);
     const bitmapLayers = bitmapLayersForShot(shot);
     const layers = bitmapLayers.filter((layer) => layer.visible);
 
@@ -78,7 +82,7 @@ export const ShotLayerImageStack = memo(
     const baseLayerIndex = imageLayerIndex >= 0 ? imageLayerIndex : 0;
 
     return layers.map((layer, index) => {
-      const source = bitmapLayerAssetSource({ folderPath, layer, revision });
+      const source = bitmapLayerAssetSource({ folderPath, layer, revision, media });
       if (!source && (layer.kind !== "image" || layer.cleared)) {
         return null;
       }

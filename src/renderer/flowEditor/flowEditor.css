@@ -1,0 +1,8 @@
+.flow-editor { height: 100vh; overflow: auto; padding: 12px 24px; }
+.flow-editor .topbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; }
+.flow-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.flow-editor .shot-card { position: relative; min-width: 0; }
+.flow-editor textarea { width: 100%; min-height: 48px; }
+.flow-editor .flow-pending { width: 240px; }
+.flow-editor[data-phase="freezing"] .flow-editor-grid,
+.flow-editor[data-phase="frozen"] .flow-editor-grid { pointer-events: none; }

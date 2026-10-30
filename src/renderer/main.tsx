@@ -1,3 +1,4 @@
+import { FlowEditor } from "./flowEditor/FlowEditor";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { RecoveryEntry } from "./RecoveryEntry";
@@ -10,7 +11,7 @@ if (!root) {
 }
 
 createRoot(root).render(
-  <React.StrictMode>
+  window.flowEditor ? <FlowEditor /> : <React.StrictMode>
     <RecoveryEntry />
   </React.StrictMode>
 );

@@ -1,6 +1,16 @@
 # Storyboard Flow developer rules
 
-## Active wave-two authority — 2026-10-30
+## Active G2 authority — 2026-10-30
+
+User authorized coordinator-owned UI integration on main after retiring all three
+wave-two worktrees. Start with the bounded existing-component editing/checkpoint/
+normal-close/reopen workflow in docs/refactor/wave2/COORDINATOR-GATES.md G2.
+Use dedicated new-format synthetic projects and an isolated entry; production default
+routing, TIFF output, migration and remaining tools are subsequent gates. One writable
+Session per project, real connected evidence, full tests/build; no new agents or push.
+This supersedes the previous implementation-only stop for this G2 scope.
+
+## Prior wave-two authority — 2026-10-30
 
 The user authorized coordinator-managed Codex worktree sessions using gpt-6.1-sol.
 The current implementation assignment is docs/refactor/wave2/IMPLEMENTATION-1.md;
