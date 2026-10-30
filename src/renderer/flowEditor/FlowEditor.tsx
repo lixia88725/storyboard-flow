@@ -60,7 +60,7 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
   const [layers, setLayers] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState(snapshot.project.shots[0]?.id);
   const [selection, setSelection] = useState<string[]>(snapshot.project.shots[0] ? [snapshot.project.shots[0].id] : []);
-  const selectionAnchor = useRef<string | undefined>(undefined);
+  const selectionAnchor = useRef<string | undefined>(snapshot.project.shots[0]?.id);
   const selectedIds = snapshot.project.shots.filter(s => selection.includes(s.id)).map(s => s.id);
   const focusShot = (id: string) => { setSelected(id); setSelection([id]); selectionAnchor.current = id; };
   const selectShot = (id: string, event: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) => {
