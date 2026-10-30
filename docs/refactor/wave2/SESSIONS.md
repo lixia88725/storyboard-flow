@@ -1,5 +1,17 @@
 # Codex wave-two sessions
 
+## Implementation batch 1 — dispatched 2026-10-30
+
+User approved implementation. All three existing sessions were resumed using `gpt-6.1-sol`
+and high reasoning with contract commit `ca34ca1c608f7a705e506dc2074c660bc5c60761`.
+Session owns src/core/session; Drawing Assets owns src/renderer/drawing; Formats Save is
+reassigned to persistence/platform asset admission for this prerequisite batch, TIFF deferred.
+See IMPLEMENTATION-1.md and electron/shared/flowWave2.ts. Each received explicit focused/full/build,
+shared verification-slot and no-install rules. Pixels additionally needs actual isolated Canvas
+pixel evidence. All were observed active; no implementation delivery is accepted yet.
+Coordinator contract build passed (both typechecks), raw local log .hermes/wave2-contract-build.log.
+This is not evidence for pending implementations. Original design creation details follow.
+
 Created 2026-10-30 from main `10152aa520ab59fc9dc3cacd6db4d8267f69ae84`.
 Requested model for all three: `gpt-6.1-sol`, reasoning high. Initial stage: design/source audit,
 not runtime implementation. All three were observed active after creation. Coordinator remains

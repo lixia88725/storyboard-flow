@@ -1,3 +1,14 @@
+## Codex wave-two implementation dispatched — 2026-10-30
+
+Three existing managed Codex worktree sessions resumed on gpt-6.1-sol/high. Shared contract
+commit ca34ca1 defines the first bounded implementation batch: headless Session, real immutable
+asset admission/read, Canvas brush/eraser pixel production. Main remains coordinator-owned.
+See docs/refactor/wave2/IMPLEMENTATION-1.md and SESSIONS.md for ownership, thread IDs and gates.
+Contract build passed; lane implementation/focused/full/build/Canvas results are pending.
+No new-core production UI/TIFF wiring or acceptance claimed. No push, dependency installation,
+old-project migration or cross-session-history behavior change. Next: inspect scoped delivery,
+independent composition tests and review, then actual G2 UI wiring in a later assignment.
+
 ## Wave-one worktrees archived — 2026-10-30
 
 User approved retirement. The three completed Hermes checkouts were fully archived and verified,
