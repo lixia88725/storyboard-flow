@@ -36,6 +36,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
   const maxPending = options.maxPendingRequests, maxHistory = options.maxHistoryEntries;
   // Capture methods too: replacing the caller's options after construction changes no dependency.
   const produce = options.pixels.produce.bind(options.pixels), put = options.assets.put.bind(options.assets);
+  const blank = options.pixels.blank?.bind(options.pixels);
   const produceTool = options.tools?.produce.bind(options.tools);
   const read = options.assets.read.bind(options.assets), checkpoint = options.checkpoint.bind(options);
   const setTimeout = options.clock.setTimeout.bind(options.clock), clearTimeout = options.clock.clearTimeout.bind(options.clock);
@@ -216,6 +217,41 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
     const result = installed(history.apply(command));
     return result.ok ? result : account(result.error);
   };
+  const newShot = async (request: Extract<FlowSessionRequest, { kind: 'newShot' }>): Promise<FlowResult<boolean>> => {
+    if (!blank) return failure('unavailable', 'Blank canvas producer unavailable');
+    const project = current();
+    const index = request.afterId === undefined ? project.shots.length : project.shots.findIndex(s => s.id === request.afterId) + 1;
+    if (request.afterId !== undefined && index === 0) return failure('not-found', 'Insertion anchor is no longer active');
+    const image = { id: request.imageId, revision: 0, width: request.width, height: request.height,
+      layers: [{ id: 'paint', name: 'Drawing', kind: 'paint' as const, visible: true, locked: false, opacity: 1,
+        blendMode: 'normal' as const, width: request.width, height: request.height, assetId: '0'.repeat(64) }] };
+    const command = { kind: 'insertShot' as const, shot: { id: request.shotId, imageId: image.id, name: 'New shot', scriptText: '' }, image, index };
+    const preflight = applyStoryboardEdit(project, command);
+    if (!preflight.ok) return { ok: false, error: { ...preflight.error, effect: 'none' } };
+    if (operationSerial >= Number.MAX_SAFE_INTEGER) return failure('resource-limit', 'Operation sequence exhausted');
+    const operationId = `blank_${incarnation}_${++operationSerial}`;
+    let output;
+    try { output = dependencyResult(await blank(request.width, request.height), 'none'); }
+    catch (error) { return unexpected(error, 'none'); }
+    if (!output.ok) return output;
+    if (!output.value || !(output.value.png instanceof Uint8Array) || !positive(output.value.png.byteLength) || output.value.width !== image.width || output.value.height !== image.height)
+      return failure('invalid-input', 'Blank canvas producer returned invalid data');
+    const png = output.value.png.slice(), byteLength = png.byteLength;
+    let admitted;
+    try { admitted = dependencyResult(await put({ operationId, png, width: image.width, height: image.height }), 'unknown'); }
+    catch (error) { return unexpected(error, 'unknown'); }
+    if (!admitted.ok) return admitted;
+    const receipt = admitted.value;
+    if (!receipt || receipt.sessionId !== sessionId || receipt.operationId !== operationId || typeof receipt.assetId !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(receipt.assetId) || receipt.width !== image.width || receipt.height !== image.height ||
+        receipt.byteLength !== byteLength || !['synced', 'skipped'].includes(receipt.directorySync))
+      return failure('conflict', 'Blank asset receipt mismatch', 'unknown');
+    // The queue admits no text shortcut during newShot; Undo/freeze wait until it settles.
+    if (!same(current(), project)) return failure('conflict', 'New shot baseline changed', 'retained');
+    image.layers[0].assetId = receipt.assetId;
+    const result = installed(history.apply(command));
+    return result.ok ? result : { ok: false, error: { ...result.error, effect: 'retained' } };
+  };
   const paint = async (request: Extract<FlowSessionRequest, { kind: 'paint' | 'pixelTool' }>): Promise<FlowResult<boolean>> => {
     const project = current(), shot = project.shots.find(shot => shot.id === request.shotId);
     if (!shot) return failure('not-found', 'Active shot not found');
@@ -269,6 +305,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
   };
   const execute = async (request: FlowSessionRequest): Promise<FlowResult<boolean>> => {
     switch (request.kind) {
+      case 'newShot': return newShot(request);
       case 'board': return request.command.kind === 'insertShot' ? insert(request.command) : board({ command: request.command });
       case 'layer': {
         const project = current(), shot = project.shots.find(shot => shot.id === request.shotId);

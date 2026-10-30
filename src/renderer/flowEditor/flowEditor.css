@@ -9,3 +9,7 @@
 
 .flow-editor-sheet { border: 0; padding: 0; margin: 0; min-width: 0; }
 .flow-editor-sheet:disabled { pointer-events: none; }
+.flow-editor .topbar { flex-wrap: wrap; }
+.flow-dialogue-transfers { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; min-height: 30px; border: 1px dashed #777; }
+.flow-dialogue-transfers button { cursor: grab; max-width: 100%; white-space: pre-wrap; }
+.flow-dialogue-transfers span { opacity: .65; font-size: 12px; }

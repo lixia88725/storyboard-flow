@@ -692,3 +692,46 @@ describe('queued pixel tools', () => {
     expect(session.snapshot().project).toEqual(p); expect((await session.request({ kind: 'undo' })).ok).toBe(false);
   });
 });
+
+describe('queued blank shot creation', () => {
+  const request = () => ({ kind: 'newShot' as const, shotId: 'new', imageId: 'new_image', width: 4, height: 3, afterId: 'a' });
+  it('admits real PNG and inserts once; Undo/Redo, freeze and reopen preserve the blank', async () => {
+    const root = await temporaryWorkspace('flow-new-shot-');
+    const png = await sharp({ create: { width: 4, height: 3, channels: 4, background: '#fff' } }).png().toBuffer();
+    const p = project(); for (const image of Object.values(p.images)) image.layers[0].assetId = hash(png);
+    const store = createProjectStore(); value(await store.saveCheckpoint(root, p, async () => png) as any);
+    const depot = value(await openFlowAssetDepot({ root, sessionId: 'session', maxPixels: 100, maxPngBytes: 10000 }));
+    const h = setup(); const { session } = setup({ project: p, assets: depot, pixels: { ...h.options.pixels, blank: async () => ({ ok: true, value: { png, width: 4, height: 3 } }) }, checkpoint: (p,r) => store.saveCheckpoint(root,p,r) });
+    await success(session.request(request())); expect(session.snapshot().project.shots.map(s => s.id)).toEqual(['a','new','b']);
+    await success(session.request({ kind: 'undo' })); expect(session.snapshot().project.shots).toEqual(p.shots);
+    await success(session.request({ kind: 'redo' })); await success(session.request({ kind: 'freeze' }));
+    const loaded = await store.loadCheckpoint(root); expect(loaded.ok).toBe(true); if (!loaded.ok) throw Error(loaded.error.message);
+    expect(loaded.value.project).toEqual(session.snapshot().project);
+    expect(Buffer.from(await loaded.value.readAsset(loaded.value.project.images.new_image.layers[0].assetId))).toEqual(png);
+  });
+  it('rejects invalid IDs, missing anchors and producer failure without history or writes', async () => {
+    const h=setup(), blank=vi.fn(async()=>error('io-failure')), put=vi.fn(h.options.assets.put);
+    const {session}=setup({pixels:{...h.options.pixels,blank},assets:{...h.options.assets,put}});
+    expect((await session.request({...request(),shotId:'a'})).ok).toBe(false);
+    expect((await session.request({...request(),afterId:'p'})).ok).toBe(false);expect(blank).not.toHaveBeenCalled();
+    expect((await session.request(request())).ok).toBe(false); expect(put).not.toHaveBeenCalled();
+    expect(session.snapshot().project).toEqual(project());expect((await session.request({kind:'undo'})).ok).toBe(false);
+  });
+  it('snapshots creation and queues Undo/freeze while blank pixels are pending', async () => {
+    const h=setup(), gate=deferred<FlowResult<FlowPixelOutput>>();
+    const {session}=setup({pixels:{...h.options.pixels,blank:()=>gate.promise}});
+    const input=request(), pending=session.request(input);input.shotId='mutated';input.width=99;
+    const undo=session.request({kind:'undo'}), freeze=session.request({kind:'freeze'});
+    gate.resolve({ok:true,value:{png:initialBytes,width:4,height:3}});
+    await success(pending);await success(undo);await success(freeze);
+    expect(session.snapshot().project.shots).toEqual(project().shots);expect(session.snapshot().phase).toBe('frozen');
+  });
+  it('can create the first shot on an empty board and rejects forged receipts', async () => {
+    const h=setup(), p=project();p.shots=[];p.parkedShots=[];p.images={};
+    const pixels={...h.options.pixels,blank:async()=>({ok:true as const,value:{png:initialBytes,width:4,height:3}})};
+    const {session}=setup({project:p,pixels});
+    const {afterId,...first}=request();await success(session.request(first));expect(session.snapshot().project.shots).toHaveLength(1);
+    const {session:bad}=setup({project:p,pixels,assets:{...h.options.assets,put:async input=>{const r=await h.options.assets.put(input);if(!r.ok)return r;return {ok:true,value:{...r.value,sessionId:'foreign'}}}}});
+    expect(await bad.request(first)).toMatchObject({ok:false,error:{effect:'unknown'}});expect(bad.snapshot().project).toEqual(p);
+  });
+});

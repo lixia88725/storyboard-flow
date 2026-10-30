@@ -81,6 +81,7 @@ type JapaneseStoryboardViewProps = {
   zoomLevel: number;
   onActionText: (shotId: string, actionText: string) => void;
   onDialogueText: (shotId: string, dialogueText: string) => void;
+  renderDialogueTransfers?: (shotId: string) => ReactNode;
   onFill: (
     shot: Shot,
     layerId: string,
@@ -123,6 +124,7 @@ export type JapaneseStoryboardRowViewProps = {
   row: JapaneseStoryboardRow;
   onActionText: (shotId: string, actionText: string) => void;
   onDialogueText: (shotId: string, dialogueText: string) => void;
+  renderDialogueTransfers?: (shotId: string) => ReactNode;
   onFill: (
     shot: Shot,
     layerId: string,
@@ -171,6 +173,7 @@ export const sameJapaneseStoryboardRowViewProps = (
   previous.row.dialogueText === next.row.dialogueText &&
   previous.onActionText === next.onActionText &&
   previous.onDialogueText === next.onDialogueText &&
+  previous.renderDialogueTransfers === next.renderDialogueTransfers &&
   previous.onFill === next.onFill &&
   previous.onFocusShot === next.onFocusShot &&
   previous.onPickColor === next.onPickColor &&
@@ -197,6 +200,7 @@ const JapaneseStoryboardRowView = memo(({
   row,
   onActionText,
   onDialogueText,
+  renderDialogueTransfers,
   onFill,
   onFocusShot,
   onPickColor,
@@ -328,6 +332,7 @@ const JapaneseStoryboardRowView = memo(({
           value={row.dialogueText}
           onChange={(event) => onDialogueText(row.shot.id, event.target.value)}
         />
+        {renderDialogueTransfers?.(row.shot.id)}
       </label>
     </article>
   );
@@ -354,6 +359,7 @@ export const JapaneseStoryboardView = forwardRef<HTMLElement, JapaneseStoryboard
   zoomLevel,
   onActionText,
   onDialogueText,
+  renderDialogueTransfers,
   onFill,
   onFocusShot,
   onPickColor,
@@ -402,6 +408,7 @@ export const JapaneseStoryboardView = forwardRef<HTMLElement, JapaneseStoryboard
             row={row}
             onActionText={onActionText}
             onDialogueText={onDialogueText}
+            renderDialogueTransfers={renderDialogueTransfers}
             onFill={onFill}
             onFocusShot={onFocusShot}
             onPickColor={onPickColor}

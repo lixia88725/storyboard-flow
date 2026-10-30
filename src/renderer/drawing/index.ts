@@ -80,7 +80,22 @@ export const createFlowPixels = (limits: FlowPixelLimits): FlowPixels => {
     ? { maxPixels: limits.maxPixels, maxPngBytes: limits.maxPngBytes, maxPoints: limits.maxPoints }
     : undefined;
 
-  return { async produce(input: FlowPixelInput, readAsset: AssetReaderV1): Promise<FlowResult<FlowPixelOutput>> {
+  return { async blank(width, height) {
+    if (!bounded || !positiveInteger(width) || !positiveInteger(height)) return fail('invalid-input', 'Invalid blank canvas dimensions');
+    if (width > bounded.maxPixels / height) return fail('resource-limit', 'Blank canvas exceeds maxPixels');
+    if (typeof document === 'undefined') return fail('unavailable', 'Canvas unavailable');
+    let canvas: HTMLCanvasElement | undefined;
+    try {
+      canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d'); if (!ctx) return fail('unavailable', 'Canvas unavailable');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
+      const blob = await encode(canvas);
+      if (blob.type !== 'image/png' || !blob.size) return fail('io-failure', 'Invalid blank PNG');
+      if (blob.size > bounded.maxPngBytes) return fail('resource-limit', 'Blank PNG exceeds limit');
+      return { ok: true, value: { png: new Uint8Array(await blob.arrayBuffer()), width, height } };
+    } catch (error) { return fail('io-failure', message(error)); }
+    finally { if (canvas) { canvas.width = 0; canvas.height = 0; } }
+  }, async produce(input: FlowPixelInput, readAsset: AssetReaderV1): Promise<FlowResult<FlowPixelOutput>> {
     let prepared: Prepared;
     try {
       if (!bounded) return fail('invalid-input', 'Pixel limits must be positive safe integers');

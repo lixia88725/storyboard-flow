@@ -16,6 +16,7 @@ export type FlowStroke = {
 export type FlowPixelInput = { image: ImageDocumentV1; layerId: string; stroke: FlowStroke };
 export type FlowPixelOutput = { png: Uint8Array; width: number; height: number };
 export type FlowPixels = {
+  blank?(width: number, height: number): Promise<FlowResult<FlowPixelOutput>>;
   produce(input: FlowPixelInput, readAsset: AssetReaderV1): Promise<FlowResult<FlowPixelOutput>>;
 };
 export type FlowPixelTool =
@@ -50,6 +51,7 @@ export type FlowBoardCommand =
   | { kind: 'moveDialogues'; dialogueIds: string[]; targetShotId: string; beforeId?: string };
 export type FlowLayerEdit = Exclude<ImageEditV1, { kind: 'replacePixels' }>;
 export type FlowSessionRequest =
+  | { kind: 'newShot'; shotId: string; imageId: string; width: number; height: number; afterId?: string }
   | { kind: 'board'; command: FlowBoardCommand }
   | { kind: 'layer'; shotId: string; edit: FlowLayerEdit }
   | { kind: 'pixelTool'; shotId: string; tool: FlowPixelTool }

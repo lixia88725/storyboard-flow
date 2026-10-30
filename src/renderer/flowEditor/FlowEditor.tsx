@@ -1,3 +1,5 @@
+import { selectShots, draggedShots } from './boardSelection';
+import { DialogueTransfers } from './DialogueTransfers';
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
 import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy } from '@dnd-kit/sortable';
@@ -57,6 +59,14 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
   const [snapshot, setSnapshot] = useState(() => flow.snapshot());
   const [layers, setLayers] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState(snapshot.project.shots[0]?.id);
+  const [selection, setSelection] = useState<string[]>(snapshot.project.shots[0] ? [snapshot.project.shots[0].id] : []);
+  const selectionAnchor = useRef<string | undefined>(undefined);
+  const selectedIds = snapshot.project.shots.filter(s => selection.includes(s.id)).map(s => s.id);
+  const focusShot = (id: string) => { setSelected(id); setSelection([id]); selectionAnchor.current = id; };
+  const selectShot = (id: string, event: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) => {
+    setSelection(current => selectShots(flow.snapshot().project.shots.map(s => s.id), current, selectionAnchor.current, id, event));
+    setSelected(id); if (!event.shiftKey) selectionAnchor.current = id;
+  };
   const [panel, setPanel] = useState<string>();
   const [japanese, setJapanese] = useState(false);
   const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
@@ -129,6 +139,15 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
     const ids = selectedIds.length >= 2 ? selectedIds : image.layers.slice(Math.max(0, index - 1), index + 1).map(l => l.id);
     act({ kind: 'pixelTool', shotId, tool: { kind: 'merge', layerIds: ids } });
   };
+  const newShot = () => {
+    const project = flow.snapshot().project, anchor = project.shots.find(s => s.id === selected);
+    const image = anchor ? project.images[anchor.imageId] : project.shots[0] ? project.images[project.shots[0].imageId] : undefined;
+    const shotId = crypto.randomUUID();
+    void request({ kind: 'newShot', shotId, imageId: crypto.randomUUID(), width: image?.width ?? 1920, height: image?.height ?? 1080,
+      ...(anchor ? { afterId: anchor.id } : {}) }).then(() => focusShot(shotId)).catch(() => {});
+  };
+  const dialogueTransfers = (shotId: string) => <DialogueTransfers shotId={shotId} dialogues={snapshot.project.dialogues} disabled={!active}
+    onMove={(id, targetShotId, beforeId) => act({ kind: 'board', command: { kind: 'moveDialogues', dialogueIds: [id], targetShotId, ...(beforeId ? { beforeId } : {}) } })} />;
   const switchView = () => {
     if (gestures.current || flow.snapshot().pending || captureMountedCanvasCheckpoints().hasUnsettledGesture) {
       setIssue('Finish the current edit before switching views'); return;
@@ -147,7 +166,9 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
         <input aria-label="Brush size" type="range" min="1" max="100" value={size} onChange={e => setSize(Number(e.target.value))} />
         <button disabled={!active} onClick={() => act({ kind: 'undo' })}>Undo</button><button disabled={!active} onClick={() => act({ kind: 'redo' })}>Redo</button>
         <button disabled={!active} onClick={() => act({ kind: 'checkpoint' })}>Checkpoint</button>
-        <button disabled={!active || !selected || !snapshot.project.shots.some(s => s.id === selected)} onClick={() => act({ kind: 'board', command: { kind: 'removeShots', shotIds: [selected!] } })}>Delete shot</button>
+        <button disabled={!active} onClick={newShot}>New shot</button>
+        <button disabled={!active || !selectedIds.length} onClick={() => act({ kind: 'board', command: { kind: 'removeShots', shotIds: selectedIds } })}>Delete shot</button>
+        <button disabled={!active || !selectedIds.length} onClick={() => act({ kind: 'board', command: { kind: 'moveShots', shotIds: selectedIds, destination: 'active' } })}>Move to end</button>
         <button disabled={!active || !selected || !snapshot.project.shots.some(s => s.id === selected)} onClick={() => {
           const shot = shots.find(s => s.id === selected);
           if (shot?.activeLayerId) act({ kind: 'pixelTool', shotId: shot.id, tool: { kind: 'clear', layerId: shot.activeLayerId } });
@@ -155,23 +176,25 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
       </header>
       <p role="status">{issue || snapshot.lastError?.message || (snapshot.checkpoint?.revision === snapshot.project.revision ? 'Editable project saved' : 'Saving editable project…')}</p>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active: from, over }) => {
-        if (over && from.id !== over.id) act({ kind: 'board', command: { kind: 'moveShots', shotIds: [String(from.id)], destination: 'active', beforeId: String(over.id) } });
+        const ids = draggedShots(flow.snapshot().project.shots.map(s => s.id), selectedIds, String(from.id));
+        if (active && over && !ids.includes(String(over.id))) act({ kind: 'board', command: { kind: 'moveShots', shotIds: ids, destination: 'active', beforeId: String(over.id) } });
       }}><SortableContext items={snapshot.project.shots.map(s => s.id)} strategy={japanese ? verticalListSortingStrategy : rectSortingStrategy}>
       {japanese ? <fieldset className="flow-editor-sheet" disabled={!active}>
-        <JapaneseStoryboardView project={view} selectedShotIds={selected ? [selected] : []} zoomLevel={100}
+        <JapaneseStoryboardView project={view} selectedShotIds={selectedIds} zoomLevel={100}
           activeSketchTool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0}
           eraserSize={size} eraserOpacity={1} eraserSoftness={0} folderPath="flow" isZoomScrubbing={false}
           bitmapRevisionByShotId={Object.fromEntries(shots.map(s => [s.id, snapshot.project.revision]))}
-          onActionText={script} onDialogueText={dialogue} onFocusShot={setSelected} onSelectShot={setSelected}
+          onActionText={script} onDialogueText={dialogue} onFocusShot={focusShot} onSelectShot={selectShot} renderDialogueTransfers={dialogueTransfers}
           onPickColor={setColor} onFill={fill} onSelectionTransform={unavailable} onSketchStroke={stroke} />
       </fieldset> :
-      <div className="flow-editor-grid">{shots.slice(0, snapshot.project.shots.length).map(shot => <Card key={shot.id} shot={shot} selected={selected === shot.id} disabled={!active}>
+      <div className="flow-editor-grid">{shots.slice(0, snapshot.project.shots.length).map(shot => <Card key={shot.id} shot={shot} selected={selectedIds.includes(shot.id)} disabled={!active} onSelect={event => selectShot(shot.id, event)}>
         <SketchPad shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0}
-          eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false} onFocusShot={() => setSelected(shot.id)}
+          eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false} onFocusShot={() => focusShot(shot.id)}
           onStroke={(layerId, input) => stroke(shot, layerId, input)} onSelectionTransform={unavailable} onFill={(layerId, point, color) => fill(shot, layerId, point, color)} onPickColor={setColor} />
         <textarea aria-label={`Script ${shot.id}`} value={shot.scriptText} disabled={!active} onChange={e => script(shot.id, e.target.value)} />
         <textarea aria-label={`Dialogue ${shot.id}`} value={shotDialogueText(view, shot.id)} disabled={!active} onChange={e => dialogue(shot.id, e.target.value)} />
-        <button disabled={!active} onClick={() => { setSelected(shot.id); setPanel(panel === shot.id ? undefined : shot.id); }}>Layers</button>
+        {dialogueTransfers(shot.id)}
+        <button disabled={!active} onClick={() => { focusShot(shot.id); setPanel(panel === shot.id ? undefined : shot.id); }}>Layers</button>
         <LayerPanel shot={shot} folderPath="flow" thumbnailRevision={snapshot.project.revision} isOpen={panel === shot.id} isRendered={panel === shot.id}
           onLayerOpacityGesture={(shotId, layerId, opacity, phase) => {
             const key = `${shotId}/${layerId}`;
@@ -196,9 +219,9 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
     </main>
   </MediaSourceContext.Provider>;
 }
-function Card({ shot, disabled, selected, children }: { shot: Shot; disabled: boolean; selected: boolean; children: React.ReactNode }) {
+function Card({ shot, disabled, selected, onSelect, children }: { onSelect: (event: React.MouseEvent<HTMLElement>) => void; shot: Shot; disabled: boolean; selected: boolean; children: React.ReactNode }) {
   const sortable = useSortable({ id: shot.id, disabled });
   return <article className={`shot-card ${selected ? 'is-selected' : ''}`} data-shot-id={shot.id} ref={sortable.setNodeRef} style={{ transform: CSS.Transform.toString(sortable.transform), transition: sortable.transition }}>
-    <button aria-label={`Move ${shot.id}`} {...sortable.attributes} {...sortable.listeners}>{shot.fileName}</button>{children}
+    <button aria-label={`Move ${shot.id}`} onClick={onSelect} {...sortable.attributes} {...sortable.listeners}>{shot.fileName}</button>{children}
   </article>;
 }
