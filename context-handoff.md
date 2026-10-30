@@ -1,3 +1,25 @@
+## G2 first connected component workflow — 2026-10-30
+
+Coordinator implemented an isolated new-format editor entry on main, reusing existing
+SketchPad, LayerPanel and static-media components with the accepted Session/Pixels/Assets
+cores. It is a small verification host, not a replacement for the full production App.
+Default launcher, RecoveryEntry/App, TIFF Save and production multi-project Close remain
+on their existing paths. No new worktrees or agents; no push or dependency installation.
+
+Final implementation `b1f1cffb42aaf8c8e88c62803bcf3d3ccd650f28` passed the complete allowed
+suite (**379 files / 2829 tests**), full build and preload checks. Receipts show clean,
+unchanged HEAD before/after. Real two-process Electron self-test passed 11 cases: Chinese
+text, reorder, drawing, multi-move opacity as one undo, Undo/Redo, checkpoint, certified
+Close/reopen, refusal during a stroke, and further eraser editing with exact pixel Undo.
+Late preview invalidation, shared-PNG layer identity and Close asset/root binding have
+regressions. Initial failed/intermediate evidence remains; no checks were weakened.
+
+Details: `docs/refactor/reviews/2026-10-30/G2-FIRST-EDITOR.md`. This is implemented and
+self-tested, not independent acceptance of complete G2 or publication. Next: established
+application-shell adapters, Japanese view and remaining tools/commands, then TIFF/output
+and multi-project lifecycle gates. Large-project caching/performance, Windows and
+installers remain unverified. The dedicated editor is not the daily-use launch target.
+
 ## Wave-two worktrees retired — 2026-10-30
 
 User authorized clean consolidation before coordinator-owned G2 wiring. All three

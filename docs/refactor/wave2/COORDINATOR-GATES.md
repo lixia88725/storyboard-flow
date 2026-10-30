@@ -1,5 +1,14 @@
 # 第二轮主管验收基线
 
+2026-10-30 status update: G1 foundations accepted. A bounded G2 first component workflow
+is implemented and self-tested in a separate new-format editor host; see
+[record](../reviews/2026-10-30/G2-FIRST-EDITOR.md). It reuses SketchPad/LayerPanel but does
+not mount the full production App or certify all G2 interaction preservation. Production
+App/Japanese/remaining-tool scenarios below remain NOT_RUN for the new core. The original
+preparation baseline follows; its blanket second-wave GUI NOT_RUN predates that limited
+connected evidence.
+
+
 2026-10-30，准备阶段；依据 main `4dac2b4` 的源码与第一轮已验收记录。
 本文是功能核对与接入门槛，不是实现完成记录，也不代替待审的三个 lane 方案。
 当前全部第二轮 GUI 场景为 NOT_RUN。原运行时 GUI 通过不能算新核心 GUI 通过。

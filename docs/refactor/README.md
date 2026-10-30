@@ -1,13 +1,14 @@
 # Storyboard Flow refactor
 
-Current status (2026-10-30): wave-two batch 1 Session/Pixels/Assets foundations are
-integrated and independently accepted; 376 files / 2821 tests and full build passed.
-All three completed wave-two worktrees are now archived and retired; only original
-main remains. See [acceptance](reviews/2026-10-30/WAVE2-BATCH1.md) and
-[retirement](reviews/2026-10-30/WAVE2-RETIREMENT.md). Next: coordinator-owned G2 UI
-integration per [current gates](wave2/COORDINATOR-GATES.md), without new parallel lanes.
-Production UI is not yet connected to the new cores. The wave-one material below is
-historical; do not restart its tasks or treat its old status as current.
+Current status (2026-10-30): wave-two foundations are integrated; the first isolated
+existing-component editor workflow is implemented and self-tested on main. Final complete
+suite: 379 files / 2829 tests; full build and 11 real two-process Electron cases passed.
+See [first editor record](reviews/2026-10-30/G2-FIRST-EDITOR.md) for exact scope and evidence.
+This small host is not the full production App; normal startup remains unchanged. Next:
+application-shell adapters and remaining G2 interactions, then G3 TIFF/output integration.
+All three old worktrees are retired; only main remains. See
+[retirement](reviews/2026-10-30/WAVE2-RETIREMENT.md) for recovery. No parallel lanes needed.
+Follow [current gates](wave2/COORDINATOR-GATES.md). The wave-one text below is historical.
 
 ## Historical wave-one assignment
 
