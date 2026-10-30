@@ -1,6 +1,13 @@
 # Storyboard Flow developer rules
 
-## Active refactor authority — 2026-10-29
+## Active wave-two authority — 2026-10-30
+
+The user authorized coordinator-managed Codex worktree sessions using gpt-6.1-sol.
+The current implementation assignment is docs/refactor/wave2/IMPLEMENTATION-1.md;
+its owned modules and shared flowWave2 contract supersede the old wave-one stop/setup scope.
+Main remains coordinator-owned. Preserve file/test safeguards; no push or production routing yet.
+
+## Prior refactor authority — 2026-10-29
 
 The user approved a new-format refactor without compatibility for existing test projects,
 local baseline/implementation commits and coordinator integration, and Hermes-owned worktrees.
