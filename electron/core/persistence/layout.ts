@@ -98,11 +98,16 @@ const bindDirectory = async (directory: string, create: boolean): Promise<boolea
   return true;
 };
 
-/** Create (or verify) the store, asset and version directories before writing. */
-export const ensureStoreDirectories = async (layout: StoreLayout): Promise<void> => {
+/** Asset admission alone must not create a manifest or a version namespace. */
+export const ensureAssetDirectories = async (layout: StoreLayout): Promise<void> => {
   await bindDirectory(path.dirname(layout.store), true);
   await bindDirectory(layout.store, true);
   await bindDirectory(layout.assets, true);
+};
+
+/** Create (or verify) the store, asset and version directories before writing. */
+export const ensureStoreDirectories = async (layout: StoreLayout): Promise<void> => {
+  await ensureAssetDirectories(layout);
   await bindDirectory(layout.versions, true);
 };
 

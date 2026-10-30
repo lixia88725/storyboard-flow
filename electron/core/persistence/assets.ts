@@ -5,7 +5,7 @@ import * as platform from '../platform/index.js';
 import { sha256Hex } from './canonicalJson.js';
 import { errnoCode, errorMessage, ProjectStoreError } from './errors.js';
 import { failAfterCleanup, readBoundFile, releaseTemporary, writeTemporaryFile } from './fileOps.js';
-import { assetPath, requireRealDirectory, type StoreLayout } from './layout.js';
+import { assetPath, ensureAssetDirectories, requireRealDirectory, type StoreLayout } from './layout.js';
 import { LIMITS } from './limits.js';
 import { ASSET_ID } from './validate.js';
 
@@ -99,7 +99,16 @@ const verifyDecodablePng = async (bytes: Buffer, claim: AssetClaim): Promise<voi
   }
 };
 
-export type AssetOutcome = { assetId: string; created: boolean };
+export type AssetOutcome = { assetId: string; created: boolean; directorySync: 'synced' | 'skipped' };
+
+/** Internal typed effect evidence; the old store still exposes only ResultV1.
+ * No caller has to interpret an error message to discover a write stage. */
+export class AssetStoreError extends ProjectStoreError {
+  constructor(error: unknown, readonly effect: 'none' | 'retained' | 'unknown') {
+    super(error instanceof ProjectStoreError ? error.code : 'io-failure', errorMessage(error));
+    this.name = 'AssetStoreError';
+  }
+}
 
 /**
  * Admit one asset: verify the supplied bytes, verify or create the immutable
@@ -110,47 +119,65 @@ export type AssetOutcome = { assetId: string; created: boolean };
  * never repaired by overwriting it.
  */
 export const storeAsset = async (layout: StoreLayout, claim: AssetClaim, readAsset: AssetReaderV1): Promise<AssetOutcome> => {
-  const bytes = await providedBytes(readAsset, claim);
-  const providedDigest = sha256Hex(bytes);
-  if (providedDigest !== claim.assetId) {
-    conflict(`Bytes supplied for asset ${claim.assetId} hash to ${providedDigest}; the reference and the bytes disagree`);
-  }
-
-  const filePath = assetPath(layout, claim.assetId);
-  const existing = await readBoundFile(filePath, LIMITS.assetBytes);
-  if (existing) verifyExistingBlob(existing, claim, filePath);
-
-  // The digest proves the bytes are unchanged, never that the current descriptors
-  // are right, so the decode and the dimension check run for every save: a reused
-  // blob and each of its references are verified exactly like a new one. Each
-  // asset id appears once in requiredAssets, so it is decoded once per save.
-  await verifyDecodablePng(bytes, claim);
-
-  if (existing) return { assetId: claim.assetId, created: false };
-
-  // Publish through a temporary file and a hard link, so a partially written file
-  // never appears under the asset's final name and an existing blob is never
-  // replaced. A crash can leave only an inert `<purpose>.<random>.tmp` behind.
-  const temporary = await writeTemporaryFile(layout.assets, 'asset', bytes);
+  let effect: 'none' | 'retained' | 'unknown' = 'none';
   try {
-    await platform.linkExclusive(temporary.path, filePath);
-  } catch (error) {
-    if (errnoCode(error) === 'EEXIST') {
-      const raced = await readBoundFile(filePath, LIMITS.assetBytes);
-      await releaseTemporary(temporary);
-      if (!raced) conflict(`Asset ${claim.assetId} disappeared while it was being created`);
-      verifyExistingBlob(raced as Buffer, claim, filePath);
-      return { assetId: claim.assetId, created: false };
+    const bytes = await providedBytes(readAsset, claim);
+    const providedDigest = sha256Hex(bytes);
+    if (providedDigest !== claim.assetId) {
+      conflict(`Bytes supplied for asset ${claim.assetId} hash to ${providedDigest}; the reference and the bytes disagree`);
     }
-    if (error instanceof ProjectStoreError) throw error;
-    await failAfterCleanup(
-      temporary,
-      error,
-      `Asset ${claim.assetId} could not be stored at ${filePath}; existing assets and the previous checkpoint are retained`
-    );
+
+    // The digest proves the bytes are unchanged, never that the current descriptors
+    // are right, so the decode and the dimension check run for every save: a reused
+    // blob and each of its references are verified exactly like a new one. Each
+    // asset id appears once in requiredAssets, so it is decoded once per save.
+    await verifyDecodablePng(bytes, claim);
+
+    // Direct depot admission has no checkpoint to create these directories for it.
+    // Validate/decode first so invalid input cannot start filesystem effects.
+    effect = 'unknown';
+    await ensureAssetDirectories(layout);
+    const filePath = assetPath(layout, claim.assetId);
+    const existing = await readBoundFile(filePath, LIMITS.assetBytes);
+    if (existing) {
+      verifyExistingBlob(existing, claim, filePath);
+      effect = 'none';
+      const directorySync = await platform.syncDirectory(layout.assets);
+      return { assetId: claim.assetId, created: false, directorySync };
+    }
+
+    // Publish through a temporary file and a hard link, so a partially written file
+    // never appears under the asset's final name and an existing blob is never
+    // replaced. A crash can leave only an inert `<purpose>.<random>.tmp` behind.
+    const temporary = await writeTemporaryFile(layout.assets, 'asset', bytes);
+    try {
+      await platform.linkExclusive(temporary.path, filePath);
+    } catch (error) {
+      if (errnoCode(error) === 'EEXIST') {
+        const raced = await readBoundFile(filePath, LIMITS.assetBytes);
+        await releaseTemporary(temporary);
+        if (!raced) conflict(`Asset ${claim.assetId} disappeared while it was being created`);
+        verifyExistingBlob(raced as Buffer, claim, filePath);
+        effect = 'none';
+        const directorySync = await platform.syncDirectory(layout.assets);
+        return { assetId: claim.assetId, created: false, directorySync };
+      }
+      if (error instanceof ProjectStoreError) throw error;
+      await failAfterCleanup(
+        temporary,
+        error,
+        `Asset ${claim.assetId} could not be stored at ${filePath}; existing assets and the previous checkpoint are retained`
+      );
+    }
+    await releaseTemporary(temporary);
+    effect = 'retained';
+    // Flush on every path, including reuse: an earlier flush may have failed after
+    // linking this immutable blob. An existence check cannot repair that receipt.
+    const directorySync = await platform.syncDirectory(layout.assets);
+    return { assetId: claim.assetId, created: true, directorySync };
+  } catch (error) {
+    throw new AssetStoreError(error, effect);
   }
-  await releaseTemporary(temporary);
-  return { assetId: claim.assetId, created: true };
 };
 
 /** Store every asset the snapshot needs, one at a time and in a stable order. */

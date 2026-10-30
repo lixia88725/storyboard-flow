@@ -1,0 +1,100 @@
+// Real isolated Canvas -> Session -> depot -> checkpoint integration, not production UI acceptance.
+import { build } from 'esbuild';
+import { spawn, execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { mkdtemp, mkdir, realpath, writeFile, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { fileURLToPath } from 'node:url';
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+const root = await mkdtemp(path.join(await realpath(os.tmpdir()), 'flow-core-composition-'));
+const runDir = path.join(repo, '.hermes', 'wave2-review', path.basename(root));
+await mkdir(runDir, { recursive: true });
+const identity = { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
+  status: execFileSync('git', ['status', '--short'], { cwd: repo, encoding: 'utf8' }).trim(), root, runDir };
+const browser = await build({ stdin: { contents: `
+import {createFlowPixels} from './src/renderer/drawing/index.ts';
+const pixels=createFlowPixels({maxPixels:1024,maxPngBytes:1048576,maxPoints:100});
+globalThis.flowProduce=async(input,bytes)=>{
+ const r=await pixels.produce(input,async()=>new Uint8Array(bytes));
+ return r.ok?{ok:true,value:{...r.value,png:Array.from(r.value.png)}}:r;
+};`, resolveDir: repo, loader: 'ts' }, bundle: true, platform: 'browser', format: 'iife', write: false });
+const html = path.join(root, 'canvas.html');
+await writeFile(html, `<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; img-src blob: data:"><script>${browser.outputFiles[0].text.replaceAll('</script','<\\/script')}</script>`);
+const main = `
+import {app,BrowserWindow,session,clipboard,shell} from 'electron';
+import fs from 'node:fs/promises'; import path from 'node:path'; import assert from 'node:assert/strict';
+import sharp from 'sharp';
+import {createFlowSession} from './src/core/session/index.ts';
+import {openFlowAssetDepot} from './electron/core/persistence/depot.ts';
+import {createProjectStore} from './electron/core/persistence/index.ts';
+const root=${JSON.stringify(root)}; const identity=${JSON.stringify(identity)};
+const userData=path.join(root,'userData');
+app.setPath('userData',userData);app.setPath('sessionData',userData);
+app.setAppLogsPath(path.join(root,'logs')); app.setPath('crashDumps',path.join(root,'crashes'));
+app.commandLine.appendSwitch('disable-background-networking');
+for(const k of Object.keys(clipboard))if(typeof clipboard[k]==='function')clipboard[k]=()=>{throw Error('clipboard forbidden')};
+shell.trashItem=()=>{throw Error('Trash forbidden')};
+let win;
+const get=r=>{assert.equal(r.ok,true,JSON.stringify(r));return r.value};
+const clock={setTimeout:(f,ms)=>setTimeout(f,ms),clearTimeout:h=>clearTimeout(h)};
+app.whenReady().then(async()=>{
+ session.defaultSession.setPermissionRequestHandler((_w,_p,cb)=>cb(false));
+ session.defaultSession.setPermissionCheckHandler(()=>false);
+ session.defaultSession.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*','ws://*/*','wss://*/*']},(_d,cb)=>cb({cancel:true}));
+ win=new BrowserWindow({show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
+ win.webContents.setWindowOpenHandler(()=>({action:'deny'}));await win.loadFile(${JSON.stringify(html)});
+ const projectRoot=path.join(root,'project');await fs.mkdir(projectRoot);
+ const depot=get(await openFlowAssetDepot({root:projectRoot,sessionId:'original',maxPixels:1024,maxPngBytes:1048576}));
+ const seed=await sharp({create:{width:16,height:16,channels:4,background:{r:0,g:0,b:0,alpha:0}}}).png().toBuffer();
+ const seedReceipt=get(await depot.put({operationId:'seed',png:seed,width:16,height:16}));
+ const project={schema:'storyboard-flow.project',version:1,id:'project',revision:0,name:'合成',shots:[{id:'shot',imageId:'image',name:'1',scriptText:'before'}],parkedShots:[],dialogues:[],images:{image:{id:'image',revision:0,width:16,height:16,layers:[{id:'layer',name:'paint',kind:'paint',visible:true,locked:false,opacity:1,blendMode:'normal',width:16,height:16,assetId:seedReceipt.assetId}]}}};
+ const store=createProjectStore();
+ const read=async id=>get(await depot.read(id));
+ get(await store.saveCheckpoint(projectRoot,project,read));
+ let started,release;const begun=new Promise(r=>started=r);const gate=new Promise(r=>release=r);
+ let first=true;let rejectCheckpoint=false;let refusePut=false;
+ const pixels={produce:async(input,reader)=>{
+  if(first){first=false;started();await gate;}
+  const bytes=await reader(input.image.layers.find(l=>l.id===input.layerId).assetId);
+  const r=await win.webContents.executeJavaScript('flowProduce('+JSON.stringify(input)+','+JSON.stringify(Array.from(bytes))+')');
+  return r.ok?{ok:true,value:{...r.value,png:new Uint8Array(r.value.png)}}:r;
+ }};
+ const assets={read:depot.read,put:input=>refusePut?Promise.resolve({ok:false,error:{code:'io-failure',message:'injected before put',effect:'none'}}):depot.put(input)};
+ const options={sessionId:'original',incarnation:'open1',project,maxHistoryEntries:60,maxPendingRequests:20,assets,pixels,clock,
+ checkpoint:(p,r)=>rejectCheckpoint?Promise.resolve({ok:false,error:{code:'io-failure',message:'injected checkpoint failure'}}):store.saveCheckpoint(projectRoot,p,r)};
+ const flow=get(createFlowSession(options));
+ const paint={kind:'paint',shotId:'shot',layerId:'layer',stroke:{tool:'brush',color:'#f00',size:4,opacity:1,softness:0,points:[8,8]}};
+ const p=flow.request(paint);await begun;
+ get(await flow.request({kind:'board',command:{kind:'setScriptText',shotId:'shot',text:'保留中文'}}));release();get(await p);
+ assert.equal(flow.snapshot().project.revision,2);assert.equal(flow.snapshot().project.shots[0].scriptText,'保留中文');
+ const painted=flow.snapshot().project.images.image.layers[0].assetId;assert.notEqual(painted,seedReceipt.assetId);
+ const decoded=await sharp(get(await depot.read(painted))).raw().toBuffer();assert.equal(decoded[(8*16+8)*4],255);assert.equal(decoded[(8*16+8)*4+3],255);
+ get(await flow.request({kind:'undo'}));assert.equal(flow.snapshot().project.images.image.layers[0].assetId,seedReceipt.assetId);assert.equal(flow.snapshot().project.shots[0].scriptText,'保留中文');
+ get(await flow.request({kind:'redo'}));assert.equal(flow.snapshot().project.images.image.layers[0].assetId,painted);
+ refusePut=true;const before=flow.snapshot().project;assert.equal((await flow.request({...paint,stroke:{...paint.stroke,color:'#00f'}})).ok,false);assert.deepEqual(flow.snapshot().project,before);refusePut=false;
+ rejectCheckpoint=true;assert.equal((await flow.request({kind:'freeze'})).ok,false);assert.equal(flow.snapshot().phase,'freezing');assert.equal((await flow.request({kind:'resume'})).ok,false);
+ rejectCheckpoint=false;get(await flow.request({kind:'freeze'}));assert.equal(flow.snapshot().phase,'frozen');
+ const loaded=get(await store.loadCheckpoint(projectRoot));assert.deepEqual(loaded.project,flow.snapshot().project);assert.deepEqual(Buffer.from(await loaded.readAsset(painted)),Buffer.from(get(await depot.read(painted))));
+ const copiedRoot=path.join(root,'relocated');await fs.cp(projectRoot,copiedRoot,{recursive:true});
+ await fs.rename(projectRoot,path.join(root,'old-unavailable'));
+ const moved=get(await store.loadCheckpoint(copiedRoot));const nextDepot=get(await openFlowAssetDepot({root:copiedRoot,sessionId:'reopened',maxPixels:1024,maxPngBytes:1048576}));
+ const next=get(createFlowSession({...options,sessionId:'reopened',incarnation:'open2',project:moved.project,assets:nextDepot,checkpoint:(p,r)=>store.saveCheckpoint(copiedRoot,p,r)}));
+ get(await next.request({...paint,stroke:{...paint.stroke,tool:'eraser',opacity:0.5}}));get(await next.request({kind:'freeze'}));
+ const reopened=get(await store.loadCheckpoint(copiedRoot));const erased=reopened.project.images.image.layers[0].assetId;
+ const eraw=await sharp(await reopened.readAsset(erased)).raw().toBuffer();assert.ok(eraw[(8*16+8)*4+3]>=126&&eraw[(8*16+8)*4+3]<=128);
+ await fs.writeFile(path.join(root,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['real Canvas paint and depot publication','text interleaving preserves content','Undo/Redo exact asset identities','put failure no edit','freeze failure/retry','checkpoint exact reopen','folder relocation with old path unavailable','new session real eraser after reopen'],finalRevision:reopened.project.revision,productionUI:false},null,2));
+ win.destroy();app.exit(0);
+}).catch(async error=>{await fs.writeFile(path.join(root,'failure.json'),JSON.stringify({...identity,error:String(error.stack||error)},null,2));if(win&&!win.isDestroyed())win.destroy();app.exit(1)});
+`;
+const entry=path.join(runDir,'entry.cjs');
+await build({stdin:{contents:main,resolveDir:repo,loader:'ts'},bundle:true,platform:'node',format:'cjs',external:['electron','sharp'],outfile:entry});
+const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;
+const child=spawn(require('electron'),[entry],{cwd:repo,env,stdio:['ignore','pipe','pipe']});
+const chunks=[];child.stdout.on('data',b=>chunks.push(b));child.stderr.on('data',b=>chunks.push(b));
+const code=await new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',resolve)});
+await writeFile(path.join(root,'electron.log'),Buffer.concat(chunks));
+console.log(JSON.stringify({code,root,runDir}));
+console.log(await readFile(path.join(root,code===0?'receipt.json':'failure.json'),'utf8'));
+process.exitCode=code===0?0:1;

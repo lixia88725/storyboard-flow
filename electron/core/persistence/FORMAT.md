@@ -3,7 +3,8 @@
 Status: **experimental**. This layout is not activated anywhere in the application. The current
 Save/recovery path, TIFF writing and legacy project folders are untouched; nothing reads this
 format in production. `electron/core/persistence/index.ts` exports the only public entry point,
-`createProjectStore(): ProjectStoreV1`.
+`createProjectStore(): ProjectStoreV1`. The separate wave-two `depot.ts` entry point admits
+immutable PNGs without publishing a project; its contract is described in §12 below.
 
 ## 1. Layout
 
@@ -68,7 +69,9 @@ format in production. `electron/core/persistence/index.ts` exports the only publ
    correct, so a reused blob is checked exactly like a new one (once per asset per save). A missing
    file is written as `<asset|version|project>.<24-hex>.tmp` and published with a hard link, so a
    partially written blob never appears under its final name and an existing blob is never replaced.
-   An existing file is verified by digest, not trusted by name.
+   An existing file is verified by digest, not trusted by name. The asset directory is flushed
+   before admission completes, including existing-file and raced EEXIST paths. Retrying after
+   a failed flush must perform this flush again before a checkpoint can advance.
 7. **Version record** — `versions/<revision>.json` published the same way (temporary file + link).
    An identical record already present is accepted; different content for an already recorded
    revision is `conflict`.
@@ -181,13 +184,11 @@ These are the numbers in `limits.ts`; the table and the code must change togethe
   supports links (APFS/HFS+, ext4, NTFS). On a filesystem that refuses links (FAT/exFAT, some
   network shares) the save fails with `io-failure`; there is deliberately no copy fallback,
   because a non-atomic create would make a partial blob look published.
-* **Directory flush coverage is not uniform, and no power-loss durability is claimed.** The version
-  directory is flushed after a version record is linked, and the store directory after the head is
-  renamed; the `assets/` directory is *not* explicitly flushed after a new blob is linked. A crash
-  immediately after a save could therefore keep the head (and its flushed directory entry) while
-  losing a just-linked asset entry, which a later `loadCheckpoint` would report as `missing-asset`.
-  These tests do not simulate power loss, so this remains an open durability question for review —
-  not a guarantee. Reported as a limitation rather than changed in this correction.
+* **No universal power-loss durability is claimed.** Asset directory entries are now flushed after
+  every admission (including reuse/retry), before version/head publication. The version directory
+  is flushed after a new record is linked, and the store directory after the head is renamed.
+  Windows skips directory flushes. Ancestor creation, device caches and filesystem behaviour are
+  not proven power-loss safe; tests inject sync errors but do not simulate power loss.
 * `O_NOFOLLOW` is not available on Windows, where only the `lstat` checks guard against links.
   Case-insensitive filesystems do not affect this layout, whose names are fixed lowercase.
 * Verified on macOS 26.6.2 (arm64, APFS) with real files. No Windows, network-filesystem or
@@ -207,3 +208,36 @@ These are the numbers in `limits.ts`; the table and the code must change togethe
 No production Save/Close wiring, no TIFF or original-image writing, no legacy project migration, no
 physical asset deletion or garbage collection, no watcher, no Trash/userData/clipboard access, no
 tile storage, no SQLite, no PSD data, no lenient partial read view, and no cross-process locking.
+
+## 12. Wave-two asset depot (isolated)
+
+`openFlowAssetDepot(options)` in `depot.ts` implements the coordinator-owned `flowWave2.ts`
+Interface without changing `index.ts`/ProjectStoreV1. Open copies options before its first await,
+binds a canonical root and session id, and loads an existing checkpoint normally. Only a genuine
+`not-found` allows an empty initial asset set; malformed/unreadable checkpoints and missing assets
+remain errors. Open is read-only and never advances head. Root identity is rechecked at use time.
+
+`put` snapshots input before await, enforces caller PNG-byte/pixel limits (also retaining the
+store's 512 MiB ceiling and sharp's default input-pixel limit), computes encoded-byte SHA-256,
+checks PNG format/header dimensions and forces full decode. It reuses `storeAsset` and the same
+canonical-root queue as checkpoint publication. It creates only the asset namespace/blob, never
+head/version records or a provisional Project. At most eight puts per depot retain encoded input
+while waiting; excess requests return `busy` before copying bytes.
+
+An operation id is a nonempty string without NUL; it is never used in a path. Within one depot
+it is bound to its submitted hash/dimensions once admitted to the root queue, including failed
+attempts. Different input conflicts. After a successful put, same-input retries verify the actual
+blob before reuse and flush again; a missing/tampered blob fails rather than recreating it or
+returning a cached receipt. Receipts are fresh objects and include `directorySync: synced|skipped`.
+
+Reads allow only initial checkpoint references and successful puts of this depot. They recheck
+binding/hash and return private copies. A new head or a new depot does not expand an existing
+depot's whitelist; old eligible ids remain readable, and a new depot gets its own checkpoint set.
+Orphan/failed-admission blobs are retained but cannot be read merely because their path is known.
+There is no delete/GC or persistent operation-id promise across depot lifetimes.
+
+Flow failures report typed effect evidence: validation/read failures have no new writes (`none`),
+a confirmed linked immutable blob surviving flush failure is `retained`, and unconfirmed write or
+cleanup outcomes are `unknown`. No message parsing is used. Failure never grants read eligibility,
+replaces a corrupt existing blob, widens permissions or advances checkpoint head. This local
+admission is neither a process-wide RAM bound nor an IPC/security or cross-process writer lease.
