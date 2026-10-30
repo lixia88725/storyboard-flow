@@ -1,3 +1,23 @@
+## Pending explicit-Save lifecycle — 2026-10-31
+
+Candidate 5643287bc1d175ddffdcf59e6a55275ce30788db implements the approved logical Pending
+policy in the isolated editor. Drag/restore/Undo changes membership and checkpoints only.
+Save places parked TIFFs under project/Pending/; active TIFFs stay in the project root.
+Editable layer assets remain under .storyboard-flow/checkpoints/assets/ and originals under
+.storyboard-flow/originals/. Unchanged image/text inputs reuse TIFFs without raster encoding.
+Moves have persisted identity/digest intents, exclusive publication and retry after interruption.
+
+Final clean unchanged candidate: full allowed suite 383 files / 2898 tests, complete build
+and 42 real Electron cases pass. Actual pointer parking, logical-only disk checks, Undo/Redo,
+Japanese restore, Save relocation and new-process reopen are verified. Raw evidence/limits:
+docs/refactor/reviews/2026-10-31/G3-PENDING.md. Policy: docs/refactor/PENDING.md.
+Implemented/self-tested; independent acceptance remains open. No push or worktree cleanup.
+
+Pending policy is now approved (supersedes the earlier undecided status below). Production
+App/launcher remains unchanged. Next: actual TIFF import/bootstrap and A/B acceptance,
+ordered filename synchronization, exported-shot Trash deletion, remaining tools and full-shell
+routing. External TIFF refresh, Windows, installers and large-raster scale remain unverified.
+
 ## G3 explicit TIFF Save slice — 2026-10-31
 
 Implementation ff1a159 plus Close-wait correction 7d152ea connects explicit TIFF Save
