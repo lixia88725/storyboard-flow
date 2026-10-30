@@ -1,5 +1,13 @@
 # 第二轮主管验收基线
 
+Latest 2026-10-30 G2 update: the isolated host now also mounts the existing Japanese
+sheet and shares Session dialogue/script/order/drawing/history with its grid. Full suite
+379 files / 2833 tests, build and actual two-process GUI passed; see
+[Japanese editor record](../reviews/2026-10-30/G2-JAPANESE-EDITOR.md).
+This closes only those bounded scenarios. Full production App, IME composition,
+cross-shot dialogue drag, Pending materialization, remaining tools and platform/scale
+acceptance remain open. Earlier NOT_RUN references below predate this limited evidence.
+
 2026-10-30 status update: G1 foundations accepted. A bounded G2 first component workflow
 is implemented and self-tested in a separate new-format editor host; see
 [record](../reviews/2026-10-30/G2-FIRST-EDITOR.md). It reuses SketchPad/LayerPanel but does

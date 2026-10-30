@@ -1,3 +1,19 @@
+## G2 Japanese view and dialogue — 2026-10-30
+
+The isolated new-format editor now reuses JapaneseStoryboardView and shares one Session
+with its grid: script/dialogue, order, pixels and Undo/Redo. Session setDialogues keeps
+active-shot/binding validation and text-during-paint behavior without bypassing Undo.
+Real GUI verified Cut drag/Undo, multiline Chinese dialogue, sheet paint/Undo, guarded
+view switching and exact checkpoint/Close/fresh-process reopen. No second writable Project.
+
+Candidate `4c8cd8a1e7de0a0ae47f3a7e946244aa01f1ab83`: full allowed suite **379 files /
+2833 tests**, complete build and real two-process GUI passed. Full/build receipts have
+clean unchanged HEAD; details in `docs/refactor/reviews/2026-10-30/G2-JAPANESE-EDITOR.md`.
+Implemented/self-tested only; full G2 independent acceptance remains open. Default App,
+launcher, TIFF and production Close unchanged. Next: remaining shell/tools/selection and
+output integration; Pending materialization, OS IME, Windows and scale remain unverified.
+Only original main; no new agents/worktrees/dependencies, personal media or push.
+
 ## G2 first connected component workflow — 2026-10-30
 
 Coordinator implemented an isolated new-format editor entry on main, reusing existing
