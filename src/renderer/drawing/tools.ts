@@ -2,12 +2,9 @@ import type { FlowFailure, FlowResult } from '../../../electron/shared/flowWave2
 import type { AssetReaderV1, ImageDocumentV1 } from '../../../electron/shared/refactorV1';
 import { applyImageEdit } from '../../core/drawing';
 
-export type PixelToolRequest =
-  | { kind: 'fill'; image: ImageDocumentV1; layerId: string; x: number; y: number; color: readonly [number, number, number, number]; tolerance: number }
-  | { kind: 'clear'; image: ImageDocumentV1; layerId: string }
-  | { kind: 'merge'; image: ImageDocumentV1; layerIds: readonly string[] };
-export type PixelToolOutput = { png: Uint8Array; width: number; height: number; baseline: ImageDocumentV1;
-  plan: { kind: 'replace'; layerId: string } | { kind: 'merge'; targetId: string; removeIds: string[]; targetProperties: { opacity: 1; blendMode: 'normal' } } };
+import type { FlowPixelToolRequest, FlowPixelToolOutput } from '../../../electron/shared/flowWave2';
+export type PixelToolRequest = FlowPixelToolRequest;
+export type PixelToolOutput = FlowPixelToolOutput;
 export type PixelToolLimits = { maxPixels: number; maxPngBytes: number; maxLayers: number };
 const fail = (code: FlowFailure['code'], message: string): FlowResult<never> => ({ ok: false, error: { code, message, effect: 'none' } });
 const integer = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n > 0;

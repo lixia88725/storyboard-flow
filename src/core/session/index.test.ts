@@ -634,3 +634,61 @@ describe('Session insertion admission', () => {
     expect(Buffer.from(await loaded.value.readAsset(hash(fresh)))).toEqual(fresh);
   });
 });
+
+describe('queued pixel tools', () => {
+  const mergeRequest = () => ({ kind: 'pixelTool' as const, shotId: 'a', tool: { kind: 'merge' as const, layerIds: ['layer', 'top'] } });
+  const mergeProject = () => {
+    const p = project(); p.images.i_a.layers[0].opacity = .5;
+    p.images.i_a.layers.push({ ...p.images.i_a.layers[0], id: 'top', opacity: .7 }); return p;
+  };
+  const output = (image: ReturnType<typeof project>['images'][string]) => ({ png: Uint8Array.of(7, 6), width: 4, height: 3,
+    baseline: structuredClone(image), plan: { kind: 'merge' as const, targetId: 'layer', removeIds: ['top'], targetProperties: { opacity: 1 as const, blendMode: 'normal' as const } } });
+  it('merges as one image revision and one Undo; retains exact layer metadata and pixels for Redo', async () => {
+    const p = mergeProject();
+    const { session } = setup({ project: p, tools: { produce: async ({ image }) => ({ ok: true, value: output(image) }) } });
+    await success(session.request(mergeRequest()));
+    const merged = session.snapshot().project.images.i_a;
+    expect(merged).toMatchObject({ revision: 1, layers: [{ id: 'layer', assetId: hash(Uint8Array.of(7, 6)), opacity: 1, blendMode: 'normal' }] });
+    expect(merged.layers).toHaveLength(1);
+    await success(session.request({ kind: 'undo' })); expect(session.snapshot().project.images.i_a).toEqual(p.images.i_a);
+    await success(session.request({ kind: 'redo' })); expect(session.snapshot().project.images.i_a).toEqual(merged);
+  });
+  it.each(['baseline', 'plan', 'dimensions'] as const)('rejects forged %s before writing assets or history', async field => {
+    const harness = setup(), put = vi.fn(harness.options.assets.put), p = mergeProject();
+    const { session } = setup({ project: p, assets: { ...harness.options.assets, put }, tools: { produce: async ({ image }) => {
+      const result = output(image);
+      if (field === 'baseline') result.baseline.revision++;
+      if (field === 'plan') result.plan.removeIds = ['foreign'];
+      if (field === 'dimensions') result.width++;
+      return { ok: true, value: result };
+    } } });
+    expect((await session.request(mergeRequest())).ok).toBe(false); expect(put).not.toHaveBeenCalled();
+    expect(session.snapshot().project).toEqual(p); expect((await session.request({ kind: 'undo' })).ok).toBe(false);
+  });
+  it('keeps text during a slow tool and serializes Undo/freeze; captures caller inputs', async () => {
+    const gate = deferred<FlowResult<ReturnType<typeof output>>>(), p = mergeProject();
+    const { session } = setup({ project: p, tools: { produce: () => gate.promise } });
+    const request = mergeRequest(); const pending = session.request(request); request.tool.layerIds[0] = 'mutated';
+    await success(session.request(text('during merge')));
+    const undo = session.request({ kind: 'undo' }), frozen = session.request({ kind: 'freeze' });
+    gate.resolve({ ok: true, value: output(p.images.i_a) });
+    await success(pending); await success(undo); await success(frozen);
+    expect(session.snapshot().project.images.i_a).toEqual(p.images.i_a);
+    expect(session.snapshot().project.shots[0].scriptText).toBe('during merge');
+    expect(session.snapshot().phase).toBe('frozen');
+  });
+  it('rejects sparse colors and locked merges before producer work', async () => {
+    const produce = vi.fn(), p = mergeProject(); p.images.i_a.layers[0].locked = true;
+    const { session } = setup({ project: p, tools: { produce } });
+    expect((await session.request(mergeRequest())).ok).toBe(false);
+    expect((await session.request({ kind: 'pixelTool', shotId: 'a', tool: { kind: 'fill', layerId: 'top', x: 0, y: 0, tolerance: 0, color: Array(4) as any } })).ok).toBe(false);
+    expect(produce).not.toHaveBeenCalled();
+  });
+  it('reports failed asset admission without publishing or adding history', async () => {
+    const harness = setup(), p = mergeProject();
+    const { session } = setup({ project: p, assets: { ...harness.options.assets, put: async () => error('io-failure', 'disk', 'unknown') },
+      tools: { produce: async ({ image }) => ({ ok: true, value: output(image) }) } });
+    expect(await session.request(mergeRequest())).toMatchObject({ ok: false, error: { effect: 'unknown' } });
+    expect(session.snapshot().project).toEqual(p); expect((await session.request({ kind: 'undo' })).ok).toBe(false);
+  });
+});

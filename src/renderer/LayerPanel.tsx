@@ -46,6 +46,7 @@ type BlendMenuState = {
 
 export type LayerPanelProps = {
   structuralEditsEnabled?: boolean;
+  mergeEditsEnabled?: boolean;
   onLayerOpacityGesture?: (shotId: string, layerId: string, opacity: number, phase: "preview" | "commit") => void;
   shot?: Shot;
   folderPath?: string;
@@ -87,6 +88,7 @@ export type LayerPanelProps = {
 
 export const LayerPanel = ({
   structuralEditsEnabled = true,
+  mergeEditsEnabled = structuralEditsEnabled,
   onLayerOpacityGesture,
   shot,
   folderPath,
@@ -606,7 +608,7 @@ export const LayerPanel = ({
                     onMergeVisibleLayers(shot.id);
                   }
                 }}
-                disabled={!structuralEditsEnabled || !shot || visibleLayers.length < 2}
+                disabled={!mergeEditsEnabled || !shot || visibleLayers.length < 2}
                 title="Merge visible layers"
                 aria-label="Merge visible layers"
               >
@@ -620,7 +622,7 @@ export const LayerPanel = ({
                   }
                 }}
                 disabled={
-                  !structuralEditsEnabled || !shot ||
+                  !mergeEditsEnabled || !shot ||
                   !activeLayer ||
                   (selectedMergeLayers.length >= 2
                     ? !isMultiLayerMerge

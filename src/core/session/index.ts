@@ -1,3 +1,5 @@
+import { toolPlan, adoptTool } from './pixelTools';
+import type { FlowPixelToolOutput } from '../../../electron/shared/flowWave2';
 import type {
   FlowCheckpointState, FlowFailure, FlowResult, FlowSession, FlowSessionOptions,
   FlowSessionOutcome, FlowSessionRequest, FlowSessionSnapshot
@@ -34,6 +36,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
   const maxPending = options.maxPendingRequests, maxHistory = options.maxHistoryEntries;
   // Capture methods too: replacing the caller's options after construction changes no dependency.
   const produce = options.pixels.produce.bind(options.pixels), put = options.assets.put.bind(options.assets);
+  const produceTool = options.tools?.produce.bind(options.tools);
   const read = options.assets.read.bind(options.assets), checkpoint = options.checkpoint.bind(options);
   const setTimeout = options.clock.setTimeout.bind(options.clock), clearTimeout = options.clock.clearTimeout.bind(options.clock);
   let phase: FlowSessionSnapshot['phase'] = 'active', pending = 0;
@@ -213,23 +216,39 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
     const result = installed(history.apply(command));
     return result.ok ? result : account(result.error);
   };
-  const paint = async (request: Extract<FlowSessionRequest, { kind: 'paint' }>): Promise<FlowResult<boolean>> => {
+  const paint = async (request: Extract<FlowSessionRequest, { kind: 'paint' | 'pixelTool' }>): Promise<FlowResult<boolean>> => {
     const project = current(), shot = project.shots.find(shot => shot.id === request.shotId);
     if (!shot) return failure('not-found', 'Active shot not found');
-    const before = project.images[shot.imageId], layer = before.layers.find(layer => layer.id === request.layerId);
-    if (!layer) return failure('not-found', 'Layer not found');
-    if (layer.locked || !layer.visible) return failure('locked', 'Painting requires a visible unlocked layer');
+    const before = project.images[shot.imageId];
+    let plan: FlowPixelToolOutput['plan'] | undefined;
+    if (request.kind === 'pixelTool') {
+      if (!produceTool) return failure('unavailable', 'Pixel tools are not connected');
+      const planned = toolPlan(before, request.tool);
+      if (!planned.ok) return planned;
+      plan = planned.value;
+    } else {
+      const layer = before.layers.find(layer => layer.id === request.layerId);
+      if (!layer) return failure('not-found', 'Layer not found');
+      if (layer.locked || !layer.visible) return failure('locked', 'Painting requires a visible unlocked layer');
+    }
     if (operationSerial >= Number.MAX_SAFE_INTEGER) return failure('resource-limit', 'Operation sequence exhausted');
     const operationId = `paint_${++operationSerial}`, baselineGeneration = generation;
     let readError: FlowFailure | null = null;
     let produced;
-    try { produced = dependencyResult(await produce({ image: copy(before), layerId: request.layerId, stroke: copy(request.stroke) }, assetReader(error => { readError ??= copy(error); })), 'none'); }
+    try {
+      const reader = assetReader(error => { readError ??= copy(error); });
+      produced = dependencyResult(request.kind === 'paint'
+        ? await produce({ image: copy(before), layerId: request.layerId, stroke: copy(request.stroke) }, reader)
+        : await produceTool!({ ...copy(request.tool), image: copy(before) }, reader), 'none');
+    }
     catch (error) { return readError ? { ok: false, error: copy(readError) } : unexpected(error, 'none'); }
     if (readError) return { ok: false, error: readError };
     if (!produced.ok) return produced;
     const output = produced.value;
     if (!output || !(output.png instanceof Uint8Array) || !positive(output.png.byteLength) || output.width !== before.width || output.height !== before.height)
       return failure('invalid-input', 'Pixel producer returned invalid PNG data/dimensions');
+    if (request.kind === 'pixelTool' && (!same((output as FlowPixelToolOutput).baseline, before) || !same((output as FlowPixelToolOutput).plan, plan)))
+      return failure('conflict', 'Pixel tool baseline or plan does not match the request');
     const png = output.png.slice(), byteLength = png.byteLength;
     let stored;
     try { stored = dependencyResult(await put({ operationId, png, width: before.width, height: before.height }), 'unknown'); }
@@ -243,7 +262,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
     const latest = current(), owner = latest.shots.find(candidate => candidate.id === request.shotId);
     if (generation !== baselineGeneration || owner?.imageId !== before.id || !same(latest.images[before.id], before))
       return failure('conflict', 'Paint baseline or control generation changed', 'retained');
-    const edit = applyImageEdit(before, { kind: 'replacePixels', layerId: request.layerId, assetId: receipt.assetId });
+    const edit = request.kind === 'pixelTool' ? adoptTool(before, plan!, receipt.assetId) : applyImageEdit(before, { kind: 'replacePixels', layerId: request.layerId, assetId: receipt.assetId });
     if (!edit.ok) return { ok: false, error: { ...edit.error, effect: 'retained' } };
     const result = installed(history.apply({ kind: 'applyImageEdit', result: edit.value }));
     return result.ok ? result : { ok: false, error: { ...result.error, effect: 'retained' } };
@@ -257,7 +276,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
         const edit = applyImageEdit(project.images[shot.imageId], request.edit);
         return edit.ok ? installed(history.apply({ kind: 'applyImageEdit', result: edit.value })) : { ok: false, error: { ...edit.error, effect: 'none' } };
       }
-      case 'paint': return paint(request);
+      case 'paint': case 'pixelTool': return paint(request);
       case 'undo': case 'redo':
         if ((request.kind === 'undo' ? undoDepth : redoDepth) === 0) return failure('not-found', 'No history entry');
         if (generation >= Number.MAX_SAFE_INTEGER) return failure('resource-limit', 'Control generation exhausted');
@@ -289,7 +308,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
         void settlement.then(() => detached.delete(settlement));
         continue;
       }
-      painting = task.request.kind === 'paint';
+      painting = task.request.kind === 'paint' || task.request.kind === 'pixelTool';
       try { task.finish(await execute(task.request)); }
       catch (error) { task.finish(unexpected(error, painting ? 'unknown' : 'none')); }
       painting = false;
@@ -322,7 +341,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
         resolve(outcome); notify();
       } };
       if (request.kind === 'freeze') { phase = 'freezing'; freezePromise = promise; cancelTimer(); }
-      if (request.kind === 'board' && (request.command.kind === 'setScriptText' || request.command.kind === 'setDialogues') && painting && queue.every(task => task.request.kind === 'paint')) {
+      if (request.kind === 'board' && (request.command.kind === 'setScriptText' || request.command.kind === 'setDialogues') && painting && queue.every(task => task.request.kind === 'paint' || task.request.kind === 'pixelTool')) {
         try { task.finish(board({ command: request.command })); } catch (error) { task.finish(unexpected(error, 'none')); }
       } else { queue.push(task); void pump(); }
       notify();

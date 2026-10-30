@@ -98,6 +98,35 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   await button('Undo');await wait(()=>read().images.image0.layers[2].assetId===painted,'Japanese drawing undo');
   await button('Grid view');
   assert.equal(await js('Array.from(document.querySelectorAll("textarea")).find(e=>e.getAttribute("aria-label")==="Dialogue shot0").value'),'第一句\\n第二句');
+  // Exercise the existing SketchPad drop handler with a real DataTransfer and
+  // DOM drop event. Pixel generation is native Canvas; this is not OS drag proof.
+  const beforeTools = read().images.image0;
+  await js(\`(() => { const stage=document.querySelector('[data-shot-id="shot0"] .image-stage'); stage.scrollIntoView();
+    const r=stage.getBoundingClientRect(),data=new DataTransfer(); data.setData('application/x-storyboard-fill-color','#2299ee');
+    stage.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data,clientX:r.x+r.width*.1,clientY:r.y+r.height*.1})); })()\`);
+  await wait(()=>read().images.image0.layers[2].assetId!==beforeTools.layers[2].assetId,'fill pixels');
+  const filled=read().images.image0.layers[2].assetId;
+  await button('Clear layer');await wait(()=>read().images.image0.layers[2].assetId!==filled,'clear pixels');
+  await button('Undo');await wait(()=>read().images.image0.layers[2].assetId===filled,'clear exact undo');
+  await button('Undo');await wait(()=>read().images.image0.layers[2].assetId===beforeTools.layers[2].assetId,'fill exact undo');
+  await click('[data-shot-id="shot0"] [aria-label="Merge visible layers"]');
+  await wait(()=>read().images.image0.layers.length===1,'merge layers');
+  assert.equal(read().images.image0.revision,beforeTools.revision+1);
+  await button('Undo');await wait(()=>read().images.image0.layers.length===3,'merge one undo');
+  assert.deepEqual(read().images.image0,beforeTools);
+  const beforeDelete=read();await button('Delete shot');
+  await wait(()=>!read().shots.some(s=>s.id==='shot0'),'delete shot');
+  assert.deepEqual(read().images,beforeDelete.images);
+  await button('Undo');await wait(()=>read().shots.some(s=>s.id==='shot0'),'restore deleted shot');
+  assert.deepEqual(read().shots,beforeDelete.shots);
+  // Leave a filled image saved, and exercise the shared Japanese fill callback.
+  await button('Japanese view');
+  const beforeSheetFill=read().images.image0.layers[2].assetId;
+  await js(\`(() => { const stage=document.querySelector('[data-shot-id="shot0"] .image-stage'); stage.scrollIntoView();
+    const r=stage.getBoundingClientRect(),data=new DataTransfer();data.setData('application/x-storyboard-fill-color','#2299ee');
+    stage.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data,clientX:r.x+r.width*.1,clientY:r.y+r.height*.1})); })()\`);
+  await wait(()=>read().images.image0.layers[2].assetId!==beforeSheetFill,'Japanese fill checkpoint');
+  await button('Grid view');
   fs.writeFileSync(${JSON.stringify(path.join(run,'expected.json'))},JSON.stringify(read()));
  }else{
   assert.deepEqual(read(),JSON.parse(fs.readFileSync(${JSON.stringify(path.join(run,'expected.json'))},'utf8')));
@@ -130,5 +159,5 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
 const final=get(await createProjectStore().loadCheckpoint(root));
 const pixels=await sharp(await final.readAsset(final.project.images.image0.layers[2].assetId)).raw().toBuffer();
 if(!pixels.some((v,i)=>i%4===3&&v>0))throw Error('No painted pixels');
-await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['Chinese text','real drag reorder','SketchPad pointer stroke','LayerPanel opacity drag','Undo twice','Redo twice','checkpoint','certified normal Close','new-process reopen','close while pointer active refused','reopened eraser and exact Undo','Japanese view shares script/order','view switch creates no revision','multiline dialogue Undo/Redo','Japanese pointer drawing and exact Undo','view switch during stroke refused','dialogue shared with grid and fresh reopen']},null,2));
+await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['Chinese text','real drag reorder','SketchPad pointer stroke','LayerPanel opacity drag','Undo twice','Redo twice','checkpoint','certified normal Close','new-process reopen','close while pointer active refused','reopened eraser and exact Undo','Japanese view shares script/order','view switch creates no revision','multiline dialogue Undo/Redo','Japanese pointer drawing and exact Undo','view switch during stroke refused','dialogue shared with grid and fresh reopen','DOM fill drop real Canvas and exact Undo','clear layer exact Undo','merge one image revision and one Undo','delete shot preserves assets and Undo','Japanese fill persisted and reopened editable']},null,2));
 console.log('PASS real editor workflow; evidence:',run);

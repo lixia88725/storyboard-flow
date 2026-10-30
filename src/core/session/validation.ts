@@ -47,6 +47,21 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
         if (shape(value, ['kind', 'shotId', 'edit']) && id(value.shotId) && record(value.edit) &&
             ['insertLayer', 'removeLayer', 'moveLayer', 'setLayer'].includes(value.edit.kind as string)) return { ok: true, value: value as FlowSessionRequest };
         break; // The real drawing Interface validates the full edit at execution.
+      case 'pixelTool': {
+        if (!shape(value, ['kind', 'shotId', 'tool']) || !id(value.shotId)) break;
+        const tool = value.tool;
+        if (shape(tool, ['kind', 'layerId']) && tool.kind === 'clear' && id(tool.layerId))
+          return { ok: true, value: value as FlowSessionRequest };
+        if (shape(tool, ['kind', 'layerIds']) && tool.kind === 'merge' && Array.isArray(tool.layerIds) &&
+            tool.layerIds.length >= 2 && Array.from(tool.layerIds).every(id) && new Set(tool.layerIds).size === tool.layerIds.length)
+          return { ok: true, value: value as FlowSessionRequest };
+        if (shape(tool, ['kind', 'layerId', 'x', 'y', 'color', 'tolerance']) && tool.kind === 'fill' && id(tool.layerId) &&
+            typeof tool.x === 'number' && Number.isFinite(tool.x) && typeof tool.y === 'number' && Number.isFinite(tool.y) &&
+            Number.isInteger(tool.tolerance) && (tool.tolerance as number) >= 0 && (tool.tolerance as number) <= 255 &&
+            Array.isArray(tool.color) && tool.color.length === 4 && Array.from(tool.color).every(c => typeof c === 'number' && Number.isInteger(c) && c >= 0 && c <= 255))
+          return { ok: true, value: value as FlowSessionRequest };
+        break;
+      }
       case 'paint': {
         if (!shape(value, ['kind', 'shotId', 'layerId', 'stroke']) || !id(value.shotId) || !id(value.layerId)) break;
         const stroke = value.stroke;

@@ -4,7 +4,7 @@ import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingS
 import { CSS } from '@dnd-kit/utilities';
 import type { FlowSession, FlowSessionRequest } from '../../../electron/shared/flowWave2';
 import { createFlowSession } from '../../core/session';
-import { createFlowPixels } from '../drawing';
+import { createPixelTools, createFlowPixels } from '../drawing';
 import { MediaSourceContext, type MediaSource } from '../mediaSource';
 import { JapaneseStoryboardView } from '../JapaneseStoryboardView';
 import { shotDialogueText } from '../editableDialogueText';
@@ -35,6 +35,7 @@ export function FlowEditor() {
       const owner = required(createFlowSession({ project, sessionId, incarnation: crypto.randomUUID(),
         maxHistoryEntries: 60, maxPendingRequests: 32, assets: api,
         pixels: createFlowPixels({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxPoints: 100_000 }),
+        tools: createPixelTools({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxLayers: 64 }),
         checkpoint: p => api.checkpoint(p), clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number) } }));
       off = api.onClose(id => { void (async () => {
         try {
@@ -110,6 +111,24 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
     return settledStrokePreview(() => flow.snapshot().project, shot.id, layerId,
       result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId, source);
   };
+  const fill = async (shot: Shot, layerId: string, point: { x: number; y: number }, color: string) => {
+    try {
+      const hex = color.replace('#', '');
+      const full = hex.length === 3 ? [...hex].map(c => c + c).join('') : hex;
+      if (!/^[a-fA-F0-9]{6}$/.test(full)) throw new Error('Invalid fill color');
+      const rgba = [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16));
+      const result = await request({ kind: 'pixelTool', shotId: shot.id, tool: { kind: 'fill', layerId, ...point, color: [rgba[0], rgba[1], rgba[2], 255], tolerance: 0 } });
+      const image = result.snapshot.project.images[result.snapshot.project.shots.find(s => s.id === shot.id)!.imageId];
+      return settledStrokePreview(() => flow.snapshot().project, shot.id, layerId, image.layers.find(l => l.id === layerId)!.assetId, source);
+    } catch (error) { setIssue(String(error)); return undefined; }
+  };
+  const merge = (shotId: string, layerId: string, selectedIds: string[]) => {
+    const project = flow.snapshot().project, shot = project.shots.find(s => s.id === shotId);
+    if (!shot) return;
+    const image = project.images[shot.imageId], index = image.layers.findIndex(l => l.id === layerId);
+    const ids = selectedIds.length >= 2 ? selectedIds : image.layers.slice(Math.max(0, index - 1), index + 1).map(l => l.id);
+    act({ kind: 'pixelTool', shotId, tool: { kind: 'merge', layerIds: ids } });
+  };
   const switchView = () => {
     if (gestures.current || flow.snapshot().pending || captureMountedCanvasCheckpoints().hasUnsettledGesture) {
       setIssue('Finish the current edit before switching views'); return;
@@ -124,9 +143,15 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
         <button disabled={!active} aria-pressed={tool === 'brush'} onClick={() => setTool('brush')}>Brush</button>
         <button disabled={!active} aria-pressed={tool === 'eraser'} onClick={() => setTool('eraser')}>Eraser</button>
         <input aria-label="Brush color" type="color" value={color} onChange={e => setColor(e.target.value)} />
+        <button draggable={active} disabled={!active} title="Drag this color onto a layer to fill" onDragStart={e => { e.dataTransfer.setData('application/x-storyboard-fill-color', color); e.dataTransfer.effectAllowed = 'copy'; }}>Fill color</button>
         <input aria-label="Brush size" type="range" min="1" max="100" value={size} onChange={e => setSize(Number(e.target.value))} />
         <button disabled={!active} onClick={() => act({ kind: 'undo' })}>Undo</button><button disabled={!active} onClick={() => act({ kind: 'redo' })}>Redo</button>
         <button disabled={!active} onClick={() => act({ kind: 'checkpoint' })}>Checkpoint</button>
+        <button disabled={!active || !selected || !snapshot.project.shots.some(s => s.id === selected)} onClick={() => act({ kind: 'board', command: { kind: 'removeShots', shotIds: [selected!] } })}>Delete shot</button>
+        <button disabled={!active || !selected || !snapshot.project.shots.some(s => s.id === selected)} onClick={() => {
+          const shot = shots.find(s => s.id === selected);
+          if (shot?.activeLayerId) act({ kind: 'pixelTool', shotId: shot.id, tool: { kind: 'clear', layerId: shot.activeLayerId } });
+        }}>Clear layer</button>
       </header>
       <p role="status">{issue || snapshot.lastError?.message || (snapshot.checkpoint?.revision === snapshot.project.revision ? 'Editable project saved' : 'Saving editable project…')}</p>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active: from, over }) => {
@@ -138,12 +163,12 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
           eraserSize={size} eraserOpacity={1} eraserSoftness={0} folderPath="flow" isZoomScrubbing={false}
           bitmapRevisionByShotId={Object.fromEntries(shots.map(s => [s.id, snapshot.project.revision]))}
           onActionText={script} onDialogueText={dialogue} onFocusShot={setSelected} onSelectShot={setSelected}
-          onPickColor={setColor} onFill={unavailable} onSelectionTransform={unavailable} onSketchStroke={stroke} />
+          onPickColor={setColor} onFill={fill} onSelectionTransform={unavailable} onSketchStroke={stroke} />
       </fieldset> :
       <div className="flow-editor-grid">{shots.slice(0, snapshot.project.shots.length).map(shot => <Card key={shot.id} shot={shot} selected={selected === shot.id} disabled={!active}>
         <SketchPad shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0}
           eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false} onFocusShot={() => setSelected(shot.id)}
-          onStroke={(layerId, input) => stroke(shot, layerId, input)} onSelectionTransform={unavailable} onFill={unavailable} onPickColor={setColor} />
+          onStroke={(layerId, input) => stroke(shot, layerId, input)} onSelectionTransform={unavailable} onFill={(layerId, point, color) => fill(shot, layerId, point, color)} onPickColor={setColor} />
         <textarea aria-label={`Script ${shot.id}`} value={shot.scriptText} disabled={!active} onChange={e => script(shot.id, e.target.value)} />
         <textarea aria-label={`Dialogue ${shot.id}`} value={shotDialogueText(view, shot.id)} disabled={!active} onChange={e => dialogue(shot.id, e.target.value)} />
         <button disabled={!active} onClick={() => { setSelected(shot.id); setPanel(panel === shot.id ? undefined : shot.id); }}>Layers</button>
@@ -155,7 +180,10 @@ function Editor({ flow, issue, setIssue, gestures }: { flow: FlowSession; issue:
               gestures.current = 0; setOpacityPreview(current => { const next = { ...current }; delete next[key]; return next; });
             });
           }}
-          structuralEditsEnabled={false} onToggle={() => setPanel(undefined)} onAddLayer={rejectTool} onRemoveLayer={rejectTool} onMergeLayers={rejectTool} onMergeVisibleLayers={rejectTool} onClearLayer={rejectTool}
+          structuralEditsEnabled={false} mergeEditsEnabled={active} onToggle={() => setPanel(undefined)} onAddLayer={rejectTool} onRemoveLayer={rejectTool} onMergeLayers={merge} onMergeVisibleLayers={shotId => {
+            const shot = snapshot.project.shots.find(s => s.id === shotId)!;
+            act({ kind: 'pixelTool', shotId, tool: { kind: 'merge', layerIds: snapshot.project.images[shot.imageId].layers.filter(l => l.visible).map(l => l.id) } });
+          }} onClearLayer={(shotId, layerId) => act({ kind: 'pixelTool', shotId, tool: { kind: 'clear', layerId } })}
           onSelectLayer={(id, layerId) => setLayers(current => ({ ...current, [id]: layerId }))}
           onUpdateLayer={(shotId, layerId, patch) => act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch } })}
           onMoveLayer={rejectTool} onMoveLayerGroup={rejectTool} onSelectedLayerIdsChange={() => {}}

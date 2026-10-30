@@ -7,7 +7,7 @@ export function projectShots(project: ProjectV1, selectedLayer: Record<string, s
   return [...project.shots, ...project.parkedShots].map((shot, order) => {
     const image = project.images[shot.imageId];
     return { id: shot.id, fileName: shot.name, scriptText: shot.scriptText, order,
-      imagePath: image.layers[0]?.assetId ?? '', activeLayerId: selectedLayer[shot.id] ?? image.layers.at(-1)?.id,
+      imagePath: image.layers[0]?.assetId ?? '', activeLayerId: image.layers.some(l => l.id === selectedLayer[shot.id]) ? selectedLayer[shot.id] : image.layers.at(-1)?.id,
       flow: { version: 1, status: 'owned', canvasWidth: image.width, canvasHeight: image.height },
       layers: image.layers.map((layer, order) => ({ ...layer, order, bitmapPath: `${shot.id}/${layer.id}/${layer.assetId}` })) };
   });
