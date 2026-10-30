@@ -1,3 +1,15 @@
+## Parallel batch 3 dispatched — 2026-10-30
+
+User authorized three new Codex worktree sessions: Board and Drawing on GPT-6.1-Terra,
+TIFF Formats on GPT-6.1-Sol, all high reasoning. Shared task baseline 9f45067; all observed
+active. Read docs/refactor/batch3/PLAN.md and SESSIONS.md for scope, IDs and paths.
+Coordinator remains on main. This supersedes earlier no-new-agents guidance for this
+batch only. No implementation delivery accepted yet; no push or production routing.
+First slices: Board commands, fill/clear/merge pixel preparation, supported TIFF codec
+roundtrip. Main owns UI/Session adoption across lanes and Save/Pending lifecycle integration.
+Heavy tests are serialized by the existing shared lock; each lane must report exact SHA,
+focused/full/build and real synthetic evidence. Prior G2 verification below remains valid.
+
 ## G2 Japanese view and dialogue — 2026-10-30
 
 The isolated new-format editor now reuses JapaneseStoryboardView and shares one Session
