@@ -1,5 +1,15 @@
 # 第二轮主管验收基线
 
+Latest 2026-10-31 update: isolated A/B switching is implemented and self-tested on clean
+`dfccac1`: full 385 files / 2911 tests, complete build, and 62 real Electron cases
+(7 switching, 13 import, 42 existing editor). See ../reviews/2026-10-31/G3-PROJECT-SWITCHING.md.
+Old session tokens cannot write/read a newly selected or reopened same-ID project;
+Close waits for switching and Save. Native picker interaction is scripted. Independent
+acceptance, ordered filenames, Trash deletion, external refresh, remaining tools,
+production routing and platform/scale gates remain open. Earlier live-switching NOT_RUN
+statements below are historical evidence.
+
+
 Latest 2026-10-31 status: isolated Pending now defers file effects to explicit Save
 (user approved); TIFF-only folder bootstrap -> editing -> Save/Undo/Save -> relocated
 reopen is self-tested. Full suite 384 files / 2906 tests, complete build and 13 import

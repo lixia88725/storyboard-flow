@@ -1,3 +1,24 @@
+## Multi-project switching in the isolated editor — 2026-10-31
+
+Candidate dfccac1d6f47a20d2e8cfa8a9534d75990912821 adds Open project with explicit
+session-bound IPC. Switching waits for real TIFF Save completion and frozen durable
+checkpoint, prepares the new project, then certifies/seals the old owner. Cancel,
+same-root selection and failed preparation retain the old Session/history. Copied
+same-ID projects and A/B/A reopen cannot reuse old tokens. Close waits for switching;
+retired image loads cannot alter the current editor. Reopening restores content with
+a fresh Session, not the prior Undo stack. Switching does not implicitly export TIFFs.
+
+Clean unchanged candidate passes complete build, full suite 385 files / 2911 tests,
+7 switching + 13 import + 42 existing-editor real Electron cases. Test receipts and
+limits: docs/refactor/reviews/2026-10-31/G3-PROJECT-SWITCHING.md. Architecture and failure
+behavior: docs/refactor/PROJECT-SWITCHING.md. Native chooser results are scripted;
+Windows, installers and large-raster scale remain unverified. Implemented/self-tested;
+independent acceptance and complete G3 remain open.
+
+Next: ordered Save filenames, exported-shot Trash deletion, external TIFF refresh,
+remaining tools and production-shell integration. Original App/launcher and the three
+prior worktrees remain unchanged. No new worktrees, personal media, dependencies or push.
+
 ## TIFF folder bootstrap and real editor loop — 2026-10-31
 
 Candidate 20259602f1db4a4d117d3334f36a198b78b9f8ad adds Main-owned TIFF folder bootstrap
