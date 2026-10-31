@@ -20,6 +20,7 @@ export function FlowInspection({shots, initialId, revision, canNavigate, renderC
   const [error, setError] = useState('');
   const index = Math.max(0, shots.findIndex(s => s.id === id));
   const shot = shots[index];
+  const nextId = shots[index + 1]?.id;
   const token = `${shot?.id}/${revision}`;
   const presentation = useContext(CanvasPresentationContext)[shot?.id ?? ''];
   const size = shot ? canvasSizeForShot(shot) : {width: 1, height: 1};
@@ -34,11 +35,11 @@ export function FlowInspection({shots, initialId, revision, canNavigate, renderC
   useEffect(() => {
     if (!playing || ready !== token || !shot) return;
     const timer = window.setTimeout(() => {
-      if (index + 1 < shots.length) setId(shots[index + 1].id);
+      if (nextId) setId(nextId);
       else setPlaying(false);
     }, 1000 / fps);
     return () => window.clearTimeout(timer);
-  }, [playing, ready, token, index, shots, fps]);
+  }, [playing, ready, token, nextId, fps]);
   const change = (action: () => void) => {if (canNavigate()) {setError(''); action();} else setError('Finish the current edit first');};
   const close = () => change(() => {setPlaying(false); onClose(shot?.id);});
   const step = (offset: number) => change(() => {

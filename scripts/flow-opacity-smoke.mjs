@@ -105,6 +105,7 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   // Re-select after closing resets the panel's transient selection.
   await mouse('mouseDown',top.x+top.width*.28,top.y+top.height*.5);await mouse('mouseUp',top.x+top.width*.28,top.y+top.height*.5);
   await mouse('mouseDown',bottom.x+bottom.width*.28,bottom.y+bottom.height*.5,['shift']);await mouse('mouseUp',bottom.x+bottom.width*.28,bottom.y+bottom.height*.5,['shift']);
+  await wait(()=>js('document.querySelectorAll(".layer-row.is-selected").length===3'),'reopened group selection');
   await preview();await mouse('mouseUp',top.x+top.width*.08,top.y+top.height*.5);
   await wait(()=>read().revision===beforeOpacity.revision+1,'single group commit');
   const changed=read();assert.equal(changed.images[shot.imageId].layers[0].opacity,1);
