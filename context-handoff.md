@@ -6,7 +6,7 @@ receipts under docs/refactor/reviews/ instead of prepending another history entr
 ## Runtime and verified candidate
 
 The new-format editor remains isolated; default App and 启动测试.command are unchanged.
-Implementation `de6c23bcd5b985645148a9c55291eb172276de6d` supports grid/Japanese editing,
+Implementation `de85bad5ae0cfc21217da4af655e7a2a523b0f80` supports grid/Japanese editing,
 Session history/checkpoints, bounded pixel/layer tools with grid-panel add/delete/group ordering, opacity, blur and lasso selection transforms, logical Pending, explicit TIFF
 Save/import-time original backup, TIFF-folder bootstrap, session-bound A/B switching and
 ordered TIFF filenames with undoable scene/artist/version settings, and owned TIFF
@@ -16,11 +16,11 @@ checkpoint metadata; explicit Save alone synchronizes names through a resumable 
 Switching waits for Save/checkpoint; cancellation or failed preparation keeps the prior
 Session/history. Reopening restores content, not a previous session's Undo stack.
 
-Final candidate `4af25f4814fc0497e5ece0d91a8361df4f88d4da` differs only by a Close-test fixture update.
-It passes 391 files / 2996 tests and complete build. The unchanged runtime passes
-176 real Electron scenarios plus 17 real Canvas checks. Scoped independent code review passed; full application
+Final candidate `de85bad5ae0cfc21217da4af655e7a2a523b0f80` passes 392 files / 3003 tests
+and complete build. It passes 214 connected Electron scenarios plus a supplemental
+Pending presentation/restore check. Scoped independent code review passed; full application
 independent acceptance and full G3 remain open. Exact scope/logs:
-[latest review](docs/refactor/reviews/2026-10-31/G3-SELECTION-TOOLS.md).
+[latest review](docs/refactor/reviews/2026-10-31/G3-SCENE-PRESENTATION.md).
 Nondurable in-process Trash ACKs block Close/switch. A process loss after OS success
 before durable confirmation remains an unknown outcome; no recovery UI is provided yet.
 Native picker results are scripted. Windows, installers, representative large rasters,
@@ -47,7 +47,7 @@ single layers/groups through one Session history action. Newly created layers ar
 only after admission; Undo/Close wait for creation. New-shot white backgrounds are retained.
 Group opacity now previews without checkpoint writes and commits all selected unlocked
 layers as one undoable action. Cancellation clears the preview. Single/group gestures
-cannot overlap pending Session/output work; remaining tools/presentation are separate gates.
+cannot overlap pending Session/output work.
 Whole-layer Gaussian blur (1–50 px) now applies to the selected visible unlocked layer
 as one undoable pixel replacement. Lasso-limited blur and move/scale/rotate are now
 connected in grid and Japanese views. Temporary polygons survive transforms without
@@ -55,6 +55,13 @@ becoming rectangles; stale async completions cannot clear newer gestures. Each t
 validates its original asset and enters one Session history action. Drag previews no longer
 encode PNG on each pointer move. Save alone writes TIFF output. Successful edits clear prior no-effect refusals,
 while unresolved operation effects and checkpoint failures remain visible.
+Independent scene matte/dialogue settings now drive grid/Japanese canvases and Pending
+previews. Expanded matte adds nonpaintable display padding without changing editable image
+pixels/dimensions; turning it off never crops originals. Save derives padded content and
+locked matte/dialogue TIFF layers. Verified generated layers normalize back to original
+coordinates on import/Refresh; externally changed overlays/padding remain intact and are
+preserved as an unverified Pending alternative during Refresh. Settings participate in
+Session history/checkpoints. Playback/onion skin remain the next bounded interaction gate.
 Documentation cleanup on codex/docs-cleanup is complete, reviewed and integrated; its
 clean worktree/branch are retained. Root history is archived below. No old runtime/script deletion.
 

@@ -17,8 +17,8 @@ and evidence belong in [context-handoff.md](context-handoff.md).
 ## Remaining interaction and rollout gates
 
 - Grid layer add/delete/single/group ordering, group opacity, whole-layer/selection blur
-  and lasso move/scale/rotate are connected. Complete mask/dialogue-overlay presentation,
-  playback/onion skin for inspection and full existing-shell parity.
+  and lasso move/scale/rotate plus independent matte/dialogue-overlay presentation are
+  connected. Complete playback/onion skin for inspection and full existing-shell parity.
 - Verify OS IME, native picker/dialogue drag, protected adjacent operations and
   representative marquee/zoom/pan/layer gestures in the real application.
 - Production entry integration and independent acceptance follow bounded G2/G3

@@ -495,3 +495,20 @@ records actual RGBA baselines independently of PNG encoding and project text. On
 Undo action changes desired images/Pending membership, while working TIFFs are written
 only by explicit Save. This supersedes the older pre-first-Save backup timing for the
 isolated new-format route only; production routing and personal files remain unchanged.
+
+
+## New-format presentation does not resize editable images — 2026-10-31
+
+The user chose independent matte settings with nonpaintable black padding. In the isolated
+new-format editor, expanded matte adds 75 display pixels above/below the original canvas;
+embedded matte covers its edges. Switching/off/Undo changes metadata, never resizes or
+crops editable PNG assets. Dialogue overlays derive from existing ordered dialogue text.
+The scene default applies to active shots; Pending retains its current setting and adopts
+the active scene setting when restored. New shots inherit the scene default.
+
+Explicit Save derives padded TIFF content plus separate locked matte/dialogue layers.
+Portable output metadata identifies generated layers and their pixel hashes. Import and
+Refresh remove only verifiably unchanged generated presentation; externally changed layers
+or padding remain intact, with unverified Refresh versions preserved in Pending. Original
+TIFF backups remain unchanged. This replaces the old expand-all-layers/crop-on-disable
+policy only for the isolated route. Default production routing is unchanged.
