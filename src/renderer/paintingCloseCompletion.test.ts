@@ -1,3 +1,4 @@
+import {selectionMatrix,transformSelectionPoints} from './selectionTransform';
 import {test,expect,vi} from 'vitest';
 import ts from 'typescript';
 import {readFileSync} from 'node:fs';
@@ -44,8 +45,11 @@ test('selection callback stops all old selection publication after completed-wit
  expect(initializer).toBeDefined();
  const code=ts.transpileModule(`const callback=${initializer!.getText(source)};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
  const setLayerDataUrls=vi.fn(),updateBitmapSelectionState=vi.fn();
- const names=['bitmapSelectionRef','activeLayer','preparedTransformRef','prepareTransformPreview','drawPreparedTransformPreview','onSelectionTransform','setLayerDataUrls','updateBitmapSelectionState'];
- const callback=new Function(...names,`${code};return callback;`)({current:{bounds:{x:0,y:0,width:1,height:1},points:[]}}, {id:'l'}, {current:{}},async()=>{},()=> 'desired',async()=>undefined,setLayerDataUrls,updateBitmapSelectionState);
- await callback({type:'move',currentBounds:{x:1,y:1,width:1,height:1}});
+ const selection={bounds:{x:0,y:0,width:1,height:1},points:[{x:0,y:0},{x:1,y:0},{x:0,y:1}]};
+ const transform={type:'move',currentBounds:{x:1,y:1,width:1,height:1}},onSelectionTransform=vi.fn(async()=>undefined);
+ const names=['bitmapSelectionRef','activeLayer','preparedTransformRef','prepareTransformPreview','drawPreparedTransformPreview','onSelectionTransform','setLayerDataUrls','updateBitmapSelectionState','transformDraftRef','transformPrepareRunRef','selectionMatrix','transformSelectionPoints'];
+ const callback=new Function(...names,`${code};return callback;`)({current:selection}, {id:'l'}, {current:{layerId:'l',sourcePath:'source',selection}},async()=>{},()=> 'desired',onSelectionTransform,setLayerDataUrls,updateBitmapSelectionState,{current:transform},{current:1},selectionMatrix,transformSelectionPoints);
+ await callback(transform);
+ expect(onSelectionTransform).toHaveBeenCalledOnce();
  expect(setLayerDataUrls).not.toHaveBeenCalled();expect(updateBitmapSelectionState).not.toHaveBeenCalled();
 });
