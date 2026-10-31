@@ -70,3 +70,18 @@ or Git metadata was used to infer obsolescence.
 
 Raw lane validation: `/tmp/flow-docs-cleanup-validation.json`. Review the scoped commit
 before integration; a historical status or dispatch banner grants no new execution authority.
+
+## Coordinator integration and root review
+
+Lane commit `06f340f` was reviewed and integrated as `038f148`. Coordinator commit
+`ef42d29` archives exact former AGENTS/handoff/todo under
+`../archive/coordinator/2026-10-31/` and keeps root current guidance concise (76 / 38 /
+40 lines at that commit). README links the documentation index; CLAUDE remains a
+symlink to AGENTS. The launcher is byte-identical to baseline.
+
+Independent read-only review of `ef42d29` found no actionable issues: all three archives
+match `e08f0e1` byte-for-byte, all 23 root relative links resolve in the commit tree, and
+all active safeguards remain except approved current-scope/Pending clarifications.
+Coordinator integration checked 97 changed non-archive relative links with zero missing.
+This accepts documentation cleanup only. Runtime naming changes are a separate candidate.
+No runtime, old worktree, evidence directory or installed dependency was deleted.

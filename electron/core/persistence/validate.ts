@@ -176,13 +176,18 @@ export const validateProject = (value: unknown): ProjectV1 => {
   if (Object.hasOwn(project, 'version') && typeof project.version === 'number' && project.version !== 1) {
     throw new ProjectStoreError('unsupported-version', `Unsupported project version ${project.version}`);
   }
-  exactObject(project, ['schema', 'version', 'id', 'revision', 'name', 'shots', 'parkedShots', 'dialogues', 'images'], 'project');
+  exactObject(project, ['schema', 'version', 'id', 'revision', 'name', 'shots', 'parkedShots', 'dialogues', 'images', ...(Object.hasOwn(project, 'naming') ? ['naming'] : [])], 'project');
   if (project.schema !== PROJECT_SCHEMA) invalid('project.schema must be "storyboard-flow.project"');
   if (project.version !== 1) invalid('project.version must be the number 1');
 
   const id = identifier(project.id, 'project.id');
   const projectRevision = revision(project.revision, 'project.revision');
   const name = text(project.name, 'project.name');
+  let naming: ProjectV1['naming'];
+  if (Object.hasOwn(project, 'naming')) {
+    const fields = exactObject(project.naming, ['sceneCode', 'artistName', 'version'], 'project.naming');
+    naming = { sceneCode: text(fields.sceneCode, 'sceneCode'), artistName: text(fields.artistName, 'artistName'), version: text(fields.version, 'version') };
+  }
 
   const shots = array(project.shots, 'project.shots', LIMITS.shots, (entry, index) => validateShot(entry, `project.shots[${index}]`));
   const parkedShots = array(project.parkedShots, 'project.parkedShots', LIMITS.shots, (entry, index) =>
@@ -220,7 +225,7 @@ export const validateProject = (value: unknown): ProjectV1 => {
     if (!shotIds.has(dialogue.shotId)) invalid(`dialogue "${dialogue.id}" references unknown shot "${dialogue.shotId}"`);
   }
 
-  return { schema: PROJECT_SCHEMA, version: 1, id, revision: projectRevision, name, shots, parkedShots, dialogues, images };
+  return { schema: PROJECT_SCHEMA, version: 1, id, revision: projectRevision, name, ...(naming ? { naming } : {}), shots, parkedShots, dialogues, images };
 };
 
 /** Copy a caller-owned project so later mutation cannot change what a save

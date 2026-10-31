@@ -5,6 +5,15 @@ Module = implementation behind an Interface; the Interface includes ordering, fa
 performance semantics, not just TypeScript declarations. Test through the same Interface used
 by callers. Keep private seams private; do not add an abstraction for an imaginary future implementation.
 
+## Current naming extension — 2026-10-31
+
+The user retained existing scene/artist/version naming settings. ProjectV1 may include
+`naming: { sceneCode, artistName, version }` (exact string fields, unknown fields rejected).
+`setProjectNaming` changes project name/settings as one undoable Board edit. New TIFF
+imports initialize naming; absent naming remains absent in low-level checkpoints. See
+[SAVE-NAMING.md](SAVE-NAMING.md) for explicit-Save output behavior and failure semantics.
+The wave-one baseline below otherwise remains unchanged.
+
 ## Data rules
 
 - ProjectV1 is a new candidate, unrelated to the legacy Project V1. No old project loader,

@@ -61,7 +61,7 @@ export async function importFlowTiffFolder(root: string, codec: TiffCodec): Prom
   const stageIdentity=await fs.lstat(stage,{bigint:true});
   let published=false;
   try{
-    const project:ProjectV1={schema:'storyboard-flow.project',version:1,id:randomUUID(),name:path.basename(root),revision:0,shots:[],parkedShots:[],dialogues:[],images:{}};
+    const project:ProjectV1={schema:'storyboard-flow.project',version:1,id:randomUUID(),name:path.basename(root),naming:{sceneCode:'scene',artistName:'artist',version:'v001'},revision:0,shots:[],parkedShots:[],dialogues:[],images:{}};
     const depot=get(await openFlowAssetDepot({root:stage,sessionId:randomUUID(),maxPixels:16*1024*1024,maxPngBytes:32*1024*1024}));
     let preparedBytes=0;
     for(const source of sources){

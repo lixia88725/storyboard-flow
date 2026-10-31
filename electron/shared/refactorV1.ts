@@ -30,12 +30,14 @@ export type ShotV1 = {
   scriptText: string;
 };
 export type DialogueV1 = { id: string; shotId: string; text: string };
+export type ProjectNamingV1 = { sceneCode: string; artistName: string; version: string };
 export type ProjectV1 = {
   schema: 'storyboard-flow.project';
   version: 1;
   id: string;
   revision: number;
   name: string;
+  naming?: ProjectNamingV1;
   shots: ShotV1[];
   parkedShots: ShotV1[];
   dialogues: DialogueV1[];
@@ -60,6 +62,7 @@ export type StoryboardEditV1 =
   | { kind: 'insertShot'; shot: ShotV1; image: ImageDocumentV1; index: number }
   | { kind: 'moveShots'; shotIds: string[]; destination: 'active' | 'pending'; beforeId?: string }
   | { kind: 'removeShots'; shotIds: string[] }
+  | { kind: 'setProjectNaming'; name: string; naming: ProjectNamingV1 }
   | { kind: 'setScriptText'; shotId: string; text: string }
   | { kind: 'setDialogues'; shotId: string; dialogues: DialogueV1[] }
   /** Move selected dialogues in their existing order to an active target, before an unselected target dialogue or at its end. */

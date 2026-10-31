@@ -53,9 +53,17 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
  choice=bad;await button('Open project');await wait(()=>js('document.querySelector("[role=status]").textContent.includes("Error")'),'invalid folder refused');
  assert.equal((await js('window.flowEditor.open()')).sessionId,a.sessionId);
  await button('Undo');await wait(()=>read(root).shots[0].scriptText==='源脚本','original history remains');await button('Redo');await wait(()=>read(root).shots[0].scriptText==='A edited','Redo after failed open');cases.push('invalid B preserves A editing and history');
+ await button('Naming');
+ for(const [label,value] of [['Project name','电影'],['Scene code','S01'],['Artist name','甲'],['Output version','2']]){
+  await js('(()=>{const e=Array.from(document.querySelectorAll("input")).find(e=>e.getAttribute("aria-label")==='+JSON.stringify(label)+');e.focus();e.select()})()');await win.webContents.insertText(value);
+ }
+ await button('Apply naming');await wait(()=>read(root).naming.version==='2','naming checkpoint');
+ assert.equal(fs.existsSync(root+'/01.tif'),true);assert.equal(fs.existsSync(root+'/电影_S01_stb_甲_v002_0010.tif'),false);
+ await button('Undo');await wait(()=>read(root).naming.version==='v001','Undo naming');await button('Redo');await wait(()=>read(root).naming.version==='2','Redo naming');cases.push('naming fields checkpoint together with Undo/Redo and no early filesystem rename');
  choice=other;delaySave=true;await button('Save TIFF');await wait(()=>saveEntered,'Save admitted');const before=choices;
  await button('Open project');await delay(200);assert.equal(choices,before);assert.equal((await js('window.flowEditor.open()')).sessionId,a.sessionId);
  saveRelease();delaySave=false;await wait(async()=>{bToken=(await js('window.flowEditor.open()')).sessionId;return bToken!==a.sessionId},'B owner');await ready();cases.push('switch waits for actual Save completion');
+ assert.equal(fs.existsSync(root+'/01.tif'),false);assert.equal(fs.existsSync(root+'/电影_S01_stb_甲_v002_0010.tif'),true);assert.equal(fs.existsSync(root+'/Pending/03.tif'),true);cases.push('explicit Save applies configured ordered names while retaining Pending names');
  const b=await js('window.flowEditor.open()');assert.equal(b.project.id,a.project.id);
  for(const method of ['read','checkpoint','saveTiff','put']){
   const arg=method==='read'?a.project.images[a.project.shots[0].imageId].layers[0].assetId:method==='put'?{operationId:'late',png:new Uint8Array(),width:4,height:4}:a.project;

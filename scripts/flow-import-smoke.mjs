@@ -36,6 +36,7 @@ dialog.showErrorBox=(title,message)=>{console.error(title,message);app.exit(1)};
 dialog.showOpenDialog=async()=>({canceled:${JSON.stringify(phase==='cancel')},filePaths:[${JSON.stringify(root)}]});
 process.argv=[process.argv[0],${JSON.stringify(path.join(repo,'dist-electron/main/flowEditorEntry.js'))},'--choose',${JSON.stringify(userData)}];
 const delay=ms=>new Promise(r=>setTimeout(r,ms));let win;const phase=${JSON.stringify(phase)};
+const outputFile=()=>{const p=read();const ledger=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/tiff-output.json'))},'utf8'));return ${JSON.stringify(root)}+'/'+ledger.entries.find(e=>e.shotId===p.shots[0].id).name};
 const read=()=>JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/checkpoints/project.json'))},'utf8'));
 async function wait(fn,label){for(let i=0;i<600;i++){try{const v=await fn();if(v)return v}catch{}await delay(50)}throw Error('Timed out: '+label)}
 const js=code=>win.webContents.executeJavaScript(code);
@@ -64,9 +65,9 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
   await mouse('mouseDown',box.x+box.width*.4,box.y+box.height*.5);await mouse('mouseMove',box.x+box.width*.6,box.y+box.height*.5);await mouse('mouseUp',box.x+box.width*.6,box.y+box.height*.5);
   await wait(()=>read().images[shot.imageId].layers[1].assetId!==initial,'paint');
   const painted=read().images[shot.imageId].layers[1].assetId;
-  await save();fs.copyFileSync(${JSON.stringify(path.join(root,'01.tif'))},${JSON.stringify(path.join(run,'painted.tif'))});
+  await save();fs.copyFileSync(outputFile(),${JSON.stringify(path.join(run,'painted.tif'))});
   await button('Undo');await wait(()=>read().images[shot.imageId].layers[1].assetId===initial,'Undo paint');
-  await save();fs.copyFileSync(${JSON.stringify(path.join(root,'01.tif'))},${JSON.stringify(path.join(run,'undone.tif'))});
+  await save();fs.copyFileSync(outputFile(),${JSON.stringify(path.join(run,'undone.tif'))});
   await button('Redo');await wait(()=>read().images[shot.imageId].layers[1].assetId===painted,'Redo paint');await save();
   fs.writeFileSync(${JSON.stringify(path.join(run,'expected.json'))},JSON.stringify(read()));
  }else{
@@ -92,7 +93,7 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
 }
 const loaded=get(await createProjectStore().loadCheckpoint(root));const shot=loaded.project.shots[0];
 const decode=async name=>get(await codec.decode(await readFile(name)));
-const painted=await decode(path.join(run,'painted.tif')),undone=await decode(path.join(run,'undone.tif')),final=await decode(path.join(root,'01.tif'));
+const painted=await decode(path.join(run,'painted.tif')),undone=await decode(path.join(run,'undone.tif')),final=await decode(path.join(root,JSON.parse(await readFile(path.join(root,'.storyboard-flow/tiff-output.json'),'utf8')).entries.find(e=>e.shotId===shot.id).name));
 const raw=async image=>sharp(image.image.layers[1].png).ensureAlpha().raw().toBuffer();
 const firstPixels=await raw(painted),undoPixels=await raw(undone),finalPixels=await raw(final);
 if(!firstPixels.some((v,i)=>i%4===3&&v>0)||undoPixels.some((v,i)=>i%4===3&&v!==0)||!firstPixels.equals(finalPixels))throw Error('Imported TIFF Save/Undo pixel mismatch');

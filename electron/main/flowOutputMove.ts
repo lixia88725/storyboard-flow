@@ -12,7 +12,16 @@ export const outputPath = (root: string, name: string, location: 'active' | 'par
  * never replaces a destination. Recovery only releases the original source name
  * when both names still identify that inode and exact bytes. No guessed rollback. */
 export async function settleOutputMove(root: string, name: string, move: OutputMove, bind: () => Promise<void>) {
-  const source = outputPath(root, name, move.from), target = outputPath(root, name, move.to);
+  if (move.to === 'parked') {
+    await bind();
+    try { await fs.mkdir(path.join(root, 'Pending')); await syncDirectory(root); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  }
+  return settleOutputFileMove(outputPath(root, name, move.from), outputPath(root, name, move.to), move, bind);
+}
+
+/** Internal rename seam: caller supplies already validated project-local paths. */
+export async function settleOutputFileMove(source: string, target: string, move: Pick<OutputMove, 'digest' | 'dev' | 'ino'>, bind: () => Promise<void>) {
   const parent = async (file: string) => {
     await bind();
     const directory = path.dirname(file);
@@ -33,10 +42,6 @@ export async function settleOutputMove(root: string, name: string, move: OutputM
     } finally { await handle.close(); }
   };
   await bind();
-  if (move.to === 'parked') {
-    try { await fs.mkdir(path.dirname(target)); await syncDirectory(root); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-  }
   let before = await inspect(source), after = await inspect(target);
   if (!before && !after) throw Error('Both output move paths are missing');
   if (!after) {

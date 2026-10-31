@@ -1,8 +1,7 @@
 # Checkpoint format — `.storyboard-flow/checkpoints` (wave 1 candidate)
 
-Status: **experimental**. This layout is not activated anywhere in the application. The current
-Save/recovery path, TIFF writing and legacy project folders are untouched; nothing reads this
-format in production. `electron/core/persistence/index.ts` exports the only public entry point,
+Status: **experimental**. The isolated new-format editor uses this layout; the default
+production App still uses its existing Save/recovery path. `electron/core/persistence/index.ts` exports the only public entry point,
 `createProjectStore(): ProjectStoreV1`. The separate wave-two `depot.ts` entry point admits
 immutable PNGs without publishing a project; its contract is described in §12 below.
 
@@ -28,6 +27,13 @@ immutable PNGs without publishing a project; its contract is described in §12 b
   pruning and no repair in wave 1**: an asset no longer referenced by any shot stays on disk, and a
   record left by an interrupted save stays on disk and keeps its meaning.
 * Leftover `*.tmp` files (see §4) are never deleted, reused or interpreted by any later run.
+
+## Naming metadata extension — 2026-10-31
+
+ProjectV1 optionally includes exact string fields `naming.sceneCode`, `naming.artistName`
+and `naming.version`. Checkpoint validates and preserves them without defaulting or
+normalizing text. Missing naming remains absent; unknown naming fields are rejected.
+This store does not rename TIFFs. The explicit output layer derives ordered filenames.
 
 ## 2. Encoding
 

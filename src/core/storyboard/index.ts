@@ -43,10 +43,11 @@ const validImage = (image: unknown): image is ImageDocumentV1 => {
   });
 };
 const validProject = (project: unknown): project is ProjectV1 => {
-  if (!shape(project, ['schema', 'version', 'id', 'revision', 'name', 'shots', 'parkedShots', 'dialogues', 'images']) ||
+  if (!shape(project, ['schema', 'version', 'id', 'revision', 'name', 'shots', 'parkedShots', 'dialogues', 'images'], ['naming']) ||
       project.schema !== 'storyboard-flow.project' || project.version !== 1 || !id(project.id) ||
       !revision(project.revision) || !text(project.name) || !Array.isArray(project.shots) ||
       !Array.isArray(project.parkedShots) || !Array.isArray(project.dialogues) || !record(project.images)) return false;
+  if (own(project, 'naming') && (!shape(project.naming, ['sceneCode', 'artistName', 'version']) || !Object.values(project.naming).every(text))) return false;
   const shotIds = new Set<string>();
   const imageIds = new Set<string>();
   for (const shot of [...project.shots, ...project.parkedShots]) {
@@ -159,6 +160,11 @@ export function applyStoryboardEdit(project: ProjectV1, edit: StoryboardEditV1):
       rest.splice(index, 0, ...ordered);
       change.shotIds = [...new Set([...moving.map(d => d.shotId), edit.targetShotId])]; change.text = true;
       return result(project, { ...project, dialogues: rest }, change);
+    }
+    case 'setProjectNaming': {
+      if (!shape(edit, ['kind', 'name', 'naming']) || !text(edit.name) || !shape(edit.naming, ['sceneCode', 'artistName', 'version']) || !Object.values(edit.naming).every(text)) return fail('invalid-input', 'Invalid naming settings');
+      change.text = true;
+      return result(project, { ...project, name: edit.name, naming: { ...edit.naming } }, change);
     }
     case 'setScriptText': {
       if (!shape(edit, ['kind', 'shotId', 'text']) || !id(edit.shotId) || !text(edit.text)) return fail('invalid-input', 'Invalid script edit');

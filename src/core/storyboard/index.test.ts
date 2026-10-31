@@ -193,3 +193,14 @@ describe('storyboard public interface', () => {
     console.info(`storyboard 1000 synthetic shots: reorder+text+2 undo ${elapsed.toFixed(1)} ms; heapUsed=${typeof process !== 'undefined' ? Math.round(process.memoryUsage().heapUsed / 1048576) : 'unavailable'} MiB (process-wide)`);
   });
 });
+
+it('naming settings are one undoable project edit and reject unknown fields',()=>{
+ const ok = <T,>(r: {ok:true;value:T}|{ok:false;error:{message:string}}):T => {if(!r.ok)throw Error(r.error.message);return r.value;};
+ const p=project();const h=history(p,10);
+ const naming={sceneCode:'S01',artistName:'绘师',version:'2'};
+ const changed=h.apply({kind:'setProjectNaming',name:'电影',naming});expect(changed.ok).toBe(true);
+ expect(ok(h.current()).naming).toEqual(naming);expect(ok(h.current()).name).toBe('电影');
+ expect(ok(h.undo()).after.name).toBe(p.name);expect(ok(h.current()).naming).toBeUndefined();
+ expect(ok(h.redo()).after.naming).toEqual(naming);
+ expect(applyStoryboardEdit(p,{kind:'setProjectNaming',name:'x',naming:{...naming,unknown:true}} as unknown as StoryboardEditV1).ok).toBe(false);
+});

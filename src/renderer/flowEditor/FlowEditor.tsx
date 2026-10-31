@@ -13,6 +13,7 @@ import { JapaneseStoryboardView } from '../JapaneseStoryboardView';
 import { shotDialogueText } from '../editableDialogueText';
 import { SketchPad } from '../SketchPad';
 import { LayerPanel } from '../LayerPanel';
+import { FlowNaming } from './FlowNaming';
 import { FlowPending, pendingDropId } from './FlowPending';
 import { captureMountedCanvasCheckpoints } from '../mountedCanvasRecoveryCapture';
 import { projectView, dialogueCommand, projectShots, pixelStroke, settledStrokePreview } from './adapter';
@@ -128,6 +129,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     setSelection(current => selectShots(flow.snapshot().project.shots.map(s => s.id), current, selectionAnchor.current, id, event));
     setSelected(id); if (!event.shiftKey) selectionAnchor.current = id;
   };
+  const [namingOpen, setNamingOpen] = useState(false);
   const [panel, setPanel] = useState<string>();
   const [savingTiff, setSavingTiff] = useState(false);
   const [savedTiffRevision, setSavedTiffRevision] = useState<number>();
@@ -254,6 +256,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     <main className="flow-editor" data-flow-editor="true" data-revision={snapshot.project.revision} data-phase={snapshot.phase}>
       <header className="topbar"><strong>Storyboard Flow</strong><span>{snapshot.project.name}</span>
         <button disabled={switching} onClick={openProject}>{switching ? 'Opening…' : 'Open project'}</button>
+        <button disabled={!active} onClick={() => setNamingOpen(value => !value)}>Naming</button>
         <button disabled={!active} onClick={switchView}>{japanese ? 'Grid view' : 'Japanese view'}</button>
         <button disabled={!active} aria-pressed={tool === 'brush'} onClick={() => setTool('brush')}>Brush</button>
         <button disabled={!active} aria-pressed={tool === 'eraser'} onClick={() => setTool('eraser')}>Eraser</button>
@@ -273,6 +276,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
           if (shot?.activeLayerId) act({ kind: 'pixelTool', shotId: shot.id, tool: { kind: 'clear', layerId: shot.activeLayerId } });
         }}>Clear layer</button>
       </header>
+      {namingOpen && <FlowNaming project={snapshot.project} onCancel={() => setNamingOpen(false)} onApply={async (name, naming) => { await request({ kind: 'board', command: { kind: 'setProjectNaming', name, naming } }); setNamingOpen(false); }} />}
       <p role="status">{issue || snapshot.lastError?.message || (snapshot.checkpoint?.revision === snapshot.project.revision ? 'Editable project saved' : 'Saving editable project…')}</p>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active: from, over }) => {
         if (!over) return;

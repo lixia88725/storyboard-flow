@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { temporaryWorkspace } from '../../test/temporaryWorkspace';
 import { createTiffCodec } from '../core/formats/index';
+import { orderedOutputNames, prepareOutputRename, settleOutputRename } from './flowOutputRename';
 import { openFlowTiffSave } from './flowTiffSave';
 import type { ProjectV1 } from '../shared/refactorV1';
 const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -141,3 +142,53 @@ describe('new TIFF output native Save protocol',()=>{
   },60000);
 
 });
+
+it('applies configured ordered names, swaps them without re-encoding, keeps Pending separate and preserves originals',async()=>{
+ const {root,p,png,c,source,output}=await fixture(true);
+ p.naming={sceneCode:'S01',artistName:'艺术家',version:'2'};
+ const prefix='中文_S01_stb_艺术家_v002_';
+ const first=await output.save(p,async()=>png);
+ expect(first.files.map(f=>f.name)).toEqual([prefix+'0010.tif',prefix+'0020.tif']);
+ await expect(fs.stat(path.join(root,'original.tif'))).rejects.toMatchObject({code:'ENOENT'});
+ const before=await Promise.all(first.files.map(f=>fs.stat(path.join(root,f.name))));
+ const encoding=vi.spyOn(c,'encode'),reader=vi.fn(async()=>png);
+ p.shots.reverse();p.revision++;
+ const second=await output.save(p,reader);
+ expect(second.files.map(f=>f.shotId)).toEqual(['second','shot']);
+ expect(second.files.map(f=>f.name)).toEqual([prefix+'0010.tif',prefix+'0020.tif']);
+ expect((await fs.stat(path.join(root,prefix+'0010.tif'))).ino).toBe(before[1].ino);
+ expect((await fs.stat(path.join(root,prefix+'0020.tif'))).ino).toBe(before[0].ino);
+ expect(encoding).not.toHaveBeenCalled();expect(reader).not.toHaveBeenCalled();
+ p.parkedShots.push(p.shots.shift()!);p.revision++;
+ const parked=await output.save(p,reader);
+ expect(parked.files.find(f=>f.shotId==='second')?.name).toBe('Pending/'+prefix+'0010.tif');
+ expect(parked.files.find(f=>f.shotId==='shot')?.name).toBe(prefix+'0020.tif');
+ expect(await fs.readFile(path.join(root,'.storyboard-flow/originals/shot.tif'))).toEqual(Buffer.from(source));
+ expect((await fs.readdir(root)).filter(n=>n.startsWith('.flow-renaming-'))).toEqual([]);
+},60000);
+
+it('rejects a foreign final-name collision before codec preparation or any output replacement',async()=>{
+ const {root,p,png,c,source,output}=await fixture();p.naming={sceneCode:'scene',artistName:'artist',version:'v001'};
+ const target=path.join(root,'中文_scene_stb_artist_v001_0010.tif');await fs.writeFile(target,'unrelated');
+ const encode=vi.spyOn(c,'encode');
+ await expect(output.save(p,async()=>png)).rejects.toThrow('filename collision');
+ expect(encode).not.toHaveBeenCalled();expect(await fs.readFile(target,'utf8')).toBe('unrelated');
+ expect(await fs.readFile(path.join(root,'original.tif'))).toEqual(Buffer.from(source));
+},60000);
+
+it('reopened Save resumes a durable rename journal before interpreting old source bindings',async()=>{
+ const {root,p,png,c,output}=await fixture(true);p.naming={sceneCode:'S',artistName:'A',version:'1'};
+ await output.save(p,async()=>png);p.shots.reverse();p.revision++;
+ const ledgerPath=path.join(root,'.storyboard-flow/tiff-output.json');
+ const ledger=JSON.parse(await fs.readFile(ledgerPath,'utf8'));
+ ledger.rename=await prepareOutputRename(root,ledger.entries,orderedOutputNames(p,ledger.entries));delete ledger.saved;
+ await fs.writeFile(ledgerPath,JSON.stringify(ledger));
+ await expect(settleOutputRename(root,ledger.rename,async()=>{await fs.writeFile(ledgerPath,JSON.stringify(ledger));throw Error('interrupted after phase publication')},async()=>{})).rejects.toThrow('interrupted');
+ const reader=vi.fn(async()=>{throw Error('unchanged TIFF must not reread PNG')});
+ const result=await (await openFlowTiffSave(root,p.id,c)).save(p,reader);
+ expect(result.files.map(f=>f.shotId)).toEqual(['second','shot']);
+ expect(value(await c.decode(await fs.readFile(path.join(root,result.files[0].name)))).text?.shotId).toBe('second');
+ expect(reader).not.toHaveBeenCalled();
+ expect(JSON.parse(await fs.readFile(ledgerPath,'utf8')).rename).toBeUndefined();
+ expect((await fs.readdir(root)).some(n=>n.startsWith('.flow-renaming-'))).toBe(false);
+},60000);

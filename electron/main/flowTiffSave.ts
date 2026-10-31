@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { orderedOutputNames, preflightOutputNames, prepareOutputRename, settleOutputRename, validOutputRename, type OutputRename } from './flowOutputRename.js';
 import { outputPath, settleOutputMove, type OutputMove } from './flowOutputMove.js';
 import { snapshotProject } from '../core/persistence/validate.js';
 import type { AssetReaderV1, ProjectV1 } from '../shared/refactorV1.js';
@@ -15,7 +16,7 @@ const leaf = (s: unknown): s is string => typeof s === 'string' && /^[^\\/\0]+\.
 const id = (s: unknown): s is string => typeof s === 'string' && /^[\w-]{1,80}$/.test(s);
 type Entry = { shotId: string; name: string; original: string | null; current: string | null; pending?: string; location?: 'active' | 'parked'; move?: OutputMove; content?: string };
 export type TiffSourceBinding = { shotId: string; name: string; digest: string; location?: 'active' | 'parked' };
-type Ledger = { version: 1; projectId: string; entries: Entry[]; saved?: { revision: number; projectHash: string } };
+type Ledger = { version: 1; projectId: string; entries: Entry[]; rename?: OutputRename; saved?: { revision: number; projectHash: string } };
 export type TiffSaveReceipt = { projectId: string; revision: number; projectHash: string; files: { shotId: string; name: string; digest: string }[] };
 const read = async (file: string, limit = 128 * 1024 * 1024): Promise<Buffer> => {
   if (await fs.realpath(file) !== file) throw Error('Aliased output path refused');
@@ -59,6 +60,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
             !/^\d+$/.test(e.move.dev) || !/^\d+$/.test(e.move.ino))) ||
         new Set(ledger.entries.map(e => e.shotId)).size !== ledger.entries.length || new Set(ledger.entries.map(e => e.name.toLowerCase())).size !== ledger.entries.length)
       throw Error('Invalid TIFF output ledger');
+    if (ledger.rename !== undefined && (!validOutputRename(ledger.rename) || ledger.rename.files.some(f => !ledger.entries.some(e => e.shotId === f.shotId && e.name === f.from && e.current === f.digest && (e.location ?? 'active') === 'active' && !e.move && !e.pending)))) throw Error('Invalid bound rename journal');
     return { ledger, bytes };
   };
   const persist = async (ledger: Ledger, previous: Buffer | null) => {
@@ -89,6 +91,14 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
       return serialized(async () => {
         if (captured.id !== projectId) throw Error('Different project');
         let { ledger, bytes } = await load();
+        const recoverRename = async () => {
+          if (!ledger.rename) return;
+          await settleOutputRename(root, ledger.rename, async () => { bytes = await persist(ledger, bytes); }, bind);
+          for (const file of ledger.rename.files) ledger.entries.find(e => e.shotId === file.shotId)!.name = file.to;
+          delete ledger.rename;
+          bytes = await persist(ledger, bytes);
+        };
+        await recoverRename();
         const allShots = [...captured.shots, ...captured.parkedShots];
         // Deletion still needs the separate output/Trash transaction;
         // refuse rather than silently leave a deleted shot on disk and claim success.
@@ -107,6 +117,8 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           entry.location = entry.move.to; delete entry.move;
           bytes = await persist(ledger, bytes);
         }
+        const names = orderedOutputNames(captured, ledger.entries);
+        await preflightOutputNames(root, ledger.entries, names);
         const preflight = async () => {
           await bind();
           for (const entry of ledger.entries) {
@@ -163,6 +175,14 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
             e.location = destination; delete e.move;
             bytes = await persist(ledger, bytes);
           }
+        }
+        await preflight();
+        await preflightOutputNames(root, ledger.entries, names);
+        const rename = await prepareOutputRename(root, ledger.entries, names);
+        if (rename) {
+          delete ledger.saved; ledger.rename = rename;
+          bytes = await persist(ledger, bytes);
+          await recoverRename();
         }
         await preflight();
         const projectHash = hash(Buffer.from(JSON.stringify(captured)));

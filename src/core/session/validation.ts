@@ -31,6 +31,8 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
       case 'board': {
         if (!shape(value, ['kind', 'command'])) break;
         const command = value.command;
+        if (shape(command, ['kind', 'name', 'naming']) && command.kind === 'setProjectNaming' && typeof command.name === 'string' && shape(command.naming, ['sceneCode', 'artistName', 'version']) && Object.values(command.naming).every(v => typeof v === 'string'))
+          return { ok: true, value: value as FlowSessionRequest };
         if (shape(command, ['kind', 'shot', 'image', 'index']) && command.kind === 'insertShot')
           return { ok: true, value: value as FlowSessionRequest };
         if (shape(command, ['kind', 'shotId', 'text']) && command.kind === 'setScriptText' && id(command.shotId) && typeof command.text === 'string')

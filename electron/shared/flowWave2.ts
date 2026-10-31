@@ -42,6 +42,7 @@ export type FlowAssetDepotOptions = {
 export type FlowBoardCommand =
   /** Insert into active board after Session revalidates each referenced depot asset. */
   | { kind: 'insertShot'; shot: ShotV1; image: ImageDocumentV1; index: number }
+  | { kind: 'setProjectNaming'; name: string; naming: NonNullable<ProjectV1['naming']> }
   | { kind: 'setScriptText'; shotId: string; text: string }
   | { kind: 'setDialogues'; shotId: string; dialogues: DialogueV1[] }
   /** Preserve board order of selection; omit beforeId to append. */
