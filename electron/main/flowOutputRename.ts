@@ -6,13 +6,13 @@ import { settleOutputFileMove } from './flowOutputMove.js';
 
 type Entry = { shotId: string; name: string; current: string | null; location?: 'active' | 'parked' };
 export type OutputRename = { phase: 'stage' | 'publish'; files: { shotId: string; from: string; stage: string; to: string; digest: string; dev: string; ino: string }[] };
-const part = (text: string) => text.trim().replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+const part = (text: string) => text.trim().replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').replace(/^\.+/, '');
 export function orderedOutputNames(project: ProjectV1, entries: readonly Entry[]): Map<string, string> {
   const result = new Map(entries.map(e => [e.shotId, e.name]));
   if (!project.naming) return result; // Low-level unconfigured checkpoints preserve bound names.
   const n = project.naming;
-  const version = part(n.version || 'v001');
-  const prefix = [part(project.name) || 'project', part(n.sceneCode || 'scene'), 'stb', part(n.artistName || 'artist'), /^\d+$/.test(version) ? `v${version.padStart(3, '0')}` : version].join('_');
+  const version = part(n.version) || 'v001';
+  const prefix = [part(project.name) || 'project', part(n.sceneCode) || 'scene', 'stb', part(n.artistName) || 'artist', /^\d+$/.test(version) ? `v${version.padStart(3, '0')}` : version].join('_');
   const reserved = new Set(project.parkedShots.map(s => result.get(s.id)?.toLowerCase()));
   let sequence = 0;
   for (const shot of project.shots) {

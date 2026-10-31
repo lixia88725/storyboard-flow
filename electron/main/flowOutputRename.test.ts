@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { temporaryWorkspace } from '../../test/temporaryWorkspace';
-import { prepareOutputRename, settleOutputRename, preflightOutputNames, validOutputRename } from './flowOutputRename';
+import { orderedOutputNames, prepareOutputRename, settleOutputRename, preflightOutputNames, validOutputRename } from './flowOutputRename';
 async function fixture(){
  const root=await temporaryWorkspace('flow-rename-');
  const entries=[];
@@ -39,4 +39,9 @@ it('rejects path traversal, duplicate destinations and corrupt rename journals',
  const {plan}=await fixture();expect(validOutputRename(plan)).toBe(true);
  const altered=structuredClone(plan);altered.files[0].stage='../outside.tif';expect(validOutputRename(altered)).toBe(false);
  const duplicate=structuredClone(plan);duplicate.files[0].to=duplicate.files[1].to;expect(validOutputRename(duplicate)).toBe(false);
+});
+
+it('normalizes unsafe leading dots and empty sanitized fields before publishing a journal',async()=>{
+ const project={name:'...',naming:{sceneCode:'/',artistName:'*',version:'?'},shots:[{id:'a'}],parkedShots:[]} as unknown as import('../shared/refactorV1').ProjectV1;
+ expect(orderedOutputNames(project,[{shotId:'a',name:'source.tif',current:null}]).get('a')).toBe('project_scene_stb_artist_v001_0010.tif');
 });
