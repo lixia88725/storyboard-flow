@@ -1,5 +1,8 @@
 # Integration plan — after Hermes wave 1
 
+> Historical integration proposal from 2026-10-29. Source observations and proposed sequencing below are retained for rationale; consult current gates before treating a gap or proposal as current work.
+> [Current navigation](wave2/COORDINATOR-GATES.md).
+
 2026-10-29；源码观察基线 main `c3e8a05`。**设计提案，未实现，不修改当前 Hermes 契约。**
 沿用 codebase-design：把有状态编排藏在小的 Interface 后，UI 不学习文件事务和资源保留细节。
 

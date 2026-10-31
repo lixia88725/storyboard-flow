@@ -1,5 +1,8 @@
 # Drawing — wave 1 assignment
 
+> Completed wave-one assignment, retained for scope and evidence interpretation. It does not restart the lane or authorize edits today.
+> [Current navigation](../README.md).
+
 ## Outcome
 
 Implement the standalone image-document editing Interface in CONTRACTS.md. A caller can change

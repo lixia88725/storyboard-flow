@@ -1,5 +1,8 @@
 # Codex wave-two sessions
 
+> Historical wave-two session and retirement registry. Recorded checkout counts are date-specific; use `git worktree list` for live inventory.
+> [Current navigation](../README.md).
+
 ## Wave-two worktrees retired — 2026-10-30
 
 User authorized clean consolidation before coordinator-owned G2 wiring. All three

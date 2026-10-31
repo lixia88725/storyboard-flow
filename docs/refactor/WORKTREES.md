@@ -1,5 +1,8 @@
 ## Wave-one worktrees archived — 2026-10-30
 
+> Historical wave-one dispatch/retirement record. Worktree counts and launcher hashes below apply to their recorded dates; obtain live checkout inventory with `git worktree list`.
+> [Current navigation](README.md).
+
 User approved retirement. The three completed Hermes checkouts were fully archived and verified,
 then removed; their branches/commits remain. Git now lists only original main. The cleanup-backup
 and kickoff directories were relocated intact into `.hermes/archive/2026-10-30-wave1/` alongside

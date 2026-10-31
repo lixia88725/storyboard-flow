@@ -1,5 +1,8 @@
 # Wave 2 — Codex coordination
 
+> Historical wave-two assignment and design index. The design/implementation lanes have delivered; dispatch, model and ownership instructions below describe that batch.
+> [Current navigation](../README.md).
+
 2026-10-30: user authorizes coordinator-managed Codex sessions in separate worktrees,
 using `gpt-6.1-sol`. Coordinator stays in original main, owns shared contracts, acceptance and
 integration. No push. First stage is bounded design/source audit; runtime implementation follows

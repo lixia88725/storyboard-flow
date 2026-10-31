@@ -1,5 +1,8 @@
 # TIFF Formats — Sol implementation task
 
+> Completed batch-three lane brief, retained for acceptance requirements. It does not restart the lane or authorize edits today.
+> [Current navigation](../README.md).
+
 Read PLAN.md. First bounded deliverable: a new-format TIFF decode/encode module under
 electron/core/formats/** using already installed codecs/helpers, with a real synthetic
 TIFF -> editable image/metadata -> edit -> TIFF -> decode roundtrip. No production Save

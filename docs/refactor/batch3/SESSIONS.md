@@ -1,5 +1,8 @@
 # Batch 3 Codex sessions — 2026-10-30
 
+> Historical batch-three dispatch registry. Session activity and model selections below describe dispatch time, not current worker status.
+> [Current navigation](../README.md).
+
 Created from shared task baseline 9f45067. All three observed active after creation;
 this records dispatch, not completed implementation or acceptance. Coordinator remains
 on original main. User authorized direct assignment and coordination of these sessions.

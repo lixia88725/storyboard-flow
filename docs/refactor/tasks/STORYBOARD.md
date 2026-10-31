@@ -1,5 +1,8 @@
 # Storyboard — wave 1 assignment
 
+> Completed wave-one assignment, retained for scope and evidence interpretation. It does not restart the lane or authorize edits today.
+> [Current navigation](../README.md).
+
 ## Outcome
 
 Implement a pure project editing Module and one project history facade using CONTRACTS.md.

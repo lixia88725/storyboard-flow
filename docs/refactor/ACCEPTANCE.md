@@ -1,5 +1,8 @@
 # Refactor acceptance — coordinator checklist
 
+> Historical acceptance catalogue from 2026-10-29. Keep case definitions as a requirements baseline; blanket NOT_RUN statements below are not the current candidate status.
+> [Current navigation](wave2/COORDINATOR-GATES.md).
+
 2026-10-29；基于 main `c3e8a05` 的源码只读检查。状态：**验收设计，尚未执行**。
 本文不更改 wave-1 契约或 Hermes 任务，不代表新功能已实现。
 

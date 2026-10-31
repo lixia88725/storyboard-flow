@@ -1,5 +1,8 @@
 # Drawing — Terra implementation task
 
+> Completed batch-three lane brief, retained for acceptance requirements. It does not restart the lane or authorize edits today.
+> [Current navigation](../README.md).
+
 Read PLAN.md. First bounded slice: real fill and clear-layer pixel production, plus
 a layer-composite/merge preparation operation, independently testable through the
 drawing module. Keep current brush/eraser FlowPixels interface and feel unchanged.

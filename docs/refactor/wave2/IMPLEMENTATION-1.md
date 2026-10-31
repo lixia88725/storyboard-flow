@@ -1,5 +1,8 @@
 # 第二轮实现第一批：真实资产 + 像素制作 + 会话组合
 
+> Completed wave-two implementation brief. Interface semantics remain a reference alongside shared types; worktree ownership and stop rules below are historical, not a new assignment.
+> [Current navigation](COORDINATOR-GATES.md).
+
 2026-10-30 用户已批准开工。共享类型唯一来源 `electron/shared/flowWave2.ts`；本文约束该文件的
 顺序、错误与测试语义，优先于三份设计提案的未冻结草案。主管留 main；三个会话独占下列范围。
 只服务合成新格式工程，先完成 G1，为 G2 做准备；本批不宣称完整重构或实际 UI 已接入。

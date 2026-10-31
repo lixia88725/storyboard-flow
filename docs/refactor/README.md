@@ -1,95 +1,38 @@
 # Storyboard Flow refactor
 
-Current status (2026-10-30): wave-two foundations and bounded G2 isolated editor wiring
-are implemented and self-tested on main. The editor now reuses JapaneseStoryboardView
-with shared Session dialogue/script/order/drawing/Undo. Complete suite: 379 files / 2833
-tests; full build and real two-process Electron workflow passed on clean candidate.
-See [Japanese editor record](reviews/2026-10-30/G2-JAPANESE-EDITOR.md) and
-[first editor record](reviews/2026-10-30/G2-FIRST-EDITOR.md) for exact scope and evidence.
-This host is not the full production App; normal startup remains unchanged. Next:
-remaining shell/tools/selection adapters, then G3 TIFF/output and Pending integration.
-All three old worktrees are retired; only main remains. See
-[retirement](reviews/2026-10-30/WAVE2-RETIREMENT.md) for recovery. No parallel lanes needed.
-Follow [current gates](wave2/COORDINATOR-GATES.md). The wave-one text below is historical.
+Start with the newest entries in [current handoff](../../context-handoff.md) and
+[remaining work](../../todo.md), then the [coordinator gates](wave2/COORDINATOR-GATES.md).
+Those describe implementation, self-test and independent-acceptance state. Dated reports
+prove only their recorded candidate; task plans do not authorize restarting old lanes.
 
-## Historical wave-one assignment
+## Find the relevant design
 
-2026-10-30: wave-one worktrees retired after verified full archives; only original main remains.
-Branches and local evidence are preserved. See [retirement record](reviews/2026-10-30/WORKTREE-RETIREMENT.md).
-Next-wave contracts/tasks are not yet assigned.
+| Work | Read |
+| --- | --- |
+| Core project/image rules | [Contracts](CONTRACTS.md), [shared types](../../electron/shared/refactorV1.ts) |
+| Session, assets and pixels | [Wave-two interface decisions](wave2/IMPLEMENTATION-1.md), [shared session types](../../electron/shared/flowWave2.ts) |
+| TIFF folder opening | [Import lifecycle](TIFF-IMPORT.md) |
+| Pending membership and output | [Pending policy](PENDING.md) |
+| Project switching and stale callbacks | [Project switching](PROJECT-SWITCHING.md) |
+| Verification scope | [Coordinator gates](wave2/COORDINATOR-GATES.md), [temporary fixtures](../testing/temporary-workspaces.md) |
+| Existing production runtime | [System map](../architecture/SYSTEM.md) |
 
-Status: wave-one cores independently reviewed and integrated on main; 372 files / 2711 tests and full build passed on `72f4011`. The new core is not connected to the app.
-See [final recheck](reviews/2026-10-29/RECHECK.md) for evidence and remaining limits.
-User authority (2026-10-29): redesign the internal format without old-project compatibility,
-preserve current interactions, prepare isolated Hermes worktrees, allow local commits and
-coordinator integration. No push or release. The user launches Hermes and reports completion.
+The isolated editor and the production App are separate integration states. Use the
+handoff and gates to establish which route a change affects before changing callers.
 
-## Read order
+## Historical work and evidence
 
-1. The worktree's root `AGENTS.md`: branch, ownership and execution rules.
-2. `TASK.md`: this worktree's bounded deliverable and acceptance cases.
-3. `docs/refactor/CONTRACTS.md`: shared data and operation semantics.
-4. `docs/refactor/TESTING.md`: commands, evidence and completion gates.
+- [Wave-one overview snapshot](archive/2026-10-31-overview.md), [worktree registry](WORKTREES.md),
+  and `tasks/`: completed Hermes assignments and original ownership.
+- [Wave two](wave2/README.md): design/implementation briefs and retirement records;
+  `COORDINATOR-GATES.md` remains the current acceptance entry.
+- [Batch three](batch3/PLAN.md): completed Board/Drawing/TIFF assignments; evidence is in
+  [integration acceptance](reviews/2026-10-30/batch3/ACCEPTANCE.md).
+- `reviews/YYYY-MM-DD/`: candidate-specific reviews, test receipts and limits. Retain
+  them when newer code supersedes a milestone.
+- [Initial acceptance catalogue](ACCEPTANCE.md) and [integration proposal](INTEGRATION-PLAN.md):
+  source-informed baselines, not a current PASS/NOT_RUN dashboard.
 
-`electron/shared/refactorV1.ts` is the coordinator-owned compile-time contract. It lives under
-electron/shared so both existing TypeScript compilation targets can use it without changing
-their output layout. It has no Node, Electron, DOM or React dependencies.
-
-Historical handoffs are preserved on main and in the baseline commit. In each Hermes worktree,
-the old root context-handoff.md, todo.md, decisions.md and docs/architecture/SYSTEM.md are removed
-by a separate briefing commit. They describe the old implementation, not this assignment.
-Read existing implementation and relevant permitted tests on demand. Do not start historical
-todos. `docs/testing/temporary-workspaces.md` remains applicable to temporary test data.
-
-## Target and sequence
-
-- Project: one scene per portable folder; 1,000-board target, reference M1 / 32 GB.
-- Preserve ordinary grid and Japanese storyboard views, existing drawing feel, text, sorting,
-  layers and Pending. No timing/audio expansion, PSD work, SQLite, Rust, new dependencies or UI redesign in wave 1.
-- Project model, editable pixels, interchange TIFF and disposable previews have separate roles.
-- New modules: storyboard, drawing, persistence/formats/platform; UI is a client.
-- Wave 1: independently testable foundations using one shared contract. Existing production
-  entry points and the latest launch scripts remain unchanged.
-- Wave 2, assigned after review: compose the cores, connect one synthetic draw/undo/checkpoint/
-  reopen/explicit-TIFF-save workflow, then integrate both views and remaining tools.
-- Final acceptance: focused and complete allowed tests, full build, actual isolated GUI,
-  real filesystem failure cases and separate Mac/Windows evidence. Wave 1 is not that acceptance.
-
-## Ownership
-
-| Lane | Editable implementation paths |
-|---|---|
-| drawing | src/core/drawing/** |
-| storyboard | src/core/storyboard/** |
-| persistence | electron/core/persistence/**, electron/core/platform/** |
-
-All lanes may create their own `DELIVERY.md`, `QUESTIONS.md`, and ignored `.hermes/evidence/`.
-The coordinator owns shared contracts, configuration, dependencies, production wiring, and main.
-An unresolved contract issue belongs in QUESTIONS.md with a concrete proposed change; continue
-independent owned work, but do not duplicate or silently change the contract.
-
-## Integration discipline
-
-Baseline source preservation commit: `235145c22d66ce500a8ea60ef6e4e7a7f21aee2c`.
-Common contract commit and lane briefing SHAs are recorded in the coordinator's
-`docs/refactor/WORKTREES.md` after setup.
-Each lane has a separate briefing commit changing AGENTS.md and removing old context entrances.
-Implementation commits follow it and must not include those setup changes. The coordinator
-cherry-picks reviewed implementation commits; whole-branch merging would replace main's
-instructions and remove its historical records. Hermes must not merge into main or push.
-
-## Delivery
-
-Use `docs/refactor/DELIVERY-TEMPLATE.md` for DELIVERY.md. State the exact implementation SHA,
-changed files, every acceptance case with evidence, tests/build exits, limitations and
-remaining integration work. A test double or a passing build is not GUI/platform acceptance.
-Return the branch, worktree path, DELIVERY.md path and commit SHA to the user. Stop after this
-wave; the user brings the result back to the coordinator.
-
-## Coordinator integration preparation
-
-While Hermes implements wave 1, main holds the source-informed
-[acceptance checklist](ACCEPTANCE.md) and [integration plan](INTEGRATION-PLAN.md).
-These are future integration proposals and NOT_RUN cases, not amendments to active lane
-contracts or evidence of completed behavior. They identify missing feature fields, composite
-commands, pixel asset ownership and Save/session concerns before production routing.
+Old worktree tables are provenance, not live inventory. Run `git worktree list` when
+coordinating or retiring checkouts. Return to the [documentation index](../README.md)
+for naming, release and repository-maintenance references.

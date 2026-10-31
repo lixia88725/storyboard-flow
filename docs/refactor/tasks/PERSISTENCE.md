@@ -1,5 +1,8 @@
 # Persistence — wave 1 assignment
 
+> Completed wave-one assignment, retained for scope and evidence interpretation. It does not restart the lane or authorize edits today.
+> [Current navigation](../README.md).
+
 ## Outcome
 
 Implement createProjectStore under CONTRACTS.md for synthetic new-format project roots:

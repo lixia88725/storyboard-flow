@@ -1,5 +1,8 @@
 # When and how Hermes tests
 
+> Historical Hermes wave-one runner protocol. Its evidence and fixture rules remain useful; lane commands below target retired Hermes branches. Use current task instructions and coordinator gates for today's verification assignment.
+> [Current navigation](wave2/COORDINATOR-GATES.md).
+
 ## 1. Before editing
 
 Record branch/HEAD and `git status --short`; inspect owned definitions and relevant existing

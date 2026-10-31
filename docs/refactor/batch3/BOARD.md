@@ -1,5 +1,8 @@
 # Board — Terra implementation task
 
+> Completed batch-three lane brief, retained for acceptance requirements. It does not restart the lane or authorize edits today.
+> [Current navigation](../README.md).
+
 Read PLAN.md. Goal: extend the existing sole writable Session with active-board
 insert/remove, group reorder, and atomic cross-shot dialogue moves, keeping pixels,
 Pending and history coherent. No UI implementation in this lane.

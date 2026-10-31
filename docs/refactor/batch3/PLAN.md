@@ -1,5 +1,8 @@
 # Parallel batch 3 — 2026-10-30
 
+> Completed batch-three assignment; integrated candidate and limits are recorded in [acceptance](../reviews/2026-10-30/batch3/ACCEPTANCE.md). Ownership and dispatch instructions below are historical.
+> [Current navigation](../README.md).
+
 Baseline: main after G2 Japanese integration (implementation 4c8cd8a, report ee1206e).
 User requested three new Codex sessions/worktrees, one Sol and two Terra. Coordinator
 owns main, reviews deliveries and connects the real app. This batch is bounded module
