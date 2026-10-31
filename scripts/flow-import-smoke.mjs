@@ -58,7 +58,7 @@ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorE
  const initial=image.layers[1].assetId;
  if(phase==='edit'){
   assert.deepEqual(fs.readFileSync(${JSON.stringify(path.join(root,'01.tif'))}),Buffer.from(${JSON.stringify(Buffer.from(original).toString('base64'))},'base64'));
-  assert.equal(fs.existsSync(${JSON.stringify(path.join(root,'.storyboard-flow/originals'))}),false);
+  assert.deepEqual(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/originals'))}+'/'+shot.id+'.tif'),Buffer.from(${JSON.stringify(Buffer.from(original).toString('base64'))},'base64'));
   await js('(()=>{const e=Array.from(document.querySelectorAll("textarea")).find(e=>e.getAttribute("aria-label")==='+JSON.stringify('Script '+shot.id)+');e.focus();e.select()})()');
   await win.webContents.insertText('导入后编辑');await wait(()=>read().shots[0].scriptText==='导入后编辑','script edit');
   const box=await rect('[data-shot-id="'+shot.id+'"] .image-stage');

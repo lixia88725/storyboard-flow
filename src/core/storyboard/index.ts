@@ -1,3 +1,4 @@
+import { validRefreshTransition } from '../../../electron/shared/flowRefresh';
 import type {
   ChangeSetV1, ImageDocumentV1, ImageEditResultV1, ProjectEditResultV1,
   ProjectV1, ResultV1, ShotV1, StoryboardEditV1
@@ -100,6 +101,15 @@ export function applyStoryboardEdit(project: ProjectV1, edit: StoryboardEditV1):
   const shot = (shotId: string) => all.find(s => s.id === shotId);
   const change = emptyChanges();
   switch (edit.kind) {
+    case 'refreshImages': {
+      if (!shape(edit, ['kind','before','after']) || !validProject(edit.before) || !validProject(edit.after) ||
+          !same(project,edit.before) || !validRefreshTransition(project,edit.after)) return fail('conflict','Refresh baseline or transition is invalid');
+      const after=copy(edit.after); after.revision=project.revision;
+      change.imageIds=Object.keys(after.images).filter(id=>!same(project.images[id],after.images[id]));
+      change.shotIds=[...after.shots,...after.parkedShots].filter(s=>change.imageIds.includes(s.imageId)).map(s=>s.id);
+      change.membership=after.parkedShots.length!==project.parkedShots.length; change.order=change.membership;
+      return result(project,after,change);
+    }
     case 'insertShot': {
       if (!shape(edit, ['kind', 'shot', 'image', 'index']) ||
           !shape(edit.shot, ['id', 'imageId', 'name', 'scriptText']) || !id(edit.shot.id) || !id(edit.shot.imageId) ||

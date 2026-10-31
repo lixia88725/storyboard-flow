@@ -765,3 +765,41 @@ describe('queued blank shot creation', () => {
     expect(await bad.request(first)).toMatchObject({ok:false,error:{effect:'unknown'}});expect(bad.snapshot().project).toEqual(p);
   });
 });
+
+it('installs a refresh as one history entry without replacing text and preserves Undo/Redo',async()=>{
+ const s=setup({refresh:async before=>{const after=structuredClone(before);after.revision++;after.images.i_a.layers[0].name='external name';return {ok:true,value:after};}});
+ await success(s.session.request({kind:'board',command:{kind:'setScriptText',shotId:'a',text:'local words'}}));
+ const before=s.session.snapshot().project;
+ await success(s.session.request({kind:'refresh'}));
+ expect(s.session.snapshot().project.shots).toEqual(before.shots);
+ expect(s.session.snapshot().project.images.i_a.layers[0].name).toBe('external name');
+ await success(s.session.request({kind:'undo'}));expect(s.session.snapshot().project.images).toEqual(before.images);
+ await success(s.session.request({kind:'redo'}));expect(s.session.snapshot().project.images.i_a.layers[0].name).toBe('external name');
+});
+it('blocks editing after unknown refresh outcome, then retries without pre-checkpointing the stale state',async()=>{
+ let calls=0;const s=setup({refresh:async before=>{if(++calls===1)return error('io-failure','retained journal','unknown');const after=structuredClone(before);after.revision++;after.images.i_a.layers[0].name='accepted';return {ok:true,value:after};}});
+ expect(await s.session.request({kind:'refresh'})).toMatchObject({ok:false,error:{effect:'unknown'}});
+ expect(await s.session.request({kind:'undo'})).toMatchObject({ok:false,error:{code:'busy'}});
+ const checkpointCount=s.saved.length;
+ await success(s.session.request({kind:'refresh'}));expect(s.saved).toHaveLength(checkpointCount);
+ await success(s.session.request({kind:'undo'}));expect(s.session.snapshot().project.images.i_a.layers[0].name).toBe('Image');
+});
+it('rejects refresh results that alter project text or reference unavailable new assets',async()=>{
+ const changed=setup({refresh:async before=>{const after=structuredClone(before);after.revision++;after.shots[0].scriptText='untrusted';return {ok:true,value:after};}});
+ expect(await changed.session.request({kind:'refresh'})).toMatchObject({ok:false,error:{effect:'unknown'}});
+ expect(changed.session.snapshot().project.shots[0].scriptText).toBe('');
+ const missing=setup({refresh:async before=>{const after=structuredClone(before);after.revision++;after.images.i_a.layers[0].assetId='a'.repeat(64);return {ok:true,value:after};}});
+ expect(await missing.session.request({kind:'refresh'})).toMatchObject({ok:false,error:{effect:'unknown'}});
+ expect(missing.session.snapshot().project.images.i_a.layers[0].assetId).toBe(initialAsset);
+});
+it('does not let queued edits or Close trap a retained refresh in the freezing phase',async()=>{
+ const waiting=deferred<FlowResult<ProjectV1>>();let attempt=0;
+ const s=setup({refresh:async before=>++attempt===1?waiting.promise:{ok:true,value:before}});
+ const refreshing=s.session.request({kind:'refresh'});await ticks();
+ const edit=s.session.request({kind:'board',command:{kind:'setScriptText',shotId:'a',text:'must not install'}});
+ const close=s.session.request({kind:'freeze'});
+ waiting.resolve(error('io-failure','retry','unknown'));
+ expect(await refreshing).toMatchObject({ok:false});expect(await edit).toMatchObject({ok:false});expect(await close).toMatchObject({ok:false});
+ expect(s.session.snapshot().phase).toBe('active');expect(s.session.snapshot().project.shots[0].scriptText).toBe('');
+ await success(s.session.request({kind:'refresh'}));
+});

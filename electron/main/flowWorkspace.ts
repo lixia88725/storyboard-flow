@@ -18,6 +18,7 @@ export function createFlowWorkspace(initial: FlowWorkspaceTarget) {
     read: (token: string, id: string) => requireOwner(token).read(id),
     put: (token: string, input: Parameters<Runtime['put']>[0]) => requireOwner(token).put(input),
     checkpoint: (token: string, project: ProjectV1) => requireOwner(token).checkpoint(project),
+    refresh: (token:string,project:ProjectV1)=>requireOwner(token).refresh(project),
     saveTiff: (token: string, project: ProjectV1) => requireOwner(token).saveTiff(project),
     certifyClose: (token: string, project: ProjectV1 | null) => requireOwner(token).certifyClose(project),
     async switchProject(token: string, project: ProjectV1, chooseAndPrepare: (currentRoot: string) => Promise<FlowWorkspaceTarget | null>) {

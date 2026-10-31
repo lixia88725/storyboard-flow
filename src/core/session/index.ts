@@ -49,7 +49,8 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
   let flight: { revision: number; promise: Promise<FlowResult<boolean>> } | null = null;
   const listeners = new Set<() => void>(), queue: Task[] = [];
   const detached = new Set<Promise<void>>();
-  let running = false, painting = false;
+  let running = false, painting = false, refreshRecovery = false;
+  const refresh = options.refresh?.bind(options);
   let freezePromise: Promise<FlowResult<FlowSessionOutcome>> | null = null;
   const current = (): ProjectV1 => {
     const result = history.current();
@@ -304,7 +305,29 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
     return result.ok ? result : { ok: false, error: { ...result.error, effect: 'retained' } };
   };
   const execute = async (request: FlowSessionRequest): Promise<FlowResult<boolean>> => {
+    if(refreshRecovery&&request.kind!=='refresh'){if(request.kind==='freeze')phase='active';return failure('busy','Retry Refresh to finish the retained operation','retained');}
     switch (request.kind) {
+      case 'refresh': {
+        if (!refresh) return failure('unavailable','External refresh is not connected');
+        if (!refreshRecovery) { const flushed=await flush(); if(!flushed.ok)return flushed; }
+        const before=current();
+        let refreshed;
+        try { refreshed=dependencyResult(await refresh(copy(before)), 'unknown'); }
+        catch(error){refreshed=unexpected(error,'unknown');}
+        if(!refreshed.ok){refreshRecovery=refreshed.error.effect==='unknown';return refreshed;}
+        const validated=applyStoryboardEdit(before,{kind:'refreshImages',before,after:refreshed.value});
+        if(!validated.ok){refreshRecovery=true;return {ok:false,error:{...validated.error,effect:'unknown'}};}
+        const priorAssets=new Set(Object.values(before.images).flatMap(i=>i.layers.map(l=>l.assetId)));
+        for(const image of Object.values(refreshed.value.images))for(const layer of image.layers)if(!priorAssets.has(layer.assetId)){
+          let asset;try{asset=dependencyResult(await read(layer.assetId),'unknown');}catch(error){refreshRecovery=true;return unexpected(error,'unknown');}
+          if(!asset.ok){refreshRecovery=true;return {...asset,error:{...asset.error,effect:'unknown'}};}
+          if(!(asset.value instanceof Uint8Array)||!asset.value.byteLength){refreshRecovery=true;return failure('missing-asset','Refreshed image asset unavailable','unknown');}
+        }
+        const applied=installed(history.apply({kind:'refreshImages',before,after:refreshed.value}));
+        if(!applied.ok){refreshRecovery=true;return {...applied,error:{...applied.error,effect:'unknown'}};}
+        refreshRecovery=false;
+        return applied;
+      }
       case 'newShot': return newShot(request);
       case 'board': return request.command.kind === 'insertShot' ? insert(request.command) : board({ command: request.command });
       case 'layer': {
@@ -362,6 +385,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
       const parsed = snapshotRequest(input);
       if (!parsed.ok) return Promise.resolve(parsed);
       const request = parsed.value;
+      if(refreshRecovery && request.kind!=='refresh')return Promise.resolve(failure('busy','Retry Refresh to finish the retained operation','retained'));
       if (request.kind === 'freeze' && freezePromise) return freezePromise;
       if (request.kind === 'freeze' && phase === 'frozen') return Promise.resolve({ ok: true, value: { snapshot: snapshot(), changed: false } });
       if (request.kind === 'resume' ? phase !== 'frozen' : request.kind !== 'freeze' && phase !== 'active')

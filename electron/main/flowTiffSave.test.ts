@@ -305,3 +305,15 @@ it('detects missing and Pending TIFFs without adopting foreign additions or acce
  ledger.entries[0].pending=hash(Buffer.from('pending'));await fs.writeFile(file,JSON.stringify(ledger));
  await expect(output.inspectExternal(p)).rejects.toThrow('pending Save');
 },60000);
+
+it('budgets larger image baselines before writing any TIFF or pending journal',async()=>{
+ const {root,p,png,source,output}=await fixture();
+ const ledgerPath=path.join(root,'.storyboard-flow/tiff-output.json');
+ const ledger=JSON.parse(await fs.readFile(ledgerPath,'utf8'));
+ ledger.padding='x'.repeat(8*1024*1024-8000-Buffer.byteLength(JSON.stringify(ledger)));
+ await fs.writeFile(ledgerPath,JSON.stringify(ledger));const before=await fs.readFile(ledgerPath);
+ const layer=p.images.image.layers[0];p.images.image.layers=Array.from({length:20},(_,i)=>({...layer,id:'layer'+i,name:'layer '+i+'x'.repeat(600)}));p.revision++;
+ await expect(output.save(p,async()=>png)).rejects.toThrow('transaction budget');
+ expect(await fs.readFile(path.join(root,'original.tif'))).toEqual(Buffer.from(source));
+ expect(await fs.readFile(ledgerPath)).toEqual(before);
+},60000);

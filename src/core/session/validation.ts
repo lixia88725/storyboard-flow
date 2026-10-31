@@ -81,7 +81,7 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
             !Array.from(stroke.points).every(point => typeof point === 'number' && Number.isFinite(point))) break;
         return { ok: true, value: value as FlowSessionRequest };
       }
-      case 'undo': case 'redo': case 'checkpoint': case 'freeze': case 'resume':
+      case 'refresh': case 'undo': case 'redo': case 'checkpoint': case 'freeze': case 'resume':
         if (shape(value, ['kind'])) return { ok: true, value: value as FlowSessionRequest };
     }
     return failure('invalid-input', 'Unsupported or malformed session request');

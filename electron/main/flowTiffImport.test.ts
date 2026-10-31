@@ -37,7 +37,7 @@ describe('TIFF folder to isolated editable project',()=>{
   expect(await fs.readFile(path.join(root,'2.tif'))).toEqual(Buffer.from(original));
   const ledger=JSON.parse(await fs.readFile(path.join(root,'.storyboard-flow/tiff-output.json'),'utf8'));
   expect(ledger.entries.map((e:{name:string})=>e.name)).toEqual(['1.tiff','2.tif','10.tif','3.tif']);
-  await expect(fs.stat(path.join(root,'.storyboard-flow/originals'))).rejects.toMatchObject({code:'ENOENT'});
+  expect(await fs.readFile(path.join(root,'.storyboard-flow/originals',p.shots[1].id+'.tif'))).toEqual(Buffer.from(original));
   p.revision++;p.shots[1].scriptText='edited';
   const receipt=await (await openFlowTiffSave(root,p.id,codec())).save(p,store.readAsset);
   expect(receipt.files[1].name).toMatch(/_scene_stb_artist_v001_0020\.tif$/);

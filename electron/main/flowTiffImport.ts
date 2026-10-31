@@ -1,3 +1,4 @@
+import { pixelDigest } from './flowPixelIdentity.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
@@ -11,7 +12,7 @@ import { assertPhysicalWorkspaceWriterTargets } from './workspacePhysicalWriterG
 import type { ProjectV1 } from '../shared/refactorV1.js';
 const get = <T>(r: {ok:true;value:T}|{ok:false;error:{message:string}}):T => { if(!r.ok)throw Error(r.error.message);return r.value; };
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
-type Source = { name: string; location: 'active' | 'parked'; file: string; digest?: string; shotId?: string };
+type Source = { pixelHashes?:Record<string,string>; name: string; location: 'active' | 'parked'; file: string; digest?: string; shotId?: string };
 const exists = async (file: string) => { try { await fs.lstat(file); return true; } catch(e) { if((e as NodeJS.ErrnoException).code==='ENOENT')return false;throw e; } };
 
 /** Main-selected folder bootstrap only, not import into an existing live Session.
@@ -65,8 +66,8 @@ export async function importFlowTiffFolder(root: string, codec: TiffCodec): Prom
     const depot=get(await openFlowAssetDepot({root:stage,sessionId:randomUUID(),maxPixels:16*1024*1024,maxPngBytes:32*1024*1024}));
     let preparedBytes=0;
     for(const source of sources){
-      const original=await readSource(source);source.digest=hash(original);
-      const candidate=get(await codec.decode(original));
+      const original=await readSource(source);source.digest=hash(original);preparedBytes+=original.byteLength;
+      const candidate=get(await codec.decode(original));source.pixelHashes={};for(const layer of candidate.image.layers)source.pixelHashes[layer.id]=await pixelDigest(layer.png);
       for(const layer of candidate.image.layers)preparedBytes+=layer.png.byteLength;
       if(preparedBytes>512*1024*1024)throw Error('Import exceeds 512 MiB prepared PNG budget');
       const shotId=randomUUID();source.shotId=shotId;
@@ -79,7 +80,7 @@ export async function importFlowTiffFolder(root: string, codec: TiffCodec): Prom
         name:candidate.text?.shotName??path.parse(source.name).name,scriptText:candidate.text?.scriptText??''});
       project.dialogues.push(...candidate.text?.dialogues??[]);
     }
-    const mappings:TiffSourceBinding[]=sources.map(s=>({shotId:s.shotId!,name:s.name,digest:s.digest!,location:s.location}));
+    const mappings:TiffSourceBinding[]=sources.map(s=>({shotId:s.shotId!,name:s.name,digest:s.digest!,location:s.location,pixelHashes:s.pixelHashes!}));
     const output=await openFlowTiffSave(stage,project.id,codec);
     await output.bindSources(project,mappings,source=>readSource(sources.find(s=>s.shotId===source.shotId)!));
     const store=createProjectStore();

@@ -59,6 +59,7 @@ export type ImageEditV1 =
   | { kind: 'replacePixels'; layerId: string; assetId: AssetIdV1 };
 export type ImageEditResultV1 = { before: ImageDocumentV1; after: ImageDocumentV1; changed: boolean; visualChanged: boolean };
 export type StoryboardEditV1 =
+  | { kind: 'refreshImages'; before: ProjectV1; after: ProjectV1 }
   | { kind: 'insertShot'; shot: ShotV1; image: ImageDocumentV1; index: number }
   | { kind: 'moveShots'; shotIds: string[]; destination: 'active' | 'pending'; beforeId?: string }
   | { kind: 'removeShots'; shotIds: string[] }

@@ -32,6 +32,7 @@ function bindEditor(sessionId: string) {
     read: (id: string) => api.read(sessionId, id),
     put: (input: Parameters<typeof api.put>[1]) => api.put(sessionId, input),
     checkpoint: (project: FlowEditorBootstrap['project']) => api.checkpoint(sessionId, project),
+    refresh: (project: FlowEditorBootstrap['project']) => api.refresh(sessionId, project),
     saveTiff: (project: FlowEditorBootstrap['project']) => api.saveTiff(sessionId, project)
   };
 }
@@ -54,7 +55,7 @@ export function FlowEditor() {
       maxHistoryEntries: 60, maxPendingRequests: 32, assets: api,
       pixels: createFlowPixels({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxPoints: 100_000 }),
       tools: createPixelTools({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxLayers: 64 }),
-      checkpoint: api.checkpoint, clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number) } }));
+      checkpoint: api.checkpoint, refresh: api.refresh, clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number) } }));
     const next = { flow, api, sessionId };
     current.current = next; setOwner(next); setIssue('');
     void flow.request({ kind: 'checkpoint' }).then(result => { if (current.current === next && !result.ok) setIssue(result.error.message); });
@@ -131,6 +132,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   };
   const [namingOpen, setNamingOpen] = useState(false);
   const [panel, setPanel] = useState<string>();
+  const [refreshing,setRefreshing]=useState(false),[refreshRecovery,setRefreshRecovery]=useState(false),[refreshStatus,setRefreshStatus]=useState('');
   const [savingTiff, setSavingTiff] = useState(false);
   const [savedTiffRevision, setSavedTiffRevision] = useState<number>();
   const [japanese, setJapanese] = useState(false);
@@ -169,6 +171,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   const act = (r: FlowSessionRequest) => { void request(r).catch(() => {}); };
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
+      if(outputWork.current)return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !(event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement)) {
         event.preventDefault(); act({ kind: event.shiftKey ? 'redo' : 'undo' });
       }
@@ -183,7 +186,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   }
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const rejectTool = () => setIssue('This operation is not connected yet');
-  const active = snapshot.phase === 'active' && !switching;
+  const active = snapshot.phase === 'active' && !switching && !refreshing && !refreshRecovery;
   const view = projectView(snapshot.project, shots);
   const script = (shotId: string, text: string) => act({ kind: 'board', command: { kind: 'setScriptText', shotId, text } });
   const dialogue = (shotId: string, text: string) => act({ kind: 'board', command: dialogueCommand(flow.snapshot().project, shotId, text) });
@@ -210,6 +213,25 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     const image = project.images[shot.imageId], index = image.layers.findIndex(l => l.id === layerId);
     const ids = selectedIds.length >= 2 ? selectedIds : image.layers.slice(Math.max(0, index - 1), index + 1).map(l => l.id);
     act({ kind: 'pixelTool', shotId, tool: { kind: 'merge', layerIds: ids } });
+  };
+  const refreshImages = () => {
+    if(outputWork.current||switching||refreshing||gestures.current||captureMountedCanvasCheckpoints().hasUnsettledGesture)return;
+    const before=flow.snapshot().project;
+    setRefreshing(true);setRefreshStatus('Checking external images…');
+    const work=(async()=>{
+      try{
+        const result=await flow.request({kind:'refresh'});
+        if(!result.ok){setRefreshRecovery(result.error.effect==='unknown');throw Error(result.error.message);}
+        const after=result.value.snapshot.project;
+        const alternatives=after.parkedShots.length-before.parkedShots.length;
+        const updated=[...before.shots,...before.parkedShots].filter(s=>JSON.stringify(before.images[s.imageId])!==JSON.stringify(after.images[s.imageId])).length;
+        setRefreshRecovery(false);setIssue('');
+        setRefreshStatus(alternatives?`${updated} images updated; ${alternatives} external versions kept in Pending`:`${updated} images updated`);
+        if(result.value.changed)setSavedTiffRevision(undefined);
+      }catch(error){setIssue(String(error));setRefreshStatus('Refresh did not finish; retry after resolving the issue');}
+      finally{setRefreshing(false);}
+    })();
+    outputWork.current=work;void work.finally(()=>{if(outputWork.current===work)outputWork.current=undefined;});
   };
   const saveTiff = async () => {
     if (!active || savingTiff || outputWork.current) return;
@@ -266,6 +288,8 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
         <button disabled={!active} onClick={() => act({ kind: 'undo' })}>Undo</button><button disabled={!active} onClick={() => act({ kind: 'redo' })}>Redo</button>
         <button disabled={!active} onClick={() => act({ kind: 'checkpoint' })}>Checkpoint</button>
         <button disabled={!active || savingTiff} onClick={() => { void saveTiff().catch(() => {}); }}>Save TIFF</button>
+        <button disabled={switching||refreshing||savingTiff||snapshot.phase!=='active'} onClick={refreshImages}>{refreshing?'Refreshing…':'Refresh images'}</button>
+        <span aria-label="External image status">{refreshStatus}</span>
         <span aria-label="TIFF output status">{savingTiff ? 'Saving TIFF…' : savedTiffRevision === snapshot.project.revision ? 'TIFF saved' : 'TIFF not saved for current edit'}</span>
         <button disabled={!active} onClick={newShot}>New shot</button>
         <button disabled={!active || !selectedIds.length} onClick={() => moveShots(selectedIds, 'pending')}>Move to Pending</button>

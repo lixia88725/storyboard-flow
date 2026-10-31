@@ -1,3 +1,9 @@
+import { canonicalJson } from '../core/persistence/canonicalJson.js';
+import { isDeepStrictEqual } from 'node:util';
+import { validRefreshTransition } from '../shared/flowRefresh.js';
+import { pixelDigest, imagePixelDigests, reconcileTiffPixels } from './flowPixelIdentity.js';
+import { admitTiffCandidate } from '../core/formats/index.js';
+import type { FlowAssetDepot } from '../shared/flowWave2.js';
 import { createOutputObservation } from './flowOutputObservation.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -7,7 +13,7 @@ import { OUTPUT_LEDGER_LIMIT, assertOutputLedgerBudget, orderedOutputNames, pref
 import { createOutputTrash, validOutputDeletion, type OutputDeletion, type TrashItem } from './flowOutputTrash.js';
 import { outputPath, settleOutputMove, type OutputMove } from './flowOutputMove.js';
 import { snapshotProject } from '../core/persistence/validate.js';
-import type { AssetReaderV1, ProjectV1 } from '../shared/refactorV1.js';
+import type { AssetReaderV1, ProjectV1, ImageDocumentV1 } from '../shared/refactorV1.js';
 import type { TiffCodec } from '../core/formats/index.js';
 import { writeManagedSourceFile } from './managedSourceSave.js';
 import { assertPhysicalWorkspaceWriterTargets } from './workspacePhysicalWriterGate.js';
@@ -21,9 +27,10 @@ const contentDigest = (project: ProjectV1, shot: ProjectV1['shots'][number]) => 
   image: project.images[shot.imageId], text: { projectId: project.id, projectName: project.name, shotId: shot.id,
     shotName: shot.name, scriptText: shot.scriptText, dialogues: project.dialogues.filter(d => d.shotId === shot.id) }
 })));
-type Entry = { shotId: string; name: string; original: string | null; current: string | null; pending?: string; location?: 'active' | 'parked'; move?: OutputMove; content?: string; deletion?: OutputDeletion; retired?: 'trashed' | 'absent-unpublished' };
-export type TiffSourceBinding = { shotId: string; name: string; digest: string; location?: 'active' | 'parked' };
-type Ledger = { version: 1; projectId: string; entries: Entry[]; rename?: OutputRename; saved?: { revision: number; projectHash: string } };
+type Entry = { baseline?: ImageDocumentV1; pixelHashes?: Record<string,string>; published?: boolean; shotId: string; name: string; original: string | null; current: string | null; pending?: string; location?: 'active' | 'parked'; move?: OutputMove; content?: string; deletion?: OutputDeletion; retired?: 'trashed' | 'absent-unpublished' };
+export type TiffSourceBinding = { pixelHashes?:Record<string,string>; shotId: string; name: string; digest: string; location?: 'active' | 'parked' };
+type RefreshJournal = { beforeHash: string; after: ProjectV1; updates: { shotId: string; digest: string; baseline: ImageDocumentV1; pixelHashes: Record<string,string> }[]; complete: boolean };
+type Ledger = { refresh?: RefreshJournal; version: 1; projectId: string; entries: Entry[]; rename?: OutputRename; saved?: { revision: number; projectHash: string } };
 export type TiffSaveReceipt = { projectId: string; revision: number; projectHash: string; files: { shotId: string; name: string; digest: string }[] };
 const read = async (file: string, limit = 128 * 1024 * 1024): Promise<Buffer> => {
   if (await fs.realpath(file) !== file) throw Error('Aliased output path refused');
@@ -54,6 +61,9 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
   };
   const observe = createOutputObservation(bind);
   const trash = createOutputTrash(root, projectId, identity, bind, trashItem);
+  const validateImage = (image: ImageDocumentV1) => snapshotProject({schema:'storyboard-flow.project',version:1,id:projectId,name:'',revision:0,
+    shots:[],parkedShots:[],dialogues:[],images:{[image.id]:image}});
+  const projectHash = (project: ProjectV1) => hash(Buffer.from(canonicalJson(snapshotProject(project))));
   const load = async (): Promise<{ ledger: Ledger; bytes: Buffer | null }> => {
     await bind(); const bytes = await optionalRead(ledgerPath, OUTPUT_LEDGER_LIMIT);
     if (!bytes) return { ledger: { version: 1, projectId, entries: [] }, bytes };
@@ -73,6 +83,17 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         new Set(ledger.entries.map(e => e.shotId)).size !== ledger.entries.length || new Set(ledger.entries.filter(e => !e.retired).map(e => e.name.toLowerCase())).size !== ledger.entries.filter(e => !e.retired).length)
       throw Error('Invalid TIFF output ledger');
     if (ledger.rename !== undefined && (!validOutputRename(ledger.rename) || ledger.rename.files.some(f => !ledger.entries.some(e => e.shotId === f.shotId && !e.retired && !e.deletion && e.name === f.from && e.current === f.digest && (e.location ?? 'active') === 'active' && !e.move && !e.pending)))) throw Error('Invalid bound rename journal');
+    for(const entry of ledger.entries){
+      if(entry.baseline)validateImage(entry.baseline);
+      if(entry.pixelHashes&&(!entry.baseline||Object.keys(entry.pixelHashes).length!==entry.baseline.layers.length||entry.baseline.layers.some(l=>!digest(entry.pixelHashes![l.id]))))throw Error('Invalid pixel baseline');
+      if(entry.published!==undefined&&typeof entry.published!=='boolean')throw Error('Invalid source provenance');
+    }
+    if(ledger.refresh){
+      const j=ledger.refresh;snapshotProject(j.after);
+      if(!digest(j.beforeHash)||j.after.id!==projectId||typeof j.complete!=='boolean'||!Array.isArray(j.updates)||
+        new Set(j.updates.map(u=>u.shotId)).size!==j.updates.length)throw Error('Invalid refresh journal');
+      for(const u of j.updates){validateImage(u.baseline);if(!u.pixelHashes||Object.keys(u.pixelHashes).length!==u.baseline.layers.length||u.baseline.layers.some(l=>!digest(u.pixelHashes[l.id])))throw Error('Invalid refresh pixel baseline');if(!digest(u.digest)||!ledger.entries.some(e=>e.shotId===u.shotId&&!e.retired&&!e.deletion&&!e.move&&!e.pending))throw Error('Invalid bound refresh update');}
+    }
     return { ledger, bytes };
   };
   const persist = async (ledger: Ledger, previous: Buffer | null) => {
@@ -93,6 +114,96 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
     }
   };
   return {
+    async hasPendingRefresh(){const j=(await load()).ledger.refresh;return !!j&&!j.complete;},
+    refresh(project: ProjectV1, depot: FlowAssetDepot, checkpoint: {load():Promise<ProjectV1>; save(project:ProjectV1):Promise<void>}): Promise<ProjectV1> {
+      const captured=snapshotProject(project);let publishing=false;
+      return serialized(async()=>{
+        if(captured.id!==projectId)throw Error('Different project');
+        let {ledger,bytes}=await load();
+        const resume=async(j:RefreshJournal)=>{
+          publishing=true;
+          // A prepared journal can outlive the depot incarnation. Re-admit its
+          // bounded immutable bytes before checkpoint publication on recovery.
+          for(const {baseline:image} of j.updates)for(const layer of image.layers){
+            const png=await read(path.join(root,'.storyboard-flow/checkpoints/assets',layer.assetId+'.png'),64*1024*1024);
+            if(hash(png)!==layer.assetId)throw Error('Retained refresh asset digest mismatch');
+            const asset=await depot.put({operationId:'refresh_recover_'+randomUUID(),png,width:image.width,height:image.height});
+            if(!asset.ok)throw Error(asset.error.message);
+          }
+          const disk=await checkpoint.load();
+          if(!isDeepStrictEqual(disk,j.after)){
+            if(projectHash(disk)!==j.beforeHash||!validRefreshTransition(disk,j.after))throw Error('Refresh checkpoint changed; retained');
+            await checkpoint.save(j.after);
+          }
+          const verified=await checkpoint.load();
+          if(!isDeepStrictEqual(verified,j.after))throw Error('Refresh checkpoint verification failed');
+          for(const u of j.updates){const e=ledger.entries.find(e=>e.shotId===u.shotId)!;e.current=u.digest;e.baseline=u.baseline;e.pixelHashes=u.pixelHashes;delete e.content;}
+          delete ledger.saved;j.complete=true;bytes=await persist(ledger,bytes);
+          return structuredClone(j.after);
+        };
+        if(ledger.refresh&&!ledger.refresh.complete){
+          if(projectHash(captured)!==ledger.refresh.beforeHash&&!isDeepStrictEqual(captured,ledger.refresh.after))throw Error('Retry the retained Refresh before editing');
+          return resume(ledger.refresh);
+        }
+        const disk=await checkpoint.load();
+        if(!isDeepStrictEqual(disk,captured)){
+          if(ledger.refresh?.complete&&projectHash(captured)===ledger.refresh.beforeHash&&isDeepStrictEqual(disk,ledger.refresh.after))return structuredClone(disk);
+          throw Error('Refresh requires the current durable checkpoint');
+        }
+        if(ledger.rename||ledger.entries.some(e=>e.pending||e.move||e.deletion))throw Error('Finish the pending Save transaction before Refresh');
+        const after=structuredClone(captured),updates:RefreshJournal['updates']=[];
+        let admittedBytes=0;
+        for(const entry of ledger.entries){
+          const shot=[...captured.shots,...captured.parkedShots].find(s=>s.id===entry.shotId);
+          if(!shot||entry.retired||!entry.current)continue;
+          const target=outputPath(root,entry.name,entry.location??'active');
+          const observed=await observe(target);if(observed===entry.current)continue;
+          if(!observed)throw Error('Source TIFF is missing: '+entry.name);
+          if(!entry.baseline||!entry.pixelHashes)throw Error('Save this project before refreshing its sources');
+          // Never bless a changed source while its first original is unavailable.
+          const original=entry.original&&await optionalRead(path.join(root,'.storyboard-flow/originals',entry.shotId+'.tif'));
+          if(entry.original&&(!original||hash(original)!==entry.original))throw Error('Original source snapshot is unavailable; retain both versions');
+          const source=await read(target);if(hash(source)!==observed)throw Error('Source changed during Refresh');
+          const decoded=await codec.decode(source);if(!decoded.ok)throw Error(decoded.error.message);
+          const candidate=decoded.value;candidate.image.id=shot.imageId;
+          const baseline=entry.baseline;
+          let identified=candidate.identity==='portable';
+          if(candidate.identity==='native'){
+            const mapping=new Map(baseline.layers.map(l=>[entry.published?`native-${(createHash('sha256').update(l.id).digest().readUInt32BE(0)&0x7fffffff)||1}`:l.id,l]));
+            identified=candidate.image.layers.every(l=>mapping.has(l.id));
+            if(identified)for(const layer of candidate.image.layers){const known=mapping.get(layer.id)!;layer.id=known.id;layer.kind=known.kind;}
+          }
+          if(candidate.kind==='plain'&&!entry.published&&baseline.layers.length===1){candidate.image.layers[0].id=baseline.layers[0].id;candidate.image.layers[0].kind=baseline.layers[0].kind;identified=true;}
+          if(identified&&candidate.identity==='portable'&&candidate.image.layers.some(l=>!baseline.layers.some(b=>b.id===l.id)))identified=false;
+          for(const layer of candidate.image.layers)admittedBytes+=layer.png.byteLength;
+          if(admittedBytes>512*1024*1024)throw Error('Refresh exceeds 512 MiB prepared asset budget');
+          const admitted=await admitTiffCandidate(candidate,depot,'refresh_'+randomUUID());if(!admitted.ok)throw Error(admitted.error.message);
+          const external=admitted.value;
+          const {planned,externalPixels}=await reconcileTiffPixels(baseline,entry.pixelHashes,captured.images[shot.imageId],external,identified,async id=>{const r=await depot.read(id);if(!r.ok)throw Error(r.error.message);return r.value;});
+          if(planned.kind==='replace')after.images[shot.imageId]=planned.image;
+          if(planned.kind==='conflict'){
+            const alternativeId=randomUUID(),imageId=randomUUID();
+            after.images[imageId]={...external,id:imageId,revision:0};
+            after.parkedShots.push({id:alternativeId,imageId,name:shot.name+' — External version',scriptText:shot.scriptText});
+          }
+          // Retain accepted external assets even where local edits won the merge.
+          const retainedId=randomUUID();after.images[retainedId]={...external,id:retainedId};
+          updates.push({shotId:shot.id,digest:observed,baseline:external,pixelHashes:externalPixels});
+        }
+        if(!updates.length)return captured;
+        after.revision++;snapshotProject(after);if(!validRefreshTransition(captured,after))throw Error('Invalid prepared refresh transition');
+        // Recheck all observed bytes before recording an acceptance intent.
+        for(const u of updates){const e=ledger.entries.find(e=>e.shotId===u.shotId)!;if(hash(await read(outputPath(root,e.name,e.location??'active')))!==u.digest)throw Error('Source changed before refresh acceptance');}
+        const j:RefreshJournal={beforeHash:projectHash(captured),after,updates,complete:false};
+        ledger.refresh=j;delete ledger.saved;
+        // Both durable states must fit before the first acceptance write. A larger
+        // external baseline must not strand an already published checkpoint.
+        const completed=structuredClone(ledger);completed.refresh!.complete=true;
+        for(const u of updates){const e=completed.entries.find(e=>e.shotId===u.shotId)!;e.current=u.digest;e.baseline=u.baseline;e.pixelHashes=u.pixelHashes;delete e.content;}
+        if(Math.max(Buffer.byteLength(JSON.stringify(ledger)),Buffer.byteLength(JSON.stringify(completed)))>OUTPUT_LEDGER_LIMIT)throw Error('TIFF refresh ledger exceeds the 8 MiB transaction budget');
+        publishing=true;bytes=await persist(ledger,bytes);return resume(j);
+      }).catch(error=>{if(publishing)throw Object.assign(new Error(error instanceof Error?error.message:String(error)),{refreshPending:true});throw error;});
+    },
     hasPendingTrashAcknowledgements: trash.hasPendingAcknowledgements,
     /** Known outputs only: never resurrect locally removed shots or interpret new
      * root files as authority. Observation does not change ownership or project data. */
@@ -128,8 +239,13 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           if (!id(source.shotId) || !leaf(source.name) || !digest(source.digest) || !['active', 'parked'].includes(source.location ?? 'active') ||
               !(source.location === 'parked' ? captured.parkedShots : captured.shots).some(s => s.id === source.shotId) ||
               state.ledger.entries.some(e => e.shotId === source.shotId || e.name.toLowerCase() === source.name.toLowerCase())) throw Error('Invalid source binding');
-          if (hash(await readOriginal(source)) !== source.digest) throw Error('Source changed since import');
-          state.ledger.entries.push({ shotId: source.shotId, name: source.name, original: source.digest, current: source.digest, location: source.location ?? 'active' });
+          const original=await readOriginal(source);if (hash(original) !== source.digest) throw Error('Source changed since import');
+          let pixelHashes=source.pixelHashes;
+          if(!pixelHashes){const decoded=await codec.decode(original);if(!decoded.ok)throw Error(decoded.error.message);pixelHashes={};for(const layer of decoded.value.image.layers)pixelHashes[layer.id]=await pixelDigest(layer.png);}
+          const image=captured.images[[...captured.shots,...captured.parkedShots].find(s=>s.id===source.shotId)!.imageId];
+          if(Object.keys(pixelHashes).length!==image.layers.length||image.layers.some(l=>!digest(pixelHashes![l.id])))throw Error('Invalid source pixel baseline');
+          await writeManagedSourceFile(root,path.join(root,'.storyboard-flow/originals',source.shotId+'.tif'),Buffer.from(original),{createOnly:true});
+          state.ledger.entries.push({ shotId: source.shotId, name: source.name, original: source.digest, current: source.digest, pixelHashes, baseline: captured.images[[...captured.shots,...captured.parkedShots].find(s=>s.id===source.shotId)!.imageId], published:false, location: source.location ?? 'active' });
         }
         await persist(state.ledger, null);
       });
@@ -139,6 +255,8 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
       return serialized(async () => {
         if (captured.id !== projectId) throw Error('Different project');
         let { ledger, bytes } = await load();
+        if(ledger.refresh&&!ledger.refresh.complete)throw Error('Retry Refresh before Save');
+        delete ledger.refresh;
         const recoverRename = async () => {
           if (!ledger.rename) return;
           await settleOutputRename(root, ledger.rename, async () => { bytes = await persist(ledger, bytes); }, bind);
@@ -189,22 +307,32 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         };
         await preflight();
         // Finish every codec/read failure before replacing any output file.
-        const candidates: { entry: Entry; bytes?: Buffer; digest: string; content: string }[] = [];
+        const candidates: { entry: Entry; bytes?: Buffer; digest: string; content: string; pixelHashes?:Record<string,string> }[] = [];
         let total = 0;
         for (const shot of allShots) {
           const input = { image: captured.images[shot.imageId], text: { projectId, projectName: captured.name,
             shotId: shot.id, shotName: shot.name, scriptText: shot.scriptText, dialogues: captured.dialogues.filter(d => d.shotId === shot.id) } };
           const entry = ledger.entries.find(e => e.shotId === shot.id)!;
           const content = hash(Buffer.from(JSON.stringify(input)));
-          if (entry.content === content && entry.current && !entry.pending) {
+          if (entry.baseline && entry.pixelHashes && entry.published && entry.content === content && entry.current && !entry.pending) {
             candidates.push({ entry, digest: entry.current, content }); continue;
           }
-          const encoded = await codec.encode(input, reader);
+          const pixelCache=new Map<string,Uint8Array>();
+          const encoded = await codec.encode(input, async id=>{const bytes=await reader(id);pixelCache.set(id,bytes);return bytes;});
           if (!encoded.ok) throw Error(encoded.error.message);
           const output = Buffer.from(encoded.value); total += output.length;
           if (total > 512 * 1024 * 1024) throw Error('Prepared TIFF batch exceeds 512 MiB');
-          candidates.push({ entry, bytes: output, digest: hash(output), content });
+          candidates.push({ entry, bytes: output, digest: hash(output), content, pixelHashes:await imagePixelDigests(input.image,async id=>pixelCache.get(id)!) });
         }
+        // Reserve all positive record growth, so every intermediate mixture of
+        // old/new baselines plus pending/move/rename records fits before effects.
+        let baselineGrowth=0;
+        for(const candidate of candidates)if(candidate.bytes){
+          const entry=candidate.entry,shot=allShots.find(s=>s.id===entry.shotId)!;
+          const final={...entry,current:candidate.digest,baseline:captured.images[shot.imageId],pixelHashes:candidate.pixelHashes,published:true,content:candidate.content};
+          baselineGrowth+=Math.max(0,Buffer.byteLength(JSON.stringify(final))-Buffer.byteLength(JSON.stringify(entry)));
+        }
+        assertOutputLedgerBudget(ledger,names,removed.length*1024+baselineGrowth);
         await preflight(); bytes = await persist(ledger, bytes);
         for (const entry of removed) {
           const target = outputPath(root, entry.name, entry.location ?? 'active');
@@ -232,7 +360,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
             e.pending = candidate.digest; delete ledger.saved; bytes = await persist(ledger, bytes);
             if (actual !== candidate.digest) { await bind(); await writeManagedSourceFile(root, target, candidate.bytes, actual === null ? { createOnly: true } : { expectedDigest: actual }); }
             if (hash(await read(target)) !== candidate.digest) throw Error('TIFF readback mismatch');
-            e.current = candidate.digest; e.content = candidate.content; delete e.pending; bytes = await persist(ledger, bytes);
+            e.current = candidate.digest; e.baseline=structuredClone(captured.images[allShots.find(s=>s.id===e.shotId)!.imageId]); e.published=true; e.pixelHashes=candidate.pixelHashes; e.content = candidate.content; delete e.pending; bytes = await persist(ledger, bytes);
           }
           const destination = captured.parkedShots.some(s => s.id === e.shotId) ? 'parked' : 'active';
           if (destination !== (e.location ?? 'active')) {

@@ -57,7 +57,7 @@ export type FlowSessionRequest =
   | { kind: 'layer'; shotId: string; edit: FlowLayerEdit }
   | { kind: 'pixelTool'; shotId: string; tool: FlowPixelTool }
   | { kind: 'paint'; shotId: string; layerId: string; stroke: FlowStroke }
-  | { kind: 'undo' | 'redo' | 'checkpoint' | 'freeze' | 'resume' };
+  | { kind: 'undo' | 'redo' | 'checkpoint' | 'freeze' | 'resume' | 'refresh' };
 export type FlowCheckpointState = {
   sessionId: string; incarnation: string; revision: number;
   receipt: CheckpointReceiptV1;
@@ -80,5 +80,6 @@ export type FlowClock = {
 export type FlowSessionOptions = {
   sessionId: string; incarnation: string; project: ProjectV1; maxHistoryEntries: number;
   maxPendingRequests: number; assets: FlowAssetDepot; pixels: FlowPixels; tools?: FlowPixelTools; clock: FlowClock;
+  refresh?(project: ProjectV1): Promise<FlowResult<ProjectV1>>;
   checkpoint(project: ProjectV1, readAsset: AssetReaderV1): Promise<ResultV1<CheckpointReceiptV1>>;
 };
