@@ -6,7 +6,7 @@ receipts under docs/refactor/reviews/ instead of prepending another history entr
 ## Runtime and verified candidate
 
 The new-format editor remains isolated; default App and 启动测试.command are unchanged.
-Implementation `de85bad5ae0cfc21217da4af655e7a2a523b0f80` supports grid/Japanese editing,
+Implementation `16f42a72a7090f99b15439c599a7a35d3d33252b` supports grid/Japanese editing,
 Session history/checkpoints, bounded pixel/layer tools with grid-panel add/delete/group ordering, opacity, blur and lasso selection transforms, logical Pending, explicit TIFF
 Save/import-time original backup, TIFF-folder bootstrap, session-bound A/B switching and
 ordered TIFF filenames with undoable scene/artist/version settings, and owned TIFF
@@ -16,11 +16,12 @@ checkpoint metadata; explicit Save alone synchronizes names through a resumable 
 Switching waits for Save/checkpoint; cancellation or failed preparation keeps the prior
 Session/history. Reopening restores content, not a previous session's Undo stack.
 
-Final candidate `de85bad5ae0cfc21217da4af655e7a2a523b0f80` passes 392 files / 3003 tests
-and complete build. It passes 214 connected Electron scenarios plus a supplemental
-Pending presentation/restore check. Scoped independent code review passed; full application
-independent acceptance and full G3 remain open. Exact scope/logs:
-[latest review](docs/refactor/reviews/2026-10-31/G3-SCENE-PRESENTATION.md).
+Final candidate `16f42a72a7090f99b15439c599a7a35d3d33252b` passes 392 files / 3003 tests
+and complete build. It passes 221 connected Electron scenarios (including the corrected opacity
+driver precondition), plus mixed-aspect/Undo-isolation/playing-Close checks. Current
+renderer-only changes are self-reviewed/tested; full independent application acceptance
+and full G3 remain open. The earlier intermittent opacity failure remains recorded for follow-up. Exact scope/logs:
+[latest review](docs/refactor/reviews/2026-10-31/G3-PLAYBACK-INSPECTION.md).
 Nondurable in-process Trash ACKs block Close/switch. A process loss after OS success
 before durable confirmation remains an unknown outcome; no recovery UI is provided yet.
 Native picker results are scripted. Windows, installers, representative large rasters,
@@ -61,7 +62,12 @@ pixels/dimensions; turning it off never crops originals. Save derives padded con
 locked matte/dialogue TIFF layers. Verified generated layers normalize back to original
 coordinates on import/Refresh; externally changed overlays/padding remain intact and are
 preserved as an unverified Pending alternative during Refresh. Settings participate in
-Session history/checkpoints. Playback/onion skin remain the next bounded interaction gate.
+Session history/checkpoints. Playback/onion skin are now connected through an isolated
+Inspect entry from grid/Japanese views. Only the current canvas mounts; paused drawing
+uses ordinary Session edits with preview-only adjacent active images. Playback excludes
+Pending, waits for image decoding, stops at the last shot, and pauses on load failure or
+window blur. Navigation/Close refuses unsettled gestures. Speed and onion settings are
+transient. Production zoom/timeline parity and large-project memory/performance remain open.
 Documentation cleanup on codex/docs-cleanup is complete, reviewed and integrated; its
 clean worktree/branch are retained. Root history is archived below. No old runtime/script deletion.
 

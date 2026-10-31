@@ -512,3 +512,17 @@ Refresh remove only verifiably unchanged generated presentation; externally chan
 or padding remain intact, with unverified Refresh versions preserved in Pending. Original
 TIFF backups remain unchanged. This replaces the old expand-all-layers/crop-on-disable
 policy only for the isolated route. Default production routing is unchanged.
+
+
+## Isolated inspection is transient and uses the existing canvas — 2026-10-31
+
+The user authorized playback checks/onion skin without timing or audio expansion. The
+isolated editor exposes an Inspect entry from both grid and Japanese views. It owns only
+transient current position, preview speed and onion visibility. Paused inspection reuses
+SketchPad and Session edits; playing uses read-only layers, hides onion references and
+blocks editor Undo shortcuts. Only active shots participate, with no neighbor wrapping.
+Decode readiness starts each frame's dwell; Pause, leaving the view and window blur stop
+advancement. Pending, project JSON and TIFF never receive playback/onion state. Save still
+writes only actual image layers and explicit matte/dialogue presentation. This bounded
+entry does not replace the production zoom-driven animation policy; full shell parity
+remains a separate integration gate.

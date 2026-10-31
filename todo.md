@@ -18,7 +18,11 @@ and evidence belong in [context-handoff.md](context-handoff.md).
 
 - Grid layer add/delete/single/group ordering, group opacity, whole-layer/selection blur
   and lasso move/scale/rotate plus independent matte/dialogue-overlay presentation are
-  connected. Complete playback/onion skin for inspection and full existing-shell parity.
+  connected. Inspection playback/onion skin are connected with bounded GUI evidence.
+  Complete full existing-shell parity, including production zoom/timeline integration.
+- Follow up the intermittent opacity GUI failure during group re-selection after panel
+  reopen; unchanged-script retry and the final driver with an explicit group-selected
+  wait passed. The original cause remains unproven; see the latest inspection review.
 - Verify OS IME, native picker/dialogue drag, protected adjacent operations and
   representative marquee/zoom/pan/layer gestures in the real application.
 - Production entry integration and independent acceptance follow bounded G2/G3
