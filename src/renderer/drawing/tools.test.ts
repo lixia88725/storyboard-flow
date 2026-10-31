@@ -110,3 +110,15 @@ describe('pixel tool resource ownership', () => {
     } finally { vi.unstubAllGlobals(); }
   });
 });
+
+it('refuses invalid blur radius, locked/hidden layers and oversized canvases before reading',async()=>{
+ const read=vi.fn();
+ for(const radius of [0,51,NaN,Infinity,'8',undefined])expect((await tools().produce({kind:'blur',image:image(),layerId:'a',radius} as PixelToolRequest,read)).ok).toBe(false);
+ for(const patch of [{locked:true},{visible:false}]){
+  const source=image();Object.assign(source.layers[0],patch);
+  expect((await tools().produce({kind:'blur',image:source,layerId:'a',radius:8},read)).ok).toBe(false);
+ }
+ const source=image();source.width=10;source.layers.forEach(l=>l.width=10);
+ expect(await tools().produce({kind:'blur',image:source,layerId:'a',radius:8},read)).toMatchObject({ok:false,error:{code:'resource-limit'}});
+ expect(read).not.toHaveBeenCalled();
+});

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
-import type { FlowAssetReceipt, FlowFailure, FlowPixelOutput, FlowResult, FlowSession, FlowSessionOptions, FlowSessionOutcome } from '../../../electron/shared/flowWave2';
+import type { FlowAssetReceipt, FlowFailure, FlowPixelOutput, FlowPixelToolOutput, FlowResult, FlowSession, FlowSessionOptions, FlowSessionOutcome } from '../../../electron/shared/flowWave2';
 import type { AssetReaderV1, CheckpointReceiptV1, ProjectV1, ResultV1 } from '../../../electron/shared/refactorV1';
 import { createFlowSession } from './index';
 import { createProjectStore } from '../../../electron/core/persistence/index';
@@ -855,4 +855,47 @@ it('records a complete group opacity gesture as one Undo entry and checkpoints e
  expect((await session.request(edit)).ok).toBe(false);expect(session.snapshot().project).toEqual(after);
  await success(session.request({kind:'undo'}));expect(session.snapshot().project.images).toEqual(p.images);
  await success(session.request({kind:'redo'}));expect(session.snapshot().project.images).toEqual(after.images);
+});
+
+it('queues blur as one pixel replacement and preserves exact layer properties through Undo',async()=>{
+ const p=project();p.images.i_a.layers[0].opacity=0.4;p.images.i_a.layers[0].blendMode='multiply';
+ const gate=deferred<FlowResult<FlowPixelToolOutput>>(),produce=vi.fn(()=>gate.promise),{session}=setup({project:p,tools:{produce}});
+ const before=structuredClone(p.images.i_a);
+ const apply=session.request({kind:'pixelTool',shotId:'a',tool:{kind:'blur',layerId:'layer',radius:8}});
+ const undo=session.request({kind:'undo'});
+ gate.resolve({ok:true,value:{png:Uint8Array.of(7,8,9),width:4,height:3,baseline:before,plan:{kind:'replace',layerId:'layer'}}});
+ const result=await success(apply);expect(result.snapshot.project.images.i_a.layers[0]).toMatchObject({opacity:0.4,blendMode:'multiply'});
+ await success(undo);expect(session.snapshot().project.images.i_a).toEqual(before);
+ await success(session.request({kind:'redo'}));expect(session.snapshot().project.images.i_a.layers[0].assetId).toBe(hash(Uint8Array.of(7,8,9)));
+});
+it('rejects malformed blur input before pixel production and leaves failed blur out of history',async()=>{
+ const produce=vi.fn(async()=>error('unavailable')),{session}=setup({tools:{produce}});
+ for(const radius of [0,51,NaN,Infinity])expect((await session.request({kind:'pixelTool',shotId:'a',tool:{kind:'blur',layerId:'layer',radius}})).ok).toBe(false);
+ expect(produce).not.toHaveBeenCalled();
+ expect((await session.request({kind:'pixelTool',shotId:'a',tool:{kind:'blur',layerId:'layer',radius:8}})).ok).toBe(false);
+ expect((await session.request({kind:'undo'})).ok).toBe(false);expect(session.snapshot().project).toEqual(project());
+});
+
+
+it('dismisses a refused operation after a successful edit without hiding a checkpoint failure', async () => {
+ const {session}=setup({async checkpoint(){return {ok:false,error:{code:'io-failure',message:'disk unavailable'}};}});
+ await success(session.request(text('edited')));
+ expect((await session.request({kind:'checkpoint'})).ok).toBe(false);
+ expect((await session.request({kind:'layer',shotId:'missing',edit:{kind:'removeLayer',layerId:'layer'}})).ok).toBe(false);
+ expect(session.snapshot().lastError?.code).toBe('not-found');
+ await success(session.request(text('retry')));
+ expect(session.snapshot().lastError?.message).toBe('disk unavailable');
+ const healthy=setup().session;
+ expect((await healthy.request({kind:'layer',shotId:'missing',edit:{kind:'removeLayer',layerId:'layer'}})).ok).toBe(false);
+ await success(healthy.request(text('success')));
+ expect(healthy.snapshot().lastError).toBeNull();
+});
+
+it('keeps an unresolved asset effect across a later refusal and successful edit', async () => {
+ const h=setup();
+ const {session}=setup({pixels:{produce:async()=>painted},assets:{...h.options.assets,put:async()=>error('io-failure','uncertain asset','unknown')}});
+ expect((await session.request(paint())).ok).toBe(false);
+ expect((await session.request({kind:'layer',shotId:'missing',edit:{kind:'removeLayer',layerId:'layer'}})).ok).toBe(false);
+ await success(session.request(text('success')));
+ expect(session.snapshot().lastError).toMatchObject({message:'uncertain asset',effect:'unknown'});
 });

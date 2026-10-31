@@ -136,8 +136,9 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   const [savingTiff, setSavingTiff] = useState(false);
   const [savedTiffRevision, setSavedTiffRevision] = useState<number>();
   const [japanese, setJapanese] = useState(false);
-  const [tool, setTool] = useState<'brush' | 'eraser'>('brush');
+  const [tool, setTool] = useState<'brush' | 'eraser' | 'blur'>('brush');
   const [color, setColor] = useState('#dd3344');
+  const [blurRadius,setBlurRadius]=useState(8);
   const [size, setSize] = useState(20);
   const [opacityPreview, setOpacityPreview] = useState<Record<string, number>>({});
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -216,6 +217,11 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   };
   const moveLayers = (shotId:string,layerIds:string[],targetLayerId:string,placement:'before'|'after') =>
     act({kind:'layer',shotId,edit:{kind:'moveLayers',layerIds,targetLayerId,placement}});
+  const applyBlur = () => {
+    if(!active||gestures.current||outputWork.current||flow.snapshot().pending||captureMountedCanvasCheckpoints().hasUnsettledGesture){setIssue('Finish the current edit before applying blur');return;}
+    const shot=shots.find(s=>s.id===selected);
+    if(shot?.activeLayerId)act({kind:'pixelTool',shotId:shot.id,tool:{kind:'blur',layerId:shot.activeLayerId,radius:blurRadius}});
+  };
   const merge = (shotId: string, layerId: string, selectedIds: string[]) => {
     const project = flow.snapshot().project, shot = project.shots.find(s => s.id === shotId);
     if (!shot) return;
@@ -291,6 +297,8 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
         <button disabled={!active} onClick={switchView}>{japanese ? 'Grid view' : 'Japanese view'}</button>
         <button disabled={!active} aria-pressed={tool === 'brush'} onClick={() => setTool('brush')}>Brush</button>
         <button disabled={!active} aria-pressed={tool === 'eraser'} onClick={() => setTool('eraser')}>Eraser</button>
+        <button disabled={!active} aria-pressed={tool==='blur'} onClick={()=>setTool('blur')}>Blur</button>
+        {tool==='blur'&&<><input aria-label="Blur radius" type="range" min="1" max="50" step="1" value={blurRadius} onChange={e=>setBlurRadius(Number(e.target.value))}/><span>{blurRadius} px</span><button disabled={!active||!!snapshot.pending} onClick={applyBlur}>Apply blur</button></>}
         <input aria-label="Brush color" type="color" value={color} onChange={e => setColor(e.target.value)} />
         <button draggable={active} disabled={!active} title="Drag this color onto a layer to fill" onDragStart={e => { e.dataTransfer.setData('application/x-storyboard-fill-color', color); e.dataTransfer.effectAllowed = 'copy'; }}>Fill color</button>
         <input aria-label="Brush size" type="range" min="1" max="100" value={size} onChange={e => setSize(Number(e.target.value))} />

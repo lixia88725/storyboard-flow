@@ -131,7 +131,7 @@ export async function runPixelCanvasChecks() {
   // Observe native resources belonging to each tool call; decode and Canvas remain real.
   const toolLifetimes: { label: string; canvases: number; admitted: number; closed: number }[] = [];
   async function trackedTool(label: string, request: PixelToolRequest, reader: AssetReaderV1,
-    producer = operations) {
+    producer = operations, expectedCanvases = 1) {
     const canvases: HTMLCanvasElement[] = [];
     let admitted = 0, closed = 0;
     document.createElement = ((tag: string, options?: ElementCreationOptions) => {
@@ -151,13 +151,21 @@ export async function runPixelCanvasChecks() {
     finally {
       document.createElement = originalCreate;
       globalThis.createImageBitmap = originalDecode;
-      assert(canvases.length === 1, `${label}: actual canvas allocated`);
+      assert(canvases.length === expectedCanvases, `${label}: actual canvas allocated`);
       assert(admitted > 0 && admitted === closed, `${label}: all admitted native bitmaps closed`);
       assert(canvases.every(canvas => canvas.width === 0 && canvas.height === 0), `${label}: canvas backing released`);
       toolLifetimes.push({ label, canvases: canvases.length, admitted, closed });
     }
   }
   const base = inputOf(baseStroke()).image;
+  const impulse=canvasOf();impulse.context.fillStyle='#0000ff';impulse.context.fillRect(16,12,1,1);
+  const impulsePng=await bytesOf(impulse.canvas);impulse.canvas.width=impulse.canvas.height=0;
+  const blurRequest:PixelToolRequest={kind:'blur',image:base,layerId:'layer',radius:2};
+  const blurred=value(await trackedTool('blur-success',blurRequest,async()=>{blurRequest.radius=50;return impulsePng;},operations,2));
+  const blurPixels=await rgbaOf(blurred.png),blurCenter=pixel(blurPixels,16,12),blurEdge=pixel(blurPixels,18,12);
+  assert(blurCenter[3]>3 && blurCenter[3]<60 && blurEdge[3]>0,'Gaussian spread replaces sharp core and uses captured radius');
+  assert(blurCenter[2]===255 && blurred.plan.kind==='replace' && blurred.plan.layerId==='layer','blur preserves color and target');
+  cases.push({name:'tool-blur',png:base64(blurred.png),reference:base64(blurred.png),samples:{center:blurCenter,edge:blurEdge}});
   const barrier = canvasOf();
   barrier.context.fillStyle = '#0000ff'; barrier.context.fillRect(0, 0, width, height);
   barrier.context.fillStyle = '#000000'; barrier.context.fillRect(16, 0, 1, height);

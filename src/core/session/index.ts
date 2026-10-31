@@ -71,7 +71,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
   const remember = (error: FlowFailure, source: 'checkpoint' | 'operation') => {
     const entry = { serial: ++errorSerial, error: copy(error) };
     if (source === 'checkpoint') checkpointError = entry;
-    else operationError = entry;
+    else if (!operationError || operationError.error.effect === 'none' || error.effect !== 'none') operationError = entry;
   };
   const unexpected = (error: unknown, effect: FlowFailure['effect']): FlowResult<never> =>
     error instanceof AssetReadFailure ? { ok: false, error: copy(error.failure) } :
@@ -422,6 +422,8 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
       const promise = new Promise<FlowResult<FlowSessionOutcome>>(complete => { resolve = complete; });
       const task: Task = { request, finish: result => {
         if (!result.ok && request.kind !== 'checkpoint' && request.kind !== 'freeze') remember(result.error, 'operation');
+        // A successful edit dismisses a refused operation, never an unresolved effect or checkpoint failure.
+        if (result.ok && request.kind !== 'checkpoint' && request.kind !== 'freeze' && request.kind !== 'resume' && operationError?.error.effect === 'none') operationError = null;
         pending--;
         if (request.kind === 'freeze') freezePromise = null;
         const outcome = result.ok ? { ok: true as const, value: { changed: result.value, snapshot: snapshot() } } : copy(result);

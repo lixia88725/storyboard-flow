@@ -20,6 +20,7 @@ export type FlowPixels = {
   produce(input: FlowPixelInput, readAsset: AssetReaderV1): Promise<FlowResult<FlowPixelOutput>>;
 };
 export type FlowPixelTool =
+  | { kind: 'blur'; layerId: string; radius: number }
   | { kind: 'fill'; layerId: string; x: number; y: number; color: readonly [number, number, number, number]; tolerance: number }
   | { kind: 'clear'; layerId: string }
   | { kind: 'merge'; layerIds: readonly string[] };

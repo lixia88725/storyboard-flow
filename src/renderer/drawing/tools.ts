@@ -26,9 +26,10 @@ export function createPixelTools(limits: PixelToolLimits) {
     ? { ...limits } : undefined;
   return { async produce(request: PixelToolRequest, read: AssetReaderV1): Promise<FlowResult<PixelToolOutput>> {
     let image: ImageDocumentV1, ids: string[], plan: PixelToolOutput['plan'], kind: PixelToolRequest['kind'];
+    let blurRadius: number | undefined;
     let fill: { x: number; y: number; color: number[]; tolerance: number } | undefined;
     try {
-      if (!bounded || typeof read !== 'function' || !request || !['fill', 'clear', 'merge'].includes(request.kind)) return fail('invalid-input', 'Invalid limits, request or reader');
+      if (!bounded || typeof read !== 'function' || !request || !['fill', 'clear', 'merge', 'blur'].includes(request.kind)) return fail('invalid-input', 'Invalid limits, request or reader');
       kind = request.kind;
       const firstId = request.kind === 'merge' ? request.layerIds?.[0] : request.layerId;
       const checked = applyImageEdit(request.image, { kind: 'setLayer', layerId: firstId, patch: {} });
@@ -53,6 +54,7 @@ export function createPixelTools(limits: PixelToolLimits) {
         if (layer.locked) return fail('locked', 'Target is locked');
         if (!layer.visible) return fail('invalid-input', 'Target must be visible');
         ids = [layer.id]; plan = { kind: 'replace', layerId: layer.id };
+        if(request.kind==='blur'){if(typeof request.radius!=='number'||!Number.isFinite(request.radius)||request.radius<1||request.radius>50)return fail('invalid-input','Blur radius must be 1–50 pixels');blurRadius=request.radius;}
         if (request.kind === 'fill') {
           if (!Number.isFinite(request.x) || !Number.isFinite(request.y) || !Number.isInteger(request.tolerance) || request.tolerance < 0 || request.tolerance > 255 || !validRgba(request.color)) return fail('invalid-input', 'Invalid fill coordinates, RGBA or tolerance');
           fill = { x: Math.min(image.width - 1, Math.max(0, Math.floor(request.x))), y: Math.min(image.height - 1, Math.max(0, Math.floor(request.y))), color: [...request.color], tolerance: request.tolerance };
@@ -61,6 +63,7 @@ export function createPixelTools(limits: PixelToolLimits) {
     } catch (e) { return fail('invalid-input', `Could not capture input: ${errorText(e)}`); }
     if (typeof document === 'undefined' || typeof createImageBitmap !== 'function' || typeof Blob === 'undefined') return fail('unavailable', 'Canvas unavailable');
     let canvas: HTMLCanvasElement | undefined;
+    let blurred: HTMLCanvasElement | undefined;
     let bitmap: ImageBitmap | undefined;
     try {
       canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
@@ -83,7 +86,16 @@ export function createPixelTools(limits: PixelToolLimits) {
         ctx.globalCompositeOperation = kind === 'merge' && layer.blendMode !== 'normal' ? layer.blendMode : 'source-over';
         ctx.drawImage(bitmap, 0, 0); bitmap.close(); bitmap = undefined;
       }
-      if (plan.kind === 'replace' && !fill) ctx.clearRect(0, 0, image.width, image.height);
+      if (kind === 'clear') ctx.clearRect(0, 0, image.width, image.height);
+      if(blurRadius!==undefined){
+        blurred=document.createElement('canvas');blurred.width=image.width;blurred.height=image.height;
+        const filtered=blurred.getContext('2d');if(!filtered||!('filter' in filtered))return fail('unavailable','Canvas blur unavailable');
+        filtered.filter=`blur(${blurRadius}px)`;
+        if(filtered.filter!==`blur(${blurRadius}px)`)return fail('unavailable','Canvas blur filter refused');
+        filtered.drawImage(canvas,0,0);
+        // Replace the original pixels; overlaying leaves a sharp opaque core.
+        ctx.clearRect(0,0,image.width,image.height);ctx.drawImage(blurred,0,0);
+      }
       if (fill) {
         const pixels = ctx.getImageData(0, 0, image.width, image.height), data = pixels.data;
         const start = fill.y * image.width + fill.x, target = Array.from(data.slice(start * 4, start * 4 + 4));
@@ -108,6 +120,6 @@ export function createPixelTools(limits: PixelToolLimits) {
       if (png.length !== blob.size) return fail('io-failure', 'PNG byte length changed');
       return { ok: true, value: { png, width: image.width, height: image.height, baseline: image, plan } };
     } catch (e) { return fail('unavailable', `Canvas operation failed: ${errorText(e)}`); }
-    finally { bitmap?.close(); if (canvas) { canvas.width = 0; canvas.height = 0; } }
+    finally { bitmap?.close(); if(blurred){blurred.width=0;blurred.height=0;} if (canvas) { canvas.width = 0; canvas.height = 0; } }
   } };
 }

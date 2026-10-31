@@ -61,6 +61,7 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
       case 'pixelTool': {
         if (!shape(value, ['kind', 'shotId', 'tool']) || !id(value.shotId)) break;
         const tool = value.tool;
+        if (shape(tool,['kind','layerId','radius']) && tool.kind==='blur' && id(tool.layerId) && typeof tool.radius==='number' && Number.isFinite(tool.radius) && tool.radius>=1 && tool.radius<=50) return {ok:true,value:value as FlowSessionRequest};
         if (shape(tool, ['kind', 'layerId']) && tool.kind === 'clear' && id(tool.layerId))
           return { ok: true, value: value as FlowSessionRequest };
         if (shape(tool, ['kind', 'layerIds']) && tool.kind === 'merge' && Array.isArray(tool.layerIds) &&
