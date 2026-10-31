@@ -6,8 +6,8 @@ receipts under docs/refactor/reviews/ instead of prepending another history entr
 ## Runtime and verified candidate
 
 The new-format editor remains isolated; default App and 启动测试.command are unchanged.
-Implementation `455ee0e0b7b719e95c601ae7c36789723a1770b4` supports grid/Japanese editing,
-Session history/checkpoints, bounded pixel/layer tools with grid-panel add/delete/group ordering and opacity, logical Pending, explicit TIFF
+Implementation `ab59423ca1d46ae5d4000dd6d40eb21c2914efdd` supports grid/Japanese editing,
+Session history/checkpoints, bounded pixel/layer tools with grid-panel add/delete/group ordering, opacity and whole-layer blur, logical Pending, explicit TIFF
 Save/import-time original backup, TIFF-folder bootstrap, session-bound A/B switching and
 ordered TIFF filenames with undoable scene/artist/version settings, and owned TIFF
 deletion to system Trash on explicit Save. Undo regenerates deleted TIFFs from retained
@@ -16,10 +16,10 @@ checkpoint metadata; explicit Save alone synchronizes names through a resumable 
 Switching waits for Save/checkpoint; cancellation or failed preparation keeps the prior
 Session/history. Reopening restores content, not a previous session's Undo stack.
 
-That clean unchanged candidate passes 390 files / 2986 tests, complete build and
-113 real Electron scenarios. Scoped independent code review passed; full application
+That clean unchanged candidate passes 390 files / 2991 tests, complete build and
+130 real Electron scenarios plus 13 real Canvas checks. Scoped independent code review passed; full application
 independent acceptance and full G3 remain open. Exact scope/logs:
-[latest review](docs/refactor/reviews/2026-10-31/G3-GROUP-OPACITY.md).
+[latest review](docs/refactor/reviews/2026-10-31/G3-WHOLE-LAYER-BLUR.md).
 Nondurable in-process Trash ACKs block Close/switch. A process loss after OS success
 before durable confirmation remains an unknown outcome; no recovery UI is provided yet.
 Native picker results are scripted. Windows, installers, representative large rasters,
@@ -47,6 +47,10 @@ only after admission; Undo/Close wait for creation. New-shot white backgrounds a
 Group opacity now previews without checkpoint writes and commits all selected unlocked
 layers as one undoable action. Cancellation clears the preview. Single/group gestures
 cannot overlap pending Session/output work; remaining tools/presentation are separate gates.
+Whole-layer Gaussian blur (1–50 px) now applies to the selected visible unlocked layer
+as one undoable pixel replacement. Save alone writes its TIFF output; selected-area blur
+and selection transforms remain open. Successful edits clear prior no-effect refusals,
+while unresolved operation effects and checkpoint failures remain visible.
 Documentation cleanup on codex/docs-cleanup is complete, reviewed and integrated; its
 clean worktree/branch are retained. Root history is archived below. No old runtime/script deletion.
 
