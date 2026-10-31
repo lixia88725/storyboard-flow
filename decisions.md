@@ -526,3 +526,20 @@ advancement. Pending, project JSON and TIFF never receive playback/onion state. 
 writes only actual image layers and explicit matte/dialogue presentation. This bounded
 entry does not replace the production zoom-driven animation policy; full shell parity
 remains a separate integration gate.
+
+
+## Dual-panel frontend target — 2026-10-31
+
+The user chose a new frontend rather than reproducing old zoom-to-animation interaction.
+One application window contains movable/resizable/hideable panels. Grid pictures draw;
+headers select and sort. The canvas displays the earliest selected active shot in project
+order. Starting a stroke single-selects its shot. Left/right manual review cancels multi-
+selection and single-selects the adjacent active shot, stopping at edges and excluding
+Pending. There is no separate playhead/selection marker or timing/audio expansion now.
+Grid tile scale and canvas zoom are independent; neither changes editing mode.
+
+Markdown is explicit export only in the target. Import, continuously rewriting external
+Markdown and an AI editing endpoint are not part of this frontend prototype. Photoshop
+interoperability and advanced drawing/brush work remain later module tasks. The first
+prototype reuses Session/SketchPad/LayerPanel and keeps default production routing intact.
+See docs/refactor/WORKBENCH.md for current scope, implementation and remaining gates.

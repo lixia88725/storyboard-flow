@@ -6,6 +6,18 @@ receipts under docs/refactor/reviews/ instead of prepending another history entr
 ## Runtime and verified candidate
 
 The new-format editor remains isolated; default App and 启动测试.command are unchanged.
+Current candidate `ebc8a2c70cba4a474744c3be0403d0a35171e809` adds an opt-in dual-panel
+workbench (`--workbench`): direct grid/viewer drawing with live mirroring, earliest-selected
+canvas, single-selection manual arrow flipping, dock/hide/resize panels, and visible-only
+raster loading. Full suite: 392 files / 3003 tests; full build passed on the same clean
+candidate. Small and 1,000-shot real Electron workbench variants pass 17 checks each;
+119 protected classic-editor checks also pass. This is coordinator self-test, not independent
+application acceptance. Read [workbench design](docs/refactor/WORKBENCH.md) and
+[prototype evidence/limits](docs/refactor/reviews/2026-10-31/G4-WORKBENCH-PROTOTYPE.md).
+The fresh open synthetic preview is `.hermes/previews/interaction-6xVMhW/`; preserve any
+subsequent user edits. Existing preview/worktrees are untouched.
+
+Prior core/editor milestone (retained behavior and historical evidence):
 Implementation `16f42a72a7090f99b15439c599a7a35d3d33252b` supports grid/Japanese editing,
 Session history/checkpoints, bounded pixel/layer tools with grid-panel add/delete/group ordering, opacity, blur and lasso selection transforms, logical Pending, explicit TIFF
 Save/import-time original backup, TIFF-folder bootstrap, session-bound A/B switching and
@@ -16,7 +28,7 @@ checkpoint metadata; explicit Save alone synchronizes names through a resumable 
 Switching waits for Save/checkpoint; cancellation or failed preparation keeps the prior
 Session/history. Reopening restores content, not a previous session's Undo stack.
 
-Final candidate `16f42a72a7090f99b15439c599a7a35d3d33252b` passes 392 files / 3003 tests
+Prior candidate `16f42a72a7090f99b15439c599a7a35d3d33252b` passes 392 files / 3003 tests
 and complete build. It passes 221 connected Electron scenarios (including the corrected opacity
 driver precondition), plus mixed-aspect/Undo-isolation/playing-Close checks. Current
 renderer-only changes are self-reviewed/tested; full independent application acceptance
@@ -25,7 +37,7 @@ and full G3 remain open. The earlier intermittent opacity failure remains record
 Nondurable in-process Trash ACKs block Close/switch. A process loss after OS success
 before durable confirmation remains an unknown outcome; no recovery UI is provided yet.
 Native picker results are scripted. Windows, installers, representative large rasters,
-full production-shell parity and hostile cross-process/crash behavior are not certified.
+production frontend rollout and hostile cross-process/crash behavior are not certified.
 
 ## Current work
 
@@ -67,7 +79,8 @@ Inspect entry from grid/Japanese views. Only the current canvas mounts; paused d
 uses ordinary Session edits with preview-only adjacent active images. Playback excludes
 Pending, waits for image decoding, stops at the last shot, and pauses on load failure or
 window blur. Navigation/Close refuses unsettled gestures. Speed and onion settings are
-transient. Production zoom/timeline parity and large-project memory/performance remain open.
+transient. The user now targets a new dual-panel frontend rather than old zoom/timeline parity.
+Large-raster memory/performance remains open; the prototype scale check uses small synthetic rasters.
 Documentation cleanup on codex/docs-cleanup is complete, reviewed and integrated; its
 clean worktree/branch are retained. Root history is archived below. No old runtime/script deletion.
 

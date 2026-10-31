@@ -12,14 +12,22 @@ and evidence belong in [context-handoff.md](context-handoff.md).
   evidence (see current handoff). Remaining: real Photoshop identity/roundtrip checks,
   representative large-project resource measurements, and a separately designed automatic
   observation schedule. External rename/relink/new-file discovery remain separate work.
-- Handle remaining interchange/Markdown behavior.
+- Implement explicit Markdown export only for the new frontend. No import or external
+  Markdown autosync; any future AI editing interface needs its own design.
 
 ## Remaining interaction and rollout gates
 
 - Grid layer add/delete/single/group ordering, group opacity, whole-layer/selection blur
   and lasso move/scale/rotate plus independent matte/dialogue-overlay presentation are
   connected. Inspection playback/onion skin are connected with bounded GUI evidence.
-  Complete full existing-shell parity, including production zoom/timeline integration.
+  The user now targets the new dual-panel workbench instead of old zoom/timeline parity.
+- Review the working prototype with the user. Add new-workbench Japanese layout and
+  remaining presentation/tool controls; refine dock/resize/keyboard/pen interactions and
+  layout persistence. Keep the `--workbench` route isolated until acceptance. The classic
+  Workspace shortcut currently resets to classic on project switch; polish that if retained.
+- Develop representative large-raster/decoded-memory benchmarks and thumbnail/cache policy.
+  The 1,000-shot 640×360 fixture passes bounded loading/interaction checks (~3.4s opening),
+  but all lightweight card DOM remains and the 96-entry URL cache is not a byte budget.
 - Follow up the intermittent opacity GUI failure during group re-selection after panel
   reopen; unchanged-script retry and the final driver with an explicit group-selected
   wait passed. The original cause remains unproven; see the latest inspection review.
