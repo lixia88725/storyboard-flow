@@ -1,5 +1,14 @@
 # 第二轮主管验收基线
 
+Latest 2026-10-31 naming gate: clean `bba2bb5` passes 386 files / 2922 tests,
+complete build and 64 real Electron cases. User-confirmed scene/artist/version settings
+and ordered explicit-Save TIFF names are implemented; three independent code-review
+findings were corrected and re-reviewed. See ../reviews/2026-10-31/G3-SAVE-NAMING.md.
+Exported-shot Trash deletion, external refresh, remaining tools, production-shell
+integration and broader platform/scale/application acceptance remain open. Prior
+ordered-filenames TODO statements below describe earlier candidate states.
+
+
 Latest 2026-10-31 update: isolated A/B switching is implemented and self-tested on clean
 `dfccac1`: full 385 files / 2911 tests, complete build, and 62 real Electron cases
 (7 switching, 13 import, 42 existing editor). See ../reviews/2026-10-31/G3-PROJECT-SWITCHING.md.

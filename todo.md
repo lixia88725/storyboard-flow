@@ -5,10 +5,6 @@ and evidence belong in [context-handoff.md](context-handoff.md).
 
 ## Current output integration
 
-- Preserve project/scene/stb/artist/version naming settings; Save synchronizes active
-  TIFF filenames in board order (0010, 0020, …). Autosave does not rename files.
-- Complete collision-safe two-stage renaming, partial-failure recovery and connected
-  Save/Undo/reopen verification. Pending keeps its separate membership/output policy.
 - Implement exported-shot deletion to system Trash on Save, with original backups,
   durable effect reporting, failure/retry and actual connected verification.
 - Handle external TIFF refresh/conflicts and remaining interchange/Markdown behavior.
