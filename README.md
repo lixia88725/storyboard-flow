@@ -172,3 +172,5 @@ Option/Alt drag 不再作为复制手势；按住 Option/Alt 拖动 storyboard�
 双击根目录 `启动测试.command`。脚本使用现有依赖，完整编译前端和 Electron 后直接启动应用；不会自动安装依赖或清理用户数据。启动日志保存在 `.hermes/launch/`，异常退出会提示日志位置。
 
 只检查运行依赖：`bash 启动测试.command --check`。默认使用应用的常规配置目录；独立测试可设置 `FLOW_USER_DATA_DIR`。旧的 `--full`、`--dev`、`--reset-cache`、`--userdata` 参数不再提供，开发热更新使用 `npm run dev`。Windows 启动入口与安装包本轮未验证。
+
+Developer navigation: [documentation index](docs/README.md), [current handoff](context-handoff.md), [remaining work](todo.md).

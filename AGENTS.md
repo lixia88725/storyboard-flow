@@ -1,43 +1,20 @@
 # Storyboard Flow developer rules
-## Active parallel batch 3 — 2026-10-30
 
-User explicitly authorized three new Codex worktree sessions: Board and Drawing on
-gpt-6.1-terra, TIFF Formats on gpt-6.1-sol; coordinator stays on original main.
-Read docs/refactor/batch3/PLAN.md and the assigned lane task before editing.
-This supersedes earlier no-new-agent/remaining-tools stop clauses only for these tasks.
-Scoped implementation, synthetic tests and local commits are authorized; no push,
-default production routing, old-code deletion, dependencies or personal media changes.
-Shared contracts and file ownership follow the batch plan; report cross-lane needs
-instead of editing another lane. Prior milestones below remain historical evidence.
+## Current work and authority — 2026-10-31
 
-## Active G2 authority — 2026-10-30
+Coordinator owns original main and continues the isolated new-format editor integration.
+The user authorized a parallel documentation-cleanup worktree; its assigned scope is
+history/navigation only. Current behavior/evidence is in context-handoff.md; unfinished
+gates are in todo.md. Historical wave-one, wave-two and batch-three briefs are evidence,
+not instructions to restart agents. Prior authority text is preserved in
+[the dated snapshot](docs/archive/coordinator/2026-10-31/AGENTS.md).
 
-User authorized coordinator-owned UI integration on main after retiring all three
-wave-two worktrees. Start with the bounded existing-component editing/checkpoint/
-normal-close/reopen workflow in docs/refactor/wave2/COORDINATOR-GATES.md G2.
-Use dedicated new-format synthetic projects and an isolated entry; production default
-routing, TIFF output, migration and remaining tools are subsequent gates. One writable
-Session per project, real connected evidence, full tests/build; no new agents or push.
-This supersedes the previous implementation-only stop for this G2 scope.
-
-## Prior wave-two authority — 2026-10-30
-
-The user authorized coordinator-managed Codex worktree sessions using gpt-6.1-sol.
-The current implementation assignment is docs/refactor/wave2/IMPLEMENTATION-1.md;
-its owned modules and shared flowWave2 contract supersede the old wave-one stop/setup scope.
-Main remains coordinator-owned. Preserve file/test safeguards; no push or production routing yet.
-
-## Prior refactor authority — 2026-10-29
-
-The user approved a new-format refactor without compatibility for existing test projects,
-local baseline/implementation commits and coordinator integration, and Hermes-owned worktrees.
-Start this work at `docs/refactor/README.md` and its contract/testing pointers. The original main
-checkout is coordinator-owned. Historical handoff/todo files remain evidence for the existing
-runtime, not a task list for the refactor. Wave 1 adds isolated cores only; production wiring,
-legacy safety removal, dependency installation, SQLite/PSD work and publication are outside it.
-Preserve existing files. On 2026-10-29 the user separately approved replacing the old launchers with one root `启动测试.command`; it builds current source before launching and never installs dependencies or clears user data. This paragraph supersedes old-format
-compatibility requirements only for the explicitly isolated new-format cores; remaining file,
-test-fixture and execution safeguards below still apply to existing code and data.
+New-format redesign does not require compatibility with old test projects. Preserve old
+files and recovery data. Local scoped implementation, synthetic tests, local commits and
+coordinator integration are authorized. Default production routing, dependency installation,
+personal media changes, publication and push are outside the current task. One writable
+Session per project. Existing launcher 启动测试.command builds source before launching;
+keep it intact unless the user requests a launcher change.
 
 ## Project and naming
 
@@ -54,7 +31,7 @@ Check Git/worktree status before editing and preserve existing work. Use an isol
 ## Stack and routing
 
 - Electron main/preload; React + TypeScript + Vite renderer; dnd-kit drag behavior; Canvas/react-konva drawing; sharp TIFF/PNG processing; Python TIFF/native permission helpers; Vitest tests.
-- Current drawing data is bitmap-layer based: `shots[].layers`, with PNGs under `.storyboard-flow/layers/{shotId}/{layerId}.png`. Legacy `sketchLayers` and `imageLayerEdits` are migration inputs, not primary editing data.
+- Existing production drawing data is bitmap-layer based: `shots[].layers`, with PNGs under `.storyboard-flow/layers/{shotId}/{layerId}.png`. Legacy `sketchLayers` and `imageLayerEdits` are migration inputs, not primary editing data.
 - Project ordering, dialogue, rename plans, layer metadata/locks and FLOW import status: start at `src/shared/projectOps.ts` and its tests.
 - Renderer behavior belongs in focused controllers/helpers. Keep canvas work in `SketchPad.tsx` and its controllers; layer selection/merge/visibility/drag/opacity in `LayerPanel.tsx` and shared rules. Avoid adding orchestration inline to `App.tsx`.
 - High-risk Save/Import/TIFF orchestration remains in `electron/main/main.ts`; isolated IPC/read-side/runtime work goes in focused main services and runtimes with tests.
@@ -69,7 +46,7 @@ Preserve user files unless an explicit user action requires changing them. Keep 
 
 Save is the operation for synchronizing real filenames and writing working TIFF pixels. Do not auto-rename real images during autosave. Existing explicitly approved Create/Import/Pending materialization paths remain exceptions described in the architecture; this does not grant new write paths.
 
-Storyboard deletion remains pending app state until Save; deleted root images go to system Trash, not Archive. Parked shots stay in JSON but do not participate in Save output, filename sync, Timeline or `storyboard-script.md`.
+Storyboard deletion remains pending app state until Save; deleted root images go to system Trash, not Archive. In the isolated new-format editor, Pending is logical membership until Save, which writes parked TIFFs under Pending/; see docs/refactor/PENDING.md. Parked shots do not participate in active-board filename numbering, Timeline or `storyboard-script.md`. Keep the existing production route separate until its integration gate.
 
 Do not treat `.storyboard-flow` assets as root image shots. Keep failures, recovery objects, History, custody pins and old assets intact. Unknown native restrictions must refuse safely rather than widening permissions. Recovery copies are non-executable; do not OS-open them. The default per-workspace recovery budget is 8GiB across actual/reserved partitions; reject new spending rather than automatically deleting recovery data. Do not turn a retained failure or cleanup into successful Save ACK. In-flight effects must settle; timeout is not cancellation.
 
