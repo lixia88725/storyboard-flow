@@ -480,3 +480,18 @@ parked TIFFs in project/Pending/ and active TIFFs in the project root. First ori
 under .storyboard-flow/originals/. Membership-only moves reuse TIFF bytes and do not encode
 pixels. This supersedes the immediate materialization/move rule above for this new path,
 not the unchanged production runtime. See docs/refactor/PENDING.md for protocol and limits.
+
+## New-format TIFF refresh preserves source originals at import — 2026-10-31
+
+The user approved manual external-image refresh with independent Flow drawing and project
+text, and Pending alternatives for genuine or ambiguous conflicts. The isolated editor
+now captures the first TIFF bytes under `.storyboard-flow/originals/<shotId>.tif` during
+source binding/import, before the prepared project namespace is published. Source TIFF
+bytes count toward the preparation budget. Save validates and retains that same original;
+waiting until first Save would lose it if another application replaced the source first.
+
+Refresh accepts a version only through a recoverable exact-checkpoint transaction. It
+records actual RGBA baselines independently of PNG encoding and project text. One Session
+Undo action changes desired images/Pending membership, while working TIFFs are written
+only by explicit Save. This supersedes the older pre-first-Save backup timing for the
+isolated new-format route only; production routing and personal files remain unchanged.

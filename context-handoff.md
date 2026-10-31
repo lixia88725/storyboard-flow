@@ -6,9 +6,9 @@ receipts under docs/refactor/reviews/ instead of prepending another history entr
 ## Runtime and verified candidate
 
 The new-format editor remains isolated; default App and 启动测试.command are unchanged.
-Implementation `b077f44ca8ae048321f6459f35f68e2379b0204b` supports grid/Japanese editing,
+Implementation `d2ed4eee0e14016314b1ae20c93ced938290d8e6` supports grid/Japanese editing,
 Session history/checkpoints, bounded pixel/layer tools, logical Pending, explicit TIFF
-Save/first-original backup, TIFF-folder bootstrap, session-bound A/B switching and
+Save/import-time original backup, TIFF-folder bootstrap, session-bound A/B switching and
 ordered TIFF filenames with undoable scene/artist/version settings, and owned TIFF
 deletion to system Trash on explicit Save. Undo regenerates deleted TIFFs from retained
 assets; original backups survive. Naming changes
@@ -16,10 +16,10 @@ checkpoint metadata; explicit Save alone synchronizes names through a resumable 
 Switching waits for Save/checkpoint; cancellation or failed preparation keeps the prior
 Session/history. Reopening restores content, not a previous session's Undo stack.
 
-That clean unchanged candidate passes 389 files / 2960 tests, complete build and 74
-real Electron scenarios. Naming and Trash received scoped independent code review and
-corrections; full application independent acceptance and full G3 remain open. Exact
-logs and scope: [latest review](docs/refactor/reviews/2026-10-31/G3-EXTERNAL-SYNC-FOUNDATION.md).
+That clean unchanged candidate passes 390 files / 2974 tests, complete build,
+preload consistency and 87 real Electron scenarios. Scoped independent code review
+passed after budget/recovery corrections; full application independent acceptance and
+full G3 remain open. Exact logs/scope: [latest review](docs/refactor/reviews/2026-10-31/G3-EXTERNAL-REFRESH.md).
 Nondurable in-process Trash ACKs block Close/switch. A process loss after OS success
 before durable confirmation remains an unknown outcome; no recovery UI is provided yet.
 Native picker results are scripted. Windows, installers, representative large rasters,
@@ -31,13 +31,15 @@ Exported-shot Trash transactions are implemented and verified in the isolated ed
 Current slice is external TIFF synchronization. The user approved separating external
 artwork, Flow drawing and project text, with genuinely conflicting/ambiguous versions
 retained in Pending. See [target design](docs/refactor/EXTERNAL-TIFF-SYNC.md).
-The synchronization foundation now includes read-only observation, a pure three-way
-image planner and TIFF rasterVersion 2/native layer IDs. The fixed candidate passes the
-full allowed suite, complete build and 74 existing connected regression cases; scoped
-independent code review passed after one correction. These are foundation/regression
-gates, not external-refresh UI acceptance. Automatic adoption is not connected. Before enabling it, bind image-only baselines, source preservation and one
-Session history/checkpoint transaction. PD2's stack-clearing behavior informs the design;
-Flow retains editable layers and maps exported identities once instead of clearing them.
+Manual Refresh is now connected through Main and one Session history operation.
+Independent external layers preserve local drawing/text; same-layer conflicts enter
+Pending, deduplicated on retry/reopen. Refresh and Undo never write working TIFFs.
+Import preserves first originals before project publication. Durable refresh intents
+recover failed checkpoint/ledger completion and lost replies; uncertain publication
+blocks unrelated work until Refresh retry. Actual RGBA comparison avoids PNG encoding
+false conflicts. Prepared/completed ledger budgets are checked before new effects.
+Real Photoshop identity preservation and automatic polling remain unverified/unimplemented.
+PD2's stack-clearing behavior informs the design; Flow keeps editable internal layers.
 User-confirmed project/scene/stb/artist/version/0010 naming is implemented and verified.
 Documentation cleanup on codex/docs-cleanup is complete, reviewed and integrated; its
 clean worktree/branch are retained. Root history is archived below. No old runtime/script deletion.

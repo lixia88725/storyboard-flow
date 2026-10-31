@@ -1,10 +1,10 @@
 # External TIFF synchronization — target design
 
-Status: design approved in principle by the user; implementation is staged. The
-observation, reconciliation and native-ID codec foundation has focused/build evidence
-and fixed-candidate full/build/GUI regression evidence in
-[the foundation report](reviews/2026-10-31/G3-EXTERNAL-SYNC-FOUNDATION.md). No automatic adoption or production routing is enabled. The codec now writes native
-layer IDs and Flow rasterVersion 2; application synchronization is not connected.
+Status: manual Refresh is connected in the isolated new-format editor. It retains
+source snapshots/baselines, combines independent changes, imports conflicts into Pending,
+and installs one Session history action through a recoverable checkpoint transaction.
+See [the refresh report](reviews/2026-10-31/G3-EXTERNAL-REFRESH.md) for exact verification.
+Automatic polling, real Photoshop roundtrip and default production routing remain open.
 
 ## Product rules
 
@@ -29,7 +29,7 @@ separate document properties and manually confirmed repository versions. Its fun
 names/strings are evidence for those mechanisms, not verified pseudocode for every
 simultaneous-edit case. No claim that Flow must reproduce unspecified PD2 behavior.
 
-Current code findings:
+Foundation findings and their resolution:
 
 - `LayerV1.kind` is a drawing role, not provenance. Do not reinterpret `paint` as
   proof of local origin; external TIFFs can contain many paint layers.
@@ -39,12 +39,11 @@ Current code findings:
 - Bundled psdtags supports Photoshop's per-layer `lyid` record. The codec now
   supports that record without installing a dependency, but
   actual preservation through Photoshop Save must be verified with synthetic media.
-- The output observer currently compares the whole encoded logical input. That is
+- The output observer diagnostic compares the whole encoded logical input. That is
   conservative detection only; it must not become the final image-conflict classifier.
-- Before first Save, folder import retains decoded assets but may not retain original
-  TIFF bytes. If an external app replaces those bytes, a later original-backup check
-  cannot recover them. This requires an explicit source-preservation change, not a
-  bypass of the existing original digest check.
+- Folder import now preserves byte-exact TIFF originals while preparing the project
+  namespace, before publication. Its 512-MiB prepared budget includes source TIFF bytes
+  and decoded PNGs. Existing original digest checks remain enforced.
 
 ## State and ownership
 
@@ -65,7 +64,7 @@ explicit Save publishes it. Image history and output history must not be conflat
 
 ## Reconciliation rules
 
-Use semantic image comparisons (asset digest, dimensions and layer properties), not
+Use semantic image comparisons (decoded RGBA digest, dimensions and layer properties), not
 image/project revision numbers, file timestamps or project text. File stat signatures
 only avoid unnecessary rereads; no timestamp or cached result authorizes replacement.
 
@@ -98,8 +97,8 @@ flattened externally, that shortcut no longer applies.
 1. On initial import, preserve a byte-exact source snapshot inside the prepared project
    namespace before publishing it. Account for source bytes as well as decoded assets
    in admission/disk budgets. Do not retroactively claim unavailable originals exist.
-   Decide the precise relationship to the existing first-Save backup before changing
-   that path; old tests expecting no pre-Save backup need an explicit contract update.
+   The existing originals/<shotId>.tif is now populated at source binding/import; Save
+   verifies and preserves that same first original. Import tests reflect this contract.
 2. Save records B only for outputs actually published and acknowledged. Keep an image
    baseline separate from the full TIFF content signature, so text edits remain cheap.
 3. Refresh observes only bound active/Pending sources. Removed shots are not resurrected;
@@ -186,9 +185,9 @@ commit or clear the current layer/history stack merely to imitate PD2.
   `/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-layer-identity-bk1izb4k/receipt.json`;
   generator `/tmp/flow-layer-identity-probe.py`. Synthetic library roundtrip only,
   no actual Photoshop process and no application codec changes.
-- The foundation full-suite/build and 74 existing GUI regression scenarios now pass;
-  connected refresh UI, crash/retry acceptance and real Photoshop roundtrip remain
-  NOT RUN. No automatic synchronization is enabled.
+- The foundation full-suite/build and 74 existing GUI regression scenarios passed.
+  The subsequent manual-refresh report above records connected UI and fault/retry
+  evidence. Real Photoshop roundtrip and automatic synchronization remain unverified.
 
 ## Native identity foundation
 
@@ -215,3 +214,31 @@ Scoped independent review found native-only decode inferred layer kind from arra
 position, which made reorder look like a layer edit. Generic imported layers now use
 a stable `image` kind unless Flow metadata supplies a kind. Regression combines local
 pixel edits with external native-only reorder and verifies one combined result.
+
+## Manual Refresh implementation
+
+The Session flushes its captured state, queues Refresh with normal edits, and admits
+one restricted image-only history action. Main checks that capture against the durable
+checkpoint, prepares immutable assets and records a before-hash/after-project intent.
+It publishes and verifies the after-checkpoint before accepting source digests/baselines.
+Completed intents retain a receipt for lost replies; retries return the same result.
+An unfinished intent blocks new checkpoint/Save/Close and is completed on explicit retry
+or project reopen. Recovery re-admits journal-owned immutable PNGs to the new depot.
+This recovers a requested operation; it does not monitor or adopt new filesystem changes.
+
+Both prepared and completed ledger sizes are checked before intent publication. Save
+also budgets positive baseline growth plus existing pending/move/rename overhead before
+new output effects. Deterministic budget refusal retains normal editing; uncertain
+publication requires Refresh retry. These limits fail visibly, without garbage collection.
+
+PNG compression bytes are not pixel identity. Reconciliation hashes decoded RGBA for
+all three versions and maps the selected layers back to immutable PNG assets. Baselines
+retain these pixel hashes; Save seeds them only after actual output acknowledgement.
+Project text is never replaced by refreshed TIFF text. Accepted external image assets
+remain referenced internally even where local edits win; no automatic cleanup is added.
+
+Manual Refresh only examines bound active/Pending TIFFs. It does not discover new files,
+follow external renames, guess unsupported layer identity, or merge same-layer pixels.
+Save remains the only operation that writes working TIFFs. Undo affects desired project
+state and Pending membership; it does not rewind source digests or rewrite disk files.
+The visible Refresh status reports updated images and retained Pending alternatives.
