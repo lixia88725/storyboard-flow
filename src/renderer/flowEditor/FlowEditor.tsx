@@ -165,13 +165,14 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   }, [snapshot.project]);
   useEffect(() => { disposed.current = false; return () => { disposed.current = true; for (const url of cache.values()) URL.revokeObjectURL(url); }; }, [cache]);
   const media: MediaSource = useMemo(() => ({ assetUrl: id => urls[id] ?? '', layerAssetUrl: ({ bitmapPath }) => urls[bitmapPath.split('/').at(-1)!] ?? '' }), [urls]);
-  const request = async (r: FlowSessionRequest) => {
+  const request = async (r: FlowSessionRequest, settlingGesture=false) => {
+    if(gestures.current && !settlingGesture)throw Error('Finish the current layer gesture first');
     try { const result = required(await flow.request(r)); setIssue(''); return result; } catch (error) { setIssue(String(error)); throw error; }
   };
   const act = (r: FlowSessionRequest) => { void request(r).catch(() => {}); };
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if(outputWork.current)return;
+      if(outputWork.current||gestures.current)return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !(event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement)) {
         event.preventDefault(); act({ kind: event.shiftKey ? 'redo' : 'undo' });
       }
@@ -337,10 +338,18 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
         {dialogueTransfers(shot.id)}
         <button disabled={!active} onClick={() => { focusShot(shot.id); setPanel(panel === shot.id ? undefined : shot.id); }}>Layers</button>
         <LayerPanel shot={shot} folderPath="flow" thumbnailRevision={snapshot.project.revision} isOpen={panel === shot.id} isRendered={panel === shot.id}
+          canBeginLayerGesture={()=>!gestures.current && !flow.snapshot().pending && !outputWork.current && flow.snapshot().phase==='active'}
+          onLayerGroupOpacityGesture={(shotId,ids,delta,initial,phase)=>{
+            const changes=ids.map(layerId=>({layerId,before:initial[layerId],opacity:Math.round(Math.max(0,Math.min(1,initial[layerId]+delta))*1000)/1000}));
+            const clear=()=>{gestures.current=0;setOpacityPreview(current=>{const next={...current};for(const id of ids)delete next[`${shotId}/${id}`];return next;});};
+            if(phase==='preview'){gestures.current=1;setOpacityPreview(current=>({...current,...Object.fromEntries(changes.map(c=>[`${shotId}/${c.layerId}`,c.opacity]))}));}
+            else if(phase==='cancel')clear();
+            else void request({kind:'layer',shotId,edit:{kind:'setLayerOpacities',changes}},true).catch(()=>{}).finally(clear);
+          }}
           onLayerOpacityGesture={(shotId, layerId, opacity, phase) => {
             const key = `${shotId}/${layerId}`;
             if (phase === 'preview') { gestures.current = 1; setOpacityPreview(current => ({ ...current, [key]: opacity })); }
-            else void request({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch: { opacity } } }).catch(() => {}).finally(() => {
+            else void request({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch: { opacity } } },true).catch(() => {}).finally(() => {
               gestures.current = 0; setOpacityPreview(current => { const next = { ...current }; delete next[key]; return next; });
             });
           }}

@@ -56,7 +56,7 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
       }
       case 'layer':
         if (shape(value, ['kind', 'shotId', 'edit']) && id(value.shotId) && record(value.edit) &&
-            ['insertLayer', 'removeLayer', 'moveLayer', 'moveLayers', 'setLayer'].includes(value.edit.kind as string)) return { ok: true, value: value as FlowSessionRequest };
+            ['insertLayer', 'removeLayer', 'moveLayer', 'moveLayers', 'setLayerOpacities', 'setLayer'].includes(value.edit.kind as string)) return { ok: true, value: value as FlowSessionRequest };
         break; // The real drawing Interface validates the full edit at execution.
       case 'pixelTool': {
         if (!shape(value, ['kind', 'shotId', 'tool']) || !id(value.shotId)) break;

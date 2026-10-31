@@ -43,6 +43,7 @@ const patchKeys: readonly string[] = ["name", "visible", "locked", "opacity", "b
 const editKeys: Readonly<Record<string, readonly string[]>> = {
   insertLayer: ["kind", "layer", "index"],
   removeLayer: ["kind", "layerId"],
+  setLayerOpacities: ["kind", "changes"],
   moveLayer: ["kind", "layerId", "index"],
   moveLayers: ["kind", "layerIds", "targetLayerId", "placement"],
   setLayer: ["kind", "layerId", "patch"],
@@ -257,7 +258,7 @@ export const validateEdit = (value: unknown): CoreFailureV1 | undefined => {
   // Own keys only: `kind in editKeys` would also accept inherited names such as "constructor",
   // "toString" or "__proto__", whose values are not key lists. Those must be invalid-input.
   if (typeof kind !== "string" || !Object.hasOwn(editKeys, kind)) {
-    return fail("invalid-input", "edit.kind must be insertLayer, removeLayer, moveLayer, moveLayers, setLayer or replacePixels");
+    return fail("invalid-input", "edit.kind must be insertLayer, removeLayer, moveLayer, moveLayers, setLayerOpacities, setLayer or replacePixels");
   }
 
   const keyFailure = checkKeys(value, editKeys[kind]!, `edit(${kind})`);
@@ -266,6 +267,15 @@ export const validateEdit = (value: unknown): CoreFailureV1 | undefined => {
   }
 
   switch (kind) {
+    case "setLayerOpacities": {
+      const changes=value.changes;
+      return Array.isArray(changes) && changes.length>0 && Array.from(changes).every(c =>
+        isRecord(c) && !checkKeys(c,['layerId','before','opacity'],'opacity change') && isLayerId(c.layerId) &&
+        typeof c.before==='number' && Number.isFinite(c.before) && c.before>=0 && c.before<=1 &&
+        typeof c.opacity==='number' && Number.isFinite(c.opacity) && c.opacity>=0 && c.opacity<=1) &&
+        new Set(changes.map(c=>c.layerId)).size===changes.length
+        ? undefined : fail('invalid-input','Invalid layer opacity changes');
+    }
     case "insertLayer": {
       const layer: unknown = value.layer;
       if (!isRecord(layer)) {

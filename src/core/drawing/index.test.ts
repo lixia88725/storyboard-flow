@@ -807,3 +807,29 @@ describe('atomic group ordering',()=>{
   expect(applyImageEdit(before,{...edit,placement:'after'}).ok).toBe(false);
  });
 });
+
+describe('atomic opacity changes',()=>{
+ it('changes all selected opacities in one revision and preserves unrelated fields',()=>{
+  const before=image([layer('a',{opacity:0.8}),layer('b',{opacity:0.3}),layer('c')]);
+  const r=applyImageEdit(before,{kind:'setLayerOpacities',changes:[{layerId:'a',before:0.8,opacity:0.6},{layerId:'b',before:0.3,opacity:0.1}]});
+  expect(r).toMatchObject({ok:true,value:{changed:true,visualChanged:true,after:{revision:8}}});
+  if(r.ok){expect(r.value.after.layers.map(l=>l.opacity)).toEqual([0.6,0.1,1]);expect(r.value.after.layers[2]).toEqual(before.layers[2]);}
+  expect(before.layers.map(l=>l.opacity)).toEqual([0.8,0.3,1]);
+ });
+ it('refuses stale, locked, missing and invalid members before changing any layer',()=>{
+  const before=image([layer('a'),layer('b',{locked:true})]);
+  for(const changes of [
+   [{layerId:'a',before:0.9,opacity:0.5}],
+   [{layerId:'a',before:1,opacity:0.5},{layerId:'b',before:1,opacity:0.5}],
+   [{layerId:'a',before:1,opacity:0.5},{layerId:'missing',before:1,opacity:0.5}],
+   [{layerId:'a',before:1,opacity:NaN}],
+   [{layerId:'a',before:1,opacity:0.5},{layerId:'a',before:1,opacity:0.5}],
+   [{layerId:'a',before:1,opacity:0.5},,]
+  ])expect(applyImageEdit(before,asEdit({kind:'setLayerOpacities',changes})).ok).toBe(false);
+  expect(before.layers.map(l=>l.opacity)).toEqual([1,1]);
+ });
+ it('allows unchanged locked layers and no-op at exhausted revision',()=>{
+  const before=image([layer('a',{locked:true})],{revision:Number.MAX_SAFE_INTEGER});
+  expect(applyImageEdit(before,{kind:'setLayerOpacities',changes:[{layerId:'a',before:1,opacity:1}]})).toMatchObject({ok:true,value:{changed:false}});
+ });
+});

@@ -102,6 +102,17 @@ export const applyImageEdit = (
   }
 
   switch (edit.kind) {
+    case "setLayerOpacities": {
+      const changes=new Map(edit.changes.map(change=>[change.layerId,change]));
+      for(const change of edit.changes){
+        const layer=image.layers.find(layer=>layer.id===change.layerId);
+        if(!layer)return {ok:false,error:fail('not-found','Opacity layer no longer exists')};
+        if(layer.opacity!==change.before)return {ok:false,error:fail('conflict','Opacity changed during gesture')};
+        if(layer.locked && layer.opacity!==change.opacity)return lockedFailure(layer.id,'changing its opacity');
+      }
+      if(edit.changes.every(change=>change.before===change.opacity))return {ok:true,value:noOpResult(image)};
+      return commitEdit(image,image.layers.map(layer=>changes.has(layer.id)?{...layer,opacity:changes.get(layer.id)!.opacity}:layer),true);
+    }
     case "insertLayer": {
       const sizeFailure = checkInsertLayerSize(image, edit.layer);
       if (sizeFailure) {

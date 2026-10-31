@@ -33,6 +33,7 @@ type LayerRowGesture = {
   intent?: LayerRowDragIntent;
   initialOpacities: Record<string, number>;
   opacity?: number;
+  deltaOpacity?: number;
 };
 type LayerRowGestureVisual = {
   layerIds: string[];
@@ -45,8 +46,10 @@ type BlendMenuState = {
 };
 
 export type LayerPanelProps = {
+  canBeginLayerGesture?: () => boolean;
   structuralEditsEnabled?: boolean;
   mergeEditsEnabled?: boolean;
+  onLayerGroupOpacityGesture?: (shotId:string, layerIds:string[], delta:number, initial:Record<string,number>, phase:'preview'|'commit'|'cancel')=>void;
   onLayerOpacityGesture?: (shotId: string, layerId: string, opacity: number, phase: "preview" | "commit") => void;
   shot?: Shot;
   folderPath?: string;
@@ -90,6 +93,8 @@ export const LayerPanel = ({
   structuralEditsEnabled = true,
   mergeEditsEnabled = structuralEditsEnabled,
   onLayerOpacityGesture,
+  onLayerGroupOpacityGesture,
+  canBeginLayerGesture,
   shot,
   folderPath,
   thumbnailRevision,
@@ -121,6 +126,9 @@ export const LayerPanel = ({
       : undefined;
   const visibleLayers = layers.filter((layer) => layer.visible);
   const [openBlendMenu, setOpenBlendMenu] = useState<BlendMenuState | undefined>();
+  const cancelGroupGesture=useRef<(()=>void)|undefined>(undefined);
+  useEffect(()=>{if(!isOpen||!isRendered)cancelGroupGesture.current?.();},[isOpen,isRendered]);
+  useEffect(()=>()=>{cancelGroupGesture.current?.();},[shot?.id]);
   const [rowGestureVisual, setRowGestureVisual] = useState<LayerRowGestureVisual | undefined>();
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
   const suppressNextRowClickRef = useRef(false);
@@ -204,6 +212,7 @@ export const LayerPanel = ({
   const beginLayerRowGesture = (event: PointerEvent<HTMLDivElement>, layer: BitmapLayer) => {
     if (
       !shot ||
+      canBeginLayerGesture?.() === false ||
       layer.locked ||
       event.shiftKey ||
       event.metaKey ||
@@ -214,6 +223,7 @@ export const LayerPanel = ({
       return;
     }
 
+    cancelGroupGesture.current?.();
     event.stopPropagation();
     const gestureLayerIds = selectedLayerIds.includes(layer.id) ? selectedLayerIds : [layer.id];
     const movableLayerIds = layers
@@ -249,12 +259,9 @@ export const LayerPanel = ({
 
       const rect = row.getBoundingClientRect();
       if (gesture.movableLayerIds.length > 1) {
-        onUpdateLayerGroupOpacity(
-          shot.id,
-          gesture.movableLayerIds,
-          (clientX - gesture.startX) / rect.width,
-          gesture.initialOpacities
-        );
+        gesture.deltaOpacity=(clientX-gesture.startX)/rect.width;
+        if(onLayerGroupOpacityGesture)onLayerGroupOpacityGesture(shot.id,gesture.movableLayerIds,gesture.deltaOpacity,gesture.initialOpacities,'preview');
+        else onUpdateLayerGroupOpacity(shot.id,gesture.movableLayerIds,gesture.deltaOpacity,gesture.initialOpacities);
       } else {
         const opacity = layerOpacityFromClientX(clientX, rect.left, rect.width);
         gesture.opacity = opacity;
@@ -310,6 +317,9 @@ export const LayerPanel = ({
         }, 0);
       }
 
+      cancelGroupGesture.current=undefined;
+      if(gesture.intent==='opacity' && gesture.deltaOpacity!==undefined && onLayerGroupOpacityGesture)
+        onLayerGroupOpacityGesture(shot.id,gesture.movableLayerIds,gesture.deltaOpacity,gesture.initialOpacities,upEvent.type==='pointercancel'?'cancel':'commit');
       if (gesture.intent === "opacity" && gesture.opacity !== undefined && onLayerOpacityGesture) {
         onLayerOpacityGesture(shot.id, gesture.layerId, gesture.opacity, "commit");
       }
@@ -328,6 +338,13 @@ export const LayerPanel = ({
       }
     };
 
+    if(onLayerGroupOpacityGesture && gesture.movableLayerIds.length>1)cancelGroupGesture.current=()=>{
+      window.removeEventListener('pointermove',handlePointerMove);
+      window.removeEventListener('pointerup',handlePointerUp);
+      window.removeEventListener('pointercancel',handlePointerUp);
+      cancelGroupGesture.current=undefined;setRowGestureVisual(undefined);
+      if(gesture.deltaOpacity!==undefined)onLayerGroupOpacityGesture(shot.id,gesture.movableLayerIds,gesture.deltaOpacity,gesture.initialOpacities,'cancel');
+    };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp, { once: true });
     window.addEventListener("pointercancel", handlePointerUp, { once: true });

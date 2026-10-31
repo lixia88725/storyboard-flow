@@ -51,7 +51,9 @@ export type ChangeSetV1 = {
   order: boolean;
   membership: boolean;
 };
+export type LayerOpacityChangeV1 = { layerId: string; before: number; opacity: number };
 export type ImageEditV1 =
+  | { kind: 'setLayerOpacities'; changes: LayerOpacityChangeV1[] }
   | { kind: 'insertLayer'; layer: LayerV1; index: number }
   | { kind: 'removeLayer'; layerId: string }
   | { kind: 'moveLayer'; layerId: string; index: number }

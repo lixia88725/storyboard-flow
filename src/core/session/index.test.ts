@@ -845,3 +845,14 @@ describe('structural layer workflow',()=>{
   const before=session.snapshot().project;expect((await session.request(move)).ok).toBe(false);expect(session.snapshot().project).toEqual(before);
  });
 });
+
+it('records a complete group opacity gesture as one Undo entry and checkpoints exact values',async()=>{
+ const p=project();p.images.i_a.layers=['a','b','c'].map((id,i)=>({...p.images.i_a.layers[0],id,opacity:[0.8,0.3,1][i]}));
+ const {session,saved}=setup({project:p});
+ const edit={kind:'layer' as const,shotId:'a',edit:{kind:'setLayerOpacities' as const,changes:[{layerId:'a',before:0.8,opacity:0.6},{layerId:'b',before:0.3,opacity:0.1}]}};
+ await success(session.request(edit));await success(session.request({kind:'checkpoint'}));const after=session.snapshot().project;
+ expect(saved.at(-1)).toEqual(after);expect(after.revision).toBe(1);
+ expect((await session.request(edit)).ok).toBe(false);expect(session.snapshot().project).toEqual(after);
+ await success(session.request({kind:'undo'}));expect(session.snapshot().project.images).toEqual(p.images);
+ await success(session.request({kind:'redo'}));expect(session.snapshot().project.images).toEqual(after.images);
+});
