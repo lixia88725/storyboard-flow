@@ -43,7 +43,7 @@ describe('new TIFF output native Save protocol',()=>{
     const {root,p,png,source,output}=await fixture();const file=path.join(root,'original.tif');
     await fs.writeFile(file,'external');await expect(output.save(p,async()=>png)).rejects.toThrow('outside Flow');expect(await fs.readFile(file,'utf8')).toBe('external');
     await fs.writeFile(file,source);p.shots=[];
-    await expect(output.save(p,async()=>png)).rejects.toThrow('lifecycle');expect(await fs.readFile(file)).toEqual(Buffer.from(source));
+    await expect(output.save(p,async()=>png)).rejects.toThrow('System Trash capability unavailable');expect(await fs.readFile(file)).toEqual(Buffer.from(source));
   },60000);
   it('snapshots before await and admits no output when pixel preparation fails',async()=>{
     const {root,p,png,source,output}=await fixture();const file=path.join(root,'original.tif');
@@ -191,4 +191,90 @@ it('reopened Save resumes a durable rename journal before interpreting old sourc
  expect(reader).not.toHaveBeenCalled();
  expect(JSON.parse(await fs.readFile(ledgerPath,'utf8')).rename).toBeUndefined();
  expect((await fs.readdir(root)).some(n=>n.startsWith('.flow-renaming-'))).toBe(false);
+},60000);
+
+it('deletes only at Save, retires owned TIFFs, reuses ordered names and regenerates Undo from assets',async()=>{
+ const {root,p,png,c,source}=await fixture(true);
+ const sink=await temporaryWorkspace('flow-trash-sink-');
+ const trash=vi.fn(async(file:string)=>{await fs.rename(file,path.join(sink,path.basename(file)));});
+ const output=await openFlowTiffSave(root,p.id,c,trash);
+ p.naming={sceneCode:'S',artistName:'A',version:'1'};
+ const before=structuredClone(p), images=structuredClone(p.images);
+ const first=await output.save(p,async()=>png), removed=first.files[0].name;
+ p.shots.shift();p.revision++;
+ expect(await fs.readFile(path.join(root,removed))).toBeTruthy();expect(trash).not.toHaveBeenCalled();
+ const next=await output.save(p,async()=>png);
+ expect(next.files).toHaveLength(1);expect(next.files[0].name).toBe(removed);
+ expect(value(await c.decode(await fs.readFile(path.join(root,removed)))).text?.shotId).toBe('second');
+ expect(trash).toHaveBeenCalledTimes(1);
+ const ledger=JSON.parse(await fs.readFile(path.join(root,'.storyboard-flow/tiff-output.json'),'utf8'));
+ expect(ledger.entries.find((e:{shotId:string})=>e.shotId==='shot').retired).toBe('trashed');
+ expect(p.images).toEqual(images);
+ const foreign=path.join(root,'shot.tif');await fs.writeFile(foreign,'foreign TIFF at old intermediate name');
+ const restored=structuredClone(before);restored.revision=2;
+ const result=await (await openFlowTiffSave(root,p.id,c,trash)).save(restored,async()=>png);
+ expect(result.files.map(f=>f.name)).toEqual(first.files.map(f=>f.name));
+ expect(await fs.readFile(foreign,'utf8')).toBe('foreign TIFF at old intermediate name');
+ expect(value(await c.decode(await fs.readFile(path.join(root,removed)))).text?.shotId).toBe('shot');
+ expect(trash).toHaveBeenCalledTimes(1);
+ expect(await fs.readFile(path.join(root,'.storyboard-flow/originals/shot.tif'))).toEqual(Buffer.from(source));
+},60000);
+
+it('preserves imported originals when deleting before first Save and resumes a partial multi-file Trash failure',async()=>{
+ const {root,p,png,c,source}=await fixture(true);
+ const sink=await temporaryWorkspace('flow-delete-import-');let fail=true;
+ const trash=vi.fn(async(file:string)=>{
+   if(path.basename(file)==='second.tif'&&fail)throw Error('OS rejected second');
+   await fs.rename(file,path.join(sink,path.basename(file)));
+ });
+ const output=await openFlowTiffSave(root,p.id,c,trash);p.shots=[];p.revision++;
+ await expect(output.save(p,async()=>png)).rejects.toThrow('OS rejected second');
+ const file=path.join(root,'.storyboard-flow/tiff-output.json');let ledger=JSON.parse(await fs.readFile(file,'utf8'));
+ expect(ledger.saved).toBeUndefined();expect(ledger.entries[0].retired).toBe('trashed');
+ expect(ledger.entries[1].deletion.phase).toBe('dispatching');
+ for(const id of ['shot','second'])expect(await fs.readFile(path.join(root,'.storyboard-flow/originals',id+'.tif'))).toEqual(Buffer.from(source));
+ fail=false;expect((await (await openFlowTiffSave(root,p.id,c,trash)).save(p,async()=>png)).files).toEqual([]);
+ expect(trash).toHaveBeenCalledTimes(3);
+ ledger=JSON.parse(await fs.readFile(file,'utf8'));expect(ledger.entries.every((e:{retired:string})=>e.retired==='trashed')).toBe(true);
+},60000);
+
+it('deletes Pending output and refuses missing established output without a Trash ACK',async()=>{
+ const {root,p,png,c,output}=await fixture();p.parkedShots=p.shots;p.shots=[];
+ await output.save(p,async()=>png);
+ const sink=await temporaryWorkspace('flow-delete-pending-'), trash=vi.fn(async(file:string)=>{await fs.rename(file,path.join(sink,'owned.tif'));});
+ const save=await openFlowTiffSave(root,p.id,c,trash), file=path.join(root,'Pending/original.tif');
+ const saved=await fs.readFile(file);await fs.unlink(file);p.parkedShots=[];
+ await expect(save.save(p,async()=>png)).rejects.toThrow('outside Flow');expect(trash).not.toHaveBeenCalled();
+ await fs.writeFile(file,saved);await save.save(p,async()=>png);expect(trash).toHaveBeenCalledTimes(1);
+ await expect(fs.stat(file)).rejects.toMatchObject({code:'ENOENT'});
+},60000);
+
+it('retires an absent never-published output distinctly, without manufacturing a Trash ACK',async()=>{
+ const {root,p,png,c}=await fixture();
+ const file=path.join(root,'.storyboard-flow/tiff-output.json');
+ const ledger=JSON.parse(await fs.readFile(file,'utf8'));
+ ledger.entries.push({shotId:'unpublished',name:'unpublished.tif',original:null,current:null,pending:hash(Buffer.from('never published'))});
+ await fs.writeFile(file,JSON.stringify(ledger));
+ const trash=vi.fn();await (await openFlowTiffSave(root,p.id,c,trash)).save(p,async()=>png);
+ expect(trash).not.toHaveBeenCalled();
+ expect(JSON.parse(await fs.readFile(file,'utf8')).entries.find((e:{shotId:string})=>e.shotId==='unpublished').retired).toBe('absent-unpublished');
+},60000);
+
+it('prepares kept pixels before new deletions and accepts known pending bytes for deletion',async()=>{
+ const {root,p,png,c}=await fixture(true);
+ const sink=await temporaryWorkspace('flow-delete-pending-bytes-');
+ const trash=vi.fn(async(file:string)=>{await fs.rename(file,path.join(sink,'owned.tif'));});
+ const output=await openFlowTiffSave(root,p.id,c,trash);p.shots.shift();
+ await expect(output.save(p,async()=>{throw Error('pixel failure');})).rejects.toThrow();
+ expect(trash).not.toHaveBeenCalled();expect(await fs.readFile(path.join(root,'original.tif'))).toBeTruthy();
+ // Save previously admitted/preserved this original, then replacement publication
+ // succeeded while its ledger ACK failed. The pending digest is authoritative.
+ const file=path.join(root,'.storyboard-flow/tiff-output.json');
+ const ledger=JSON.parse(await fs.readFile(file,'utf8')), entry=ledger.entries[0];
+ await fs.mkdir(path.join(root,'.storyboard-flow/originals'),{recursive:true});
+ await fs.copyFile(path.join(root,'original.tif'),path.join(root,'.storyboard-flow/originals/shot.tif'));
+ const changed=Buffer.from('known pending synthetic output');entry.pending=hash(changed);
+ await fs.writeFile(file,JSON.stringify(ledger));await fs.writeFile(path.join(root,'original.tif'),changed);
+ await output.save(p,async()=>png);expect(trash).toHaveBeenCalledTimes(1);
+ expect(await fs.readFile(path.join(sink,'owned.tif'))).toEqual(changed);
 },60000);

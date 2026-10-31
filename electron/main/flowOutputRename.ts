@@ -31,7 +31,8 @@ export async function preflightOutputNames(root: string, entries: readonly Entry
   const disk = new Map<string, string[]>();
   for (const file of await fs.readdir(root)) disk.set(file.toLowerCase(), [...(disk.get(file.toLowerCase()) ?? []), file]);
   for (const entry of entries) {
-    const target = names.get(entry.shotId)!;
+    const target = names.get(entry.shotId);
+    if (target === undefined) continue; // Owned removals may occupy a future active destination.
     if (target === entry.name && entry.location === 'parked') continue;
     for (const found of disk.get(target.toLowerCase()) ?? []) if (!sources.has(found)) throw Error(`Output filename collision: ${target}`);
   }
@@ -79,8 +80,8 @@ export async function settleOutputRename(root: string, plan: OutputRename, persi
  * covers pending/content hashes and JSON framing; from/to use measured UTF-8 bytes.
  * Keep this admission bound and the actual serialized write/read limit consistent. */
 export const OUTPUT_LEDGER_LIMIT = 8 * 1024 * 1024;
-export function assertOutputLedgerBudget(ledger: { entries: readonly Entry[] }, names: Map<string, string>) {
-  let reserved = Buffer.byteLength(JSON.stringify(ledger)) + ledger.entries.length * 256 + 512;
+export function assertOutputLedgerBudget(ledger: { entries: readonly Entry[] }, names: Map<string, string>, additionalBytes = 0) {
+  let reserved = Buffer.byteLength(JSON.stringify(ledger)) + ledger.entries.length * 256 + 512 + additionalBytes;
   for (const entry of ledger.entries) {
     const target = names.get(entry.shotId);
     if (target !== undefined && target !== entry.name) reserved += Buffer.byteLength(JSON.stringify([entry.shotId, entry.name, target])) + 512;

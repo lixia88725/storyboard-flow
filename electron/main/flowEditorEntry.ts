@@ -1,7 +1,7 @@
 /** Dedicated G2 entry: electron dist-electron/main/flowEditorEntry.js <project-root> <isolated-userData>.
  * Opens a new-format checkpoint or bootstraps a TIFF folder without changing originals.
  * Pass --choose instead of a root to select a folder through the native dialog. */
-import { app, BrowserWindow, ipcMain, session, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, session, dialog, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs/promises';
@@ -36,7 +36,7 @@ app.whenReady().then(async () => {
       scriptPath: path.join(repo, 'electron/core/formats/codec.py'),
       depsDir: process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff')
     }));
-    return { root, runtime: await openFlowEditorRuntime(root) };
+    return { root, runtime: await openFlowEditorRuntime(root, file => shell.trashItem(file)) };
   };
   const workspace = createFlowWorkspace(await prepare(root));
   const entry = path.join(repo, 'dist/index.html');

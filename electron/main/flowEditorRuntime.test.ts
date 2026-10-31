@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import * as managed from './managedSourceSave';
+import { temporaryWorkspace } from '../../test/temporaryWorkspace';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -58,3 +60,29 @@ describe('dedicated editor root and Close certification',()=>{
   }finally{await fs.rm(root,{recursive:true,force:true});}
  });
 });
+
+it('refuses Close while a real Trash ACK is not durable, then allows retry without another Trash call',async()=>{
+ const {root,project}=await fixture();
+ const sink=await temporaryWorkspace('flow-runtime-trash-');
+ const trash=vi.fn(async(file:string)=>{await fs.rename(file,path.join(sink,'owned.tif'));});
+ const runtime=await openFlowEditorRuntime(root,trash);
+ const originalWrite=managed.writeManagedSourceFile;
+ try {
+  expect((await runtime.saveTiff(project)).ok).toBe(true);
+  const removed=structuredClone(project);removed.shots=[];removed.revision++;
+  expect((await runtime.checkpoint(removed)).ok).toBe(true);
+  const write=vi.spyOn(managed,'writeManagedSourceFile').mockImplementation(async(...args)=>{
+   if(args[1].endsWith('/tiff-output.json')&&Buffer.from(args[2]).toString().includes('"phase":"confirmed"'))throw Error('confirmation disk failure');
+   return originalWrite(...args);
+  });
+  try {
+   const result=await runtime.saveTiff(removed);expect(result.ok).toBe(false);
+   if(!result.ok)expect(result.error.message).toContain('confirmation disk failure');
+   expect(trash).toHaveBeenCalledTimes(1);
+   expect(await runtime.certifyClose(removed)).toBe(false);
+  } finally {write.mockRestore();}
+  expect((await runtime.saveTiff(removed)).ok).toBe(true);
+  expect(trash).toHaveBeenCalledTimes(1);
+  expect(await runtime.certifyClose(removed)).toBe(true);
+ }finally{await fs.rm(root,{recursive:true,force:true});}
+},60000);

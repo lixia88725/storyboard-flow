@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { TrashItem } from './flowOutputTrash.js';
 import { openFlowTiffSave } from './flowTiffSave.js';
 import { createTiffCodec } from '../core/formats/index.js';
 import fs from 'node:fs/promises';
@@ -9,7 +10,7 @@ import { openFlowAssetDepot } from '../core/persistence/depot.js';
 import { createProjectStore } from '../core/persistence/index.js';
 import type { ProjectV1 } from '../shared/refactorV1.js';
 /** One root, one renderer owner. Not used by the normal TIFF/legacy runtime. */
-export async function openFlowEditorRuntime(root: string) {
+export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem) {
   const store = createProjectStore();
   const loaded = await store.loadCheckpoint(root);
   if (!loaded.ok) throw new Error(loaded.error.message);
@@ -22,7 +23,7 @@ export async function openFlowEditorRuntime(root: string) {
   const output = await openFlowTiffSave(root, projectId, createTiffCodec({
     scriptPath: path.join(repo, 'electron/core/formats/codec.py'),
     depsDir: process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff')
-  }));
+  }), trashItem);
   let sealed = false, pending = 0;
   const busy = () => ({ ok: false as const, error: { code: 'busy' as const, message: 'Editor is closing', effect: 'none' as const } });
   return {
@@ -55,7 +56,7 @@ export async function openFlowEditorRuntime(root: string) {
       }); } finally { pending--; }
     },
     async certifyClose(project: ProjectV1 | null) {
-      if (sealed || pending || !project || project.id !== projectId) return false;
+      if (sealed || pending || output.hasPendingTrashAcknowledgements() || !project || project.id !== projectId) return false;
       sealed = true;
       try {
         const binding = await fs.lstat(root, { bigint: true });
