@@ -6,8 +6,8 @@ receipts under docs/refactor/reviews/ instead of prepending another history entr
 ## Runtime and verified candidate
 
 The new-format editor remains isolated; default App and 启动测试.command are unchanged.
-Implementation `d2ed4eee0e14016314b1ae20c93ced938290d8e6` supports grid/Japanese editing,
-Session history/checkpoints, bounded pixel/layer tools, logical Pending, explicit TIFF
+Implementation `e9cdd3ff12941e0982fd9d0b8658656ab4d877f3` supports grid/Japanese editing,
+Session history/checkpoints, bounded pixel/layer tools with grid-panel add/delete/group ordering, logical Pending, explicit TIFF
 Save/import-time original backup, TIFF-folder bootstrap, session-bound A/B switching and
 ordered TIFF filenames with undoable scene/artist/version settings, and owned TIFF
 deletion to system Trash on explicit Save. Undo regenerates deleted TIFFs from retained
@@ -16,10 +16,10 @@ checkpoint metadata; explicit Save alone synchronizes names through a resumable 
 Switching waits for Save/checkpoint; cancellation or failed preparation keeps the prior
 Session/history. Reopening restores content, not a previous session's Undo stack.
 
-That clean unchanged candidate passes 390 files / 2974 tests, complete build,
-preload consistency and 87 real Electron scenarios. Scoped independent code review
-passed after budget/recovery corrections; full application independent acceptance and
-full G3 remain open. Exact logs/scope: [latest review](docs/refactor/reviews/2026-10-31/G3-EXTERNAL-REFRESH.md).
+That clean unchanged candidate passes 390 files / 2982 tests, complete build and
+105 real Electron scenarios. Scoped independent code review passed; full application
+independent acceptance and full G3 remain open. Exact scope/logs:
+[latest review](docs/refactor/reviews/2026-10-31/G3-LAYER-STRUCTURE.md).
 Nondurable in-process Trash ACKs block Close/switch. A process loss after OS success
 before durable confirmation remains an unknown outcome; no recovery UI is provided yet.
 Native picker results are scripted. Windows, installers, representative large rasters,
@@ -28,7 +28,7 @@ full production-shell parity and hostile cross-process/crash behavior are not ce
 ## Current work
 
 Exported-shot Trash transactions are implemented and verified in the isolated editor.
-Current slice is external TIFF synchronization. The user approved separating external
+Manual external TIFF synchronization is complete within the bounded isolated route. The user approved separating external
 artwork, Flow drawing and project text, with genuinely conflicting/ambiguous versions
 retained in Pending. See [target design](docs/refactor/EXTERNAL-TIFF-SYNC.md).
 Manual Refresh is now connected through Main and one Session history operation.
@@ -41,6 +41,10 @@ false conflicts. Prepared/completed ledger budgets are checked before new effect
 Real Photoshop identity preservation and automatic polling remain unverified/unimplemented.
 PD2's stack-clearing behavior informs the design; Flow keeps editable internal layers.
 User-confirmed project/scene/stb/artist/version/0010 naming is implemented and verified.
+The grid LayerPanel now creates transparent layers, deletes unlocked layers and moves
+single layers/groups through one Session history action. Newly created layers are selected
+only after admission; Undo/Close wait for creation. New-shot white backgrounds are retained.
+Group opacity and remaining tools/presentation are separate gates.
 Documentation cleanup on codex/docs-cleanup is complete, reviewed and integrated; its
 clean worktree/branch are retained. Root history is archived below. No old runtime/script deletion.
 

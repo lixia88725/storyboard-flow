@@ -16,7 +16,8 @@ and evidence belong in [context-handoff.md](context-handoff.md).
 
 ## Remaining interaction and rollout gates
 
-- Complete structural layer tools, blur/selection transforms, mask/dialogue-overlay
+- Grid layer add/delete/single/group ordering is connected; complete group opacity,
+  blur/selection transforms, mask/dialogue-overlay
   presentation, playback/onion skin for inspection and full existing-shell parity.
 - Verify OS IME, native picker/dialogue drag, protected adjacent operations and
   representative marquee/zoom/pan/layer gestures in the real application.
