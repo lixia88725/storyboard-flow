@@ -1,3 +1,4 @@
+import {Workbench} from './Workbench';
 import {FlowInspection} from './FlowInspection';
 import {CanvasPresentationContext} from '../canvasPresentation';
 import type { SelectionTransformIntent } from '../selectionTransform';
@@ -122,6 +123,10 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   api: ReturnType<typeof bindEditor>; openProject: () => void; switching: boolean;
   outputWork: { current: Promise<void> | undefined }; flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number }
 }) {
+  const [workbench,setWorkbench]=useState(window.location.hash==='#flow-workbench');
+  const [demand,setDemand]=useState<string[]>([]);
+  const demandRef=useRef(demand);demandRef.current=demand;
+  const requestAssets=useCallback((ids:string[])=>setDemand(old=>JSON.stringify(old)===JSON.stringify(ids)?old:ids),[]);
   const [snapshot, setSnapshot] = useState(() => flow.snapshot());
   const [layers, setLayers] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState(snapshot.project.shots[0]?.id);
@@ -166,13 +171,16 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
       if (disposed.current) throw Error('Editor session retired');
       const bytes = new Uint8Array(required(result));
       const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
-      cache.set(id, url); setUrls(Object.fromEntries(cache)); return url;
+      cache.set(id, url);
+      if(workbench)for(const [old,held] of cache){if(cache.size<=96)break;if(!demandRef.current.includes(old)&&old!==id){URL.revokeObjectURL(held);cache.delete(old);}}
+      setUrls(Object.fromEntries(cache)); return url;
     }).finally(() => loads.delete(id)));
     return loads.get(id)!;
   };
   useEffect(() => {
-    for (const image of Object.values(snapshot.project.images)) for (const layer of image.layers) void source(layer.assetId).catch(error => setIssue(String(error)));
-  }, [snapshot.project]);
+    const ids=workbench?demand:Object.values(snapshot.project.images).flatMap(image=>image.layers.map(layer=>layer.assetId));
+    for(const id of new Set(ids))void source(id).catch(error=>setIssue(String(error)));
+  }, [snapshot.project, demand, workbench]);
   useEffect(() => { disposed.current = false; return () => { disposed.current = true; for (const url of cache.values()) URL.revokeObjectURL(url); }; }, [cache]);
   const media: MediaSource = useMemo(() => ({ assetUrl: id => urls[id] ?? '', layerAssetUrl: ({ bitmapPath }) => urls[bitmapPath.split('/').at(-1)!] ?? '' }), [urls]);
   const request = async (r: FlowSessionRequest, settlingGesture=false) => {
@@ -236,7 +244,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     act({kind:'layer',shotId,edit:{kind:'moveLayers',layerIds,targetLayerId,placement}});
   const applyBlur = () => {
     if(!active||gestures.current||outputWork.current||flow.snapshot().pending||captureMountedCanvasCheckpoints().hasUnsettledGesture){setIssue('Finish the current edit before applying blur');return;}
-    const shot=shots.find(s=>s.id===selected);
+    const shot=shots.find(s=>s.id===(workbench?selectedIds[0]:selected));
     if(shot?.activeLayerId)act({kind:'pixelTool',shotId:shot.id,tool:{kind:'blur',layerId:shot.activeLayerId,radius:blurRadius,...(pixelSelections.current[`${shot.id}/${shot.activeLayerId}`] ? {selection:pixelSelections.current[`${shot.id}/${shot.activeLayerId}`]} : {})}});
   };
   const merge = (shotId: string, layerId: string, selectedIds: string[]) => {
@@ -285,7 +293,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   };
 
   const newShot = () => {
-    const project = flow.snapshot().project, anchor = project.shots.find(s => s.id === selected);
+    const project = flow.snapshot().project, anchor = project.shots.find(s => s.id === (workbench?selectedIds[0]:selected));
     const image = anchor ? project.images[anchor.imageId] : project.shots[0] ? project.images[project.shots[0].imageId] : undefined;
     const shotId = crypto.randomUUID();
     void request({ kind: 'newShot', shotId, imageId: crypto.randomUUID(), width: image?.width ?? 1920, height: image?.height ?? 1080,
@@ -306,11 +314,54 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     setJapanese(value => !value);
   };
 
+  const renderLayers=(shot:Shot)=><LayerPanel shot={shot} folderPath="flow" thumbnailRevision={snapshot.project.revision} isOpen={workbench || panel === shot.id} isRendered={workbench || panel === shot.id}
+          canBeginLayerGesture={()=>!gestures.current && !flow.snapshot().pending && !outputWork.current && flow.snapshot().phase==='active'}
+          onLayerGroupOpacityGesture={(shotId,ids,delta,initial,phase)=>{
+            const changes=ids.map(layerId=>({layerId,before:initial[layerId],opacity:Math.round(Math.max(0,Math.min(1,initial[layerId]+delta))*1000)/1000}));
+            const clear=()=>{gestures.current=0;setOpacityPreview(current=>{const next={...current};for(const id of ids)delete next[`${shotId}/${id}`];return next;});};
+            if(phase==='preview'){gestures.current=1;setOpacityPreview(current=>({...current,...Object.fromEntries(changes.map(c=>[`${shotId}/${c.layerId}`,c.opacity]))}));}
+            else if(phase==='cancel')clear();
+            else void request({kind:'layer',shotId,edit:{kind:'setLayerOpacities',changes}},true).catch(()=>{}).finally(clear);
+          }}
+          onLayerOpacityGesture={(shotId, layerId, opacity, phase) => {
+            const key = `${shotId}/${layerId}`;
+            if (phase === 'preview') { gestures.current = 1; setOpacityPreview(current => ({ ...current, [key]: opacity })); }
+            else void request({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch: { opacity } } },true).catch(() => {}).finally(() => {
+              gestures.current = 0; setOpacityPreview(current => { const next = { ...current }; delete next[key]; return next; });
+            });
+          }}
+          structuralEditsEnabled={active} mergeEditsEnabled={active} onToggle={() => setPanel(undefined)} onAddLayer={id=>{void addLayer(id);}} onRemoveLayer={(shotId,layerId)=>act({kind:'layer',shotId,edit:{kind:'removeLayer',layerId}})} onMergeLayers={merge} onMergeVisibleLayers={shotId => {
+            const shot = snapshot.project.shots.find(s => s.id === shotId)!;
+            act({ kind: 'pixelTool', shotId, tool: { kind: 'merge', layerIds: snapshot.project.images[shot.imageId].layers.filter(l => l.visible).map(l => l.id) } });
+          }} onClearLayer={(shotId, layerId) => act({ kind: 'pixelTool', shotId, tool: { kind: 'clear', layerId } })}
+          onSelectLayer={(id, layerId) => setLayers(current => ({ ...current, [id]: layerId }))}
+          onUpdateLayer={(shotId, layerId, patch) => act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch } })}
+          onMoveLayer={(shotId,layerId,target,placement)=>moveLayers(shotId,[layerId],target,placement)} onMoveLayerGroup={moveLayers} onSelectedLayerIdsChange={() => {}}
+          onUpdateLayerGroupOpacity={(shotId, ids, delta, initial) => {
+            if (ids.length !== 1) { rejectTool(); return; }
+            act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId: ids[0], patch: { opacity: Math.max(0, Math.min(1, initial[ids[0]] + delta)) } } });
+          }} />;
   const canInspect = () => active && !outputWork.current && !gestures.current && !flow.snapshot().pending && !captureMountedCanvasCheckpoints().hasUnsettledGesture;
   const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:snapshot.project.dialogues.filter(d=>d.shotId===s.id).map(d=>d.text.trim()).filter(Boolean).join(' ').replace(/\s+/g,' ')} ]));
+  if(workbench)return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
+    <Workbench name={snapshot.project.name} shots={shots.slice(0,snapshot.project.shots.length)} parked={shots.slice(snapshot.project.shots.length)} selected={selectedIds} revision={snapshot.project.revision} disabled={!active}
+      status={issue||snapshot.lastError?.message||(snapshot.checkpoint?.revision===snapshot.project.revision?'所有修改已暂存':'正在暂存…')}
+      select={selectShot} focus={focusShot} canNavigate={canInspect} demand={requestAssets} move={moveShots} renderLayers={renderLayers}
+      renderInfo={shot=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText} disabled={!active} onChange={e=>script(shot.id,e.target.value)}/></label><label>对白<textarea aria-label={'对白 '+shot.id} value={shotDialogueText(view,shot.id)} disabled={!active} onChange={e=>dialogue(shot.id,e.target.value)}/></label>{dialogueTransfers(shot.id)}</div>}
+      renderCanvas={(shot,previous,next)=><SketchPad key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0} eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false}
+        onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
+        onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
+      actions={<><button disabled={!active} onClick={openProject}>打开项目</button><button disabled={!active} onClick={()=>setNamingOpen(true)}>命名</button><button disabled={!active||savingTiff} className="wb-save" onClick={()=>{void saveTiff().catch(()=>{});}}>{savingTiff?'保存中…':'保存 TIFF'}</button><button disabled={!active} onClick={refreshImages}>刷新外部图片</button></>}
+      toolbar={<><div className="wb-tool-group">{(['brush','eraser','select','blur'] as const).map((t,i)=><button key={t} disabled={!active} aria-pressed={tool===t} onClick={()=>{if(canInspect())setTool(t);}}>{['画笔','橡皮','选区','模糊'][i]}</button>)}</div>
+        <input aria-label="画笔颜色" type="color" value={color} onChange={e=>setColor(e.target.value)}/><label>笔径 <input aria-label="画笔大小" type="range" min="1" max="100" value={size} onChange={e=>setSize(Number(e.target.value))}/><span>{size}</span></label>
+        {tool==='blur'&&<><input aria-label="模糊半径" type="range" min="1" max="50" value={blurRadius} onChange={e=>setBlurRadius(Number(e.target.value))}/><button disabled={!active} onClick={applyBlur}>应用模糊</button></>}
+        <button disabled={!active} onClick={()=>act({kind:'undo'})}>撤销</button><button disabled={!active} onClick={()=>act({kind:'redo'})}>重做</button><span className="wb-toolbar-spacer"/>
+        <button disabled={!active} onClick={newShot}>＋ 新建板</button><button disabled={!active||!selectedIds.length} onClick={()=>moveShots(selectedIds,'pending')}>移入 Pending</button><button disabled={!active||!selectedIds.length} onClick={()=>act({kind:'board',command:{kind:'removeShots',shotIds:selectedIds}})}>删除</button></>}/>
+    {namingOpen&&<div className="wb-naming"><FlowNaming project={snapshot.project} onCancel={()=>setNamingOpen(false)} onApply={async(name,naming)=>{await request({kind:'board',command:{kind:'setProjectNaming',name,naming}});setNamingOpen(false);}}/></div>}
+  </CanvasPresentationContext.Provider></MediaSourceContext.Provider>;
   return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <main className="flow-editor" data-flow-editor="true" data-revision={snapshot.project.revision} data-phase={snapshot.phase}>
-      <header className="topbar"><strong>Storyboard Flow</strong><span>{snapshot.project.name}</span>
+      <header className="topbar"><button onClick={()=>{if(canInspect())setWorkbench(true);}}>Workspace</button><strong>Storyboard Flow</strong><span>{snapshot.project.name}</span>
         <button disabled={switching} onClick={openProject}>{switching ? 'Opening…' : 'Open project'}</button>
         <button disabled={!active} onClick={() => setNamingOpen(value => !value)}>Naming</button>
         <label>Matte <select aria-label="Matte mode" disabled={!active||!!snapshot.pending} value={snapshot.project.presentation?.mode??'off'} onChange={e=>{
@@ -381,33 +432,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
         <textarea aria-label={`Dialogue ${shot.id}`} value={shotDialogueText(view, shot.id)} disabled={!active} onChange={e => dialogue(shot.id, e.target.value)} />
         {dialogueTransfers(shot.id)}
         <button disabled={!active} onClick={() => { focusShot(shot.id); setPanel(panel === shot.id ? undefined : shot.id); }}>Layers</button>
-        <LayerPanel shot={shot} folderPath="flow" thumbnailRevision={snapshot.project.revision} isOpen={panel === shot.id} isRendered={panel === shot.id}
-          canBeginLayerGesture={()=>!gestures.current && !flow.snapshot().pending && !outputWork.current && flow.snapshot().phase==='active'}
-          onLayerGroupOpacityGesture={(shotId,ids,delta,initial,phase)=>{
-            const changes=ids.map(layerId=>({layerId,before:initial[layerId],opacity:Math.round(Math.max(0,Math.min(1,initial[layerId]+delta))*1000)/1000}));
-            const clear=()=>{gestures.current=0;setOpacityPreview(current=>{const next={...current};for(const id of ids)delete next[`${shotId}/${id}`];return next;});};
-            if(phase==='preview'){gestures.current=1;setOpacityPreview(current=>({...current,...Object.fromEntries(changes.map(c=>[`${shotId}/${c.layerId}`,c.opacity]))}));}
-            else if(phase==='cancel')clear();
-            else void request({kind:'layer',shotId,edit:{kind:'setLayerOpacities',changes}},true).catch(()=>{}).finally(clear);
-          }}
-          onLayerOpacityGesture={(shotId, layerId, opacity, phase) => {
-            const key = `${shotId}/${layerId}`;
-            if (phase === 'preview') { gestures.current = 1; setOpacityPreview(current => ({ ...current, [key]: opacity })); }
-            else void request({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch: { opacity } } },true).catch(() => {}).finally(() => {
-              gestures.current = 0; setOpacityPreview(current => { const next = { ...current }; delete next[key]; return next; });
-            });
-          }}
-          structuralEditsEnabled={active} mergeEditsEnabled={active} onToggle={() => setPanel(undefined)} onAddLayer={id=>{void addLayer(id);}} onRemoveLayer={(shotId,layerId)=>act({kind:'layer',shotId,edit:{kind:'removeLayer',layerId}})} onMergeLayers={merge} onMergeVisibleLayers={shotId => {
-            const shot = snapshot.project.shots.find(s => s.id === shotId)!;
-            act({ kind: 'pixelTool', shotId, tool: { kind: 'merge', layerIds: snapshot.project.images[shot.imageId].layers.filter(l => l.visible).map(l => l.id) } });
-          }} onClearLayer={(shotId, layerId) => act({ kind: 'pixelTool', shotId, tool: { kind: 'clear', layerId } })}
-          onSelectLayer={(id, layerId) => setLayers(current => ({ ...current, [id]: layerId }))}
-          onUpdateLayer={(shotId, layerId, patch) => act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch } })}
-          onMoveLayer={(shotId,layerId,target,placement)=>moveLayers(shotId,[layerId],target,placement)} onMoveLayerGroup={moveLayers} onSelectedLayerIdsChange={() => {}}
-          onUpdateLayerGroupOpacity={(shotId, ids, delta, initial) => {
-            if (ids.length !== 1) { rejectTool(); return; }
-            act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId: ids[0], patch: { opacity: Math.max(0, Math.min(1, initial[ids[0]] + delta)) } } });
-          }} />
+        {renderLayers(shot)}
       </Card>)}</div>}</SortableContext>
       <FlowPending shots={shots.slice(snapshot.project.shots.length)} disabled={!active} revision={snapshot.project.revision} onRestore={id => moveShots([id], 'active')} />
       </DndContext>}

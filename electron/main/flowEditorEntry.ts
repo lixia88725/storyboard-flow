@@ -10,7 +10,7 @@ import { createTiffCodec } from '../core/formats/index.js';
 import { randomUUID } from 'node:crypto';
 import { createFlowWorkspace } from './flowWorkspace.js';
 import { openFlowEditorRuntime } from './flowEditorRuntime.js';
-const [requestedRoot, userData] = process.argv.slice(2);
+const [requestedRoot, userData, viewMode] = process.argv.slice(2);
 if (!requestedRoot || !userData || (requestedRoot !== '--choose' && !path.isAbsolute(requestedRoot)) || !path.isAbsolute(userData)) throw new Error('Absolute project and isolated userData paths required');
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 app.setPath('userData', userData);
@@ -40,7 +40,8 @@ app.whenReady().then(async () => {
   };
   const workspace = createFlowWorkspace(await prepare(root));
   const entry = path.join(repo, 'dist/index.html');
-  const documentUrl = pathToFileURL(entry).href + '#flow-editor';
+  const viewHash=viewMode==='--workbench'?'flow-workbench':'flow-editor';
+  const documentUrl = pathToFileURL(entry).href + '#'+viewHash;
   let closeId: string | null = null, closing = false;
   const caller = (event: Electron.IpcMainInvokeEvent) => {
     if (!documentUrl || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== documentUrl)
@@ -78,6 +79,6 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_w, _p, cb) => cb(false));
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*','https://*/*','ws://*/*','wss://*/*'] }, (_d, cb) => cb({ cancel: true }));
   importing = false;
-  await win.loadFile(entry, { hash: 'flow-editor' });
+  await win.loadFile(entry, { hash: viewHash });
 }).catch(error => { console.error(error); if (requestedRoot === '--choose') dialog.showErrorBox('Could not open Storyboard Flow project', String(error)); app.exit(1); });
 app.on('window-all-closed', () => app.quit());
