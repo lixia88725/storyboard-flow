@@ -1,9 +1,9 @@
-import { it, expect } from 'vitest';
+import { it, expect, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { temporaryWorkspace } from '../../test/temporaryWorkspace';
-import { orderedOutputNames, prepareOutputRename, settleOutputRename, preflightOutputNames, validOutputRename } from './flowOutputRename';
+import { assertOutputLedgerBudget, orderedOutputNames, prepareOutputRename, settleOutputRename, preflightOutputNames, validOutputRename } from './flowOutputRename';
 async function fixture(){
  const root=await temporaryWorkspace('flow-rename-');
  const entries=[];
@@ -44,4 +44,24 @@ it('rejects path traversal, duplicate destinations and corrupt rename journals',
 it('normalizes unsafe leading dots and empty sanitized fields before publishing a journal',async()=>{
  const project={name:'...',naming:{sceneCode:'/',artistName:'*',version:'?'},shots:[{id:'a'}],parkedShots:[]} as unknown as import('../shared/refactorV1').ProjectV1;
  expect(orderedOutputNames(project,[{shotId:'a',name:'source.tif',current:null}]).get('a')).toBe('project_scene_stb_artist_v001_0010.tif');
+});
+
+it('keeps case-sensitive shot IDs distinct in a durable rename plan',async()=>{
+ const {root,entries,names}=await fixture();entries[1].shotId='A';names.delete('b');names.set('A','0010.tif');
+ const plan=(await prepareOutputRename(root,entries,names))!;expect(validOutputRename(plan)).toBe(true);
+ await settleOutputRename(root,plan,async()=>{},async()=>{});
+ expect(await fs.readFile(path.join(root,'0010.tif'),'utf8')).toBe('b');
+});
+it('reserves long-name batch journal capacity before any output work',()=>{
+ const entries=Array.from({length:10000},(_,i)=>({shotId:String(i),name:'s'.repeat(230)+i+'.tif',current:'0'.repeat(64)}));
+ const names=new Map(entries.map(e=>[e.shotId,'t'.repeat(230)+e.shotId+'.tif']));
+ expect(()=>assertOutputLedgerBudget({entries},names)).toThrow('transaction budget');
+ expect(()=>assertOutputLedgerBudget({entries:entries.slice(0,1000)},names)).not.toThrow();
+});
+it('checks unchanged active destination names for case-folded foreign entries',async()=>{
+ const {root,entries}=await fixture();const names=new Map(entries.map(e=>[e.shotId,e.name]));
+ // Names differing by case require a case-sensitive volume. Mock only the directory
+ // listing to exercise its policy on this Mac; real file mutation is not claimed.
+ const readdir=vi.spyOn(fs,'readdir').mockResolvedValue(['0010.tif','0020.tif','0010.TIF'] as never);
+ try {await expect(preflightOutputNames(root,entries,names)).rejects.toThrow('collision');}finally{readdir.mockRestore()}
 });

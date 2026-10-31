@@ -20,8 +20,11 @@ names and does not consume active-board positions; numbering skips a reserved Pe
 name to preserve the output ledger's project-wide name uniqueness.
 
 `flowOutputRename` is internal to TIFF Save, not a renderer filesystem capability.
-Destination preflight rejects foreign names (case-insensitively) before codec/output
-work. After TIFF writes/membership moves settle, Save records source names, exclusive
+Destination preflight rejects foreign active names (case-insensitively), including
+unchanged names, before codec/output work. Shot IDs remain case-sensitive. A shared
+8-MiB read/write limit and conservative transaction-space reservation reject oversized
+ledger/rename plans before new TIFF effects; a large manifest can therefore hit a
+resource limit even below the 10,000-entry structural limit. After TIFF writes/membership moves settle, Save records source names, exclusive
 hidden staging names, destination names and inode/digest identity in its existing output
 ledger. It stages every source before publishing any final name, so cycles and case-only
 renames do not overwrite another shot. Publication uses the existing identity-checked

@@ -32,7 +32,7 @@ export async function preflightOutputNames(root: string, entries: readonly Entry
   for (const file of await fs.readdir(root)) disk.set(file.toLowerCase(), [...(disk.get(file.toLowerCase()) ?? []), file]);
   for (const entry of entries) {
     const target = names.get(entry.shotId)!;
-    if (target === entry.name) continue;
+    if (target === entry.name && entry.location === 'parked') continue;
     for (const found of disk.get(target.toLowerCase()) ?? []) if (!sources.has(found)) throw Error(`Output filename collision: ${target}`);
   }
 }
@@ -46,7 +46,10 @@ export async function prepareOutputRename(root: string, entries: readonly Entry[
     if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1n) throw Error('Unsupported rename source');
     files.push({ shotId: entry.shotId, from: entry.name, to, stage: `.flow-renaming-${randomUUID()}.tif`, digest: entry.current, dev: String(stat.dev), ino: String(stat.ino) });
   }
-  return files.length ? { phase: 'stage', files } : undefined;
+  if (!files.length) return undefined;
+  const plan: OutputRename = { phase: 'stage', files };
+  if (!validOutputRename(plan)) throw Error('Invalid prepared rename journal');
+  return plan;
 }
 export function validOutputRename(value: unknown): value is OutputRename {
   if (!value || typeof value !== 'object') return false;
@@ -55,7 +58,8 @@ export function validOutputRename(value: unknown): value is OutputRename {
   return ['stage', 'publish'].includes(p.phase) && Array.isArray(p.files) && p.files.length > 0 && p.files.length <= 10000 && p.files.every(f =>
     f && /^[\w-]{1,80}$/.test(f.shotId) && leaf(f.from) && leaf(f.to) && f.from !== f.to &&
     /^\.flow-renaming-[a-f0-9-]{36}\.tif$/.test(f.stage) && /^[a-f0-9]{64}$/.test(f.digest) && /^\d+$/.test(f.dev) && /^\d+$/.test(f.ino)) &&
-    ['shotId', 'from', 'stage', 'to'].every(key => new Set(p.files.map(f => f[key as 'from'].toLowerCase())).size === p.files.length);
+    new Set(p.files.map(f => f.shotId)).size === p.files.length &&
+    ['from', 'stage', 'to'].every(key => new Set(p.files.map(f => f[key as 'from'].toLowerCase())).size === p.files.length);
 }
 export async function settleOutputRename(root: string, plan: OutputRename, persistPhase: () => Promise<void>, bind: () => Promise<void>) {
   if (!validOutputRename(plan)) throw Error('Invalid output rename journal');
@@ -69,4 +73,17 @@ export async function settleOutputRename(root: string, plan: OutputRename, persi
     if ((await fs.readdir(root)).some(n => n.toLowerCase() === file.to.toLowerCase() && n !== file.to)) throw Error('Case-folded output collision');
     await settleOutputFileMove(path.join(root, file.stage), path.join(root, file.to), file, bind);
   }
+}
+
+/** Reserve bounded journal space before any TIFF effect. The per-entry allowance
+ * covers pending/content hashes and JSON framing; from/to use measured UTF-8 bytes.
+ * Keep this admission bound and the actual serialized write/read limit consistent. */
+export const OUTPUT_LEDGER_LIMIT = 8 * 1024 * 1024;
+export function assertOutputLedgerBudget(ledger: { entries: readonly Entry[] }, names: Map<string, string>) {
+  let reserved = Buffer.byteLength(JSON.stringify(ledger)) + ledger.entries.length * 256 + 512;
+  for (const entry of ledger.entries) {
+    const target = names.get(entry.shotId);
+    if (target !== undefined && target !== entry.name) reserved += Buffer.byteLength(JSON.stringify([entry.shotId, entry.name, target])) + 512;
+  }
+  if (reserved > OUTPUT_LEDGER_LIMIT) throw Error('TIFF output ledger exceeds the 8 MiB transaction budget');
 }

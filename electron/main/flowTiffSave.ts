@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { orderedOutputNames, preflightOutputNames, prepareOutputRename, settleOutputRename, validOutputRename, type OutputRename } from './flowOutputRename.js';
+import { OUTPUT_LEDGER_LIMIT, assertOutputLedgerBudget, orderedOutputNames, preflightOutputNames, prepareOutputRename, settleOutputRename, validOutputRename, type OutputRename } from './flowOutputRename.js';
 import { outputPath, settleOutputMove, type OutputMove } from './flowOutputMove.js';
 import { snapshotProject } from '../core/persistence/validate.js';
 import type { AssetReaderV1, ProjectV1 } from '../shared/refactorV1.js';
@@ -46,7 +46,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
     await assertPhysicalWorkspaceWriterTargets([root]);
   };
   const load = async (): Promise<{ ledger: Ledger; bytes: Buffer | null }> => {
-    await bind(); const bytes = await optionalRead(ledgerPath, 8 * 1024 * 1024);
+    await bind(); const bytes = await optionalRead(ledgerPath, OUTPUT_LEDGER_LIMIT);
     if (!bytes) return { ledger: { version: 1, projectId, entries: [] }, bytes };
     const ledger: Ledger = JSON.parse(bytes.toString());
     if (ledger.version !== 1 || ledger.projectId !== projectId || !Array.isArray(ledger.entries) || ledger.entries.length > 10000 ||
@@ -65,6 +65,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
   };
   const persist = async (ledger: Ledger, previous: Buffer | null) => {
     await bind(); const bytes = Buffer.from(JSON.stringify(ledger));
+    if (bytes.length > OUTPUT_LEDGER_LIMIT) throw Error('TIFF output ledger exceeds the 8 MiB read/write limit');
     await writeManagedSourceFile(root, ledgerPath, bytes, previous ? { expectedDigest: hash(previous) } : { createOnly: true });
     return bytes;
   };
@@ -118,6 +119,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           bytes = await persist(ledger, bytes);
         }
         const names = orderedOutputNames(captured, ledger.entries);
+        assertOutputLedgerBudget(ledger, names);
         await preflightOutputNames(root, ledger.entries, names);
         const preflight = async () => {
           await bind();
