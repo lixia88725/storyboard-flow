@@ -7,7 +7,7 @@ import numpy as np
 import tifffile
 from codec import RasterUnicodeName
 from psdtags import (TiffImageSourceData, PsdBlendMode, PsdEmpty, PsdKey,
-                     PsdLayerMask, PsdRectangle, PsdString, PsdCompressionType)
+                     PsdLayerMask, PsdRectangle, PsdString, PsdCompressionType, PsdInteger)
 
 mode, source, dest = sys.argv[1:]
 if mode == 'png16':
@@ -53,10 +53,15 @@ else:
         import base64, json, re
         match = re.search(rb'<flow:metadata>(.*?)</flow:metadata>', xmp)
         envelope = json.loads(base64.b64decode(match[1]))
-        if mode == 'version': envelope['rasterVersion'] = 2
+        if mode == 'version': envelope['rasterVersion'] = 999
         else: envelope['unknown'] = True
         xmp = xmp.replace(match[1], base64.b64encode(json.dumps(envelope).encode()))
-    if mode == 'name': layer.info = [PsdString(PsdKey.UNICODE_LAYER_NAME, '外部重命名')]
+    if mode == 'name': layer.info = [i for i in layer.info if i.key != PsdKey.UNICODE_LAYER_NAME] + [PsdString(PsdKey.UNICODE_LAYER_NAME, '外部重命名')]
+    if mode == 'reorder': d.layers.layers.reverse()
+    if mode == 'missing-id': layer.info = [i for i in layer.info if i.key != PsdKey.LAYER_ID]
+    if mode == 'duplicate-id':
+        value = next(i.value for i in d.layers[0].info if i.key == PsdKey.LAYER_ID)
+        d.layers[1].info = [i for i in d.layers[1].info if i.key != PsdKey.LAYER_ID] + [PsdInteger(PsdKey.LAYER_ID, value)]
     for record in d.layers:
         record.info = [RasterUnicodeName(info.key, info.value) if info.key == PsdKey.UNICODE_LAYER_NAME else info for info in record.info]
     tags = [d.tifftag(maxworkers=1)]

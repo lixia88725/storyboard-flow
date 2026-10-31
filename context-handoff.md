@@ -28,7 +28,15 @@ full production-shell parity and hostile cross-process/crash behavior are not ce
 ## Current work
 
 Exported-shot Trash transactions are implemented and verified in the isolated editor.
-Next output slice is external TIFF refresh/conflicts and remaining interchange behavior.
+Current slice is external TIFF synchronization. The user approved separating external
+artwork, Flow drawing and project text, with genuinely conflicting/ambiguous versions
+retained in Pending. See [target design](docs/refactor/EXTERNAL-TIFF-SYNC.md).
+The synchronization foundation now includes read-only observation, a pure three-way
+image planner and TIFF rasterVersion 2/native layer IDs. Development focused tests and
+build passed; candidate full/connected gates are pending. Automatic adoption is not
+connected. Before enabling it, bind image-only baselines, source preservation and one
+Session history/checkpoint transaction. PD2's stack-clearing behavior informs the design;
+Flow retains editable layers and maps exported identities once instead of clearing them.
 User-confirmed project/scene/stb/artist/version/0010 naming is implemented and verified.
 Documentation cleanup on codex/docs-cleanup is complete, reviewed and integrated; its
 clean worktree/branch are retained. Root history is archived below. No old runtime/script deletion.

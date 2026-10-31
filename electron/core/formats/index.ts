@@ -16,6 +16,7 @@ export type TiffText = {
   scriptText: string; dialogues: DialogueV1[];
 };
 export type TiffCandidate = {
+  identity: 'portable' | 'native' | 'unverified';
   kind: 'plain' | 'layered'; image: Omit<ImageDocumentV1, 'layers'> & {
     layers: Array<Omit<LayerV1, 'assetId'> & { png: Uint8Array }>
   }; text: TiffText | null;
@@ -146,20 +147,33 @@ export function createTiffCodec(options: { scriptPath: string; depsDir: string; 
         await fs.writeFile(path.join(root, 'source.tiff'), bytes, { flag: 'wx' });
         const result = await run(root, 'decode', {});
         const env = result.envelope;
-        const layers = result.layers as Array<{ name: string; visible: boolean; locked: boolean; opacity: number; blendMode: LayerV1['blendMode'] }>;
+        const layers = result.layers as Array<{ nativeId?: number | null; name: string; visible: boolean; locked: boolean; opacity: number; blendMode: LayerV1['blendMode'] }>;
         if (env !== null) {
           exact(env, ['app', 'format', 'rasterVersion', 'image', 'text'], 'Flow TIFF envelope');
           exact(env.image, ['id', 'revision', 'layers'], 'Flow TIFF image');
           if (!Array.isArray(env.image.layers) || env.image.layers.length !== layers.length) refuse('invalid-input', 'Flow layer identity count differs from TIFF');
         }
+        const portable = env?.rasterVersion === 2;
+        const identities = new Map<number, { id: string; kind: LayerV1['kind']; opacity: number }>();
+        if (portable) {
+          for (const identity of env.image.layers) {
+            exact(identity, ['id', 'kind', 'opacity', 'nativeId'], 'Flow native layer identity');
+            if (!Number.isSafeInteger(identity.nativeId) || Number(identity.nativeId) < 1 || Number(identity.nativeId) > 0x7fffffff || identities.has(Number(identity.nativeId)))
+              refuse('invalid-input', 'Invalid or duplicate portable layer identity');
+            identities.set(Number(identity.nativeId), identity as unknown as { id: string; kind: LayerV1['kind']; opacity: number });
+          }
+          if (layers.some(layer => !identities.has(layer.nativeId!))) refuse('unsupported-input', 'Missing or unknown native layer identity; cannot match Flow layers');
+        }
+        const native = layers.every(layer => Number.isSafeInteger(layer.nativeId) && layer.nativeId! > 0);
         const image: ImageDocumentV1 = { id: env?.image.id ?? 'tiff-image', revision: env?.image.revision ?? 0,
           width: result.width, height: result.height, layers: layers.map((layer, i) => {
-            const identity = env?.image.layers[i];
+            const identity = portable ? identities.get(layer.nativeId!) : env?.image.layers[i];
             if (identity) {
-              exact(identity, ['id', 'kind', 'opacity'], 'Flow layer identity');
+              if (!portable) exact(identity, ['id', 'kind', 'opacity'], 'Flow layer identity');
               if (Math.round(Number(identity.opacity) * 255) !== Math.round(layer.opacity * 255)) refuse('unsupported-input', 'Flow opacity conflicts with TIFF record; resolve external metadata before importing');
             }
-            return { ...layer, id: identity?.id ?? `layer-${i}`, kind: identity?.kind ?? (i === 0 ? 'image' : 'paint'),
+            const { nativeId, ...raster } = layer;
+            return { ...raster, id: identity?.id ?? (nativeId ? `native-${nativeId}` : `layer-${i}`), kind: identity?.kind ?? 'image',
               opacity: identity?.opacity ?? layer.opacity, width: result.width, height: result.height, assetId: '0'.repeat(64) };
           }) };
         const checked = snapshot({ image, text: env?.text ?? null }, limits);
@@ -171,7 +185,7 @@ export function createTiffCodec(options: { scriptPath: string; depsDir: string; 
           const { assetId: _untrusted, ...properties } = layer;
           candidates.push({ ...properties, png });
         }
-        return { kind: result.kind, image: { ...checked.image, layers: candidates }, text: checked.text };
+        return { identity: portable ? 'portable' : env === null && native ? 'native' : 'unverified', kind: result.kind, image: { ...checked.image, layers: candidates }, text: checked.text };
       });
     },
     encode(input, readAsset) {
@@ -190,9 +204,10 @@ export function createTiffCodec(options: { scriptPath: string; depsDir: string; 
           await pngBytes(png, copied.image.width, copied.image.height, limits);
           await fs.writeFile(path.join(root, `${i}.png`), png, { flag: 'wx' });
         }
-        const envelope = { app: 'Storyboard Flow', format: 'flow-tiff', rasterVersion: 1,
+        const envelope = { app: 'Storyboard Flow', format: 'flow-tiff', rasterVersion: 2,
           image: { id: copied.image.id, revision: copied.image.revision,
-            layers: copied.image.layers.map(({ id, kind, opacity }) => ({ id, kind, opacity })) }, text: copied.text };
+            layers: copied.image.layers.map(({ id, kind, opacity }) => ({ id, kind, opacity, nativeId: (createHash('sha256').update(id).digest().readUInt32BE(0) & 0x7fffffff) || 1 })) }, text: copied.text };
+        if (new Set(envelope.image.layers.map(l => l.nativeId)).size !== envelope.image.layers.length) refuse('invalid-input', 'Native layer identity collision');
         await run(root, 'encode', { image: copied.image, envelope });
         const file = path.join(root, 'output.tiff');
         if ((await fs.stat(file)).size > limits.maxTiffBytes) refuse('resource-limit', 'Encoded TIFF exceeds limit');
@@ -206,7 +221,8 @@ export function createTiffCodec(options: { scriptPath: string; depsDir: string; 
  * receipts. Partial immutable admissions can remain on failure; no head is published. */
 export async function admitTiffCandidate(candidate: TiffCandidate, depot: FlowAssetDepot, operationId: string): Promise<TiffResult<ImageDocumentV1>> {
   try {
-    exact(candidate, ['kind', 'image', 'text'], 'TIFF candidate');
+    exact(candidate, ['identity', 'kind', 'image', 'text'], 'TIFF candidate');
+    if (!['portable', 'native', 'unverified'].includes(candidate.identity)) refuse('invalid-input', 'Invalid identity confidence');
     if (candidate.kind !== 'plain' && candidate.kind !== 'layered') refuse('invalid-input', 'Invalid TIFF candidate kind');
     checkDimensions(candidate.image, CAPS);
     for (const layer of candidate.image.layers) {

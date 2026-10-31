@@ -1,3 +1,4 @@
+import { reconcileExternalImage } from '../../main/flowImageReconciliation';
 import { describe, expect, it } from 'vitest';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
@@ -243,4 +244,44 @@ describe('isolated real TIFF raster codec', () => {
     expect(await short.decode(source)).toMatchObject({ ok: false, error: { code: 'codec-failure' } });
     expect(await short.decode(source)).toMatchObject({ ok: false, error: { code: 'codec-failure' } });
   });
+});
+
+it('matches reordered TIFF raster records by native layer ID, not stale XMP position', async()=>{
+ const s=await sample(),c=codec();const source=value(await c.encode({image:s.image,text},s.read));
+ const decoded=value(await c.decode(await fixture('reorder',source)));
+ expect(decoded.identity).toBe('portable');
+ expect(decoded.image.layers.map(l=>l.id)).toEqual([...s.image.layers].reverse().map(l=>l.id));
+ for(const layer of decoded.image.layers){
+  const expected=s.image.layers.find(l=>l.id===layer.id)!;
+  expect(layer.name).toBe(expected.name);expect(layer.opacity).toBe(expected.opacity);
+  expect(await pixels(layer.png)).toEqual(await pixels(s.assets.get(expected.assetId)!));
+ }
+ expect(decoded.text).toEqual(text);
+});
+it('refuses missing or duplicated native IDs instead of guessing correspondence',async()=>{
+ const source=await encodeSample(),c=codec();
+ for(const mode of ['missing-id','duplicate-id'])expect(await c.decode(await fixture(mode,source))).toMatchObject({ok:false});
+});
+it('reports native identity without XMP and unverified identity for plain input',async()=>{
+ const source=await encodeSample(),c=codec();
+ const generic=value(await c.decode(await fixture('generic',source)));
+ const reordered=value(await c.decode(await fixture('generic',await fixture('reorder',source))));
+ expect(generic.identity).toBe('native');expect(reordered.identity).toBe('native');
+ expect(reordered.image.layers.map(l=>l.id)).toEqual([...generic.image.layers].reverse().map(l=>l.id));
+ expect(value(await c.decode(await fixture('plain'))).identity).toBe('unverified');
+});
+
+it('keeps native-only layer kind stable so external reorder can coexist with local pixel edits',async()=>{
+ const source=await encodeSample(),c=codec();
+ const original=value(await c.decode(await fixture('generic',source)));
+ const external=value(await c.decode(await fixture('generic',await fixture('reorder',source))));
+ const admitted=(candidate:typeof original):ImageDocumentV1=>({...candidate.image,layers:candidate.image.layers.map(({png,...layer})=>({...layer,assetId:sha(png)}))});
+ const b=admitted(original),l=structuredClone(b),e=admitted(external);
+ l.layers[0].assetId='f'.repeat(64);
+ expect(new Map(e.layers.map(l=>[l.id,l.kind]))).toEqual(new Map(b.layers.map(l=>[l.id,l.kind])));
+ const plan=reconcileExternalImage(b,l,e,true);expect(plan.kind).toBe('replace');
+ if(plan.kind==='replace'){
+  expect(plan.image.layers.map(l=>l.id)).toEqual(e.layers.map(l=>l.id));
+  expect(plan.image.layers.find(layer=>layer.id===l.layers[0].id)?.assetId).toBe(l.layers[0].assetId);
+ }
 });

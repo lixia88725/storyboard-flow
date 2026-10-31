@@ -278,3 +278,30 @@ it('prepares kept pixels before new deletions and accepts known pending bytes fo
  await output.save(p,async()=>png);expect(trash).toHaveBeenCalledTimes(1);
  expect(await fs.readFile(path.join(sink,'owned.tif'))).toEqual(changed);
 },60000);
+
+it('observes external changes read-only, distinguishes local edits, and does not resurrect deleted shots',async()=>{
+ const {root,p,png,output}=await fixture(true);await output.save(p,async()=>png);
+ const file=path.join(root,'.storyboard-flow/tiff-output.json'), ledger=await fs.readFile(file);
+ const before=structuredClone(p);
+ expect(await output.inspectExternal(p)).toEqual([]);
+ await fs.writeFile(path.join(root,'original.tif'),'external bytes');
+ const observed=await output.inspectExternal(p);
+ expect(observed).toEqual([{shotId:'shot',name:'original.tif',location:'active',status:'changed',digest:hash(Buffer.from('external bytes')),localOutputChanges:false}]);
+ p.shots[0].scriptText='local text';
+ expect((await output.inspectExternal(p))[0].localOutputChanges).toBe(true);
+ p.shots.shift();expect(await output.inspectExternal(p)).toEqual([]);
+ expect(await fs.readFile(file)).toEqual(ledger);expect(p.images).toEqual(before.images);
+ await expect(output.save(p,async()=>png)).rejects.toThrow('outside Flow');
+ expect(await fs.readFile(path.join(root,'original.tif'),'utf8')).toBe('external bytes');
+},60000);
+
+it('detects missing and Pending TIFFs without adopting foreign additions or accepting interrupted Save state',async()=>{
+ const {root,p,png,output}=await fixture();p.parkedShots=p.shots;p.shots=[];await output.save(p,async()=>png);
+ await fs.writeFile(path.join(root,'foreign.tif'),'not a known shot');
+ expect(await output.inspectExternal(p)).toEqual([]);
+ await fs.unlink(path.join(root,'Pending/original.tif'));
+ expect(await output.inspectExternal(p)).toEqual([{shotId:'shot',name:'original.tif',location:'parked',status:'missing',digest:null,localOutputChanges:false}]);
+ const file=path.join(root,'.storyboard-flow/tiff-output.json'),ledger=JSON.parse(await fs.readFile(file,'utf8'));
+ ledger.entries[0].pending=hash(Buffer.from('pending'));await fs.writeFile(file,JSON.stringify(ledger));
+ await expect(output.inspectExternal(p)).rejects.toThrow('pending Save');
+},60000);

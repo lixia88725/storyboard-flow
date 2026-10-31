@@ -13,6 +13,7 @@ prove only their recorded candidate; task plans do not authorize restarting old 
 | Session, assets and pixels | [Wave-two interface decisions](wave2/IMPLEMENTATION-1.md), [shared session types](../../electron/shared/flowWave2.ts) |
 | TIFF folder opening | [Import lifecycle](TIFF-IMPORT.md) |
 | Ordered TIFF filenames | [Save naming](SAVE-NAMING.md) |
+| External artwork and local drawing | [External TIFF synchronization design](EXTERNAL-TIFF-SYNC.md) |
 | Save-time output deletion | [Trash protocol](OUTPUT-TRASH.md) |
 | Pending membership and output | [Pending policy](PENDING.md) |
 | Project switching and stale callbacks | [Project switching](PROJECT-SWITCHING.md) |

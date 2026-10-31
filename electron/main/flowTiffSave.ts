@@ -1,3 +1,4 @@
+import { createOutputObservation } from './flowOutputObservation.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
@@ -15,6 +16,11 @@ const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const digest = (s: unknown): s is string => typeof s === 'string' && /^[a-f0-9]{64}$/.test(s);
 const leaf = (s: unknown): s is string => typeof s === 'string' && /^[^\\/\0]+\.tiff?$/i.test(s) && !s.startsWith('.');
 const id = (s: unknown): s is string => typeof s === 'string' && /^[\w-]{1,80}$/.test(s);
+export type ExternalTiffObservation = { shotId: string; name: string; location: 'active' | 'parked'; status: 'changed' | 'missing'; digest: string | null; localOutputChanges: boolean };
+const contentDigest = (project: ProjectV1, shot: ProjectV1['shots'][number]) => hash(Buffer.from(JSON.stringify({
+  image: project.images[shot.imageId], text: { projectId: project.id, projectName: project.name, shotId: shot.id,
+    shotName: shot.name, scriptText: shot.scriptText, dialogues: project.dialogues.filter(d => d.shotId === shot.id) }
+})));
 type Entry = { shotId: string; name: string; original: string | null; current: string | null; pending?: string; location?: 'active' | 'parked'; move?: OutputMove; content?: string; deletion?: OutputDeletion; retired?: 'trashed' | 'absent-unpublished' };
 export type TiffSourceBinding = { shotId: string; name: string; digest: string; location?: 'active' | 'parked' };
 type Ledger = { version: 1; projectId: string; entries: Entry[]; rename?: OutputRename; saved?: { revision: number; projectHash: string } };
@@ -46,6 +52,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
     if (await fs.realpath(root) !== root || now.dev !== identity.dev || now.ino !== identity.ino || !now.isDirectory() || now.isSymbolicLink()) throw Error('Output root changed');
     await assertPhysicalWorkspaceWriterTargets([root]);
   };
+  const observe = createOutputObservation(bind);
   const trash = createOutputTrash(root, projectId, identity, bind, trashItem);
   const load = async (): Promise<{ ledger: Ledger; bytes: Buffer | null }> => {
     await bind(); const bytes = await optionalRead(ledgerPath, OUTPUT_LEDGER_LIMIT);
@@ -87,6 +94,29 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
   };
   return {
     hasPendingTrashAcknowledgements: trash.hasPendingAcknowledgements,
+    /** Known outputs only: never resurrect locally removed shots or interpret new
+     * root files as authority. Observation does not change ownership or project data. */
+    inspectExternal(project: ProjectV1): Promise<ExternalTiffObservation[]> {
+      const captured = snapshotProject(project);
+      return serialized(async () => {
+        if (captured.id !== projectId) throw Error('Different project');
+        const { ledger } = await load();
+        if (ledger.rename || ledger.entries.some(e => e.move || e.deletion || e.pending))
+          throw Error('Finish the pending Save transaction before checking external edits');
+        const observations: ExternalTiffObservation[] = [];
+        const shots = new Map([...captured.shots, ...captured.parkedShots].map(s => [s.id, s]));
+        for (const entry of ledger.entries) {
+          const shot = shots.get(entry.shotId);
+          if (entry.retired || !shot || !entry.current) continue;
+          const actual = await observe(outputPath(root, entry.name, entry.location ?? 'active'));
+          if (actual === entry.current) continue;
+          observations.push({ shotId: entry.shotId, name: entry.name, location: entry.location ?? 'active',
+            status: actual === null ? 'missing' : 'changed', digest: actual,
+            localOutputChanges: entry.content !== contentDigest(captured, shot) });
+        }
+        return observations;
+      });
+    },
     /** Main/import-owned binding only. Never infer original ownership from a filename alone. */
     bindSources(project: ProjectV1, sources: readonly TiffSourceBinding[], readOriginal: (source: TiffSourceBinding) => Promise<Uint8Array> = source => read(outputPath(root, source.name, source.location ?? 'active'))) {
       const captured = snapshotProject(project), mappings = structuredClone(sources);

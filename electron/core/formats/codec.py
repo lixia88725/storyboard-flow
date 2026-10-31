@@ -19,7 +19,7 @@ import tifffile
 from psdtags import (PsdBlendMode, PsdChannel, PsdChannelId, PsdClippingType,
                      PsdCompressionType, PsdFormat, PsdKey, PsdLayer,
                      PsdLayerFlag, PsdLayerMask, PsdLayers, PsdRectangle,
-                     PsdString, PsdUserMask, TiffImageSourceData)
+                     PsdString, PsdInteger, PsdUserMask, TiffImageSourceData)
 
 BLENDS = {'normal': PsdBlendMode.NORMAL, 'multiply': PsdBlendMode.MULTIPLY, 'screen': PsdBlendMode.SCREEN}
 NS = '{https://storyboard-flow.local/ns/1.0/}metadata'
@@ -160,7 +160,7 @@ def decode(root, limits):
                     and all(not node.attrib for node in nodes), 'Unknown XMP fields cannot be preserved')
                 envelope = json.loads(base64.b64decode(entries[0].text, validate=True))
                 require(envelope.get('app') == 'Storyboard Flow' and envelope.get('format') == 'flow-tiff'
-                        and envelope.get('rasterVersion') == 1, 'Unsupported Flow TIFF metadata version')
+                        and envelope.get('rasterVersion') in (1, 2), 'Unsupported Flow TIFF metadata version')
             except Refusal:
                 raise
             except Exception as e:
@@ -183,7 +183,7 @@ def decode(root, limits):
         require(layer.clipping == PsdClippingType.BASE and not layer.blending_ranges,
                 f'Layer {i}: clipping or blending ranges are unsupported')
         require(layer.mask is None or layer.mask == PsdLayerMask(), f'Layer {i}: masks are unsupported')
-        require(all(info.key == PsdKey.UNICODE_LAYER_NAME for info in layer.info),
+        require(all(info.key in (PsdKey.UNICODE_LAYER_NAME, PsdKey.LAYER_ID) for info in layer.info),
                 f'Layer {i}: groups, effects, text, adjustments or unknown layer tags are unsupported')
         require(not int(layer.flags) & ~int(PsdLayerFlag.VISIBLE | PsdLayerFlag.TRANSPARENCY_PROTECTED | PsdLayerFlag.PHOTOSHOP5),
                 f'Layer {i}: unknown layer flags')
@@ -203,11 +203,15 @@ def decode(root, limits):
         write_png(root, i, a, limits)
         names = [v.value for v in layer.info if v.key == PsdKey.UNICODE_LAYER_NAME]
         require(len(names) <= 1, f'Layer {i}: duplicate Unicode names')
-        result.append({'name': str(names[0] if names else layer.name),
+        native_ids = [v.value for v in layer.info if v.key == PsdKey.LAYER_ID]
+        require(len(native_ids) <= 1 and all(isinstance(v, int) and 0 < v < 2147483648 for v in native_ids), 'Invalid native layer identity', 'invalid-input')
+        result.append({'nativeId': native_ids[0] if native_ids else None, 'name': str(names[0] if names else layer.name),
                        'visible': not bool(layer.flags & PsdLayerFlag.VISIBLE),
                        'locked': bool(layer.flags & PsdLayerFlag.TRANSPARENCY_PROTECTED),
                        'opacity': layer.opacity / 255,
                        'blendMode': next(k for k, v in BLENDS.items() if v == layer.blendmode)})
+    native_ids = [l['nativeId'] for l in result if l['nativeId'] is not None]
+    require(len(set(native_ids)) == len(native_ids), 'Duplicate native layer identity', 'invalid-input')
     return {'kind': 'layered', 'width': w, 'height': h, 'envelope': envelope, 'layers': result}
 
 def composite(loaded, h, w):
@@ -244,7 +248,7 @@ def encode(root, manifest, limits):
         records.append(PsdLayer(name=name.encode('macroman', errors='replace').decode('macroman')[:255],
             rectangle=PsdRectangle(0, 0, h, w), channels=channels, mask=PsdLayerMask(),
             opacity=int(layer['opacity']*255+0.5), blendmode=BLENDS[layer['blendMode']], flags=flags,
-            info=[RasterUnicodeName(PsdKey.UNICODE_LAYER_NAME, name)]))
+            info=[RasterUnicodeName(PsdKey.UNICODE_LAYER_NAME, name), PsdInteger(PsdKey.LAYER_ID, manifest['envelope']['image']['layers'][i]['nativeId'])]))
     data = TiffImageSourceData(name='Storyboard Flow', psdformat=PsdFormat.LE32BIT,
                               layers=PsdLayers(key=PsdKey.LAYER, has_transparency=True, layers=records), usermask=PsdUserMask(), info=[])
     encoded = base64.b64encode(json.dumps(manifest['envelope'], ensure_ascii=False, separators=(',', ':')).encode()).decode()
