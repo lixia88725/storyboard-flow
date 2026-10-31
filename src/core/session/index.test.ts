@@ -899,3 +899,21 @@ it('keeps an unresolved asset effect across a later refusal and successful edit'
  await success(session.request(text('success')));
  expect(session.snapshot().lastError).toMatchObject({message:'uncertain asset',effect:'unknown'});
 });
+
+it('validates selection geometry and refuses stale transforms before production',async()=>{
+ const produce=vi.fn(async()=>error('unavailable')),{session}=setup({tools:{produce}});
+ const selection=[{x:0,y:0},{x:3,y:0},{x:3,y:2}];
+ const tool={kind:'transform' as const,layerId:'layer',expectedAssetId:'f'.repeat(64),selection,matrix:[1,0,0,1,1,0] as const};
+ expect(await session.request({kind:'pixelTool',shotId:'a',tool})).toMatchObject({ok:false,error:{code:'conflict'}});
+ for(const bad of [[],Array(3),[{x:0,y:0},{x:Infinity,y:0},{x:1,y:2}]]){
+  expect(await session.request({kind:'pixelTool',shotId:'a',tool:{kind:'blur',layerId:'layer',radius:2,selection:bad}})).toMatchObject({ok:false,error:{code:'invalid-input'}});
+ }
+ expect(produce).not.toHaveBeenCalled();expect(session.snapshot().project).toEqual(project());
+});
+it('admits one selection transform and restores exact pixels with Undo and Redo',async()=>{
+ const {session}=setup({tools:{async produce(input){return {ok:true,value:{png:Uint8Array.of(8,8,8),width:4,height:3,baseline:input.image,plan:{kind:'replace',layerId:'layer'}}};}}});
+ const result=await success(session.request({kind:'pixelTool',shotId:'a',tool:{kind:'transform',layerId:'layer',expectedAssetId:initialAsset,selection:[{x:0,y:0},{x:3,y:0},{x:3,y:2}],matrix:[1,0,0,1,1,0]}}));
+ expect(result.snapshot.project.revision).toBe(1);const asset=result.snapshot.project.images.i_a.layers[0].assetId;
+ await success(session.request({kind:'undo'}));expect(session.snapshot().project.images.i_a.layers[0].assetId).toBe(initialAsset);
+ await success(session.request({kind:'redo'}));expect(session.snapshot().project.images.i_a.layers[0].assetId).toBe(asset);
+});

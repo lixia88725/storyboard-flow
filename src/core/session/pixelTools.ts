@@ -9,6 +9,7 @@ export function toolPlan(image: ImageDocumentV1, tool: FlowPixelTool): FlowResul
   const selected = image.layers.filter(layer => ids.includes(layer.id));
   if (selected.length !== ids.length) return failure('not-found', 'Layer not found');
   if (selected.some(layer => layer.locked || !layer.visible)) return failure('locked', 'Tools require visible unlocked layers');
+  if (tool.kind === 'transform' && selected[0].assetId !== tool.expectedAssetId) return failure('conflict', 'Selection source changed; select again');
   if (tool.kind !== 'merge') return { ok: true, value: { kind: 'replace', layerId: tool.layerId } };
   const start = image.layers.indexOf(selected[0]);
   if (selected.some((layer, i) => image.layers[start + i] !== layer)) return failure('invalid-input', 'Merge layers must be contiguous');

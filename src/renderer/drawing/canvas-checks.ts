@@ -166,6 +166,23 @@ export async function runPixelCanvasChecks() {
   assert(blurCenter[3]>3 && blurCenter[3]<60 && blurEdge[3]>0,'Gaussian spread replaces sharp core and uses captured radius');
   assert(blurCenter[2]===255 && blurred.plan.kind==='replace' && blurred.plan.layerId==='layer','blur preserves color and target');
   cases.push({name:'tool-blur',png:base64(blurred.png),reference:base64(blurred.png),samples:{center:blurCenter,edge:blurEdge}});
+  const region=[{x:15,y:10},{x:18,y:10},{x:18,y:15},{x:15,y:15}];
+  const selectedBlur=value(await trackedTool('selected-blur',{kind:'blur',image:base,layerId:'layer',radius:2,selection:region},async()=>impulsePng,operations,2));
+  const selectedPixels=await rgbaOf(selectedBlur.png);
+  assert(pixel(selectedPixels,16,12)[3]>0 && pixel(selectedPixels,16,12)[3]<60 && pixel(selectedPixels,18,12)[3]===0,'blur modifies only selected region');
+  cases.push({name:'tool-selected-blur',png:base64(selectedBlur.png),reference:base64(selectedBlur.png),samples:{center:pixel(selectedPixels,16,12)}});
+  for(const [label,matrix,x,y] of [
+    ['move',[1,0,0,1,4,0],20,12],
+    ['scale',[2,0,0,2,-16,-12],16,12],
+    ['rotate',[0,1,-1,0,28,-4],15,12]
+  ] as const){
+    const request:PixelToolRequest={kind:'transform',image:base,layerId:'layer',expectedAssetId:base.layers[0].assetId,selection:region,matrix};
+    const output=value(await trackedTool(label,request,async()=>{request.matrix=[1,0,0,1,100,100];request.selection=[];return impulsePng;},operations,2));
+    const rgba=await rgbaOf(output.png);
+    assert(pixel(rgba,x,y)[2]===255 && pixel(rgba,x,y)[3]>0,label+' moves selected pixels');
+    if(label==='move')assert(pixel(rgba,16,12)[3]===0,'move clears original');
+    cases.push({name:'tool-selection-'+label,png:base64(output.png),reference:base64(output.png),samples:{target:pixel(rgba,x,y)}});
+  }
   const barrier = canvasOf();
   barrier.context.fillStyle = '#0000ff'; barrier.context.fillRect(0, 0, width, height);
   barrier.context.fillStyle = '#000000'; barrier.context.fillRect(16, 0, 1, height);

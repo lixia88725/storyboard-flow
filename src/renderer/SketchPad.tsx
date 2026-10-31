@@ -1,3 +1,4 @@
+import { selectionMatrix, transformSelectionPoints, type SelectionTransformIntent } from './selectionTransform';
 import { useMediaSource } from './mediaSource';
 import {
   Fragment,
@@ -89,6 +90,7 @@ type BitmapTransformDraft = {
   rotationRadians?: number;
 };
 type PreparedBitmapTransform = {
+  sourcePath: string;
   layerId: string;
   selection: BitmapSelection;
   sourceCanvas: HTMLCanvasElement;
@@ -241,7 +243,7 @@ export type SketchPadProps = {
     renderedDataUrl?: string,
     pendingStrokes?: SketchStroke[]
   ) => Promise<string | undefined>;
-  onSelectionTransform: (layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onSelectionTransform: (layerId: string, dataUrl: string, intent?: SelectionTransformIntent) => Promise<string | undefined>;
   onBitmapSelectionChange?: (
     shotId: string,
     layerId: string | undefined,
@@ -836,6 +838,7 @@ export const SketchPad = memo(({
 
     preparedTransformRef.current = {
       layerId: activeLayer.id,
+      sourcePath: activeLayer.bitmapPath,
       selection,
       sourceCanvas,
       patchCanvas: sourcePatch
@@ -850,7 +853,8 @@ export const SketchPad = memo(({
 
   const drawPreparedTransformPreview = (
     targetBounds: Bounds,
-    rotationRadians = 0
+    rotationRadians = 0,
+    encode = false
   ): string | undefined => {
     const preparedTransform = preparedTransformRef.current;
     const previewCanvas = transformPreviewCanvasRef.current;
@@ -890,57 +894,43 @@ export const SketchPad = memo(({
       );
     }
 
-    return previewCanvas.toDataURL("image/png");
+    return encode ? previewCanvas.toDataURL("image/png") : undefined;
   };
 
   const commitSelectionTransform = async (transform: BitmapTransformDraft) => {
     const currentSelection = bitmapSelectionRef.current;
-    if (!currentSelection || !activeLayer || activeLayer.locked) {
+    if (!currentSelection || !activeLayer || activeLayer.locked || transformDraftRef.current !== transform) {
       return;
     }
 
     if (!preparedTransformRef.current) {
       await prepareTransformPreview(currentSelection);
     }
+    if (transformDraftRef.current !== transform || bitmapSelectionRef.current !== currentSelection) return;
 
     const dataUrl = drawPreparedTransformPreview(
       transform.currentBounds,
-      transform.rotationRadians ?? 0
+      transform.rotationRadians ?? 0,
+      true
     );
     if (!dataUrl) {
       return;
     }
 
-    const writtenDataUrl = await onSelectionTransform(activeLayer.id, dataUrl);
+    const prepared = preparedTransformRef.current;
+    if (!prepared || prepared.layerId !== activeLayer.id) return;
+    const matrix = selectionMatrix(prepared.selection.bounds, transform.currentBounds, transform.rotationRadians ?? 0);
+    const preparedRun = transformPrepareRunRef.current;
+    const writtenDataUrl = await onSelectionTransform(activeLayer.id, dataUrl, {
+      sourcePath: prepared.sourcePath, selection: prepared.selection.points.map(p=>({...p})), matrix
+    });
     // Absence includes completed original writes whose UI generation revoked.
     // Do not continue publishing an old selection after that control-flow exit.
-    if (!writtenDataUrl) return;
+    if (!writtenDataUrl || preparedRun !== transformPrepareRunRef.current || transformDraftRef.current !== transform) return;
     setLayerDataUrls((current) => ({ ...current, [activeLayer.id]: writtenDataUrl }));
 
-    if (transform.type === "rotate") {
-      const center = bitmapSelectionCenter(transform.startBounds);
-      const points = currentSelection.points.map((point) =>
-        rotatePointAroundCenter(point, center, transform.rotationRadians ?? 0)
-      );
-      updateBitmapSelectionState({
-        ...currentSelection,
-        bounds: bitmapSelectionBounds(points) ?? transform.currentBounds,
-        points
-      });
-      return;
-    }
-
-    const targetBounds = transform.currentBounds;
-    updateBitmapSelectionState({
-      ...currentSelection,
-      bounds: targetBounds,
-      points: [
-        { x: targetBounds.x, y: targetBounds.y },
-        { x: targetBounds.x + targetBounds.width, y: targetBounds.y },
-        { x: targetBounds.x + targetBounds.width, y: targetBounds.y + targetBounds.height },
-        { x: targetBounds.x, y: targetBounds.y + targetBounds.height }
-      ]
-    });
+    const points = transformSelectionPoints(currentSelection.points, matrix);
+    updateBitmapSelectionState({ ...currentSelection, points, bounds: bitmapSelectionBounds(points) ?? transform.currentBounds });
   };
 
   const getSketchPoints = (event: {
@@ -1368,6 +1358,7 @@ export const SketchPad = memo(({
     const currentTransform = transformDraftRef.current;
     if (currentTransform) {
       await commitSelectionTransform(currentTransform);
+      if (transformDraftRef.current !== currentTransform) return;
       updateTransformDraftState(undefined);
       clearPreparedTransform();
       return;

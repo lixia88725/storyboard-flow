@@ -1,6 +1,8 @@
+import type { SelectionTransformIntent } from '../selectionTransform';
+import type { FlowSelection } from '../../../electron/shared/flowSelection';
 import { selectShots, draggedShots } from './boardSelection';
 import { DialogueTransfers } from './DialogueTransfers';
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
 import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -24,7 +26,6 @@ const required = <T,>(r: { ok: true; value: T } | { ok: false; error: { message:
   if (!r.ok) throw new Error(r.error.message); return r.value;
 };
 const beforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
-const unavailable = () => { throw new Error('This tool is not connected in this editor yet'); };
 
 function bindEditor(sessionId: string) {
   const api = window.flowEditor!;
@@ -136,8 +137,13 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   const [savingTiff, setSavingTiff] = useState(false);
   const [savedTiffRevision, setSavedTiffRevision] = useState<number>();
   const [japanese, setJapanese] = useState(false);
-  const [tool, setTool] = useState<'brush' | 'eraser' | 'blur'>('brush');
+  const [tool, setTool] = useState<'brush' | 'eraser' | 'blur' | 'select'>('brush');
   const [color, setColor] = useState('#dd3344');
+  const pixelSelections = useRef<Record<string, FlowSelection>>({});
+  const bitmapSelectionChange = useCallback((shotId: string, layerId: string | undefined, points: FlowSelection | undefined) => {
+    for(const key of Object.keys(pixelSelections.current))if(key.startsWith(`${shotId}/`))delete pixelSelections.current[key];
+    if(layerId && points)pixelSelections.current[`${shotId}/${layerId}`]=points.map(p=>({...p}));
+  },[]);
   const [blurRadius,setBlurRadius]=useState(8);
   const [size, setSize] = useState(20);
   const [opacityPreview, setOpacityPreview] = useState<Record<string, number>>({});
@@ -198,6 +204,14 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     return settledStrokePreview(() => flow.snapshot().project, shot.id, layerId,
       result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId, source);
   };
+  const transformSelection = async (shot: Shot, layerId: string, _preview: string, intent?: SelectionTransformIntent) => {
+    try {
+      if(!intent || !active || outputWork.current)throw Error('Selection is not ready');
+      const result=await request({kind:'pixelTool',shotId:shot.id,tool:{kind:'transform',layerId,expectedAssetId:intent.sourcePath.split('/').at(-1)!,selection:intent.selection,matrix:intent.matrix}});
+      const image=result.snapshot.project.images[result.snapshot.project.shots.find(s=>s.id===shot.id)!.imageId];
+      return settledStrokePreview(()=>flow.snapshot().project,shot.id,layerId,image.layers.find(l=>l.id===layerId)!.assetId,source);
+    } catch(error){setIssue(String(error));return undefined;}
+  };
   const fill = async (shot: Shot, layerId: string, point: { x: number; y: number }, color: string) => {
     try {
       const hex = color.replace('#', '');
@@ -220,7 +234,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   const applyBlur = () => {
     if(!active||gestures.current||outputWork.current||flow.snapshot().pending||captureMountedCanvasCheckpoints().hasUnsettledGesture){setIssue('Finish the current edit before applying blur');return;}
     const shot=shots.find(s=>s.id===selected);
-    if(shot?.activeLayerId)act({kind:'pixelTool',shotId:shot.id,tool:{kind:'blur',layerId:shot.activeLayerId,radius:blurRadius}});
+    if(shot?.activeLayerId)act({kind:'pixelTool',shotId:shot.id,tool:{kind:'blur',layerId:shot.activeLayerId,radius:blurRadius,...(pixelSelections.current[`${shot.id}/${shot.activeLayerId}`] ? {selection:pixelSelections.current[`${shot.id}/${shot.activeLayerId}`]} : {})}});
   };
   const merge = (shotId: string, layerId: string, selectedIds: string[]) => {
     const project = flow.snapshot().project, shot = project.shots.find(s => s.id === shotId);
@@ -297,6 +311,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
         <button disabled={!active} onClick={switchView}>{japanese ? 'Grid view' : 'Japanese view'}</button>
         <button disabled={!active} aria-pressed={tool === 'brush'} onClick={() => setTool('brush')}>Brush</button>
         <button disabled={!active} aria-pressed={tool === 'eraser'} onClick={() => setTool('eraser')}>Eraser</button>
+        <button disabled={!active} aria-pressed={tool==='select'} onClick={()=>setTool('select')}>Select</button>
         <button disabled={!active} aria-pressed={tool==='blur'} onClick={()=>setTool('blur')}>Blur</button>
         {tool==='blur'&&<><input aria-label="Blur radius" type="range" min="1" max="50" step="1" value={blurRadius} onChange={e=>setBlurRadius(Number(e.target.value))}/><span>{blurRadius} px</span><button disabled={!active||!!snapshot.pending} onClick={applyBlur}>Apply blur</button></>}
         <input aria-label="Brush color" type="color" value={color} onChange={e => setColor(e.target.value)} />
@@ -335,12 +350,12 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
           eraserSize={size} eraserOpacity={1} eraserSoftness={0} folderPath="flow" isZoomScrubbing={false}
           bitmapRevisionByShotId={Object.fromEntries(shots.map(s => [s.id, snapshot.project.revision]))}
           onActionText={script} onDialogueText={dialogue} onFocusShot={focusShot} onSelectShot={selectShot} renderDialogueTransfers={dialogueTransfers}
-          onPickColor={setColor} onFill={fill} onSelectionTransform={unavailable} onSketchStroke={stroke} />
+          onPickColor={setColor} onFill={fill} onSelectionTransform={transformSelection} onBitmapSelectionChange={bitmapSelectionChange} onSketchStroke={stroke} />
       </fieldset> :
       <div className="flow-editor-grid">{shots.slice(0, snapshot.project.shots.length).map(shot => <Card key={shot.id} shot={shot} selected={selectedIds.includes(shot.id)} disabled={!active} onSelect={event => selectShot(shot.id, event)}>
         <SketchPad shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0}
           eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false} onFocusShot={() => focusShot(shot.id)}
-          onStroke={(layerId, input) => stroke(shot, layerId, input)} onSelectionTransform={unavailable} onFill={(layerId, point, color) => fill(shot, layerId, point, color)} onPickColor={setColor} />
+          onStroke={(layerId, input) => stroke(shot, layerId, input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId, point, color) => fill(shot, layerId, point, color)} onPickColor={setColor} />
         <textarea aria-label={`Script ${shot.id}`} value={shot.scriptText} disabled={!active} onChange={e => script(shot.id, e.target.value)} />
         <textarea aria-label={`Dialogue ${shot.id}`} value={shotDialogueText(view, shot.id)} disabled={!active} onChange={e => dialogue(shot.id, e.target.value)} />
         {dialogueTransfers(shot.id)}

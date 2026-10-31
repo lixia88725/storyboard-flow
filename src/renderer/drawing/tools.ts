@@ -1,3 +1,4 @@
+import { validSelection, validTransform, type FlowSelection, type FlowTransform } from '../../../electron/shared/flowSelection';
 import type { FlowFailure, FlowResult } from '../../../electron/shared/flowWave2';
 import type { AssetReaderV1, ImageDocumentV1 } from '../../../electron/shared/refactorV1';
 import { applyImageEdit } from '../../core/drawing';
@@ -26,10 +27,11 @@ export function createPixelTools(limits: PixelToolLimits) {
     ? { ...limits } : undefined;
   return { async produce(request: PixelToolRequest, read: AssetReaderV1): Promise<FlowResult<PixelToolOutput>> {
     let image: ImageDocumentV1, ids: string[], plan: PixelToolOutput['plan'], kind: PixelToolRequest['kind'];
+    let selection: FlowSelection | undefined, matrix: FlowTransform | undefined;
     let blurRadius: number | undefined;
     let fill: { x: number; y: number; color: number[]; tolerance: number } | undefined;
     try {
-      if (!bounded || typeof read !== 'function' || !request || !['fill', 'clear', 'merge', 'blur'].includes(request.kind)) return fail('invalid-input', 'Invalid limits, request or reader');
+      if (!bounded || typeof read !== 'function' || !request || !['fill', 'clear', 'merge', 'blur', 'transform'].includes(request.kind)) return fail('invalid-input', 'Invalid limits, request or reader');
       kind = request.kind;
       const firstId = request.kind === 'merge' ? request.layerIds?.[0] : request.layerId;
       const checked = applyImageEdit(request.image, { kind: 'setLayer', layerId: firstId, patch: {} });
@@ -54,6 +56,15 @@ export function createPixelTools(limits: PixelToolLimits) {
         if (layer.locked) return fail('locked', 'Target is locked');
         if (!layer.visible) return fail('invalid-input', 'Target must be visible');
         ids = [layer.id]; plan = { kind: 'replace', layerId: layer.id };
+        if ((request.kind === 'blur' && Object.hasOwn(request, 'selection')) || request.kind === 'transform') {
+          if (!validSelection(request.selection)) return fail('invalid-input', 'Invalid selection');
+          selection = request.selection.map(p => ({...p}));
+        }
+        if (request.kind === 'transform') {
+          if (!validTransform(request.matrix)) return fail('invalid-input', 'Invalid transform');
+          if (layer.assetId !== request.expectedAssetId) return fail('conflict', 'Selection source changed');
+          matrix = [...request.matrix];
+        }
         if(request.kind==='blur'){if(typeof request.radius!=='number'||!Number.isFinite(request.radius)||request.radius<1||request.radius>50)return fail('invalid-input','Blur radius must be 1–50 pixels');blurRadius=request.radius;}
         if (request.kind === 'fill') {
           if (!Number.isFinite(request.x) || !Number.isFinite(request.y) || !Number.isInteger(request.tolerance) || request.tolerance < 0 || request.tolerance > 255 || !validRgba(request.color)) return fail('invalid-input', 'Invalid fill coordinates, RGBA or tolerance');
@@ -87,6 +98,16 @@ export function createPixelTools(limits: PixelToolLimits) {
         ctx.drawImage(bitmap, 0, 0); bitmap.close(); bitmap = undefined;
       }
       if (kind === 'clear') ctx.clearRect(0, 0, image.width, image.height);
+      const mask = (context: CanvasRenderingContext2D) => {
+        context.beginPath(); selection!.forEach((p,i) => i ? context.lineTo(p.x,p.y) : context.moveTo(p.x,p.y)); context.closePath();
+      };
+      if (matrix) {
+        blurred=document.createElement('canvas'); blurred.width=image.width; blurred.height=image.height;
+        const patch=blurred.getContext('2d'); if(!patch)return fail('unavailable','Canvas context unavailable');
+        mask(patch); patch.clip(); patch.drawImage(canvas,0,0);
+        ctx.save(); ctx.globalCompositeOperation='destination-out'; mask(ctx); ctx.fill(); ctx.restore();
+        ctx.save(); ctx.transform(...matrix); ctx.drawImage(blurred,0,0); ctx.restore();
+      }
       if(blurRadius!==undefined){
         blurred=document.createElement('canvas');blurred.width=image.width;blurred.height=image.height;
         const filtered=blurred.getContext('2d');if(!filtered||!('filter' in filtered))return fail('unavailable','Canvas blur unavailable');
@@ -94,7 +115,8 @@ export function createPixelTools(limits: PixelToolLimits) {
         if(filtered.filter!==`blur(${blurRadius}px)`)return fail('unavailable','Canvas blur filter refused');
         filtered.drawImage(canvas,0,0);
         // Replace the original pixels; overlaying leaves a sharp opaque core.
-        ctx.clearRect(0,0,image.width,image.height);ctx.drawImage(blurred,0,0);
+        ctx.save(); if(selection){mask(ctx);ctx.clip();}
+        ctx.clearRect(0,0,image.width,image.height);ctx.drawImage(blurred,0,0);ctx.restore();
       }
       if (fill) {
         const pixels = ctx.getImageData(0, 0, image.width, image.height), data = pixels.data;

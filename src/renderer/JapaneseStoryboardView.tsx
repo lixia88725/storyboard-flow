@@ -1,3 +1,4 @@
+import type { SelectionTransformIntent } from './selectionTransform';
 import { sortedShots } from "../shared/projectOps";
 import type { Project, Shot, SketchStroke, SketchTool } from "../shared/types";
 import { shotDialogueText } from "./editableDialogueText";
@@ -91,7 +92,7 @@ type JapaneseStoryboardViewProps = {
   onFocusShot: (shotId: string) => void;
   onPickColor: (color: string) => void;
   onSelectShot: (shotId: string, event: MouseEvent<HTMLElement>) => void;
-  onSelectionTransform: (shot: Shot, layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onSelectionTransform: (shot: Shot, layerId: string, dataUrl: string, intent?: SelectionTransformIntent) => Promise<string | undefined>;
   onBitmapSelectionChange?: (
     shotId: string,
     layerId: string | undefined,
@@ -134,7 +135,7 @@ export type JapaneseStoryboardRowViewProps = {
   onFocusShot: (shotId: string) => void;
   onPickColor: (color: string) => void;
   onSelectShot: (shotId: string, event: MouseEvent<HTMLElement>) => void;
-  onSelectionTransform: (shot: Shot, layerId: string, dataUrl: string) => Promise<string | undefined>;
+  onSelectionTransform: (shot: Shot, layerId: string, dataUrl: string, intent?: SelectionTransformIntent) => Promise<string | undefined>;
   onBitmapSelectionChange?: (
     shotId: string,
     layerId: string | undefined,
@@ -250,8 +251,8 @@ const JapaneseStoryboardRowView = memo(({
     [onSketchStroke, row.shot]
   );
   const handleSelectionTransform = useCallback(
-    (layerId: string, dataUrl: string) =>
-      onSelectionTransform(row.shot, layerId, dataUrl),
+    (layerId: string, dataUrl: string, intent?: SelectionTransformIntent) =>
+      onSelectionTransform(row.shot, layerId, dataUrl, intent),
     [onSelectionTransform, row.shot]
   );
   const handleFill = useCallback(

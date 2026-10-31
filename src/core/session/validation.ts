@@ -1,3 +1,4 @@
+import { validSelection, validTransform } from '../../../electron/shared/flowSelection';
 import type { FlowFailure, FlowResult, FlowSessionRequest } from '../../../electron/shared/flowWave2';
 
 export const id = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(value);
@@ -61,7 +62,8 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
       case 'pixelTool': {
         if (!shape(value, ['kind', 'shotId', 'tool']) || !id(value.shotId)) break;
         const tool = value.tool;
-        if (shape(tool,['kind','layerId','radius']) && tool.kind==='blur' && id(tool.layerId) && typeof tool.radius==='number' && Number.isFinite(tool.radius) && tool.radius>=1 && tool.radius<=50) return {ok:true,value:value as FlowSessionRequest};
+        if (shape(tool,['kind','layerId','radius'],['selection']) && tool.kind==='blur' && id(tool.layerId) && typeof tool.radius==='number' && Number.isFinite(tool.radius) && tool.radius>=1 && tool.radius<=50 && (!Object.hasOwn(tool,'selection') || validSelection(tool.selection))) return {ok:true,value:value as FlowSessionRequest};
+        if (shape(tool,['kind','layerId','expectedAssetId','selection','matrix']) && tool.kind==='transform' && id(tool.layerId) && typeof tool.expectedAssetId==='string' && /^[a-f0-9]{64}$/.test(tool.expectedAssetId) && validSelection(tool.selection) && validTransform(tool.matrix)) return {ok:true,value:value as FlowSessionRequest};
         if (shape(tool, ['kind', 'layerId']) && tool.kind === 'clear' && id(tool.layerId))
           return { ok: true, value: value as FlowSessionRequest };
         if (shape(tool, ['kind', 'layerIds']) && tool.kind === 'merge' && Array.isArray(tool.layerIds) &&

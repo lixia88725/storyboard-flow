@@ -1,3 +1,4 @@
+import type { FlowSelection, FlowTransform } from './flowSelection.js';
 /** Coordinator-owned first wave-2 implementation contract. No production IPC or TIFF yet.
  * Semantics and exclusions: docs/refactor/wave2/IMPLEMENTATION-1.md. */
 import type { AssetIdV1, AssetReaderV1, CheckpointReceiptV1, CoreErrorCodeV1,
@@ -20,7 +21,8 @@ export type FlowPixels = {
   produce(input: FlowPixelInput, readAsset: AssetReaderV1): Promise<FlowResult<FlowPixelOutput>>;
 };
 export type FlowPixelTool =
-  | { kind: 'blur'; layerId: string; radius: number }
+  | { kind: 'blur'; layerId: string; radius: number; selection?: FlowSelection }
+  | { kind: 'transform'; layerId: string; expectedAssetId: string; selection: FlowSelection; matrix: FlowTransform }
   | { kind: 'fill'; layerId: string; x: number; y: number; color: readonly [number, number, number, number]; tolerance: number }
   | { kind: 'clear'; layerId: string }
   | { kind: 'merge'; layerIds: readonly string[] };
