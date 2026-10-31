@@ -1,5 +1,15 @@
 # 第二轮主管验收基线
 
+Latest 2026-10-31 status: isolated Pending now defers file effects to explicit Save
+(user approved); TIFF-only folder bootstrap -> editing -> Save/Undo/Save -> relocated
+reopen is self-tested. Full suite 384 files / 2906 tests, complete build and 13 import
+plus 42 editor GUI cases pass on clean 2025960. See ../reviews/2026-10-31/G3-TIFF-IMPORT.md
+and ../reviews/2026-10-31/G3-PENDING.md. Native chooser selection is scripted in tests.
+G3 live A/B switching and independent acceptance remain open; production routing, naming,
+Trash deletion, remaining tools and platform/scale gates are not complete. Earlier Pending
+policy questions and blanket NOT_RUN statements below are historical baseline evidence.
+
+
 Latest 2026-10-30 G2 update: the isolated host now also mounts the existing Japanese
 sheet and shares Session dialogue/script/order/drawing/history with its grid. Full suite
 379 files / 2833 tests, build and actual two-process GUI passed; see

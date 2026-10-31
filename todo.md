@@ -1,3 +1,26 @@
+## TIFF folder bootstrap and real editor loop — 2026-10-31
+
+Candidate 20259602f1db4a4d117d3334f36a198b78b9f8ad adds Main-owned TIFF folder bootstrap
+to the dedicated new-format entry, including native chooser selection/cancel. Existing
+project data is strictly opened, never overwritten by fallback import. Root/Pending TIFFs
+are read-only during import; private staged checkpoint/source bindings publish exclusively
+only after validation and source rechecks. Fresh project/shot/image/dialogue IDs avoid
+portable identity collisions. First-original backups remain an explicit Save responsibility.
+Fixed the initial checkpoint notification race by refreshing state after UI subscription.
+
+Clean unchanged candidate passes full suite 384 files / 2906 tests, complete build,
+13 new real Electron import cases plus all prior 42 editor cases. Actual pointer edit,
+Save/Undo/Save, raw pixel comparisons, exact original backup, relocated-folder reopen and
+continued editing are verified. Chooser result is scripted; native picker visual interaction
+and cross-machine/Windows acceptance are not claimed. Details and invocation:
+docs/refactor/reviews/2026-10-31/G3-TIFF-IMPORT.md; docs/refactor/TIFF-IMPORT.md.
+
+Implemented/self-tested only; independent acceptance and complete G3 remain open. Next:
+live A/B switching/stale callbacks, ordered Save filenames, exported-shot Trash deletion,
+external TIFF refresh, remaining tools and production-shell integration. Installer resources,
+Windows/Linux publication and 1000-image raster scale remain unverified. Default App/launcher,
+three prior worktrees and personal media untouched; no push or dependency installation.
+
 ## Pending explicit-Save lifecycle — 2026-10-31
 
 Candidate 5643287bc1d175ddffdcf59e6a55275ce30788db implements the approved logical Pending
