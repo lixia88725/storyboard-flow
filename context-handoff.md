@@ -6,23 +6,29 @@ receipts under docs/refactor/reviews/ instead of prepending another history entr
 ## Runtime and verified candidate
 
 The new-format editor remains isolated; default App and 启动测试.command are unchanged.
-Implementation `bba2bb51da35bbce73d1534b2b8c6000490ce7da` supports grid/Japanese editing,
+Implementation `8385b1f1afc391c2e56e57c21d65bc7f58fa1ac1` supports grid/Japanese editing,
 Session history/checkpoints, bounded pixel/layer tools, logical Pending, explicit TIFF
 Save/first-original backup, TIFF-folder bootstrap, session-bound A/B switching and
-ordered TIFF filenames with undoable scene/artist/version settings. Naming changes
+ordered TIFF filenames with undoable scene/artist/version settings, and owned TIFF
+deletion to system Trash on explicit Save. Undo regenerates deleted TIFFs from retained
+assets; original backups survive. Naming changes
 checkpoint metadata; explicit Save alone synchronizes names through a resumable journal.
 Switching waits for Save/checkpoint; cancellation or failed preparation keeps the prior
 Session/history. Reopening restores content, not a previous session's Undo stack.
 
-That clean unchanged candidate passes 386 files / 2922 tests, complete build and 64
-real Electron scenarios. Naming received scoped independent code review and corrections; full application
-independent acceptance and full G3 remain open. Exact logs and scope: [latest review](docs/refactor/reviews/2026-10-31/G3-SAVE-NAMING.md).
+That clean unchanged candidate passes 387 files / 2939 tests, complete build and 74
+real Electron scenarios. Naming and Trash received scoped independent code review and
+corrections; full application independent acceptance and full G3 remain open. Exact
+logs and scope: [latest review](docs/refactor/reviews/2026-10-31/G3-OUTPUT-TRASH.md).
+Nondurable in-process Trash ACKs block Close/switch. A process loss after OS success
+before durable confirmation remains an unknown outcome; no recovery UI is provided yet.
 Native picker results are scripted. Windows, installers, representative large rasters,
 full production-shell parity and hostile cross-process/crash behavior are not certified.
 
 ## Current work
 
-Next coordinator slice is exported-shot Trash transactions on explicit Save.
+Exported-shot Trash transactions are implemented and verified in the isolated editor.
+Next output slice is external TIFF refresh/conflicts and remaining interchange behavior.
 User-confirmed project/scene/stb/artist/version/0010 naming is implemented and verified.
 Documentation cleanup on codex/docs-cleanup is complete, reviewed and integrated; its
 clean worktree/branch are retained. Root history is archived below. No old runtime/script deletion.

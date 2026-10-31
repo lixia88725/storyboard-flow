@@ -5,8 +5,9 @@ and evidence belong in [context-handoff.md](context-handoff.md).
 
 ## Current output integration
 
-- Implement exported-shot deletion to system Trash on Save, with original backups,
-  durable effect reporting, failure/retry and actual connected verification.
+- Add explicit recovery UX for unknown Trash outcomes after process loss. Current
+  protocol retains evidence and refuses a guessed successful Save; normal failure/retry,
+  backups, Undo regeneration and connected system Trash are verified.
 - Handle external TIFF refresh/conflicts and remaining interchange/Markdown behavior.
 
 ## Remaining interaction and rollout gates
