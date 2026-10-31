@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
 import { SortableContext, useSortable, rectSortingStrategy, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import type { FlowEditorBootstrap } from '../../../electron/shared/flowEditor';
 import type { FlowSession, FlowSessionRequest } from '../../../electron/shared/flowWave2';
 import { createFlowSession } from '../../core/session';
 import { createPixelTools, createFlowPixels } from '../drawing';
@@ -24,41 +25,98 @@ const required = <T,>(r: { ok: true; value: T } | { ok: false; error: { message:
 const beforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
 const unavailable = () => { throw new Error('This tool is not connected in this editor yet'); };
 
+function bindEditor(sessionId: string) {
+  const api = window.flowEditor!;
+  return {
+    read: (id: string) => api.read(sessionId, id),
+    put: (input: Parameters<typeof api.put>[1]) => api.put(sessionId, input),
+    checkpoint: (project: FlowEditorBootstrap['project']) => api.checkpoint(sessionId, project),
+    saveTiff: (project: FlowEditorBootstrap['project']) => api.saveTiff(sessionId, project)
+  };
+}
+type EditorOwner = { flow: FlowSession; sessionId: string; api: ReturnType<typeof bindEditor> };
 export function FlowEditor() {
-  const [flow, setFlow] = useState<FlowSession>();
+  const [owner, setOwner] = useState<EditorOwner>();
+  const current = useRef<EditorOwner | undefined>(undefined);
   const [issue, setIssue] = useState('');
+  const [switching, setSwitching] = useState(false);
   const gestures = useRef(0);
   const outputWork = useRef<Promise<void> | undefined>(undefined);
+  const switchWork = useRef<Promise<void> | undefined>(undefined);
+  const closing = useRef(false);
+  const assertSettledGesture = () => {
+    if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) throw Error('Finish the current stroke first');
+  };
+  const install = ({ project, sessionId }: FlowEditorBootstrap) => {
+    const api = bindEditor(sessionId);
+    const flow = required(createFlowSession({ project, sessionId, incarnation: crypto.randomUUID(),
+      maxHistoryEntries: 60, maxPendingRequests: 32, assets: api,
+      pixels: createFlowPixels({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxPoints: 100_000 }),
+      tools: createPixelTools({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxLayers: 64 }),
+      checkpoint: api.checkpoint, clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number) } }));
+    const next = { flow, api, sessionId };
+    current.current = next; setOwner(next); setIssue('');
+    void flow.request({ kind: 'checkpoint' }).then(result => { if (current.current === next && !result.ok) setIssue(result.error.message); });
+  };
+  const resume = async (owner: EditorOwner) => {
+    if (owner.flow.snapshot().phase === 'frozen') required(await owner.flow.request({ kind: 'resume' }));
+  };
+  const openProject = () => {
+    if (switchWork.current || closing.current || !current.current) return;
+    const previous = current.current;
+    setSwitching(true);
+    const work = (async () => {
+      try {
+        assertSettledGesture();
+        while (outputWork.current) await outputWork.current;
+        assertSettledGesture();
+        const frozen = required(await previous.flow.request({ kind: 'freeze' }));
+        const next = await window.flowEditor!.switchProject(previous.sessionId, frozen.snapshot.project);
+        if (next) install(next); else { await resume(previous); setIssue(''); }
+      } catch (error) {
+        if (current.current === previous) await resume(previous);
+        setIssue(String(error));
+      } finally { setSwitching(false); }
+    })();
+    switchWork.current = work;
+    void work.finally(() => { if (switchWork.current === work) switchWork.current = undefined; });
+  };
   useEffect(() => {
     const api = window.flowEditor!;
-    let off: (() => void) | undefined, cancelled = false;
+    let cancelled = false;
     window.addEventListener('beforeunload', beforeUnload);
-    void api.open().then(({ project, sessionId }) => {
-      if (cancelled) return;
-      const owner = required(createFlowSession({ project, sessionId, incarnation: crypto.randomUUID(),
-        maxHistoryEntries: 60, maxPendingRequests: 32, assets: api,
-        pixels: createFlowPixels({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxPoints: 100_000 }),
-        tools: createPixelTools({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxLayers: 64 }),
-        checkpoint: p => api.checkpoint(p), clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number) } }));
-      off = api.onClose(id => { void (async () => {
-        try {
-          if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) throw new Error('Finish the current stroke before closing');
-          while (outputWork.current) await outputWork.current;
-          if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) throw new Error('Finish the current stroke before closing');
-          const result = required(await owner.request({ kind: 'freeze' }));
-          const closed = await api.finishClose(id, result.snapshot.project);
-          if (!closed.ok) throw new Error(closed.message);
-          window.removeEventListener('beforeunload', beforeUnload);
-        } catch (error) { setIssue(String(error)); await api.finishClose(id, null); }
-      })(); });
-      setFlow(owner);
-      void owner.request({ kind: 'checkpoint' }).then(result => { if (!result.ok) setIssue(result.error.message); });
-    }).catch(error => setIssue(String(error)));
-    return () => { cancelled = true; off?.(); window.removeEventListener('beforeunload', beforeUnload); };
+    void api.open().then(value => { if (!cancelled) install(value); }).catch(error => setIssue(String(error)));
+    const off = api.onClose(id => { void (async () => {
+      if (closing.current) return;
+      closing.current = true;
+      let owner: EditorOwner | undefined;
+      try {
+        if (switchWork.current) await switchWork.current;
+        owner = current.current;
+        if (!owner) throw Error('Project is still opening');
+        assertSettledGesture();
+        while (outputWork.current) await outputWork.current;
+        assertSettledGesture();
+        const result = required(await owner.flow.request({ kind: 'freeze' }));
+        const closed = await api.finishClose(owner.sessionId, id, result.snapshot.project);
+        if (!closed.ok) throw Error(closed.message);
+        window.removeEventListener('beforeunload', beforeUnload);
+      } catch (error) {
+        setIssue(String(error));
+        await api.finishClose(owner?.sessionId ?? '', id, null);
+        if (owner) await resume(owner);
+        closing.current = false;
+      }
+    })(); });
+    return () => { cancelled = true; off(); window.removeEventListener('beforeunload', beforeUnload); };
   }, []);
-  return flow ? <Editor flow={flow} issue={issue} setIssue={setIssue} gestures={gestures} outputWork={outputWork} /> : <main><p role="status">{issue || 'Opening project…'}</p></main>;
+  return owner ? <Editor key={owner.sessionId} flow={owner.flow} api={owner.api} openProject={openProject} switching={switching}
+    issue={issue} setIssue={s => { if (current.current === owner) setIssue(s); }} gestures={gestures} outputWork={outputWork} /> : <main><p role="status">{issue || 'Opening project…'}</p></main>;
 }
-function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: { current: Promise<void> | undefined }; flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number } }) {
+function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, outputWork }: {
+  api: ReturnType<typeof bindEditor>; openProject: () => void; switching: boolean;
+  outputWork: { current: Promise<void> | undefined }; flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number }
+}) {
   const [snapshot, setSnapshot] = useState(() => flow.snapshot());
   const [layers, setLayers] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState(snapshot.project.shots[0]?.id);
@@ -79,6 +137,7 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
   const [size, setSize] = useState(20);
   const [opacityPreview, setOpacityPreview] = useState<Record<string, number>>({});
   const [urls, setUrls] = useState<Record<string, string>>({});
+  const disposed = useRef(false);
   const cache = useMemo(() => new Map<string, string>(), []);
   const loads = useMemo(() => new Map<string, Promise<string>>(), []);
   useEffect(() => {
@@ -89,7 +148,8 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
   }, [flow]);
   const source = async (id: string): Promise<string> => {
     if (cache.has(id)) return cache.get(id)!;
-    if (!loads.has(id)) loads.set(id, window.flowEditor!.read(id).then(result => {
+    if (!loads.has(id)) loads.set(id, api.read(id).then(result => {
+      if (disposed.current) throw Error('Editor session retired');
       const bytes = new Uint8Array(required(result));
       const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
       cache.set(id, url); setUrls(Object.fromEntries(cache)); return url;
@@ -99,7 +159,7 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
   useEffect(() => {
     for (const image of Object.values(snapshot.project.images)) for (const layer of image.layers) void source(layer.assetId).catch(error => setIssue(String(error)));
   }, [snapshot.project]);
-  useEffect(() => () => { for (const url of cache.values()) URL.revokeObjectURL(url); }, [cache]);
+  useEffect(() => { disposed.current = false; return () => { disposed.current = true; for (const url of cache.values()) URL.revokeObjectURL(url); }; }, [cache]);
   const media: MediaSource = useMemo(() => ({ assetUrl: id => urls[id] ?? '', layerAssetUrl: ({ bitmapPath }) => urls[bitmapPath.split('/').at(-1)!] ?? '' }), [urls]);
   const request = async (r: FlowSessionRequest) => {
     try { const result = required(await flow.request(r)); setIssue(''); return result; } catch (error) { setIssue(String(error)); throw error; }
@@ -121,7 +181,7 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
   }
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const rejectTool = () => setIssue('This operation is not connected yet');
-  const active = snapshot.phase === 'active';
+  const active = snapshot.phase === 'active' && !switching;
   const view = projectView(snapshot.project, shots);
   const script = (shotId: string, text: string) => act({ kind: 'board', command: { kind: 'setScriptText', shotId, text } });
   const dialogue = (shotId: string, text: string) => act({ kind: 'board', command: dialogueCommand(flow.snapshot().project, shotId, text) });
@@ -150,7 +210,7 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
     act({ kind: 'pixelTool', shotId, tool: { kind: 'merge', layerIds: ids } });
   };
   const saveTiff = async () => {
-    if (savingTiff || outputWork.current) return;
+    if (!active || savingTiff || outputWork.current) return;
     if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture || flow.snapshot().pending) {
       setIssue('Finish the current edit before saving TIFF'); return;
     }
@@ -158,7 +218,7 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
     setSavingTiff(true);
     const work = (async () => {
       try {
-        const receipt = required(await window.flowEditor!.saveTiff(captured));
+        const receipt = required(await api.saveTiff(captured));
         if (receipt.projectId !== captured.id || receipt.revision !== captured.revision) throw Error('TIFF Save receipt mismatch');
         setSavedTiffRevision(receipt.revision); setIssue('');
       } catch (error) { setIssue(String(error)); throw error; }
@@ -193,6 +253,7 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
   return <MediaSourceContext.Provider value={media}>
     <main className="flow-editor" data-flow-editor="true" data-revision={snapshot.project.revision} data-phase={snapshot.phase}>
       <header className="topbar"><strong>Storyboard Flow</strong><span>{snapshot.project.name}</span>
+        <button disabled={switching} onClick={openProject}>{switching ? 'Opening…' : 'Open project'}</button>
         <button disabled={!active} onClick={switchView}>{japanese ? 'Grid view' : 'Japanese view'}</button>
         <button disabled={!active} aria-pressed={tool === 'brush'} onClick={() => setTool('brush')}>Brush</button>
         <button disabled={!active} aria-pressed={tool === 'eraser'} onClick={() => setTool('eraser')}>Eraser</button>

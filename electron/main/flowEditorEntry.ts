@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import { importFlowTiffFolder } from './flowTiffImport.js';
 import { createTiffCodec } from '../core/formats/index.js';
 import { randomUUID } from 'node:crypto';
+import { createFlowWorkspace } from './flowWorkspace.js';
 import { openFlowEditorRuntime } from './flowEditorRuntime.js';
 const [requestedRoot, userData] = process.argv.slice(2);
 if (!requestedRoot || !userData || (requestedRoot !== '--choose' && !path.isAbsolute(requestedRoot)) || !path.isAbsolute(userData)) throw new Error('Absolute project and isolated userData paths required');
@@ -26,14 +27,18 @@ app.whenReady().then(async () => {
   let importing = true;
   win.on('close', event => { if (importing) event.preventDefault(); });
   await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<!doctype html><title>Storyboard Flow</title><body style="background:#222;color:#eee;font:18px system-ui;padding:40px">Opening Storyboard Flow project…</body>'));
-  let metadataExists = true;
-  try { await fs.lstat(path.join(root, '.storyboard-flow')); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') metadataExists = false; else throw error; }
-  if (!metadataExists) await importFlowTiffFolder(root, createTiffCodec({
-    scriptPath: path.join(repo, 'electron/core/formats/codec.py'),
-    depsDir: process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff')
-  }));
-  const runtime = await openFlowEditorRuntime(root);
+  const prepare = async (selectedRoot: string) => {
+    const root = await fs.realpath(selectedRoot);
+    let metadataExists = true;
+    try { await fs.lstat(path.join(root, '.storyboard-flow')); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') metadataExists = false; else throw error; }
+    if (!metadataExists) await importFlowTiffFolder(root, createTiffCodec({
+      scriptPath: path.join(repo, 'electron/core/formats/codec.py'),
+      depsDir: process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff')
+    }));
+    return { root, runtime: await openFlowEditorRuntime(root) };
+  };
+  const workspace = createFlowWorkspace(await prepare(root));
   const entry = path.join(repo, 'dist/index.html');
   const documentUrl = pathToFileURL(entry).href + '#flow-editor';
   let closeId: string | null = null, closing = false;
@@ -41,14 +46,26 @@ app.whenReady().then(async () => {
     if (!documentUrl || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== documentUrl)
       throw new Error('Current editor document required');
   };
-  for (const name of ['open', 'read', 'put', 'checkpoint', 'saveTiff'] as const) {
-    ipcMain.handle(`flow-editor:${name}`, (event, input) => { caller(event); return (runtime[name] as (value: unknown) => unknown)(input); });
+  ipcMain.handle('flow-editor:open', event => { caller(event); return workspace.open(); });
+  for (const name of ['read', 'put', 'checkpoint', 'saveTiff'] as const) {
+    ipcMain.handle(`flow-editor:${name}`, (event, token, input) => { caller(event); return (workspace[name] as (token: string, value: unknown) => unknown)(token, input); });
   }
-  ipcMain.handle('flow-editor:finish-close', async (event, id, project) => {
+  ipcMain.handle('flow-editor:switch-project', async (event, token, project) => {
+    caller(event);
+    if (closing) throw Error('Window is closing');
+    return workspace.switchProject(token, project, async currentRoot => {
+      const selection = await dialog.showOpenDialog(win, { title: 'Open Storyboard Flow project or TIFF folder', properties: ['openDirectory'] });
+      if (selection.canceled) return null;
+      const selectedRoot = await fs.realpath(selection.filePaths[0]);
+      return selectedRoot === currentRoot ? null : prepare(selectedRoot);
+    });
+  });
+  ipcMain.handle('flow-editor:finish-close', async (event, token, id, project) => {
     caller(event);
     if (!closeId || id !== closeId || closing) return { ok: false, message: 'Stale close request' };
     closing = true;
-    const accepted = await runtime.certifyClose(project);
+    let accepted = false;
+    try { accepted = await workspace.certifyClose(token, project); } catch { /* Refuse stale/transitioning close, permit retry. */ }
     if (!accepted) { closing = false; closeId = null; return { ok: false, message: 'Checkpoint verification failed; window retained' }; }
     setImmediate(() => win.destroy());
     return { ok: true };
