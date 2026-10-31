@@ -1,3 +1,4 @@
+import {FlowInspection} from './FlowInspection';
 import {CanvasPresentationContext} from '../canvasPresentation';
 import type { SelectionTransformIntent } from '../selectionTransform';
 import type { FlowSelection } from '../../../electron/shared/flowSelection';
@@ -132,6 +133,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     setSelection(current => selectShots(flow.snapshot().project.shots.map(s => s.id), current, selectionAnchor.current, id, event));
     setSelected(id); if (!event.shiftKey) selectionAnchor.current = id;
   };
+  const [inspection, setInspection] = useState(false);
   const [namingOpen, setNamingOpen] = useState(false);
   const [panel, setPanel] = useState<string>();
   const [refreshing,setRefreshing]=useState(false),[refreshRecovery,setRefreshRecovery]=useState(false),[refreshStatus,setRefreshStatus]=useState('');
@@ -304,6 +306,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     setJapanese(value => !value);
   };
 
+  const canInspect = () => active && !outputWork.current && !gestures.current && !flow.snapshot().pending && !captureMountedCanvasCheckpoints().hasUnsettledGesture;
   const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:snapshot.project.dialogues.filter(d=>d.shotId===s.id).map(d=>d.text.trim()).filter(Boolean).join(' ').replace(/\s+/g,' ')} ]));
   return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <main className="flow-editor" data-flow-editor="true" data-revision={snapshot.project.revision} data-phase={snapshot.phase}>
@@ -317,6 +320,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
         <button disabled={!active||!snapshot.project.presentation||!!snapshot.pending} aria-pressed={snapshot.project.presentation?.dialogue??false} onClick={()=>{
           if(snapshot.project.presentation)act({kind:'board',command:{kind:'setPresentation',presentation:{...snapshot.project.presentation,dialogue:!snapshot.project.presentation.dialogue}}});
         }}>Dialogue overlay</button>
+        <button disabled={!active || !snapshot.project.shots.length} onClick={() => {if(canInspect())setInspection(true);else setIssue('Finish the current edit first');}}>Inspect</button>
         <button disabled={!active} onClick={switchView}>{japanese ? 'Grid view' : 'Japanese view'}</button>
         <button disabled={!active} aria-pressed={tool === 'brush'} onClick={() => setTool('brush')}>Brush</button>
         <button disabled={!active} aria-pressed={tool === 'eraser'} onClick={() => setTool('eraser')}>Eraser</button>
@@ -343,7 +347,15 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
       </header>
       {namingOpen && <FlowNaming project={snapshot.project} onCancel={() => setNamingOpen(false)} onApply={async (name, naming) => { await request({ kind: 'board', command: { kind: 'setProjectNaming', name, naming } }); setNamingOpen(false); }} />}
       <p role="status">{issue || snapshot.lastError?.message || (snapshot.checkpoint?.revision === snapshot.project.revision ? 'Editable project saved' : 'Saving editable project…')}</p>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active: from, over }) => {
+      {inspection && <FlowInspection shots={shots.slice(0,snapshot.project.shots.length)} initialId={selected} revision={snapshot.project.revision}
+        issue={issue || snapshot.lastError?.message} canNavigate={canInspect} onClose={id=>{if(id)focusShot(id);setInspection(false);}}
+        renderCanvas={(shot,previous,next)=><SketchPad key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision}
+          onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
+          tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0} eraserSize={size} eraserOpacity={1} eraserSoftness={0}
+          isZoomScrubbing={false} onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)}
+          onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange}
+          onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor} />} />}
+      {!inspection && <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active: from, over }) => {
         if (!over) return;
         const project = flow.snapshot().project, sourceId = String(from.id), targetId = String(over.id);
         const parked = project.parkedShots.some(s => s.id === sourceId);
@@ -398,7 +410,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
           }} />
       </Card>)}</div>}</SortableContext>
       <FlowPending shots={shots.slice(snapshot.project.shots.length)} disabled={!active} revision={snapshot.project.revision} onRestore={id => moveShots([id], 'active')} />
-      </DndContext>
+      </DndContext>}
     </main>
   </CanvasPresentationContext.Provider></MediaSourceContext.Provider>;
 }

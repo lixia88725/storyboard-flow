@@ -17,3 +17,12 @@
 .flow-pending-shelf { border: 2px dashed #777; padding: 16px; margin-top: 24px; min-height: 160px; }
 .flow-pending-shelf.is-over { border-color: #e98249; background: #39322d; }
 .flow-pending-shelf .flow-pending { display: inline-block; vertical-align: top; margin: 8px; }
+
+.flow-inspection { width: min(1400px, 95vw); max-width: 95vw; height: 94vh; max-height: 94vh; box-sizing: border-box; background: #161a1d; color: #eee; border: 1px solid #555; padding: 16px; overflow: auto; }
+.flow-inspection::backdrop { background: #000b; }
+.flow-inspection header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.flow-inspection-frame { margin: 12px auto; }
+.flow-inspection-image { position: relative; isolation: isolate; background: #fff; }
+.flow-inspection-image img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.flow-inspection .onion-skin-image { object-fit: contain; }
+.flow-inspection > input[type=range] { width: 100%; }
