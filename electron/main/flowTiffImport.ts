@@ -1,3 +1,4 @@
+import {createPresentationCodec} from '../core/formats/presentation.js';
 import { pixelDigest } from './flowPixelIdentity.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -19,6 +20,7 @@ const exists = async (file: string) => { try { await fs.lstat(file); return true
  * Originals remain read-only. A whole prepared namespace is published exclusively.
  * Staging contains only derived new data; failures cannot replace an existing project. */
 export async function importFlowTiffFolder(root: string, codec: TiffCodec): Promise<ProjectV1> {
+  codec=createPresentationCodec(codec);
   if (!path.isAbsolute(root) || path.resolve(root)!==root || await fs.realpath(root)!==root) throw Error('Canonical project directory required');
   const rootIdentity = await fs.lstat(root,{bigint:true});
   if(!rootIdentity.isDirectory() || rootIdentity.isSymbolicLink())throw Error('Real project directory required');
@@ -77,9 +79,10 @@ export async function importFlowTiffFolder(root: string, codec: TiffCodec): Prom
       const image=get(await admitTiffCandidate(candidate,depot,shotId));
       project.images[image.id]=image;
       (source.location==='active'?project.shots:project.parkedShots).push({id:shotId,imageId:image.id,
-        name:candidate.text?.shotName??path.parse(source.name).name,scriptText:candidate.text?.scriptText??''});
+        ...(candidate.text?.presentation?{presentation:candidate.text.presentation.settings}:{}),name:candidate.text?.shotName??path.parse(source.name).name,scriptText:candidate.text?.scriptText??''});
       project.dialogues.push(...candidate.text?.dialogues??[]);
     }
+    if(project.shots[0]?.presentation)project.presentation=structuredClone(project.shots[0].presentation);
     const mappings:TiffSourceBinding[]=sources.map(s=>({shotId:s.shotId!,name:s.name,digest:s.digest!,location:s.location,pixelHashes:s.pixelHashes!}));
     const output=await openFlowTiffSave(stage,project.id,codec);
     await output.bindSources(project,mappings,source=>readSource(sources.find(s=>s.shotId===source.shotId)!));

@@ -43,6 +43,7 @@ export type FlowAssetDepotOptions = {
   root: string; sessionId: string; maxPixels: number; maxPngBytes: number;
 };
 export type FlowBoardCommand =
+  | {kind:'setPresentation';presentation:NonNullable<ProjectV1['presentation']>|null}
   /** Insert into active board after Session revalidates each referenced depot asset. */
   | { kind: 'insertShot'; shot: ShotV1; image: ImageDocumentV1; index: number }
   | { kind: 'setProjectNaming'; name: string; naming: NonNullable<ProjectV1['naming']> }

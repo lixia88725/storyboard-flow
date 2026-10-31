@@ -204,3 +204,24 @@ it('naming settings are one undoable project edit and reject unknown fields',()=
  expect(ok(h.redo()).after.naming).toEqual(naming);
  expect(applyStoryboardEdit(p,{kind:'setProjectNaming',name:'x',naming:{...naming,unknown:true}} as unknown as StoryboardEditV1).ok).toBe(false);
 });
+
+it('changes scene presentation without touching pixels and keeps Pending until restored',()=>{
+ const h=history(),before=current(h).images;
+ apply(h,{kind:'setPresentation',presentation:{mode:'expanded',dialogue:true}});
+ expect(current(h).images).toEqual(before);expect(current(h).shots.every(s=>s.presentation?.dialogue)).toBe(true);
+ apply(h,{kind:'moveShots',shotIds:['s0'],destination:'pending'});
+ apply(h,{kind:'setPresentation',presentation:null});
+ expect(current(h).parkedShots[0].presentation?.mode).toBe('expanded');expect(current(h).shots.every(s=>!s.presentation)).toBe(true);
+ apply(h,{kind:'moveShots',shotIds:['s0'],destination:'active'});
+ expect(current(h).shots.find(s=>s.id==='s0')?.presentation).toBeUndefined();
+ expect(h.undo().ok).toBe(true);expect(current(h).parkedShots[0].presentation?.mode).toBe('expanded');expect(current(h).images).toEqual(before);
+});
+
+it('new shots inherit scene presentation and malformed settings are refused',()=>{
+ const h=history();
+ expect(h.apply({kind:'setPresentation',presentation:{mode:'other',dialogue:true}} as never).ok).toBe(false);
+ apply(h,{kind:'setPresentation',presentation:{mode:'embedded',dialogue:false}});
+ apply(h,{kind:'insertShot',shot:{id:'new',imageId:'new_image',name:'new',scriptText:''},image:image('new_image'),index:0});
+ expect(current(h).shots[0].presentation).toEqual({mode:'embedded',dialogue:false});
+ expect(h.undo().ok).toBe(true);expect(current(h).shots.some(s=>s.id==='new')).toBe(false);
+});

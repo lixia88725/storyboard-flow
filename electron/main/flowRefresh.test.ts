@@ -129,3 +129,27 @@ it.each([0,300])('refuses oversized prepared/completed refresh states before int
  expect(get(await createProjectStore().loadCheckpoint(f.root)).project).toEqual(f.p);
  expect(await f.runtime.certifyClose(f.p)).toBe(true);
 },60000);
+
+it('refreshes editable content beneath derived mattes and retains externally edited overlays in Pending',async()=>{
+ const f=await fixture(),local=structuredClone(f.p),shot=local.shots[0];
+ local.presentation={mode:'expanded',dialogue:true};shot.presentation={...local.presentation};local.revision++;
+ get(await f.runtime.checkpoint(local));get(await f.runtime.saveTiff(local));
+ const ledger=()=>fs.readFile(path.join(f.root,'.storyboard-flow/tiff-output.json'),'utf8').then(JSON.parse);
+ const file=path.join(f.root,(await ledger()).entries[0].name);
+ const rewrite=async(layerIndex:number,png:Uint8Array)=>{
+  const candidate=get(await f.c.decode(await fs.readFile(file)));candidate.image.layers[layerIndex].png=png;
+  const assets=new Map(candidate.image.layers.map(l=>[hash(l.png),l.png]));
+  const image={...candidate.image,layers:candidate.image.layers.map(({png,...l})=>({...l,assetId:hash(png)}))};
+  await fs.writeFile(file,get(await f.c.encode({image,text:candidate.text},async id=>assets.get(id)!)));
+ };
+ const raw=get(await f.c.decode(await fs.readFile(file)));
+ expect(raw.image.height).toBe(153);expect(raw.image.layers).toHaveLength(4);
+ const changed=await sharp(raw.image.layers[0].png).composite([{input:f.pixels[2],left:0,top:75}]).png().toBuffer();
+ await rewrite(0,changed);
+ const refreshed=get(await f.runtime.refresh(local));expect(refreshed.parkedShots).toHaveLength(0);expect(refreshed.images[shot.imageId].height).toBe(3);expect(refreshed.shots[0].presentation).toEqual(local.presentation);
+ get(await f.runtime.saveTiff(refreshed));
+ const overlay=await sharp({create:{width:4,height:153,channels:4,background:'#00ff00'}}).png().toBuffer();await rewrite(2,overlay);
+ const conflict=get(await f.runtime.refresh(refreshed));expect(conflict.parkedShots).toHaveLength(1);
+ const parked=conflict.parkedShots[0];expect(parked.presentation).toBeUndefined();expect(conflict.images[parked.imageId].height).toBe(153);expect(conflict.images[parked.imageId].layers).toHaveLength(4);
+ expect(conflict.images[shot.imageId]).toEqual(refreshed.images[shot.imageId]);
+},60000);

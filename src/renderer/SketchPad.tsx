@@ -1,3 +1,4 @@
+import {CanvasPresentationContext,PresentationBars} from './canvasPresentation';
 import { selectionMatrix, transformSelectionPoints, type SelectionTransformIntent } from './selectionTransform';
 import { useMediaSource } from './mediaSource';
 import {
@@ -1415,8 +1416,10 @@ export const SketchPad = memo(({
     });
   };
 
+  const presentation=useContext(CanvasPresentationContext)[shot.id];
   return (
     <div
+      style={presentation?{position:"relative",background:"#000",paddingBlock:presentation.mode==='expanded'?`${75/canvasSize.width*100}%`:undefined}:undefined}
       className="sketch-panel"
       onMouseDown={(event) => {
         onFocusShot();
@@ -1585,6 +1588,7 @@ export const SketchPad = memo(({
           />
         ) : null}
       </div>
+      {presentation&&<PresentationBars value={presentation} width={stageSize.width/canvasSize.width}/>}
     </div>
   );
 });

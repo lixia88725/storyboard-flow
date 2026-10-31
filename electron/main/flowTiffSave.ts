@@ -1,3 +1,4 @@
+import {createPresentationCodec} from '../core/formats/presentation.js';
 import { canonicalJson } from '../core/persistence/canonicalJson.js';
 import { isDeepStrictEqual } from 'node:util';
 import { validRefreshTransition } from '../shared/flowRefresh.js';
@@ -24,7 +25,7 @@ const leaf = (s: unknown): s is string => typeof s === 'string' && /^[^\\/\0]+\.
 const id = (s: unknown): s is string => typeof s === 'string' && /^[\w-]{1,80}$/.test(s);
 export type ExternalTiffObservation = { shotId: string; name: string; location: 'active' | 'parked'; status: 'changed' | 'missing'; digest: string | null; localOutputChanges: boolean };
 const contentDigest = (project: ProjectV1, shot: ProjectV1['shots'][number]) => hash(Buffer.from(JSON.stringify({
-  image: project.images[shot.imageId], text: { projectId: project.id, projectName: project.name, shotId: shot.id,
+  image: project.images[shot.imageId], ...(shot.presentation?{presentation:shot.presentation}:{}), text: { projectId: project.id, projectName: project.name, shotId: shot.id,
     shotName: shot.name, scriptText: shot.scriptText, dialogues: project.dialogues.filter(d => d.shotId === shot.id) }
 })));
 type Entry = { baseline?: ImageDocumentV1; pixelHashes?: Record<string,string>; published?: boolean; shotId: string; name: string; original: string | null; current: string | null; pending?: string; location?: 'active' | 'parked'; move?: OutputMove; content?: string; deletion?: OutputDeletion; retired?: 'trashed' | 'absent-unpublished' };
@@ -49,6 +50,7 @@ const optionalRead = async (file: string, limit?: number) => {
  * per-file pending hashes. A partial failure never returns a Save receipt.
  * Caller serializes one writable project owner; roots/filenames never come from IPC. */
 export async function openFlowTiffSave(root: string, projectId: string, codec: TiffCodec, trashItem?: TrashItem) {
+  codec=createPresentationCodec(codec);
   const canonical = await fs.realpath(root), identity = await fs.lstat(root);
   if (canonical !== root || !identity.isDirectory() || identity.isSymbolicLink() || !id(projectId)) throw Error('Invalid output root/project');
   const ledgerPath = path.join(root, '.storyboard-flow', 'tiff-output.json');
@@ -184,7 +186,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           if(planned.kind==='conflict'){
             const alternativeId=randomUUID(),imageId=randomUUID();
             after.images[imageId]={...external,id:imageId,revision:0};
-            after.parkedShots.push({id:alternativeId,imageId,name:shot.name+' — External version',scriptText:shot.scriptText});
+            after.parkedShots.push({id:alternativeId,imageId,...(candidate.text?.presentation?{presentation:candidate.text.presentation.settings}:{}),name:shot.name+' — External version',scriptText:shot.scriptText});
           }
           // Retain accepted external assets even where local edits won the merge.
           const retainedId=randomUUID();after.images[retainedId]={...external,id:retainedId};
@@ -310,7 +312,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         const candidates: { entry: Entry; bytes?: Buffer; digest: string; content: string; pixelHashes?:Record<string,string> }[] = [];
         let total = 0;
         for (const shot of allShots) {
-          const input = { image: captured.images[shot.imageId], text: { projectId, projectName: captured.name,
+          const input = { image: captured.images[shot.imageId], ...(shot.presentation?{presentation:shot.presentation}:{}), text: { projectId, projectName: captured.name,
             shotId: shot.id, shotName: shot.name, scriptText: shot.scriptText, dialogues: captured.dialogues.filter(d => d.shotId === shot.id) } };
           const entry = ledger.entries.find(e => e.shotId === shot.id)!;
           const content = hash(Buffer.from(JSON.stringify(input)));

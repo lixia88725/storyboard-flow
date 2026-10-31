@@ -1,3 +1,4 @@
+import {validPresentation} from '../../../electron/shared/flowPresentation';
 import { validRefreshTransition } from '../../../electron/shared/flowRefresh';
 import type {
   ChangeSetV1, ImageDocumentV1, ImageEditResultV1, ProjectEditResultV1,
@@ -44,15 +45,16 @@ const validImage = (image: unknown): image is ImageDocumentV1 => {
   });
 };
 const validProject = (project: unknown): project is ProjectV1 => {
-  if (!shape(project, ['schema', 'version', 'id', 'revision', 'name', 'shots', 'parkedShots', 'dialogues', 'images'], ['naming']) ||
+  if (!shape(project, ['schema', 'version', 'id', 'revision', 'name', 'shots', 'parkedShots', 'dialogues', 'images'], ['naming','presentation']) ||
       project.schema !== 'storyboard-flow.project' || project.version !== 1 || !id(project.id) ||
       !revision(project.revision) || !text(project.name) || !Array.isArray(project.shots) ||
       !Array.isArray(project.parkedShots) || !Array.isArray(project.dialogues) || !record(project.images)) return false;
   if (own(project, 'naming') && (!shape(project.naming, ['sceneCode', 'artistName', 'version']) || !Object.values(project.naming).every(text))) return false;
+  if (own(project,'presentation') && !validPresentation(project.presentation)) return false;
   const shotIds = new Set<string>();
   const imageIds = new Set<string>();
   for (const shot of [...project.shots, ...project.parkedShots]) {
-    if (!shape(shot, ['id', 'imageId', 'name', 'scriptText']) || !id(shot.id) || shotIds.has(shot.id) ||
+    if (!shape(shot, ['id', 'imageId', 'name', 'scriptText'], ['presentation']) || (own(shot,'presentation') && !validPresentation(shot.presentation)) || !id(shot.id) || shotIds.has(shot.id) ||
         !id(shot.imageId) || imageIds.has(shot.imageId) || !text(shot.name) || !text(shot.scriptText)) return false;
     shotIds.add(shot.id);
     imageIds.add(shot.imageId);
@@ -69,6 +71,7 @@ const validProject = (project: unknown): project is ProjectV1 => {
   }
   return true;
 };
+const withPresentation=(shot:ShotV1,presentation:ShotV1['presentation']):ShotV1=>{const {presentation:_old,...rest}=shot;return {...rest,...(presentation?{presentation:copy(presentation)}:{})};};
 const imageVisual = (image: ImageDocumentV1): unknown => image.layers.map(({ id: layerId, kind, visible, opacity, blendMode, width, height, assetId }) =>
   ({ id: layerId, kind, visible, opacity, blendMode, width, height, assetId }));
 const emptyChanges = (): ChangeSetV1 => ({ imageIds: [], shotIds: [], text: false, order: false, membership: false });
@@ -117,7 +120,7 @@ export function applyStoryboardEdit(project: ProjectV1, edit: StoryboardEditV1):
           edit.image.id !== edit.shot.imageId || !Number.isSafeInteger(edit.index) || edit.index < 0 || edit.index > project.shots.length ||
           shot(edit.shot.id) || own(project.images, edit.image.id)) return fail('invalid-input', 'Invalid or duplicate shot/image or index');
       change.shotIds = [edit.shot.id]; change.imageIds = [edit.image.id]; change.membership = true; change.order = true;
-      const shots = [...project.shots]; shots.splice(edit.index, 0, copy(edit.shot));
+      const shots = [...project.shots]; shots.splice(edit.index, 0, withPresentation(copy(edit.shot), project.presentation));
       return result(project, { ...project, shots, images: { ...project.images, [edit.image.id]: copy(edit.image) } }, change);
     }
     case 'moveShots': {
@@ -132,7 +135,7 @@ export function applyStoryboardEdit(project: ProjectV1, edit: StoryboardEditV1):
       const pending = project.parkedShots.filter(s => !selected.has(s.id));
       const destination = edit.destination === 'active' ? active : pending;
       const index = edit.beforeId === undefined ? destination.length : destination.findIndex(s => s.id === edit.beforeId);
-      destination.splice(index, 0, ...moving);
+      destination.splice(index, 0, ...moving.map(s=>edit.destination==='active'?withPresentation(s,project.presentation):s));
       change.shotIds = moving.map(s => s.id);
       change.membership = moving.some(s => (project.shots.includes(s)) !== (edit.destination === 'active'));
       change.order = !same(active.map(s => s.id), project.shots.map(s => s.id)) || !same(pending.map(s => s.id), project.parkedShots.map(s => s.id));
@@ -170,6 +173,13 @@ export function applyStoryboardEdit(project: ProjectV1, edit: StoryboardEditV1):
       rest.splice(index, 0, ...ordered);
       change.shotIds = [...new Set([...moving.map(d => d.shotId), edit.targetShotId])]; change.text = true;
       return result(project, { ...project, dialogues: rest }, change);
+    }
+    case 'setPresentation': {
+      if(!shape(edit,['kind','presentation']) || (edit.presentation!==null && !validPresentation(edit.presentation)))return fail('invalid-input','Invalid presentation');
+      const {presentation:_previous,...rest}=project;
+      const presentation=edit.presentation??undefined;
+      change.shotIds=project.shots.map(s=>s.id);
+      return result(project,{...rest,...(presentation?{presentation:copy(presentation)}:{}),shots:project.shots.map(s=>withPresentation(s,presentation))},change);
     }
     case 'setProjectNaming': {
       if (!shape(edit, ['kind', 'name', 'naming']) || !text(edit.name) || !shape(edit.naming, ['sceneCode', 'artistName', 'version']) || !Object.values(edit.naming).every(text)) return fail('invalid-input', 'Invalid naming settings');

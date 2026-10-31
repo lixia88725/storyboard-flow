@@ -1,3 +1,4 @@
+import {CanvasPresentationContext} from '../canvasPresentation';
 import type { SelectionTransformIntent } from '../selectionTransform';
 import type { FlowSelection } from '../../../electron/shared/flowSelection';
 import { selectShots, draggedShots } from './boardSelection';
@@ -303,11 +304,19 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     setJapanese(value => !value);
   };
 
-  return <MediaSourceContext.Provider value={media}>
+  const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:snapshot.project.dialogues.filter(d=>d.shotId===s.id).map(d=>d.text.trim()).filter(Boolean).join(' ').replace(/\s+/g,' ')} ]));
+  return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <main className="flow-editor" data-flow-editor="true" data-revision={snapshot.project.revision} data-phase={snapshot.phase}>
       <header className="topbar"><strong>Storyboard Flow</strong><span>{snapshot.project.name}</span>
         <button disabled={switching} onClick={openProject}>{switching ? 'Opening…' : 'Open project'}</button>
         <button disabled={!active} onClick={() => setNamingOpen(value => !value)}>Naming</button>
+        <label>Matte <select aria-label="Matte mode" disabled={!active||!!snapshot.pending} value={snapshot.project.presentation?.mode??'off'} onChange={e=>{
+          if(captureMountedCanvasCheckpoints().hasUnsettledGesture||outputWork.current||gestures.current){setIssue('Finish the current edit first');return;}
+          act({kind:'board',command:{kind:'setPresentation',presentation:e.target.value==='off'?null:{mode:e.target.value as 'expanded'|'embedded',dialogue:snapshot.project.presentation?.dialogue??false}}});
+        }}><option value="off">Off</option><option value="expanded">Expanded</option><option value="embedded">Embedded</option></select></label>
+        <button disabled={!active||!snapshot.project.presentation||!!snapshot.pending} aria-pressed={snapshot.project.presentation?.dialogue??false} onClick={()=>{
+          if(snapshot.project.presentation)act({kind:'board',command:{kind:'setPresentation',presentation:{...snapshot.project.presentation,dialogue:!snapshot.project.presentation.dialogue}}});
+        }}>Dialogue overlay</button>
         <button disabled={!active} onClick={switchView}>{japanese ? 'Grid view' : 'Japanese view'}</button>
         <button disabled={!active} aria-pressed={tool === 'brush'} onClick={() => setTool('brush')}>Brush</button>
         <button disabled={!active} aria-pressed={tool === 'eraser'} onClick={() => setTool('eraser')}>Eraser</button>
@@ -391,7 +400,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
       <FlowPending shots={shots.slice(snapshot.project.shots.length)} disabled={!active} revision={snapshot.project.revision} onRestore={id => moveShots([id], 'active')} />
       </DndContext>
     </main>
-  </MediaSourceContext.Provider>;
+  </CanvasPresentationContext.Provider></MediaSourceContext.Provider>;
 }
 function Card({ shot, disabled, selected, onSelect, children }: { onSelect: (event: React.MouseEvent<HTMLElement>) => void; shot: Shot; disabled: boolean; selected: boolean; children: React.ReactNode }) {
   const sortable = useSortable({ id: shot.id, disabled });

@@ -1,3 +1,4 @@
+import {validPresentation} from '../../shared/flowPresentation.js';
 import type {
   BlendModeV1,
   DialogueV1,
@@ -138,11 +139,13 @@ const validateImage = (value: unknown, key: string): ImageDocumentV1 => {
 };
 
 const validateShot = (value: unknown, what: string): ShotV1 => {
-  const shot = exactObject(value, ['id', 'imageId', 'name', 'scriptText'], what);
+  const shot = exactObject(value, ['id', 'imageId', 'name', 'scriptText', ...(isPlainObject(value)&&Object.hasOwn(value,'presentation')?['presentation']:[])], what);
+  if(Object.hasOwn(shot,'presentation')&&!validPresentation(shot.presentation))invalid('Invalid shot presentation');
   return {
     id: identifier(shot.id, `${what}.id`),
     imageId: identifier(shot.imageId, `${what}.imageId`),
     name: text(shot.name, `${what}.name`),
+    ...(shot.presentation?{presentation:shot.presentation as ShotV1['presentation']} : {}),
     scriptText: text(shot.scriptText, `${what}.scriptText`)
   };
 };
@@ -176,7 +179,7 @@ export const validateProject = (value: unknown): ProjectV1 => {
   if (Object.hasOwn(project, 'version') && typeof project.version === 'number' && project.version !== 1) {
     throw new ProjectStoreError('unsupported-version', `Unsupported project version ${project.version}`);
   }
-  exactObject(project, ['schema', 'version', 'id', 'revision', 'name', 'shots', 'parkedShots', 'dialogues', 'images', ...(Object.hasOwn(project, 'naming') ? ['naming'] : [])], 'project');
+  exactObject(project, ['schema', 'version', 'id', 'revision', 'name', 'shots', 'parkedShots', 'dialogues', 'images', ...(Object.hasOwn(project, 'naming') ? ['naming'] : []), ...(Object.hasOwn(project,'presentation')?['presentation']:[])], 'project');
   if (project.schema !== PROJECT_SCHEMA) invalid('project.schema must be "storyboard-flow.project"');
   if (project.version !== 1) invalid('project.version must be the number 1');
 
@@ -189,6 +192,7 @@ export const validateProject = (value: unknown): ProjectV1 => {
     naming = { sceneCode: text(fields.sceneCode, 'sceneCode'), artistName: text(fields.artistName, 'artistName'), version: text(fields.version, 'version') };
   }
 
+  if(Object.hasOwn(project,'presentation')&&!validPresentation(project.presentation))invalid('Invalid project presentation');
   const shots = array(project.shots, 'project.shots', LIMITS.shots, (entry, index) => validateShot(entry, `project.shots[${index}]`));
   const parkedShots = array(project.parkedShots, 'project.parkedShots', LIMITS.shots, (entry, index) =>
     validateShot(entry, `project.parkedShots[${index}]`));
@@ -225,7 +229,7 @@ export const validateProject = (value: unknown): ProjectV1 => {
     if (!shotIds.has(dialogue.shotId)) invalid(`dialogue "${dialogue.id}" references unknown shot "${dialogue.shotId}"`);
   }
 
-  return { schema: PROJECT_SCHEMA, version: 1, id, revision: projectRevision, name, ...(naming ? { naming } : {}), shots, parkedShots, dialogues, images };
+  return { schema: PROJECT_SCHEMA, version: 1, id, revision: projectRevision, name, ...(naming ? { naming } : {}), ...(project.presentation?{presentation:project.presentation as ProjectV1['presentation']} : {}), shots, parkedShots, dialogues, images };
 };
 
 /** Copy a caller-owned project so later mutation cannot change what a save

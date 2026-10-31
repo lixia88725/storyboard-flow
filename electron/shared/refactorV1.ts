@@ -1,3 +1,4 @@
+import type { FlowPresentation } from './flowPresentation.js';
 /** Wave-1 coordinator-owned contracts. Candidate format; no production routing yet.
  * Both compiler targets can import this dependency-free file. See docs/refactor/CONTRACTS.md.
  */
@@ -24,6 +25,7 @@ export type ImageDocumentV1 = {
   layers: LayerV1[];
 };
 export type ShotV1 = {
+  presentation?: FlowPresentation;
   id: string;
   imageId: string;
   name: string;
@@ -38,6 +40,7 @@ export type ProjectV1 = {
   revision: number;
   name: string;
   naming?: ProjectNamingV1;
+  presentation?: FlowPresentation;
   shots: ShotV1[];
   parkedShots: ShotV1[];
   dialogues: DialogueV1[];
@@ -62,6 +65,7 @@ export type ImageEditV1 =
   | { kind: 'replacePixels'; layerId: string; assetId: AssetIdV1 };
 export type ImageEditResultV1 = { before: ImageDocumentV1; after: ImageDocumentV1; changed: boolean; visualChanged: boolean };
 export type StoryboardEditV1 =
+  | { kind: 'setPresentation'; presentation: FlowPresentation | null }
   | { kind: 'refreshImages'; before: ProjectV1; after: ProjectV1 }
   | { kind: 'insertShot'; shot: ShotV1; image: ImageDocumentV1; index: number }
   | { kind: 'moveShots'; shotIds: string[]; destination: 'active' | 'pending'; beforeId?: string }

@@ -11,7 +11,7 @@ const same = (a: unknown, b: unknown): boolean => {
 export function validRefreshTransition(before: ProjectV1, after: ProjectV1): boolean {
   if (same(before,after)) return true;
   if (after.revision!==before.revision+1 || !Number.isSafeInteger(after.revision)) return false;
-  for(const key of ['schema','version','id','name','naming','shots','dialogues'] as const) if(!same(before[key],after[key]))return false;
+  for(const key of ['schema','version','id','name','naming','presentation','shots','dialogues'] as const) if(!same(before[key],after[key]))return false;
   if(after.parkedShots.length<before.parkedShots.length||!same(after.parkedShots.slice(0,before.parkedShots.length),before.parkedShots))return false;
   const owners=new Set([...before.shots,...before.parkedShots].map(s=>s.imageId));
   const added=after.parkedShots.slice(before.parkedShots.length);

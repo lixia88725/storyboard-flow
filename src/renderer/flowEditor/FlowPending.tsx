@@ -1,3 +1,4 @@
+import {PresentationPreview} from '../canvasPresentation';
 import { useDroppable } from '@dnd-kit/core';
 import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -24,7 +25,7 @@ function PendingCard({ shot, disabled, revision, onRestore }: {
   return <div ref={drag.setNodeRef} data-pending-shot-id={shot.id} className="flow-pending"
     style={{ transform: CSS.Transform.toString(drag.transform), transition: drag.transition }}>
     <button disabled={disabled} aria-label={`Move pending ${shot.id}`} {...drag.attributes} {...drag.listeners}>{shot.fileName}</button>
-    <ShotStaticMedia shot={shot} folderPath="flow" revision={revision} />
+    <PresentationPreview shotId={shot.id} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}><ShotStaticMedia shot={shot} folderPath="flow" revision={revision} /></PresentationPreview>
     <button disabled={disabled} aria-label={`Restore ${shot.id}`} onClick={() => onRestore(shot.id)}>Restore</button>
   </div>;
 }

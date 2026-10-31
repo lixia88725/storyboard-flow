@@ -1,3 +1,4 @@
+import {validPresentation} from '../../../electron/shared/flowPresentation';
 import { validSelection, validTransform } from '../../../electron/shared/flowSelection';
 import type { FlowFailure, FlowResult, FlowSessionRequest } from '../../../electron/shared/flowWave2';
 
@@ -36,6 +37,7 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
       case 'board': {
         if (!shape(value, ['kind', 'command'])) break;
         const command = value.command;
+        if(shape(command,['kind','presentation']) && command.kind==='setPresentation' && (command.presentation===null||validPresentation(command.presentation)))return {ok:true,value:value as FlowSessionRequest};
         if (shape(command, ['kind', 'name', 'naming']) && command.kind === 'setProjectNaming' && typeof command.name === 'string' && shape(command.naming, ['sceneCode', 'artistName', 'version']) && Object.values(command.naming).every(v => typeof v === 'string'))
           return { ok: true, value: value as FlowSessionRequest };
         if (shape(command, ['kind', 'shot', 'image', 'index']) && command.kind === 'insertShot')

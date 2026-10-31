@@ -1,3 +1,4 @@
+import {createPresentationCodec} from '../core/formats/presentation';
 import { describe,it,expect } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -83,4 +84,20 @@ describe('TIFF folder to isolated editable project',()=>{
   await expect(importFlowTiffFolder(root,codec())).rejects.toThrow('Duplicate TIFF names');
   await expect(fs.stat(path.join(root,'.storyboard-flow'))).rejects.toMatchObject({code:'ENOENT'});
  });
+});
+
+it('reimports derived matte TIFFs into original-size editable content and preserves settings',async()=>{
+ const {root,png,original}=await fixture(),decoded=get(await codec().decode(original));
+ const image={...decoded.image,layers:decoded.image.layers.map(({png:bytes,...layer})=>({...layer,assetId:createHash('sha256').update(bytes).digest('hex')}))};
+ const assets=new Map(decoded.image.layers.map(l=>[createHash('sha256').update(l.png).digest('hex'),l.png]));
+ const output=get(await createPresentationCodec(codec()).encode({image,text:decoded.text,presentation:{mode:'expanded',dialogue:true}},async id=>assets.get(id)!));
+ await fs.writeFile(path.join(root,'10.tif'),output);
+ const p=await importFlowTiffFolder(root,codec());
+ expect(p.presentation).toEqual({mode:'expanded',dialogue:true});expect(p.shots[0].presentation).toEqual(p.presentation);
+ const restored=p.images[p.shots[0].imageId];expect(restored.height).toBe(3);expect(restored.layers).toHaveLength(1);
+ const loaded=get(await createProjectStore().loadCheckpoint(root));
+ expect(await sharp(await loaded.readAsset(restored.layers[0].assetId)).raw().toBuffer()).toEqual(await sharp(png).raw().toBuffer());
+ const writer=await openFlowTiffSave(root,p.id,codec());await writer.save(p,loaded.readAsset);
+ const ledger=JSON.parse(await fs.readFile(path.join(root,'.storyboard-flow/tiff-output.json'),'utf8'));
+ const saved=get(await codec().decode(await fs.readFile(path.join(root,ledger.entries[0].name))));expect(saved.image.height).toBe(153);expect(saved.image.layers).toHaveLength(3);
 });

@@ -1,3 +1,5 @@
+import {validPresentationReceipt,type PresentationReceipt} from './presentation.js';
+import type {FlowPresentation} from '../../shared/flowPresentation.js';
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -13,7 +15,7 @@ export type TiffResult<T> = { ok: true; value: T } | { ok: false; error: { code:
 /** Per-shot portable text/identity, deliberately not a general Photoshop metadata bag. */
 export type TiffText = {
   projectId: string; projectName: string; shotId: string; shotName: string;
-  scriptText: string; dialogues: DialogueV1[];
+  scriptText: string; dialogues: DialogueV1[]; presentation?: PresentationReceipt;
 };
 export type TiffCandidate = {
   identity: 'portable' | 'native' | 'unverified';
@@ -30,7 +32,7 @@ const CAPS: TiffLimits = Object.freeze({ maxTiffBytes: 128 * 1024 * 1024, maxPng
 export const defaultTiffLimits = CAPS;
 export type TiffCodec = {
   decode(tiff: Uint8Array): Promise<TiffResult<TiffCandidate>>;
-  encode(input: { image: ImageDocumentV1; text: TiffText | null }, readAsset: AssetReaderV1): Promise<TiffResult<Uint8Array>>;
+  encode(input: { image: ImageDocumentV1; text: TiffText | null; presentation?: FlowPresentation }, readAsset: AssetReaderV1): Promise<TiffResult<Uint8Array>>;
 };
 class Refusal extends Error {
   constructor(readonly code: TiffFailureCode, message: string) { super(message); }
@@ -58,8 +60,9 @@ function snapshot(input: { image: ImageDocumentV1; text: TiffText | null }, limi
     if (Buffer.byteLength(encoded) > limits.maxMetadataBytes) refuse('resource-limit', 'TIFF metadata exceeds limit');
     copied = JSON.parse(encoded);
     exact(copied, ['image', 'text'], 'TIFF input');
-    if (copied.text !== null) exact(copied.text, ['projectId', 'projectName', 'shotId', 'shotName', 'scriptText', 'dialogues'], 'TIFF text');
+    if (copied.text !== null) exact(copied.text, ['projectId', 'projectName', 'shotId', 'shotName', 'scriptText', 'dialogues',...(Object.hasOwn(copied.text,'presentation')?['presentation']:[])], 'TIFF text');
     const t = copied.text;
+    if(t && Object.hasOwn(t,'presentation')&&!validPresentationReceipt(t.presentation))refuse('invalid-input','Invalid presentation receipt');
     const project: ProjectV1 = { schema: 'storyboard-flow.project', version: 1, id: t?.projectId ?? 'tiff',
       name: t?.projectName ?? '', revision: 0, shots: [{ id: t?.shotId ?? 'shot', imageId: copied.image.id,
         name: t?.shotName ?? '', scriptText: t?.scriptText ?? '' }], parkedShots: [], dialogues: t?.dialogues ?? [],
