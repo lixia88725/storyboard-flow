@@ -1,22 +1,39 @@
 /** Dedicated G2 entry: electron dist-electron/main/flowEditorEntry.js <project-root> <isolated-userData>.
- * Opens existing new-format checkpoints only; never converts or chooses a personal project. */
-import { app, BrowserWindow, ipcMain, session } from 'electron';
+ * Opens a new-format checkpoint or bootstraps a TIFF folder without changing originals.
+ * Pass --choose instead of a root to select a folder through the native dialog. */
+import { app, BrowserWindow, ipcMain, session, dialog } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import fs from 'node:fs/promises';
+import { importFlowTiffFolder } from './flowTiffImport.js';
+import { createTiffCodec } from '../core/formats/index.js';
 import { randomUUID } from 'node:crypto';
 import { openFlowEditorRuntime } from './flowEditorRuntime.js';
-const [root, userData] = process.argv.slice(2);
-if (!root || !userData || !path.isAbsolute(root) || !path.isAbsolute(userData)) throw new Error('Absolute project and isolated userData paths required');
+const [requestedRoot, userData] = process.argv.slice(2);
+if (!requestedRoot || !userData || (requestedRoot !== '--choose' && !path.isAbsolute(requestedRoot)) || !path.isAbsolute(userData)) throw new Error('Absolute project and isolated userData paths required');
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 app.setPath('userData', userData);
 app.setPath('sessionData', userData);
 app.setAppLogsPath(path.join(userData, 'logs'));
 app.commandLine.appendSwitch('disable-background-networking');
 app.whenReady().then(async () => {
-  const runtime = await openFlowEditorRuntime(root);
+  const selected = requestedRoot === '--choose' ? await dialog.showOpenDialog({ title: 'Open Storyboard Flow project or TIFF folder', properties: ['openDirectory'] }) : null;
+  if (selected?.canceled) { app.quit(); return; }
+  const root = await fs.realpath(selected ? selected.filePaths[0] : requestedRoot);
   const win = new BrowserWindow({ width: 1280, height: 900, webPreferences: {
     preload: path.join(repo, 'electron/preload/flowEditor.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false
   } });
+  let importing = true;
+  win.on('close', event => { if (importing) event.preventDefault(); });
+  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<!doctype html><title>Storyboard Flow</title><body style="background:#222;color:#eee;font:18px system-ui;padding:40px">Opening Storyboard Flow project…</body>'));
+  let metadataExists = true;
+  try { await fs.lstat(path.join(root, '.storyboard-flow')); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') metadataExists = false; else throw error; }
+  if (!metadataExists) await importFlowTiffFolder(root, createTiffCodec({
+    scriptPath: path.join(repo, 'electron/core/formats/codec.py'),
+    depsDir: process.env.FLOW_PYTHON_DEPS_DIR ?? path.join(repo, 'vendor/python/photoshop-tiff')
+  }));
+  const runtime = await openFlowEditorRuntime(root);
   const entry = path.join(repo, 'dist/index.html');
   const documentUrl = pathToFileURL(entry).href + '#flow-editor';
   let closeId: string | null = null, closing = false;
@@ -43,6 +60,7 @@ app.whenReady().then(async () => {
   win.webContents.on('will-prevent-unload', () => {});
   session.defaultSession.setPermissionRequestHandler((_w, _p, cb) => cb(false));
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*','https://*/*','ws://*/*','wss://*/*'] }, (_d, cb) => cb({ cancel: true }));
+  importing = false;
   await win.loadFile(entry, { hash: 'flow-editor' });
-}).catch(error => { console.error(error); app.exit(1); });
+}).catch(error => { console.error(error); if (requestedRoot === '--choose') dialog.showErrorBox('Could not open Storyboard Flow project', String(error)); app.exit(1); });
 app.on('window-all-closed', () => app.quit());

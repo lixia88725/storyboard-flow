@@ -49,3 +49,24 @@ export const linkExclusive = (source: string, target: string): Promise<void> => 
  * here; such a failure is reported as an I/O failure, never retried silently.
  */
 export const replaceFile = (source: string, target: string): Promise<void> => fs.rename(source, target);
+
+/** Whole prepared namespace publication. Destination must not exist, including an
+ * empty directory created by another writer. Native failure never falls back to
+ * replacing it. Wait for the child to settle before inspecting or cleaning stages. */
+export async function publishDirectoryExclusive(source: string, target: string): Promise<void> {
+  const { execFile } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const path = await import('node:path');
+  for (const file of [source, target]) {
+    if (!path.isAbsolute(file) || await fs.realpath(path.dirname(file)) !== path.dirname(file)) throw Error('Publication directory is aliased');
+  }
+  const original = await fs.lstat(source, { bigint: true });
+  if (!original.isDirectory() || original.isSymbolicLink()) throw Error('Expected a real prepared directory');
+  const script = fileURLToPath(new URL('../../../electron/core/platform/publish_directory.py', import.meta.url));
+  await new Promise<void>((resolve, reject) => execFile(process.env.FLOW_PYTHON_PATH || 'python3', ['-I', '-B', script, source, target],
+    { maxBuffer: 65536 }, (error, _stdout, stderr) => error ? reject(Error(`Project publication failed; stage retained: ${stderr || error.message}`)) : resolve()));
+  const published = await fs.lstat(target, { bigint: true });
+  if (published.dev !== original.dev || published.ino !== original.ino || !published.isDirectory()) throw Error('Published project identity changed');
+  await syncDirectory(path.dirname(target));
+  await syncDirectory(path.dirname(source));
+}

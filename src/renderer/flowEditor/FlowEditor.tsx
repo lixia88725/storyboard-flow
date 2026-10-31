@@ -81,7 +81,12 @@ function Editor({ flow, issue, setIssue, gestures, outputWork }: { outputWork: {
   const [urls, setUrls] = useState<Record<string, string>>({});
   const cache = useMemo(() => new Map<string, string>(), []);
   const loads = useMemo(() => new Map<string, Promise<string>>(), []);
-  useEffect(() => flow.subscribe(() => setSnapshot(flow.snapshot())), [flow]);
+  useEffect(() => {
+    const unsubscribe = flow.subscribe(() => setSnapshot(flow.snapshot()));
+    // A fast initial checkpoint can finish between render and effect subscription.
+    setSnapshot(flow.snapshot());
+    return unsubscribe;
+  }, [flow]);
   const source = async (id: string): Promise<string> => {
     if (cache.has(id)) return cache.get(id)!;
     if (!loads.has(id)) loads.set(id, window.flowEditor!.read(id).then(result => {

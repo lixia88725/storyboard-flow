@@ -14,6 +14,7 @@ const digest = (s: unknown): s is string => typeof s === 'string' && /^[a-f0-9]{
 const leaf = (s: unknown): s is string => typeof s === 'string' && /^[^\\/\0]+\.tiff?$/i.test(s) && !s.startsWith('.');
 const id = (s: unknown): s is string => typeof s === 'string' && /^[\w-]{1,80}$/.test(s);
 type Entry = { shotId: string; name: string; original: string | null; current: string | null; pending?: string; location?: 'active' | 'parked'; move?: OutputMove; content?: string };
+export type TiffSourceBinding = { shotId: string; name: string; digest: string; location?: 'active' | 'parked' };
 type Ledger = { version: 1; projectId: string; entries: Entry[]; saved?: { revision: number; projectHash: string } };
 export type TiffSaveReceipt = { projectId: string; revision: number; projectHash: string; files: { shotId: string; name: string; digest: string }[] };
 const read = async (file: string, limit = 128 * 1024 * 1024): Promise<Buffer> => {
@@ -67,17 +68,18 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
   };
   return {
     /** Main/import-owned binding only. Never infer original ownership from a filename alone. */
-    bindSources(project: ProjectV1, sources: readonly { shotId: string; name: string; digest: string }[]) {
+    bindSources(project: ProjectV1, sources: readonly TiffSourceBinding[], readOriginal: (source: TiffSourceBinding) => Promise<Uint8Array> = source => read(outputPath(root, source.name, source.location ?? 'active'))) {
       const captured = snapshotProject(project), mappings = structuredClone(sources);
       return serialized(async () => {
         if (captured.id !== projectId) throw Error('Different project');
         const state = await load();
         if (state.bytes) throw Error('Source bindings already initialized');
         for (const source of mappings) {
-          if (!id(source.shotId) || !leaf(source.name) || !digest(source.digest) || !captured.shots.some(s => s.id === source.shotId) ||
+          if (!id(source.shotId) || !leaf(source.name) || !digest(source.digest) || !['active', 'parked'].includes(source.location ?? 'active') ||
+              !(source.location === 'parked' ? captured.parkedShots : captured.shots).some(s => s.id === source.shotId) ||
               state.ledger.entries.some(e => e.shotId === source.shotId || e.name.toLowerCase() === source.name.toLowerCase())) throw Error('Invalid source binding');
-          if (hash(await read(path.join(root, source.name))) !== source.digest) throw Error('Source changed since import');
-          state.ledger.entries.push({ shotId: source.shotId, name: source.name, original: source.digest, current: source.digest });
+          if (hash(await readOriginal(source)) !== source.digest) throw Error('Source changed since import');
+          state.ledger.entries.push({ shotId: source.shotId, name: source.name, original: source.digest, current: source.digest, location: source.location ?? 'active' });
         }
         await persist(state.ledger, null);
       });
