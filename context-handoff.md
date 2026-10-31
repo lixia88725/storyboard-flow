@@ -6,7 +6,7 @@ receipts under docs/refactor/reviews/ instead of prepending another history entr
 ## Runtime and verified candidate
 
 The new-format editor remains isolated; default App and 启动测试.command are unchanged.
-Implementation `8385b1f1afc391c2e56e57c21d65bc7f58fa1ac1` supports grid/Japanese editing,
+Implementation `b077f44ca8ae048321f6459f35f68e2379b0204b` supports grid/Japanese editing,
 Session history/checkpoints, bounded pixel/layer tools, logical Pending, explicit TIFF
 Save/first-original backup, TIFF-folder bootstrap, session-bound A/B switching and
 ordered TIFF filenames with undoable scene/artist/version settings, and owned TIFF
@@ -16,10 +16,10 @@ checkpoint metadata; explicit Save alone synchronizes names through a resumable 
 Switching waits for Save/checkpoint; cancellation or failed preparation keeps the prior
 Session/history. Reopening restores content, not a previous session's Undo stack.
 
-That clean unchanged candidate passes 387 files / 2939 tests, complete build and 74
+That clean unchanged candidate passes 389 files / 2960 tests, complete build and 74
 real Electron scenarios. Naming and Trash received scoped independent code review and
 corrections; full application independent acceptance and full G3 remain open. Exact
-logs and scope: [latest review](docs/refactor/reviews/2026-10-31/G3-OUTPUT-TRASH.md).
+logs and scope: [latest review](docs/refactor/reviews/2026-10-31/G3-EXTERNAL-SYNC-FOUNDATION.md).
 Nondurable in-process Trash ACKs block Close/switch. A process loss after OS success
 before durable confirmation remains an unknown outcome; no recovery UI is provided yet.
 Native picker results are scripted. Windows, installers, representative large rasters,
@@ -32,9 +32,10 @@ Current slice is external TIFF synchronization. The user approved separating ext
 artwork, Flow drawing and project text, with genuinely conflicting/ambiguous versions
 retained in Pending. See [target design](docs/refactor/EXTERNAL-TIFF-SYNC.md).
 The synchronization foundation now includes read-only observation, a pure three-way
-image planner and TIFF rasterVersion 2/native layer IDs. Development focused tests and
-build passed; candidate full/connected gates are pending. Automatic adoption is not
-connected. Before enabling it, bind image-only baselines, source preservation and one
+image planner and TIFF rasterVersion 2/native layer IDs. The fixed candidate passes the
+full allowed suite, complete build and 74 existing connected regression cases; scoped
+independent code review passed after one correction. These are foundation/regression
+gates, not external-refresh UI acceptance. Automatic adoption is not connected. Before enabling it, bind image-only baselines, source preservation and one
 Session history/checkpoint transaction. PD2's stack-clearing behavior informs the design;
 Flow retains editable layers and maps exported identities once instead of clearing them.
 User-confirmed project/scene/stb/artist/version/0010 naming is implemented and verified.

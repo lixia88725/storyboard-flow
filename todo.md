@@ -8,7 +8,12 @@ and evidence belong in [context-handoff.md](context-handoff.md).
 - Add explicit recovery UX for unknown Trash outcomes after process loss. Current
   protocol retains evidence and refuses a guessed successful Save; normal failure/retry,
   backups, Undo regeneration and connected system Trash are verified.
-- Handle external TIFF refresh/conflicts and remaining interchange/Markdown behavior.
+- Connect external TIFF refresh: persist image baselines/source originals, bind
+  adoption to a durable checkpoint, apply one Session Undo operation, retain conflicts
+  in Pending, and add manual Refresh with connected failure/retry tests. Native layer
+  IDs, read-only observation and pure reconciliation foundation are verified; automatic
+  adoption and actual Photoshop roundtrip are not. See docs/refactor/EXTERNAL-TIFF-SYNC.md.
+- Handle remaining interchange/Markdown behavior.
 
 ## Remaining interaction and rollout gates
 

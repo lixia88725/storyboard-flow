@@ -2,7 +2,8 @@
 
 Status: design approved in principle by the user; implementation is staged. The
 observation, reconciliation and native-ID codec foundation has focused/build evidence
-only until the next fixed-candidate gate. No automatic adoption or production routing is enabled. The codec now writes native
+and fixed-candidate full/build/GUI regression evidence in
+[the foundation report](reviews/2026-10-31/G3-EXTERNAL-SYNC-FOUNDATION.md). No automatic adoption or production routing is enabled. The codec now writes native
 layer IDs and Flow rasterVersion 2; application synchronization is not connected.
 
 ## Product rules
@@ -175,8 +176,7 @@ commit or clear the current layer/history stack merely to imitate PD2.
 
 ## Development evidence (not integration acceptance)
 
-- Read-only output observation: 23 focused tests and complete build passed, still
-  uncommitted/unwired; `/tmp/flow-external-focused.log`, `/tmp/flow-external-build.log`.
+- Read-only output observation: 23 focused tests and complete build passed, development-stage evidence (now committed, still unwired); `/tmp/flow-external-focused.log`, `/tmp/flow-external-build.log`.
 - Pure reconciliation policy: 13 tests passed; `/tmp/flow-reconcile-focused.log`.
   Complete build also passed: `/tmp/flow-reconcile-build.log`. These tests exercise
   policy using already validated image documents, not proof of format identity.
@@ -186,8 +186,9 @@ commit or clear the current layer/history stack merely to imitate PD2.
   `/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-layer-identity-bk1izb4k/receipt.json`;
   generator `/tmp/flow-layer-identity-probe.py`. Synthetic library roundtrip only,
   no actual Photoshop process and no application codec changes.
-- New full-suite, connected refresh UI, crash/retry acceptance and real Photoshop
-  roundtrip remain NOT RUN. No automatic synchronization is enabled.
+- The foundation full-suite/build and 74 existing GUI regression scenarios now pass;
+  connected refresh UI, crash/retry acceptance and real Photoshop roundtrip remain
+  NOT RUN. No automatic synchronization is enabled.
 
 ## Native identity foundation
 
