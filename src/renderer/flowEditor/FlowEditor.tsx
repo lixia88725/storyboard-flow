@@ -207,6 +207,14 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
       return settledStrokePreview(() => flow.snapshot().project, shot.id, layerId, image.layers.find(l => l.id === layerId)!.assetId, source);
     } catch (error) { setIssue(String(error)); return undefined; }
   };
+  const addLayer = async (shotId:string) => {
+    const layerId=crypto.randomUUID(),shot=shots.find(s=>s.id===shotId);
+    try { await request({kind:'newLayer',shotId,layerId,...(shot?.activeLayerId?{afterId:shot.activeLayerId}:{})});
+      setLayers(current=>({...current,[shotId]:layerId}));
+    } catch { /* request reports the failure; selection remains unchanged. */ }
+  };
+  const moveLayers = (shotId:string,layerIds:string[],targetLayerId:string,placement:'before'|'after') =>
+    act({kind:'layer',shotId,edit:{kind:'moveLayers',layerIds,targetLayerId,placement}});
   const merge = (shotId: string, layerId: string, selectedIds: string[]) => {
     const project = flow.snapshot().project, shot = project.shots.find(s => s.id === shotId);
     if (!shot) return;
@@ -336,13 +344,13 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
               gestures.current = 0; setOpacityPreview(current => { const next = { ...current }; delete next[key]; return next; });
             });
           }}
-          structuralEditsEnabled={false} mergeEditsEnabled={active} onToggle={() => setPanel(undefined)} onAddLayer={rejectTool} onRemoveLayer={rejectTool} onMergeLayers={merge} onMergeVisibleLayers={shotId => {
+          structuralEditsEnabled={active} mergeEditsEnabled={active} onToggle={() => setPanel(undefined)} onAddLayer={id=>{void addLayer(id);}} onRemoveLayer={(shotId,layerId)=>act({kind:'layer',shotId,edit:{kind:'removeLayer',layerId}})} onMergeLayers={merge} onMergeVisibleLayers={shotId => {
             const shot = snapshot.project.shots.find(s => s.id === shotId)!;
             act({ kind: 'pixelTool', shotId, tool: { kind: 'merge', layerIds: snapshot.project.images[shot.imageId].layers.filter(l => l.visible).map(l => l.id) } });
           }} onClearLayer={(shotId, layerId) => act({ kind: 'pixelTool', shotId, tool: { kind: 'clear', layerId } })}
           onSelectLayer={(id, layerId) => setLayers(current => ({ ...current, [id]: layerId }))}
           onUpdateLayer={(shotId, layerId, patch) => act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch } })}
-          onMoveLayer={rejectTool} onMoveLayerGroup={rejectTool} onSelectedLayerIdsChange={() => {}}
+          onMoveLayer={(shotId,layerId,target,placement)=>moveLayers(shotId,[layerId],target,placement)} onMoveLayerGroup={moveLayers} onSelectedLayerIdsChange={() => {}}
           onUpdateLayerGroupOpacity={(shotId, ids, delta, initial) => {
             if (ids.length !== 1) { rejectTool(); return; }
             act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId: ids[0], patch: { opacity: Math.max(0, Math.min(1, initial[ids[0]] + delta)) } } });

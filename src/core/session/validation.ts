@@ -23,6 +23,10 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
     const value: unknown = copy(input);
     if (!record(value)) return failure('invalid-input', 'Request must be an object');
     switch (value.kind) {
+      case 'newLayer':
+        if (shape(value, ['kind','shotId','layerId'], ['afterId']) && id(value.shotId) && id(value.layerId) &&
+            (!Object.hasOwn(value,'afterId') || id(value.afterId))) return {ok:true,value:value as FlowSessionRequest};
+        break;
       case 'newShot':
         if (shape(value, ['kind', 'shotId', 'imageId', 'width', 'height'], ['afterId']) && id(value.shotId) && id(value.imageId) &&
             positive(value.width) && positive(value.height) && (!Object.hasOwn(value, 'afterId') || id(value.afterId)))
@@ -52,7 +56,7 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
       }
       case 'layer':
         if (shape(value, ['kind', 'shotId', 'edit']) && id(value.shotId) && record(value.edit) &&
-            ['insertLayer', 'removeLayer', 'moveLayer', 'setLayer'].includes(value.edit.kind as string)) return { ok: true, value: value as FlowSessionRequest };
+            ['insertLayer', 'removeLayer', 'moveLayer', 'moveLayers', 'setLayer'].includes(value.edit.kind as string)) return { ok: true, value: value as FlowSessionRequest };
         break; // The real drawing Interface validates the full edit at execution.
       case 'pixelTool': {
         if (!shape(value, ['kind', 'shotId', 'tool']) || !id(value.shotId)) break;

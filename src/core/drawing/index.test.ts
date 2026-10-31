@@ -784,3 +784,26 @@ describe("ownership, immutability and undo from before", () => {
     expect(ids(document)).toEqual(["layer-bottom", "layer-middle", "layer-top"]);
   });
 });
+
+describe('atomic group ordering',()=>{
+ it('preserves stack order rather than selection order and does not mutate the input',()=>{
+  const before=image(['a','b','c','d'].map(id=>layer(id)));
+  const r=applyImageEdit(before,{kind:'moveLayers',layerIds:['c','a'],targetLayerId:'d',placement:'after'});
+  expect(r.ok).toBe(true);if(!r.ok)return;
+  expect(r.value.after.layers.map(l=>l.id)).toEqual(['b','d','a','c']);expect(r.value.after.revision).toBe(8);
+  expect(before.layers.map(l=>l.id)).toEqual(['a','b','c','d']);
+ });
+ it('refuses missing, duplicate, sparse and locked selections without partial ordering',()=>{
+  const before=image([layer('a'),layer('b',{locked:true}),layer('c')]);
+  for(const layerIds of [['missing'],['a','a'],['a',,'b'],['a','b']]){
+   expect(applyImageEdit(before,asEdit({kind:'moveLayers',layerIds,targetLayerId:'c',placement:'after'})).ok).toBe(false);
+  }
+  expect(before.layers.map(l=>l.id)).toEqual(['a','b','c']);
+ });
+ it('allows a no-op at exhausted revision but refuses a real change',()=>{
+  const before=image([layer('a'),layer('b')],{revision:Number.MAX_SAFE_INTEGER});
+  const edit={kind:'moveLayers' as const,layerIds:['a'],targetLayerId:'b',placement:'before' as const};
+  const noop=applyImageEdit(before,edit);expect(noop).toMatchObject({ok:true,value:{changed:false}});
+  expect(applyImageEdit(before,{...edit,placement:'after'}).ok).toBe(false);
+ });
+});

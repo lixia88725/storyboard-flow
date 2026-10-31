@@ -231,3 +231,11 @@ describe('source, snapshot and resource ownership', () => {
     expect(env.context.globalCompositeOperation).toBe('source-over');
   });
 });
+
+it('distinguishes transparent layer allocation from white new-shot allocation',async()=>{
+ const env=canvasEnvironment();const fillRect=vi.fn();Object.assign(env.context,{fillRect});
+ const pixels=createFlowPixels(limits());
+ expect((await pixels.blank!(12,8,'transparent')).ok).toBe(true);expect(fillRect).not.toHaveBeenCalled();
+ expect((await pixels.blank!(12,8)).ok).toBe(true);expect(fillRect).toHaveBeenCalledWith(0,0,12,8);
+ expect(env.canvas.width).toBe(0);expect(env.canvas.height).toBe(0);
+});

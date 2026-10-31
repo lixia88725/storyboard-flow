@@ -44,6 +44,7 @@ const editKeys: Readonly<Record<string, readonly string[]>> = {
   insertLayer: ["kind", "layer", "index"],
   removeLayer: ["kind", "layerId"],
   moveLayer: ["kind", "layerId", "index"],
+  moveLayers: ["kind", "layerIds", "targetLayerId", "placement"],
   setLayer: ["kind", "layerId", "patch"],
   replacePixels: ["kind", "layerId", "assetId"]
 };
@@ -256,7 +257,7 @@ export const validateEdit = (value: unknown): CoreFailureV1 | undefined => {
   // Own keys only: `kind in editKeys` would also accept inherited names such as "constructor",
   // "toString" or "__proto__", whose values are not key lists. Those must be invalid-input.
   if (typeof kind !== "string" || !Object.hasOwn(editKeys, kind)) {
-    return fail("invalid-input", "edit.kind must be insertLayer, removeLayer, moveLayer, setLayer or replacePixels");
+    return fail("invalid-input", "edit.kind must be insertLayer, removeLayer, moveLayer, moveLayers, setLayer or replacePixels");
   }
 
   const keyFailure = checkKeys(value, editKeys[kind]!, `edit(${kind})`);
@@ -284,6 +285,12 @@ export const validateEdit = (value: unknown): CoreFailureV1 | undefined => {
       return isLayerId(value.layerId)
         ? undefined
         : fail("invalid-input", "removeLayer.layerId must match [A-Za-z0-9_-]{1,80}");
+    }
+    case "moveLayers": {
+      return Array.isArray(value.layerIds) && value.layerIds.length > 0 &&
+        Array.from(value.layerIds).every(isLayerId) && new Set(value.layerIds).size === value.layerIds.length &&
+        isLayerId(value.targetLayerId) && ['before','after'].includes(value.placement as string)
+        ? undefined : fail('invalid-input', 'Invalid layer group move');
     }
     case "moveLayer": {
       if (!isLayerId(value.layerId)) {

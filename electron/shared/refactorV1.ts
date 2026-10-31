@@ -55,6 +55,7 @@ export type ImageEditV1 =
   | { kind: 'insertLayer'; layer: LayerV1; index: number }
   | { kind: 'removeLayer'; layerId: string }
   | { kind: 'moveLayer'; layerId: string; index: number }
+  | { kind: 'moveLayers'; layerIds: string[]; targetLayerId: string; placement: 'before' | 'after' }
   | { kind: 'setLayer'; layerId: string; patch: Partial<Pick<LayerV1, 'name' | 'visible' | 'locked' | 'opacity' | 'blendMode'>> }
   | { kind: 'replacePixels'; layerId: string; assetId: AssetIdV1 };
 export type ImageEditResultV1 = { before: ImageDocumentV1; after: ImageDocumentV1; changed: boolean; visualChanged: boolean };

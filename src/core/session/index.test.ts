@@ -803,3 +803,45 @@ it('does not let queued edits or Close trap a retained refresh in the freezing p
  expect(s.session.snapshot().phase).toBe('active');expect(s.session.snapshot().project.shots[0].scriptText).toBe('');
  await success(s.session.request({kind:'refresh'}));
 });
+
+describe('structural layer workflow',()=>{
+ const blank=vi.fn(async()=>painted);
+ const make=()=>setup({pixels:{blank,produce:async()=>({ok:true,value:{png:Uint8Array.of(4,5,6),width:4,height:3}})}});
+ it('admits a new layer, paints it, removes it and restores exact assets through history',async()=>{
+  const {session,blobs}=make();
+  await success(session.request({kind:'newLayer',shotId:'a',layerId:'ink',afterId:'layer'}));
+  expect(blank).toHaveBeenLastCalledWith(4,3,'transparent');
+  const added=session.snapshot().project.images.i_a;
+  expect(added.layers.map(l=>l.id)).toEqual(['layer','ink']);expect(blobs.has(added.layers[1].assetId)).toBe(true);
+  await success(session.request({...paint(),layerId:'ink'}));
+  const drawn=session.snapshot().project.images.i_a;
+  await success(session.request({kind:'layer',shotId:'a',edit:{kind:'removeLayer',layerId:'ink'}}));
+  await success(session.request({kind:'undo'}));expect(session.snapshot().project.images.i_a).toEqual(drawn);
+  await success(session.request({kind:'undo'}));expect(session.snapshot().project.images.i_a).toEqual(added);
+  await success(session.request({kind:'undo'}));expect(session.snapshot().project.images.i_a.layers).toHaveLength(1);
+  await success(session.request({kind:'redo'}));expect(session.snapshot().project.images.i_a).toEqual(added);
+ });
+ it('rejects stale, duplicate and parked requests before producing pixels; failed admission creates no history',async()=>{
+  const producer=vi.fn(async()=>painted),{session}=setup({pixels:{blank:producer,produce:async()=>painted}});
+  for(const request of [{kind:'newLayer',shotId:'a',layerId:'layer'},{kind:'newLayer',shotId:'p',layerId:'new'},{kind:'newLayer',shotId:'a',layerId:'new',afterId:'missing'}] as const)expect((await session.request(request)).ok).toBe(false);
+  expect(producer).not.toHaveBeenCalled();expect((await session.request({kind:'undo'})).ok).toBe(false);
+  const failed=setup({pixels:{blank:async()=>error('io-failure'),produce:async()=>painted}}).session;
+  expect((await failed.request({kind:'newLayer',shotId:'a',layerId:'new'})).ok).toBe(false);
+  expect(failed.snapshot().project).toEqual(project());
+ });
+ it('queues Undo behind new layer creation and freezes only after its exact checkpoint',async()=>{
+  const gate=deferred<FlowResult<FlowPixelOutput>>();const {session,saved}=setup({pixels:{blank:()=>gate.promise,produce:async()=>painted}});
+  const add=session.request({kind:'newLayer',shotId:'a',layerId:'new'}),undo=session.request({kind:'undo'}),freeze=session.request({kind:'freeze'});
+  gate.resolve(painted);await success(add);await success(undo);await success(freeze);
+  expect(session.snapshot().project.images.i_a.layers).toHaveLength(1);expect(saved.at(-1)).toEqual(session.snapshot().project);
+ });
+ it('moves a group in stack order as one undoable action and refuses locked members atomically',async()=>{
+  const p=project();p.images.i_a.layers=['a','b','c','d'].map(id=>({...p.images.i_a.layers[0],id}));
+  const {session}=setup({project:p});
+  const move={kind:'layer' as const,shotId:'a',edit:{kind:'moveLayers' as const,layerIds:['c','a'],targetLayerId:'d',placement:'after' as const}};
+  await success(session.request(move));expect(session.snapshot().project.images.i_a.layers.map(l=>l.id)).toEqual(['b','d','a','c']);
+  await success(session.request({kind:'undo'}));expect(session.snapshot().project.images.i_a).toEqual(p.images.i_a);
+  await success(session.request({kind:'layer',shotId:'a',edit:{kind:'setLayer',layerId:'c',patch:{locked:true}}}));
+  const before=session.snapshot().project;expect((await session.request(move)).ok).toBe(false);expect(session.snapshot().project).toEqual(before);
+ });
+});

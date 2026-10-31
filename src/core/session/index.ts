@@ -218,6 +218,47 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
     const result = installed(history.apply(command));
     return result.ok ? result : account(result.error);
   };
+  const blankAsset = async (width:number,height:number,background:'white'|'transparent'='white'):Promise<FlowResult<string>> => {
+    if (!blank) return failure('unavailable','Blank canvas producer unavailable');
+    if (operationSerial >= Number.MAX_SAFE_INTEGER) return failure('resource-limit', 'Operation sequence exhausted');
+    const operationId = `blank_${incarnation}_${++operationSerial}`;
+    let output;
+    try { output = dependencyResult(await blank(width, height, background), 'none'); }
+    catch (error) { return unexpected(error, 'none'); }
+    if (!output.ok) return output;
+    if (!output.value || !(output.value.png instanceof Uint8Array) || !positive(output.value.png.byteLength) || output.value.width !== width || output.value.height !== height)
+      return failure('invalid-input', 'Blank canvas producer returned invalid data');
+    const png = output.value.png.slice(), byteLength = png.byteLength;
+    let admitted;
+    try { admitted = dependencyResult(await put({ operationId, png, width: width, height: height }), 'unknown'); }
+    catch (error) { return unexpected(error, 'unknown'); }
+    if (!admitted.ok) return admitted;
+    const receipt = admitted.value;
+    if (!receipt || receipt.sessionId !== sessionId || receipt.operationId !== operationId || typeof receipt.assetId !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(receipt.assetId) || receipt.width !== width || receipt.height !== height ||
+        receipt.byteLength !== byteLength || !['synced', 'skipped'].includes(receipt.directorySync))
+      return failure('conflict', 'Blank asset receipt mismatch', 'unknown');
+    return {ok:true,value:receipt.assetId};
+  };
+  const newLayer = async (request:Extract<FlowSessionRequest,{kind:'newLayer'}>):Promise<FlowResult<boolean>> => {
+    const project=current(),shot=project.shots.find(s=>s.id===request.shotId);
+    if(!shot)return failure('not-found','Active shot not found');
+    const image=project.images[shot.imageId];
+    const index=request.afterId===undefined?image.layers.length:image.layers.findIndex(l=>l.id===request.afterId)+1;
+    if(request.afterId!==undefined&&index===0)return failure('not-found','Layer insertion anchor no longer exists');
+    const edit={kind:'insertLayer' as const,index,layer:{id:request.layerId,name:'Drawing',kind:'paint' as const,visible:true,locked:false,opacity:1,blendMode:'normal' as const,width:image.width,height:image.height,assetId:'0'.repeat(64)}};
+    const check=applyImageEdit(image,edit);
+    if(!check.ok)return {ok:false,error:{...check.error,effect:'none'}};
+    const preflight=applyStoryboardEdit(project,{kind:'applyImageEdit',result:check.value});
+    if(!preflight.ok)return {ok:false,error:{...preflight.error,effect:'none'}};
+    const asset=await blankAsset(image.width,image.height,'transparent');if(!asset.ok)return asset;
+    if(!same(current(),project))return failure('conflict','Layer insertion baseline changed','retained');
+    edit.layer.assetId=asset.value;
+    const result=applyImageEdit(image,edit);
+    if(!result.ok)return {ok:false,error:{...result.error,effect:'retained'}};
+    const applied=installed(history.apply({kind:'applyImageEdit',result:result.value}));
+    return applied.ok?applied:{ok:false,error:{...applied.error,effect:'retained'}};
+  };
   const newShot = async (request: Extract<FlowSessionRequest, { kind: 'newShot' }>): Promise<FlowResult<boolean>> => {
     if (!blank) return failure('unavailable', 'Blank canvas producer unavailable');
     const project = current();
@@ -229,27 +270,11 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
     const command = { kind: 'insertShot' as const, shot: { id: request.shotId, imageId: image.id, name: 'New shot', scriptText: '' }, image, index };
     const preflight = applyStoryboardEdit(project, command);
     if (!preflight.ok) return { ok: false, error: { ...preflight.error, effect: 'none' } };
-    if (operationSerial >= Number.MAX_SAFE_INTEGER) return failure('resource-limit', 'Operation sequence exhausted');
-    const operationId = `blank_${incarnation}_${++operationSerial}`;
-    let output;
-    try { output = dependencyResult(await blank(request.width, request.height), 'none'); }
-    catch (error) { return unexpected(error, 'none'); }
-    if (!output.ok) return output;
-    if (!output.value || !(output.value.png instanceof Uint8Array) || !positive(output.value.png.byteLength) || output.value.width !== image.width || output.value.height !== image.height)
-      return failure('invalid-input', 'Blank canvas producer returned invalid data');
-    const png = output.value.png.slice(), byteLength = png.byteLength;
-    let admitted;
-    try { admitted = dependencyResult(await put({ operationId, png, width: image.width, height: image.height }), 'unknown'); }
-    catch (error) { return unexpected(error, 'unknown'); }
+    const admitted = await blankAsset(image.width,image.height);
     if (!admitted.ok) return admitted;
-    const receipt = admitted.value;
-    if (!receipt || receipt.sessionId !== sessionId || receipt.operationId !== operationId || typeof receipt.assetId !== 'string' ||
-        !/^[a-f0-9]{64}$/.test(receipt.assetId) || receipt.width !== image.width || receipt.height !== image.height ||
-        receipt.byteLength !== byteLength || !['synced', 'skipped'].includes(receipt.directorySync))
-      return failure('conflict', 'Blank asset receipt mismatch', 'unknown');
     // The queue admits no text shortcut during newShot; Undo/freeze wait until it settles.
     if (!same(current(), project)) return failure('conflict', 'New shot baseline changed', 'retained');
-    image.layers[0].assetId = receipt.assetId;
+    image.layers[0].assetId = admitted.value;
     const result = installed(history.apply(command));
     return result.ok ? result : { ok: false, error: { ...result.error, effect: 'retained' } };
   };
@@ -328,6 +353,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
         refreshRecovery=false;
         return applied;
       }
+      case 'newLayer': return newLayer(request);
       case 'newShot': return newShot(request);
       case 'board': return request.command.kind === 'insertShot' ? insert(request.command) : board({ command: request.command });
       case 'layer': {

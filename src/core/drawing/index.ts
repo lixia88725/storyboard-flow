@@ -159,6 +159,20 @@ export const applyImageEdit = (
       return commitEdit(image, layers, true);
     }
 
+    case "moveLayers": {
+      const selected = new Set(edit.layerIds);
+      if (edit.layerIds.some(id => !image.layers.some(layer => layer.id === id)) || !image.layers.some(layer => layer.id === edit.targetLayerId))
+        return { ok: false, error: fail('not-found', 'Layer move target no longer exists') };
+      const moving = image.layers.filter(layer => selected.has(layer.id));
+      if (selected.has(edit.targetLayerId)) return { ok: true, value: noOpResult(image) };
+      const locked = moving.find(layer => layer.locked);
+      if (locked) return lockedFailure(locked.id, 'reordering it');
+      const remaining = image.layers.filter(layer => !selected.has(layer.id));
+      const index = remaining.findIndex(layer => layer.id === edit.targetLayerId) + (edit.placement === 'after' ? 1 : 0);
+      const layers = [...remaining.slice(0,index), ...moving, ...remaining.slice(index)];
+      return layers.every((layer,index) => layer.id === image.layers[index].id)
+        ? { ok: true, value: noOpResult(image) } : commitEdit(image,layers,true);
+    }
     case "moveLayer": {
       const indexResult = layerIndexOrNotFound(image, edit.layerId);
       if (!indexResult.ok) {
