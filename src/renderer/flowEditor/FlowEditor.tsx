@@ -1,3 +1,4 @@
+import { useFolderStatus } from './useFolderStatus';
 import {Workbench} from './Workbench';
 import {FlowInspection} from './FlowInspection';
 import {CanvasPresentationContext} from '../canvasPresentation';
@@ -37,6 +38,7 @@ function bindEditor(sessionId: string) {
     put: (input: Parameters<typeof api.put>[1]) => api.put(sessionId, input),
     checkpoint: (project: FlowEditorBootstrap['project']) => api.checkpoint(sessionId, project),
     refresh: (project: FlowEditorBootstrap['project']) => api.refresh(sessionId, project),
+    folderStatus: (request: Parameters<typeof api.folderStatus>[1]) => api.folderStatus(sessionId, request),
     saveTiff: (project: FlowEditorBootstrap['project']) => api.saveTiff(sessionId, project)
   };
 }
@@ -144,6 +146,8 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   const [refreshing,setRefreshing]=useState(false),[refreshRecovery,setRefreshRecovery]=useState(false),[refreshStatus,setRefreshStatus]=useState('');
   const [savingTiff, setSavingTiff] = useState(false);
   const [savedTiffRevision, setSavedTiffRevision] = useState<number>();
+  const flowSaved = snapshot.checkpoint?.revision === snapshot.project.revision && !snapshot.pending;
+  const folderStatus = useFolderStatus(snapshot.project, workbench && flowSaved, savingTiff || refreshing, api.folderStatus);
   const [japanese, setJapanese] = useState(false);
   const [tool, setTool] = useState<'brush' | 'eraser' | 'blur' | 'select'>('brush');
   const [color, setColor] = useState('#dd3344');
@@ -354,7 +358,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:snapshot.project.dialogues.filter(d=>d.shotId===s.id).map(d=>d.text.trim()).filter(Boolean).join(' ').replace(/\s+/g,' ')} ]));
   if(workbench)return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <Workbench name={snapshot.project.name} shots={shots.slice(0,snapshot.project.shots.length)} parked={shots.slice(snapshot.project.shots.length)} selected={selectedIds} revision={snapshot.project.revision} disabled={!active}
-      status={issue||snapshot.lastError?.message||(snapshot.checkpoint?.revision===snapshot.project.revision?'所有修改已暂存':'正在暂存…')}
+      status={issue||snapshot.lastError?.message||(flowSaved ? 'Flow 内已保存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus) : '正在保存到 Flow…')}
       select={selectShot} focus={focusShot} canNavigate={canInspect} canContinueBrush={shot=>active && tool==='brush' && !outputWork.current && !gestures.current &&
         brushQueue.current.size>0 && !otherRequests.current &&
         [...brushQueue.current.values()].every(key=>key===JSON.stringify([shot.id,shot.activeLayerId]))} demand={requestAssets} move={moveShots} renderLayers={renderLayers}

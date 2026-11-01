@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
       throw new Error('Current editor document required');
   };
   ipcMain.handle('flow-editor:open', event => { caller(event); return workspace.open(); });
-  for (const name of ['read', 'put', 'checkpoint', 'saveTiff', 'refresh'] as const) {
+  for (const name of ['read', 'put', 'checkpoint', 'saveTiff', 'refresh', 'folderStatus'] as const) {
     ipcMain.handle(`flow-editor:${name}`, (event, token, input) => { caller(event); return (workspace[name] as (token: string, value: unknown) => unknown)(token, input); });
   }
   ipcMain.handle('flow-editor:switch-project', async (event, token, project) => {

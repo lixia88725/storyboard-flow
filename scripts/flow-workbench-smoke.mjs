@@ -40,10 +40,12 @@ for(const phase of ['edit','reopen']){
  import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorEntry.js'))}).then(async()=>{
  await app.whenReady();await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win},'window');win.setSize(1600,1000);
  await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');
- await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent==="所有修改已暂存"'),'checkpoint');
+ await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("Flow 内已保存")'),'checkpoint');
  await wait(()=>js('document.querySelector(".wb-viewer .image-stage img")?.naturalWidth>0'),'viewer raster');
  const openingMs=Date.now()-started;
+ const folderSays=text=>wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.includes('+JSON.stringify(text)+')'),text);
  if(phase==='edit'){
+ await folderSays('文件夹中的故事板待更新');
  const before=read();assert.equal(before.shots.length,count);
  await js('document.querySelector(\'[aria-label="选择故事板 shot2"]\').dispatchEvent(new MouseEvent("click",{bubbles:true,shiftKey:true}))');
  await wait(async()=>JSON.stringify(await selected())==='["shot0","shot1","shot2"]','range selection');assert.equal(await current(),'shot0');
@@ -93,8 +95,16 @@ for(const phase of ['edit','reopen']){
  await wait(()=>js('!document.querySelector("[data-live-mirror]")'),'viewer mirror settled');
  await button('撤销');await wait(()=>read().images.image0.layers[1].assetId===${JSON.stringify(transparent)},'viewer stroke undo');
  if(count<100){await button('保存 TIFF');await wait(()=>js('!Array.from(document.querySelectorAll("button")).some(b=>b.textContent==="保存中…")'),'Save settles');assert.ok(fs.existsSync(${JSON.stringify(path.join(root,'.storyboard-flow/tiff-output.json'))}));}
+ if(count<100) await folderSays('文件夹中的故事板已更新');
  fs.writeFileSync(${JSON.stringify(path.join(run,'expected.json'))},JSON.stringify(read()));
  }else{assert.deepEqual(read(),JSON.parse(fs.readFileSync(${JSON.stringify(path.join(run,'expected.json'))},'utf8')));}
+ if(phase==='reopen' && count<100){
+   await folderSays('文件夹中的故事板已更新');
+   const entry=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/tiff-output.json'))})).entries.find(e=>!e.retired && e.location!=='parked');
+   fs.appendFileSync(require('node:path').join(${JSON.stringify(root)},entry.name),'test external edit');
+   await js("window.dispatchEvent(new Event('focus'))");
+   await folderSays('文件夹中的故事板有改动');
+ }
  await js('document.querySelector(".wb-header details").open=false');await delay(400);
  await wait(()=>js('Array.from(document.querySelectorAll(".wb-card")).slice(0,3).every(e=>e.querySelector("img")?.naturalWidth>0)'), 'visible cards remain rendered after reorder');
  const metrics=await js('({canvases:document.querySelectorAll(".stage-overlay").length,rasterImages:document.querySelectorAll(".wb-grid img").length,cards:document.querySelectorAll(".wb-card").length,heap:performance.memory?.usedJSHeapSize})');

@@ -44,7 +44,7 @@ ipcMain.handle = (channel, listener) => {
   let win; await waitFor(()=>win=BrowserWindow.getAllWindows()[0],'window');
   const js=code=>win.webContents.executeJavaScript(code);
   const current=()=>js("document.querySelector('[data-current-shot]').dataset.currentShot");
-  const settled=()=>js("document.querySelector('.wb-status')?.innerText.includes('所有修改已暂存')");
+  const settled=()=>js("document.querySelector('.wb-status')?.innerText.includes('Flow 内已保存')");
   const ready=()=>js("Array.from(document.querySelectorAll('.wb-viewer .image-stage > img')).filter(i=>i.complete&&i.naturalWidth===2048).length===3");
   await waitFor(settled,'initial checkpoint');await waitFor(ready,'layers');
   const arrow=()=>js("document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}))");

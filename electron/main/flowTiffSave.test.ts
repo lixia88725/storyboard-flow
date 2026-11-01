@@ -283,11 +283,17 @@ it('observes external changes read-only, distinguishes local edits, and does not
  const {root,p,png,output}=await fixture(true);await output.save(p,async()=>png);
  const file=path.join(root,'.storyboard-flow/tiff-output.json'), ledger=await fs.readFile(file);
  const before=structuredClone(p);
+ const status=(inspectDisk=false)=>output.folderStatus({project:p,inspectDisk});
+ expect(await status(true)).toBe('current');
+ p.revision++;expect(await status()).toBe('current');
+ p.shots[0].scriptText='local';expect(await status()).toBe('pending');
+ p.shots[0].scriptText=before.shots[0].scriptText;
  expect(await output.inspectExternal(p)).toEqual([]);
  await fs.writeFile(path.join(root,'original.tif'),'external bytes');
+ expect(await status(true)).toBe('external');
  const observed=await output.inspectExternal(p);
  expect(observed).toEqual([{shotId:'shot',name:'original.tif',location:'active',status:'changed',digest:hash(Buffer.from('external bytes')),localOutputChanges:false}]);
- p.shots[0].scriptText='local text';
+ p.shots[0].scriptText='local text';expect(await status()).toBe('both');
  expect((await output.inspectExternal(p))[0].localOutputChanges).toBe(true);
  p.shots.shift();expect(await output.inspectExternal(p)).toEqual([]);
  expect(await fs.readFile(file)).toEqual(ledger);expect(p.images).toEqual(before.images);

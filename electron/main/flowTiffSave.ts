@@ -61,6 +61,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
     if (await fs.realpath(root) !== root || now.dev !== identity.dev || now.ino !== identity.ino || !now.isDirectory() || now.isSymbolicLink()) throw Error('Output root changed');
     await assertPhysicalWorkspaceWriterTargets([root]);
   };
+  let observedChanges = new Map<string, { expected: string; missing: boolean }>();
   const observe = createOutputObservation(bind);
   const trash = createOutputTrash(root, projectId, identity, bind, trashItem);
   const validateImage = (image: ImageDocumentV1) => snapshotProject({schema:'storyboard-flow.project',version:1,id:projectId,name:'',revision:0,
@@ -116,6 +117,45 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
     }
   };
   return {
+    folderStatus({ project, inspectDisk }: import('../shared/flowEditor.js').FolderStatusRequest): Promise<import('../shared/flowEditor.js').FolderStatus> {
+      const captured = snapshotProject(project);
+      return serialized(async () => {
+        if (captured.id !== projectId) throw Error('Different project');
+        const { ledger } = await load();
+        const entries = ledger.entries.filter(entry => !entry.retired);
+        if (ledger.rename || (ledger.refresh && !ledger.refresh.complete) || entries.some(e => e.move || e.pending || e.deletion)) return 'unfinished';
+        if (inspectDisk) {
+          const changes: typeof observedChanges = new Map();
+          for (const entry of entries) {
+            if (!entry.current) continue;
+            const actual = await observe(outputPath(root, entry.name, entry.location ?? 'active'));
+            if (actual !== entry.current) changes.set(entry.shotId, { expected: entry.current, missing: actual === null });
+          }
+          observedChanges = changes;
+        }
+        const parked = new Set(captured.parkedShots.map(s => s.id));
+        const shots = new Map([...captured.shots, ...captured.parkedShots].map(s => [s.id, s]));
+        const names = orderedOutputNames(captured, entries.filter(e => shots.has(e.shotId)));
+        let pending = entries.length !== shots.size, external = false, missing = false;
+        for (const entry of entries) {
+          const shot = shots.get(entry.shotId);
+          const changed = shot && contentDigest(captured, shot) !== entry.content;
+          const observation = observedChanges.get(entry.shotId);
+          if (observation && observation.expected === entry.current) {
+            if (observation.missing) missing = true;
+            else {
+              external = true;
+              if (shot && (entry.content ? changed : !isDeepStrictEqual(entry.baseline, captured.images[shot.imageId]))) return 'both';
+            }
+          }
+          if (!shot || changed || !entry.published || entry.name !== names.get(entry.shotId) ||
+              parked.has(entry.shotId) !== (entry.location === 'parked')) pending = true;
+        }
+        if (missing) return 'missing';
+        if (external) return 'external';
+        return pending ? 'pending' : 'current';
+      });
+    },
     async hasPendingRefresh(){const j=(await load()).ledger.refresh;return !!j&&!j.complete;},
     refresh(project: ProjectV1, depot: FlowAssetDepot, checkpoint: {load():Promise<ProjectV1>; save(project:ProjectV1):Promise<void>}): Promise<ProjectV1> {
       const captured=snapshotProject(project);let publishing=false;
