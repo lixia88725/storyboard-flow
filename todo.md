@@ -1,6 +1,6 @@
 # Remaining Storyboard Flow work
 
-Updated 2026-10-31. This list is scope, not fresh permission. Current implemented state
+Updated 2026-11-01. This list is scope, not fresh permission. Current implemented state
 and evidence belong in [context-handoff.md](context-handoff.md).
 
 ## Current output integration
@@ -26,10 +26,9 @@ and evidence belong in [context-handoff.md](context-handoff.md).
   remaining presentation/tool controls; refine dock/resize/keyboard/pen interactions and
   layout persistence. Keep the `--workbench` route isolated until acceptance. The classic
   Workspace shortcut currently resets to classic on project switch; polish that if retained.
-- Fix rapid strokes refused during autosave. A 100-ms follow-up stroke was absent after
-  reopen, and repeated navigation succeeded only after 8.87s in the measured run. The 1,000-board
-  2K sample measured 8.1s in that call after one stroke, versus 143ms with six boards.
-  See docs/refactor/STUDIO-PERFORMANCE.md. Continue decoded-memory/thumbnail profiling.
+- Rapid consecutive brush strokes now survive the 100-ms autosave test and normal reopen.
+  Next measure cold checkpoint time, sustained stylus input and decoded-memory/thumbnail use.
+  See docs/refactor/STUDIO-PERFORMANCE.md.
   The 1,000-shot 640×360 fixture passes bounded loading/interaction checks (~3.4s opening),
   but all lightweight card DOM remains and the 96-entry URL cache is not a byte budget.
 - Follow up the intermittent opacity GUI failure during group re-selection after panel

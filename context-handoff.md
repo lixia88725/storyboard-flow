@@ -13,6 +13,12 @@ passed the complete build and 392 files / 3003 tests. Evidence directories are
 edit/close/reopen and explicit Markdown export of the reopened text. See the
 [trial card](docs/refactor/STUDIO-TRIAL.md) and [2K measurements](docs/refactor/STUDIO-PERFORMANCE.md).
 
+Candidate `4b6df30` fixes dropped consecutive strokes during autosave. On the isolated 2K
+fixture, the rapid third stroke survived Undo/Redo and all four strokes survived reopen.
+Full suite: 392 files / 3004 tests; build passed. Receipts: .hermes/evidence/20261101T013543.967574Z-full/ and
+.hermes/evidence/20261101T015701.227625Z-build/. Both adjacent editor GUI smoke checks passed.
+Raw GUI results: `.hermes/bench-cadence-final/`. The studio example itself was not edited.
+
 ## Runtime and verified candidate
 
 The new-format editor remains isolated; default App and 启动测试.command are unchanged.
