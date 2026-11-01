@@ -17,7 +17,7 @@ export type WorkbenchProps={
  name:string;shots:Shot[];parked:Shot[];selected:string[];revision:number;disabled:boolean;status:string;
  toolbar:ReactNode;actions:ReactNode;
  select:(id:string,event:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;
- focus:(id:string)=>void;canNavigate:()=>boolean;demand:(ids:string[])=>void;
+ focus:(id:string)=>void;canNavigate:()=>boolean;canContinueBrush:(shot:Shot)=>boolean;demand:(ids:string[])=>void;
  move:(ids:string[],destination:'active'|'pending',before?:string)=>void;
  renderCanvas:(shot:Shot,previous?:Shot,next?:Shot)=>ReactNode;
  renderLayers:(shot:Shot)=>ReactNode;renderInfo:(shot:Shot)=>ReactNode;
@@ -50,6 +50,7 @@ export function Workbench(p:WorkbenchProps){
  const surface=(shot:Shot,where:string,editable:boolean)=>{
   const key=where+':'+shot.id,other=live?.id===shot.id&&live.surface!==key;
   return <div className="wb-surface" data-surface={key} onPointerDownCapture={e=>{
+   if(!p.disabled && editable && live?.surface===key && e.isPrimary && e.button===0 && p.canContinueBrush(shot))return;
    if(p.disabled||!p.canNavigate()){e.preventDefault();e.stopPropagation();return;}
    flushSync(()=>{p.focus(shot.id);setLive({id:shot.id,surface:key,node:e.currentTarget});});
   }} onPointerUpCapture={settle} onPointerCancelCapture={settle}>

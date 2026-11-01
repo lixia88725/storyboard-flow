@@ -70,9 +70,9 @@ This store does not rename TIFFs. The explicit output layer derives ordered file
    content → no-op (nothing is rewritten and the receipt is returned).
 6. **Assets first**, in ascending asset-id order: the reader's bytes are copied and hashed, the
    hash must equal the claimed id, and the PNG must be decoded and must match the dimensions that
-   **every current reference** declares. That decode and dimension check runs for an asset that is
-   already stored as well: the digest proves the bytes are unchanged, never that a new descriptor is
-   correct, so a reused blob is checked exactly like a new one (once per asset per save). A missing
+   **every current reference** declares. A process cache holds dimensions for up to 4,096 fully decoded PNG digests.
+   Every save hashes the supplied bytes and checks every current reference against those dimensions;
+   cache misses require a full decode. A missing
    file is written as `<asset|version|project>.<24-hex>.tmp` and published with a hard link, so a
    partially written blob never appears under its final name and an existing blob is never replaced.
    An existing file is verified by digest, not trusted by name. The asset directory is flushed
@@ -225,8 +225,8 @@ remain errors. Open is read-only and never advances head. Root identity is reche
 
 `put` snapshots input before await, enforces caller PNG-byte/pixel limits (also retaining the
 store's 512 MiB ceiling and sharp's default input-pixel limit), computes encoded-byte SHA-256,
-checks PNG format/header dimensions and forces full decode. It reuses `storeAsset` and the same
-canonical-root queue as checkpoint publication. It creates only the asset namespace/blob, never
+checks current dimensions and requires a successfully decoded PNG digest. Individual asset writes
+   share a root queue with checkpoint asset checks; checkpoints themselves still publish in order. It creates only the asset namespace/blob, never
 head/version records or a provisional Project. At most eight puts per depot retain encoded input
 while waiting; excess requests return `busy` before copying bytes.
 

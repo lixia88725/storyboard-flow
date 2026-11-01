@@ -6,7 +6,7 @@ import { loadCheckpoint } from './checkpoint.js';
 import { errorMessage, ProjectStoreError } from './errors.js';
 import { bindRoot } from './layout.js';
 import { LIMITS } from './limits.js';
-import { withRootLock } from './lock.js';
+import { withCheckpointLock, withRootLock } from './lock.js';
 
 const positiveInteger = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0;
 const validId = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && !value.includes('\0');
@@ -34,7 +34,7 @@ export const openFlowAssetDepot = async (options: FlowAssetDepotOptions): Promis
 
   try {
     const layout = await bindRoot(root, 'save');
-    return await withRootLock(layout.root, async () => {
+    return await withCheckpointLock(layout.root, () => withRootLock(layout.root, async () => {
       const rootIdentity = await fs.lstat(layout.root, { bigint: true });
       const assertBinding = async () => {
         const current = await fs.lstat(layout.root, { bigint: true });
@@ -111,6 +111,6 @@ export const openFlowAssetDepot = async (options: FlowAssetDepotOptions): Promis
         } catch (error) { return failed(error); }
       };
       return { ok: true, value: { put, read } };
-    });
+    }));
   } catch (error) { return failed(error); }
 };

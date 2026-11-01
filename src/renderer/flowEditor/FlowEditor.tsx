@@ -183,9 +183,13 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   }, [snapshot.project, demand, workbench]);
   useEffect(() => { disposed.current = false; return () => { disposed.current = true; for (const url of cache.values()) URL.revokeObjectURL(url); }; }, [cache]);
   const media: MediaSource = useMemo(() => ({ assetUrl: id => urls[id] ?? '', layerAssetUrl: ({ bitmapPath }) => urls[bitmapPath.split('/').at(-1)!] ?? '' }), [urls]);
+  const otherRequests = useRef(0);
   const request = async (r: FlowSessionRequest, settlingGesture=false) => {
     if(gestures.current && !settlingGesture)throw Error('Finish the current layer gesture first');
+    const other = r.kind !== 'paint' || r.stroke.tool !== 'brush';
+    if (other) otherRequests.current++;
     try { const result = required(await flow.request(r)); setIssue(''); return result; } catch (error) { setIssue(String(error)); throw error; }
+    finally { if (other) otherRequests.current--; }
   };
   const act = (r: FlowSessionRequest) => { void request(r).catch(() => {}); };
   useEffect(() => {
@@ -209,11 +213,16 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   const view = projectView(snapshot.project, shots);
   const script = (shotId: string, text: string) => act({ kind: 'board', command: { kind: 'setScriptText', shotId, text } });
   const dialogue = (shotId: string, text: string) => act({ kind: 'board', command: dialogueCommand(flow.snapshot().project, shotId, text) });
+  const brushQueue = useRef(new Map<symbol, string>());
   const stroke = async (shot: Shot, layerId: string, input: SketchStroke) => {
-    const result = await request({ kind: 'paint', shotId: shot.id, layerId, stroke: pixelStroke(input) });
-    const currentShot = result.snapshot.project.shots.find(s => s.id === shot.id)!;
-    return settledStrokePreview(() => flow.snapshot().project, shot.id, layerId,
-      result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId, source);
+    const token = Symbol();
+    if (input.tool === 'brush') brushQueue.current.set(token, JSON.stringify([shot.id,layerId]));
+    try {
+      const result = await request({ kind: 'paint', shotId: shot.id, layerId, stroke: pixelStroke(input) });
+      const currentShot = result.snapshot.project.shots.find(s => s.id === shot.id)!;
+      return await settledStrokePreview(() => flow.snapshot().project, shot.id, layerId,
+        result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId, source);
+    } finally { brushQueue.current.delete(token); }
   };
   const transformSelection = async (shot: Shot, layerId: string, _preview: string, intent?: SelectionTransformIntent) => {
     try {
@@ -346,7 +355,9 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   if(workbench)return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <Workbench name={snapshot.project.name} shots={shots.slice(0,snapshot.project.shots.length)} parked={shots.slice(snapshot.project.shots.length)} selected={selectedIds} revision={snapshot.project.revision} disabled={!active}
       status={issue||snapshot.lastError?.message||(snapshot.checkpoint?.revision===snapshot.project.revision?'所有修改已暂存':'正在暂存…')}
-      select={selectShot} focus={focusShot} canNavigate={canInspect} demand={requestAssets} move={moveShots} renderLayers={renderLayers}
+      select={selectShot} focus={focusShot} canNavigate={canInspect} canContinueBrush={shot=>active && tool==='brush' && !outputWork.current && !gestures.current &&
+        brushQueue.current.size>0 && !otherRequests.current &&
+        [...brushQueue.current.values()].every(key=>key===JSON.stringify([shot.id,shot.activeLayerId]))} demand={requestAssets} move={moveShots} renderLayers={renderLayers}
       renderInfo={shot=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText} disabled={!active} onChange={e=>script(shot.id,e.target.value)}/></label><label>对白<textarea aria-label={'对白 '+shot.id} value={shotDialogueText(view,shot.id)} disabled={!active} onChange={e=>dialogue(shot.id,e.target.value)}/></label>{dialogueTransfers(shot.id)}</div>}
       renderCanvas={(shot,previous,next)=><SketchPad key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0} eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false}
         onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}

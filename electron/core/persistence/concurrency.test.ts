@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { temporaryWorkspace } from '../../../test/temporaryWorkspace';
 import { createProjectStore } from './index';
-import { pendingRootCount } from './lock';
+import { pendingRootCount, withRootLock } from './lock';
 import { canonicalJson } from './canonicalJson';
 import { clone, readerFor, scene, storePaths } from './store.fixture';
 
@@ -61,6 +61,21 @@ describe('concurrent saves and caller-owned input', () => {
     const loaded = await b.loadCheckpoint(root);
     expect(loaded.ok).toBe(true);
     if (loaded.ok) expect(loaded.value.project.revision).toBe(2);
+  });
+
+  it('allows an asset writer between checkpoint assets without waiting for head publication', async () => {
+    const root = await fs.realpath(await temporaryWorkspace('persistence-interleave-'));
+    const { project, assets } = await scene();
+    const order: string[] = [];
+    let write: Promise<void> | undefined;
+    const saved = await store.saveCheckpoint(root, project, async id => {
+      order.push('read');
+      if (!write) write = withRootLock(root, async () => { order.push('writer'); });
+      return assets.get(id)!;
+    });
+    await write;
+    expect(saved.ok).toBe(true);
+    expect(order.slice(0, 3)).toEqual(['read', 'writer', 'read']);
   });
 
   it('does not serialize independent roots', async () => {

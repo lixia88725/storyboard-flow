@@ -13,7 +13,7 @@ import { triggerFault } from './faults.js';
 import { failAfterCleanup, readBoundFile, releaseTemporary, writeTemporaryFile } from './fileOps.js';
 import { assertStoreDirectory, bindRoot, ensureStoreDirectories, versionPath, type StoreLayout } from './layout.js';
 import { LIMITS } from './limits.js';
-import { withRootLock } from './lock.js';
+import { withCheckpointLock, withRootLock } from './lock.js';
 import { snapshotProject, validateProject } from './validate.js';
 
 type Head = { project: ProjectV1; canonical: string };
@@ -127,8 +127,10 @@ const publishCheckpoint = async (
   manifestBytes: Buffer,
   readAsset: AssetReaderV1
 ): Promise<CheckpointReceiptV1> => {
-  await ensureStoreDirectories(layout);
-  const head = await readHeadForSave(layout);
+  const head = await withRootLock(layout.root, async () => {
+    await ensureStoreDirectories(layout);
+    return readHeadForSave(layout);
+  });
   const revision = snapshot.revision;
 
   let idempotent = false;
@@ -185,7 +187,7 @@ export const saveCheckpoint = async (
 
   try {
     const layout = await bindRoot(root, 'save');
-    const receipt = await withRootLock(layout.root, () => publishCheckpoint(layout, snapshot, canonical, manifestBytes, readAsset));
+    const receipt = await withCheckpointLock(layout.root, () => publishCheckpoint(layout, snapshot, canonical, manifestBytes, readAsset));
     return { ok: true, value: receipt };
   } catch (error) {
     return storeFailureOf(error);

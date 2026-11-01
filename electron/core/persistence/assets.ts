@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import sharp from 'sharp';
+import { withRootLock } from './lock.js';
 import type { AssetReaderV1, ProjectV1 } from '../../shared/refactorV1.js';
 import * as platform from '../platform/index.js';
 import { sha256Hex } from './canonicalJson.js';
@@ -77,8 +78,10 @@ const pngMetadata = async (bytes: Buffer, claim: AssetClaim): Promise<sharp.Meta
 /** Decode the PNG header for dimensions and force a full decode so truncated or
  * corrupt pixel data is refused at admission. sharp's default input-pixel limit
  * bounds the decode, so a small file cannot expand into an unbounded raster. */
+const decodedDimensions = new Map<string, { width: number; height: number }>();
 const verifyDecodablePng = async (bytes: Buffer, claim: AssetClaim): Promise<void> => {
-  const metadata = await pngMetadata(bytes, claim);
+  const cached = decodedDimensions.get(claim.assetId);
+  const metadata = cached ? { ...cached, format: "png" } : await pngMetadata(bytes, claim);
   if (metadata.format !== 'png') invalid(`Asset ${claim.assetId} is ${metadata.format ?? 'not an image'}, not PNG`);
   const width = metadata.width ?? 0;
   const height = metadata.height ?? 0;
@@ -92,8 +95,11 @@ const verifyDecodablePng = async (bytes: Buffer, claim: AssetClaim): Promise<voi
       );
     }
   }
+  if (cached) return;
   try {
     await sharp(bytes, { failOn: 'error' }).raw().toBuffer();
+    if (decodedDimensions.size >= 4096) decodedDimensions.delete(decodedDimensions.keys().next().value!);
+    decodedDimensions.set(claim.assetId, { width, height });
   } catch (error) {
     invalid(`Asset ${claim.assetId} could not be decoded: ${errorMessage(error)}`);
   }
@@ -127,10 +133,7 @@ export const storeAsset = async (layout: StoreLayout, claim: AssetClaim, readAss
       conflict(`Bytes supplied for asset ${claim.assetId} hash to ${providedDigest}; the reference and the bytes disagree`);
     }
 
-    // The digest proves the bytes are unchanged, never that the current descriptors
-    // are right, so the decode and the dimension check run for every save: a reused
-    // blob and each of its references are verified exactly like a new one. Each
-    // asset id appears once in requiredAssets, so it is decoded once per save.
+    // A verified digest can reuse its decoded dimensions; every reference is still checked.
     await verifyDecodablePng(bytes, claim);
 
     // Direct depot admission has no checkpoint to create these directories for it.
@@ -183,7 +186,9 @@ export const storeAsset = async (layout: StoreLayout, claim: AssetClaim, readAss
 /** Store every asset the snapshot needs, one at a time and in a stable order. */
 export const storeRequiredAssets = async (layout: StoreLayout, project: ProjectV1, readAsset: AssetReaderV1): Promise<AssetOutcome[]> => {
   const outcomes: AssetOutcome[] = [];
-  for (const claim of requiredAssets(project)) outcomes.push(await storeAsset(layout, claim, readAsset));
+  for (const claim of requiredAssets(project)) {
+    outcomes.push(await withRootLock(layout.root, () => storeAsset(layout, claim, readAsset)));
+  }
   return outcomes;
 };
 
