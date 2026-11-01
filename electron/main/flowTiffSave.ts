@@ -123,6 +123,11 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         if (captured.id !== projectId) throw Error('Different project');
         const { ledger } = await load();
         const entries = ledger.entries.filter(entry => !entry.retired);
+        for (const entry of entries) {
+          if (!entry.deletion) continue;
+          const recovery = await trash.recovery(entry.name, entry.deletion);
+          if (recovery) return recovery;
+        }
         if (ledger.rename || (ledger.refresh && !ledger.refresh.complete) || entries.some(e => e.move || e.pending || e.deletion)) return 'unfinished';
         if (inspectDisk) {
           const changes: typeof observedChanges = new Map();

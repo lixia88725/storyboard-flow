@@ -19,3 +19,12 @@
 .wb-panel-layers .shot-layer-popover {position:static!important;width:100%!important;max-width:none!important;transform:none!important;opacity:1!important;pointer-events:auto!important;box-shadow:none!important;}.wb-panel-layers .layer-panel {width:100%;box-shadow:none;}.wb-panel-layers .layer-row {font-size:12px;min-height:38px;}.wb-panel-layers .layer-thumb {max-height:36px;}
 .flow-workbench .flow-pending-shelf {border:0;margin:0;padding:6px 10px;white-space:nowrap;}.flow-workbench .flow-pending-shelf>h2,.flow-workbench .flow-pending-shelf>p {display:none;}.flow-workbench .flow-pending {display:inline-block;width:135px;vertical-align:top;margin-right:8px;}.flow-workbench .flow-pending>button {font-size:10px;}
 .wb-status {height:27px;min-height:27px;display:flex;justify-content:space-between;align-items:center;padding:0 15px;border-top:1px solid #353b40;background:#23282b;color:#8e9ba4;font-size:10px;}.wb-status span:first-child {color:#b9c4b7;}.wb-naming {position:fixed;z-index:200;inset:20% 20%;background:#252a2e;border:1px solid #606970;padding:24px;box-shadow:0 0 0 100vmax #0008;}
+
+.wb-recovery { position:fixed; bottom:36px; right:16px; z-index:5; width:min(420px,90vw); padding:14px; background:#312c25; color:#fff3df; border:1px solid #887557; border-radius:6px; }
+.wb-recovery p { line-height:1.5; overflow-wrap:anywhere; }
+
+.wb-grid.wb-japanese { grid-template-columns:1fr; gap:5px; }
+.wb-japanese .wb-card { display:grid; grid-template-columns:minmax(100px,38%) minmax(0,1fr); align-items:start; }
+.wb-japanese .wb-card-handle { grid-column:1/-1; }
+.wb-japanese .wb-info { grid-template-columns:1fr; padding:5px; }
+.wb-japanese .wb-info textarea { min-height:2.4em; }

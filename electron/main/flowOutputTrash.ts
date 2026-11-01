@@ -55,6 +55,18 @@ export function createOutputTrash(root: string, projectId: string, rootIdentity:
   return {
     available: () => trashItem !== undefined,
     hasPendingAcknowledgements: () => acknowledged.size > 0,
+    async recovery(name: string, intent: OutputDeletion) {
+      if (intent.phase !== 'dispatching') return;
+      const directory = '.storyboard-flow/deletions/' + intent.token;
+      try {
+        const file = await staged(name, intent);
+        const ack = acknowledged.has(key(name, intent));
+        const state = file && ack ? 'inspect' : file || ack ? 'retry' : 'restore';
+        return { kind: 'trash-recovery', name, directory, state } as const;
+      } catch {
+        return { kind: 'trash-recovery', name, directory, state: 'inspect' } as const;
+      }
+    },
     async prepare(name: string, from: 'active' | 'parked', digest: string): Promise<OutputDeletion> {
       if (!trashItem) throw Error('System Trash capability unavailable');
       await bind(); await directory(path.join(root, '.storyboard-flow'));

@@ -33,6 +33,27 @@ for(const [name,index,color] of [['base',0,'#ff0000'],['conflict',1,'#00ff00']])
  const encoded=get(await codec.encode({image:changed,text:null},async id=>assets.get(id)));
  variants[name]=path.join(run,name+'.tif');await writeFile(variants[name],encoded);
 }
+// Optional workstation acceptance: Photoshop edits only two generated temporary TIFFs.
+if (process.env.FLOW_PHOTOSHOP_TEST === '1') {
+ for (const [name, layerName, color] of [['base','背景','ff0000'],['conflict','绘画','00ff00']]) {
+   const file = variants[name];
+   await writeFile(file, name === 'base' ? original : await readFile(variants.base));
+   const jsx = `(function(){
+     var doc=app.open(new File(${JSON.stringify(file)}));
+     try {
+       var layer=doc.artLayers.getByName(${JSON.stringify(layerName)});
+       doc.activeLayer=layer;
+       var locked=layer.allLocked;
+       if(locked)layer.allLocked=false;
+       var fill=new SolidColor(); fill.rgb.hexValue=${JSON.stringify(color)};
+       doc.selection.selectAll();doc.selection.fill(fill);doc.selection.deselect();
+       if(locked)layer.allLocked=true;
+       doc.save();
+     } finally {doc.close(SaveOptions.DONOTSAVECHANGES);}
+   })()`;
+   execFileSync('/usr/bin/osascript',['-e','on run argv','-e','tell application "Adobe Photoshop 2026" to do javascript (item 1 of argv) show debugger never','-e','end run',jsx],{timeout:120000});
+ }
+}
 for(const phase of ['edit','reopen']){
  const userData=path.join(run,phase+'-userData');await mkdir(userData);const driver=path.join(run,phase+'.cjs');
  await writeFile(driver,`

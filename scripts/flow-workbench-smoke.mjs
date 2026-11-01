@@ -20,8 +20,8 @@ for(let i=0;i<count+1;i++){
 }
 get(await createProjectStore().saveCheckpoint(root,project,async id=>get(await depot.read(id))));
 const identity={head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),status:execFileSync('git',['status','--short'],{encoding:'utf8'}).trim(),run,count};
-for(const phase of ['edit','reopen']){
- const userData=path.join(run,phase+'-userData');await mkdir(userData);const driver=path.join(run,phase+'.cjs');
+for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen'])){
+ const userData=path.join(run,'userData');await mkdir(userData,{recursive:true});const driver=path.join(run,phase+'.cjs');
  await writeFile(driver,String.raw`
  const {app,BrowserWindow,clipboard,shell,ipcMain}=require('electron'),fs=require('node:fs'),assert=require('node:assert/strict');
  for(const k of Object.keys(clipboard))if(typeof clipboard[k]==='function')clipboard[k]=()=>{throw Error('Clipboard forbidden')};shell.trashItem=()=>{throw Error('Trash forbidden')};
@@ -44,6 +44,27 @@ for(const phase of ['edit','reopen']){
  await wait(()=>js('document.querySelector(".wb-viewer .image-stage img")?.naturalWidth>0'),'viewer raster');
  const openingMs=Date.now()-started;
  const folderSays=text=>wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.includes('+JSON.stringify(text)+')'),text);
+ if(phase==='recovery'){
+   const source=fs.readFileSync(${JSON.stringify(path.join(run,'staged-path.txt'))},'utf8');
+   const held=${JSON.stringify(path.join(run,'simulated-trash.tif'))};
+   const notice=()=>js('document.querySelector(".wb-recovery")?.textContent||""');
+   await wait(async()=>(await notice()).includes('放回'),'missing acknowledgement after restart');
+   assert.ok((await notice()).includes(require('node:path').basename(source)));
+   await button('保存 TIFF');
+   await wait(async()=>(await notice()).includes('放回'),'unknown outcome remains blocked');
+   assert.ok(fs.existsSync(held));assert.ok(!fs.existsSync(source));
+   fs.copyFileSync(held,source);
+   await js("window.dispatchEvent(new Event('focus'))");
+   await wait(async()=>(await notice()).includes('身份或内容'),'substitute refused');
+   fs.renameSync(source,held+'.rejected-copy');
+   fs.renameSync(held,source);
+   await js("window.dispatchEvent(new Event('focus'))");
+   await wait(async()=>(await notice()).includes('重试保存 TIFF'),'restored original verified');
+   let calls=0;
+   shell.trashItem=async file=>{assert.equal(file,source);calls++;fs.renameSync(file,held);};
+   await button('重试保存 TIFF');await folderSays('文件夹中的故事板已更新');
+   assert.equal(calls,1);assert.equal(await notice(),'');win.close();return;
+ }
  if(phase==='edit'){
  await folderSays('文件夹中的故事板待更新');
  const before=read();assert.equal(before.shots.length,count);
@@ -94,16 +115,37 @@ for(const phase of ['edit','reopen']){
  await wait(()=>read().images.image0.layers[1].assetId!==${JSON.stringify(transparent)},'viewer stroke checkpoint');
  await wait(()=>js('!document.querySelector("[data-live-mirror]")'),'viewer mirror settled');
  await button('撤销');await wait(()=>read().images.image0.layers[1].assetId===${JSON.stringify(transparent)},'viewer stroke undo');
+ if(count<100){
+   const revisionBefore=read().revision;
+   await button('日式分镜');
+   await wait(()=>js('!!document.querySelector(".wb-japanese .wb-row-info textarea")'),'Japanese rows');
+   assert.equal(read().revision,revisionBefore);
+   await js('document.querySelector(".wb-row-info textarea").focus()');
+   await win.webContents.insertText('日式动作');
+   await wait(()=>read().shots.some(s=>s.scriptText.includes('日式动作')),'Japanese row text checkpoint');
+ }
  if(count<100){await button('保存 TIFF');await wait(()=>js('!Array.from(document.querySelectorAll("button")).some(b=>b.textContent==="保存中…")'),'Save settles');assert.ok(fs.existsSync(${JSON.stringify(path.join(root,'.storyboard-flow/tiff-output.json'))}));}
  if(count<100) await folderSays('文件夹中的故事板已更新');
  fs.writeFileSync(${JSON.stringify(path.join(run,'expected.json'))},JSON.stringify(read()));
  }else{assert.deepEqual(read(),JSON.parse(fs.readFileSync(${JSON.stringify(path.join(run,'expected.json'))},'utf8')));}
  if(phase==='reopen' && count<100){
+   await wait(()=>js('!!document.querySelector(".wb-japanese .wb-row-info textarea")'),'layout restored after new process');
+   await button('日式分镜');
    await folderSays('文件夹中的故事板已更新');
    const entry=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/tiff-output.json'))})).entries.find(e=>!e.retired && e.location!=='parked');
+   const target=require('node:path').join(${JSON.stringify(root)},entry.name),original=fs.readFileSync(target);
    fs.appendFileSync(require('node:path').join(${JSON.stringify(root)},entry.name),'test external edit');
    await js("window.dispatchEvent(new Event('focus'))");
    await folderSays('文件夹中的故事板有改动');
+   fs.writeFileSync(target,original);
+   await button('删除');await wait(()=>read().shots.length===count-1,'checkpoint logical removal');
+   shell.trashItem=async file=>{
+     assert.equal(require('node:path').dirname(require('node:path').dirname(file)),${JSON.stringify(path.join(root,'.storyboard-flow/deletions'))});
+     fs.writeFileSync(${JSON.stringify(path.join(run,'staged-path.txt'))},file);
+     fs.renameSync(file,${JSON.stringify(path.join(run,'simulated-trash.tif'))});throw Error('Synthetic lost OS reply');
+   };
+   await button('保存 TIFF');await wait(()=>js('document.querySelector(".wb-recovery")?.textContent.includes("放回")'),'actionable recovery');
+
  }
  await js('document.querySelector(".wb-header details").open=false');await delay(400);
  await wait(()=>js('Array.from(document.querySelectorAll(".wb-card")).slice(0,3).every(e=>e.querySelector("img")?.naturalWidth>0)'), 'visible cards remain rendered after reorder');
@@ -118,4 +160,4 @@ for(const phase of ['edit','reopen']){
  const chunks=[],child=spawn(require('electron'),[driver],{cwd:repo,env,stdio:['ignore','pipe','pipe']});child.stdout.on('data',b=>chunks.push(b));child.stderr.on('data',b=>{chunks.push(b);process.stderr.write(b)});
  const code=await new Promise(resolve=>child.on('exit',resolve));await writeFile(path.join(run,phase+'.log'),Buffer.concat(chunks));console.log(phase,code,run);if(code!==0)throw Error('Workbench verification failed: '+run);await readFile(path.join(run,phase+'-closed.json'));
 }
-await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['workbench connected to real Session','multi-select displays earliest board','arrows cancel multi-select and stop at boundary','navigation never edits project','hover enables grid painting','drawing selects and follows current board','live stroke mirrored in both directions before pointer release','unsettled stroke blocks navigation','single Undo and Redo restores stroke','text arrows do not navigate','panels hide and restore','panel docking is separate from board ordering','split resize','Pending membership and Undo','header pointer reorder and Undo',...(count<100?['explicit Save for small fixture']:[]),'normal Close and reopen retains edits',...(count>=100?['bounded visible rasters and editable canvases at scale']:[])]},null,2));console.log('PASS',run);
+await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['workbench connected to real Session','multi-select displays earliest board','arrows cancel multi-select and stop at boundary','navigation never edits project','hover enables grid painting','drawing selects and follows current board','live stroke mirrored in both directions before pointer release','unsettled stroke blocks navigation','single Undo and Redo restores stroke','text arrows do not navigate','panels hide and restore','panel docking is separate from board ordering','split resize','Pending membership and Undo','header pointer reorder and Undo',...(count<100?['explicit Save for small fixture','Japanese row edit and layout reopen','interrupted Trash: missing and substituted files refused, verified original retry']:[]),'normal Close and reopen retains edits',...(count>=100?['bounded visible rasters and editable canvases at scale']:[])]},null,2));console.log('PASS',run);

@@ -2,7 +2,8 @@ import type { FlowAssetDepot, FlowResult } from './flowWave2.js';
 import type { ProjectV1, ResultV1, CheckpointReceiptV1 } from './refactorV1.js';
 /** Dedicated new-format editor capability. Root selection belongs to Main. */
 export type FlowEditorBootstrap = { project: ProjectV1; sessionId: string };
-export type FolderStatus = 'current' | 'pending' | 'external' | 'both' | 'missing' | 'unfinished';
+export type FolderStatus = 'current' | 'pending' | 'external' | 'both' | 'missing' | 'unfinished' | TrashRecovery;
+export type TrashRecovery = { kind: 'trash-recovery'; name: string; directory: string; state: 'restore' | 'retry' | 'inspect' };
 export type FolderStatusRequest = { project: ProjectV1; inspectDisk: boolean };
 export type FlowEditorBridge = {
   read(sessionId: string, id: string): ReturnType<FlowAssetDepot['read']>;

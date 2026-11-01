@@ -87,6 +87,25 @@ async function profile() {
   await waitFor(()=>js(`document.querySelector('[data-workbench]').dataset.revision!==${JSON.stringify(revision)} && document.querySelector('.wb-status').innerText.includes('Flow 内已保存')`),'stroke checkpoint');
   report.strokeCheckpointMs=Math.round(performance.now()-released);
   await sampleMemory('painted');
+  if (process.env.FLOW_PROFILE_SCROLL === '1') {
+    const scroll = await js(`(async()=>{
+      const grid = document.querySelector('.wb-grid').closest('.wb-panel-body');
+      const limit = grid.scrollHeight - grid.clientHeight, samples = [];
+      if (limit <= 0) throw Error('Expected a scrollable grid');
+      const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
+      for (let i=0; i<=120; i++) {
+        const start=performance.now();
+        grid.scrollTop = limit * (i<=60 ? i : 120-i) / 60;
+        await frame(); await frame();
+        samples.push(performance.now()-start);
+      }
+      return {distance:limit, steps:samples.length, p95TwoFramesMs:Math.round(samples.sort((a,b)=>a-b)[114])};
+    })()`);
+    report.scroll=scroll;
+    await sampleMemory('scroll-return');
+    await delay(10000);
+    await sampleMemory('idle-10s');
+  }
   report.mainCheckpointMs = checkpointMs;
   fs.writeFileSync(output,JSON.stringify(report,null,2));
   win.close();

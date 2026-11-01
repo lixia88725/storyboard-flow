@@ -358,7 +358,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:snapshot.project.dialogues.filter(d=>d.shotId===s.id).map(d=>d.text.trim()).filter(Boolean).join(' ').replace(/\s+/g,' ')} ]));
   if(workbench)return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <Workbench name={snapshot.project.name} shots={shots.slice(0,snapshot.project.shots.length)} parked={shots.slice(snapshot.project.shots.length)} selected={selectedIds} revision={snapshot.project.revision} disabled={!active}
-      status={issue||snapshot.lastError?.message||(flowSaved ? 'Flow 内已保存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus) : '正在保存到 Flow…')}
+      status={issue||snapshot.lastError?.message||(flowSaved ? 'Flow 内已保存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label) : '正在保存到 Flow…')}
       select={selectShot} focus={focusShot} canNavigate={canInspect} canContinueBrush={shot=>active && tool==='brush' && !outputWork.current && !gestures.current &&
         brushQueue.current.size>0 && !otherRequests.current &&
         [...brushQueue.current.values()].every(key=>key===JSON.stringify([shot.id,shot.activeLayerId]))} demand={requestAssets} move={moveShots} renderLayers={renderLayers}
@@ -372,6 +372,12 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
         {tool==='blur'&&<><input aria-label="模糊半径" type="range" min="1" max="50" value={blurRadius} onChange={e=>setBlurRadius(Number(e.target.value))}/><button disabled={!active} onClick={applyBlur}>应用模糊</button></>}
         <button disabled={!active} onClick={()=>act({kind:'undo'})}>撤销</button><button disabled={!active} onClick={()=>act({kind:'redo'})}>重做</button><span className="wb-toolbar-spacer"/>
         <button disabled={!active} onClick={newShot}>＋ 新建板</button><button disabled={!active||!selectedIds.length} onClick={()=>moveShots(selectedIds,'pending')}>移入 Pending</button><button disabled={!active||!selectedIds.length} onClick={()=>act({kind:'board',command:{kind:'removeShots',shotIds:selectedIds}})}>删除</button></>}/>
+    {folderStatus.recovery && <aside className="wb-recovery" aria-label="文件恢复">
+      <strong>上次保存中断 · {folderStatus.recovery.name}</strong>
+      {folderStatus.recovery.state === 'restore' && <p>Flow 无法确认这张故事板是否已移入废纸篓。请在系统废纸篓中找到原文件，选择“放回”或“还原”。还原位置是项目内的 <code>{folderStatus.recovery.directory}</code>。切回 Flow 后会重新检查。若找不到原文件，请保留整个项目文件夹以便恢复。</p>}
+      {folderStatus.recovery.state === 'inspect' && <p>恢复文件的位置、身份或内容与保存记录不一致。请保留项目文件夹和原文件，以便核对。</p>}
+      {folderStatus.recovery.state === 'retry' && <><p>已找到可继续的删除记录。重试会继续上次保存，并把仍待删除的原文件移入系统废纸篓。</p><button disabled={!active || savingTiff} onClick={() => { void saveTiff().catch(() => {}); }}>重试保存 TIFF</button></>}
+    </aside>}
     {namingOpen&&<div className="wb-naming"><FlowNaming project={snapshot.project} onCancel={()=>setNamingOpen(false)} onApply={async(name,naming)=>{await request({kind:'board',command:{kind:'setProjectNaming',name,naming}});setNamingOpen(false);}}/></div>}
   </CanvasPresentationContext.Provider></MediaSourceContext.Provider>;
   return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
