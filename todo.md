@@ -34,7 +34,7 @@ and evidence belong in [context-handoff.md](context-handoff.md).
   reopen; unchanged-script retry and the final driver with an explicit group-selected
   wait passed. The original cause remains unproven; see the latest inspection review.
 - The real macOS Open button returned the expected synthetic folder and opened the workbench.
-  Verify OS IME, native dialogue drag, protected adjacent operations and
+  macOS Doubao Pinyin composition arrows and native mouse dialogue transfer/Undo passed in synthetic projects. Verify other platforms/input methods, protected adjacent operations and
   representative marquee/zoom/pan/layer gestures in the real application.
 - Production entry integration and independent acceptance follow bounded G2/G3
   evidence; isolated editor self-tests do not certify the default App.

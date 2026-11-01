@@ -3,6 +3,15 @@
 Updated 2026-11-01. Maintain this as a current snapshot; place completed milestone
 receipts under docs/refactor/reviews/ instead of prepending another history entry.
 
+## Pre-studio acceptance
+
+Workbench candidate `89213f1` accepts brush input while an explicit TIFF Save publishes
+its captured revision. Full build and 393 files / 3006 tests passed. Receipts:
+`.hermes/evidence/20261101T054833.416191Z-full/` and `.hermes/bench-prestudio/`.
+The [performance and handoff record](docs/refactor/STUDIO-PERFORMANCE.md) includes a
+relocated 2K scene, all seven TIFFs in Photoshop, native Chinese composition and mouse
+dialogue transfer, three opacity reruns and a textured 1,000-board workload.
+
 ## Studio trial
 
 Double-click 打开双面板试画.command to resume the dedicated 2048×1152 example in
