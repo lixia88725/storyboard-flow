@@ -19,6 +19,17 @@ Full suite: 392 files / 3004 tests; build passed. Receipts: .hermes/evidence/202
 .hermes/evidence/20261101T015701.227625Z-build/. Both adjacent editor GUI smoke checks passed.
 Raw GUI results: `.hermes/bench-cadence-final/`. The studio example itself was not edited.
 
+Workbench candidate `43e2736` adds Japanese editable rows, workstation layout preferences
+and an interrupted-Trash recovery notice. Complete build passed; full suite passed 392 files / 3004 tests.
+Logs: `.hermes/evidence/20261101T031808.635908Z-full/`. A real macOS folder picker selected the isolated sample and opened the workbench (driver in
+`.hermes/native-picker-nov01/`). Opening the same isolated profile restores
+the view; project content and TIFF output remain separate. Recovery revalidates the
+staged original and uses the ordinary Save path. A same-byte copy at the same path
+is refused. GUI evidence: `flow-workbench-smoke-mH6ynt` (system temporary directory).
+Opacity regression and supported TIFF Refresh passed in `flow-opacity-smoke-FuRgmS`
+and `flow-refresh-smoke-9Cop0Q`. Actual Photoshop 2026 external Refresh was refused;
+see the [performance and interchange notes](docs/refactor/STUDIO-PERFORMANCE.md).
+
 ## Runtime and verified candidate
 
 The new-format editor remains isolated; default App and 启动测试.command are unchanged.
@@ -97,13 +108,11 @@ Pending, waits for image decoding, stops at the last shot, and pauses on load fa
 window blur. Navigation/Close refuses unsettled gestures. Speed and onion settings are
 transient. The user now targets a new dual-panel frontend rather than old zoom/timeline parity.
 Large-raster memory/performance remains open; the prototype scale check uses small synthetic rasters.
-Documentation cleanup on codex/docs-cleanup is complete, reviewed and integrated; its
-clean worktree/branch are retained. Root history is archived below. No old runtime/script deletion.
+Documentation cleanup on codex/docs-cleanup is complete, reviewed and integrated; its local branch is retained. Root history is archived below. No old runtime/script deletion.
 
 Use [todo](todo.md) for unfinished gates and [documentation index](docs/README.md) for
 design pointers. Check live Git/worktree state before editing or cleanup: previous
-retirement reports describe their date, not today's inventory. Three older checkouts
-remain retained; their unique work must be audited before any retirement.
+retirement reports describe their date, not today's inventory. All four remaining secondary worktrees were retired on November 1. Their tips are held by local branches; archived ignored data is in `.hermes/worktree-retirement-20261101/`.
 
 ## Historical evidence
 

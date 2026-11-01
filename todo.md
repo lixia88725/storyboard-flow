@@ -5,11 +5,11 @@ and evidence belong in [context-handoff.md](context-handoff.md).
 
 ## Current output integration
 
-- Add explicit recovery UX for unknown Trash outcomes after process loss. Current
-  protocol retains evidence and refuses a guessed successful Save; normal failure/retry,
-  backups, Undo regeneration and connected system Trash are verified.
+- Workbench now identifies interrupted Trash operations by filename, rechecks restored
+  originals and allows a verified retry. Native Trash restore by a human on Windows/macOS
+  remains a platform check; preserve unresolved evidence if the original cannot be found.
 - External TIFF manual Refresh is connected and has checkpoint/Undo/conflict/retry
-  evidence (see current handoff). Remaining: real Photoshop identity/roundtrip checks,
+  evidence (see current handoff). Photoshop 2026 writes unsupported image resources (tag 34377) even for simple raster layers; see STUDIO-PERFORMANCE.md. Remaining: agree original-preservation policy and implement/test that interchange,
   representative large-project resource measurements, and a separately designed automatic
   observation schedule. External rename/relink/new-file discovery remain separate work.
 - Explicit Markdown export from a saved checkpoint is available through the trial CLI.
@@ -22,19 +22,19 @@ and evidence belong in [context-handoff.md](context-handoff.md).
   and lasso move/scale/rotate plus independent matte/dialogue-overlay presentation are
   connected. Inspection playback/onion skin are connected with bounded GUI evidence.
   The user now targets the new dual-panel workbench instead of old zoom/timeline parity.
-- Review the working prototype with the user. Add new-workbench Japanese layout and
-  remaining presentation/tool controls; refine dock/resize/keyboard/pen interactions and
-  layout persistence. Keep the `--workbench` route isolated until acceptance. The classic
+- Review the working prototype with the user. Japanese rows and workstation layout preferences are connected. Review remaining
+  presentation/tool controls and refine dock/resize/keyboard/pen interactions. Keep the `--workbench` route isolated until acceptance. The classic
   Workspace shortcut currently resets to classic on project switch; polish that if retained.
 - Rapid consecutive brush strokes now survive the 100-ms autosave test and normal reopen.
-  Next measure cold checkpoint time, sustained stylus input and decoded-memory/thumbnail use.
+  400-board navigation, full-grid scroll/idle and checkpoint measurements are recorded. Next verify sustained stylus input and realistic artwork on target hardware.
   See docs/refactor/STUDIO-PERFORMANCE.md.
   The 1,000-shot 640×360 fixture passes bounded loading/interaction checks (~3.4s opening),
   but all lightweight card DOM remains and the 96-entry URL cache is not a byte budget.
 - Follow up the intermittent opacity GUI failure during group re-selection after panel
   reopen; unchanged-script retry and the final driver with an explicit group-selected
   wait passed. The original cause remains unproven; see the latest inspection review.
-- Verify OS IME, native picker/dialogue drag, protected adjacent operations and
+- The real macOS Open button returned the expected synthetic folder and opened the workbench.
+  Verify OS IME, native dialogue drag, protected adjacent operations and
   representative marquee/zoom/pan/layer gestures in the real application.
 - Production entry integration and independent acceptance follow bounded G2/G3
   evidence; isolated editor self-tests do not certify the default App.
@@ -47,8 +47,7 @@ and evidence belong in [context-handoff.md](context-handoff.md).
 
 - Keep documentation entry/current handoff/task list concise; preserve historical
   evidence separately. See [cleanup inventory](docs/maintenance/CLEANUP-REVIEW.md).
-- Audit unique commits, uncommitted work and retained evidence before retiring old
-  worktrees. No older worktree deletion is authorized merely by this list.
+- Four old worktrees have been retired. Branches and ignored evidence were preserved locally. No older worktree deletion is authorized merely by this list.
 - Delete superseded runtime/scripts only after caller/coverage comparison and the
   replacement's acceptance; ignored build/dependency/evidence folders are not junk.
 
