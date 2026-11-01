@@ -354,12 +354,16 @@ function Editor({ startInWorkbench, flow, api, openProject, switching, issue, se
             if (ids.length !== 1) { rejectTool(); return; }
             act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId: ids[0], patch: { opacity: Math.max(0, Math.min(1, initial[ids[0]] + delta)) } } });
           }} />;
-  const canInspect = () => active && !outputWork.current && !gestures.current && !flow.snapshot().pending && !captureMountedCanvasCheckpoints().hasUnsettledGesture;
+  const editsSettled = () => active && !gestures.current && !flow.snapshot().pending && !captureMountedCanvasCheckpoints().hasUnsettledGesture;
+  const canInspect = () => !outputWork.current && editsSettled();
+  // TIFF output owns its captured revision. A new brush stroke edits the live Session.
+  const brushAvailable = () => active && tool === 'brush' && (!outputWork.current || savingTiff) && !gestures.current;
+  const canStartCanvasEdit = () => (!outputWork.current || brushAvailable()) && editsSettled();
   const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:snapshot.project.dialogues.filter(d=>d.shotId===s.id).map(d=>d.text.trim()).filter(Boolean).join(' ').replace(/\s+/g,' ')} ]));
   if(workbench)return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <Workbench name={snapshot.project.name} shots={shots.slice(0,snapshot.project.shots.length)} parked={shots.slice(snapshot.project.shots.length)} selected={selectedIds} revision={snapshot.project.revision} disabled={!active}
       status={issue||snapshot.lastError?.message||(flowSaved ? 'Flow 内已保存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label) : '正在保存到 Flow…')}
-      select={selectShot} focus={focusShot} canNavigate={canInspect} canContinueBrush={shot=>active && tool==='brush' && !outputWork.current && !gestures.current &&
+      select={selectShot} focus={focusShot} canNavigate={canInspect} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>brushAvailable() &&
         brushQueue.current.size>0 && !otherRequests.current &&
         [...brushQueue.current.values()].every(key=>key===JSON.stringify([shot.id,shot.activeLayerId]))} demand={requestAssets} move={moveShots} renderLayers={renderLayers}
       renderInfo={shot=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText} disabled={!active} onChange={e=>script(shot.id,e.target.value)}/></label><label>对白<textarea aria-label={'对白 '+shot.id} value={shotDialogueText(view,shot.id)} disabled={!active} onChange={e=>dialogue(shot.id,e.target.value)}/></label>{dialogueTransfers(shot.id)}</div>}

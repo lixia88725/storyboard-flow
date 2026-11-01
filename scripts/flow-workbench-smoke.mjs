@@ -25,7 +25,13 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  await writeFile(driver,String.raw`
  const {app,BrowserWindow,clipboard,shell,ipcMain}=require('electron'),fs=require('node:fs'),assert=require('node:assert/strict');
  for(const k of Object.keys(clipboard))if(typeof clipboard[k]==='function')clipboard[k]=()=>{throw Error('Clipboard forbidden')};shell.trashItem=()=>{throw Error('Trash forbidden')};
- const reads=new Set(),handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(name,fn)=>handle(name,name==='flow-editor:read'?async(e,token,id)=>{reads.add(id);return fn(e,token,id)}:fn);
+ let gateSave=false,releaseSave;
+ const reads=new Set(),handle=ipcMain.handle.bind(ipcMain);
+ ipcMain.handle=(name,fn)=>handle(name,async(...args)=>{
+   if(name==='flow-editor:read')reads.add(args[2]);
+   if(name==='flow-editor:saveTiff' && gateSave)await new Promise(resolve=>releaseSave=resolve);
+   return fn(...args);
+ });
  process.argv=[process.argv[0],${JSON.stringify(path.join(repo,'dist-electron/main/flowEditorEntry.js'))},${JSON.stringify(root)},${JSON.stringify(userData)},'--workbench'];
  let win;const phase=${JSON.stringify(phase)},count=${count};const delay=ms=>new Promise(r=>setTimeout(r,ms));const read=()=>JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/checkpoints/project.json'))},'utf8'));const js=c=>win.webContents.executeJavaScript(c);
  async function wait(fn,label){for(let i=0;i<400;i++){try{if(await fn())return}catch{}await delay(50)}throw Error('Timeout '+label)}
@@ -124,8 +130,22 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
    await win.webContents.insertText('日式动作');
    await wait(()=>read().shots.some(s=>s.scriptText.includes('日式动作')),'Japanese row text checkpoint');
  }
- if(count<100){await button('保存 TIFF');await wait(()=>js('!Array.from(document.querySelectorAll("button")).some(b=>b.textContent==="保存中…")'),'Save settles');assert.ok(fs.existsSync(${JSON.stringify(path.join(root,'.storyboard-flow/tiff-output.json'))}));}
- if(count<100) await folderSays('文件夹中的故事板已更新');
+ if(count<100){
+   const viewId=await current(),before=read(),shot=before.shots.find(s=>s.id===viewId),ink=before.images[shot.imageId].layers[1].assetId;
+   gateSave=true;await button('保存 TIFF');await wait(()=>releaseSave,'Save captured');
+   const box=await rect('.wb-viewer .image-stage');
+   await mouse('mouseDown',box.x+box.width*.7,box.y+box.height*.6);
+   await mouse('mouseMove',box.x+box.width*.75,box.y+box.height*.6);
+   await mouse('mouseUp',box.x+box.width*.75,box.y+box.height*.6);
+   await wait(()=>read().images[shot.imageId].layers[1].assetId!==ink,'new stroke while TIFF Save pending');
+   gateSave=false;releaseSave();
+   await folderSays('文件夹中的故事板待更新');
+   const ledger=()=>JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/tiff-output.json'))},'utf8'));
+   await wait(()=>ledger().saved?.revision===before.revision,'first output belongs to captured revision');
+   assert.equal(ledger().entries.find(e=>e.shotId===shot.id).baseline.layers[1].assetId,ink);
+   await button('保存 TIFF');await folderSays('文件夹中的故事板已更新');
+   assert.equal(ledger().entries.find(e=>e.shotId===shot.id).baseline.layers[1].assetId,read().images[shot.imageId].layers[1].assetId);
+ }
  fs.writeFileSync(${JSON.stringify(path.join(run,'expected.json'))},JSON.stringify(read()));
  }else{assert.deepEqual(read(),JSON.parse(fs.readFileSync(${JSON.stringify(path.join(run,'expected.json'))},'utf8')));}
  if(phase==='reopen' && count<100){

@@ -34,7 +34,7 @@ export type WorkbenchProps={
  name:string;shots:Shot[];parked:Shot[];selected:string[];revision:number;disabled:boolean;status:string;
  toolbar:ReactNode;actions:ReactNode;
  select:(id:string,event:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;
- focus:(id:string)=>void;canNavigate:()=>boolean;canContinueBrush:(shot:Shot)=>boolean;demand:(ids:string[])=>void;
+ focus:(id:string)=>void;canNavigate:()=>boolean;canStartCanvasEdit:()=>boolean;canContinueBrush:(shot:Shot)=>boolean;demand:(ids:string[])=>void;
  move:(ids:string[],destination:'active'|'pending',before?:string)=>void;
  renderCanvas:(shot:Shot,previous?:Shot,next?:Shot)=>ReactNode;
  renderLayers:(shot:Shot)=>ReactNode;renderInfo:(shot:Shot)=>ReactNode;
@@ -72,12 +72,12 @@ export function Workbench(p:WorkbenchProps){
  useEffect(()=>{if(!current||live)return;const card=Array.from(root.current?.querySelectorAll<HTMLElement>('[data-board-id]')??[]).find(el=>el.dataset.boardId===current.id);
   if(card){const scroll=card.closest('.wb-panel-body')!,a=card.getBoundingClientRect(),b=scroll.getBoundingClientRect();if(a.top<b.top||a.bottom>b.bottom)card.scrollIntoView({block:'nearest',inline:'nearest'});}
  },[current?.id]);
- const settle=()=>{window.clearTimeout(settleTimer.current);settleTimer.current=window.setTimeout(()=>{if(currentProps.current.canNavigate())setLive(undefined);else settle();},80);};
+ const settle=()=>{window.clearTimeout(settleTimer.current);settleTimer.current=window.setTimeout(()=>{if(currentProps.current.canStartCanvasEdit())setLive(undefined);else settle();},80);};
  const surface=(shot:Shot,where:string,editable:boolean)=>{
   const key=where+':'+shot.id,other=live?.id===shot.id&&live.surface!==key;
   return <div className="wb-surface" data-surface={key} onPointerDownCapture={e=>{
    if(!p.disabled && editable && live?.surface===key && e.isPrimary && e.button===0 && p.canContinueBrush(shot))return;
-   if(p.disabled||!p.canNavigate()){e.preventDefault();e.stopPropagation();return;}
+   if(p.disabled || !(editable ? p.canStartCanvasEdit() : p.canNavigate())){e.preventDefault();e.stopPropagation();return;}
    flushSync(()=>{p.focus(shot.id);setLive({id:shot.id,surface:key,node:e.currentTarget});});
   }} onPointerUpCapture={settle} onPointerCancelCapture={settle}>
    <div style={{visibility:other?'hidden':undefined}}>{editable?p.renderCanvas(shot,where==='viewer'&&onion?p.shots[index-1]:undefined,where==='viewer'&&onion?p.shots[index+1]:undefined):<PresentationPreview shotId={shot.id} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}><ShotStaticMedia shot={shot} folderPath="flow" revision={p.revision}/></PresentationPreview>}</div>
@@ -88,7 +88,7 @@ export function Workbench(p:WorkbenchProps){
   if(panel==='board')return <><div className="wb-panel-tools"><button aria-pressed={japanese} onClick={()=>{if(p.canNavigate())setJapanese(!japanese);}}>日式分镜</button><span>{p.shots.length} 张 · {p.selected.length} 已选</span><label>缩略图 <input aria-label="缩略图大小" type="range" min="150" max="460" value={tile} onChange={e=>{if(p.canNavigate())setTile(Number(e.target.value));}}/></label></div>
    <SortableContext items={p.shots.map(s=>s.id)} strategy={rectSortingStrategy}><div className={japanese ? "wb-grid wb-japanese" : "wb-grid"} style={{'--tile':tile+'px'} as CSSProperties}>
     {p.shots.map((shot,i)=><BoardCard key={shot.id} shot={shot} index={i} selected={p.selected.includes(shot.id)} disabled={p.disabled} onSelect={e=>{if(p.canNavigate())p.select(shot.id,e);}}
-     rowInfo={japanese ? p.renderInfo : undefined} visible={reportVisible} activate={()=>{if(p.canNavigate())flushSync(()=>setHovered(shot.id));}}>
+     rowInfo={japanese ? p.renderInfo : undefined} visible={reportVisible} activate={()=>{if(p.canStartCanvasEdit())flushSync(()=>setHovered(shot.id));}}>
      {surface(shot,'grid',hovered===shot.id)}
     </BoardCard>)}
    </div></SortableContext></>;
