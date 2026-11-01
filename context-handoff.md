@@ -1,7 +1,17 @@
 # Current Storyboard Flow handoff
 
-Updated 2026-10-31. Maintain this as a current snapshot; place completed milestone
+Updated 2026-11-01. Maintain this as a current snapshot; place completed milestone
 receipts under docs/refactor/reviews/ instead of prepending another history entry.
+
+## Studio trial
+
+Double-click 打开双面板试画.command to resume the dedicated 2048×1152 example in
+`.hermes/studio-preview/project`. Preserve its user edits. Trial tooling on `ae820cf`
+passed the complete build and 392 files / 3003 tests. Evidence directories are
+`.hermes/evidence/20261101T004041.931715Z-build/` and
+`.hermes/evidence/20261101T004112.087456Z-full/`. A separate fixture verified normal
+edit/close/reopen and explicit Markdown export of the reopened text. See the
+[trial card](docs/refactor/STUDIO-TRIAL.md) and [2K measurements](docs/refactor/STUDIO-PERFORMANCE.md).
 
 ## Runtime and verified candidate
 

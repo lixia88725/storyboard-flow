@@ -12,7 +12,8 @@ and evidence belong in [context-handoff.md](context-handoff.md).
   evidence (see current handoff). Remaining: real Photoshop identity/roundtrip checks,
   representative large-project resource measurements, and a separately designed automatic
   observation schedule. External rename/relink/new-file discovery remain separate work.
-- Implement explicit Markdown export only for the new frontend. No import or external
+- Explicit Markdown export from a saved checkpoint is available through the trial CLI.
+  Decide its UI placement after studio feedback. No import or external
   Markdown autosync; any future AI editing interface needs its own design.
 
 ## Remaining interaction and rollout gates
@@ -25,7 +26,9 @@ and evidence belong in [context-handoff.md](context-handoff.md).
   remaining presentation/tool controls; refine dock/resize/keyboard/pen interactions and
   layout persistence. Keep the `--workbench` route isolated until acceptance. The classic
   Workspace shortcut currently resets to classic on project switch; polish that if retained.
-- Develop representative large-raster/decoded-memory benchmarks and thumbnail/cache policy.
+- Profile the main checkpoint call and input during autosave first. The 1,000-board
+  2K sample measured 8.1s in that call after one stroke, versus 143ms with six boards.
+  See docs/refactor/STUDIO-PERFORMANCE.md. Continue decoded-memory/thumbnail profiling.
   The 1,000-shot 640×360 fixture passes bounded loading/interaction checks (~3.4s opening),
   but all lightweight card DOM remains and the 96-entry URL cache is not a byte budget.
 - Follow up the intermittent opacity GUI failure during group re-selection after panel
