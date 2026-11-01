@@ -8,7 +8,7 @@ export type FolderStatusRequest = { project: ProjectV1; inspectDisk: boolean };
 export type FlowEditorBridge = {
   read(sessionId: string, id: string): ReturnType<FlowAssetDepot['read']>;
   put(sessionId: string, input: Parameters<FlowAssetDepot['put']>[0]): ReturnType<FlowAssetDepot['put']>;
-  switchProject(sessionId: string, project: ProjectV1): Promise<FlowEditorBootstrap | null>;
+  switchProject(sessionId: string, project: ProjectV1, mode?: 'photoshop-copy'): Promise<FlowEditorBootstrap | null>;
   open(): Promise<{ project: ProjectV1; sessionId: string }>;
   refresh(sessionId:string,project:ProjectV1):Promise<FlowResult<ProjectV1>>;
   folderStatus(sessionId: string, request: FolderStatusRequest): Promise<FolderStatus>;

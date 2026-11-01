@@ -9,7 +9,7 @@ and evidence belong in [context-handoff.md](context-handoff.md).
   originals and allows a verified retry. Native Trash restore by a human on Windows/macOS
   remains a platform check; preserve unresolved evidence if the original cannot be found.
 - External TIFF manual Refresh is connected and has checkpoint/Undo/conflict/retry
-  evidence (see current handoff). Photoshop 2026 writes unsupported image resources (tag 34377) even for simple raster layers; see STUDIO-PERFORMANCE.md. Remaining: agree original-preservation policy and implement/test that interchange,
+  evidence (see current handoff). Photoshop 2026 writes unsupported image resources (tag 34377) even for simple raster layers; see STUDIO-PERFORMANCE.md. The approved first step preserves the Photoshop original and publishes a separately named Flow working TIFF. The workbench creates an independent composite-plus-ink project from a selected single-page 8-bit RGB TIFF. Its editable output was reopened in Photoshop 2026. Tracking subsequent changes to the original PS document remains future work. Remaining work also includes
   representative large-project resource measurements, and a separately designed automatic
   observation schedule. External rename/relink/new-file discovery remain separate work.
 - Explicit Markdown export from a saved checkpoint is available through the trial CLI.

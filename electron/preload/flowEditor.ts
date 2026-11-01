@@ -13,7 +13,7 @@ const api: FlowEditorBridge = {
     ipcRenderer.on('flow-editor:close', handler);
     return () => { ipcRenderer.removeListener('flow-editor:close', handler); };
   },
-  switchProject: (sessionId, project) => ipcRenderer.invoke('flow-editor:switch-project', sessionId, project),
+  switchProject: (sessionId, project, mode) => ipcRenderer.invoke('flow-editor:switch-project', sessionId, project, mode),
   finishClose: (sessionId, id, project) => ipcRenderer.invoke('flow-editor:finish-close', sessionId, id, project)
 };
 contextBridge.exposeInMainWorld('flowEditor', api);

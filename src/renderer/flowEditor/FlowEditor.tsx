@@ -42,7 +42,7 @@ function bindEditor(sessionId: string) {
     saveTiff: (project: FlowEditorBootstrap['project']) => api.saveTiff(sessionId, project)
   };
 }
-type EditorOwner = { flow: FlowSession; sessionId: string; api: ReturnType<typeof bindEditor> };
+type EditorOwner = { startInWorkbench: boolean; flow: FlowSession; sessionId: string; api: ReturnType<typeof bindEditor> };
 export function FlowEditor() {
   const [owner, setOwner] = useState<EditorOwner>();
   const current = useRef<EditorOwner | undefined>(undefined);
@@ -55,21 +55,21 @@ export function FlowEditor() {
   const assertSettledGesture = () => {
     if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) throw Error('Finish the current stroke first');
   };
-  const install = ({ project, sessionId }: FlowEditorBootstrap) => {
+  const install = ({ project, sessionId }: FlowEditorBootstrap, startInWorkbench = window.location.hash === '#flow-workbench') => {
     const api = bindEditor(sessionId);
     const flow = required(createFlowSession({ project, sessionId, incarnation: crypto.randomUUID(),
       maxHistoryEntries: 60, maxPendingRequests: 32, assets: api,
       pixels: createFlowPixels({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxPoints: 100_000 }),
       tools: createPixelTools({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxLayers: 64 }),
       checkpoint: api.checkpoint, refresh: api.refresh, clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number) } }));
-    const next = { flow, api, sessionId };
+    const next = { flow, api, sessionId, startInWorkbench };
     current.current = next; setOwner(next); setIssue('');
     void flow.request({ kind: 'checkpoint' }).then(result => { if (current.current === next && !result.ok) setIssue(result.error.message); });
   };
   const resume = async (owner: EditorOwner) => {
     if (owner.flow.snapshot().phase === 'frozen') required(await owner.flow.request({ kind: 'resume' }));
   };
-  const openProject = () => {
+  const openProject = (mode?: 'photoshop-copy') => {
     if (switchWork.current || closing.current || !current.current) return;
     const previous = current.current;
     setSwitching(true);
@@ -79,8 +79,8 @@ export function FlowEditor() {
         while (outputWork.current) await outputWork.current;
         assertSettledGesture();
         const frozen = required(await previous.flow.request({ kind: 'freeze' }));
-        const next = await window.flowEditor!.switchProject(previous.sessionId, frozen.snapshot.project);
-        if (next) install(next); else { await resume(previous); setIssue(''); }
+        const next = await window.flowEditor!.switchProject(previous.sessionId, frozen.snapshot.project, mode);
+        if (next) install(next, mode === 'photoshop-copy' || previous.startInWorkbench); else { await resume(previous); setIssue(''); }
       } catch (error) {
         if (current.current === previous) await resume(previous);
         setIssue(String(error));
@@ -118,14 +118,14 @@ export function FlowEditor() {
     })(); });
     return () => { cancelled = true; off(); window.removeEventListener('beforeunload', beforeUnload); };
   }, []);
-  return owner ? <Editor key={owner.sessionId} flow={owner.flow} api={owner.api} openProject={openProject} switching={switching}
+  return owner ? <Editor key={owner.sessionId} startInWorkbench={owner.startInWorkbench} flow={owner.flow} api={owner.api} openProject={openProject} switching={switching}
     issue={issue} setIssue={s => { if (current.current === owner) setIssue(s); }} gestures={gestures} outputWork={outputWork} /> : <main><p role="status">{issue || 'Opening project…'}</p></main>;
 }
-function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, outputWork }: {
-  api: ReturnType<typeof bindEditor>; openProject: () => void; switching: boolean;
+function Editor({ startInWorkbench, flow, api, openProject, switching, issue, setIssue, gestures, outputWork }: {
+  startInWorkbench: boolean; api: ReturnType<typeof bindEditor>; openProject: (mode?: 'photoshop-copy') => void; switching: boolean;
   outputWork: { current: Promise<void> | undefined }; flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number }
 }) {
-  const [workbench,setWorkbench]=useState(window.location.hash==='#flow-workbench');
+  const [workbench,setWorkbench]=useState(startInWorkbench);
   const [demand,setDemand]=useState<string[]>([]);
   const demandRef=useRef(demand);demandRef.current=demand;
   const requestAssets=useCallback((ids:string[])=>setDemand(old=>JSON.stringify(old)===JSON.stringify(ids)?old:ids),[]);
@@ -366,7 +366,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
       renderCanvas={(shot,previous,next)=><SketchPad key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0} eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false}
         onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
         onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
-      actions={<><button disabled={!active} onClick={openProject}>打开项目</button><button disabled={!active} onClick={()=>setNamingOpen(true)}>命名</button><button disabled={!active||savingTiff} className="wb-save" onClick={()=>{void saveTiff().catch(()=>{});}}>{savingTiff?'保存中…':'保存 TIFF'}</button><button disabled={!active} onClick={refreshImages}>刷新外部图片</button></>}
+      actions={<><button disabled={!active} onClick={()=>openProject()}>打开项目</button><button disabled={!active} title="将 TIFF 的合成画面作为底图，在原件旁新建独立的 Flow 项目" onClick={()=>openProject('photoshop-copy')}>从 TIFF 创建工作副本</button><button disabled={!active} onClick={()=>setNamingOpen(true)}>命名</button><button disabled={!active||savingTiff} className="wb-save" onClick={()=>{void saveTiff().catch(()=>{});}}>{savingTiff?'保存中…':'保存 TIFF'}</button><button disabled={!active} onClick={refreshImages}>刷新外部图片</button></>}
       toolbar={<><div className="wb-tool-group">{(['brush','eraser','select','blur'] as const).map((t,i)=><button key={t} disabled={!active} aria-pressed={tool===t} onClick={()=>{if(canInspect())setTool(t);}}>{['画笔','橡皮','选区','模糊'][i]}</button>)}</div>
         <input aria-label="画笔颜色" type="color" value={color} onChange={e=>setColor(e.target.value)}/><label>笔径 <input aria-label="画笔大小" type="range" min="1" max="100" value={size} onChange={e=>setSize(Number(e.target.value))}/><span>{size}</span></label>
         {tool==='blur'&&<><input aria-label="模糊半径" type="range" min="1" max="50" value={blurRadius} onChange={e=>setBlurRadius(Number(e.target.value))}/><button disabled={!active} onClick={applyBlur}>应用模糊</button></>}
@@ -383,7 +383,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <main className="flow-editor" data-flow-editor="true" data-revision={snapshot.project.revision} data-phase={snapshot.phase}>
       <header className="topbar"><button onClick={()=>{if(canInspect())setWorkbench(true);}}>Workspace</button><strong>Storyboard Flow</strong><span>{snapshot.project.name}</span>
-        <button disabled={switching} onClick={openProject}>{switching ? 'Opening…' : 'Open project'}</button>
+        <button disabled={switching} onClick={()=>openProject()}>{switching ? 'Opening…' : 'Open project'}</button>
         <button disabled={!active} onClick={() => setNamingOpen(value => !value)}>Naming</button>
         <label>Matte <select aria-label="Matte mode" disabled={!active||!!snapshot.pending} value={snapshot.project.presentation?.mode??'off'} onChange={e=>{
           if(captureMountedCanvasCheckpoints().hasUnsettledGesture||outputWork.current||gestures.current){setIssue('Finish the current edit first');return;}
