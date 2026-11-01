@@ -26,7 +26,8 @@ and evidence belong in [context-handoff.md](context-handoff.md).
   remaining presentation/tool controls; refine dock/resize/keyboard/pen interactions and
   layout persistence. Keep the `--workbench` route isolated until acceptance. The classic
   Workspace shortcut currently resets to classic on project switch; polish that if retained.
-- Profile the main checkpoint call and input during autosave first. The 1,000-board
+- Fix rapid strokes refused during autosave. A 100-ms follow-up stroke was absent after
+  reopen, and repeated navigation succeeded only after 8.87s in the measured run. The 1,000-board
   2K sample measured 8.1s in that call after one stroke, versus 143ms with six boards.
   See docs/refactor/STUDIO-PERFORMANCE.md. Continue decoded-memory/thumbnail profiling.
   The 1,000-shot 640×360 fixture passes bounded loading/interaction checks (~3.4s opening),
