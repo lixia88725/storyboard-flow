@@ -1,0 +1,27 @@
+/* Local styles for the reusable dialogue blocks. The host owns page layout; this file
+   only describes the block list itself, so it can sit inside a card, a letterbox bar or a
+   side column without dragging global layout rules along. */
+
+.flow-dialogue-blocks { display: flex; flex-direction: column; gap: 2px; color: #e2e5e7; font: 12px "PingFang SC", sans-serif; }
+.flow-dialogue-blocks.is-compact { font-size: 11px; gap: 1px; }
+
+.flow-dialogue-block { position: relative; display: flex; align-items: flex-start; gap: 4px; border-radius: 3px; }
+/* The insertion line only exists while a drag is over this board. */
+.flow-dialogue-block.is-drop-before::before,
+.flow-dialogue-block.is-drop-after::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; background: #e98249; }
+.flow-dialogue-block.is-drop-before::before { top: -1px; }
+.flow-dialogue-block.is-drop-after::after { bottom: -1px; }
+/* An empty zone is the only drop feedback a blank board can show. */
+.flow-dialogue-blocks.is-drop-empty { outline: 2px dashed #e98249; outline-offset: -2px; }
+
+.flow-dialogue-handle { flex: 0 0 auto; width: 12px; margin-top: 6px; align-self: stretch; min-height: 18px; padding: 0; border: 0; border-radius: 2px; background: #4a525a; cursor: grab; opacity: .55; }
+.flow-dialogue-handle:hover { opacity: .9; }
+.flow-dialogue-handle:active { cursor: grabbing; }
+.flow-dialogue-handle:disabled { cursor: default; opacity: .25; }
+
+.flow-dialogue-text { flex: 1 1 auto; min-width: 0; box-sizing: border-box; resize: none; overflow: hidden; padding: 6px 8px; border: 1px solid #41494f; border-radius: 3px; background: #1b1f22; color: #e2e5e7; font: inherit; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.flow-dialogue-text:focus { border-color: #6d7a84; outline: none; }
+.flow-dialogue-text::placeholder { color: #6b767f; }
+.flow-dialogue-block.is-blank .flow-dialogue-text { border-style: dashed; }
+.flow-dialogue-blocks.is-compact .flow-dialogue-text { padding: 3px 6px; }
+.flow-dialogue-blocks.is-disabled { opacity: .7; }
