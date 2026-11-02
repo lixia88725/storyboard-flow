@@ -19,6 +19,7 @@ import { JapaneseStoryboardView } from '../JapaneseStoryboardView';
 import { shotDialogueText } from '../editableDialogueText';
 import { SketchPad } from '../SketchPad';
 import { LayerPanel } from '../LayerPanel';
+import { WorkspaceToolRail } from './workspace/WorkspaceToolRail';
 import { FlowNaming } from './FlowNaming';
 import { FlowPending, pendingDropId } from './FlowPending';
 import { captureMountedCanvasCheckpoints } from '../mountedCanvasRecoveryCapture';
@@ -371,11 +372,12 @@ function Editor({ startInWorkbench, flow, api, openProject, switching, issue, se
         onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
         onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
       actions={<><button disabled={!active} onClick={()=>openProject()}>打开项目</button><button disabled={!active} title="将 TIFF 的合成画面作为底图，在原件旁新建独立的 Flow 项目" onClick={()=>openProject('photoshop-copy')}>从 TIFF 创建工作副本</button><button disabled={!active} onClick={()=>setNamingOpen(true)}>命名</button><button disabled={!active||savingTiff} className="wb-save" onClick={()=>{void saveTiff().catch(()=>{});}}>{savingTiff?'保存中…':'保存 TIFF'}</button><button disabled={!active} onClick={refreshImages}>刷新外部图片</button></>}
-      toolbar={<><div className="wb-tool-group">{(['brush','eraser','select','blur'] as const).map((t,i)=><button key={t} disabled={!active} aria-pressed={tool===t} onClick={()=>{if(canInspect())setTool(t);}}>{['画笔','橡皮','选区','模糊'][i]}</button>)}</div>
-        <input aria-label="画笔颜色" type="color" value={color} onChange={e=>setColor(e.target.value)}/><label>笔径 <input aria-label="画笔大小" type="range" min="1" max="100" value={size} onChange={e=>setSize(Number(e.target.value))}/><span>{size}</span></label>
-        {tool==='blur'&&<><input aria-label="模糊半径" type="range" min="1" max="50" value={blurRadius} onChange={e=>setBlurRadius(Number(e.target.value))}/><button disabled={!active} onClick={applyBlur}>应用模糊</button></>}
-        <button disabled={!active} onClick={()=>act({kind:'undo'})}>撤销</button><button disabled={!active} onClick={()=>act({kind:'redo'})}>重做</button><span className="wb-toolbar-spacer"/>
-        <button disabled={!active} onClick={newShot}>＋ 新建板</button><button disabled={!active||!selectedIds.length} onClick={()=>moveShots(selectedIds,'pending')}>移入 Pending</button><button disabled={!active||!selectedIds.length} onClick={()=>act({kind:'board',command:{kind:'removeShots',shotIds:selectedIds}})}>删除</button></>}/>
+      toolbar={null}
+      toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canInspect()} onToolChange={setTool}
+        color={color} onColorChange={setColor} size={size} onSizeChange={setSize}
+        blurRadius={blurRadius} onBlurRadiusChange={setBlurRadius} onApplyBlur={applyBlur}
+        footer={<><button disabled={!active} onClick={()=>act({kind:'undo'})}>撤销</button><button disabled={!active} onClick={()=>act({kind:'redo'})}>重做</button></>}/>}
+      boardActions={<><button disabled={!active} onClick={newShot}>＋ 新建板</button><button disabled={!active||!selectedIds.length} onClick={()=>moveShots(selectedIds,'pending')}>移入 Pending</button><button disabled={!active||!selectedIds.length} onClick={()=>act({kind:'board',command:{kind:'removeShots',shotIds:selectedIds}})}>删除{selectedIds.length>1?` (${selectedIds.length})`:''}</button></>}/>
     {folderStatus.recovery && <aside className="wb-recovery" aria-label="文件恢复">
       <strong>上次保存中断 · {folderStatus.recovery.name}</strong>
       {folderStatus.recovery.state === 'restore' && <p>Flow 无法确认这张故事板是否已移入废纸篓。请在系统废纸篓中找到原文件，选择“放回”或“还原”。还原位置是项目内的 <code>{folderStatus.recovery.directory}</code>。切回 Flow 后会重新检查。若找不到原文件，请保留整个项目文件夹以便恢复。</p>}

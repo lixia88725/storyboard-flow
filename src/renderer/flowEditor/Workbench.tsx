@@ -8,31 +8,12 @@ import {ShotStaticMedia} from '../ShotStaticMedia';
 import {CanvasPresentationContext,PresentationPreview} from '../canvasPresentation';
 import {FlowPending,pendingDropId} from './FlowPending';
 import {draggedShots} from './boardSelection';
+import {defaultWorkspaceLayout, panelLabels as labels, readWorkspaceLayout, writeWorkspaceLayout, type WorkspacePanel as Panel} from './workspace/layoutPreferences';
 import './workbench.css';
 
-type Panel='board'|'canvas'|'info'|'layers'|'pending';
-const labels:Record<Panel,string>={board:'故事板',canvas:'画布',info:'动作与对白',layers:'图层',pending:'Pending'};
-const initial:Panel[][]=[['board','pending'],['canvas','info','layers']];
-const layoutKey = 'flow.workbench.layout.v1';
-const defaults = {layout: initial, hidden: [] as Panel[], split: 48, tile: 220, zoom: 100, japanese: false, heights: {} as Partial<Record<Panel, number>>};
-function readLayout(): typeof defaults {
-  try {
-    const value = JSON.parse(localStorage.getItem(layoutKey) || 'null');
-    const panels = Object.keys(labels);
-    if (!Array.isArray(value?.layout) || value.layout.length !== 2 || !value.layout.every(Array.isArray) ||
-        value.layout.flat().sort().join() !== panels.sort().join() ||
-        !Array.isArray(value.hidden) || !value.hidden.every((id: string) => panels.includes(id)) ||
-        !Number.isFinite(value.split) || value.split < 25 || value.split > 75 ||
-        !Number.isFinite(value.tile) || value.tile < 150 || value.tile > 460 ||
-        ![50,75,100,150,200].includes(value.zoom) || typeof value.japanese !== 'boolean') return defaults;
-    const heights = Object.fromEntries(Object.entries(value.heights ?? {}).filter(([id, height]) =>
-      panels.includes(id) && typeof height === 'number' && Number.isFinite(height) && height >= 100 && height <= 10000));
-    return {...value, heights};
-  } catch { return defaults; }
-}
 export type WorkbenchProps={
  name:string;shots:Shot[];parked:Shot[];selected:string[];revision:number;disabled:boolean;status:string;
- toolbar:ReactNode;actions:ReactNode;
+ toolbar:ReactNode;actions:ReactNode;toolRail:ReactNode;boardActions:ReactNode;
  select:(id:string,event:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;
  focus:(id:string)=>void;canNavigate:()=>boolean;canStartCanvasEdit:()=>boolean;canContinueBrush:(shot:Shot)=>boolean;demand:(ids:string[])=>void;
  move:(ids:string[],destination:'active'|'pending',before?:string)=>void;
@@ -40,14 +21,14 @@ export type WorkbenchProps={
  renderLayers:(shot:Shot)=>ReactNode;renderInfo:(shot:Shot)=>ReactNode;
 };
 export function Workbench(p:WorkbenchProps){
- const [saved]=useState(readLayout);
+ const [saved]=useState(readWorkspaceLayout);
  const [heights,setHeights]=useState(saved.heights);
  const [japanese,setJapanese]=useState(saved.japanese);
  const [layout,setLayout]=useState(saved.layout),[hidden,setHidden]=useState(saved.hidden);
  const [split,setSplit]=useState(saved.split),[tile,setTile]=useState(saved.tile),[zoom,setZoom]=useState(saved.zoom),[onion,setOnion]=useState(false);
  useEffect(()=>{
    const timer=window.setTimeout(()=>{
-     try { localStorage.setItem(layoutKey,JSON.stringify({layout,hidden,split,tile,zoom,japanese,heights})); } catch { /* Layout stays usable without profile storage. */ }
+     writeWorkspaceLayout({layout,hidden,split,tile,zoom,japanese,heights});
    },100);
    return ()=>window.clearTimeout(timer);
  },[layout,hidden,split,tile,zoom,japanese,heights]);
@@ -85,7 +66,7 @@ export function Workbench(p:WorkbenchProps){
   </div>;
  };
  const content=(panel:Panel):ReactNode=>{
-  if(panel==='board')return <><div className="wb-panel-tools"><button aria-pressed={japanese} onClick={()=>{if(p.canNavigate())setJapanese(!japanese);}}>日式分镜</button><span>{p.shots.length} 张 · {p.selected.length} 已选</span><label>缩略图 <input aria-label="缩略图大小" type="range" min="150" max="460" value={tile} onChange={e=>{if(p.canNavigate())setTile(Number(e.target.value));}}/></label></div>
+  if(panel==='board')return <><div className="wb-panel-tools wb-board-tools"><button aria-pressed={japanese} onClick={()=>{if(p.canNavigate())setJapanese(!japanese);}}>日式分镜</button><span>{p.shots.length} 张 · {p.selected.length} 已选</span><label>缩略图 <input aria-label="缩略图大小" type="range" min="150" max="460" value={tile} onChange={e=>{if(p.canNavigate())setTile(Number(e.target.value));}}/></label><div className="wb-board-actions">{p.boardActions}</div></div>
    <SortableContext items={p.shots.map(s=>s.id)} strategy={rectSortingStrategy}><div className={japanese ? "wb-grid wb-japanese" : "wb-grid"} style={{'--tile':tile+'px'} as CSSProperties}>
     {p.shots.map((shot,i)=><BoardCard key={shot.id} shot={shot} index={i} selected={p.selected.includes(shot.id)} disabled={p.disabled} onSelect={e=>{if(p.canNavigate())p.select(shot.id,e);}}
      rowInfo={japanese ? p.renderInfo : undefined} visible={reportVisible} activate={()=>{if(p.canStartCanvasEdit())flushSync(()=>setHovered(shot.id));}}>
@@ -100,8 +81,10 @@ export function Workbench(p:WorkbenchProps){
  };
  const movePanel=(e:React.DragEvent,column:number,before?:Panel)=>{const id=e.dataTransfer.getData('application/x-flow-panel') as Panel;if(!labels[id]||!p.canNavigate())return;e.preventDefault();e.stopPropagation();setLayout(old=>{const next=old.map(col=>col.filter(v=>v!==id));const at=before?next[column].indexOf(before):-1;next[column].splice(at<0?next[column].length:at,0,id);return next;});};
  return <main ref={root} className="flow-workbench" data-flow-editor="true" data-workbench="true" data-revision={p.revision}>
-  <header className="wb-header"><div className="wb-brand">Storyboard <b>Flow</b><span>{p.name}</span></div><nav>{p.actions}<details><summary>面板</summary><div className="wb-menu">{(Object.keys(labels) as Panel[]).map(id=><label key={id}><input type="checkbox" checked={!hidden.includes(id)} onChange={()=>{if(p.canNavigate())setHidden(h=>h.includes(id)?h.filter(v=>v!==id):[...h,id]);}}/>{labels[id]}</label>)}<button onClick={()=>{if(p.canNavigate()){setLayout(initial);setHidden([]);setHeights({});setJapanese(false);setSplit(48);setZoom(100);setTile(220);}}}>恢复默认布局</button></div></details></nav></header>
+  <header className="wb-header"><div className="wb-brand">Storyboard <b>Flow</b><span>{p.name}</span></div><nav>{p.actions}<details><summary>面板</summary><div className="wb-menu">{(Object.keys(labels) as Panel[]).map(id=><label key={id}><input type="checkbox" checked={!hidden.includes(id)} onChange={()=>{if(p.canNavigate())setHidden(h=>h.includes(id)?h.filter(v=>v!==id):[...h,id]);}}/>{labels[id]}</label>)}<button onClick={()=>{if(p.canNavigate()){const defaults=defaultWorkspaceLayout();setLayout(defaults.layout);setHidden(defaults.hidden);setHeights(defaults.heights);setJapanese(defaults.japanese);setSplit(defaults.split);setZoom(defaults.zoom);setTile(defaults.tile);}}}>恢复默认布局</button></div></details></nav></header>
   <div className="wb-toolbar">{p.toolbar}</div>
+  <div className="wb-main-row">{p.toolRail}<div className="wb-work-area">
+  {hidden.length>0&&<div className="wb-restore-strip" aria-label="已隐藏的面板">{hidden.map(id=><button key={id} type="button" disabled={!p.canNavigate()} onClick={()=>setHidden(h=>h.filter(v=>v!==id))}>显示{labels[id]}</button>)}</div>}
   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({active,over})=>{if(!over||!p.canNavigate())return;const id=String(active.id),target=String(over.id),pending=p.parked.some(s=>s.id===id),ids=pending?[id]:draggedShots(p.shots.map(s=>s.id),p.selected,id);if(ids.includes(target))return;if(target===pendingDropId||p.parked.some(s=>s.id===target))p.move(ids,'pending',target===pendingDropId?undefined:target);else if(p.shots.some(s=>s.id===target))p.move(ids,'active',target);}}>
    <div className="wb-dock" style={{gridTemplateColumns:`minmax(240px, ${split}fr) 7px minmax(260px, ${100-split}fr)`}}>
     {layout.map((panels,col)=><div key={col} className="wb-column" style={{gridColumn:col?3:1}} onDragOver={e=>{if(e.dataTransfer.types.includes('application/x-flow-panel'))e.preventDefault();}} onDrop={e=>movePanel(e,col)}>
@@ -116,6 +99,7 @@ export function Workbench(p:WorkbenchProps){
     <div className="wb-divider" role="separator" aria-label="面板分隔" aria-orientation="vertical" tabIndex={0} onKeyDown={e=>{if(p.canNavigate()&&['ArrowLeft','ArrowRight'].includes(e.key)){e.stopPropagation();e.preventDefault();setSplit(v=>Math.max(25,Math.min(75,v+(e.key==='ArrowRight'?2:-2))));}}} onPointerDown={e=>{if(!p.canNavigate())return;e.currentTarget.setPointerCapture(e.pointerId);}} onPointerMove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId)){const r=e.currentTarget.parentElement!.getBoundingClientRect();setSplit(Math.max(25,Math.min(75,(e.clientX-r.left)/r.width*100)));}}}/>
    </div>
   </DndContext>
+  </div></div>
   <footer className="wb-status"><span role="status">{p.status}</span><span>画布落笔 · 顶部排序 · ← → 翻板</span></footer>
  </main>;
 }
