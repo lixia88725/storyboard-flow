@@ -41,7 +41,7 @@ export function WorkspaceToolRail(p: Props) {
       </>}
       {p.tool==='blur' && <><label>半径 <output>{p.blurRadius}</output><input aria-label="模糊半径" type="range" min="1" max="50"
         value={p.blurRadius} disabled={p.disabled} onChange={e=>p.onBlurRadiusChange(Number(e.target.value))}/></label>
-        <button type="button" className="wb-apply-blur" disabled={p.disabled} onClick={p.onApplyBlur}>应用模糊</button></>}
+        <button type="button" className="wb-apply-blur" title="对当前图层或选区应用模糊" disabled={p.disabled} onClick={p.onApplyBlur}>应用模糊</button></>}
     </div>
     {p.footer && <div className="wb-tool-rail-footer">{p.footer}</div>}
   </aside>;

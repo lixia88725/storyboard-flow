@@ -38,3 +38,15 @@
 .wb-japanese .wb-card-handle { grid-column:1/-1; }
 .wb-japanese .wb-info { grid-template-columns:1fr; padding:5px; }
 .wb-japanese .wb-info textarea { min-height:2.4em; }
+
+.wb-board-dialogue { position:absolute; bottom:0; left:0; right:0; z-index:40; }
+.flow-workbench .wb-board-dialogue>button { width:100%; height:100%; padding:0; border:0; border-radius:0; background:transparent; cursor:text; }
+.flow-workbench .wb-board-dialogue>textarea { display:block; width:100%; height:100%; min-height:0; margin:0; padding:2px 3.75%; resize:none; border:1px solid var(--wb-accent); border-radius:0; background:#000; color:#fff; font:inherit; }
+
+.flow-workbench .wb-info .flow-dialogue-blocks { min-width:0; }
+.flow-workbench .flow-dialogue-blocks textarea { margin:0; min-height:0; resize:none; }
+.wb-board-dialogue:has(.flow-dialogue-blocks) { background:#000; overflow:auto; }
+.wb-board-dialogue .flow-dialogue-blocks { min-height:100%; }
+.flow-workbench .wb-board-dialogue .flow-dialogue-text { background:#000; color:#fff; padding:2px 4px; border-color:transparent; }
+.flow-workbench .wb-board-dialogue .flow-dialogue-text:focus { border-color:var(--wb-accent); }
+.flow-workbench .flow-dialogue-handle { padding:0; width:12px; background:#4a525a; }

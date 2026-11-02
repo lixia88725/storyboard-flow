@@ -9,10 +9,12 @@ import {CanvasPresentationContext,PresentationPreview} from '../canvasPresentati
 import {FlowPending,pendingDropId} from './FlowPending';
 import {draggedShots} from './boardSelection';
 import {defaultWorkspaceLayout, panelLabels as labels, readWorkspaceLayout, writeWorkspaceLayout, type WorkspacePanel as Panel} from './workspace/layoutPreferences';
+import {BoardDialogue} from './workspace/BoardDialogue';
 import './workbench.css';
 
 export type WorkbenchProps={
  name:string;shots:Shot[];parked:Shot[];selected:string[];revision:number;disabled:boolean;status:string;
+ renderDialogue:(id:string,compact?:boolean)=>ReactNode;
  toolbar:ReactNode;actions:ReactNode;toolRail:ReactNode;boardActions:ReactNode;
  select:(id:string,event:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;
  focus:(id:string)=>void;canNavigate:()=>boolean;canStartCanvasEdit:()=>boolean;canContinueBrush:(shot:Shot)=>boolean;demand:(ids:string[])=>void;
@@ -21,6 +23,7 @@ export type WorkbenchProps={
  renderLayers:(shot:Shot)=>ReactNode;renderInfo:(shot:Shot)=>ReactNode;
 };
 export function Workbench(p:WorkbenchProps){
+ const [dialogueEditing,setDialogueEditing]=useState<string>();
  const [saved]=useState(readWorkspaceLayout);
  const [heights,setHeights]=useState(saved.heights);
  const [japanese,setJapanese]=useState(saved.japanese);
@@ -57,11 +60,16 @@ export function Workbench(p:WorkbenchProps){
  const surface=(shot:Shot,where:string,editable:boolean)=>{
   const key=where+':'+shot.id,other=live?.id===shot.id&&live.surface!==key;
   return <div className="wb-surface" data-surface={key} onPointerDownCapture={e=>{
+   if(e.target instanceof Element&&e.target.closest('[data-board-dialogue]'))return;
    if(!p.disabled && editable && live?.surface===key && e.isPrimary && e.button===0 && p.canContinueBrush(shot))return;
    if(p.disabled || !(editable ? p.canStartCanvasEdit() : p.canNavigate())){e.preventDefault();e.stopPropagation();return;}
    flushSync(()=>{p.focus(shot.id);setLive({id:shot.id,surface:key,node:e.currentTarget});});
   }} onPointerUpCapture={settle} onPointerCancelCapture={settle}>
    <div style={{visibility:other?'hidden':undefined}}>{editable?p.renderCanvas(shot,where==='viewer'&&onion?p.shots[index-1]:undefined,where==='viewer'&&onion?p.shots[index+1]:undefined):<PresentationPreview shotId={shot.id} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}><ShotStaticMedia shot={shot} folderPath="flow" revision={p.revision}/></PresentationPreview>}</div>
+   {where==='grid'&&<BoardDialogue shotId={shot.id} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}
+     editing={dialogueEditing===shot.id} disabled={p.disabled} editor={dialogueEditing===shot.id?p.renderDialogue(shot.id,true):null}
+     begin={()=>{if(p.disabled||!p.canNavigate())return false;p.focus(shot.id);setDialogueEditing(shot.id);return true;}}
+     end={()=>setDialogueEditing(id=>id===shot.id?undefined:id)}/>}
    {other&&<LiveMirror source={live.node} shot={shot}/>}
   </div>;
  };
@@ -93,7 +101,7 @@ export function Workbench(p:WorkbenchProps){
          const height=parseFloat(e.currentTarget.style.height);
          if(Number.isFinite(height) && height>=100 && height!==heights[id])setHeights(old=>({...old,[id]:height}));
        }} onDragOver={e=>{if(e.dataTransfer.types.includes('application/x-flow-panel'))e.preventDefault();}} onDrop={e=>movePanel(e,col,id)}>
-      <header draggable onDragStart={e=>{if(!p.canNavigate()){e.preventDefault();return;}e.dataTransfer.setData('application/x-flow-panel',id);}}><span>⠿ {labels[id]}</span><button aria-label={'隐藏'+labels[id]} onClick={()=>{if(p.canNavigate())setHidden(h=>[...h,id]);}}>×</button></header><div className="wb-panel-body">{content(id)}</div>
+      <header draggable onDragStart={e=>{if(!p.canNavigate()){e.preventDefault();return;}e.dataTransfer.setData('application/x-flow-panel',id);}}><span>⠿ {labels[id]}</span><button aria-label={'隐藏'+labels[id]} title={'隐藏'+labels[id]+'，可从上方恢复'} onClick={()=>{if(p.canNavigate())setHidden(h=>[...h,id]);}}>×</button></header><div className="wb-panel-body">{content(id)}</div>
      </section>)}
     </div>)}
     <div className="wb-divider" role="separator" aria-label="面板分隔" aria-orientation="vertical" tabIndex={0} onKeyDown={e=>{if(p.canNavigate()&&['ArrowLeft','ArrowRight'].includes(e.key)){e.stopPropagation();e.preventDefault();setSplit(v=>Math.max(25,Math.min(75,v+(e.key==='ArrowRight'?2:-2))));}}} onPointerDown={e=>{if(!p.canNavigate())return;e.currentTarget.setPointerCapture(e.pointerId);}} onPointerMove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId)){const r=e.currentTarget.parentElement!.getBoundingClientRect();setSplit(Math.max(25,Math.min(75,(e.clientX-r.left)/r.width*100)));}}}/>

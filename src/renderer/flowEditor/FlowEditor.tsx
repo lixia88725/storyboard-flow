@@ -19,6 +19,7 @@ import { JapaneseStoryboardView } from '../JapaneseStoryboardView';
 import { shotDialogueText } from '../editableDialogueText';
 import { SketchPad } from '../SketchPad';
 import { LayerPanel } from '../LayerPanel';
+import {DialogueBlocks} from './dialogueBlocks';
 import { WorkspaceToolRail } from './workspace/WorkspaceToolRail';
 import { FlowNaming } from './FlowNaming';
 import { FlowPending, pendingDropId } from './FlowPending';
@@ -315,6 +316,10 @@ function Editor({ startInWorkbench, flow, api, openProject, switching, issue, se
   };
   const dialogueTransfers = (shotId: string) => <DialogueTransfers shotId={shotId} dialogues={snapshot.project.dialogues} disabled={!active}
     onMove={(id, targetShotId, beforeId) => act({ kind: 'board', command: { kind: 'moveDialogues', dialogueIds: [id], targetShotId, ...(beforeId ? { beforeId } : {}) } })} />;
+  const renderDialogue = (shotId: string, compact = false) => <DialogueBlocks shotId={shotId}
+    dialogues={snapshot.project.dialogues} disabled={!active} variant={compact?'compact':'full'} autoFocus={compact}
+    onSelect={()=>{if(selectedIds.length!==1||selectedIds[0]!==shotId)focusShot(shotId);}}
+    onCommit={command=>act({kind:'board',command})} ariaLabel={`故事板对白 ${shotId}`}/>;
   const moveShots = (shotIds: string[], destination: 'active' | 'pending', beforeId?: string) => {
     if (!active || gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) {
       setIssue('Finish the current stroke before moving shots'); return;
@@ -367,11 +372,12 @@ function Editor({ startInWorkbench, flow, api, openProject, switching, issue, se
       select={selectShot} focus={focusShot} canNavigate={canInspect} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>brushAvailable() &&
         brushQueue.current.size>0 && !otherRequests.current &&
         [...brushQueue.current.values()].every(key=>key===JSON.stringify([shot.id,shot.activeLayerId]))} demand={requestAssets} move={moveShots} renderLayers={renderLayers}
-      renderInfo={shot=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText} disabled={!active} onChange={e=>script(shot.id,e.target.value)}/></label><label>对白<textarea aria-label={'对白 '+shot.id} value={shotDialogueText(view,shot.id)} disabled={!active} onChange={e=>dialogue(shot.id,e.target.value)}/></label>{dialogueTransfers(shot.id)}</div>}
+      renderInfo={shot=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText} disabled={!active} onChange={e=>script(shot.id,e.target.value)}/></label>{renderDialogue(shot.id)}</div>}
       renderCanvas={(shot,previous,next)=><SketchPad key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0} eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false}
         onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
         onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
       actions={<><button disabled={!active} onClick={()=>openProject()}>打开项目</button><button disabled={!active} title="将 TIFF 的合成画面作为底图，在原件旁新建独立的 Flow 项目" onClick={()=>openProject('photoshop-copy')}>从 TIFF 创建工作副本</button><button disabled={!active} onClick={()=>setNamingOpen(true)}>命名</button><button disabled={!active||savingTiff} className="wb-save" onClick={()=>{void saveTiff().catch(()=>{});}}>{savingTiff?'保存中…':'保存 TIFF'}</button><button disabled={!active} onClick={refreshImages}>刷新外部图片</button></>}
+      renderDialogue={renderDialogue}
       toolbar={null}
       toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canInspect()} onToolChange={setTool}
         color={color} onColorChange={setColor} size={size} onSizeChange={setSize}
