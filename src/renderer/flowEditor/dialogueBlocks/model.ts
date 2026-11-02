@@ -212,14 +212,20 @@ export function reconcileBlocks(draft: readonly DraftBlock[], incoming: readonly
       ? { ...block, text: local.text, pending: true }
       : { id: block.id, shotId: block.shotId, text: block.text, pending: false };
   });
+  const placed = (id: string) => next.some((item) => item.id === id);
+  // Previous anchor first, as before, but the anchor must be a *placed* neighbour rather than a
+  // host row: a run of drafts shares one host block, so anchoring every member on that row would
+  // stack the run at one point and reverse it (A, B, C came back as A, C, B). Forward order plus
+  // the placed set — which already holds the drafts inserted earlier in this walk — keeps the run
+  // in draft order, and a draft with no previous anchor still falls back to the following one.
   draft.forEach((block, position) => {
     if (known.has(block.id) || !block.pending) return;
-    const previous = draft.slice(0, position).reverse().find((candidate) => known.has(candidate.id));
+    const previous = draft.slice(0, position).reverse().find((candidate) => placed(candidate.id));
     if (previous) {
       next.splice(next.findIndex((item) => item.id === previous.id) + 1, 0, { ...block });
       return;
     }
-    const following = draft.slice(position + 1).find((candidate) => known.has(candidate.id));
+    const following = draft.slice(position + 1).find((candidate) => placed(candidate.id));
     next.splice(following ? next.findIndex((item) => item.id === following.id) : next.length, 0, { ...block });
   });
   return next;
