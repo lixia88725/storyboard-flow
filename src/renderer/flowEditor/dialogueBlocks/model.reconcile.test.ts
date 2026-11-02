@@ -36,6 +36,58 @@ describe("late echo", () => {
   });
 });
 
+describe("consecutive local drafts", () => {
+  const run = (ids: string[], settled: string[]) => ids.map((id) => typed(id, `文-${id}`, !settled.includes(id)));
+
+  it("does not reverse a run that shares one anchor", () => {
+    const draft = [typed("A", "甲", false), typed("B", "乙", true), typed("C", "丙", true)];
+    const result = reconcileBlocks(draft, [block("A", "甲")]);
+    expect(result.map((item) => item.id)).toEqual(["A", "B", "C"]);
+    expect(result.map((item) => item.text)).toEqual(["甲", "乙", "丙"]);
+  });
+
+  it("keeps the previous anchor first when the host reorders around a single draft", () => {
+    const draft = [typed("A", "文-A", false), typed("X", "文-X", true), typed("B", "文-B", false)];
+    expect(reconcileBlocks(draft, [block("B", "文-B"), block("A", "文-A")]).map((item) => item.id)).toEqual([
+      "B",
+      "A",
+      "X"
+    ]);
+  });
+
+  it("keeps a longer run in draft order behind its host block", () => {
+    expect(reconcileBlocks(run(["A", "B", "C", "D"], ["A"]), [block("A", "文-A")]).map((item) => item.id)).toEqual([
+      "A",
+      "B",
+      "C",
+      "D"
+    ]);
+  });
+
+  it("keeps a run in front of its host block, and a run on an empty host board", () => {
+    expect(reconcileBlocks(run(["B", "C", "A"], ["A"]), [block("A", "文-A")]).map((item) => item.id)).toEqual([
+      "B",
+      "C",
+      "A"
+    ]);
+    expect(reconcileBlocks(run(["B", "C"], []), []).map((item) => item.id)).toEqual(["B", "C"]);
+  });
+
+  it("keeps runs on both sides of a settled block", () => {
+    const draft = [...run(["A"], []), ...run(["S"], ["S"]), ...run(["C", "D"], [])];
+    expect(reconcileBlocks(draft, [block("S", "文-S")]).map((item) => item.id)).toEqual(["A", "S", "C", "D"]);
+  });
+
+  it("follows a host reorder while each run keeps its draft neighbours", () => {
+    expect(
+      reconcileBlocks(run(["A", "B"], ["A"]), [block("Z", "文-Z"), block("A", "文-A")]).map((item) => item.id)
+    ).toEqual(["Z", "A", "B"]);
+    expect(
+      reconcileBlocks(run(["B", "A"], ["A"]), [block("A", "文-A"), block("Z", "文-Z")]).map((item) => item.id)
+    ).toEqual(["B", "A", "Z"]);
+  });
+});
+
 describe("undo", () => {
   it("accepts a host change once the block has settled, in both directions", () => {
     expect(reconcileBlocks([typed("d1", "你好", false)], [block("d1", "")]).map((item) => item.text)).toEqual([""]);
