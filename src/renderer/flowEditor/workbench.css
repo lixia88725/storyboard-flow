@@ -28,3 +28,6 @@
 .wb-japanese .wb-card-handle { grid-column:1/-1; }
 .wb-japanese .wb-info { grid-template-columns:1fr; padding:5px; }
 .wb-japanese .wb-info textarea { min-height:2.4em; }
+
+/* The dock header controls visibility of the workbench layer panel. */
+.flow-workbench .wb-panel-layers .layer-toggle { display:none; }
