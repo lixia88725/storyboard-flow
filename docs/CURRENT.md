@@ -46,3 +46,10 @@
 PSD优先、完整PS往返、SQLite、音频/时间轴扩展、PDF、云协作和内置AI不在当前范围。跨平台认证和发布仍未完成。
 
 清理收尾：删除搬空的根 `electron/`、空 `research/` 与旧 History 实验夹具、wave-1 专用验证脚本、过期 Drawing/Storyboard 迁移说明；移除测试配置中不存在的 electron 测试目录。现行存储契约、开发验证脚本、archive、依赖与构建产物保留；`.hermes`仅清理上文明确列出的合成副本。
+
+## 今日收尾与下次工作（2026-11-03）
+
+- 本地提交 `b356f5a` 已完成，提交前72文件/802测试、完整构建和preload检查通过。首次 `git push origin main` 被必需云端测试规则拒绝。随后用户明确授权取消该推送前门槛，已移除 `required_status_checks`；推送后的CI、禁止强制推送和禁止删除main保持不变。用户要求保持单一main，未创建备份分支。推送与发布结果须分别核验，不以本地提交或CI启动代替成功。
+- 三位Terra的实现、独立复审和GUI交付均已收齐，无执行者在运行或持有写权；Paseo旧子会话已归档。Codex原生接口不提供归档操作，保留已完成会话记录，不再派工。汇总及提交前日志在 `.hermes/module-migration-nov03/agent-closeout.json` 和同目录 `precommit-*`。
+- 计划下一轮按主模块安排GPT-6.1 Terra子Agent，用户可直接与模块负责人讨论；跨模块接口、方向与范围变化先由chief协调。按需分批启动，明确独占写入范围，负责人实现自测后回报，chief组织独立审查与整体验收。优先围绕workbench、storyboard、drawing开展产品交互讨论；session、project-files、platform按具体需求参与，不强制同时启动六位。
+- 此收尾记录与推送规则调整在架构提交之后单独记录；无关的 `D CLAUDE.md` 继续保留现场，不纳入任务。
