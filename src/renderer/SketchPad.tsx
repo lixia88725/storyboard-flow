@@ -222,6 +222,7 @@ const buildOverlaySelection = (draft: BitmapSelectionDraft): BitmapSelection | u
 };
 
 export type SketchPadProps = {
+  respectActiveLayer?: boolean;
   shot: Shot;
   folderPath?: string;
   bitmapRevision: number;
@@ -258,6 +259,7 @@ export type SketchPadProps = {
 };
 
 export const SketchPad = memo(({
+  respectActiveLayer = false,
   shot,
   folderPath,
   bitmapRevision,
@@ -332,11 +334,13 @@ export const SketchPad = memo(({
   const activeLayer = useMemo(
     () =>
       bitmapLayers.find((layer) => layer.id === shot.activeLayerId && layer.visible) ??
-      [...bitmapLayers].reverse().find((layer) => layer.visible),
-    [bitmapLayers, shot.activeLayerId]
+      (respectActiveLayer ? undefined : [...bitmapLayers].reverse().find((layer) => layer.visible)),
+    [bitmapLayers, shot.activeLayerId, respectActiveLayer]
   );
   const editableLayer = useMemo(() => editableBitmapLayerForShot(shot), [shot]);
-  const activeDrawingLayer = tool === "select" ? activeLayer : editableLayer;
+  const activeDrawingLayer = respectActiveLayer
+    ? activeLayer && !activeLayer.locked ? activeLayer : undefined
+    : tool === "select" ? activeLayer : editableLayer;
   const activeDrawingLayerId = activeDrawingLayer?.id ?? imageBitmapLayerId;
   const [layerDataUrls, setLayerDataUrls] = useState<Record<string, string>>({});
   const [liveBitmapLayerId, setLiveBitmapLayerId] = useState<string | undefined>();
@@ -1197,6 +1201,13 @@ export const SketchPad = memo(({
     if (!shouldHandleSketchPointer(event, activePointerIdRef.current)) {
       return;
     }
+
+    // Konva binds its pointer listeners to the inner .konvajs-content node, while the
+    // stroke captures the pointer on its parent container. A captured pointer is
+    // retargeted to that container, so Konva's own pointermove never runs mid-stroke;
+    // this window listener is the only live path. Follow the pen here as well, or the
+    // brush outline stays frozen at the pen-down point until release.
+    updateBrushCursorPreview(event);
 
     if (!isDrawingRef.current || (tool !== "select" && !draftStrokeRef.current)) {
       return;

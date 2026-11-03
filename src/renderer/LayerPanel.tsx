@@ -1,5 +1,7 @@
+import { Eye, EyeOff, LockKeyhole, LockKeyholeOpen, SquarePlus, Trash2 } from "lucide-react";
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -23,6 +25,7 @@ import {
 } from "./sketchGeometry";
 import { nextRangeSelection, type RangeSelectionMode } from "./rangeSelection";
 import { layerSelectionForPanelState } from "./layerPanelController";
+import { layerMergeAllowed, layerRowGestureEndEffects, type LayerOpacityPhase } from "./layerPanelGestures";
 
 type LayerRowGesture = {
   layerId: string;
@@ -50,7 +53,12 @@ export type LayerPanelProps = {
   structuralEditsEnabled?: boolean;
   mergeEditsEnabled?: boolean;
   onLayerGroupOpacityGesture?: (shotId:string, layerIds:string[], delta:number, initial:Record<string,number>, phase:'preview'|'commit'|'cancel')=>void;
-  onLayerOpacityGesture?: (shotId: string, layerId: string, opacity: number, phase: "preview" | "commit") => void;
+  onLayerOpacityGesture?: (shotId: string, layerId: string, opacity: number, phase: LayerOpacityPhase) => void;
+  /** Host/Session rule for M and V. Absent keeps the historic visible/unlocked policy. */
+  canMergeLayerIds?: (layerIds: string[]) => boolean;
+  /** Dual-panel route: honour shot.activeLayerId even when that layer is hidden. */
+  respectActiveLayer?: boolean;
+  docked?: boolean;
   shot?: Shot;
   folderPath?: string;
   thumbnailRevision: number;
@@ -94,6 +102,9 @@ export const LayerPanel = ({
   mergeEditsEnabled = structuralEditsEnabled,
   onLayerOpacityGesture,
   onLayerGroupOpacityGesture,
+  canMergeLayerIds,
+  respectActiveLayer,
+  docked = false,
   canBeginLayerGesture,
   shot,
   folderPath,
@@ -115,7 +126,17 @@ export const LayerPanel = ({
 }: LayerPanelProps) => {
   const layers = useMemo(() => (shot ? bitmapLayersForShot(shot) : []), [shot]);
   const displayLayers = [...layers].reverse();
-  const activeLayer = shot ? activeVisibleBitmapLayerForShot(shot) : undefined;
+  const activeLayer = useMemo(() => {
+    if (!shot) {
+      return undefined;
+    }
+    // The dual-panel workbench edits exactly the layer named by shot.activeLayerId, even a
+    // hidden one, so panel operations cannot drift onto a different visible layer. The
+    // classic editor keeps the historic visible-fallback resolution.
+    return respectActiveLayer
+      ? layers.find((layer) => layer.id === shot.activeLayerId)
+      : activeVisibleBitmapLayerForShot(shot);
+  }, [layers, respectActiveLayer, shot]);
   const activeLayerId = activeLayer?.id;
   const activeLayerIndex = activeLayer
     ? layers.findIndex((layer) => layer.id === activeLayer.id)
@@ -126,11 +147,44 @@ export const LayerPanel = ({
       : undefined;
   const visibleLayers = layers.filter((layer) => layer.visible);
   const [openBlendMenu, setOpenBlendMenu] = useState<BlendMenuState | undefined>();
-  const cancelGroupGesture=useRef<(()=>void)|undefined>(undefined);
-  useEffect(()=>{if(!isOpen||!isRendered)cancelGroupGesture.current?.();},[isOpen,isRendered]);
-  useEffect(()=>()=>{cancelGroupGesture.current?.();},[shot?.id]);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number }>();
+  const menuRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!menu || !el) return;
+    el.showPopover();
+    el.style.left = Math.max(4, Math.min(menu.x, innerWidth - el.offsetWidth - 4)) + "px";
+    el.style.top = Math.max(4, Math.min(menu.y, innerHeight - el.offsetHeight - 4)) + "px";
+    (el.querySelector<HTMLButtonElement>("button:not(:disabled)") ?? el).focus();
+    const close = () => setMenu(undefined);
+    const outside = (e: globalThis.PointerEvent) => { if (!e.composedPath().includes(el)) close(); };
+    document.addEventListener("pointerdown", outside, true);
+    window.addEventListener("blur", close);
+    return () => { document.removeEventListener("pointerdown", outside, true); window.removeEventListener("blur", close); };
+  }, [menu]);
+  useEffect(() => { setMenu(undefined); }, [isOpen, isRendered, shot?.id]);
+  // Any live gesture (row opacity/reorder, visibility drag) registers a teardown here,
+  // so closing the panel, switching boards, losing focus or unmounting cannot commit.
+  const cancelRowGestureRef = useRef<(() => void) | undefined>(undefined);
+  const cancelVisibilityDragRef = useRef<(() => void) | undefined>(undefined);
+  const cancelLiveGestures = () => {
+    cancelRowGestureRef.current?.();
+    cancelVisibilityDragRef.current?.();
+  };
+  useEffect(() => {
+    if (!isOpen || !isRendered) {
+      cancelLiveGestures();
+      // A popover left open would otherwise reappear the next time the panel opens.
+      setOpenBlendMenu(undefined);
+    }
+  }, [isOpen, isRendered]);
+  useEffect(() => () => cancelLiveGestures(), [shot?.id]);
   const [rowGestureVisual, setRowGestureVisual] = useState<LayerRowGestureVisual | undefined>();
   const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!docked || !activeLayerId || !isOpen) return;
+    setSelectedLayerIds(ids => ids.includes(activeLayerId) ? ids : [activeLayerId]);
+  }, [activeLayerId, docked, isOpen]);
   const suppressNextRowClickRef = useRef(false);
   const layerSelectionAnchorIdRef = useRef<string | undefined>(undefined);
   const layerIds = useMemo(() => layers.map((layer) => layer.id), [layers]);
@@ -139,6 +193,16 @@ export const LayerPanel = ({
   const isMultiLayerMerge =
     selectedMergeLayers.length >= 2 &&
     selectedMergeLayers.every((layer) => layer.visible && !layer.locked);
+  // Host rules (Session) may veto a merge the local visible/locked policy would allow.
+  const mergeVisibleLayerIds = visibleLayers.map((layer) => layer.id);
+  const mergeSelectionLayerIds =
+    selectedMergeLayers.length >= 2
+      ? selectedMergeLayers.map((layer) => layer.id)
+      : [activeLayer?.id, mergeTargetLayer?.id].filter((id): id is string => Boolean(id));
+  const mergeVisibleAllowed =
+    mergeEditsEnabled && layerMergeAllowed(mergeVisibleLayerIds, canMergeLayerIds);
+  const mergeSelectionAllowed =
+    mergeEditsEnabled && layerMergeAllowed(mergeSelectionLayerIds, canMergeLayerIds);
 
   useEffect(() => {
     if (!shot || !isOpen) {
@@ -176,8 +240,20 @@ export const LayerPanel = ({
     onSelectedLayerIdsChange(shot.id, selectedLayerIds);
   }, [isOpen, onSelectedLayerIdsChange, selectedLayerIds, shot?.id]);
 
+  const openRowMenu = (layer: BitmapLayer, x: number, y: number) => {
+    if (!shot) return;
+    if (!selectedLayerIds.includes(layer.id)) {
+      setSelectedLayerIds([layer.id]);
+      layerSelectionAnchorIdRef.current = layer.id;
+    }
+    if (activeLayerId !== layer.id) onSelectLayer(shot.id, layer.id);
+    setMenu({ id: layer.id, x, y });
+  };
+  const mergeDisabled = !mergeSelectionAllowed || !shot || !activeLayer ||
+    (selectedMergeLayers.length >= 2 ? !isMultiLayerMerge : !mergeTargetLayer || activeLayer.locked || mergeTargetLayer.locked);
+
   const interactiveLayerRowTarget = (target: EventTarget | null) => {
-    return target instanceof HTMLElement
+    return target instanceof Element
       ? target.closest("button, textarea, select, .layer-blend-menu")
       : null;
   };
@@ -223,7 +299,7 @@ export const LayerPanel = ({
       return;
     }
 
-    cancelGroupGesture.current?.();
+    cancelLiveGestures();
     event.stopPropagation();
     const gestureLayerIds = selectedLayerIds.includes(layer.id) ? selectedLayerIds : [layer.id];
     const movableLayerIds = layers
@@ -302,13 +378,44 @@ export const LayerPanel = ({
       }
     };
 
-    const handlePointerUp = (upEvent: globalThis.PointerEvent) => {
-      if (gesture.intent) {
-        upEvent.preventDefault();
-      }
+    const gestureHasGroupCallback =
+      Boolean(onLayerGroupOpacityGesture) && gesture.movableLayerIds.length > 1;
+    const gestureHasOpacityCallback = Boolean(onLayerOpacityGesture);
+
+    const detach = () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
+      window.removeEventListener("blur", handleCancel);
+    };
+
+    const emitEnd = (cancelled: boolean) => {
+      const effects = layerRowGestureEndEffects({
+        intent: gesture.intent,
+        cancelled,
+        groupCallback: gestureHasGroupCallback,
+        opacityCallback: gestureHasOpacityCallback,
+        opacity: gesture.opacity,
+        deltaOpacity: gesture.deltaOpacity
+      });
+      if (effects.groupOpacityPhase && onLayerGroupOpacityGesture) {
+        onLayerGroupOpacityGesture(
+          shot.id,
+          gesture.movableLayerIds,
+          gesture.deltaOpacity ?? 0,
+          gesture.initialOpacities,
+          effects.groupOpacityPhase
+        );
+      }
+      if (effects.opacityPhase && onLayerOpacityGesture) {
+        onLayerOpacityGesture(shot.id, gesture.layerId, gesture.opacity ?? 1, effects.opacityPhase);
+      }
+      return effects;
+    };
+
+    const finish = (cancelled: boolean) => {
+      detach();
+      cancelRowGestureRef.current = undefined;
       setRowGestureVisual(undefined);
       suppressNextRowClickRef.current = Boolean(gesture.intent);
       if (gesture.intent) {
@@ -316,38 +423,43 @@ export const LayerPanel = ({
           suppressNextRowClickRef.current = false;
         }, 0);
       }
+      return emitEnd(cancelled);
+    };
 
-      cancelGroupGesture.current=undefined;
-      if(gesture.intent==='opacity' && gesture.deltaOpacity!==undefined && onLayerGroupOpacityGesture)
-        onLayerGroupOpacityGesture(shot.id,gesture.movableLayerIds,gesture.deltaOpacity,gesture.initialOpacities,upEvent.type==='pointercancel'?'cancel':'commit');
-      if (gesture.intent === "opacity" && gesture.opacity !== undefined && onLayerOpacityGesture) {
-        onLayerOpacityGesture(shot.id, gesture.layerId, gesture.opacity, "commit");
+    // Pointercancel, window blur, panel close, board switch and unmount all cancel:
+    // the host rolls the preview back and a pending reorder never moves a layer.
+    const handleCancel = () => {
+      finish(true);
+    };
+
+    const handlePointerUp = (upEvent: globalThis.PointerEvent) => {
+      const cancelled = upEvent.type === "pointercancel";
+      if (gesture.intent) {
+        upEvent.preventDefault();
       }
-      if (gesture.intent === "reorder") {
-        const targetRow = layerRowFromPoint(upEvent.clientX, upEvent.clientY, new Set(gesture.movableLayerIds));
-        const targetLayerId = targetRow?.dataset.layerId;
-        if (targetRow && targetLayerId && targetLayerId !== gesture.layerId) {
-          const rect = targetRow.getBoundingClientRect();
-          const placement = layerDropPlacementFromClientY(upEvent.clientY, rect.top, rect.height);
-          if (gesture.movableLayerIds.length > 1) {
-            onMoveLayerGroup(shot.id, gesture.movableLayerIds, targetLayerId, placement);
-          } else {
-            onMoveLayer(shot.id, gesture.layerId, targetLayerId, placement);
-          }
+      const effects = finish(cancelled);
+      if (cancelled || !effects.reorder) {
+        return;
+      }
+
+      const targetRow = layerRowFromPoint(upEvent.clientX, upEvent.clientY, new Set(gesture.movableLayerIds));
+      const targetLayerId = targetRow?.dataset.layerId;
+      if (targetRow && targetLayerId && targetLayerId !== gesture.layerId) {
+        const rect = targetRow.getBoundingClientRect();
+        const placement = layerDropPlacementFromClientY(upEvent.clientY, rect.top, rect.height);
+        if (gesture.movableLayerIds.length > 1) {
+          onMoveLayerGroup(shot.id, gesture.movableLayerIds, targetLayerId, placement);
+        } else {
+          onMoveLayer(shot.id, gesture.layerId, targetLayerId, placement);
         }
       }
     };
 
-    if(onLayerGroupOpacityGesture && gesture.movableLayerIds.length>1)cancelGroupGesture.current=()=>{
-      window.removeEventListener('pointermove',handlePointerMove);
-      window.removeEventListener('pointerup',handlePointerUp);
-      window.removeEventListener('pointercancel',handlePointerUp);
-      cancelGroupGesture.current=undefined;setRowGestureVisual(undefined);
-      if(gesture.deltaOpacity!==undefined)onLayerGroupOpacityGesture(shot.id,gesture.movableLayerIds,gesture.deltaOpacity,gesture.initialOpacities,'cancel');
-    };
+    cancelRowGestureRef.current = handleCancel;
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp, { once: true });
     window.addEventListener("pointercancel", handlePointerUp, { once: true });
+    window.addEventListener("blur", handleCancel);
   };
 
   const handleLayerRowClick = (event: MouseEvent<HTMLDivElement>, layer: BitmapLayer) => {
@@ -392,6 +504,12 @@ export const LayerPanel = ({
     if (!shot || event.button > 0) {
       return;
     }
+    // A pointerdown is followed by a compat mousedown for the same press. Keep one drag.
+    if (cancelVisibilityDragRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
 
     event.preventDefault();
     event.stopPropagation();
@@ -432,19 +550,25 @@ export const LayerPanel = ({
       }
     };
 
-    const handleMouseUp = (upEvent: globalThis.MouseEvent | globalThis.PointerEvent) => {
-      upEvent.preventDefault();
+    const endVisibilityDrag = (upEvent?: Event) => {
+      upEvent?.preventDefault();
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mouseup", endVisibilityDrag);
       window.removeEventListener("pointermove", handleMouseMove);
-      window.removeEventListener("pointerup", handleMouseUp);
+      window.removeEventListener("pointerup", endVisibilityDrag);
+      window.removeEventListener("pointercancel", endVisibilityDrag);
+      window.removeEventListener("blur", endVisibilityDrag);
+      cancelVisibilityDragRef.current = undefined;
     };
 
     applyToLayer(layer.id);
+    cancelVisibilityDragRef.current = () => endVisibilityDrag();
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp, { once: true });
+    window.addEventListener("mouseup", endVisibilityDrag, { once: true });
     window.addEventListener("pointermove", handleMouseMove);
-    window.addEventListener("pointerup", handleMouseUp, { once: true });
+    window.addEventListener("pointerup", endVisibilityDrag, { once: true });
+    window.addEventListener("pointercancel", endVisibilityDrag);
+    window.addEventListener("blur", endVisibilityDrag);
   };
 
   return (
@@ -462,6 +586,17 @@ export const LayerPanel = ({
           className="layer-panel"
           aria-label="Storyboard layers"
         >
+          {docked && shot && <div className="dock-layer-properties">
+            <label><span>混合模式</span><select aria-label="混合模式" value={activeLayer?.blendMode ?? "normal"} disabled={!activeLayer || activeLayer.locked}
+              onChange={e => activeLayer && onUpdateLayer(shot.id, activeLayer.id, { blendMode: e.target.value as SketchBlendMode })}>
+              {sketchBlendModes.map(mode => <option key={mode} value={mode}>{{normal:"正常",multiply:"正片叠底",screen:"滤色"}[mode]}</option>)}
+            </select></label>
+            <output title="左右拖动图层行可调整不透明度">不透明度 <b>{activeLayer ? Math.round((activeLayer.opacity ?? 1)*100)+"%" : "—"}</b></output>
+            <button type="button" aria-label={activeLayer?.locked ? "解锁当前图层" : "锁定当前图层"} aria-pressed={!!activeLayer?.locked}
+              disabled={!activeLayer} title={activeLayer?.locked ? "解锁当前图层" : "锁定当前图层"}
+              onClick={() => activeLayer && onUpdateLayer(shot.id, activeLayer.id, {locked: !activeLayer.locked})}>
+              {activeLayer?.locked ? <LockKeyhole size={15}/> : <LockKeyholeOpen size={15}/>}</button>
+          </div>}
           {shot ? (
             <div className="layer-list">
               {displayLayers.map((layer) => {
@@ -482,6 +617,13 @@ export const LayerPanel = ({
                     } ${
                       layer.locked ? "is-locked" : ""
                     }`}
+                    tabIndex={docked ? 0 : undefined}
+                    onContextMenu={docked ? e => {e.preventDefault(); e.stopPropagation(); openRowMenu(layer,e.clientX,e.clientY);} : undefined}
+                    onKeyDown={docked ? e => {
+                      if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+                        e.preventDefault(); const r=e.currentTarget.getBoundingClientRect(); openRowMenu(layer,r.left+12,r.bottom);
+                      }
+                    } : undefined}
                     style={{
                       "--layer-opacity-width": `${Math.round((layer.opacity ?? 1) * 100)}%`,
                       transform:
@@ -514,7 +656,7 @@ export const LayerPanel = ({
                         }
                       }}
                     >
-                      <span className={layer.visible ? "layer-eye is-on" : "layer-eye"} />
+                      {docked ? (layer.visible ? <Eye size={16}/> : <EyeOff size={16}/>) : <span className={layer.visible ? "layer-eye is-on" : "layer-eye"} />}
                     </button>
                     <BitmapLayerThumbnail
                       layer={layer}
@@ -532,6 +674,7 @@ export const LayerPanel = ({
                         onUpdateLayer(shot.id, layer.id, { name: event.target.value })
                       }
                     />
+                    {docked ? (layer.locked && <LockKeyhole className="dock-row-lock" size={12} aria-label="已锁定"/>) : <>
                     <button
                       type="button"
                       className="layer-lock"
@@ -608,7 +751,7 @@ export const LayerPanel = ({
                           </button>
                         ))}
                       </div>
-                    ) : null}
+                    ) : null}</>}
                   </div>
                 );
               })}
@@ -616,8 +759,19 @@ export const LayerPanel = ({
           ) : (
             <p className="layer-empty">Select a shot to edit layers.</p>
           )}
+          {docked && menu && shot && <div ref={menuRef} className="dock-layer-menu" popover="manual" role="menu" aria-label="图层操作" tabIndex={-1}
+            onKeyDown={e => {
+              if(e.key === "Escape"){e.preventDefault(); setMenu(undefined); document.querySelector<HTMLElement>(".wb-panel-layers .layer-row.is-active")?.focus();}
+              if(e.key === "ArrowDown" || e.key === "ArrowUp"){e.preventDefault(); e.stopPropagation(); const items=Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")); const i=items.indexOf(document.activeElement as HTMLButtonElement); items[(i+(e.key==="ArrowDown"?1:-1)+items.length)%items.length]?.focus();}
+            }}>
+            <button role="menuitem" disabled={mergeDisabled || activeLayerId !== menu.id}
+              onClick={() => {setMenu(undefined); onMergeLayers(shot.id, menu.id, mergeSelectionLayerIds);}}>
+              {selectedMergeLayers.length >= 2 ? "合并所选图层" : "向下合并"}</button>
+            <button role="menuitem" disabled={!mergeVisibleAllowed || visibleLayers.length < 2}
+              onClick={() => {setMenu(undefined); onMergeVisibleLayers(shot.id);}}>合并可见图层</button>
+          </div>}
           <div className="layer-panel-footer">
-            <div className="layer-panel-footer-group">
+            {!docked && <div className="layer-panel-footer-group">
               <button
                 type="button"
                 onClick={() => {
@@ -625,7 +779,7 @@ export const LayerPanel = ({
                     onMergeVisibleLayers(shot.id);
                   }
                 }}
-                disabled={!mergeEditsEnabled || !shot || visibleLayers.length < 2}
+                disabled={!mergeVisibleAllowed || !shot || visibleLayers.length < 2}
                 title="Merge visible layers"
                 aria-label="Merge visible layers"
               >
@@ -639,7 +793,7 @@ export const LayerPanel = ({
                   }
                 }}
                 disabled={
-                  !mergeEditsEnabled || !shot ||
+                  !mergeSelectionAllowed || !shot ||
                   !activeLayer ||
                   (selectedMergeLayers.length >= 2
                     ? !isMultiLayerMerge
@@ -650,7 +804,7 @@ export const LayerPanel = ({
               >
                 M
               </button>
-            </div>
+            </div>}
             <div className="layer-panel-footer-group">
               <button
                 type="button"
@@ -660,10 +814,10 @@ export const LayerPanel = ({
                   }
                 }}
                 disabled={!structuralEditsEnabled || !shot}
-                title="Add layer"
+                title={docked ? "新建图层" : "Add layer"}
                 aria-label="Add layer"
               >
-                +
+                {docked ? <SquarePlus size={16}/> : "+"}
               </button>
               <button
                 type="button"
@@ -673,10 +827,10 @@ export const LayerPanel = ({
                   }
                 }}
                 disabled={!structuralEditsEnabled || !shot || !activeLayer || activeLayer.locked || layers.length <= 1}
-                title="Delete current layer"
+                title={docked ? "删除当前图层" : "Delete current layer"}
                 aria-label="Delete current layer"
               >
-                -
+                {docked ? <Trash2 size={16}/> : "-"}
               </button>
             </div>
           </div>

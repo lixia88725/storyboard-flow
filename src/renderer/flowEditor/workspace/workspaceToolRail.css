@@ -1,13 +1,14 @@
-.wb-tool-rail { width:86px; flex:none; display:flex; flex-direction:column; min-height:0; background:#24292d; border-right:1px solid #465057; color:#c6cace; }
-.wb-tool-rail-list { display:flex; flex-direction:column; padding:8px 5px; gap:3px; }
-.flow-workbench .wb-tool-rail-list button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:52px; border:1px solid transparent; border-radius:4px; color:#afb8be; }
-.flow-workbench .wb-tool-rail-list button[aria-pressed=true] { border-color:#b88955; background:#4e3f31; color:#ffe0b3; }
+.wb-tool-rail { width:76px; flex:none; display:flex; flex-direction:column; min-height:0; overflow-y:auto; overflow-x:hidden; background:#242529; border-right:1px solid var(--wb-line); color:#c6cace; }
+.wb-tool-rail-list { display:flex; flex-direction:column; padding:10px 7px; gap:4px; }
+.flow-workbench .wb-tool-rail-list button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:52px; border:1px solid transparent; border-radius:8px; color:#afb8be; }
+.flow-workbench .wb-tool-rail-list button[aria-pressed=true] { background:#354458; color:#c8deff; }
 .wb-tool-glyph { font-size:22px; line-height:1; font-family:'SF Pro Text','PingFang SC',sans-serif; }
 .wb-tool-options { border-top:1px solid #41494e; padding:9px 7px; display:grid; gap:10px; }
-.wb-tool-options label { display:grid; gap:6px; color:#aab4ba; font-size:11px; }
-.wb-tool-options output { justify-self:end; color:#e9c092; font-variant-numeric:tabular-nums; }
-.wb-tool-options input[type=range] { width:100%; }
-.wb-tool-options input[type=color] { width:100%; height:26px; }
+.wb-tool-options label { display:grid; grid-template-columns:1fr auto; gap:6px; color:#aab4ba; font-size:11px; }
+.wb-tool-options input { grid-column:1/-1; min-width:0; }
+.wb-tool-options output { justify-self:end; color:var(--wb-accent); font-variant-numeric:tabular-nums; }
+.flow-workbench .wb-tool-options input[type=range] { width:100%; }
+.flow-workbench .wb-tool-options input[type=color] { width:100%; height:26px; }
 .flow-workbench .wb-tool-options .wb-apply-blur { border:1px solid #697178; background:#30383d; padding:6px 3px; }
 .wb-tool-rail-footer { margin-top:auto; border-top:1px solid #41494e; padding:6px; display:grid; gap:3px; }
 .wb-tool-rail-footer button { width:100%; }

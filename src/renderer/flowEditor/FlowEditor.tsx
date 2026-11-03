@@ -13,6 +13,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { FlowEditorBootstrap } from '../../../electron/shared/flowEditor';
 import type { FlowSession, FlowSessionRequest } from '../../../electron/shared/flowWave2';
 import { createFlowSession } from '../../core/session';
+import { toolPlan } from '../../core/session/pixelTools';
 import { createPixelTools, createFlowPixels } from '../drawing';
 import { MediaSourceContext, type MediaSource } from '../mediaSource';
 import { JapaneseStoryboardView } from '../JapaneseStoryboardView';
@@ -35,9 +36,18 @@ const beforeUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnVal
 
 function bindEditor(sessionId: string) {
   const api = window.flowEditor!;
+  const preview: { accept?: (id:string,png:Uint8Array)=>void } = {};
   return {
+    preview,
     read: (id: string) => api.read(sessionId, id),
-    put: (input: Parameters<typeof api.put>[1]) => api.put(sessionId, input),
+    put: async (input: Parameters<typeof api.put>[1]) => {
+      const result=await api.put(sessionId,input);
+      if(result.ok && preview.accept){
+        try { preview.accept(result.value.assetId,input.png); }
+        catch { /* Presentation falls back to the normal depot read. */ }
+      }
+      return result;
+    },
     checkpoint: (project: FlowEditorBootstrap['project']) => api.checkpoint(sessionId, project),
     refresh: (project: FlowEditorBootstrap['project']) => api.refresh(sessionId, project),
     folderStatus: (request: Parameters<typeof api.folderStatus>[1]) => api.folderStatus(sessionId, request),
@@ -171,15 +181,25 @@ function Editor({ startInWorkbench, flow, api, openProject, switching, issue, se
     setSnapshot(flow.snapshot());
     return unsubscribe;
   }, [flow]);
+  const rememberUrl = (id:string, bytes:Uint8Array) => {
+    const existing=cache.get(id);if(existing)return existing;
+    const url=URL.createObjectURL(new Blob([new Uint8Array(bytes)],{type:'image/png'}));
+    cache.set(id,url);
+    if(workbench)for(const [old,held] of cache){if(cache.size<=96)break;if(!demandRef.current.includes(old)&&old!==id){URL.revokeObjectURL(held);cache.delete(old);}}
+    setUrls(Object.fromEntries(cache));return url;
+  };
+  // The pixels just accepted by the depot are already here. Make their URL available
+  // before Session announces that layer's new id, so neither surface drops its image.
+  useEffect(()=>{
+    if(!workbench)return;
+    api.preview.accept=rememberUrl;
+    return()=>{delete api.preview.accept;};
+  },[api,workbench,cache]);
   const source = async (id: string): Promise<string> => {
     if (cache.has(id)) return cache.get(id)!;
     if (!loads.has(id)) loads.set(id, api.read(id).then(result => {
       if (disposed.current) throw Error('Editor session retired');
-      const bytes = new Uint8Array(required(result));
-      const url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
-      cache.set(id, url);
-      if(workbench)for(const [old,held] of cache){if(cache.size<=96)break;if(!demandRef.current.includes(old)&&old!==id){URL.revokeObjectURL(held);cache.delete(old);}}
-      setUrls(Object.fromEntries(cache)); return url;
+      return rememberUrl(id,required(result));
     }).finally(() => loads.delete(id)));
     return loads.get(id)!;
   };
@@ -227,7 +247,14 @@ function Editor({ startInWorkbench, flow, api, openProject, switching, issue, se
       const result = await request({ kind: 'paint', shotId: shot.id, layerId, stroke: pixelStroke(input) });
       const currentShot = result.snapshot.project.shots.find(s => s.id === shot.id)!;
       return await settledStrokePreview(() => flow.snapshot().project, shot.id, layerId,
-        result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId, source);
+        result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId, async id=>{
+          const url=await source(id);
+          if(workbench){
+            // Keep the temporary stroke until Chromium can paint the committed raster.
+            const raster=new Image();raster.src=url;await raster.decode();
+          }
+          return url;
+        });
     } finally { brushQueue.current.delete(token); }
   };
   const transformSelection = async (shot: Shot, layerId: string, _preview: string, intent?: SelectionTransformIntent) => {
@@ -333,7 +360,11 @@ function Editor({ startInWorkbench, flow, api, openProject, switching, issue, se
     setJapanese(value => !value);
   };
 
-  const renderLayers=(shot:Shot)=><LayerPanel shot={shot} folderPath="flow" thumbnailRevision={snapshot.project.revision} isOpen={workbench || panel === shot.id} isRendered={workbench || panel === shot.id}
+  const renderLayers=(shot:Shot)=><LayerPanel key={shot.id} docked={workbench} respectActiveLayer={workbench} shot={shot}
+          canMergeLayerIds={ids=>{
+            const board=snapshot.project.shots.find(s=>s.id===shot.id);
+            return !!board && ids.length>=2 && toolPlan(snapshot.project.images[board.imageId],{kind:'merge',layerIds:ids}).ok;
+          }} folderPath="flow" thumbnailRevision={snapshot.project.revision} isOpen={workbench || panel === shot.id} isRendered={workbench || panel === shot.id}
           canBeginLayerGesture={()=>!gestures.current && !flow.snapshot().pending && !outputWork.current && flow.snapshot().phase==='active'}
           onLayerGroupOpacityGesture={(shotId,ids,delta,initial,phase)=>{
             const changes=ids.map(layerId=>({layerId,before:initial[layerId],opacity:Math.round(Math.max(0,Math.min(1,initial[layerId]+delta))*1000)/1000}));
@@ -344,10 +375,10 @@ function Editor({ startInWorkbench, flow, api, openProject, switching, issue, se
           }}
           onLayerOpacityGesture={(shotId, layerId, opacity, phase) => {
             const key = `${shotId}/${layerId}`;
+            const clear=()=>{gestures.current=0;setOpacityPreview(current=>{const next={...current};delete next[key];return next;});};
             if (phase === 'preview') { gestures.current = 1; setOpacityPreview(current => ({ ...current, [key]: opacity })); }
-            else void request({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch: { opacity } } },true).catch(() => {}).finally(() => {
-              gestures.current = 0; setOpacityPreview(current => { const next = { ...current }; delete next[key]; return next; });
-            });
+            else if (phase === 'cancel') clear();
+            else void request({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId, patch: { opacity } } },true).catch(() => {}).finally(clear);
           }}
           structuralEditsEnabled={active} mergeEditsEnabled={active} onToggle={() => setPanel(undefined)} onAddLayer={id=>{void addLayer(id);}} onRemoveLayer={(shotId,layerId)=>act({kind:'layer',shotId,edit:{kind:'removeLayer',layerId}})} onMergeLayers={merge} onMergeVisibleLayers={shotId => {
             const shot = snapshot.project.shots.find(s => s.id === shotId)!;
@@ -365,15 +396,17 @@ function Editor({ startInWorkbench, flow, api, openProject, switching, issue, se
   // TIFF output owns its captured revision. A new brush stroke edits the live Session.
   const brushAvailable = () => active && tool === 'brush' && (!outputWork.current || savingTiff) && !gestures.current;
   const canStartCanvasEdit = () => (!outputWork.current || brushAvailable()) && editsSettled();
-  const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:snapshot.project.dialogues.filter(d=>d.shotId===s.id).map(d=>d.text.trim()).filter(Boolean).join(' ').replace(/\s+/g,' ')} ]));
+  const dialogueText=new Map<string,string>();
+  for(const d of snapshot.project.dialogues){const text=d.text.trim();if(text)dialogueText.set(d.shotId,[dialogueText.get(d.shotId),text].filter(Boolean).join(' ').replace(/\s+/g,' '));}
+  const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:dialogueText.get(s.id)??''} ]));
   if(workbench)return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
-    <Workbench name={snapshot.project.name} shots={shots.slice(0,snapshot.project.shots.length)} parked={shots.slice(snapshot.project.shots.length)} selected={selectedIds} revision={snapshot.project.revision} disabled={!active}
+    <Workbench dialogueText={dialogueText} name={snapshot.project.name} shots={shots.slice(0,snapshot.project.shots.length)} parked={shots.slice(snapshot.project.shots.length)} selected={selectedIds} revision={snapshot.project.revision} disabled={!active}
       status={issue||snapshot.lastError?.message||(flowSaved ? 'Flow 内已保存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label) : '正在保存到 Flow…')}
       select={selectShot} focus={focusShot} canNavigate={canInspect} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>brushAvailable() &&
         brushQueue.current.size>0 && !otherRequests.current &&
         [...brushQueue.current.values()].every(key=>key===JSON.stringify([shot.id,shot.activeLayerId]))} demand={requestAssets} move={moveShots} renderLayers={renderLayers}
       renderInfo={shot=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText} disabled={!active} onChange={e=>script(shot.id,e.target.value)}/></label>{renderDialogue(shot.id)}</div>}
-      renderCanvas={(shot,previous,next)=><SketchPad key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0} eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false}
+      renderCanvas={(shot,previous,next)=><SketchPad respectActiveLayer key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0} eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false}
         onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
         onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
       actions={<><button disabled={!active} onClick={()=>openProject()}>打开项目</button><button disabled={!active} title="将 TIFF 的合成画面作为底图，在原件旁新建独立的 Flow 项目" onClick={()=>openProject('photoshop-copy')}>从 TIFF 创建工作副本</button><button disabled={!active} onClick={()=>setNamingOpen(true)}>命名</button><button disabled={!active||savingTiff} className="wb-save" onClick={()=>{void saveTiff().catch(()=>{});}}>{savingTiff?'保存中…':'保存 TIFF'}</button><button disabled={!active} onClick={refreshImages}>刷新外部图片</button></>}

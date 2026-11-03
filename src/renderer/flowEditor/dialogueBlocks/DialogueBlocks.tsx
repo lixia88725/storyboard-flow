@@ -263,6 +263,7 @@ function BoardEditor({
       onDragEnd={() => setDropIndex(null)}
       onBlurCapture={blur}
     >
+      {variant === "full" && <div className="flow-dialogue-heading">台词</div>}
       {blocks.map((block, index) => (
         <div
           key={block.id}

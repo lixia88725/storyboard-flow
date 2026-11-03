@@ -1,5 +1,7 @@
 # Current Storyboard Flow handoff
 
+2026-11-02: [工作室试画反馈、未合入的布局草稿与三个会话收束记录](docs/refactor/STUDIO-FEEDBACK-2026-11-02.md)。
+
 Updated 2026-11-01. Maintain this as a current snapshot; place completed milestone
 receipts under docs/refactor/reviews/ instead of prepending another history entry.
 

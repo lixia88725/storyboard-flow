@@ -26,7 +26,8 @@ for(let i=0;i<count+1;i++){
 project.dialogues.push({id:'line0',shotId:'shot0',text:'第一段'},{id:'line1',shotId:'shot0',text:'第二段'});
 get(await createProjectStore().saveCheckpoint(root,project,async id=>get(await depot.read(id))));
 const identity={head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),status:execFileSync('git',['status','--short'],{encoding:'utf8'}).trim(),run,count};
-for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen'])){
+const layersOnly=process.argv.includes('--layers');
+for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','recovery'] : ['edit','reopen'])){
  const userData=path.join(run,'userData');await mkdir(userData,{recursive:true});const driver=path.join(run,phase+'.cjs');
  await writeFile(driver,String.raw`
  const {app,BrowserWindow,clipboard,shell,ipcMain}=require('electron'),fs=require('node:fs'),assert=require('node:assert/strict');
@@ -55,6 +56,10 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("Flow 内已保存")'),'checkpoint');
  await wait(()=>js('document.querySelector(".wb-viewer .image-stage img")?.naturalWidth>0'),'viewer raster');
  const openingMs=Date.now()-started;
+ if(${JSON.stringify(layersOnly)}){
+   await require(${JSON.stringify(path.join(repo,'scripts/workbench-layer-checks.cjs'))})({phase,js,win,mouse,rect,button,wait,delay,read,run:${JSON.stringify(run)}});
+   win.close();return;
+ }
  const folderSays=text=>wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.includes('+JSON.stringify(text)+')'),text);
  if(phase==='recovery'){
    const source=fs.readFileSync(${JSON.stringify(path.join(run,'staged-path.txt'))},'utf8');
@@ -79,8 +84,20 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  }
  if(phase==='edit'){
  const initialDialogue=read().dialogues;
- // Static path: pointer capture must focus the input without starting a stroke.
- await js('document.querySelector(\'[data-board-id="shot0"] [data-board-dialogue]\').dispatchEvent(new PointerEvent("pointerdown",{bubbles:true,isPrimary:true,button:0}))');
+ async function clickTrack(selector){
+   const r=await rect(selector);const x=r.x+r.width/2,y=r.y+r.height/2;
+   await mouse('mouseMove',x,y);await mouse('mouseDown',x,y);await mouse('mouseUp',x,y);
+ }
+ for(const [selector,id] of [['[data-board-id="shot2"] .wb-dialogue-footer button','shot2'],['.wb-viewer [data-board-dialogue] button','shot0']]){
+   if(id==='shot0')await js('document.querySelector(\'[aria-label="选择故事板 shot0"]\').click()');
+   await clickTrack(selector);
+   await wait(()=>js('document.activeElement?.matches("[data-board-dialogue] textarea")'),'track keyboard focus '+id);
+   await win.webContents.insertText('轨道验收');
+   await wait(()=>read().dialogues.some(d=>d.shotId===id&&d.text.includes('轨道验收')),'track write '+id);
+   await js('document.activeElement.blur()');await button('撤销');
+   await wait(()=>JSON.stringify(read().dialogues)===JSON.stringify(initialDialogue),'track undo '+id);
+ }
+ await clickTrack('[data-board-id="shot0"] [data-board-dialogue] button');
  await wait(()=>js('document.activeElement?.getAttribute("data-dialogue-id")==="line0"'),'static dialogue focus');
  await js('document.activeElement.dispatchEvent(new CompositionEvent("compositionstart",{bubbles:true,data:"中"}));document.activeElement.dispatchEvent(new KeyboardEvent("keydown",{bubbles:true,key:"ArrowRight",isComposing:true}));');
  await win.webContents.insertText('中文输入 ');
@@ -147,7 +164,11 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  const before=read();assert.equal(before.shots.length,count);
  await js('document.querySelector(\'[aria-label="隐藏Pending"]\').click()');
  assert.equal(await js('!!document.querySelector(\'[data-panel="pending"]\')'),false);
- await button('显示Pending');
+ assert.equal(await js('Array.from(document.querySelectorAll("button")).some(b=>b.textContent==="显示Pending")'),false);
+ await js('document.querySelector(".wb-header summary").click()');
+ assert.equal(await js('document.querySelector("[data-panel-toggle=pending]").checked'),false);
+ await js('document.querySelector("[data-panel-toggle=pending]").click()');
+ await js('document.querySelector(".wb-header summary").click()');
  assert.equal(await js('!!document.querySelector(\'[data-panel="pending"]\')'),true);
  assert.equal(await js('getComputedStyle(document.querySelector(".layer-toggle")).display'),'none');
  assert.equal(await js('!!document.querySelector(".wb-board-actions button")'),true);
@@ -193,6 +214,19 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  await mouse('mouseDown',from.x+25,from.y+12);await mouse('mouseMove',from.x+40,from.y+12);await wait(()=>js('document.querySelector(\'[aria-label="选择故事板 shot1"]\').getAttribute("aria-pressed")=="true"'),'drag activated');await delay(250);await mouse('mouseMove',to.x+25,to.y+12);await delay(300);await mouse('mouseUp',to.x+25,to.y+12);
  await wait(()=>read().shots[0].id==='shot1','header reorder');await button('撤销');await wait(()=>read().shots[0].id==='shot0','reorder undo');
  // Reverse direction: a viewer stroke is visible in the grid before release.
+ // Sample both surfaces throughout the press and commit; a final screenshot misses a one-frame blink.
+ await js("("+(()=>{
+   const surfaces=['viewer:shot0','grid:shot0'].map(id=>document.querySelector('[data-surface="'+id+'"]'));
+   const rects=surfaces.map(s=>s.querySelector('.image-stage').getBoundingClientRect());
+   window.strokeFrames={count:0,errors:[],stop:false};
+   const sample=()=>{const f=window.strokeFrames;if(f.stop)return;f.count++;
+     surfaces.forEach((s,i)=>{const stage=s.querySelector('.image-stage'),r=stage.getBoundingClientRect();
+       const matte=s.querySelector('[data-flow-matte], [data-flow-presentation-preview]');
+       if(!matte||getComputedStyle(matte).visibility==='hidden')f.errors.push('matte hidden '+i);
+       if(stage.querySelectorAll(':scope > img').length<2)f.errors.push('layer removed '+i);
+       if(['x','y','width','height'].some(k=>Math.abs(rects[i][k]-r[k])>1))f.errors.push('stage moved '+i);
+     });requestAnimationFrame(sample);};sample();
+ }).toString()+")()");
  const viewer=await rect('.wb-viewer .wb-surface');
  await mouse('mouseMove',viewer.x+viewer.width*.4,viewer.y+viewer.height*.4);
  await mouse('mouseDown',viewer.x+viewer.width*.4,viewer.y+viewer.height*.4);
@@ -201,6 +235,8 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  await mouse('mouseUp',viewer.x+viewer.width*.6,viewer.y+viewer.height*.4);
  await wait(()=>read().images.image0.layers[1].assetId!==${JSON.stringify(transparent)},'viewer stroke checkpoint');
  await wait(()=>js('!document.querySelector("[data-live-mirror]")'),'viewer mirror settled');
+ const sampling=await js('(()=>{window.strokeFrames.stop=true;return window.strokeFrames})()');
+ assert.ok(sampling.count>2);assert.deepEqual([...new Set(sampling.errors)],[]);
  await button('撤销');await wait(()=>read().images.image0.layers[1].assetId===${JSON.stringify(transparent)},'viewer stroke undo');
  if(count<100){
    const revisionBefore=read().revision;
@@ -264,4 +300,4 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  const chunks=[],child=spawn(require('electron'),[driver],{cwd:repo,env,stdio:['ignore','pipe','pipe']});child.stdout.on('data',b=>chunks.push(b));child.stderr.on('data',b=>{chunks.push(b);process.stderr.write(b)});
  const code=await new Promise(resolve=>child.on('exit',resolve));await writeFile(path.join(run,phase+'.log'),Buffer.concat(chunks));console.log(phase,code,run);if(code!==0)throw Error('Workbench verification failed: '+run);await readFile(path.join(run,phase+'-closed.json'));
 }
-await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['workbench connected to real Session','multi-select displays earliest board','arrows cancel multi-select and stop at boundary','navigation never edits project','hover enables grid painting','drawing selects and follows current board','live stroke mirrored in both directions before pointer release','unsettled stroke blocks navigation','single Undo and Redo restores stroke','text arrows do not navigate','panels hide and restore','panel docking is separate from board ordering','split resize','Pending membership and Undo','header pointer reorder and Undo',...(count<100?['explicit Save for small fixture','Japanese row edit and layout reopen','interrupted Trash: missing and substituted files refused, verified original retry']:[]),'normal Close and reopen retains edits','inline static/hovered/blank dialogue selection and input','A to B to A retains stable records','Enter splits and Shift Enter retains id','same/cross/empty-board dialogue insertion and cancellation','structure actions each undo once','Japanese dialogue soft break survives reopen',...(count>=100?['bounded visible rasters and editable canvases at scale']:[])]},null,2));console.log('PASS',run);
+await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:layersOnly?['workbench layer audit: target isolation, display, gestures, history, checkpoint reopen']:['workbench connected to real Session','multi-select displays earliest board','arrows cancel multi-select and stop at boundary','navigation never edits project','hover enables grid painting','drawing selects and follows current board','live stroke mirrored in both directions before pointer release','unsettled stroke blocks navigation','single Undo and Redo restores stroke','text arrows do not navigate','panels hide and restore','panel docking is separate from board ordering','split resize','Pending membership and Undo','header pointer reorder and Undo',...(count<100?['explicit Save for small fixture','Japanese row edit and layout reopen','interrupted Trash: missing and substituted files refused, verified original retry']:[]),'normal Close and reopen retains edits','inline static/hovered/blank dialogue selection and input','A to B to A retains stable records','Enter splits and Shift Enter retains id','same/cross/empty-board dialogue insertion and cancellation','structure actions each undo once','Japanese dialogue soft break survives reopen',...(count>=100?['bounded visible rasters and editable canvases at scale']:[])]},null,2));console.log('PASS',run);

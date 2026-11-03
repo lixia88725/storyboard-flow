@@ -4,6 +4,10 @@
 
 .flow-dialogue-blocks { display: flex; flex-direction: column; gap: 2px; color: #e2e5e7; font: 12px "PingFang SC", sans-serif; }
 .flow-dialogue-blocks.is-compact { font-size: 11px; gap: 1px; }
+/* The full editor sits beside another captioned field, so it carries the matching caption.
+   Line box 16px + gap 2px + 5px margin lines the first text box up with a field whose
+   textarea keeps the host's 7px top margin. Compact letterbox overlays render no caption. */
+.flow-dialogue-heading { margin-bottom: 5px; font-size: 11px; line-height: 16px; color: #94a0aa; }
 
 .flow-dialogue-block { position: relative; display: flex; align-items: flex-start; gap: 4px; border-radius: 3px; }
 /* The insertion line only exists while a drag is over this board. */
