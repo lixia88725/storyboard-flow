@@ -1,0 +1,165 @@
+/* Shared drawing surfaces, selection controls and onion-skin presentation. */
+.sketch-panel {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border-bottom: 2px solid #171b1f;
+  background: var(--slate-canvas);
+}
+
+.image-stage {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, #d9d9d9 25%, transparent 25%),
+    linear-gradient(-45deg, #d9d9d9 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d9d9d9 75%),
+    linear-gradient(-45deg, transparent 75%, #d9d9d9 75%),
+    #ffffff;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  background-size: 16px 16px;
+  isolation: isolate;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.image-stage img,
+.live-bitmap-canvas,
+.selection-transform-canvas,
+.bitmap-selection-overlay,
+.stage-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.brush-cursor-preview {
+  position: absolute;
+  z-index: 4;
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 1px solid rgba(16, 24, 32, 0.82);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.94);
+  transform: translate(-50%, -50%);
+}
+
+.image-stage img {
+  object-fit: fill;
+  user-select: none;
+}
+
+.live-bitmap-canvas {
+  pointer-events: none;
+  user-select: none;
+}
+
+.selection-transform-canvas,
+.bitmap-selection-overlay {
+  pointer-events: none;
+  user-select: none;
+}
+
+.bitmap-selection-overlay {
+  z-index: 2;
+  overflow: visible;
+}
+
+.selection-transform-canvas {
+  z-index: 1;
+}
+
+.bitmap-selection-outline,
+.bitmap-selection-bounds {
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: #111;
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.bitmap-selection-bounds {
+  fill: none;
+  stroke: #fff;
+}
+
+.bitmap-selection-handle {
+  fill: #fff;
+  stroke: #111;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.bitmap-selection-rotation-stem {
+  stroke: #fff;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.bitmap-selection-rotation-handle {
+  fill: #f05a28;
+  stroke: #fff;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.onion-skin-overlay,
+.onion-skin-ghost,
+.onion-skin-stage,
+.onion-skin-image {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none;
+  user-select: none;
+}
+
+.onion-skin-overlay {
+  z-index: 1;
+}
+
+.onion-skin-ghost {
+  opacity: 0.28;
+  mix-blend-mode: multiply;
+}
+
+.onion-skin-ghost-previous {
+  filter: grayscale(1) sepia(1) saturate(5) hue-rotate(315deg);
+}
+
+.onion-skin-ghost-next {
+  filter: grayscale(1) sepia(1) saturate(4) hue-rotate(80deg);
+}
+
+.onion-skin-image {
+  object-fit: fill;
+}
+
+.onion-skin-stage canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.stage-overlay canvas {
+  width: 100% !important;
+  height: 100% !important;
+  touch-action: none;
+  user-select: none;
+}
+
+.stage-overlay .konvajs-content {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+}

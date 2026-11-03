@@ -1,76 +1,57 @@
-# Storyboard Flow developer rules
+# Storyboard Flow 开发规则
 
-## Current work and authority — 2026-10-31
+## 当前目标与授权（2026-11-03）
 
-Coordinator owns original main and continues the isolated new-format editor integration.
-The user authorized a parallel documentation-cleanup worktree; its assigned scope is
-history/navigation only. Current behavior/evidence is in context-handoff.md; unfinished
-gates are in todo.md. Historical wave-one, wave-two and batch-three briefs are evidence,
-not instructions to restart agents. Prior authority text is preserved in
-[the dated snapshot](docs/archive/coordinator/2026-10-31/AGENTS.md).
+- 新工作台作为唯一入口，正式退役旧前端、旧后端及其启动路径。旧前端移入独立 `archive/`，仅供交互参考，不参与运行、构建或发布；新版仍依赖的共享模块保留。
+- 这是已批准的迁移目标，完成状态以 `docs/CURRENT.md` 和验证证据为准。旧格式测试项目无需兼容；用户原文件、旧项目和恢复数据必须保留，不自动迁移。
+- 主 Agent 负责目标、协作与最终验收。按需分工，说明职责、交付物、依赖和验收标准；执行者实现并自测，审查保持独立。共享文件协调写权，并行写入使用隔离 worktree。
+- 本地范围内实现、合成测试、本地提交与主管集成已获授权；发布、推送、依赖安装、全局配置及个人媒体修改需要另行授权。
+- GitHub以 `main` 为唯一长期分支；用户要求提交和推送时默认使用main，不自动创建远端备份或功能分支。并行写入所需的本地隔离worktree不自动推送；已有远端分支须核对内容后另行清理。
+- 保留启动器“先构建源码再启动”的行为。功能完成需用户试用时，直接打开新版；重启只正常关闭已确认归属的试用实例，保留用户画稿与布局。
 
-New-format redesign does not require compatibility with old test projects. Preserve old
-files and recovery data. Local scoped implementation, synthetic tests, local commits and
-coordinator integration are authorized. Default production routing, dependency installation,
-personal media changes, publication and push are outside the current task. One writable
-Session per project. Existing launcher 启动测试.command builds source before launching;
-keep it intact unless the user requests a launcher change.
+## 开始工作
 
-## Project and naming
+1. 先读本文件和 `docs/CURRENT.md`；改数据/接口/文件流程前读 `docs/ARCHITECTURE.md`，改交互前读 `docs/DESIGN.md`，验证或打包前读 `docs/DEVELOPMENT.md`。
+2. 核对当前目录、Git 状态和 worktree；保留已有改动，不 reset、stash 或覆盖他人的工作。
+3. 改接口前读定义与调用方。历史任务书仅作证据，不据此重启任务；文档不产生新授权。重大范围冲突交由用户决定。
 
-Storyboard Flow is a local-first Electron desktop app for arranging storyboard images, moving dialogue between shots, drawing edits, and managing lightweight storyboard layers.
+## 文档分工与维护
 
-The user approved complete naming unification on 2026-10-29. Use `Storyboard Flow` for the product, `Flow`/`flow` for code identifiers, and `FLOW_*` for environment variables. Current data uses `.storyboard-flow`, managed child projects use `.storyboard-flow-project`, and the standalone new core uses `.storyboard-flow/checkpoints`. TIFF uses `app: "Storyboard Flow"`, `format: "flow-tiff"` and the `flow:metadata` XMP tag. See `docs/architecture/NAMING.md` for exact scopes. Existing old-format folders are retained without migration; historical reports preserve their original names and evidence. This explicit approval supersedes the previous internal-name compatibility rule; it does not authorize changing personal files or deleting recovery data.
+| 文档 | 负责内容 |
+| --- | --- |
+| [README](README.md) | 软件介绍、启动方式和文档导航 |
+| 本文件 AGENTS | 必须遵守的工作规则、授权和安全边界 |
+| [CURRENT](docs/CURRENT.md) | 当前进度、验证结果、剩余工作 |
+| [DESIGN](docs/DESIGN.md) | 已确认的产品行为、设计目的与取舍 |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | 模块职责、数据流和接口契约 |
+| [DEVELOPMENT](docs/DEVELOPMENT.md) | 项目特有的工具入口、操作与验证方法 |
 
-## Context and authorization
+同一条信息只在负责它的文档中维护，其他文档链接引用。任务收尾时更新受影响的文档，不另建重复交接单；通用开发常识和可直接从代码/配置查到的细节不重复抄写。PD2等参考资料与归档不自动成为本项目需求；已确认的取舍写入DESIGN。
 
-Read this file, `context-handoff.md`, and `todo.md` first. Read relevant sections of `docs/architecture/SYSTEM.md` and `decisions.md` for the task. Documentation describes behavior, not new permission. Other machines need not have workstation-specific rules or tools. Check applicable local rules and task authorization explicitly.
+用户要求 commit 时，提交前检查所有当前文档是否受本次拟提交改动影响，包括内容、路径和验证状态；需要更新的先同步，再与相关代码一起提交，无需更新的说明原因。历史归档和参考原文不自动改写；检查不扩大提交范围，不纳入无关改动。这是提交前复核，不替代任务收尾时的文档维护。
 
-Check Git/worktree status before editing and preserve existing work. Use an isolated worktree for concurrent changes. Do not reset or stash someone else's work. Read definitions and callers before changing contracts. Existing safety boundaries and approved scope take precedence over old notes; seek a decision on material conflicts rather than silently changing requirements.
+## 命名与模块边界
 
-## Stack and routing
+- 产品名 `Storyboard Flow`，代码标识 `Flow/flow`，环境变量 `FLOW_*`。改磁盘格式、命名或模块职责时，先查 [ARCHITECTURE](docs/ARCHITECTURE.md)；历史证据保留原名。
+- 编排逻辑放在所属专用模块，避免堆入入口组件；模块定位见架构中的代码地图。
+- 修改 IPC/preload 时同步运行中的桥接实现、类型声明和校验；跨边界改动必须做真实连接验证。
+- 普通拖拽移动/排序；Alt/Option 拖拽复制已退役。内置 AI 生成、供应商和候选界面已退役，普通 Pending 保留。
 
-- Electron main/preload; React + TypeScript + Vite renderer; dnd-kit drag behavior; Canvas/react-konva drawing; sharp TIFF/PNG processing; Python TIFF/native permission helpers; Vitest tests.
-- Existing production drawing data is bitmap-layer based: `shots[].layers`, with PNGs under `.storyboard-flow/layers/{shotId}/{layerId}.png`. Legacy `sketchLayers` and `imageLayerEdits` are migration inputs, not primary editing data.
-- Project ordering, dialogue, rename plans, layer metadata/locks and FLOW import status: start at `src/shared/projectOps.ts` and its tests.
-- Renderer behavior belongs in focused controllers/helpers. Keep canvas work in `SketchPad.tsx` and its controllers; layer selection/merge/visibility/drag/opacity in `LayerPanel.tsx` and shared rules. Avoid adding orchestration inline to `App.tsx`.
-- High-risk Save/Import/TIFF orchestration remains in `electron/main/main.ts`; isolated IPC/read-side/runtime work goes in focused main services and runtimes with tests.
-- Preload changes update `electron/preload/preload.ts`, `electron/preload/preload.cjs` and `src/renderer/global.d.ts` together.
-- Cross-boundary changes require real connected checks. Inspect `scripts/electron-bitmap-smoke.mjs` before executing; it is not automatically safe for personal userData, Trash or clipboard.
-- Option/Alt drag copy is retired; normal drag moves/sorts. Do not reintroduce copy-on-drag without an explicit product decision.
-- Built-in AI generation/provider/candidate UI is retired. Do not recreate it as part of unrelated work. Ordinary Pending remains supported.
+## 文件与数据安全
 
-## File and data safety
+- 每个项目仅允许一个可写 Session。用户文件仅按明确操作改变；内部资产不能当成根目录故事板图片。
+- 自动暂存只保存内部状态；显式 Save 才同步工作 TIFF 像素与真实文件名。文件重命名采用两阶段方式；既有获批的创建/导入物化路径仍按其契约执行。
+- 删除先进入应用状态，Save 时才将已删除工作图片送入系统废纸篓。Pending 在 Save 前仅为逻辑归属，Save 写入 `Pending/`；不参与活动板编号、翻板或活动板Markdown导出。详见 `docs/ARCHITECTURE.md`。
+- 保留原件、恢复对象、History、保管标记、旧资产及失败/未知结果证据。恢复副本不可执行，不通过系统打开。每工作区恢复预算默认 8 GiB（实际与预留合计），超额拒绝新支出，不自动清理恢复数据。
+- 原生权限不明时安全拒绝，不扩大权限。超时不等于取消；在途副作用必须结算，失败保留或清理不能伪装成 Save 成功。
+- 不把源码清理扩大为用户项目清理。凭据不得写入仓库；不终止无关进程。
+- SQLite、PDF 导出、云同步/协作、PSD 优先流程、Photoshop 全保真往返及格式迁移均需另行批准。
 
-Preserve user files unless an explicit user action requires changing them. Keep V1 Project/Shot/Dialogue/BitmapLayer and naming metadata understandable and local-first. Use two-stage renaming for working image filenames.
+## 验证与交付
 
-Save is the operation for synchronizing real filenames and writing working TIFF pixels. Do not auto-rename real images during autosave. Existing explicitly approved Create/Import/Pending materialization paths remain exceptions described in the architecture; this does not grant new write paths.
-
-Storyboard deletion remains pending app state until Save; deleted root images go to system Trash, not Archive. In the isolated new-format editor, Pending is logical membership until Save, which writes parked TIFFs under Pending/; see docs/refactor/PENDING.md. Parked shots do not participate in active-board filename numbering, Timeline or `storyboard-script.md`. Keep the existing production route separate until its integration gate.
-
-Do not treat `.storyboard-flow` assets as root image shots. Keep failures, recovery objects, History, custody pins and old assets intact. Unknown native restrictions must refuse safely rather than widening permissions. Recovery copies are non-executable; do not OS-open them. The default per-workspace recovery budget is 8GiB across actual/reserved partitions; reject new spending rather than automatically deleting recovery data. Do not turn a retained failure or cleanup into successful Save ACK. In-flight effects must settle; timeout is not cancellation.
-
-No SQLite, PDF export, cloud sync/collaboration, PSD-first workflow, Photoshop full-fidelity round-trip or format migration without separate approval. Do not install dependencies, access real media/credentials, change global configuration, terminate unrelated processes, commit, push, merge, publish or deploy merely because a script is available. These actions need appropriate task authority. Never place API keys in project files.
-
-## Tests and completion
-
-Use focused regression tests for behavior changes; keep necessary assertions. Run the complete allowed suite and `npm run build` before claiming an implementation complete. The build includes both renderer and Electron typechecks; retain the full log rather than mechanically repeating identical typecheck evidence. Vite-only or build:electron is insufficient.
-
-Commands (installation and execution still require task authorization):
-
-```sh
-npm ci
-npm run dev
-npm run test
-npm run typecheck
-npm run build
-npm run check:preload
-npm run prepare:package-resources
-npm run smoke:bitmap
-```
-
-`src/renderer/normalSaveMetadataHistory.test.ts` is not certified input: do not read, copy, hash, execute or publish it. Only certified fixtures may be used. `vitest.config.ts` explicitly excludes that path, and it is not distributed in the source candidate. Use the approved enumerated suite for restricted verification; do not broaden input discovery to unapproved fixtures.
-
-Run `check:preload` for preload changes. Packaging resource changes require `prepare:package-resources` with pre-existing compatible dependencies; do not silently install them. Build before smoke:bitmap because it uses dist/dist-electron. Preserve smoke scenarios when adding focused coverage. For UI changes verify the actual workflow and protected nearby paths when feasible; mark untested GUI behavior TODO: verify. Test doubles or green unit tests do not prove real GUI, platform, cross-machine or installer behavior.
-
-Report implemented, self-tested, independently accepted and published states separately. Use independent review according to risk; self-tests are not independent acceptance. Missing required behavior evidence prevents an overall PASS. Keep exact candidate identity, commands, raw results, skips, failure boundaries and owned-resource cleanup in the task handoff. Do not delete assertions or shrink approved requirements to get green.
+- 行为变更做聚焦回归；完成声明前运行完整获准测试集和 `npm run build`（含 renderer/Electron 类型检查），保留完整日志。
+- **禁止读取、复制、哈希、执行或发布 `src/renderer/normalSaveMetadataHistory.test.ts`。** 仅使用获准夹具及明确枚举的测试集；归档、扫描和打包也必须排除该文件。
+- preload 与打包资源改动须完成对应专项检查，入口见 [DEVELOPMENT](docs/DEVELOPMENT.md)，只使用已安装的兼容依赖。执行 GUI 脚本前检查副作用，使用合成项目、独立 userData，保护个人数据、剪贴板与废纸篓。
+- 使用 dist 的 GUI 验证先完整构建；检查实际操作及邻近受保护路径。未验证的 GUI、输入法、硬件、跨平台与安装器行为明确标记待验，单测通过不能替代这些证据。
+- 退役旧测试时记录对应的已退役路径及新版覆盖，不能为通过测试而删断言或缩小产品要求。
+- 分别报告已实现、自测、独立验收和发布状态；交接包含候选身份、命令、原始结果、跳过项、失败边界和自有资源收尾。缺少必要证据时不宣称整体通过。

@@ -21,9 +21,12 @@ const sharpRuntimePackage = `sharp-darwin-${macArch}`;
 const sharpLibvipsPackage = `sharp-libvips-darwin-${macArch}`;
 
 const requiredSourcePaths = [
+  path.join(repoRoot, 'src/project-files/main/formats/codec.py'),
+  path.join(repoRoot, 'src/platform/main/platform/publish_directory.py'),
+  path.join(repoRoot, 'scripts/layer-file-permissions.py'),
   path.join(repoRoot, "dist", "index.html"),
-  path.join(repoRoot, "dist-electron", "main", "main.js"),
-  path.join(repoRoot, "electron", "preload", "preload.cjs"),
+  path.join(repoRoot, "dist-electron", "platform", "main", "flowEditorEntry.js"),
+  path.join(repoRoot, "src", "platform", "preload", "flowEditor.cjs"),
   path.join(repoRoot, "dist-resources", "python-deps", "photoshop-tiff"),
   path.join(repoRoot, "node_modules", "electron", "dist", "Electron.app"),
   path.join(repoRoot, "node_modules", "sharp"),
@@ -35,10 +38,13 @@ const requiredSourcePaths = [
 ];
 
 const requiredPackagedPaths = [
+  path.join(packagedAppRoot, 'src/project-files/main/formats/codec.py'),
+  path.join(packagedAppRoot, 'src/platform/main/platform/publish_directory.py'),
+  path.join(packagedAppRoot, 'scripts/layer-file-permissions.py'),
   path.join(packagedAppRoot, "package.json"),
   path.join(packagedAppRoot, "dist", "index.html"),
-  path.join(packagedAppRoot, "dist-electron", "main", "main.js"),
-  path.join(packagedAppRoot, "electron", "preload", "preload.cjs"),
+  path.join(packagedAppRoot, "dist-electron", "platform", "main", "flowEditorEntry.js"),
+  path.join(packagedAppRoot, "src", "platform", "preload", "flowEditor.cjs"),
   path.join(packagedAppRoot, "node_modules", "sharp"),
   path.join(packagedAppRoot, "node_modules", "@img", sharpRuntimePackage),
   path.join(
@@ -101,7 +107,7 @@ run("/usr/libexec/PlistBuddy", [
 
 await cp(path.join(repoRoot, "node_modules", "electron", "LICENSE"), path.join(appResources, "LICENSE"));
 await cp(path.join(repoRoot, "node_modules", "electron", "dist", "LICENSES.chromium.html"), path.join(appResources, "LICENSES.chromium.html"));
-await mkdir(path.join(packagedAppRoot, "electron", "preload"), { recursive: true });
+await mkdir(path.join(packagedAppRoot, "src", "platform", "preload"), { recursive: true });
 await mkdir(path.join(packagedAppRoot, "scripts"), { recursive: true });
 await mkdir(path.join(packagedAppRoot, "node_modules", "@img"), { recursive: true });
 
@@ -111,29 +117,18 @@ await cp(path.join(repoRoot, "dist-electron"), path.join(packagedAppRoot, "dist-
   recursive: true
 });
 await cp(
-  path.join(repoRoot, "electron", "preload", "preload.cjs"),
-  path.join(packagedAppRoot, "electron", "preload", "preload.cjs")
-);
-await cp(
-  path.join(repoRoot, "scripts", "photoshop-layered-tiff-export.py"),
-  path.join(packagedAppRoot, "scripts", "photoshop-layered-tiff-export.py")
-);
-await cp(
-  path.join(repoRoot, "scripts", "photoshop-layered-tiff-import.py"),
-  path.join(packagedAppRoot, "scripts", "photoshop-layered-tiff-import.py")
+  path.join(repoRoot, "src", "platform", "preload", "flowEditor.cjs"),
+  path.join(packagedAppRoot, "src", "platform", "preload", "flowEditor.cjs")
 );
 await cp(
   path.join(repoRoot, "scripts", "layer-file-permissions.py"),
   path.join(packagedAppRoot, "scripts", "layer-file-permissions.py")
 );
-await cp(path.join(repoRoot, "dist-resources"), appResources, { recursive: true });
-for (const script of [
-  "recovery-origin-permissions.py", "recovery-claim-records.py",
-  "recovery-content-permissions.py", "recovery-origin-enrollment.py",
-  "recovery-project-permissions.py", "owned-stage-cleanup.py"
-]) {
-  await cp(path.join(repoRoot, "scripts", script), path.join(packagedAppRoot, "scripts", script));
+for (const worker of ['src/project-files/main/formats/codec.py', 'src/platform/main/platform/publish_directory.py']) {
+  await mkdir(path.dirname(path.join(packagedAppRoot, worker)), { recursive: true });
+  await cp(path.join(repoRoot, worker), path.join(packagedAppRoot, worker));
 }
+await cp(path.join(repoRoot, "dist-resources"), appResources, { recursive: true });
 
 await copyNodeModule("sharp");
 await copyNodeModule("@img", sharpRuntimePackage);
@@ -152,7 +147,7 @@ await writeFile(
       private: true,
       license: "MIT",
       type: "module",
-      main: "dist-electron/main/main.js",
+      main: "dist-electron/platform/main/flowEditorEntry.js",
       dependencies: {
         sharp: "^0.34.2"
       }

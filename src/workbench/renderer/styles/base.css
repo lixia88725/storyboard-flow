@@ -1,0 +1,76 @@
+:root {
+  --topbar-height: 38px;
+  --topbar-control-height: 28px;
+  --bottom-bar-height: 36px;
+  --status-toggle-size: 20px;
+  color: #211f1a;
+  background: #f2efe7;
+  font-family:
+    ui-sans-serif,
+    "Avenir Next",
+    "Helvetica Neue",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 1000px;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(29, 28, 24, 0.04) 1px, transparent 1px),
+    linear-gradient(rgba(29, 28, 24, 0.04) 1px, transparent 1px),
+    #f2efe7;
+  background-size: 32px 32px;
+}
+
+button,
+textarea,
+input,
+select {
+  font: inherit;
+}
+
+:where(
+  textarea,
+  select,
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="color"])
+):focus {
+  outline: none;
+}
+
+button {
+  border: 1px solid #27231d;
+  background: #fffaf0;
+  color: #211f1a;
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  box-shadow: 0 1px 0 #27231d;
+}
+
+button:hover {
+  background: #fff3d8;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+button.primary {
+  background: #1f6f62;
+  color: #fffdf7;
+  border-color: #164b43;
+}

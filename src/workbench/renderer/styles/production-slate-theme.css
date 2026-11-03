@@ -1,0 +1,78 @@
+/* Shared palette and control theme. Applied after base and component rules. */
+:root {
+  --slate-bg: #151719;
+  --slate-bg-2: #1a1d20;
+  --slate-chrome: #22262a;
+  --slate-panel: #24282d;
+  --slate-panel-2: #2d3339;
+  --slate-panel-3: #343b42;
+  --slate-panel-glow: rgba(243, 239, 228, 0.055);
+  --slate-line: #3c444c;
+  --slate-line-strong: #535c66;
+  --slate-ink: #f3efe4;
+  --slate-text: #d8d2c5;
+  --slate-muted: #9ca4ad;
+  --slate-dim: #737d86;
+  --slate-input: #171a1d;
+  --slate-canvas: #0e1012;
+  --slate-accent: #ff642d;
+  --slate-accent-soft: rgba(255, 100, 45, 0.24);
+  --slate-accent-ink: #151719;
+  --slate-tool-icon: color-mix(in srgb, var(--slate-muted), var(--slate-bg) 26%);
+  --slate-tool-icon-selected: color-mix(in srgb, #fff7ed, var(--slate-accent) 34%);
+  --slate-good: #50bfa5;
+  --slate-warn: #f2bc5b;
+  --slate-danger: #f08a68;
+  --slate-radius: 6px;
+  --slate-shadow-card: 0 1px 0 rgba(0, 0, 0, 0.28);
+  --slate-shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.24);
+  color: var(--slate-ink);
+  background: var(--slate-bg);
+}
+
+body {
+  background: #151719;
+}
+
+button {
+  border-color: var(--slate-line);
+  background: #252a2f;
+  color: var(--slate-ink);
+  box-shadow: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    color 120ms ease;
+}
+
+button:hover {
+  border-color: var(--slate-line-strong);
+  background: #2b3036;
+}
+
+button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--slate-accent), white 8%);
+  outline-offset: 2px;
+}
+
+button.primary {
+  border-color: color-mix(in srgb, var(--slate-accent), black 36%);
+  background: var(--slate-accent);
+  color: var(--slate-accent-ink);
+  box-shadow: none;
+}
+
+button:disabled {
+  opacity: 0.44;
+}
+
+.layer-panel-controls select,
+.layer-panel-controls input {
+  border-color: #101316;
+  background: var(--slate-input);
+  color: var(--slate-ink);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.42),
+    0 1px 0 rgba(255, 255, 255, 0.035);
+}

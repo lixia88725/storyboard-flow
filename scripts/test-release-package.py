@@ -17,9 +17,9 @@ class PackageValidation(unittest.TestCase):
         root = "Storyboard Flow-Windows-x64/" if windows else "Storyboard Flow.app/Contents/"
         res = root + ("resources/" if windows else "Resources/")
         app = res + "app/"
-        files = {app + "package.json": json.dumps({"version": version}).encode(), app + "LICENSE": license_bytes,
-                 app + "dist/index.html": b"html", app + "dist-electron/main/main.js": b"main",
-                 app + "electron/preload/preload.cjs": b"preload", app + "node_modules/sharp/LICENSE": b"Apache",
+        files = {app + "src/project-files/main/formats/codec.py": b"codec", app + "src/platform/main/platform/publish_directory.py": b"publish", app + "package.json": json.dumps({"version": version, "main": "dist-electron/platform/main/flowEditorEntry.js"}).encode(), app + "LICENSE": license_bytes,
+                 app + "dist/index.html": b"html", app + "dist-electron/platform/main/flowEditorEntry.js": b"main",
+                 app + "src/platform/preload/flowEditor.cjs": b"preload", app + "node_modules/sharp/LICENSE": b"Apache",
                  root + ("LICENSE" if windows else "Resources/LICENSE"): b"Electron MIT",
                  root + ("LICENSES.chromium.html" if windows else "Resources/LICENSES.chromium.html"): b"Chromium notices",
                  root + ("Storyboard Flow.exe" if windows else "MacOS/Storyboard Flow"): b"runtime",
@@ -32,10 +32,7 @@ class PackageValidation(unittest.TestCase):
             files.update({app + "node_modules/@img/sharp-darwin-arm64/LICENSE": b"Apache",
                           app + "node_modules/@img/sharp-libvips-darwin-arm64/versions.json": b"{}",
                           app + "node_modules/@img/sharp-libvips-darwin-arm64/README.md": b"libvips LGPLv3"})
-        for script in ["photoshop-layered-tiff-export.py", "photoshop-layered-tiff-import.py",
-                       "layer-file-permissions.py", "recovery-origin-permissions.py", "recovery-claim-records.py",
-                       "recovery-content-permissions.py", "recovery-origin-enrollment.py",
-                       "recovery-project-permissions.py", "owned-stage-cleanup.py"]:
+        for script in ["layer-file-permissions.py"]:
             files[app + "scripts/" + script] = b"synthetic helper"
         if omit:
             files = {n: data for n, data in files.items() if omit not in n}
@@ -61,14 +58,19 @@ class PackageValidation(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validator.validate_package(self.fixture(True, **args), "0.1.31", b"project MIT")
 
+    def test_missing_new_codec(self):
+        with self.assertRaisesRegex(ValueError, "codec.py"):
+            validator.validate_package(self.fixture(False, omit="codec.py"), "0.1.31", b"project MIT")
+
+    def test_missing_publish_worker(self):
+        with self.assertRaisesRegex(ValueError, "publish_directory.py"):
+            validator.validate_package(self.fixture(False, omit="publish_directory.py"), "0.1.31", b"project MIT")
+
     def test_missing_python_runtime(self):
         with self.assertRaises(ValueError):
             validator.validate_package(self.fixture(True, omit="python/python.exe"), "0.1.31", b"project MIT")
         for windows in [False, True]:
-            for script in ["photoshop-layered-tiff-export.py", "photoshop-layered-tiff-import.py",
-                           "layer-file-permissions.py", "recovery-origin-permissions.py", "recovery-claim-records.py",
-                           "recovery-content-permissions.py", "recovery-origin-enrollment.py",
-                           "recovery-project-permissions.py", "owned-stage-cleanup.py"]:
+            for script in ["layer-file-permissions.py"]:
                 with self.subTest(windows=windows, script=script), self.assertRaises(ValueError):
                     validator.validate_package(self.fixture(windows, omit="scripts/" + script), "0.1.31", b"project MIT")
 

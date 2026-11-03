@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { preparePackageResources } from "../dist-electron/main/packageResources.js";
+import { preparePackageResources } from "../dist-electron/platform/main/packageResources.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 

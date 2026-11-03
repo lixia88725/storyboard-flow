@@ -2,7 +2,7 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {open, link, unlink} from 'node:fs/promises';
-import {createProjectStore} from '../dist-electron/core/persistence/index.js';
+import {createProjectStore} from '../dist-electron/project-files/main/persistence/index.js';
 
 function heading(text) {
   return text.replace(/[\r\n]+/g,' ').replace(/[\\<>\[\]*_`#]/g, character=>'\\'+character);

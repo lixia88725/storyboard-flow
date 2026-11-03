@@ -2,8 +2,8 @@ import {createRequire} from 'node:module';
 import {spawn,execFileSync} from 'node:child_process';
 import {mkdtemp,mkdir,writeFile,readFile,realpath} from 'node:fs/promises';
 import path from 'node:path';import os from 'node:os';import {fileURLToPath} from 'node:url';import sharp from 'sharp';
-import {openFlowAssetDepot} from '../dist-electron/core/persistence/depot.js';
-import {createProjectStore} from '../dist-electron/core/persistence/index.js';
+import {openFlowAssetDepot} from '../dist-electron/project-files/main/persistence/depot.js';
+import {createProjectStore} from '../dist-electron/project-files/main/persistence/index.js';
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),require=createRequire(import.meta.url),get=r=>{if(!r.ok)throw Error(r.error.message);return r.value;};
 const run=await mkdtemp(path.join(await realpath(os.tmpdir()),'flow-workbench-smoke-')),root=path.join(run,'project');await mkdir(root);
 const depot=get(await openFlowAssetDepot({root,sessionId:'seed',maxPixels:1000000,maxPngBytes:1000000}));
@@ -32,7 +32,7 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
    if(name==='flow-editor:saveTiff' && gateSave)await new Promise(resolve=>releaseSave=resolve);
    return fn(...args);
  });
- process.argv=[process.argv[0],${JSON.stringify(path.join(repo,'dist-electron/main/flowEditorEntry.js'))},${JSON.stringify(root)},${JSON.stringify(userData)},'--workbench'];
+ process.argv=[process.argv[0],${JSON.stringify(path.join(repo,'dist-electron/platform/main/flowEditorEntry.js'))},${JSON.stringify(root)},${JSON.stringify(userData)},'--workbench'];
  let win;const phase=${JSON.stringify(phase)},count=${count};const delay=ms=>new Promise(r=>setTimeout(r,ms));const read=()=>JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/checkpoints/project.json'))},'utf8'));const js=c=>win.webContents.executeJavaScript(c);
  async function wait(fn,label){for(let i=0;i<400;i++){try{if(await fn())return}catch{}await delay(50)}throw Error('Timeout '+label)}
  async function button(text){await js('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==='+JSON.stringify(text)+').click()');await delay(100)}
@@ -43,7 +43,7 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  const selected=()=>js('Array.from(document.querySelectorAll(".wb-card.is-selected")).map(e=>e.dataset.boardId)');
  app.on('window-all-closed',()=>fs.writeFileSync(${JSON.stringify(path.join(run,phase+'-closed.json'))},'{}'));
  const started=Date.now();
- import(${JSON.stringify('file://'+path.join(repo,'dist-electron/main/flowEditorEntry.js'))}).then(async()=>{
+ import(${JSON.stringify('file://'+path.join(repo,'dist-electron/platform/main/flowEditorEntry.js'))}).then(async()=>{
  await app.whenReady();await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win},'window');win.setSize(1600,1000);
  await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');
  await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("Flow 内已保存")'),'checkpoint');
@@ -111,6 +111,9 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  const from=await rect('[aria-label="选择故事板 shot1"]'),to=await rect('[aria-label="选择故事板 shot0"]');
  await mouse('mouseDown',from.x+25,from.y+12);await mouse('mouseMove',from.x+40,from.y+12);await wait(()=>js('document.querySelector(\'[aria-label="选择故事板 shot1"]\').getAttribute("aria-pressed")=="true"'),'drag activated');await delay(250);await mouse('mouseMove',to.x+25,to.y+12);await delay(300);await mouse('mouseUp',to.x+25,to.y+12);
  await wait(()=>read().shots[0].id==='shot1','header reorder');await button('撤销');await wait(()=>read().shots[0].id==='shot0','reorder undo');
+ // Undo restores board order, not selection. Select the target explicitly before testing its raster.
+ await js('document.querySelector(\'[aria-label="选择故事板 shot0"]\').click()');
+ await wait(async()=>await current()==='shot0','viewer stroke target');
  // Reverse direction: a viewer stroke is visible in the grid before release.
  const viewer=await rect('.wb-viewer .wb-surface');
  await mouse('mouseMove',viewer.x+viewer.width*.4,viewer.y+viewer.height*.4);

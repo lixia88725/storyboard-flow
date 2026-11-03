@@ -17,7 +17,7 @@ if (fixture.id !== 'studio-sample' || !Number.isInteger(Number(stepArg)) || Numb
   throw Error('Expected a generated sample and a navigation range inside its active boards.');
 const steps = Number(stepArg);
 const userData = fs.mkdtempSync(path.join(os.tmpdir(),'flow-profile-'));
-const entry = path.resolve('dist-electron/main/flowEditorEntry.js');
+const entry = path.resolve('dist-electron/platform/main/flowEditorEntry.js');
 process.argv = [process.execPath,entry,root,userData,'--workbench'];
 const started = performance.now();
 const delay = ms => new Promise(resolve => setTimeout(resolve,ms));

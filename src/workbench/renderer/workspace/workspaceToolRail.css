@@ -1,0 +1,15 @@
+.wb-tool-rail { width:48px; flex:none; display:flex; flex-direction:column; min-height:0; overflow-y:auto; overflow-x:hidden; background:#242529; border-right:1px solid var(--wb-line); color:#c6cace; }
+.wb-tool-rail-list { display:flex; flex-direction:column; align-items:center; padding:7px 4px; gap:4px; }
+.flow-workbench .wb-tool-rail-list button { display:grid; place-items:center; width:34px; height:34px; padding:0; border:1px solid transparent; border-radius:5px; color:#afb8be; }
+.flow-workbench .wb-tool-rail-list button[aria-pressed=true] { background:#354458; color:#d5e5ff; border-color:#536a85; }
+.wb-tool-rail-list button>span { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
+.wb-tool-glyph { display:block;pointer-events:none; }
+.wb-tool-options { border-top:1px solid var(--wb-line); padding:8px 4px; display:grid; gap:12px; }
+.wb-tool-options label { display:flex;flex-direction:column;align-items:center;gap:5px;color:#aab4ba;font-size:10px; }
+.wb-tool-options input { min-width:0; }
+.wb-tool-options output { color:#cbd5e2;font-size:11px;font-variant-numeric:tabular-nums; }
+.flow-workbench .wb-tool-options input[type=range] { writing-mode:vertical-lr;direction:rtl; width:20px;height:112px; margin:3px 0;cursor:ns-resize; }
+.flow-workbench .wb-tool-options input[type=color] { width:26px;height:26px; border-radius:4px;cursor:pointer; }
+.flow-workbench .wb-tool-options .wb-apply-blur { font-size:10px;line-height:1.4;border:1px solid #50575e;background:#30383d;padding:5px 2px; }
+.wb-tool-rail-footer { margin-top:auto; border-top:1px solid var(--wb-line); padding:6px 3px; display:grid;gap:3px; }
+.flow-workbench .wb-tool-rail-footer button { width:100%;font-size:10px;padding:5px 0; }

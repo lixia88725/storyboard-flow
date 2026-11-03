@@ -11,7 +11,7 @@ if (!app.requestSingleInstanceLock()) {
     const win = BrowserWindow.getAllWindows()[0];
     if (win) { win.restore(); win.show(); win.focus(); }
   });
-  const entry = path.resolve(__dirname, '../dist-electron/main/flowEditorEntry.js');
+  const entry = path.resolve(__dirname, '../dist-electron/platform/main/flowEditorEntry.js');
   process.argv = [process.execPath, entry, path.join(run,'project'), userData, '--workbench'];
   import(pathToFileURL(entry).href);
 }

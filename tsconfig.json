@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ES2022",
     "useDefineForClassFields": true,
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ES2022"
+    ],
     "allowJs": false,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -16,6 +20,13 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src"],
-  "exclude": ["src/renderer/normalSaveMetadataHistory.test.ts"]
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/renderer/normalSaveMetadataHistory.test.ts",
+    "src/platform/main",
+    "src/platform/preload",
+    "src/project-files/main"
+  ]
 }

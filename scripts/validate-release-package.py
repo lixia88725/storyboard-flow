@@ -14,8 +14,8 @@ def validate_package(zip_path, version, license_bytes):
     app = resources + "app/"
     with zipfile.ZipFile(zip_path) as archive:
         names = set(archive.namelist())
-        required = [app + "package.json", app + "LICENSE", app + "dist/index.html",
-                    app + "dist-electron/main/main.js", app + "electron/preload/preload.cjs",
+        required = [app + "src/project-files/main/formats/codec.py", app + "src/platform/main/platform/publish_directory.py", app + "package.json", app + "LICENSE", app + "dist/index.html",
+                    app + "dist-electron/platform/main/flowEditorEntry.js", app + "src/platform/preload/flowEditor.cjs",
                     app + "node_modules/sharp/LICENSE",
                     root + ("LICENSE" if windows else "Resources/LICENSE"),
                     root + ("LICENSES.chromium.html" if windows else "Resources/LICENSES.chromium.html"),
@@ -27,15 +27,14 @@ def validate_package(zip_path, version, license_bytes):
             required += [app + "node_modules/@img/sharp-darwin-arm64/LICENSE",
                          app + "node_modules/@img/sharp-libvips-darwin-arm64/versions.json"]
         missing = [n for n in required if n not in names or archive.getinfo(n).file_size == 0]
-        for script in ["photoshop-layered-tiff-export.py", "photoshop-layered-tiff-import.py",
-                       "layer-file-permissions.py", "recovery-origin-permissions.py", "recovery-claim-records.py",
-                       "recovery-content-permissions.py", "recovery-origin-enrollment.py",
-                       "recovery-project-permissions.py", "owned-stage-cleanup.py"]:
+        for script in ["layer-file-permissions.py"]:
             member = app + "scripts/" + script
             if member not in names or archive.getinfo(member).file_size == 0:
                 missing.append(member)
         if missing:
             raise ValueError("Missing packaged files/notices: " + ", ".join(missing))
+        if json.loads(archive.read(app + "package.json")).get("main") != "dist-electron/platform/main/flowEditorEntry.js":
+            raise ValueError("Retired application entry")
         if archive.read(app + "LICENSE") != license_bytes:
             raise ValueError("Project MIT license mismatch")
         if json.loads(archive.read(app + "package.json"))["version"] != version:

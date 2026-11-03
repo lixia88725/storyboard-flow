@@ -14,7 +14,7 @@ await mkdir(runDir, { recursive: true });
 const identity = { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim(),
   status: execFileSync('git', ['status', '--short'], { cwd: repo, encoding: 'utf8' }).trim(), root, runDir };
 const browser = await build({ stdin: { contents: `
-import {createFlowPixels} from './src/renderer/drawing/index.ts';
+import {createFlowPixels} from './src/drawing/renderer/index.ts';
 const pixels=createFlowPixels({maxPixels:1024,maxPngBytes:1048576,maxPoints:100});
 globalThis.flowProduce=async(input,bytes)=>{
  const r=await pixels.produce(input,async()=>new Uint8Array(bytes));
@@ -26,9 +26,9 @@ const main = `
 import {app,BrowserWindow,session,clipboard,shell} from 'electron';
 import fs from 'node:fs/promises'; import path from 'node:path'; import assert from 'node:assert/strict';
 import sharp from 'sharp';
-import {createFlowSession} from './src/core/session/index.ts';
-import {openFlowAssetDepot} from './electron/core/persistence/depot.ts';
-import {createProjectStore} from './electron/core/persistence/index.ts';
+import {createFlowSession} from './src/session/core/index.ts';
+import {openFlowAssetDepot} from './src/project-files/main/persistence/depot.ts';
+import {createProjectStore} from './src/project-files/main/persistence/index.ts';
 const root=${JSON.stringify(root)}; const identity=${JSON.stringify(identity)};
 const userData=path.join(root,'userData');
 app.setPath('userData',userData);app.setPath('sessionData',userData);

@@ -1,8 +1,8 @@
 import path from 'node:path';
 import {mkdir, access} from 'node:fs/promises';
 import sharp from 'sharp';
-import {openFlowAssetDepot} from '../dist-electron/core/persistence/depot.js';
-import {createProjectStore} from '../dist-electron/core/persistence/index.js';
+import {openFlowAssetDepot} from '../dist-electron/project-files/main/persistence/depot.js';
+import {createProjectStore} from '../dist-electron/project-files/main/persistence/index.js';
 
 const [folder, widthArg = '2048', countArg = '6'] = process.argv.slice(2);
 const width = Number(widthArg), count = Number(countArg), height = width * 9 / 16;

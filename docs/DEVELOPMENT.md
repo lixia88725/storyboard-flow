@@ -1,0 +1,44 @@
+# 开发工具与验证指南
+
+开发约束与禁止输入见 [AGENTS](../AGENTS.md)，进度和待验事项见 [CURRENT](CURRENT.md)。本文只保留本项目的特殊做法和工具入口。
+
+## 项目注意事项
+
+- 用户画稿在 `.hermes/studio-preview/project`，不能当测试夹具。测试配置可用绝对路径 `FLOW_USER_DATA_DIR` 指定。当前数据保护范围见 [CURRENT](CURRENT.md)。
+- 文件系统测试使用 `test/temporaryWorkspace.ts` 创建系统临时容器；副本也放在容器内。清理须核对自有身份，不跟随符号链接；失败或中断保留现场。遇到不明锁或验证退出码75，交主管处理。
+- 完整测试使用 [获准枚举清单](../test/allowed-suite.json)，已同步本次架构迁移后的72个测试文件。移动测试时同步路径，新增获准测试明确加入；不因沿用旧清单漏跑。`.hermes/retire-paths-nov03/allowed-suite.json`仅是旧候选证据，不用于当前运行。禁止输入仍以 AGENTS 为准。
+- 下列GUI脚本使用 `dist/`、`dist-electron/` 构建产物；执行前置条件和验证边界统一见 [AGENTS：验证与交付](../AGENTS.md#验证与交付)。
+
+## 启动与专项检查
+
+| 场景 | 入口 |
+| --- | --- |
+| 启动试用 | 根目录 `启动 Storyboard Flow.command`：先构建再启动；`--choose` 选择项目 |
+| 修改主进程与界面的桥接（preload） | 运行 `npm run check:preload`（TS/CJS桥接一致性检查） |
+| 修改打包资源 | 运行 `npm run prepare:package-resources`；Windows用内置Python，macOS用可用Python3，缺失时报告，不擅自安装 |
+
+执行完整清单（不会自动发现清单外测试）：
+
+```sh
+node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "node:child_process"; const files=JSON.parse(fs.readFileSync("test/allowed-suite.json","utf8")); const r=spawnSync(process.execPath,["node_modules/vitest/vitest.mjs","run",...files],{stdio:"inherit"}); if(r.error) throw r.error; process.exit(r.status ?? 1);'
+```
+
+测试统一使用根目录 `vitest.config.ts`，完整与聚焦检查共用该配置；测试前置准备在 `vitest.setup.ts`。其余命令以 [package.json](../package.json) 为准。构建会清理旧Electron产物；旧界面与波次验证入口已退役，不从archive恢复运行。
+
+## GUI验证脚本索引
+
+| 检查什么 | 脚本 |
+| --- | --- |
+| 默认启动、选择目录、关闭与重开 | [flow-startup-smoke.mjs](../scripts/flow-startup-smoke.mjs) |
+| 绘画、排序、恢复综合流程 | [flow-workbench-smoke.mjs](../scripts/flow-workbench-smoke.mjs) |
+| 修饰键、框选、整组插入、Pending | [flow-board-selection-smoke.mjs](../scripts/flow-board-selection-smoke.mjs)；`FLOW_GESTURE_SCROLL=1` 加验长日式行滚动 |
+| 分隔条、折叠、弹出面板与布局恢复 | [flow-dock-panels-smoke.mjs](../scripts/flow-dock-panels-smoke.mjs) |
+| 适合画布、工具栏、日式对白拖动 | [flow-workbench-polish-smoke.mjs](../scripts/flow-workbench-polish-smoke.mjs) |
+| 对白分组撤销与重开 | [flow-dialogue-undo-smoke.mjs](../scripts/flow-dialogue-undo-smoke.mjs) |
+| 对白提交失败、双编辑器、重试与关闭 | [flow-dialogue-failure-smoke.mjs](../scripts/flow-dialogue-failure-smoke.mjs) |
+| Pending删除、保存、撤销与重开 | [flow-pending-delete-smoke.mjs](../scripts/flow-pending-delete-smoke.mjs) |
+| 拖动性能 | [flow-workbench-drag-perf.cjs](../scripts/flow-workbench-drag-perf.cjs)；先核对当前拖动DOM与采样口径，同机器/负载比较 |
+
+## 打包与发布
+
+流程以 [.github/workflows](../.github/workflows) 和发布脚本为准；使用已安装依赖，保留第三方许可。`RELEASE_ENABLED` 开启后，main推送可能触发发布，必须获得发布授权并实时核对开关。发布安装包与更新下载索引是两步，分别确认；失败保留旧索引。Git代码备份不包含Release安装包。各平台验收状态见 CURRENT，不沿用旧客户端的认证。
