@@ -113,7 +113,7 @@ export function PendingAddAction({ flow, sessionId, disabled, recovery }: {
     {state.open && <div className="wb-naming" data-pending-add="true" data-pending-phase={state.phase}>
       <section className="wb-sheet" role="dialog" aria-modal="true" aria-label="添加到 Pending">
         <h2>添加到 Pending</h2>
-        <p className="wb-sheet-note">新图片加入 Pending，保存时才写入文件夹。</p>
+        <p className="wb-sheet-note">新图片加入 Pending；只写入这一批的新文件，现有故事板不改动。</p>
         {state.phase === 'choose' && <div className="wb-sheet-group wb-pending-source">
           <button type="button" onClick={() => start('files')}>选择图片…</button>
           <button type="button" onClick={() => start('folder')}>选择文件夹…</button>
