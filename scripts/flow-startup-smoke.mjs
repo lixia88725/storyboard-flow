@@ -40,7 +40,7 @@ for(const phase of ['cancel','open','reopen']){
   await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win});
   await wait(()=>win.webContents.executeJavaScript('!!document.querySelector("[data-workbench]")'));
   assert.deepEqual(await win.webContents.executeJavaScript('({bridge:!!window.flowEditor,old:!!window.storyboard,hash:location.hash,classic:!!document.querySelector(".flow-editor-grid")})'),{bridge:true,old:false,hash:'#flow-workbench',classic:false});
-  await wait(()=>win.webContents.executeJavaScript('document.body.innerText.includes("Flow 内已保存")'));
+  await wait(()=>win.webContents.executeJavaScript('document.body.innerText.includes("已自动暂存")'));
   assert.equal(app.getPath('userData'),process.env.FLOW_USER_DATA_DIR);
   verified=true;win.close();
  }).catch(e=>{console.error(e);app.exit(1)});

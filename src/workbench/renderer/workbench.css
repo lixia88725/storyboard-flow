@@ -21,20 +21,90 @@
 .wb-board-actions { display:flex; gap:3px; margin-left:auto; }
 .flow-workbench .wb-board-actions button { background:#323338; white-space:nowrap; }
 .flow-workbench .wb-board-actions button:first-child { color:#c5dbff; }
-.wb-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,var(--tile)),1fr));align-content:start;gap:14px;padding:14px;}.wb-card {min-width:0;border:1px solid #424349;border-radius:7px;background:#2c2d31;}.wb-card.is-selected {border-color:var(--wb-accent);box-shadow:0 0 0 1px var(--wb-accent);}.flow-workbench .wb-card-handle {width:100%;border-radius:6px 6px 0 0;display:flex;align-items:center;gap:10px;height:30px;text-align:left;background:#2c2d31;cursor:grab;padding:4px 8px;}.wb-card-handle b {font:12px 'SF Mono',monospace;color:#e7e8e5;}.wb-card-handle span:nth-child(2){flex:1;font-size:11px;color:var(--wb-subtle);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.wb-card.is-selected .wb-card-handle {background:#303b4a;}.wb-card-picture {background:#141719;min-height:70px;}
-.wb-surface {position:relative;}.wb-surface .sketch-panel {border-radius:0;}.wb-viewer {padding:20px;background:#171a1d;min-height:0;overflow:auto;}.wb-viewer>div {margin:auto;}.wb-empty {padding:30px;color:#707c85;text-align:center;}.wb-info {padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;}.wb-info label {font-size:11px;color:#94a0aa;line-height:16px;}.flow-workbench textarea {margin-top:7px;background:#1b1f22;border:1px solid #41494f;border-radius:3px;resize:vertical;color:#e2e5e7;font:12px 'PingFang SC',sans-serif;width:100%;min-height:62px;padding:8px;}.wb-info .flow-dialogue-transfers {grid-column:1/-1;font-size:10px;min-height:20px;padding:3px;border-color:#42494e;}
+.wb-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,var(--tile)),1fr));align-content:start;gap:14px;padding:14px;}.wb-card {min-width:0;border:1px solid #424349;border-radius:7px;background:#2c2d31;}.wb-card.is-selected {border-color:var(--wb-accent);box-shadow:0 0 0 1px var(--wb-accent);}.flow-workbench .wb-card-handle {width:100%;border-radius:6px 6px 0 0;display:flex;align-items:center;gap:10px;height:30px;text-align:left;background:#2c2d31;cursor:grab;padding:4px 8px;}.wb-card-handle b {font:12px 'SF Mono',monospace;color:#e7e8e5;}.wb-card-grip{margin-inline-start:auto;color:var(--wb-subtle);}.wb-card.is-selected .wb-card-handle {background:#303b4a;}.wb-card-picture {background:#141719;min-height:70px;}
+.wb-surface {position:relative;}.wb-surface .sketch-panel {border-radius:0;}.wb-viewer {padding:20px;background:#171a1d;min-height:0;overflow:auto;}.wb-viewer>div {margin:auto;}
+/* With no board selected the panel is one flat surface: the hint sits centered in the whole
+   body instead of a dark band above the panel's own background. */
+.wb-panel-body:has(>.wb-viewer.is-empty) {display:flex;flex-direction:column;}
+.wb-viewer.is-empty {flex:1 1 auto;display:flex;align-items:center;justify-content:center;padding:0;background:#242529;}
+.wb-empty {padding:30px;color:#707c85;text-align:center;}.wb-info {padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;}.wb-info label {font-size:11px;color:#94a0aa;line-height:16px;}.flow-workbench textarea {margin-top:7px;background:#1b1f22;border:1px solid #41494f;border-radius:3px;resize:vertical;color:#e2e5e7;font:12px 'PingFang SC',sans-serif;width:100%;min-height:62px;padding:8px;}.wb-info .flow-dialogue-transfers {grid-column:1/-1;font-size:10px;min-height:20px;padding:3px;border-color:#42494e;}
 .wb-panel-layers .shot-layer-popover {position:static!important;width:100%!important;max-width:none!important;transform:none!important;opacity:1!important;pointer-events:auto!important;box-shadow:none!important;}.wb-panel-layers .layer-panel {width:100%;box-shadow:none;}.wb-panel-layers .layer-row {font-size:12px;min-height:38px;}.wb-panel-layers .layer-thumb {max-height:36px;}
 .flow-workbench .wb-panel-layers .layer-toggle { display:none; }
 .flow-workbench .flow-pending-shelf {border:0;margin:0;padding:6px 10px;white-space:nowrap;}.flow-workbench .flow-pending-shelf>h2,.flow-workbench .flow-pending-shelf>p {display:none;}.flow-workbench .flow-pending {display:inline-block;width:135px;vertical-align:top;margin-right:8px;}.flow-workbench .flow-pending>button {font-size:10px;}
-.wb-status {height:27px;min-height:27px;display:flex;justify-content:space-between;align-items:center;padding:0 15px;border-top:1px solid #353b40;background:#23282b;color:#8e9ba4;font-size:10px;}.wb-status span:first-child {color:#b9c4b7;}.wb-naming {position:fixed;z-index:200;inset:20% 20%;background:#252a2e;border:1px solid #606970;padding:24px;box-shadow:0 0 0 100vmax #0008;}
+.wb-status {height:27px;min-height:27px;display:flex;justify-content:space-between;align-items:center;padding:0 15px;border-top:1px solid #353b40;background:#23282b;color:#8e9ba4;font-size:10px;}.wb-status span:first-child {color:#b9c4b7;}
+.flow-workbench .wb-refresh { display:inline-flex; align-items:center; justify-content:center; width:28px; height:26px; padding:0; color:#8b959d; }
+.flow-workbench .wb-refresh:hover { color:#eef1f3; }
+.flow-workbench .wb-refresh[data-external=true] { color:var(--wb-accent); }
+.wb-refresh svg { display:block; }
+.wb-refresh[data-spinning=true] svg { animation:wb-refresh-spin .6s ease; }
+@keyframes wb-refresh-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+.wb-naming { position:fixed; inset:0; z-index:200; display:flex; justify-content:center; align-items:flex-start; padding:11vh 16px 16px; background:#0008; backdrop-filter:blur(2px); }
+.wb-sheet { width:min(520px,100%); max-height:78vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; background:#24292d; border:1px solid #3f474d; border-radius:12px; box-shadow:0 24px 64px #000b, inset 0 1px 0 #ffffff0f; }
+.wb-sheet h2 { margin:0; font-size:15px; font-weight:600; color:#eef1f3; letter-spacing:-.01em; }
+.wb-sheet-note { margin:-8px 0 0; font-size:11.5px; color:#8b959d; }
+.wb-sheet-group { background:#1e2326; border:1px solid #363d43; border-radius:9px; overflow:hidden; }
+.wb-sheet-field { display:block; padding:8px 12px 9px; }
+.wb-sheet-field>span { display:block; margin-bottom:3px; font-size:10.5px; color:#8b959d; letter-spacing:.02em; }
+.wb-sheet-field:focus-within { background:#232a2f; box-shadow:inset 0 0 0 1px #92baff66; }
+.wb-sheet-field + .wb-sheet-field, .wb-sheet-row { border-top:1px solid #363d43; }
+.wb-naming .wb-sheet-field input { width:100%; padding:1px 0; border:0; border-radius:0; outline:none; background:transparent; color:#e6eaee; font:13px inherit; box-shadow:none; }
+.wb-naming .wb-sheet-field input:disabled { color:#8b959d; }
+.wb-sheet-row { display:grid; grid-template-columns:repeat(3,1fr); }
+.wb-sheet-row .wb-sheet-field { border-top:0; }
+.wb-sheet-row .wb-sheet-field + .wb-sheet-field { border-left:1px solid #363d43; }
+.wb-sheet-preview { display:flex; flex-direction:column; gap:4px; padding:10px 12px; background:#1a1f22; border:1px solid #333a40; border-radius:9px; }
+.wb-sheet-label { margin-bottom:2px; font-size:10.5px; color:#8b959d; }
+.wb-sheet-preview code { font:12px ui-monospace,SFMono-Regular,Menlo,monospace; color:#a8c8f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wb-sheet-count, .wb-sheet-error { margin:2px 0 0; font-size:11px; color:#8b959d; }
+.wb-sheet-error { color:#ff9c8a; }
+.wb-sheet-actions { display:flex; justify-content:flex-end; gap:8px; }
+.wb-naming .wb-sheet-actions button { padding:6px 16px; border-color:#4a525a; border-radius:7px; }
+.wb-naming .wb-sheet-actions button:hover { background:#333a40; }
+.wb-naming .wb-sheet-actions button.primary { background:#d0e2ff; border-color:#d0e2ff; color:#172334; font-weight:600; }
+.wb-naming .wb-sheet-actions button.primary:hover { background:#e2edff; color:#172334; }
+.wb-naming .wb-sheet-actions button.primary:disabled { background:#4a5563; border-color:#4a5563; color:#20262c; }
 
 .wb-recovery { position:fixed; bottom:36px; right:16px; z-index:5; width:min(420px,90vw); padding:14px; background:#312c25; color:#fff3df; border:1px solid #887557; border-radius:6px; }
 .wb-recovery p { line-height:1.5; overflow-wrap:anywhere; }
 
 .wb-grid.wb-japanese { grid-template-columns:1fr; gap:5px; }
-.wb-japanese .wb-card { display:grid; grid-template-columns:minmax(100px,38%) minmax(0,1fr); align-items:start; }
-.wb-japanese .wb-card-handle { grid-column:1/-1; }
-.wb-japanese .wb-info { grid-template-columns:1fr; padding:8px; }
+/* Japanese sheet row: 镜号 | 画面 | 动作说明 | 台词, in the order of the paper form the
+   artists already read. The number column is the whole drag handle, so the card has no
+   header strip of its own and the picture starts at the row's top edge. */
+.wb-japanese .wb-card { --wb-split:44%; display:grid; grid-template-columns:44px minmax(120px,32%) minmax(0,1fr); align-items:start; }
+.wb-japanese .wb-card-handle { grid-column:1; grid-row:1; align-self:stretch; width:100%; height:auto; flex-direction:column; justify-content:flex-start; gap:8px; padding:7px 0 5px; border-right:1px solid #3a3b40; border-radius:6px 0 0 6px; user-select:none; }
+/* Upright digits read top-to-bottom like the sheet's 镜号 cell. The negative tracking pulls
+   the glyph boxes together (3 digits: 42px -> 36.6px) so they read as one number. The digits
+   are decorative inside the handle: pointer events go to the button itself, so pressing on a
+   numeral starts the same drag as pressing the empty rail beside it. */
+.wb-japanese .wb-card-handle b { writing-mode:vertical-rl; text-orientation:upright; letter-spacing:-.15em; line-height:1; pointer-events:none; }
+.wb-japanese .wb-card-grip { margin:auto 0 0; }
+.wb-japanese .wb-info { grid-template-columns:minmax(0,var(--wb-split)) minmax(0,1fr); gap:0; padding:8px 0; height:100%; align-items:stretch; align-content:start; }
+.wb-japanese .wb-row-info { align-self:stretch; position:relative; }
+/* The rule between 动作 and 台词 is drawn on the row, not on the text column, so it runs the
+   full height of the row instead of stopping where the text ends. Both columns come from
+   --wb-split so the rule and the column boundary can never drift apart; the dialogue column
+   keeps 24px of left padding for the grip, which sits just right of the rule. */
+.wb-japanese .wb-row-info::before { content:""; position:absolute; top:0; bottom:0; left:calc(var(--wb-split) - .5px); width:1px; background:#3a3b40; pointer-events:none; }
+.wb-japanese .wb-info>label { padding:0 10px 0 8px; }
+.wb-japanese .wb-info>.flow-dialogue-blocks { padding-left:24px; padding-right:8px; height:100%; }
+/* Row text behaves like a writing app: no field box, a quiet block under the pointer and
+   while editing, so the sheet reads as text instead of as a form. Left padding is zero and
+   the grip hangs in the gutter, so each caption starts exactly where its text does. */
+.wb-japanese .wb-row-info textarea,
+.wb-japanese .wb-row-info .flow-dialogue-text { background:transparent; border-color:transparent; border-radius:5px; padding:5px 6px 5px 0; color:#e2e5e7; }
+.wb-japanese .wb-row-info textarea { margin-top:4px; }
+.wb-japanese .wb-row-info .flow-dialogue-text { margin-top:0; }
+.wb-japanese .wb-row-info .flow-dialogue-block { gap:0; }
+/* The dots are drawn smaller than the button: a 20×20 hit area is the floor the GUI smoke
+   (and a comfortable press) requires, so only the glyph shrinks. */
+.wb-japanese .wb-row-info .flow-dialogue-handle { position:absolute; left:-22px; top:3px; margin-top:0; }
+.wb-japanese .wb-row-info .flow-dialogue-grip { width:7px; height:10px; }
+.wb-japanese .wb-row-info textarea:hover,
+.wb-japanese .wb-row-info .flow-dialogue-text:hover { background:#ffffff0b; }
+.wb-japanese .wb-row-info textarea:focus,
+.wb-japanese .wb-row-info .flow-dialogue-text:focus { background:#ffffff10; border-color:transparent; outline:none; }
+.wb-japanese .wb-row-info .flow-dialogue-block.is-blank .flow-dialogue-text { border-style:solid; }
 .flow-workbench .wb-japanese .wb-info textarea { min-height:2.4em; }
 
 .wb-board-dialogue { position:absolute; bottom:0; left:0; right:0; z-index:40; }
@@ -48,6 +118,42 @@
    fixed resizable box while a one-line dialogue block stayed short, and soft-wrapped text was
    clipped to its row count. Japanese rows keep their compact floor below. */
 .flow-workbench .wb-info textarea { field-sizing:content; min-height:62px; resize:none; }
+
+/* Right-hand 动作与对白 panel gets the same writing-app treatment as the Japanese row: no
+   field boxes, a quiet tint under the pointer, captions flush with their text, and one
+   hairline down the body that starts below the 34px title bar so it never crosses it.
+   Scoped to this panel: dialogs, naming forms, cards, the Japanese row and the canvas
+   dialogue track keep their own look (the track stays solid for contrast over a drawing). */
+/* The hairline lives on the info grid, not on the panel, so it tracks the real column gap
+   even when the body shows a scrollbar (a panel-centred line drifts ~8px right of the gap and
+   ends up on top of the dialogue text). min-height keeps it spanning the whole body, and the
+   line scrolls with the content only when the content is taller, so the visible rule is
+   continuous at every scroll offset. */
+.flow-workbench .wb-panel-info .wb-info { position:relative; min-height:100%; }
+.flow-workbench .wb-panel-info .wb-info::before { content:""; position:absolute; top:0; bottom:0; left:calc(50% - .5px); width:1px; background:#3a3b40; pointer-events:none; }
+.flow-workbench .wb-panel-info textarea,
+.flow-workbench .wb-panel-info .flow-dialogue-text { background:transparent; border-color:transparent; border-radius:5px; padding:5px 6px 5px 0; }
+.flow-workbench .wb-panel-info textarea { margin-top:4px; }
+/* Blocks grow with their text instead of sitting in a fixed 62px well: an empty field is one
+   line tall, the way a document line behaves. */
+.flow-workbench .wb-panel-info textarea,
+.flow-workbench .wb-panel-info .flow-dialogue-text { min-height:0; }
+.flow-workbench .wb-panel-info .flow-dialogue-block { gap:0; }
+/* Same grip as the Japanese row: it hangs in a 22px gutter left of the text, so it never sits
+   on a character and native text selection keeps working; 20px hit area, dots drawn smaller. */
+.flow-workbench .wb-panel-info .flow-dialogue-blocks { padding-left:22px; }
+.flow-workbench .wb-panel-info .flow-dialogue-handle { position:absolute; left:-22px; top:3px; margin-top:0; }
+.flow-workbench .wb-panel-info .flow-dialogue-grip { width:7px; height:10px; }
+.flow-workbench .wb-panel-info .flow-dialogue-text { margin-top:0; }
+.flow-workbench .wb-panel-info textarea:hover,
+.flow-workbench .wb-panel-info .flow-dialogue-text:hover { background:#ffffff0b; }
+.flow-workbench .wb-panel-info textarea:focus,
+.flow-workbench .wb-panel-info .flow-dialogue-text:focus { background:#ffffff10; border-color:transparent; outline:none; }
+/* Keyboard users still get a mark; a 2px bar on the left edge reads as a selection gutter
+   rather than bringing the field box back. */
+.flow-workbench .wb-panel-info textarea:focus-visible,
+.flow-workbench .wb-panel-info .flow-dialogue-text:focus-visible { box-shadow:inset 2px 0 0 #4a5661; }
+.flow-workbench .wb-panel-info .flow-dialogue-block.is-blank .flow-dialogue-text { border-style:solid; }
 .wb-board-dialogue:has(.flow-dialogue-blocks) { background:#000; overflow:auto; }
 .wb-board-dialogue .flow-dialogue-blocks { min-height:100%; }
 .flow-workbench .wb-board-dialogue .flow-dialogue-text { background:#000; color:#fff; padding:2px 4px; border-color:transparent; }

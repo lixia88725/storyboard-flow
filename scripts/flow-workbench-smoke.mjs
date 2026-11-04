@@ -46,7 +46,7 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  import(${JSON.stringify('file://'+path.join(repo,'dist-electron/platform/main/flowEditorEntry.js'))}).then(async()=>{
  await app.whenReady();await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win},'window');win.setSize(1600,1000);
  await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');
- await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("Flow 内已保存")'),'checkpoint');
+ await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'checkpoint');
  await wait(()=>js('document.querySelector(".wb-viewer .image-stage img")?.naturalWidth>0'),'viewer raster');
  const openingMs=Date.now()-started;
  const folderSays=text=>wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.includes('+JSON.stringify(text)+')'),text);
@@ -56,7 +56,7 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
    const notice=()=>js('document.querySelector(".wb-recovery")?.textContent||""');
    await wait(async()=>(await notice()).includes('放回'),'missing acknowledgement after restart');
    assert.ok((await notice()).includes(require('node:path').basename(source)));
-   await button('保存 TIFF');
+   await button('保存');
    await wait(async()=>(await notice()).includes('放回'),'unknown outcome remains blocked');
    assert.ok(fs.existsSync(held));assert.ok(!fs.existsSync(source));
    fs.copyFileSync(held,source);
@@ -135,7 +135,7 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  }
  if(count<100){
    const viewId=await current(),before=read(),shot=before.shots.find(s=>s.id===viewId),ink=before.images[shot.imageId].layers[1].assetId;
-   gateSave=true;await button('保存 TIFF');await wait(()=>releaseSave,'Save captured');
+   gateSave=true;await button('保存');await wait(()=>releaseSave,'Save captured');
    const box=await rect('.wb-viewer .image-stage');
    await mouse('mouseDown',box.x+box.width*.7,box.y+box.height*.6);
    await mouse('mouseMove',box.x+box.width*.75,box.y+box.height*.6);
@@ -146,7 +146,7 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
    const ledger=()=>JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/tiff-output.json'))},'utf8'));
    await wait(()=>ledger().saved?.revision===before.revision,'first output belongs to captured revision');
    assert.equal(ledger().entries.find(e=>e.shotId===shot.id).baseline.layers[1].assetId,ink);
-   await button('保存 TIFF');await folderSays('文件夹中的故事板已更新');
+   await button('保存');await folderSays('文件夹中的故事板已更新');
    assert.equal(ledger().entries.find(e=>e.shotId===shot.id).baseline.layers[1].assetId,read().images[shot.imageId].layers[1].assetId);
  }
  fs.writeFileSync(${JSON.stringify(path.join(run,'expected.json'))},JSON.stringify(read()));
@@ -167,7 +167,7 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
      fs.writeFileSync(${JSON.stringify(path.join(run,'staged-path.txt'))},file);
      fs.renameSync(file,${JSON.stringify(path.join(run,'simulated-trash.tif'))});throw Error('Synthetic lost OS reply');
    };
-   await button('保存 TIFF');await wait(()=>js('document.querySelector(".wb-recovery")?.textContent.includes("放回")'),'actionable recovery');
+   await button('保存');await wait(()=>js('document.querySelector(".wb-recovery")?.textContent.includes("放回")'),'actionable recovery');
 
  }
  await js('document.querySelector(".wb-header details").open=false');await delay(400);

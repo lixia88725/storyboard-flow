@@ -36,7 +36,7 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
    return fn(...args);
  });
  process.argv=[process.argv[0],${JSON.stringify(entryPath)},${JSON.stringify(root)},${JSON.stringify(userData)},'--workbench'];
- let win;const phase=${JSON.stringify(phase)},count=${count};const delay=ms=>new Promise(r=>setTimeout(r,ms));const read=()=>JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/checkpoints/project.json'))},'utf8'));const js=c=>win.webContents.executeJavaScript(c);
+ let win;const phase=${JSON.stringify(phase)},count=${count};const delay=ms=>new Promise(r=>setTimeout(r,ms));const read=()=>JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/checkpoints/project.json'))},'utf8'));const js=c=>win.webContents.executeJavaScript(c).catch(e=>{throw Error('executeJavaScript failed: '+String(c).slice(0,200)+' :: '+e.message)});
  async function wait(fn,label){for(let i=0;i<400;i++){try{if(await fn())return}catch{}await delay(50)}throw Error('Timeout '+label)}
  async function button(text){await js('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==='+JSON.stringify(text)+').click()');await delay(100)}
  async function rect(s){return js('(()=>{const e=document.querySelector('+JSON.stringify(s)+');const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()')}
@@ -49,7 +49,7 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
  import(${JSON.stringify('file://'+entryPath)}).then(async()=>{
  await app.whenReady();await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win},'window');win.setSize(1600,1000);
  await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');
- await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("Flow 内已保存")'),'checkpoint');
+ await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'checkpoint');
  await wait(()=>js('document.querySelector(".wb-viewer .image-stage img")?.naturalWidth>0'),'viewer raster');
  const openingMs=Date.now()-started;
  if(${JSON.stringify(layersOnly)}){
@@ -63,7 +63,7 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
    const notice=()=>js('document.querySelector(".wb-recovery")?.textContent||""');
    await wait(async()=>(await notice()).includes('放回'),'missing acknowledgement after restart');
    assert.ok((await notice()).includes(require('node:path').basename(source)));
-   await button('保存 TIFF');
+   await button('保存');
    await wait(async()=>(await notice()).includes('放回'),'unknown outcome remains blocked');
    assert.ok(fs.existsSync(held));assert.ok(!fs.existsSync(source));
    fs.copyFileSync(held,source);
@@ -132,28 +132,93 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
  await wait(()=>read().dialogues.filter(d=>d.shotId==='shot0').length===3,'Enter splits one block');
  assert.equal(read().dialogues.find(d=>d.id==='line0').text,'一段');assert.equal(read().dialogues[0].text,'第');assert.notEqual(read().dialogues[0].id,'line0');assert.ok(read().dialogues.some(d=>d.id==='line1'&&d.text==='第二段'));
  await js('document.activeElement.blur()');await button('撤销');await wait(()=>JSON.stringify(read().dialogues)===JSON.stringify(initialDialogue),'split undo');
- async function dropDialogue(id,source,y,cancel=false){
-   await js('(()=>{window.__dialogueDrag=new DataTransfer();window.__dialogueDrag.setData("application/x-flow-dialogue",'+JSON.stringify(JSON.stringify({id,shotId:source}))+');const e=document.querySelector(".wb-panel-info .flow-dialogue-blocks");e.dispatchEvent(new DragEvent("dragover",{bubbles:true,dataTransfer:window.__dialogueDrag,clientY:'+y+'}));})()');
+ // Dialogue drag is explicit opt-in (allowDrag): both the Japanese row and the right panel pass
+ // renderInfo(shot, true), so both surfaces reorder lines and move them between boards. The
+ // compact lists inside cards and the canvas track stay read-only.
+ async function dragDialogue(selector,id,source,y,drop=true){
+   await js('(()=>{window.__dialogueDrag=new DataTransfer();window.__dialogueDrag.setData("application/x-flow-dialogue",'+JSON.stringify(JSON.stringify({id,shotId:source}))+');const e=document.querySelector('+JSON.stringify(selector)+');e.dispatchEvent(new DragEvent("dragover",{bubbles:true,dataTransfer:window.__dialogueDrag,clientY:'+y+'}));})()');
    await delay(100);
-   await js(cancel?'window.dispatchEvent(new DragEvent("dragend"))':'document.querySelector(".wb-panel-info .flow-dialogue-blocks").dispatchEvent(new DragEvent("drop",{bubbles:true,dataTransfer:window.__dialogueDrag}))');
+   await js(drop?'document.querySelector('+JSON.stringify(selector)+').dispatchEvent(new DragEvent("drop",{bubbles:true,dataTransfer:window.__dialogueDrag}))':'window.dispatchEvent(new DragEvent("dragend"))');
+   await delay(150);
  }
- const line=await rect('.wb-panel-info [data-block-id="line0"]');
- const cancelRevision=read().revision;await dropDialogue('line1','shot0',line.y,true);assert.equal(read().revision,cancelRevision);
- assert.equal(await js('document.querySelector(".wb-panel-info .flow-dialogue-blocks").hasAttribute("data-drop-index")'),false);
- await dropDialogue('line1','shot0',line.y);await wait(()=>read().dialogues[0].id==='line1','same-board insertion');
+ const panelZone='.wb-panel-info .flow-dialogue-blocks';
+ assert.equal(await js('document.querySelector('+JSON.stringify(panelZone)+').dataset.allowDrag'),'true','right panel accepts dialogue drags');
+ assert.ok(await js('document.querySelectorAll('+JSON.stringify('.wb-panel-info [aria-label^=Drag]')+').length')>=2,'right panel offers a grip per line');
+ const panelLine=await rect('.wb-panel-info [data-block-id="line0"]');
+ await dragDialogue(panelZone,'line1','shot0',panelLine.y);
+ await wait(()=>read().dialogues[0].id==='line1','right panel same-board insertion');
+ await button('撤销');await wait(()=>read().dialogues[0].id==='line0','right panel same-board undo');
+ const panelCancelRevision=read().revision;
+ await dragDialogue(panelZone,'line1','shot0',panelLine.y,false);
+ assert.equal(read().revision,panelCancelRevision,'right panel cancel keeps the revision');
+ assert.equal(await js('document.querySelector('+JSON.stringify(panelZone)+').hasAttribute("data-drop-index")'),false,'right panel cancel clears the drop index');
+ assert.equal(read().dialogues.find(d=>d.id==='line0').text,'第一段');
+ // A drop on a storyboard card carries no dialogue list, so nothing may move: not the lines,
+ // not the board order, and no leftover drop index.
+ const cardBox=await rect('[data-board-id="shot2"]');
+ const invalidRevision=read().revision;const invalidOrder=read().shots.map(s=>s.id).join('');
+ await dragDialogue('[data-board-id="shot2"]','line1','shot0',cardBox.y+10);
+ assert.equal(read().revision,invalidRevision,'invalid drop keeps the revision');
+ assert.equal(read().dialogues[0].id,'line0','invalid drop keeps the dialogue order');
+ assert.equal(read().shots.map(s=>s.id).join(''),invalidOrder,'invalid drop keeps the board order');
+ assert.equal(await js('document.querySelector('+JSON.stringify(panelZone)+').hasAttribute("data-drop-index")'),false,'invalid drop leaves no drop index');
+
+ // The same gestures on the Japanese row still move, insert and undo.
+ await button('日式分镜');
+ await wait(()=>js('!!document.querySelector(".wb-japanese .wb-row-info .flow-dialogue-blocks")'),'japanese row drag surface');
+ const rowZone='[data-board-id="shot0"] .wb-row-info .flow-dialogue-blocks';
+ assert.equal(await js('document.querySelector('+JSON.stringify(rowZone)+').dataset.allowDrag'),'true','japanese row accepts dialogue drags');
+ assert.ok(await js('document.querySelectorAll('+JSON.stringify(rowZone+' [aria-label^=Drag]')+').length')>=2,'japanese row offers a grip per line');
+ const rowLine=await rect('[data-board-id="shot0"] .wb-row-info [data-block-id="line0"]');
+ const cancelRevision=read().revision;
+ await dragDialogue(rowZone,'line1','shot0',rowLine.y,false);
+ assert.equal(read().revision,cancelRevision,'japanese cancel keeps the revision');
+ assert.equal(await js('document.querySelector('+JSON.stringify(rowZone)+').hasAttribute("data-drop-index")'),false,'cancel clears the drop index');
+ await dragDialogue(rowZone,'line1','shot0',rowLine.y);
+ await wait(()=>read().dialogues[0].id==='line1','same-board insertion');
  await button('撤销');await wait(()=>read().dialogues[0].id==='line0','same-board reorder undo');
  await js('document.querySelector(\'[aria-label="选择故事板 shot1"]\').click()');
- const zone=await rect('.wb-panel-info .flow-dialogue-blocks');
- await dropDialogue('line0','shot0',zone.y);await wait(()=>read().dialogues.find(d=>d.id==='line0').shotId==='shot1','drop into empty board');
+ await wait(()=>js('!!document.querySelector(\'[data-board-id="shot1"] .wb-row-info .flow-dialogue-blocks\')'),'empty japanese row');
+ const emptyZone='[data-board-id="shot1"] .wb-row-info .flow-dialogue-blocks';
+ const emptyBox=await rect(emptyZone);
+ await dragDialogue(emptyZone,'line0','shot0',emptyBox.y+4);
+ await wait(()=>read().dialogues.find(d=>d.id==='line0').shotId==='shot1','drop into empty board');
  assert.equal(read().dialogues.find(d=>d.id==='line1').shotId,'shot0');
  await button('撤销');await wait(()=>JSON.stringify(read().dialogues)===JSON.stringify(initialDialogue),'cross-board move undo');
- await js('document.querySelector(".wb-panel-info .flow-dialogue-text").focus()');await win.webContents.insertText('目标块');
+ await js('document.querySelector(\'[data-board-id="shot1"] .wb-row-info .flow-dialogue-text\').focus()');await win.webContents.insertText('目标块');
  await wait(()=>read().dialogues.some(d=>d.shotId==='shot1'),'seed nonempty target');
  const targetBlock=read().dialogues.find(d=>d.shotId==='shot1');
- const destination=await rect('.wb-panel-info .flow-dialogue-block');await dropDialogue('line1','shot0',destination.y);
+ const destination=await rect('[data-board-id="shot1"] .wb-row-info .flow-dialogue-block');
+ await dragDialogue(emptyZone,'line1','shot0',destination.y+2);
  await wait(()=>read().dialogues.filter(d=>d.shotId==='shot1').map(d=>d.id).join()===['line1',targetBlock.id].join(),'cross-board insertion before target');
  await button('撤销');await wait(()=>read().dialogues.find(d=>d.id==='line1').shotId==='shot0','insert undo');
  await button('撤销');await wait(()=>JSON.stringify(read().dialogues)===JSON.stringify(initialDialogue),'target creation undo');
+ // Right panel and Japanese rows share one protocol, in both directions. The panel always shows
+ // the current board, so a row's line dropped into it crosses boards whenever the panel is on a
+ // different board; nothing may be lost and the board order must not move.
+ const crossIds=read().dialogues.map(d=>d.id).sort().join();
+ const crossCount=read().dialogues.length;
+ const crossOrder=read().shots.map(s=>s.id).join('');
+ const crossBaseline=JSON.stringify(read().dialogues);
+ await js('Array.from(document.querySelectorAll(".wb-card-handle")).find(h=>h.getAttribute("aria-label").includes("shot2")).click()');
+ await wait(()=>js('document.querySelector(".wb-panel-info .flow-dialogue-blocks")?.dataset.allowDrag==="true"'),'panel drag surface on the other board');
+ const panelOther=await rect('.wb-panel-info .flow-dialogue-blocks');
+ await dragDialogue('.wb-panel-info .flow-dialogue-blocks','line0','shot0',panelOther.y+4);
+ await wait(()=>read().dialogues.find(d=>d.id==='line0').shotId==='shot2','row to panel cross-board move');
+ assert.equal(read().dialogues.length,crossCount,'row to panel keeps every line');
+ assert.equal(read().dialogues.map(d=>d.id).sort().join(),crossIds,'row to panel keeps the line ids');
+ assert.equal(read().shots.map(s=>s.id).join(''),crossOrder,'row to panel keeps the board order');
+ await button('撤销');await wait(()=>JSON.stringify(read().dialogues)===crossBaseline,'row to panel undo');
+ await js('Array.from(document.querySelectorAll(".wb-card-handle")).find(h=>h.getAttribute("aria-label").includes("shot0")).click()');
+ await wait(()=>js('Array.from(document.querySelectorAll(".wb-panel-info .flow-dialogue-text")).some(t=>t.dataset.dialogueId==="line0")'),'panel back on shot0');
+ const rowOther=await rect('[data-board-id="shot2"] .wb-row-info .flow-dialogue-blocks');
+ await dragDialogue('[data-board-id="shot2"] .wb-row-info .flow-dialogue-blocks','line0','shot0',rowOther.y+4);
+ await wait(()=>read().dialogues.find(d=>d.id==='line0').shotId==='shot2','panel to row cross-board move');
+ assert.equal(read().dialogues.length,crossCount,'panel to row keeps every line');
+ assert.equal(read().dialogues.map(d=>d.id).sort().join(),crossIds,'panel to row keeps the line ids');
+ assert.equal(read().shots.map(s=>s.id).join(''),crossOrder,'panel to row keeps the board order');
+ await button('撤销');await wait(()=>JSON.stringify(read().dialogues)===crossBaseline,'panel to row undo');
+ await button('日式分镜');await wait(()=>js('!document.querySelector(".wb-japanese")'),'back to the normal grid');
  await js('document.querySelector(\'[aria-label="选择故事板 shot0"]\').click()');
 
  await folderSays('文件夹中的故事板待更新');
@@ -172,7 +237,7 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
  assert.equal(await js('!!document.querySelector(\'[aria-label="模糊半径"]\')'),true);
  await js('document.querySelector(\'[aria-label="画笔"]\').click()');
 
- await js('document.querySelector(\'[aria-label="选择故事板 shot2"]\').dispatchEvent(new MouseEvent("click",{bubbles:true,shiftKey:true}))');
+ await js('Array.from(document.querySelectorAll(".wb-card-handle")).find(h=>h.getAttribute("aria-label").includes("shot2")).dispatchEvent(new MouseEvent("click",{bubbles:true,shiftKey:true}))');
  await wait(async()=>JSON.stringify(await selected())==='["shot0","shot1","shot2"]','range selection');assert.equal(await current(),'shot0');
  await key('ArrowRight');await wait(async()=>await current()==='shot1','right navigation');assert.deepEqual(await selected(),['shot1']);
  await key('ArrowLeft');await wait(async()=>await current()==='shot0','left navigation');await key('ArrowLeft');assert.equal(await current(),'shot0');
@@ -209,6 +274,11 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
  const from=await rect('[aria-label="选择故事板 shot1"]'),to=await rect('[aria-label="选择故事板 shot0"]');
  await mouse('mouseDown',from.x+25,from.y+12);await mouse('mouseMove',from.x+40,from.y+12);await wait(()=>js('document.querySelector(\'[aria-label="选择故事板 shot1"]\').getAttribute("aria-pressed")=="true"'),'drag activated');await delay(250);await mouse('mouseMove',to.x+25,to.y+12);await delay(300);await mouse('mouseUp',to.x+25,to.y+12);
  await wait(()=>read().shots[0].id==='shot1','header reorder');await button('撤销');await wait(()=>read().shots[0].id==='shot0','reorder undo');
+ // Starting a drag on an unselected board selects it by design, so the viewer now shows
+ // shot1. Return to shot0 before sampling both of its surfaces.
+ await js('document.querySelector(\'[aria-label="选择故事板 shot0"]\').click()');
+ await wait(()=>js('!!document.querySelector(\'[data-surface="viewer:shot0"]\')'),'viewer back on shot0');
+ await delay(300);
  // Reverse direction: a viewer stroke is visible in the grid before release.
  // Sample both surfaces throughout the press and commit; a final screenshot misses a one-frame blink.
  await js("("+(()=>{
@@ -248,7 +318,7 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
  }
  if(count<100){
    const viewId=await current(),before=read(),shot=before.shots.find(s=>s.id===viewId),ink=before.images[shot.imageId].layers[1].assetId;
-   gateSave=true;await button('保存 TIFF');await wait(()=>releaseSave,'Save captured');
+   gateSave=true;await button('保存');await wait(()=>releaseSave,'Save captured');
    const box=await rect('.wb-viewer .image-stage');
    await mouse('mouseDown',box.x+box.width*.7,box.y+box.height*.6);
    await mouse('mouseMove',box.x+box.width*.75,box.y+box.height*.6);
@@ -259,7 +329,7 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
    const ledger=()=>JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/tiff-output.json'))},'utf8'));
    await wait(()=>ledger().saved?.revision===before.revision,'first output belongs to captured revision');
    assert.equal(ledger().entries.find(e=>e.shotId===shot.id).baseline.layers[1].assetId,ink);
-   await button('保存 TIFF');await folderSays('文件夹中的故事板已更新');
+   await button('保存');await folderSays('文件夹中的故事板已更新');
    assert.equal(ledger().entries.find(e=>e.shotId===shot.id).baseline.layers[1].assetId,read().images[shot.imageId].layers[1].assetId);
  }
  fs.writeFileSync(${JSON.stringify(path.join(run,'expected.json'))},JSON.stringify(read()));
@@ -280,7 +350,7 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
      fs.writeFileSync(${JSON.stringify(path.join(run,'staged-path.txt'))},file);
      fs.renameSync(file,${JSON.stringify(path.join(run,'simulated-trash.tif'))});throw Error('Synthetic lost OS reply');
    };
-   await button('保存 TIFF');await wait(()=>js('document.querySelector(".wb-recovery")?.textContent.includes("放回")'),'actionable recovery');
+   await button('保存');await wait(()=>js('document.querySelector(".wb-recovery")?.textContent.includes("放回")'),'actionable recovery');
 
  }
  await js('document.querySelector(".wb-header details").open=false');await delay(400);

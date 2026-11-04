@@ -6,7 +6,6 @@ import { app, BrowserWindow, ipcMain, session, dialog, shell } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs/promises';
-import { createPhotoshopCopy } from '../../project-files/main/flowPhotoshopCopy.js';
 import { importFlowTiffFolder } from '../../project-files/main/flowTiffImport.js';
 import { createTiffCodec } from '../../project-files/main/formats/index.js';
 import { randomUUID } from 'node:crypto';
@@ -29,7 +28,7 @@ const ownsInstance = suppliedUserData ? true : app.requestSingleInstanceLock();
 app.on('second-instance', () => { const win = BrowserWindow.getAllWindows()[0]; if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } });
 if (!ownsInstance) app.quit();
 else app.whenReady().then(async () => {
-  const selected = requestedRoot === '--choose' ? await dialog.showOpenDialog({ title: 'Open Storyboard Flow project or TIFF folder', properties: ['openDirectory'] }) : null;
+  const selected = requestedRoot === '--choose' ? await dialog.showOpenDialog({ title: '打开 Storyboard Flow 项目或 TIFF 文件夹', properties: ['openDirectory'] }) : null;
   if (selected?.canceled) { app.quit(); return; }
   const root = await fs.realpath(selected ? selected.filePaths[0] : requestedRoot);
   const win = new BrowserWindow({ width: 1280, height: 900, webPreferences: {
@@ -59,20 +58,14 @@ else app.whenReady().then(async () => {
       throw new Error('Current editor document required');
   };
   ipcMain.handle('flow-editor:open', event => { caller(event); return workspace.open(); });
-  for (const name of ['read', 'put', 'checkpoint', 'saveTiff', 'refresh', 'folderStatus'] as const) {
+  for (const name of ['read', 'put', 'checkpoint', 'saveTiff', 'refresh', 'folderStatus', 'outputNames'] as const) {
     ipcMain.handle(`flow-editor:${name}`, (event, token, input) => { caller(event); return (workspace[name] as (token: string, value: unknown) => unknown)(token, input); });
   }
-  ipcMain.handle('flow-editor:switch-project', async (event, token, project, mode) => {
+  ipcMain.handle('flow-editor:switch-project', async (event, token, project) => {
     caller(event);
     if (closing) throw Error('Window is closing');
     return workspace.switchProject(token, project, async currentRoot => {
-      if (mode === 'photoshop-copy') {
-        const selected = await dialog.showOpenDialog(win, { title:'以合成底图创建工作副本（保存在原件旁的 -Flow 文件夹）',
-          filters:[{name:'Photoshop TIFF',extensions:['tif','tiff']}], properties:['openFile'] });
-        if (selected.canceled) return null;
-        return prepare(await createPhotoshopCopy(selected.filePaths[0]));
-      }
-      const selection = await dialog.showOpenDialog(win, { title: 'Open Storyboard Flow project or TIFF folder', properties: ['openDirectory'] });
+      const selection = await dialog.showOpenDialog(win, { title: '打开 Storyboard Flow 项目或 TIFF 文件夹', properties: ['openDirectory'] });
       if (selection.canceled) return null;
       const selectedRoot = await fs.realpath(selection.filePaths[0]);
       return selectedRoot === currentRoot ? null : prepare(selectedRoot);

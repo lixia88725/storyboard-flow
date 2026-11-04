@@ -23,7 +23,7 @@ app.on('window-all-closed',()=>save(phase+'-closed.json',{}));
 process.argv=[process.argv[0],entry,root,userData,'--workbench'];
 import(pathToFileURL(entry).href).then(async()=>{
  await app.whenReady();await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win},'window');win.setSize(1500,950);
- await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("Flow 内已保存")'),'checkpoint');
+ await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'checkpoint');
  if(phase==='reopen'){
   assert.deepEqual(read(),JSON.parse(fs.readFileSync(path.join(run,'expected.json'))));assert.deepEqual((await prefs()).collapsed,[true,true]);
   assert.equal(await js(`document.querySelectorAll('.wb-column.is-collapsed').length`),2);

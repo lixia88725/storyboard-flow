@@ -1,28 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { ProjectV1 } from '../../platform/contracts/refactorV1.js';
 import { settleOutputFileMove } from './flowOutputMove.js';
 
 type Entry = { shotId: string; name: string; current: string | null; location?: 'active' | 'parked' };
 export type OutputRename = { phase: 'stage' | 'publish'; files: { shotId: string; from: string; stage: string; to: string; digest: string; dev: string; ino: string }[] };
-const part = (text: string) => text.trim().replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').replace(/^\.+/, '');
-export function orderedOutputNames(project: ProjectV1, entries: readonly Entry[]): Map<string, string> {
-  const result = new Map(entries.map(e => [e.shotId, e.name]));
-  if (!project.naming) return result; // Low-level unconfigured checkpoints preserve bound names.
-  const n = project.naming;
-  const version = part(n.version) || 'v001';
-  const prefix = [part(project.name) || 'project', part(n.sceneCode) || 'scene', 'stb', part(n.artistName) || 'artist', /^\d+$/.test(version) ? `v${version.padStart(3, '0')}` : version].join('_');
-  const reserved = new Set(project.parkedShots.map(s => result.get(s.id)?.toLowerCase()));
-  let sequence = 0;
-  for (const shot of project.shots) {
-    let name: string;
-    do { name = `${prefix}_${String(++sequence * 10).padStart(4, '0')}.tif`; } while (reserved.has(name.toLowerCase()));
-    if (Buffer.byteLength(name) > 240) throw Error('Output filename exceeds 240 UTF-8 bytes; shorten naming settings');
-    result.set(shot.id, name);
-  }
-  return result;
-}
 
 /** Preflight all destinations before TIFF writes; only this batch's active source
  * names may occupy another destination (including case-only renames). */

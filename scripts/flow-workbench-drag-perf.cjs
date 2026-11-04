@@ -494,7 +494,7 @@ async function drive(options) {
     win.setSize(width, height);
     win.focus();
     await until(() => js('!!document.querySelector("[data-workbench]")'), 'workbench');
-    await until(() => js('document.querySelector(".wb-status [role=status]")?.textContent.startsWith("Flow 内已保存")'), 'initial checkpoint');
+    await until(() => js('document.querySelector(".wb-status [role=status]")?.textContent.startsWith("已自动暂存")'), 'initial checkpoint');
     await until(() => js('document.querySelector(".wb-viewer .image-stage img")?.naturalWidth>0'), 'viewer raster');
     result.openedAt = now();
     await js(bootstrapPage());
@@ -596,7 +596,7 @@ async function drive(options) {
           result.dropHit = await js('(()=>{const card=document.elementFromPoint(' + Math.round(plan.move.to.x) + ',' + Math.round(plan.move.to.y) + ')?.closest("[data-board-id]");return {board:card?.dataset.boardId??null,mounted:!!(card&&card.querySelector(".sketch-panel"))}})()');
           if (!result.dropHit.mounted) throw Error('Card under the pointer has no editable canvas after drop: ' + JSON.stringify(result.dropHit));
           await until(() => js('document.querySelector("[data-workbench]").dataset.revision !== ' + JSON.stringify(String(revisionBefore))), 'revision change', 15000);
-          await until(() => js('document.querySelector(".wb-status [role=status]")?.textContent.startsWith("Flow 内已保存")'), 'checkpoint after drop', 15000);
+          await until(() => js('document.querySelector(".wb-status [role=status]")?.textContent.startsWith("已自动暂存")'), 'checkpoint after drop', 15000);
           result.checkpointObservedAt = now();
           result.orderAfter = writes().shots.slice(0, 10).map(shot => shot.id);
         }

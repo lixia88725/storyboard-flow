@@ -18,12 +18,16 @@
 /* An empty zone is the only drop feedback a blank board can show. */
 .flow-dialogue-blocks.is-drop-empty { outline: 2px dashed #e98249; outline-offset: -2px; }
 
-/* Reorder grip: six quiet dots, never a filled pill. 20px hit area, decorative SVG inside a
-   named button, and it stays visible at rest (it darkens on hover/focus instead of hiding) so
-   the gesture remains discoverable. Only the Japanese storyboard turns this on.
+/* Reorder grip: six quiet dots that stay out of the page until the pointer is over the
+   gutter left of the line, the way a writing app reveals its block handle. The 20px hit
+   area stays live whether or not the dots are drawn, so the gesture is still reachable by
+   keyboard focus and the text never shifts when the handle appears.
    Scoped through `.flow-dialogue-blocks` so the host's generic `.flow-workbench button` rule
    (padding, border, colour, pointer cursor) cannot win by specificity. */
-.flow-dialogue-blocks .flow-dialogue-handle { flex: 0 0 auto; align-self: flex-start; display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 20px; min-width: 20px; height: 20px; margin-top: 3px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: #78838c; font: inherit; line-height: 1; cursor: grab; }
+.flow-dialogue-blocks .flow-dialogue-handle { flex: 0 0 auto; align-self: flex-start; display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 20px; min-width: 20px; height: 20px; margin-top: 3px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: #78838c; font: inherit; line-height: 1; cursor: grab; opacity: 0; transition: opacity .12s ease; }
+.flow-dialogue-blocks .flow-dialogue-handle:hover,
+.flow-dialogue-blocks .flow-dialogue-handle:focus-visible,
+.flow-dialogue-blocks .flow-dialogue-handle:active { opacity: 1; }
 .flow-dialogue-blocks .flow-dialogue-handle:hover { color: #b3bdc5; background: rgba(255, 255, 255, .07); }
 .flow-dialogue-blocks .flow-dialogue-handle:focus-visible { color: #d8dfe4; outline: 2px solid #7e9db5; outline-offset: 1px; }
 .flow-dialogue-blocks .flow-dialogue-handle:active { cursor: grabbing; }

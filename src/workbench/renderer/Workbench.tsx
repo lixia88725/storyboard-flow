@@ -127,10 +127,10 @@ export function Workbench(p:WorkbenchProps){
     </BoardCard>)}
    </BoardGrid></>;
   if(panel==='canvas')return <><div className="wb-panel-tools"><div><button aria-label="上一张" disabled={!current||index===0} onClick={()=>navigate(-1)}>←</button><span className="wb-position">{current?index+1:0} / {p.shots.length}</span><button aria-label="下一张" disabled={!current||index===p.shots.length-1} onClick={()=>navigate(1)}>→</button></div><button aria-pressed={onion} onClick={()=>{if(p.canNavigate())setOnion(!onion);}}>洋葱皮</button><label>画布 <select aria-label="画布缩放" value={String(zoom)} onChange={e=>{if(!p.canNavigate())return;const value=e.target.value;setZoom(value==='fit'?'fit':Number(value));}}><option value="fit">适合</option>{workspaceZoomSteps.map(n=><option key={n} value={n}>{n}%</option>)}</select></label></div>
-   <div className="wb-viewer" ref={viewerRef} data-current-shot={current?.id}>{current?(zoom==='fit'
+   <div className={'wb-viewer'+(current?'':' is-empty')} ref={viewerRef} data-current-shot={current?.id}>{current?(zoom==='fit'
      ?<div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={fitBox?{width:fitBox.width,height:fitBox.height,flex:'none'}:{width:'100%'}}>{surface(current,'viewer',true)}</div></div>
      :<div style={{width:zoom+'%',minWidth:zoom+'%'}}>{surface(current,'viewer',true)}</div>):<p className="wb-empty">选择一张故事板开始绘制</p>}</div></>;
-  if(panel==='info')return current?p.renderInfo(current):<p className="wb-empty">尚未选择故事板</p>;
+  if(panel==='info')return current?p.renderInfo(current,true):<p className="wb-empty">尚未选择故事板</p>;
   if(panel==='layers')return current?p.renderLayers(current):null;
   return <FlowPending stationary shots={p.parked} disabled={p.disabled} revision={p.revision} onRestore={id=>p.move([id],'active')} onDelete={p.remove} renderMedia={shot=><PendingPreview shot={shot} revision={p.revision} visible={reportVisible}/>}/>;
  };
@@ -183,7 +183,7 @@ function BoardCard({shot,index,selected,disabled,onSelect,visible,activate,child
  return <article ref={setCard} data-board-id={shot.id} className={'wb-card'+(selected?' is-selected':'')}>
   <button className="wb-card-handle" aria-label={'选择故事板 '+shot.id} {...sortable.attributes} {...sortable.listeners} onPointerDownCapture={e=>{modifiedHeader.current=e.isPrimary&&e.button===0&&Boolean(e.shiftKey||e.metaKey||e.ctrlKey);if(modifiedHeader.current){e.currentTarget.focus({preventScroll:true});e.preventDefault();e.stopPropagation();if(!disabled)onSelect(e);}}}
    onContextMenu={e=>{if(e.ctrlKey)e.preventDefault();}} onKeyDownCapture={()=>{modifiedHeader.current=false;}}
-   onClick={e=>{if(modifiedHeader.current){modifiedHeader.current=false;return;}onSelect(e);}}><b>{String(index+1).padStart(3,'0')}</b><span>{shot.fileName}</span><span>⠿</span></button>
+   onClick={e=>{if(modifiedHeader.current){modifiedHeader.current=false;return;}onSelect(e);}}><b>{String(index+1).padStart(3,'0')}</b><span className="wb-card-grip" aria-hidden="true">⠿</span></button>
   <div className="wb-card-picture" style={{aspectRatio:`${shot.flow?.canvasWidth??640}/${shot.flow?.canvasHeight??360}`}} onPointerEnter={activate} onContextMenu={e=>{if(e.ctrlKey)e.preventDefault();}}
     onPointerDownCapture={e=>{modifiedPicture.current=e.isPrimary&&e.button===0&&Boolean(e.shiftKey||e.metaKey||e.ctrlKey);if(!modifiedPicture.current||e.target instanceof Element&&e.target.closest('input,textarea,[contenteditable=true],[data-board-dialogue]')){modifiedPicture.current=false;return;}e.preventDefault();e.stopPropagation();if(!disabled)onSelect(e);}}
     onMouseDownCapture={e=>{if(modifiedPicture.current){e.preventDefault();e.stopPropagation();}}}

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-const methods = { open: 'open', read: 'read', put: 'put', refresh: 'refresh', folderStatus: 'folderStatus', saveTiff: 'saveTiff', checkpoint: 'checkpoint', switchProject: 'switch-project', finishClose: 'finish-close' };
+const methods = { open: 'open', read: 'read', put: 'put', refresh: 'refresh', folderStatus: 'folderStatus', outputNames: 'outputNames', saveTiff: 'saveTiff', checkpoint: 'checkpoint', switchProject: 'switch-project', finishClose: 'finish-close' };
 /** Execute only the trusted preload with an isolated Electron stub; no real IPC. */
 export function checkFlowPreload(source, contract) {
   let api; const calls = [], listeners = new Map();
@@ -17,7 +17,7 @@ export function checkFlowPreload(source, contract) {
   const typed = [...contract.matchAll(/^  (\w+)\(/gm)].map(match => match[1]).sort();
   assert.deepEqual(typed, expected);
   for (const [method, channel] of Object.entries(methods)) {
-    const args = method === 'open' ? [] : method === 'read' || method === 'put' || method === 'folderStatus' || method === 'refresh' || method === 'saveTiff' || method === 'checkpoint' ? ['session', { test: true }] : ['session', { test: true }, 'option'];
+    const args = method === 'open' ? [] : method === 'read' || method === 'put' || method === 'folderStatus' || method === 'outputNames' || method === 'refresh' || method === 'saveTiff' || method === 'checkpoint' || method === 'switchProject' ? ['session', { test: true }] : ['session', { test: true }, 'option'];
     api[method](...args); assert.deepEqual(calls.pop(), ['flow-editor:' + channel, ...args]);
   }
   let received; const dispose = api.onClose(id => { received = id; });

@@ -22,7 +22,7 @@ npm run setup:photoshop-tiff-deps
 
 然后双击 `启动 Storyboard Flow.command`。启动器会构建并打开工作台；首次使用时，选择已有的 Flow 项目或受支持的 TIFF 文件夹。开发时可用 `npm run dev` 启动热更新。
 
-**什么时候点「保存 TIFF」？** 草图、排序和对白会自动暂存在项目文件夹中。准备让外部绘画工具看到这次修改时，再点「保存 TIFF」：它会同步工作图、文件名和 Pending 位置，并将已删除镜头对应的工作图移到系统废纸篓。在其他工具里改过受支持的 TIFF 后，可回到工作台手动刷新。分层 TIFF 交换支持部分图层特性，不保证完整保留 Photoshop 的所有效果。
+**什么时候点「保存」？** 草图、排序和对白会自动暂存在项目文件夹中（状态栏显示「已自动暂存」）。准备让外部绘画工具看到这次修改时，再点「保存」：它按「命名」里的规则同步工作图与文件名、更新 Pending 位置，并将已删除镜头对应的工作图移到系统废纸篓。在其他工具里改过受支持的 TIFF 后，回到工作台点顶部的刷新图标取回改动。需要独立副本时，先在访达/资源管理器里复制项目文件夹，再用「打开」打开副本。分层 TIFF 交换支持部分图层特性，不保证完整保留 Photoshop 的所有效果。
 
 ## English
 
@@ -44,7 +44,7 @@ npm run setup:photoshop-tiff-deps
 
 Double-click `启动 Storyboard Flow.command` to build and launch the app. On first launch, choose an existing Flow project or a folder of supported TIFFs. For development with hot reload, run `npm run dev`.
 
-**When should I use Save TIFF?** Flow automatically checkpoints sketches, shot order, and dialogue in the project folder. Choose **Save TIFF** when you want your edits to reach the working image files. It updates pixels, filenames, and Pending locations, and sends working images for deleted shots to the system Trash. After editing a supported TIFF in another tool, refresh it manually in Flow. Layered TIFF exchange supports a subset of layer features; full Photoshop fidelity is not guaranteed.
+**When should I use Save?** Flow automatically checkpoints sketches, shot order, and dialogue in the project folder (the status bar reads "已自动暂存"). Choose **Save** when you want your edits to reach the working image files. It applies the naming rule to filenames, updates pixels and Pending locations, and sends working images for deleted shots to the system Trash. After editing a supported TIFF in another tool, click the refresh icon in the header to pull the changes back. For an independent copy, duplicate the project folder in Finder/Explorer and open the copy with **Open**. Layered TIFF exchange supports a subset of layer features; full Photoshop fidelity is not guaranteed.
 
 ## 文档 · Documentation
 

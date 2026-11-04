@@ -34,6 +34,7 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
     open: () => ({ sessionId, project: structuredClone(bootstrap) }),
     read: depot.value.read,
     folderStatus: output.folderStatus,
+    outputNames: (project: ProjectV1) => output.outputNames(project),
     async put(input: Parameters<typeof depot.value.put>[0]) {
       if (sealed || refreshing) return busy();
       pending++;

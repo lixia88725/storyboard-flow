@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { temporaryWorkspace } from '../../../test/temporaryWorkspace';
-import { assertOutputLedgerBudget, orderedOutputNames, prepareOutputRename, settleOutputRename, preflightOutputNames, validOutputRename } from './flowOutputRename';
+import { assertOutputLedgerBudget, prepareOutputRename, settleOutputRename, preflightOutputNames, validOutputRename } from './flowOutputRename';
+import { orderedOutputNames } from '../../platform/contracts/flowNaming';
 async function fixture(){
  const root=await temporaryWorkspace('flow-rename-');
  const entries=[];

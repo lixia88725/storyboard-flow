@@ -15,7 +15,7 @@ async function geometry(label){
  const g=await js(`(()=>{const rect=e=>{const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height,width:r.width}};return {canvas:[...document.querySelectorAll('.wb-panel-canvas .wb-panel-body,.wb-viewer,.wb-viewer .image-stage')].map(e=>({class:e.className,rect:rect(e),client:e.clientHeight,scroll:e.scrollHeight})),cols:[...document.querySelectorAll('.wb-column')].map(c=>({rect:rect(c),scroll:c.scrollHeight,client:c.clientHeight,overflow:getComputedStyle(c).overflowY,panels:[...c.querySelectorAll(':scope>.wb-panel')].map(p=>({id:p.dataset.panel,rect:rect(p),body:rect(p.querySelector('.wb-panel-body'))}))})),rail:rect(document.querySelector('.wb-tool-rail')),range:rect(document.querySelector('[aria-label="画笔大小"]')),header:document.querySelector('.wb-header').textContent}})()`);
  for(const c of g.cols){assert.equal(c.overflow,'hidden',label+' column not scrollable');assert.ok(c.scroll<=c.client+2,label+' column contents fit');for(const p of c.panels){assert.ok(p.rect.bottom<=c.rect.bottom+2,label+' '+p.id+' fits');assert.ok(p.body.height>16,label+' '+p.id+' body accessible');}}
  if(['default','short window','restored','reopened'].includes(label)&&g.canvas.length===3){const [body,viewer,stage]=g.canvas;assert.ok(stage.rect.bottom<=body.rect.bottom+2,label+' fit canvas bottom inside panel');assert.ok(stage.rect.top>=body.rect.top,label+' fit canvas top inside panel');assert.ok(body.scroll<=body.client+2,label+' fit mode needs no vertical scroll');}
- assert.ok(g.rail.width<=50);assert.ok(g.range.height>g.range.width*3);assert.ok(!g.header.includes('Storyboard'));assert.ok(!g.header.includes('Workbench polish acceptance'));assert.ok(g.header.trim().startsWith('打开项目'));
+ assert.ok(g.rail.width<=50);assert.ok(g.range.height>g.range.width*3);assert.ok(!g.header.includes('Storyboard'));assert.ok(!g.header.includes('Workbench polish acceptance'));assert.ok(g.header.trim().startsWith('打开'));
  return {label,...g};
 }
 const save=(name,data)=>fs.writeFileSync(path.join(run,name),JSON.stringify(data,null,2));
@@ -23,14 +23,15 @@ app.on('window-all-closed',()=>save(phase+'-closed.json',{}));
 process.argv=[process.argv[0],entry,root,userData,'--workbench'];
 import(pathToFileURL(entry).href).then(async()=>{
  await app.whenReady();await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win},'window');win.setSize(1500,950);
- await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("Flow 内已保存")'),'checkpoint');
+ await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'checkpoint');
  if(phase==='reopen'){assert.deepEqual(read().dialogues,JSON.parse(fs.readFileSync(path.join(run,'expected.json'))).dialogues);await geometry('reopened');save(phase+'-done.json',{ok:true,phase});win.close();return;}
  const cases=[],before=read();cases.push(await geometry('default'));
- assert.equal(await js('document.querySelectorAll(".flow-dialogue-handle").length'),0,'normal mode hides all handles');
+ assert.equal(await js('document.querySelectorAll(".wb-card .flow-dialogue-handle").length'),0,'card dialogue lists stay read-only in the normal grid');
+ assert.ok(await js('document.querySelectorAll(".wb-panel-info .flow-dialogue-handle").length')>=1,'right panel offers a grip per line');
  // Open a footer editor and confirm its drag surface is also disabled.
  await js(`document.querySelector('[data-board-id="shot0"] .wb-dialogue-footer button').click()`);
  await wait(()=>js('!!document.querySelector(".wb-dialogue-footer textarea")'),'footer editor');
- assert.equal(await js('document.querySelectorAll(".flow-dialogue-handle").length'),0);
+ assert.equal(await js('document.querySelectorAll(".wb-dialogue-footer .flow-dialogue-handle").length'),0,'footer editor stays read-only');
  await js(`document.activeElement.blur()`);
  win.setSize(1000,650);cases.push(await geometry('short window'));
  // Even oversized saved panel preferences must share the viewport; no column scrolling.
@@ -51,7 +52,8 @@ import(pathToFileURL(entry).href).then(async()=>{
  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Up'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Up'});
  await wait(()=>js(`Number(document.querySelector('[aria-label="画笔大小"]').value)>${size}`),'vertical range Up');
  await button('日式分镜');await wait(()=>js('!!document.querySelector(".wb-japanese .flow-dialogue-handle")'),'Japanese handles');
- assert.equal(await js('document.querySelectorAll(".wb-panel-info .flow-dialogue-handle").length'),0,'info stays non-draggable in Japanese mode');
+ assert.equal(await js('document.querySelector(".wb-panel-info .flow-dialogue-blocks").dataset.allowDrag'),'true','info panel is a drag surface in Japanese mode');
+ assert.ok(await js('document.querySelectorAll(".wb-panel-info .flow-dialogue-handle").length')>=1,'info panel offers a grip per line');
  const handle=await js(`(()=>{const e=document.querySelector('.wb-japanese .flow-dialogue-handle'),r=e.getBoundingClientRect();return {w:r.width,h:r.height,circles:e.querySelectorAll('circle').length,bg:getComputedStyle(e).backgroundColor}})()`);
  assert.ok(handle.w>=20&&handle.h>=20);assert.equal(handle.circles,6);assert.equal(handle.bg,'rgba(0, 0, 0, 0)');
  fs.writeFileSync(path.join(run,'japanese.png'),(await win.webContents.capturePage()).toPNG());
@@ -63,6 +65,9 @@ import(pathToFileURL(entry).href).then(async()=>{
  // Cross-board move to a blank Japanese row, followed by one undo.
  await js(`(()=>{const h=document.querySelector('.wb-japanese [aria-label="Drag dialogue line0"]'),box=document.querySelector('[data-board-id="shot1"] .flow-dialogue-blocks'),r=box.getBoundingClientRect(),d=new DataTransfer();h.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:d}));box.dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:d,clientY:r.top}));h.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:d}));})()`);
  await wait(()=>read().dialogues.find(d=>d.id==='line0')?.shotId==='shot1','Japanese cross-board');await button('撤销');await wait(()=>read().dialogues.find(d=>d.id==='line0')?.shotId==='shot0','undo cross-board');
- await button('日式分镜');assert.equal(await js('document.querySelectorAll(".flow-dialogue-handle").length'),0);
+ await button('日式分镜');
+ assert.equal(await js('document.querySelectorAll(".wb-japanese .flow-dialogue-handle").length'),0,'Japanese handles disappear with the sheet view');
+ assert.equal(await js('document.querySelectorAll(".wb-card .flow-dialogue-handle").length'),0,'cards stay read-only after leaving the sheet view');
+ assert.ok(await js('document.querySelectorAll(".wb-panel-info .flow-dialogue-handle").length')>=1,'info panel keeps its grips in the normal grid');
  assert.deepEqual(read().dialogues,before.dialogues);save('expected.json',read());save('cases.json',cases);save(phase+'-done.json',{phase,ok:true});fs.writeFileSync(path.join(run,'final.png'),(await win.webContents.capturePage()).toPNG());win.close();
 }).catch(async e=>{console.error(e);if(win&&!win.isDestroyed()){console.error(await js('document.body.innerText'));fs.writeFileSync(path.join(run,'failure.png'),(await win.webContents.capturePage()).toPNG());}app.exit(1)});

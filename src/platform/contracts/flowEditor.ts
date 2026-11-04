@@ -8,10 +8,12 @@ export type FolderStatusRequest = { project: ProjectV1; inspectDisk: boolean };
 export type FlowEditorBridge = {
   read(sessionId: string, id: string): ReturnType<FlowAssetDepot['read']>;
   put(sessionId: string, input: Parameters<FlowAssetDepot['put']>[0]): ReturnType<FlowAssetDepot['put']>;
-  switchProject(sessionId: string, project: ProjectV1, mode?: 'photoshop-copy'): Promise<FlowEditorBootstrap | null>;
+  switchProject(sessionId: string, project: ProjectV1): Promise<FlowEditorBootstrap | null>;
   open(): Promise<{ project: ProjectV1; sessionId: string }>;
   refresh(sessionId:string,project:ProjectV1):Promise<FlowResult<ProjectV1>>;
   folderStatus(sessionId: string, request: FolderStatusRequest): Promise<FolderStatus>;
+  /** Read-only bound filenames; the naming sheet uses them once so its sample equals Save. */
+  outputNames(sessionId: string, project: ProjectV1): Promise<{ shotId: string; name: string }[]>;
   saveTiff(sessionId: string, project: ProjectV1): Promise<{ ok: true; value: { projectId: string; revision: number; projectHash: string } } | { ok: false; error: { message: string } }>;
   checkpoint(sessionId: string, project: ProjectV1): Promise<ResultV1<CheckpointReceiptV1>>;
   onClose(listener: (requestId: string) => void): () => void;

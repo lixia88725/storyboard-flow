@@ -10,7 +10,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { OUTPUT_LEDGER_LIMIT, assertOutputLedgerBudget, orderedOutputNames, preflightOutputNames, prepareOutputRename, settleOutputRename, validOutputRename, type OutputRename } from './flowOutputRename.js';
+import { OUTPUT_LEDGER_LIMIT, assertOutputLedgerBudget, preflightOutputNames, prepareOutputRename, settleOutputRename, validOutputRename, type OutputRename } from './flowOutputRename.js';
+import { orderedOutputNames } from '../../platform/contracts/flowNaming.js';
 import { createOutputTrash, validOutputDeletion, type OutputDeletion, type TrashItem } from './flowOutputTrash.js';
 import { outputPath, settleOutputMove, type OutputMove } from './flowOutputMove.js';
 import { snapshotProject } from './persistence/validate.js';
@@ -49,6 +50,7 @@ const optionalRead = async (file: string, limit?: number) => {
 /** Explicit output only. Native policy/CAS writes, immutable originals and durable
  * per-file pending hashes. A partial failure never returns a Save receipt.
  * Caller serializes one writable project owner; roots/filenames never come from IPC. */
+const firstOutputName = (shotId: string) => shotId + '.tif';
 export async function openFlowTiffSave(root: string, projectId: string, codec: TiffCodec, trashItem?: TrashItem) {
   codec=createPresentationCodec(codec);
   const canonical = await fs.realpath(root), identity = await fs.lstat(root);
@@ -159,6 +161,24 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         if (missing) return 'missing';
         if (external) return 'external';
         return pending ? 'pending' : 'current';
+      });
+    },
+    /** Read-only bound filenames for the naming preview. Opening the sheet fetches this
+     * once so the sample is computed from the same entries Save uses; no writes here. */
+    async outputNames(project: ProjectV1): Promise<{ shotId: string; name: string }[]> {
+      return serialized(async () => {
+        if (project.id !== projectId) throw Error('Different project');
+        const { ledger } = await load();
+        if (ledger.rename || (ledger.refresh && !ledger.refresh.complete) || ledger.entries.some(e => e.move || e.deletion || e.pending))
+          throw Error('请先完成上次保存或刷新，再查看命名预览');
+        const entries = new Map(ledger.entries.map(e => [e.shotId, e]));
+        const parked = new Set(project.parkedShots.map(s => s.id));
+        return [...project.shots, ...project.parkedShots].map(({ id: shotId }) => {
+          const entry = entries.get(shotId);
+          // Restoring a retired Pending entry assigns a fresh random leaf during Save.
+          if (entry?.retired && parked.has(shotId)) throw Error('请先保存恢复的 Pending 故事板，再查看命名预览');
+          return { shotId, name: entry && !entry.retired ? entry.name : firstOutputName(shotId) };
+        });
       });
     },
     async hasPendingRefresh(){const j=(await load()).ledger.refresh;return !!j&&!j.complete;},
@@ -332,7 +352,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         for (const shot of allShots) {
           let entry = ledger.entries.find(e => e.shotId === shot.id);
           if (!entry || entry.retired) {
-            const name = entry?.retired ? `${shot.id}-${randomUUID()}.tif` : `${shot.id}.tif`;
+            const name = entry?.retired ? `${shot.id}-${randomUUID()}.tif` : firstOutputName(shot.id);
             if (ledger.entries.some(e => !e.retired && e.shotId !== shot.id && e.name.toLowerCase() === name.toLowerCase())) throw Error('Output name collision');
             if (!entry) { entry = { shotId: shot.id, name, original: null, current: null }; ledger.entries.push(entry); }
             entry.name = name; entry.current = null; delete entry.content; delete entry.pending; delete entry.retired;

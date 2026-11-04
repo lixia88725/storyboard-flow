@@ -58,7 +58,7 @@ import(pathToFileURL(entry).href).then(async()=>{
   await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win},'window');
   win.setSize(1500,1000);
   await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');
-  await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("Flow 内已保存")'),'checkpoint');
+  await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'checkpoint');
   await wait(()=>js('!!document.querySelector(".wb-panel-info .flow-dialogue-text[data-dialogue-id=\\"line0\\"]")'),'info dialogue editor');
 
   if(phase==='reopen'){
@@ -101,7 +101,7 @@ import(pathToFileURL(entry).href).then(async()=>{
 
   // 3) Drain the queue; the failure is still unsettled afterwards.
   releaseWrites();
-  await wait(async()=>(await status()).startsWith('Flow 内已保存'),'queue drained');
+  await wait(async()=>(await status()).startsWith('已自动暂存'),'queue drained');
   assert.equal((await infoField()).value,base+'x','the failed text is still local after draining');
   assert.equal(lineText(),base,'draining did not silently install the failed text');
 

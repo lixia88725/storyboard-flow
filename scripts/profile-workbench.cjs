@@ -48,7 +48,7 @@ async function profile() {
     const images=Array.from(viewer?.querySelectorAll('.image-stage > img')||[]);
     return images.length===3 && images.every(im=>im.complete && im.naturalWidth>0);})()`);
   await waitFor(()=>ready(0),'initial canvas');
-  await waitFor(()=>js("document.querySelector('.wb-status')?.innerText.includes('Flow 内已保存')"),'initial checkpoint');
+  await waitFor(()=>js("document.querySelector('.wb-status')?.innerText.includes('已自动暂存')"),'initial checkpoint');
   report.openMs = Math.round(performance.now()-started);
   async function sampleMemory(position) {
     const processes = app.getAppMetrics();
@@ -84,7 +84,7 @@ async function profile() {
   report.firstVisibleStrokeMs=Math.round(performance.now()-begin);
   mouse('mouseUp',point.x+16);
   const released=performance.now();
-  await waitFor(()=>js(`document.querySelector('[data-workbench]').dataset.revision!==${JSON.stringify(revision)} && document.querySelector('.wb-status').innerText.includes('Flow 内已保存')`),'stroke checkpoint');
+  await waitFor(()=>js(`document.querySelector('[data-workbench]').dataset.revision!==${JSON.stringify(revision)} && document.querySelector('.wb-status').innerText.includes('已自动暂存')`),'stroke checkpoint');
   report.strokeCheckpointMs=Math.round(performance.now()-released);
   await sampleMemory('painted');
   if (process.env.FLOW_PROFILE_SCROLL === '1') {

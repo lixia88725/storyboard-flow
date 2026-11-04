@@ -17,6 +17,7 @@ import { LayerPanel } from '../../drawing/renderer/LayerPanel';
 import {DialogueBlocks} from '../../storyboard/renderer/dialogueBlocks';
 import {createDialogueCommitState, type DialogueCommitState, type DialogueEditState} from '../../storyboard/renderer/dialogueCommitState';
 import { WorkspaceToolRail } from './workspace/WorkspaceToolRail';
+import { RotateCw } from 'lucide-react';
 import { FlowNaming } from './FlowNaming';
 import { captureMountedCanvasCheckpoints } from '../../drawing/renderer/mountedCanvasRecoveryCapture';
 import { projectShots, pixelStroke, settledStrokePreview } from './adapter';
@@ -45,6 +46,7 @@ function bindEditor(sessionId: string) {
     checkpoint: (project: FlowEditorBootstrap['project']) => api.checkpoint(sessionId, project),
     refresh: (project: FlowEditorBootstrap['project']) => api.refresh(sessionId, project),
     folderStatus: (request: Parameters<typeof api.folderStatus>[1]) => api.folderStatus(sessionId, request),
+    outputNames: (project: FlowEditorBootstrap['project']) => api.outputNames(sessionId, project),
     saveTiff: (project: FlowEditorBootstrap['project']) => api.saveTiff(sessionId, project)
   };
 }
@@ -80,7 +82,7 @@ export function FlowEditor() {
   const resume = async (owner: EditorOwner) => {
     if (owner.flow.snapshot().phase === 'frozen') required(await owner.flow.request({ kind: 'resume' }));
   };
-  const openProject = (mode?: 'photoshop-copy') => {
+  const openProject = () => {
     if (switchWork.current || closing.current || !current.current) return;
     const previous = current.current;
     setSwitching(true);
@@ -90,7 +92,7 @@ export function FlowEditor() {
         while (outputWork.current) await outputWork.current;
         assertSettledGesture();
         const frozen = required(await previous.flow.request({ kind: 'freeze' }));
-        const next = await window.flowEditor!.switchProject(previous.sessionId, frozen.snapshot.project, mode);
+        const next = await window.flowEditor!.switchProject(previous.sessionId, frozen.snapshot.project);
         if (next) install(next); else { await resume(previous); setIssue(''); }
       } catch (error) {
         if (current.current === previous) await resume(previous);
@@ -137,7 +139,7 @@ export function FlowEditor() {
     issue={issue} setIssue={s => { if (current.current === owner) setIssue(s); }} gestures={gestures} outputWork={outputWork} dialogueCommits={dialogueCommits} /> : <main><p role="status">{issue || 'Opening project…'}</p></main>;
 }
 function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, outputWork, dialogueCommits }: {
-  api: ReturnType<typeof bindEditor>; openProject: (mode?: 'photoshop-copy') => void; switching: boolean;
+  api: ReturnType<typeof bindEditor>; openProject: () => void; switching: boolean;
   outputWork: { current: Promise<void> | undefined }; flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number };
   dialogueCommits: { current: DialogueCommitState }
 }) {
@@ -444,7 +446,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:dialogueText.get(s.id)??''} ]));
   return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <Workbench dialogueText={dialogueText} name={snapshot.project.name} shots={shots.slice(0,snapshot.project.shots.length)} parked={shots.slice(snapshot.project.shots.length)} selected={selectedIds} revision={snapshot.project.revision} disabled={!active}
-      status={issue||snapshot.lastError?.message||(flowSaved ? 'Flow 内已保存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label) : '正在保存到 Flow…')}
+      status={issue||snapshot.lastError?.message||(flowSaved ? '已自动暂存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label) : '正在自动暂存…')}
       select={selectShot} focus={focusShot}
       selectAll={()=>{const ids=selectAllShots(flow.snapshot().project.shots.map(s=>s.id));setSelection(ids);selectionAnchor.current=undefined;}}
       selectMany={ids=>{const known=new Set(ids),next=flow.snapshot().project.shots.map(s=>s.id).filter(id=>known.has(id));setSelection(next);selectionAnchor.current=next[0];}}
@@ -456,7 +458,7 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
       renderCanvas={(shot,previous,next)=><SketchPad respectActiveLayer key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0} eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false}
         onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
         onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
-      actions={<><button disabled={!active} onClick={()=>openProject()}>打开项目</button><button disabled={!active} title="将 TIFF 的合成画面作为底图，在原件旁新建独立的 Flow 项目" onClick={()=>openProject('photoshop-copy')}>从 TIFF 创建工作副本</button><button disabled={!active} onClick={()=>setNamingOpen(true)}>命名</button><button disabled={!active||savingTiff} className="wb-save" onClick={()=>{void saveTiff().catch(()=>{});}}>{savingTiff?'保存中…':'保存 TIFF'}</button><button disabled={!active} onClick={refreshImages}>刷新外部图片</button></>}
+      actions={<><button disabled={!active} onClick={()=>openProject()}>打开</button><button disabled={!active} onClick={()=>setNamingOpen(true)}>命名</button><button disabled={!active||savingTiff} className="wb-save" onClick={()=>{void saveTiff().catch(()=>{});}}>{savingTiff?'保存中…':'保存'}</button><button disabled={!active} className="wb-refresh" data-external={folderStatus.state==='external'||folderStatus.state==='both'} data-spinning={refreshing} title="从文件夹取回外部改动" aria-label="从文件夹取回外部改动" onClick={refreshImages}><RotateCw size={15} strokeWidth={1.75} aria-hidden /></button></>}
       renderDialogue={renderDialogue}
       toolbar={null}
       toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} onToolChange={setTool}
@@ -470,6 +472,6 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
       {folderStatus.recovery.state === 'inspect' && <p>恢复文件的位置、身份或内容与保存记录不一致。请保留项目文件夹和原文件，以便核对。</p>}
       {folderStatus.recovery.state === 'retry' && <><p>已找到可继续的删除记录。重试会继续上次保存，并把仍待删除的原文件移入系统废纸篓。</p><button disabled={!active || savingTiff} onClick={() => { void saveTiff().catch(() => {}); }}>重试保存 TIFF</button></>}
     </aside>}
-    {namingOpen&&<div className="wb-naming"><FlowNaming project={snapshot.project} onCancel={()=>setNamingOpen(false)} onApply={async(name,naming)=>{await request({kind:'board',command:{kind:'setProjectNaming',name,naming}});setNamingOpen(false);}}/></div>}
+    {namingOpen&&<div className="wb-naming"><FlowNaming project={snapshot.project} loadBindings={api.outputNames} onCancel={()=>setNamingOpen(false)} onApply={async(name,naming)=>{await request({kind:'board',command:{kind:'setProjectNaming',name,naming}});setNamingOpen(false);}}/></div>}
   </CanvasPresentationContext.Provider></MediaSourceContext.Provider>;
 }

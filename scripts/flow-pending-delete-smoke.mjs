@@ -99,7 +99,7 @@ app.on('window-all-closed',()=>fs.writeFileSync(${JSON.stringify(path.join(run,p
 import(${JSON.stringify('file://'+entry)}).then(async()=>{
  await app.whenReady();await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win},'window');win.setSize(1600,1000);
  await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');
- await wait(async()=>(await status()).startsWith('Flow 内已保存'),'checkpoint');
+ await wait(async()=>(await status()).startsWith('已自动暂存'),'checkpoint');
  if(phase==='edit'){
   assert.equal(read().parkedShots.length,2);assert.deepEqual(pendingFiles(),['shot2.tif','shot3.tif']);
   const activeSelectedBefore=await js('Array.from(document.querySelectorAll(".wb-card.is-selected")).map(e=>e.dataset.boardId)');
@@ -129,7 +129,7 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
   await button('撤销');await wait(()=>read().parkedShots.length===2,'one undo restores membership');
   await button('重做');await wait(()=>read().parkedShots.length===0,'redo removes membership');
   await wait(()=>js('!document.querySelector(\'[aria-label="选择 Pending shot2"]\')'),'selection pruned');
-  await button('保存 TIFF');await folderSays('文件夹中的故事板已更新');
+  await button('保存');await folderSays('文件夹中的故事板已更新');
   assert.equal(trashCalls.length,2,'only the two deleted Pending TIFFs reach Trash');
   // Provenance comes from the durable intent captured inside the Trash callback, not from the path.
   assert.deepEqual(trashCalls.map(c=>[c.shotId,c.from,c.phase,c.name]).sort(),
@@ -145,7 +145,7 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
   assert.equal(sha(root+'/.storyboard-flow/originals/shot2.tif'),ORIGINAL,'imported original byte-identical after delete');
   assert.equal(sha(root+'/.storyboard-flow/originals/shot3.tif'),ORIGINAL3,'second imported original byte-identical after delete');
   await button('撤销');await wait(()=>read().parkedShots.length===2,'undo after physical delete');
-  await button('保存 TIFF');await folderSays('文件夹中的故事板已更新');
+  await button('保存');await folderSays('文件夹中的故事板已更新');
   assert.equal(trashCalls.length,2,'regeneration never reads Trash');
   const regenerated=pendingFiles();
   assert.equal(regenerated.length,2);

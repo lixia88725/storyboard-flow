@@ -5,7 +5,8 @@ import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { temporaryWorkspace } from '../../../test/temporaryWorkspace';
 import { createTiffCodec } from './formats/index';
-import { orderedOutputNames, prepareOutputRename, settleOutputRename } from './flowOutputRename';
+import { prepareOutputRename, settleOutputRename } from './flowOutputRename';
+import { orderedOutputNames } from '../../platform/contracts/flowNaming';
 import { openFlowTiffSave } from './flowTiffSave';
 import type { ProjectV1 } from '../../platform/contracts/refactorV1';
 const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -24,6 +25,26 @@ async function fixture(two = false) {
   return {root,p,png,c,source,output};
 }
 describe('new TIFF output native Save protocol',()=>{
+  it('reports bound filenames for the naming preview without touching the folder',async()=>{
+    const {root,p,output}=await fixture(true);
+    const before=await fs.readdir(root);
+    const names=await output.outputNames(p);
+    expect(names.map(entry=>entry.shotId).sort()).toEqual(['second','shot']);
+    expect(names.find(entry=>entry.shotId==='second')!.name).toBe('second.tif');
+    expect(await fs.readdir(root)).toEqual(before);
+    await expect(output.outputNames({...p,id:'other'})).rejects.toThrow('Different project');
+  },60000);
+  it('reserves the first unsaved Pending filename in preview without creating an output ledger',async()=>{
+    const {p,png,c}=await fixture(true);
+    const root=await temporaryWorkspace('flow-new-preview-'), output=await openFlowTiffSave(root,p.id,c);
+    p.name='P';p.naming={sceneCode:'S',artistName:'A',version:'1'};
+    const parked=p.shots.pop()!;parked.id='P_S_stb_A_v001_0010';p.parkedShots.push(parked);
+    const preview=orderedOutputNames(p,await output.outputNames(p));
+    expect(preview.get('shot')).toBe('P_S_stb_A_v001_0020.tif');
+    await expect(fs.stat(path.join(root,'.storyboard-flow/tiff-output.json'))).rejects.toMatchObject({code:'ENOENT'});
+    await output.save(p,async()=>png);
+    for(const leaf of [preview.get('shot')!, 'Pending/'+parked.id+'.tif']) expect((await fs.stat(path.join(root,leaf))).isFile()).toBe(true);
+  },60000);
   it('saves captured pixels/text, preserves first backup through repeated Save and Undo output, and reopens ledger',async()=>{
     const {root,p,png,c,source,output}=await fixture();
     const edit=await sharp({create:{width:2,height:1,channels:4,background:'#112233'}}).png().toBuffer();
@@ -184,6 +205,9 @@ it('reopened Save resumes a durable rename journal before interpreting old sourc
  ledger.rename=await prepareOutputRename(root,ledger.entries,orderedOutputNames(p,ledger.entries));delete ledger.saved;
  await fs.writeFile(ledgerPath,JSON.stringify(ledger));
  await expect(settleOutputRename(root,ledger.rename,async()=>{await fs.writeFile(ledgerPath,JSON.stringify(ledger));throw Error('interrupted after phase publication')},async()=>{})).rejects.toThrow('interrupted');
+ const beforePreview=await fs.readFile(ledgerPath);
+ await expect(output.outputNames(p)).rejects.toThrow('请先完成');
+ expect(await fs.readFile(ledgerPath)).toEqual(beforePreview);
  const reader=vi.fn(async()=>{throw Error('unchanged TIFF must not reread PNG')});
  const result=await (await openFlowTiffSave(root,p.id,c)).save(p,reader);
  expect(result.files.map(f=>f.shotId)).toEqual(['second','shot']);

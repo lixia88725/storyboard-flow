@@ -61,11 +61,11 @@ checkpoint先验证/发布不可变资产和版本，再发布head。相同revis
 
 IME候选只留本地，确认后提交。每个编辑器独立持有未确认提交义务；其他实例成功、卸载或超时都不能代为解除。失败保留最新意图供重试，旧回执不能清掉新请求；成功与宿主回显之间仍须保留用户回退意图。关闭在freeze后复检义务。具体状态机见 `dialogueCommitState.ts` 和 `dialogueBlocks/commitQueue.ts`。
 
-## TIFF导入与工作副本
+## TIFF导入
 
 严格打开已有checkpoint；缺失与损坏/权限失败必须区分。无现有项目namespace的受支持TIFF文件夹可初始化，读取根与 `Pending/`，自然排序。新项目产生自己的身份，不将来源ID直接当授权。准备私有staging、原始来源快照、资产与绑定，复查来源后原生独占发布；竞争目的地、别名、符号链接及不支持结构拒绝，失败只清理仍能确认身份的自有临时对象。
 
-原件字节保留在 `.storyboard-flow/originals/`，后续Save不覆盖首份原件。TIFF原生层ID与XMP映射用于支持子集的身份，不靠名称/数组位置猜测。`portable/native/unverified`是验证级别；native存在不等于已与任意项目基线对应。外来不支持的PS结构安全拒绝。显式创建合成底图+墨线的独立工作副本，不承诺PSD/全部图层保真或来源持续追踪。
+原件字节保留在 `.storyboard-flow/originals/`，后续Save不覆盖首份原件。TIFF原生层ID与XMP映射用于支持子集的身份，不靠名称/数组位置猜测。`portable/native/unverified`是验证级别；native存在不等于已与任意项目基线对应。外来不支持的PS结构安全拒绝。独立副本由用户在文件系统复制项目文件夹后经“打开”初始化，软件不另设工作副本入口；不承诺PSD/全部图层保真或来源持续追踪。
 
 ## 显式Save、命名与删除
 

@@ -61,7 +61,7 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win},'window');
  win.setSize(1600,1000);
  await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');
- await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("Flow 内已保存")'),'checkpoint');
+ await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'checkpoint');
  await wait(()=>js('document.querySelector(".wb-viewer .image-stage img")?.naturalWidth>0'),'viewer raster');
  const count=${count},order=Array.from({length:count},(_,i)=>'shot'+i),baseline=read();
  assert.equal(baseline.shots.length,count);
