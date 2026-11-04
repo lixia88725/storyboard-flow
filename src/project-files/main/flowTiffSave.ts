@@ -34,6 +34,11 @@ export type TiffSourceBinding = { pixelHashes?:Record<string,string>; shotId: st
 type RefreshJournal = { beforeHash: string; after: ProjectV1; updates: { shotId: string; digest: string; baseline: ImageDocumentV1; pixelHashes: Record<string,string> }[]; complete: boolean };
 type Ledger = { refresh?: RefreshJournal; version: 1; projectId: string; entries: Entry[]; rename?: OutputRename; saved?: { revision: number; projectHash: string } };
 export type TiffSaveReceipt = { projectId: string; revision: number; projectHash: string; files: { shotId: string; name: string; digest: string }[] };
+/** A TIFF this process wrote at its final project name during creation. `source`
+ * keeps the imported TIFF bytes as the original; `output` keeps the bytes written
+ * at creation (raster import has no TIFF source to preserve). `originalDigest` is
+ * the digest read during import; binding refuses bytes that no longer match it. */
+export type CreatedOutputBinding = { shotId: string; name: string; digest: string; originalDigest: string; pixelHashes: Record<string, string>; original: 'source' | 'output' };
 const read = async (file: string, limit = 128 * 1024 * 1024): Promise<Buffer> => {
   if (await fs.realpath(file) !== file) throw Error('Aliased output path refused');
   const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -313,6 +318,47 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           if(Object.keys(pixelHashes).length!==image.layers.length||image.layers.some(l=>!digest(pixelHashes![l.id])))throw Error('Invalid source pixel baseline');
           await writeManagedSourceFile(root,path.join(root,'.storyboard-flow/originals',source.shotId+'.tif'),Buffer.from(original),{createOnly:true});
           state.ledger.entries.push({ shotId: source.shotId, name: source.name, original: source.digest, current: source.digest, pixelHashes, baseline: captured.images[[...captured.shots,...captured.parkedShots].find(s=>s.id===source.shotId)!.imageId], published:false, location: source.location ?? 'active' });
+        }
+        await persist(state.ledger, null);
+      });
+    },
+    /** Creation-time binding. The caller wrote these TIFFs at their final project
+     * names from an empty stage; each becomes a published entry with a content and
+     * pixel baseline so the first Save can reuse the bytes. Every output, its
+     * baseline and its original are verified before anything is recorded. */
+    bindCreatedOutputs(project: ProjectV1, outputs: readonly CreatedOutputBinding[], readSource: (shotId: string) => Promise<Uint8Array>) {
+      const captured = snapshotProject(project), mappings = structuredClone(outputs);
+      return serialized(async () => {
+        if (captured.id !== projectId) throw Error('Different project');
+        const state = await load();
+        if (state.bytes) throw Error('Output bindings already initialized');
+        if (!captured.shots.length || mappings.length !== captured.shots.length) throw Error('Created outputs must cover every active board exactly once');
+        const shots = new Map(captured.shots.map(s => [s.id, s]));
+        const shotIds = new Set<string>(), names = new Set<string>();
+        for (const output of mappings) {
+          if (!output || !id(output.shotId) || !leaf(output.name) || !digest(output.digest) || !digest(output.originalDigest) ||
+              !['source', 'output'].includes(output.original) || !output.pixelHashes || typeof output.pixelHashes !== 'object' ||
+              Array.isArray(output.pixelHashes) || !shots.has(output.shotId) || shotIds.has(output.shotId) ||
+              names.has(output.name.toLowerCase())) throw Error('Invalid created output binding');
+          if (output.original === 'output' && output.originalDigest !== output.digest) throw Error('Created output original must be the written TIFF');
+          const shot = shots.get(output.shotId)!;
+          const layers = captured.images[shot.imageId].layers;
+          if (Object.keys(output.pixelHashes).length !== layers.length || layers.some(layer => !digest(output.pixelHashes[layer.id])))
+            throw Error('Invalid created output pixel baseline');
+          const written = await read(outputPath(root, output.name, 'active'));
+          if (hash(written) !== output.digest) throw Error(`Created output changed before binding: ${output.name}`);
+          if (output.original === 'source' && hash(Buffer.from(await readSource(output.shotId))) !== output.originalDigest)
+            throw Error(`Imported source changed before binding: ${output.name}`);
+          shotIds.add(output.shotId); names.add(output.name.toLowerCase());
+        }
+        for (const output of mappings) {
+          const shot = shots.get(output.shotId)!;
+          const original = output.original === 'source' ? Buffer.from(await readSource(output.shotId)) : await read(outputPath(root, output.name, 'active'));
+          if (hash(original) !== output.originalDigest) throw Error(`Original changed before binding: ${output.name}`);
+          await writeManagedSourceFile(root, path.join(root, '.storyboard-flow/originals', output.shotId + '.tif'), original, { createOnly: true });
+          state.ledger.entries.push({ shotId: output.shotId, name: output.name, original: output.originalDigest, current: output.digest,
+            pixelHashes: output.pixelHashes, baseline: structuredClone(captured.images[shot.imageId]), published: true,
+            content: contentDigest(captured, shot), location: 'active' });
         }
         await persist(state.ledger, null);
       });
