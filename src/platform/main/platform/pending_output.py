@@ -1,18 +1,13 @@
-"""Atomically publish one Pending output from a private staging directory.
+"""Create and fill one Pending output without ever moving an existing entry.
 
-The staged file's device/inode is supplied by the caller (recorded in the ledger
-journal). Both directories are opened with O_NOFOLLOW and verified against the
-caller's captured identities; the staged entry's identity is checked through the
-open stage descriptor, and the exclusive rename runs with dirfd-bound
-`renameatx_np`/`renameat2`, so a path swapped after a precheck cannot redirect
-the write. A replaced staged entry is never published and an existing target is
-never replaced.
-
-There is no conditional unlink: publication moves the staged inode into
-`Pending`, so the target is the exact inode the journal recorded and no second
-link is left behind.
+Both parent directories are opened with O_NOFOLLOW and checked against the
+caller's captured device/inode. `create` makes a new entry with O_EXCL, so it can
+never adopt an existing file. `write` opens the staged file and the new target
+relative to those directories, verifies both identities through the opened
+descriptors, then truncates and writes. A staged entry replaced by name cannot
+redirect the read; a target whose inode or link count no longer matches is never
+truncated, so a foreign file is never overwritten.
 """
-import ctypes
 import json
 import os
 import stat
@@ -21,7 +16,7 @@ from typing import NoReturn
 
 raw = json.loads(sys.argv[1])
 
-def emit(value):
+def emit(value) -> NoReturn:
     print(json.dumps(value))
     sys.exit(0)
 
@@ -53,52 +48,81 @@ if [str(stage_dir.st_dev), str(stage_dir.st_ino)] != [raw["stageDev"], raw["stag
 if [str(pending_dir.st_dev), str(pending_dir.st_ino)] != [raw["pendingDev"], raw["pendingIno"]]:
     fail("changed", "Pending directory identity changed")
 
-source = lookup(stage_fd, raw["stageName"])
-if source is None:
-    fail("missing", "staged file is missing")
+if raw["mode"] == "create":
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        target_fd = os.open(raw["targetName"], flags, 0o600, dir_fd=pending_fd)
+    except FileExistsError:
+        fail("exists", "Pending name already exists")
+    except OSError as error:
+        fail("io", "Pending output could not be created: %s" % error)
+    target = os.fstat(target_fd)
+    if not stat.S_ISREG(target.st_mode) or target.st_nlink != 1:
+        os.close(target_fd)
+        fail("changed", "created Pending output is not a single-link regular file")
+    os.fsync(target_fd)
+    os.close(target_fd)
+    os.fsync(pending_fd)
+    emit({"ok": True, "dev": str(target.st_dev), "ino": str(target.st_ino)})
+
+if raw["mode"] == "discard":
+    staged = lookup(stage_fd, raw["stageName"])
+    if staged is None:
+        emit({"ok": True, "removed": False})
+    if not stat.S_ISREG(staged.st_mode) or staged.st_nlink != 1 or \
+            [str(staged.st_dev), str(staged.st_ino)] != [raw["fileDev"], raw["fileIno"]]:
+        fail("changed", "staged file no longer matches the prepared identity; left in place")
+    try:
+        os.unlink(raw["stageName"], dir_fd=stage_fd)
+    except OSError as error:
+        fail("io", "staged file could not be removed: %s" % error)
+    os.fsync(stage_fd)
+    emit({"ok": True, "removed": True})
+
+if raw["mode"] != "write":
+    fail("invalid", "unknown Pending output mode")
+
+try:
+    source_fd = os.open(raw["stageName"], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=stage_fd)
+except OSError as error:
+    fail("staged" if error.errno in (getattr(os, "ELOOP", 40), getattr(os, "ENOENT", 2)) else "io",
+         "staged file could not be opened safely: %s" % error)
+source = os.fstat(source_fd)
 if not stat.S_ISREG(source.st_mode):
-    fail("changed", "staged entry is not a regular file")
+    os.close(source_fd)
+    fail("staged", "staged entry is not a regular file")
 if [str(source.st_dev), str(source.st_ino)] != [raw["fileDev"], raw["fileIno"]]:
-    fail("changed", "staged file no longer matches the prepared identity")
-if lookup(pending_fd, raw["targetName"]) is not None:
-    fail("exists", "Pending name already exists")
+    os.close(source_fd)
+    fail("staged", "staged file no longer matches the prepared identity")
+chunks = []
+while True:
+    chunk = os.read(source_fd, 1 << 20)
+    if not chunk:
+        break
+    chunks.append(chunk)
+payload = b"".join(chunks)
+os.close(source_fd)
 
-if sys.platform == "darwin":
-    libc = ctypes.CDLL(None, use_errno=True)
-    call = libc.renameatx_np
-    call.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-    call.restype = ctypes.c_int
-    if call(stage_fd, os.fsencode(raw["stageName"]), pending_fd, os.fsencode(raw["targetName"]), 0x00000004):
-        code = ctypes.get_errno()
-        fail("exists" if code == 17 else "io", "exclusive Pending rename failed: %s" % os.strerror(code))
-elif sys.platform == "linux":
-    libc = ctypes.CDLL(None, use_errno=True)
-    call = libc.renameat2
-    call.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-    call.restype = ctypes.c_int
-    if call(stage_fd, os.fsencode(raw["stageName"]), pending_fd, os.fsencode(raw["targetName"]), 1):
-        code = ctypes.get_errno()
-        fail("exists" if code == 17 else "io", "exclusive Pending rename failed: %s" % os.strerror(code))
-elif sys.platform == "win32":
-    # No dirfd variant exists; absolute paths and identity checks are used with
-    # MoveFileExW and no replace flag. This platform path is not verified here.
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    move = kernel.MoveFileExW
-    move.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint]
-    move.restype = ctypes.c_int
-    if not move(os.path.join(raw["stageDir"], raw["stageName"]), os.path.join(raw["pendingDir"], raw["targetName"]), 8):
-        error = ctypes.get_last_error()
-        fail("exists" if error in (80, 183) else "io", "exclusive Pending move failed: %s" % error)
-else:
-    fail("invalid", "exclusive Pending publication unsupported on this platform")
-
-target = lookup(pending_fd, raw["targetName"])
-if target is None:
-    fail("changed", "Pending output disappeared after publication")
-if not stat.S_ISREG(target.st_mode):
-    fail("changed", "Pending output is not a regular file")
-if [str(target.st_dev), str(target.st_ino)] != [raw["fileDev"], raw["fileIno"]]:
-    fail("changed", "Pending output does not identify the staged inode")
-if target.st_nlink != 1:
-    fail("changed", "Pending output still has %d links" % target.st_nlink)
-emit({"ok": True, "dev": str(target.st_dev), "ino": str(target.st_ino), "nlink": target.st_nlink})
+try:
+    target_fd = os.open(raw["targetName"], os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=pending_fd)
+except OSError as error:
+    fail("target" if error.errno in (getattr(os, "ELOOP", 40), getattr(os, "ENOENT", 2)) else "io",
+         "Pending output could not be opened safely: %s" % error)
+target = os.fstat(target_fd)
+if not stat.S_ISREG(target.st_mode) or target.st_nlink != 1:
+    os.close(target_fd)
+    fail("target", "Pending output is not a single-link regular file")
+if [str(target.st_dev), str(target.st_ino)] != [raw["targetDev"], raw["targetIno"]]:
+    os.close(target_fd)
+    fail("target", "Pending output no longer matches the registered identity")
+os.ftruncate(target_fd, 0)
+offset = 0
+while offset < len(payload):
+    offset += os.write(target_fd, payload[offset:])
+os.fsync(target_fd)
+written = os.fstat(target_fd)
+os.close(target_fd)
+if [str(written.st_dev), str(written.st_ino)] != [raw["targetDev"], raw["targetIno"]] or written.st_size != len(payload):
+    fail("target", "Pending output changed while it was written")
+os.fsync(pending_fd)
+emit({"ok": True, "size": len(payload), "dev": str(written.st_dev), "ino": str(written.st_ino)})

@@ -85,25 +85,25 @@ export async function publishDirectoryExclusive(
   await syncDirectory(path.dirname(source));
 }
 
-/** Atomically publish a Pending output through bound parent directories.
+/** Create or fill one Pending output through bound parent directories.
  *
- * Both directories are opened with O_NOFOLLOW and verified against the caller's
- * captured device/inode, then an exclusive rename runs relative to those
- * descriptors after the staged entry's identity matches the journal. A path
- * swapped after a precheck cannot redirect the write, a replaced staged entry is
- * never published, and an existing target is reported as `exists` without being
- * touched. */
-export async function publishPendingOutput(input: {
+ * `create` uses O_EXCL, so an existing entry is reported as `exists` and never
+ * adopted. `write` verifies the staged inode and the created target inode through
+ * opened descriptors before truncating, so a swapped staged name cannot redirect
+ * the read and a replaced target is never overwritten. The helper fsyncs the
+ * file and the Pending directory before returning. */
+export async function pendingOutput(mode: 'create' | 'write' | 'discard', input: {
   stageDir: string; stageName: string; pendingDir: string; targetName: string;
-  fileDev: string; fileIno: string; stageDev: string; stageIno: string; pendingDev: string; pendingIno: string;
-}): Promise<{ ok: true; dev?: string; ino?: string; nlink?: number } | { ok: false; code: string; message: string }> {
+  fileDev: string; fileIno: string; targetDev?: string; targetIno?: string;
+  stageDev: string; stageIno: string; pendingDev: string; pendingIno: string;
+}): Promise<{ ok: true; dev?: string; ino?: string; size?: number; removed?: boolean } | { ok: false; code: string; message: string }> {
   const { execFile } = await import('node:child_process');
   const path = await import('node:path');
   for (const file of [input.stageDir, input.pendingDir]) {
     if (!path.isAbsolute(file)) throw Error('Pending output directory must be absolute');
   }
   const script = path.join(flowAppRoot, 'src/platform/main/platform/pending_output.py');
-  const stdout = await new Promise<string>((resolve, reject) => execFile(flowPythonPath(), ['-I', '-B', script, JSON.stringify(input)],
-    { maxBuffer: 65536 }, (error, out, stderr) => error ? reject(Error(`Pending output publication failed: ${stderr || error.message}`)) : resolve(out)));
+  const stdout = await new Promise<string>((resolve, reject) => execFile(flowPythonPath(), ['-I', '-B', script, JSON.stringify({ mode, ...input })],
+    { maxBuffer: 65536 }, (error, out, stderr) => error ? reject(Error(`Pending output ${mode} failed: ${stderr || error.message}`)) : resolve(out)));
   try { return JSON.parse(stdout); } catch { throw Error('Pending output helper returned an invalid receipt'); }
 }
