@@ -233,13 +233,18 @@ export async function createImageProject(input: CreateImageProjectInput, options
     // Sources must still be exactly what was converted; a folder must still hold
     // the same direct children. Requirements are checked before publication.
     await verifySources(input.source, sources, prepared);
+    // Identity is re-checked here and again inside the native helper immediately
+    // before and after the rename. No kernel rename can be conditioned on the
+    // source inode, so a swap in that last window cannot be eliminated; if it
+    // happens the helper reports a different directory at the destination and
+    // this call never treats it as success.
     await assertStageBinding();
     if (options.signal.aborted) throw cancelled('创建已取消');
     if ((await fs.readdir(path.dirname(target))).some(entry => entry.toLowerCase() === path.basename(target).toLowerCase()))
       throw Error(`Destination appeared during creation; nothing was replaced: ${target}`);
     await assertPhysicalWorkspaceWriterTargets([target]);
     try {
-      await publishDirectoryExclusive(stage, target);
+      await publishDirectoryExclusive(stage, target, identity);
       published = true;
     } catch (error) {
       // The native publication may already have renamed the stage before a later
@@ -250,6 +255,7 @@ export async function createImageProject(input: CreateImageProjectInput, options
         published = true;
         throw Error(`publication was renamed but its durability could not be confirmed: ${message(error)}`);
       }
+      if (attached) throw Error(`the destination now exists and is not this creation; it was left untouched: ${target}; ${message(error)}`);
       throw error;
     }
 

@@ -70,5 +70,7 @@
   "src/drawing/contracts/releaseNotes.test.ts",
   "src/drawing/contracts/repositoryRelease.test.ts",
   "src/drawing/contracts/repositoryWorkflow.test.ts",
-  "src/drawing/contracts/retiredDrawingModel.test.ts"
+  "src/drawing/contracts/retiredDrawingModel.test.ts",
+  "src/project-files/main/createImageProject.test.ts",
+  "src/project-files/main/createImageProject.publishFailure.test.ts"
 ]

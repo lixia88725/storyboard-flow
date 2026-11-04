@@ -53,8 +53,17 @@ export const replaceFile = (source: string, target: string): Promise<void> => fs
 
 /** Whole prepared namespace publication. Destination must not exist, including an
  * empty directory created by another writer. Native failure never falls back to
- * replacing it. Wait for the child to settle before inspecting or cleaning stages. */
-export async function publishDirectoryExclusive(source: string, target: string): Promise<void> {
+ * replacing it. Wait for the child to settle before inspecting or cleaning stages.
+ *
+ * `expected` is the directory identity captured when the caller created it. The
+ * native helper re-checks it immediately before the rename and on the moved
+ * destination, which narrows but cannot remove the swap window (no kernel rename
+ * is conditioned on the source inode). A mismatch is an error, never success. */
+export async function publishDirectoryExclusive(
+  source: string,
+  target: string,
+  expected?: { dev: bigint; ino: bigint }
+): Promise<void> {
   const { execFile } = await import('node:child_process');
   const { fileURLToPath } = await import('node:url');
   const path = await import('node:path');
@@ -63,11 +72,15 @@ export async function publishDirectoryExclusive(source: string, target: string):
   }
   const original = await fs.lstat(source, { bigint: true });
   if (!original.isDirectory() || original.isSymbolicLink()) throw Error('Expected a real prepared directory');
+  if (expected && (original.dev !== expected.dev || original.ino !== expected.ino))
+    throw Error(`Source directory identity changed before publication: ${source}`);
+  const identity = expected ?? { dev: original.dev, ino: original.ino };
   const script = path.join(flowAppRoot, 'src/platform/main/platform/publish_directory.py');
-  await new Promise<void>((resolve, reject) => execFile(flowPythonPath(), ['-I', '-B', script, source, target],
-    { maxBuffer: 65536 }, (error, _stdout, stderr) => error ? reject(Error(`Project publication failed; stage retained: ${stderr || error.message}`)) : resolve()));
+  const args = [script, source, target, ...(expected ? [String(expected.dev), String(expected.ino)] : [])];
+  await new Promise<void>((resolve, reject) => execFile(flowPythonPath(), ['-I', '-B', ...args],
+    { maxBuffer: 65536 }, (error, _stdout, stderr) => error ? reject(Error(`Project publication failed: ${stderr || error.message}; inspect the source and destination before retrying`)) : resolve()));
   const published = await fs.lstat(target, { bigint: true });
-  if (published.dev !== original.dev || published.ino !== original.ino || !published.isDirectory()) throw Error('Published project identity changed');
+  if (published.dev !== identity.dev || published.ino !== identity.ino || !published.isDirectory()) throw Error('Published project identity changed');
   await syncDirectory(path.dirname(target));
   await syncDirectory(path.dirname(source));
 }
