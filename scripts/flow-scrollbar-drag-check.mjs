@@ -1,6 +1,6 @@
 // Isolated native check: a synthetic overflow panel inside the real workbench CSS,
-// dragged by holding the visible scrollbar thumb with the mouse. No wheel events and
-// no programmatic scrollTop changes are used for the scroll itself.
+// dragged by holding the visible scrollbar thumb, then scrolled by native wheel input.
+// Neither action changes scrollTop programmatically.
 //
 // Requires `npm run build`. The panel is test-only DOM inside the otherwise real
 // Electron window; no userData, project, clipboard or Trash is touched.
@@ -75,7 +75,12 @@ app.whenReady().then(async()=>{
   }
   await sleep(200);
   await shot('02-after-drag');
-  const result={ok:after>before,rect,style,thumb,before,after,used,evidence};
+  const x=Math.round(rect.left+40),y=Math.round(rect.top+40);
+  win.webContents.sendInputEvent({type:'mouseMove',x,y});
+  win.webContents.sendInputEvent({type:'mouseWheel',x,y,deltaX:0,deltaY:-120,canScroll:true});
+  await wait(async()=>await exec('document.getElementById("flow-scrollbar-drag-panel").scrollTop')!==after,'native wheel scroll');
+  const afterWheel=await exec('document.getElementById("flow-scrollbar-drag-panel").scrollTop');
+  const result={ok:after>before,rect,style,thumb,before,after,afterWheel,used,evidence};
   if(!result.ok)throw Error('thumb drag did not change scrollTop: '+JSON.stringify(result));
   fs.writeFileSync(out,JSON.stringify(result));
   await sleep(200);
@@ -100,4 +105,4 @@ if (!result.ok) {
   console.error('FAIL', evidence, result);
   process.exit(1);
 }
-console.log('PASS', evidence, JSON.stringify({ before: result.before, after: result.after, thumb: result.thumb, style: result.style }));
+console.log('PASS', evidence, JSON.stringify({ before: result.before, after: result.after, afterWheel: result.afterWheel, thumb: result.thumb, style: result.style }));
