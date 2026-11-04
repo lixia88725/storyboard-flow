@@ -607,7 +607,10 @@ export const SketchPad = memo(({
       if (draftStrokeRef.current?.id === stroke.id) {
         clearDraftStroke();
       }
-      clearLiveBitmapEdit();
+      // A late echo must not tear down the live canvas a newer stroke is drawing into.
+      if (!draftStrokeRef.current || liveBitmapLayerIdRef.current !== layerId) {
+        clearLiveBitmapEdit();
+      }
       committingStrokeIdsRef.current.delete(stroke.id);
       pendingCommittedStrokesRef.current = pendingCommittedStrokesRef.current.filter(
         (item) => item.stroke.id !== stroke.id
