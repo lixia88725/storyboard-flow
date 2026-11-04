@@ -584,7 +584,7 @@ export const SketchPad = memo(({
     }
     try {
       const renderedDataUrl =
-        stroke.tool === "eraser" &&
+        (stroke.tool === "eraser" || stroke.brush) &&
         liveBitmapLayerIdRef.current === layerId &&
         liveBitmapEditCanCommitRenderedDataUrlRef.current
           ? liveBitmapCanvasRefs.current[layerId]?.toDataURL("image/png")
@@ -1206,7 +1206,9 @@ export const SketchPad = memo(({
     draftStrokeRef.current = nextStroke;
     if (shouldRenderLiveStroke(nextStroke)) {
       setDraftStroke(nextStroke);
-    } else if (tool === "eraser") {
+    } else {
+      // Everything that is not drawn on the overlay — the eraser and preset brushes —
+      // previews inside the layer's own pixels.
       void prepareLiveBitmapEdit(activeDrawingLayer);
     }
   };
