@@ -205,7 +205,10 @@ function LiveMirror({source,shot}:{source:HTMLElement;shot:Shot}){
  useLayoutEffect(()=>{
   const canvas=ref.current, stage=source.querySelector('.image-stage');
   if(!canvas||!stage||!target)return;
-  const ctx=canvas.getContext('2d');if(!ctx)return;
+  // Match Chromium's layer blending space: flattening translucent sRGB layers
+  // before a P3 display conversion produces a different color from the source.
+  const colorSpace=window.matchMedia('(color-gamut: p3)').matches?'display-p3':'srgb';
+  const ctx=canvas.getContext('2d',{colorSpace});if(!ctx)return;
   let frame=0;
   const draw=()=>{
    const nodes=Array.from(stage.querySelectorAll<HTMLImageElement|HTMLCanvasElement>(':scope > img, :scope > canvas, :scope > .stage-overlay canvas'))
