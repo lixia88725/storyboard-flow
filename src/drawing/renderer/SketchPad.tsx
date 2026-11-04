@@ -14,7 +14,7 @@ import {
   type CSSProperties,
   type DragEvent as ReactDragEvent
 } from "react";
-import { Circle, Layer, Line, Stage } from "react-konva";
+import { Circle, Image as KonvaImage, Layer, Line, Stage } from "react-konva";
 import { registerMountedCanvasCheckpoint } from "./mountedCanvasRecoveryCapture";
 import { WorkspaceCanvasSlotContext } from './workspaceCanvasSlotContext';
 import { bitmapLayersForShot, imageBitmapLayerId } from "../contracts/projectOps";
@@ -301,6 +301,24 @@ export const SketchPad = memo(({
 }: SketchPadProps) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [draftStroke, setDraftStroke] = useState<SketchStroke | undefined>();
+  // Preset strokes preview through the same dab renderer that commits them. Drawing the
+  // draft with a Konva Line would show a round stroke and then swap to a textured one.
+  const draftBrushCanvasRef = useRef<HTMLCanvasElement | undefined>(undefined);
+  const [draftBrushVersion, setDraftBrushVersion] = useState(0);
+  useEffect(() => {
+    const stroke = draftStroke;
+    if (!stroke?.brush) return;
+    const width = shot.flow?.canvasWidth ?? sketchCanvasSize.width;
+    const height = shot.flow?.canvasHeight ?? sketchCanvasSize.height;
+    const canvas = (draftBrushCanvasRef.current ??= document.createElement("canvas"));
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    drawStrokePathOnCanvas(context, stroke);
+    setDraftBrushVersion((version) => version + 1);
+  }, [draftStroke, shot.flow?.canvasWidth, shot.flow?.canvasHeight]);
   const [pendingCommittedStrokes, setPendingCommittedStrokes] = useState<PendingCommittedStroke[]>([]);
   const [stageSize, setStageSize] = useState(sketchCanvasSize);
   const imageStageRef = useRef<HTMLDivElement | null>(null);
@@ -1641,6 +1659,9 @@ export const SketchPad = memo(({
                   : [])
               ].map(({ layerId, stroke }) => {
                 const previewLayer = bitmapLayers.find((layer) => layer.id === layerId) ?? activeDrawingLayer;
+                if (stroke.brush && draftBrushCanvasRef.current && stroke.id === draftStroke?.id) {
+                  return <KonvaImage key={stroke.id} image={draftBrushCanvasRef.current} listening={false} perfectDrawEnabled={false} />;
+                }
                 return stroke.points.length === 2 ? (
                   <Circle
                     key={stroke.id}

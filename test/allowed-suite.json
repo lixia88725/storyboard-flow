@@ -70,5 +70,7 @@
   "src/drawing/contracts/releaseNotes.test.ts",
   "src/drawing/contracts/repositoryRelease.test.ts",
   "src/drawing/contracts/repositoryWorkflow.test.ts",
-  "src/drawing/contracts/retiredDrawingModel.test.ts"
+  "src/drawing/contracts/retiredDrawingModel.test.ts",
+  "src/drawing/renderer/brushStroke.test.ts",
+  "src/drawing/renderer/brushPresets.test.ts"
 ]
