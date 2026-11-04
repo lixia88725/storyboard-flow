@@ -45,7 +45,7 @@ export type PendingAddRecord = {
    * Absent means the entry was never proven ours and must not be claimed. */
   targetDev?: string; targetIno?: string;
 };
-export type PendingAddJournal = { token: string; operationId: string; beforeHash: string; afterHash: string; additions: PendingAddRecord[]; complete: boolean };
+export type PendingAddJournal = { token: string; operationId: string; beforeHash: string; afterHash: string; additions: PendingAddRecord[]; complete: boolean; abandoned?: string[] };
 export type PendingAddition = {
   shot: ShotV1; image: ImageDocumentV1; dialogues: DialogueV1[]; basis: string;
   /** TIFF source bytes stay the original; for a raster the written TIFF is. */
@@ -135,7 +135,9 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           !Array.isArray(a.additions) || a.additions.length === 0 || a.additions.length > 10000 ||
           new Set(a.additions.map(x => x.shot.id)).size !== a.additions.length ||
           new Set(a.additions.map(x => x.name.toLowerCase())).size !== a.additions.length ||
-          new Set(a.additions.map(x => x.staged)).size !== a.additions.length) throw Error('Invalid Pending add journal');
+          new Set(a.additions.map(x => x.staged)).size !== a.additions.length ||
+          a.abandoned !== undefined && (!Array.isArray(a.abandoned) || a.abandoned.length > 10000 ||
+            a.abandoned.some(x => typeof x !== 'string' || !leaf(x)) || new Set(a.abandoned).size !== a.abandoned.length)) throw Error('Invalid Pending add journal');
       for (const add of a.additions) {
         if (!add || !add.shot || !id(add.shot.id) || !leaf(add.name) || !digest(add.digest) || !digest(add.originalDigest) ||
             !['source', 'output'].includes(add.original) || !add.pixelHashes || typeof add.pixelHashes !== 'object' || Array.isArray(add.pixelHashes) ||
@@ -188,6 +190,8 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
       if (!entry.isDirectory() || entry.isSymbolicLink() || await fs.realpath(dir) !== dir)
         throw Error('Pending add staging directory is aliased or replaced');
     }
+    await syncDirectory(path.join(root, '.storyboard-flow'));
+    await syncDirectory(stageRoot);
     return blobs;
   };
   /** Logical bytes already retained; symlinks and multiply-linked entries are not
@@ -527,6 +531,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         if (retained + PENDING_ADD_BATCH_LIMIT > PENDING_ADD_STAGE_LIMIT)
           throw Error(`Pending staging retains ${retained} bytes of ${PENDING_ADD_STAGE_LIMIT}; a ${PENDING_ADD_BATCH_LIMIT}-byte batch cannot be reserved. Nothing was deleted; inspect ${stageDir}`);
         const records: PendingAddRecord[] = [];
+        const prepared: Buffer[] = [];
         let total = 0;
         for (const [index, item] of payload.entries()) {
           if (signal?.aborted) throw cancelled('添加已取消');
@@ -538,6 +543,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           const output = Buffer.from(encoded.value); total += output.length;
           if (total > 512 * 1024 * 1024) throw Error('Prepared Pending TIFF batch exceeds 512 MiB');
           const digest = hash(output), staged = digest + '.tif', stagedPath = path.join(stageDir, staged);
+          prepared[index] = output;
           try { await fs.writeFile(stagedPath, output, { flag: 'wx' }); }
           catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -560,8 +566,10 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         for (const [index, item] of payload.entries()) {
           if (signal?.aborted) throw cancelled('添加已取消');
           const record = records[index], originalPath = path.join(root, '.storyboard-flow', 'originals', record.shot.id + '.tif');
-          const original = item.original.kind === 'source' ? Buffer.from(await item.original.read()) : await fs.readFile(path.join(stageDir, record.staged));
-          if (item.original.kind === 'source' && hash(original) !== item.original.digest) throw Error('Image source changed before it could be added');
+          // The backup uses the same already-verified bytes that were staged; it
+          // never re-reads the staging path.
+          const original = item.original.kind === 'source' ? Buffer.from(await item.original.read()) : prepared[index];
+          if (hash(original) !== record.originalDigest) throw Error('Image bytes changed before they could be added');
           await writeManagedSourceFile(root, originalPath, original, { createOnly: true });
         }
         // Last cancellable point: after this persist the add is completed or
@@ -605,35 +613,24 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
             if (attempt > 1) throw retainedError('Pending output name collision; retained');
             await bind();
             const base = { ...identity, stageName: record.staged, targetName: record.name, fileDev: record.dev, fileIno: record.ino };
-            const created = await pendingOutput('create', base);
-            if (!created.ok) {
-              if (created.code !== 'exists') throw retainedError(`Pending output could not be created: ${created.message}`);
+            // One helper call: it hashes the staged payload, creates the target
+            // with O_EXCL and writes only to that new descriptor. An existing
+            // target is never opened for writing.
+            const published = await pendingOutput('publish', { ...base, expectedDigest: record.digest });
+            if (!published.ok) {
+              if (published.code !== 'exists') throw retainedError(`Pending output could not be published: ${published.message}`);
               rename(record);
               if (overLimit()) throw retainedError('Pending output rename would exceed the 8 MiB transaction budget; retained');
               bytes = await persist(ledger, bytes);
               continue;
             }
-            record.targetDev = created.dev; record.targetIno = created.ino;
-            // Register the new inode before any bytes are written. A crash before
-            // this persist leaves an unregistered empty file, which recovery keeps
-            // and never claims or overwrites.
+            record.targetDev = published.dev; record.targetIno = published.ino;
+            // Registration happens after the single-call write. A crash before this
+            // persist leaves a complete but unregistered file; recovery keeps it as
+            // unknown and publishes under a new name.
             if (overLimit()) throw retainedError('Pending output registration would exceed the 8 MiB transaction budget; retained');
             bytes = await persist(ledger, bytes);
-            const written = await pendingOutput('write', { ...base, targetName: record.name, targetDev: record.targetDev, targetIno: record.targetIno });
-            if (!written.ok) {
-              if (written.code !== 'target') throw retainedError(`Pending output could not be written: ${written.message}`);
-              // The created entry was replaced after registration; keep the scene,
-              // step to a fresh exclusive target and retry.
-              rename(record);
-              if (overLimit()) throw retainedError('Pending output rename would exceed the 8 MiB transaction budget; retained');
-              bytes = await persist(ledger, bytes);
-              continue;
-            }
-            const target = path.join(pending.path, record.name);
-            const final = await fs.lstat(target, { bigint: true });
-            if (!final.isFile() || final.isSymbolicLink() || String(final.dev) !== record.targetDev || String(final.ino) !== record.targetIno)
-              throw retainedError('Pending output identity changed; retained');
-            if (hash(await read(target, 512 * 1024 * 1024)) !== record.digest) throw retainedError('Pending output readback mismatch');
+            if (published.digest !== record.digest) throw retainedError('Pending output readback mismatch');
             await syncDirectory(pending.path);
             break;
           }
@@ -726,33 +723,32 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
             if (attempt > 1) throw retainedError('Pending output name collision; retained');
             await bind();
             const target = path.join(pending.path, record.name);
-            const existing = await fs.lstat(target, { bigint: true }).catch(error => {
+            let existing = await fs.lstat(target, { bigint: true }).catch(error => {
               if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
               throw error;
             });
-            const ours = existing && record.targetDev !== undefined && record.targetIno !== undefined &&
-              existing.isFile() && !existing.isSymbolicLink() && String(existing.dev) === record.targetDev && String(existing.ino) === record.targetIno;
-            if (ours) {
-              if (hash(await read(target, 512 * 1024 * 1024)) === record.digest) break;
-              const rewritten = await pendingOutput('write', { ...identity, stageName: record.staged, targetName: record.name,
-                fileDev: record.dev, fileIno: record.ino, targetDev: record.targetDev, targetIno: record.targetIno });
-              if (rewritten.ok) {
-                if (hash(await read(target, 512 * 1024 * 1024)) !== record.digest) throw retainedError('Pending output readback mismatch; retained');
-                break;
-              }
-              if (rewritten.code !== 'target') throw retainedError(`Pending output could not be written: ${rewritten.message}`);
-              rename(record);
-              if (overLimit()) throw retainedError('Pending output rename would exceed the 8 MiB transaction budget; retained');
-              bytes = await persist(ledger, bytes);
-              continue;
-            }
             if (existing) {
-              // A foreign file, or an entry created before its inode was
-              // registered: keep it untouched and publish under a fresh name.
-              rename(record);
-              if (overLimit()) throw retainedError('Pending output rename would exceed the 8 MiB transaction budget; retained');
-              bytes = await persist(ledger, bytes);
-              continue;
+              // Identity and content are checked on one read-only descriptor, then
+              // the name binding is checked again; no write path exists here.
+              const observed = await pendingOutput('read', { ...identity, stageName: record.staged, targetName: record.name,
+                fileDev: record.dev, fileIno: record.ino });
+              if (observed.ok) {
+                const trusted = record.targetDev !== undefined && record.targetIno !== undefined &&
+                  observed.dev === record.targetDev && observed.ino === record.targetIno && observed.digest === record.digest;
+                if (trusted) break;
+              } else if (observed.code === 'missing') {
+                existing = undefined;
+              }
+              if (existing) {
+                // Foreign, partial, edited in place or replaced: keep it, record
+                // that its ownership is unknown, and publish under a fresh name.
+                if (!journal.abandoned?.includes(record.name))
+                  journal.abandoned = [...(journal.abandoned ?? []), record.name];
+                rename(record);
+                if (overLimit()) throw retainedError('Pending output rename would exceed the 8 MiB transaction budget; retained');
+                bytes = await persist(ledger, bytes);
+                continue;
+              }
             }
             const staged = await fs.lstat(path.join(stageDir, record.staged), { bigint: true }).catch(error => {
               if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
@@ -760,30 +756,22 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
             });
             if (!staged || !staged.isFile() || staged.isSymbolicLink() || String(staged.dev) !== record.dev || String(staged.ino) !== record.ino)
               throw retainedError('Prepared Pending TIFF is unavailable: ' + path.join(stageDir, record.staged));
-            const created = await pendingOutput('create', { ...identity, stageName: record.staged, targetName: record.name,
-              fileDev: record.dev, fileIno: record.ino });
-            if (!created.ok) {
-              if (created.code === 'exists') {
+            const published = await pendingOutput('publish', { ...identity, stageName: record.staged, targetName: record.name,
+              fileDev: record.dev, fileIno: record.ino, expectedDigest: record.digest });
+            if (!published.ok) {
+              if (published.code === 'exists') {
                 rename(record);
                 if (overLimit()) throw retainedError('Pending output rename would exceed the 8 MiB transaction budget; retained');
                 bytes = await persist(ledger, bytes);
                 continue;
               }
-              throw retainedError(`Pending output could not be created: ${created.message}`);
+              throw retainedError(`Pending output could not be published: ${published.message}`);
             }
-            record.targetDev = created.dev; record.targetIno = created.ino;
+            record.targetDev = published.dev; record.targetIno = published.ino;
             if (overLimit()) throw retainedError('Pending output registration would exceed the 8 MiB transaction budget; retained');
             bytes = await persist(ledger, bytes);
-            const written = await pendingOutput('write', { ...identity, stageName: record.staged, targetName: record.name,
-              fileDev: record.dev, fileIno: record.ino, targetDev: record.targetDev, targetIno: record.targetIno });
-            if (!written.ok) {
-              if (written.code !== 'target') throw retainedError(`Pending output could not be written: ${written.message}`);
-              rename(record);
-              if (overLimit()) throw retainedError('Pending output rename would exceed the 8 MiB transaction budget; retained');
-              bytes = await persist(ledger, bytes);
-              continue;
-            }
-            if (hash(await read(target, 512 * 1024 * 1024)) !== record.digest) throw retainedError('Pending output readback mismatch; retained');
+            if (published.digest !== record.digest) throw retainedError('Pending output readback mismatch; retained');
+            await syncDirectory(pending.path);
             break;
           }
         }

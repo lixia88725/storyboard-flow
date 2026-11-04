@@ -292,8 +292,29 @@ describe('appendPending transaction', () => {
     expect(own.value.added).toEqual(appended.value.added);
   }, 120_000);
 
-  it('never writes a target when the staged inode was replaced', async () => {
+  it('publishes verified staged bytes into a newly created target in one call', async () => {
     const root = await temporaryWorkspace('flow-pending-native-');
+    const stageDir = path.join(root, 'stage'), pendingDir = path.join(root, 'pending');
+    await fs.mkdir(stageDir); await fs.mkdir(pendingDir);
+    const staged = path.join(stageDir, 'one.tif'), target = path.join(pendingDir, 'one.tif');
+    await fs.writeFile(staged, 'ours');
+    const file = await fs.lstat(staged, { bigint: true });
+    const dirs = { stage: await fs.lstat(stageDir, { bigint: true }), pending: await fs.lstat(pendingDir, { bigint: true }) };
+    const base = { stageDir, stageName: 'one.tif', pendingDir, targetName: 'one.tif',
+      fileDev: String(file.dev), fileIno: String(file.ino),
+      stageDev: String(dirs.stage.dev), stageIno: String(dirs.stage.ino),
+      pendingDev: String(dirs.pending.dev), pendingIno: String(dirs.pending.ino) };
+    const published = await pendingOutput('publish', { ...base, expectedDigest: hash(Buffer.from('ours')) });
+    expect(published.ok).toBe(true);
+    if (!published.ok) throw Error(published.message);
+    expect(published.digest).toBe(hash(Buffer.from('ours')));
+    expect(await fs.readFile(target, 'utf8')).toBe('ours');
+    expect((await fs.lstat(target, { bigint: true })).nlink).toBe(1n);
+    expect(await fs.readFile(staged, 'utf8')).toBe('ours');
+  }, 60_000);
+
+  it('never creates a target when the staged inode was replaced', async () => {
+    const root = await temporaryWorkspace('flow-pending-native2-');
     const stageDir = path.join(root, 'stage'), pendingDir = path.join(root, 'pending');
     await fs.mkdir(stageDir); await fs.mkdir(pendingDir);
     const staged = path.join(stageDir, 'one.tif');
@@ -304,29 +325,48 @@ describe('appendPending transaction', () => {
       fileDev: String(file.dev), fileIno: String(file.ino),
       stageDev: String(dirs.stage.dev), stageIno: String(dirs.stage.ino),
       pendingDev: String(dirs.pending.dev), pendingIno: String(dirs.pending.ino) };
-    const created = await pendingOutput('create', base);
-    if (!created.ok) throw Error(created.message);
     await fs.unlink(staged); await fs.writeFile(staged, 'foreign');
-    const written = await pendingOutput('write', { ...base, targetDev: created.dev, targetIno: created.ino });
-    expect(written.ok).toBe(false);
-    if (written.ok) throw Error('a replaced staged inode must not be read');
-    expect(written.code).toBe('staged');
-    expect((await fs.stat(path.join(pendingDir, 'one.tif'))).size).toBe(0);
+    const published = await pendingOutput('publish', { ...base, expectedDigest: hash(Buffer.from('ours')) });
+    expect(published.ok).toBe(false);
+    if (published.ok) throw Error('a replaced staged inode must not be published');
+    expect(published.code).toBe('staged');
+    await expect(fs.lstat(path.join(pendingDir, 'one.tif'))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await fs.readFile(staged, 'utf8')).toBe('foreign');
   }, 60_000);
 
-  it('never replaces a foreign Pending target and leaves both files in place', async () => {
-    const root = await temporaryWorkspace('flow-pending-native2-');
+  it('refuses staged bytes changed in place before any target is created', async () => {
+    const root = await temporaryWorkspace('flow-pending-native3-');
+    const stageDir = path.join(root, 'stage'), pendingDir = path.join(root, 'pending');
+    await fs.mkdir(stageDir); await fs.mkdir(pendingDir);
+    const staged = path.join(stageDir, 'one.tif');
+    await fs.writeFile(staged, 'ours');
+    const file = await fs.lstat(staged, { bigint: true });
+    const dirs = { stage: await fs.lstat(stageDir, { bigint: true }), pending: await fs.lstat(pendingDir, { bigint: true }) };
+    // Same inode, different bytes: identity alone must not authorize a write.
+    await fs.writeFile(staged, 'corrupt');
+    const published = await pendingOutput('publish', { stageDir, stageName: 'one.tif', pendingDir, targetName: 'one.tif',
+      fileDev: String(file.dev), fileIno: String(file.ino),
+      stageDev: String(dirs.stage.dev), stageIno: String(dirs.stage.ino),
+      pendingDev: String(dirs.pending.dev), pendingIno: String(dirs.pending.ino), expectedDigest: hash(Buffer.from('ours')) });
+    expect(published.ok).toBe(false);
+    if (published.ok) throw Error('tampered staged bytes must not be published');
+    expect(published.code).toBe('staged');
+    await expect(fs.lstat(path.join(pendingDir, 'one.tif'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(staged, 'utf8')).toBe('corrupt');
+  }, 60_000);
+
+  it('never adopts an existing Pending target and leaves both files in place', async () => {
+    const root = await temporaryWorkspace('flow-pending-native4-');
     const stageDir = path.join(root, 'stage'), pendingDir = path.join(root, 'pending');
     await fs.mkdir(stageDir); await fs.mkdir(pendingDir);
     const staged = path.join(stageDir, 'one.tif'), target = path.join(pendingDir, 'one.tif');
     await fs.writeFile(staged, 'ours'); await fs.writeFile(target, 'foreign');
     const file = await fs.lstat(staged, { bigint: true });
     const dirs = { stage: await fs.lstat(stageDir, { bigint: true }), pending: await fs.lstat(pendingDir, { bigint: true }) };
-    const result = await pendingOutput('create', { stageDir, stageName: 'one.tif', pendingDir, targetName: 'one.tif',
+    const result = await pendingOutput('publish', { stageDir, stageName: 'one.tif', pendingDir, targetName: 'one.tif',
       fileDev: String(file.dev), fileIno: String(file.ino),
       stageDev: String(dirs.stage.dev), stageIno: String(dirs.stage.ino),
-      pendingDev: String(dirs.pending.dev), pendingIno: String(dirs.pending.ino) });
+      pendingDev: String(dirs.pending.dev), pendingIno: String(dirs.pending.ino), expectedDigest: hash(Buffer.from('ours')) });
     expect(result.ok).toBe(false);
     if (result.ok) throw Error('a foreign target must not be adopted');
     expect(result.code).toBe('exists');
@@ -334,52 +374,29 @@ describe('appendPending transaction', () => {
     expect(await fs.readFile(staged, 'utf8')).toBe('ours');
   }, 60_000);
 
-  it('never truncates a target whose inode was replaced after creation', async () => {
-    const root = await temporaryWorkspace('flow-pending-native3-');
+  it('reads identity and content from one descriptor and re-binds the name', async () => {
+    const root = await temporaryWorkspace('flow-pending-native5-');
     const stageDir = path.join(root, 'stage'), pendingDir = path.join(root, 'pending');
     await fs.mkdir(stageDir); await fs.mkdir(pendingDir);
     const staged = path.join(stageDir, 'one.tif'), target = path.join(pendingDir, 'one.tif');
-    await fs.writeFile(staged, 'ours');
+    await fs.writeFile(staged, 'ours'); await fs.writeFile(target, 'foreign');
     const file = await fs.lstat(staged, { bigint: true });
     const dirs = { stage: await fs.lstat(stageDir, { bigint: true }), pending: await fs.lstat(pendingDir, { bigint: true }) };
     const base = { stageDir, stageName: 'one.tif', pendingDir, targetName: 'one.tif',
       fileDev: String(file.dev), fileIno: String(file.ino),
       stageDev: String(dirs.stage.dev), stageIno: String(dirs.stage.ino),
       pendingDev: String(dirs.pending.dev), pendingIno: String(dirs.pending.ino) };
-    const created = await pendingOutput('create', base);
-    if (!created.ok) throw Error(created.message);
-    const first = await pendingOutput('write', { ...base, targetDev: created.dev, targetIno: created.ino });
-    expect(first.ok).toBe(true);
+    const observed = await pendingOutput('read', base);
+    expect(observed.ok).toBe(true);
+    if (!observed.ok) throw Error(observed.message);
+    expect(observed.digest).toBe(hash(Buffer.from('foreign')));
+    expect(observed.dev).toBe(String((await fs.lstat(target, { bigint: true })).dev));
     await fs.unlink(target); await fs.writeFile(target, 'foreign');
-    const second = await pendingOutput('write', { ...base, targetDev: created.dev, targetIno: created.ino });
-    expect(second.ok).toBe(false);
-    if (second.ok) throw Error('a replaced target must not be truncated');
-    expect(second.code).toBe('target');
-    expect(await fs.readFile(target, 'utf8')).toBe('foreign');
-    expect(await fs.readFile(staged, 'utf8')).toBe('ours');
-  }, 60_000);
-
-  it('rewrites its own registered target idempotently and keeps the staged bytes', async () => {
-    const root = await temporaryWorkspace('flow-pending-native4-');
-    const stageDir = path.join(root, 'stage'), pendingDir = path.join(root, 'pending');
-    await fs.mkdir(stageDir); await fs.mkdir(pendingDir);
-    const staged = path.join(stageDir, 'one.tif'), target = path.join(pendingDir, 'one.tif');
-    await fs.writeFile(staged, 'ours');
-    const file = await fs.lstat(staged, { bigint: true });
-    const dirs = { stage: await fs.lstat(stageDir, { bigint: true }), pending: await fs.lstat(pendingDir, { bigint: true }) };
-    const base = { stageDir, stageName: 'one.tif', pendingDir, targetName: 'one.tif',
-      fileDev: String(file.dev), fileIno: String(file.ino),
-      stageDev: String(dirs.stage.dev), stageIno: String(dirs.stage.ino),
-      pendingDev: String(dirs.pending.dev), pendingIno: String(dirs.pending.ino) };
-    const created = await pendingOutput('create', base);
-    if (!created.ok) throw Error(created.message);
-    for (let index = 0; index < 2; index += 1) {
-      const written = await pendingOutput('write', { ...base, targetDev: created.dev, targetIno: created.ino });
-      expect(written.ok).toBe(true);
-      expect(await fs.readFile(target, 'utf8')).toBe('ours');
-    }
-    expect(await fs.readFile(staged, 'utf8')).toBe('ours');
-    expect((await fs.lstat(target, { bigint: true })).nlink).toBe(1n);
+    const replaced = await pendingOutput('read', base);
+    expect(replaced.ok).toBe(true);
+    if (!replaced.ok) throw Error(replaced.message);
+    expect(replaced.ino).not.toBe(observed.ino);
+    expect(replaced.digest).toBe(hash(Buffer.from('foreign')));
   }, 60_000);
 
   it('refuses to follow a Pending directory replaced by a symbolic link', async () => {
@@ -410,8 +427,26 @@ describe('appendPending transaction', () => {
     const added = path.join(root, 'Pending', names[0]);
     expect(hash(await fs.readFile(added))).toBe(journal.additions[0].digest);
     expect(String((await fs.lstat(added, { bigint: true })).ino)).not.toBe(replacedIno);
+    expect((await ledger(root)).add?.abandoned).toContain(journal.additions[0].name);
     expect((await ledger(root)).add).toMatchObject({ complete: true });
   }, 120_000);
+  it('keeps an in-place edited target and publishes under a fresh name', async () => {
+    const { root, project: current } = await project();
+    const journal = await interruptedAppend(root, current, 'edited.png', [101, 102, 103]);
+    const target = path.join(root, 'Pending', journal.additions[0].name);
+    const ino = (await fs.lstat(target, { bigint: true })).ino;
+    const handle = await fs.open(target, 'r+');
+    try { await handle.truncate(0); await handle.write(Buffer.from('user edited')); await handle.sync(); } finally { await handle.close(); }
+    await openFlowEditorRuntime(root);
+    expect(await fs.readFile(target, 'utf8')).toBe('user edited');
+    expect((await fs.lstat(target, { bigint: true })).ino).toBe(ino);
+    const names = (await fs.readdir(path.join(root, 'Pending'))).filter(name => name !== journal.additions[0].name);
+    expect(names).toHaveLength(1);
+    expect(hash(await fs.readFile(path.join(root, 'Pending', names[0])))).toBe(journal.additions[0].digest);
+    expect((await ledger(root)).add?.abandoned).toContain(journal.additions[0].name);
+  }, 120_000);
+
+
   it('consumes only the actual name growth from the reserved allowance', () => {
     expect(consumePendingNameGrowth(1056, 'a.tif', 'a-2.tif')).toBe(1052);
     expect(consumePendingNameGrowth(1055, 'a.tif', 'a-2.tif')).toBe(1051);
@@ -433,6 +468,7 @@ describe('appendPending transaction', () => {
     const names = (await fs.readdir(path.join(root, 'Pending'))).filter(name => name !== journal.additions[0].name);
     expect(names).toHaveLength(1);
     expect(hash(await fs.readFile(path.join(root, 'Pending', names[0])))).toBe(journal.additions[0].digest);
+    expect((await ledger(root)).add?.abandoned).toContain(journal.additions[0].name);
     expect((await ledger(root)).add).toMatchObject({ complete: true });
   }, 120_000);
 
