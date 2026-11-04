@@ -748,7 +748,7 @@ export const SketchPad = memo(({
       });
     }
 
-    if (liveBitmapEditRunRef.current !== editRun || draftStrokeRef.current?.tool !== "eraser") {
+    if (liveBitmapEditRunRef.current !== editRun || !draftStrokeRef.current) {
       return;
     }
 
@@ -761,14 +761,14 @@ export const SketchPad = memo(({
     setLiveBitmapLayerId(layer.id);
 
     const currentStroke = draftStrokeRef.current;
-    if (currentStroke?.tool === "eraser" && shouldCommitStroke(currentStroke)) {
+    if (currentStroke && shouldCommitStroke(currentStroke)) {
       drawStrokePathOnCanvas(context, currentStroke);
     }
   };
 
   const drawLiveBitmapSegments = (stroke: SketchStroke, previousPointOffset: number) => {
     if (
-      stroke.tool !== "eraser" ||
+      (stroke.tool !== "eraser" && !stroke.brush) ||
       !activeDrawingLayer ||
       liveBitmapLayerIdRef.current !== activeDrawingLayer.id
     ) {

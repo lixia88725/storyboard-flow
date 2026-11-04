@@ -192,12 +192,19 @@ export const blendMenuDirectionFromRects = (
   return spaceBelow < menuHeight && spaceAbove > spaceBelow ? "up" : "down";
 };
 
-export const shouldRenderLiveStroke = (stroke: { tool?: "brush" | "eraser" }): boolean => {
-  return stroke.tool !== "eraser";
+/**
+ * Whether the live stroke belongs on the Konva overlay above the finished image. Preset
+ * brushes carry their own tip and must composite inside the active layer, so they use the
+ * live bitmap canvas instead; legacy round strokes keep the overlay they always had.
+ */
+export const shouldRenderLiveStroke = (stroke: { tool?: "brush" | "eraser"; brush?: unknown }): boolean => {
+  return stroke.tool !== "eraser" && !stroke.brush;
 };
 
-export const shouldKeepCommittedStrokePreview = (stroke: { tool?: "brush" | "eraser" }): boolean => {
-  return stroke.tool === "brush";
+export const shouldKeepCommittedStrokePreview = (stroke: { tool?: "brush" | "eraser"; brush?: unknown }): boolean => {
+  // A preset stroke is already in the layer canvas while the PNG echoes back; keeping an
+  // overlay copy as well would draw it twice, over the composite instead of inside the layer.
+  return stroke.tool === "brush" && !stroke.brush;
 };
 
 export const shouldUseRenderedEraserDataUrl = ({
