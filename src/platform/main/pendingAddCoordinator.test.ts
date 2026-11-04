@@ -32,14 +32,17 @@ function setup(overrides: Partial<PendingAddCoordinatorDeps> = {}) {
 const request = (mode: 'files' | 'folder' = 'files', operationId = 'op_1', recover = false) => ({ mode, operationId, recover });
 
 describe('Pending add coordinator', () => {
-  it('passes the picked source and progress and forgets a successful operation', async () => {
+  it('passes the picked source and progress and keeps a lost-reply operation addressable', async () => {
     const { coordinator, pick, append, onProgress } = setup();
     expect(await coordinator.add(7, 'session', project, request())).toMatchObject({ ok: true, value: { revision: 1 } });
     expect(pick).toHaveBeenCalledWith('files');
     expect(append).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session', windowId: 7, projectId: 'project-a', mode: 'files' }),
-      project, { source: files }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+      project, { operationId: 'op_1', source: files }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(onProgress).toHaveBeenCalledWith('op_1', { done: 1, total: 1, phase: 'read' });
-    expect(await coordinator.add(7, 'session', project, request('files', 'op_1', true))).toMatchObject({ ok: false, error: { code: 'conflict' } });
+    expect(await coordinator.add(7, 'session', project, request())).toMatchObject({ ok: false, error: { code: 'conflict' } });
+    expect(await coordinator.add(7, 'session', project, request('files', 'op_1', true))).toMatchObject({ ok: true });
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(append.mock.calls[1][2]).toEqual({ operationId: 'op_1', recover: true });
   });
 
   it('returns a known cancellation without opening an append', async () => {
@@ -58,7 +61,7 @@ describe('Pending add coordinator', () => {
     expect(await coordinator.add(7, 'session', project, request())).toMatchObject({ ok: false, error: { effect: 'unknown' } });
     expect(await coordinator.add(7, 'session', project, request('files', 'op_1', true))).toMatchObject({ ok: true });
     expect(pick).toHaveBeenCalledTimes(1);
-    expect(append.mock.calls[1][2]).toEqual({ recover: true });
+    expect(append.mock.calls[1][2]).toEqual({ operationId: 'op_1', recover: true });
   });
 
   it('rejects recovery from another window, session, project or mode', async () => {

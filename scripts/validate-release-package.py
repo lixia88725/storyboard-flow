@@ -14,7 +14,7 @@ def validate_package(zip_path, version, license_bytes):
     app = resources + "app/"
     with zipfile.ZipFile(zip_path) as archive:
         names = set(archive.namelist())
-        required = [app + "src/project-files/main/formats/codec.py", app + "src/platform/main/platform/publish_directory.py", app + "package.json", app + "LICENSE", app + "dist/index.html",
+        required = [app + "src/project-files/main/formats/codec.py", app + "src/platform/main/platform/publish_directory.py", app + "src/platform/main/platform/pending_output.py", app + "package.json", app + "LICENSE", app + "dist/index.html",
                     app + "dist-electron/platform/main/flowEditorEntry.js", app + "src/platform/preload/flowEditor.cjs",
                     app + "node_modules/sharp/LICENSE",
                     root + ("LICENSE" if windows else "Resources/LICENSE"),

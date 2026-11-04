@@ -14,7 +14,7 @@ export type PendingAppendOptions = {
 export type PendingAppend = (
   owner: PendingAddOwner,
   project: ProjectV1,
-  input: { source?: PendingAddSource; recover?: boolean },
+  input: { source?: PendingAddSource; recover?: boolean; operationId: string },
   options: PendingAppendOptions
 ) => Promise<FlowResult<ProjectV1>>;
 
@@ -99,17 +99,22 @@ export function createPendingAddCoordinator(deps: PendingAddCoordinatorDeps) {
     const signal = operation.controller.signal;
     try {
       const result = await deps.append(owner, project,
-        recover ? { recover: true } : { source: operation.source! },
+        recover ? { operationId, recover: true } : { operationId, source: operation.source! },
         {
           signal,
           onProgress: progress => deps.onProgress(operationId, progress),
           decideIssues: issues => deps.askIssues(operationId, issues, signal)
         });
       if (result.ok) {
-        operations.delete(operationId);
+        // Keep a successful first attempt addressable: its reply may be lost after
+        // the durable append. A recover with the same owner and operation id resumes
+        // that durable result; a normal reply never asks for it again.
+        if (recover) operations.delete(operationId);
         return result;
       }
-      if (result.error.effect === 'unknown') operation.retained = true;
+      // A failed first attempt is a known result; a failed recover stays retryable
+      // under the same owner so the Session can reconcile the durable intent.
+      if (result.error.effect === 'unknown' || recover) operation.retained = true;
       else operations.delete(operationId);
       return result;
     } catch (error) {
