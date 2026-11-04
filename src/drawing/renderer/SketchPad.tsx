@@ -286,12 +286,16 @@ const BrushStrokeImage = ({ stroke, width, height, layerOpacity }: {
     const context = canvas.getContext("2d");
     if (!context) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
-    drawStrokePathOnCanvas(context, stroke);
+    // paintBrushStroke already composites at the stroke's own opacity, so the canvas carries
+    // it; the node must not multiply it again. The eraser only needs a mask here: erasing
+    // happens against the real layers when the node composites with destination-out.
+    drawStrokePathOnCanvas(context, stroke.tool === "eraser" ? { ...stroke, tool: "brush", color: "#000000" } : stroke);
     setVersion(current => current + 1);
   }, [stroke, width, height]);
   if (!canvasRef.current) return null;
   return <KonvaImage key={version} image={canvasRef.current} listening={false} perfectDrawEnabled={false}
-    opacity={liveStrokePreviewOpacity(stroke, layerOpacity)} />;
+    opacity={layerOpacity ?? 1}
+    globalCompositeOperation={stroke.tool === "eraser" ? "destination-out" : "source-over"} />;
 };
 
 export const SketchPad = memo(({
