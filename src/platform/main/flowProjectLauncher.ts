@@ -263,23 +263,26 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
     if (draft.controller) throw Error('这个项目正在创建');
     const issue = problem(draft);
     if (issue) throw Error(issue);
-    const destinationParent = draft.destinationParent!;
-    const parent = await fs.realpath(destinationParent);
-    const parentMeta = await fs.lstat(parent);
-    if (!parentMeta.isDirectory() || parentMeta.isSymbolicLink() || parent !== destinationParent)
-      throw Error('保存位置必须是真实目录，不能是链接');
-    const targetRoot = path.join(parent, draft.folderName);
-    if (path.dirname(targetRoot) !== parent) throw Error('文件夹名称不能包含路径分隔符');
-    try {
-      await fs.lstat(targetRoot);
-      throw Error('保存位置中已经有同名文件夹，请换一个文件夹名称');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
-    }
+    // The controller exists before the first await so a cancel click during the
+    // destination checks is not lost.
     const controller = new AbortController();
     draft.controller = controller;
     let canceled = false;
     try {
+      const destinationParent = draft.destinationParent!;
+      const parent = await fs.realpath(destinationParent);
+      const parentMeta = await fs.lstat(parent);
+      if (!parentMeta.isDirectory() || parentMeta.isSymbolicLink() || parent !== destinationParent)
+        throw Error('保存位置必须是真实目录，不能是链接');
+      const targetRoot = path.join(parent, draft.folderName);
+      if (path.dirname(targetRoot) !== parent) throw Error('文件夹名称不能包含路径分隔符');
+      try {
+        await fs.lstat(targetRoot);
+        throw Error('保存位置中已经有同名文件夹，请换一个文件夹名称');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+      }
+      if (controller.signal.aborted || canceled) throw new ProjectCreationCanceled();
       const created = await deps.createProject({
         source: draft.source!, destinationParent: parent,
         folderName: draft.folderName, name: draft.name, naming: { ...draft.naming }
@@ -293,7 +296,8 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
           return decision;
         }
       });
-      if (canceled || controller.signal.aborted) throw new ProjectCreationCanceled();
+      // A successful return means the file module published a complete project;
+      // a late cancel click must not hide it.
       if (!created || !absolute(created.root)) throw Error('创建结果没有返回项目位置');
       const expected = path.join(parent, draft.folderName);
       const canonical = await fs.realpath(created.root);
@@ -308,7 +312,8 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
       drafts.delete(id);
       return target;
     } catch (error) {
-      if (canceled || controller.signal.aborted) {
+      const name = (error as { name?: string })?.name;
+      if (canceled || name === 'AbortError' || error instanceof ProjectCreationCanceled) {
         // The file module may retain its private staging directory on cancellation.
         // Keep that location in the Main log; the UI only needs the neutral notice.
         const detail = error instanceof Error ? error.message : String(error);

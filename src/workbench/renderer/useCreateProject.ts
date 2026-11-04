@@ -10,7 +10,6 @@ export function useCreateProject(start: (target: FlowProjectTarget) => Promise<T
   const [state, setState] = useState<CreateSheetState | null>(null);
   const stateRef = useRef<CreateSheetState | null>(null);
   const draftRef = useRef<string | null>(null);
-  const aborting = useRef(false);
   const startRef = useRef(start);
   stateRef.current = state;
   startRef.current = start;
@@ -72,7 +71,6 @@ export function useCreateProject(start: (target: FlowProjectTarget) => Promise<T
     const current = stateRef.current;
     const id = draftRef.current;
     if (!current || !id || current.phase !== 'editing') return;
-    aborting.current = false;
     try {
       const draft = await window.flowEditor!.createUpdate(id, fields);
       setState(previous => previous ? { ...previous, draft, phase: 'creating', progress: null, issues: null, error: '' } : previous);
@@ -83,31 +81,25 @@ export function useCreateProject(start: (target: FlowProjectTarget) => Promise<T
       } else if (result === 'unchanged') {
         setState(previous => previous ? { ...previous, phase: 'editing', progress: null, issues: null, error: '已取消创建' } : previous);
       } else {
-        setState(previous => previous ? { ...previous, phase: 'editing', progress: null, issues: null, error: aborting.current ? '已取消创建' : result.error } : previous);
+        setState(previous => previous ? { ...previous, phase: 'editing', progress: null, issues: null, error: result.error } : previous);
       }
-    } catch (error) {
-      if (aborting.current) {
-        setState(previous => previous ? { ...previous, phase: 'editing', progress: null, issues: null, error: '已取消创建' } : previous);
-      } else fail(error);
-    } finally { aborting.current = false; }
+    } catch (error) { fail(error); }
   }, [fail]);
 
   const abort = useCallback(async () => {
     const id = draftRef.current;
     if (!id) return;
-    aborting.current = true;
     try { await window.flowEditor!.createAbort(id); } catch (error) { fail(error); }
   }, [fail]);
 
   const respond = useCallback(async (decision: 'continue' | 'cancel') => {
     const current = stateRef.current;
     if (!current?.issues) return;
-    if (decision === 'cancel') aborting.current = true;
     try {
       const accepted = await window.flowEditor!.respondCreateIssues(current.issues.requestId, decision);
-      if (!accepted) { aborting.current = false; return; }
+      if (!accepted) return;
       setState(previous => previous ? { ...previous, issues: null, phase: decision === 'continue' ? 'creating' : 'editing', error: decision === 'cancel' ? '已取消创建' : '' } : previous);
-    } catch (error) { aborting.current = false; fail(error); }
+    } catch (error) { fail(error); }
   }, [fail]);
 
   const cancel = useCallback(async () => {

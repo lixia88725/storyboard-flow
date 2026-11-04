@@ -190,7 +190,7 @@ describe('project launcher creation', () => {
     const running = new Promise<void>(resolve => { started = resolve; });
     const createProject = vi.fn<CreateImageProject>((_input, options) => new Promise((_, reject) => {
       started();
-      options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+      options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
     }));
     const { launcher, destination } = await fixture({ createProject });
     const folder = await mkdtemp(path.join(os.tmpdir(), 'flow-source-'));

@@ -100,7 +100,7 @@ export async function createImageProject(input, options) {
       name: input.name, naming: { ...input.naming }, shots: [], parkedShots: [], dialogues: [], images: {} };
     const depot = get(await openFlowAssetDepot({ root: target, sessionId: randomUUID(), maxPixels: 16 * 1024 * 1024, maxPngBytes: 64 * 1024 * 1024 }));
     for (const [index, file] of files.entries()) {
-      if (options.signal.aborted) throw Error('aborted');
+      if (options.signal.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
       const png = await sharp(file).png().toBuffer();
       const meta = await sharp(png).metadata();
       const { assetId } = get(await depot.put({ operationId: 'create-' + index, png, width: meta.width, height: meta.height }));
