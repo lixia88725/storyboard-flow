@@ -98,7 +98,7 @@ async function pngBytes(input: Uint8Array, width: number, height: number, limits
 /** No source/output paths are accepted. Only private temporary files are written.
  * Caller selects the installed Python/deps and source worker; packaged worker copying
  * remains a coordinator integration gate. One in-flight conversion per codec, no queue. */
-export function createTiffCodec(options: { scriptPath: string; depsDir: string; pythonPath?: string; limits?: Partial<TiffLimits> }): TiffCodec {
+export function createTiffCodec(options: { scriptPath: string; depsDir: string; pythonPath?: string | (() => Promise<string>); limits?: Partial<TiffLimits> }): TiffCodec {
   const limits = { ...CAPS, ...options.limits };
   for (const key of Object.keys(limits) as Array<keyof TiffLimits>) {
     if (!(key in CAPS) || !Number.isSafeInteger(limits[key]) || limits[key] < 1 || limits[key] > CAPS[key]) {
@@ -126,8 +126,9 @@ export function createTiffCodec(options: { scriptPath: string; depsDir: string; 
   }
   async function run(root: string, operation: 'decode' | 'encode', request: object) {
     await fs.writeFile(path.join(root, 'request.json'), JSON.stringify({ ...request, limits }), { flag: 'wx' });
+    const interpreter = typeof pythonPath === 'function' ? await pythonPath() : pythonPath;
     await new Promise<void>((resolve, reject) => {
-      execFile(pythonPath, [scriptPath, operation, root], {
+      execFile(interpreter, [...(typeof pythonPath === 'function' ? ['-I', '-B', '-S'] : []), scriptPath, operation, root], {
         env: { ...process.env, FLOW_PYTHON_DEPS_DIR: depsDir, PYTHONDONTWRITEBYTECODE: '1' },
         timeout: limits.timeoutMs, killSignal: 'SIGKILL', maxBuffer: 64 * 1024
       }, (error, _stdout, stderr) => error ? reject(new Refusal('codec-failure', `TIFF worker failed: ${error.message}; ${stderr.slice(0, 4096)}`)) : resolve());
