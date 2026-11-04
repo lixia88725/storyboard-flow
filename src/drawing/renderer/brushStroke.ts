@@ -122,14 +122,16 @@ const tipCanvas = (kind: StrokeBrush["tip"], diameter: number, hardness: number,
   canvas.height = mask.height;
   const context = canvas.getContext("2d");
   if (context) {
-    // Paint the colour first and keep the mask as alpha, so stamping is a plain drawImage.
-    context.fillStyle = color;
-    context.fillRect(0, 0, canvas.width, canvas.height);
+    // Install coverage first. putImageData replaces RGB too; tint the installed
+    // mask with source-in so the same cached tip carries the selected brush colour.
     const image = context.createImageData(mask.width, mask.height);
     for (let pixel = 0; pixel < mask.alpha.length; pixel++) {
       image.data[pixel * 4 + 3] = mask.alpha[pixel];
     }
     context.putImageData(image, 0, 0);
+    context.globalCompositeOperation = "source-in";
+    context.fillStyle = color;
+    context.fillRect(0, 0, canvas.width, canvas.height);
   }
 
   if (tipCache.size >= TIP_CACHE_LIMIT) tipCache.clear();

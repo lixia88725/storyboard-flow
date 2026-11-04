@@ -90,6 +90,11 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  await mouse('mouseUp',target.x+target.width*.6,target.y+target.height*.5);
  await wait(()=>read().images.image2.layers[1].assetId!==${JSON.stringify(transparent)},'grid stroke checkpoint');
  const painted=read().images.image2.layers[1].assetId;
+ const savedPng=require('node:path').join(${JSON.stringify(root)},'.storyboard-flow/checkpoints/assets',painted+'.png');
+ const pixel=await require(${JSON.stringify(require.resolve('sharp'))})(savedPng).ensureAlpha().raw().toBuffer();
+ let selectedRed=false;
+ for(let i=0;i<pixel.length;i+=4)if(pixel[i+3]>200&&Math.abs(pixel[i]-221)<=2&&Math.abs(pixel[i+1]-51)<=2&&Math.abs(pixel[i+2]-68)<=2){selectedRed=true;break;}
+ assert.ok(selectedRed,'committed PNG preserves the selected #dd3344 brush colour');
  await wait(()=>js('!document.querySelector("[data-live-mirror]")'),'settled mirror');
  await button('撤销');await wait(()=>read().images.image2.layers[1].assetId===${JSON.stringify(transparent)},'one undo');
  await button('重做');await wait(()=>read().images.image2.layers[1].assetId===painted,'redo');
