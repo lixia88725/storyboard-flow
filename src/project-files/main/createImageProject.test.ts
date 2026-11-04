@@ -206,8 +206,8 @@ describe('createImageProject', () => {
     await expect(createImageProject(
       { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Cancelled', name: 'Cancelled', naming: NAMING },
       options({ signal: cancelled.signal, decideIssues: async () => 'cancel' }))).rejects.toMatchObject({ name: 'AbortError' });
-    expect((await fs.readdir(destination)).sort()).toEqual(['Mixed']);
-    expect((await stages(destination)).length).toBe(0);
+    expect((await fs.readdir(destination)).filter(name => name === 'Mixed')).toHaveLength(1);
+    expect((await stages(destination)).length).toBe(1);
     expect(await fs.readFile(path.join(sources, 'broken.png'), 'utf8')).toBe('not an image');
   }, 60_000);
 
@@ -217,7 +217,10 @@ describe('createImageProject', () => {
     await expect(createImageProject(
       { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Refused', name: 'Refused', naming: NAMING },
       options())).rejects.toThrow('need confirmation');
-    expect(await fs.readdir(destination)).toEqual([]);
+    const entries = await fs.readdir(destination);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].startsWith('.flow-create-')).toBe(true);
+    await expect(fs.lstat(path.join(destination, 'Refused'))).rejects.toMatchObject({ code: 'ENOENT' });
   }, 30_000);
 
   it('converts a CMYK JPEG only after a confirmed flatten reason', async () => {
@@ -291,7 +294,10 @@ describe('createImageProject', () => {
     expect(actions).toHaveLength(1);
     expect(actions[0]).toContain('skip:');
     expect(actions[0]).toContain('Multipage');
-    expect(await fs.readdir(destination)).toEqual([]);
+    const entries = await fs.readdir(destination);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].startsWith('.flow-create-')).toBe(true);
+    await expect(fs.lstat(path.join(destination, 'Pages'))).rejects.toMatchObject({ code: 'ENOENT' });
   }, 30_000);
 
   it('never uses the first frame of an animated PNG without confirmation', async () => {
@@ -340,7 +346,7 @@ describe('createImageProject', () => {
     expect((await stages(destination)).length).toBe(0);
   }, 30_000);
 
-  it('cleans its private stage on abort and never publishes', async () => {
+  it('leaves its private stage in place on abort and never publishes', async () => {
     const { sources, destination } = await layout();
     for (const name of ['a.png', 'b.png']) await fs.writeFile(path.join(sources, name), await rgb(4, 3, { r: 9, g: 9, b: 9, alpha: 1 }).png().toBuffer());
     const aborted = signal();
@@ -348,26 +354,41 @@ describe('createImageProject', () => {
     await expect(createImageProject(
       { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Aborted', name: 'Aborted', naming: NAMING },
       options({ signal: aborted.signal }))).rejects.toMatchObject({ name: 'AbortError' });
+    // A cancellation known before the stage exists leaves no trace at all.
     expect(await fs.readdir(destination)).toEqual([]);
     const during = signal();
-    await expect(createImageProject(
-      { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'During', name: 'During', naming: NAMING },
-      options({ signal: during.signal, onProgress: ({ done }) => { if (done === 1) during.controller.abort(); } }))).rejects.toMatchObject({ name: 'AbortError' });
-    expect(await fs.readdir(destination)).toEqual([]);
-    expect((await stages(destination)).length).toBe(0);
+    let failure = '';
+    try {
+      await createImageProject(
+        { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'During', name: 'During', naming: NAMING },
+        options({ signal: during.signal, onProgress: ({ done }) => { if (done === 1) during.controller.abort(); } }));
+    } catch (error) { failure = (error as Error).message; }
+    expect(failure).toMatch(/retained at/);
+    const entries = await fs.readdir(destination);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].startsWith('.flow-create-')).toBe(true);
+    expect(failure).toContain(path.join(destination, entries[0]));
+    await expect(fs.lstat(path.join(destination, 'During'))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await fs.readdir(sources)).toEqual(['a.png', 'b.png']);
   }, 60_000);
 
-  it('detects a source rewritten during creation and cleans its own stage only', async () => {
+  it('retains its stage when a source is rewritten during creation and never publishes', async () => {
     const { sources, destination } = await layout();
     const file = path.join(sources, 'only.png');
     await fs.writeFile(file, await rgb(4, 3, { r: 1, g: 2, b: 3, alpha: 1 }).png().toBuffer());
     const replacement = await rgb(6, 5, { r: 200, g: 0, b: 0, alpha: 1 }).png().toBuffer();
-    await expect(createImageProject(
-      { source: { kind: 'files', files: [file] }, destinationParent: destination, folderName: 'Changed', name: 'Changed', naming: NAMING },
-      options({ onProgress: ({ done }) => { if (done === 1) writeFileSync(file, replacement); } })))
-      .rejects.toThrow(/changed/);
-    expect(await fs.readdir(destination)).toEqual([]);
+    let failure = '';
+    try {
+      await createImageProject(
+        { source: { kind: 'files', files: [file] }, destinationParent: destination, folderName: 'Changed', name: 'Changed', naming: NAMING },
+        options({ onProgress: ({ done, phase }) => { if (done === 1 && phase === 'read') writeFileSync(file, replacement); } }));
+    } catch (error) { failure = (error as Error).message; }
+    expect(failure).toMatch(/changed/);
+    expect(failure).toMatch(/retained at/);
+    const entries = await fs.readdir(destination);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].startsWith('.flow-create-')).toBe(true);
+    await expect(fs.lstat(path.join(destination, 'Changed'))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await fs.readFile(file)).toEqual(replacement);
   }, 60_000);
 
@@ -376,25 +397,81 @@ describe('createImageProject', () => {
     for (const name of ['a.png', 'b.png']) await fs.writeFile(path.join(sources, name), await rgb(4, 3, { r: 9, g: 9, b: 9, alpha: 1 }).png().toBuffer());
     const replacement = await rgb(6, 5, { r: 1, g: 2, b: 3, alpha: 1 }).png().toBuffer();
     const injected: string[] = [];
-    await expect(createImageProject(
-      { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Foreign', name: 'Foreign', naming: NAMING },
-      options({ onProgress: ({ done, phase }) => {
-        if (done !== 1 || phase !== 'write') return;
-        const stage = readdirSync(destination).find(name => name.startsWith('.flow-create-'));
-        if (!stage) throw Error('stage missing');
-        const root = path.join(destination, stage);
-        writeFileSync(path.join(root, 'intruder.txt'), 'from outside');
-        writeFileSync(path.join(root, '.storyboard-flow', 'nested-intruder.txt'), 'from outside');
-        injected.push(root);
-        // Force the creation to fail after the foreign files exist.
-        writeFileSync(path.join(sources, 'a.png'), replacement);
-      } }))).rejects.toThrow(/content not created here/);
+    let failure = '';
+    try {
+      await createImageProject(
+        { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Foreign', name: 'Foreign', naming: NAMING },
+        options({ onProgress: ({ done, phase }) => {
+          if (done !== 1 || phase !== 'write') return;
+          const stage = readdirSync(destination).find(name => name.startsWith('.flow-create-'));
+          if (!stage) throw Error('stage missing');
+          const root = path.join(destination, stage);
+          writeFileSync(path.join(root, 'intruder.txt'), 'from outside');
+          writeFileSync(path.join(root, '.storyboard-flow', 'nested-intruder.txt'), 'from outside');
+          injected.push(root);
+          // Force the creation to fail after the foreign files exist.
+          writeFileSync(path.join(sources, 'a.png'), replacement);
+        } }));
+    } catch (error) { failure = (error as Error).message; }
+    expect(failure).toMatch(/retained at/);
     expect(await fs.readdir(destination)).toHaveLength(1);
     expect(injected).toHaveLength(1);
+    expect(failure).toContain(injected[0]);
     expect((await fs.readdir(destination))[0].startsWith('.flow-create-')).toBe(true);
     expect(await fs.readFile(path.join(injected[0], 'intruder.txt'), 'utf8')).toBe('from outside');
     expect(await fs.readFile(path.join(injected[0], '.storyboard-flow', 'nested-intruder.txt'), 'utf8')).toBe('from outside');
     expect(await fs.readFile(path.join(sources, 'a.png'))).toEqual(replacement);
+  }, 60_000);
+
+  it('does not trust a modified output ledger and leaves the stage in place', async () => {
+    const { sources, destination } = await layout();
+    for (const name of ['a.png', 'b.png']) await fs.writeFile(path.join(sources, name), await rgb(4, 3, { r: 9, g: 9, b: 9, alpha: 1 }).png().toBuffer());
+    let stagePath = '';
+    let failure = '';
+    try {
+      await createImageProject(
+        { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Ledger', name: 'Ledger', naming: NAMING },
+        options({ onProgress: ({ done, phase }) => {
+          if (done !== 1 || phase !== 'write') return;
+          const stage = readdirSync(destination).find(name => name.startsWith('.flow-create-'));
+          if (!stage) throw Error('stage missing');
+          stagePath = path.join(destination, stage);
+          writeFileSync(path.join(stagePath, '.storyboard-flow', 'tiff-output.json'), '{"foreignNote":true}');
+        } }));
+    } catch (error) { failure = (error as Error).message; }
+    expect(failure).toMatch(/retained at/);
+    expect(failure).toContain(stagePath);
+    await expect(fs.lstat(path.join(destination, 'Ledger'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(path.join(stagePath, '.storyboard-flow', 'tiff-output.json'), 'utf8')).toBe('{"foreignNote":true}');
+  }, 60_000);
+
+  it('leaves a swapped staging directory untouched and never publishes', async () => {
+    const { sources, destination } = await layout();
+    for (const name of ['a.png', 'b.png']) await fs.writeFile(path.join(sources, name), await rgb(4, 3, { r: 9, g: 9, b: 9, alpha: 1 }).png().toBuffer());
+    let originalStage = '', swapped = '';
+    let failure = '';
+    try {
+      await createImageProject(
+        { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Swapped', name: 'Swapped', naming: NAMING },
+        options({ onProgress: ({ done, phase }) => {
+          if (done !== 1 || phase !== 'write') return;
+          const stage = readdirSync(destination).find(name => name.startsWith('.flow-create-'));
+          if (!stage) throw Error('stage missing');
+          originalStage = path.join(destination, stage);
+          swapped = originalStage + '-swapped';
+          renameSync(originalStage, swapped);
+          mkdirSync(originalStage);
+          writeFileSync(path.join(originalStage, 'intruder.txt'), 'not ours');
+        } }));
+    } catch (error) { failure = (error as Error).message; }
+    expect(failure).toMatch(/staging|stage/i);
+    expect(failure).toContain(originalStage);
+    // The replacement directory is untouched: no writes, no deletion.
+    expect(await fs.readdir(originalStage)).toEqual(['intruder.txt']);
+    expect(await fs.readFile(path.join(originalStage, 'intruder.txt'), 'utf8')).toBe('not ours');
+    // The original stage (with our partial output) still exists where it was moved.
+    expect((await fs.readdir(swapped)).some(name => name.endsWith('.tif'))).toBe(true);
+    await expect(fs.lstat(path.join(destination, 'Swapped'))).rejects.toMatchObject({ code: 'ENOENT' });
   }, 60_000);
 
   it('retains a published project when verification fails, including files added there', async () => {
@@ -432,16 +509,21 @@ describe('createImageProject', () => {
     expect(await fs.readFile(path.join(target, 'intruder.txt'), 'utf8')).toBe('added after publication began');
   }, 120_000);
 
-  it('detects a source moved during creation, cleans its stage and leaves the moved file alone', async () => {
+  it('retains its stage when a source is moved during creation and leaves the moved file alone', async () => {
     const { sources, destination } = await layout();
     const file = path.join(sources, 'moved.png');
     const bytes = await rgb(4, 3, { r: 1, g: 2, b: 3, alpha: 1 }).png().toBuffer();
     await fs.writeFile(file, bytes);
-    await expect(createImageProject(
-      { source: { kind: 'files', files: [file] }, destinationParent: destination, folderName: 'Moved', name: 'Moved', naming: NAMING },
-      options({ onProgress: ({ done }) => { if (done === 1) renameSync(file, file + '-away'); } })))
-      .rejects.toThrow(/missing|changed/i);
-    expect(await fs.readdir(destination)).toEqual([]);
+    let failure = '';
+    try {
+      await createImageProject(
+        { source: { kind: 'files', files: [file] }, destinationParent: destination, folderName: 'Moved', name: 'Moved', naming: NAMING },
+        options({ onProgress: ({ done, phase }) => { if (done === 1 && phase === 'read') renameSync(file, file + '-away'); } }));
+    } catch (error) { failure = (error as Error).message; }
+    expect(failure).toMatch(/missing|changed/i);
+    expect(failure).toMatch(/retained at/);
+    await expect(fs.lstat(path.join(destination, 'Moved'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await stages(destination)).length).toBe(1);
     expect(await fs.readFile(file + '-away')).toEqual(bytes);
   }, 60_000);
 
@@ -467,13 +549,18 @@ describe('createImageProject', () => {
 
   it('never replaces a destination that appears before publication', async () => {
     const { sources, destination } = await layout();
-    await fs.writeFile(path.join(sources, 'one.png'), await rgb(4, 3, { r: 1, g: 2, b: 3, alpha: 1 }).png().toBuffer());
+    for (const name of ['one.png', 'two.png']) await fs.writeFile(path.join(sources, name), await rgb(4, 3, { r: 1, g: 2, b: 3, alpha: 1 }).png().toBuffer());
     const target = path.join(destination, 'Raced');
-    await expect(createImageProject(
-      { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Raced', name: 'Raced', naming: NAMING },
-      options({ onProgress: ({ done }) => { if (done === 1) mkdirSync(target); } })))
-      .rejects.toThrow('Destination appeared during creation');
+    let failure = '';
+    try {
+      await createImageProject(
+        { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Raced', name: 'Raced', naming: NAMING },
+        options({ onProgress: ({ done, phase }) => { if (done === 1 && phase === 'write') mkdirSync(target); } }));
+    } catch (error) { failure = (error as Error).message; }
+    expect(failure).toMatch(/Destination appeared during creation/);
+    expect(failure).toMatch(/retained at/);
+    // The foreign destination is untouched; the private stage is retained.
     expect(await fs.readdir(target)).toEqual([]);
-    expect((await stages(destination)).length).toBe(0);
+    expect((await stages(destination)).length).toBe(1);
   }, 60_000);
 });

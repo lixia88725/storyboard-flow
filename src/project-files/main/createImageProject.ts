@@ -8,7 +8,6 @@ import { admitTiffCandidate, createTiffCodec, type TiffCodec } from './formats/i
 import { createPresentationCodec } from './formats/presentation.js';
 import { openFlowAssetDepot } from './persistence/depot.js';
 import { createProjectStore } from './persistence/index.js';
-import { canonicalJson } from './persistence/canonicalJson.js';
 import { imagePixelDigests } from './flowPixelIdentity.js';
 import { openFlowTiffSave, type CreatedOutputBinding } from './flowTiffSave.js';
 import { assertPhysicalWorkspaceWriterTargets } from './workspacePhysicalWriterGate.js';
@@ -102,6 +101,12 @@ type Prepared = {
  * project opens, saves and reopens without its sources. Problems and accepted
  * degradations are reported once through `decideIssues`; a refusal that cannot be
  * composed reliably is never flattened silently.
+ *
+ * Every check that can run before the stage exists does run first. Once the stage
+ * exists it is never recursively deleted: a path-based check can be defeated by a
+ * file arriving or the directory being swapped between the check and the delete.
+ * Cancellation and failures therefore report the staging location and leave it
+ * untouched; only a fully verified, exclusively published project is returned.
  */
 export async function createImageProject(input: CreateImageProjectInput, options: CreateImageProjectOptions): Promise<{ root: string }> {
   const { naming, name } = bindInput(input);
@@ -121,10 +126,12 @@ export async function createImageProject(input: CreateImageProjectInput, options
   const codec: TiffCodec = createPresentationCodec(rawCodec);
   const store = createProjectStore();
   let stage: string | undefined, identity: { dev: bigint; ino: bigint } | undefined, published = false;
-  // Everything the private stage may legitimately contain; the failure cleanup
-  // deletes only a stage whose entire content is accounted for here.
-  let ownedProject: ProjectV1 | undefined;
-  const prepared: Prepared[] = [], bindings: CreatedOutputBinding[] = [], ownedAssets = new Set<string>();
+  const prepared: Prepared[] = [], bindings: CreatedOutputBinding[] = [];
+  // Progress is advisory: a host callback that throws must not change the outcome.
+  const report = (progress: { done: number; total: number; phase?: 'read' | 'write' }) => {
+    try { options.onProgress?.(progress); } catch { /* ignored on purpose */ }
+  };
+  if (options.signal.aborted) throw cancelled('创建已取消');
   try {
     stage = await fs.mkdtemp(path.join(path.dirname(target), STAGE_PREFIX));
     const stageEntry = await fs.lstat(stage, { bigint: true });
@@ -133,7 +140,12 @@ export async function createImageProject(input: CreateImageProjectInput, options
     const readAsset: AssetReaderV1 = async id => get(await depot.read(id));
     const project: ProjectV1 = { schema: 'storyboard-flow.project', version: 1, id: randomUUID(), name,
       naming, revision: 0, shots: [], parkedShots: [], dialogues: [], images: {} };
-    ownedProject = project;
+    const assertStageBinding = async () => {
+      if (!stage || !identity) throw Error('Staging directory is unavailable');
+      const current = await fs.lstat(stage, { bigint: true }).catch(error => { if (isMissing(error)) throw Error(`Staging directory disappeared: ${stage}`); throw error; });
+      if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== identity.dev || current.ino !== identity.ino || await fs.realpath(stage) !== stage)
+        throw Error(`Staging directory changed during creation: ${stage}`);
+    };
     const issues: ImageSourceIssue[] = [];
     let preparedBytes = 0;
 
@@ -146,13 +158,13 @@ export async function createImageProject(input: CreateImageProjectInput, options
         // Every other read refusal (alias, identity race) stays fatal.
         if (!(error instanceof ImageSourceTooLargeError)) throw error;
         issues.push({ file: source.file, reason: error.message, action: 'skip' });
-        options.onProgress?.({ done: index + 1, total: sources.length, phase: 'read' });
+        report({ done: index + 1, total: sources.length, phase: 'read' });
         continue;
       }
       const conversion = await convertImageSource(source, read, codec);
       if (!conversion.ok) {
         issues.push({ file: source.file, reason: conversion.reason, action: 'skip' });
-        options.onProgress?.({ done: index + 1, total: sources.length, phase: 'read' });
+        report({ done: index + 1, total: sources.length, phase: 'read' });
         continue;
       }
       const converted = conversion.value;
@@ -173,14 +185,13 @@ export async function createImageProject(input: CreateImageProjectInput, options
         } : null
       };
       const image = get(await admitTiffCandidate(candidate, depot, `create_${shotId}`));
-      for (const layer of image.layers) ownedAssets.add(layer.assetId);
       const presentation = converted.text?.presentation?.settings;
       project.images[image.id] = image;
       project.shots.push({ id: shotId, imageId: image.id, ...(presentation ? { presentation } : {}),
         name: converted.text?.shotName ?? path.parse(source.name).name, scriptText: converted.text?.scriptText ?? '' });
       project.dialogues.push(...dialogues);
       prepared.push({ source, digest: read.digest, kind: converted.kind, image, shotId });
-      options.onProgress?.({ done: index + 1, total: sources.length, phase: 'read' });
+      report({ done: index + 1, total: sources.length, phase: 'read' });
     }
 
     // One central confirmation for defects and accepted degradations. Cancelling
@@ -209,17 +220,20 @@ export async function createImageProject(input: CreateImageProjectInput, options
         originalDigest: item.kind === 'tiff' ? item.digest : outputDigest,
         pixelHashes: await imagePixelDigests(item.image, readAsset),
         original: item.kind === 'tiff' ? 'source' : 'output' });
-      if (index + 1 < prepared.length) options.onProgress?.({ done: index + 1, total: prepared.length, phase: 'write' });
+      if (index + 1 < prepared.length) report({ done: index + 1, total: prepared.length, phase: 'write' });
     }
 
+    await assertStageBinding();
     const output = await openFlowTiffSave(stage, project.id, rawCodec);
     const sourceById = new Map(prepared.map(item => [item.shotId, item.source]));
     await output.bindCreatedOutputs(project, bindings, async shotId => (await readImageSource(sourceById.get(shotId)!)).bytes);
+    await assertStageBinding();
     get(await store.saveCheckpoint(stage, project, readAsset));
 
     // Sources must still be exactly what was converted; a folder must still hold
     // the same direct children. Requirements are checked before publication.
     await verifySources(input.source, sources, prepared);
+    await assertStageBinding();
     if (options.signal.aborted) throw cancelled('创建已取消');
     if ((await fs.readdir(path.dirname(target))).some(entry => entry.toLowerCase() === path.basename(target).toLowerCase()))
       throw Error(`Destination appeared during creation; nothing was replaced: ${target}`);
@@ -247,7 +261,7 @@ export async function createImageProject(input: CreateImageProjectInput, options
     const outputs = await fs.readdir(target);
     const expected = new Set(bindings.map(binding => binding.name));
     if (![...expected].every(entry => outputs.includes(entry))) throw Error('Created project is missing a working TIFF');
-    options.onProgress?.({ done: prepared.length, total: prepared.length, phase: 'write' });
+    report({ done: prepared.length, total: prepared.length, phase: 'write' });
     return { root: target };
   } catch (error) {
     const cancelledError = (error as { name?: string })?.name === 'AbortError';
@@ -258,86 +272,23 @@ export async function createImageProject(input: CreateImageProjectInput, options
       throw Object.assign(new Error(`Project published but verification failed: ${message(error)}; the created project is retained at ${target}`),
         { name: cancelledError ? 'AbortError' : 'Error' });
     }
-    // Before publication the stage is private. It is removed only when every
-    // entry in it was created by this call; foreign content means retention.
-    let retained = stage, note = '';
-    if (stage && identity) {
-      try {
-        const current = await fs.lstat(stage, { bigint: true }).catch(error => { if (isMissing(error)) return undefined; throw error; });
-        if (!current) retained = undefined;
-        else if (!current.isDirectory() || current.isSymbolicLink() || current.dev !== identity.dev || current.ino !== identity.ino) {
-          note = `; the staging directory changed identity and was retained: ${stage}`;
-        } else {
-          const foreign = await unownedStageEntries(stage, { project: ownedProject, bindings, assets: ownedAssets });
-          if (foreign.length) note = `; content not created here was found and the staging directory was retained at ${stage}: ${foreign.slice(0, 5).join(', ')}${foreign.length > 5 ? ', …' : ''}`;
-          else { await fs.rm(stage, { recursive: true }); retained = undefined; }
-        }
-      } catch (cleanupError) {
-        note = `; staging cleanup could not be confirmed (${message(cleanupError)}); retained: ${stage}`;
-      }
+    // The private stage is never recursively deleted: a check followed by a
+    // path-based delete can lose files added after the check, or delete a
+    // directory swapped in at the same path. Report where the work remains.
+    let note = '';
+    if (stage) {
+      const current = identity
+        ? await fs.lstat(stage, { bigint: true }).catch(probe => { if (isMissing(probe)) return undefined; throw probe; })
+        : undefined;
+      if (!current) note = `; the private staging directory is no longer at ${stage} (this call deleted nothing)`;
+      else if (!identity) note = `; the private staging directory was retained at ${stage}`;
+      else if (current.isDirectory() && !current.isSymbolicLink() && current.dev === identity.dev && current.ino === identity.ino)
+        note = `; the private staging directory was retained at ${stage}`;
+      else note = `; the staging path no longer refers to this creation and was left untouched: ${stage}`;
     }
-    throw Object.assign(new Error(`Project creation failed: ${message(error)}${note}${!note && retained ? `; retained output: ${retained}` : ''}`),
+    throw Object.assign(new Error(`Project creation failed: ${message(error)}${note}`),
       { name: cancelledError ? 'AbortError' : 'Error' });
   }
-}
-
-type StageOwnership = { project: ProjectV1 | undefined; bindings: readonly CreatedOutputBinding[]; assets: ReadonlySet<string> };
-
-/** Every entry the private stage may contain. Anything else is foreign and makes
- * the whole stage ineligible for deletion; nothing is removed by name alone. */
-async function unownedStageEntries(stage: string, owned: StageOwnership): Promise<string[]> {
-  const directories = new Set(['.storyboard-flow',
-    path.join('.storyboard-flow', 'checkpoints'), path.join('.storyboard-flow', 'checkpoints', 'assets'),
-    path.join('.storyboard-flow', 'checkpoints', 'versions'), path.join('.storyboard-flow', 'originals')]);
-  const outputs = new Map(owned.bindings.map(binding => [binding.name, binding.digest]));
-  const originals = new Map(owned.bindings.map(binding => [path.join('.storyboard-flow', 'originals', binding.shotId + '.tif'), binding.originalDigest]));
-  const manifest = path.join('.storyboard-flow', 'checkpoints', 'project.json');
-  const version = path.join('.storyboard-flow', 'checkpoints', 'versions', '0.json');
-  const ledger = path.join('.storyboard-flow', 'tiff-output.json');
-  const hashFile = async (file: string) => digest(await fs.readFile(file));
-  const ownedFile = async (file: string, relative: string): Promise<boolean> => {
-    const output = outputs.get(relative);
-    if (output) return await hashFile(file) === output;
-    const original = originals.get(relative);
-    if (original) return await hashFile(file) === original;
-    const asset = /^([a-f0-9]{64})\.png$/.exec(path.basename(relative));
-    if (relative === path.join('.storyboard-flow', 'checkpoints', 'assets', path.basename(relative)) && asset && owned.assets.has(asset[1]))
-      return await hashFile(file) === asset[1];
-    try {
-      if (relative === ledger) {
-        const parsed = JSON.parse(await fs.readFile(file, 'utf8'));
-        if (!owned.project || parsed?.projectId !== owned.project.id || !Array.isArray(parsed.entries) || parsed.entries.length !== owned.bindings.length) return false;
-        const entries = new Map(parsed.entries.map((entry: { shotId: string }) => [entry.shotId, entry]));
-        return owned.bindings.every(binding => {
-          const entry = entries.get(binding.shotId) as { name?: string; current?: string; original?: string } | undefined;
-          return !!entry && entry.name === binding.name && entry.current === binding.digest && entry.original === binding.originalDigest;
-        });
-      }
-      if (relative === manifest) {
-        if (!owned.project) return false;
-        return canonicalJson(JSON.parse(await fs.readFile(file, 'utf8'))) === canonicalJson(owned.project);
-      }
-      if (relative === version) {
-        const [record, head] = [await fs.readFile(file), await fs.readFile(path.join(stage, manifest))];
-        return record.equals(head);
-      }
-    } catch { return false; }
-    return false;
-  };
-  const unexpected: string[] = [];
-  const visit = async (directory: string): Promise<void> => {
-    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-      const full = path.join(directory, entry.name), relative = path.relative(stage, full);
-      if (entry.isSymbolicLink()) { unexpected.push(relative); continue; }
-      if (entry.isDirectory()) {
-        if (!directories.has(relative)) { unexpected.push(relative); continue; }
-        await visit(full); continue;
-      }
-      if (!entry.isFile() || !await ownedFile(full, relative)) unexpected.push(relative);
-    }
-  };
-  await visit(stage);
-  return unexpected;
 }
 
 /** Compare every source with the bytes converted earlier, and re-list a folder so
