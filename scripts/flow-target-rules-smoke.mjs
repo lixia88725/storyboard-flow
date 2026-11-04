@@ -1,7 +1,7 @@
 // Real-window rules:
 //   - same-name recent projects show distinct display-only target suffixes in the
 //     home and project menu, while opening still uses only the opaque id
-//   - the top-bar 添加图片 entry works while the Pending panel is hidden and uses
+//   - the storyboard-toolbar 添加板 entry works while the Pending panel is hidden and uses
 //     the same operation/form as the panel entry
 //
 // Requires `npm run build`; synthetic projects, isolated userData, no Save/Trash.
@@ -84,7 +84,9 @@ const wait=async(fn,label)=>{const end=Date.now()+40000;while(Date.now()<end){tr
 const sel=value=>'document.querySelector('+JSON.stringify(value)+')';
 const exists=value=>exec('!!'+sel(value));
 const button=(label)=>exec('(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==='+JSON.stringify(label)+');if(!b)return false;b.click();return true})()');
-const field=key=>exec(sel('[data-project-field='+key+']')+'.value');
+const openNaming=()=>wait(()=>exec('(()=>{if(document.querySelector("[data-project-naming]"))return true;document.querySelector("[data-project-title]:not(:disabled)")?.click();return false})()'),'open project naming');
+const dismissNaming=async()=>{if(await exists('[data-project-naming]')){win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});await wait(async()=>!(await exists('[data-project-naming]')),'dismiss project naming');}};
+const field=async key=>{await openNaming();return exec(sel('[data-project-field='+key+']')+'.value');};
 const waitField=(key,value)=>wait(async()=>(await field(key))===value,'field '+key+' '+value);
 const targets=scope=>exec('[...document.querySelectorAll('+JSON.stringify(scope+' [data-recent-target]')+')].map(e=>e.dataset.recentTarget)');
 const checkpoint=()=>{try{return JSON.parse(fs.readFileSync(path.join(plan.second,'.storyboard-flow/checkpoints/project.json'),'utf8'))}catch{return null}};
@@ -106,18 +108,38 @@ app.whenReady().then(async()=>{
   await shot('01-home-targets');
   if(!(await clickRecent(homeTargets.find(target=>target.includes('same-a/同名项目')))))throw Error('home recent A not clickable');
   await wait(()=>exists('[data-workbench]'),'workbench A');
-  await waitField('sceneCode','A');
+  await wait(async()=>await exec(sel('[data-project-title]')+'.textContent.trim()')==='同名项目','resting document title');
+  const geometry=await exec('(()=>{const box=q=>document.querySelector(q).getBoundingClientRect();const t=box("[data-project-title]"),p=box(".wb-header .wb-project-menu summary"),s=box(".wb-header .wb-save");return {center:t.x+t.width/2,mid:innerWidth/2,y:t.y+t.height/2,projectY:p.y+p.height/2,saveY:s.y+s.height/2}})()');
+  if(Math.abs(geometry.center-geometry.mid)>2 || Math.abs(geometry.y-geometry.projectY)>3 || Math.abs(geometry.y-geometry.saveY)>3)throw Error('title not centered on the same row: '+JSON.stringify(geometry));
+  const faces=await exec('[".wb-project-menu summary",".wb-save"].map(q=>{const s=getComputedStyle(document.querySelector(".wb-header "+q));return [s.height,s.borderRadius,s.borderColor,s.backgroundColor,s.fontWeight]})');
+  if(JSON.stringify(faces[0])!==JSON.stringify(faces[1]))throw Error('project/save styles differ: '+JSON.stringify(faces));
+  if(await exists('[data-project-naming]'))throw Error('rename fields exposed at rest');
+  win.webContents.sendInputEvent({type:'mouseMove',x:Math.round(geometry.center),y:Math.round(geometry.y)});await sleep(250);
+  if(await exists('[data-project-naming]'))throw Error('hover opened rename without a click');
+  await shot('04-title-hover');
+  for(const type of ['mouseDown','mouseUp'])win.webContents.sendInputEvent({type,button:'left',clickCount:1,x:Math.round(geometry.center),y:Math.round(geometry.y)});
+  await wait(()=>exists('[data-project-naming]'),'click opens naming');
+  if((await exec('document.querySelectorAll("[data-project-naming] [data-project-field]").length'))!==4)throw Error('expected four naming fields');
+  await waitField('sceneCode','A');await shot('05-rename-open');await dismissNaming();
+  if(!(await exec('document.activeElement===document.querySelector("[data-project-title]")')))throw Error('Escape did not return keyboard focus to the title');
+  await openNaming();await button('完成');
+  await wait(async()=>!(await exists('[data-project-naming]')),'Done dismisses naming');
+  await openNaming();
+  const outside=await exec('(()=>{const h=document.querySelector(".wb-header").getBoundingClientRect();return {x:Math.round(h.left+3),y:Math.round(h.top+3)}})()');
+  for(const type of ['mouseDown','mouseUp'])win.webContents.sendInputEvent({type,button:'left',clickCount:1,...outside});
+  await wait(async()=>!(await exists('[data-project-naming]')),'outside click dismisses naming');
   await exec(sel('.wb-project-menu summary')+'.click()');
   await wait(async()=>(await targets('.wb-project-menu-list')).length===2,'menu targets');
   const menuTargets=await targets('.wb-project-menu-list');
   if(!menuTargets.some(target=>target.includes('same-a/同名项目'))||!menuTargets.some(target=>target.includes('same-b/同名项目')))throw Error('same-name menu targets missing: '+menuTargets);
   await shot('02-menu-targets');
   if(!(await clickRecent(menuTargets.find(target=>target.includes('same-b/同名项目')))))throw Error('menu recent B not clickable');
-  await waitField('sceneCode','B');
+  await waitField('sceneCode','B');await dismissNaming();
   await togglePending();
   await wait(()=>exec('!document.querySelector("[data-panel=pending]")'),'pending hidden');
-  if(!(await exists('.wb-pending-add')))throw Error('top-bar add missing while Pending hidden');
-  await button('添加图片');
+  const boardAdd=await exec('(()=>{const buttons=[...document.querySelectorAll(".wb-board-actions button")];const i=buttons.findIndex(b=>b.classList.contains("wb-pending-add"));return i>0 && buttons[i-1].textContent.includes("新建板") && !document.querySelector(".wb-header .wb-pending-add")})()');
+  if(!boardAdd)throw Error('添加板 must sit beside 新建板, independently of the Pending panel');
+  await button('添加板');
   await wait(()=>exists('[data-pending-add]'),'pending sheet');
   await button('选择文件夹…');
   await wait(()=>checkpoint()?.parkedShots?.length===2,'pending checkpoint while hidden');

@@ -67,14 +67,15 @@ const wait=async(fn,label)=>{const end=Date.now()+40000;while(Date.now()<end){tr
 const sel=value=>'document.querySelector('+JSON.stringify(value)+')';
 const exists=value=>exec('!!'+sel(value));
 const button=(label)=>exec('(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==='+JSON.stringify(label)+');if(!b)return false;b.click();return true})()');
-const field=()=>exec(sel('[data-project-field=name]')+'.value');
+const openNaming=()=>wait(()=>exec('(()=>{if(document.querySelector("[data-project-naming]"))return true;document.querySelector("[data-project-title]:not(:disabled)")?.click();return false})()'),'open project naming');
+const field=async()=>{await openNaming();return exec(sel('[data-project-field=name]')+'.value');};
 const waitField=value=>wait(async()=>(await field())===value,'name '+value);
 const checkpoint=()=>{try{return JSON.parse(fs.readFileSync(path.join(plan.root,'.storyboard-flow/checkpoints/project.json'),'utf8'))}catch{return null}};
 const waitCheckpoint=value=>wait(()=>checkpoint()?.name===value,'checkpoint '+value);
 const rootTifs=()=>{try{return fs.readdirSync(plan.root).filter(name=>name.endsWith('.tif')).sort()}catch{return []}};
-const folderLabel=()=>exec(sel('[data-project-naming] .wb-project-folder')+'.textContent');
+const folderLabel=async()=>{await openNaming();return exec(sel('[data-project-naming] .wb-project-folder')+'.textContent');};
 const saveDisabled=()=>exec('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="保存").disabled');
-const focusName=()=>exec('(()=>{const i='+sel('[data-project-field=name]')+';i.focus();return document.activeElement===i})()');
+const focusName=async()=>{await openNaming();return exec('(()=>{const i='+sel('[data-project-field=name]')+';i.focus();return document.activeElement===i})()');};
 const typeName=async(value)=>{
   await focusName();
   const chars=[...value];

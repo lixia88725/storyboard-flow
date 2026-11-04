@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState } from 'react';
 import type { FlowPendingAdd, FlowSession } from '../../platform/contracts/flowWave2';
 import type { FlowPendingIssues, FlowPendingProgress } from '../../platform/contracts/flowEditor';
@@ -20,8 +21,8 @@ const blank: State = { open: false, phase: 'choose', error: '', unknown: false, 
 /** The Pending panel action. Session owns FIFO, installation and the single undo
  * step; this component only calls the request, shows progress/issues and asks Main
  * to abort the file work. Main never receives a path. */
-export function PendingAddAction({ flow, sessionId, disabled, recovery }: {
-  flow: FlowSession; sessionId: string; disabled: boolean; recovery?: FlowPendingAdd;
+export function PendingAddAction({ anchor, flow, sessionId, disabled, recovery }: {
+  anchor: HTMLSpanElement | null; flow: FlowSession; sessionId: string; disabled: boolean; recovery?: FlowPendingAdd;
 }) {
   const [supported, setSupported] = useState(false);
   const [state, setState] = useState<State>(blank);
@@ -105,11 +106,11 @@ export function PendingAddAction({ flow, sessionId, disabled, recovery }: {
   };
 
   if (!supported) return null;
-  const label = recovery && !state.open ? '重试添加' : '添加图片';
+  const label = recovery && !state.open ? '重试添加' : '添加板';
   return <>
-    <button type="button" className="wb-pending-add" data-recovery={Boolean(recovery) || undefined}
+    {anchor && createPortal(<button type="button" className="wb-pending-add" data-recovery={Boolean(recovery) || undefined}
       disabled={disabled || state.open} title={recovery ? '上次添加未确认，需要重试' : '从图片添加故事板到 Pending'}
-      onClick={() => { if (recovery && !state.open) openRecovery(); else setState({ ...blank, open: true }); }}>{label}</button>
+      onClick={() => { if (recovery && !state.open) openRecovery(); else setState({ ...blank, open: true }); }}>{label}</button>, anchor)}
     {state.open && <div className="wb-naming" data-pending-add="true" data-pending-phase={state.phase}>
       <section className="wb-sheet" role="dialog" aria-modal="true" aria-label="添加到 Pending">
         <h2>添加到 Pending</h2>

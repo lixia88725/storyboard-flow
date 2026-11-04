@@ -20,7 +20,7 @@ import { LayerPanel } from '../../drawing/renderer/LayerPanel';
 import {DialogueBlocks} from '../../storyboard/renderer/dialogueBlocks';
 import {createDialogueCommitState, type DialogueCommitState, type DialogueEditState} from '../../storyboard/renderer/dialogueCommitState';
 import { WorkspaceToolRail } from './workspace/WorkspaceToolRail';
-import { RotateCw } from 'lucide-react';
+import { ChevronDown, FolderClosed, RotateCw, Save } from 'lucide-react';
 import { ProjectLauncher } from './ProjectLauncher';
 import { CreateProjectSheet } from './CreateProjectSheet';
 import { ProjectNamingBar } from './ProjectNamingBar';
@@ -577,6 +577,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
     const menu = event.currentTarget.closest('details');
     if (menu instanceof HTMLDetailsElement) menu.open = false;
   };
+  const [addAnchor, setAddAnchor] = useState<HTMLSpanElement | null>(null);
   const dialogueText=new Map<string,string>();
   for(const d of snapshot.project.dialogues){const text=d.text.trim();if(text)dialogueText.set(d.shotId,[dialogueText.get(d.shotId),text].filter(Boolean).join(' ').replace(/\s+/g,' '));}
   const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:dialogueText.get(s.id)??''} ]));
@@ -608,7 +609,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
         onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
       actions={<div className="wb-actions">
         <details className="wb-project-menu">
-          <summary>项目</summary>
+          <summary className="wb-document-action"><FolderClosed aria-hidden size={15}/>项目<ChevronDown aria-hidden size={11}/></summary>
           <div className="wb-menu wb-project-menu-list">
             <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void openProject({ kind: 'dialog' }); }}>打开项目…</button>
             <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void create.begin(); }}>新建项目…</button>
@@ -629,8 +630,8 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
                 </div>) : <span className="wb-menu-empty">还没有最近项目</span>}
           </div>
         </details>
-        <PendingAddAction flow={flow} sessionId={sessionId} disabled={!active || savingTiff} recovery={snapshot.pendingAddRecovery} />
-        <button disabled={!active || savingTiff || Boolean(naming.issue) || naming.composing} className="wb-save" onClick={() => { void saveTiff().catch(() => {}); }}>{savingTiff?'保存中…':'保存'}</button>
+        <PendingAddAction anchor={addAnchor} flow={flow} sessionId={sessionId} disabled={!active || savingTiff} recovery={snapshot.pendingAddRecovery} />
+        <button disabled={!active || savingTiff || Boolean(naming.issue) || naming.composing} className="wb-save wb-document-action" onClick={() => { void saveTiff().catch(() => {}); }}><Save aria-hidden size={15}/>{savingTiff?'保存中…':'保存'}</button>
         <button disabled={!active} className="wb-refresh" data-external={folderStatus.state==='external'||folderStatus.state==='both'} data-spinning={refreshing} title="从文件夹取回外部改动" aria-label="从文件夹取回外部改动" onClick={refreshImages}><RotateCw size={15} strokeWidth={1.75} aria-hidden /></button>
       </div>}
       renderDialogue={renderDialogue}
@@ -639,7 +640,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
         color={color} onColorChange={setColor} size={activePresetValue.size} onSizeChange={setActiveSize}
         blurRadius={blurRadius} onBlurRadiusChange={setBlurRadius} onApplyBlur={applyBlur}
         footer={<><button disabled={!active} onClick={()=>void historyStep('undo')}>撤销</button><button disabled={!active} onClick={()=>void historyStep('redo')}>重做</button></>}/>}
-      boardActions={<><button disabled={!active} onClick={newShot}>＋ 新建板</button><button disabled={!active||!selectedIds.length} onClick={()=>moveShots(selectedIds,'pending')}>移入 Pending</button><button disabled={!active||!selectedIds.length} onClick={()=>removeActiveShots(selectedIds)}>删除{selectedIds.length>1?` (${selectedIds.length})`:''}</button></>}/>
+      boardActions={<><button disabled={!active} onClick={newShot}>＋ 新建板</button><span className="wb-add-anchor" ref={setAddAnchor}/><button disabled={!active||!selectedIds.length} onClick={()=>moveShots(selectedIds,'pending')}>移入 Pending</button><button disabled={!active||!selectedIds.length} onClick={()=>removeActiveShots(selectedIds)}>删除{selectedIds.length>1?` (${selectedIds.length})`:''}</button></>}/>
     {brushPanel && <BrushPanel tool={tool==='eraser'?'eraser':'brush'} preferences={brushPreferences}
       disabled={!active} anchor={brushPanel} onChange={setBrushPreferences} onClose={()=>setBrushPanel(undefined)}/>}
     {folderStatus.recovery && <aside className="wb-recovery" aria-label="文件恢复">

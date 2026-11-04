@@ -99,7 +99,7 @@ app.whenReady().then(async()=>{
   await shot('02-relocated');
   await exec('(()=>{const row=[...document.querySelectorAll("[data-recent-project]")].find(row=>row.textContent.includes("移动项目"));const b=row&&[...row.querySelectorAll("button")].find(x=>x.textContent.includes("移动项目"));if(!b)return false;b.click();return true})()');
   await wait(()=>exec('!!document.querySelector("[data-workbench]")'),'relocated workbench');
-  await wait(()=>exec('document.querySelector("[data-project-field=name]")?.value==="移动项目"'),'relocated name');
+  await wait(()=>exec('document.querySelector("[data-project-title]")?.textContent.trim()==="移动项目"'),'relocated name');
   fs.writeFileSync(out,JSON.stringify({ok:true,before,after,relocates,opened:true}));
   await sleep(200);
   win.close();

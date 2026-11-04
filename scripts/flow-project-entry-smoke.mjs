@@ -101,7 +101,9 @@ const button=(label,scope='')=>exec('(()=>{const list=[...document.querySelector
 const waitButton=async(label,scope='')=>wait(()=>button(label,scope),'button '+label);
 const waitText=async(value)=>wait(async()=>String(await exec('document.body.innerText')).includes(value),'text '+value);
 const pendingCount=()=>exec('document.querySelectorAll("[data-pending-shot-id]").length');
-const field=key=>exec(sel('[data-project-field='+key+']')+'.value');
+const openNaming=()=>wait(()=>exec('(()=>{if(document.querySelector("[data-project-naming]"))return true;document.querySelector("[data-project-title]:not(:disabled)")?.click();return false})()'),'open project naming');
+const dismissNaming=async()=>{if(await exists('[data-project-naming]')){win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});await wait(async()=>!(await exists('[data-project-naming]')),'dismiss project naming');}};
+const field=async key=>{if(key==='name')return exec(sel('[data-project-title]')+'.textContent.trim()');await openNaming();return exec(sel('[data-project-field='+key+']')+'.value');};
 const waitField=(key,value)=>wait(async()=>(await field(key))===value,'field '+key);
 const setInput=(selector,value)=>exec('(()=>{const i='+sel(selector)+';if(!i)return false;const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;set.call(i,'+JSON.stringify(value)+');i.dispatchEvent(new Event("input",{bubbles:true}));i.blur();return true})()');
 const setValue=(selector,value)=>exec('(()=>{const i='+sel(selector)+';if(!i)return false;const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;set.call(i,'+JSON.stringify(value)+');i.dispatchEvent(new Event("input",{bubbles:true}));return true})()');
@@ -139,6 +141,7 @@ const runPhase=async()=>{
   await wait(()=>exists('[data-workbench]'),'workbench');
   await waitField('name',path.basename(plan.goodSource));
   if((await field('sceneCode'))!=='scene'||(await field('artistName'))!=='artist'||(await field('version'))!=='v001')throw Error('default naming');
+  await dismissNaming();
   await exec(sel('.wb-project-menu summary')+'.click()');
   await wait(async()=>String(await exec(sel('.wb-project-menu-list')+'.textContent')).includes(path.basename(plan.goodSource)),'recent menu');
   const menu=String(await exec(sel('.wb-project-menu-list')+'.textContent'));
@@ -165,6 +168,7 @@ const runPhase=async()=>{
   await exec('document.querySelector("[data-wheel-target]")?.removeAttribute("data-wheel-target")');
   if(!wheelMoved)console.warn('wheel check did not move the panel; CSS does not intercept wheel events');
   win.setSize(1280,900);await sleep(400);
+  await openNaming();
   await setInput('[data-project-field=name]','');
   await sleep(300);
   let saveDisabled=await exec('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="保存").disabled');
@@ -186,9 +190,11 @@ const runPhase=async()=>{
   if(tif.length!==2)throw Error('expected two TIFF outputs, got '+tif.length);
   let issueResult='skipped';
   if(plan.supportsIssues){
+   await openNaming();
    await setInput('[data-project-field=sceneCode]','S99');
    await sleep(600);
-   await exec(sel('.wb-project-menu summary')+'.click()');
+   await dismissNaming();
+  await exec(sel('.wb-project-menu summary')+'.click()');
    await button('新建项目…');await wait(()=>exists('[data-create-sheet]'),'create sheet 2');
    if((await exec(sel('[data-create-field=sceneCode]')+'.value'))!=='scene')throw Error('create draft inherited the current scene');
    await button('选择文件夹…');
@@ -226,7 +232,7 @@ const runPhase=async()=>{
   await wait(()=>exists('[data-workbench]'),'seeded workbench');
   await waitField('name','合成项目');
   await wait(()=>exists('.wb-pending-add'),'pending add');
-  await button('添加图片');
+  await button('添加板','.wb-board-actions');
   await wait(()=>exists('[data-pending-add]'),'pending sheet');
   await button('选择文件夹…');
   await wait(()=>exists('[data-pending-issues]'),'pending issues');
@@ -242,7 +248,7 @@ const runPhase=async()=>{
   await button('重做');
   await wait(async()=>await pendingCount()===2,'pending redo');
   await shot('06-pending-shelf');
-  await button('添加图片');
+  await button('添加板','.wb-board-actions');
   await wait(()=>exists('[data-pending-add]'),'pending sheet cancel');
   await button('选择文件夹…');
   await waitText('已取消添加');

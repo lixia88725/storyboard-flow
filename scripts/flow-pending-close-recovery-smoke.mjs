@@ -83,7 +83,8 @@ const exists=value=>exec('!!'+sel(value));
 const button=(label,scope='')=>exec('(()=>{const list=[...document.querySelectorAll('+JSON.stringify(scope+((scope?' ':'')+'button'))+')];const b=list.find(x=>x.textContent.trim()==='+JSON.stringify(label)+')||list.find(x=>x.textContent.includes('+JSON.stringify(label)+'));if(!b)return false;b.click();return true})()');
 const waitButton=async(label,scope='')=>wait(()=>button(label,scope),'button '+label);
 const waitText=async(value)=>wait(async()=>String(await exec('document.body.innerText')).includes(value),'text '+value);
-const field=key=>exec(sel('[data-project-field='+key+']')+'.value');
+const openNaming=()=>wait(()=>exec('(()=>{if(document.querySelector("[data-project-naming]"))return true;document.querySelector("[data-project-title]:not(:disabled)")?.click();return false})()'),'open project naming');
+const field=async key=>{await openNaming();return exec(sel('[data-project-field='+key+']')+'.value');};
 const waitField=(key,value)=>wait(async()=>(await field(key))===value,'field '+key);
 const setInput=(selector,value)=>exec('(()=>{const i='+sel(selector)+';if(!i)return false;const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;set.call(i,'+JSON.stringify(value)+');i.dispatchEvent(new Event("input",{bubbles:true}));i.blur();return true})()');
 const pendingCount=()=>exec('document.querySelectorAll("[data-pending-shot-id]").length');
@@ -92,7 +93,7 @@ const rootTifs=()=>{try{return fs.readdirSync(plan.root).filter(name=>name.endsW
 const pendingTifs=()=>{try{return fs.readdirSync(path.join(plan.root,'Pending')).filter(name=>name.endsWith('.tif')).sort()}catch{return []}};
 const add = async () => {
   await wait(()=>exists('.wb-pending-add'),'pending add');
-  await button('添加图片');
+  await button('添加板','.wb-board-actions');
   await wait(()=>exists('[data-pending-add]'),'pending sheet');
   await button('选择文件夹…');
 };
@@ -101,6 +102,7 @@ const runPhase=async()=>{
   await wait(()=>exists('[data-workbench]'),'close workbench');
   await add();
   await wait(async()=>await pendingCount()===2,'close pending 2');
+  await openNaming();
   await setInput('[data-project-field=name]','无保存关闭');
   await wait(async()=>String(await exec('document.body.innerText')).includes('已自动暂存'),'close autosave');
   await sleep(700);
