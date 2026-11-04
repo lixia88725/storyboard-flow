@@ -1,3 +1,4 @@
+import {pendingAddEdit} from './pendingAdd';
 import type { ChangeSetV1, ProjectEditResultV1, ProjectV1, ResultV1, StoryboardEditV1 } from '../../platform/contracts/refactorV1';
 import { applyStoryboardEdit } from '../../storyboard/core';
 import { validProject, revision, fail, ok, copy, same, positionChanges } from '../../project-files/contracts/projectModel';
@@ -7,6 +8,8 @@ export interface ProjectHistoryV1 {
   current(): ResultV1<ProjectV1>;
   /** `typing` is non-persistent metadata: it may only join an existing undo group. */
   apply(edit: StoryboardEditV1, typing?: { group: string }): ResultV1<ProjectEditResultV1>;
+  /** Private installation of a verified durable Pending append, never a public board command. */
+  insertParkedShots(before: ProjectV1, after: ProjectV1): ResultV1<ProjectEditResultV1>;
   undo(): ResultV1<ProjectEditResultV1>;
   redo(): ResultV1<ProjectEditResultV1>;
   undoDepth(): number;
@@ -95,6 +98,15 @@ export function createProjectHistory(project: ProjectV1, options: ProjectHistory
       serial = state.revision;
       typingGroup = !backwards && key !== null && at !== null && token !== null ? { key, token, at } : null;
       return ok(copy(applied.value));
+    },
+    insertParkedShots: (before, after) => {
+      if (!same(state, before)) return fail('conflict', 'Pending append baseline changed');
+      const result = pendingAddEdit(before, after);
+      if (!result.ok) return result;
+      push(undoStack, state);
+      redoStack.length = 0; typingGroup = null;
+      state = copy(after); serial = state.revision;
+      return result;
     },
     undo: () => { typingGroup = null; return restore(undoStack, redoStack); },
     redo: () => { typingGroup = null; return restore(redoStack, undoStack); },

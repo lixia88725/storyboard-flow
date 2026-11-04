@@ -41,6 +41,10 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
     const value: unknown = copy(input);
     if (!record(value)) return failure('invalid-input', 'Request must be an object');
     switch (value.kind) {
+      case 'pendingAdd':
+        if (shape(value, ['kind','mode','operationId']) && (value.mode === 'files' || value.mode === 'folder') && id(value.operationId))
+          return {ok:true, value:{kind:'pendingAdd', mode:value.mode, operationId:value.operationId}};
+        break;
       case 'newLayer':
         if (shape(value, ['kind','shotId','layerId'], ['afterId']) && id(value.shotId) && id(value.layerId) &&
             (!Object.hasOwn(value,'afterId') || id(value.afterId))) return {ok:true,value:value as FlowSessionRequest};

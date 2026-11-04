@@ -1,3 +1,4 @@
+import {pendingAddEdit} from './pendingAdd';
 import { toolPlan, adoptTool } from './pixelTools';
 import type { FlowPixelToolOutput } from '../../platform/contracts/flowWave2';
 import type {
@@ -65,6 +66,11 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
   const listeners = new Set<() => void>(), queue: Task[] = [];
   const detached = new Set<Promise<void>>();
   let running = false, painting = false, refreshRecovery = false;
+  const pendingAdd = options.pendingAdd?.bind(options);
+  let recovery: {mode:'files'|'folder'; operationId:string} | undefined;
+  const pendingBlocked = (request: FlowSessionRequest) => recovery &&
+    !(request.kind === 'pendingAdd' && request.mode === recovery.mode && request.operationId === recovery.operationId);
+  const retryPending = () => failure<never>('busy', 'Retry the unfinished Pending addition before continuing', 'retained');
   const refresh = options.refresh?.bind(options);
   let freezePromise: Promise<FlowResult<FlowSessionOutcome>> | null = null;
   const current = (): ProjectV1 => {
@@ -76,7 +82,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
     const latestError = !checkpointError ? operationError : !operationError ? checkpointError :
       checkpointError.serial > operationError.serial ? checkpointError : operationError;
     return { sessionId, incarnation, project: current(), phase, pending,
-      checkpoint: copy(checkpointState), lastError: latestError ? copy(latestError.error) : null };
+      ...(recovery ? {pendingAddRecovery:copy(recovery)} : {}), checkpoint: copy(checkpointState), lastError: latestError ? copy(latestError.error) : null };
   };
   const notify = () => {
     for (const listener of [...listeners]) {
@@ -352,8 +358,50 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
     return result.ok ? result : { ok: false, error: { ...result.error, effect: 'retained' } };
   };
   const execute = async (request: FlowSessionRequest): Promise<FlowResult<boolean>> => {
+    if (pendingBlocked(request)) { if (request.kind === 'freeze') phase='active'; return retryPending(); }
     if(refreshRecovery&&request.kind!=='refresh'){if(request.kind==='freeze')phase='active';return failure('busy','Retry Refresh to finish the retained operation','retained');}
     switch (request.kind) {
+      case 'pendingAdd': {
+        if (!pendingAdd) return failure('unavailable','Pending import is not connected');
+        const recover = !!recovery, {mode, operationId} = request;
+        if (!recover) {
+          await Promise.all([...detached]);
+          const flushed = await flush();
+          if (!flushed.ok) return flushed;
+        }
+        const before = current();
+        // Once the dependency is invoked an exception, malformed response or failed
+        // adoption can follow a durable publication; only the same operation may retry.
+        try {
+          const added = dependencyResult(await pendingAdd(copy(before), {mode, operationId, recover}), 'unknown');
+          if (!added.ok) {
+            if (recover || added.error.effect === 'unknown') {
+              recovery = {mode, operationId};
+              return {...added, error:{...added.error, effect:'unknown'}};
+            }
+            return added;
+          }
+          recovery = {mode, operationId};
+          const plan = pendingAddEdit(before, added.value);
+          if (!plan.ok) return {...plan, error:{...plan.error, effect:'unknown'}};
+          const accepted = plan.value.after;
+          const assets = new Set(plan.value.changes.imageIds.flatMap(id => accepted.images[id].layers.map(l => l.assetId)));
+          for (const id of assets) {
+            const asset = dependencyResult(await read(id), 'unknown');
+            if (!asset.ok) return {...asset, error:{...asset.error, effect:'unknown'}};
+            if (!(asset.value instanceof Uint8Array) || !asset.value.length)
+              return failure('missing-asset', 'Added Pending asset unavailable', 'unknown');
+          }
+          const applied = history.insertParkedShots(before, accepted);
+          if (!applied.ok) return {...applied, error:{...applied.error, effect:'unknown'}};
+          recovery = undefined;
+          if (recover) operationError = null;
+          return installed(applied);
+        } catch (error) {
+          recovery = {mode, operationId};
+          return unexpected(error, 'unknown');
+        }
+      }
       case 'refresh': {
         if (!refresh) return failure('unavailable','External refresh is not connected');
         if (!refreshRecovery) { const flushed=await flush(); if(!flushed.ok)return flushed; }
@@ -433,6 +481,7 @@ function session(options: FlowSessionOptions, history: ProjectHistoryV1): FlowSe
       const parsed = snapshotRequest(input);
       if (!parsed.ok) return Promise.resolve(parsed);
       const request = parsed.value;
+      if (pendingBlocked(request)) return Promise.resolve(retryPending());
       if(refreshRecovery && request.kind!=='refresh')return Promise.resolve(failure('busy','Retry Refresh to finish the retained operation','retained'));
       if (request.kind === 'freeze' && freezePromise) return freezePromise;
       if (request.kind === 'freeze' && phase === 'frozen') return Promise.resolve({ ok: true, value: { snapshot: snapshot(), changed: false } });

@@ -64,7 +64,9 @@ export type FlowBoardCommand =
   /** Preserve existing dialogue order; beforeId is an unselected dialogue on the active target, or omit to append. */
   | { kind: 'moveDialogues'; dialogueIds: string[]; targetShotId: string; beforeId?: string };
 export type FlowLayerEdit = Exclude<ImageEditV1, { kind: 'replacePixels' }>;
+export type FlowPendingAdd = { mode: 'files' | 'folder'; operationId: string };
 export type FlowSessionRequest =
+  | ({ kind: 'pendingAdd' } & FlowPendingAdd)
   | { kind: 'newLayer'; shotId: string; layerId: string; afterId?: string }
   | { kind: 'newShot'; shotId: string; imageId: string; width: number; height: number; afterId?: string }
   | { kind: 'board'; command: FlowBoardCommand }
@@ -79,6 +81,8 @@ export type FlowCheckpointState = {
 export type FlowSessionSnapshot = {
   sessionId: string; incarnation: string; project: ProjectV1;
   phase: 'active' | 'freezing' | 'frozen'; pending: number;
+  /** Retry this exact operation to reconcile its durable intent before other work. */
+  pendingAddRecovery?: FlowPendingAdd;
   checkpoint: FlowCheckpointState | null; lastError: FlowFailure | null;
 };
 export type FlowSessionOutcome = { snapshot: FlowSessionSnapshot; changed: boolean };
@@ -96,6 +100,7 @@ export type FlowClock = {
 export type FlowSessionOptions = {
   sessionId: string; incarnation: string; project: ProjectV1; maxHistoryEntries: number;
   maxPendingRequests: number; assets: FlowAssetDepot; pixels: FlowPixels; tools?: FlowPixelTools; clock: FlowClock;
+  pendingAdd?(before: ProjectV1, request: FlowPendingAdd & { recover: boolean }): Promise<FlowResult<ProjectV1>>;
   refresh?(project: ProjectV1): Promise<FlowResult<ProjectV1>>;
   checkpoint(project: ProjectV1, readAsset: AssetReaderV1): Promise<ResultV1<CheckpointReceiptV1>>;
 };

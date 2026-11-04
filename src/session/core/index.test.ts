@@ -1086,3 +1086,83 @@ describe('stroke contract', () => {
     expect(request(patch as Record<string, unknown>)).toMatchObject({ ok: false, error: { code: 'invalid-input' } });
   });
 });
+
+describe('durable Pending batch admission', () => {
+  const add = {kind:'pendingAdd', mode:'files', operationId:'import_1'} as const;
+  function appended(before: ProjectV1) {
+    const next = structuredClone(before);
+    for (const n of ['1','2']) {
+      const imageId = 'new_image_'+n, shotId = 'new_shot_'+n;
+      next.images[imageId] = {...structuredClone(before.images.i_a), id:imageId};
+      next.parkedShots.push({id:shotId,imageId,name:n,scriptText:''});
+      next.dialogues.push({id:'new_line_'+n,shotId,text:'line'});
+    }
+    next.revision++;
+    return next;
+  }
+  it('flushes the edited baseline before Main, installs its exact revision, undoes/redoes the whole batch', async () => {
+    const gate = deferred<FlowResult<ProjectV1>>();
+    const h = setup({pendingAdd:vi.fn(async (before, options) => {
+      expect(options).toEqual({mode:'files',operationId:'import_1',recover:false});
+      expect(h.saved.at(-1)).toEqual(before);
+      return gate.promise;
+    })});
+    await success(h.session.request(text('先暂存这个修改')));
+    const before = h.session.snapshot().project, after = appended(before);
+    const sent = h.session.request(add);
+    const undo = h.session.request({kind:'undo'});
+    await ticks();
+    expect(h.session.snapshot().project).toEqual(before);
+    gate.resolve({ok:true,value:after});
+    expect((await success(sent)).snapshot.project).toEqual(after);
+    expect((await success(undo)).snapshot.project).toEqual({...before,revision:after.revision+1});
+    expect((await success(h.session.request({kind:'redo'}))).snapshot.project).toEqual({...after,revision:after.revision+2});
+  });
+  it('keeps the editor usable after cancellation before intent; rejects path injection', async () => {
+    const picker = vi.fn(async () => error('unavailable','cancelled'));
+    const h = setup({pendingAdd:picker});
+    expect(snapshotRequest({...add, files:['/private/source']})).toMatchObject({ok:false});
+    expect(snapshotRequest({...add, operationId:'/bad/id'})).toMatchObject({ok:false});
+    expect(await h.session.request(add)).toMatchObject({ok:false,error:{effect:'none'}});
+    expect(h.session.snapshot().pendingAddRecovery).toBeUndefined();
+    expect(await h.session.request({kind:'undo'})).toMatchObject({ok:false,error:{code:'not-found'}});
+    await success(h.session.request(text('next')));
+  });
+  it('blocks already queued writes and freeze after an unknown result; recovery flushes nothing and installs once', async () => {
+    const gate = deferred<FlowResult<ProjectV1>>(), modes:boolean[]=[];
+    const h = setup({pendingAdd:async (before, r) => {
+      modes.push(r.recover);
+      if (modes.length === 1) return gate.promise;
+      if (modes.length === 2) return error('io-failure','still unresolved','none');
+      return {ok:true,value:appended(before)};
+    }});
+    const sent=h.session.request(add), queued=h.session.request(text('must not publish')), freeze=h.session.request({kind:'freeze'});
+    gate.resolve(error('io-failure','reply lost','unknown'));
+    expect(await sent).toMatchObject({ok:false,error:{effect:'unknown'}});
+    for(const result of [await queued, await freeze, await h.session.request({kind:'checkpoint'}),
+      await h.session.request({...add,operationId:'other'}), await h.session.request({...add,mode:'folder'})])
+      expect(result).toMatchObject({ok:false,error:{code:'busy'}});
+    expect(h.session.snapshot()).toMatchObject({phase:'active',pendingAddRecovery:{operationId:'import_1'}});
+    expect(await h.session.request(add)).toMatchObject({ok:false,error:{effect:'unknown'}});
+    const recovered=await success(h.session.request(add));
+    expect(recovered.snapshot.project).toEqual(appended(project()));
+    expect(recovered.snapshot.pendingAddRecovery).toBeUndefined();
+    expect(modes).toEqual([false,true,true]); expect(h.saved).toEqual([project()]);
+  });
+  it.each(['rename','active','old image','extra image','dialogue owner','missing asset'] as const)(
+    'refuses an untrustworthy durable result (%s) and retains the original session for recovery', async why => {
+    const h=setup({pendingAdd:async before=>{
+      const after=appended(before);
+      if (why==='rename') after.name='changed';
+      if (why==='active') after.shots.reverse();
+      if (why==='old image') after.images.i_a.layers[0].name='changed';
+      if (why==='extra image') after.images.extra={...after.images.i_a,id:'extra'};
+      if (why==='dialogue owner') after.dialogues[0].shotId='a';
+      if (why==='missing asset') after.images.new_image_1.layers[0].assetId='f'.repeat(64);
+      return {ok:true,value:after};
+    }});
+    expect(await h.session.request(add)).toMatchObject({ok:false,error:{effect:'unknown'}});
+    expect(h.session.snapshot().project).toEqual(project());
+    expect(await h.session.request({kind:'undo'})).toMatchObject({ok:false,error:{code:'busy'}});
+  });
+});
