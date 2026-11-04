@@ -84,3 +84,21 @@ describe("brush preferences", () => {
     expect(preferences.pressure).toBe(false);
   });
 });
+
+describe("brush size shortcuts", () => {
+  it("maps [ and ] to one step and ignores modified or typing keys", async () => {
+    const { brushSizeShortcutDelta, nextBrushSize } = await import("./brushPanel");
+    expect(brushSizeShortcutDelta({ key: "[" })).toBe(-1);
+    expect(brushSizeShortcutDelta({ key: "]" })).toBe(1);
+    expect(brushSizeShortcutDelta({ key: "[", metaKey: true })).toBeUndefined();
+    expect(brushSizeShortcutDelta({ key: "[", isComposing: true })).toBeUndefined();
+    expect(brushSizeShortcutDelta({ key: "[", target: { tagName: "INPUT" } as unknown as EventTarget })).toBeUndefined();
+    expect(brushSizeShortcutDelta({ key: "[", target: { tagName: "TEXTAREA" } as unknown as EventTarget })).toBeUndefined();
+    expect(brushSizeShortcutDelta({ key: "a" })).toBeUndefined();
+    expect(nextBrushSize(1, -1)).toBe(1);
+    expect(nextBrushSize(9, 1)).toBe(10);
+    expect(nextBrushSize(39, 1)).toBe(41);
+    expect(nextBrushSize(99, 1)).toBe(104);
+    expect(nextBrushSize(240, 1)).toBe(240);
+  });
+});

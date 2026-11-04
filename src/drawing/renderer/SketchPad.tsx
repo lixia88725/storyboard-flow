@@ -240,6 +240,10 @@ export type SketchPadProps = {
   brush?: StrokeBrush;
   /** Same for the eraser preset. */
   eraserBrush?: StrokeBrush;
+  /** Global pressure switch; when off, every sample is treated as full pressure. */
+  pressureEnabled?: boolean;
+  /** Right-click on a drawable surface asks the host to open the brush panel. */
+  onOpenBrushPanel?: (anchor: { x: number; y: number }) => void;
   onionSkinPreviousShot?: Shot;
   onionSkinNextShot?: Shot;
   onionSkinPreviousRevision?: number;
@@ -279,6 +283,8 @@ export const SketchPad = memo(({
   eraserSoftness,
   brush,
   eraserBrush,
+  pressureEnabled = true,
+  onOpenBrushPanel,
   onionSkinPreviousShot,
   onionSkinNextShot,
   onionSkinPreviousRevision = 0,
@@ -1017,7 +1023,7 @@ export const SketchPad = memo(({
    * behave exactly like a full-pressure tap, so they resolve to 1 instead of half ink.
    */
   const pressureOf = (pointerEvent: globalThis.PointerEvent): number => {
-    if (pointerEvent.pointerType !== "pen") {
+    if (!pressureEnabled || pointerEvent.pointerType !== "pen") {
       return 1;
     }
     const value = pointerEvent.pressure;
@@ -1088,6 +1094,10 @@ export const SketchPad = memo(({
   const createStroke = (strokeTool: StrokeTool, position: Point, pressure = 1): SketchStroke => {
     const toolSize = strokeTool === "eraser" ? eraserSize : brushSize;
     const canvasScale = canvasSize.width / sketchCanvasSize.width;
+    const preset = strokeTool === "eraser" ? eraserBrush : brush;
+    // Fresh seed per stroke: grain differs between strokes, but the whole stroke — and
+    // therefore its preview and its committed pixels — uses one seed.
+    const seed = (Math.random() * 0xffffffff) >>> 0;
     return {
       id: crypto.randomUUID(),
       tool: strokeTool,
@@ -1096,12 +1106,7 @@ export const SketchPad = memo(({
       size: toolSize * canvasScale,
       softness: strokeTool === "eraser" ? eraserSoftness : brushSoftness,
       points: [position.x, position.y],
-      // A fresh seed per stroke keeps grain varied between strokes while staying
-      // reproducible inside one stroke, which is what preview/commit parity needs.
-      ...(strokeTool === "eraser"
-        ? eraserBrush ? { brush: eraserBrush } : {}
-        : brush ? { brush } : {}),
-      ...((strokeTool === "eraser" ? eraserBrush : brush) ? { pressures: [pressure] } : {})
+      ...(preset ? { brush: { ...preset, seed }, pressures: [pressure] } : {})
     };
   };
 
@@ -1532,7 +1537,14 @@ export const SketchPad = memo(({
         onPointerCancel={hideBrushCursorPreview}
         onDragOver={handleFillDragOver}
         onDrop={handleFillDrop}
-      >
+        onContextMenu={(event) => {
+          if (!onOpenBrushPanel) return;
+          // Right-click opens the panel and never becomes part of a stroke.
+          event.preventDefault();
+          event.stopPropagation();
+          onOpenBrushPanel({ x: event.clientX, y: event.clientY });
+        }}
+        >
         {bitmapLayers.length === 0 ? <img src={imageSrc} alt={shot.fileName} draggable={false} /> : null}
         {bitmapLayers
           .filter((layer) => layer.visible)

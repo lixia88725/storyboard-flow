@@ -13,6 +13,8 @@ import { toolPlan } from '../../session/core/pixelTools';
 import { createPixelTools, createFlowPixels } from '../../drawing/renderer';
 import { MediaSourceContext, type MediaSource } from '../../drawing/renderer/mediaSource';
 import { SketchPad } from '../../drawing/renderer/SketchPad';
+import { BrushPanel, brushSizeShortcutDelta, nextBrushSize } from '../../drawing/renderer/brushPanel';
+import { preferenceFor, readBrushPreferences, strokeBrushFor, withPreference, writeBrushPreferences } from '../../drawing/renderer/brushPresets';
 import { LayerPanel } from '../../drawing/renderer/LayerPanel';
 import {DialogueBlocks} from '../../storyboard/renderer/dialogueBlocks';
 import {createDialogueCommitState, type DialogueCommitState, type DialogueEditState} from '../../storyboard/renderer/dialogueCommitState';
@@ -170,7 +172,28 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     if(layerId && points)pixelSelections.current[`${shotId}/${layerId}`]=points.map(p=>({...p}));
   },[]);
   const [blurRadius,setBlurRadius]=useState(8);
-  const [size, setSize] = useState(20);
+  // Brush preferences are a tool preference of this machine's user: they never enter the
+  // project, and each preset keeps its own size and opacity.
+  const [brushPreferences, setBrushPreferences] = useState(readBrushPreferences);
+  const [brushPanel, setBrushPanel] = useState<{x:number;y:number}|undefined>();
+  useEffect(()=>{ writeBrushPreferences(brushPreferences); },[brushPreferences]);
+  // The rail's size field always edits the preset the current tool is using.
+  const activePresetId = tool==='eraser' ? brushPreferences.eraser : brushPreferences.brush;
+  const activePresetValue = preferenceFor(brushPreferences, activePresetId);
+  const setActiveSize = (size:number)=>setBrushPreferences(p=>withPreference(p, tool==='eraser'?p.eraser:p.brush, {size}));
+  useEffect(()=>{
+    const onKey=(event:KeyboardEvent)=>{
+      const delta=brushSizeShortcutDelta(event);
+      if(delta===undefined)return;
+      event.preventDefault();
+      setBrushPreferences(p=>{
+        const id=tool==='eraser'?p.eraser:p.brush;
+        return withPreference(p,id,{size:nextBrushSize(preferenceFor(p,id).size,delta)});
+      });
+    };
+    window.addEventListener('keydown',onKey);
+    return ()=>window.removeEventListener('keydown',onKey);
+  },[tool]);
   const [opacityPreview, setOpacityPreview] = useState<Record<string, number>>({});
   const [urls, setUrls] = useState<Record<string, string>>({});
   const disposed = useRef(false);
@@ -455,17 +478,28 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
         [...brushQueue.current.values()].every(key=>key===JSON.stringify([shot.id,shot.activeLayerId]))} demand={requestAssets} move={moveShots} remove={deletePending} renderLayers={renderLayers}
       holdShots={dialogueHoldShots}
       renderInfo={(shot,allowDialogueDrag=false)=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText} disabled={!active} onChange={e=>script(shot.id,e.target.value)}/></label>{renderDialogue(shot.id,false,allowDialogueDrag)}</div>}
-      renderCanvas={(shot,previous,next)=><SketchPad respectActiveLayer key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color} brushSize={size} brushOpacity={1} brushSoftness={0} eraserSize={size} eraserOpacity={1} eraserSoftness={0} isZoomScrubbing={false}
+      renderCanvas={(shot,previous,next)=><SketchPad respectActiveLayer key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color}
+        brushSize={preferenceFor(brushPreferences, brushPreferences.brush).size}
+        brushOpacity={preferenceFor(brushPreferences, brushPreferences.brush).opacity}
+        eraserSize={preferenceFor(brushPreferences, brushPreferences.eraser).size}
+        eraserOpacity={preferenceFor(brushPreferences, brushPreferences.eraser).opacity}
+        brushSoftness={0} eraserSoftness={0}
+        brush={strokeBrushFor(brushPreferences.brush, 1)} eraserBrush={strokeBrushFor(brushPreferences.eraser, 1)}
+        pressureEnabled={brushPreferences.pressure}
+        onOpenBrushPanel={canStartCanvasEdit()?setBrushPanel:undefined}
+        isZoomScrubbing={false}
         onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
         onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
       actions={<><button disabled={!active} onClick={()=>openProject()}>打开</button><button disabled={!active} onClick={()=>setNamingOpen(true)}>命名</button><button disabled={!active||savingTiff} className="wb-save" onClick={()=>{void saveTiff().catch(()=>{});}}>{savingTiff?'保存中…':'保存'}</button><button disabled={!active} className="wb-refresh" data-external={folderStatus.state==='external'||folderStatus.state==='both'} data-spinning={refreshing} title="从文件夹取回外部改动" aria-label="从文件夹取回外部改动" onClick={refreshImages}><RotateCw size={15} strokeWidth={1.75} aria-hidden /></button></>}
       renderDialogue={renderDialogue}
       toolbar={null}
       toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} onToolChange={setTool}
-        color={color} onColorChange={setColor} size={size} onSizeChange={setSize}
+        color={color} onColorChange={setColor} size={activePresetValue.size} onSizeChange={setActiveSize}
         blurRadius={blurRadius} onBlurRadiusChange={setBlurRadius} onApplyBlur={applyBlur}
         footer={<><button disabled={!active} onClick={()=>void historyStep('undo')}>撤销</button><button disabled={!active} onClick={()=>void historyStep('redo')}>重做</button></>}/>}
       boardActions={<><button disabled={!active} onClick={newShot}>＋ 新建板</button><button disabled={!active||!selectedIds.length} onClick={()=>moveShots(selectedIds,'pending')}>移入 Pending</button><button disabled={!active||!selectedIds.length} onClick={()=>removeActiveShots(selectedIds)}>删除{selectedIds.length>1?` (${selectedIds.length})`:''}</button></>}/>
+    {brushPanel && <BrushPanel tool={tool==='eraser'?'eraser':'brush'} preferences={brushPreferences}
+      disabled={!active} anchor={brushPanel} onChange={setBrushPreferences} onClose={()=>setBrushPanel(undefined)}/>}
     {folderStatus.recovery && <aside className="wb-recovery" aria-label="文件恢复">
       <strong>上次保存中断 · {folderStatus.recovery.name}</strong>
       {folderStatus.recovery.state === 'restore' && <p>Flow 无法确认这张故事板是否已移入废纸篓。请在系统废纸篓中找到原文件，选择“放回”或“还原”。还原位置是项目内的 <code>{folderStatus.recovery.directory}</code>。切回 Flow 后会重新检查。若找不到原文件，请保留整个项目文件夹以便恢复。</p>}
