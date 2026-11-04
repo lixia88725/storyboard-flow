@@ -123,6 +123,36 @@ describe('project launcher recent targets', () => {
     expect(state.recent).toHaveLength(2);
   });
 
+  it('removes and relocates a recent target without changing its project identity', async () => {
+    const { launcher, userData } = await fixture();
+    const first = await projectFolder();
+    const second = await projectFolder();
+    await launcher.openRoot(first);
+    const id = (await launcher.state()).recent[0].id;
+    await launcher.relocate(id, second, 'project-a', '移动后');
+    const relocated = (await launcher.state()).recent[0];
+    expect(relocated).toMatchObject({ id, name: '移动后', available: true });
+    expect((await launcher.recentProject(id))).toEqual({ projectId: 'project-a', name: '移动后' });
+    await launcher.forget(id);
+    expect((await launcher.state()).recent).toEqual([]);
+    expect(JSON.parse(await readFile(path.join(userData, 'recent-projects.json'), 'utf8')).projects).toEqual([]);
+  });
+
+  it('refuses a relocation with another identity or an already recorded location', async () => {
+    const { launcher } = await fixture();
+    const first = await projectFolder();
+    const second = await projectFolder();
+    await launcher.openRoot(first);
+    await launcher.openRoot(second);
+    const entries = (await launcher.state()).recent;
+    const firstEntry = entries[1], secondEntry = entries[0];
+    const firstProject = await launcher.recentProject(firstEntry.id);
+    if (!firstProject) throw Error('missing recent project');
+    await expect(launcher.relocate(firstEntry.id, second, firstProject.projectId, 'x')).rejects.toThrow('已经在最近项目');
+    await expect(launcher.relocate(firstEntry.id, second, 'another-project', 'x')).rejects.toThrow('不一致');
+    void secondEntry;
+  });
+
   it('ignores malformed recent records and drops entries without an identity', async () => {
     const { launcher, userData } = await fixture();
     await writeFile(path.join(userData, 'recent-projects.json'), JSON.stringify({ version: 1, projects: [

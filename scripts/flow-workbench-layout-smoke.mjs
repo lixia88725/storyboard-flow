@@ -226,10 +226,10 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
  await js('document.querySelector(\'[aria-label="隐藏Pending"]\').click()');
  assert.equal(await js('!!document.querySelector(\'[data-panel="pending"]\')'),false);
  assert.equal(await js('Array.from(document.querySelectorAll("button")).some(b=>b.textContent==="显示Pending")'),false);
- await js('document.querySelector(".wb-header summary").click()');
+ await js('document.querySelector(".wb-header .wb-panel-menu summary").click()');
  assert.equal(await js('document.querySelector("[data-panel-toggle=pending]").checked'),false);
  await js('document.querySelector("[data-panel-toggle=pending]").click()');
- await js('document.querySelector(".wb-header summary").click()');
+ await js('document.querySelector(".wb-header .wb-panel-menu summary").click()');
  assert.equal(await js('!!document.querySelector(\'[data-panel="pending"]\')'),true);
  assert.equal(await js('getComputedStyle(document.querySelector(".layer-toggle")).display'),'none');
  assert.equal(await js('!!document.querySelector(".wb-board-actions button")'),true);
@@ -261,7 +261,7 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
  await js('document.querySelector(\'[aria-label="动作说明 shot2"]\').dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}))');assert.equal(await current(),'shot2');
  const revision=read().revision;
  await js('document.querySelector(\'[aria-label="隐藏图层"]\').click()');assert.equal(await js('!!document.querySelector(\'[data-panel="layers"]\')'),false);
- await js('document.querySelector(".wb-header summary").click()');await button('恢复默认布局');assert.equal(await js('!!document.querySelector(\'[data-panel="layers"]\')'),true);
+ await js('document.querySelector(".wb-header .wb-panel-menu summary").click()');await button('恢复默认布局');assert.equal(await js('!!document.querySelector(\'[data-panel="layers"]\')'),true);
  // Panel docking is metadata-free native drag/drop; the board ordering uses a separate drag type.
  await js('(()=>{const d=new DataTransfer();d.setData("application/x-flow-panel","info");document.querySelector(".wb-column").dispatchEvent(new DragEvent("drop",{bubbles:true,dataTransfer:d}))})()');
  assert.equal(await js('document.querySelector(".wb-column").querySelectorAll(\'[data-panel="info"]\').length'),1);
@@ -353,7 +353,7 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
    await button('保存');await wait(()=>js('document.querySelector(".wb-recovery")?.textContent.includes("放回")'),'actionable recovery');
 
  }
- await js('document.querySelector(".wb-header details").open=false');await delay(400);
+ await js('document.querySelector(".wb-header .wb-panel-menu").open=false');await delay(400);
  await wait(()=>js('Array.from(document.querySelectorAll(".wb-card")).slice(0,3).every(e=>e.querySelector("img")?.naturalWidth>0)'), 'visible cards remain rendered after reorder');
  const metrics=await js('({canvases:document.querySelectorAll(".stage-overlay").length,rasterImages:document.querySelectorAll(".wb-grid img").length,cards:document.querySelectorAll(".wb-card").length,heap:performance.memory?.usedJSHeapSize})');
  fs.writeFileSync(${JSON.stringify(path.join(run,phase+'-metrics.json'))},JSON.stringify({openingMs,readAssets:reads.size,...metrics}));

@@ -3,9 +3,10 @@ import type { FlowRecentProject } from '../../platform/contracts/flowEditor';
 /** First window with no project: every action here opens or creates a real target.
  * A recent entry that no longer resolves is shown as unavailable instead of being
  * silently treated as another project. */
-export function ProjectLauncher({ recent, busy, message, onCreate, onOpen, onOpenRecent }: {
+export function ProjectLauncher({ recent, busy, message, onCreate, onOpen, onOpenRecent, onRemoveRecent, onRelocateRecent }: {
   recent: FlowRecentProject[]; busy: boolean; message: string;
   onCreate: () => void; onOpen: () => void; onOpenRecent: (id: string) => void;
+  onRemoveRecent: (id: string) => Promise<void>; onRelocateRecent: (id: string) => Promise<void>;
 }) {
   return <main className="flow-launcher" data-project-launcher="true">
     <section className="launcher-card" aria-label="项目入口">
@@ -21,12 +22,16 @@ export function ProjectLauncher({ recent, busy, message, onCreate, onOpen, onOpe
       <section className="launcher-recent" aria-label="最近项目">
         <h2>最近项目</h2>
         {recent.length
-          ? <ul>{recent.map(project => <li key={project.id}>
-              <button disabled={busy || !project.available} title={project.available ? project.name : '文件夹已不可用'}
-                onClick={() => onOpenRecent(project.id)}>
-                <span>{project.name}</span>
-                {!project.available && <small>不可用</small>}
-              </button>
+          ? <ul>{recent.map(project => <li key={project.id} data-recent-project={project.id} data-recent-available={project.available || undefined}>
+              {project.available
+                ? <button disabled={busy} title={project.name} onClick={() => onOpenRecent(project.id)}><span>{project.name}</span></button>
+                : <div className="launcher-recent-missing">
+                    <span>{project.name}<small>不可用</small></span>
+                    <div>
+                      <button disabled={busy} onClick={() => void onRelocateRecent(project.id)}>重新定位…</button>
+                      <button disabled={busy} onClick={() => void onRemoveRecent(project.id)}>移除</button>
+                    </div>
+                  </div>}
             </li>)}</ul>
           : <p>还没有打开过项目。</p>}
       </section>

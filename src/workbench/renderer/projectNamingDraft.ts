@@ -19,3 +19,7 @@ export const sameNamingDraft = (left: NamingDraft, right: NamingDraft): boolean 
 /** Publication-boundary validation: typing may hold an invalid value while the project
  * continues to autosave, but explicit output waits for a valid name. */
 export const namingDraftIssue = (draft: NamingDraft): string | null => namingIssue(draft.name, draft.naming);
+
+/** A late reply may be adopted only when the local draft is clean and no commit is
+ * queued or running. Dirty text always wins over an older project snapshot. */
+export const shouldAdoptIncomingNaming = (dirty: boolean, queued: number): boolean => !dirty && queued === 0;

@@ -104,6 +104,19 @@ export function FlowEditor() {
       setCurrentRecentId(state.currentId);
     } catch { /* keep the last known list */ }
   };
+  const removeRecent = async (id: string) => {
+    try { await window.flowEditor!.removeRecent(id); await refreshRecent(); }
+    catch (error) { setIssue(String(error)); }
+  };
+  const relocateRecent = async (id: string) => {
+    try {
+      const result = await window.flowEditor!.relocateRecent(id);
+      if ('canceled' in result) return;
+      if (!result.ok) { setIssue(result.message); return; }
+      setIssue('');
+      await refreshRecent();
+    } catch (error) { setIssue(String(error)); }
+  };
   const resume = async (owner: EditorOwner) => {
     if (owner.flow.snapshot().phase === 'frozen') required(await owner.flow.request({ kind: 'resume' }));
   };
@@ -198,29 +211,31 @@ export function FlowEditor() {
   return owner
     ? <Editor key={owner.sessionId} flow={owner.flow} api={owner.api} folderName={owner.folderName} sessionId={owner.sessionId} openProject={openProject} switching={switching}
         issue={issue} setIssue={s => { if (current.current === owner) setIssue(s); }} gestures={gestures} outputWork={outputWork} dialogueCommits={dialogueCommits}
-        beforeTransition={beforeTransition} recent={recent} currentRecentId={currentRecentId} />
-    : <ProjectHome recent={recent} busy={launchBusy} issue={issue} launch={launch} />;
+        beforeTransition={beforeTransition} recent={recent} currentRecentId={currentRecentId} onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent} />
+    : <ProjectHome recent={recent} busy={launchBusy} issue={issue} launch={launch} onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent} />;
 }
-function ProjectHome({ recent, busy, issue, launch }: {
+function ProjectHome({ recent, busy, issue, launch, onRemoveRecent, onRelocateRecent }: {
   recent: FlowRecentProject[]; busy: boolean; issue: string;
   launch: (target: FlowProjectTarget) => Promise<TransitionResult>;
+  onRemoveRecent: (id: string) => Promise<void>; onRelocateRecent: (id: string) => Promise<void>;
 }) {
   const create = useCreateProject(launch);
   return <>
     <ProjectLauncher recent={recent} busy={busy || create.state?.phase === 'creating'} message={issue}
       onCreate={() => void create.begin()} onOpen={() => void launch({ kind: 'dialog' })}
-      onOpenRecent={id => void launch({ kind: 'recent', id })} />
+      onOpenRecent={id => void launch({ kind: 'recent', id })} onRemoveRecent={onRemoveRecent} onRelocateRecent={onRelocateRecent} />
     {create.state && <CreateProjectSheet key={create.state.draft.id} state={create.state} busy={busy}
       onChooseSource={kind => void create.chooseSource(kind)} onChooseDestination={() => void create.chooseDestination()}
       onConfirm={fields => void create.confirm(fields)} onCancel={() => void create.cancel()}
       onAbort={() => void create.abort()} onRespond={decision => void create.respond(decision)} onError={create.setError} />}
   </>;
 }
-function Editor({ flow, api, folderName, sessionId, openProject, switching, issue, setIssue, gestures, outputWork, dialogueCommits, beforeTransition, recent, currentRecentId }: {
+function Editor({ flow, api, folderName, sessionId, openProject, switching, issue, setIssue, gestures, outputWork, dialogueCommits, beforeTransition, recent, currentRecentId, onRemoveRecent, onRelocateRecent }: {
   api: ReturnType<typeof bindEditor>; folderName: string; sessionId: string; openProject: (target: FlowProjectTarget) => Promise<TransitionResult>; switching: boolean;
   outputWork: { current: Promise<void> | undefined }; flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number };
   dialogueCommits: { current: DialogueCommitState };
   beforeTransition: { current: () => Promise<void> }; recent: FlowRecentProject[]; currentRecentId: string | null;
+  onRemoveRecent: (id: string) => Promise<void>; onRelocateRecent: (id: string) => Promise<void>;
 }) {
   const [demand,setDemand]=useState<string[]>([]);
   const demandRef=useRef(demand);demandRef.current=demand;
@@ -599,12 +614,20 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
             <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void openProject({ kind: 'dialog' }); }}>打开项目…</button>
             <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void create.begin(); }}>新建项目…</button>
             <span className="wb-menu-label">最近项目</span>
-            {recent.length ? recent.map(project => <button type="button" key={project.id}
-              disabled={!active || switching || !project.available || project.id === currentRecentId}
-              title={!project.available ? '文件夹已不可用' : project.id === currentRecentId ? '当前项目' : project.name}
-              onClick={event => { closeMenu(event); void openProject({ kind: 'recent', id: project.id }); }}>
-              {project.name}{project.id === currentRecentId ? ' · 当前' : !project.available ? ' · 不可用' : ''}
-            </button>) : <span className="wb-menu-empty">还没有最近项目</span>}
+            {recent.length ? recent.map(project => project.available
+              ? <button type="button" key={project.id} data-recent-project={project.id}
+                  disabled={!active || switching || project.id === currentRecentId}
+                  title={project.id === currentRecentId ? '当前项目' : project.name}
+                  onClick={event => { closeMenu(event); void openProject({ kind: 'recent', id: project.id }); }}>
+                  {project.name}{project.id === currentRecentId ? ' · 当前' : ''}
+                </button>
+              : <div className="wb-menu-missing" key={project.id} data-recent-project={project.id}>
+                  <span>{project.name} · 不可用</span>
+                  <div>
+                    <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void onRelocateRecent(project.id); }}>重新定位…</button>
+                    <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void onRemoveRecent(project.id); }}>移除</button>
+                  </div>
+                </div>) : <span className="wb-menu-empty">还没有最近项目</span>}
           </div>
         </details>
         <button disabled={!active || savingTiff || Boolean(naming.issue) || naming.composing} className="wb-save" onClick={() => { void saveTiff().catch(() => {}); }}>{savingTiff?'保存中…':'保存'}</button>

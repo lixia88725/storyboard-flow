@@ -9,6 +9,7 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createFlowWorkspace, type FlowWorkspaceTarget } from '../../project-files/main/flowWorkspace.js';
 import { openFlowEditorRuntime } from '../../project-files/main/flowEditorRuntime.js';
+import { createProjectStore } from '../../project-files/main/persistence/index.js';
 import type { FlowCreatePatch, FlowEditorBootstrap, FlowPendingBridgeRequest, FlowProjectTarget } from '../contracts/flowEditor.js';
 import type { CreateImageProject, CreateImageProjectIssue } from '../contracts/flowProjectCreation.js';
 import type { FlowResult } from '../contracts/flowWave2.js';
@@ -206,6 +207,30 @@ else app.whenReady().then(async () => {
     caller(event);
     const state = await launcher.state();
     return { ...state, open: Boolean(workspace), currentId: currentRoot ? await launcher.idFor(currentRoot) : null };
+  });
+  ipcMain.handle('flow-editor:remove-recent', async (event, id: string) => {
+    caller(event);
+    if (typeof id !== 'string' || !id) throw Error('Invalid recent project id');
+    await launcher.forget(id);
+  });
+  ipcMain.handle('flow-editor:relocate-recent', async (event, id: string) => {
+    caller(event);
+    if (typeof id !== 'string' || !id) return { ok: false as const, message: '最近项目记录无效' };
+    const entry = await launcher.recentProject(id);
+    if (!entry) return { ok: false as const, message: '这条最近项目记录已不存在' };
+    const selection = await dialog.showOpenDialog(win, { title: '重新定位最近项目', buttonLabel: '选择', properties: ['openDirectory'] });
+    if (selection.canceled) return { canceled: true as const };
+    try {
+      const root = await fs.realpath(selection.filePaths[0]);
+      const loaded = await createProjectStore().loadCheckpoint(root);
+      if (!loaded.ok) return { ok: false as const, message: '所选文件夹不是可用的 Flow 项目' };
+      if (loaded.value.project.id !== entry.projectId)
+        return { ok: false as const, message: '这个文件夹里的项目与最近记录不一致' };
+      await launcher.relocate(id, root, entry.projectId, loaded.value.project.name);
+      return { ok: true as const };
+    } catch (error) {
+      return { ok: false as const, message: error instanceof Error ? error.message : String(error) };
+    }
   });
   ipcMain.handle('flow-editor:update-recent-name', async (event, token: string, name: string) => {
     caller(event);
