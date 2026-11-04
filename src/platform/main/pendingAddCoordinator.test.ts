@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPendingAddCoordinator, type PendingAddCoordinatorDeps, type PendingAddSource } from './pendingAddCoordinator';
+import { createPendingAddCoordinator, supportsPendingAdd, type PendingAddCoordinatorDeps, type PendingAddSource } from './pendingAddCoordinator';
 import type { ProjectV1 } from '../../platform/contracts/refactorV1';
 import type { FlowResult } from '../../platform/contracts/flowWave2';
 
@@ -25,7 +25,7 @@ function setup(overrides: Partial<PendingAddCoordinatorDeps> = {}) {
   });
   const askIssues = vi.fn(async () => 'continue' as const);
   const onProgress = vi.fn();
-  const deps: PendingAddCoordinatorDeps = { currentSessionId: () => 'session', pick, append: append as never, askIssues, onProgress, ...overrides };
+  const deps: PendingAddCoordinatorDeps = { available: () => true, currentSessionId: () => 'session', pick, append: append as never, askIssues, onProgress, ...overrides };
   return { coordinator: createPendingAddCoordinator(deps), pick, append, askIssues, onProgress };
 }
 
@@ -43,6 +43,15 @@ describe('Pending add coordinator', () => {
     expect(await coordinator.add(7, 'session', project, request('files', 'op_1', true))).toMatchObject({ ok: true });
     expect(pick).toHaveBeenCalledTimes(1);
     expect(append.mock.calls[1][2]).toEqual({ operationId: 'op_1', recover: true });
+  });
+
+  it('refuses unsupported platforms/missing backend before a picker opens', async () => {
+    expect(supportsPendingAdd('darwin', () => {})).toBe(true);
+    for (const [platform, method] of [['win32', () => {}], ['darwin', null]] as const) {
+      const {coordinator, pick, append} = setup({available: () => supportsPendingAdd(platform, method)});
+      expect(await coordinator.add(7,'session',project,request())).toMatchObject({ok:false,error:{code:'unavailable',effect:'none'}});
+      expect(pick).not.toHaveBeenCalled(); expect(append).not.toHaveBeenCalled();
+    }
   });
 
   it('returns a known cancellation without opening an append', async () => {

@@ -14,7 +14,7 @@ import type { CreateImageProject, CreateImageProjectIssue } from '../contracts/f
 import type { FlowResult } from '../contracts/flowWave2.js';
 import type { ProjectV1 } from '../contracts/refactorV1.js';
 import { createFlowProjectLauncher, isProjectCreationCanceled } from './flowProjectLauncher.js';
-import { createPendingAddCoordinator, type PendingAddSource, type PendingAppendOptions } from './pendingAddCoordinator.js';
+import { createPendingAddCoordinator, supportsPendingAdd, type PendingAddSource, type PendingAppendOptions } from './pendingAddCoordinator.js';
 
 const explicit = process.argv.slice(app.isPackaged ? 1 : 2).filter(arg => !arg.startsWith('--inspect'));
 const [requestedRoot = '--choose', suppliedUserData, compatibilityView] = explicit;
@@ -188,7 +188,9 @@ else app.whenReady().then(async () => {
       signal.addEventListener('abort', abort, { once: true });
       send('flow-editor:pending-issues', { requestId, operationId, issues: displayIssues(issues) });
     });
+  const pendingAvailable = () => supportsPendingAdd(process.platform, workspace?.appendPending);
   const pending = createPendingAddCoordinator({
+    available: pendingAvailable,
     currentSessionId,
     pick: pickPendingSource,
     append: appendPending,
@@ -255,6 +257,7 @@ else app.whenReady().then(async () => {
     }
     if (previousRoot && project) await launcher.updateName(previousRoot, project.name).catch(() => {});
     if (!bootstrap) return null;
+    pending.cancelAll(); // Previous owner is retired only after successful switch.
     currentRoot = candidateRoot;
     return withFolder(bootstrap);
   });
@@ -315,8 +318,7 @@ else app.whenReady().then(async () => {
   });
   ipcMain.handle('flow-editor:pending-capability', event => {
     caller(event);
-    const active = workspace as (ReturnType<typeof createFlowWorkspace> & PendingRuntime) | null;
-    return Boolean(active && typeof active.appendPending === 'function');
+    return pendingAvailable();
   });
   ipcMain.handle('flow-editor:pending-add', (event, token: string, project: ProjectV1, request: FlowPendingBridgeRequest) => {
     caller(event);
@@ -335,8 +337,11 @@ else app.whenReady().then(async () => {
     return true;
   });
 
+  win.once('closed', () => pending.cancelAll());
   win.on('close', event => {
-    pending.cancelAll();
+    // A veto before certification leaves this window as the writable owner.
+    // Abort the picker, but keep the operation identity available for recovery.
+    pending.abortInFlight();
     if (!workspace) {
       if (activeLaunch || [...issueRequests.keys()].length) {
         event.preventDefault();

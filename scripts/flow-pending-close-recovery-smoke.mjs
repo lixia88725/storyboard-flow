@@ -123,10 +123,10 @@ const runPhase=async()=>{
   await wait(()=>exists('[data-workbench]'),'recovery workbench');
   await wait(()=>ipcMain._invokeHandlers&&ipcMain._invokeHandlers.has('flow-editor:pending-add'),'pending handler');
   const channel='flow-editor:pending-add', original=ipcMain._invokeHandlers.get(channel);
-  let injected=false;
+  let injected=0;
   ipcMain._invokeHandlers.set(channel,async(event,...args)=>{
     const result=await original(event,...args);
-    if(!injected&&result&&result.ok){injected=true;return {ok:false,error:{code:'io-failure',message:'injected lost bridge reply after durable append',effect:'unknown'}};}
+    if(injected<2&&result&&result.ok){injected++;return {ok:false,error:{code:'io-failure',message:'injected lost bridge reply '+injected+' after durable append',effect:'unknown'}};}
     return result;
   });
   await add();
@@ -136,6 +136,17 @@ const runPhase=async()=>{
   if(picks!==1)throw Error('first add picked '+picks+' times');
   if(afterFault.pending.length!==2)throw Error('durable append missing files');
   await shot('03-recovery-error');
+  const closeChannel='flow-editor:finish-close', finish=ipcMain._invokeHandlers.get(closeChannel);
+  let vetoed=false;
+  ipcMain._invokeHandlers.set(closeChannel,async(event,...args)=>{
+    const result=await finish(event,...args);
+    if(!result.ok&&args[2]===null)vetoed=true;
+    return result;
+  });
+  win.close();
+  await wait(async()=>vetoed,'uncertain operation vetoes window close');
+  await button('重试');
+  await waitText('injected lost bridge reply 2');
   await button('重试');
   await wait(async()=>await pendingCount()===2,'recovered pending 2');
   const afterRecover={picks,count:await pendingCount(),root:rootTifs(),pending:pendingTifs()};
@@ -144,7 +155,7 @@ const runPhase=async()=>{
   if(afterRecover.count!==2)throw Error('recover duplicated Pending cards');
   if(afterRecover.root.length)throw Error('recover wrote an active TIFF');
   await shot('04-recovered');
-  return {ok:true,phase:'recovery',afterFault,afterRecover};
+  return {ok:true,phase:'recovery',afterFault,afterRecover,vetoed,lostReplies:injected};
  }
  if(plan.phase==='recovery-reopen'){
   await wait(()=>exists('[data-workbench]'),'recovery reopen workbench');

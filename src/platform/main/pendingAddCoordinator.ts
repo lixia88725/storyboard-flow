@@ -18,7 +18,11 @@ export type PendingAppend = (
   options: PendingAppendOptions
 ) => Promise<FlowResult<ProjectV1>>;
 
+export const supportsPendingAdd = (platform: NodeJS.Platform, append: unknown) =>
+  platform !== 'win32' && typeof append === 'function';
+
 export type PendingAddCoordinatorDeps = {
+  available: () => boolean;
   /** The only writable session currently owned by the window. */
   currentSessionId: () => string | null;
   pick: (mode: FlowPendingMode) => Promise<PendingAddSource | null>;
@@ -74,6 +78,7 @@ export function createPendingAddCoordinator(deps: PendingAddCoordinatorDeps) {
       if (!operation) return fail('conflict', 'No matching Pending operation', 'none');
       if (!ownerMatches(operation, owner)) return fail('conflict', 'Pending operation belongs to another owner', 'none');
     } else {
+      if (!deps.available()) return fail('unavailable', '当前平台不支持添加图片到 Pending');
       if (operation) return fail('conflict', 'Pending operation id was already used', 'none');
       operation = { owner, controller: new AbortController(), inFlight: false, retained: false };
       operations.set(operationId, operation);
@@ -109,7 +114,9 @@ export function createPendingAddCoordinator(deps: PendingAddCoordinatorDeps) {
         // Keep a successful first attempt addressable: its reply may be lost after
         // the durable append. A recover with the same owner and operation id resumes
         // that durable result; a normal reply never asks for it again.
-        if (recover) operations.delete(operationId);
+        // A retry reply can also be lost. Keep the original owner binding through
+        // retries; the runtime revalidates the durable operation each time.
+        delete operation.source;
         return result;
       }
       // A failed first attempt is a known result; a failed recover stays retryable
@@ -132,12 +139,15 @@ export function createPendingAddCoordinator(deps: PendingAddCoordinatorDeps) {
     operation.controller.abort();
   };
 
-  const cancelAll = () => {
+  const abortInFlight = () => {
     for (const operation of operations.values()) operation.controller.abort();
+  };
+  const cancelAll = () => {
+    abortInFlight();
     operations.clear();
   };
 
-  return { add, cancel, cancelAll };
+  return { add, cancel, abortInFlight, cancelAll };
 }
 
 export type PendingAddCoordinator = ReturnType<typeof createPendingAddCoordinator>;
