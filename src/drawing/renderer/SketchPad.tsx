@@ -352,6 +352,10 @@ export const SketchPad = memo(({
   // live view re-render the whole stroke each frame, so what is shown is exactly the
   // capped result that will be committed instead of an accumulating approximation.
   const liveBitmapBaseRef = useRef<{ layerId: string; pixels: ImageData } | undefined>(undefined);
+  // Which layer asset the live canvas currently reflects. A second stroke that starts
+  // before the first one's PNG echoes back must not reload the canvas from the stale
+  // asset: that would drop the pending stroke for a frame or two.
+  const liveCanvasAssetRef = useRef<{ layerId: string; assetId: string } | undefined>(undefined);
   const liveBitmapLayerIdRef = useRef<string | undefined>(undefined);
   const liveBitmapEditRunRef = useRef(0);
   const liveBitmapEditCanCommitRenderedDataUrlRef = useRef(false);
@@ -737,16 +741,26 @@ export const SketchPad = memo(({
       return;
     }
 
-    canvas.width = Math.max(1, Math.round(layer.width));
-    canvas.height = Math.max(1, Math.round(layer.height));
-    context.clearRect(0, 0, canvas.width, canvas.height);
+    const cached = liveCanvasAssetRef.current;
+    const reusable =
+      cached?.layerId === layer.id &&
+      cached.assetId === layer.bitmapPath &&
+      canvas.width === Math.max(1, Math.round(layer.width)) &&
+      canvas.height === Math.max(1, Math.round(layer.height));
 
-    const sourceUrl = layerSourceUrl(layer);
-    if (sourceUrl) {
-      await drawImageUrl(context, sourceUrl, canvas.width, canvas.height).catch(() => {
-        context.clearRect(0, 0, canvas.width, canvas.height);
-      });
+    if (!reusable) {
+      canvas.width = Math.max(1, Math.round(layer.width));
+      canvas.height = Math.max(1, Math.round(layer.height));
+      context.clearRect(0, 0, canvas.width, canvas.height);
+
+      const sourceUrl = layerSourceUrl(layer);
+      if (sourceUrl) {
+        await drawImageUrl(context, sourceUrl, canvas.width, canvas.height).catch(() => {
+          context.clearRect(0, 0, canvas.width, canvas.height);
+        });
+      }
     }
+    liveCanvasAssetRef.current = { layerId: layer.id, assetId: layer.bitmapPath };
 
     if (liveBitmapEditRunRef.current !== editRun || !draftStrokeRef.current) {
       return;
