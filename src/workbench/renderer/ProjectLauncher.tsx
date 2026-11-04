@@ -22,11 +22,13 @@ export function ProjectLauncher({ recent, busy, message, onCreate, onOpen, onOpe
       <section className="launcher-recent" aria-label="最近项目">
         <h2>最近项目</h2>
         {recent.length
-          ? <ul>{recent.map(project => <li key={project.id} data-recent-project={project.id} data-recent-available={project.available || undefined}>
+          ? <ul>{recent.map(project => <li key={project.id} data-recent-project={project.id} data-recent-available={project.available || undefined} data-recent-target={project.target}>
               {project.available
-                ? <button disabled={busy} title={project.name} onClick={() => onOpenRecent(project.id)}><span>{project.name}</span></button>
+                ? <button disabled={busy} title={project.target} onClick={() => onOpenRecent(project.id)}>
+                    <span className="launcher-recent-label"><span>{project.name}</span><small className="launcher-recent-target">{project.target}</small></span>
+                  </button>
                 : <div className="launcher-recent-missing">
-                    <span>{project.name}<small>不可用</small></span>
+                    <span className="launcher-recent-label"><span>{project.name} <small>不可用</small></span><small className="launcher-recent-target">{project.target}</small></span>
                     <div>
                       <button disabled={busy} onClick={() => void onRelocateRecent(project.id)}>重新定位…</button>
                       <button disabled={busy} onClick={() => void onRemoveRecent(project.id)}>移除</button>
