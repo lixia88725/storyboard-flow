@@ -289,7 +289,12 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
      surfaces.forEach((s,i)=>{const stage=s.querySelector('.image-stage'),r=stage.getBoundingClientRect();
        const matte=s.querySelector('[data-flow-matte], [data-flow-presentation-preview]');
        if(!matte||getComputedStyle(matte).visibility==='hidden')f.errors.push('matte hidden '+i);
-       if(stage.querySelectorAll(':scope > img').length<2)f.errors.push('layer removed '+i);
+       // A live brush substitutes a real layer-sized canvas for its static PNG.
+       // Hidden spare canvases and the mirror/overlay itself cannot satisfy this check.
+       const rasters=[...stage.querySelectorAll(':scope > img,:scope > canvas.live-bitmap-canvas')].filter(node=>
+         getComputedStyle(node).display!=='none' && (node instanceof HTMLImageElement ||
+           node.width===640 && node.height===360));
+       if(rasters.length!==2)f.errors.push('layer removed or duplicated '+i);
        if(['x','y','width','height'].some(k=>Math.abs(rects[i][k]-r[k])>1))f.errors.push('stage moved '+i);
      });requestAnimationFrame(sample);};sample();
  }).toString()+")()");
