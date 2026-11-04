@@ -13,6 +13,7 @@ import { createTiffCodec } from './formats/index.js';
 import { createPresentationCodec } from './formats/presentation.js';
 import { flowCodecOptions } from '../../platform/main/flowRuntimePaths.js';
 import { preparePendingAdd } from './appendPendingImages';
+import { publishPendingOutput } from '../../platform/main/platform/index.js';
 import type { AssetReaderV1, ProjectV1 } from '../../platform/contracts/refactorV1.js';
 
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -153,9 +154,6 @@ describe('appendPending transaction', () => {
     expect(await fs.stat(pendingFile)).toBeTruthy();
     const journal = (await ledger(root)).add;
     expect(journal).toMatchObject({ complete: false });
-    // The private staging name still proves ownership of the Pending link.
-    const staged = path.join(root, '.storyboard-flow', 'pending-add', journal.token, journal.additions[0].staged);
-    expect(await fs.stat(staged)).toBeTruthy();
     const reopened = await openFlowEditorRuntime(root);
     const recovered = await checkpoint(root);
     expect(recovered.parkedShots.map(shot => shot.id)).toEqual([plan.project.parkedShots[0].id]);
@@ -163,29 +161,13 @@ describe('appendPending transaction', () => {
     expect((await reopened.folderStatus({ project: recovered, inspectDisk: true }))).toBe('current');
   }, 120_000);
 
-  it('refuses to claim a Pending file when the private staged bytes are gone', async () => {
+  it('refuses to recreate a published Pending output whose target was removed', async () => {
     const { root, project: current } = await project();
-    const rawCodec = createTiffCodec(flowCodecOptions());
-    const depot = await openFlowAssetDepot({ root, sessionId: 'tx2', maxPixels: 16_000_000, maxPngBytes: 32 * 1024 * 1024 });
-    if (!depot.ok) throw Error(depot.error.message);
-    const store = createProjectStore();
-    const output = await openFlowTiffSave(root, current.id, rawCodec);
-    const readAsset: AssetReaderV1 = async id => { const r = await depot.value.read(id); if (!r.ok) throw Error(r.error.message); return r.value; };
-    const file = await addSource(root, 'orphan.png', [1, 2, 4]);
-    const plan = await preparePendingAdd(current, { kind: 'files', files: [file] }, { signal: new AbortController().signal }, { codec: codec(), depot: depot.value });
-    const additions = plan.additions.map(addition => ({ shot: addition.shot, image: addition.image, dialogues: addition.dialogues, basis: addition.basis, original: { kind: 'output' as const } }));
-    const realSave = async (project: ProjectV1) => { const saved = await store.saveCheckpoint(root, project, readAsset); if (!saved.ok) throw Error(saved.error.message); };
-    let savedOnce = false;
-    const access = { load: async () => { if (savedOnce) { savedOnce = false; throw Error('simulated interruption'); } const loaded = await store.loadCheckpoint(root); if (!loaded.ok) throw Error(loaded.error.message); return loaded.value.project; }, save: async (project: ProjectV1) => { await realSave(project); savedOnce = true; } };
-    await expect(output.appendPending(current, additions, readAsset, access, 'op-crash')).rejects.toThrow('simulated interruption');
-    const journal = (await ledger(root)).add;
-    const pendingFile = path.join(root, 'Pending', additions[0].basis + '.tif');
-    const bytes = await fs.readFile(pendingFile);
-    // Remove only the private staging link: the Pending file remains, but it can no
-    // longer be proven to belong to this transaction. Recovery must not adopt it.
-    await fs.unlink(path.join(root, '.storyboard-flow', 'pending-add', journal.token, journal.additions[0].staged));
+    const journal = await interruptedAppend(root, current, 'orphan.png', [1, 2, 4]);
+    const pendingFile = path.join(root, 'Pending', journal.additions[0].name);
+    await fs.unlink(pendingFile);
     await expect(openFlowEditorRuntime(root)).rejects.toThrow('Prepared Pending TIFF is unavailable');
-    expect(await fs.readFile(pendingFile)).toEqual(bytes);
+    await expect(fs.lstat(pendingFile)).rejects.toMatchObject({ code: 'ENOENT' });
   }, 120_000);
 
   it('answers recover with the durable after without appending a second time', async () => {
@@ -295,19 +277,44 @@ describe('appendPending transaction', () => {
     expect(own.value.added).toEqual(appended.value.added);
   }, 120_000);
 
-  it('retries a failed private-link release on the next open instead of reporting success', async () => {
-    const { root, project: current } = await project();
-    const journal = await interruptedAppend(root, current, 'release.png', [12, 34, 56]);
-    const stageDir = path.join(root, '.storyboard-flow', 'pending-add', journal.token);
-    await fs.chmod(stageDir, 0o500);
-    await expect(openFlowEditorRuntime(root)).rejects.toThrow(/could not be released/);
-    await fs.chmod(stageDir, 0o700);
-    const reopened = await openFlowEditorRuntime(root);
-    expect((await fs.readdir(path.join(root, 'Pending'))).length).toBe(1);
-    const target = await fs.lstat(path.join(root, 'Pending', journal.additions[0].name), { bigint: true });
-    expect(target.nlink).toBe(1n);
-    expect((await reopened.open().project).parkedShots).toHaveLength(1);
-  }, 120_000);
+  it('never publishes a staged file whose inode was replaced', async () => {
+    const root = await temporaryWorkspace('flow-pending-native-');
+    const stageDir = path.join(root, 'stage'), pendingDir = path.join(root, 'pending');
+    await fs.mkdir(stageDir); await fs.mkdir(pendingDir);
+    const staged = path.join(stageDir, 'one.tif');
+    await fs.writeFile(staged, 'ours');
+    const file = await fs.lstat(staged, { bigint: true });
+    const dirs = { stage: await fs.lstat(stageDir, { bigint: true }), pending: await fs.lstat(pendingDir, { bigint: true }) };
+    await fs.unlink(staged); await fs.writeFile(staged, 'foreign');
+    const result = await publishPendingOutput({ stageDir, stageName: 'one.tif', pendingDir, targetName: 'one.tif',
+      fileDev: String(file.dev), fileIno: String(file.ino),
+      stageDev: String(dirs.stage.dev), stageIno: String(dirs.stage.ino),
+      pendingDev: String(dirs.pending.dev), pendingIno: String(dirs.pending.ino) });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw Error('a replaced staged inode must not be published');
+    expect(result.code).toBe('changed');
+    await expect(fs.lstat(path.join(pendingDir, 'one.tif'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(staged, 'utf8')).toBe('foreign');
+  }, 60_000);
+
+  it('never replaces a foreign Pending target and leaves both files in place', async () => {
+    const root = await temporaryWorkspace('flow-pending-native2-');
+    const stageDir = path.join(root, 'stage'), pendingDir = path.join(root, 'pending');
+    await fs.mkdir(stageDir); await fs.mkdir(pendingDir);
+    const staged = path.join(stageDir, 'one.tif'), target = path.join(pendingDir, 'one.tif');
+    await fs.writeFile(staged, 'ours'); await fs.writeFile(target, 'foreign');
+    const file = await fs.lstat(staged, { bigint: true });
+    const dirs = { stage: await fs.lstat(stageDir, { bigint: true }), pending: await fs.lstat(pendingDir, { bigint: true }) };
+    const result = await publishPendingOutput({ stageDir, stageName: 'one.tif', pendingDir, targetName: 'one.tif',
+      fileDev: String(file.dev), fileIno: String(file.ino),
+      stageDev: String(dirs.stage.dev), stageIno: String(dirs.stage.ino),
+      pendingDev: String(dirs.pending.dev), pendingIno: String(dirs.pending.ino) });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw Error('a foreign target must not be replaced');
+    expect(result.code).toBe('exists');
+    expect(await fs.readFile(target, 'utf8')).toBe('foreign');
+    expect(await fs.readFile(staged, 'utf8')).toBe('ours');
+  }, 60_000);
 
   it('refuses to follow a Pending directory replaced by a symbolic link', async () => {
     const { root, project: current } = await project();
@@ -332,7 +339,58 @@ describe('appendPending transaction', () => {
     await expect(openFlowEditorRuntime(root)).rejects.toThrow(/different file occupies the Pending name/);
     expect(await fs.readFile(target)).toEqual(bytes);
   }, 120_000);
+  it('cancels during the write phase before the journal and leaves no Pending output', async () => {
+    const { root, project: current } = await project();
+    const runtime = await openFlowEditorRuntime(root);
+    const ledgerBefore = hash(await fs.readFile(path.join(root, '.storyboard-flow', 'tiff-output.json')));
+    const file = await addSource(root, 'abort-write.png', [31, 32, 33]);
+    const controller = new AbortController();
+    const result = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-abort-write' },
+      { signal: controller.signal, onProgress: ({ phase }) => { if (phase === 'write') controller.abort(); } });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw Error('an aborted append must not report success');
+    expect(result.error.effect).toBe('none');
+    expect(result.error.message).toMatch(/取消/);
+    await expect(fs.lstat(path.join(root, 'Pending'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(hash(await fs.readFile(path.join(root, '.storyboard-flow', 'tiff-output.json')))).toBe(ledgerBefore);
+  }, 120_000);
+
+  it('refuses to exceed the 10000-entry output history before writing an intent', async () => {
+    const { root, project: current } = await project();
+    const entries = Array.from({ length: 10_000 }, (_, index) => ({ shotId: 'history-' + index, name: 'history-' + index + '.tif', original: null, current: null }));
+    await fs.writeFile(path.join(root, '.storyboard-flow', 'tiff-output.json'), JSON.stringify({ version: 1, projectId: current.id, entries }));
+    const runtime = await openFlowEditorRuntime(root);
+    const file = await addSource(root, 'overflow.png', [41, 42, 43]);
+    const result = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-overflow' },
+      { signal: new AbortController().signal });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw Error('history overflow must be refused before intent');
+    expect(result.error.message).toMatch(/10000/);
+    await expect(fs.lstat(path.join(root, 'Pending'))).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 120_000);
 });
+
+  it('refuses a ledger close to 8 MiB before the journal, reserving name growth', async () => {
+    const { root, project: current } = await project();
+    const entries: { shotId: string; name: string; original: null; current: null }[] = [];
+    let size = 0;
+    while (size < 8 * 1024 * 1024 - 3000 && entries.length < 9990) {
+      entries.push({ shotId: 'history-' + entries.length, name: 'x'.repeat(820) + entries.length + '.tif', original: null, current: null });
+      size = Buffer.byteLength(JSON.stringify({ version: 1, projectId: current.id, entries }));
+    }
+    expect(size).toBeLessThan(8 * 1024 * 1024);
+    await fs.writeFile(path.join(root, '.storyboard-flow', 'tiff-output.json'), JSON.stringify({ version: 1, projectId: current.id, entries }));
+    const runtime = await openFlowEditorRuntime(root);
+    const file = await addSource(root, 'near-limit.png', [51, 52, 53]);
+    const result = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-budget' },
+      { signal: new AbortController().signal });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw Error('an over-budget append must not start');
+    expect(result.error.message).toMatch(/8 MiB/);
+    await expect(fs.lstat(path.join(root, 'Pending'))).rejects.toMatchObject({ code: 'ENOENT' });
+    const after = JSON.parse(await fs.readFile(path.join(root, '.storyboard-flow', 'tiff-output.json'), 'utf8'));
+    expect(after.add).toBeUndefined();
+  }, 120_000);
 
 /** Leave an incomplete journal with linked Pending outputs, as a crash would. */
 async function interruptedAppend(root: string, current: ProjectV1, name: string, rgb: [number, number, number]) {

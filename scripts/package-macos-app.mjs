@@ -23,6 +23,7 @@ const sharpLibvipsPackage = `sharp-libvips-darwin-${macArch}`;
 const requiredSourcePaths = [
   path.join(repoRoot, 'src/project-files/main/formats/codec.py'),
   path.join(repoRoot, 'src/platform/main/platform/publish_directory.py'),
+  path.join(repoRoot, 'src/platform/main/platform/pending_output.py'),
   path.join(repoRoot, 'scripts/layer-file-permissions.py'),
   path.join(repoRoot, "dist", "index.html"),
   path.join(repoRoot, "dist-electron", "platform", "main", "flowEditorEntry.js"),
@@ -40,6 +41,7 @@ const requiredSourcePaths = [
 const requiredPackagedPaths = [
   path.join(packagedAppRoot, 'src/project-files/main/formats/codec.py'),
   path.join(packagedAppRoot, 'src/platform/main/platform/publish_directory.py'),
+  path.join(packagedAppRoot, 'src/platform/main/platform/pending_output.py'),
   path.join(packagedAppRoot, 'scripts/layer-file-permissions.py'),
   path.join(packagedAppRoot, "package.json"),
   path.join(packagedAppRoot, "dist", "index.html"),
@@ -124,7 +126,7 @@ await cp(
   path.join(repoRoot, "scripts", "layer-file-permissions.py"),
   path.join(packagedAppRoot, "scripts", "layer-file-permissions.py")
 );
-for (const worker of ['src/project-files/main/formats/codec.py', 'src/platform/main/platform/publish_directory.py']) {
+for (const worker of ['src/project-files/main/formats/codec.py', 'src/platform/main/platform/publish_directory.py', 'src/platform/main/platform/pending_output.py']) {
   await mkdir(path.dirname(path.join(packagedAppRoot, worker)), { recursive: true });
   await cp(path.join(repoRoot, worker), path.join(packagedAppRoot, worker));
 }

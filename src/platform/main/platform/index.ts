@@ -85,15 +85,17 @@ export async function publishDirectoryExclusive(
   await syncDirectory(path.dirname(source));
 }
 
-/** Link or release a Pending output through parent directory descriptors.
+/** Atomically publish a Pending output through bound parent directories.
  *
  * Both directories are opened with O_NOFOLLOW and verified against the caller's
- * captured device/inode, then `link(2)`/`unlink(2)` run relative to those
- * descriptors. A path swapped to a symbolic link after a precheck therefore
- * cannot redirect the write. `link` reports `exists` without touching the entry. */
-export async function pendingOutputLink(mode: 'link' | 'release', input: {
+ * captured device/inode, then an exclusive rename runs relative to those
+ * descriptors after the staged entry's identity matches the journal. A path
+ * swapped after a precheck cannot redirect the write, a replaced staged entry is
+ * never published, and an existing target is reported as `exists` without being
+ * touched. */
+export async function publishPendingOutput(input: {
   stageDir: string; stageName: string; pendingDir: string; targetName: string;
-  stageDev?: string; stageIno?: string; pendingDev?: string; pendingIno?: string;
+  fileDev: string; fileIno: string; stageDev: string; stageIno: string; pendingDev: string; pendingIno: string;
 }): Promise<{ ok: true; dev?: string; ino?: string; nlink?: number } | { ok: false; code: string; message: string }> {
   const { execFile } = await import('node:child_process');
   const path = await import('node:path');
@@ -101,7 +103,7 @@ export async function pendingOutputLink(mode: 'link' | 'release', input: {
     if (!path.isAbsolute(file)) throw Error('Pending output directory must be absolute');
   }
   const script = path.join(flowAppRoot, 'src/platform/main/platform/pending_output.py');
-  const stdout = await new Promise<string>((resolve, reject) => execFile(flowPythonPath(), ['-I', '-B', script, mode, JSON.stringify(input)],
-    { maxBuffer: 65536 }, (error, out, stderr) => error ? reject(Error(`Pending output ${mode} failed: ${stderr || error.message}`)) : resolve(out)));
+  const stdout = await new Promise<string>((resolve, reject) => execFile(flowPythonPath(), ['-I', '-B', script, JSON.stringify(input)],
+    { maxBuffer: 65536 }, (error, out, stderr) => error ? reject(Error(`Pending output publication failed: ${stderr || error.message}`)) : resolve(out)));
   try { return JSON.parse(stdout); } catch { throw Error('Pending output helper returned an invalid receipt'); }
 }

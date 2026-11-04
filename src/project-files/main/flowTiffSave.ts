@@ -19,7 +19,7 @@ import type { AssetReaderV1, DialogueV1, ProjectV1, ImageDocumentV1, ShotV1 } fr
 import type { TiffCodec } from './formats/index.js';
 import { writeManagedSourceFile } from './managedSourceSave.js';
 import { assertPhysicalWorkspaceWriterTargets } from './workspacePhysicalWriterGate.js';
-import { pendingOutputLink, syncDirectory } from '../../platform/main/platform/index.js';
+import { publishPendingOutput, syncDirectory } from '../../platform/main/platform/index.js';
 
 const hash = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const digest = (s: unknown): s is string => typeof s === 'string' && /^[a-f0-9]{64}$/.test(s);
@@ -62,19 +62,6 @@ const read = async (file: string, limit = 128 * 1024 * 1024): Promise<Buffer> =>
     const st = await handle.stat();
     if (!st.isFile() || st.nlink !== 1 || st.size > limit) throw Error('Unsupported output file');
     const bytes = await handle.readFile(); if (bytes.length > limit) throw Error('Output too large'); return bytes;
-  } finally { await handle.close(); }
-};
-/** Pending staging files are hard-linked during the transaction, so their link
- * count is two until the private name is released. Everything else matches `read`. */
-const readLinked = async (file: string, limit = 128 * 1024 * 1024): Promise<Buffer> => {
-  if (await fs.realpath(file) !== file) throw Error('Aliased Pending output refused');
-  const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const st = await handle.stat();
-    if (!st.isFile() || st.size > limit) throw Error('Unsupported Pending output file');
-    const bytes = await handle.readFile();
-    if (bytes.length > limit) throw Error('Pending output too large');
-    return bytes;
   } finally { await handle.close(); }
 };
 const optionalRead = async (file: string, limit?: number) => {
@@ -175,6 +162,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
     }
   };
   const retainedError = (text: string) => Object.assign(new Error(text), { pendingAddRetained: true });
+  const cancelled = (text: string) => Object.assign(new Error(text), { name: 'AbortError' });
   const ensureStageRoot = async () => {
     const stageRoot = path.join(root, PENDING_ADD_STAGE);
     try { await fs.mkdir(stageRoot, { mode: 0o700 }); }
@@ -193,38 +181,6 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
       throw Error('Pending directory is aliased or replaced');
     await assertPhysicalWorkspaceWriterTargets([pendingPath]);
     return { path: pendingPath, dev: entry.dev, ino: entry.ino };
-  };
-  /** `released` or `gone` means the Pending file is the only link left; `failed`
-   * means the private link is still there and the project is not safely readable. */
-  const releaseStaged = async (stageDir: string, pendingDir: string, record: PendingAddRecord): Promise<'released' | 'gone' | 'failed'> => {
-    const stage = await fs.lstat(stageDir, { bigint: true });
-    const pending = await fs.lstat(pendingDir, { bigint: true });
-    const result = await pendingOutputLink('release', { stageDir, stageName: record.staged, pendingDir,
-      targetName: record.name, stageDev: String(stage.dev), stageIno: String(stage.ino),
-      pendingDev: String(pending.dev), pendingIno: String(pending.ino) });
-    if (result.ok) return 'released';
-    if (result.code === 'missing-target') return 'gone';
-    if (result.code === 'missing') {
-      const target = await fs.lstat(path.join(pendingDir, record.name), { bigint: true }).catch(() => undefined);
-      return target && String(target.dev) === record.dev && String(target.ino) === record.ino && target.nlink === 1n ? 'gone' : 'failed';
-    }
-    return 'failed';
-  };
-  const settleReceipt = async (journal: PendingAddJournal) => {
-    const stageDir = path.join(root, PENDING_ADD_STAGE, journal.token);
-    const stage = await fs.lstat(stageDir, { bigint: true }).catch(() => undefined);
-    if (!stage) return;
-    if (!stage.isDirectory() || stage.isSymbolicLink() || await fs.realpath(stageDir) !== stageDir)
-      throw retainedError('Pending add staging is aliased or replaced; retained');
-    const pendingPath = path.join(root, 'Pending');
-    const pending = await fs.lstat(pendingPath, { bigint: true }).catch(() => undefined);
-    if (!pending) return;
-    if (!pending.isDirectory() || pending.isSymbolicLink() || await fs.realpath(pendingPath) !== pendingPath)
-      throw retainedError('Pending directory is aliased or replaced; retained');
-    for (const record of journal.additions)
-      if (await releaseStaged(stageDir, pendingPath, record) === 'failed')
-        throw retainedError('Pending add receipt is durable but its private link could not be released; reopen to retry');
-    try { await fs.rmdir(stageDir); } catch { /* non-empty staging is retained internally */ }
   };
   return {
     folderStatus({ project, inspectDisk }: import('../../platform/contracts/flowEditor.js').FolderStatusRequest): Promise<import('../../platform/contracts/flowEditor.js').FolderStatus> {
@@ -467,18 +423,18 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
       });
     },
     /** Append images to the end of Pending. Only this call's Pending TIFFs, their
-     * originals, their assets and the checkpoint are written. No Save, no rename,
-     * no re-encode of existing boards and no deletion.
+     * originals, their assets and the checkpoint are written. No Save, no rename
+     * of existing boards, no naming pass and no deletion.
      *
      * Boundary: everything before the ledger journal is cancellable and leaves no
-     * user-visible file. The journal records the caller's operation id, the exact
-     * before/after project hashes, the encoded bytes' private staging names and
-     * identities. After it is durable the call completes or is recovered on the
-     * next open; it is never cancelled. */
+     * user-visible file. The signal is checked through staging and immediately
+     * before the intent is persisted. After that the call completes or is
+     * recovered on the next open; it is never cancelled. */
     appendPending(project: ProjectV1, additions: readonly PendingAddition[], readAsset: AssetReaderV1,
       checkpoint: { load(): Promise<ProjectV1>; save(project: ProjectV1): Promise<void> },
-      operationId: string, onProgress?: (progress: { done: number; total: number }) => void) {
+      operationId: string, options: { signal?: AbortSignal; onProgress?: (progress: { done: number; total: number }) => void } = {}) {
       if (typeof operationId !== 'string' || !/^[\w.:-]{1,100}$/.test(operationId)) throw Error('A valid Pending operation id is required');
+      const signal = options.signal;
       const captured = snapshotProject(project);
       // Functions cannot be structured-cloned; copy every value and keep the
       // source reader by reference.
@@ -490,15 +446,18 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           : { kind: 'output' as const }
       }));
       return serialized(async () => {
+        if (signal?.aborted) throw cancelled('添加已取消');
         if (captured.id !== projectId) throw Error('Different project');
         let { ledger, bytes } = await load();
         if (ledger.add && !ledger.add.complete) throw Error('Retry the retained Pending add before editing');
-        if (ledger.add?.complete) { await settleReceipt(ledger.add); delete ledger.add; }
+        if (ledger.add?.complete) delete ledger.add;
         if (ledger.rename || (ledger.refresh && !ledger.refresh.complete) || ledger.entries.some(e => e.move || e.deletion || e.pending))
           throw Error('Finish the pending Save transaction before adding images');
         const disk = await checkpoint.load();
         if (projectHash(disk) !== projectHash(captured)) throw Error('Adding images requires the current durable checkpoint');
         if (!payload.length || payload.length > 10000) throw Error('One or more images are required');
+        if (ledger.entries.length + payload.length > 10000)
+          throw Error('TIFF output history exceeds 10000 entries; retained history is not automatically deleted');
         const after = structuredClone(captured), known = new Set([...captured.shots, ...captured.parkedShots].map(s => s.id));
         for (const item of payload) {
           if (!item || !item.shot || !id(item.shot.id) || known.has(item.shot.id) || !item.image || item.image.id !== item.shot.imageId ||
@@ -536,6 +495,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         const records: PendingAddRecord[] = [];
         let total = 0;
         for (const [index, item] of payload.entries()) {
+          if (signal?.aborted) throw cancelled('添加已取消');
           const shot = item.shot;
           const text = { projectId: after.id, projectName: after.name, shotId: shot.id, shotName: shot.name,
             scriptText: shot.scriptText, dialogues: after.dialogues.filter(dialogue => dialogue.shotId === shot.id) };
@@ -550,50 +510,64 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           records.push({ shot: structuredClone(shot), image: structuredClone(item.image), dialogues: structuredClone(item.dialogues),
             name: staged, digest: hash(output), originalDigest: item.original.kind === 'output' ? hash(output) : item.original.digest,
             original: item.original.kind, pixelHashes, staged, dev: String(st.dev), ino: String(st.ino) });
-          onProgress?.({ done: index + 1, total: payload.length });
+          options.onProgress?.({ done: index + 1, total: payload.length });
         }
         await syncDirectory(stageDir);
         // Originals are internal and create-only; a TIFF source keeps its exact bytes.
         for (const [index, item] of payload.entries()) {
+          if (signal?.aborted) throw cancelled('添加已取消');
           const record = records[index], originalPath = path.join(root, '.storyboard-flow', 'originals', record.shot.id + '.tif');
           const original = item.original.kind === 'source' ? Buffer.from(await item.original.read()) : await fs.readFile(path.join(stageDir, record.staged));
           if (item.original.kind === 'source' && hash(original) !== item.original.digest) throw Error('Image source changed before it could be added');
           await writeManagedSourceFile(root, originalPath, original, { createOnly: true });
         }
+        // Last cancellable point: after this persist the add is completed or
+        // recovered, never silently dropped.
+        if (signal?.aborted) throw cancelled('添加已取消');
         const journal: PendingAddJournal = { token, operationId, beforeHash: projectHash(captured), afterHash: projectHash(after), additions: records, complete: false };
         ledger.add = journal; delete ledger.saved;
-        const completed = structuredClone(ledger);
-        completed.add!.complete = true;
-        for (const record of completed.add!.additions) completed.entries.push({ shotId: record.shot.id, name: record.name,
-          original: record.originalDigest, current: record.digest, pixelHashes: record.pixelHashes,
-          baseline: structuredClone(record.image), published: true,
-          content: boardContentDigest(after, after.parkedShots.find(shot => shot.id === record.shot.id)!), location: 'parked' });
-        // Preflight with the actual completed ledger, including the retained receipt.
-        if (Math.max(Buffer.byteLength(JSON.stringify(ledger)), Buffer.byteLength(JSON.stringify(completed))) > OUTPUT_LEDGER_LIMIT)
-          throw Error('TIFF Pending add ledger exceeds the 8 MiB transaction budget');
+        const completedWithEntries = () => {
+          const completed = structuredClone(ledger);
+          completed.add!.complete = true;
+          for (const record of completed.add!.additions) completed.entries.push({ shotId: record.shot.id, name: record.name,
+            original: record.originalDigest, current: record.digest, pixelHashes: record.pixelHashes,
+            baseline: structuredClone(record.image), published: true,
+            content: boardContentDigest(after, after.parkedShots.find(shot => shot.id === record.shot.id)!), location: 'parked' });
+          return completed;
+        };
+        // Reserve a bounded per-name growth allowance ("a" → "a-2") in both the
+        // entry and the retained receipt, so a name race cannot push the completed
+        // ledger over the limit after the checkpoint was written.
+        const nameGrowth = records.length * 32 + 1024;
+        const overBudget = () => Math.max(Buffer.byteLength(JSON.stringify(ledger)), Buffer.byteLength(JSON.stringify(completedWithEntries()))) + nameGrowth > OUTPUT_LEDGER_LIMIT;
+        if (overBudget()) throw Error('TIFF Pending add ledger exceeds the 8 MiB transaction budget');
         bytes = await persist(ledger, bytes);
         const pending = await ensurePendingRoot();
         for (const record of records) {
           for (let attempt = 0; ; attempt += 1) {
-            if (attempt > 1000) throw retainedError('Pending output name collision; retained');
+            if (attempt > 1) throw retainedError('Pending output name collision; retained');
             await bind();
-            const linked = await pendingOutputLink('link', { stageDir, stageName: record.staged, pendingDir: pending.path,
-              targetName: record.name, stageDev: String(stageInfo.dev), stageIno: String(stageInfo.ino),
+            const published = await publishPendingOutput({ stageDir, stageName: record.staged, pendingDir: pending.path,
+              targetName: record.name, fileDev: record.dev, fileIno: record.ino,
+              stageDev: String(stageInfo.dev), stageIno: String(stageInfo.ino),
               pendingDev: String(pending.dev), pendingIno: String(pending.ino) });
-            if (linked.ok) break;
-            if (linked.code !== 'exists') throw retainedError(`Pending output could not be linked: ${linked.message}`);
-            if (attempt > 0) throw retainedError('Pending output name collision; retained');
+            if (published.ok) break;
+            if (published.code !== 'exists') throw retainedError(`Pending output could not be published: ${published.message}`);
+            // A foreign file appeared at the chosen name. Step aside once, update
+            // both the entry and the receipt, and refuse if that would break the
+            // transaction budget.
             let stem = record.name.replace(/\.tif$/i, ''), suffix = 2;
             while (taken.has(`${stem}-${suffix}.tif`.toLowerCase())) suffix += 1;
             record.name = `${stem}-${suffix}.tif`; taken.add(record.name.toLowerCase());
             ledger.add!.additions.find(add => add.staged === record.staged)!.name = record.name;
+            if (overBudget()) throw retainedError('Pending output rename would exceed the 8 MiB transaction budget; retained');
             bytes = await persist(ledger, bytes);
           }
           const target = path.join(pending.path, record.name);
           const linked = await fs.lstat(target, { bigint: true });
           if (!linked.isFile() || linked.isSymbolicLink() || String(linked.dev) !== record.dev || String(linked.ino) !== record.ino)
             throw retainedError('Pending output identity changed; retained');
-          if (hash(await readLinked(target)) !== record.digest) throw retainedError('Pending output readback mismatch');
+          if (hash(await read(target)) !== record.digest) throw retainedError('Pending output readback mismatch');
           await syncDirectory(pending.path);
         }
         await checkpoint.save(after);
@@ -606,28 +580,13 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           content: boardContentDigest(after, after.parkedShots.find(shot => shot.id === record.shot.id)!), location: 'parked' });
         ledger.add!.complete = true; delete ledger.saved;
         bytes = await persist(ledger, bytes);
-        // Release only the private staging names, each still provably the Pending
-        // file's other link. A failure is not success: the receipt stays complete
-        // and the next open retries the release.
-        for (const record of records) {
-          if (!await releaseStaged(stageDir, pending.path, record)) throw retainedError('Pending output is durable but its private link could not be released; reopen to finish');
-        }
-        try { await fs.rmdir(stageDir); } catch { /* non-empty staging is retained internally */ }
+        try { await fs.rmdir(stageDir); } catch { /* foreign staging residue is retained internally */ }
         return { project: after, added: records.map(record => ({ shotId: record.shot.id, name: record.name, digest: record.digest })) };
       });
     },
-    /** Only an incomplete journal blocks editing or close; completed receipts are
-     * pure recoverable receipts and never gate a project. */
+    /** Only an incomplete journal blocks editing or close; a completed receipt is a
+     * pure recoverable receipt and never gates a project. */
     hasPendingAdd() { return serialized(async () => { const add = (await load()).ledger.add; return !!add && !add.complete; }); },
-    /** Release staged links left by a completed receipt (crash or failure between
-     * the merge and the release). Never inspects the checkpoint hash: later edits
-     * and Undo are allowed to have moved it on. */
-    settlePendingAddReceipts() {
-      return serialized(async () => {
-        const { ledger } = await load();
-        if (ledger.add?.complete) await settleReceipt(ledger.add);
-      });
-    },
     /** Resume an interrupted append before the project is editable. Only the exact
      * before/after hash is accepted; encoded bytes come from the private staging
      * directory, never from a re-encode. An explicit recovery must present the
@@ -641,7 +600,6 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           throw Error('A different Pending add is retained; its operation id does not match');
         if (journal.complete) {
           if (operationId === undefined) return undefined;
-          await settleReceipt(journal);
           const durable = await checkpoint.load();
           if (projectHash(durable) !== journal.afterHash) throw Error('The Pending add already completed and the project changed since; it will not be installed again');
           return { project: durable, added: journal.additions.map(record => ({ shotId: record.shot.id, name: record.name, digest: record.digest })) };
@@ -667,15 +625,6 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         });
         if (!stageInfo.isDirectory() || stageInfo.isSymbolicLink() || await fs.realpath(stageDir) !== stageDir)
           throw retainedError('Prepared Pending staging is not a real directory; retained at ' + stageDir);
-        for (const record of journal.additions) {
-          const staged = path.join(stageDir, record.staged);
-          const st = await fs.lstat(staged, { bigint: true }).catch(error => {
-            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-            throw error;
-          });
-          if (!st || !st.isFile() || st.isSymbolicLink() || String(st.dev) !== record.dev || String(st.ino) !== record.ino ||
-              hash(await readLinked(staged)) !== record.digest) throw retainedError('Prepared Pending TIFF is unavailable; retained at ' + stageDir);
-        }
         const pending = await ensurePendingRoot();
         for (const record of journal.additions) {
           const target = path.join(pending.path, record.name);
@@ -688,15 +637,22 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
               throw retainedError('A different file occupies the Pending name; retained: ' + target);
           } else {
             await bind();
-            const linked = await pendingOutputLink('link', { stageDir, stageName: record.staged, pendingDir: pending.path,
-              targetName: record.name, stageDev: String(stageInfo.dev), stageIno: String(stageInfo.ino),
+            const published = await publishPendingOutput({ stageDir, stageName: record.staged, pendingDir: pending.path,
+              targetName: record.name, fileDev: record.dev, fileIno: record.ino,
+              stageDev: String(stageInfo.dev), stageIno: String(stageInfo.ino),
               pendingDev: String(pending.dev), pendingIno: String(pending.ino) });
-            if (!linked.ok) throw retainedError(`Pending output could not be linked: ${linked.message}`);
+            if (!published.ok) {
+              if (published.code === 'exists') {
+                const raced = await fs.lstat(target, { bigint: true });
+                if (!raced.isFile() || raced.isSymbolicLink() || String(raced.dev) !== record.dev || String(raced.ino) !== record.ino)
+                  throw retainedError('A different file occupies the Pending name; retained: ' + target);
+              } else throw retainedError(`Prepared Pending TIFF is unavailable: ${published.message}`);
+            }
           }
           const final = await fs.lstat(target, { bigint: true });
           if (!final.isFile() || final.isSymbolicLink() || String(final.dev) !== record.dev || String(final.ino) !== record.ino)
             throw retainedError('Pending output identity changed; retained');
-          if (hash(await readLinked(target)) !== record.digest) throw retainedError('Pending output readback mismatch; retained');
+          if (hash(await read(target)) !== record.digest) throw retainedError('Pending output readback mismatch; retained');
           await syncDirectory(pending.path);
         }
         if (diskHash === journal.beforeHash) {
@@ -716,10 +672,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           content: boardContentDigest(after, after.parkedShots.find(shot => shot.id === record.shot.id)!), location: 'parked' });
         journal.complete = true; delete ledger.saved;
         bytes = await persist(ledger, bytes);
-        for (const record of journal.additions) {
-          if (!await releaseStaged(stageDir, pending.path, record)) throw retainedError('Pending add is durable but its private link could not be released; reopen to finish');
-        }
-        try { await fs.rmdir(stageDir); } catch { /* non-empty staging is retained internally */ }
+        try { await fs.rmdir(stageDir); } catch { /* foreign staging residue is retained internally */ }
         return { project: after, added: journal.additions.map(record => ({ shotId: record.shot.id, name: record.name, digest: record.digest })) };
       });
     },
@@ -729,7 +682,6 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
         if (captured.id !== projectId) throw Error('Different project');
         let { ledger, bytes } = await load();
         if (ledger.add && !ledger.add.complete) throw Error('Retry the retained Pending add before Save');
-        if (ledger.add?.complete) await settleReceipt(ledger.add);
         delete ledger.add;
         if(ledger.refresh&&!ledger.refresh.complete)throw Error('Retry Refresh before Save');
         delete ledger.refresh;

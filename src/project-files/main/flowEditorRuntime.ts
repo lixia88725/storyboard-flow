@@ -32,9 +32,6 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
     await output.resumePendingAdd(depot.value,checkpointAccess);
     loaded=await store.loadCheckpoint(root);if(!loaded.ok)throw Error(loaded.error.message);
   }
-  // A completed receipt may still own a private link left by a crash; release it
-  // without inspecting the checkpoint hash (later edits and Undo are allowed).
-  await output.settlePendingAddReceipts();
   if(await output.hasPendingRefresh()){
     await output.refresh(loaded.value.project,depot.value,checkpointAccess);
     loaded=await store.loadCheckpoint(root);if(!loaded.ok)throw Error(loaded.error.message);
@@ -78,7 +75,7 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
         });
         const value = await output.appendPending(project, additions,
           async id => { const asset = await depot.value.read(id); if (!asset.ok) throw Error(asset.error.message); return asset.value; },
-          checkpointAccess, input.operationId, progress => options.onProgress?.({ ...progress, phase: 'write' }));
+          checkpointAccess, input.operationId, { signal: options.signal, onProgress: progress => options.onProgress?.({ ...progress, phase: 'write' }) });
         return { ok: true as const, value };
       } catch (error) {
         let retained = (error as { pendingAddRetained?: boolean })?.pendingAddRetained;
