@@ -285,9 +285,10 @@
 .wb-create-issues { padding:10px 12px; background:#2c2622; border:1px solid #6b5747; border-radius:9px; }
 .wb-create-issues p { margin:0; color:#e2cdb6; font-size:11.5px; line-height:1.5; }
 .wb-create-issues ul { list-style:none; margin:8px 0 0; padding:0; max-height:140px; overflow:auto; display:flex; flex-direction:column; gap:4px; }
-.wb-create-issues li { display:flex; align-items:baseline; gap:8px; color:#cdb9a3; font-size:11px; }
-.wb-create-issues code { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e9dccb; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; }
-.wb-create-issues b { flex:none; color:#e8b98f; font-weight:600; }
+.wb-create-issues li { display:grid; grid-template-columns:minmax(90px,0.6fr) minmax(0,1fr) auto; align-items:baseline; gap:8px; color:#cdb9a3; font-size:11px; }
+.wb-create-issues code { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e9dccb; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; }
+.wb-create-issues span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wb-create-issues b { color:#e8b98f; font-weight:600; }
 
 /* Scrollbars: only a gray rounded thumb. No track, no border and no end buttons; the
    wheel and thumb drag keep the native scrolling behavior. */
@@ -298,3 +299,11 @@
 .flow-workbench *::-webkit-scrollbar-thumb:hover, .flow-launcher *::-webkit-scrollbar-thumb:hover { background:rgba(196,201,208,.62); }
 .flow-workbench *::-webkit-scrollbar-button, .flow-launcher *::-webkit-scrollbar-button { display:none; }
 .flow-workbench *::-webkit-scrollbar-corner, .flow-launcher *::-webkit-scrollbar-corner { background:transparent; }
+
+/* Pending header action and its small sheet. The shelf keeps its own component. */
+.wb-panel-header-actions { display:flex; align-items:center; gap:2px; }
+.flow-workbench .wb-pending-add { padding:2px 7px; border:1px solid #46525f; border-radius:5px; background:#323a44; color:#c5dbff; font-size:11px; font-weight:500; }
+.flow-workbench .wb-pending-add:hover { background:#3d4855; color:#fff; }
+.flow-workbench .wb-pending-add[data-recovery] { border-color:#7a6248; color:#ffd7a8; }
+.wb-pending-source { display:flex; gap:8px; padding:10px; }
+.wb-pending-source button { flex:1; padding:9px 10px; border-color:#4a525a; border-radius:7px; }

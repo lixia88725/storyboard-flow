@@ -149,14 +149,15 @@ else app.whenReady().then(async () => {
 
   type PendingRuntime = {
     appendPending?: (token: string, project: ProjectV1, input: { source?: PendingAddSource; recover?: boolean },
-      options: PendingAppendOptions) => Promise<FlowResult<ProjectV1>>;
+      options: PendingAppendOptions) => Promise<FlowResult<{ project: ProjectV1 }>>;
   };
   const appendPending = async (owner: { sessionId: string; windowId: number; projectId: string; mode: 'files' | 'folder' },
     project: ProjectV1, input: { source?: PendingAddSource; recover?: boolean }, options: PendingAppendOptions): Promise<FlowResult<ProjectV1>> => {
     const active = workspace as (ReturnType<typeof createFlowWorkspace> & PendingRuntime) | null;
     if (!active || typeof active.appendPending !== 'function')
       return { ok: false, error: { code: 'unavailable', message: 'Pending import is not connected', effect: 'none' } };
-    return active.appendPending(owner.sessionId, project, input, options);
+    const result = await active.appendPending(owner.sessionId, project, input, options);
+    return result.ok ? { ok: true, value: result.value.project } : result;
   };
   const currentSessionId = () => {
     try { return workspace?.open().sessionId ?? null; } catch { return null; }

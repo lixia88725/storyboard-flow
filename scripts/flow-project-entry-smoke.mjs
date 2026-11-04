@@ -64,6 +64,9 @@ await images(goodSource, ['0010.png', '0020.png']);
 const issueSource = path.join(run, 'source-issues');
 await images(issueSource, ['0010.png']);
 await writeFile(path.join(issueSource, 'broken.tiff'), Buffer.from('this is not a TIFF'));
+const pendingSource = path.join(run, 'pending-source');
+await images(pendingSource, ['p1.png', 'p2.png']);
+await writeFile(path.join(pendingSource, 'broken.tiff'), Buffer.from('this is not a TIFF'));
 const destination = path.join(run, 'destination');
 const destination2 = path.join(run, 'destination-two');
 const destination3 = path.join(run, 'destination-three');
@@ -133,8 +136,8 @@ shell.trashItem=()=>{throw Error('Trash is forbidden in this check')};
 for(const key of Object.keys(clipboard))if(typeof clipboard[key]==='function')clipboard[key]=()=>{throw Error('Clipboard is forbidden in this check')};
 dialog.showErrorBox=(_title,message)=>{throw Error(message)};
 const queues=JSON.parse(JSON.stringify(plan.dialogs));
-dialog.showOpenDialog=async(_win,options)=>{const title=options&&options.title||'';const key=title.includes('打开 Storyboard')?'open':title.includes('图片来源文件夹')?'folder':title.includes('保存位置')?'destination':title.includes('故事板图片')?'files':null;if(!key||!queues[key]||!queues[key].length)throw Error('Unexpected dialog: '+title);const value=queues[key].shift();if(value===null||value.canceled)return {canceled:true,filePaths:[]};return {canceled:false,filePaths:Array.isArray(value)?value:[value]};};
-process.argv=[process.execPath,${JSON.stringify(repo)},'--choose',plan.userData];
+dialog.showOpenDialog=async(_win,options)=>{const title=options&&options.title||'';const key=title.includes('打开 Storyboard')?'open':title.includes('添加到 Pending')?'pending':title.includes('图片来源文件夹')?'folder':title.includes('保存位置')?'destination':title.includes('故事板图片')?'files':null;if(!key||!queues[key]||!queues[key].length)throw Error('Unexpected dialog: '+title);const value=queues[key].shift();if(value===null||value.canceled)return {canceled:true,filePaths:[]};return {canceled:false,filePaths:Array.isArray(value)?value:[value]};};
+process.argv=[process.execPath,${JSON.stringify(repo)},...(plan.root?[plan.root,plan.userData]:['--choose',plan.userData])];
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const write=(value)=>{if(!fs.existsSync(out))fs.writeFileSync(out,JSON.stringify(value))};
 process.on('uncaughtException',e=>{write({ok:false,reason:'uncaught '+String(e)});app.exit(1)});
@@ -149,6 +152,7 @@ const exists=value=>exec('!!'+sel(value));
 const button=(label,scope='')=>exec('(()=>{const list=[...document.querySelectorAll('+JSON.stringify(scope+((scope?' ':'')+'button'))+')];const b=list.find(x=>x.textContent.trim()==='+JSON.stringify(label)+')||list.find(x=>x.textContent.includes('+JSON.stringify(label)+'));if(!b)return false;b.click();return true})()');
 const waitButton=async(label,scope='')=>wait(()=>button(label,scope),'button '+label);
 const waitText=async(value)=>wait(async()=>String(await exec('document.body.innerText')).includes(value),'text '+value);
+const pendingCount=()=>exec('document.querySelectorAll("[data-pending-shot-id]").length');
 const field=key=>exec(sel('[data-project-field='+key+']')+'.value');
 const waitField=(key,value)=>wait(async()=>(await field(key))===value,'field '+key);
 const setInput=(selector,value)=>exec('(()=>{const i='+sel(selector)+';if(!i)return false;const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;set.call(i,'+JSON.stringify(value)+');i.dispatchEvent(new Event("input",{bubbles:true}));i.blur();return true})()');
@@ -243,6 +247,7 @@ const runPhase=async()=>{
    await wait(async()=>String(await exec(sel('[data-create-source]')+'.textContent')).includes(path.basename(plan.issueSource)),'issue source');
    await button('选择位置…');
    await wait(async()=>String(await exec(sel('[data-create-destination]')+'.textContent')).length>0,'destination 2');
+   await wait(async()=>await exec('(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="开始创建");return !!b&&!b.disabled})()'),'issues start enabled');
    await button('开始创建');
    await wait(()=>exists('[data-create-issues]'),'issue sheet');
    const issues=String(await exec(sel('[data-create-issues]')+'.textContent'));
@@ -268,6 +273,49 @@ const runPhase=async()=>{
   await wait(()=>exists('[data-workbench]'),'files workbench');
   await waitField('name','未命名项目');
   return {ok:true,phase:'files'};
+ }
+ if(plan.phase==='pending'){
+  await wait(()=>exists('[data-workbench]'),'seeded workbench');
+  await waitField('name','合成项目');
+  await wait(()=>exists('.wb-pending-add'),'pending add');
+  await button('添加图片');
+  await wait(()=>exists('[data-pending-add]'),'pending sheet');
+  await button('选择文件夹…');
+  await wait(()=>exists('[data-pending-issues]'),'pending issues');
+  if(!String(await exec('document.body.innerText')).includes('broken.tiff'))throw Error('pending issue missing broken.tiff');
+  await shot('05-pending-issues');
+  await button('继续添加');
+  await wait(async()=>await pendingCount()===2,'pending two');
+  const pending=await pendingCount();
+  if(pending!==2)throw Error('pending card count '+pending);
+  await sleep(500);
+  await button('撤销');
+  await wait(async()=>await pendingCount()===0,'pending undo');
+  await button('重做');
+  await wait(async()=>await pendingCount()===2,'pending redo');
+  await shot('06-pending-shelf');
+  await button('添加图片');
+  await wait(()=>exists('[data-pending-add]'),'pending sheet cancel');
+  await button('选择文件夹…');
+  await waitText('已取消添加');
+  await button('关闭');
+  await wait(async()=>await pendingCount()===2,'pending after cancel');
+  await button('保存');
+  await wait(async()=>{const label=await exec('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="保存")?.textContent');return label==='保存'},'pending save finished');
+  await wait(()=>{try{return fs.readdirSync(plan.root).some(n=>n.endsWith('.tif'))}catch{return false}},'active TIFF after Save');
+  await sleep(300);
+  const pendingDir=path.join(plan.root,'Pending');
+  await wait(()=>{try{return fs.readdirSync(pendingDir).filter(n=>n.endsWith('.tif')).length===2}catch{return false}},'pending TIFFs');
+  const tifs=fs.readdirSync(pendingDir).filter(n=>n.endsWith('.tif')).sort();
+  const active=fs.readdirSync(plan.root).filter(n=>n.endsWith('.tif')).sort();
+  return {ok:true,phase:'pending',pending,tifs,active};
+ }
+ if(plan.phase==='pending-reopen'){
+  await wait(()=>exists('[data-workbench]'),'reopened Pending workbench');
+  await waitField('name','合成项目');
+  await wait(async()=>await pendingCount()===2,'reopened pending two');
+  const pending=await pendingCount();
+  return {ok:true,phase:'pending-reopen',pending};
  }
  if(plan.phase==='reopen'){
   await wait(()=>exists('[data-project-launcher]'),'launcher');
@@ -302,18 +350,20 @@ app.whenReady().then(async()=>{
 `);
 
 const phases = [
-  { phase: 'home', dialogs: { open: [null, tiffOnly], folder: [], destination: [], files: [] } },
-  { phase: 'create', dialogs: { open: [], folder: [goodSource, issueSource], destination: [destination, destination2], files: [] } },
-  { phase: 'files', dialogs: { open: [], folder: [], destination: [destination3], files: [[path.join(goodSource, '0010.png'), path.join(goodSource, '0020.png')]] } },
-  { phase: 'reopen', dialogs: { open: [], folder: [], destination: [], files: [] } },
-  { phase: 'open', dialogs: { open: [seed], folder: [], destination: [], files: [] } }
+  { phase: 'home', dialogs: { open: [null, tiffOnly], folder: [], destination: [], files: [], pending: [] } },
+  { phase: 'create', dialogs: { open: [], folder: [goodSource, issueSource], destination: [destination, destination2], files: [], pending: [] } },
+  { phase: 'files', dialogs: { open: [], folder: [], destination: [destination3], files: [[path.join(goodSource, '0010.png'), path.join(goodSource, '0020.png')]], pending: [] } },
+  { phase: 'reopen', dialogs: { open: [], folder: [], destination: [], files: [], pending: [] } },
+  { phase: 'open', dialogs: { open: [seed], folder: [], destination: [], files: [], pending: [] } },
+  { phase: 'pending', root: seed, pendingSource, dialogs: { open: [], folder: [], destination: [], files: [], pending: [pendingSource, null] } },
+  { phase: 'pending-reopen', root: seed, dialogs: { open: [], folder: [], destination: [], files: [], pending: [] } }
 ];
 
 let failed = null;
 try {
   for (const phase of phases) {
     const plan = {
-      ...phase, userData, evidence, seed, goodSource, issueSource, destination,
+      ...phase, userData, evidence, seed, goodSource, issueSource, pendingSource, destination,
       createdFolder: path.join(destination, path.basename(goodSource)),
       issueFolder: path.join(destination2, path.basename(issueSource)),
       supportsIssues: true

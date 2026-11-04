@@ -23,6 +23,8 @@ export type WorkbenchProps={
  toolbar:ReactNode;actions:ReactNode;toolRail:ReactNode;boardActions:ReactNode;
  /** Persistent project fields, kept out of the per-session editor panes. */
  projectBar?:ReactNode;
+ /** Pending-panel header action; the shelf itself stays a storyboard component. */
+ pendingActions?:ReactNode;
  select:(id:string,event:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;
  focus:(id:string)=>void;selectMany:(ids:string[])=>void;selectAll:()=>void;clearSelection:()=>void;canNavigate:()=>boolean;canStartCanvasEdit:()=>boolean;canContinueBrush:(shot:Shot)=>boolean;demand:(ids:string[])=>void;
  move:(ids:string[],destination:'active'|'pending',before?:string)=>void;
@@ -159,7 +161,7 @@ export function Workbench(p:WorkbenchProps){
       <section className={'wb-panel wb-panel-'+id+(collapsed[col]?' wb-panel-flyout':'')} data-panel={id} tabIndex={id==='board'?-1:undefined} style={{height:heights[id],display:collapsed[col]&&flyout[col]!==id?'none':undefined}}
        onPointerDownCapture={e=>{if(id==='board'&&e.isPrimary&&e.button===0&&e.target instanceof Element&&!e.target.closest('input,textarea,select,button,[contenteditable=true]'))e.currentTarget.focus({preventScroll:true});}}
        onDragOver={e=>{if(!collapsed[col]&&e.dataTransfer.types.includes('application/x-flow-panel'))e.preventDefault();}} onDrop={e=>{if(!collapsed[col])movePanel(e,col,id);}}>
-       <header draggable={!collapsed[col]} onDragStart={e=>{if(!p.canNavigate()){e.preventDefault();return;}e.dataTransfer.setData('application/x-flow-panel',id);}}><span className="wb-panel-title">{labels[id]}</span><button aria-label={(collapsed[col]?'关闭':'隐藏')+labels[id]} title={collapsed[col]?'关闭展开面板':'隐藏'+labels[id]+'，可在右上角「面板」中重新打开'} onClick={()=>{if(p.canNavigate()){if(collapsed[col])setFlyout([undefined,undefined]);else setHidden(h=>[...h,id]);}}}>×</button></header><div className="wb-panel-body">{content(id)}</div>
+       <header draggable={!collapsed[col]} onDragStart={e=>{if(!p.canNavigate()){e.preventDefault();return;}e.dataTransfer.setData('application/x-flow-panel',id);}}><span className="wb-panel-title">{labels[id]}</span><div className="wb-panel-header-actions">{id==='pending'&&p.pendingActions}<button aria-label={(collapsed[col]?'关闭':'隐藏')+labels[id]} title={collapsed[col]?'关闭展开面板':'隐藏'+labels[id]+'，可在右上角「面板」中重新打开'} onClick={()=>{if(p.canNavigate()){if(collapsed[col])setFlyout([undefined,undefined]);else setHidden(h=>[...h,id]);}}}>×</button></div></header><div className="wb-panel-body">{content(id)}</div>
       </section>
      </Fragment>)}
     </div>})}

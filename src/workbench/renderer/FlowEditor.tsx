@@ -7,7 +7,8 @@ import { selectShots, nextSelectionAnchor, selectAllShots } from '../../storyboa
 import { pendingDeleteDecision } from '../../storyboard/renderer/pendingSelection';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import type { FlowEditorBootstrap, FlowProjectTarget, FlowRecentProject } from '../../platform/contracts/flowEditor';
-import type { FlowBoardCommand, FlowSession, FlowSessionRequest } from '../../platform/contracts/flowWave2';
+import type { FlowBoardCommand, FlowPendingAdd, FlowSession, FlowSessionRequest } from '../../platform/contracts/flowWave2';
+import type { ProjectV1 } from '../../platform/contracts/refactorV1';
 import { createFlowSession } from '../../session/core';
 import { toolPlan } from '../../session/core/pixelTools';
 import { createPixelTools, createFlowPixels } from '../../drawing/renderer';
@@ -23,6 +24,7 @@ import { CreateProjectSheet } from './CreateProjectSheet';
 import { ProjectNamingBar } from './ProjectNamingBar';
 import { useCreateProject } from './useCreateProject';
 import { useProjectNaming } from './useProjectNaming';
+import { PendingAddAction } from './PendingAddAction';
 import { captureMountedCanvasCheckpoints } from '../../drawing/renderer/mountedCanvasRecoveryCapture';
 import { projectShots, pixelStroke, settledStrokePreview } from './adapter';
 import type { Shot, SketchStroke } from '../../drawing/contracts/types';
@@ -51,7 +53,8 @@ function bindEditor(sessionId: string) {
     refresh: (project: FlowEditorBootstrap['project']) => api.refresh(sessionId, project),
     folderStatus: (request: Parameters<typeof api.folderStatus>[1]) => api.folderStatus(sessionId, request),
     outputNames: (project: FlowEditorBootstrap['project']) => api.outputNames(sessionId, project),
-    saveTiff: (project: FlowEditorBootstrap['project']) => api.saveTiff(sessionId, project)
+    saveTiff: (project: FlowEditorBootstrap['project']) => api.saveTiff(sessionId, project),
+    pendingAdd: (project: ProjectV1, request: FlowPendingAdd & { recover: boolean }) => api.pendingAdd(sessionId, project, request)
   };
 }
 type EditorOwner = { flow: FlowSession; sessionId: string; api: ReturnType<typeof bindEditor>; folderName: string };
@@ -84,7 +87,8 @@ export function FlowEditor() {
       maxHistoryEntries: 60, maxPendingRequests: 32, assets: api,
       pixels: createFlowPixels({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxPoints: 100_000 }),
       tools: createPixelTools({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxLayers: 64 }),
-      checkpoint: api.checkpoint, refresh: api.refresh, clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number), now: () => performance.now() } }));
+      checkpoint: api.checkpoint, refresh: api.refresh, pendingAdd: api.pendingAdd,
+      clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number), now: () => performance.now() } }));
     const next = { flow, api, sessionId, folderName };
     current.current = next; setOwner(next); setIssue('');
     beforeTransition.current = () => Promise.resolve();
@@ -540,8 +544,11 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:dialogueText.get(s.id)??''} ]));
   return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <Workbench dialogueText={dialogueText} name={snapshot.project.name} shots={shots.slice(0,snapshot.project.shots.length)} parked={shots.slice(snapshot.project.shots.length)} selected={selectedIds} revision={snapshot.project.revision} disabled={!active}
-      status={issue||snapshot.lastError?.message||(flowSaved ? '已自动暂存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label) : '正在自动暂存…')}
+      status={issue || (flowSaved
+        ? '已自动暂存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label)
+        : (snapshot.lastError?.message || '正在自动暂存…'))}
       projectBar={<ProjectNamingBar naming={naming} folderName={folderName} disabled={!active || savingTiff} />}
+      pendingActions={<PendingAddAction flow={flow} sessionId={sessionId} disabled={!active || savingTiff} recovery={snapshot.pendingAddRecovery} />}
       select={selectShot} focus={focusShot}
       selectAll={()=>{const ids=selectAllShots(flow.snapshot().project.shots.map(s=>s.id));setSelection(ids);selectionAnchor.current=undefined;}}
       selectMany={ids=>{const known=new Set(ids),next=flow.snapshot().project.shots.map(s=>s.id).filter(id=>known.has(id));setSelection(next);selectionAnchor.current=next[0];}}
