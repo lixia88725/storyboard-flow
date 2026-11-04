@@ -11,7 +11,7 @@ import path from 'node:path';
 import { constants } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { OUTPUT_LEDGER_LIMIT, assertOutputLedgerBudget, preflightOutputNames, prepareOutputRename, settleOutputRename, validOutputRename, type OutputRename } from './flowOutputRename.js';
-import { orderedOutputNames } from '../../platform/contracts/flowNaming.js';
+import { namingIssue, orderedOutputNames } from '../../platform/contracts/flowNaming.js';
 import { createOutputTrash, validOutputDeletion, type OutputDeletion, type TrashItem } from './flowOutputTrash.js';
 import { outputPath, settleOutputMove, type OutputMove } from './flowOutputMove.js';
 import { snapshotProject } from './persistence/validate.js';
@@ -799,6 +799,10 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
       const captured = snapshotProject(project);
       return serialized(async () => {
         if (captured.id !== projectId) throw Error('Different project');
+        if (captured.naming) {
+          const issue = namingIssue(captured.name, captured.naming);
+          if (issue) throw Error(issue);
+        }
         let { ledger, bytes } = await load();
         if (ledger.add && !ledger.add.complete) throw Error('Retry the retained Pending add before Save');
         delete ledger.add;

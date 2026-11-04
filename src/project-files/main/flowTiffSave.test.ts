@@ -45,6 +45,15 @@ describe('new TIFF output native Save protocol',()=>{
     await output.save(p,async()=>png);
     for(const leaf of [preview.get('shot')!, 'Pending/'+parked.id+'.tif']) expect((await fs.stat(path.join(root,leaf))).isFile()).toBe(true);
   },60000);
+  it('refuses an incomplete naming draft before touching the ledger or source TIFF',async()=>{
+    const {root,p,source,output}=await fixture();
+    const ledgerPath=path.join(root,'.storyboard-flow/tiff-output.json'), before=await fs.readFile(ledgerPath);
+    p.naming={sceneCode:'scene',artistName:'',version:'v001'};
+    const reader=vi.fn(async()=>{throw Error('unexpected pixel read')});
+    await expect(output.save(p,reader)).rejects.toThrow('作者不能为空');
+    expect(reader).not.toHaveBeenCalled();expect(await fs.readFile(ledgerPath)).toEqual(before);
+    expect(await fs.readFile(path.join(root,'original.tif'))).toEqual(Buffer.from(source));
+  },60000);
   it('saves captured pixels/text, preserves first backup through repeated Save and Undo output, and reopens ledger',async()=>{
     const {root,p,png,c,source,output}=await fixture();
     const edit=await sharp({create:{width:2,height:1,channels:4,background:'#112233'}}).png().toBuffer();

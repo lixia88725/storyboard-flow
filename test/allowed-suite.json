@@ -76,5 +76,8 @@
   "src/project-files/main/createImageProject.test.ts",
   "src/project-files/main/createImageProject.publishFailure.test.ts",
   "src/project-files/main/appendPendingImages.test.ts",
-  "src/project-files/main/pendingAppend.transaction.test.ts"
+  "src/project-files/main/pendingAppend.transaction.test.ts",
+  "src/platform/main/flowProjectLauncher.test.ts",
+  "src/platform/main/pendingAddCoordinator.test.ts",
+  "src/workbench/renderer/projectNamingDraft.test.ts"
 ]
