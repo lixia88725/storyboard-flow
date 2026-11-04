@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 import { temporaryWorkspace } from '../../../test/temporaryWorkspace';
 import { createImageProject } from './createImageProject';
@@ -175,12 +176,13 @@ describe('appendPending transaction', () => {
     expect((await ledger(root)).add).toMatchObject({ complete: true });
   }, 120_000);
 
-  it('refuses when both the target and the staged bytes are gone', async () => {
+  it('refuses when the target, staged bytes and raster original are all gone', async () => {
     const { root, project: current } = await project();
     const journal = await interruptedAppend(root, current, 'lost.png', [1, 2, 5]);
     const pendingFile = path.join(root, 'Pending', journal.additions[0].name);
     await fs.unlink(pendingFile);
     await fs.unlink(path.join(root, '.storyboard-flow', 'pending-add', 'blobs', journal.additions[0].staged));
+    await fs.unlink(path.join(root, '.storyboard-flow', 'originals', journal.additions[0].shot.id + '.tif'));
     await expect(openFlowEditorRuntime(root)).rejects.toThrow('Prepared Pending TIFF is unavailable');
     await expect(fs.lstat(pendingFile)).rejects.toMatchObject({ code: 'ENOENT' });
   }, 120_000);
@@ -399,6 +401,55 @@ describe('appendPending transaction', () => {
     expect(replaced.digest).toBe(hash(Buffer.from('foreign')));
   }, 60_000);
 
+  it('publishes from the verified original when the staged blob is damaged, without a new blob', async () => {
+    const { root, project: current } = await project();
+    const journal = await interruptedAppend(root, current, 'recover-blob.png', [111, 112, 113]);
+    const target = path.join(root, 'Pending', journal.additions[0].name);
+    await fs.unlink(target);
+    const blobs = path.join(root, '.storyboard-flow', 'pending-add', 'blobs');
+    const blob = path.join(blobs, journal.additions[0].staged);
+    await fs.writeFile(blob, 'corrupt');
+    const before = (await fs.readdir(blobs)).length;
+    await openFlowEditorRuntime(root);
+    const recreated = path.join(root, 'Pending', journal.additions[0].name);
+    expect(hash(await fs.readFile(recreated))).toBe(journal.additions[0].digest);
+    expect(await fs.readFile(blob, 'utf8')).toBe('corrupt');
+    expect((await fs.readdir(blobs)).length).toBe(before);
+    expect((await ledger(root)).add).toMatchObject({ complete: true });
+  }, 120_000);
+
+
+  it('rejects a FIFO Pending target without blocking', async () => {
+    const root = await temporaryWorkspace('flow-pending-fifo-');
+    const stageDir = path.join(root, 'stage'), pendingDir = path.join(root, 'pending');
+    await fs.mkdir(stageDir); await fs.mkdir(pendingDir);
+    const staged = path.join(stageDir, 'one.tif');
+    await fs.writeFile(staged, 'ours');
+    execFileSync('mkfifo', [path.join(pendingDir, 'one.tif')]);
+    const file = await fs.lstat(staged, { bigint: true });
+    const dirs = { stage: await fs.lstat(stageDir, { bigint: true }), pending: await fs.lstat(pendingDir, { bigint: true }) };
+    const result = await pendingOutput('read', { stageDir, stageName: 'one.tif', pendingDir, targetName: 'one.tif',
+      fileDev: String(file.dev), fileIno: String(file.ino),
+      stageDev: String(dirs.stage.dev), stageIno: String(dirs.stage.ino),
+      pendingDev: String(dirs.pending.dev), pendingIno: String(dirs.pending.ino) });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw Error('a FIFO must not be read as a target');
+    expect(result.code).toBe('target');
+  }, 60_000);
+
+  it('does not block when the output ledger is a FIFO', async () => {
+    const { root } = await project();
+    const ledgerPath = path.join(root, '.storyboard-flow', 'tiff-output.json');
+    await fs.rm(ledgerPath, { force: true });
+    execFileSync('mkfifo', [ledgerPath]);
+    const outcome = await Promise.race([
+      openFlowEditorRuntime(root).then(() => 'opened', () => 'rejected'),
+      new Promise<string>(resolve => setTimeout(() => resolve('timeout'), 3000))
+    ]);
+    expect(outcome).not.toBe('timeout');
+  }, 60_000);
+
+
   it('refuses to follow a Pending directory replaced by a symbolic link', async () => {
     const { root, project: current } = await project();
     const journal = await interruptedAppend(root, current, 'symlink.png', [7, 8, 9]);
@@ -427,7 +478,7 @@ describe('appendPending transaction', () => {
     const added = path.join(root, 'Pending', names[0]);
     expect(hash(await fs.readFile(added))).toBe(journal.additions[0].digest);
     expect(String((await fs.lstat(added, { bigint: true })).ino)).not.toBe(replacedIno);
-    expect((await ledger(root)).add?.abandoned).toContain(journal.additions[0].name);
+    expect((await ledger(root)).add?.abandoned).toBe(1);
     expect((await ledger(root)).add).toMatchObject({ complete: true });
   }, 120_000);
   it('keeps an in-place edited target and publishes under a fresh name', async () => {
@@ -443,7 +494,7 @@ describe('appendPending transaction', () => {
     const names = (await fs.readdir(path.join(root, 'Pending'))).filter(name => name !== journal.additions[0].name);
     expect(names).toHaveLength(1);
     expect(hash(await fs.readFile(path.join(root, 'Pending', names[0])))).toBe(journal.additions[0].digest);
-    expect((await ledger(root)).add?.abandoned).toContain(journal.additions[0].name);
+    expect((await ledger(root)).add?.abandoned).toBe(1);
   }, 120_000);
 
 
@@ -468,7 +519,7 @@ describe('appendPending transaction', () => {
     const names = (await fs.readdir(path.join(root, 'Pending'))).filter(name => name !== journal.additions[0].name);
     expect(names).toHaveLength(1);
     expect(hash(await fs.readFile(path.join(root, 'Pending', names[0])))).toBe(journal.additions[0].digest);
-    expect((await ledger(root)).add?.abandoned).toContain(journal.additions[0].name);
+    expect((await ledger(root)).add?.abandoned).toBe(1);
     expect((await ledger(root)).add).toMatchObject({ complete: true });
   }, 120_000);
 
@@ -560,6 +611,56 @@ describe('appendPending transaction', () => {
     const after = JSON.parse(await fs.readFile(path.join(root, '.storyboard-flow', 'tiff-output.json'), 'utf8'));
     expect(after.add).toBeUndefined();
   }, 120_000);
+
+  it('recovers at 8 MiB minus 100 with a 190-character name and a bounded abandoned count', async () => {
+    const LIMIT = 8 * 1024 * 1024;
+    const { root, project: current } = await project();
+    const runtime = await openFlowEditorRuntime(root);
+    const longBasis = 'n'.repeat(186);
+    const file = await addSource(root, longBasis + '.png', [121, 122, 123]);
+    const appended = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-limit' },
+      { signal: new AbortController().signal });
+    if (!appended.ok) throw Error(appended.error.message);
+    expect(appended.value.added[0].name.length).toBe(190);
+    const stored = await ledger(root);
+    const record = stored.add!.additions[0];
+    // Simulate a crash after publication and before the inode registration.
+    stored.add!.complete = false;
+    delete record.targetDev;
+    delete record.targetIno;
+    stored.entries = stored.entries.filter(entry => entry.shotId !== record.shot.id);
+    const completedEntry = { shotId: record.shot.id, name: record.name, original: record.originalDigest, current: record.digest,
+      pixelHashes: record.pixelHashes, baseline: record.image, published: true, content: '0'.repeat(64), location: 'parked' as const };
+    const size = () => {
+      const journalSize = Buffer.byteLength(JSON.stringify(stored));
+      const completed = structuredClone(stored);
+      completed.add!.complete = true;
+      completed.entries.push(completedEntry);
+      return Math.max(journalSize, Buffer.byteLength(JSON.stringify(completed)));
+    };
+    let index = 0;
+    while (size() < LIMIT - 2500 && index < 9900) {
+      stored.entries.push({ shotId: 'filler-' + index, name: 'filler-' + index + '-' + 'x'.repeat(900) + '.tif', original: null, current: null, retired: 'trashed' });
+      index += 1;
+    }
+    expect(index).toBeLessThan(9900);
+    const last = stored.entries[stored.entries.length - 1];
+    const gap = LIMIT - 100 - size();
+    last.name = last.name.replace(/\.tif$/, 'x'.repeat(Math.max(0, gap)) + '.tif');
+    expect(size()).toBeGreaterThan(LIMIT - 400);
+    expect(size()).toBeLessThanOrEqual(LIMIT - 100);
+    await fs.writeFile(path.join(root, '.storyboard-flow', 'tiff-output.json'), JSON.stringify(stored));
+    await openFlowEditorRuntime(root);
+    const recovered = await ledger(root);
+    expect(recovered.add).toMatchObject({ complete: true, abandoned: 1 });
+    const oldName = record.name;
+    expect(await fs.readFile(path.join(root, 'Pending', oldName))).toBeTruthy();
+    const names = (await fs.readdir(path.join(root, 'Pending'))).filter(name => name !== oldName);
+    expect(names).toHaveLength(1);
+    expect(hash(await fs.readFile(path.join(root, 'Pending', names[0])))).toBe(record.digest);
+    expect(JSON.stringify({ ...recovered.add, abandoned: 10000 }).length).toBeLessThanOrEqual(JSON.stringify({ ...recovered.add, abandoned: 9999 }).length + 1);
+  }, 180_000);
+
 
 /** Leave an incomplete journal with linked Pending outputs, as a crash would. */
 async function interruptedAppend(root: string, current: ProjectV1, name: string, rgb: [number, number, number]) {

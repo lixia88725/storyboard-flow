@@ -96,10 +96,12 @@ export async function pendingOutput(mode: 'publish' | 'read', input: {
   stageDir: string; stageName: string; pendingDir: string; targetName: string;
   fileDev: string; fileIno: string; stageDev: string; stageIno: string; pendingDev: string; pendingIno: string;
   expectedDigest?: string; maxBytes?: number;
+  source?: 'stage' | 'original'; originalDir?: string; originalName?: string;
+  sourceDev?: string; sourceIno?: string; originalDirDev?: string; originalDirIno?: string;
 }): Promise<{ ok: true; dev: string; ino: string; size: number; digest: string } | { ok: false; code: string; message: string }> {
   const { execFile } = await import('node:child_process');
   const path = await import('node:path');
-  for (const file of [input.stageDir, input.pendingDir]) {
+  for (const file of [input.stageDir, input.pendingDir, ...(input.originalDir ? [input.originalDir] : [])]) {
     if (!path.isAbsolute(file)) throw Error('Pending output directory must be absolute');
   }
   const script = path.join(flowAppRoot, 'src/platform/main/platform/pending_output.py');
