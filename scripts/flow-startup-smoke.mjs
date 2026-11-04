@@ -35,12 +35,20 @@ for(const phase of ['cancel','open','reopen']){
  app.on('will-quit',()=>{if(picked&&(phase==='cancel'||verified))fs.writeFileSync(done,JSON.stringify({ok:true,phase,picked,verified}))});
  const wait=async fn=>{for(let i=0;i<300;i++){try{if(await fn())return}catch{}await new Promise(r=>setTimeout(r,50))}throw Error('Startup timeout')};
  import(${JSON.stringify('file://'+path.join(repo,pkg.main))}).then(async()=>{
-  if(phase==='cancel')return;
   await app.whenReady();let win;
   await wait(()=>{win=BrowserWindow.getAllWindows()[0];return win});
-  await wait(()=>win.webContents.executeJavaScript('!!document.querySelector("[data-workbench]")'));
-  assert.deepEqual(await win.webContents.executeJavaScript('({bridge:!!window.flowEditor,old:!!window.storyboard,hash:location.hash,classic:!!document.querySelector(".flow-editor-grid")})'),{bridge:true,old:false,hash:'#flow-workbench',classic:false});
-  await wait(()=>win.webContents.executeJavaScript('document.body.innerText.includes("已自动暂存")'));
+  await wait(()=>win.webContents.executeJavaScript('!!document.querySelector("[data-project-launcher]")'));
+  await win.webContents.executeJavaScript('(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.includes("打开项目…"));if(!b)return false;b.click();return true})()');
+  await wait(()=>picked);
+  if(phase==='cancel'){
+    await new Promise(r=>setTimeout(r,250));
+    assert.equal(await win.webContents.executeJavaScript('!!document.querySelector("[data-workbench]")'),false);
+    assert.equal(await win.webContents.executeJavaScript('!!document.querySelector("[data-project-launcher]")'),true);
+  }else{
+    await wait(()=>win.webContents.executeJavaScript('!!document.querySelector("[data-workbench]")'));
+    assert.deepEqual(await win.webContents.executeJavaScript('({bridge:!!window.flowEditor,old:!!window.storyboard,hash:location.hash,classic:!!document.querySelector(".flow-editor-grid")})'),{bridge:true,old:false,hash:'#flow-workbench',classic:false});
+    await wait(()=>win.webContents.executeJavaScript('document.body.innerText.includes("已自动暂存")'));
+  }
   assert.equal(app.getPath('userData'),process.env.FLOW_USER_DATA_DIR);
   verified=true;win.close();
  }).catch(e=>{console.error(e);app.exit(1)});

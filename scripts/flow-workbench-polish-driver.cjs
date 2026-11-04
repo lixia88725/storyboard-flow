@@ -15,7 +15,7 @@ async function geometry(label){
  const g=await js(`(()=>{const rect=e=>{const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height,width:r.width}};return {canvas:[...document.querySelectorAll('.wb-panel-canvas .wb-panel-body,.wb-viewer,.wb-viewer .image-stage')].map(e=>({class:e.className,rect:rect(e),client:e.clientHeight,scroll:e.scrollHeight})),cols:[...document.querySelectorAll('.wb-column')].map(c=>({rect:rect(c),scroll:c.scrollHeight,client:c.clientHeight,overflow:getComputedStyle(c).overflowY,panels:[...c.querySelectorAll(':scope>.wb-panel')].map(p=>({id:p.dataset.panel,rect:rect(p),body:rect(p.querySelector('.wb-panel-body'))}))})),rail:rect(document.querySelector('.wb-tool-rail')),range:rect(document.querySelector('[aria-label="画笔大小"]')),header:document.querySelector('.wb-header').textContent}})()`);
  for(const c of g.cols){assert.equal(c.overflow,'hidden',label+' column not scrollable');assert.ok(c.scroll<=c.client+2,label+' column contents fit');for(const p of c.panels){assert.ok(p.rect.bottom<=c.rect.bottom+2,label+' '+p.id+' fits');assert.ok(p.body.height>16,label+' '+p.id+' body accessible');}}
  if(['default','short window','restored','reopened'].includes(label)&&g.canvas.length===3){const [body,viewer,stage]=g.canvas;assert.ok(stage.rect.bottom<=body.rect.bottom+2,label+' fit canvas bottom inside panel');assert.ok(stage.rect.top>=body.rect.top,label+' fit canvas top inside panel');assert.ok(body.scroll<=body.client+2,label+' fit mode needs no vertical scroll');}
- assert.ok(g.rail.width<=50);assert.ok(g.range.height>g.range.width*3);assert.ok(!g.header.includes('Storyboard'));assert.ok(!g.header.includes('Workbench polish acceptance'));assert.ok(g.header.trim().startsWith('打开'));
+ assert.ok(g.rail.width<=50);assert.ok(g.range.height>g.range.width*3);assert.ok(!g.header.includes('Storyboard'));assert.ok(g.header.includes('项目')&&g.header.includes('保存'));
  return {label,...g};
 }
 const save=(name,data)=>fs.writeFileSync(path.join(run,name),JSON.stringify(data,null,2));
@@ -45,7 +45,7 @@ import(pathToFileURL(entry).href).then(async()=>{
  cases.push(await geometry('all panels narrow column'));
  const reachable=await js(`(()=>{const b=document.querySelector('[data-panel=board] .wb-panel-body'),t=b.querySelector('.wb-board-tools');b.scrollTop=t.offsetHeight;const r=b.getBoundingClientRect(),c=b.querySelector('.wb-card').getBoundingClientRect();return {body:r.height,top:r.top,cardTop:c.top,cardBottom:c.bottom,toolbarPosition:getComputedStyle(t).position};})()`);
  assert.equal(reachable.toolbarPosition,'static');assert.ok(reachable.cardTop<reachable.top+reachable.body&&reachable.cardBottom>reachable.top,'board content remains reachable below wrapped tools');
- await js(`document.querySelector('.wb-header details').open=true`);await button('恢复默认布局');await js(`document.querySelector('.wb-header details').open=false`);
+ await js(`document.querySelector('.wb-header .wb-panel-menu').open=true`);await button('恢复默认布局');await js(`document.querySelector('.wb-header .wb-panel-menu').open=false`);
  win.setSize(1500,950);cases.push(await geometry('restored'));
  // Native vertical range keyboard semantics: Up increases the brush diameter.
  await js(`document.querySelector('[aria-label="画笔大小"]').focus()`);const size=await js(`Number(document.activeElement.value)`);

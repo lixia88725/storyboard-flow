@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultProjectNaming, namingDraftIssue, namingDraftOf, sameNamingDraft } from './projectNamingDraft';
+import { defaultProjectNaming, namingDraftIssue, namingDraftOf, sameNamingDraft, shouldAdoptIncomingNaming } from './projectNamingDraft';
 import type { ProjectV1 } from '../../platform/contracts/refactorV1';
 
 const project = (name: string, naming?: ProjectV1['naming']): ProjectV1 => ({
@@ -24,6 +24,13 @@ describe('project naming draft', () => {
     expect(sameNamingDraft(base, { ...base, naming: { ...base.naming } })).toBe(true);
     expect(sameNamingDraft(base, { ...base, name: '别的' })).toBe(false);
     expect(sameNamingDraft(base, { ...base, naming: { ...base.naming, version: 'v002' } })).toBe(false);
+  });
+
+  it('keeps newer local text when a commit is dirty or still queued', () => {
+    expect(shouldAdoptIncomingNaming(false, 0)).toBe(true);
+    expect(shouldAdoptIncomingNaming(true, 0)).toBe(false);
+    expect(shouldAdoptIncomingNaming(false, 1)).toBe(false);
+    expect(shouldAdoptIncomingNaming(true, 1)).toBe(false);
   });
 
   it('reports invalid values at the publication boundary', () => {

@@ -16,6 +16,7 @@ export type FlowProjectTarget =
 export type FlowLaunchResult = { canceled: true } | { canceled: false; bootstrap: FlowEditorBootstrap };
 export type FlowRecentProject = { id: string; name: string; available: boolean };
 export type FlowLauncherState = { recent: FlowRecentProject[]; open: boolean; currentId: string | null };
+export type FlowRelocateResult = { canceled: true } | { ok: true } | { ok: false; message: string };
 
 export type FlowCreateSourceView =
   | { kind: 'none' }
@@ -56,6 +57,9 @@ export type FlowEditorBridge = {
   launcherState(): Promise<FlowLauncherState>;
   /** Display label only; the recorded root and project identity never change here. */
   updateRecentName(sessionId: string, name: string): Promise<void>;
+  removeRecent(id: string): Promise<void>;
+  /** Rebind a missing recent target only after its project identity matches. */
+  relocateRecent(id: string): Promise<FlowRelocateResult>;
   launch(target: FlowProjectTarget): Promise<FlowLaunchResult>;
   createDraft(): Promise<FlowCreateDraftView>;
   createChooseSource(draftId: string, kind: 'files' | 'folder'): Promise<FlowCreateDraftView | { canceled: true }>;

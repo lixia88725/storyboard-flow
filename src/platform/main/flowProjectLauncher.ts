@@ -347,6 +347,30 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
   });
   const idFor = async (root: string) => (await loadRecent()).find(entry => entry.root === root)?.id ?? null;
 
+  const recentProject = async (id: string) => {
+    const entry = (await loadRecent()).find(candidate => candidate.id === id);
+    return entry ? { projectId: entry.projectId, name: entry.name } : null;
+  };
+  const forget = async (id: string) => {
+    const list = await loadRecent();
+    if (!list.some(entry => entry.id === id)) return;
+    recent = list.filter(entry => entry.id !== id);
+    await saveRecent();
+  };
+  /** Rebind a missing target only after the caller verified the same project id. */
+  const relocate = async (id: string, root: string, projectId: string, projectName: string) => {
+    const list = await loadRecent();
+    const entry = list.find(candidate => candidate.id === id);
+    if (!entry) throw Error('这条最近项目记录已不存在');
+    if (entry.projectId !== projectId) throw Error('这个文件夹里的项目与最近记录不一致');
+    if (list.some(candidate => candidate.id !== id && candidate.root === root)) throw Error('这个位置已经在最近项目中');
+    const canonical = await fs.realpath(root);
+    recent = list.map(candidate => candidate.id === id
+      ? { ...candidate, root: canonical, name: clean(projectName), lastOpenedAt: now() }
+      : candidate);
+    await saveRecent();
+  };
+
   /** Renaming the project changes the display label, never the folder. */
   const updateName = async (root: string, projectName: string) => {
     const list = await loadRecent();
@@ -359,7 +383,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
   };
 
   return {
-    state, idFor, updateName, openRoot, openRecent, begin, setSource, setDestination, update,
+    state, idFor, recentProject, forget, relocate, updateName, openRoot, openRecent, begin, setSource, setDestination, update,
     problem: (id: string) => problem(requireDraft(id)),
     createAndPrepare, abort, discard, abortAll,
     view: (id: string) => view(requireDraft(id)),
