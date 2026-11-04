@@ -33,6 +33,13 @@ export type FlowCreatePatch = { folderName?: string; name?: string; naming?: Pro
 export type FlowCreateProgress = { draftId: string; done: number; total: number; phase?: 'read' | 'write' };
 export type FlowCreateIssues = { requestId: string; draftId: string; issues: CreateImageProjectIssue[] };
 
+export type FlowPendingMode = 'files' | 'folder';
+/** The bridge request is created by the Session and only carries the mode and an
+ * opaque operation id. Main owns the source paths and the owner/window binding. */
+export type FlowPendingBridgeRequest = { mode: FlowPendingMode; operationId: string; recover: boolean };
+export type FlowPendingProgress = { operationId: string; done: number; total: number; phase?: 'read' | 'write' };
+export type FlowPendingIssues = { requestId: string; operationId: string; issues: CreateImageProjectIssue[] };
+
 export type FlowEditorBridge = {
   read(sessionId: string, id: string): ReturnType<FlowAssetDepot['read']>;
   put(sessionId: string, input: Parameters<FlowAssetDepot['put']>[0]): ReturnType<FlowAssetDepot['put']>;
@@ -59,4 +66,11 @@ export type FlowEditorBridge = {
   respondCreateIssues(requestId: string, decision: 'continue' | 'cancel'): Promise<boolean>;
   onCreateProgress(listener: (progress: FlowCreateProgress) => void): () => void;
   onCreateIssues(listener: (issues: FlowCreateIssues) => void): () => void;
+  /** True only when the Main runtime can append into Pending. */
+  pendingCapability(): Promise<boolean>;
+  pendingAdd(sessionId: string, project: ProjectV1, request: FlowPendingBridgeRequest): Promise<FlowResult<ProjectV1>>;
+  cancelPendingAdd(sessionId: string, operationId: string): Promise<void>;
+  respondPendingIssues(requestId: string, decision: 'continue' | 'cancel'): Promise<boolean>;
+  onPendingProgress(listener: (progress: FlowPendingProgress) => void): () => void;
+  onPendingIssues(listener: (issues: FlowPendingIssues) => void): () => void;
 };

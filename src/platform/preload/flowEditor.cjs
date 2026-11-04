@@ -27,5 +27,11 @@ contextBridge.exposeInMainWorld('flowEditor', {
   createDiscard: draftId => ipcRenderer.invoke('flow-editor:create-discard', draftId),
   respondCreateIssues: (requestId, decision) => ipcRenderer.invoke('flow-editor:create-issues-response', requestId, decision),
   onCreateProgress: listener => listen('flow-editor:create-progress', listener),
-  onCreateIssues: listener => listen('flow-editor:create-issues', listener)
+  onCreateIssues: listener => listen('flow-editor:create-issues', listener),
+  pendingCapability: () => ipcRenderer.invoke('flow-editor:pending-capability'),
+  pendingAdd: (sessionId, project, request) => ipcRenderer.invoke('flow-editor:pending-add', sessionId, project, request),
+  cancelPendingAdd: (sessionId, operationId) => ipcRenderer.invoke('flow-editor:pending-cancel', sessionId, operationId),
+  respondPendingIssues: (requestId, decision) => ipcRenderer.invoke('flow-editor:pending-issues-response', requestId, decision),
+  onPendingProgress: listener => listen('flow-editor:pending-progress', listener),
+  onPendingIssues: listener => listen('flow-editor:pending-issues', listener)
 });

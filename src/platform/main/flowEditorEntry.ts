@@ -9,9 +9,12 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createFlowWorkspace, type FlowWorkspaceTarget } from '../../project-files/main/flowWorkspace.js';
 import { openFlowEditorRuntime } from '../../project-files/main/flowEditorRuntime.js';
-import type { FlowCreatePatch, FlowEditorBootstrap, FlowProjectTarget } from '../contracts/flowEditor.js';
+import type { FlowCreatePatch, FlowEditorBootstrap, FlowPendingBridgeRequest, FlowProjectTarget } from '../contracts/flowEditor.js';
 import type { CreateImageProject, CreateImageProjectIssue } from '../contracts/flowProjectCreation.js';
+import type { FlowResult } from '../contracts/flowWave2.js';
+import type { ProjectV1 } from '../contracts/refactorV1.js';
 import { createFlowProjectLauncher, isProjectCreationCanceled } from './flowProjectLauncher.js';
+import { createPendingAddCoordinator, type PendingAddSource, type PendingAppendOptions } from './pendingAddCoordinator.js';
 
 const explicit = process.argv.slice(app.isPackaged ? 1 : 2).filter(arg => !arg.startsWith('--inspect'));
 const [requestedRoot = '--choose', suppliedUserData, compatibilityView] = explicit;
@@ -38,9 +41,19 @@ else app.whenReady().then(async () => {
   let activeLaunch: Promise<unknown> | null = null;
   let closeId: string | null = null, closing = false;
   const issueRequests = new Map<string, { draftId: string; resolve: (decision: 'continue' | 'cancel') => void }>();
+  const pendingIssueRequests = new Map<string, { operationId: string; resolve: (decision: 'continue' | 'cancel') => void }>();
 
   const send = (channel: string, payload: unknown) => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+  };
+  /** The renderer shows a label, never the Main-owned absolute source path. */
+  const displayIssues = (issues: CreateImageProjectIssue[]) => {
+    const labels = issues.map(issue => path.basename(issue.file));
+    const duplicated = new Set(labels.filter((label, index) => labels.indexOf(label) !== index));
+    return issues.map(issue => ({ ...issue,
+      file: duplicated.has(path.basename(issue.file))
+        ? `${path.basename(path.dirname(issue.file))}/${path.basename(issue.file)}`
+        : path.basename(issue.file) }));
   };
   const settleDraftIssues = (draftId: string, decision: 'continue' | 'cancel') => {
     for (const [requestId, pending] of issueRequests) {
@@ -49,7 +62,12 @@ else app.whenReady().then(async () => {
       pending.resolve(decision);
     }
   };
-  const settleAllIssues = () => { for (const pending of issueRequests.values()) pending.resolve('cancel'); issueRequests.clear(); };
+  const settleAllIssues = () => {
+    for (const pending of issueRequests.values()) pending.resolve('cancel');
+    issueRequests.clear();
+    for (const pending of pendingIssueRequests.values()) pending.resolve('cancel');
+    pendingIssueRequests.clear();
+  };
 
   let createProject: Promise<CreateImageProject> | null = null;
   const loadCreateProject = () => createProject ??= (async () => {
@@ -80,15 +98,8 @@ else app.whenReady().then(async () => {
     decideIssues: (draftId, issues: CreateImageProjectIssue[]) => new Promise<'continue' | 'cancel'>(resolve => {
       if (win.isDestroyed() || win.webContents.isDestroyed()) { resolve('cancel'); return; }
       const requestId = randomUUID();
-      // The renderer shows a label, never the Main-owned absolute source path.
-      const labels = issues.map(issue => path.basename(issue.file));
-      const duplicated = new Set(labels.filter((label, index) => labels.indexOf(label) !== index));
-      const shown = issues.map(issue => ({ ...issue,
-        file: duplicated.has(path.basename(issue.file))
-          ? `${path.basename(path.dirname(issue.file))}/${path.basename(issue.file)}`
-          : path.basename(issue.file) }));
       issueRequests.set(requestId, { draftId, resolve });
-      send('flow-editor:create-issues', { requestId, draftId, issues: shown });
+      send('flow-editor:create-issues', { requestId, draftId, issues: displayIssues(issues) });
     })
   });
 
@@ -135,6 +146,58 @@ else app.whenReady().then(async () => {
     if (!workspace) throw Error('尚未打开项目');
     return workspace;
   };
+
+  type PendingRuntime = {
+    appendPending?: (token: string, project: ProjectV1, input: { source?: PendingAddSource; recover?: boolean },
+      options: PendingAppendOptions) => Promise<FlowResult<ProjectV1>>;
+  };
+  const appendPending = async (owner: { sessionId: string; windowId: number; projectId: string; mode: 'files' | 'folder' },
+    project: ProjectV1, input: { source?: PendingAddSource; recover?: boolean }, options: PendingAppendOptions): Promise<FlowResult<ProjectV1>> => {
+    const active = workspace as (ReturnType<typeof createFlowWorkspace> & PendingRuntime) | null;
+    if (!active || typeof active.appendPending !== 'function')
+      return { ok: false, error: { code: 'unavailable', message: 'Pending import is not connected', effect: 'none' } };
+    return active.appendPending(owner.sessionId, project, input, options);
+  };
+  const currentSessionId = () => {
+    try { return workspace?.open().sessionId ?? null; } catch { return null; }
+  };
+  const pickPendingSource = async (mode: 'files' | 'folder'): Promise<PendingAddSource | null> => {
+    if (mode === 'files') {
+      const selection = await dialog.showOpenDialog(win, { title: '添加到 Pending：选择图片', buttonLabel: '选择',
+        properties: ['openFile', 'multiSelections'], filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'tif', 'tiff'] }] });
+      if (selection.canceled) return null;
+      const files = await Promise.all(selection.filePaths.map(file => fs.realpath(file)));
+      return { kind: 'files', files };
+    }
+    const selection = await dialog.showOpenDialog(win, { title: '添加到 Pending：选择文件夹', buttonLabel: '选择', properties: ['openDirectory'] });
+    if (selection.canceled) return null;
+    return { kind: 'folder', folder: await fs.realpath(selection.filePaths[0]) };
+  };
+  const askPendingIssues = (operationId: string, issues: CreateImageProjectIssue[], signal: AbortSignal) =>
+    new Promise<'continue' | 'cancel'>(resolve => {
+      if (win.isDestroyed() || win.webContents.isDestroyed() || signal.aborted) { resolve('cancel'); return; }
+      const requestId = randomUUID();
+      const finish = (decision: 'continue' | 'cancel') => {
+        if (!pendingIssueRequests.delete(requestId)) return;
+        signal.removeEventListener('abort', abort);
+        resolve(decision);
+      };
+      const abort = () => finish('cancel');
+      pendingIssueRequests.set(requestId, { operationId, resolve: finish });
+      signal.addEventListener('abort', abort, { once: true });
+      send('flow-editor:pending-issues', { requestId, operationId, issues: displayIssues(issues) });
+    });
+  const pending = createPendingAddCoordinator({
+    currentSessionId,
+    pick: pickPendingSource,
+    append: appendPending,
+    onProgress: (operationId, progress) => {
+      if (!Number.isFinite(progress?.done) || !Number.isFinite(progress?.total) || progress.total < 0) return;
+      send('flow-editor:pending-progress', { operationId, done: Math.max(0, Math.min(progress.done, progress.total)), total: progress.total,
+        ...(progress.phase === 'read' || progress.phase === 'write' ? { phase: progress.phase } : {}) });
+    },
+    askIssues: askPendingIssues
+  });
 
   ipcMain.handle('flow-editor:launcher-state', async event => {
     caller(event);
@@ -243,14 +306,36 @@ else app.whenReady().then(async () => {
   ipcMain.handle('flow-editor:create-issues-response', (event, requestId: string, decision: 'continue' | 'cancel') => {
     caller(event);
     if (typeof requestId !== 'string' || (decision !== 'continue' && decision !== 'cancel')) throw Error('Invalid issue decision');
-    const pending = issueRequests.get(requestId);
-    if (!pending) return false;
+    const request = issueRequests.get(requestId);
+    if (!request) return false;
     issueRequests.delete(requestId);
-    pending.resolve(decision);
+    request.resolve(decision);
+    return true;
+  });
+  ipcMain.handle('flow-editor:pending-capability', event => {
+    caller(event);
+    const active = workspace as (ReturnType<typeof createFlowWorkspace> & PendingRuntime) | null;
+    return Boolean(active && typeof active.appendPending === 'function');
+  });
+  ipcMain.handle('flow-editor:pending-add', (event, token: string, project: ProjectV1, request: FlowPendingBridgeRequest) => {
+    caller(event);
+    return pending.add(event.sender.id, token, project, request);
+  });
+  ipcMain.handle('flow-editor:pending-cancel', (event, token: string, operationId: string) => {
+    caller(event);
+    pending.cancel(event.sender.id, token, operationId);
+  });
+  ipcMain.handle('flow-editor:pending-issues-response', (event, requestId: string, decision: 'continue' | 'cancel') => {
+    caller(event);
+    if (typeof requestId !== 'string' || (decision !== 'continue' && decision !== 'cancel')) throw Error('Invalid Pending issue decision');
+    const request = pendingIssueRequests.get(requestId);
+    if (!request) return false;
+    request.resolve(decision);
     return true;
   });
 
   win.on('close', event => {
+    pending.cancelAll();
     if (!workspace) {
       if (activeLaunch || [...issueRequests.keys()].length) {
         event.preventDefault();

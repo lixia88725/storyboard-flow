@@ -35,6 +35,20 @@ const api: FlowEditorBridge = {
     const handler = (_event: Electron.IpcRendererEvent, issues: Parameters<typeof listener>[0]) => listener(issues);
     ipcRenderer.on('flow-editor:create-issues', handler);
     return () => { ipcRenderer.removeListener('flow-editor:create-issues', handler); };
+  },
+  pendingCapability: () => ipcRenderer.invoke('flow-editor:pending-capability'),
+  pendingAdd: (sessionId, project, request) => ipcRenderer.invoke('flow-editor:pending-add', sessionId, project, request),
+  cancelPendingAdd: (sessionId, operationId) => ipcRenderer.invoke('flow-editor:pending-cancel', sessionId, operationId),
+  respondPendingIssues: (requestId, decision) => ipcRenderer.invoke('flow-editor:pending-issues-response', requestId, decision),
+  onPendingProgress: listener => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: Parameters<typeof listener>[0]) => listener(progress);
+    ipcRenderer.on('flow-editor:pending-progress', handler);
+    return () => { ipcRenderer.removeListener('flow-editor:pending-progress', handler); };
+  },
+  onPendingIssues: listener => {
+    const handler = (_event: Electron.IpcRendererEvent, issues: Parameters<typeof listener>[0]) => listener(issues);
+    ipcRenderer.on('flow-editor:pending-issues', handler);
+    return () => { ipcRenderer.removeListener('flow-editor:pending-issues', handler); };
   }
 };
 contextBridge.exposeInMainWorld('flowEditor', api);

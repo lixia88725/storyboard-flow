@@ -5,19 +5,23 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const methods = { open: 'open', read: 'read', put: 'put', refresh: 'refresh', folderStatus: 'folderStatus', outputNames: 'outputNames', saveTiff: 'saveTiff', checkpoint: 'checkpoint', switchProject: 'switch-project', finishClose: 'finish-close',
   launcherState: 'launcher-state', updateRecentName: 'update-recent-name', launch: 'launch', createDraft: 'create-draft', createChooseSource: 'create-choose-source', createChooseDestination: 'create-choose-destination',
-  createUpdate: 'create-update', createAbort: 'create-abort', createDiscard: 'create-discard', respondCreateIssues: 'create-issues-response' };
-const listeners = { onClose: 'close', onCreateProgress: 'create-progress', onCreateIssues: 'create-issues' };
-const payloads = { onClose: 'close-id', onCreateProgress: { draftId: 'draft', done: 1, total: 2 }, onCreateIssues: { requestId: 'request', draftId: 'draft', issues: [] } };
+  createUpdate: 'create-update', createAbort: 'create-abort', createDiscard: 'create-discard', respondCreateIssues: 'create-issues-response',
+  pendingCapability: 'pending-capability', pendingAdd: 'pending-add', cancelPendingAdd: 'pending-cancel', respondPendingIssues: 'pending-issues-response' };
+const listeners = { onClose: 'close', onCreateProgress: 'create-progress', onCreateIssues: 'create-issues', onPendingProgress: 'pending-progress', onPendingIssues: 'pending-issues' };
+const payloads = { onClose: 'close-id', onCreateProgress: { draftId: 'draft', done: 1, total: 2 }, onCreateIssues: { requestId: 'request', draftId: 'draft', issues: [] },
+  onPendingProgress: { operationId: 'operation', done: 1, total: 2 }, onPendingIssues: { requestId: 'request', operationId: 'operation', issues: [] } };
 const argsFor = method => {
-  if (method === 'open' || method === 'launcherState' || method === 'createDraft') return [];
+  if (method === 'open' || method === 'launcherState' || method === 'createDraft' || method === 'pendingCapability') return [];
   if (method === 'launch') return [{ test: true }];
   if (method === 'updateRecentName') return ['session', 'name'];
   if (method === 'switchProject') return ['session', { test: true }, { test: true }];
   if (method === 'finishClose') return ['session', { test: true }, 'option'];
   if (method === 'createChooseSource') return ['draft', 'files'];
   if (method === 'createUpdate') return ['draft', { test: true }];
-  if (method === 'respondCreateIssues') return ['request', 'continue'];
+  if (method === 'respondCreateIssues' || method === 'respondPendingIssues') return ['request', 'continue'];
   if (method === 'createAbort' || method === 'createDiscard' || method === 'createChooseDestination') return ['draft'];
+  if (method === 'pendingAdd') return ['session', { test: true }, { test: true }];
+  if (method === 'cancelPendingAdd') return ['session', 'operation'];
   return ['session', { test: true }];
 };
 /** Execute only the trusted preload with an isolated Electron stub; no real IPC. */

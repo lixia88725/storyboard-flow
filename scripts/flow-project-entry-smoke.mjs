@@ -159,7 +159,7 @@ const runPhase=async()=>{
   await wait(()=>exists('[data-project-launcher]'),'launcher');
   const bridge=await exec('(async()=>{const s=await window.flowEditor.launcherState();const d=await window.flowEditor.createDraft();await window.flowEditor.createDiscard(d.id);return {open:s.open,recent:s.recent.length,methods:Object.keys(window.flowEditor).length,defaults:{name:d.name,folderName:d.folderName,naming:d.naming}}})()');
   if(bridge.open!==false)throw Error('home reported an open project');
-  if(bridge.methods!==23)throw Error('preload method count '+bridge.methods);
+  if(bridge.methods!==29)throw Error('preload method count '+bridge.methods);
   if(bridge.defaults.name!=='未命名项目')throw Error('unexpected draft default');
   await shot('01-home');
   await button('打开项目…');await sleep(300);
