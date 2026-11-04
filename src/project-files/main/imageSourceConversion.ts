@@ -17,6 +17,11 @@ export const SOURCE_PIXEL_LIMIT = 16 * 1024 * 1024;
 export const SOURCE_DIMENSION_LIMIT = 8192;
 
 export type ImageSourceIssue = { file: string; reason: string; action: 'skip' | 'flatten' };
+/** A source larger than the shared read cap. Creation converts this into a
+ * confirmable skip instead of aborting the whole batch. */
+export class ImageSourceTooLargeError extends Error {
+  constructor(readonly source: string) { super(`Image source exceeds the ${SOURCE_BYTE_LIMIT}-byte limit: ${source}`); this.name = 'ImageSourceTooLargeError'; }
+}
 export type ScannedSource = { file: string; name: string };
 export type ReadSource = { bytes: Buffer; digest: string };
 
@@ -90,9 +95,10 @@ export async function readImageSource(source: ScannedSource): Promise<ReadSource
   });
   try {
     const before = await handle.stat({ bigint: true });
-    if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(SOURCE_BYTE_LIMIT)) throw Error(`Unsupported image file: ${source.name}`);
+    if (!before.isFile() || before.nlink !== 1n) throw Error(`Unsupported image file: ${source.name}`);
+    if (before.size > BigInt(SOURCE_BYTE_LIMIT)) throw new ImageSourceTooLargeError(source.name);
     const bytes = await handle.readFile();
-    if (bytes.length > SOURCE_BYTE_LIMIT) throw Error(`Image source exceeds the ${SOURCE_BYTE_LIMIT}-byte limit: ${source.name}`);
+    if (bytes.length > SOURCE_BYTE_LIMIT) throw new ImageSourceTooLargeError(source.name);
     const after = await handle.stat({ bigint: true });
     if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size || after.mtimeNs !== before.mtimeNs)
       throw Error(`Image source changed while it was read: ${source.name}`);
@@ -138,6 +144,27 @@ function multiPictureJpeg(bytes: Uint8Array): boolean {
   return false;
 }
 
+/** ICC descriptions are ASCII in v2 profiles and UTF-16BE in v4. Accept only a
+ * profile that identifies itself as sRGB; any other embedded profile is skipped
+ * because the available decoder cannot transform it reliably. */
+function confirmedSrgbProfile(icc: Uint8Array | undefined): boolean {
+  if (!icc) return false;
+  if (/sRGB/i.test(Buffer.from(icc).toString('latin1'))) return true;
+  for (let index = 0; index + 8 <= icc.length; index += 1) {
+    if (icc[index] === 0x73 && icc[index + 1] === 0 && icc[index + 2] === 0x52 && icc[index + 3] === 0 &&
+        icc[index + 4] === 0x47 && icc[index + 5] === 0 && icc[index + 6] === 0x42 && icc[index + 7] === 0) return true;
+  }
+  return false;
+}
+
+function profileLabel(icc: Uint8Array | undefined): string {
+  if (!icc) return 'unknown profile';
+  const text = Buffer.from(icc).toString('latin1');
+  const readable = /[ -~]{6,}/.exec(text);
+  const name = /sRGB|Display P3|Adobe RGB|ROMM|ProPhoto|ITU|DCI|ACES/gi.exec(text);
+  return (name?.[0] ?? readable?.[0] ?? 'embedded profile').slice(0, 60);
+}
+
 /** Convert one source into canvas-sized RGBA layers. A refusal is a per-file defect
  * the caller may confirm as a skip; it is never a silent flatten. */
 export async function convertImageSource(source: ScannedSource, read: ReadSource, codec: TiffCodec): Promise<ConversionResult> {
@@ -165,6 +192,8 @@ export async function convertImageSource(source: ScannedSource, read: ReadSource
   if (meta.format !== 'png' && meta.format !== 'jpeg') return { ok: false, reason: `unsupported raster format: ${meta.format ?? 'unknown'}` };
   if ((meta.format === 'png' && animatedPng(read.bytes)) || (meta.format === 'jpeg' && multiPictureJpeg(read.bytes)))
     return { ok: false, reason: 'multi-frame image has no reliable single-frame composition; export a single frame' };
+  if (meta.hasProfile && !confirmedSrgbProfile(meta.icc))
+    return { ok: false, reason: `embedded ICC profile is not confirmed sRGB (${profileLabel(meta.icc)}) and cannot be converted reliably; export sRGB pixels` };
   const width = meta.autoOrient?.width ?? meta.width, height = meta.autoOrient?.height ?? meta.height;
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 ||
       width > SOURCE_DIMENSION_LIMIT || height > SOURCE_DIMENSION_LIMIT || width * height > SOURCE_PIXEL_LIMIT) {

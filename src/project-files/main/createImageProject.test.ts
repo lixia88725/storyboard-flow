@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { temporaryWorkspace } from '../../../test/temporaryWorkspace';
 import { createTiffCodec } from './formats/index';
 import { createProjectStore } from './persistence';
@@ -68,7 +68,7 @@ describe('createImageProject', () => {
     await fs.mkdir(path.join(sources, 'nested'));
     await fs.writeFile(path.join(sources, 'nested', '3.png'), red);
     const before = { red: hash(red), blue: hash(blue) };
-    const progress: { done: number; total: number }[] = [];
+    const progress: { done: number; total: number; phase?: 'read' | 'write' }[] = [];
     const { root } = await createImageProject(
       { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Proj', name: 'Proj', naming: NAMING },
       options({ onProgress: entry => progress.push(entry) }));
@@ -79,7 +79,11 @@ describe('createImageProject', () => {
     expect(created.shots.map(shot => shot.name)).toEqual(['2', '10']);
     const files = (await fs.readdir(root)).sort();
     expect(files).toEqual(['.storyboard-flow', 'Proj_S01_stb_Li_v002_0010.tif', 'Proj_S01_stb_Li_v002_0020.tif']);
-    expect(progress).toEqual([{ done: 1, total: 2 }, { done: 2, total: 2 }]);
+    expect(progress.filter(entry => entry.phase === 'read')).toEqual([
+      { done: 1, total: 2, phase: 'read' }, { done: 2, total: 2, phase: 'read' }]);
+    // The write pass reaches 100% only after the published project is verified.
+    expect(progress.filter(entry => entry.phase === 'write')).toEqual([
+      { done: 1, total: 2, phase: 'write' }, { done: 2, total: 2, phase: 'write' }]);
     expect(hash(await fs.readFile(path.join(sources, '10.png')))).toBe(before.red);
     expect(hash(await fs.readFile(path.join(sources, '2.jpg')))).toBe(before.blue);
     const ledger = JSON.parse(await fs.readFile(path.join(root, '.storyboard-flow/tiff-output.json'), 'utf8'));
@@ -234,6 +238,45 @@ describe('createImageProject', () => {
     expect(pixels[0]).toBeGreaterThan(pixels[2]);
   }, 60_000);
 
+  it('skips an oversized file after confirmation instead of aborting the batch', async () => {
+    const { sources, destination } = await layout();
+    await fs.writeFile(path.join(sources, 'good.png'), await rgb(4, 3, { r: 1, g: 2, b: 3, alpha: 1 }).png().toBuffer());
+    const huge = path.join(sources, 'huge.png');
+    const handle = await fs.open(huge, 'w');
+    try { await handle.truncate(129 * 1024 * 1024); } finally { await handle.close(); }
+    const reasons: string[] = [];
+    const reads: { done: number; total: number; phase?: string }[] = [];
+    const { root } = await createImageProject(
+      { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Huge', name: 'Huge', naming: NAMING },
+      options({ onProgress: entry => reads.push(entry),
+        decideIssues: async issues => { reasons.push(...issues.map(issue => `${issue.action}:${issue.reason}`)); return 'continue'; } }));
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]).toContain('skip:');
+    expect(reasons[0]).toContain('134217728');
+    expect((await project(root)).shots.map(shot => shot.name)).toEqual(['good']);
+    // Both files still report decode progress, including the skipped one.
+    expect(reads.filter(entry => entry.phase === 'read')).toEqual([
+      { done: 1, total: 2, phase: 'read' }, { done: 2, total: 2, phase: 'read' }]);
+    expect((await fs.stat(huge)).size).toBe(129 * 1024 * 1024);
+  }, 60_000);
+
+  const p3 = '/System/Library/ColorSync/Profiles/Display P3.icc';
+  it.skipIf(!existsSync(p3))('skips a non-sRGB ICC profile that cannot be converted reliably', async () => {
+    const { sources, destination } = await layout();
+    const plain = await rgb(4, 3, { r: 1, g: 2, b: 3, alpha: 1 }).jpeg().toBuffer();
+    await fs.writeFile(path.join(sources, 'p3.jpg'), await sharp(plain).withIccProfile(p3).jpeg().toBuffer());
+    await fs.writeFile(path.join(sources, 'plain.png'), await rgb(4, 3, { r: 4, g: 5, b: 6, alpha: 1 }).png().toBuffer());
+    const reasons: string[] = [];
+    const { root } = await createImageProject(
+      { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Profile', name: 'Profile', naming: NAMING },
+      options({ decideIssues: async issues => { reasons.push(...issues.map(issue => `${issue.action}:${issue.reason}`)); return 'continue'; } }));
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]).toContain('skip:');
+    expect(reasons[0]).toContain('ICC');
+    expect(reasons[0]).toContain('not confirmed sRGB');
+    expect((await project(root)).shots.map(shot => shot.name)).toEqual(['plain']);
+  }, 60_000);
+
   it('reports a multipage TIFF as a confirmed skip instead of silently flattening it', async () => {
     const { sources, destination } = await layout();
     await multipageTiff(path.join(sources, 'pages.tif'));
@@ -282,6 +325,15 @@ describe('createImageProject', () => {
     expect((await stages(destination)).length).toBe(0);
     await expect(createImageProject({ ...input, destinationParent: sources, folderName: 'Nested', source: { kind: 'folder', folder: sources } }, options()))
       .rejects.toThrow('outside the source folder');
+    // A single selected file must not bypass the same rule, including a deeper parent.
+    await expect(createImageProject({ ...input, destinationParent: sources, folderName: 'Single',
+      source: { kind: 'files', files: [path.join(sources, 'good.png')] } }, options()))
+      .rejects.toThrow('outside the source folder');
+    await fs.mkdir(path.join(sources, 'deeper'));
+    await expect(createImageProject({ ...input, destinationParent: path.join(sources, 'deeper'), folderName: 'Single',
+      source: { kind: 'files', files: [path.join(sources, 'good.png')] } }, options()))
+      .rejects.toThrow('outside the source folder');
+    expect((await stages(destination)).length).toBe(0);
     await fs.symlink(path.join(sources, 'good.png'), path.join(sources, 'alias.png'));
     await expect(createImageProject({ ...input, folderName: 'Alias', source: { kind: 'folder', folder: sources } }, options()))
       .rejects.toThrow('regular file');
@@ -318,6 +370,67 @@ describe('createImageProject', () => {
     expect(await fs.readdir(destination)).toEqual([]);
     expect(await fs.readFile(file)).toEqual(replacement);
   }, 60_000);
+
+  it('retains its private stage instead of deleting files it did not create', async () => {
+    const { sources, destination } = await layout();
+    for (const name of ['a.png', 'b.png']) await fs.writeFile(path.join(sources, name), await rgb(4, 3, { r: 9, g: 9, b: 9, alpha: 1 }).png().toBuffer());
+    const replacement = await rgb(6, 5, { r: 1, g: 2, b: 3, alpha: 1 }).png().toBuffer();
+    const injected: string[] = [];
+    await expect(createImageProject(
+      { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Foreign', name: 'Foreign', naming: NAMING },
+      options({ onProgress: ({ done, phase }) => {
+        if (done !== 1 || phase !== 'write') return;
+        const stage = readdirSync(destination).find(name => name.startsWith('.flow-create-'));
+        if (!stage) throw Error('stage missing');
+        const root = path.join(destination, stage);
+        writeFileSync(path.join(root, 'intruder.txt'), 'from outside');
+        writeFileSync(path.join(root, '.storyboard-flow', 'nested-intruder.txt'), 'from outside');
+        injected.push(root);
+        // Force the creation to fail after the foreign files exist.
+        writeFileSync(path.join(sources, 'a.png'), replacement);
+      } }))).rejects.toThrow(/content not created here/);
+    expect(await fs.readdir(destination)).toHaveLength(1);
+    expect(injected).toHaveLength(1);
+    expect((await fs.readdir(destination))[0].startsWith('.flow-create-')).toBe(true);
+    expect(await fs.readFile(path.join(injected[0], 'intruder.txt'), 'utf8')).toBe('from outside');
+    expect(await fs.readFile(path.join(injected[0], '.storyboard-flow', 'nested-intruder.txt'), 'utf8')).toBe('from outside');
+    expect(await fs.readFile(path.join(sources, 'a.png'))).toEqual(replacement);
+  }, 60_000);
+
+  it('retains a published project when verification fails, including files added there', async () => {
+    const { sources, destination } = await layout();
+    const width = 2000, height = 2000;
+    const noise = randomBytes(width * height * 3);
+    await fs.writeFile(path.join(sources, 'big.png'), await sharp(noise, { raw: { width, height, channels: 3 } }).png().toBuffer());
+    const target = path.join(destination, 'Big');
+    let tampered = false;
+    const timer = setInterval(() => {
+      if (tampered) return;
+      try {
+        const stage = readdirSync(destination).find(name => name.startsWith('.flow-create-'));
+        if (!stage) return;
+        const root = path.join(destination, stage);
+        const checkpoint = path.join(root, '.storyboard-flow', 'checkpoints', 'project.json');
+        if (!existsSync(checkpoint)) return;
+        const output = readdirSync(root).find(name => name.endsWith('.tif'));
+        if (!output) return;
+        // Once the outputs are bound and the checkpoint is published, replace one
+        // output with a symlink so the post-publication check must fail.
+        rmSync(path.join(root, output));
+        symlinkSync(checkpoint, path.join(root, output));
+        writeFileSync(path.join(root, 'intruder.txt'), 'added after publication began');
+        tampered = true;
+      } catch { tampered = false; }
+    }, 1);
+    try {
+      await expect(createImageProject(
+        { source: { kind: 'folder', folder: sources }, destinationParent: destination, folderName: 'Big', name: 'Big', naming: NAMING },
+        options())).rejects.toThrow(/published but verification failed.*retained at/i);
+    } finally { clearInterval(timer); }
+    expect(tampered).toBe(true);
+    expect(existsSync(target)).toBe(true);
+    expect(await fs.readFile(path.join(target, 'intruder.txt'), 'utf8')).toBe('added after publication began');
+  }, 120_000);
 
   it('detects a source moved during creation, cleans its stage and leaves the moved file alone', async () => {
     const { sources, destination } = await layout();
