@@ -268,6 +268,32 @@ export type SketchPadProps = {
   onInteractionActiveChange?: (active: boolean) => void;
 };
 
+/**
+ * A preset stroke, drawn by the committing renderer into an offscreen canvas and shown as
+ * an image. The canvas is reused per stroke and remounted per redraw: Konva only repaints
+ * when the image prop changes identity, so mutating one canvas in place would freeze the
+ * preview at its first frame.
+ */
+const BrushStrokeImage = ({ stroke, width, height, layerOpacity }: {
+  stroke: SketchStroke; width: number; height: number; layerOpacity?: number;
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    const canvas = (canvasRef.current ??= document.createElement("canvas"));
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    drawStrokePathOnCanvas(context, stroke);
+    setVersion(current => current + 1);
+  }, [stroke, width, height]);
+  if (!canvasRef.current) return null;
+  return <KonvaImage key={version} image={canvasRef.current} listening={false} perfectDrawEnabled={false}
+    opacity={liveStrokePreviewOpacity(stroke, layerOpacity)} />;
+};
+
 export const SketchPad = memo(({
   respectActiveLayer = false,
   shot,
@@ -301,24 +327,7 @@ export const SketchPad = memo(({
 }: SketchPadProps) => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [draftStroke, setDraftStroke] = useState<SketchStroke | undefined>();
-  // Preset strokes preview through the same dab renderer that commits them. Drawing the
-  // draft with a Konva Line would show a round stroke and then swap to a textured one.
-  const draftBrushCanvasRef = useRef<HTMLCanvasElement | undefined>(undefined);
-  const [draftBrushVersion, setDraftBrushVersion] = useState(0);
-  useEffect(() => {
-    const stroke = draftStroke;
-    if (!stroke?.brush) return;
-    const width = shot.flow?.canvasWidth ?? sketchCanvasSize.width;
-    const height = shot.flow?.canvasHeight ?? sketchCanvasSize.height;
-    const canvas = (draftBrushCanvasRef.current ??= document.createElement("canvas"));
-    if (canvas.width !== width) canvas.width = width;
-    if (canvas.height !== height) canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    drawStrokePathOnCanvas(context, stroke);
-    setDraftBrushVersion((version) => version + 1);
-  }, [draftStroke, shot.flow?.canvasWidth, shot.flow?.canvasHeight]);
+
   const [pendingCommittedStrokes, setPendingCommittedStrokes] = useState<PendingCommittedStroke[]>([]);
   const [stageSize, setStageSize] = useState(sketchCanvasSize);
   const imageStageRef = useRef<HTMLDivElement | null>(null);
@@ -1659,8 +1668,9 @@ export const SketchPad = memo(({
                   : [])
               ].map(({ layerId, stroke }) => {
                 const previewLayer = bitmapLayers.find((layer) => layer.id === layerId) ?? activeDrawingLayer;
-                if (stroke.brush && draftBrushCanvasRef.current && stroke.id === draftStroke?.id) {
-                  return <KonvaImage key={stroke.id} image={draftBrushCanvasRef.current} listening={false} perfectDrawEnabled={false} />;
+                if (stroke.brush) {
+                  return <BrushStrokeImage key={stroke.id} stroke={stroke} width={canvasSize.width} height={canvasSize.height}
+                    layerOpacity={previewLayer?.opacity} />;
                 }
                 return stroke.points.length === 2 ? (
                   <Circle
