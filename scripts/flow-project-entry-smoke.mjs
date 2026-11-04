@@ -3,10 +3,7 @@
 // (defaults, progress, cancel, retry), batch issue confirmation, create while editing,
 // naming collected by Save, reopen from recent, and real preload IPC.
 //
-// Requires a complete build (`npm run build`). If the file module has not landed yet,
-// this script writes a TEST-ONLY createImageProject stub into dist-electron for the run
-// and removes it afterwards. The stub exercises this entry's wiring, not the real file
-// module's import fidelity.
+// Requires a complete build with the real image-import backend.
 import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -21,6 +18,8 @@ import { createProjectStore } from '../dist-electron/project-files/main/persiste
 
 const require = createRequire(import.meta.url);
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const backend = path.join(repo, 'dist-electron/project-files/main/createImageProject.js');
+if (!existsSync(backend)) throw Error('Missing built createImageProject.js; run npm run build before testing project entry');
 const electron = require('electron');
 const run = await realpath(await mkdtemp(path.join(os.tmpdir(), 'flow-project-entry-')));
 const evidence = path.join(repo, '.hermes', 'project-entry-nov04', path.basename(run));
@@ -73,57 +72,6 @@ const destination3 = path.join(run, 'destination-three');
 await mkdir(destination);
 await mkdir(destination2);
 await mkdir(destination3);
-
-const stubPath = path.join(repo, 'dist-electron', 'project-files', 'main', 'createImageProject.js');
-const usingStub = !existsSync(stubPath);
-if (usingStub) {
-  await writeFile(stubPath, `// TEST-ONLY stub written by scripts/flow-project-entry-smoke.mjs.
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import sharp from 'sharp';
-import { openFlowAssetDepot } from './persistence/depot.js';
-import { createProjectStore } from './persistence/index.js';
-const get = r => { if (!r.ok) throw Error(r.error.message); return r.value; };
-const supported = name => /\\.(png|jpe?g|tiff?)$/i.test(name);
-export async function createImageProject(input, options) {
-  const target = path.join(input.destinationParent, input.folderName);
-  await fs.mkdir(target);
-  try {
-    let files = input.source.kind === 'folder'
-      ? (await fs.readdir(input.source.folder)).filter(name => supported(name)).sort((a, b) => a.localeCompare(b)).map(name => path.join(input.source.folder, name))
-      : input.source.files.filter(file => supported(file));
-    const broken = files.filter(file => path.basename(file).startsWith('broken'));
-    if (broken.length && options.decideIssues) {
-      const decision = await options.decideIssues(broken.map(file => ({ file: path.basename(file), reason: '测试用不可读图片', action: 'skip' })));
-      if (decision !== 'continue') throw Error('creation cancelled');
-      files = files.filter(file => !broken.includes(file));
-    }
-    const project = { schema: 'storyboard-flow.project', version: 1, id: randomUUID(), revision: 0,
-      name: input.name, naming: { ...input.naming }, shots: [], parkedShots: [], dialogues: [], images: {} };
-    const depot = get(await openFlowAssetDepot({ root: target, sessionId: randomUUID(), maxPixels: 16 * 1024 * 1024, maxPngBytes: 64 * 1024 * 1024 }));
-    for (const [index, file] of files.entries()) {
-      if (options.signal.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
-      const png = await sharp(file).png().toBuffer();
-      const meta = await sharp(png).metadata();
-      const { assetId } = get(await depot.put({ operationId: 'create-' + index, png, width: meta.width, height: meta.height }));
-      const shotId = randomUUID(), imageId = randomUUID(), layerId = randomUUID();
-      project.images[imageId] = { id: imageId, revision: 0, width: meta.width, height: meta.height, layers: [
-        { id: layerId, name: 'Drawing', kind: 'image', locked: false, visible: true, opacity: 1, blendMode: 'normal', width: meta.width, height: meta.height, assetId }
-      ] };
-      project.shots.push({ id: shotId, imageId, name: path.parse(file).name, scriptText: '' });
-      options.onProgress?.({ done: index + 1, total: files.length });
-      await new Promise(resolve => setTimeout(resolve, 180));
-    }
-    get(await createProjectStore().saveCheckpoint(target, project, async id => get(await depot.read(id))));
-    return { root: target };
-  } catch (error) {
-    await fs.rm(target, { recursive: true, force: true }).catch(() => {});
-    throw error;
-  }
-}
-`);
-}
 
 const driverPath = path.join(run, 'driver.cjs');
 const resultPath = path.join(run, 'phase-result.json');
@@ -387,13 +335,11 @@ try {
     if (!quit?.quit) throw Error(`${phase.phase} did not close cleanly (exit ${code})\n${log.join('')}`);
     console.log(phase.phase, 'PASS', JSON.stringify(result));
   }
-  await writeFile(path.join(evidence, 'summary.json'), JSON.stringify({ passed: true, usingStub, phases: phases.map(p => p.phase) }, null, 2));
+  await writeFile(path.join(evidence, 'summary.json'), JSON.stringify({ passed: true, backend: "createImageProject", phases: phases.map(p => p.phase) }, null, 2));
   console.log('PASS', evidence);
 } catch (error) {
   failed = error;
   console.error(error);
-  await writeFile(path.join(evidence, 'summary.json'), JSON.stringify({ passed: false, usingStub, reason: String(error) }, null, 2)).catch(() => {});
-} finally {
-  if (usingStub) await rm(stubPath, { force: true });
+  await writeFile(path.join(evidence, 'summary.json'), JSON.stringify({ passed: false, backend: "createImageProject", reason: String(error) }, null, 2)).catch(() => {});
 }
 if (failed) process.exit(1);
