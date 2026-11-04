@@ -92,11 +92,11 @@ export async function publishDirectoryExclusive(
  * opened descriptors before truncating, so a swapped staged name cannot redirect
  * the read and a replaced target is never overwritten. The helper fsyncs the
  * file and the Pending directory before returning. */
-export async function pendingOutput(mode: 'create' | 'write' | 'discard', input: {
+export async function pendingOutput(mode: 'create' | 'write', input: {
   stageDir: string; stageName: string; pendingDir: string; targetName: string;
   fileDev: string; fileIno: string; targetDev?: string; targetIno?: string;
   stageDev: string; stageIno: string; pendingDev: string; pendingIno: string;
-}): Promise<{ ok: true; dev?: string; ino?: string; size?: number; removed?: boolean } | { ok: false; code: string; message: string }> {
+}): Promise<{ ok: true; dev: string; ino: string; size?: number } | { ok: false; code: string; message: string }> {
   const { execFile } = await import('node:child_process');
   const path = await import('node:path');
   for (const file of [input.stageDir, input.pendingDir]) {

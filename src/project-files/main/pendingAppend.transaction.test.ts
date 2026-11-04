@@ -14,7 +14,7 @@ import { createPresentationCodec } from './formats/presentation.js';
 import { flowCodecOptions } from '../../platform/main/flowRuntimePaths.js';
 import { preparePendingAdd } from './appendPendingImages';
 import { pendingOutput } from '../../platform/main/platform/index.js';
-import { consumePendingNameGrowth } from './flowTiffSave';
+import { consumePendingNameGrowth, PENDING_ADD_BATCH_LIMIT, PENDING_ADD_STAGE_LIMIT } from './flowTiffSave';
 import type { AssetReaderV1, ProjectV1 } from '../../platform/contracts/refactorV1.js';
 
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -180,7 +180,7 @@ describe('appendPending transaction', () => {
     const journal = await interruptedAppend(root, current, 'lost.png', [1, 2, 5]);
     const pendingFile = path.join(root, 'Pending', journal.additions[0].name);
     await fs.unlink(pendingFile);
-    await fs.unlink(path.join(root, '.storyboard-flow', 'pending-add', journal.token, journal.additions[0].staged));
+    await fs.unlink(path.join(root, '.storyboard-flow', 'pending-add', 'blobs', journal.additions[0].staged));
     await expect(openFlowEditorRuntime(root)).rejects.toThrow('Prepared Pending TIFF is unavailable');
     await expect(fs.lstat(pendingFile)).rejects.toMatchObject({ code: 'ENOENT' });
   }, 120_000);
@@ -437,6 +437,40 @@ describe('appendPending transaction', () => {
   }, 120_000);
 
 
+  it('retains staged bytes by content address instead of deleting them', async () => {
+    const { root, project: current } = await project();
+    const runtime = await openFlowEditorRuntime(root);
+    const file = await addSource(root, 'retain.png', [71, 72, 73]);
+    const result = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-retain' },
+      { signal: new AbortController().signal });
+    if (!result.ok) throw Error(result.error.message);
+    const blob = path.join(root, '.storyboard-flow', 'pending-add', 'blobs', result.value.added[0].digest + '.tif');
+    expect((await fs.lstat(blob, { bigint: true })).size).toBeGreaterThan(0);
+    await openFlowEditorRuntime(root);
+    expect((await fs.lstat(blob)).isFile()).toBe(true);
+  }, 120_000);
+
+  it('refuses an append when retained staging cannot reserve one batch, without deleting it', async () => {
+    const { root, project: current } = await project();
+    const blobs = path.join(root, '.storyboard-flow', 'pending-add', 'blobs');
+    await fs.mkdir(blobs, { recursive: true });
+    const unknown = path.join(blobs, 'unknown.bin');
+    const size = PENDING_ADD_STAGE_LIMIT - PENDING_ADD_BATCH_LIMIT + 1;
+    await fs.writeFile(unknown, '');
+    await fs.truncate(unknown, size);
+    const runtime = await openFlowEditorRuntime(root);
+    const file = await addSource(root, 'budget.png', [81, 82, 83]);
+    const result = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-stage-budget' },
+      { signal: new AbortController().signal });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw Error('an over-budget staging area must not start');
+    expect(result.error.message).toMatch(/Pending staging retains/);
+    expect((await fs.lstat(unknown)).size).toBe(size);
+    expect((await ledger(root)).add).toBeUndefined();
+    await expect(fs.lstat(path.join(root, 'Pending'))).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 120_000);
+
+
   it('cancels during the write phase before the journal and leaves no Pending output', async () => {
     const { root, project: current } = await project();
     const runtime = await openFlowEditorRuntime(root);
@@ -450,6 +484,7 @@ describe('appendPending transaction', () => {
     expect(result.error.effect).toBe('none');
     expect(result.error.message).toMatch(/取消/);
     await expect(fs.lstat(path.join(root, 'Pending'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await fs.readdir(path.join(root, '.storyboard-flow', 'pending-add', 'blobs'))).length).toBeGreaterThan(0);
     expect(hash(await fs.readFile(path.join(root, '.storyboard-flow', 'tiff-output.json')))).toBe(ledgerBefore);
   }, 120_000);
 

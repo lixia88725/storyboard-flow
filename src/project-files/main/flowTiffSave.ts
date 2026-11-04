@@ -52,6 +52,11 @@ export type PendingAddition = {
   original: { kind: 'source'; digest: string; read: () => Promise<Uint8Array> } | { kind: 'output' };
 };
 export const PENDING_ADD_STAGE = '.storyboard-flow/pending-add';
+/** Retained staged bytes are content-addressed and never deleted automatically.
+ * The budget bounds consecutive operations; a new append reserves one maximum
+ * batch before staging anything. */
+export const PENDING_ADD_STAGE_LIMIT = 2 * 1024 * 1024 * 1024;
+export const PENDING_ADD_BATCH_LIMIT = 512 * 1024 * 1024;
 /** A rename grows the name in both the retained receipt and the merged entry, so
  * it consumes twice the name delta from the reserved allowance; the full allowance
  * must never be added again after a name race. */
@@ -172,14 +177,31 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
   };
   const retainedError = (text: string) => Object.assign(new Error(text), { pendingAddRetained: true });
   const cancelled = (text: string) => Object.assign(new Error(text), { name: 'AbortError' });
-  const ensureStageRoot = async () => {
-    const stageRoot = path.join(root, PENDING_ADD_STAGE);
-    try { await fs.mkdir(stageRoot, { mode: 0o700 }); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-    const entry = await fs.lstat(stageRoot);
-    if (!entry.isDirectory() || entry.isSymbolicLink() || await fs.realpath(stageRoot) !== stageRoot)
-      throw Error('Pending add staging directory is aliased or replaced');
-    return stageRoot;
+  /** Staged TIFFs live in one content-addressed directory. Entries are reused by
+   * digest and never deleted; unknown or aliased entries are left in place. */
+  const ensureStageBlobs = async () => {
+    const stageRoot = path.join(root, PENDING_ADD_STAGE), blobs = path.join(stageRoot, 'blobs');
+    for (const dir of [stageRoot, blobs]) {
+      try { await fs.mkdir(dir, { mode: 0o700 }); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+      const entry = await fs.lstat(dir);
+      if (!entry.isDirectory() || entry.isSymbolicLink() || await fs.realpath(dir) !== dir)
+        throw Error('Pending add staging directory is aliased or replaced');
+    }
+    return blobs;
+  };
+  /** Logical bytes already retained; symlinks and multiply-linked entries are not
+   * counted and are never touched. */
+  const stageUsage = async (dir: string) => {
+    let total = 0;
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const st = await fs.lstat(path.join(dir, entry.name), { bigint: true });
+      if (!st.isFile() || st.isSymbolicLink() || st.nlink !== 1n) continue;
+      total += Number(st.size);
+      if (total > PENDING_ADD_STAGE_LIMIT) break;
+    }
+    return total;
   };
   const ensurePendingRoot = async () => {
     const pendingPath = path.join(root, 'Pending');
@@ -190,19 +212,6 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
       throw Error('Pending directory is aliased or replaced');
     await assertPhysicalWorkspaceWriterTargets([pendingPath]);
     return { path: pendingPath, dev: entry.dev, ino: entry.ino };
-  };
-  /** Remove only this transaction's staged names, verified through the binding
-   * descriptor. A replaced or foreign entry is left in place. */
-  const discardStaged = async (records: PendingAddRecord[], stageDir: string,
-    stageInfo: { dev: bigint; ino: bigint }, pending: { path: string; dev: bigint; ino: bigint }) => {
-    for (const record of records) {
-      try {
-        await pendingOutput('discard', { stageDir, stageName: record.staged, pendingDir: pending.path, targetName: record.name,
-          fileDev: record.dev, fileIno: record.ino, stageDev: String(stageInfo.dev), stageIno: String(stageInfo.ino),
-          pendingDev: String(pending.dev), pendingIno: String(pending.ino) });
-      } catch { /* leave unproven entries in the private staging directory */ }
-    }
-    try { await fs.rmdir(stageDir); } catch { /* foreign staging residue is retained internally */ }
   };
   return {
     folderStatus({ project, inspectDisk }: import('../../platform/contracts/flowEditor.js').FolderStatusRequest): Promise<import('../../platform/contracts/flowEditor.js').FolderStatus> {
@@ -512,9 +521,11 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           }
         };
         const names = payload.map(item => nextName(item.basis));
-        const stageRoot = await ensureStageRoot(), token = randomUUID(), stageDir = path.join(stageRoot, token);
-        await fs.mkdir(stageDir, { mode: 0o700 });
+        const stageDir = await ensureStageBlobs(), token = randomUUID();
         const stageInfo = await fs.lstat(stageDir, { bigint: true });
+        const retained = await stageUsage(stageDir);
+        if (retained + PENDING_ADD_BATCH_LIMIT > PENDING_ADD_STAGE_LIMIT)
+          throw Error(`Pending staging retains ${retained} bytes of ${PENDING_ADD_STAGE_LIMIT}; a ${PENDING_ADD_BATCH_LIMIT}-byte batch cannot be reserved. Nothing was deleted; inspect ${stageDir}`);
         const records: PendingAddRecord[] = [];
         let total = 0;
         for (const [index, item] of payload.entries()) {
@@ -526,14 +537,20 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           if (!encoded.ok) throw Error(`Pending image could not be encoded: ${encoded.error.message}`);
           const output = Buffer.from(encoded.value); total += output.length;
           if (total > 512 * 1024 * 1024) throw Error('Prepared Pending TIFF batch exceeds 512 MiB');
-          const staged = names[index], stagedPath = path.join(stageDir, staged);
-          await fs.writeFile(stagedPath, output, { flag: 'wx' });
+          const digest = hash(output), staged = digest + '.tif', stagedPath = path.join(stageDir, staged);
+          try { await fs.writeFile(stagedPath, output, { flag: 'wx' }); }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+            const existing = await read(stagedPath, PENDING_ADD_BATCH_LIMIT);
+            if (hash(existing) !== digest)
+              throw Error('A staged block in the private staging directory does not match its content address; left untouched at ' + stagedPath);
+          }
           const handle = await fs.open(stagedPath, 'r');
           try { await handle.sync(); } finally { await handle.close(); }
           const st = await fs.lstat(stagedPath, { bigint: true });
           const pixelHashes = await imagePixelDigests(item.image, readAsset);
           records.push({ shot: structuredClone(shot), image: structuredClone(item.image), dialogues: structuredClone(item.dialogues),
-            name: staged, digest: hash(output), originalDigest: item.original.kind === 'output' ? hash(output) : item.original.digest,
+            name: names[index], digest, originalDigest: item.original.kind === 'output' ? digest : item.original.digest,
             original: item.original.kind, pixelHashes, staged, dev: String(st.dev), ino: String(st.ino) });
           options.onProgress?.({ done: index + 1, total: payload.length });
         }
@@ -631,7 +648,6 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           content: boardContentDigest(after, after.parkedShots.find(shot => shot.id === record.shot.id)!), location: 'parked' });
         ledger.add!.complete = true; delete ledger.saved;
         bytes = await persist(ledger, bytes);
-        await discardStaged(records, stageDir, stageInfo, pending);
         return { project: after, added: records.map(record => ({ shotId: record.shot.id, name: record.name, digest: record.digest })) };
       });
     },
@@ -669,7 +685,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           if (projectHash(after) !== journal.afterHash) throw retainedError('Pending add journal does not match its after hash; retained');
         } else if (diskHash === journal.afterHash) after = disk;
         else throw retainedError('Pending add checkpoint changed since it was prepared; retained at ' + root);
-        const stageDir = path.join(root, PENDING_ADD_STAGE, journal.token);
+        const stageDir = path.join(root, PENDING_ADD_STAGE, 'blobs');
         const stageInfo = await fs.lstat(stageDir, { bigint: true }).catch(error => {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw retainedError('Prepared Pending staging is unavailable; retained at ' + stageDir);
           throw error;
@@ -788,7 +804,6 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           content: boardContentDigest(after, after.parkedShots.find(shot => shot.id === record.shot.id)!), location: 'parked' });
         journal.complete = true; delete ledger.saved;
         bytes = await persist(ledger, bytes);
-        await discardStaged(journal.additions, stageDir, stageInfo, pending);
         return { project: after, added: journal.additions.map(record => ({ shotId: record.shot.id, name: record.name, digest: record.digest })) };
       });
     },

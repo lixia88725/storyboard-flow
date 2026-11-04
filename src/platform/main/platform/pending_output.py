@@ -65,20 +65,6 @@ if raw["mode"] == "create":
     os.fsync(pending_fd)
     emit({"ok": True, "dev": str(target.st_dev), "ino": str(target.st_ino)})
 
-if raw["mode"] == "discard":
-    staged = lookup(stage_fd, raw["stageName"])
-    if staged is None:
-        emit({"ok": True, "removed": False})
-    if not stat.S_ISREG(staged.st_mode) or staged.st_nlink != 1 or \
-            [str(staged.st_dev), str(staged.st_ino)] != [raw["fileDev"], raw["fileIno"]]:
-        fail("changed", "staged file no longer matches the prepared identity; left in place")
-    try:
-        os.unlink(raw["stageName"], dir_fd=stage_fd)
-    except OSError as error:
-        fail("io", "staged file could not be removed: %s" % error)
-    os.fsync(stage_fd)
-    emit({"ok": True, "removed": True})
-
 if raw["mode"] != "write":
     fail("invalid", "unknown Pending output mode")
 
