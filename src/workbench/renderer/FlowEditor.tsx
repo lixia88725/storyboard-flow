@@ -586,7 +586,6 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
         ? '已自动暂存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label)
         : (snapshot.lastError?.message || '正在自动暂存…'))}
       projectBar={<ProjectNamingBar naming={naming} folderName={folderName} disabled={!active || savingTiff} />}
-      pendingActions={<PendingAddAction flow={flow} sessionId={sessionId} disabled={!active || savingTiff} recovery={snapshot.pendingAddRecovery} />}
       select={selectShot} focus={focusShot}
       selectAll={()=>{const ids=selectAllShots(flow.snapshot().project.shots.map(s=>s.id));setSelection(ids);selectionAnchor.current=undefined;}}
       selectMany={ids=>{const known=new Set(ids),next=flow.snapshot().project.shots.map(s=>s.id).filter(id=>known.has(id));setSelection(next);selectionAnchor.current=next[0];}}
@@ -615,14 +614,14 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
             <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void create.begin(); }}>新建项目…</button>
             <span className="wb-menu-label">最近项目</span>
             {recent.length ? recent.map(project => project.available
-              ? <button type="button" key={project.id} data-recent-project={project.id}
+              ? <button type="button" key={project.id} data-recent-project={project.id} data-recent-target={project.target}
                   disabled={!active || switching || project.id === currentRecentId}
                   title={project.id === currentRecentId ? '当前项目' : project.name}
                   onClick={event => { closeMenu(event); void openProject({ kind: 'recent', id: project.id }); }}>
-                  {project.name}{project.id === currentRecentId ? ' · 当前' : ''}
+                  <span className="wb-menu-recent-label"><span>{project.name}{project.id === currentRecentId ? ' · 当前' : ''}</span><small className="wb-menu-recent-target">{project.target}</small></span>
                 </button>
-              : <div className="wb-menu-missing" key={project.id} data-recent-project={project.id}>
-                  <span>{project.name} · 不可用</span>
+              : <div className="wb-menu-missing" key={project.id} data-recent-project={project.id} data-recent-target={project.target}>
+                  <span className="wb-menu-recent-label"><span>{project.name} · 不可用</span><small className="wb-menu-recent-target">{project.target}</small></span>
                   <div>
                     <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void onRelocateRecent(project.id); }}>重新定位…</button>
                     <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void onRemoveRecent(project.id); }}>移除</button>
@@ -630,6 +629,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
                 </div>) : <span className="wb-menu-empty">还没有最近项目</span>}
           </div>
         </details>
+        <PendingAddAction flow={flow} sessionId={sessionId} disabled={!active || savingTiff} recovery={snapshot.pendingAddRecovery} />
         <button disabled={!active || savingTiff || Boolean(naming.issue) || naming.composing} className="wb-save" onClick={() => { void saveTiff().catch(() => {}); }}>{savingTiff?'保存中…':'保存'}</button>
         <button disabled={!active} className="wb-refresh" data-external={folderStatus.state==='external'||folderStatus.state==='both'} data-spinning={refreshing} title="从文件夹取回外部改动" aria-label="从文件夹取回外部改动" onClick={refreshImages}><RotateCw size={15} strokeWidth={1.75} aria-hidden /></button>
       </div>}

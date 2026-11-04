@@ -123,6 +123,24 @@ describe('project launcher recent targets', () => {
     expect(state.recent).toHaveLength(2);
   });
 
+  it('distinguishes same-name recent projects with the shortest unique target suffix', async () => {
+    const { launcher } = await fixture();
+    const base = await mkdtemp(path.join(os.tmpdir(), 'flow-same-'));
+    const first = path.join(base, 'a', '同名');
+    const second = path.join(base, 'b', '同名');
+    await mkdir(path.join(first, '.storyboard-flow'), { recursive: true });
+    await mkdir(path.join(second, '.storyboard-flow'), { recursive: true });
+    await launcher.openRoot(first);
+    await launcher.openRoot(second);
+    const recent = (await launcher.state()).recent;
+    expect(recent).toHaveLength(2);
+    expect(recent[0].name).toBe(recent[1].name);
+    expect(new Set(recent.map(entry => entry.target)).size).toBe(2);
+    expect(recent.some(entry => entry.target.endsWith('a/同名'))).toBe(true);
+    expect(recent.some(entry => entry.target.endsWith('b/同名'))).toBe(true);
+    expect(recent.every(entry => !path.isAbsolute(entry.target))).toBe(true);
+  });
+
   it('removes and relocates a recent target without changing its project identity', async () => {
     const { launcher, userData } = await fixture();
     const first = await projectFolder();

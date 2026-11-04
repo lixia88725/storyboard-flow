@@ -301,7 +301,6 @@
 .flow-workbench *::-webkit-scrollbar-corner, .flow-launcher *::-webkit-scrollbar-corner { background:transparent; }
 
 /* Pending header action and its small sheet. The shelf keeps its own component. */
-.wb-panel-header-actions { display:flex; align-items:center; gap:2px; }
 .flow-workbench .wb-pending-add { padding:2px 7px; border:1px solid #46525f; border-radius:5px; background:#323a44; color:#c5dbff; font-size:11px; font-weight:500; }
 .flow-workbench .wb-pending-add:hover { background:#3d4855; color:#fff; }
 .flow-workbench .wb-pending-add[data-recovery] { border-color:#7a6248; color:#ffd7a8; }
@@ -317,3 +316,9 @@
 .launcher-recent-missing > span { display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#9aa4ac; }
 .launcher-recent-missing > div { display:flex; flex:none; gap:4px; }
 .launcher-recent-missing button { width:auto; padding:4px 8px; font-size:11px; }
+.launcher-recent-label { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.launcher-recent-target { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#7d8790; font-size:10.5px; }
+.wb-menu-recent-label { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.wb-menu-recent-target { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#7d8790; font-size:10px; }
+/* The project menu sits at the left edge; anchor its popover to the right, not off-screen. */
+.wb-project-menu .wb-menu { right:auto; left:0; }

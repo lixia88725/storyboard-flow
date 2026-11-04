@@ -340,11 +340,27 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
     for (const draft of drafts.values()) draft.controller?.abort();
   };
 
-  const state = async (): Promise<{ recent: FlowRecentProject[] }> => ({
-    recent: await Promise.all((await loadRecent()).map(async entry => ({
-      id: entry.id, name: entry.name, available: await available(entry.root)
-    })))
-  });
+  const state = async (): Promise<{ recent: FlowRecentProject[] }> => {
+    const list = await loadRecent();
+    const parts = list.map(entry => {
+      const root = path.parse(entry.root).root;
+      return entry.root.slice(root.length).split(path.sep).filter(Boolean);
+    });
+    const target = (index: number) => {
+      const own = parts[index];
+      if (!own.length) return path.basename(list[index].root) || list[index].root;
+      for (let length = 1; length <= own.length; length++) {
+        const suffix = own.slice(-length).join('/');
+        if (parts.every((other, otherIndex) => otherIndex === index || other.slice(-length).join('/') !== suffix)) return suffix;
+      }
+      return own.join('/');
+    };
+    return {
+      recent: await Promise.all(list.map(async (entry, index) => ({
+        id: entry.id, name: entry.name, available: await available(entry.root), target: target(index)
+      })))
+    };
+  };
   const idFor = async (root: string) => (await loadRecent()).find(entry => entry.root === root)?.id ?? null;
 
   const recentProject = async (id: string) => {

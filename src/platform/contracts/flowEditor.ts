@@ -14,7 +14,7 @@ export type FlowProjectTarget =
   | { kind: 'recent'; id: string }
   | { kind: 'create'; draftId: string };
 export type FlowLaunchResult = { canceled: true } | { canceled: false; bootstrap: FlowEditorBootstrap };
-export type FlowRecentProject = { id: string; name: string; available: boolean };
+export type FlowRecentProject = { id: string; name: string; available: boolean; /** Display-only shortest unique suffix; never used as a write path. */ target: string };
 export type FlowLauncherState = { recent: FlowRecentProject[]; open: boolean; currentId: string | null };
 export type FlowRelocateResult = { canceled: true } | { ok: true } | { ok: false; message: string };
 
