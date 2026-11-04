@@ -352,6 +352,10 @@ export const SketchPad = memo(({
   // live view re-render the whole stroke each frame, so what is shown is exactly the
   // capped result that will be committed instead of an accumulating approximation.
   const liveBitmapBaseRef = useRef<{ layerId: string; pixels: ImageData } | undefined>(undefined);
+  // Which layer asset the live canvas currently reflects. A second stroke that starts
+  // before the first one's PNG echoes back must not reload the canvas from the stale
+  // asset: that would drop the pending stroke for a frame or two.
+  const liveCanvasAssetRef = useRef<{ layerId: string; assetId: string } | undefined>(undefined);
   const liveBitmapLayerIdRef = useRef<string | undefined>(undefined);
   const liveBitmapEditRunRef = useRef(0);
   const liveBitmapEditCanCommitRenderedDataUrlRef = useRef(false);
@@ -584,7 +588,7 @@ export const SketchPad = memo(({
     }
     try {
       const renderedDataUrl =
-        stroke.tool === "eraser" &&
+        (stroke.tool === "eraser" || stroke.brush) &&
         liveBitmapLayerIdRef.current === layerId &&
         liveBitmapEditCanCommitRenderedDataUrlRef.current
           ? liveBitmapCanvasRefs.current[layerId]?.toDataURL("image/png")
@@ -603,7 +607,10 @@ export const SketchPad = memo(({
       if (draftStrokeRef.current?.id === stroke.id) {
         clearDraftStroke();
       }
-      clearLiveBitmapEdit();
+      // A late echo must not tear down the live canvas a newer stroke is drawing into.
+      if (!draftStrokeRef.current || liveBitmapLayerIdRef.current !== layerId) {
+        clearLiveBitmapEdit();
+      }
       committingStrokeIdsRef.current.delete(stroke.id);
       pendingCommittedStrokesRef.current = pendingCommittedStrokesRef.current.filter(
         (item) => item.stroke.id !== stroke.id
@@ -737,18 +744,28 @@ export const SketchPad = memo(({
       return;
     }
 
-    canvas.width = Math.max(1, Math.round(layer.width));
-    canvas.height = Math.max(1, Math.round(layer.height));
-    context.clearRect(0, 0, canvas.width, canvas.height);
+    const cached = liveCanvasAssetRef.current;
+    const reusable =
+      cached?.layerId === layer.id &&
+      cached.assetId === layer.bitmapPath &&
+      canvas.width === Math.max(1, Math.round(layer.width)) &&
+      canvas.height === Math.max(1, Math.round(layer.height));
 
-    const sourceUrl = layerSourceUrl(layer);
-    if (sourceUrl) {
-      await drawImageUrl(context, sourceUrl, canvas.width, canvas.height).catch(() => {
-        context.clearRect(0, 0, canvas.width, canvas.height);
-      });
+    if (!reusable) {
+      canvas.width = Math.max(1, Math.round(layer.width));
+      canvas.height = Math.max(1, Math.round(layer.height));
+      context.clearRect(0, 0, canvas.width, canvas.height);
+
+      const sourceUrl = layerSourceUrl(layer);
+      if (sourceUrl) {
+        await drawImageUrl(context, sourceUrl, canvas.width, canvas.height).catch(() => {
+          context.clearRect(0, 0, canvas.width, canvas.height);
+        });
+      }
     }
+    liveCanvasAssetRef.current = { layerId: layer.id, assetId: layer.bitmapPath };
 
-    if (liveBitmapEditRunRef.current !== editRun || draftStrokeRef.current?.tool !== "eraser") {
+    if (liveBitmapEditRunRef.current !== editRun || !draftStrokeRef.current) {
       return;
     }
 
@@ -761,14 +778,14 @@ export const SketchPad = memo(({
     setLiveBitmapLayerId(layer.id);
 
     const currentStroke = draftStrokeRef.current;
-    if (currentStroke?.tool === "eraser" && shouldCommitStroke(currentStroke)) {
+    if (currentStroke && shouldCommitStroke(currentStroke)) {
       drawStrokePathOnCanvas(context, currentStroke);
     }
   };
 
   const drawLiveBitmapSegments = (stroke: SketchStroke, previousPointOffset: number) => {
     if (
-      stroke.tool !== "eraser" ||
+      (stroke.tool !== "eraser" && !stroke.brush) ||
       !activeDrawingLayer ||
       liveBitmapLayerIdRef.current !== activeDrawingLayer.id
     ) {
@@ -1206,7 +1223,9 @@ export const SketchPad = memo(({
     draftStrokeRef.current = nextStroke;
     if (shouldRenderLiveStroke(nextStroke)) {
       setDraftStroke(nextStroke);
-    } else if (tool === "eraser") {
+    } else {
+      // Everything that is not drawn on the overlay — the eraser and preset brushes —
+      // previews inside the layer's own pixels.
       void prepareLiveBitmapEdit(activeDrawingLayer);
     }
   };
