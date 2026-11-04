@@ -14,7 +14,9 @@ export function projectShots(project: ProjectV1, selectedLayer: Record<string, s
 export function pixelStroke(stroke: SketchStroke): FlowStroke {
   // SketchPad already scales size and points into image pixels. Never scale twice.
   return { tool: stroke.tool, color: stroke.color, size: stroke.size, opacity: stroke.opacity ?? 1,
-    softness: stroke.softness ?? 0, points: [...stroke.points] };
+    softness: stroke.softness ?? 0, points: [...stroke.points],
+    ...(stroke.brush ? { brush: { ...stroke.brush } } : {}),
+    ...(stroke.pressures?.length ? { pressures: [...stroke.pressures] } : {}) };
 }
 
 /** SketchPad caches a returned preview. A delayed read must not override intervening Undo. */

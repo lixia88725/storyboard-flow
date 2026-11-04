@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import type { FlowAssetReceipt, FlowFailure, FlowPixelOutput, FlowPixelToolOutput, FlowResult, FlowSession, FlowSessionOptions, FlowSessionOutcome } from '../../platform/contracts/flowWave2';
 import type { AssetReaderV1, CheckpointReceiptV1, ProjectV1, ResultV1 } from '../../platform/contracts/refactorV1';
 import { createFlowSession } from '.';
+import { snapshotRequest } from './validation';
 import { createProjectStore } from '../../project-files/main/persistence/index';
 import { openFlowAssetDepot } from '../../project-files/main/persistence/depot';
 import { temporaryWorkspace } from '../../../test/temporaryWorkspace';
@@ -1055,5 +1056,33 @@ describe('dialogue typing groups through the Session', () => {
     expect(await session.request({ kind: 'undo' })).toMatchObject({ ok: false, error: { code: 'not-found' } });
     await success(session.request({ kind: 'redo' }));
     expect(texts(session)).toEqual(['A']);
+  });
+});
+
+describe('stroke contract', () => {
+  const request = (patch: Record<string, unknown> = {}) => snapshotRequest({
+    kind: 'paint', shotId: 'a', layerId: 'layer',
+    stroke: { tool: 'brush', color: '#abcdef', size: 8, opacity: 0.5, softness: 0, points: [1, 1, 2, 2], ...patch },
+  });
+  const brush = { tip: 'pencil', spacing: 0.05, hardness: 0.5, grain: 0.6, seed: 99, pressureSize: 0.4, pressureOpacity: 0.6 };
+
+  it('accepts a preset tip with one pressure sample per point', () => {
+    expect(request({ brush, pressures: [0.4, 0.9] }).ok).toBe(true);
+  });
+
+  it('still accepts a legacy stroke without tip or pressures', () => {
+    expect(request().ok).toBe(true);
+  });
+
+  it.each([
+    ['unknown tip', { brush: { ...brush, tip: 'spray' } }],
+    ['out-of-range spacing', { brush: { ...brush, spacing: 4 } }],
+    ['negative seed', { brush: { ...brush, seed: -1 } }],
+    ['extra brush key', { brush: { ...brush, gamma: 1 } }],
+    ['pressures shorter than points', { brush, pressures: [0.5] }],
+    ['pressure above one', { brush, pressures: [0.5, 1.4] }],
+    ['pressure not a number', { brush, pressures: [0.5, Number.NaN] }],
+  ])('rejects %s', (_label, patch) => {
+    expect(request(patch as Record<string, unknown>)).toMatchObject({ ok: false, error: { code: 'invalid-input' } });
   });
 });

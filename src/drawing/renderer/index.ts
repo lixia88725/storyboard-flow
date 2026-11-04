@@ -16,6 +16,19 @@ const unitInterval = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
+/** Same bounds as the session contract: the renderer never trusts a shape it cannot honour. */
+const validStrokeBrush = (value: unknown): value is NonNullable<FlowStroke['brush']> => {
+  if (!record(value)) return false;
+  const brush = value as Record<string, unknown>;
+  return ['hard', 'soft', 'pencil', 'charcoal'].includes(brush.tip as string) &&
+    unitInterval(brush.spacing) && unitInterval(brush.hardness) && unitInterval(brush.grain) &&
+    typeof brush.seed === 'number' && Number.isSafeInteger(brush.seed) && brush.seed >= 0 &&
+    unitInterval(brush.pressureSize) && unitInterval(brush.pressureOpacity);
+};
+const validPressures = (value: unknown, pointPairs: number): value is readonly number[] =>
+  Array.isArray(value) && value.length === pointPairs && value.every(unitInterval);
+
+
 type Prepared = { image: ImageDocumentV1; assetId: string; stroke: FlowStroke };
 
 /** Validate before allocating the private points/image snapshot or starting an async reader.
@@ -45,11 +58,17 @@ const prepare = (input: FlowPixelInput, limits: FlowPixelLimits): FlowResult<Pre
     if (typeof value !== 'number' || !Number.isFinite(value))
       return fail('invalid-input', 'Stroke coordinates must be finite numbers');
   }
+  if (stroke.brush !== undefined && !validStrokeBrush(stroke.brush))
+    return fail('invalid-input', 'Stroke brush settings are out of range');
+  if (stroke.pressures !== undefined && !validPressures(stroke.pressures, stroke.points.length / 2))
+    return fail('invalid-input', 'Stroke pressures must match the point count');
   return { ok: true, value: {
     image: { ...input.image, layers: input.image.layers.map(item => ({ ...item })) },
     assetId: layer.assetId,
     stroke: { tool: stroke.tool, color: stroke.color, size: stroke.size,
-      opacity: stroke.opacity, softness: stroke.softness, points: [...stroke.points] }
+      opacity: stroke.opacity, softness: stroke.softness, points: [...stroke.points],
+      ...(stroke.brush ? { brush: { ...stroke.brush } } : {}),
+      ...(stroke.pressures ? { pressures: [...stroke.pressures] } : {}) }
   } };
 };
 
@@ -141,7 +160,12 @@ export const createFlowPixels = (limits: FlowPixelLimits): FlowPixels => {
       if (!context) return fail('unavailable', 'Canvas2D context could not be created');
       context.drawImage(bitmap, 0, 0);
       // Coordinates already use image pixels. No renderer sketch-coordinate scaling here.
-      drawStrokePathOnCanvas(context, { ...prepared.stroke, id: 'flow-pixel-stroke', points: [...prepared.stroke.points] });
+      const preparedStroke = prepared.stroke;
+      drawStrokePathOnCanvas(context, { id: 'flow-pixel-stroke', tool: preparedStroke.tool, color: preparedStroke.color,
+        size: preparedStroke.size, opacity: preparedStroke.opacity, softness: preparedStroke.softness,
+        points: [...preparedStroke.points],
+        ...(preparedStroke.brush ? { brush: { ...preparedStroke.brush } } : {}),
+        ...(preparedStroke.pressures ? { pressures: [...preparedStroke.pressures] } : {}) });
       let blob: Blob;
       try { blob = await encode(canvas); }
       catch (error) { return fail('io-failure', `Canvas PNG encode failed: ${message(error)}`); }

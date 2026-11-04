@@ -24,6 +24,7 @@ import type {
   Shot,
   SketchStroke,
   SketchTool,
+  StrokeBrush,
   StrokeTool
 } from "../contracts/types";
 import {
@@ -70,6 +71,7 @@ import {
   shouldShowBrushCursorPreviewForTool
 } from "./sketchRendering";
 import { nextStageResizeDecision, sameStageSize } from "./stageResize";
+import { dabBounds, dabsForStroke } from "./brushStroke";
 import { canFillBitmapLayer, editableBitmapLayerForShot } from "./activeTargets";
 import { ShotLayerImageStack, bitmapLayerAssetSource } from "../../storyboard/renderer/ShotStaticMedia";
 
@@ -234,6 +236,10 @@ export type SketchPadProps = {
   eraserOpacity: number;
   eraserSize: number;
   eraserSoftness: number;
+  /** Tip and dynamics for the active brush preset; absent keeps the legacy round stroke. */
+  brush?: StrokeBrush;
+  /** Same for the eraser preset. */
+  eraserBrush?: StrokeBrush;
   onionSkinPreviousShot?: Shot;
   onionSkinNextShot?: Shot;
   onionSkinPreviousRevision?: number;
@@ -271,6 +277,8 @@ export const SketchPad = memo(({
   eraserOpacity,
   eraserSize,
   eraserSoftness,
+  brush,
+  eraserBrush,
   onionSkinPreviousShot,
   onionSkinNextShot,
   onionSkinPreviousRevision = 0,
@@ -303,6 +311,10 @@ export const SketchPad = memo(({
   const pendingBrushCursorPointRef = useRef<Point | undefined>(undefined);
   const pendingCommittedStrokesRef = useRef<PendingCommittedStroke[]>([]);
   const liveBitmapCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
+  // Pixels of the layer at the start of an eraser stroke. Restoring from them lets the
+  // live view re-render the whole stroke each frame, so what is shown is exactly the
+  // capped result that will be committed instead of an accumulating approximation.
+  const liveBitmapBaseRef = useRef<{ layerId: string; pixels: ImageData } | undefined>(undefined);
   const liveBitmapLayerIdRef = useRef<string | undefined>(undefined);
   const liveBitmapEditRunRef = useRef(0);
   const liveBitmapEditCanCommitRenderedDataUrlRef = useRef(false);
@@ -704,6 +716,7 @@ export const SketchPad = memo(({
     }
 
     liveBitmapLayerIdRef.current = layer.id;
+    liveBitmapBaseRef.current = { layerId: layer.id, pixels: context.getImageData(0, 0, canvas.width, canvas.height) };
     liveBitmapEditCanCommitRenderedDataUrlRef.current = shouldUseRenderedEraserDataUrl({
       layerId: layer.id,
       pendingCommittedStrokes: pendingCommittedStrokesRef.current
@@ -729,7 +742,29 @@ export const SketchPad = memo(({
     const canvas = liveBitmapCanvasRefs.current[activeDrawingLayer.id];
     const context = canvas?.getContext("2d");
 
-    if (segments.length === 0 || !context) {
+    if (segments.length === 0 || !context || !canvas) {
+      return;
+    }
+
+    // A preset eraser re-renders the whole stroke over the pixels captured at stroke
+    // start: segment-by-segment erasing would accumulate past the stroke opacity, and
+    // the committed raster (one composite) would then look lighter than the preview.
+    const base = liveBitmapBaseRef.current;
+    if (stroke.brush && base?.layerId === activeDrawingLayer.id) {
+      const bounds = dabBounds(dabsForStroke({
+        tool: stroke.tool,
+        color: stroke.color,
+        size: stroke.size,
+        opacity: stroke.opacity ?? 1,
+        points: stroke.points,
+        pressures: stroke.pressures,
+        brush: stroke.brush,
+      }), canvas.width, canvas.height);
+      if (!bounds) {
+        return;
+      }
+      context.putImageData(base.pixels, 0, 0, bounds.x, bounds.y, bounds.width, bounds.height);
+      drawStrokePathOnCanvas(context, stroke);
       return;
     }
 
@@ -741,6 +776,7 @@ export const SketchPad = memo(({
   const clearLiveBitmapEdit = () => {
     liveBitmapEditRunRef.current += 1;
     liveBitmapLayerIdRef.current = undefined;
+    liveBitmapBaseRef.current = undefined;
     liveBitmapEditCanCommitRenderedDataUrlRef.current = false;
     setLiveBitmapLayerId(undefined);
   };
@@ -976,6 +1012,38 @@ export const SketchPad = memo(({
     return sketchPointsFromClientPoints(points, rect, canvasSize);
   };
 
+  /**
+   * Pen pressure for one sample. Mouse and touch report a constant 0.5 (or 0) and must
+   * behave exactly like a full-pressure tap, so they resolve to 1 instead of half ink.
+   */
+  const pressureOf = (pointerEvent: globalThis.PointerEvent): number => {
+    if (pointerEvent.pointerType !== "pen") {
+      return 1;
+    }
+    const value = pointerEvent.pressure;
+    if (!Number.isFinite(value) || value <= 0) {
+      return 1;
+    }
+    return Math.min(1, Math.max(0.02, value));
+  };
+
+  /** Points and their pressures from the same coalesced samples, so indexes always align. */
+  const sketchSamples = (pointerEvent: globalThis.PointerEvent) => {
+    const rect = stageRectRef.current ?? refreshStageRect();
+    if (!rect) {
+      return { points: [] as Point[], pressures: [] as number[] };
+    }
+    const coalescedEvents =
+      typeof pointerEvent.getCoalescedEvents === "function"
+        ? pointerEvent.getCoalescedEvents()
+        : [];
+    const samples = coalescedEvents.length > 0 ? [...coalescedEvents, pointerEvent] : [pointerEvent];
+    return {
+      points: sketchPointsFromClientPoints(samples, rect, canvasSize),
+      pressures: samples.map(pressureOf)
+    };
+  };
+
   const updateBrushCursorPreview = (pointerEvent: globalThis.PointerEvent) => {
     if (!isBrushCursorPreviewTool) {
       return;
@@ -1017,7 +1085,7 @@ export const SketchPad = memo(({
     }
   };
 
-  const createStroke = (strokeTool: StrokeTool, position: Point): SketchStroke => {
+  const createStroke = (strokeTool: StrokeTool, position: Point, pressure = 1): SketchStroke => {
     const toolSize = strokeTool === "eraser" ? eraserSize : brushSize;
     const canvasScale = canvasSize.width / sketchCanvasSize.width;
     return {
@@ -1027,7 +1095,13 @@ export const SketchPad = memo(({
       opacity: strokeTool === "eraser" ? eraserOpacity : brushOpacity,
       size: toolSize * canvasScale,
       softness: strokeTool === "eraser" ? eraserSoftness : brushSoftness,
-      points: [position.x, position.y]
+      points: [position.x, position.y],
+      // A fresh seed per stroke keeps grain varied between strokes while staying
+      // reproducible inside one stroke, which is what preview/commit parity needs.
+      ...(strokeTool === "eraser"
+        ? eraserBrush ? { brush: eraserBrush } : {}
+        : brush ? { brush } : {}),
+      ...((strokeTool === "eraser" ? eraserBrush : brush) ? { pressures: [pressure] } : {})
     };
   };
 
@@ -1057,7 +1131,9 @@ export const SketchPad = memo(({
         // Some embedded WebViews can reject capture during synthetic pointer transitions.
       }
     }
-    const position = getSketchPoints(event)[0];
+    const samples = event.evt ? sketchSamples(event.evt) : { points: [], pressures: [] };
+    const position = samples.points[0];
+    const startPressure = samples.pressures[0] ?? 1;
 
     if (!position) {
       return;
@@ -1090,7 +1166,7 @@ export const SketchPad = memo(({
 
     updateDrawingState(true);
     const strokeTool: StrokeTool = tool;
-    const nextStroke = createStroke(strokeTool, position);
+    const nextStroke = createStroke(strokeTool, position, startPressure);
     draftStrokeRef.current = nextStroke;
     if (shouldRenderLiveStroke(nextStroke)) {
       setDraftStroke(nextStroke);
@@ -1183,7 +1259,8 @@ export const SketchPad = memo(({
       return;
     }
 
-    const positions = getSketchPoints(event);
+    const samples = event.evt ? sketchSamples(event.evt) : { points: [], pressures: [] };
+    const positions = samples.points;
 
     if (positions.length === 0) {
       return;
@@ -1194,7 +1271,7 @@ export const SketchPad = memo(({
       return;
     }
 
-    extendBitmapStroke(positions);
+    extendBitmapStroke(positions, samples.pressures);
   };
 
   const extendGlobalStroke = (event: globalThis.PointerEvent) => {
@@ -1213,7 +1290,8 @@ export const SketchPad = memo(({
       return;
     }
 
-    const positions = getSketchPointsFromPointerEvent(event);
+    const samples = sketchSamples(event);
+    const positions = samples.points;
 
     if (positions.length === 0) {
       return;
@@ -1224,10 +1302,10 @@ export const SketchPad = memo(({
       return;
     }
 
-    extendBitmapStroke(positions);
+    extendBitmapStroke(positions, samples.pressures);
   };
 
-  const extendBitmapStroke = (positions: Point[]) => {
+  const extendBitmapStroke = (positions: Point[], pressures: number[] = []) => {
     if (positions.length === 0) {
       return;
     }
@@ -1248,7 +1326,7 @@ export const SketchPad = memo(({
         return;
       }
 
-      const nextStroke = createStroke(tool, positions[0]);
+      const nextStroke = createStroke(tool, positions[0], pressures[0] ?? 1);
       draftStrokeRef.current = nextStroke;
       currentStroke = nextStroke;
       if (shouldRenderLiveStroke(nextStroke)) {
@@ -1265,12 +1343,16 @@ export const SketchPad = memo(({
     const minPointDistance =
       currentStroke.tool === "eraser" ? Math.max(3, toolSize * canvasScale * 0.25) : 1;
     const nextPoints = currentStroke.points;
-    for (const position of positions) {
+    const nextPressures = currentStroke.pressures ?? [];
+    currentStroke.pressures = nextPressures;
+    for (let index = 0; index < positions.length; index++) {
+      const position = positions[index];
       if (!shouldAppendStrokePoint(currentStroke, position, minPointDistance)) {
         continue;
       }
 
       nextPoints.push(position.x, position.y);
+      nextPressures.push(pressures[index] ?? 1);
     }
 
     if (nextPoints.length === previousPointLength) {

@@ -11,6 +11,21 @@ const shape = (value: unknown, keys: string[], optional: string[] = []): value i
 export const failure = <T>(code: FlowFailure['code'], message: string, effect: FlowFailure['effect'] = 'none'): FlowResult<T> =>
   ({ ok: false, error: { code, message, effect } });
 export const copy = <T>(value: T): T => structuredClone(value);
+
+const unit = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+const brushTips = ['hard', 'soft', 'pencil', 'charcoal'];
+
+/** Brush tips are renderer input, but the contract still bounds every field. */
+const validStrokeBrush = (value: unknown): boolean =>
+  shape(value, ['tip', 'spacing', 'hardness', 'grain', 'seed', 'pressureSize', 'pressureOpacity']) &&
+  brushTips.includes(value.tip as string) &&
+  unit(value.spacing) && unit(value.hardness) && unit(value.grain) &&
+  Number.isSafeInteger(value.seed) && (value.seed as number) >= 0 &&
+  unit(value.pressureSize) && unit(value.pressureOpacity);
+
+const validPressures = (value: unknown, pointPairs: number): boolean =>
+  Array.isArray(value) && value.length === pointPairs && value.every(unit);
 export const same = (a: unknown, b: unknown): boolean => {
   if (a === b) return true;
   if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => same(v, b[i]));
@@ -84,13 +99,15 @@ export const snapshotRequest = (input: unknown): FlowResult<FlowSessionRequest> 
       case 'paint': {
         if (!shape(value, ['kind', 'shotId', 'layerId', 'stroke']) || !id(value.shotId) || !id(value.layerId)) break;
         const stroke = value.stroke;
-        if (!shape(stroke, ['tool', 'color', 'size', 'opacity', 'softness', 'points']) || !['brush', 'eraser'].includes(stroke.tool as string) ||
+        if (!shape(stroke, ['tool', 'color', 'size', 'opacity', 'softness', 'points'], ['brush', 'pressures']) || !['brush', 'eraser'].includes(stroke.tool as string) ||
             typeof stroke.color !== 'string' || !/^#(?:[a-fA-F0-9]{3}|[a-fA-F0-9]{6})$/.test(stroke.color) ||
             typeof stroke.size !== 'number' || !Number.isFinite(stroke.size) || stroke.size <= 0 ||
             typeof stroke.opacity !== 'number' || !Number.isFinite(stroke.opacity) || stroke.opacity < 0 || stroke.opacity > 1 ||
             typeof stroke.softness !== 'number' || !Number.isFinite(stroke.softness) || stroke.softness < 0 || stroke.softness > 1 ||
             !Array.isArray(stroke.points) || stroke.points.length < 2 || stroke.points.length % 2 !== 0 ||
             !Array.from(stroke.points).every(point => typeof point === 'number' && Number.isFinite(point))) break;
+        if (Object.hasOwn(stroke, 'brush') && !validStrokeBrush(stroke.brush)) break;
+        if (Object.hasOwn(stroke, 'pressures') && !validPressures(stroke.pressures, stroke.points.length / 2)) break;
         return { ok: true, value: value as FlowSessionRequest };
       }
       case 'refresh': case 'undo': case 'redo': case 'checkpoint': case 'freeze': case 'resume':

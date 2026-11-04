@@ -4,6 +4,18 @@ export type BitmapSelectionMode = "lasso";
 export type SketchBlendMode = "normal" | "multiply" | "screen";
 export type BitmapBlendMode = "normal" | "multiply" | "screen";
 
+/** Brush tip plus dynamics carried by one stroke. Contracts own the shape; the renderer owns the pixels. */
+export type StrokeBrush = {
+  tip: "hard" | "soft" | "pencil" | "charcoal";
+  /** Dab spacing as a fraction of the dab size. */
+  spacing: number;
+  hardness: number;
+  grain: number;
+  seed: number;
+  pressureSize: number;
+  pressureOpacity: number;
+};
+
 export type SketchStroke = {
   id: string;
   tool: StrokeTool;
@@ -12,6 +24,10 @@ export type SketchStroke = {
   size: number;
   softness?: number;
   points: number[];
+  /** Present when the stroke was drawn with a preset tip; absent strokes keep the legacy path. */
+  brush?: StrokeBrush;
+  /** One sample per point pair. Missing entries mean full pressure (mouse). */
+  pressures?: number[];
 };
 
 export type SketchLayer = {

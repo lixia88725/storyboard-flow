@@ -13,6 +13,14 @@ export type FlowResult<T> = { ok: true; value: T } | { ok: false; error: FlowFai
 export type FlowStroke = {
   tool: 'brush' | 'eraser'; color: string; size: number; opacity: number;
   softness: number; points: readonly number[];
+  /** Brush tip and dynamics; omitted for the legacy round-path renderer. */
+  brush?: {
+    tip: 'hard' | 'soft' | 'pencil' | 'charcoal';
+    spacing: number; hardness: number; grain: number; seed: number;
+    pressureSize: number; pressureOpacity: number;
+  };
+  /** One pressure sample per point pair; omitted means the mouse (full pressure). */
+  pressures?: readonly number[];
 };
 export type FlowPixelInput = { image: ImageDocumentV1; layerId: string; stroke: FlowStroke };
 export type FlowPixelOutput = { png: Uint8Array; width: number; height: number };
