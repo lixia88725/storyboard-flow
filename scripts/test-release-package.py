@@ -17,7 +17,7 @@ class PackageValidation(unittest.TestCase):
         root = "Storyboard Flow-Windows-x64/" if windows else "Storyboard Flow.app/Contents/"
         res = root + ("resources/" if windows else "Resources/")
         app = res + "app/"
-        files = {app + "src/project-files/main/formats/codec.py": b"codec", app + "src/platform/main/platform/publish_directory.py": b"publish", app + "package.json": json.dumps({"version": version, "main": "dist-electron/platform/main/flowEditorEntry.js"}).encode(), app + "LICENSE": license_bytes,
+        files = {app + "src/project-files/main/formats/codec.py": b"codec", app + "src/platform/main/platform/publish_directory.py": b"publish", app + "src/platform/main/platform/pending_output.py": b"pending", app + "package.json": json.dumps({"version": version, "main": "dist-electron/platform/main/flowEditorEntry.js"}).encode(), app + "LICENSE": license_bytes,
                  app + "dist/index.html": b"html", app + "dist-electron/platform/main/flowEditorEntry.js": b"main",
                  app + "src/platform/preload/flowEditor.cjs": b"preload", app + "node_modules/sharp/LICENSE": b"Apache",
                  root + ("LICENSE" if windows else "Resources/LICENSE"): b"Electron MIT",

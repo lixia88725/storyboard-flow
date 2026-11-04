@@ -24,7 +24,7 @@ test('CI builds real Main cold-reader dependencies before running the full suite
 test('both packaging recipes include current workers and only the new entry', () => {
   for (const recipe of ['scripts/package-macos-app.mjs', 'scripts/package-windows-portable.mjs']) {
     const text = read(recipe);
-    for (const worker of ['codec.py', 'publish_directory.py', 'layer-file-permissions.py', 'flowEditorEntry.js', 'flowEditor.cjs']) expect(text, recipe).toContain(worker);
+    for (const worker of ['codec.py', 'publish_directory.py', 'pending_output.py', 'layer-file-permissions.py', 'flowEditorEntry.js', 'flowEditor.cjs']) expect(text, recipe).toContain(worker);
     expect(text).not.toContain('main/main.js');
     expect(text).not.toContain('"preload.cjs"');
     expect(text).not.toContain('recovery-origin-permissions.py');

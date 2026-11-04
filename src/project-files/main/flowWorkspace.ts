@@ -22,6 +22,8 @@ export function createFlowWorkspace(initial: FlowWorkspaceTarget) {
     folderStatus: (token: string, request: Parameters<Runtime['folderStatus']>[0]) => requireOwner(token).folderStatus(request),
     outputNames: (token: string, project: ProjectV1) => requireOwner(token).outputNames(project),
     saveTiff: (token: string, project: ProjectV1) => requireOwner(token).saveTiff(project),
+    appendPending: (token: string, project: ProjectV1, input: Parameters<Runtime['appendPending']>[1], options: Parameters<Runtime['appendPending']>[2]) =>
+      requireOwner(token).appendPending(project, input, options),
     certifyClose: (token: string, project: ProjectV1 | null) => requireOwner(token).certifyClose(project),
     async switchProject(token: string, project: ProjectV1, chooseAndPrepare: (currentRoot: string) => Promise<FlowWorkspaceTarget | null>) {
       const previous = requireOwner(token);
