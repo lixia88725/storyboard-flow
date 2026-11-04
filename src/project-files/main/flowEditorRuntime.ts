@@ -32,6 +32,9 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
     await output.resumePendingAdd(depot.value,checkpointAccess);
     loaded=await store.loadCheckpoint(root);if(!loaded.ok)throw Error(loaded.error.message);
   }
+  // A completed receipt may still own a private link left by a crash; release it
+  // without inspecting the checkpoint hash (later edits and Undo are allowed).
+  await output.settlePendingAddReceipts();
   if(await output.hasPendingRefresh()){
     await output.refresh(loaded.value.project,depot.value,checkpointAccess);
     loaded=await store.loadCheckpoint(root);if(!loaded.ok)throw Error(loaded.error.message);
@@ -45,12 +48,14 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
     /** One append into the end of Pending. The file side verifies that the caller's
      * project is the durable checkpoint, writes only this batch, and returns the
      * exact after project (revision + 1) that the Session installs once. */
-    async appendPending(project: ProjectV1, input: { source?: PendingAppendInput['source']; recover?: boolean }, options: PendingAppendOptions) {
+    async appendPending(project: ProjectV1, input: { source?: PendingAppendInput['source']; recover?: boolean; operationId?: string }, options: PendingAppendOptions) {
       if (sealed || refreshing) return busy();
       if (project?.id !== projectId) return { ok: false as const, error: { code: 'conflict' as const, message: 'Different project identity', effect: 'none' as const } };
+      if (typeof input?.operationId !== 'string' || !/^[\w.:-]{1,100}$/.test(input.operationId))
+        return { ok: false as const, error: { code: 'invalid-input' as const, message: 'A valid Pending operation id is required', effect: 'none' as const } };
       if (input?.recover || pendingAddRetained) {
         try {
-          const resumed = await output.resumePendingAdd(depot.value, checkpointAccess);
+          const resumed = await output.resumePendingAdd(depot.value, checkpointAccess, input.operationId);
           if (!resumed) return { ok: false as const, error: { code: 'not-found' as const, message: 'No retained Pending add to recover', effect: 'none' as const } };
           pendingAddRetained = false;
           return { ok: true as const, value: resumed };
@@ -73,11 +78,11 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
         });
         const value = await output.appendPending(project, additions,
           async id => { const asset = await depot.value.read(id); if (!asset.ok) throw Error(asset.error.message); return asset.value; },
-          checkpointAccess, progress => options.onProgress?.({ ...progress, phase: 'write' }));
+          checkpointAccess, input.operationId, progress => options.onProgress?.({ ...progress, phase: 'write' }));
         return { ok: true as const, value };
       } catch (error) {
-        let retained = true;
-        try { retained = await output.hasPendingAdd(); } catch { retained = true; }
+        let retained = (error as { pendingAddRetained?: boolean })?.pendingAddRetained;
+        if (retained === undefined) { try { retained = await output.hasPendingAdd(); } catch { retained = true; } }
         pendingAddRetained = retained;
         return { ok: false as const, error: { code: 'io-failure' as const, message: error instanceof Error ? error.message : String(error),
           effect: retained ? 'unknown' as const : 'none' as const } };

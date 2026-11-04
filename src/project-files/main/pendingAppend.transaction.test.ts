@@ -75,7 +75,7 @@ describe('appendPending transaction', () => {
     await fs.mkdir(path.join(root, 'Pending'));
     await fs.writeFile(path.join(root, 'Pending', 'panel.tif'), 'foreign');
     const file = await addSource(root, 'panel.png', [90, 80, 70]);
-    const result = await runtime.appendPending(edited, { source: { kind: 'files', files: [file] } }, { signal: new AbortController().signal });
+    const result = await runtime.appendPending(edited, { source: { kind: 'files', files: [file] }, operationId: 'op-append-1' }, { signal: new AbortController().signal });
     if (!result.ok) throw Error(result.error.message);
     expect(result.ok).toBe(true);
     const { project: after, added } = result.value;
@@ -103,7 +103,7 @@ describe('appendPending transaction', () => {
     const { root, project: current } = await project();
     const runtime = await openFlowEditorRuntime(root);
     const file = await addSource(root, 'reuse.png', [5, 6, 7]);
-    const appended = await runtime.appendPending(current, { source: { kind: 'files', files: [file] } }, { signal: new AbortController().signal });
+    const appended = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-append-1' }, { signal: new AbortController().signal });
     if (!appended.ok) throw Error(appended.error.message);
     expect(appended.ok).toBe(true);
     const output = path.join(root, 'Pending', appended.value.added[0].name);
@@ -148,7 +148,7 @@ describe('appendPending transaction', () => {
       },
       save: async (project: ProjectV1) => { await realSave(project); savedOnce = true; }
     };
-    await expect(output.appendPending(current, additions, readAsset, access)).rejects.toThrow('simulated interruption');
+    await expect(output.appendPending(current, additions, readAsset, access, 'op-crash')).rejects.toThrow('simulated interruption');
     const pendingFile = path.join(root, 'Pending', additions[0].basis + '.tif');
     expect(await fs.stat(pendingFile)).toBeTruthy();
     const journal = (await ledger(root)).add;
@@ -177,7 +177,7 @@ describe('appendPending transaction', () => {
     const realSave = async (project: ProjectV1) => { const saved = await store.saveCheckpoint(root, project, readAsset); if (!saved.ok) throw Error(saved.error.message); };
     let savedOnce = false;
     const access = { load: async () => { if (savedOnce) { savedOnce = false; throw Error('simulated interruption'); } const loaded = await store.loadCheckpoint(root); if (!loaded.ok) throw Error(loaded.error.message); return loaded.value.project; }, save: async (project: ProjectV1) => { await realSave(project); savedOnce = true; } };
-    await expect(output.appendPending(current, additions, readAsset, access)).rejects.toThrow('simulated interruption');
+    await expect(output.appendPending(current, additions, readAsset, access, 'op-crash')).rejects.toThrow('simulated interruption');
     const journal = (await ledger(root)).add;
     const pendingFile = path.join(root, 'Pending', additions[0].basis + '.tif');
     const bytes = await fs.readFile(pendingFile);
@@ -192,11 +192,11 @@ describe('appendPending transaction', () => {
     const { root, project: current } = await project();
     const runtime = await openFlowEditorRuntime(root);
     const file = await addSource(root, 'again.png', [9, 9, 9]);
-    const first = await runtime.appendPending(current, { source: { kind: 'files', files: [file] } }, { signal: new AbortController().signal });
+    const first = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-append-1' }, { signal: new AbortController().signal });
     if (!first.ok) throw Error(first.error.message);
     expect(first.ok).toBe(true);
     const entries = (await ledger(root)).entries.length;
-    const second = await runtime.appendPending(first.value.project, { recover: true }, { signal: new AbortController().signal });
+    const second = await runtime.appendPending(first.value.project, { recover: true, operationId: 'op-append-1' }, { signal: new AbortController().signal });
     expect(second.ok).toBe(true);
     if (!second.ok) throw Error(second.error.message);
     expect(second.value.added).toEqual(first.value.added);
@@ -212,7 +212,7 @@ describe('appendPending transaction', () => {
     const folder = path.join(root, 'cancel');
     await fs.mkdir(folder);
     await fs.writeFile(path.join(folder, 'broken.png'), 'not an image');
-    const result = await runtime.appendPending(current, { source: { kind: 'folder', folder } },
+    const result = await runtime.appendPending(current, { source: { kind: 'folder', folder }, operationId: 'op-cancel' },
       { signal: new AbortController().signal, decideIssues: async () => 'cancel' });
     expect(result.ok).toBe(false);
     if (result.ok) throw Error('cancel must not succeed');
@@ -226,7 +226,7 @@ describe('appendPending transaction', () => {
     const trashed: string[] = [];
     const runtime = await openFlowEditorRuntime(root, async file => { trashed.push(file); await fs.rm(file); });
     const file = await addSource(root, 'undo.png', [8, 7, 6]);
-    const appended = await runtime.appendPending(current, { source: { kind: 'files', files: [file] } }, { signal: new AbortController().signal });
+    const appended = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-append-1' }, { signal: new AbortController().signal });
     if (!appended.ok) throw Error(appended.error.message);
     const output = path.join(root, 'Pending', appended.value.added[0].name);
     const undone = structuredClone(appended.value.project);
@@ -242,4 +242,122 @@ describe('appendPending transaction', () => {
     expect(trashed[0]).toContain(appended.value.added[0].name);
     await expect(fs.stat(output)).rejects.toMatchObject({ code: 'ENOENT' });
   }, 120_000);
+
+  it('accepts a TIFF source through the append seam without cloning its reader', async () => {
+    const { root, project: current } = await project();
+    const runtime = await openFlowEditorRuntime(root);
+    const tiffName = (await fs.readdir(root)).find(name => name.endsWith('_0010.tif'))!;
+    const source = path.join(root, tiffName), sourceBytes = await fs.readFile(source);
+    const result = await runtime.appendPending(current, { source: { kind: 'files', files: [source] }, operationId: 'op-tiff' },
+      { signal: new AbortController().signal });
+    if (!result.ok) throw Error(result.error.message);
+    const added = result.value.added[0], shot = result.value.project.parkedShots[0];
+    expect(result.value.project.images[shot.imageId].layers).toHaveLength(1);
+    // The leaf collides with the active board's name on disk, so it steps aside.
+    expect(added.name).toBe(tiffName.replace(/\.tif$/i, '') + '-2.tif');
+    const original = await fs.readFile(path.join(root, '.storyboard-flow', 'originals', added.shotId + '.tif'));
+    expect(hash(original)).toBe(hash(sourceBytes));
+  }, 120_000);
+
+  it('never re-checks a completed receipt against an older checkpoint after edits and reopen', async () => {
+    const { root, project: current } = await project();
+    const runtime = await openFlowEditorRuntime(root);
+    const file = await addSource(root, 'later.png', [3, 4, 5]);
+    const appended = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-later' },
+      { signal: new AbortController().signal });
+    if (!appended.ok) throw Error(appended.error.message);
+    const edited = structuredClone(appended.value.project);
+    edited.shots[0].scriptText = 'changed after the append';
+    edited.revision += 1;
+    expect((await runtime.checkpoint(edited)).ok).toBe(true);
+    // A normal reopen must not fail because the receipt's afterHash is now stale.
+    const reopened = await openFlowEditorRuntime(root);
+    const opened = reopened.open().project;
+    expect(opened.parkedShots).toHaveLength(1);
+    expect(opened.shots[0].scriptText).toBe('changed after the append');
+  }, 120_000);
+
+  it('refuses a receipt owned by another operation id and never reinstalls it', async () => {
+    const { root, project: current } = await project();
+    const runtime = await openFlowEditorRuntime(root);
+    const file = await addSource(root, 'owner.png', [6, 5, 4]);
+    const appended = await runtime.appendPending(current, { source: { kind: 'files', files: [file] }, operationId: 'op-owner' },
+      { signal: new AbortController().signal });
+    if (!appended.ok) throw Error(appended.error.message);
+    const foreign = await runtime.appendPending(appended.value.project, { recover: true, operationId: 'op-foreign' },
+      { signal: new AbortController().signal });
+    expect(foreign.ok).toBe(false);
+    if (foreign.ok) throw Error('a foreign operation id must not claim the receipt');
+    expect(foreign.error.message).toMatch(/different Pending add/i);
+    const own = await runtime.appendPending(appended.value.project, { recover: true, operationId: 'op-owner' },
+      { signal: new AbortController().signal });
+    if (!own.ok) throw Error(own.error.message);
+    expect(own.value.added).toEqual(appended.value.added);
+  }, 120_000);
+
+  it('retries a failed private-link release on the next open instead of reporting success', async () => {
+    const { root, project: current } = await project();
+    const journal = await interruptedAppend(root, current, 'release.png', [12, 34, 56]);
+    const stageDir = path.join(root, '.storyboard-flow', 'pending-add', journal.token);
+    await fs.chmod(stageDir, 0o500);
+    await expect(openFlowEditorRuntime(root)).rejects.toThrow(/could not be released/);
+    await fs.chmod(stageDir, 0o700);
+    const reopened = await openFlowEditorRuntime(root);
+    expect((await fs.readdir(path.join(root, 'Pending'))).length).toBe(1);
+    const target = await fs.lstat(path.join(root, 'Pending', journal.additions[0].name), { bigint: true });
+    expect(target.nlink).toBe(1n);
+    expect((await reopened.open().project).parkedShots).toHaveLength(1);
+  }, 120_000);
+
+  it('refuses to follow a Pending directory replaced by a symbolic link', async () => {
+    const { root, project: current } = await project();
+    const journal = await interruptedAppend(root, current, 'symlink.png', [7, 8, 9]);
+    const outside = path.join(root, 'outside');
+    await fs.mkdir(outside);
+    await fs.rename(path.join(root, 'Pending'), path.join(root, 'Pending-old'));
+    await fs.symlink(outside, path.join(root, 'Pending'));
+    await expect(openFlowEditorRuntime(root)).rejects.toThrow(/aliased or replaced/);
+    expect(await fs.readdir(outside)).toEqual([]);
+    expect((await fs.readdir(path.join(root, 'Pending-old'))).length).toBe(1);
+    expect(journal.additions).toHaveLength(1);
+  }, 120_000);
+  it('refuses a same-digest replacement that is not the staged inode', async () => {
+    const { root, project: current } = await project();
+    const journal = await interruptedAppend(root, current, 'replaced.png', [21, 22, 23]);
+    const target = path.join(root, 'Pending', journal.additions[0].name);
+    const bytes = await fs.readFile(target);
+    // Same bytes, different inode: a copy is not proof of ownership.
+    await fs.unlink(target);
+    await fs.writeFile(target, bytes);
+    await expect(openFlowEditorRuntime(root)).rejects.toThrow(/different file occupies the Pending name/);
+    expect(await fs.readFile(target)).toEqual(bytes);
+  }, 120_000);
 });
+
+/** Leave an incomplete journal with linked Pending outputs, as a crash would. */
+async function interruptedAppend(root: string, current: ProjectV1, name: string, rgb: [number, number, number]) {
+  const rawCodec = createTiffCodec(flowCodecOptions());
+  const depot = await openFlowAssetDepot({ root, sessionId: 'interrupt', maxPixels: 16_000_000, maxPngBytes: 32 * 1024 * 1024 });
+  if (!depot.ok) throw Error(depot.error.message);
+  const store = createProjectStore();
+  const output = await openFlowTiffSave(root, current.id, rawCodec);
+  const readAsset: AssetReaderV1 = async id => { const r = await depot.value.read(id); if (!r.ok) throw Error(r.error.message); return r.value; };
+  const file = await addSource(root, name, rgb);
+  const plan = await preparePendingAdd(current, { kind: 'files', files: [file] }, { signal: new AbortController().signal }, { codec: codec(), depot: depot.value });
+  const additions = plan.additions.map(addition => ({ shot: addition.shot, image: addition.image, dialogues: addition.dialogues, basis: addition.basis, original: { kind: 'output' as const } }));
+  const realSave = async (project: ProjectV1) => { const saved = await store.saveCheckpoint(root, project, readAsset); if (!saved.ok) throw Error(saved.error.message); };
+  let savedOnce = false;
+  const access = {
+    load: async () => {
+      if (savedOnce) { savedOnce = false; throw Error('simulated interruption'); }
+      const loaded = await store.loadCheckpoint(root);
+      if (!loaded.ok) throw Error(loaded.error.message);
+      return loaded.value.project;
+    },
+    save: async (project: ProjectV1) => { await realSave(project); savedOnce = true; }
+  };
+  await expect(output.appendPending(current, additions, readAsset, access, 'op-interrupt')).rejects.toThrow('simulated interruption');
+  const journal = (await ledger(root)).add;
+  expect(journal).toMatchObject({ complete: false });
+  return journal;
+}

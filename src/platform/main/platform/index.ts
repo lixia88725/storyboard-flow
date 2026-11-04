@@ -84,3 +84,24 @@ export async function publishDirectoryExclusive(
   await syncDirectory(path.dirname(target));
   await syncDirectory(path.dirname(source));
 }
+
+/** Link or release a Pending output through parent directory descriptors.
+ *
+ * Both directories are opened with O_NOFOLLOW and verified against the caller's
+ * captured device/inode, then `link(2)`/`unlink(2)` run relative to those
+ * descriptors. A path swapped to a symbolic link after a precheck therefore
+ * cannot redirect the write. `link` reports `exists` without touching the entry. */
+export async function pendingOutputLink(mode: 'link' | 'release', input: {
+  stageDir: string; stageName: string; pendingDir: string; targetName: string;
+  stageDev?: string; stageIno?: string; pendingDev?: string; pendingIno?: string;
+}): Promise<{ ok: true; dev?: string; ino?: string; nlink?: number } | { ok: false; code: string; message: string }> {
+  const { execFile } = await import('node:child_process');
+  const path = await import('node:path');
+  for (const file of [input.stageDir, input.pendingDir]) {
+    if (!path.isAbsolute(file)) throw Error('Pending output directory must be absolute');
+  }
+  const script = path.join(flowAppRoot, 'src/platform/main/platform/pending_output.py');
+  const stdout = await new Promise<string>((resolve, reject) => execFile(flowPythonPath(), ['-I', '-B', script, mode, JSON.stringify(input)],
+    { maxBuffer: 65536 }, (error, out, stderr) => error ? reject(Error(`Pending output ${mode} failed: ${stderr || error.message}`)) : resolve(out)));
+  try { return JSON.parse(stdout); } catch { throw Error('Pending output helper returned an invalid receipt'); }
+}
