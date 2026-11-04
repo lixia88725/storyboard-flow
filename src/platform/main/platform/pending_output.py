@@ -66,24 +66,43 @@ if [str(pending_dir.st_dev), str(pending_dir.st_ino)] != [raw["pendingDev"], raw
 if raw["mode"] == "publish":
     if not re.fullmatch(r"[0-9a-f]{64}", raw.get("expectedDigest", "")):
         fail("invalid", "an expected digest is required for publication")
-    try:
-        source_fd = os.open(raw["stageName"], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=stage_fd)
-    except OSError as error:
-        fail("staged" if error.errno in (getattr(os, "ELOOP", 40), getattr(os, "ENOENT", 2)) else "io",
-             "staged file could not be opened safely: %s" % error)
-    source = os.fstat(source_fd)
-    if not stat.S_ISREG(source.st_mode) or source.st_nlink != 1:
-        os.close(source_fd)
-        fail("staged", "staged entry is not a single-link regular file")
-    if [str(source.st_dev), str(source.st_ino)] != [raw["fileDev"], raw["fileIno"]]:
-        os.close(source_fd)
-        fail("staged", "staged file no longer matches the prepared identity")
+    if raw.get("source") == "original":
+        # A raster original is the exact encoded TIFF. It is opened read-only
+        # from the bound originals directory; no copy or new blob is created.
+        source_dir_fd, source_dir = open_directory(raw["originalDir"], "original")
+        if [str(source_dir.st_dev), str(source_dir.st_ino)] != [raw["originalDirDev"], raw["originalDirIno"]]:
+            fail("changed", "original directory identity changed")
+        try:
+            source_fd = os.open(raw["originalName"], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0), dir_fd=source_dir_fd)
+        except OSError as error:
+            fail("original" if error.errno in (getattr(os, "ELOOP", 40), getattr(os, "ENOENT", 2)) else "io",
+                 "original file could not be opened safely: %s" % error)
+        source = os.fstat(source_fd)
+        if not stat.S_ISREG(source.st_mode) or source.st_nlink != 1:
+            os.close(source_fd)
+            fail("original", "original entry is not a single-link regular file")
+        if [str(source.st_dev), str(source.st_ino)] != [raw["sourceDev"], raw["sourceIno"]]:
+            os.close(source_fd)
+            fail("original", "original file no longer matches the recorded identity")
+    else:
+        try:
+            source_fd = os.open(raw["stageName"], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0), dir_fd=stage_fd)
+        except OSError as error:
+            fail("staged" if error.errno in (getattr(os, "ELOOP", 40), getattr(os, "ENOENT", 2)) else "io",
+                 "staged file could not be opened safely: %s" % error)
+        source = os.fstat(source_fd)
+        if not stat.S_ISREG(source.st_mode) or source.st_nlink != 1:
+            os.close(source_fd)
+            fail("staged", "staged entry is not a single-link regular file")
+        if [str(source.st_dev), str(source.st_ino)] != [raw["fileDev"], raw["fileIno"]]:
+            os.close(source_fd)
+            fail("staged", "staged file no longer matches the prepared identity")
     payload = read_bounded(source_fd, int(raw["maxBytes"]), "staged")
     os.close(source_fd)
     digest = hashlib.sha256(payload).hexdigest()
     if digest != raw["expectedDigest"]:
         fail("staged", "staged bytes do not match the expected digest and were not written")
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_CREAT | os.O_EXCL | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         target_fd = os.open(raw["targetName"], flags, 0o600, dir_fd=pending_fd)
     except FileExistsError:
@@ -99,10 +118,18 @@ if raw["mode"] == "publish":
         offset += os.write(target_fd, payload[offset:])
     os.fsync(target_fd)
     written = os.fstat(target_fd)
-    os.close(target_fd)
     if written.st_size != len(payload):
+        os.close(target_fd)
         fail("target", "Pending output changed while it was written")
+    # Read back through the same descriptor; a same-length rewrite after fsync
+    # cannot be reported as success.
+    os.lseek(target_fd, 0, os.SEEK_SET)
+    check = read_bounded(target_fd, int(raw["maxBytes"]), "written target")
+    if len(check) != len(payload) or hashlib.sha256(check).hexdigest() != digest:
+        os.close(target_fd)
+        fail("target", "Pending output read-back did not match the written bytes")
     bound = lookup(pending_fd, raw["targetName"])
+    os.close(target_fd)
     if bound is None or not stat.S_ISREG(bound.st_mode) or bound.st_nlink != 1 or \
             [str(bound.st_dev), str(bound.st_ino)] != [str(written.st_dev), str(written.st_ino)]:
         fail("target", "the Pending name no longer binds the created inode; the entry was left in place")
@@ -113,7 +140,7 @@ if raw["mode"] != "read":
     fail("invalid", "unknown Pending output mode")
 
 try:
-    target_fd = os.open(raw["targetName"], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=pending_fd)
+    target_fd = os.open(raw["targetName"], os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0), dir_fd=pending_fd)
 except OSError as error:
     fail("missing" if error.errno == getattr(os, "ENOENT", 2) else "target",
          "Pending output could not be opened read-only: %s" % error)
