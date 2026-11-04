@@ -6,8 +6,9 @@ import type { FlowSelection } from '../../platform/contracts/flowSelection';
 import { selectShots, nextSelectionAnchor, selectAllShots } from '../../storyboard/renderer/boardSelection';
 import { pendingDeleteDecision } from '../../storyboard/renderer/pendingSelection';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import type { FlowEditorBootstrap } from '../../platform/contracts/flowEditor';
-import type { FlowBoardCommand, FlowSession, FlowSessionRequest } from '../../platform/contracts/flowWave2';
+import type { FlowEditorBootstrap, FlowProjectTarget, FlowRecentProject } from '../../platform/contracts/flowEditor';
+import type { FlowBoardCommand, FlowPendingAdd, FlowSession, FlowSessionRequest } from '../../platform/contracts/flowWave2';
+import type { ProjectV1 } from '../../platform/contracts/refactorV1';
 import { createFlowSession } from '../../session/core';
 import { toolPlan } from '../../session/core/pixelTools';
 import { createPixelTools, createFlowPixels } from '../../drawing/renderer';
@@ -20,7 +21,12 @@ import {DialogueBlocks} from '../../storyboard/renderer/dialogueBlocks';
 import {createDialogueCommitState, type DialogueCommitState, type DialogueEditState} from '../../storyboard/renderer/dialogueCommitState';
 import { WorkspaceToolRail } from './workspace/WorkspaceToolRail';
 import { RotateCw } from 'lucide-react';
-import { FlowNaming } from './FlowNaming';
+import { ProjectLauncher } from './ProjectLauncher';
+import { CreateProjectSheet } from './CreateProjectSheet';
+import { ProjectNamingBar } from './ProjectNamingBar';
+import { useCreateProject } from './useCreateProject';
+import { useProjectNaming } from './useProjectNaming';
+import { PendingAddAction } from './PendingAddAction';
 import { captureMountedCanvasCheckpoints } from '../../drawing/renderer/mountedCanvasRecoveryCapture';
 import { projectShots, pixelStroke, settledStrokePreview } from './adapter';
 import type { Shot, SketchStroke } from '../../drawing/contracts/types';
@@ -49,19 +55,27 @@ function bindEditor(sessionId: string) {
     refresh: (project: FlowEditorBootstrap['project']) => api.refresh(sessionId, project),
     folderStatus: (request: Parameters<typeof api.folderStatus>[1]) => api.folderStatus(sessionId, request),
     outputNames: (project: FlowEditorBootstrap['project']) => api.outputNames(sessionId, project),
-    saveTiff: (project: FlowEditorBootstrap['project']) => api.saveTiff(sessionId, project)
+    saveTiff: (project: FlowEditorBootstrap['project']) => api.saveTiff(sessionId, project),
+    pendingAdd: (project: ProjectV1, request: FlowPendingAdd & { recover: boolean }) => api.pendingAdd(sessionId, project, request)
   };
 }
-type EditorOwner = { flow: FlowSession; sessionId: string; api: ReturnType<typeof bindEditor> };
+type EditorOwner = { flow: FlowSession; sessionId: string; api: ReturnType<typeof bindEditor>; folderName: string };
+type TransitionResult = 'opened' | 'unchanged' | { error: string };
 export function FlowEditor() {
   const [owner, setOwner] = useState<EditorOwner>();
   const current = useRef<EditorOwner | undefined>(undefined);
   const [issue, setIssue] = useState('');
   const [switching, setSwitching] = useState(false);
+  const [launchBusy, setLaunchBusy] = useState(false);
+  const [recent, setRecent] = useState<FlowRecentProject[]>([]);
+  const [currentRecentId, setCurrentRecentId] = useState<string | null>(null);
   const gestures = useRef(0);
   const outputWork = useRef<Promise<void> | undefined>(undefined);
-  const switchWork = useRef<Promise<void> | undefined>(undefined);
+  const switchWork = useRef<Promise<TransitionResult> | undefined>(undefined);
   const closing = useRef(false);
+  // The active editor registers its naming draft here. A project transition must collect
+  // those values before freeze; closing must do the same.
+  const beforeTransition = useRef<() => Promise<void>>(() => Promise.resolve());
   // Dialogue composition and host-owned commits live here so the close/open path can read them
   // synchronously; an editor unmounting never marks its text as saved.
   const dialogueCommits = useRef(createDialogueCommitState());
@@ -69,46 +83,85 @@ export function FlowEditor() {
     if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) throw Error('Finish the current stroke first');
     if (dialogueCommits.current.busy()) throw Error('Finish the current dialogue input first');
   };
-  const install = ({ project, sessionId }: FlowEditorBootstrap) => {
+  const install = ({ project, sessionId, folderName }: FlowEditorBootstrap) => {
     const api = bindEditor(sessionId);
     const flow = required(createFlowSession({ project, sessionId, incarnation: crypto.randomUUID(),
       maxHistoryEntries: 60, maxPendingRequests: 32, assets: api,
       pixels: createFlowPixels({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxPoints: 100_000 }),
       tools: createPixelTools({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxLayers: 64 }),
-      checkpoint: api.checkpoint, refresh: api.refresh, clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number), now: () => performance.now() } }));
-    const next = { flow, api, sessionId };
+      checkpoint: api.checkpoint, refresh: api.refresh, pendingAdd: api.pendingAdd,
+      clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number), now: () => performance.now() } }));
+    const next = { flow, api, sessionId, folderName };
     current.current = next; setOwner(next); setIssue('');
+    beforeTransition.current = () => Promise.resolve();
     dialogueCommits.current.reset();
     void flow.request({ kind: 'checkpoint' }).then(result => { if (current.current === next && !result.ok) setIssue(result.error.message); });
+  };
+  const refreshRecent = async () => {
+    try {
+      const state = await window.flowEditor!.launcherState();
+      setRecent(state.recent);
+      setCurrentRecentId(state.currentId);
+    } catch { /* keep the last known list */ }
   };
   const resume = async (owner: EditorOwner) => {
     if (owner.flow.snapshot().phase === 'frozen') required(await owner.flow.request({ kind: 'resume' }));
   };
-  const openProject = () => {
-    if (switchWork.current || closing.current || !current.current) return;
+  const openProject = (target: FlowProjectTarget): Promise<TransitionResult> => {
+    if (switchWork.current) return Promise.resolve({ error: '项目正在切换，请稍候' });
+    if (closing.current || !current.current) return Promise.resolve({ error: '项目尚未打开' });
     const previous = current.current;
     setSwitching(true);
-    const work = (async () => {
+    const work = (async (): Promise<TransitionResult> => {
       try {
         assertSettledGesture();
+        await beforeTransition.current();
         while (outputWork.current) await outputWork.current;
         assertSettledGesture();
         const frozen = required(await previous.flow.request({ kind: 'freeze' }));
-        const next = await window.flowEditor!.switchProject(previous.sessionId, frozen.snapshot.project);
-        if (next) install(next); else { await resume(previous); setIssue(''); }
+        const next = await window.flowEditor!.switchProject(previous.sessionId, frozen.snapshot.project, target);
+        if (next) { install(next); void refreshRecent(); return 'opened'; }
+        await resume(previous); setIssue(''); return 'unchanged';
       } catch (error) {
         if (current.current === previous) await resume(previous);
-        setIssue(String(error));
+        const message = error instanceof Error ? error.message : String(error);
+        setIssue(message);
+        return { error: message };
       } finally { setSwitching(false); }
     })();
     switchWork.current = work;
     void work.finally(() => { if (switchWork.current === work) switchWork.current = undefined; });
+    return work;
+  };
+  const launch = async (target: FlowProjectTarget): Promise<TransitionResult> => {
+    if (owner || launchBusy) return { error: '项目已经打开' };
+    setLaunchBusy(true); setIssue('');
+    try {
+      const result = await window.flowEditor!.launch(target);
+      if (result.canceled) return 'unchanged';
+      install(result.bootstrap);
+      void refreshRecent();
+      return 'opened';
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setIssue(message);
+      return { error: message };
+    } finally { setLaunchBusy(false); }
   };
   useEffect(() => {
     const api = window.flowEditor!;
     let cancelled = false;
-    window.addEventListener('beforeunload', beforeUnload);
-    void api.open().then(value => { if (!cancelled) install(value); }).catch(error => setIssue(String(error)));
+    void (async () => {
+      try {
+        const state = await api.launcherState();
+        if (cancelled) return;
+        setRecent(state.recent);
+        if (state.open) {
+          const value = await api.open();
+          if (!cancelled) { install(value); void refreshRecent(); }
+        }
+      } catch (error) { if (!cancelled) setIssue(String(error)); }
+    })();
     const off = api.onClose(id => { void (async () => {
       if (closing.current) return;
       closing.current = true;
@@ -118,6 +171,7 @@ export function FlowEditor() {
         owner = current.current;
         if (!owner) throw Error('Project is still opening');
         assertSettledGesture();
+        await beforeTransition.current();
         while (outputWork.current) await outputWork.current;
         assertSettledGesture();
         const result = required(await owner.flow.request({ kind: 'freeze' }));
@@ -127,7 +181,6 @@ export function FlowEditor() {
         assertSettledGesture();
         const closed = await api.finishClose(owner.sessionId, id, result.snapshot.project);
         if (!closed.ok) throw Error(closed.message);
-        window.removeEventListener('beforeunload', beforeUnload);
       } catch (error) {
         setIssue(String(error));
         await api.finishClose(owner?.sessionId ?? '', id, null);
@@ -135,15 +188,39 @@ export function FlowEditor() {
         closing.current = false;
       }
     })(); });
-    return () => { cancelled = true; off(); window.removeEventListener('beforeunload', beforeUnload); };
+    return () => { cancelled = true; off(); };
   }, []);
-  return owner ? <Editor key={owner.sessionId} flow={owner.flow} api={owner.api} openProject={openProject} switching={switching}
-    issue={issue} setIssue={s => { if (current.current === owner) setIssue(s); }} gestures={gestures} outputWork={outputWork} dialogueCommits={dialogueCommits} /> : <main><p role="status">{issue || 'Opening project…'}</p></main>;
+  useEffect(() => {
+    if (!owner) return;
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+  }, [owner]);
+  return owner
+    ? <Editor key={owner.sessionId} flow={owner.flow} api={owner.api} folderName={owner.folderName} sessionId={owner.sessionId} openProject={openProject} switching={switching}
+        issue={issue} setIssue={s => { if (current.current === owner) setIssue(s); }} gestures={gestures} outputWork={outputWork} dialogueCommits={dialogueCommits}
+        beforeTransition={beforeTransition} recent={recent} currentRecentId={currentRecentId} />
+    : <ProjectHome recent={recent} busy={launchBusy} issue={issue} launch={launch} />;
 }
-function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, outputWork, dialogueCommits }: {
-  api: ReturnType<typeof bindEditor>; openProject: () => void; switching: boolean;
+function ProjectHome({ recent, busy, issue, launch }: {
+  recent: FlowRecentProject[]; busy: boolean; issue: string;
+  launch: (target: FlowProjectTarget) => Promise<TransitionResult>;
+}) {
+  const create = useCreateProject(launch);
+  return <>
+    <ProjectLauncher recent={recent} busy={busy || create.state?.phase === 'creating'} message={issue}
+      onCreate={() => void create.begin()} onOpen={() => void launch({ kind: 'dialog' })}
+      onOpenRecent={id => void launch({ kind: 'recent', id })} />
+    {create.state && <CreateProjectSheet key={create.state.draft.id} state={create.state} busy={busy}
+      onChooseSource={kind => void create.chooseSource(kind)} onChooseDestination={() => void create.chooseDestination()}
+      onConfirm={fields => void create.confirm(fields)} onCancel={() => void create.cancel()}
+      onAbort={() => void create.abort()} onRespond={decision => void create.respond(decision)} onError={create.setError} />}
+  </>;
+}
+function Editor({ flow, api, folderName, sessionId, openProject, switching, issue, setIssue, gestures, outputWork, dialogueCommits, beforeTransition, recent, currentRecentId }: {
+  api: ReturnType<typeof bindEditor>; folderName: string; sessionId: string; openProject: (target: FlowProjectTarget) => Promise<TransitionResult>; switching: boolean;
   outputWork: { current: Promise<void> | undefined }; flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number };
-  dialogueCommits: { current: DialogueCommitState }
+  dialogueCommits: { current: DialogueCommitState };
+  beforeTransition: { current: () => Promise<void> }; recent: FlowRecentProject[]; currentRecentId: string | null;
 }) {
   const [demand,setDemand]=useState<string[]>([]);
   const demandRef=useRef(demand);demandRef.current=demand;
@@ -159,7 +236,6 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
     setSelection(current => selectShots(order, current, anchor, id, event));
     selectionAnchor.current = nextSelectionAnchor(order, anchor, id, event);
   };
-  const [namingOpen, setNamingOpen] = useState(false);
   const [refreshing,setRefreshing]=useState(false),[refreshRecovery,setRefreshRecovery]=useState(false);
   const [savingTiff, setSavingTiff] = useState(false);
   const flowSaved = snapshot.checkpoint?.revision === snapshot.project.revision && !snapshot.pending;
@@ -244,6 +320,16 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   const [dialogueBusy, setDialogueBusy] = useState(false);
   // Bumped only after a successful history step: dialogue drafts adopt the restored text.
   const [authority, setAuthority] = useState(0);
+  const naming = useProjectNaming(snapshot.project, async draft => {
+    await request({ kind: 'board', command: { kind: 'setProjectNaming', name: draft.name, naming: draft.naming } });
+    // The recent label follows the project name; its root and identity do not change.
+    await window.flowEditor!.updateRecentName(sessionId, draft.name).catch(() => {});
+  });
+  useEffect(() => {
+    beforeTransition.current = naming.flush;
+    return () => { beforeTransition.current = () => Promise.resolve(); };
+  }, [beforeTransition, naming.flush]);
+  const create = useCreateProject(openProject);
   // Response-tracked identity, not a render-time read of the state object: several editors can
   // be busy at once, so the held set (not a single shot) decides which cards stay mounted.
   const [dialogueHoldShots, setDialogueHoldShots] = useState<string[]>([]);
@@ -368,13 +454,21 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   };
   const saveTiff = async () => {
     if (!active || savingTiff || outputWork.current) return;
+    if (naming.composing) { setIssue('请先完成输入法组字，再保存'); return; }
     if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture || flow.snapshot().pending || inputUnsettled()) {
       setIssue('Finish the current edit before saving TIFF'); return;
     }
-    const captured = flow.snapshot().project;
+    if (naming.issue) { setIssue(naming.issue); return; }
     setSavingTiff(true);
     const work = (async () => {
       try {
+        // Collect the values currently in the four fields before capturing the project.
+        await naming.flush();
+        await request({ kind: 'checkpoint' });
+        const live = flow.snapshot();
+        if (live.phase !== 'active' || live.pending || gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture)
+          throw Error('Finish the current edit before saving TIFF');
+        const captured = live.project;
         const receipt = required(await api.saveTiff(captured));
         if (receipt.projectId !== captured.id || receipt.revision !== captured.revision) throw Error('TIFF Save receipt mismatch');
         setIssue('');
@@ -464,12 +558,20 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
   // TIFF output owns its captured revision. A new brush stroke edits the live Session.
   const brushAvailable = () => active && tool === 'brush' && (!outputWork.current || savingTiff) && !gestures.current;
   const canStartCanvasEdit = () => (!outputWork.current || brushAvailable()) && editsSettled();
+  const closeMenu = (event: { currentTarget: HTMLElement }) => {
+    const menu = event.currentTarget.closest('details');
+    if (menu instanceof HTMLDetailsElement) menu.open = false;
+  };
   const dialogueText=new Map<string,string>();
   for(const d of snapshot.project.dialogues){const text=d.text.trim();if(text)dialogueText.set(d.shotId,[dialogueText.get(d.shotId),text].filter(Boolean).join(' ').replace(/\s+/g,' '));}
   const presentations=Object.fromEntries([...snapshot.project.shots,...snapshot.project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:dialogueText.get(s.id)??''} ]));
   return <MediaSourceContext.Provider value={media}><CanvasPresentationContext.Provider value={presentations}>
     <Workbench dialogueText={dialogueText} name={snapshot.project.name} shots={shots.slice(0,snapshot.project.shots.length)} parked={shots.slice(snapshot.project.shots.length)} selected={selectedIds} revision={snapshot.project.revision} disabled={!active}
-      status={issue||snapshot.lastError?.message||(flowSaved ? '已自动暂存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label) : '正在自动暂存…')}
+      status={issue || (flowSaved
+        ? '已自动暂存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label)
+        : (snapshot.lastError?.message || '正在自动暂存…'))}
+      projectBar={<ProjectNamingBar naming={naming} folderName={folderName} disabled={!active || savingTiff} />}
+      pendingActions={<PendingAddAction flow={flow} sessionId={sessionId} disabled={!active || savingTiff} recovery={snapshot.pendingAddRecovery} />}
       select={selectShot} focus={focusShot}
       selectAll={()=>{const ids=selectAllShots(flow.snapshot().project.shots.map(s=>s.id));setSelection(ids);selectionAnchor.current=undefined;}}
       selectMany={ids=>{const known=new Set(ids),next=flow.snapshot().project.shots.map(s=>s.id).filter(id=>known.has(id));setSelection(next);selectionAnchor.current=next[0];}}
@@ -490,7 +592,24 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
         isZoomScrubbing={false}
         onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
         onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
-      actions={<><button disabled={!active} onClick={()=>openProject()}>打开</button><button disabled={!active} onClick={()=>setNamingOpen(true)}>命名</button><button disabled={!active||savingTiff} className="wb-save" onClick={()=>{void saveTiff().catch(()=>{});}}>{savingTiff?'保存中…':'保存'}</button><button disabled={!active} className="wb-refresh" data-external={folderStatus.state==='external'||folderStatus.state==='both'} data-spinning={refreshing} title="从文件夹取回外部改动" aria-label="从文件夹取回外部改动" onClick={refreshImages}><RotateCw size={15} strokeWidth={1.75} aria-hidden /></button></>}
+      actions={<div className="wb-actions">
+        <details className="wb-project-menu">
+          <summary>项目</summary>
+          <div className="wb-menu wb-project-menu-list">
+            <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void openProject({ kind: 'dialog' }); }}>打开项目…</button>
+            <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void create.begin(); }}>新建项目…</button>
+            <span className="wb-menu-label">最近项目</span>
+            {recent.length ? recent.map(project => <button type="button" key={project.id}
+              disabled={!active || switching || !project.available || project.id === currentRecentId}
+              title={!project.available ? '文件夹已不可用' : project.id === currentRecentId ? '当前项目' : project.name}
+              onClick={event => { closeMenu(event); void openProject({ kind: 'recent', id: project.id }); }}>
+              {project.name}{project.id === currentRecentId ? ' · 当前' : !project.available ? ' · 不可用' : ''}
+            </button>) : <span className="wb-menu-empty">还没有最近项目</span>}
+          </div>
+        </details>
+        <button disabled={!active || savingTiff || Boolean(naming.issue) || naming.composing} className="wb-save" onClick={() => { void saveTiff().catch(() => {}); }}>{savingTiff?'保存中…':'保存'}</button>
+        <button disabled={!active} className="wb-refresh" data-external={folderStatus.state==='external'||folderStatus.state==='both'} data-spinning={refreshing} title="从文件夹取回外部改动" aria-label="从文件夹取回外部改动" onClick={refreshImages}><RotateCw size={15} strokeWidth={1.75} aria-hidden /></button>
+      </div>}
       renderDialogue={renderDialogue}
       toolbar={null}
       toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} onToolChange={setTool}
@@ -506,6 +625,9 @@ function Editor({ flow, api, openProject, switching, issue, setIssue, gestures, 
       {folderStatus.recovery.state === 'inspect' && <p>恢复文件的位置、身份或内容与保存记录不一致。请保留项目文件夹和原文件，以便核对。</p>}
       {folderStatus.recovery.state === 'retry' && <><p>已找到可继续的删除记录。重试会继续上次保存，并把仍待删除的原文件移入系统废纸篓。</p><button disabled={!active || savingTiff} onClick={() => { void saveTiff().catch(() => {}); }}>重试保存 TIFF</button></>}
     </aside>}
-    {namingOpen&&<div className="wb-naming"><FlowNaming project={snapshot.project} loadBindings={api.outputNames} onCancel={()=>setNamingOpen(false)} onApply={async(name,naming)=>{await request({kind:'board',command:{kind:'setProjectNaming',name,naming}});setNamingOpen(false);}}/></div>}
+    {create.state && <CreateProjectSheet key={create.state.draft.id} state={create.state} busy={switching}
+      onChooseSource={kind => void create.chooseSource(kind)} onChooseDestination={() => void create.chooseDestination()}
+      onConfirm={fields => void create.confirm(fields)} onCancel={() => void create.cancel()}
+      onAbort={() => void create.abort()} onRespond={decision => void create.respond(decision)} onError={create.setError} />}
   </CanvasPresentationContext.Provider></MediaSourceContext.Provider>;
 }

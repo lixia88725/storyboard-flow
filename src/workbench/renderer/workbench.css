@@ -237,3 +237,73 @@
 .wb-drag-ghost>div { width:100%;height:100%; }
 .wb-drag-ghost span { position:absolute;right:4px;bottom:4px;padding:2px 6px;background:#2c3b54;color:#fff;border-radius:8px;font:11px system-ui; }
 .wb-marquee>span { position:absolute;right:3px;bottom:3px;padding:1px 5px;border-radius:3px;background:#36527d;color:#fff;font:11px system-ui;white-space:nowrap; }
+
+/* Project entry, creation draft and persistent naming fields. */
+.flow-launcher { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:32px; background:radial-gradient(120% 100% at 50% 0%,#232a30 0%,#15181b 62%); color:#c6cace; font:13px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; }
+.flow-launcher * { box-sizing:border-box; }
+.flow-launcher button { padding:7px 14px; border:1px solid #465058; border-radius:8px; background:#2a3035; color:#dfe5ea; font:inherit; cursor:pointer; }
+.flow-launcher button:hover { background:#343c43; color:#fff; }
+.flow-launcher button:disabled { opacity:.4; cursor:default; }
+.launcher-card { width:min(560px,100%); display:flex; flex-direction:column; gap:18px; padding:26px; background:#202427; border:1px solid #363d43; border-radius:14px; box-shadow:0 24px 64px #0009, inset 0 1px 0 #ffffff0d; }
+.launcher-card h1 { margin:0; font-size:22px; font-weight:650; letter-spacing:-.02em; color:#f0f2f4; }
+.launcher-card header p { margin:6px 0 0; color:#8e99a1; }
+.launcher-actions { display:flex; gap:8px; }
+.launcher-actions button { padding:9px 18px; }
+.launcher-actions .primary { background:#d0e2ff; border-color:#d0e2ff; color:#172334; font-weight:600; }
+.launcher-actions .primary:hover { background:#e2edff; color:#172334; }
+.launcher-message { margin:0; color:#ff9c8a; font-size:12px; }
+.launcher-recent { display:flex; flex-direction:column; gap:8px; }
+.launcher-recent h2 { margin:0; font-size:11px; font-weight:600; letter-spacing:.04em; color:#818c94; }
+.launcher-recent p { margin:0; color:#7d8790; font-size:12px; }
+.launcher-recent ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; max-height:240px; overflow:auto; }
+.launcher-recent button { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; text-align:left; padding:8px 10px; border-color:transparent; background:transparent; }
+.launcher-recent button:hover { background:#2b3237; }
+.launcher-recent small { color:#7d8790; font-size:10.5px; }
+
+.wb-actions { display:flex; align-items:center; gap:4px; }
+.wb-actions > details { margin-left:0; }
+.wb-project-menu-list { width:224px; max-height:min(60vh,420px); overflow:auto; }
+.wb-menu-label { display:block; margin:7px 7px 3px; font-size:10px; letter-spacing:.04em; color:#818c94; }
+.wb-menu-empty { display:block; padding:4px 7px 6px; font-size:11px; color:#7d8790; }
+.wb-project-menu-list button { text-align:left; }
+
+.wb-project-bar { display:flex; align-items:center; flex-wrap:wrap; gap:4px 14px; padding:5px 16px; background:#1d2124; border-bottom:1px solid #111; flex-shrink:0; }
+.wb-project-folder { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#7d8790; font-size:11px; }
+.wb-project-field { display:flex; align-items:center; gap:6px; font-size:11px; color:#8b959d; }
+.wb-project-field input { width:112px; padding:3px 6px; background:#262b2f; border:1px solid #3a4147; border-radius:5px; outline:none; color:#e6eaee; font-family:inherit; font-size:12px; }
+.wb-project-field input:focus { border-color:#92baff; }
+.wb-project-field input[aria-invalid=true] { border-color:#a9665a; }
+.wb-project-issue { color:#ff9c8a; font-size:11px; }
+
+.wb-create-source { display:grid; grid-template-columns:70px minmax(0,1fr) auto; align-items:center; gap:8px; padding:8px 12px; }
+.wb-create-source + .wb-create-source { border-top:1px solid #363d43; }
+.wb-create-source > span { color:#8b959d; font-size:10.5px; }
+.wb-create-source > div { display:flex; flex-wrap:wrap; gap:6px; }
+.wb-create-source output { max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#b9c2ca; font-size:11px; }
+.wb-create-progress { display:flex; align-items:center; gap:10px; color:#aab4bc; font-size:11px; }
+.wb-create-progress progress { flex:1; height:6px; accent-color:#92baff; }
+.wb-create-issues { padding:10px 12px; background:#2c2622; border:1px solid #6b5747; border-radius:9px; }
+.wb-create-issues p { margin:0; color:#e2cdb6; font-size:11.5px; line-height:1.5; }
+.wb-create-issues ul { list-style:none; margin:8px 0 0; padding:0; max-height:140px; overflow:auto; display:flex; flex-direction:column; gap:4px; }
+.wb-create-issues li { display:grid; grid-template-columns:minmax(90px,0.6fr) minmax(0,1fr) auto; align-items:baseline; gap:8px; color:#cdb9a3; font-size:11px; }
+.wb-create-issues code { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#e9dccb; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; }
+.wb-create-issues span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wb-create-issues b { color:#e8b98f; font-weight:600; }
+
+/* Scrollbars: only a gray rounded thumb. No track, no border and no end buttons; the
+   wheel and thumb drag keep the native scrolling behavior. */
+.flow-workbench, .flow-launcher { scrollbar-width:thin; scrollbar-color:rgba(196,201,208,.42) transparent; }
+.flow-workbench *::-webkit-scrollbar, .flow-launcher *::-webkit-scrollbar { width:8px; height:8px; background:transparent; }
+.flow-workbench *::-webkit-scrollbar-track, .flow-launcher *::-webkit-scrollbar-track { background:transparent; border:0; }
+.flow-workbench *::-webkit-scrollbar-thumb, .flow-launcher *::-webkit-scrollbar-thumb { border:0; border-radius:999px; background:rgba(196,201,208,.42); }
+.flow-workbench *::-webkit-scrollbar-thumb:hover, .flow-launcher *::-webkit-scrollbar-thumb:hover { background:rgba(196,201,208,.62); }
+.flow-workbench *::-webkit-scrollbar-button, .flow-launcher *::-webkit-scrollbar-button { display:none; }
+.flow-workbench *::-webkit-scrollbar-corner, .flow-launcher *::-webkit-scrollbar-corner { background:transparent; }
+
+/* Pending header action and its small sheet. The shelf keeps its own component. */
+.wb-panel-header-actions { display:flex; align-items:center; gap:2px; }
+.flow-workbench .wb-pending-add { padding:2px 7px; border:1px solid #46525f; border-radius:5px; background:#323a44; color:#c5dbff; font-size:11px; font-weight:500; }
+.flow-workbench .wb-pending-add:hover { background:#3d4855; color:#fff; }
+.flow-workbench .wb-pending-add[data-recovery] { border-color:#7a6248; color:#ffd7a8; }
+.wb-pending-source { display:flex; gap:8px; padding:10px; }
+.wb-pending-source button { flex:1; padding:9px 10px; border-color:#4a525a; border-radius:7px; }
