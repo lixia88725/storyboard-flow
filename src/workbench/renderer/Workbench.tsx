@@ -21,6 +21,8 @@ export type WorkbenchProps={
  dialogueText:ReadonlyMap<string,string>;name:string;shots:Shot[];parked:Shot[];selected:string[];revision:number;disabled:boolean;status:string;
  renderDialogue:(id:string,compact?:boolean)=>ReactNode;
  toolbar:ReactNode;actions:ReactNode;toolRail:ReactNode;boardActions:ReactNode;
+ /** Persistent project fields, kept out of the per-session editor panes. */
+ projectBar?:ReactNode;
  select:(id:string,event:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;
  focus:(id:string)=>void;selectMany:(ids:string[])=>void;selectAll:()=>void;clearSelection:()=>void;canNavigate:()=>boolean;canStartCanvasEdit:()=>boolean;canContinueBrush:(shot:Shot)=>boolean;demand:(ids:string[])=>void;
  move:(ids:string[],destination:'active'|'pending',before?:string)=>void;
@@ -144,6 +146,7 @@ export function Workbench(p:WorkbenchProps){
    e.preventDefault();if(!p.disabled&&p.canNavigate())(e.shiftKey?p.clearSelection:p.selectAll)();
   }}>
   <header className="wb-header"><nav aria-label="项目操作">{p.actions}<details><summary>面板</summary><div className="wb-menu">{(Object.keys(labels) as Panel[]).map(id=><label key={id}><input type="checkbox" data-panel-toggle={id} checked={!hidden.includes(id)} onChange={()=>{if(p.canNavigate())setHidden(h=>h.includes(id)?h.filter(v=>v!==id):[...h,id]);}}/>{labels[id]}</label>)}<button onClick={()=>{if(p.canNavigate()){const defaults=defaultWorkspaceLayout();setLayout(defaults.layout);setHidden(defaults.hidden);setHeights(defaults.heights);setJapanese(defaults.japanese);setSplit(defaults.split);setZoom(defaults.zoom);setTile(defaults.tile);setCollapsed(defaults.collapsed);setFlyout([undefined,undefined]);}}}>恢复默认布局</button></div></details></nav></header>
+  {p.projectBar}
   <div className="wb-toolbar">{p.toolbar}</div>
   <div className="wb-main-row">{p.toolRail}<div className="wb-work-area">
   <DndContext autoScroll={false} sensors={sensors} collisionDetection={closestCenter} onDragStart={sorting.start} onDragCancel={sorting.cancel} onDragEnd={sorting.end}>

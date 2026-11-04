@@ -212,18 +212,19 @@
 }
 
 .layer-list::-webkit-scrollbar {
-  width: 0.68em;
+  width: 8px;
+  height: 8px;
 }
 
 .layer-list::-webkit-scrollbar-track {
   background: transparent;
+  border: 0;
 }
 
 .layer-list::-webkit-scrollbar-thumb {
-  border: 0.18em solid transparent;
+  border: 0;
   border-radius: 999px;
   background-color: rgba(216, 210, 197, 0.42);
-  background-clip: content-box;
 }
 
 .layer-list::-webkit-scrollbar-thumb:hover {
