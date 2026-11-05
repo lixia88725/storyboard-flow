@@ -88,15 +88,24 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
  await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'reload checkpoint');
  await delay(500);
  const canvasShot=()=>js('document.querySelector("[data-current-shot]")?.dataset.currentShot');
+  const point=(id,where)=>js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="'+id+'"]')+'),r=c.getBoundingClientRect();'+
+   'const y=Math.round(r.top+r.height/2);if('+JSON.stringify(where)+'==="left")return {x:Math.round(r.left+r.width*0.25),y};'+
+   'if('+JSON.stringify(where)+'==="right")return {x:Math.round(r.left+r.width*0.75),y};'+
+   'const cards=Array.from(document.querySelectorAll(".wb-pending-grid [data-pending-shot-id]"));'+
+   'if('+JSON.stringify(where)+'==="below"){const last=cards[cards.length-1].getBoundingClientRect();return {x:Math.round(last.right+8),y:Math.round(last.top+last.height/2)}}'+
+   'const i=cards.indexOf(c),n=cards[i+1];'+
+   'const x=n?Math.round((r.right+n.getBoundingClientRect().left)/2):Math.round(r.right+24);return {x,y}})()');
+  // Resolve the drop point after the grab point: centring a card can scroll the panel.
+  const dragOnto=async(id,targetId,where)=>{const from=await cardPoint(id);assert.ok(from,'grab '+id);const to=await point(targetId,where);assert.ok(to,'drop '+targetId);await dragTo(from,to);await settle()};
+
  const start=order(),canvas0=await canvasShot();
+
 
  if(${JSON.stringify(phase)}==='edit'){
   assert.deepEqual(start.parked,['shot2','shot3','shot4','shot5'],'fixture parked order');
   assert.deepEqual(start.active,['shot0','shot1'],'fixture active order');
   // 1. single card sorted inside Pending
-  const from=await cardPoint('shot5'),above=await dropAbove('shot2');
-  assert.ok(from&&above,'single sort coordinates');
-  await dragTo(from,above);await settle();
+  await dragOnto('shot5','shot2','left');
   assert.deepEqual(order().parked,['shot5','shot2','shot3','shot4'],'single card moves to the front');
   assert.equal(order().dialogues,start.dialogues,'sorting leaves dialogue untouched');
   await undo();assert.deepEqual(order().parked,start.parked,'one undo restores the sort');
@@ -105,9 +114,7 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   // 2. a selected group sorts inside Pending and keeps its relative order
   await cardClick('shot3');await cardClick('shot4','metaKey:true');await delay(200);
   assert.deepEqual(await selPending(),['shot3','shot4'],'group selected in Pending');
-  const groupFrom=await cardPoint('shot3'),groupAbove=await dropAbove('shot2');
-  assert.ok(groupFrom&&groupAbove,'group sort coordinates');
-  await dragTo(groupFrom,groupAbove);await settle();
+  await dragOnto('shot3','shot2','left');
   assert.deepEqual(order().parked,['shot3','shot4','shot2','shot5'],'group keeps relative order when sorted up');
   assert.deepEqual(await selPending(),['shot3','shot4'],'selection follows the group');
   await undo();assert.deepEqual(order().parked,start.parked,'one undo restores the group sort');
@@ -138,22 +145,120 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   assert.equal(focusState.corner,'1','focus reveals the 移回 control');
   assert.ok(focusState.visible,'control has a box while focused');
   assert.ok(focusState.outline!=='none 0px'||focusState.shadow!=='none','focused control shows a focus indicator: '+JSON.stringify(focusState));
-  const activeOf=()=>read().shots.map(x=>x.id);
-  for(const key of ['Enter','Space']){
-   try{
-    win.webContents.sendInputEvent({type:'keyDown',keyCode:key});
-    win.webContents.sendInputEvent({type:'char',keyCode:key==='Enter'?'\r':' '});
-    win.webContents.sendInputEvent({type:'keyUp',keyCode:key});
-   }catch{}
-   await delay(500);
-   if(activeOf().includes('shot4'))break;
-  }
+  const pendingCount=()=>js('document.querySelectorAll(".wb-pending-grid [data-pending-shot-id]").length');
+  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Enter'});
+  win.webContents.sendInputEvent({type:'char',keyCode:'\r'});
+  win.webContents.sendInputEvent({type:'keyUp',keyCode:'Enter'});
+  await wait(async()=>await pendingCount()===3,'Enter activates the focused control');
   await settle();
   assert.deepEqual(order().active,['shot0','shot1','shot4'],'Enter moves only the focused card back, to the end');
   assert.deepEqual(order().parked,['shot2','shot3','shot5'],'the rest of Pending is untouched');
-  assert.equal(await js('document.activeElement?.closest(".flow-pending-shelf")!==null||document.activeElement===document.body'),true,'focus stays in a sane place');
+  assert.equal(await js('document.activeElement?.getAttribute("aria-label")'),'Restore shot5','focus moves to the next Pending card control');
+  assert.equal(await js('getComputedStyle(document.activeElement.closest(".wb-card").querySelector(".wb-card-corner")).opacity'),'1','the receiving control is visible too');
   await undo();assert.deepEqual(order().parked,start.parked,'one undo restores the keyboard move');
   assert.equal(await canvasShot(),canvas0,'keyboard work never switches the right-hand canvas');
+
+  // 5. Two-dimensional insertion inside the Pending grid, the same rule as the board:
+  // right half inserts after, left half before, a gap takes the next card's side, a card in
+  // the second row wins over the first, and pointing past the last row appends.
+  await dragOnto('shot5','shot3','right');
+  assert.deepEqual(order().parked,['shot2','shot3','shot5','shot4'],'right half inserts after the card');
+  await undo();
+  await dragOnto('shot4','shot2','left');
+  assert.deepEqual(order().parked,['shot4','shot2','shot3','shot5'],'left half inserts before the card');
+  await undo();
+  await dragOnto('shot5','shot2','gap');
+  assert.deepEqual(order().parked,['shot2','shot5','shot3','shot4'],'the gap between two cards takes the next side');
+  await undo();
+  await dragOnto('shot2','shot4','right');
+  assert.deepEqual(order().parked,['shot3','shot4','shot2','shot5'],'a second-row card wins over the first row');
+  await undo();
+  await dragOnto('shot2','shot5','below');
+  assert.deepEqual(order().parked,['shot3','shot4','shot5','shot2'],'dropping past the last row appends');
+  await undo();
+  assert.deepEqual(order().parked,start.parked,'every geometry case returns to the fixture');
+  assert.equal(order().dialogues,start.dialogues,'geometry cases leave dialogue untouched');
+  assert.equal(await canvasShot(),canvas0,'geometry cases never switch the canvas');
+
+  // 6. A group dropped between two cards keeps its own order.
+  await cardClick('shot4');await cardClick('shot5','metaKey:true');await delay(200);
+  await dragOnto('shot4','shot2','left');
+  assert.deepEqual(order().parked,['shot4','shot5','shot2','shot3'],'group keeps relative order at the new slot');
+  assert.deepEqual(await selPending(),['shot4','shot5'],'the group stays selected after a Pending move');
+  await undo();
+  assert.deepEqual(order().parked,start.parked,'one undo restores the group move');
+
+  // 7. A target that starts outside the viewport: the drag scrolls the Pending panel itself
+  // and the drop lands on the card that was hidden at pick-up time.
+  // A narrow window keeps the Pending grid to a couple of columns, so with a short panel the
+  // lower row really starts outside the visible box.
+  win.setSize(900,760);await delay(300);
+  await js('localStorage.setItem("flow.workbench.layout.v2",JSON.stringify({layout:[["board","pending"],["canvas","info","layers"]],hidden:[],split:60,tile:200,zoom:"fit",japanese:false,collapsed:[false,false],heights:{board:380,pending:170}}))');
+  win.webContents.reload();
+  await wait(()=>js('!!document.querySelector(".flow-pending-shelf .wb-card")'),'reload small panel');
+  await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'small panel checkpoint');
+  await delay(500);
+  await js('(()=>{const b=document.querySelector(".flow-pending-shelf").closest(".wb-panel-body");b.scrollTop=0})()');await delay(250);
+  const hiddenBefore=await js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="shot5"]')+'),b=c.closest(".wb-panel-body"),r=c.getBoundingClientRect(),br=b.getBoundingClientRect();return {outside:r.top>br.bottom-8,scroll:b.scrollTop}})()');
+  assert.equal(hiddenBefore.outside,true,'the last card starts outside the visible Pending panel');
+  const edgeBox=await js('(()=>{const b=document.querySelector(".flow-pending-shelf").closest(".wb-panel-body"),r=b.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.bottom-6)}})()');
+  const dragStart=await cardPoint('shot2');
+  assert.ok(dragStart,'grab for the scroll case');
+  move(dragStart.x,dragStart.y);await delay(80);down(dragStart.x,dragStart.y);await delay(100);move(dragStart.x+8,dragStart.y+4);await delay(100);
+  move(edgeBox.x,edgeBox.y);await delay(1500);
+  const scrolled=await js('document.querySelector(".flow-pending-shelf").closest(".wb-panel-body").scrollTop');
+  assert.ok(scrolled>0,'dragging at the panel edge scrolls the Pending panel, not the board');
+  const boardScroll=await js('document.querySelector("[data-panel=board] .wb-panel-body").scrollTop');
+  assert.equal(boardScroll,0,'the storyboard panel does not scroll for a Pending drag');
+  const lastCard=await js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="shot5"]')+'),r=c.getBoundingClientRect();return {x:Math.round(r.left+r.width*0.25),y:Math.round(r.top+r.height/2)}})()');
+  move(lastCard.x,lastCard.y);await delay(300);up(lastCard.x,lastCard.y);await delay(400);await settle();
+  assert.deepEqual(order().parked,['shot3','shot4','shot2','shot5'],'the drop lands on a card revealed by auto-scroll');
+  await undo();
+  assert.deepEqual(order().parked,start.parked,'one undo restores the scrolled drop');
+
+  // 8. Empty table: a board card drops into the empty Pending grid, and when the keyboard
+  // empties it again focus lands on the toolbar, where the next Tab still reaches a control.
+  win.setSize(1500,980);await delay(300);
+  await js('localStorage.setItem("flow.workbench.layout.v2",JSON.stringify({layout:[["board","pending"],["canvas","info","layers"]],hidden:[],split:48,tile:220,zoom:"fit",japanese:false,collapsed:[false,false],heights:{board:400,pending:620}}))');
+  win.webContents.reload();
+  await wait(()=>js('!!document.querySelector(".flow-pending-shelf .wb-card")'),'reload for empty table');
+  await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'empty table checkpoint');
+  await delay(500);
+  await js('Array.from(document.querySelectorAll(".wb-pending-tools button")).find(b=>b.textContent==="全选").click()');await delay(200);
+  await js('Array.from(document.querySelectorAll(".wb-pending-tools button")).find(b=>b.textContent==="移入故事板").click()');await settle();
+  assert.deepEqual(order().parked,[],'the Pending table is now empty');
+  assert.equal(await js('document.querySelectorAll(".wb-pending-grid [data-pending-shot-id]").length'),0,'no cards are rendered');
+  const emptySpot=await js('(()=>{const s=document.querySelector(".flow-pending-shelf"),r=s.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.bottom-40)}})()');
+  const boardCard=await js('(()=>{const c=document.querySelector("[data-board-id=shot0] .wb-card-handle"),r=c.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()');
+  await dragTo(boardCard,emptySpot);await settle();
+  assert.equal(order().parked.length,1,'a board card drops into the empty table');
+  assert.equal(order().parked[0],'shot0','the empty table takes the dropped card');
+  // Keyboard empties it again: focus must not fall back to the body.
+  await cardPoint(order().parked[0]);
+  const took=await js('(()=>{const b=document.querySelector(".wb-pending-restore");b.focus();return {ok:document.activeElement===b,now:(document.activeElement.className||"")+"|"+(document.activeElement.tagName)}})()');
+  assert.equal(took.ok,true,'the last card control takes focus: '+JSON.stringify(took));
+  await delay(200);
+  assert.equal(await js('getComputedStyle(document.activeElement.closest(".wb-card").querySelector(".wb-card-corner")).opacity'),'1','focus reveals the control on the last card');
+  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Enter'});
+  win.webContents.sendInputEvent({type:'char',keyCode:'\r'});
+  win.webContents.sendInputEvent({type:'keyUp',keyCode:'Enter'});
+  await wait(()=>js('!document.querySelector(".wb-pending-grid [data-pending-shot-id]")'),'keyboard empties the table');
+  await settle();
+  assert.deepEqual(order().parked,[],'the keyboard emptied the table');
+  assert.equal(await js('!!document.activeElement && document.activeElement.className.includes("wb-pending-tools")'),true,'focus lands on the Pending toolbar');
+  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Tab'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Tab'});
+  await delay(250);
+  const afterTab=await js('(()=>{const a=document.activeElement;return {isBody:a===document.body,tag:a.tagName,label:a.getAttribute&&a.getAttribute("aria-label"),text:(a.textContent||"").slice(0,12),inside:!!a.closest(".flow-workbench")}})()');
+  assert.equal(afterTab.isBody,false,'the next Tab leaves the toolbar for a real control');
+  assert.equal(afterTab.inside,true,'that control is inside the workbench: '+JSON.stringify(afterTab));
+  // Restore the fixture state for the reopen phase.
+  for(let i=0;i<6;i++){
+   const state=order();
+   if(JSON.stringify(state.parked)===JSON.stringify(start.parked)&&JSON.stringify(state.active)===JSON.stringify(start.active))break;
+   await undo();
+  }
+  assert.deepEqual(order().parked,start.parked,'fixture parked order restored before reopen');
+  assert.deepEqual(order().active,start.active,'fixture active order restored before reopen');
  }else{
   // Reopen: the committed order survived, Pending starts with no selection, and the same
   // control still works from the keyboard.

@@ -1,4 +1,4 @@
-import type {ReactNode} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {PresentationPreview} from '../../drawing/renderer/canvasPresentation';
 import {useDraggable,useDroppable} from '@dnd-kit/core';
 import type {Shot} from '../../drawing/contracts/types';
@@ -28,12 +28,33 @@ export function FlowPending(p: {
 }) {
   const drop = useDroppable({ id: pendingDropId, disabled: p.disabled });
   const order = p.shots.map(shot => shot.id);
+  // Focus after a keyboard move: the moved card unmounts, so focus is handed to the next
+  // card's control, or to the toolbar when the table empties — never left to the body.
+  const shelf = useRef<HTMLElement | null>(null);
+  const setShelf = (node: HTMLElement | null) => { shelf.current = node; drop.setNodeRef(node); };
+  const [focusAfter, setFocusAfter] = useState<{gone: string; next?: string} | null>(null);
+  useEffect(() => {
+    if (!focusAfter) return;
+    if (p.shots.some(shot => shot.id === focusAfter.gone)) return;
+    const host = shelf.current;
+    if (!host) return;
+    const card = focusAfter.next ? host.querySelector<HTMLElement>(`[data-pending-shot-id="${focusAfter.next}"] .wb-card-corner button`) : null;
+    const target = card ?? host.querySelector<HTMLElement>('.wb-pending-tools button:not([disabled])') ?? host.querySelector<HTMLElement>('.wb-pending-tools');
+    target?.focus();
+    setFocusAfter(null);
+  }, [focusAfter, p.shots]);
+  const restore = (id: string) => {
+    const index = order.indexOf(id);
+    const next = [...order.slice(index + 1), ...order.slice(0, index)].find(other => other !== id);
+    setFocusAfter({gone: id, next});
+    p.onRestore(id);
+  };
   // A local binding keeps the optional delete callable inside the click handler.
   const remove = p.onDelete;
   const marquee = useMarqueeSelection({ idAttribute: 'data-pending-shot-id', selected: [...p.selected], order, disabled: p.disabled,
     canSelect: () => !p.disabled, onSelect: p.onSelectMany, resetKeys: [p.disabled] });
-  return <aside ref={drop.setNodeRef} aria-label="Pending" className={`flow-pending-shelf ${drop.isOver ? 'is-over' : ''}`}>
-    <div className="wb-pending-tools flow-pending-actions">
+  return <aside ref={setShelf} aria-label="Pending" className={`flow-pending-shelf ${drop.isOver ? 'is-over' : ''}`}>
+    <div className="wb-pending-tools flow-pending-actions" tabIndex={-1}>
       <span>{p.shots.length} 张 · {p.selected.length} 已选</span>
       <button disabled={p.disabled || !p.shots.length} onClick={p.onSelectAll}>全选</button>
       <button disabled={p.disabled || !p.selected.length} onClick={p.onClear}>取消选择</button>
@@ -45,7 +66,7 @@ export function FlowPending(p: {
     <div className="wb-grid wb-pending-grid" ref={marquee.setElement} onPointerDown={marquee.onPointerDown}>
       {p.shots.map(shot => <PendingCard key={shot.id} shot={shot} disabled={p.disabled} revision={p.revision}
         selected={p.selected.includes(shot.id)} text={p.dialogueText.get(shot.id) ?? ''}
-        onRestore={p.onRestore} onSelect={p.onSelect} renderMedia={p.renderMedia} />)}
+        onRestore={restore} onSelect={p.onSelect} renderMedia={p.renderMedia} />)}
     </div>
   </aside>;
 }

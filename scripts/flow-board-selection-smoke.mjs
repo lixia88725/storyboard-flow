@@ -95,7 +95,7 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  assert.deepEqual(read().shots.map(s=>s.id),[...order.slice(1,31),'shot0',...order.slice(31)]);
  await js('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="撤销").click()');await wait(()=>read().shots[0].id==='shot0','scroll undo');
  await js('document.querySelector('+JSON.stringify(bodySelector)+').scrollTop=0');await delay(400);
- const g=await rect('.wb-grid');
+ const g=await rect('.wb-grid:not(.wb-pending-grid)');
  await mouse('mouseMove',g.x+3,g.y+3);await mouse('mouseDown',g.x+3,g.y+3);await mouse('mouseMove',g.x+60,g.y+50);
  await wait(()=>js('!!document.querySelector("[data-marquee-active=true]")'),'scroll marquee');
  for(let n=0;n<5;n++){await js('(()=>{const b=document.querySelector('+JSON.stringify(bodySelector)+'),c=document.querySelector("[data-board-id=shot30]");b.scrollTop+=c.getBoundingClientRect().top-b.getBoundingClientRect().top-100})()');await delay(120);}
@@ -235,7 +235,7 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  assert.deepEqual(read().shots.map(s=>s.id),baseline.shots.map(s=>s.id));
  assert.equal(await js('document.querySelector("[data-workbench]").dataset.revision'),String(read().revision));
  // Marquee starts only in blank grid padding; cards intersected even partly are selected.
- const grid=await rect('.wb-grid'),first=await rect('[data-board-id=shot0]');
+ const grid=await rect('.wb-grid:not(.wb-pending-grid)'),first=await rect('[data-board-id=shot0]');
  await mouse('mouseMove',grid.x+3,grid.y+3);await mouse('mouseDown',grid.x+3,grid.y+3);
  await mouse('mouseMove',first.x+first.width*.7,first.y+first.height*.5);
  await wait(()=>js('!!document.querySelector("[data-marquee-active=true]")'),'marquee active');
@@ -277,10 +277,11 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  await clickAt('.wb-board-selection button');await dragStart('shot1');
  const shelf=await rect('.flow-pending-shelf');await mouse('mouseMove',shelf.x+shelf.width-12,shelf.y+25);await mouse('mouseUp',shelf.x+shelf.width-12,shelf.y+25);
  await wait(()=>read().shots.length===0,'all to Pending');
- const restore=await rect('[aria-label="选择 Pending shot5"]');
- await mouse('mouseMove',restore.x+10,restore.y+10);await mouse('mouseDown',restore.x+10,restore.y+10);await mouse('mouseMove',restore.x+25,restore.y+10);
- const empty=await rect('.wb-grid');await mouse('mouseMove',empty.x+40,empty.y+40);await mouse('mouseUp',empty.x+40,empty.y+40);
- await wait(()=>read().shots.length===1&&read().shots[0].id==='shot5','Pending into empty board');
+ await revealPending('shot5');
+ const restore=await js('(()=>{const c=document.querySelector("[data-pending-shot-id=shot5] .wb-card-picture"),r=c.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()');
+ await mouse('mouseMove',restore.x,restore.y);await mouse('mouseDown',restore.x,restore.y);await mouse('mouseMove',restore.x+14,restore.y+4);
+ const empty=await rect('[data-panel=board] .wb-panel-body');await mouse('mouseMove',empty.x+60,empty.y+70);await mouse('mouseUp',empty.x+60,empty.y+70);
+ await wait(()=>read().shots.length===1&&read().shots[0].id==='shot5','Pending into empty board',9000);
  assert.equal(read().parkedShots.length,count);
  // The whole Pending card is a drag surface: the thumbnail starts the drag, while the card's
  // own control (移回) never does. Selection uses the board's gestures on the parked order, and
@@ -302,7 +303,7 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  assert.ok(grab,'pending card offers a thumbnail grab point');
  assert.ok(grab.tag!=='BUTTON','grab point is the picture, not a control');
  await mouse('mouseMove',grab.x,grab.y);await mouse('mouseDown',grab.x,grab.y);await mouse('mouseMove',grab.x+10,grab.y-10);
- const empty2=await rect('.wb-grid');await mouse('mouseMove',empty2.x+60,empty2.y+60);await mouse('mouseUp',empty2.x+60,empty2.y+60);
+ const empty2=await rect('.wb-grid:not(.wb-pending-grid)');await mouse('mouseMove',empty2.x+60,empty2.y+60);await mouse('mouseUp',empty2.x+60,empty2.y+60);
  await wait(()=>read().shots.some(s=>s.id==='shot5'),'thumbnail drag out of Pending');
  await undo();await wait(()=>read().shots.length===0,'undo thumbnail drag');
  await revealPending('shot5');await clickAt('[aria-label="Restore shot5"]');
@@ -325,7 +326,7 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  // Two selected Pending cards move together into the empty board.
  const headId=order0[0];
  await cardClick(headId);await delay(150);await cardClick(order0[1],'metaKey:true');await delay(180);
- const groupGrab=await pendingGrab(headId),board=await rect('.wb-grid');
+ const groupGrab=await pendingGrab(headId),board=await rect('.wb-grid:not(.wb-pending-grid)');
  assert.ok(groupGrab&&board,'group drag coordinates');
  await mouse('mouseMove',groupGrab.x,groupGrab.y);await mouse('mouseDown',groupGrab.x,groupGrab.y);await mouse('mouseMove',groupGrab.x+8,groupGrab.y-4);
  await mouse('mouseMove',board.x+40,board.y+40);await delay(140);await mouse('mouseUp',board.x+40,board.y+40);

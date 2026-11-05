@@ -8,41 +8,45 @@ import {boardInsertion,boardMovePlan,type BoardRect,type Point} from './boardGes
 
 type Props={shots:Shot[];parked:Shot[];selected:string[];pendingSelected:string[];revision:number;canNavigate:()=>boolean;selectMany:(ids:string[])=>void;selectManyPending:(ids:string[])=>void;move:(ids:string[],destination:'active'|'pending',before?:string)=>void};
 type Target={destination:'active'|'pending';beforeId?:string;changed:boolean};
-type Gesture={ids:string[];activeOrder:string[];pendingOrder:string[];rects:BoardRect[];scroll:HTMLElement|null;top:number;left:number;point:Point;dirty:boolean;dispose:()=>void;target?:Target};
+/** One table's immutable geometry, plus the box that scrolls it. */
+type Table={kind:'active'|'pending';order:string[];grid:HTMLElement|null;scroll:HTMLElement|null;rects:BoardRect[];top:number;left:number};
+type Gesture={ids:string[];tables:Record<'active'|'pending',Table>;point:Point;target?:Target;dispose:()=>void};
 /** Sorting uses immutable source geometry. Only the ghost and insertion marker move. */
 export function useBoardSorting(p:Props,root:RefObject<HTMLElement|null>,dragging:RefObject<boolean>,afterDrop:(point:Point)=>void){
  const props=useRef(p);props.current=p;
  const gesture=useRef<Gesture|undefined>(undefined);const skipClick=useRef(false);
  const [preview,setPreview]=useState<{shot:Shot;count:number}>();
  const ghost=useRef<HTMLDivElement>(null),marker=useRef<HTMLDivElement>(null);
+ /** Cards of one table in its own order, measured in client coordinates. */
+ const measure=(kind:Table['kind'],order:string[]):Table=>{
+  const grid=(kind==='pending'?root.current?.querySelector<HTMLElement>('.wb-pending-grid')
+   :root.current?.querySelector<HTMLElement>('.wb-grid:not(.wb-pending-grid)'))??null;
+  const attr=kind==='pending'?'pendingShotId':'boardId',selector=kind==='pending'?'[data-pending-shot-id]':'[data-board-id]';
+  const rects=Array.from(grid?.querySelectorAll<HTMLElement>(selector)??[]).map(el=>{
+   const r=el.getBoundingClientRect();
+   return {id:(el.dataset as Record<string,string|undefined>)[attr]!,left:r.left,top:r.top,width:r.width,height:r.height};
+  });
+  const scroll=grid?.closest<HTMLElement>('.wb-panel-body')??null;
+  return {kind,order,grid,scroll,rects,top:scroll?.scrollTop??0,left:scroll?.scrollLeft??0};
+ };
+ const remeasure=(t:Table)=>Object.assign(t,measure(t.kind,t.order));
  const update=()=>{
   const g=gesture.current;if(!g)return;
   if(ghost.current)ghost.current.style.transform=`translate(${g.point.x+14}px,${g.point.y+14}px)`;
-  if(g.dirty){
-   const grid=root.current?.querySelector<HTMLElement>('.wb-grid:not(.wb-pending-grid)');
-   g.rects=Array.from(grid?.querySelectorAll<HTMLElement>('[data-board-id]')??[]).map(el=>{const r=el.getBoundingClientRect();return {id:el.dataset.boardId!,left:r.left,top:r.top,width:r.width,height:r.height};});
-   g.top=g.scroll?.scrollTop??0;g.left=g.scroll?.scrollLeft??0;g.dirty=false;
-  }
   g.target=undefined;if(marker.current)marker.current.hidden=true;
   const hit=document.elementFromPoint(g.point.x,g.point.y);if(!hit||!root.current?.contains(hit))return;
-  // The Pending table renders its cards inside a grid too, so the shelf is tested first.
-  const shelf=hit.closest<HTMLElement>('.flow-pending-shelf'),grid=shelf?null:hit.closest<HTMLElement>('.wb-grid');
-  if(grid){
-   const dx=(g.scroll?.scrollLeft??0)-g.left,dy=(g.scroll?.scrollTop??0)-g.top;
-   const rects=g.rects.map(r=>({...r,left:r.left-dx,top:r.top-dy}));
-   const insertion=boardInsertion(rects,g.point),bounds=grid.getBoundingClientRect();
-   const plan=boardMovePlan(g.activeOrder,g.ids,insertion?.index??0);
-   g.target={destination:'active',beforeId:plan.beforeId,changed:plan.changed};
-   const line=insertion?.line??{left:bounds.left+14,top:bounds.top+14,width:Math.max(20,bounds.width-28),height:3};
-   if(marker.current){Object.assign(marker.current.style,{left:line.left+'px',top:line.top+'px',width:line.width+'px',height:line.height+'px'});marker.current.hidden=false;}
-  }else if(shelf){
-   const cards=Array.from(shelf.querySelectorAll<HTMLElement>('[data-pending-shot-id]'));
-   const card=hit.closest<HTMLElement>('[data-pending-shot-id]'),r=card?.getBoundingClientRect();
-   const slot=card?cards.indexOf(card)+(g.point.y>r!.top+r!.height/2?1:0):cards.length;
-   const plan=boardMovePlan(g.pendingOrder,g.ids,slot);g.target={destination:'pending',beforeId:plan.beforeId,changed:plan.changed};
-   const anchor=cards.find(c=>c.dataset.pendingShotId===plan.beforeId),box=(anchor??cards.at(-1)??shelf).getBoundingClientRect();
-   if(marker.current){Object.assign(marker.current.style,{left:box.left+'px',top:(anchor?box.top:box.bottom)+'px',width:box.width+'px',height:'3px'});marker.current.hidden=false;}
-  }
+  // The panel under the pointer decides the table, so an empty table still accepts a drop.
+  const panel=hit.closest<HTMLElement>('[data-panel=board],[data-panel=pending]');
+  const table=!panel?undefined:panel.getAttribute('data-panel')==='pending'?g.tables.pending:g.tables.active;
+  if(!table)return;
+  // The same two-dimensional insertion rule serves both tables; only the order differs.
+  const dx=(table.scroll?.scrollLeft??0)-table.left,dy=(table.scroll?.scrollTop??0)-table.top;
+  const insertion=boardInsertion(table.rects.map(r=>({...r,left:r.left-dx,top:r.top-dy})),g.point);
+  const plan=boardMovePlan(table.order,g.ids,insertion?.index??table.order.length);
+  g.target={destination:table.kind,beforeId:plan.beforeId,changed:plan.changed};
+  const bounds=table.grid?.getBoundingClientRect();
+  const line=insertion?.line??(bounds?{left:bounds.left+14,top:bounds.top+14,width:Math.max(20,bounds.width-28),height:3}:undefined);
+  if(marker.current&&line){Object.assign(marker.current.style,{left:line.left+'px',top:line.top+'px',width:line.width+'px',height:line.height+'px'});marker.current.hidden=false;}
  };
  const cancel=()=>{gesture.current?.dispose();gesture.current=undefined;dragging.current=false;setPreview(undefined);};
  useEffect(()=>{
@@ -59,20 +63,27 @@ export function useBoardSorting(p:Props,root:RefObject<HTMLElement|null>,draggin
   // Either table drags its own selection: the same rule, applied to that table's order.
   const fromPending=pendingOrder.includes(id);
   const ids=fromPending?draggedShots(pendingOrder,current.pendingSelected,id):draggedShots(activeOrder,current.selected,id);
-  const grid=root.current?.querySelector<HTMLElement>('.wb-grid:not(.wb-pending-grid)'),scroll=grid?.closest<HTMLElement>('.wb-panel-body')??null;
-  const rects=Array.from(grid?.querySelectorAll<HTMLElement>('[data-board-id]')??[]).map(el=>{const r=el.getBoundingClientRect();return {id:el.dataset.boardId!,left:r.left,top:r.top,width:r.width,height:r.height};});
+  const tables={active:measure('active',activeOrder),pending:measure('pending',pendingOrder)};
   const e=event.activatorEvent as PointerEvent;
-  gesture.current={ids,activeOrder,pendingOrder,rects,scroll,top:scroll?.scrollTop??0,left:scroll?.scrollLeft??0,point:{x:e.clientX,y:e.clientY},dirty:false,dispose:()=>{}};
+  gesture.current={ids,tables,point:{x:e.clientX,y:e.clientY},dispose:()=>{}};
   // Near-window editors can change row height while scrolling. Invalidate cached
   // geometry on actual layout/content changes, rather than forcing layout each move.
   let frame=0,autoFrame=0;
-  const invalidate=()=>{if(!gesture.current)return;gesture.current.dirty=true;cancelAnimationFrame(frame);frame=requestAnimationFrame(update);};
+  const invalidate=()=>{const g=gesture.current;if(!g)return;remeasure(g.tables.active);remeasure(g.tables.pending);cancelAnimationFrame(frame);frame=requestAnimationFrame(update);};
   const resizeObserver=new ResizeObserver(invalidate),mutations=new MutationObserver(invalidate);
-  if(grid){resizeObserver.observe(grid);for(const card of grid.querySelectorAll<HTMLElement>('[data-board-id]'))resizeObserver.observe(card);mutations.observe(grid,{childList:true,subtree:true});}
+  for(const t of Object.values(tables)){
+   if(!t.grid)continue;
+   resizeObserver.observe(t.grid);
+   for(const card of t.grid.querySelectorAll<HTMLElement>('[data-board-id],[data-pending-shot-id]'))resizeObserver.observe(card);
+   mutations.observe(t.grid,{childList:true,subtree:true});
+  }
   const autoScroll=()=>{
    const g=gesture.current;if(!g)return;
    const hit=document.elementFromPoint(g.point.x,g.point.y);
-   const host=hit&&root.current?.contains(hit)&&hit.closest('[data-panel=board],[data-panel=pending]')?hit.closest<HTMLElement>('.wb-panel-body'):null;
+   // Scroll the panel the pointer is actually over, so a drag near the Pending edge never
+   // scrolls the storyboard underneath it.
+   const body=hit&&root.current?.contains(hit)?hit.closest<HTMLElement>('.wb-panel-body'):null;
+   const host=body&&body.querySelector('.wb-grid')?body:null;
    if(host){const r=host.getBoundingClientRect(),edge=28;
     const velocity=g.point.y<r.top+edge?-Math.min(18,(r.top+edge-g.point.y)*.6):g.point.y>r.bottom-edge?Math.min(18,(g.point.y-r.bottom+edge)*.6):0;
     if(velocity){const before=host.scrollTop;host.scrollTop+=velocity;if(before!==host.scrollTop)update();}
@@ -87,10 +98,13 @@ export function useBoardSorting(p:Props,root:RefObject<HTMLElement|null>,draggin
   setPreview({shot,count:ids.length});
  };
  const end=()=>{
-  const g=gesture.current;if(!g){cancel();return;}g.dirty=true;update();const current=props.current;
-  const unchanged=JSON.stringify(g.activeOrder)===JSON.stringify(current.shots.map(s=>s.id))&&JSON.stringify(g.pendingOrder)===JSON.stringify(current.parked.map(s=>s.id));
-  const target=g.target;cancel();
-  if(unchanged&&target?.changed&&current.canNavigate()){current.move(g.ids,target.destination,target.beforeId);afterDrop(g.point);}
+  const g=gesture.current;if(!g){cancel();return;}
+  // Re-derive the target from the final pointer position before committing the move.
+  update();
+  const current=props.current;
+  const unchanged=JSON.stringify(g.tables.active.order)===JSON.stringify(current.shots.map(s=>s.id))&&JSON.stringify(g.tables.pending.order)===JSON.stringify(current.parked.map(s=>s.id));
+  const target=g.target,point=g.point;cancel();
+  if(unchanged&&target?.changed&&current.canNavigate()){current.move(g.ids,target.destination,target.beforeId);afterDrop(point);}
  };
  return {start,end,cancel,skipClick,overlay:preview&&createPortal(<><div ref={marker} className="wb-insertion-line" hidden/><div ref={ghost} className="wb-drag-ghost" aria-hidden="true"><ShotStaticMedia shot={preview.shot} folderPath="flow" revision={p.revision}/><span>{preview.count} 张</span></div></>,document.body)};
 }
