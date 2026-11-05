@@ -50,8 +50,14 @@ import(pathToFileURL(entry).href).then(async()=>{
  cases.push(await geometry('all panels narrow column'));
  const reachable=await js(`(()=>{const b=document.querySelector('[data-panel=board] .wb-panel-body'),t=b.querySelector('.wb-board-tools');b.scrollTop=t.offsetHeight;const r=b.getBoundingClientRect(),c=b.querySelector('.wb-card').getBoundingClientRect();return {body:r.height,top:r.top,cardTop:c.top,cardBottom:c.bottom,toolbarPosition:getComputedStyle(t).position};})()`);
  assert.equal(reachable.toolbarPosition,'static');assert.ok(reachable.cardTop<reachable.top+reachable.body&&reachable.cardBottom>reachable.top,'board content remains reachable below wrapped tools');
+ // The two table sliders are independent, and resetting layout restores both.
+ await js(`(()=>{const e=document.querySelector('[aria-label="Pending 卡片大小"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'260');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+ await wait(()=>js(`document.querySelector('[aria-label="Pending 卡片大小"]').value==='260'`),'Pending size changed');
+ assert.equal(await js(`document.querySelector('[aria-label="缩略图大小"]').value`),'220');
  await js(`document.querySelector('.wb-header .wb-panel-menu').open=true`);await button('恢复默认布局');await js(`document.querySelector('.wb-header .wb-panel-menu').open=false`);
  win.setSize(1500,950);cases.push(await geometry('restored'));
+ assert.equal(await js(`document.querySelector('[aria-label="Pending 卡片大小"]').value`),'170');
+ assert.equal(await js(`document.querySelector('[aria-label="缩略图大小"]').value`),'220');
  // Native vertical range keyboard semantics: Up increases the brush diameter.
  await js(`document.querySelector('[aria-label="画笔大小"]').focus()`);const size=await js(`Number(document.activeElement.value)`);
  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Up'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Up'});

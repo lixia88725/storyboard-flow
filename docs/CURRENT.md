@@ -2,6 +2,16 @@
 
 更新：2026-11-05。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 
+## 本轮：工具栏瘦身与绘画编码优化
+
+已本地整合故事板／Pending 工具栏瘦身：移除批量选择和移动按钮，保留本桌键盘全选；Pending 使用独立记忆的尺寸滑杆和垃圾桶图标。主管补齐恢复默认布局同时恢复 Pending 尺寸，并在真实窗口验证独立调节与重置；原有撤销／重做和取回图标保留。
+
+绘画准入改用廉价手势谓词，工作台提交不再生成被丢弃的整层 data URL。整合前，执行者以相同固定输入完成铅笔、软笔与预设橡皮四例整图 RGBA 零差对照；页面计数显示原有 2K 每笔 6 次整层编码（约 102–104ms）被消除。这证明减少编码工作，不代表已证明端到端首帧改善。
+
+主管整合后完整构建与获准清单 **83 文件／958 项**全部通过。工具栏 GUI edit/reopen 通过（`flow-workbench-polish-gqbAk3`），含图标、两桌尺寸独立与恢复默认断言。日志：`/tmp/flow-ui-drawing-chief-build.log`、`/tmp/flow-ui-drawing-chief-suite.log`、`/tmp/flow-ui-drawing-chief-polish-elevated.log`。Pending 小桌子排序、边缘滚动、键盘移回和重开复验亦通过（`flow-pending-table-mX0sMu`），日志 `/tmp/flow-ui-drawing-chief-table.log`。首次受限环境的 GUI 子进程退出，保留 `/tmp/flow-ui-drawing-chief-polish.log`；随后隔离合成窗口正常通过。
+
+**绘画故障尚未整体解决。** 橡皮连续落笔与跨画布准入／预览交接仍为未合入候选；共享基底模块在重复准备时会丢失已接受笔迹，主管未验收。已暂停执行者继续叠加修补，由主管收敛真实资产／笔迹生命周期。未重启用户窗口、未推送或发布。
+
 ## 本轮：撤销、重做与取回图标
 
 左侧工具栏底部的撤销/重做改为纯图标，保留悬停解释和可访问名称；取回外部改动改用文件夹向内箭头，忙碌时轻微明暗变化。原操作逻辑不变。完整构建和工具栏 GUI（含撤销、关闭重开、图标与提示属性检查）通过，获准全量 82 文件／945 项全部通过。未推送，未重启用户试用窗口。日志：`/tmp/flow-icon-buttons-build.log`、`/tmp/flow-icon-buttons-gui.log`、`/tmp/flow-icon-buttons-suite.log`；GUI 目录 `flow-workbench-polish-Q9YPRb`。系统原生悬停提示气泡的显示时序未自动取证。
