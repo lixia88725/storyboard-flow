@@ -36,8 +36,9 @@
 .flow-workbench .wb-refresh:hover { color:#eef1f3; }
 .flow-workbench .wb-refresh[data-external=true] { color:var(--wb-accent); }
 .wb-refresh svg { display:block; }
-.wb-refresh[data-spinning=true] svg { animation:wb-refresh-spin .6s ease; }
-@keyframes wb-refresh-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+.wb-refresh[data-spinning=true] svg { animation:wb-refresh-pulse .8s ease-in-out infinite alternate; }
+@keyframes wb-refresh-pulse { from { opacity:1; } to { opacity:.35; } }
+@media (prefers-reduced-motion:reduce) { .wb-refresh[data-spinning=true] svg { animation:none; opacity:.5; } }
 .wb-naming { position:fixed; inset:0; z-index:200; display:flex; justify-content:center; align-items:flex-start; padding:11vh 16px 16px; background:#0008; backdrop-filter:blur(2px); }
 .wb-sheet { width:min(520px,100%); max-height:78vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; background:#24292d; border:1px solid #3f474d; border-radius:12px; box-shadow:0 24px 64px #000b, inset 0 1px 0 #ffffff0f; }
 .wb-sheet h2 { margin:0; font-size:15px; font-weight:600; color:#eef1f3; letter-spacing:-.01em; }

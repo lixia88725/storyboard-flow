@@ -2,6 +2,10 @@
 
 更新：2026-11-05。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 
+## 本轮：撤销、重做与取回图标
+
+左侧工具栏底部的撤销/重做改为纯图标，保留悬停解释和可访问名称；取回外部改动改用文件夹向内箭头，忙碌时轻微明暗变化。原操作逻辑不变。完整构建和工具栏 GUI（含撤销、关闭重开、图标与提示属性检查）通过，获准全量 82 文件／945 项全部通过。未推送，未重启用户试用窗口。日志：`/tmp/flow-icon-buttons-build.log`、`/tmp/flow-icon-buttons-gui.log`、`/tmp/flow-icon-buttons-suite.log`；GUI 目录 `flow-workbench-polish-Q9YPRb`。系统原生悬停提示气泡的显示时序未自动取证。
+
 ## 本轮：Pending 小桌子整合
 
 Pending 卡片与故事板共用外观、选择、框选和二维插入规则，显示只读台词，保留整卡拖动；点击不切右侧画布。候选 `0008ef6` 已本地整合至 `6c77dea`，未推送。执行者在隔离 worktree 完成 82 文件／945 项获准测试、构建，以及 Pending 小桌子、故事板选择、Pending 删除和工具栏四组 GUI 回归；覆盖键盘焦点恢复、内部组排序、跨桌插入、Pending 边缘滚动与重开。主管在实际整合版本 `6c77dea` 上独立完成 `npm run build`、显式枚举获准清单的 82 文件／945 项测试，以及小桌子和主故事板选择两组 GUI 复验，均通过。整合证据：`/tmp/flow-pending-chief-build.log`、`/tmp/flow-pending-chief-suite.log`、`/tmp/flow-pending-chief-gui.log`、`/tmp/flow-pending-chief-selection.log`；GUI 运行目录分别为 `flow-pending-table-s33Lts`、`flow-board-selection-lz56ps`（系统临时目录）。

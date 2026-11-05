@@ -20,7 +20,7 @@ import { LayerPanel } from '../../drawing/renderer/LayerPanel';
 import {DialogueBlocks} from '../../storyboard/renderer/dialogueBlocks';
 import {createDialogueCommitState, type DialogueCommitState, type DialogueEditState} from '../../storyboard/renderer/dialogueCommitState';
 import { WorkspaceToolRail } from './workspace/WorkspaceToolRail';
-import { ChevronDown, FolderClosed, RotateCw, Save } from 'lucide-react';
+import { ChevronDown, FolderClosed, FolderInput, Undo2, Redo2, Save } from 'lucide-react';
 import { ProjectLauncher } from './ProjectLauncher';
 import { CreateProjectSheet } from './CreateProjectSheet';
 import { ProjectNamingBar } from './ProjectNamingBar';
@@ -649,14 +649,14 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
         </details>
         <PendingAddAction anchor={addAnchor} flow={flow} sessionId={sessionId} disabled={!active || savingTiff} recovery={snapshot.pendingAddRecovery} />
         <button disabled={!active || savingTiff || Boolean(naming.issue) || naming.composing} className="wb-save wb-document-action" onClick={() => { void saveTiff().catch(() => {}); }}><Save aria-hidden size={15}/>{savingTiff?'保存中…':'保存'}</button>
-        <button disabled={!active} className="wb-refresh" data-external={folderStatus.state==='external'||folderStatus.state==='both'} data-spinning={refreshing} title="从文件夹取回外部改动" aria-label="从文件夹取回外部改动" onClick={refreshImages}><RotateCw size={15} strokeWidth={1.75} aria-hidden /></button>
+        <button disabled={!active} className="wb-refresh" data-external={folderStatus.state==='external'||folderStatus.state==='both'} data-spinning={refreshing} aria-busy={refreshing} title="从文件夹取回外部改动" aria-label="从文件夹取回外部改动" onClick={refreshImages}><FolderInput size={17} strokeWidth={1.75} aria-hidden /></button>
       </div>}
       renderDialogue={renderDialogue}
       toolbar={null}
       toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} onToolChange={setTool}
         color={color} onColorChange={setColor} size={activePresetValue.size} onSizeChange={setActiveSize}
         blurRadius={blurRadius} onBlurRadiusChange={setBlurRadius} onApplyBlur={applyBlur}
-        footer={<><button disabled={!active} onClick={()=>void historyStep('undo')}>撤销</button><button disabled={!active} onClick={()=>void historyStep('redo')}>重做</button></>}/>}
+        footer={<><button disabled={!active} title="撤销" aria-label="撤销" onClick={()=>void historyStep('undo')}><Undo2 size={20} strokeWidth={1.5} aria-hidden /><span className="wb-sr-only">撤销</span></button><button disabled={!active} title="重做" aria-label="重做" onClick={()=>void historyStep('redo')}><Redo2 size={20} strokeWidth={1.5} aria-hidden /><span className="wb-sr-only">重做</span></button></>}/>}
       boardActions={<><button className="wb-icon-button" disabled={!active} title="新建板" aria-label="新建板" onClick={newShot}>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg><span className="wb-sr-only">新建板</span></button>
         <span className="wb-add-anchor" ref={setAddAnchor}/>

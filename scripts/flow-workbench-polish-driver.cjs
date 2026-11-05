@@ -26,6 +26,11 @@ import(pathToFileURL(entry).href).then(async()=>{
  await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'checkpoint');
  if(phase==='reopen'){assert.deepEqual(read().dialogues,JSON.parse(fs.readFileSync(path.join(run,'expected.json'))).dialogues);await geometry('reopened');save(phase+'-done.json',{ok:true,phase});win.close();return;}
  const cases=[],before=read();cases.push(await geometry('default'));
+ const historyIcons=await js(`Array.from(document.querySelectorAll('.wb-tool-rail-footer button')).map(b=>({label:b.getAttribute('aria-label'),title:b.title,icon:!!b.querySelector('svg'),textClip:getComputedStyle(b.querySelector('span')).clip}))`);
+ assert.deepEqual(historyIcons.map(b=>b.label),['撤销','重做']);
+ for(const b of historyIcons){assert.equal(b.title,b.label);assert.ok(b.icon);assert.notEqual(b.textClip,'auto');}
+ assert.equal(await js(`!!document.querySelector('.wb-refresh[title="从文件夹取回外部改动"] svg.lucide-folder-input')`),true);
+ save('icon-controls.json',historyIcons);
  assert.equal(await js('document.querySelectorAll(".wb-card .flow-dialogue-handle").length'),0,'card dialogue lists stay read-only in the normal grid');
  assert.ok(await js('document.querySelectorAll(".wb-panel-info .flow-dialogue-handle").length')>=1,'right panel offers a grip per line');
  // Open a footer editor and confirm its drag surface is also disabled.
