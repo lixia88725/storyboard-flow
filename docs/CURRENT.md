@@ -1,6 +1,18 @@
 # 当前状态与剩余工作
 
-更新：2026-11-05。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
+更新：2026-11-06。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
+
+## 本轮收口：跨画布共享绘画展示
+
+候选 `37ad7f3 → 6d53aaa → ac94c9f` 已快进整合至本地 main，未推送或发布。故事板小画面与大画布使用会话级共享展示 owner，移除 DOM LiveMirror 和 hover 起笔依赖；资产回执与覆盖前缀绑定，历史屏障遮住旧像素并保留新输入。关闭／切项目在结算前同步停止新绘画准入，freeze 后复检义务；超限笔不自动提交截断前缀。失败处理及用户明确选择的新顺序语义见 [DESIGN](DESIGN.md)，接口与预算见 [ARCHITECTURE](ARCHITECTURE.md#绘画展示与输入义务)。
+
+实现者最终自测：显式获准 **85 文件／995 项**、构建、跨画布专项、六组关闭／预算／失败恢复专项、五阶段重新叠画与 unknown／retained 正常关闭重开，以及邻近橡皮、选择、综合工作台均通过。五种预设、四个时点的同一固定 seed 输入与独立 FlowPixels 路径整图 RGBA 共 20 组零差异；重叠失败笔的新顺序选择另有 921600 通道零差异对照。Terra 对三次候选进行独立只读复审，最终按已确认的新顺序选择语义关闭阻断，未发现新增阻断；该审查不代替主管运行验证。
+
+主管独立验证：最终候选完整构建通过；五阶段恢复选择／正常关窗重开通过（`flow-paint-presentation-0NoOu2`），主树重新构建后跨画布与 20 组像素专项通过（`flow-paint-presentation-5lMonK`），主树选择／拖拽通过（`flow-board-selection-PphMKk`）。最终候选显式完整获准清单 **85 文件／995 项全部通过**（319.84s，SUITE_EXIT 0），本轮软件修复通过主管验收；人工硬件与跨平台边界仍见下文。日志：`/tmp/flow-paint-choice-chief-build.log`、`/tmp/flow-paint-final-main-build.log`、`/tmp/flow-paint-choice-chief-contract.log`、`/tmp/flow-paint-final-main-gui.log`、`/tmp/flow-paint-final-main-selection.log`、`/tmp/flow-paint-choice-chief-suite.log`。
+
+此前被拒候选及原型不合入；失败日志和合成证据保留。最初依赖复制嵌套造成的 114 项失败已在本 worktree 中修正路径，无新安装。真实数位笔、Windows、长期内存和极端大项目仍待人工／专项验证；不以合成鼠标或局部像素预算认证这些行为。当前会话和 JSON 导出保留错误证据，不承诺重开后继续显示内存中的 Session 错误。用户画稿与现有试用窗口未重置或重启。
+
+以下早前候选未完成说明属于当时状态，现行结果以上述收口为准。
 
 ## 本轮：同画布橡皮连续落笔
 

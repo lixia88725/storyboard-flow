@@ -36,6 +36,9 @@ node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "
 | 同名最近项目、隐藏 Pending 面板后从故事板工具栏添加 | [flow-target-rules-smoke.mjs](../scripts/flow-target-rules-smoke.mjs) |
 | 透明轨道及拖动滑块 | [flow-scrollbar-drag-check.mjs](../scripts/flow-scrollbar-drag-check.mjs) |
 | 默认启动、选择目录、关闭与重开 | [flow-startup-smoke.mjs](../scripts/flow-startup-smoke.mjs) |
+| 跨画布共享展示、冷解码、Undo 和固定输入像素对照 | `node scripts/flow-paint-presentation-smoke.mjs` |
+| 关闭竞态、预算选择与提交失败恢复 | `node scripts/flow-paint-presentation-smoke.mjs --recovery` |
+| 重新叠画顺序及 unknown／retained 导出、正常关闭和重开 | `node scripts/flow-paint-presentation-smoke.mjs --recovery-contract`，下载限制在该次临时证据目录 |
 | 大画布与卡片的快速橡皮连续落笔 | [flow-eraser-continuation-smoke.mjs](../scripts/flow-eraser-continuation-smoke.mjs)，8 笔像素及 revision 断言 |
 | 绘画、排序、恢复综合流程 | [flow-workbench-smoke.mjs](../scripts/flow-workbench-smoke.mjs) |
 | 修饰键、框选、整组插入、Pending | [flow-board-selection-smoke.mjs](../scripts/flow-board-selection-smoke.mjs)；`FLOW_GESTURE_SCROLL=1` 加验长日式行滚动 |
