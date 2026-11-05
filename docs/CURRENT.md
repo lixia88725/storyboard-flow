@@ -1,8 +1,14 @@
 # 当前状态与剩余工作
 
-更新：2026-11-04。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
+更新：2026-11-05。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 
-## 本轮：文稿标题与故事板工具栏
+## 本轮：Pending 小桌子整合
+
+Pending 卡片与故事板共用外观、选择、框选和二维插入规则，显示只读台词，保留整卡拖动；点击不切右侧画布。候选 `0008ef6` 已本地整合至 `6c77dea`，未推送。执行者在隔离 worktree 完成 82 文件／945 项获准测试、构建，以及 Pending 小桌子、故事板选择、Pending 删除和工具栏四组 GUI 回归；覆盖键盘焦点恢复、内部组排序、跨桌插入、Pending 边缘滚动与重开。主管在实际整合版本 `6c77dea` 上独立完成 `npm run build`、显式枚举获准清单的 82 文件／945 项测试，以及小桌子和主故事板选择两组 GUI 复验，均通过。整合证据：`/tmp/flow-pending-chief-build.log`、`/tmp/flow-pending-chief-suite.log`、`/tmp/flow-pending-chief-gui.log`、`/tmp/flow-pending-chief-selection.log`；GUI 运行目录分别为 `flow-pending-table-s33Lts`、`flow-board-selection-lz56ps`（系统临时目录）。
+
+绘画低风险编码优化与跨画布预览交接修复仍为独立候选，尚未包含在此整合中。未验证触控/Windows，以及故事板侧视口外拖放和连续跨屏长距离滚动；用户试用窗口尚未重启。
+
+## 上一轮：文稿标题与故事板工具栏
 
 工作台顶栏只占一行：「项目」与「保存」使用同一按钮样式，窗口中央显示项目名；悬停露出箭头，点击展开命名信息。输入仍自动暂存，按 Esc、点「完成」或点外面可收起面板。「添加板」在故事板工具栏中紧邻「新建板」，图片仍加入 Pending。已用合成项目验证标题居中、键盘与鼠标关闭、命名恢复及隐藏 Pending 时添加；五组真实窗口回归、完整构建和 81 文件／938 项测试均通过。已生成本地 macOS arm64 试用包，截图与日志在 `.hermes/flow-titlebar/`。
 

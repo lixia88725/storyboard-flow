@@ -30,6 +30,7 @@ node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "
 | 检查什么 | 脚本 |
 | --- | --- |
 | 独立创建、添加图片与重开 | [flow-project-entry-smoke.mjs](../scripts/flow-project-entry-smoke.mjs)；必须使用真实创建后端 |
+| Pending 小桌子、二维排序、边缘滚动与键盘移回 | [flow-pending-table-smoke.mjs](../scripts/flow-pending-table-smoke.mjs)，包含重开验证 |
 | Pending 回包丢失、重试及关窗 | [flow-pending-close-recovery-smoke.mjs](../scripts/flow-pending-close-recovery-smoke.mjs) |
 | 命名保持焦点时暂存、失效最近项目 | [flow-naming-focus-smoke.mjs](../scripts/flow-naming-focus-smoke.mjs)、[flow-recent-manage-smoke.mjs](../scripts/flow-recent-manage-smoke.mjs) |
 | 同名最近项目、隐藏 Pending 面板后从故事板工具栏添加 | [flow-target-rules-smoke.mjs](../scripts/flow-target-rules-smoke.mjs) |
