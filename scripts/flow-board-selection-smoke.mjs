@@ -281,6 +281,28 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  const empty=await rect('.wb-grid');await mouse('mouseMove',empty.x+40,empty.y+40);await mouse('mouseUp',empty.x+40,empty.y+40);
  await wait(()=>read().shots.length===1&&read().shots[0].id==='shot5','Pending into empty board');
  assert.equal(read().parkedShots.length,count);
+ // The whole Pending card is a drag surface: the thumbnail starts the drag, while the card's
+ // own controls (Restore, selection checkbox) stay clickable and never start one.
+ async function pendingGrab(id){
+   return js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="'+id+'"]')+');if(!c)return null;const body=c.closest(".wb-panel-body")||c.parentElement,br=body.getBoundingClientRect(),r=c.getBoundingClientRect();for(let y=Math.round(Math.min(r.bottom,br.bottom)-4);y>Math.max(r.top,br.top)+2;y-=5){const e=document.elementFromPoint(Math.round(r.left+r.width*0.3),y);if(e&&c.contains(e)&&!e.closest("input,label,[data-no-drag],.flow-pending-name"))return {x:Math.round(r.left+r.width*0.3),y,tag:e.tagName}}return null})()');
+ }
+ async function undo(){await js('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="撤销").click()');await delay(250)}
+ await undo();await wait(()=>read().shots.length===0&&read().parkedShots.length===count,'undo Pending into board');
+ const grab=await pendingGrab('shot5');
+ assert.ok(grab,'pending card offers a thumbnail grab point');
+ assert.ok(grab.tag!=='BUTTON','grab point is the picture, not a control');
+ await mouse('mouseMove',grab.x,grab.y);await mouse('mouseDown',grab.x,grab.y);await mouse('mouseMove',grab.x+10,grab.y-10);
+ const empty2=await rect('.wb-grid');await mouse('mouseMove',empty2.x+60,empty2.y+60);await mouse('mouseUp',empty2.x+60,empty2.y+60);
+ await wait(()=>read().shots.some(s=>s.id==='shot5'),'thumbnail drag out of Pending');
+ await undo();await wait(()=>read().shots.length===0,'undo thumbnail drag');
+ await clickAt('[aria-label="Restore shot5"]');
+ await wait(()=>read().shots.some(s=>s.id==='shot5'),'Restore button inside the card');
+ await undo();await wait(()=>read().shots.length===0,'undo Restore');
+ const beforeSelect=await js('document.querySelector(".flow-pending-actions span")?.textContent');
+ await clickAt('[aria-label^="选择 Pending"]');
+ const afterSelect=await js('document.querySelector(".flow-pending-actions span")?.textContent');
+ assert.notEqual(afterSelect,beforeSelect,'the checkbox selects without moving the card');
+ assert.equal(read().parkedShots.length,count,'the checkbox leaves membership alone');
  }
  fs.writeFileSync(${JSON.stringify(path.join(run,'selection.done'))},JSON.stringify({count,order,baselineRevision:baseline.revision}));
  fs.writeFileSync(${JSON.stringify(path.join(run,'selection.png'))},(await win.webContents.capturePage()).toPNG());

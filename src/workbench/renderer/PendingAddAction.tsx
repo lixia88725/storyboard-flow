@@ -107,10 +107,14 @@ export function PendingAddAction({ anchor, flow, sessionId, disabled, recovery }
 
   if (!supported) return null;
   const label = recovery && !state.open ? '重试添加' : '添加板';
+  // The normal state is an icon; an unresolved add keeps its words so the retry reads clearly.
+  const retrying = Boolean(recovery) && !state.open;
   return <>
-    {anchor && createPortal(<button type="button" className="wb-pending-add" data-recovery={Boolean(recovery) || undefined}
-      disabled={disabled || state.open} title={recovery ? '上次添加未确认，需要重试' : '从图片添加故事板到 Pending'}
-      onClick={() => { if (recovery && !state.open) openRecovery(); else setState({ ...blank, open: true }); }}>{label}</button>, anchor)}
+    {anchor && createPortal(<button type="button" className={`wb-pending-add wb-icon-button${retrying ? ' is-retry' : ''}`} data-recovery={Boolean(recovery) || undefined}
+      disabled={disabled || state.open} aria-label={label} title={recovery ? '上次添加未确认，需要重试' : '从图片添加故事板到 Pending'}
+      onClick={() => { if (recovery && !state.open) openRecovery(); else setState({ ...blank, open: true }); }}>
+      {retrying ? label : <><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.9v6.2M5.5 6.8 8 9.3l2.5-2.5M2.9 11v1.7h10.2V11"/></svg><span className="wb-sr-only">{label}</span></>}
+    </button>, anchor)}
     {state.open && <div className="wb-naming" data-pending-add="true" data-pending-phase={state.phase}>
       <section className="wb-sheet" role="dialog" aria-modal="true" aria-label="添加到 Pending">
         <h2>添加到 Pending</h2>

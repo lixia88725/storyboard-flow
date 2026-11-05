@@ -40,13 +40,21 @@ function PendingCard({ shot, disabled, revision, onRestore, selectable, selected
   stationary?:boolean; selectable: boolean; selected: boolean; onToggle: () => void; renderMedia?: (shot: Shot) => ReactNode;
 }) {
   const drag = useSortable({ id: shot.id, disabled });
-  return <div ref={drag.setNodeRef} data-pending-shot-id={shot.id} className="flow-pending"
-    style={stationary?undefined:{ transform: CSS.Transform.toString(drag.transform), transition: drag.transition }}>
+  // The whole card is the pointer drag surface, so a thumbnail is enough to pick it up. Controls
+  // inside it (selection checkbox, Restore) opt out; the name button keeps the keyboard drag
+  // handle, which is also its accessible name.
+  const startDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    if (event.target instanceof Element && event.target.closest('input,label,[data-no-drag]')) return;
+    drag.listeners?.onPointerDown?.(event as unknown as React.PointerEvent);
+  };
+  return <div ref={drag.setNodeRef} data-pending-shot-id={shot.id} className={`flow-pending${drag.isDragging ? ' is-dragging' : ''}`}
+    style={stationary?undefined:{ transform: CSS.Transform.toString(drag.transform), transition: drag.transition }} onPointerDown={startDrag}>
     {selectable && <label onClick={event => event.stopPropagation()}>
       <input type="checkbox" checked={selected} disabled={disabled} onChange={onToggle} aria-label={`选择 Pending ${shot.id}`} />
     </label>}
-    <button disabled={disabled} aria-label={`Move pending ${shot.id}`} {...drag.attributes} {...drag.listeners}>{shot.fileName}</button>
+    <button className="flow-pending-name" disabled={disabled} aria-label={`Move pending ${shot.id}`} {...drag.attributes} onKeyDown={drag.listeners?.onKeyDown as React.KeyboardEventHandler<HTMLButtonElement> | undefined}>{shot.fileName}</button>
     {renderMedia ? renderMedia(shot) : <PresentationPreview shotId={shot.id} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}><ShotStaticMedia shot={shot} folderPath="flow" revision={revision} /></PresentationPreview>}
-    <button disabled={disabled} aria-label={`Restore ${shot.id}`} onClick={() => onRestore(shot.id)}>Restore</button>
+    <button data-no-drag disabled={disabled} aria-label={`Restore ${shot.id}`} onClick={() => onRestore(shot.id)}>Restore</button>
   </div>;
 }

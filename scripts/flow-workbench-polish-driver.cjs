@@ -65,7 +65,7 @@ import(pathToFileURL(entry).href).then(async()=>{
  // Cross-board move to a blank Japanese row, followed by one undo.
  await js(`(()=>{const h=document.querySelector('.wb-japanese [aria-label="Drag dialogue line0"]'),box=document.querySelector('[data-board-id="shot1"] .flow-dialogue-blocks'),r=box.getBoundingClientRect(),d=new DataTransfer();h.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:d}));box.dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer:d,clientY:r.top}));h.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:d}));})()`);
  await wait(()=>read().dialogues.find(d=>d.id==='line0')?.shotId==='shot1','Japanese cross-board');await button('撤销');await wait(()=>read().dialogues.find(d=>d.id==='line0')?.shotId==='shot0','undo cross-board');
- await button('日式分镜');
+ await button('网格视图');
  assert.equal(await js('document.querySelectorAll(".wb-japanese .flow-dialogue-handle").length'),0,'Japanese handles disappear with the sheet view');
  assert.equal(await js('document.querySelectorAll(".wb-card .flow-dialogue-handle").length'),0,'cards stay read-only after leaving the sheet view');
  assert.ok(await js('document.querySelectorAll(".wb-panel-info .flow-dialogue-handle").length')>=1,'info panel keeps its grips in the normal grid');

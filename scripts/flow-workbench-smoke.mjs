@@ -109,7 +109,9 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  assert.equal(await js('document.querySelector(".wb-column").querySelectorAll(\'[data-panel="info"]\').length'),1);
  await button('恢复默认布局');
  const divider=await rect('.wb-divider');await mouse('mouseDown',divider.x+3,divider.y+40);await mouse('mouseMove',divider.x+90,divider.y+40);await mouse('mouseUp',divider.x+90,divider.y+40);
+ await js('document.querySelector(".wb-board-more summary").click()');await delay(150);
  await button('移入 Pending');await wait(()=>read().parkedShots.some(s=>s.id==='shot2'),'Pending membership');
+ await js('document.querySelector(".wb-board-more summary").click()');await delay(120);
  await button('撤销');await wait(()=>read().shots.some(s=>s.id==='shot2'),'restore membership');
  await js('document.querySelector(\'[aria-label="选择故事板 shot0"]\').click()');
  await delay(500);
@@ -158,7 +160,7 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  }else{assert.deepEqual(read(),JSON.parse(fs.readFileSync(${JSON.stringify(path.join(run,'expected.json'))},'utf8')));}
  if(phase==='reopen' && count<100){
    await wait(()=>js('!!document.querySelector(".wb-japanese .wb-row-info textarea")'),'layout restored after new process');
-   await button('日式分镜');
+   await button('网格视图');
    await folderSays('文件夹中的故事板已更新');
    const entry=JSON.parse(fs.readFileSync(${JSON.stringify(path.join(root,'.storyboard-flow/tiff-output.json'))})).entries.find(e=>!e.retired && e.location!=='parked');
    const target=require('node:path').join(${JSON.stringify(root)},entry.name),original=fs.readFileSync(target);

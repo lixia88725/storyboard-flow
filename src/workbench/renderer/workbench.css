@@ -30,7 +30,7 @@
 .wb-empty {padding:30px;color:#707c85;text-align:center;}.wb-info {padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;}.wb-info label {font-size:11px;color:#94a0aa;line-height:16px;}.flow-workbench textarea {margin-top:7px;background:#1b1f22;border:1px solid #41494f;border-radius:3px;resize:vertical;color:#e2e5e7;font:12px 'PingFang SC',sans-serif;width:100%;min-height:62px;padding:8px;}.wb-info .flow-dialogue-transfers {grid-column:1/-1;font-size:10px;min-height:20px;padding:3px;border-color:#42494e;}
 .wb-panel-layers .shot-layer-popover {position:static!important;width:100%!important;max-width:none!important;transform:none!important;opacity:1!important;pointer-events:auto!important;box-shadow:none!important;}.wb-panel-layers .layer-panel {width:100%;box-shadow:none;}.wb-panel-layers .layer-row {font-size:12px;min-height:38px;}.wb-panel-layers .layer-thumb {max-height:36px;}
 .flow-workbench .wb-panel-layers .layer-toggle { display:none; }
-.flow-workbench .flow-pending-shelf {border:0;margin:0;padding:6px 10px;white-space:nowrap;}.flow-workbench .flow-pending-shelf>h2,.flow-workbench .flow-pending-shelf>p {display:none;}.flow-workbench .flow-pending {display:inline-block;width:135px;vertical-align:top;margin-right:8px;}.flow-workbench .flow-pending>button {font-size:10px;}
+.flow-workbench .flow-pending-shelf {border:0;margin:0;padding:6px 10px;white-space:nowrap;}.flow-workbench .flow-pending-shelf>h2,.flow-workbench .flow-pending-shelf>p {display:none;}.flow-workbench .flow-pending {display:inline-block;width:135px;vertical-align:top;margin-right:8px;cursor:grab;}.flow-workbench .flow-pending.is-dragging {cursor:grabbing;}.flow-workbench .flow-pending>button {font-size:10px;}.flow-workbench .flow-pending-name,.flow-workbench .flow-pending label {cursor:inherit;}
 .wb-status {height:27px;min-height:27px;display:flex;justify-content:space-between;align-items:center;padding:0 15px;border-top:1px solid #353b40;background:#23282b;color:#8e9ba4;font-size:10px;}.wb-status span:first-child {color:#b9c4b7;}
 .flow-workbench .wb-refresh { display:inline-flex; align-items:center; justify-content:center; width:28px; height:26px; padding:0; color:#8b959d; }
 .flow-workbench .wb-refresh:hover { color:#eef1f3; }
@@ -318,6 +318,27 @@
 .flow-workbench .wb-pending-add { padding:2px 7px; border:1px solid #46525f; border-radius:5px; background:#323a44; color:#c5dbff; font-size:11px; font-weight:500; }
 .flow-workbench .wb-pending-add:hover { background:#3d4855; color:#fff; }
 .flow-workbench .wb-pending-add[data-recovery] { border-color:#7a6248; color:#ffd7a8; }
+/* Board toolbar: icon controls. The accessible name stays in a hidden span so the labels in
+   tests and screen readers keep working while the toolbar reads as glyphs. */
+.flow-workbench .wb-icon-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; height:26px; min-width:26px; padding:0 6px; border:1px solid transparent; border-radius:6px; background:#ffffff10; color:#c8d2da; font:500 11px 'PingFang SC',sans-serif; cursor:pointer; }
+.flow-workbench .wb-icon-button:hover:not(:disabled) { background:#ffffff1e; color:#eef2f5; }
+.flow-workbench .wb-icon-button:disabled { opacity:.42; cursor:default; }
+.flow-workbench .wb-icon-button svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.35; stroke-linecap:round; stroke-linejoin:round; }
+.flow-workbench .wb-icon-badge { font-size:9px; line-height:1; padding:1px 3px; border-radius:4px; background:#ffffff26; }
+.flow-workbench .wb-sr-only { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+.flow-workbench .wb-board-more { position:relative; display:inline-flex; }
+.flow-workbench .wb-board-more>summary { list-style:none; }
+.flow-workbench .wb-board-more>summary::-webkit-details-marker { display:none; }
+.flow-workbench .wb-board-more[open]>summary { background:#ffffff22; color:#eef2f5; }
+.flow-workbench .wb-board-more .wb-menu { top:30px; right:0; width:150px; }
+.flow-workbench .wb-board-more .wb-menu button { padding:7px; text-align:left; }
+/* View switch: one rounded container, two icon segments; the active segment is the only one lit. */
+.flow-workbench .wb-view-switch { display:inline-flex; align-items:center; gap:2px; padding:2px; border-radius:7px; background:#00000038; }
+.flow-workbench .wb-view-switch button { display:inline-flex; align-items:center; justify-content:center; width:26px; height:22px; padding:0; border:0; border-radius:5px; background:transparent; color:#7d8891; cursor:pointer; }
+.flow-workbench .wb-view-switch button:hover:not([aria-pressed=true]) { background:#ffffff12; color:#b9c3cb; }
+.flow-workbench .wb-view-switch button[aria-pressed=true] { background:#ffffff1f; color:#e8edf1; }
+.flow-workbench .wb-view-switch button:disabled { opacity:.42; cursor:default; }
+.flow-workbench .wb-view-switch svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.35; stroke-linejoin:round; stroke-linecap:round; }
 .wb-pending-source { display:flex; gap:8px; padding:10px; }
 .wb-pending-source button { flex:1; padding:9px 10px; border-color:#4a525a; border-radius:7px; }
 
