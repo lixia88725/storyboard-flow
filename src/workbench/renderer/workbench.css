@@ -211,7 +211,7 @@
 
 .wb-tile-slider { display:inline-flex; align-items:center; }
 .wb-board-tools .wb-board-actions { margin-left:auto; }
-.wb-board-selection {display:flex;gap:2px;}.flow-workbench .wb-board-selection button {font-size:11px;padding:4px 6px;color:var(--wb-subtle);}.wb-panel-board:focus {outline:none;}
+.wb-panel-board:focus {outline:none;}
 
 /* Dock boundaries: one quiet 5px seam, with a larger invisible hit target. */
 .wb-dock {position:relative;}
