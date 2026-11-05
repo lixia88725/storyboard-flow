@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createPaintPresentation, type PaintTarget, type PaintReceipt, type PaintRaster } from './paintPresentation';
+import { createPaintPresentation, createPaintInputGate, type PaintTarget, type PaintReceipt, type PaintRaster } from './paintPresentation';
 import type { SketchStroke } from '../contracts/types';
 const deferred = <T,>() => { let resolve!: (v: T) => void, reject!: (e: unknown) => void; const promise = new Promise<T>((a,b) => { resolve=a; reject=b; }); return {promise,resolve,reject}; };
 const tick = async () => { for(let i=0;i<8;i++) await Promise.resolve(); };
@@ -14,12 +14,14 @@ function harness(limits: {maxStrokes?:number;maxPoints?:number;maxPixels?:number
     create:()=>({pixels:[]}),copy:(to,from)=>{to.pixels=[...from.pixels];},stroke:(to,s)=>{to.pixels.push(s.id);},release:r=>{r.released=true;},
     decode:target=>{const work=deferred<Raster>();decodes.push({target,work});return work.promise;},
   };
-  const owner=createPaintPresentation({raster,current:()=>current,commit:async(_target,s)=>{const work=deferred<PaintReceipt>();writes.push({stroke:s,work});return work.promise;},report:m=>reports.push(m),...limits});
+  const inputGate=createPaintInputGate();
+  const owner=createPaintPresentation({inputGate,raster,current:()=>current,commit:async(_target,s)=>{const work=deferred<PaintReceipt>();writes.push({stroke:s,work});return work.promise;},report:m=>reports.push(m),...limits});
   const begin=(id:string)=>owner.begin('shot','ink',stroke(id));
   const end=(id:string)=>owner.end(id);
   const decode=async(index:number,pixels:string[])=>{decodes[index].work.resolve({pixels});await tick();};
   const ack=async(index:number,assetId:string)=>{current={...current!,assetId};writes[index].work.resolve({assetId,revision:index+1});await tick();};
-  return {owner,begin,end,decode,ack,decodes,writes,reports,setCurrent:(next:PaintTarget|undefined)=>{current=next;},current:()=>current!};
+  inputGate.connect(owner.assertSettled);
+  return {owner,inputGate,begin,end,decode,ack,decodes,writes,reports,setCurrent:(next:PaintTarget|undefined)=>{current=next;},current:()=>current!};
 }
 describe('Session-owned paint presentation',()=>{
   it('retains full cold down/up and multiple strokes; never paints an unknown base',async()=>{
@@ -93,12 +95,80 @@ describe('Session-owned paint presentation',()=>{
     const h=harness(),next=harness();h.begin('A');h.end('A');h.owner.dispose();const pixels={pixels:['old'],released:false};
     h.decodes[0].work.resolve(pixels);await h.ack(0,'A');expect(pixels.released).toBe(true);expect(h.owner.stats().rasters).toBe(0);expect(next.owner.frame().status).toBe('idle');
   });
-  it('bounds queue/points/canvases and never evicts accepted input at budget',async()=>{
+  it('requires an explicit whole-stroke decision after overflow; up never submits a prefix',async()=>{
     const h=harness({maxStrokes:2,maxPoints:3});h.begin('A');h.end('A');h.begin('B');
-    expect(h.owner.update({...stroke('B'),points:[1,2,3,4,5,6]})).toBe(false);h.end('B');expect(h.begin('C')).toBe(false);
-    expect(h.owner.stats().points).toBe(2);expect(h.writes.map(w=>w.stroke.points)).toEqual([[2,3],[2,3]]);
-    await h.decode(0,['base']);expect(h.owner.stats().rasters).toBe(3);await h.ack(1,'AB');await h.decode(1,['base','A','B']);
+    expect(h.owner.update({...stroke('B'),points:[1,2,3,4,5,6]})).toBe(false);h.end('B');
+    expect(h.writes.map(w=>w.stroke.id)).toEqual(['A']);expect(h.begin('C')).toBe(false);
+    expect(h.owner.frame().decision).toBe(true);expect(h.owner.stats().points).toBe(2);
+    await expect(h.owner.settle()).rejects.toThrow();
+    h.owner.resolveBudget('commit');expect(h.writes.map(w=>w.stroke.points)).toEqual([[2,3],[2,3]]);
+    expect(h.begin('C')).toBe(false); // Stroke-count cap still applies after the decision.
+    await h.decode(0,['base']);expect(h.owner.stats().rasters).toBe(3);await h.ack(0,'A');await h.ack(1,'AB');await h.decode(1,['base','A']);await h.decode(2,['base','A','B']);
     expect(h.owner.stats().records).toBe(0);expect(h.begin('C')).toBe(true);
+  });
+  it('discards only the explicitly refused budget stroke',()=>{
+    const h=harness({maxPoints:1});h.begin('A');h.owner.update({...stroke('A'),points:[1,2,3,4]});h.end('A');
+    h.owner.resolveBudget('discard');expect(h.writes).toHaveLength(0);expect(h.owner.hasInput()).toBe(false);expect(h.begin('B')).toBe(true);
+  });
+  it('synchronous transition latch closes settle-to-freeze admission and resumes after refusal',async()=>{
+    const h=harness();h.begin('A');h.end('A');h.inputGate.pause();
+    const settled=h.owner.settle();await h.ack(0,'A');await settled;
+    expect(h.begin('gap')).toBe(false);h.inputGate.assertSettled();
+    h.inputGate.resume();expect(h.begin('after refusal')).toBe(true);
+    expect(()=>h.inputGate.assertSettled()).toThrow();
+  });
+  it('post-freeze certification checks newly registered owner obligations',()=>{
+    const h=harness();h.inputGate.pause();h.inputGate.assertSettled();
+    h.inputGate.connect(()=>{throw Error('unsubmitted input');});expect(()=>h.inputGate.assertSettled()).toThrow('unsubmitted input');
+  });
+  it('explicit none retry drains successes and reapplies only failed input to current authority',async()=>{
+    const h=harness();h.begin('A');h.end('A');h.begin('B');h.end('B');await h.decode(0,['base']);
+    h.writes[0].work.reject({message:'temporary',effect:'none'});await tick();
+    const retry=h.owner.resolveFailure('retry');expect(h.writes).toHaveLength(2);
+    await h.ack(1,'B');expect(await retry).toBe(true);expect(h.writes.map(w=>w.stroke.id)).toEqual(['A','B','A']);
+    expect(h.owner.frame().canvas).toBeUndefined();await h.decode(1,['base','B']);expect(h.owner.frame().canvas?.pixels).toEqual(['base','B','A']);
+    await h.ack(2,'BA');await h.decode(2,['base','B','A']);await h.owner.settle();expect(h.owner.stats().records).toBe(0);
+  });
+  it('unknown never retries, requires explicit recovery export before discard, then restores authority',async()=>{
+    const h=harness();h.begin('A');h.end('A');await h.decode(0,['base']);h.writes[0].work.reject({message:'ambiguous',effect:'unknown'});await tick();
+    expect(await h.owner.resolveFailure('retry')).toBe(false);expect(await h.owner.resolveFailure('discard')).toBe(false);
+    const evidence=h.owner.recoveryRecord();expect(evidence.entries[0]).toMatchObject({stroke:stroke('A'),failure:{effect:'unknown'}});
+    h.owner.markRecoveryExportRequested();expect(await h.owner.resolveFailure('discard')).toBe(true);
+    await h.decode(1,['base']);expect(h.owner.frame().canvas?.pixels).toEqual(['base']);expect(h.begin('B')).toBe(true);
+  });
+  it('budget cannot be resolved while the pointer is still held; further points remain bounded',()=>{
+    const h=harness({maxPoints:1});h.begin('A');const tooLong={...stroke('A'),points:[1,2,3,4]};h.owner.update(tooLong);
+    h.owner.resolveBudget('commit');expect(h.writes).toHaveLength(0);expect(h.owner.frame().decisionReady).toBe(false);
+    for(let n=0;n<10;n++)expect(h.owner.update(tooLong)).toBe(false);expect(h.owner.stats().points).toBe(1);
+    h.owner.cancel('A');h.owner.resolveBudget('discard');expect(h.owner.hasInput()).toBe(false);
+  });
+  it('none discard drains later success and preserves its pixels without replay',async()=>{
+    const h=harness();h.begin('A');h.end('A');h.begin('B');h.end('B');await h.decode(0,['base']);
+    h.writes[0].work.reject({message:'temporary',effect:'none'});await tick();const discard=h.owner.resolveFailure('discard');
+    await h.ack(1,'B');expect(await discard).toBe(true);await h.decode(1,['base','B']);expect(h.owner.frame().canvas?.pixels).toEqual(['base','B']);expect(h.writes).toHaveLength(2);
+  });
+  it('unknown discard preserves an actually installed asset instead of assuming no effect',async()=>{
+    const h=harness();h.begin('A');h.end('A');await h.decode(0,['base']);h.setCurrent({...h.current(),assetId:'installed-A'});
+    h.writes[0].work.reject({message:'post-install exception',effect:'unknown'});await tick();
+    h.owner.markRecoveryExportRequested();expect(await h.owner.resolveFailure('discard')).toBe(true);
+    expect(h.decodes[1].target.assetId).toBe('installed-A');await h.decode(1,['base','A']);expect(h.owner.frame().canvas?.pixels).toEqual(['base','A']);
+  });
+  it('a later failure invalidates earlier export evidence and cannot be discarded unseen',async()=>{
+    const h=harness();h.begin('A');h.end('A');h.begin('B');h.end('B');
+    h.writes[0].work.reject({message:'unknown A',effect:'unknown'});await tick();h.owner.markRecoveryExportRequested();
+    const discard=h.owner.resolveFailure('discard');h.writes[1].work.reject({message:'unknown B',effect:'unknown'});await tick();
+    expect(await discard).toBe(false);expect(h.owner.recoveryRecord().entries).toHaveLength(2);expect(h.owner.stats().records).toBe(2);
+  });
+  it('failure during a history barrier retains both draining failure and new queued input for recovery',async()=>{
+    const h=harness();h.begin('A');h.end('A');await h.decode(0,['base']);let ran=false;
+    const barrier=h.owner.barrier(async()=>{ran=true;});h.begin('B');h.end('B');const refused=expect(barrier).rejects.toThrow('temporary');
+    h.writes[0].work.reject({message:'temporary',effect:'none'});await refused;expect(ran).toBe(false);
+    expect(await h.owner.resolveFailure('retry')).toBe(true);expect(h.writes.map(w=>w.stroke.id)).toEqual(['A','A','B']);
+    await h.decode(1,['base']);expect(h.owner.frame().canvas?.pixels).toEqual(['base','A','B']);
+  });
+  it('dispose during recovery drain prevents retry or allocation in the next session',async()=>{
+    const h=harness();h.begin('A');h.end('A');h.begin('B');h.end('B');h.writes[0].work.reject({message:'temporary',effect:'none'});await tick();
+    const retry=h.owner.resolveFailure('retry');h.owner.dispose();await h.ack(1,'B');expect(await retry).toBe(false);expect(h.writes).toHaveLength(2);expect(h.owner.stats().rasters).toBe(0);
   });
   it('bounds pixels before allocation and rejects simultaneous drafts explicitly',()=>{
     const h=harness({maxPixels:1});expect(h.begin('A')).toBe(false);expect(h.decodes).toHaveLength(0);

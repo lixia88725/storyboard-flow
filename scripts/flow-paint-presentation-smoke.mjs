@@ -1,4 +1,4 @@
-// Synthetic rapid-eraser regression. Build first; independent project/userData, clipboard and Trash forbidden.
+// Synthetic paint presentation / recovery regression. Build first; independent project/userData, clipboard and Trash forbidden.
 import os from 'node:os';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
@@ -11,6 +11,7 @@ import { writeFile } from 'node:fs/promises';
 import { openFlowAssetDepot } from '../dist-electron/project-files/main/persistence/depot.js';
 import { createProjectStore } from '../dist-electron/project-files/main/persistence/index.js';
 
+const recovery = process.argv.includes('--recovery');
 const run = await mkdtemp(path.join(await realpath(os.tmpdir()), 'flow-paint-presentation-'));
 const inkMode = 'transparent';
 const root = path.join(run, 'project');
@@ -43,9 +44,9 @@ const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const bundle=await build({entryPoints:[path.join(repo,'scripts/paint-presentation-browser-check.ts')],bundle:true,write:false,format:'iife',globalName:'PaintRasterCheck',platform:'browser'});
 await writeFile(path.join(run,'raster-check.js'),bundle.outputFiles[0].text);
 const env={...process.env,FLOW_REPO:repo,FLOW_ROOT:root,FLOW_OUT:run};delete env.ELECTRON_RUN_AS_NODE;
-const child=spawn(createRequire(import.meta.url)('electron'),[path.join(repo,'scripts/flow-paint-presentation-driver.cjs')],{cwd:repo,env,stdio:'inherit'});
+const child=spawn(createRequire(import.meta.url)('electron'),[path.join(repo,recovery?'scripts/flow-paint-recovery-driver.cjs':'scripts/flow-paint-presentation-driver.cjs')],{cwd:repo,env,stdio:'inherit'});
 const timer=setTimeout(()=>child.kill('SIGTERM'),120000);
 const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',(code)=>resolve(code));});clearTimeout(timer);
 const result=JSON.parse(await readFile(path.join(run,'result.json'),'utf8'));
-if(code!==0||result.error||result.cases.length!==3||result.raster.length!==5)throw Error('Paint presentation failed: '+run);
+if(code!==0||result.error||result.cases.length!==(recovery?6:3)||(!recovery&&result.raster.length!==5))throw Error('Paint presentation failed: '+run);
 console.log('PASS',run);

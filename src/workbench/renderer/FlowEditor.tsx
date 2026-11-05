@@ -1,4 +1,4 @@
-import { createPaintPresentation } from '../../drawing/renderer/paintPresentation';
+import { createPaintInputGate, createPaintPresentation } from '../../drawing/renderer/paintPresentation';
 import { paintPresentationCanvas } from '../../drawing/renderer/paintPresentationCanvas';
 import { canContinuePaint } from './paintAdmission';
 import { useFolderStatus } from './useFolderStatus';
@@ -62,7 +62,7 @@ function bindEditor(sessionId: string) {
     pendingAdd: (project: ProjectV1, request: FlowPendingAdd & { recover: boolean }) => api.pendingAdd(sessionId, project, request)
   };
 }
-type EditorOwner = { flow: FlowSession; sessionId: string; api: ReturnType<typeof bindEditor>; folderName: string };
+type EditorOwner = { paintInput: ReturnType<typeof createPaintInputGate>; flow: FlowSession; sessionId: string; api: ReturnType<typeof bindEditor>; folderName: string };
 type TransitionResult = 'opened' | 'unchanged' | { error: string };
 export function FlowEditor() {
   const [owner, setOwner] = useState<EditorOwner>();
@@ -94,7 +94,7 @@ export function FlowEditor() {
       tools: createPixelTools({ maxPixels: 32_000_000, maxPngBytes: 64 * 1024 * 1024, maxLayers: 64 }),
       checkpoint: api.checkpoint, refresh: api.refresh, pendingAdd: api.pendingAdd,
       clock: { setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: h => window.clearTimeout(h as number), now: () => performance.now() } }));
-    const next = { flow, api, sessionId, folderName };
+    const next = { flow, api, sessionId, folderName, paintInput: createPaintInputGate() };
     current.current = next; setOwner(next); setIssue('');
     beforeTransition.current = () => Promise.resolve();
     dialogueCommits.current.reset();
@@ -121,12 +121,17 @@ export function FlowEditor() {
     } catch (error) { setIssue(String(error)); }
   };
   const resume = async (owner: EditorOwner) => {
+    // A failed checkpoint leaves Session in `freezing`; finish that fence before
+    // resuming. Never open the presentation gate against a frozen Session.
+    if (owner.flow.snapshot().phase === 'freezing') required(await owner.flow.request({ kind: 'freeze' }));
     if (owner.flow.snapshot().phase === 'frozen') required(await owner.flow.request({ kind: 'resume' }));
+    owner.paintInput.resume();
   };
   const openProject = (target: FlowProjectTarget): Promise<TransitionResult> => {
     if (switchWork.current) return Promise.resolve({ error: '项目正在切换，请稍候' });
     if (closing.current || !current.current) return Promise.resolve({ error: '项目尚未打开' });
     const previous = current.current;
+    previous.paintInput.pause();
     setSwitching(true);
     const work = (async (): Promise<TransitionResult> => {
       try {
@@ -135,12 +140,17 @@ export function FlowEditor() {
         while (outputWork.current) await outputWork.current;
         assertSettledGesture();
         const frozen = required(await previous.flow.request({ kind: 'freeze' }));
+        previous.paintInput.assertSettled();
+        assertSettledGesture();
         const next = await window.flowEditor!.switchProject(previous.sessionId, frozen.snapshot.project, target);
         if (next) { install(next); void refreshRecent(); return 'opened'; }
         await resume(previous); setIssue(''); return 'unchanged';
       } catch (error) {
-        if (current.current === previous) await resume(previous);
-        const message = error instanceof Error ? error.message : String(error);
+        let message = error instanceof Error ? error.message : String(error);
+        if (current.current === previous) {
+          try { await resume(previous); }
+          catch (resumeError) { message += '；输入仍暂停，请重试关闭项目：' + String(resumeError); }
+        }
         setIssue(message);
         return { error: message };
       } finally { setSwitching(false); }
@@ -181,11 +191,13 @@ export function FlowEditor() {
     const off = api.onClose(id => { void (async () => {
       if (closing.current) return;
       closing.current = true;
+      current.current?.paintInput.pause();
       let owner: EditorOwner | undefined;
       try {
         if (switchWork.current) await switchWork.current;
         owner = current.current;
         if (!owner) throw Error('Project is still opening');
+        owner.paintInput.pause();
         assertSettledGesture();
         await beforeTransition.current();
         while (outputWork.current) await outputWork.current;
@@ -195,13 +207,16 @@ export function FlowEditor() {
         // leaves `active`), so a new obligation may appear while we await it. Never certify the
         // closed project with unconfirmed dialogue text: refuse and resume instead.
         assertSettledGesture();
+        owner.paintInput.assertSettled();
         const closed = await api.finishClose(owner.sessionId, id, result.snapshot.project);
         if (!closed.ok) throw Error(closed.message);
       } catch (error) {
         setIssue(String(error));
-        await api.finishClose(owner?.sessionId ?? '', id, null);
-        if (owner) await resume(owner);
-        closing.current = false;
+        try { await api.finishClose(owner?.sessionId ?? '', id, null); }
+        catch (closeError) { setIssue('关闭确认失败：' + String(closeError)); }
+        try { if (owner) await resume(owner); }
+        catch (resumeError) { setIssue('输入仍暂停，请重试关闭项目：' + String(resumeError)); }
+        finally { closing.current = false; }
       }
     })(); });
     return () => { cancelled = true; off(); };
@@ -212,7 +227,7 @@ export function FlowEditor() {
     return () => window.removeEventListener('beforeunload', beforeUnload);
   }, [owner]);
   return owner
-    ? <Editor key={owner.sessionId} flow={owner.flow} api={owner.api} folderName={owner.folderName} sessionId={owner.sessionId} openProject={openProject} switching={switching}
+    ? <Editor key={owner.sessionId} paintInput={owner.paintInput} flow={owner.flow} api={owner.api} folderName={owner.folderName} sessionId={owner.sessionId} openProject={openProject} switching={switching}
         issue={issue} setIssue={s => { if (current.current === owner) setIssue(s); }} gestures={gestures} outputWork={outputWork} dialogueCommits={dialogueCommits}
         beforeTransition={beforeTransition} recent={recent} currentRecentId={currentRecentId} onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent} />
     : <ProjectHome recent={recent} busy={launchBusy} issue={issue} launch={launch} onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent} />;
@@ -233,8 +248,8 @@ function ProjectHome({ recent, busy, issue, launch, onRemoveRecent, onRelocateRe
       onAbort={() => void create.abort()} onRespond={decision => void create.respond(decision)} onError={create.setError} />}
   </>;
 }
-function Editor({ flow, api, folderName, sessionId, openProject, switching, issue, setIssue, gestures, outputWork, dialogueCommits, beforeTransition, recent, currentRecentId, onRemoveRecent, onRelocateRecent }: {
-  api: ReturnType<typeof bindEditor>; folderName: string; sessionId: string; openProject: (target: FlowProjectTarget) => Promise<TransitionResult>; switching: boolean;
+function Editor({ paintInput, flow, api, folderName, sessionId, openProject, switching, issue, setIssue, gestures, outputWork, dialogueCommits, beforeTransition, recent, currentRecentId, onRemoveRecent, onRelocateRecent }: {
+  paintInput: ReturnType<typeof createPaintInputGate>; api: ReturnType<typeof bindEditor>; folderName: string; sessionId: string; openProject: (target: FlowProjectTarget) => Promise<TransitionResult>; switching: boolean;
   outputWork: { current: Promise<void> | undefined }; flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number };
   dialogueCommits: { current: DialogueCommitState };
   beforeTransition: { current: () => Promise<void> }; recent: FlowRecentProject[]; currentRecentId: string | null;
@@ -339,6 +354,8 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   useEffect(() => { disposed.current = false; return () => { disposed.current = true; for (const url of cache.values()) URL.revokeObjectURL(url); }; }, [cache]);
   const media: MediaSource = useMemo(() => ({ assetUrl: id => urls[id] ?? '', layerAssetUrl: ({ bitmapPath }) => urls[bitmapPath.split('/').at(-1)!] ?? '' }), [urls]);
   const paintPresentation = useMemo(() => createPaintPresentation({
+    inputGate: paintInput,
+    identity: { projectId: flow.snapshot().project.id, sessionId },
     raster: paintPresentationCanvas(source),
     current: (shotId, layerId) => {
       const project = flow.snapshot().project, shot = project.shots.find(s => s.id === shotId);
@@ -355,6 +372,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
     },
     report: setIssue,
   }), [flow]);
+  useEffect(() => paintInput.connect(paintPresentation.assertSettled), [paintInput, paintPresentation]);
   useEffect(() => () => paintPresentation.dispose(), [paintPresentation]);
   const otherRequests = useRef(0);
   const request = async (r: FlowSessionRequest, settlingGesture=false) => {
@@ -590,7 +608,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
             if (ids.length !== 1) { rejectTool(); return; }
             act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId: ids[0], patch: { opacity: Math.max(0, Math.min(1, initial[ids[0]] + delta)) } } });
           }} />;
-  const editsSettled = () => active && !paintPresentation.hasInput() && !gestures.current && !flow.snapshot().pending && !hasUnsettledMountedGesture() && !inputUnsettled();
+  const editsSettled = () => !paintInput.isPaused() && active && !paintPresentation.hasInput() && !gestures.current && !flow.snapshot().pending && !hasUnsettledMountedGesture() && !inputUnsettled();
   const canNavigate = () => !outputWork.current && editsSettled();
   // TIFF output owns its captured revision. A new brush stroke edits the live Session.
   const brushAvailable = () => active && tool === 'brush' && (!outputWork.current || savingTiff) && !gestures.current;
@@ -617,7 +635,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
       selectManyPending={ids=>{const known=new Set(ids),next=parkedOrder().filter(id=>known.has(id));setPendingSelection(next);pendingAnchor.current=next[0];}}
       selectAllPending={()=>{setPendingSelection(selectAllShots(parkedOrder()));pendingAnchor.current=undefined;}}
       clearPending={()=>{setPendingSelection([]);pendingAnchor.current=undefined;}}
-      canNavigate={canNavigate} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>canContinuePaint({active,tool,outputWork:!!outputWork.current,savingTiff,gesture:!!gestures.current || hasUnsettledMountedGesture() || inputUnsettled(),otherRequests:paintPresentation.awaitingAuthority() ? 0 : otherRequests.current,queuedTargets:paintPresentation.canContinue(shot.id,shot.activeLayerId ?? '') ? [JSON.stringify([shot.id,shot.activeLayerId])] : [],target:JSON.stringify([shot.id,shot.activeLayerId])})} demand={requestAssets} move={moveShots} remove={deletePending} renderLayers={renderLayers}
+      canNavigate={canNavigate} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>canContinuePaint({active:active && !paintInput.isPaused(),tool,outputWork:!!outputWork.current,savingTiff,gesture:!!gestures.current || hasUnsettledMountedGesture() || inputUnsettled(),otherRequests:paintPresentation.awaitingAuthority() ? 0 : otherRequests.current,queuedTargets:paintPresentation.canContinue(shot.id,shot.activeLayerId ?? '') ? [JSON.stringify([shot.id,shot.activeLayerId])] : [],target:JSON.stringify([shot.id,shot.activeLayerId])})} demand={requestAssets} move={moveShots} remove={deletePending} renderLayers={renderLayers}
       holdShots={dialogueHoldShots}
       renderInfo={(shot,allowDialogueDrag=false)=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText} disabled={!active} onChange={e=>script(shot.id,e.target.value)}/></label>{renderDialogue(shot.id,false,allowDialogueDrag)}</div>}
       renderCanvas={(shot,previous,next)=><SketchPad paintPresentation={paintPresentation} respectActiveLayer key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color}

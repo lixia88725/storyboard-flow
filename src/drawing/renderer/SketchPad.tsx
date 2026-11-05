@@ -1421,6 +1421,8 @@ export const SketchPad = memo(({
       }
     }
 
+    // A budget pause retains the accepted prefix without collecting further points.
+    if (paintPresentation?.frame().decision) return;
     const previousPointOffset = currentStroke.points.length / 2;
     const previousPointLength = currentStroke.points.length;
     const toolSize = currentStroke.tool === "eraser" ? eraserSize : brushSize;
