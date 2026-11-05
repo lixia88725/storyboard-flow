@@ -1,3 +1,5 @@
+import { createPaintPresentation } from '../../drawing/renderer/paintPresentation';
+import { paintPresentationCanvas } from '../../drawing/renderer/paintPresentationCanvas';
 import { canContinuePaint } from './paintAdmission';
 import { useFolderStatus } from './useFolderStatus';
 import {Workbench} from './Workbench';
@@ -30,7 +32,7 @@ import { useProjectNaming } from './useProjectNaming';
 import { PendingAddAction } from './PendingAddAction';
 import { hasUnsettledMountedGesture } from '../../drawing/renderer/mountedCanvasRecoveryCapture';
 import { projectShots, pixelStroke, settledStrokePreview } from './adapter';
-import type { Shot, SketchStroke } from '../../drawing/contracts/types';
+import type { Shot } from '../../drawing/contracts/types';
 import '../../storyboard/renderer/flowPending.css';
 
 const required = <T,>(r: { ok: true; value: T } | { ok: false; error: { message: string } }): T => {
@@ -304,7 +306,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   const cache = useMemo(() => new Map<string, string>(), []);
   const loads = useMemo(() => new Map<string, Promise<string>>(), []);
   useEffect(() => {
-    const unsubscribe = flow.subscribe(() => setSnapshot(flow.snapshot()));
+    const unsubscribe = flow.subscribe(() => { paintPresentation.observe(); setSnapshot(flow.snapshot()); });
     // A fast initial checkpoint can finish between render and effect subscription.
     setSnapshot(flow.snapshot());
     return unsubscribe;
@@ -336,12 +338,35 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   }, [snapshot.project, demand]);
   useEffect(() => { disposed.current = false; return () => { disposed.current = true; for (const url of cache.values()) URL.revokeObjectURL(url); }; }, [cache]);
   const media: MediaSource = useMemo(() => ({ assetUrl: id => urls[id] ?? '', layerAssetUrl: ({ bitmapPath }) => urls[bitmapPath.split('/').at(-1)!] ?? '' }), [urls]);
+  const paintPresentation = useMemo(() => createPaintPresentation({
+    raster: paintPresentationCanvas(source),
+    current: (shotId, layerId) => {
+      const project = flow.snapshot().project, shot = project.shots.find(s => s.id === shotId);
+      const image = shot && project.images[shot.imageId], layer = image?.layers.find(l => l.id === layerId);
+      return shot && image && layer && layer.visible && !layer.locked
+        ? { shotId, imageId: image.id, layerId, assetId: layer.assetId, width: image.width, height: image.height } : undefined;
+    },
+    commit: async (target, stroke) => {
+      const result = await flow.request({kind:'paint', shotId:target.shotId, layerId:target.layerId, stroke:pixelStroke(stroke)});
+      if (!result.ok) throw result.error;
+      const shot = result.value.snapshot.project.shots.find(s => s.id === target.shotId)!;
+      const layer = result.value.snapshot.project.images[shot.imageId].layers.find(l => l.id === target.layerId)!;
+      return { assetId: layer.assetId, revision: result.value.snapshot.project.revision };
+    },
+    report: setIssue,
+  }), [flow]);
+  useEffect(() => () => paintPresentation.dispose(), [paintPresentation]);
   const otherRequests = useRef(0);
   const request = async (r: FlowSessionRequest, settlingGesture=false) => {
     if(gestures.current && !settlingGesture)throw Error('Finish the current layer gesture first');
     const other = r.kind !== 'paint';
     if (other) otherRequests.current++;
-    try { const result = required(await flow.request(r)); setIssue(''); return result; } catch (error) { setIssue(String(error)); throw error; }
+    try {
+      const run = async () => required(await flow.request(r));
+      const changesPixels = r.kind !== 'paint' && r.kind !== 'board' && r.kind !== 'checkpoint' && r.kind !== 'freeze' && r.kind !== 'resume';
+      const result = changesPixels ? await paintPresentation.barrier(run) : await run();
+      setIssue(''); return result;
+    } catch (error) { setIssue(String(error)); throw error; }
     finally { if (other) otherRequests.current--; }
   };
   const act = (r: FlowSessionRequest) => { void request(r).catch(() => {}); };
@@ -354,9 +379,9 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
     await window.flowEditor!.updateRecentName(sessionId, draft.name).catch(() => {});
   });
   useEffect(() => {
-    beforeTransition.current = naming.flush;
+    beforeTransition.current = async () => { await naming.flush(); await paintPresentation.settle(); };
     return () => { beforeTransition.current = () => Promise.resolve(); };
-  }, [beforeTransition, naming.flush]);
+  }, [beforeTransition, naming.flush, paintPresentation]);
   const create = useCreateProject(openProject);
   // Response-tracked identity, not a render-time read of the state object: several editors can
   // be busy at once, so the held set (not a single shot) decides which cards stay mounted.
@@ -404,29 +429,13 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   // One admission path for the textarea shortcut, the global shortcut and the rail buttons.
   const historyStep = async (kind: 'undo' | 'redo') => {
     // Reads live state: the global shortcut effect below is installed once per session.
-    if (flow.snapshot().phase !== 'active' || gestures.current || outputWork.current) { setIssue('Finish the current edit first'); return; }
+    if (flow.snapshot().phase !== 'active' || gestures.current || outputWork.current || paintPresentation.hasDrawing()) { setIssue('Finish the current edit first'); return; }
     if (dialogueCommits.current.busy()) {
       setIssue('Finish the current dialogue input first'); return;
     }
     try { await request({ kind }); setAuthority(value => value + 1); } catch { /* request reports the failure */ }
   };
   const script = (shotId: string, text: string) => act({ kind: 'board', command: { kind: 'setScriptText', shotId, text } });
-  const brushQueue = useRef(new Map<symbol, string>());
-  const stroke = async (shot: Shot, layerId: string, input: SketchStroke) => {
-    const token = Symbol();
-    if (input.tool === 'brush' || input.tool === 'eraser') brushQueue.current.set(token, JSON.stringify([shot.id,layerId]));
-    try {
-      const result = await request({ kind: 'paint', shotId: shot.id, layerId, stroke: pixelStroke(input) });
-      const currentShot = result.snapshot.project.shots.find(s => s.id === shot.id)!;
-      return await settledStrokePreview(() => flow.snapshot().project, shot.id, layerId,
-        result.snapshot.project.images[currentShot.imageId].layers.find(l => l.id === layerId)!.assetId, async id=>{
-          const url=await source(id);
-          // Keep the temporary stroke until Chromium can paint the committed raster.
-          const raster=new Image();raster.src=url;await raster.decode();
-          return url;
-        });
-    } finally { brushQueue.current.delete(token); }
-  };
   const transformSelection = async (shot: Shot, layerId: string, _preview: string, intent?: SelectionTransformIntent) => {
     try {
       if(!intent || !active || outputWork.current)throw Error('Selection is not ready');
@@ -472,7 +481,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
     setRefreshing(true);
     const work=(async()=>{
       try{
-        const result=await flow.request({kind:'refresh'});
+        const result=await paintPresentation.barrier(() => flow.request({kind:'refresh'}));
         if(!result.ok){setRefreshRecovery(result.error.effect==='unknown');throw Error(result.error.message);}
         setRefreshRecovery(false);setIssue('');
       }catch(error){setIssue(String(error));}
@@ -483,7 +492,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   const saveTiff = async () => {
     if (!active || savingTiff || outputWork.current) return;
     if (naming.composing) { setIssue('请先完成输入法组字，再保存'); return; }
-    if (gestures.current || hasUnsettledMountedGesture() || flow.snapshot().pending || inputUnsettled()) {
+    if (paintPresentation.hasInput() || gestures.current || hasUnsettledMountedGesture() || flow.snapshot().pending || inputUnsettled()) {
       setIssue('Finish the current edit before saving TIFF'); return;
     }
     if (naming.issue) { setIssue(naming.issue); return; }
@@ -555,7 +564,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
             const board=snapshot.project.shots.find(s=>s.id===shot.id);
             return !!board && ids.length>=2 && toolPlan(snapshot.project.images[board.imageId],{kind:'merge',layerIds:ids}).ok;
           }} folderPath="flow" thumbnailRevision={snapshot.project.revision} isOpen isRendered
-          canBeginLayerGesture={()=>!gestures.current && !flow.snapshot().pending && !outputWork.current && flow.snapshot().phase==='active'}
+          canBeginLayerGesture={()=>!paintPresentation.hasInput() && !gestures.current && !flow.snapshot().pending && !outputWork.current && flow.snapshot().phase==='active'}
           onLayerGroupOpacityGesture={(shotId,ids,delta,initial,phase)=>{
             const changes=ids.map(layerId=>({layerId,before:initial[layerId],opacity:Math.round(Math.max(0,Math.min(1,initial[layerId]+delta))*1000)/1000}));
             const clear=()=>{gestures.current=0;setOpacityPreview(current=>{const next={...current};for(const id of ids)delete next[`${shotId}/${id}`];return next;});};
@@ -581,7 +590,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
             if (ids.length !== 1) { rejectTool(); return; }
             act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId: ids[0], patch: { opacity: Math.max(0, Math.min(1, initial[ids[0]] + delta)) } } });
           }} />;
-  const editsSettled = () => active && !gestures.current && !flow.snapshot().pending && !hasUnsettledMountedGesture() && !inputUnsettled();
+  const editsSettled = () => active && !paintPresentation.hasInput() && !gestures.current && !flow.snapshot().pending && !hasUnsettledMountedGesture() && !inputUnsettled();
   const canNavigate = () => !outputWork.current && editsSettled();
   // TIFF output owns its captured revision. A new brush stroke edits the live Session.
   const brushAvailable = () => active && tool === 'brush' && (!outputWork.current || savingTiff) && !gestures.current;
@@ -608,10 +617,10 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
       selectManyPending={ids=>{const known=new Set(ids),next=parkedOrder().filter(id=>known.has(id));setPendingSelection(next);pendingAnchor.current=next[0];}}
       selectAllPending={()=>{setPendingSelection(selectAllShots(parkedOrder()));pendingAnchor.current=undefined;}}
       clearPending={()=>{setPendingSelection([]);pendingAnchor.current=undefined;}}
-      canNavigate={canNavigate} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>canContinuePaint({active,tool,outputWork:!!outputWork.current,savingTiff,gesture:!!gestures.current,otherRequests:otherRequests.current,queuedTargets:[...brushQueue.current.values()],target:JSON.stringify([shot.id,shot.activeLayerId])})} demand={requestAssets} move={moveShots} remove={deletePending} renderLayers={renderLayers}
+      canNavigate={canNavigate} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>canContinuePaint({active,tool,outputWork:!!outputWork.current,savingTiff,gesture:!!gestures.current || hasUnsettledMountedGesture() || inputUnsettled(),otherRequests:paintPresentation.awaitingAuthority() ? 0 : otherRequests.current,queuedTargets:paintPresentation.canContinue(shot.id,shot.activeLayerId ?? '') ? [JSON.stringify([shot.id,shot.activeLayerId])] : [],target:JSON.stringify([shot.id,shot.activeLayerId])})} demand={requestAssets} move={moveShots} remove={deletePending} renderLayers={renderLayers}
       holdShots={dialogueHoldShots}
       renderInfo={(shot,allowDialogueDrag=false)=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText} disabled={!active} onChange={e=>script(shot.id,e.target.value)}/></label>{renderDialogue(shot.id,false,allowDialogueDrag)}</div>}
-      renderCanvas={(shot,previous,next)=><SketchPad respectActiveLayer key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color}
+      renderCanvas={(shot,previous,next)=><SketchPad paintPresentation={paintPresentation} respectActiveLayer key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color}
         brushSize={preferenceFor(brushPreferences, brushPreferences.brush).size}
         brushOpacity={preferenceFor(brushPreferences, brushPreferences.brush).opacity}
         eraserSize={preferenceFor(brushPreferences, brushPreferences.eraser).size}
@@ -622,7 +631,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
         onOpenBrushPanel={canStartCanvasEdit()?setBrushPanel:undefined}
         isZoomScrubbing={false}
         onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
-        onFocusShot={()=>focusShot(shot.id)} wantsRenderedDataUrl={false} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
+        onFocusShot={()=>focusShot(shot.id)} wantsRenderedDataUrl={false} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
       actions={<div className="wb-actions">
         <details className="wb-project-menu">
           <summary className="wb-document-action"><FolderClosed aria-hidden size={15}/>项目<ChevronDown aria-hidden size={11}/></summary>

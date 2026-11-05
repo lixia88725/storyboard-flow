@@ -138,12 +138,12 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  assert.equal(await contextMenu(headerSel('shot1'),{ctrlKey:true}),false);
  assert.equal(await contextMenu('[data-board-id=shot3] .wb-card-picture',{ctrlKey:true}),false);
 
- // Picture modifiers select instead of painting; the canvas is hovered first so a leaking
- // pointerdown would actually place a stroke.
+ // Picture modifiers select instead of painting. A normal down on this static card
+ // now mounts its input surface immediately, so a leaking modifier would still paint.
  await clickHeader('shot1');await wait(async()=>JSON.stringify(await selected())==='["shot1"]','anchor for picture');
  const pic=await rect('[data-board-id=shot3] .wb-card-picture');
  await mouse('mouseMove',pic.x+pic.width*.5,pic.y+pic.height*.5);
- await wait(()=>js('!!document.querySelector("[data-board-id=shot3] .stage-overlay")'),'hover canvas');
+ assert.equal(await js('!!document.querySelector("[data-board-id=shot1] .stage-overlay")'),true,'selected card has its input surface');
  const inkBefore=read().images.image3.layers[1].assetId;
  await mouse('mouseDown',pic.x+pic.width*.5,pic.y+pic.height*.5,['shift']);
  await mouse('mouseMove',pic.x+pic.width*.6,pic.y+pic.height*.5,['shift']);
@@ -151,7 +151,7 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  await wait(async()=>JSON.stringify(await selected())==='["shot1","shot2","shot3"]','picture shift range');
  await delay(400);
  assert.equal(read().images.image3.layers[1].assetId,inkBefore);
- assert.equal(await js('!!document.querySelector("[data-live-mirror]")'),false);
+ assert.equal(await js('!!document.querySelector("[data-paint-layer][data-paint-status=ready]")'),false);
  await mouse('mouseDown',pic.x+pic.width*.5,pic.y+pic.height*.5,['meta']);
  await mouse('mouseUp',pic.x+pic.width*.5,pic.y+pic.height*.5,['meta']);
  await wait(async()=>JSON.stringify(await selected())==='["shot1","shot2"]','picture meta toggle');
@@ -357,7 +357,7 @@ const receipt={...identity,passed:true,scrollCase,cases:[
  'header plain click replaces, Cmd/Ctrl click toggles, discrete toggle moves the anchor',
  'header Shift ranges work in both directions and keep the anchor across repeated clicks',
  'header Shift+Cmd/Ctrl unions the range with the existing selection',
- 'picture Shift/Cmd press selects without starting a stroke and without a live mirror',
+ 'picture Shift/Cmd press selects without starting a stroke or a shared live raster',
  'board-scoped Cmd/Ctrl+A selects all, Shift+Cmd/Ctrl+A clears',
  'Cmd/Ctrl+A inside the action textarea is not hijacked and leaves the board selection alone',
  'right/middle modified presses on a header leave the selection untouched',

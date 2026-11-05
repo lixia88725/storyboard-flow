@@ -1,3 +1,5 @@
+import type { PaintPresentation } from './paintPresentation';
+import { PaintPresentationLayer, PaintStaticImage } from './PaintPresentationLayer';
 import {CanvasPresentationContext,PresentationBars} from './canvasPresentation';
 import { selectionMatrix, transformSelectionPoints, type SelectionTransformIntent } from './selectionTransform';
 import { useMediaSource } from './mediaSource';
@@ -226,6 +228,7 @@ const buildOverlaySelection = (draft: BitmapSelectionDraft): BitmapSelection | u
 
 export type SketchPadProps = {
   respectActiveLayer?: boolean;
+  paintPresentation?: PaintPresentation;
   shot: Shot;
   folderPath?: string;
   bitmapRevision: number;
@@ -253,7 +256,7 @@ export type SketchPadProps = {
   /** The host consumes the third onStroke argument; the workbench drops it, so its canvas
    * encode on submit is pure cost. Defaults to true to keep other hosts byte-identical. */
   wantsRenderedDataUrl?: boolean;
-  onStroke: (
+  onStroke?: (
     layerId: string,
     stroke: SketchStroke,
     renderedDataUrl?: string,
@@ -304,6 +307,7 @@ const BrushStrokeImage = ({ stroke, width, height, layerOpacity }: {
 
 export const SketchPad = memo(({
   respectActiveLayer = false,
+  paintPresentation,
   shot,
   folderPath,
   bitmapRevision,
@@ -563,7 +567,9 @@ export const SketchPad = memo(({
       }
 
       const currentStroke = draftStrokeRef.current;
-      if (currentStroke && shouldCommitStroke(currentStroke)) {
+      if (paintPresentation && event.type === 'pointercancel' && currentStroke) {
+        paintPresentation.cancel(currentStroke.id); clearDraftStroke();
+      } else if (currentStroke && shouldCommitStroke(currentStroke)) {
         void commitStroke(activeDrawingLayerId, currentStroke);
       } else {
         clearDraftStroke();
@@ -585,6 +591,11 @@ export const SketchPad = memo(({
   }, [activeDrawingLayerId, isDrawing, onStroke, tool, selectionDraft, transformDraft, bitmapSelection]);
 
   const commitStroke = async (layerId: string, stroke: SketchStroke) => {
+    if (paintPresentation) {
+      paintPresentation.end(stroke.id);
+      if (draftStrokeRef.current?.id === stroke.id) clearDraftStroke();
+      return;
+    }
     if (committingStrokeIdsRef.current.has(stroke.id)) {
       return;
     }
@@ -613,7 +624,7 @@ export const SketchPad = memo(({
               .filter((item) => item.layerId === layerId && item.stroke.id !== stroke.id)
               .map((item) => item.stroke)
           : [];
-      const dataUrl = await onStroke(layerId, stroke, renderedDataUrl, pendingStrokesForLayer);
+      const dataUrl = await onStroke?.(layerId, stroke, renderedDataUrl, pendingStrokesForLayer);
       if (dataUrl) {
         setLayerDataUrls((current) => ({ ...current, [layerId]: dataUrl }));
       }
@@ -1231,10 +1242,12 @@ export const SketchPad = memo(({
       return;
     }
 
-    updateDrawingState(true);
     const strokeTool: StrokeTool = tool;
     const nextStroke = createStroke(strokeTool, position, startPressure);
+    if (paintPresentation && !paintPresentation.begin(shot.id, activeDrawingLayer.id, nextStroke)) return;
+    updateDrawingState(true);
     draftStrokeRef.current = nextStroke;
+    if (paintPresentation) return;
     if (shouldRenderLiveStroke(nextStroke)) {
       setDraftStroke(nextStroke);
     } else {
@@ -1396,9 +1409,12 @@ export const SketchPad = memo(({
       }
 
       const nextStroke = createStroke(tool, positions[0], pressures[0] ?? 1);
+      if (paintPresentation && !paintPresentation.begin(shot.id, activeDrawingLayer.id, nextStroke)) return;
       draftStrokeRef.current = nextStroke;
       currentStroke = nextStroke;
-      if (shouldRenderLiveStroke(nextStroke)) {
+      if (paintPresentation) {
+        // The shared owner renders this stroke below, after samples are appended.
+      } else if (shouldRenderLiveStroke(nextStroke)) {
         setDraftStroke(nextStroke);
       } else {
         void prepareLiveBitmapEdit(activeDrawingLayer);
@@ -1411,9 +1427,9 @@ export const SketchPad = memo(({
     const canvasScale = canvasSize.width / sketchCanvasSize.width;
     const minPointDistance =
       currentStroke.tool === "eraser" ? Math.max(3, toolSize * canvasScale * 0.25) : 1;
-    const nextPoints = currentStroke.points;
-    const nextPressures = currentStroke.pressures ?? [];
-    currentStroke.pressures = nextPressures;
+    const nextPoints = paintPresentation ? [...currentStroke.points] : currentStroke.points;
+    const nextPressures = paintPresentation ? [...(currentStroke.pressures ?? [])] : currentStroke.pressures ?? [];
+    if (!paintPresentation) currentStroke.pressures = nextPressures;
     for (let index = 0; index < positions.length; index++) {
       const position = positions[index];
       if (!shouldAppendStrokePoint(currentStroke, position, minPointDistance)) {
@@ -1430,9 +1446,12 @@ export const SketchPad = memo(({
 
     const nextStroke = {
       ...currentStroke,
-      points: nextPoints
+      points: nextPoints,
+      pressures: nextPressures
     };
+    if (paintPresentation && !paintPresentation.update(nextStroke)) return;
     draftStrokeRef.current = nextStroke;
+    if (paintPresentation) return;
     if (shouldRenderLiveStroke(nextStroke)) {
       scheduleDraftStrokeRender(nextStroke);
     } else {
@@ -1507,7 +1526,9 @@ export const SketchPad = memo(({
     }
 
     const currentStroke = draftStrokeRef.current;
-    if (currentStroke && shouldCommitStroke(currentStroke)) {
+    if (paintPresentation && event?.evt?.type === 'pointercancel' && currentStroke) {
+      paintPresentation.cancel(currentStroke.id); clearDraftStroke();
+    } else if (currentStroke && shouldCommitStroke(currentStroke)) {
       void commitStroke(activeDrawingLayerId, currentStroke);
     } else {
       clearDraftStroke();
@@ -1624,6 +1645,9 @@ export const SketchPad = memo(({
 
             return (
               <Fragment key={layer.id}>
+                {paintPresentation && !isTransformingLayer ? <PaintPresentationLayer owner={paintPresentation} shotId={shot.id} layerId={layer.id} style={layerStyle}>
+                  <PaintStaticImage key={layer.bitmapPath} src={layerSrc ?? ''} style={layerStyle}/>
+                </PaintPresentationLayer> : <>
                 {layerSrc && !isLiveBitmapLayer && !isTransformingLayer ? (
                   <img
                     src={layerSrc}
@@ -1658,6 +1682,7 @@ export const SketchPad = memo(({
                     display: isLiveBitmapLayer ? "block" : "none"
                   }}
                 />
+                </>}
               </Fragment>
             );
           })}

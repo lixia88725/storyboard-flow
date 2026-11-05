@@ -1,5 +1,6 @@
+import { shouldStartSketchPointer } from '../../drawing/renderer/sketchGeometry';
 import {Fragment,useEffect,useRef,useState,useLayoutEffect,useContext,useMemo,useCallback,type ReactNode,type CSSProperties} from 'react';
-import {flushSync,createPortal} from 'react-dom';
+import {flushSync} from 'react-dom';
 import {DndContext,PointerSensor,useSensor,useSensors,closestCenter,useDraggable} from '@dnd-kit/core';
 import type {Shot} from '../../drawing/contracts/types';
 import {ShotStaticMedia} from '../../storyboard/renderer/ShotStaticMedia';
@@ -54,23 +55,18 @@ export function Workbench(p:WorkbenchProps){
    },100);
    return ()=>window.clearTimeout(timer);
  },[layout,hidden,split,tile,pendingTile,zoom,japanese,heights,collapsed]);
- const [hovered,setHovered]=useState<string | undefined>(undefined),[live,setLive]=useState<{id:string;surface:string;node:HTMLElement}>();
- // Hover must not mount a canvas mid-drag: that swaps the picture, flushes a full
- // grid render and re-reads assets while the pointer is sorting cards.
+ const surfaceInput=useRef(false);
+ // Mount on an actual down/drop, never on pointerenter: replacing the native hit
+ // target during pointerenter can suppress the immediately following pointerdown.
  const dragging=useRef(false);
  const visible=useRef(new Set<string>()),[visibilityVersion,setVisibilityVersion]=useState(0);
  const current=p.shots.find(s=>p.selected.includes(s.id));
  const index=p.shots.findIndex(s=>s.id===current?.id);
- const root=useRef<HTMLDivElement>(null),settleTimer=useRef<number | undefined>(undefined);
+ const root=useRef<HTMLDivElement>(null);
  const sensors=useSensors(useSensor(PointerSensor,pointerSensorOptions));
- const currentProps=useRef(p);currentProps.current=p;
- const sorting=useBoardSorting(p,root,dragging,point=>requestAnimationFrame(()=>{
-  const card=document.elementFromPoint(point.x,point.y)?.closest<HTMLElement>('[data-board-id]');
-  if(card&&currentProps.current.canStartCanvasEdit())setHovered(card.dataset.boardId);
- }));
- const demandKey=useMemo(()=>JSON.stringify([...p.shots.filter(s=>visible.current.has(s.id)||s.id===current?.id||s.id===hovered||(onion&&!hidden.includes('canvas')&&(s.id===p.shots[index-1]?.id||s.id===p.shots[index+1]?.id))),...(!hidden.includes('pending')?p.parked.filter(s=>visible.current.has(s.id)):[])].flatMap(s=>(s.layers??[]).map(l=>l.bitmapPath.split('/').at(-1)!))),[p.shots,p.parked,visibilityVersion,hovered,current?.id,index,onion,hidden]);
+ const sorting=useBoardSorting(p,root,dragging,()=>{});
+ const demandKey=useMemo(()=>JSON.stringify([...p.shots.filter(s=>visible.current.has(s.id)||s.id===current?.id||(onion&&!hidden.includes('canvas')&&(s.id===p.shots[index-1]?.id||s.id===p.shots[index+1]?.id))),...(!hidden.includes('pending')?p.parked.filter(s=>visible.current.has(s.id)):[])].flatMap(s=>(s.layers??[]).map(l=>l.bitmapPath.split('/').at(-1)!))),[p.shots,p.parked,visibilityVersion,current?.id,index,onion,hidden]);
  useEffect(()=>{p.demand(JSON.parse(demandKey));},[demandKey,visibilityVersion]);
- useEffect(()=>()=>window.clearTimeout(settleTimer.current),[]);
  const reportVisible=(id:string,value:boolean)=>{const changed=value?!visible.current.has(id):visible.current.has(id);if(!changed)return;value?visible.current.add(id):visible.current.delete(id);setVisibilityVersion(v=>v+1);};
  const navigate=(offset:number)=>{if(!current||!p.canNavigate())return;const next=p.shots[Math.max(0,Math.min(p.shots.length-1,index+offset))];p.focus(next.id);};
  useEffect(()=>{
@@ -79,10 +75,9 @@ export function Workbench(p:WorkbenchProps){
    e.preventDefault();navigate(e.key==='ArrowLeft'?-1:1);
   };window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
  },[p.shots,p.selected,p.canNavigate]);
- useEffect(()=>{if(!current||live)return;const card=Array.from(root.current?.querySelectorAll<HTMLElement>('[data-board-id]')??[]).find(el=>el.dataset.boardId===current.id);
+ useEffect(()=>{if(!current||surfaceInput.current)return;const card=Array.from(root.current?.querySelectorAll<HTMLElement>('[data-board-id]')??[]).find(el=>el.dataset.boardId===current.id);
   if(card){const scroll=card.closest('.wb-panel-body')!,a=card.getBoundingClientRect(),b=scroll.getBoundingClientRect();if(a.top<b.top||a.bottom>b.bottom)card.scrollIntoView({block:'nearest',inline:'nearest'});}
  },[current?.id]);
- const settle=()=>{window.clearTimeout(settleTimer.current);settleTimer.current=window.setTimeout(()=>{if(currentProps.current.canStartCanvasEdit())setLive(undefined);else settle();},80);};
  const viewerRef=useRef<HTMLDivElement|null>(null);
  const [fitBox,setFitBox]=useState<{width:number;height:number}|undefined>();
  // "适合" mode: the canvas keeps its aspect ratio and stays completely inside the panel.
@@ -112,25 +107,39 @@ export function Workbench(p:WorkbenchProps){
    begin={()=>{if(p.disabled||!p.canNavigate())return false;p.focus(shot.id);setDialogueEditing(key);return true;}}
    end={()=>setDialogueEditing(current=>current===key?undefined:current)}/>;
  const surface=(shot:Shot,where:string,editable:boolean)=>{
-  const key=where+':'+shot.id,other=live?.id===shot.id&&live.surface!==key;
+  const key=where+':'+shot.id;
   return <div className="wb-surface" data-surface={key} onPointerDownCapture={e=>{
-   if(e.target instanceof Element&&e.target.closest('[data-board-dialogue]'))return;
-   if(!p.disabled && editable && live?.surface===key && e.isPrimary && e.button===0 && p.canContinueBrush(shot))return;
-   if(p.disabled || !(editable ? p.canStartCanvasEdit() : p.canNavigate())){e.preventDefault();e.stopPropagation();return;}
-   flushSync(()=>{p.focus(shot.id);setLive({id:shot.id,surface:key,node:e.currentTarget});});
-  }} onPointerUpCapture={settle} onPointerCancelCapture={settle}>
+   if(e.target instanceof Element&&e.target.closest('[data-board-dialogue],button'))return;
+   if((e.nativeEvent as PointerEvent & {flowForwarded?:boolean}).flowForwarded)return;
+   const continuing=!p.disabled && shouldStartSketchPointer(e.nativeEvent) && p.canContinueBrush(shot);
+   if(p.disabled || (!continuing && !(editable ? p.canStartCanvasEdit() : p.canNavigate()))){e.preventDefault();e.stopPropagation();return;}
+   const original=e.nativeEvent,host=e.currentTarget;
+   const hadInput=e.target instanceof Element && !!e.target.closest('.stage-overlay');
+   surfaceInput.current=true;
+   flushSync(()=>{p.focus(shot.id);});
+   // The pointer may land on a static card before any hover. Mount synchronously and
+   // deliver that very down event once; subsequent samples use native pointer capture.
+   if(!hadInput && shouldStartSketchPointer(original)){
+    e.preventDefault();e.stopPropagation();
+    const node=host.querySelector('.stage-overlay .konvajs-content');
+    if(node){const forwarded=new PointerEvent('pointerdown',{
+     bubbles:true,cancelable:true,pointerId:original.pointerId,pointerType:original.pointerType,isPrimary:original.isPrimary,
+     clientX:original.clientX,clientY:original.clientY,button:original.button,buttons:original.buttons,pressure:original.pressure,
+     tiltX:original.tiltX,tiltY:original.tiltY,twist:original.twist,
+    });Object.defineProperty(forwarded,'flowForwarded',{value:true});node.dispatchEvent(forwarded);}
+   }
+  }} onPointerUpCapture={()=>{surfaceInput.current=false;}} onPointerCancelCapture={()=>{surfaceInput.current=false;}}>
    <div>{editable?p.renderCanvas(shot,where==='viewer'&&onion?p.shots[index-1]:undefined,where==='viewer'&&onion?p.shots[index+1]:undefined):<PresentationPreview shotId={shot.id} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}><ShotStaticMedia shot={shot} folderPath="flow" revision={p.revision}/></PresentationPreview>}</div>
    {presentation[shot.id]?.dialogue&&track(shot,key)}
-   {other&&<LiveMirror source={live.node} shot={shot}/>}
   </div>;
  };
  const content=(panel:Panel):ReactNode=>{
   if(panel==='board')return <><div className="wb-panel-tools wb-board-tools"><div className="wb-view-switch" role="group" aria-label="故事板视图"><button aria-pressed={!japanese} title="网格视图（美式故事板）" onClick={()=>{if(p.canNavigate())setJapanese(false);}}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.7" y="2.7" width="4.5" height="4.5" rx="1"/><rect x="8.8" y="2.7" width="4.5" height="4.5" rx="1"/><rect x="2.7" y="8.8" width="4.5" height="4.5" rx="1"/><rect x="8.8" y="8.8" width="4.5" height="4.5" rx="1"/></svg><span className="wb-sr-only">网格视图</span></button><button aria-pressed={japanese} title="日式分镜（镜号、画面、动作与台词）" onClick={()=>{if(p.canNavigate())setJapanese(true);}}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.4" width="11" height="9.2" rx="1"/><path d="M5.7 3.4v9.2M8.5 6.5h4M8.5 9.5h4"/></svg><span className="wb-sr-only">日式分镜</span></button></div><span>{p.shots.length} 张 · {p.selected.length} 已选</span><label className="wb-tile-slider" title="缩略图大小"><input aria-label="缩略图大小" type="range" min="150" max="460" value={tile} onChange={e=>{if(p.canNavigate())setTile(Number(e.target.value));}}/></label><div className="wb-board-actions">{p.boardActions}</div></div>
    <BoardGrid japanese={japanese} tile={tile} selected={p.selected} order={p.shots.map(s=>s.id)} disabled={p.disabled} canSelect={p.canNavigate} onSelect={p.selectMany}>
     {p.shots.map((shot,i)=><BoardCard key={shot.id} shot={shot} index={i} selected={p.selected.includes(shot.id)} disabled={p.disabled} onSelect={e=>{if(p.canNavigate())p.select(shot.id,e);}}
-     hold={Boolean(p.holdShots?.includes(shot.id))} force={hovered===shot.id}
-     footer={!japanese&&!presentation[shot.id]?.dialogue?track(shot,'footer:'+shot.id,true):null} rowInfo={japanese ? shot=>p.renderInfo(shot,true) : undefined} visible={reportVisible} activate={()=>{if(!dragging.current&&!root.current?.querySelector('[data-marquee-active="true"]')&&p.canStartCanvasEdit())flushSync(()=>setHovered(shot.id));}}>
-     {surface(shot,'grid',hovered===shot.id)}
+     hold={Boolean(p.holdShots?.includes(shot.id))} force={current?.id===shot.id}
+     footer={!japanese&&!presentation[shot.id]?.dialogue?track(shot,'footer:'+shot.id,true):null} rowInfo={japanese ? shot=>p.renderInfo(shot,true) : undefined} visible={reportVisible}>
+     {surface(shot,'grid',current?.id===shot.id)}
     </BoardCard>)}
    </BoardGrid></>;
   if(panel==='canvas')return <><div className="wb-panel-tools"><div><button aria-label="上一张" disabled={!current||index===0} onClick={()=>navigate(-1)}>←</button><span className="wb-position">{current?index+1:0} / {p.shots.length}</span><button aria-label="下一张" disabled={!current||index===p.shots.length-1} onClick={()=>navigate(1)}>→</button></div><button aria-pressed={onion} onClick={()=>{if(p.canNavigate())setOnion(!onion);}}>洋葱皮</button><label>画布 <select aria-label="画布缩放" value={String(zoom)} onChange={e=>{if(!p.canNavigate())return;const value=e.target.value;setZoom(value==='fit'?'fit':Number(value));}}><option value="fit">适合</option>{workspaceZoomSteps.map(n=><option key={n} value={n}>{n}%</option>)}</select></label></div>
@@ -183,7 +192,7 @@ export function Workbench(p:WorkbenchProps){
   <footer className="wb-status"><span role="status">{p.status}</span><span>画布落笔 · 顶部排序 · ← → 翻板</span></footer>
  </main>;
 }
-function BoardCard({shot,index,selected,disabled,onSelect,visible,activate,children,rowInfo,footer,hold,force}:{footer:ReactNode;rowInfo?:(shot:Shot)=>ReactNode;shot:Shot;index:number;selected:boolean;disabled:boolean;onSelect:(e:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;visible:(id:string,v:boolean)=>void;activate:()=>void;children:ReactNode;hold?:boolean;force?:boolean}){
+function BoardCard({shot,index,selected,disabled,onSelect,visible,children,rowInfo,footer,hold,force}:{footer:ReactNode;rowInfo?:(shot:Shot)=>ReactNode;shot:Shot;index:number;selected:boolean;disabled:boolean;onSelect:(e:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;visible:(id:string,v:boolean)=>void;children:ReactNode;hold?:boolean;force?:boolean}){
  const modifiedPicture=useRef(false),modifiedHeader=useRef(false);
  const sortable=useDraggable({id:shot.id,disabled});const element=useRef<HTMLElement|null>(null),[near,setNear]=useState(false);const report=useRef(visible);report.current=visible;
  // A stable ref keeps dnd-kit's ResizeObserver attached; an inline arrow detaches and
@@ -193,8 +202,8 @@ function BoardCard({shot,index,selected,disabled,onSelect,visible,activate,child
  // reliable reset after a transformed card may have reported a false intersection.
  useEffect(()=>{const observer=new IntersectionObserver(entries=>{const value=entries[0].isIntersecting;setNear(value);report.current(shot.id,value);},{rootMargin:'80px'});if(element.current)observer.observe(element.current);return()=>{observer.disconnect();report.current(shot.id,false);};},[shot.id,index]);
  // Unconfirmed IME text must survive a scroll: hold the mounted editor even when the card
- // leaves the near window. The hovered card is forced so a drop or hover stays drawable
- // even if its intersection state lagged while it was being transformed.
+ // leaves the near window. The activated card is forced so an accepted pointer gesture
+ // keeps its input surface even if intersection state lags during scrolling.
  const shown=near||Boolean(hold)||Boolean(force);
  return <ShotCard kind="board" id={shot.id} selected={selected} register={setCard}
   aspectRatio={`${shot.flow?.canvasWidth??640}/${shot.flow?.canvasHeight??360}`}
@@ -202,7 +211,7 @@ function BoardCard({shot,index,selected,disabled,onSelect,visible,activate,child
    onPointerDownCapture={e=>{modifiedHeader.current=e.isPrimary&&e.button===0&&Boolean(e.shiftKey||e.metaKey||e.ctrlKey);if(modifiedHeader.current){e.currentTarget.focus({preventScroll:true});e.preventDefault();e.stopPropagation();if(!disabled)onSelect(e);}}}
    onContextMenu={e=>{if(e.ctrlKey)e.preventDefault();}} onKeyDownCapture={()=>{modifiedHeader.current=false;}}
    onClick={e=>{if(modifiedHeader.current){modifiedHeader.current=false;return;}onSelect(e);}}/>}
-  pictureProps={{onPointerEnter:activate,onContextMenu:e=>{if(e.ctrlKey)e.preventDefault();},
+  pictureProps={{onContextMenu:e=>{if(e.ctrlKey)e.preventDefault();},
    onPointerDownCapture:e=>{modifiedPicture.current=e.isPrimary&&e.button===0&&Boolean(e.shiftKey||e.metaKey||e.ctrlKey);if(!modifiedPicture.current||e.target instanceof Element&&e.target.closest('input,textarea,[contenteditable=true],[data-board-dialogue]')){modifiedPicture.current=false;return;}e.preventDefault();e.stopPropagation();if(!disabled)onSelect(e);},
    onMouseDownCapture:e=>{if(modifiedPicture.current){e.preventDefault();e.stopPropagation();}},
    onClickCapture:e=>{if(modifiedPicture.current){e.preventDefault();e.stopPropagation();modifiedPicture.current=false;}}}}
@@ -210,36 +219,6 @@ function BoardCard({shot,index,selected,disabled,onSelect,visible,activate,child
   footer={shown?footer:undefined}
   rowInfo={rowInfo && <div className="wb-row-info">{shown && rowInfo(shot)}</div>} />;
 }
-function LiveMirror({source,shot}:{source:HTMLElement;shot:Shot}){
- const anchor=useRef<HTMLSpanElement>(null),ref=useRef<HTMLCanvasElement>(null);
- const [target,setTarget]=useState<HTMLElement|null>(null);
- // Mirror only the raster plane. The destination owns its matte, dialogue and geometry.
- useLayoutEffect(()=>{setTarget(anchor.current?.parentElement?.querySelector<HTMLElement>('.image-stage')??null);});
- useLayoutEffect(()=>{
-  const canvas=ref.current, stage=source.querySelector('.image-stage');
-  if(!canvas||!stage||!target)return;
-  // Match Chromium's layer blending space: flattening translucent sRGB layers
-  // before a P3 display conversion produces a different color from the source.
-  const colorSpace=window.matchMedia('(color-gamut: p3)').matches?'display-p3':'srgb';
-  const ctx=canvas.getContext('2d',{colorSpace});if(!ctx)return;
-  let frame=0;
-  const draw=()=>{
-   const nodes=Array.from(stage.querySelectorAll<HTMLImageElement|HTMLCanvasElement>(':scope > img, :scope > canvas, :scope > .stage-overlay canvas'))
-    .filter(node=>getComputedStyle(node).display!=='none'&&getComputedStyle(node).visibility!=='hidden');
-   // Keep the last complete frame while the renderer decodes a replacement layer.
-   if(nodes.length && nodes.every(node=>node instanceof HTMLImageElement ? node.complete&&node.naturalWidth>0 : node.width>0&&node.height>0)){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    for(const node of nodes){const style=getComputedStyle(node);ctx.save();ctx.globalAlpha=Number(style.opacity);ctx.globalCompositeOperation=(style.mixBlendMode==='normal'?'source-over':style.mixBlendMode) as GlobalCompositeOperation;ctx.drawImage(node,0,0,canvas.width,canvas.height);ctx.restore();}
-    canvas.dataset.ready='true';
-   }
-   frame=requestAnimationFrame(draw);
-  };
-  draw();return()=>cancelAnimationFrame(frame);
- },[source,target,shot.flow?.canvasWidth,shot.flow?.canvasHeight]);
- return <><span hidden ref={anchor}/>{target&&createPortal(<canvas aria-hidden="true" data-live-mirror="true" ref={ref} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}/>,target)}</>;
-
-}
-
 function PendingPreview({shot,revision,visible}:{shot:Shot;revision:number;visible:(id:string,value:boolean)=>void}) {
  const element=useRef<HTMLDivElement>(null),[near,setNear]=useState(false),report=useRef(visible);report.current=visible;
  useEffect(()=>{const observer=new IntersectionObserver(entries=>{const value=entries[0].isIntersecting;setNear(value);report.current(shot.id,value);},{rootMargin:'80px'});if(element.current)observer.observe(element.current);return()=>{observer.disconnect();report.current(shot.id,false);};},[shot.id]);

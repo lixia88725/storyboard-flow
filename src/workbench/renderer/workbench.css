@@ -174,8 +174,6 @@
 .wb-header nav { flex-shrink:0; }
 
 /* Keep the stage background and its presentation in place during a mirrored stroke. */
-.wb-surface .image-stage > [data-live-mirror] { position:absolute;inset:0;width:100%;height:100%;pointer-events:none; }
-.wb-surface .image-stage:has(> [data-live-mirror][data-ready]) > :is(img,canvas,.stage-overlay):not([data-live-mirror]) { visibility:hidden; }
 
 .flow-workbench .wb-dialogue-footer > button { display:block;width:100%;padding:5px 8px;text-align:left;font:inherit;color:#c8cfda;cursor:text;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .wb-dialogue-footer { padding:2px 4px; }
@@ -386,3 +384,14 @@
 /* The control only appears on hover or focus, so a keyboard user must see where focus landed. */
 .flow-workbench .wb-pending-restore:focus,
 .flow-workbench .wb-card:focus-within .wb-pending-restore { outline:2px solid var(--wb-accent); outline-offset:1px; }
+
+/* A shared layer replaces its static raster atomically. Preparing is opaque, including
+   between synchronous history invalidation and React's next render. */
+.paint-presentation-layer { position:absolute; inset:0; pointer-events:none; }
+.paint-static-layer, .paint-shared-layer { position:absolute; inset:0; width:100%; height:100%; }
+.paint-static-layer img { position:absolute; inset:0; width:100%; height:100%; }
+.paint-presentation-layer[data-paint-status="idle"] .paint-shared-layer { display:none; }
+.paint-presentation-layer:not([data-paint-status="idle"]) .paint-static-layer { display:none; }
+.paint-presentation-layer[data-paint-status="preparing"], .paint-presentation-layer[data-paint-status="error"] { background:#e4e4e4; z-index:3; }
+.paint-preparing { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; gap:8px; color:#333; font-size:12px; background:#e4e4e4; }
+.paint-preparing button { pointer-events:auto; }

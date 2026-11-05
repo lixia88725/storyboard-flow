@@ -81,11 +81,10 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  assert.deepEqual(read(),before);
  const target=await rect('[data-board-id="shot2"] .wb-card-picture');
  await mouse('mouseMove',target.x+target.width*.4,target.y+target.height*.5);
- await wait(()=>js('!!document.querySelector(\'[data-surface="grid:shot2"] .stage-overlay\')'),'hover editable canvas');
  await mouse('mouseDown',target.x+target.width*.4,target.y+target.height*.5);
  await mouse('mouseMove',target.x+target.width*.6,target.y+target.height*.5);
  assert.equal(await current(),'shot2');assert.deepEqual(await selected(),['shot2']);
- await wait(()=>js('Array.from(document.querySelectorAll("[data-live-mirror]")).some(c=>{const a=c.getContext("2d").getImageData(0,0,c.width,c.height).data;for(let i=0;i<a.length;i+=4)if(a[i]>170&&a[i+1]<100&&a[i+2]<130)return true;return false})'),'live red stroke mirrored before release');
+ await wait(()=>js('Array.from(document.querySelectorAll(".wb-viewer [data-paint-layer][data-paint-status=ready]")).some(c=>{const a=c.getContext("2d").getImageData(0,0,c.width,c.height).data;for(let i=0;i<a.length;i+=4)if(a[i]>170&&a[i+1]<100&&a[i+2]<130)return true;return false})'),'live red stroke mirrored before release');
  await key('ArrowRight');assert.equal(await current(),'shot2');assert.equal(read().images.image2.layers[1].assetId,${JSON.stringify(transparent)});
  await mouse('mouseUp',target.x+target.width*.6,target.y+target.height*.5);
  await wait(()=>read().images.image2.layers[1].assetId!==${JSON.stringify(transparent)},'grid stroke checkpoint');
@@ -95,7 +94,7 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  let selectedRed=false;
  for(let i=0;i<pixel.length;i+=4)if(pixel[i+3]>200&&Math.abs(pixel[i]-221)<=2&&Math.abs(pixel[i+1]-51)<=2&&Math.abs(pixel[i+2]-68)<=2){selectedRed=true;break;}
  assert.ok(selectedRed,'committed PNG preserves the selected #dd3344 brush colour');
- await wait(()=>js('!document.querySelector("[data-live-mirror]")'),'settled mirror');
+ await wait(()=>js('!document.querySelector("[data-paint-status=preparing]")'),'settled mirror');
  await button('撤销');await wait(()=>read().images.image2.layers[1].assetId===${JSON.stringify(transparent)},'one undo');
  await button('重做');await wait(()=>read().images.image2.layers[1].assetId===painted,'redo');
  // Native text input owns arrow keys rather than flipping the current board.
@@ -130,10 +129,10 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  await mouse('mouseMove',viewer.x+viewer.width*.4,viewer.y+viewer.height*.4);
  await mouse('mouseDown',viewer.x+viewer.width*.4,viewer.y+viewer.height*.4);
  await mouse('mouseMove',viewer.x+viewer.width*.6,viewer.y+viewer.height*.4);
- await wait(()=>js('Array.from(document.querySelectorAll(".wb-grid [data-live-mirror]")).some(c=>{const a=c.getContext("2d").getImageData(0,0,c.width,c.height).data;for(let i=0;i<a.length;i+=4)if(a[i]>170&&a[i+1]<100&&a[i+2]<130)return true;return false})'),'viewer stroke mirrored into grid');
+ await wait(()=>js('Array.from(document.querySelectorAll(".wb-grid [data-paint-layer][data-paint-status=ready]")).some(c=>{const a=c.getContext("2d").getImageData(0,0,c.width,c.height).data;for(let i=0;i<a.length;i+=4)if(a[i]>170&&a[i+1]<100&&a[i+2]<130)return true;return false})'),'viewer stroke mirrored into grid');
  await mouse('mouseUp',viewer.x+viewer.width*.6,viewer.y+viewer.height*.4);
  await wait(()=>read().images.image0.layers[1].assetId!==${JSON.stringify(transparent)},'viewer stroke checkpoint');
- await wait(()=>js('!document.querySelector("[data-live-mirror]")'),'viewer mirror settled');
+ await wait(()=>js('!document.querySelector("[data-paint-status=preparing]")'),'viewer mirror settled');
  await button('撤销');await wait(()=>read().images.image0.layers[1].assetId===${JSON.stringify(transparent)},'viewer stroke undo');
  if(count<100){
    const revisionBefore=read().revision;
@@ -194,4 +193,4 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  const chunks=[],child=spawn(require('electron'),[driver],{cwd:repo,env,stdio:['ignore','pipe','pipe']});child.stdout.on('data',b=>chunks.push(b));child.stderr.on('data',b=>{chunks.push(b);process.stderr.write(b)});
  const code=await new Promise(resolve=>child.on('exit',resolve));await writeFile(path.join(run,phase+'.log'),Buffer.concat(chunks));console.log(phase,code,run);if(code!==0)throw Error('Workbench verification failed: '+run);await readFile(path.join(run,phase+'-closed.json'));
 }
-await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['workbench connected to real Session','multi-select displays earliest board','arrows cancel multi-select and stop at boundary','navigation never edits project','hover enables grid painting','drawing selects and follows current board','live stroke mirrored in both directions before pointer release','unsettled stroke blocks navigation','single Undo and Redo restores stroke','text arrows do not navigate','panels hide and restore','panel docking is separate from board ordering','split resize','Pending membership and Undo','header pointer reorder and Undo',...(count<100?['explicit Save for small fixture','Japanese row edit and layout reopen','interrupted Trash: missing and substituted files refused, verified original retry']:[]),'normal Close and reopen retains edits',...(count>=100?['bounded visible rasters and editable canvases at scale']:[])]},null,2));console.log('PASS',run);
+await writeFile(path.join(run,'receipt.json'),JSON.stringify({...identity,passed:true,cases:['workbench connected to real Session','multi-select displays earliest board','arrows cancel multi-select and stop at boundary','navigation never edits project','pointerdown enables grid painting without hover','drawing selects and follows current board','live stroke mirrored in both directions before pointer release','unsettled stroke blocks navigation','single Undo and Redo restores stroke','text arrows do not navigate','panels hide and restore','panel docking is separate from board ordering','split resize','Pending membership and Undo','header pointer reorder and Undo',...(count<100?['explicit Save for small fixture','Japanese row edit and layout reopen','interrupted Trash: missing and substituted files refused, verified original retry']:[]),'normal Close and reopen retains edits',...(count>=100?['bounded visible rasters and editable canvases at scale']:[])]},null,2));console.log('PASS',run);
