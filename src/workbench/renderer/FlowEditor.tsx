@@ -27,7 +27,7 @@ import { ProjectNamingBar } from './ProjectNamingBar';
 import { useCreateProject } from './useCreateProject';
 import { useProjectNaming } from './useProjectNaming';
 import { PendingAddAction } from './PendingAddAction';
-import { captureMountedCanvasCheckpoints } from '../../drawing/renderer/mountedCanvasRecoveryCapture';
+import { hasUnsettledMountedGesture } from '../../drawing/renderer/mountedCanvasRecoveryCapture';
 import { projectShots, pixelStroke, settledStrokePreview } from './adapter';
 import type { Shot, SketchStroke } from '../../drawing/contracts/types';
 import '../../storyboard/renderer/flowPending.css';
@@ -80,7 +80,7 @@ export function FlowEditor() {
   // synchronously; an editor unmounting never marks its text as saved.
   const dialogueCommits = useRef(createDialogueCommitState());
   const assertSettledGesture = () => {
-    if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) throw Error('Finish the current stroke first');
+    if (gestures.current || hasUnsettledMountedGesture()) throw Error('Finish the current stroke first');
     if (dialogueCommits.current.busy()) throw Error('Finish the current dialogue input first');
   };
   const install = ({ project, sessionId, folderName }: FlowEditorBootstrap) => {
@@ -454,7 +454,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   const moveLayers = (shotId:string,layerIds:string[],targetLayerId:string,placement:'before'|'after') =>
     act({kind:'layer',shotId,edit:{kind:'moveLayers',layerIds,targetLayerId,placement}});
   const applyBlur = () => {
-    if(!active||gestures.current||outputWork.current||flow.snapshot().pending||captureMountedCanvasCheckpoints().hasUnsettledGesture){setIssue('Finish the current edit before applying blur');return;}
+    if(!active||gestures.current||outputWork.current||flow.snapshot().pending||hasUnsettledMountedGesture()){setIssue('Finish the current edit before applying blur');return;}
     const shot=shots.find(s=>s.id===(selectedIds[0]));
     if(shot?.activeLayerId)act({kind:'pixelTool',shotId:shot.id,tool:{kind:'blur',layerId:shot.activeLayerId,radius:blurRadius,...(pixelSelections.current[`${shot.id}/${shot.activeLayerId}`] ? {selection:pixelSelections.current[`${shot.id}/${shot.activeLayerId}`]} : {})}});
   };
@@ -466,7 +466,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
     act({ kind: 'pixelTool', shotId, tool: { kind: 'merge', layerIds: ids } });
   };
   const refreshImages = () => {
-    if(outputWork.current||switching||refreshing||gestures.current||captureMountedCanvasCheckpoints().hasUnsettledGesture)return;
+    if(outputWork.current||switching||refreshing||gestures.current||hasUnsettledMountedGesture())return;
     if (inputUnsettled()) { setIssue('Finish the current dialogue input before refreshing images'); return; }
     setRefreshing(true);
     const work=(async()=>{
@@ -482,7 +482,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   const saveTiff = async () => {
     if (!active || savingTiff || outputWork.current) return;
     if (naming.composing) { setIssue('请先完成输入法组字，再保存'); return; }
-    if (gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture || flow.snapshot().pending || inputUnsettled()) {
+    if (gestures.current || hasUnsettledMountedGesture() || flow.snapshot().pending || inputUnsettled()) {
       setIssue('Finish the current edit before saving TIFF'); return;
     }
     if (naming.issue) { setIssue(naming.issue); return; }
@@ -493,7 +493,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
         await naming.flush();
         await request({ kind: 'checkpoint' });
         const live = flow.snapshot();
-        if (live.phase !== 'active' || live.pending || gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture)
+        if (live.phase !== 'active' || live.pending || gestures.current || hasUnsettledMountedGesture())
           throw Error('Finish the current edit before saving TIFF');
         const captured = live.project;
         const receipt = required(await api.saveTiff(captured));
@@ -521,7 +521,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
     onCommit={(command, owner)=>commitDialogue(command, owner)} onEditState={reportDialogueEdit}
     onUndo={()=>void historyStep('undo')} onRedo={()=>void historyStep('redo')} ariaLabel={`故事板对白 ${shotId}`}/>;
   const moveShots = (shotIds: string[], destination: 'active' | 'pending', beforeId?: string) => {
-    if (!active || gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) {
+    if (!active || gestures.current || hasUnsettledMountedGesture()) {
       setIssue('Finish the current stroke before moving shots'); return;
     }
     // Moving the edited board out of the grid unmounts its dialogue editor.
@@ -541,7 +541,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
     const decision = pendingDeleteDecision(
       { pending: current.pending, parked: current.project.parkedShots.map(shot => shot.id) }, shotIds);
     if (decision === 'empty') return;
-    if (!active || savingTiff || outputWork.current || gestures.current || captureMountedCanvasCheckpoints().hasUnsettledGesture) {
+    if (!active || savingTiff || outputWork.current || gestures.current || hasUnsettledMountedGesture()) {
       setIssue('Finish the current edit before deleting shots'); return;
     }
     // Live work may be a queued Restore, so the parked check alone would race it.
@@ -580,7 +580,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
             if (ids.length !== 1) { rejectTool(); return; }
             act({ kind: 'layer', shotId, edit: { kind: 'setLayer', layerId: ids[0], patch: { opacity: Math.max(0, Math.min(1, initial[ids[0]] + delta)) } } });
           }} />;
-  const editsSettled = () => active && !gestures.current && !flow.snapshot().pending && !captureMountedCanvasCheckpoints().hasUnsettledGesture && !inputUnsettled();
+  const editsSettled = () => active && !gestures.current && !flow.snapshot().pending && !hasUnsettledMountedGesture() && !inputUnsettled();
   const canNavigate = () => !outputWork.current && editsSettled();
   // TIFF output owns its captured revision. A new brush stroke edits the live Session.
   const brushAvailable = () => active && tool === 'brush' && (!outputWork.current || savingTiff) && !gestures.current;
@@ -623,7 +623,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
         onOpenBrushPanel={canStartCanvasEdit()?setBrushPanel:undefined}
         isZoomScrubbing={false}
         onionSkinPreviousShot={previous} onionSkinNextShot={next} onionSkinPreviousRevision={snapshot.project.revision} onionSkinNextRevision={snapshot.project.revision}
-        onFocusShot={()=>focusShot(shot.id)} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
+        onFocusShot={()=>focusShot(shot.id)} wantsRenderedDataUrl={false} onStroke={(layerId,input)=>stroke(shot,layerId,input)} onSelectionTransform={(layerId,data,intent)=>transformSelection(shot,layerId,data,intent)} onBitmapSelectionChange={bitmapSelectionChange} onFill={(layerId,point,color)=>fill(shot,layerId,point,color)} onPickColor={setColor}/>}
       actions={<div className="wb-actions">
         <details className="wb-project-menu">
           <summary className="wb-document-action"><FolderClosed aria-hidden size={15}/>项目<ChevronDown aria-hidden size={11}/></summary>

@@ -249,6 +249,9 @@ export type SketchPadProps = {
   onionSkinPreviousRevision?: number;
   onionSkinNextRevision?: number;
   isZoomScrubbing: boolean;
+  /** The host consumes the third onStroke argument; the workbench drops it, so its canvas
+   * encode on submit is pure cost. Defaults to true to keep other hosts byte-identical. */
+  wantsRenderedDataUrl?: boolean;
   onStroke: (
     layerId: string,
     stroke: SketchStroke,
@@ -320,6 +323,7 @@ export const SketchPad = memo(({
   onionSkinPreviousRevision = 0,
   onionSkinNextRevision = 0,
   isZoomScrubbing,
+  wantsRenderedDataUrl = true,
   onStroke,
   onSelectionTransform,
   onBitmapSelectionChange,
@@ -369,6 +373,11 @@ export const SketchPad = memo(({
   const transformPrepareRunRef = useRef(0);
   const canvasSlot = useContext(WorkspaceCanvasSlotContext);
   const heldCheckpoint = canvasSlot?.checkpoints?.find(c => c.shotId === shot.id);
+  // Read from refs only, so a gate check costs nothing and never encodes a layer.
+  const mountedGestureUnsettled = () =>
+    isDrawingRef.current || !!draftStrokeRef.current || !!pendingDraftStrokeRef.current ||
+    !!selectionDraftRef.current || !!transformDraftRef.current || committingStrokeIdsRef.current.size > 0 ||
+    pendingCommittedStrokesRef.current.length > 0;
   useLayoutEffect(() => registerMountedCanvasCheckpoint(() => ({
     folderPath, shotId: shot.id, pointerId: activePointerIdRef.current,
     draft: draftStrokeRef.current ?? null, selection: selectionDraftRef.current ?? bitmapSelectionRef.current ?? null,
@@ -376,10 +385,8 @@ export const SketchPad = memo(({
     liveLayers: Object.entries(liveBitmapCanvasRefs.current).flatMap(([layerId, canvas]) =>
       canvas && liveBitmapLayerIdRef.current === layerId ? [{ layerId, dataUrl: canvas.toDataURL("image/png") }] : []),
     transformPixels: transformPreviewCanvasRef.current?.toDataURL("image/png"),
-    hasUnsettledGesture: isDrawingRef.current || !!draftStrokeRef.current || !!pendingDraftStrokeRef.current ||
-      !!selectionDraftRef.current || !!transformDraftRef.current || committingStrokeIdsRef.current.size > 0 ||
-      pendingCommittedStrokesRef.current.length > 0
-  }), canvasSlot?.incarnation), [folderPath, shot.id, canvasSlot?.incarnation]);
+    hasUnsettledGesture: mountedGestureUnsettled()
+  }), canvasSlot?.incarnation, mountedGestureUnsettled), [folderPath, shot.id, canvasSlot?.incarnation]);
   const media = useMediaSource();
   const imageSrc = media.assetUrl(shot.previewPath ?? shot.imagePath);
   const canvasSize = useMemo(() => canvasSizeForShot(shot), [shot]);
@@ -588,6 +595,7 @@ export const SketchPad = memo(({
     }
     try {
       const renderedDataUrl =
+        wantsRenderedDataUrl &&
         (stroke.tool === "eraser" || stroke.brush) &&
         liveBitmapLayerIdRef.current === layerId &&
         liveBitmapEditCanCommitRenderedDataUrlRef.current
