@@ -318,10 +318,10 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  assert.deepEqual(await selectedPending(),[order0[1],order0[2]],'shift selects the Pending range');
  assert.equal(read().parkedShots.length,parkedAtStart,'selecting leaves Pending membership alone');
  assert.equal(dialogues(),dialoguesBefore,'selecting leaves dialogue untouched');
- // Internal Pending reorder is covered by the slice driver (scripts/.tmp-pending-driver.cjs run,
- // reported with its own log): the short Pending panel in this fixture cannot show two cards at
- // once, so the drag anchor is not reliably reachable here. Undo/redo of a move is covered by the
- // group move below and by the delete smoke.
+ // Internal Pending reorder, group sorting, precise cross-table drops, undo/redo, reopen and the
+ // keyboard path for the card control are covered by scripts/flow-pending-table-smoke.mjs, which
+ // uses a tall Pending panel of its own. This fixture keeps the panel short, so its cards cannot
+ // show two at a time; the reorder cases live there rather than being dropped.
  // Two selected Pending cards move together into the empty board.
  const headId=order0[0];
  await cardClick(headId);await delay(150);await cardClick(order0[1],'metaKey:true');await delay(180);
