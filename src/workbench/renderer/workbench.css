@@ -400,3 +400,9 @@
 .paint-preparing { flex-direction:column; padding:8px; text-align:center; }
 .paint-decisions { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; pointer-events:auto; }
 .paint-decisions span { width:100%; }
+/* Recovery choices remain readable on the light preparation mask and reachable
+   when only a small grid card is visible. */
+.paint-preparing:has(.paint-decisions) { overflow:auto; justify-content:safe center; }
+.paint-preparing:has(.paint-decisions) > * { flex-shrink:0; }
+.paint-decisions button { color:#222; background:#fff; border:1px solid #aaa; border-radius:4px; padding:5px 8px; }
+.paint-decisions button:disabled { opacity:.45; }

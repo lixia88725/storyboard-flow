@@ -71,9 +71,9 @@ async function holdTransition(kind='close'){
 
   const failBefore=await revision(),failPuts=puts;failNext='none';await dot(.5,.3);await dot(.7,.3);
   await wait(async()=>(await state()).frame.status==='error','none failure');
-  await click('在当前图层重试未成功笔迹');await ready();
+  await click('把未成功笔迹重新画到当前画面上');await ready();
   assert.equal(await revision(),failBefore+2);assert.equal(puts,failPuts+3);assert.deepEqual(await alpha([[.3,.3],[.5,.3],[.7,.3]]),[255,255,255]);
-  report.cases.push({name:'none retry drains in-flight success without duplicate replay',puts:puts-failPuts,revisionDelta:2});
+  report.cases.push({name:'explicit none reapply is a new operation over in-flight success without duplicate replay',puts:puts-failPuts,revisionDelta:2});
 
   const unknownBefore=await revision(),unknownPuts=puts;failNext='unknown';await dot(.5,.6);
   await wait(async()=>(await state()).frame.status==='error','unknown failure');
@@ -81,7 +81,7 @@ async function holdTransition(kind='close'){
   await click('导出保留笔迹');await wait(()=>exported,'explicit recovery export completed');
   const evidence=JSON.parse(fs.readFileSync(path.join(out,'paint-recovery.json'),'utf8'));
   assert.equal(evidence.entries.length,1);assert.equal(evidence.entries[0].failure.effect,'unknown');assert.equal(evidence.target.shotId,'shot0');assert.ok(evidence.identity.sessionId);assert.equal(evidence.identity.projectId,'admission');
-  await click('已保存导出文件，放弃保留笔迹');await ready();assert.equal(await revision(),unknownBefore);assert.equal(puts,unknownPuts+1);assert.deepEqual(await alpha([[.5,.6]]),[0]);
+  await click('已保存导出文件，放弃未确认输入');await ready();assert.equal(await revision(),unknownBefore);assert.equal(puts,unknownPuts+1);assert.deepEqual(await alpha([[.5,.6]]),[0]);
   await dot(.7,.6);await ready();assert.equal(await revision(),unknownBefore+1);
   report.cases.push({name:'unknown export + explicit discard restores authority and admits new input',export:path.join(out,'paint-recovery.json'),puts:puts-unknownPuts});
 

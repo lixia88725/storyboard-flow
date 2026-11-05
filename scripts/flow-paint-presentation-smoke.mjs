@@ -12,8 +12,9 @@ import { openFlowAssetDepot } from '../dist-electron/project-files/main/persiste
 import { createProjectStore } from '../dist-electron/project-files/main/persistence/index.js';
 
 const recovery = process.argv.includes('--recovery');
+const contract = process.argv.includes('--recovery-contract');
 const run = await mkdtemp(path.join(await realpath(os.tmpdir()), 'flow-paint-presentation-'));
-const inkMode = 'transparent';
+const inkMode = contract ? 'opaque' : 'transparent';
 const root = path.join(run, 'project');
 const W = 640, H = 360;
 await mkdir(root, { recursive: true });
@@ -44,9 +45,21 @@ const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const bundle=await build({entryPoints:[path.join(repo,'scripts/paint-presentation-browser-check.ts')],bundle:true,write:false,format:'iife',globalName:'PaintRasterCheck',platform:'browser'});
 await writeFile(path.join(run,'raster-check.js'),bundle.outputFiles[0].text);
 const env={...process.env,FLOW_REPO:repo,FLOW_ROOT:root,FLOW_OUT:run};delete env.ELECTRON_RUN_AS_NODE;
+if(contract){
+  for(const phase of ['none','unknown','unknown-reopen','retained','retained-reopen']){
+    const child=spawn(createRequire(import.meta.url)('electron'),[path.join(repo,'scripts/flow-paint-recovery-contract-driver.cjs')],{cwd:repo,env:{...env,FLOW_PAINT_PHASE:phase},stdio:'inherit'});
+    const timer=setTimeout(()=>child.kill('SIGTERM'),120000);
+    const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',resolve);});clearTimeout(timer);
+    const result=JSON.parse(await readFile(path.join(run,phase+'-result.json'),'utf8'));
+    if(code!==0||result.error||!result.normalClosed||result.close.length!==1||!result.close[0].result.ok||JSON.stringify(result.close[0].project)!==JSON.stringify(result.expectedProject))throw Error('Paint recovery contract failed: '+phase+' '+run);
+    console.log('PASS',phase,run);
+  }
+}else{
 const child=spawn(createRequire(import.meta.url)('electron'),[path.join(repo,recovery?'scripts/flow-paint-recovery-driver.cjs':'scripts/flow-paint-presentation-driver.cjs')],{cwd:repo,env,stdio:'inherit'});
 const timer=setTimeout(()=>child.kill('SIGTERM'),120000);
 const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',(code)=>resolve(code));});clearTimeout(timer);
 const result=JSON.parse(await readFile(path.join(run,'result.json'),'utf8'));
 if(code!==0||result.error||result.cases.length!==(recovery?6:3)||(!recovery&&result.raster.length!==5))throw Error('Paint presentation failed: '+run);
 console.log('PASS',run);
+
+}

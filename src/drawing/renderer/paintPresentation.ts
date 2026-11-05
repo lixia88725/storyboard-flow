@@ -190,7 +190,9 @@ export function createPaintPresentation<R>(options: {
         entries: all().filter(e => e.state !== 'acked').map(e => ({ stroke: clone(e.stroke), state: e.state, failure: e.failure && { ...e.failure } })) };
     },
     markRecoveryExportRequested() { recoveryExportRequested = true; emit(); },
-    /** Explicit user action only. Unknown/retained effects are never retried: the
+    /** Reapplying failed inputs is a NEW operation over current pixels, not a
+     * restoration of their original order relative to later successful strokes.
+     * The UI explains this and requires an explicit choice. Unknown/retained effects are never retried: the
      * Session pump can report an unexpected error after history installation too.
      * The UI offers an evidence download, then requires the user to confirm it
      * was saved before explicitly abandoning unknown input. Browser download start

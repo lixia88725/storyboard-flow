@@ -56,3 +56,30 @@ export async function runPaintRasterChecks() {
   }
   return checks;
 }
+
+/** Test-only fixed inputs and independent committed-PNG oracle, used against the
+ * real mounted owner and real Session by the recovery contract GUI driver. */
+export function recoveryContractStrokes() {
+  const common = { size: 70, opacity: .55, softness: 0, points: [220,180,340,180,220,180], pressures: [1,.8,1] };
+  const a: SketchStroke = { ...common, id:'contract-A', tool:'brush', color:'#dd3344', brush:{...strokeBrushFor('hard',1),seed:71} };
+  const b: SketchStroke = { ...common, id:'contract-B', tool:'eraser', color:'#000000', opacity:.6, brush:{...strokeBrushFor('eraser-hard',1),seed:72} };
+  return [a,b];
+}
+export async function comparePaintSequence(base: Uint8Array, width: number, height: number, strokes: SketchStroke[], actual: HTMLCanvasElement | Uint8Array) {
+  const producer=createFlowPixels({maxPixels:width*height,maxPngBytes:4*1024*1024,maxPoints:1000});
+  let png=base;
+  for(const stroke of strokes){
+    const assetId='0'.repeat(64);
+    const result=await producer.produce({image:{id:'oracle',revision:0,width,height,layers:[{id:'ink',name:'Ink',kind:'paint',visible:true,locked:false,opacity:1,blendMode:'normal',width,height,assetId}]},layerId:'ink',stroke:{...stroke,opacity:stroke.opacity!,softness:stroke.softness!}},async()=>png);
+    if(!result.ok)throw Error(result.error.message);png=result.value.png;
+  }
+  const open=async(bytes:Uint8Array)=>{
+    const bitmap=await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>],{type:'image/png'}));
+    const c=document.createElement('canvas');c.width=width;c.height=height;c.getContext('2d')!.drawImage(bitmap,0,0);bitmap.close();return c;
+  };
+  const expected=await open(png), observed=actual instanceof HTMLCanvasElement?actual:await open(actual);
+  const a=expected.getContext('2d')!.getImageData(0,0,width,height).data,b=observed.getContext('2d')!.getImageData(0,0,width,height).data;
+  let differences=0,max=0;for(let i=0;i<a.length;i++){const d=Math.abs(a[i]-b[i]);if(d){differences++;max=Math.max(max,d);}}
+  expected.width=0;if(!(actual instanceof HTMLCanvasElement))observed.width=0;
+  return {channels:a.length,differences,max};
+}

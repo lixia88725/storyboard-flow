@@ -121,9 +121,10 @@ describe('Session-owned paint presentation',()=>{
     const h=harness();h.inputGate.pause();h.inputGate.assertSettled();
     h.inputGate.connect(()=>{throw Error('unsubmitted input');});expect(()=>h.inputGate.assertSettled()).toThrow('unsubmitted input');
   });
-  it('explicit none retry drains successes and reapplies only failed input to current authority',async()=>{
+  it('explicit reapply is a new B-then-A operation over saved B, not restoration of the original A-then-B order',async()=>{
     const h=harness();h.begin('A');h.end('A');h.begin('B');h.end('B');await h.decode(0,['base']);
     h.writes[0].work.reject({message:'temporary',effect:'none'});await tick();
+    expect(h.writes).toHaveLength(2); // No automatic reapplication before the user's choice.
     const retry=h.owner.resolveFailure('retry');expect(h.writes).toHaveLength(2);
     await h.ack(1,'B');expect(await retry).toBe(true);expect(h.writes.map(w=>w.stroke.id)).toEqual(['A','B','A']);
     expect(h.owner.frame().canvas).toBeUndefined();await h.decode(1,['base','B']);expect(h.owner.frame().canvas?.pixels).toEqual(['base','B','A']);

@@ -52,10 +52,12 @@ export function PaintPresentationLayer({ owner, shotId, layerId, style, children
         <button type="button" disabled={!controls.decisionReady} onClick={() => owner.resolveBudget('discard')}>放弃该笔，重新绘画</button>
       </div>}
       {controls.recovery && <div className="paint-decisions" onPointerDown={e => e.stopPropagation()}>
-        {!controls.recovery.retry && <span>结果未知，不会重试。请导出笔迹与错误记录；确认文件已保存后再放弃。取消下载请重新导出。</span>}
+        {controls.recovery.retry
+          ? <span>后续成功的笔迹已经保存；重新绘制失败笔迹会把它们放在当前画面最上面，原来的先后顺序可能改变（例如先画后擦）。</span>
+          : <span>结果未知，不会重试。放弃的只是未确认输入，不会撤销已经保存的画面；原始错误仍保留。请导出笔迹与错误记录，确认文件已保存后再放弃。取消下载请重新导出。</span>}
         <button type="button" disabled={controls.recovery.busy} onClick={exportRecovery}>导出保留笔迹</button>
-        {controls.recovery.retry && <button type="button" disabled={controls.recovery.busy} onClick={() => void owner.resolveFailure('retry')}>在当前图层重试未成功笔迹</button>}
-        <button type="button" disabled={controls.recovery.busy || !controls.recovery.discard} onClick={() => void owner.resolveFailure('discard')}>{controls.recovery.retry ? '放弃保留笔迹' : '已保存导出文件，放弃保留笔迹'}</button>
+        {controls.recovery.retry && <button type="button" disabled={controls.recovery.busy} onClick={() => void owner.resolveFailure('retry')}>把未成功笔迹重新画到当前画面上</button>}
+        <button type="button" disabled={controls.recovery.busy || !controls.recovery.discard} onClick={() => void owner.resolveFailure('discard')}>{controls.recovery.retry ? '放弃未确认输入' : '已保存导出文件，放弃未确认输入'}</button>
       </div>}
       {status === 'error' && retryDecode && <button type="button" onPointerDown={e => e.stopPropagation()} onClick={() => owner.retryDecode()}>重试准备画面</button>}
     </div>}
