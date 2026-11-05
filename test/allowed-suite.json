@@ -79,5 +79,6 @@
   "src/project-files/main/pendingAppend.transaction.test.ts",
   "src/platform/main/flowProjectLauncher.test.ts",
   "src/platform/main/pendingAddCoordinator.test.ts",
-  "src/workbench/renderer/projectNamingDraft.test.ts"
+  "src/workbench/renderer/projectNamingDraft.test.ts",
+  "src/storyboard/renderer/pendingTable.test.ts"
 ]

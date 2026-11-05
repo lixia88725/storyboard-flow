@@ -43,7 +43,7 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
  async function mouse(type,x,y){win.webContents.sendInputEvent({type,x:Math.round(x),y:Math.round(y),button:'left',clickCount:1});await delay(65)}
  const current=()=>js('document.querySelector("[data-current-shot]").dataset.currentShot');
  const key=k=>js('document.body.dispatchEvent(new KeyboardEvent("keydown",{key:'+JSON.stringify(k)+',bubbles:true}))');
- const selected=()=>js('Array.from(document.querySelectorAll(".wb-card.is-selected")).map(e=>e.dataset.boardId)');
+ const selected=()=>js('Array.from(document.querySelectorAll(".wb-card[data-board-id].is-selected")).map(e=>e.dataset.boardId)');
  app.on('window-all-closed',()=>fs.writeFileSync(${JSON.stringify(path.join(run,phase+'-closed.json'))},'{}'));
  const started=Date.now();
  import(${JSON.stringify('file://'+entryPath)}).then(async()=>{
@@ -361,8 +361,8 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
 
  }
  await js('document.querySelector(".wb-header .wb-panel-menu").open=false');await delay(400);
- await wait(()=>js('Array.from(document.querySelectorAll(".wb-card")).slice(0,3).every(e=>e.querySelector("img")?.naturalWidth>0)'), 'visible cards remain rendered after reorder');
- const metrics=await js('({canvases:document.querySelectorAll(".stage-overlay").length,rasterImages:document.querySelectorAll(".wb-grid img").length,cards:document.querySelectorAll(".wb-card").length,heap:performance.memory?.usedJSHeapSize})');
+ await wait(()=>js('Array.from(document.querySelectorAll(".wb-card[data-board-id]")).slice(0,3).every(e=>e.querySelector("img")?.naturalWidth>0)'), 'visible cards remain rendered after reorder');
+ const metrics=await js('({canvases:document.querySelectorAll(".stage-overlay").length,rasterImages:document.querySelectorAll(".wb-grid img").length,cards:document.querySelectorAll(".wb-card[data-board-id]").length,heap:performance.memory?.usedJSHeapSize})');
  fs.writeFileSync(${JSON.stringify(path.join(run,phase+'-metrics.json'))},JSON.stringify({openingMs,readAssets:reads.size,...metrics}));
  if(count>=100){assert.ok(reads.size<100,'only visible assets requested');assert.ok(metrics.canvases<=2,'bounded editable canvases');assert.ok(metrics.rasterImages<100,'offscreen rasters unmounted');}
  fs.writeFileSync(${JSON.stringify(path.join(run,phase+'.png'))},(await win.webContents.capturePage()).toPNG());win.close();

@@ -246,6 +246,18 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   const selectionAnchor = useRef<string | undefined>(snapshot.project.shots[0]?.id);
   const selectedIds = snapshot.project.shots.filter(s => selection.includes(s.id)).map(s => s.id);
   const focusShot = (id: string) => { setSelection([id]); selectionAnchor.current = id; };
+  // Pending is its own table: same gestures and the same helpers, its own order and anchor.
+  // It never merges with the board selection and never opens the canvas.
+  const [pendingSelection, setPendingSelection] = useState<string[]>([]);
+  const pendingAnchor = useRef<string | undefined>(undefined);
+  const parkedOrder = () => flow.snapshot().project.parkedShots.map(s => s.id);
+  const pendingSelected = snapshot.project.parkedShots.filter(s => pendingSelection.includes(s.id)).map(s => s.id);
+  const selectPending = (id: string, event: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) => {
+    if (!active) return;
+    const order = parkedOrder(), anchor = pendingAnchor.current;
+    setPendingSelection(current => selectShots(order, current, anchor, id, event));
+    pendingAnchor.current = nextSelectionAnchor(order, anchor, id, event);
+  };
   const selectShot = (id: string, event: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) => {
     const order = flow.snapshot().project.shots.map(s => s.id), anchor = selectionAnchor.current;
     setSelection(current => selectShots(order, current, anchor, id, event));
@@ -590,7 +602,12 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
       select={selectShot} focus={focusShot}
       selectAll={()=>{const ids=selectAllShots(flow.snapshot().project.shots.map(s=>s.id));setSelection(ids);selectionAnchor.current=undefined;}}
       selectMany={ids=>{const known=new Set(ids),next=flow.snapshot().project.shots.map(s=>s.id).filter(id=>known.has(id));setSelection(next);selectionAnchor.current=next[0];}}
-      clearSelection={()=>{setSelection([]);selectionAnchor.current=undefined;}} canNavigate={canNavigate} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>brushAvailable() &&
+      clearSelection={()=>{setSelection([]);selectionAnchor.current=undefined;}}
+      pendingSelected={pendingSelected} selectPending={selectPending}
+      selectManyPending={ids=>{const known=new Set(ids),next=parkedOrder().filter(id=>known.has(id));setPendingSelection(next);pendingAnchor.current=next[0];}}
+      selectAllPending={()=>{setPendingSelection(selectAllShots(parkedOrder()));pendingAnchor.current=undefined;}}
+      clearPending={()=>{setPendingSelection([]);pendingAnchor.current=undefined;}}
+      canNavigate={canNavigate} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>brushAvailable() &&
         brushQueue.current.size>0 && !otherRequests.current &&
         [...brushQueue.current.values()].every(key=>key===JSON.stringify([shot.id,shot.activeLayerId]))} demand={requestAssets} move={moveShots} remove={deletePending} renderLayers={renderLayers}
       holdShots={dialogueHoldShots}

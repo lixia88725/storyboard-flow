@@ -6,7 +6,7 @@ import {ShotStaticMedia} from '../ShotStaticMedia';
 import {draggedShots} from '../boardSelection';
 import {boardInsertion,boardMovePlan,type BoardRect,type Point} from './boardGestures';
 
-type Props={shots:Shot[];parked:Shot[];selected:string[];revision:number;canNavigate:()=>boolean;selectMany:(ids:string[])=>void;move:(ids:string[],destination:'active'|'pending',before?:string)=>void};
+type Props={shots:Shot[];parked:Shot[];selected:string[];pendingSelected:string[];revision:number;canNavigate:()=>boolean;selectMany:(ids:string[])=>void;selectManyPending:(ids:string[])=>void;move:(ids:string[],destination:'active'|'pending',before?:string)=>void};
 type Target={destination:'active'|'pending';beforeId?:string;changed:boolean};
 type Gesture={ids:string[];activeOrder:string[];pendingOrder:string[];rects:BoardRect[];scroll:HTMLElement|null;top:number;left:number;point:Point;dirty:boolean;dispose:()=>void;target?:Target};
 /** Sorting uses immutable source geometry. Only the ghost and insertion marker move. */
@@ -19,13 +19,14 @@ export function useBoardSorting(p:Props,root:RefObject<HTMLElement|null>,draggin
   const g=gesture.current;if(!g)return;
   if(ghost.current)ghost.current.style.transform=`translate(${g.point.x+14}px,${g.point.y+14}px)`;
   if(g.dirty){
-   const grid=root.current?.querySelector<HTMLElement>('.wb-grid');
+   const grid=root.current?.querySelector<HTMLElement>('.wb-grid:not(.wb-pending-grid)');
    g.rects=Array.from(grid?.querySelectorAll<HTMLElement>('[data-board-id]')??[]).map(el=>{const r=el.getBoundingClientRect();return {id:el.dataset.boardId!,left:r.left,top:r.top,width:r.width,height:r.height};});
    g.top=g.scroll?.scrollTop??0;g.left=g.scroll?.scrollLeft??0;g.dirty=false;
   }
   g.target=undefined;if(marker.current)marker.current.hidden=true;
   const hit=document.elementFromPoint(g.point.x,g.point.y);if(!hit||!root.current?.contains(hit))return;
-  const grid=hit.closest<HTMLElement>('.wb-grid'),shelf=hit.closest<HTMLElement>('.flow-pending-shelf');
+  // The Pending table renders its cards inside a grid too, so the shelf is tested first.
+  const shelf=hit.closest<HTMLElement>('.flow-pending-shelf'),grid=shelf?null:hit.closest<HTMLElement>('.wb-grid');
   if(grid){
    const dx=(g.scroll?.scrollLeft??0)-g.left,dy=(g.scroll?.scrollTop??0)-g.top;
    const rects=g.rects.map(r=>({...r,left:r.left-dx,top:r.top-dy}));
@@ -55,8 +56,10 @@ export function useBoardSorting(p:Props,root:RefObject<HTMLElement|null>,draggin
   const current=props.current,id=String(event.active.id),shot=[...current.shots,...current.parked].find(s=>s.id===id);
   if(!shot||!current.canNavigate())return;
   const activeOrder=current.shots.map(s=>s.id),pendingOrder=current.parked.map(s=>s.id);
-  const ids=pendingOrder.includes(id)?[id]:draggedShots(activeOrder,current.selected,id);
-  const grid=root.current?.querySelector<HTMLElement>('.wb-grid'),scroll=grid?.closest<HTMLElement>('.wb-panel-body')??null;
+  // Either table drags its own selection: the same rule, applied to that table's order.
+  const fromPending=pendingOrder.includes(id);
+  const ids=fromPending?draggedShots(pendingOrder,current.pendingSelected,id):draggedShots(activeOrder,current.selected,id);
+  const grid=root.current?.querySelector<HTMLElement>('.wb-grid:not(.wb-pending-grid)'),scroll=grid?.closest<HTMLElement>('.wb-panel-body')??null;
   const rects=Array.from(grid?.querySelectorAll<HTMLElement>('[data-board-id]')??[]).map(el=>{const r=el.getBoundingClientRect();return {id:el.dataset.boardId!,left:r.left,top:r.top,width:r.width,height:r.height};});
   const e=event.activatorEvent as PointerEvent;
   gesture.current={ids,activeOrder,pendingOrder,rects,scroll,top:scroll?.scrollTop??0,left:scroll?.scrollLeft??0,point:{x:e.clientX,y:e.clientY},dirty:false,dispose:()=>{}};
@@ -79,7 +82,8 @@ export function useBoardSorting(p:Props,root:RefObject<HTMLElement|null>,draggin
   autoFrame=requestAnimationFrame(autoScroll);
   gesture.current.dispose=()=>{cancelAnimationFrame(frame);cancelAnimationFrame(autoFrame);resizeObserver.disconnect();mutations.disconnect();};
   dragging.current=true;skipClick.current=true;
-  if(activeOrder.includes(id)&&!current.selected.includes(id))current.selectMany(ids);
+  if(fromPending){if(!current.pendingSelected.includes(id))current.selectManyPending(ids);}
+  else if(!current.selected.includes(id))current.selectMany(ids);
   setPreview({shot,count:ids.length});
  };
  const end=()=>{

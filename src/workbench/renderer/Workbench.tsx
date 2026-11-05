@@ -6,6 +6,7 @@ import {ShotStaticMedia} from '../../storyboard/renderer/ShotStaticMedia';
 import {CanvasPresentationContext,PresentationPreview} from '../../drawing/renderer/canvasPresentation';
 import {FlowPending} from '../../storyboard/renderer/FlowPending';
 import {BoardGrid} from '../../storyboard/renderer/workspace/BoardGrid';
+import {ShotCard,ShotCardHandle} from '../../storyboard/renderer/workspace/ShotCard';
 import {useBoardSorting} from '../../storyboard/renderer/workspace/useBoardSorting';
 import {defaultWorkspaceLayout, panelLabels as labels, readWorkspaceLayout, workspaceZoomSteps, writeWorkspaceLayout, type WorkspacePanel as Panel} from './workspace/layoutPreferences';
 import {contentBoxOf,fitCanvasBox} from './workspace/canvasFit';
@@ -24,7 +25,11 @@ export type WorkbenchProps={
  /** Persistent project fields, kept out of the per-session editor panes. */
  projectBar?:ReactNode;
  select:(id:string,event:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;
- focus:(id:string)=>void;selectMany:(ids:string[])=>void;selectAll:()=>void;clearSelection:()=>void;canNavigate:()=>boolean;canStartCanvasEdit:()=>boolean;canContinueBrush:(shot:Shot)=>boolean;demand:(ids:string[])=>void;
+ focus:(id:string)=>void;selectMany:(ids:string[])=>void;selectAll:()=>void;clearSelection:()=>void;
+ /** Pending keeps its own selection: same gestures, its own order, never merged with the board. */
+ pendingSelected:string[];selectPending:(id:string,event:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;
+ selectManyPending:(ids:string[])=>void;selectAllPending:()=>void;clearPending:()=>void;
+ canNavigate:()=>boolean;canStartCanvasEdit:()=>boolean;canContinueBrush:(shot:Shot)=>boolean;demand:(ids:string[])=>void;
  move:(ids:string[],destination:'active'|'pending',before?:string)=>void;
  /** Pending-only removal; the sheet's own selection decides the count. */
  remove:(ids:string[])=>void;
@@ -134,7 +139,10 @@ export function Workbench(p:WorkbenchProps){
      :<div style={{width:zoom+'%',minWidth:zoom+'%'}}>{surface(current,'viewer',true)}</div>):<p className="wb-empty">选择一张故事板开始绘制</p>}</div></>;
   if(panel==='info')return current?p.renderInfo(current,true):<p className="wb-empty">尚未选择故事板</p>;
   if(panel==='layers')return current?p.renderLayers(current):null;
-  return <FlowPending stationary shots={p.parked} disabled={p.disabled} revision={p.revision} onRestore={id=>p.move([id],'active')} onDelete={p.remove} renderMedia={shot=><PendingPreview shot={shot} revision={p.revision} visible={reportVisible}/>}/>;
+  return <FlowPending shots={p.parked} disabled={p.disabled} revision={p.revision} selected={p.pendingSelected}
+   onSelect={p.selectPending} onSelectMany={p.selectManyPending} onSelectAll={p.selectAllPending} onClear={p.clearPending}
+   dialogueText={p.dialogueText} onMove={ids=>p.move(ids,'active')} onRestore={id=>p.move([id],'active')} onDelete={p.remove}
+   renderMedia={shot=><PendingPreview shot={shot} revision={p.revision} visible={reportVisible}/>}/>;
  };
  const movePanel=(e:React.DragEvent,column:number,before?:Panel)=>{const id=e.dataTransfer.getData('application/x-flow-panel') as Panel;if(!labels[id]||!p.canNavigate())return;e.preventDefault();e.stopPropagation();setLayout(old=>{const next=old.map(col=>col.filter(v=>v!==id));const at=before?next[column].indexOf(before):-1;next[column].splice(at<0?next[column].length:at,0,id);return next;});};
  return <main ref={root} className="flow-workbench" data-flow-editor="true" data-workbench="true" data-revision={p.revision} onClickCapture={e=>{if(sorting.skipClick.current&&e.detail>0){e.preventDefault();e.stopPropagation();}}} onPointerDownCapture={e=>{if(!dragging.current)sorting.skipClick.current=false;if(flyout.some(Boolean)&&e.target instanceof Element&&!e.target.closest('.wb-column.is-collapsed')&&p.canNavigate())setFlyout([undefined,undefined]);}} onKeyDown={e=>{
@@ -182,17 +190,19 @@ function BoardCard({shot,index,selected,disabled,onSelect,visible,activate,child
  // leaves the near window. The hovered card is forced so a drop or hover stays drawable
  // even if its intersection state lagged while it was being transformed.
  const shown=near||Boolean(hold)||Boolean(force);
- return <article ref={setCard} data-board-id={shot.id} className={'wb-card'+(selected?' is-selected':'')}>
-  <button className="wb-card-handle" aria-label={'选择故事板 '+shot.id} {...sortable.attributes} {...sortable.listeners} onPointerDownCapture={e=>{modifiedHeader.current=e.isPrimary&&e.button===0&&Boolean(e.shiftKey||e.metaKey||e.ctrlKey);if(modifiedHeader.current){e.currentTarget.focus({preventScroll:true});e.preventDefault();e.stopPropagation();if(!disabled)onSelect(e);}}}
+ return <ShotCard kind="board" id={shot.id} selected={selected} register={setCard}
+  aspectRatio={`${shot.flow?.canvasWidth??640}/${shot.flow?.canvasHeight??360}`}
+  handle={<ShotCardHandle label={'选择故事板 '+shot.id} index={index} attributes={sortable.attributes} listeners={sortable.listeners as never}
+   onPointerDownCapture={e=>{modifiedHeader.current=e.isPrimary&&e.button===0&&Boolean(e.shiftKey||e.metaKey||e.ctrlKey);if(modifiedHeader.current){e.currentTarget.focus({preventScroll:true});e.preventDefault();e.stopPropagation();if(!disabled)onSelect(e);}}}
    onContextMenu={e=>{if(e.ctrlKey)e.preventDefault();}} onKeyDownCapture={()=>{modifiedHeader.current=false;}}
-   onClick={e=>{if(modifiedHeader.current){modifiedHeader.current=false;return;}onSelect(e);}}><b>{String(index+1).padStart(3,'0')}</b><span className="wb-card-grip" aria-hidden="true">⠿</span></button>
-  <div className="wb-card-picture" style={{aspectRatio:`${shot.flow?.canvasWidth??640}/${shot.flow?.canvasHeight??360}`}} onPointerEnter={activate} onContextMenu={e=>{if(e.ctrlKey)e.preventDefault();}}
-    onPointerDownCapture={e=>{modifiedPicture.current=e.isPrimary&&e.button===0&&Boolean(e.shiftKey||e.metaKey||e.ctrlKey);if(!modifiedPicture.current||e.target instanceof Element&&e.target.closest('input,textarea,[contenteditable=true],[data-board-dialogue]')){modifiedPicture.current=false;return;}e.preventDefault();e.stopPropagation();if(!disabled)onSelect(e);}}
-    onMouseDownCapture={e=>{if(modifiedPicture.current){e.preventDefault();e.stopPropagation();}}}
-    onClickCapture={e=>{if(modifiedPicture.current){e.preventDefault();e.stopPropagation();modifiedPicture.current=false;}}}>{shown?children:null}</div>
-  {shown&&footer}
-  {rowInfo && <div className="wb-row-info">{shown && rowInfo(shot)}</div>}
- </article>;
+   onClick={e=>{if(modifiedHeader.current){modifiedHeader.current=false;return;}onSelect(e);}}/>}
+  pictureProps={{onPointerEnter:activate,onContextMenu:e=>{if(e.ctrlKey)e.preventDefault();},
+   onPointerDownCapture:e=>{modifiedPicture.current=e.isPrimary&&e.button===0&&Boolean(e.shiftKey||e.metaKey||e.ctrlKey);if(!modifiedPicture.current||e.target instanceof Element&&e.target.closest('input,textarea,[contenteditable=true],[data-board-dialogue]')){modifiedPicture.current=false;return;}e.preventDefault();e.stopPropagation();if(!disabled)onSelect(e);},
+   onMouseDownCapture:e=>{if(modifiedPicture.current){e.preventDefault();e.stopPropagation();}},
+   onClickCapture:e=>{if(modifiedPicture.current){e.preventDefault();e.stopPropagation();modifiedPicture.current=false;}}}}
+  picture={shown?children:null}
+  footer={shown?footer:undefined}
+  rowInfo={rowInfo && <div className="wb-row-info">{shown && rowInfo(shot)}</div>} />;
 }
 function LiveMirror({source,shot}:{source:HTMLElement;shot:Shot}){
  const anchor=useRef<HTMLSpanElement>(null),ref=useRef<HTMLCanvasElement>(null);

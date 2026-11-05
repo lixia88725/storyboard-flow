@@ -30,7 +30,7 @@
 .wb-empty {padding:30px;color:#707c85;text-align:center;}.wb-info {padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;}.wb-info label {font-size:11px;color:#94a0aa;line-height:16px;}.flow-workbench textarea {margin-top:7px;background:#1b1f22;border:1px solid #41494f;border-radius:3px;resize:vertical;color:#e2e5e7;font:12px 'PingFang SC',sans-serif;width:100%;min-height:62px;padding:8px;}.wb-info .flow-dialogue-transfers {grid-column:1/-1;font-size:10px;min-height:20px;padding:3px;border-color:#42494e;}
 .wb-panel-layers .shot-layer-popover {position:static!important;width:100%!important;max-width:none!important;transform:none!important;opacity:1!important;pointer-events:auto!important;box-shadow:none!important;}.wb-panel-layers .layer-panel {width:100%;box-shadow:none;}.wb-panel-layers .layer-row {font-size:12px;min-height:38px;}.wb-panel-layers .layer-thumb {max-height:36px;}
 .flow-workbench .wb-panel-layers .layer-toggle { display:none; }
-.flow-workbench .flow-pending-shelf {border:0;margin:0;padding:6px 10px;white-space:nowrap;}.flow-workbench .flow-pending-shelf>h2,.flow-workbench .flow-pending-shelf>p {display:none;}.flow-workbench .flow-pending {display:inline-block;width:135px;vertical-align:top;margin-right:8px;cursor:grab;}.flow-workbench .flow-pending.is-dragging {cursor:grabbing;}.flow-workbench .flow-pending>button {font-size:10px;}.flow-workbench .flow-pending-name,.flow-workbench .flow-pending label {cursor:inherit;}
+.flow-workbench .flow-pending-shelf {border:0;margin:0;padding:0;display:flex;flex-direction:column;min-height:0;}
 .wb-status {height:27px;min-height:27px;display:flex;justify-content:space-between;align-items:center;padding:0 15px;border-top:1px solid #353b40;background:#23282b;color:#8e9ba4;font-size:10px;}.wb-status span:first-child {color:#b9c4b7;}
 .flow-workbench .wb-refresh { display:inline-flex; align-items:center; justify-content:center; width:28px; height:26px; padding:0; color:#8b959d; }
 .flow-workbench .wb-refresh:hover { color:#eef1f3; }
@@ -357,3 +357,24 @@
 .wb-menu-recent-target { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#7d8790; font-size:10px; }
 /* The project menu sits at the left edge; anchor its popover to the right, not off-screen. */
 .wb-project-menu .wb-menu { right:auto; left:0; }
+
+/* Pending table: the same cards as the storyboard, read-only, with a toolbar of the same shape. */
+.flow-workbench .wb-pending-tools { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:2px 10px 8px; font-size:11px; color:#8b949d; }
+.flow-workbench .wb-pending-tools span { margin-right:auto; }
+.flow-workbench .wb-pending-tools button { padding:2px 7px; border:1px solid #3c444d; border-radius:5px; background:#2a3038; color:#b9c3cb; font:500 11px 'PingFang SC',sans-serif; cursor:pointer; }
+.flow-workbench .wb-pending-tools button:hover:not(:disabled) { background:#333b45; color:#eef2f5; }
+.flow-workbench .wb-pending-tools button:disabled { opacity:.45; cursor:default; }
+.flow-workbench .wb-pending-grid { flex:1 1 auto; min-height:0; --tile:180px; padding:0 10px 10px; }
+/* The card body is the drag surface here, so the whole card reads as grabbable. */
+.flow-workbench .wb-pending-grid > .wb-card { cursor:grab; }
+.flow-workbench .wb-pending-grid > .wb-card.is-dragging { cursor:grabbing; }
+.flow-workbench .wb-pending-grid .wb-card-handle { justify-content:flex-start; gap:6px; padding:4px 6px; }
+.flow-workbench .wb-pending-grid > .wb-card { position:relative; }
+.flow-workbench .wb-card-corner { position:absolute; top:32px; right:6px; display:flex; gap:4px; z-index:2; opacity:0; transition:opacity .12s; }
+/* The card's own control appears on hover or keyboard focus, so the grab bar stays clean. */
+.flow-workbench .wb-card:hover .wb-card-corner,.flow-workbench .wb-card:focus-within .wb-card-corner { opacity:1; }
+.flow-workbench .wb-pending-footer { padding:2px 7px 7px; }
+/* Read-only dialogue: wrapped, clamped, never an input. */
+.flow-workbench .wb-pending-dialogue { flex:1 1 auto; margin:0; min-width:0; font-size:11px; line-height:1.45; color:#aab3bb; white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:6; overflow:hidden; }
+.flow-workbench .wb-pending-restore { padding:1px 5px; border:1px solid #3c444d; border-radius:4px; background:#262c34cc; color:#9aa4ad; font:500 10px 'PingFang SC',sans-serif; cursor:pointer; }
+.flow-workbench .wb-pending-restore:hover:not(:disabled) { background:#333b45; color:#eef2f5; }

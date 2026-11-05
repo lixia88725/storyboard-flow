@@ -102,23 +102,32 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  await wait(async()=>(await status()).startsWith('已自动暂存'),'checkpoint');
  if(phase==='edit'){
   assert.equal(read().parkedShots.length,2);assert.deepEqual(pendingFiles(),['shot2.tif','shot3.tif']);
-  const activeSelectedBefore=await js('Array.from(document.querySelectorAll(".wb-card.is-selected")).map(e=>e.dataset.boardId)');
-  // Pressing and moving from the checkbox must not start a sort drag (PointerSensor distance 6).
-  const box=await rect('[aria-label="选择 Pending shot2"]');
-  await mouse('mouseMove',box.x+box.width/2,box.y+box.height/2);
-  await mouse('mouseDown',box.x+box.width/2,box.y+box.height/2);
-  await mouse('mouseMove',box.x+box.width/2+40,box.y+box.height/2+24);await delay(220);
-  await mouse('mouseUp',box.x+box.width/2+40,box.y+box.height/2+24);await delay(200);
-  assert.deepEqual(read().parkedShots.map(s=>s.id),['shot2','shot3'],'checkbox drag attempt left Pending order unchanged');
-  assert.deepEqual(await js('Array.from(document.querySelectorAll(".flow-pending")).map(e=>e.style.transform||"")'),['',''],'checkbox drag attempt left no sort transform');
-  assert.deepEqual(await js('Array.from(document.querySelectorAll(".flow-pending-shelf input[type=checkbox]")).map(c=>c.checked)'),[false,false],'checkbox drag attempt did not toggle selection');
-  // Real pointer input on the checkbox itself: it must toggle selection without starting a sort drag.
-  await clickAt('[aria-label="选择 Pending shot2"]');
-  await clickAt('[aria-label="选择 Pending shot3"]');
+  const activeSelectedBefore=await js('Array.from(document.querySelectorAll(".wb-card[data-board-id].is-selected")).map(e=>e.dataset.boardId)');
+  // Pressing and moving from a card control (移回) must not start a sort drag, move the shot
+  // back, shift the card or select it: the control opts out with data-no-drag.
+  // Cards sit in a short panel: scroll the one we act on fully into view first.
+  const reveal=async id=>{await js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="'+id+'"]')+');if(!c)return;const b=c.closest(".wb-panel-body");b.scrollTop=Math.max(0,c.offsetTop-b.clientHeight/2+c.clientHeight/2)})()');await delay(250)};
+  await reveal('shot2');
+  const cardBefore=await rect('[data-pending-shot-id="shot2"]');
+  const control=await rect('[aria-label="Restore shot2"]');
+  await mouse('mouseMove',control.x+control.width/2,control.y+control.height/2);
+  await mouse('mouseDown',control.x+control.width/2,control.y+control.height/2);
+  await mouse('mouseMove',control.x+control.width/2+40,control.y+control.height/2+24);await delay(220);
+  await mouse('mouseUp',control.x+control.width/2+40,control.y+control.height/2+24);await delay(220);
+  assert.deepEqual(read().parkedShots.map(s=>s.id),['shot2','shot3'],'control drag attempt left Pending order unchanged');
+  assert.deepEqual(read().shots.map(s=>s.id),['shot0','shot1'],'control drag attempt did not move the shot back');
+  const cardAfter=await rect('[data-pending-shot-id="shot2"]');
+  assert.ok(Math.abs(cardAfter.x-cardBefore.x)<1&&Math.abs(cardAfter.y-cardBefore.y)<1,'control drag attempt left the card in place');
+  assert.deepEqual(await js('Array.from(document.querySelectorAll(".flow-pending-shelf [data-pending-shot-id].is-selected")).map(e=>e.dataset.pendingShotId)'),[],'control drag attempt did not select');
+  const cardsBefore=await js('Array.from(document.querySelectorAll(".flow-pending-shelf [data-pending-shot-id]")).map(e=>{const r=e.getBoundingClientRect();return [Math.round(r.x),Math.round(r.y)]})');
+  // Real pointer input on the card's grab bar: it selects without starting a sort drag or moving anything.
+  // Pending selects like the board: the second card is added with ⌘, not a checkbox.
+  await reveal('shot2');await clickAt('[aria-label="选择 Pending shot2"]');
+  await reveal('shot3');await js('(()=>{const e=document.querySelector('+JSON.stringify('[data-pending-shot-id="shot3"] .wb-card-picture')+');e.dispatchEvent(new MouseEvent("click",{bubbles:true,metaKey:true}))})()');await delay(250);
   await wait(()=>js('!!Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="删除 Pending (2)")'),'delete count');
-  assert.deepEqual(await js('Array.from(document.querySelectorAll(".wb-card.is-selected")).map(e=>e.dataset.boardId)'),activeSelectedBefore,'active selection unchanged by Pending checkboxes');
-  assert.deepEqual(await js('Array.from(document.querySelectorAll(".flow-pending-shelf input[type=checkbox]")).map(c=>c.checked)'),[true,true],'both Pending checkboxes checked by pointer');
-  assert.deepEqual(await js('Array.from(document.querySelectorAll(".flow-pending")).map(e=>e.style.transform||"")'),['',''],'checkbox pointer left no sort transform');
+  assert.deepEqual(await js('Array.from(document.querySelectorAll(".wb-card[data-board-id].is-selected")).map(e=>e.dataset.boardId)'),activeSelectedBefore,'active selection unchanged by Pending selection');
+  assert.deepEqual(await js('Array.from(document.querySelectorAll(".flow-pending-shelf [data-pending-shot-id].is-selected")).map(e=>e.dataset.pendingShotId)'),['shot2','shot3'],'both Pending cards selected by pointer');
+  assert.deepEqual(await js('Array.from(document.querySelectorAll(".flow-pending-shelf [data-pending-shot-id]")).map(e=>{const r=e.getBoundingClientRect();return [Math.round(r.x),Math.round(r.y)]})'),cardsBefore,'selecting left every card in place');
   assert.deepEqual(pendingFiles(),['shot2.tif','shot3.tif']);
   assert.equal(sha(root+'/.storyboard-flow/originals/shot2.tif'),ORIGINAL,'imported original retained before Save');
   const activeBefore=read().shots.map(s=>s.id);
