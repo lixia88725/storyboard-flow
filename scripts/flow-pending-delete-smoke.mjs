@@ -124,14 +124,14 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
   // Pending selects like the board: the second card is added with ⌘, not a checkbox.
   await reveal('shot2');await clickAt('[aria-label="选择 Pending shot2"]');
   await reveal('shot3');await js('(()=>{const e=document.querySelector('+JSON.stringify('[data-pending-shot-id="shot3"] .wb-card-picture')+');e.dispatchEvent(new MouseEvent("click",{bubbles:true,metaKey:true}))})()');await delay(250);
-  await wait(()=>js('!!Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="删除 Pending (2)")'),'delete count');
+  await wait(()=>js('!!document.querySelector("[aria-label=\'删除 Pending (2)\']")'),'delete count');
   assert.deepEqual(await js('Array.from(document.querySelectorAll(".wb-card[data-board-id].is-selected")).map(e=>e.dataset.boardId)'),activeSelectedBefore,'active selection unchanged by Pending selection');
   assert.deepEqual(await js('Array.from(document.querySelectorAll(".flow-pending-shelf [data-pending-shot-id].is-selected")).map(e=>e.dataset.pendingShotId)'),['shot2','shot3'],'both Pending cards selected by pointer');
   assert.deepEqual(await js('Array.from(document.querySelectorAll(".flow-pending-shelf [data-pending-shot-id]")).map(e=>{const r=e.getBoundingClientRect();return [Math.round(r.x),Math.round(r.y)]})'),cardsBefore,'selecting left every card in place');
   assert.deepEqual(pendingFiles(),['shot2.tif','shot3.tif']);
   assert.equal(sha(root+'/.storyboard-flow/originals/shot2.tif'),ORIGINAL,'imported original retained before Save');
   const activeBefore=read().shots.map(s=>s.id);
-  await clickAt('[aria-label="删除选中的 Pending (2)"]');
+  await clickAt('[aria-label="删除 Pending (2)"]');
   await wait(()=>read().parkedShots.length===0,'logical delete before Save');
   assert.deepEqual(read().shots.map(s=>s.id),activeBefore);
   assert.deepEqual(pendingFiles(),['shot2.tif','shot3.tif'],'no file effect before Save');
@@ -166,8 +166,8 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
   assert.equal(read().parkedShots.length,2);
   assert.equal(pendingFiles().length,2);
   await clickAt('[aria-label="选择 Pending shot2"]');
-  await wait(()=>js('!!Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="删除 Pending (1)")'),'single delete count');
-  await clickAt('[aria-label="删除选中的 Pending (1)"]');
+  await wait(()=>js('!!document.querySelector("[aria-label=\'删除 Pending\']")'),'single delete count');
+  await clickAt('[aria-label="删除 Pending"]');
   await wait(()=>read().parkedShots.length===1,'reopened Pending delete');
   assert.deepEqual(read().shots.map(s=>s.id),['shot0','shot1']);
  }

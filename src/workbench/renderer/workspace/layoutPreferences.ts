@@ -11,6 +11,8 @@ export type WorkspaceLayout = {
   hidden: WorkspacePanel[];
   split: number;
   tile: number;
+  /** Card size of the Pending table; kept apart from the storyboard slider. */
+  pendingTile: number;
   zoom: WorkspaceZoom;
   japanese: boolean;
   collapsed: [boolean, boolean];
@@ -24,7 +26,7 @@ export const layoutKey = 'flow.workbench.layout.v2';
 export const legacyLayoutKey = 'flow.workbench.layout.v1';
 export const defaultWorkspaceLayout = (): WorkspaceLayout => ({
   layout: [['board', 'pending'], ['canvas', 'info', 'layers']],
-  hidden: [], split: 48, tile: 220, zoom: 'fit', japanese: false, collapsed: [false,false], heights: {},
+  hidden: [], split: 48, tile: 220, pendingTile: 170, zoom: 'fit', japanese: false, collapsed: [false,false], heights: {},
 });
 
 const validZoom = (zoom: unknown): zoom is WorkspaceZoom =>
@@ -45,7 +47,10 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
         !validZoom(value.zoom) || typeof value.japanese !== 'boolean') return fallback;
     const heights = Object.fromEntries(Object.entries(value.heights ?? {}).filter(([id, height]) =>
       panels.includes(id as WorkspacePanel) && typeof height === 'number' && Number.isFinite(height) && height >= 36 && height <= 10000));
-    return {layout: value.layout, hidden: value.hidden, split: value.split, tile: value.tile,
+    // Pending size arrived later: an older profile keeps its layout and just takes the default.
+    const pendingTile = Number.isFinite(value.pendingTile) && value.pendingTile >= 110 && value.pendingTile <= 320
+      ? value.pendingTile : fallback.pendingTile;
+    return {layout: value.layout, hidden: value.hidden, split: value.split, tile: value.tile, pendingTile,
       zoom: value.zoom, japanese: value.japanese, heights,
       collapsed: Array.isArray(value.collapsed)&&value.collapsed.length===2&&value.collapsed.every((v:unknown)=>typeof v==='boolean') ? value.collapsed : [false,false]};
   } catch { return fallback; }

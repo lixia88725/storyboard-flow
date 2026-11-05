@@ -82,7 +82,7 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
  win.setSize(1500,980);win.show();win.focus();app.focus({steal:true});
  await wait(()=>js('!!document.querySelector(".flow-pending-shelf .wb-card")'),'pending cards');
  // A tall Pending panel so two cards and a drop anchor are on screen together.
- await js('localStorage.setItem("flow.workbench.layout.v2",JSON.stringify({layout:[["board","pending"],["canvas","info","layers"]],hidden:[],split:48,tile:220,zoom:"fit",japanese:false,collapsed:[false,false],heights:{board:400,pending:620}}))');
+ await js('localStorage.setItem("flow.workbench.layout.v2",JSON.stringify({layout:[["board","pending"],["canvas","info","layers"]],hidden:[],split:48,tile:220,zoom:"fit",japanese:false,collapsed:[false,false],heights:{board:400,pending:620},pendingTile:300}))');
  win.webContents.reload();
  await wait(()=>js('!!document.querySelector(".flow-pending-shelf .wb-card")'),'reload cards');
  await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'reload checkpoint');
@@ -96,6 +96,9 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
    'const i=cards.indexOf(c),n=cards[i+1];'+
    'const x=n?Math.round((r.right+n.getBoundingClientRect().left)/2):Math.round(r.right+24);return {x,y}})()');
   // Resolve the drop point after the grab point: centring a card can scroll the panel.
+  const without=(from,moving)=>from.filter(x=>!(Array.isArray(moving)?moving:[moving]).includes(x));
+  const before=(from,moving,target)=>{const rest=without(from,moving),m=Array.isArray(moving)?moving:[moving],at=rest.indexOf(target);return [...rest.slice(0,at),...m,...rest.slice(at)]};
+  const after=(from,moving,target)=>{const rest=without(from,moving),m=Array.isArray(moving)?moving:[moving],at=rest.indexOf(target)+1;return [...rest.slice(0,at),...m,...rest.slice(at)]};
   const dragOnto=async(id,targetId,where)=>{const from=await cardPoint(id);assert.ok(from,'grab '+id);const to=await point(targetId,where);assert.ok(to,'drop '+targetId);await dragTo(from,to);await settle()};
 
  const start=order(),canvas0=await canvasShot();
@@ -106,16 +109,16 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   assert.deepEqual(start.active,['shot0','shot1'],'fixture active order');
   // 1. single card sorted inside Pending
   await dragOnto('shot5','shot2','left');
-  assert.deepEqual(order().parked,['shot5','shot2','shot3','shot4'],'single card moves to the front');
+  assert.deepEqual(order().parked,before(start.parked,'shot5','shot2'),'a card dropped on the left half moves in front');
   assert.equal(order().dialogues,start.dialogues,'sorting leaves dialogue untouched');
   await undo();assert.deepEqual(order().parked,start.parked,'one undo restores the sort');
-  await redo();assert.deepEqual(order().parked,['shot5','shot2','shot3','shot4'],'redo re-applies the sort');
+  await redo();assert.deepEqual(order().parked,before(start.parked,'shot5','shot2'),'redo re-applies the sort');
   await undo();assert.deepEqual(order().parked,start.parked,'undo again');
   // 2. a selected group sorts inside Pending and keeps its relative order
   await cardClick('shot3');await cardClick('shot4','metaKey:true');await delay(200);
   assert.deepEqual(await selPending(),['shot3','shot4'],'group selected in Pending');
   await dragOnto('shot3','shot2','left');
-  assert.deepEqual(order().parked,['shot3','shot4','shot2','shot5'],'group keeps relative order when sorted up');
+  assert.deepEqual(order().parked,before(start.parked,['shot3','shot4'],'shot2'),'group keeps relative order when sorted up');
   assert.deepEqual(await selPending(),['shot3','shot4'],'selection follows the group');
   await undo();assert.deepEqual(order().parked,start.parked,'one undo restores the group sort');
   // 3. a precise cross-table drop, then undo and redo
@@ -162,19 +165,19 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   // right half inserts after, left half before, a gap takes the next card's side, a card in
   // the second row wins over the first, and pointing past the last row appends.
   await dragOnto('shot5','shot3','right');
-  assert.deepEqual(order().parked,['shot2','shot3','shot5','shot4'],'right half inserts after the card');
+  assert.deepEqual(order().parked,after(start.parked,'shot5','shot3'),'right half inserts after the card');
   await undo();
   await dragOnto('shot4','shot2','left');
-  assert.deepEqual(order().parked,['shot4','shot2','shot3','shot5'],'left half inserts before the card');
+  assert.deepEqual(order().parked,before(start.parked,'shot4','shot2'),'left half inserts before the card');
   await undo();
   await dragOnto('shot5','shot2','gap');
-  assert.deepEqual(order().parked,['shot2','shot5','shot3','shot4'],'the gap between two cards takes the next side');
+  assert.deepEqual(order().parked,before(start.parked,'shot5','shot3'),'the gap between two cards takes the next side');
   await undo();
   await dragOnto('shot2','shot4','right');
-  assert.deepEqual(order().parked,['shot3','shot4','shot2','shot5'],'a second-row card wins over the first row');
+  assert.deepEqual(order().parked,after(start.parked,'shot2','shot4'),'a second-row card wins over the first row');
   await undo();
   await dragOnto('shot2','shot5','below');
-  assert.deepEqual(order().parked,['shot3','shot4','shot5','shot2'],'dropping past the last row appends');
+  assert.deepEqual(order().parked,[...without(start.parked,'shot2'),'shot2'],'dropping past the last row appends');
   await undo();
   assert.deepEqual(order().parked,start.parked,'every geometry case returns to the fixture');
   assert.equal(order().dialogues,start.dialogues,'geometry cases leave dialogue untouched');
@@ -183,7 +186,7 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   // 6. A group dropped between two cards keeps its own order.
   await cardClick('shot4');await cardClick('shot5','metaKey:true');await delay(200);
   await dragOnto('shot4','shot2','left');
-  assert.deepEqual(order().parked,['shot4','shot5','shot2','shot3'],'group keeps relative order at the new slot');
+  assert.deepEqual(order().parked,before(start.parked,['shot4','shot5'],'shot2'),'group keeps relative order at the new slot');
   assert.deepEqual(await selPending(),['shot4','shot5'],'the group stays selected after a Pending move');
   await undo();
   assert.deepEqual(order().parked,start.parked,'one undo restores the group move');
@@ -193,7 +196,7 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   // A narrow window keeps the Pending grid to a couple of columns, so with a short panel the
   // lower row really starts outside the visible box.
   win.setSize(900,760);await delay(300);
-  await js('localStorage.setItem("flow.workbench.layout.v2",JSON.stringify({layout:[["board","pending"],["canvas","info","layers"]],hidden:[],split:60,tile:200,zoom:"fit",japanese:false,collapsed:[false,false],heights:{board:380,pending:170}}))');
+  await js('localStorage.setItem("flow.workbench.layout.v2",JSON.stringify({layout:[["board","pending"],["canvas","info","layers"]],hidden:[],split:60,tile:200,zoom:"fit",japanese:false,collapsed:[false,false],heights:{board:380,pending:170},pendingTile:300}))');
   win.webContents.reload();
   await wait(()=>js('!!document.querySelector(".flow-pending-shelf .wb-card")'),'reload small panel');
   await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'small panel checkpoint');
@@ -201,6 +204,7 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   await js('(()=>{const b=document.querySelector(".flow-pending-shelf").closest(".wb-panel-body");b.scrollTop=0})()');await delay(250);
   const hiddenBefore=await js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="shot5"]')+'),b=c.closest(".wb-panel-body"),r=c.getBoundingClientRect(),br=b.getBoundingClientRect();return {outside:r.top>br.bottom-8,scroll:b.scrollTop}})()');
   assert.equal(hiddenBefore.outside,true,'the last card starts outside the visible Pending panel');
+  const boardScrollBefore=await js('document.querySelector("[data-panel=board] .wb-panel-body").scrollTop');
   const edgeBox=await js('(()=>{const b=document.querySelector(".flow-pending-shelf").closest(".wb-panel-body"),r=b.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.bottom-6)}})()');
   const dragStart=await cardPoint('shot2');
   assert.ok(dragStart,'grab for the scroll case');
@@ -209,10 +213,10 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   const scrolled=await js('document.querySelector(".flow-pending-shelf").closest(".wb-panel-body").scrollTop');
   assert.ok(scrolled>0,'dragging at the panel edge scrolls the Pending panel, not the board');
   const boardScroll=await js('document.querySelector("[data-panel=board] .wb-panel-body").scrollTop');
-  assert.equal(boardScroll,0,'the storyboard panel does not scroll for a Pending drag');
+  assert.equal(boardScroll,boardScrollBefore,'the storyboard panel keeps its scroll while Pending scrolls');
   const lastCard=await js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="shot5"]')+'),r=c.getBoundingClientRect();return {x:Math.round(r.left+r.width*0.25),y:Math.round(r.top+r.height/2)}})()');
   move(lastCard.x,lastCard.y);await delay(300);up(lastCard.x,lastCard.y);await delay(400);await settle();
-  assert.deepEqual(order().parked,['shot3','shot4','shot2','shot5'],'the drop lands on a card revealed by auto-scroll');
+  assert.deepEqual(order().parked,before(start.parked,'shot2','shot5'),'the drop lands on a card revealed by auto-scroll');
   await undo();
   assert.deepEqual(order().parked,start.parked,'one undo restores the scrolled drop');
 
@@ -224,12 +228,17 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   await wait(()=>js('!!document.querySelector(".flow-pending-shelf .wb-card")'),'reload for empty table');
   await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'empty table checkpoint');
   await delay(500);
-  await js('Array.from(document.querySelectorAll(".wb-pending-tools button")).find(b=>b.textContent==="全选").click()');await delay(200);
-  await js('Array.from(document.querySelectorAll(".wb-pending-tools button")).find(b=>b.textContent==="移入故事板").click()');await settle();
+  // The toolbar has no buttons for this any more: ⌘A selects the table, the selection drags out.
+  await cardClick('shot2');await delay(120);
+  await js('(()=>{const c=document.querySelector("[data-pending-shot-id=shot2] .wb-card-picture");c.dispatchEvent(new KeyboardEvent("keydown",{key:"a",metaKey:true,bubbles:true}))})()');
+  await wait(async()=>(await selPending()).length===4,'⌘A selects the whole Pending table');
+  const boardBody=await js('(()=>{const b=document.querySelector("[data-panel=board] .wb-panel-body"),r=b.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.bottom-24)}})()');
+  await dragTo(await cardPoint('shot2'),boardBody);await settle();
   assert.deepEqual(order().parked,[],'the Pending table is now empty');
   assert.equal(await js('document.querySelectorAll(".wb-pending-grid [data-pending-shot-id]").length'),0,'no cards are rendered');
   const emptySpot=await js('(()=>{const s=document.querySelector(".flow-pending-shelf"),r=s.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.bottom-40)}})()');
-  const boardCard=await js('(()=>{const c=document.querySelector("[data-board-id=shot0] .wb-card-handle"),r=c.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}})()');
+  await js('(()=>{const b=document.querySelector("[data-panel=board] .wb-panel-body");b.scrollTop=0})()');await delay(250);
+  const boardCard=await js('(()=>{const c=document.querySelector("[data-board-id=shot0] .wb-card-handle"),r=c.getBoundingClientRect(),b=c.closest(".wb-panel-body").getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(Math.max(r.top+8,b.top+10))}})()');
   await dragTo(boardCard,emptySpot);await settle();
   assert.equal(order().parked.length,1,'a board card drops into the empty table');
   assert.equal(order().parked[0],'shot0','the empty table takes the dropped card');

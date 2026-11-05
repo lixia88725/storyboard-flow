@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {useEffect,useRef,useState,type CSSProperties,type ReactNode} from 'react';
 import {PresentationPreview} from '../../drawing/renderer/canvasPresentation';
 import {useDraggable,useDroppable} from '@dnd-kit/core';
 import type {Shot} from '../../drawing/contracts/types';
@@ -18,11 +18,11 @@ export function FlowPending(p: {
   shots: Shot[]; disabled: boolean; revision: number;
   /** Pending-only selection, in parked order. */
   selected: readonly string[]; onSelect: (id: string, event: Modifiers) => void;
-  onSelectMany: (ids: string[]) => void; onSelectAll: () => void; onClear: () => void;
+  onSelectMany: (ids: string[]) => void;
+  /** Card size for this table, driven by its own slider. */
+  tile?: number; onTile?: (size: number) => void;
   /** Read-only dialogue, keyed by shot. */
   dialogueText: ReadonlyMap<string, string>;
-  /** Move the current selection back to the end of the storyboard. */
-  onMove: (ids: string[]) => void;
   onRestore: (id: string) => void;
   stationary?: boolean; onDelete?: (ids: string[]) => void; renderMedia?: (shot: Shot) => ReactNode;
 }) {
@@ -56,14 +56,19 @@ export function FlowPending(p: {
   return <aside ref={setShelf} aria-label="Pending" className={`flow-pending-shelf ${drop.isOver ? 'is-over' : ''}`}>
     <div className="wb-pending-tools flow-pending-actions" tabIndex={-1}>
       <span>{p.shots.length} 张 · {p.selected.length} 已选</span>
-      <button disabled={p.disabled || !p.shots.length} onClick={p.onSelectAll}>全选</button>
-      <button disabled={p.disabled || !p.selected.length} onClick={p.onClear}>取消选择</button>
-      <button disabled={p.disabled || !p.selected.length} title="把选中的故事板移回故事板末尾，也可以直接拖过去"
-        onClick={() => p.onMove([...p.selected])}>移入故事板</button>
-      {remove && <button disabled={p.disabled || !p.selected.length} aria-label={`删除选中的 Pending (${p.selected.length})`}
-        onClick={() => { if (p.selected.length) remove([...p.selected]); }}>删除 Pending{p.selected.length ? ` (${p.selected.length})` : ''}</button>}
+      <label className="wb-tile-slider" title="Pending 卡片大小"><input aria-label="Pending 卡片大小" type="range" min="110" max="320"
+        value={p.tile ?? 170} onChange={event => p.onTile?.(Number(event.target.value))} disabled={p.disabled}/></label>
+      {remove && <button className="wb-icon-button" disabled={p.disabled || !p.selected.length}
+        title={p.selected.length > 1 ? `删除选中的 Pending (${p.selected.length})` : '删除选中的 Pending'}
+        aria-label={p.selected.length > 1 ? `删除 Pending (${p.selected.length})` : '删除 Pending'}
+        onClick={() => { if (p.selected.length) remove([...p.selected]); }}>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 4.9h9.6M6.5 4.9V3.4h3v1.5M4.7 4.9l.55 7.7h5.5l.55-7.7M6.8 7.1v3.6M9.2 7.1v3.6"/></svg>
+        <span className="wb-sr-only">删除 Pending</span>
+        {p.selected.length > 1 && <span className="wb-icon-badge" aria-hidden="true">{p.selected.length}</span>}
+      </button>}
     </div>
-    <div className="wb-grid wb-pending-grid" ref={marquee.setElement} onPointerDown={marquee.onPointerDown}>
+    <div className="wb-grid wb-pending-grid" ref={marquee.setElement} onPointerDown={marquee.onPointerDown}
+      style={{'--tile': `${p.tile ?? 170}px`} as CSSProperties}>
       {p.shots.map(shot => <PendingCard key={shot.id} shot={shot} disabled={p.disabled} revision={p.revision}
         selected={p.selected.includes(shot.id)} text={p.dialogueText.get(shot.id) ?? ''}
         onRestore={restore} onSelect={p.onSelect} renderMedia={p.renderMedia} />)}

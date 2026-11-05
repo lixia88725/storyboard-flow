@@ -104,28 +104,23 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  const expected=await js('(()=>{const g=document.querySelector(".wb-grid").getBoundingClientRect();const end='+JSON.stringify({x:t.x+60,y})+';return Array.from(document.querySelectorAll("[data-board-id]")).filter(e=>{const r=e.getBoundingClientRect();return r.left<end.x&&r.right>g.left+3&&r.top<end.y&&r.bottom>g.top+3}).map(e=>e.dataset.boardId)})()');
  await mouse('mouseUp',t.x+60,y);assert.deepEqual(await selected(),expected);assert.ok(expected.length>20,'marquee crosses initial near window');
  }else{
- // Toolbar: 全选 covers every active board only; Pending keeps its own unticked selection.
- const buttons=await js('Array.from(document.querySelectorAll(".wb-board-selection button")).map(b=>({text:b.textContent,title:b.title,disabled:b.disabled}))');
- assert.equal(buttons.length,2);
- assert.equal(buttons[0].text,'全选');assert.ok(buttons[0].title.includes('⌘/Ctrl+A'));
- assert.equal(buttons[0].disabled,false);
- assert.equal(buttons[1].text,'取消选择');assert.equal(buttons[1].disabled,false);
- await clickAt('.wb-board-selection button');
- await wait(async()=>(await selected()).length===count,'toolbar select all');
+ // ⌘/Ctrl+A is the only select-all left: it covers every active board and leaves Pending alone.
+ const pick=await js('Array.from(document.querySelectorAll(".wb-board-tools input[type=range]")).map(i=>({label:i.getAttribute("aria-label"),min:i.min,max:i.max}))');
+ assert.deepEqual(pick,[{label:'缩略图大小',min:'150',max:'460'}],'the storyboard toolbar keeps one size slider and no buttons');
+ await key('[data-board-id=shot1] .wb-card-handle',{key:'a',metaKey:true});
+ await wait(async()=>(await selected()).length===count,'keyboard select all');
  assert.deepEqual(await selected(),order);
  assert.equal(await js('document.querySelectorAll(".flow-pending-shelf [data-pending-shot-id].is-selected").length'),0,'board select-all leaves Pending unselected');
  assert.equal(await status(),count+' 张 · '+count+' 已选');
- assert.equal(await js('document.querySelector(".wb-board-selection button:nth-of-type(2)").disabled'),false);
  // Select-all cleared the anchor, so a following Shift click is a fresh single-board range.
  await clickHeader('shot2',{shiftKey:true});
  await wait(async()=>JSON.stringify(await selected())==='["shot2"]','anchor cleared after select all');
  assert.deepEqual(await selected(),['shot2']);
 
- // 取消选择 empties the board selection without touching the project.
- await clickAt('.wb-board-selection button:nth-of-type(2)');
- await wait(async()=>(await selected()).length===0,'clear selection');
+ // ⇧⌘A empties the board selection without touching the project.
+ await key('[data-board-id=shot2] .wb-card-handle',{key:'a',metaKey:true,shiftKey:true});
+ await wait(async()=>(await selected()).length===0,'keyboard clear selection');
  assert.equal(await status(),count+' 张 · 0 已选');
- assert.equal(await js('document.querySelector(".wb-board-selection button:nth-of-type(2)").disabled'),true);
 
  // Header modifiers: stable anchor, reverse ranges, discrete toggles and additive ranges.
  await clickHeader('shot1');await wait(async()=>JSON.stringify(await selected())==='["shot1"]','plain click');
@@ -274,7 +269,7 @@ import(${JSON.stringify('file://'+entry)}).then(async()=>{
  await dragStart('shot1');win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});await delay(100);await mouse('mouseUp',10,10);assert.deepEqual(read(),noDrop);
  await dragStart('shot1');await mouse('mouseMove',10,10);await mouse('mouseUp',10,10);await delay(700);assert.deepEqual(read(),noDrop);
  // Moving all active cards into Pending leaves an actual empty droppable board.
- await clickAt('.wb-board-selection button');await dragStart('shot1');
+ await key('[data-board-id=shot1] .wb-card-handle',{key:'a',metaKey:true});await wait(async()=>(await selected()).length===count,'select all before the shelf drag');await dragStart('shot1');
  const shelf=await rect('.flow-pending-shelf');await mouse('mouseMove',shelf.x+shelf.width-12,shelf.y+25);await mouse('mouseUp',shelf.x+shelf.width-12,shelf.y+25);
  await wait(()=>read().shots.length===0,'all to Pending');
  await revealPending('shot5');
@@ -356,8 +351,8 @@ await readFile(path.join(run,'selection.done'));
 const receipt={...identity,passed:true,scrollCase,cases:[
  'blank-space marquee replace/toggle/cancel, noncontiguous end insertion with stationary geometry, outside/Escape cancellation, Pending empty-board restore',
  'scrollCase: Japanese long-row drag auto-scroll, insertion marker geometry after near-window mounts, marquee across initial near window',
- 'toolbar 全选 covers every active board and leaves Pending selection untouched',
- 'toolbar 取消选择 empties the board selection and disables itself',
+ '⌘A covers every active board and leaves the Pending selection untouched',
+ '⇧⌘A empties the board selection without writing the project',
  'select-all clears the anchor so the next Shift click is a single-board range',
  'header plain click replaces, Cmd/Ctrl click toggles, discrete toggle moves the anchor',
  'header Shift ranges work in both directions and keep the anchor across repeated clicks',

@@ -109,9 +109,13 @@ for(const phase of (count<100 ? ['edit','reopen','recovery'] : ['edit','reopen']
  assert.equal(await js('document.querySelector(".wb-column").querySelectorAll(\'[data-panel="info"]\').length'),1);
  await button('恢复默认布局');
  const divider=await rect('.wb-divider');await mouse('mouseDown',divider.x+3,divider.y+40);await mouse('mouseMove',divider.x+90,divider.y+40);await mouse('mouseUp',divider.x+90,divider.y+40);
- await js('document.querySelector(".wb-board-more summary").click()');await delay(150);
- await button('移入 Pending');await wait(()=>read().parkedShots.some(s=>s.id==='shot2'),'Pending membership');
- await js('document.querySelector(".wb-board-more summary").click()');await delay(120);
+ // Pending membership comes from dragging the board onto the shelf; the toolbar no longer
+ // carries a menu for it.
+ const shelfHandle=await rect('[data-board-id=shot2] .wb-card-handle'),shelfBox=await rect('.flow-pending-shelf');
+ await mouse('mouseMove',shelfHandle.x+8,shelfHandle.y+8);await mouse('mouseDown',shelfHandle.x+8,shelfHandle.y+8);
+ await mouse('mouseMove',shelfHandle.x+20,shelfHandle.y+14);await mouse('mouseMove',shelfBox.x+shelfBox.width/2,shelfBox.y+shelfBox.height/2);
+ await mouse('mouseUp',shelfBox.x+shelfBox.width/2,shelfBox.y+shelfBox.height/2);
+ await wait(()=>read().parkedShots.some(s=>s.id==='shot2'),'Pending membership');
  await button('撤销');await wait(()=>read().shots.some(s=>s.id==='shot2'),'restore membership');
  await js('document.querySelector(\'[aria-label="选择故事板 shot0"]\').click()');
  await delay(500);

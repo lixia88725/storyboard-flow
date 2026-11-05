@@ -47,13 +47,13 @@ export function Workbench(p:WorkbenchProps){
  const toggleColumn=(col:number)=>{if(!p.canNavigate())return;setCollapsed(old=>old.map((v,i)=>i===col?!v:v) as [boolean,boolean]);setFlyout([undefined,undefined]);};
  const [japanese,setJapanese]=useState(saved.japanese);
  const [layout,setLayout]=useState(saved.layout),[hidden,setHidden]=useState(saved.hidden);
- const [split,setSplit]=useState(saved.split),[tile,setTile]=useState(saved.tile),[zoom,setZoom]=useState(saved.zoom),[onion,setOnion]=useState(false);
+ const [split,setSplit]=useState(saved.split),[tile,setTile]=useState(saved.tile),[pendingTile,setPendingTile]=useState(saved.pendingTile),[zoom,setZoom]=useState(saved.zoom),[onion,setOnion]=useState(false);
  useEffect(()=>{
    const timer=window.setTimeout(()=>{
-     writeWorkspaceLayout({layout,hidden,split,tile,zoom,japanese,heights,collapsed});
+     writeWorkspaceLayout({layout,hidden,split,tile,pendingTile,zoom,japanese,heights,collapsed});
    },100);
    return ()=>window.clearTimeout(timer);
- },[layout,hidden,split,tile,zoom,japanese,heights,collapsed]);
+ },[layout,hidden,split,tile,pendingTile,zoom,japanese,heights,collapsed]);
  const [hovered,setHovered]=useState<string | undefined>(undefined),[live,setLive]=useState<{id:string;surface:string;node:HTMLElement}>();
  // Hover must not mount a canvas mid-drag: that swaps the picture, flushes a full
  // grid render and re-reads assets while the pointer is sorting cards.
@@ -125,7 +125,7 @@ export function Workbench(p:WorkbenchProps){
   </div>;
  };
  const content=(panel:Panel):ReactNode=>{
-  if(panel==='board')return <><div className="wb-panel-tools wb-board-tools"><div className="wb-view-switch" role="group" aria-label="故事板视图"><button aria-pressed={!japanese} title="网格视图（美式故事板）" onClick={()=>{if(p.canNavigate())setJapanese(false);}}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.7" y="2.7" width="4.5" height="4.5" rx="1"/><rect x="8.8" y="2.7" width="4.5" height="4.5" rx="1"/><rect x="2.7" y="8.8" width="4.5" height="4.5" rx="1"/><rect x="8.8" y="8.8" width="4.5" height="4.5" rx="1"/></svg><span className="wb-sr-only">网格视图</span></button><button aria-pressed={japanese} title="日式分镜（镜号、画面、动作与台词）" onClick={()=>{if(p.canNavigate())setJapanese(true);}}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.4" width="11" height="9.2" rx="1"/><path d="M5.7 3.4v9.2M8.5 6.5h4M8.5 9.5h4"/></svg><span className="wb-sr-only">日式分镜</span></button></div><span>{p.shots.length} 张 · {p.selected.length} 已选</span><label>缩略图 <input aria-label="缩略图大小" type="range" min="150" max="460" value={tile} onChange={e=>{if(p.canNavigate())setTile(Number(e.target.value));}}/></label><div className="wb-board-selection"><button disabled={p.disabled||!p.shots.length} title="全选故事板（⌘/Ctrl+A）" onClick={()=>{if(p.canNavigate())p.selectAll();}}>全选</button><button disabled={p.disabled||!p.selected.length} onClick={()=>{if(p.canNavigate())p.clearSelection();}}>取消选择</button></div><div className="wb-board-actions">{p.boardActions}</div></div>
+  if(panel==='board')return <><div className="wb-panel-tools wb-board-tools"><div className="wb-view-switch" role="group" aria-label="故事板视图"><button aria-pressed={!japanese} title="网格视图（美式故事板）" onClick={()=>{if(p.canNavigate())setJapanese(false);}}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.7" y="2.7" width="4.5" height="4.5" rx="1"/><rect x="8.8" y="2.7" width="4.5" height="4.5" rx="1"/><rect x="2.7" y="8.8" width="4.5" height="4.5" rx="1"/><rect x="8.8" y="8.8" width="4.5" height="4.5" rx="1"/></svg><span className="wb-sr-only">网格视图</span></button><button aria-pressed={japanese} title="日式分镜（镜号、画面、动作与台词）" onClick={()=>{if(p.canNavigate())setJapanese(true);}}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3.4" width="11" height="9.2" rx="1"/><path d="M5.7 3.4v9.2M8.5 6.5h4M8.5 9.5h4"/></svg><span className="wb-sr-only">日式分镜</span></button></div><span>{p.shots.length} 张 · {p.selected.length} 已选</span><label className="wb-tile-slider" title="缩略图大小"><input aria-label="缩略图大小" type="range" min="150" max="460" value={tile} onChange={e=>{if(p.canNavigate())setTile(Number(e.target.value));}}/></label><div className="wb-board-actions">{p.boardActions}</div></div>
    <BoardGrid japanese={japanese} tile={tile} selected={p.selected} order={p.shots.map(s=>s.id)} disabled={p.disabled} canSelect={p.canNavigate} onSelect={p.selectMany}>
     {p.shots.map((shot,i)=><BoardCard key={shot.id} shot={shot} index={i} selected={p.selected.includes(shot.id)} disabled={p.disabled} onSelect={e=>{if(p.canNavigate())p.select(shot.id,e);}}
      hold={Boolean(p.holdShots?.includes(shot.id))} force={hovered===shot.id}
@@ -140,8 +140,9 @@ export function Workbench(p:WorkbenchProps){
   if(panel==='info')return current?p.renderInfo(current,true):<p className="wb-empty">尚未选择故事板</p>;
   if(panel==='layers')return current?p.renderLayers(current):null;
   return <FlowPending shots={p.parked} disabled={p.disabled} revision={p.revision} selected={p.pendingSelected}
-   onSelect={p.selectPending} onSelectMany={p.selectManyPending} onSelectAll={p.selectAllPending} onClear={p.clearPending}
-   dialogueText={p.dialogueText} onMove={ids=>p.move(ids,'active')} onRestore={id=>p.move([id],'active')} onDelete={p.remove}
+   tile={pendingTile} onTile={size=>{if(p.canNavigate())setPendingTile(size);}}
+   onSelect={p.selectPending} onSelectMany={p.selectManyPending}
+   dialogueText={p.dialogueText} onRestore={id=>p.move([id],'active')} onDelete={p.remove}
    renderMedia={shot=><PendingPreview shot={shot} revision={p.revision} visible={reportVisible}/>}/>;
  };
  const movePanel=(e:React.DragEvent,column:number,before?:Panel)=>{const id=e.dataTransfer.getData('application/x-flow-panel') as Panel;if(!labels[id]||!p.canNavigate())return;e.preventDefault();e.stopPropagation();setLayout(old=>{const next=old.map(col=>col.filter(v=>v!==id));const at=before?next[column].indexOf(before):-1;next[column].splice(at<0?next[column].length:at,0,id);return next;});};
@@ -150,8 +151,13 @@ export function Workbench(p:WorkbenchProps){
    if(e.key==='Escape'&&flyout.some(Boolean)&&p.canNavigate()){e.preventDefault();setFlyout([undefined,undefined]);return;}
    if(e.defaultPrevented||e.altKey||!(e.metaKey||e.ctrlKey)||e.key.toLowerCase()!=='a')return;
    const target=e.target as Element;
-   if(!target.closest('[data-panel="board"]')||target.closest('input,textarea,select,[contenteditable=true],dialog,[role=dialog]'))return;
-   e.preventDefault();if(!p.disabled&&p.canNavigate())(e.shiftKey?p.clearSelection:p.selectAll)();
+   if(target.closest('input,textarea,select,[contenteditable=true],dialog,[role=dialog]'))return;
+   // Both tables keep ⌘/Ctrl+A (Shift clears) even though their toolbars no longer carry buttons.
+   const table=target.closest('[data-panel="board"]')?'board':target.closest('[data-panel="pending"]')?'pending':undefined;
+   if(!table)return;
+   e.preventDefault();if(p.disabled||!p.canNavigate())return;
+   if(table==='board')(e.shiftKey?p.clearSelection:p.selectAll)();
+   else (e.shiftKey?p.clearPending:p.selectAllPending)();
   }}>
   <header className="wb-header"><nav aria-label="项目操作">{p.actions}{p.projectBar}<details className="wb-panel-menu"><summary>面板</summary><div className="wb-menu">{(Object.keys(labels) as Panel[]).map(id=><label key={id}><input type="checkbox" data-panel-toggle={id} checked={!hidden.includes(id)} onChange={()=>{if(p.canNavigate())setHidden(h=>h.includes(id)?h.filter(v=>v!==id):[...h,id]);}}/>{labels[id]}</label>)}<button onClick={()=>{if(p.canNavigate()){const defaults=defaultWorkspaceLayout();setLayout(defaults.layout);setHidden(defaults.hidden);setHeights(defaults.heights);setJapanese(defaults.japanese);setSplit(defaults.split);setZoom(defaults.zoom);setTile(defaults.tile);setCollapsed(defaults.collapsed);setFlyout([undefined,undefined]);}}}>恢复默认布局</button></div></details></nav></header>
   <div className="wb-toolbar">{p.toolbar}</div>

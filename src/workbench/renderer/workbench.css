@@ -209,6 +209,8 @@
 .wb-panel-layers .layer-row.is-active {box-shadow:inset 2px 0 var(--wb-accent);}
 .wb-panel-layers .layer-row.is-selected {outline:0;background-color:#383f49;}
 
+.wb-tile-slider { display:inline-flex; align-items:center; }
+.wb-board-tools .wb-board-actions { margin-left:auto; }
 .wb-board-selection {display:flex;gap:2px;}.flow-workbench .wb-board-selection button {font-size:11px;padding:4px 6px;color:var(--wb-subtle);}.wb-panel-board:focus {outline:none;}
 
 /* Dock boundaries: one quiet 5px seam, with a larger invisible hit target. */
@@ -361,11 +363,13 @@
 
 /* Pending table: the same cards as the storyboard, read-only, with a toolbar of the same shape. */
 .flow-workbench .wb-pending-tools { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:2px 10px 8px; font-size:11px; color:#8b949d; }
-.flow-workbench .wb-pending-tools span { margin-right:auto; }
+.flow-workbench .wb-pending-tools > span { margin-right:auto; }
+.flow-workbench .wb-pending-tools .wb-tile-slider { order:2; }
+.flow-workbench .wb-pending-tools .wb-icon-button { order:3; }
 .flow-workbench .wb-pending-tools button { padding:2px 7px; border:1px solid #3c444d; border-radius:5px; background:#2a3038; color:#b9c3cb; font:500 11px 'PingFang SC',sans-serif; cursor:pointer; }
 .flow-workbench .wb-pending-tools button:hover:not(:disabled) { background:#333b45; color:#eef2f5; }
 .flow-workbench .wb-pending-tools button:disabled { opacity:.45; cursor:default; }
-.flow-workbench .wb-pending-grid { flex:1 1 auto; min-height:0; --tile:180px; padding:0 10px 10px; }
+.flow-workbench .wb-pending-grid { flex:1 1 auto; min-height:0; --tile:170px; padding:0 10px 10px; }
 /* The card body is the drag surface here, so the whole card reads as grabbable. */
 .flow-workbench .wb-pending-grid > .wb-card { cursor:grab; }
 .flow-workbench .wb-pending-grid > .wb-card.is-dragging { cursor:grabbing; }
@@ -379,3 +383,6 @@
 .flow-workbench .wb-pending-dialogue { flex:1 1 auto; margin:0; min-width:0; font-size:11px; line-height:1.45; color:#aab3bb; white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:6; overflow:hidden; }
 .flow-workbench .wb-pending-restore { padding:1px 5px; border:1px solid #3c444d; border-radius:4px; background:#262c34cc; color:#9aa4ad; font:500 10px 'PingFang SC',sans-serif; cursor:pointer; }
 .flow-workbench .wb-pending-restore:hover:not(:disabled) { background:#333b45; color:#eef2f5; }
+/* The control only appears on hover or focus, so a keyboard user must see where focus landed. */
+.flow-workbench .wb-pending-restore:focus,
+.flow-workbench .wb-card:focus-within .wb-pending-restore { outline:2px solid var(--wb-accent); outline-offset:1px; }

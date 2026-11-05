@@ -27,6 +27,16 @@ describe('workbench layout preferences', () => {
     expect(parseWorkspaceLayout('{')).toEqual(defaults);
   });
 
+  it('keeps a stored Pending card size, and defaults it for older profiles', () => {
+    const saved = {...defaultWorkspaceLayout(), tile: 300, pendingTile: 240};
+    expect(parseWorkspaceLayout(JSON.stringify(saved)).pendingTile).toBe(240);
+    const {pendingTile, ...older} = defaultWorkspaceLayout();
+    expect(pendingTile).toBe(170);
+    expect(parseWorkspaceLayout(JSON.stringify(older)).pendingTile).toBe(170);
+    expect(parseWorkspaceLayout(JSON.stringify({...saved, pendingTile: 900})).pendingTile).toBe(170);
+    expect(parseWorkspaceLayout(JSON.stringify({...saved, pendingTile: 300})).tile).toBe(300);
+  });
+
   it('discards invalid heights without losing an otherwise valid layout', () => {
     const saved = {...defaultWorkspaceLayout(), heights: {board: -4, canvas: 300, wrong: 500}};
     expect(parseWorkspaceLayout(JSON.stringify(saved)).heights).toEqual({canvas: 300});

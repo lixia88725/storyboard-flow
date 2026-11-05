@@ -660,10 +660,6 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
       boardActions={<><button className="wb-icon-button" disabled={!active} title="新建板" aria-label="新建板" onClick={newShot}>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.4v9.2M3.4 8h9.2"/></svg><span className="wb-sr-only">新建板</span></button>
         <span className="wb-add-anchor" ref={setAddAnchor}/>
-        <details className="wb-board-more">
-          <summary className="wb-icon-button" title="更多故事板操作" aria-label="更多故事板操作"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.6" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="12.4" cy="8" r="1.1" fill="currentColor" stroke="none"/></svg></summary>
-          <div className="wb-menu"><button disabled={!active||!selectedIds.length} onClick={event=>{event.currentTarget.closest('details')?.removeAttribute('open');moveShots(selectedIds,'pending');}}>移入 Pending</button></div>
-        </details>
         <button className="wb-icon-button" disabled={!active||!selectedIds.length} title="删除" aria-label={selectedIds.length>1?`删除 (${selectedIds.length})`:'删除'} onClick={()=>removeActiveShots(selectedIds)}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 4.9h9.6M6.5 4.9V3.4h3v1.5M4.7 4.9l.55 7.7h5.5l.55-7.7M6.8 7.1v3.6M9.2 7.1v3.6"/></svg><span className="wb-sr-only">删除</span>
           {selectedIds.length>1&&<span className="wb-icon-badge" aria-hidden="true">{selectedIds.length}</span>}
