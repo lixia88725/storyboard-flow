@@ -16,6 +16,7 @@ import {
 } from "react";
 import { Circle, Image as KonvaImage, Layer, Line, Stage } from "react-konva";
 import { registerMountedCanvasCheckpoint } from "./mountedCanvasRecoveryCapture";
+import { isSketchGestureUnsettled } from "./sketchGestureState";
 import { WorkspaceCanvasSlotContext } from './workspaceCanvasSlotContext';
 import { bitmapLayersForShot, imageBitmapLayerId } from "../contracts/projectOps";
 import type {
@@ -374,10 +375,15 @@ export const SketchPad = memo(({
   const canvasSlot = useContext(WorkspaceCanvasSlotContext);
   const heldCheckpoint = canvasSlot?.checkpoints?.find(c => c.shotId === shot.id);
   // Read from refs only, so a gate check costs nothing and never encodes a layer.
-  const mountedGestureUnsettled = () =>
-    isDrawingRef.current || !!draftStrokeRef.current || !!pendingDraftStrokeRef.current ||
-    !!selectionDraftRef.current || !!transformDraftRef.current || committingStrokeIdsRef.current.size > 0 ||
-    pendingCommittedStrokesRef.current.length > 0;
+  const mountedGestureUnsettled = () => isSketchGestureUnsettled({
+    isDrawing: isDrawingRef.current,
+    draftStroke: !!draftStrokeRef.current,
+    pendingDraftStroke: !!pendingDraftStrokeRef.current,
+    selectionDraft: !!selectionDraftRef.current,
+    transformDraft: !!transformDraftRef.current,
+    committingStrokes: committingStrokeIdsRef.current.size,
+    pendingCommitted: pendingCommittedStrokesRef.current.length
+  });
   useLayoutEffect(() => registerMountedCanvasCheckpoint(() => ({
     folderPath, shotId: shot.id, pointerId: activePointerIdRef.current,
     draft: draftStrokeRef.current ?? null, selection: selectionDraftRef.current ?? bitmapSelectionRef.current ?? null,
