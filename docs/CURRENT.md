@@ -2,6 +2,14 @@
 
 更新：2026-11-05。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 
+## 本轮：同画布橡皮连续落笔
+
+主管修复了橡皮无法使用同目标 paint 连续准入的问题：画笔与橡皮均按同一板、同一层的在途 paint 队列判定，非 paint 请求仍阻止续笔；保存期间的例外仍只属于画笔。跨画布接管没有随此修复放开。
+
+完整构建、获准清单 **84 文件／963 项**通过（`/tmp/flow-eraser-chief-build.log`、`/tmp/flow-eraser-chief-suite.log`）。真实合成 Electron 窗口中，viewer/grid 快速橡皮均 8/8，400ms 对照亦 8/8，所有点 alpha=0；已固化 `scripts/flow-eraser-continuation-smoke.mjs` 并复跑通过（`flow-eraser-continuation-GhH1hN`，`/tmp/flow-eraser-chief-stable-gui2.log`）。综合绘画／保存／撤销／重开／恢复三阶段通过（`flow-workbench-smoke-6nRcwe`，`/tmp/flow-eraser-chief-workbench.log`）。首次固化脚本使用临时目录别名被安全拒绝，修正为规范路径后通过，失败日志保留。
+
+跨画布与共享展示基底仍未完成。两份独立只读审查一致要求按会话统一展示像素，明确 paint 回执的资产覆盖关系及历史屏障；方案结论不是实现或验收证据。真实数位笔、Windows 与长期内存仍待验，未重启用户试用窗口、未推送。
+
 ## 本轮：工具栏瘦身与绘画编码优化
 
 已本地整合故事板／Pending 工具栏瘦身：移除批量选择和移动按钮，保留本桌键盘全选；Pending 使用独立记忆的尺寸滑杆和垃圾桶图标。主管补齐恢复默认布局同时恢复 Pending 尺寸，并在真实窗口验证独立调节与重置；原有撤销／重做和取回图标保留。
@@ -10,7 +18,7 @@
 
 主管整合后完整构建与获准清单 **83 文件／958 项**全部通过。工具栏 GUI edit/reopen 通过（`flow-workbench-polish-gqbAk3`），含图标、两桌尺寸独立与恢复默认断言。日志：`/tmp/flow-ui-drawing-chief-build.log`、`/tmp/flow-ui-drawing-chief-suite.log`、`/tmp/flow-ui-drawing-chief-polish-elevated.log`。Pending 小桌子排序、边缘滚动、键盘移回和重开复验亦通过（`flow-pending-table-mX0sMu`），日志 `/tmp/flow-ui-drawing-chief-table.log`。首次受限环境的 GUI 子进程退出，保留 `/tmp/flow-ui-drawing-chief-polish.log`；随后隔离合成窗口正常通过。
 
-**绘画故障尚未整体解决。** 橡皮连续落笔与跨画布准入／预览交接仍为未合入候选；共享基底模块在重复准备时会丢失已接受笔迹，主管未验收。已暂停执行者继续叠加修补，由主管收敛真实资产／笔迹生命周期。未重启用户窗口、未推送或发布。
+**绘画故障尚未整体解决。** 跨画布准入／预览交接仍为未合入候选（同画布橡皮连笔修复见上）；共享基底模块在重复准备时会丢失已接受笔迹，主管未验收。已暂停执行者继续叠加修补，由主管收敛真实资产／笔迹生命周期。未重启用户窗口、未推送或发布。
 
 ## 本轮：撤销、重做与取回图标
 

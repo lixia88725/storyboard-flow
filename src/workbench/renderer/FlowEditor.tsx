@@ -1,3 +1,4 @@
+import { canContinuePaint } from './paintAdmission';
 import { useFolderStatus } from './useFolderStatus';
 import {Workbench} from './Workbench';
 import {CanvasPresentationContext} from '../../drawing/renderer/canvasPresentation';
@@ -338,7 +339,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   const otherRequests = useRef(0);
   const request = async (r: FlowSessionRequest, settlingGesture=false) => {
     if(gestures.current && !settlingGesture)throw Error('Finish the current layer gesture first');
-    const other = r.kind !== 'paint' || r.stroke.tool !== 'brush';
+    const other = r.kind !== 'paint';
     if (other) otherRequests.current++;
     try { const result = required(await flow.request(r)); setIssue(''); return result; } catch (error) { setIssue(String(error)); throw error; }
     finally { if (other) otherRequests.current--; }
@@ -413,7 +414,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
   const brushQueue = useRef(new Map<symbol, string>());
   const stroke = async (shot: Shot, layerId: string, input: SketchStroke) => {
     const token = Symbol();
-    if (input.tool === 'brush') brushQueue.current.set(token, JSON.stringify([shot.id,layerId]));
+    if (input.tool === 'brush' || input.tool === 'eraser') brushQueue.current.set(token, JSON.stringify([shot.id,layerId]));
     try {
       const result = await request({ kind: 'paint', shotId: shot.id, layerId, stroke: pixelStroke(input) });
       const currentShot = result.snapshot.project.shots.find(s => s.id === shot.id)!;
@@ -607,9 +608,7 @@ function Editor({ flow, api, folderName, sessionId, openProject, switching, issu
       selectManyPending={ids=>{const known=new Set(ids),next=parkedOrder().filter(id=>known.has(id));setPendingSelection(next);pendingAnchor.current=next[0];}}
       selectAllPending={()=>{setPendingSelection(selectAllShots(parkedOrder()));pendingAnchor.current=undefined;}}
       clearPending={()=>{setPendingSelection([]);pendingAnchor.current=undefined;}}
-      canNavigate={canNavigate} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>brushAvailable() &&
-        brushQueue.current.size>0 && !otherRequests.current &&
-        [...brushQueue.current.values()].every(key=>key===JSON.stringify([shot.id,shot.activeLayerId]))} demand={requestAssets} move={moveShots} remove={deletePending} renderLayers={renderLayers}
+      canNavigate={canNavigate} canStartCanvasEdit={canStartCanvasEdit} canContinueBrush={shot=>canContinuePaint({active,tool,outputWork:!!outputWork.current,savingTiff,gesture:!!gestures.current,otherRequests:otherRequests.current,queuedTargets:[...brushQueue.current.values()],target:JSON.stringify([shot.id,shot.activeLayerId])})} demand={requestAssets} move={moveShots} remove={deletePending} renderLayers={renderLayers}
       holdShots={dialogueHoldShots}
       renderInfo={(shot,allowDialogueDrag=false)=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText} disabled={!active} onChange={e=>script(shot.id,e.target.value)}/></label>{renderDialogue(shot.id,false,allowDialogueDrag)}</div>}
       renderCanvas={(shot,previous,next)=><SketchPad respectActiveLayer key={shot.id} shot={shot} folderPath="flow" bitmapRevision={snapshot.project.revision} tool={tool} brushColor={color}
