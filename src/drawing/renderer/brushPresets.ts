@@ -1,8 +1,9 @@
 /**
  * Brush presets and their user-level preferences.
  *
- * Six presets ship: four brushes (hard, soft, pencil, charcoal) and two erasers
- * (hard, soft). Each remembers its own last size and opacity; that is a tool
+ * Five presets ship: three brushes (hard, soft, pencil) and two erasers (hard, soft).
+ * Charcoal was removed: at shipped sizes it read as a rougher pencil rather than a
+ * distinct tool, and a preset that behaves like another one only adds choices. Each remembers its own last size and opacity; that is a tool
  * preference of the person drawing, not project data, so it lives in localStorage
  * next to the workspace layout and never enters the project file.
  *
@@ -12,7 +13,7 @@
 import type { StrokeBrush } from "./brushStroke";
 import type { BrushTipKind } from "./brushTips";
 
-export type BrushPresetId = "hard" | "soft" | "pencil" | "charcoal" | "eraser-hard" | "eraser-soft";
+export type BrushPresetId = "hard" | "soft" | "pencil" | "eraser-hard" | "eraser-soft";
 
 export type BrushPreset = {
   id: BrushPresetId;
@@ -36,15 +37,13 @@ export const BRUSH_PRESETS: Record<BrushPresetId, BrushPreset> = {
     spacing: 0.05, pressureSize: 0.3, pressureOpacity: 0.6, factory: { size: 36, opacity: 0.85 } }),
   pencil: preset({ id: "pencil", label: "铅笔", tool: "brush", tip: "pencil", hardness: 0.5, grain: 0.55,
     spacing: 0.035, pressureSize: 0.45, pressureOpacity: 0.6, factory: { size: 7, opacity: 1 } }),
-  charcoal: preset({ id: "charcoal", label: "炭笔", tool: "brush", tip: "charcoal", hardness: 0.3, grain: 0.85,
-    spacing: 0.045, pressureSize: 0.5, pressureOpacity: 0.55, factory: { size: 16, opacity: 0.95 } }),
   "eraser-hard": preset({ id: "eraser-hard", label: "硬橡皮", tool: "eraser", tip: "hard", hardness: 0.9, grain: 0,
     spacing: 0.06, pressureSize: 0.6, pressureOpacity: 0, factory: { size: 24, opacity: 1 } }),
   "eraser-soft": preset({ id: "eraser-soft", label: "软橡皮", tool: "eraser", tip: "soft", hardness: 0.1, grain: 0,
     spacing: 0.05, pressureSize: 0.2, pressureOpacity: 0.7, factory: { size: 44, opacity: 0.6 } }),
 };
 
-export const BRUSH_PRESET_IDS: readonly BrushPresetId[] = ["hard", "soft", "pencil", "charcoal"];
+export const BRUSH_PRESET_IDS: readonly BrushPresetId[] = ["hard", "soft", "pencil"];
 export const ERASER_PRESET_IDS: readonly BrushPresetId[] = ["eraser-hard", "eraser-soft"];
 export const DEFAULT_BRUSH: BrushPresetId = "pencil";
 export const DEFAULT_ERASER: BrushPresetId = "eraser-hard";

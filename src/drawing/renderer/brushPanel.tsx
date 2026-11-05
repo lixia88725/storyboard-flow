@@ -14,6 +14,7 @@ import {
   type BrushPreference, type BrushPreferences, type BrushPresetId,
 } from "./brushPresets";
 import { paintBrushStroke } from "./brushStroke";
+import { renderTipMask } from "./brushTips";
 import type { StrokeBrush } from "../contracts/types";
 
 export type BrushPanelAnchor = { x: number; y: number };
@@ -69,6 +70,44 @@ const SampleStroke = (p: { brush: StrokeBrush; size: number; opacity: number; co
   return <canvas ref={ref} className={p.className ?? "wb-brush-sample"} aria-hidden="true" />;
 };
 
+
+/**
+ * The preset square shows the tip itself, the way Photoshop's brush list does: the same
+ * mask the dab uses, drawn once at a readable size. Grain that only appears while dragging
+ * still shows up as texture, so pencil does not look like a small hard round.
+ */
+const TipSwatch = ({ presetId }: { presetId: BrushPresetId }) => {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return;
+    const ratio = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth || 44, height = canvas.clientHeight || 26;
+    canvas.width = Math.max(1, Math.round(width * ratio));
+    canvas.height = Math.max(1, Math.round(height * ratio));
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.clearRect(0, 0, width, height);
+    const value = BRUSH_PRESETS[presetId];
+    const diameter = Math.max(6, Math.min(Math.round(height - 6), 20));
+    const mask = renderTipMask({ tip: value.tip, diameter, hardness: value.hardness, grain: value.grain, variant: 0 });
+    const image = context.createImageData(mask.width, mask.height);
+    for (let index = 0; index < mask.alpha.length; index++) {
+      image.data[index * 4] = 232;
+      image.data[index * 4 + 1] = 236;
+      image.data[index * 4 + 2] = 242;
+      image.data[index * 4 + 3] = mask.alpha[index];
+    }
+    const source = document.createElement("canvas");
+    source.width = mask.width;
+    source.height = mask.height;
+    source.getContext("2d")?.putImageData(image, 0, 0);
+    context.imageSmoothingEnabled = true;
+    context.drawImage(source, (width - diameter) / 2, (height - diameter) / 2);
+  }, [presetId]);
+  return <canvas ref={ref} className="wb-brush-tip" aria-hidden="true" />;
+};
+
 const clampAnchor = (anchor: BrushPanelAnchor | undefined): CSSProperties => {
   if (!anchor) return { left: 24, top: 96 };
   const width = 268, height = 286;
@@ -119,25 +158,25 @@ export function BrushPanel({ tool, preferences, disabled, anchor, onChange, onCl
         <span>{preset.label}</span>
       </div>
       <div className="wb-brush-fields">
-        <label>大小
-          <input type="range" min={1} max={MAX_BRUSH_SIZE} value={value.size} disabled={disabled}
-            onChange={event => update({ size: Number(event.target.value) })} aria-label="画笔大小" />
+        <label className="wb-brush-field">大小
           <input type="number" min={1} max={MAX_BRUSH_SIZE} value={value.size} disabled={disabled}
             onChange={event => update({ size: Number(event.target.value) })} aria-label="画笔大小数值" />
         </label>
-        <label>透明度
-          <input type="range" min={MIN_BRUSH_OPACITY * 100} max={100} value={Math.round(value.opacity * 100)} disabled={disabled}
-            onChange={event => update({ opacity: Number(event.target.value) / 100 })} aria-label="画笔透明度" />
+        <input type="range" className="wb-brush-range" min={1} max={MAX_BRUSH_SIZE} value={value.size} disabled={disabled}
+          onChange={event => update({ size: Number(event.target.value) })} aria-label="画笔大小" />
+        <label className="wb-brush-field">透明度
           <input type="number" min={MIN_BRUSH_OPACITY * 100} max={100} value={Math.round(value.opacity * 100)} disabled={disabled}
             onChange={event => update({ opacity: Number(event.target.value) / 100 })} aria-label="画笔透明度数值" />
         </label>
+        <input type="range" className="wb-brush-range" min={MIN_BRUSH_OPACITY * 100} max={100} value={Math.round(value.opacity * 100)} disabled={disabled}
+          onChange={event => update({ opacity: Number(event.target.value) / 100 })} aria-label="画笔透明度" />
       </div>
     </div>
 
     <div className="wb-brush-presets">
       {ids.map(id => <button key={id} type="button" aria-pressed={id === presetId} disabled={disabled}
         onClick={() => select(id)} title={BRUSH_PRESETS[id].label}>
-        <SampleStroke brush={strokeBrushFor(id, 7)} size={Math.min(preferenceFor(preferences, id).size, 14)} opacity={1} color="#cfd6df" className="wb-brush-thumb" />
+        <TipSwatch presetId={id} />
         <span>{BRUSH_PRESETS[id].label}</span>
       </button>)}
     </div>

@@ -6,11 +6,11 @@ import {
 } from "./brushPresets";
 
 describe("brush presets", () => {
-  it("ships four brushes and two erasers with distinct tips", () => {
-    expect(BRUSH_PRESET_IDS).toHaveLength(4);
+  it("ships three brushes and two erasers with distinct tips", () => {
+    expect(BRUSH_PRESET_IDS).toHaveLength(3);
     expect(ERASER_PRESET_IDS).toHaveLength(2);
     const tips = BRUSH_PRESET_IDS.map(id => strokeBrushFor(id, 1).tip);
-    expect(new Set(tips).size).toBe(4);
+    expect(new Set(tips).size).toBe(3);
     expect(BRUSH_PRESET_IDS.includes(DEFAULT_BRUSH)).toBe(true);
     expect(ERASER_PRESET_IDS.includes(DEFAULT_ERASER)).toBe(true);
   });
@@ -39,9 +39,9 @@ describe("brush preferences", () => {
 
   it("remembers size and opacity per preset without touching the others", () => {
     let preferences = withPreference(defaultBrushPreferences(), "pencil", { size: 12 });
-    preferences = withPreference(preferences, "charcoal", { opacity: 0.4 });
+    preferences = withPreference(preferences, "soft", { opacity: 0.4 });
     expect(preferenceFor(preferences, "pencil")).toEqual({ size: 12, opacity: 1 });
-    expect(preferenceFor(preferences, "charcoal")).toEqual({ size: 16, opacity: 0.4 });
+    expect(preferenceFor(preferences, "soft")).toEqual({ size: 36, opacity: 0.4 });
     expect(preferenceFor(preferences, "hard")).toEqual({ size: 8, opacity: 1 });
   });
 
@@ -78,10 +78,22 @@ describe("brush preferences", () => {
   });
 
   it("keeps the pressure switch independent of the selected preset", () => {
-    let preferences = withPreference(defaultBrushPreferences(), "charcoal", { size: 20 });
+    let preferences = withPreference(defaultBrushPreferences(), "soft", { size: 20 });
     preferences = { ...preferences, pressure: false };
     expect(preferenceFor(preferences, "pencil")).toEqual({ size: 7, opacity: 1 });
     expect(preferences.pressure).toBe(false);
+  });
+});
+
+describe("retired presets", () => {
+  it("drops a stored charcoal selection instead of breaking the editor", async () => {
+    const { parseBrushPreferences, BRUSH_PRESET_IDS } = await import("./brushPresets");
+    expect(BRUSH_PRESET_IDS).toEqual(["hard", "soft", "pencil"]);
+    const parsed = parseBrushPreferences(JSON.stringify({version: 1, brush: "charcoal", eraser: "eraser-hard",
+      pressure: true, presets: {charcoal: {size: 30, opacity: 0.5}, pencil: {size: 9, opacity: 0.7}}}));
+    expect(parsed.brush).toBe("pencil");
+    expect(Object.keys(parsed.presets)).toEqual(["pencil"]);
+    expect(parsed.presets.pencil).toEqual({size: 9, opacity: 0.7});
   });
 });
 
