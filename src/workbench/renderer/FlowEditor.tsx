@@ -291,6 +291,12 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
   const toolRef = useRef(tool);
   toolRef.current = tool;
   const shortcutRef = useRef<ReturnType<typeof createController>>(undefined);
+  const activeRef = useRef(false);
+  const switchingRef = useRef(false);
+  const refreshingRef = useRef(false);
+  const refreshRecoveryRef = useRef(false);
+  const savingTiffRef = useRef(false);
+  const inputUnsettledRef = useRef<() => boolean>(() => false);
   useEffect(() => {
     const controller = createController({
       current: () => toolRef.current,
@@ -298,19 +304,25 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
       // both read the previous tool.
       apply: next => { toolRef.current = next; setTool(next); },
       isBlocked: () => {
+        // Ask the live Session and gates at the event: a render-time copy can lag behind
+        // a freeze that already stopped admission, a save that already owns output, or a
+        // presentation pause that arrived without a React update.
+        if (flow.snapshot().phase !== 'active' || switchingRef.current || refreshingRef.current || refreshRecoveryRef.current) return true;
+        if (paintInput.isPaused() || outputWork.current || savingTiffRef.current) return true;
         if (document.querySelector('[role="dialog"][aria-modal="true"]')) return true;
-        if (outputRef.current || savingTiffRef.current || pausedRef.current) return true;
         // A live lasso/transform gesture owns the pointer; the eraser must not reinterpret it.
-        return toolRef.current === 'select' && hasUnsettledRef.current();
+        return toolRef.current === 'select' && (gestures.current !== 0 || hasUnsettledMountedGesture() || inputUnsettledRef.current());
       }
     });
     shortcutRef.current = controller;
+    // Lasso and blur wait for the ordinary settlement gate; brush and eraser stay available
+    // while a paint stroke is in flight, which is exactly when the spring-loaded key matters.
+    const settledForNavigation = () => activeRef.current && !paintInput.isPaused() && !outputWork.current &&
+      !paintPresentation.hasInput() && !gestures.current && !flow.snapshot().pending &&
+      !hasUnsettledMountedGesture() && !inputUnsettledRef.current();
     const onKeyDown = (event: KeyboardEvent) => {
       const mapped = TOOL_SHORTCUT_KEYS[event.key.toLowerCase()];
-      // Brush and eraser must stay available while a stroke is in flight; lasso and blur
-      // are ordinary selections and keep the existing settlement gate.
-      if (mapped === 'select' && !canNavigateRef.current()) return;
-      if (event.key.toLowerCase() === 'k' && !canNavigateRef.current()) return;
+      if (mapped && mapped !== 'brush' && mapped !== 'eraser' && !settledForNavigation()) return;
       if (controller.keyDown(event) !== 'ignored') event.preventDefault();
     };
     const onKeyUp = (event: KeyboardEvent) => { controller.keyUp(event); };
@@ -329,11 +341,6 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
       shortcutRef.current = undefined;
     };
   }, []);
-  const canNavigateRef = useRef<() => boolean>(() => false);
-  const outputRef = useRef(false);
-  const savingTiffRef = useRef(false);
-  const pausedRef = useRef(false);
-  const hasUnsettledRef = useRef<() => boolean>(() => false);
   const [color, setColor] = useState('#dd3344');
   const pixelSelections = useRef<Record<string, FlowSelection>>({});
   const bitmapSelectionChange = useCallback((shotId: string, layerId: string | undefined, points: FlowSelection | undefined) => {
@@ -658,11 +665,12 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
           }} />;
   const editsSettled = () => !paintInput.isPaused() && active && !paintPresentation.hasInput() && !gestures.current && !flow.snapshot().pending && !hasUnsettledMountedGesture() && !inputUnsettled();
   const canNavigate = () => !outputWork.current && editsSettled();
-  canNavigateRef.current = canNavigate;
-  outputRef.current = !!outputWork.current;
+  activeRef.current = active;
+  switchingRef.current = switching;
+  refreshingRef.current = refreshing;
+  refreshRecoveryRef.current = refreshRecovery;
   savingTiffRef.current = savingTiff;
-  pausedRef.current = paintInput.isPaused();
-  hasUnsettledRef.current = () => !!gestures.current || hasUnsettledMountedGesture() || inputUnsettled();
+  inputUnsettledRef.current = inputUnsettled;
   // TIFF output owns its captured revision. A new brush stroke edits the live Session.
   const brushAvailable = () => active && tool === 'brush' && (!outputWork.current || savingTiff) && !gestures.current;
   const canStartCanvasEdit = () => (!outputWork.current || brushAvailable()) && editsSettled();

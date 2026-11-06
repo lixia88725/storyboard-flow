@@ -94,4 +94,34 @@ describe("tool keys", () => {
     expect(h.down("l", { metaKey: true })).toBe("ignored");
     expect(h.tool()).toBe("brush");
   });
+
+  it("lets B finish a borrowed eraser without a late restore", () => {
+    const h = harness("brush");
+    h.down("e");
+    h.tick(40);
+    expect(h.down("b")).toBe("handled");
+    expect(h.tool()).toBe("brush");
+    h.tick(400);
+    expect(h.up("e")).toBe("ignored");
+    expect(h.tool()).toBe("brush");
+    expect(h.applied).toEqual(["eraser", "brush"]);
+  });
+
+  it("treats K as a real tool change during an eraser hold", () => {
+    const h = harness("brush");
+    h.down("e");
+    h.down("k");
+    expect(h.tool()).toBe("blur");
+    h.tick(400);
+    expect(h.up("e")).toBe("ignored");
+    expect(h.tool()).toBe("blur");
+  });
+
+  it("does not undo a tapped eraser when the window blurs later", () => {
+    const h = harness("brush");
+    h.down("e"); h.tick(60);
+    expect(h.up("e")).toBe("kept");
+    expect(h.controller.blur()).toBe(false);
+    expect(h.tool()).toBe("eraser");
+  });
 });

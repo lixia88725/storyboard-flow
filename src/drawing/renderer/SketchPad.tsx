@@ -559,14 +559,16 @@ export const SketchPad = memo(({
         return;
       }
 
-      if (tool === "select") {
+      // The draft, not the live rail tool, identifies a paint gesture: a spring-loaded key
+      // may already have restored a selection tool while this pen is still down.
+      const currentStroke = draftStrokeRef.current;
+      if (!currentStroke && tool === "select") {
         void finishBitmapSelection();
         updateDrawingState(false);
         activePointerIdRef.current = undefined;
         return;
       }
 
-      const currentStroke = draftStrokeRef.current;
       if (paintPresentation && event.type === 'pointercancel' && currentStroke) {
         paintPresentation.cancel(currentStroke.id); clearDraftStroke();
       } else if (currentStroke && shouldCommitStroke(currentStroke)) {
@@ -680,6 +682,26 @@ export const SketchPad = memo(({
     setIsDrawing(drawing);
     onInteractionActiveChange?.(drawing);
   };
+
+  // A spring-loaded key can leave the paint tools while the pointer is still down (L borrows
+  // the eraser and E is released mid-stroke). End that one stroke here so the still-pending
+  // pointerup cannot be reinterpreted as a lasso, and the next down starts cleanly.
+  useEffect(() => {
+    if (tool === "brush" || tool === "eraser") {
+      return;
+    }
+    const currentStroke = draftStrokeRef.current;
+    if (!currentStroke) {
+      return;
+    }
+    if (shouldCommitStroke(currentStroke)) {
+      void commitStroke(activeDrawingLayerId, currentStroke);
+    } else {
+      clearDraftStroke();
+    }
+    updateDrawingState(false);
+    activePointerIdRef.current = undefined;
+  }, [tool, activeDrawingLayerId]);
 
   const updateBitmapSelectionState = (selection: BitmapSelection | undefined) => {
     bitmapSelectionRef.current = selection;
@@ -1337,7 +1359,12 @@ export const SketchPad = memo(({
       return;
     }
 
-    if (!isDrawingRef.current || (tool !== "select" && !draftStrokeRef.current)) {
+    if (!isDrawingRef.current) {
+      return;
+    }
+
+    const paintStroke = !!draftStrokeRef.current;
+    if (!paintStroke && tool !== "select") {
       return;
     }
 
@@ -1348,7 +1375,7 @@ export const SketchPad = memo(({
       return;
     }
 
-    if (tool === "select") {
+    if (!paintStroke) {
       extendBitmapSelection(positions[positions.length - 1]);
       return;
     }
@@ -1368,7 +1395,12 @@ export const SketchPad = memo(({
     // brush outline stays frozen at the pen-down point until release.
     updateBrushCursorPreview(event);
 
-    if (!isDrawingRef.current || (tool !== "select" && !draftStrokeRef.current)) {
+    if (!isDrawingRef.current) {
+      return;
+    }
+
+    const paintStroke = !!draftStrokeRef.current;
+    if (!paintStroke && tool !== "select") {
       return;
     }
 
@@ -1379,7 +1411,7 @@ export const SketchPad = memo(({
       return;
     }
 
-    if (tool === "select") {
+    if (!paintStroke) {
       extendBitmapSelection(positions[positions.length - 1]);
       return;
     }
@@ -1520,14 +1552,14 @@ export const SketchPad = memo(({
       return;
     }
 
-    if (tool === "select") {
+    const currentStroke = draftStrokeRef.current;
+    if (!currentStroke && tool === "select") {
       void finishBitmapSelection();
       updateDrawingState(false);
       activePointerIdRef.current = undefined;
       return;
     }
 
-    const currentStroke = draftStrokeRef.current;
     if (paintPresentation && event?.evt?.type === 'pointercancel' && currentStroke) {
       paintPresentation.cancel(currentStroke.id); clearDraftStroke();
     } else if (currentStroke && shouldCommitStroke(currentStroke)) {

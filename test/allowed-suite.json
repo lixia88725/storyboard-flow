@@ -83,5 +83,6 @@
   "src/storyboard/renderer/pendingTable.test.ts",
   "src/drawing/renderer/sketchGestureState.test.ts",
   "src/workbench/renderer/paintAdmission.test.ts",
-  "src/drawing/renderer/paintPresentation.test.ts"
+  "src/drawing/renderer/paintPresentation.test.ts",
+  "src/workbench/renderer/toolShortcuts.test.ts"
 ]
