@@ -16,7 +16,7 @@ test('CI builds real Main cold-reader dependencies before running the full suite
   const testJob = read('.github/workflows/release.yml').split('\n  test:\n')[1].split('\n  metadata:\n')[0];
   const build = testJob.indexOf('run: npm run build');
   expect(build).toBeGreaterThan(-1);
-  expect(build).toBeLessThan(testJob.indexOf('run: npm test'));
+  expect(build).toBeLessThan(testJob.indexOf('Run explicitly approved test suite'));
   expect(testJob).toContain('run: npm run check:preload');
   expect(read('package.json')).toContain('"build": "npm run typecheck && vite build && npm run build:electron"');
   expect(read('package.json')).toContain('"typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit"');

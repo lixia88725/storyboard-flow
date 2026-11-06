@@ -40,6 +40,11 @@ jobs:
       - run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
       - run: npm run build
       - name: Run explicitly approved test suite
+        # macOS arm64 runners have 7 GB RAM and vitest runs a single worker here. The heaviest
+        # approved file (flowTiffSave) peaks near 3.4 GB resident, so the default ~2 GB old
+        # space aborts it. 4 GB is a bounded ceiling with room for the runner's own processes.
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: >-
           node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "node:child_process"; const files=JSON.parse(fs.readFileSync("test/allowed-suite.json","utf8")); const r=spawnSync(process.execPath,["node_modules/vitest/vitest.mjs","run",...files],{stdio:"inherit"}); if(r.error) throw r.error; process.exit(r.status ?? 1);'
       - run: npm run check:preload
