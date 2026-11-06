@@ -41,6 +41,13 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
  async function button(text){await js('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==='+JSON.stringify(text)+').click()');await delay(100)}
  async function rect(s){return js('(()=>{const e=document.querySelector('+JSON.stringify(s)+');const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()')}
  async function mouse(type,x,y){win.webContents.sendInputEvent({type,x:Math.round(x),y:Math.round(y),button:'left',clickCount:1});await delay(65)}
+ // Screen pixels, not a mirror element: the shared presentation must show the brush stroke
+ // on every surface that displays the shot while the pointer is still down.
+ async function redCount(box){const shot=await win.webContents.capturePage({x:Math.round(box.x),y:Math.round(box.y),width:Math.max(1,Math.round(box.width)),height:Math.max(1,Math.round(box.height))});
+  const {width,height}=shot.getSize(),data=shot.getBitmap();let n=0;
+  // NativeImage bitmaps are BGRA.
+  for(let i=0;i<width*height*4;i+=4)if(data[i+2]>170&&data[i+1]<100&&data[i]<130)n++;
+  return n}
  const current=()=>js('document.querySelector("[data-current-shot]").dataset.currentShot');
  const key=k=>js('document.body.dispatchEvent(new KeyboardEvent("keydown",{key:'+JSON.stringify(k)+',bubbles:true}))');
  const selected=()=>js('Array.from(document.querySelectorAll(".wb-card[data-board-id].is-selected")).map(e=>e.dataset.boardId)');
@@ -243,19 +250,26 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
  await key('ArrowLeft');await wait(async()=>await current()==='shot0','left navigation');await key('ArrowLeft');assert.equal(await current(),'shot0');
  assert.deepEqual(read(),before);
  const target=await rect('[data-board-id="shot2"] .wb-card-picture');
- await mouse('mouseMove',target.x+target.width*.4,target.y+target.height*.5);
- await wait(()=>js('!!document.querySelector(\'[data-surface="grid:shot2"] .stage-overlay\')'),'hover editable canvas');
- await mouse('mouseDown',target.x+target.width*.4,target.y+target.height*.5);
- await mouse('mouseMove',target.x+target.width*.6,target.y+target.height*.5);
+ const press={x:target.x+target.width*.4,y:target.y+target.height*.5},release={x:target.x+target.width*.6,y:target.y+target.height*.5};
+ // A card is a static bitmap until the press: hovering alone no longer mounts the stage.
+ assert.equal(await js('!!document.querySelector(\'[data-board-id="shot2"] .wb-card-picture .stage-overlay\')'),false,'the card is static before the press');
+ await mouse('mouseMove',press.x,press.y);await delay(400);
+ assert.equal(await js('!!document.querySelector(\'[data-surface="grid:shot2"] .stage-overlay\')'),false,'hovering alone does not mount the drawing canvas');
+ await mouse('mouseDown',press.x,press.y);
+ await wait(()=>js('!!document.querySelector(\'[data-surface="grid:shot2"] .stage-overlay\') && !!document.querySelector(\'[data-surface="viewer:shot2"] .stage-overlay\')'),'pointerdown hands the press to the shared canvas on both surfaces');
+ await mouse('mouseMove',release.x,release.y);
  assert.equal(await current(),'shot2');assert.deepEqual(await selected(),['shot2']);
- await wait(()=>js('Array.from(document.querySelectorAll("[data-live-mirror]")).some(c=>{const a=c.getContext("2d").getImageData(0,0,c.width,c.height).data;for(let i=0;i<a.length;i+=4)if(a[i]>170&&a[i+1]<100&&a[i+2]<130)return true;return false})'),'live red stroke mirrored before release');
+ const gridShot={shot2:await rect('[data-surface="grid:shot2"]')},viewerShot={shot2:await rect('[data-surface="viewer:shot2"]')};
+ await wait(async()=>await redCount(gridShot.shot2)>0&&await redCount(viewerShot.shot2)>0,'the brush shows in both surfaces before release');
  await key('ArrowRight');assert.equal(await current(),'shot2');assert.equal(read().images.image2.layers[1].assetId,${JSON.stringify(transparent)});
- await mouse('mouseUp',target.x+target.width*.6,target.y+target.height*.5);
+ await mouse('mouseUp',release.x,release.y);
  await wait(()=>read().images.image2.layers[1].assetId!==${JSON.stringify(transparent)},'grid stroke checkpoint');
  const painted=read().images.image2.layers[1].assetId;
- await wait(()=>js('!document.querySelector("[data-live-mirror]")'),'settled mirror');
+ await wait(async()=>await redCount(gridShot.shot2)>0&&await redCount(viewerShot.shot2)>0,'the committed stroke stays on both surfaces');
  await button('撤销');await wait(()=>read().images.image2.layers[1].assetId===${JSON.stringify(transparent)},'one undo');
+ await wait(async()=>await redCount(gridShot.shot2)===0&&await redCount(viewerShot.shot2)===0,'undo clears the stroke on both surfaces');
  await button('重做');await wait(()=>read().images.image2.layers[1].assetId===painted,'redo');
+ await wait(async()=>await redCount(gridShot.shot2)>0&&await redCount(viewerShot.shot2)>0,'redo repaints both surfaces');
  // Native text input owns arrow keys rather than flipping the current board.
  await js('document.querySelector(\'[aria-label="动作说明 shot2"]\').focus()');await win.webContents.insertText('文字');
  await js('document.querySelector(\'[aria-label="动作说明 shot2"]\').dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowRight",bubbles:true}))');assert.equal(await current(),'shot2');
@@ -295,23 +309,26 @@ for(const phase of (layersOnly?['edit','reopen']:count<100 ? ['edit','reopen','r
      surfaces.forEach((s,i)=>{const stage=s.querySelector('.image-stage'),r=stage.getBoundingClientRect();
        const matte=s.querySelector('[data-flow-matte], [data-flow-presentation-preview]');
        if(!matte||getComputedStyle(matte).visibility==='hidden')f.errors.push('matte hidden '+i);
-       // A live brush substitutes a real layer-sized canvas for its static PNG.
-       // Hidden spare canvases and the mirror/overlay itself cannot satisfy this check.
-       const rasters=[...stage.querySelectorAll(':scope > img,:scope > canvas.live-bitmap-canvas')].filter(node=>
-         getComputedStyle(node).display!=='none' && (node instanceof HTMLImageElement ||
-           node.width===640 && node.height===360));
-       if(rasters.length!==2)f.errors.push('layer removed or duplicated '+i);
+       // Every visible layer of the shot is one presentation layer in the stage, whether it
+       // is drawn as an <img> or as a live canvas; the stroke must not drop or duplicate one.
+       const layers=[...stage.querySelectorAll(':scope > .paint-presentation-layer')].filter(node=>{
+         const style=getComputedStyle(node);if(style.display==='none'||style.visibility==='hidden')return false;
+         return Boolean(node.querySelector('img,canvas'));
+       });
+       if(layers.length!==2)f.errors.push('layer removed or duplicated '+i+' ('+layers.length+')');
        if(['x','y','width','height'].some(k=>Math.abs(rects[i][k]-r[k])>1))f.errors.push('stage moved '+i);
      });requestAnimationFrame(sample);};sample();
  }).toString()+")()");
  const viewer=await rect('.wb-viewer .wb-surface');
  await mouse('mouseMove',viewer.x+viewer.width*.4,viewer.y+viewer.height*.4);
  await mouse('mouseDown',viewer.x+viewer.width*.4,viewer.y+viewer.height*.4);
+ await wait(()=>js('!!document.querySelector(\'[data-surface="viewer:shot0"] .stage-overlay\') && !!document.querySelector(\'[data-surface="grid:shot0"] .stage-overlay\')'),'the viewer press is shared with the grid canvas');
  await mouse('mouseMove',viewer.x+viewer.width*.6,viewer.y+viewer.height*.4);
- await wait(()=>js('Array.from(document.querySelectorAll(".wb-grid [data-live-mirror]")).some(c=>{const a=c.getContext("2d").getImageData(0,0,c.width,c.height).data;for(let i=0;i<a.length;i+=4)if(a[i]>170&&a[i+1]<100&&a[i+2]<130)return true;return false})'),'viewer stroke mirrored into grid');
+ const grid0=await rect('[data-surface="grid:shot0"]'),viewer0=await rect('[data-surface="viewer:shot0"]');
+ await wait(async()=>await redCount(grid0)>0,'the viewer stroke shows in the grid before release');
  await mouse('mouseUp',viewer.x+viewer.width*.6,viewer.y+viewer.height*.4);
  await wait(()=>read().images.image0.layers[1].assetId!==${JSON.stringify(transparent)},'viewer stroke checkpoint');
- await wait(()=>js('!document.querySelector("[data-live-mirror]")'),'viewer mirror settled');
+ await wait(async()=>await redCount(grid0)>0&&await redCount(viewer0)>0,'the committed viewer stroke stays on both surfaces');
  const sampling=await js('(()=>{window.strokeFrames.stop=true;return window.strokeFrames})()');
  assert.ok(sampling.count>2);assert.deepEqual([...new Set(sampling.errors)],[]);
  await button('撤销');await wait(()=>read().images.image0.layers[1].assetId===${JSON.stringify(transparent)},'viewer stroke undo');
