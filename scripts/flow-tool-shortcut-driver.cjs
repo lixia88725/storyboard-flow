@@ -302,6 +302,22 @@ async function step(name, fn) {
     return {};
   });
 
+  await step('a modal create sheet refuses every tool key', async () => {
+    await tap('b');
+    await js(`(()=>{document.querySelector('.wb-project-menu').open=true;const b=Array.from(document.querySelectorAll('.wb-project-menu-list button')).find(x=>x.textContent.includes('新建项目'));if(!b)return false;b.click();return true})()`);
+    await wait(() => js('!!document.querySelector("[role=dialog][aria-modal=true]")'), 'create sheet');
+    await js('document.activeElement?.blur?.()');
+    for (const code of ['e', 'b', 'l', 'k']) {
+      keyDown(code); await delay(60); keyUp(code); await delay(40);
+      await expectTool('画笔', code.toUpperCase() + ' is refused while a modal sheet is open');
+    }
+    await js(`(()=>{const b=Array.from(document.querySelectorAll('[role=dialog][aria-modal=true] button')).find(x=>x.textContent.trim()==='取消');if(!b)return false;b.click();return true})()`);
+    await wait(() => js('!document.querySelector("[role=dialog][aria-modal=true]")'), 'create sheet closed');
+    await tap('e'); await expectTool('橡皮', 'E works after the sheet closes');
+    await tap('b');
+    return {};
+  });
+
   await step('a lasso gesture refuses E and still creates the selection', async () => {
     await tap('l'); await expectTool('选区', 'lasso selected');
     const stage = await stageOf('viewer:shot0');

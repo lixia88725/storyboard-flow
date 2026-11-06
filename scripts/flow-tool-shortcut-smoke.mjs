@@ -53,5 +53,5 @@ const timer = setTimeout(() => child.kill('SIGTERM'), 180000);
 const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', code => resolve(code)); });
 clearTimeout(timer);
 const result = JSON.parse(await readFile(path.join(run, 'result.json'), 'utf8'));
-if (code !== 0 || result.error || result.cases.length !== 11) throw Error('Tool shortcut smoke failed: ' + run);
+if (code !== 0 || result.error || result.cases.length !== 12) throw Error('Tool shortcut smoke failed: ' + run);
 console.log('PASS', run);
