@@ -108,3 +108,13 @@ Main绑定来源和基线、准备资产、记录before/after intent，验证aft
 切项目先等Save、freeze当前Session，再准备目标；取消/同根/失败保留旧Session与历史。所有IPC携带当前session token，projectId或路径相同不代表旧回调仍授权。退休会话的读回调不得影响新UI或生成遗留URL。在途写入结算前不能认证关闭；对白义务在freeze之后仍须复检。
 
 一个项目仅一个可写Session。默认启动锁不提供跨显式profile的任意并发写入保证。未知原生权限、旧恢复namespace和未结算效果仍是拒绝条件；不因旧恢复UI退役而绕过。
+
+## Photocraft 原件绑定与 PSD 输出
+
+固定上游版本与组件协议见 [native/photocraft/README.md](../native/photocraft/README.md)。一次性 native worker 负责读取、合成和色彩转换，Main 校验输出和资源限制；这些限制不等同进程 RSS 硬上限。
+
+复杂来源的 `LayerV1.sourceReference` 绑定既有 originals/ledger 的 originalId、digest、format 和显示 RGBA 摘要；复用原件保管，不依赖外部原路径。核心禁止修改受保护底图，打开、Save、关闭及 Refresh 校验来源和显示身份。受保护内容使用 v3 TIFF 包络，旧 codec 拒绝误读；无引用项目继续原有格式，不自动迁移用户项目。
+
+`exportPsd` 绑定 Session 的稳定 capture、板与保管 PSD，原生 writer 在原文件模型追加新增绘画层，Main 选择目标后以已同步的同目录暂存文件和独占 hardlink 发布新文件。普通 Save 不改变语义。未知发布结果保留证据；Windows 目录同步沿用平台 skipped 契约，不承诺目录项断电持久性。
+
+打包强制校验原生版本、目标架构、桥接源码摘要、二进制和许可清单回执。macOS 签名后更新二进制回执，再签外层应用；ZIP 校验实际 Mach-O/PE 架构及摘要。

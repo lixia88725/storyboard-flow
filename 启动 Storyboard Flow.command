@@ -60,12 +60,17 @@ fi
 LOG_DIR="$REPO/.hermes/launch"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(date '+%Y%m%d-%H%M%S')-$$.log"
+# Log before any lock inspection, including all failure diagnostics.
+touch "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1
 GUARD="$LOG_DIR/start-in-progress"
-mkdir "$GUARD" 2>/dev/null || fail "已有启动流程正在运行；若上次异常中断，请先核对 $GUARD。"
+LOCK_HELPER="$REPO/scripts/launch-locks.mjs"
+node "$LOCK_HELPER" acquire "$GUARD" "$$" "$LOG_DIR" || fail '启动流程未取得互斥锁。'
 # Keep failure status while releasing only this invocation's guard.
-finish() { local result=$?; [ "${KEEP_GUARD:-0}" = 1 ] || rmdir "$GUARD" 2>/dev/null || true; trap - EXIT; if [ "$result" -ne 0 ]; then printf '\n启动未完成，日志：%s\n' "$LOG_FILE" >&2; fi; exit "$result"; }
+finish() { local result=$?; node "$LOCK_HELPER" release "$GUARD" "$$" || true; trap - EXIT; if [ "$result" -ne 0 ]; then printf '\n启动未完成，日志：%s\n' "$LOG_FILE" >&2; fi; exit "$result"; }
 trap finish EXIT
 
+node "$LOCK_HELPER" profile "$PROFILE" "$LOG_DIR" || fail '实例锁无法安全恢复；详细原因见上方及日志。'
 LOCK="$PROFILE/SingletonLock"
 PID=''
 if [[ -L "$LOCK" ]]; then
@@ -97,24 +102,26 @@ JXA
     if ! kill -0 "$PID" 2>/dev/null && [[ ! -L "$LOCK" ]]; then break; fi
     sleep 0.5
   done
+  node "$LOCK_HELPER" profile "$PROFILE" "$LOG_DIR" || fail '关闭后的实例锁无法安全恢复。'
   if kill -0 "$PID" 2>/dev/null || [[ -L "$LOCK" ]]; then fail '应用尚未正常关闭，已取消启动；请先完成画笔或台词输入。'; fi
 fi
 printf '日志：%s\n正在编译当前源码…\n' "$LOG_FILE"
-npm run build 2>&1 | tee "$LOG_FILE"
+npm run build
 [[ ! -L "$LOCK" && ! -e "$LOCK" ]] || fail '构建期间已有实例占用此配置，已停止。'
 printf '\n正在启动；关闭应用后本脚本退出。\n'
 # Keep the guard until this exact child acquires Electron's profile lock.
-KEEP_GUARD=1
 if [ "$TARGET" = trial ]; then
   env -u ELECTRON_RUN_AS_NODE "$ELECTRON" "$REPO/scripts/studio-preview.cjs" "$TRIAL" >> "$LOG_FILE" 2>&1 &
 else
   env -u ELECTRON_RUN_AS_NODE "$ELECTRON" "$REPO" >> "$LOG_FILE" 2>&1 &
 fi
 CHILD=$!
+# The child owns the guard while acquiring its profile lock, even if Terminal exits.
+node "$LOCK_HELPER" transfer "$GUARD" "$$" "$CHILD"
 READY=0
 for ((i=0; i<300; i++)); do
   if ! kill -0 "$CHILD" 2>/dev/null; then
-    KEEP_GUARD=0
+    node "$LOCK_HELPER" release "$GUARD" "$CHILD"
     wait "$CHILD"
     printf 'Storyboard Flow 已退出。\n'
     exit 0
@@ -125,9 +132,8 @@ for ((i=0; i<300; i++)); do
   fi
   sleep 0.1
 done
-[ "$READY" -eq 1 ] || fail "新实例尚未取得可确认的配置锁；保留 $GUARD，请核对进程 $CHILD。"
-KEEP_GUARD=0
-rmdir "$GUARD"
+[ "$READY" -eq 1 ] || fail "新实例尚未取得可确认的配置锁；进程 $CHILD 尚在启动，未强制退出；请查看日志。"
+node "$LOCK_HELPER" release "$GUARD" "$CHILD"
 trap on_exit EXIT
 wait "$CHILD"
 printf 'Storyboard Flow 已退出。\n'

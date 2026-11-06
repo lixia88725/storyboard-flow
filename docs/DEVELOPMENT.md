@@ -18,6 +18,10 @@
 | 修改主进程与界面的桥接（preload） | 运行 `npm run check:preload`（TS/CJS桥接一致性检查） |
 | 修改打包资源 | 运行 `npm run prepare:package-resources`；Windows用内置Python，macOS用可用Python3，缺失时报告，不擅自安装 |
 
+启动器在检查实例锁前建立日志；本机锁对应进程明确不存在（`ESRCH`）时，将 `SingletonLock/Cookie/Socket` 链接本身备份到 `.hermes/launch/stale-lock-*` 后恢复启动，不跟随链接、不删除项目数据。仍存活的实例沿用正常关闭流程，不强杀；权限不足、外机或异常锁类型保留并报错。启动互斥锁记录进程，启动交接期间绑定子进程，防止 Terminal 中断后重复启动。旧版无进程身份的目录锁不自动清理。
+
+启动器专项：`node --test scripts/launch-locks.test.mjs`（独立 Node 测试，未混入 Vitest 清单），含合成 shell 启动、失败日志和锁恢复；macOS 沙箱若禁止 `/dev/fd`，需在允许日志管道的本地环境执行。此专项不会启动真实 Electron 或读取用户项目。
+
 执行完整清单（不会自动发现清单外测试）：
 
 ```sh
@@ -58,3 +62,9 @@ node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "
 macOS 包附带 TIFF 组件，不附带 Python 解释器。第一次处理 TIFF 时会验证所选 Python 能实际载入包内组件；显式设置的 `FLOW_PYTHON_BIN`（或 `FLOW_PYTHON_PATH`）不兼容会报错，不静默替换。未指定时检查 PATH、Homebrew 与系统级 Python 安装。验收 Finder 启动路径时，用 `/usr/bin:/bin:/usr/sbin:/sbin` 且不设上述环境变量，从合成 PNG 创建项目并核对输出 TIFF；仅成功显示窗口不足以验证这个路径。
 
 流程以 [.github/workflows](../.github/workflows) 和发布脚本为准；使用已安装依赖，保留第三方许可。`RELEASE_ENABLED` 开启后，main推送可能触发发布，必须获得发布授权并实时核对开关。发布安装包与更新下载索引是两步，分别确认；失败保留旧索引。Git代码备份不包含Release安装包。各平台验收状态见 CURRENT，不沿用旧客户端的认证。
+
+## Photocraft 原生组件
+
+源码运行扩展 TIFF/PSD 和打包前，显式准备固定 Rust 1.99.1，再运行 `npm run setup:photocraft`、`npm run build:photocraft`；普通启动与 JS 构建不自动安装工具链。可用独立 RUSTUP_HOME/CARGO_HOME，操作入口、固定上游及许可证见 [组件说明](../native/photocraft/README.md)。原生 fixtures 是相关获准测试前置；缺失组件/过期回执会阻止打包。CI test 和 macOS/Windows package 均准备原生目标，真实 Windows runner 仍待验证。
+
+组合专项：`node scripts/flow-dock-panels-smoke.mjs` 检查分隔条调宽/折叠/取消/键盘/重开；`node scripts/flow-photocraft-smoke.mjs` 检查扩展导入与保护；`node scripts/flow-psd-export-smoke.mjs` 检查真实导出入口、取消和已有目标保护。均使用合成数据及独立 userData。独立像素、Photoshop 验证入口和边界见组件说明，不用同一解码器的往返代替兼容性证明。

@@ -2,6 +2,22 @@
 
 更新：2026-11-06。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 
+## Photocraft 与分隔条：本地组合验收（2026-11-06）
+
+读取/有限PSD导出/原生CI候选 `0b37b44 → b479581 → c0ded5f` 与分隔条完整链 `fe4a8aa → fe6d5cb → e7050f6` 已整合到本地主分支，产品组合HEAD `ab87025`，未推送。主管核对接点并发现拖动中键盘提前提交漏洞，已补修；完整顺序合并保留Photocraft提示和两边获准测试条目。首次遗漏前置提交造成的合并冲突已撤回后按完整顺序解决，没有批量覆盖主树文件。
+
+执行者证据：Photocraft全量90文件/1033项通过，30张真实TIFF只读显示对照max≤1且原件摘要不变；6个合成PSD通过独立读取及Photoshop27.6，原层数据保留。后续原生打包22项聚焦、15项ZIP校验通过，本机macOS包签名及包内组件执行通过。分隔条全量89文件/1036项通过，补修后build/GUI专项通过；详细限制见DESIGN及native/photocraft/README.md。
+
+主管组合验证：完整build、强制原生资源回执校验、preload通过；5文件32项接点聚焦通过；分隔条edit/reopen GUI通过（flow-dock-panels-Am1vur），PSD导出/取消/拒绝已有目标/重开通过（flow-psd-export-gui-om7u1h）。日志为 `/tmp/flow-combined-chief-{build,resources,preload,focused,dock,psd}.log`。复用已可信单点与全量证据，未重复跑组合版整套清单。通过启动器正常关闭旧试用实例、构建打开整合版，已只读确认分隔条和原试画工作台显示；没有重置画稿或布局。
+
+待验：真实GitHub runner、Windows编译/运行/NTFS、完整安装器、任意真实复杂PSD、CMYK正向独立色彩验收、复杂TIFF转PSD、触控/数位笔及原生输入法；不以合成样本推断全面保真。当前受保护底图仅可在上方新增绘画，普通Save仍是Flow TIFF；有限PSD另存另有严格准入。
+
+## 启动器异常退出恢复（2026-11-06，本地修复）
+
+修正死 PID 被 `ps` 非零返回误判为无法确认的问题：直接区分 ESRCH、存活及权限不明；确认本机进程已消失后备份残留链接并恢复。启动流程采用带 PID 的原子互斥锁，子进程取得配置锁前接管启动锁；失败诊断从检查锁之前就写入日志。未知归属与旧无身份目录锁仍安全拒绝，保留先构建再启动及正常关闭行为。
+
+验证：启动专项 11/11（`/tmp/flow-launch-lock-tests-final.log`，包含真实 shell + 合成 Electron、构建失败日志）；完整获准 88 文件／1024 项通过（`/tmp/flow-launch-full-suite.log`）。真实 Terminal 启动自动备份旧锁到 `.hermes/launch/stale-lock-gEOTUK`，构建通过并打开原试画工作台，日志 `.hermes/launch/20261106-172345-27827.log`；已按应用完整路径只读确认界面。此后完善启动子进程锁交接及 macOS 临时路径别名，最终脚本由上述合成专项覆盖，未再重启用户窗口。未推送；不涉及 Windows 启动器。
+
 ## 本轮：项目入口简化（本地候选，未推送）
 
 入口只剩「打开…」和「新建项目…」两个动作，最近项目列表保留。打开只选一个文件夹：完整 Flow 项目直接打开；普通图片文件夹进入创建确认页（项目名默认取目录名、说明新建文件夹且来源不变、选保存位置、「创建并打开」）；旧 `.storyboard-workbench` 按图片导入并明确只导入图片、旧排序与对白不迁移；带 `.storyboard-flow` 标记但读不出来的文件夹报错停止，不降级导入。新建项目是空白项目，只问名称和保存位置，复用同一创建事务（新增 `createBlankProject.ts`）。新文件夹名由项目名派生，与来源目录同名时加「分镜」后缀。打开/创建/切换错误改为界面上方显著提示。
@@ -9,6 +25,10 @@
 自测证据：`tsc --noEmit` 与 electron 类型检查、完整构建、preload 一致性检查通过；聚焦 33 项（含新增 `projectEntry.test.ts`、`createBlankProject.test.ts`）通过；真实 Electron `scripts/flow-project-entry-smoke.mjs` 七阶段全部通过（home/import/blank/legacy/reopen/open/pending，含损坏项目拒绝、取消不变、空白项目新建板并保存、重开），证据与截图在 `.hermes/project-entry-simplified/`。获准全量清单（88 文件）与独立验收状态见本轮交付记录。
 
 未覆盖：真实鼠标操作手感、用户实际试用、Windows、打包安装包；分层 TIFF 导入行为仍沿用原契约，本轮未重测。
+
+## 项目入口简化：主管验收
+
+2026-11-06：候选 `1fea416` 本地合入为 `3aee747`，未推送。执行者获准清单88文件／1024项通过；主管审查并独立完整构建、七阶段项目入口GUI通过（`/tmp/flow-entry-chief-build.log`、`/tmp/flow-entry-chief-gui.log`，现场 `flow-project-entry-yxtVbB`）。已通过Terminal启动新版供试用，原文件未导入或改写；真实用户TIFF兼容性、Windows尚未由本专项认证。
 
 ## 本次提交与推送范围
 

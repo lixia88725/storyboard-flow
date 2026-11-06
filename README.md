@@ -22,6 +22,8 @@ npm ci
 npm run setup:photoshop-tiff-deps
 ```
 
+扩展 TIFF/PSD 读取及打包还需显式准备 Rust 1.99.1，再运行 `npm run setup:photocraft` 和 `npm run build:photocraft`，详见[组件说明](native/photocraft/README.md)。启动器不会自动安装这些依赖。
+
 然后双击 `启动 Storyboard Flow.command`。启动器会构建并打开工作台；首次使用时，可以打开已有 Flow 项目，或从 JPEG、PNG、受支持的 TIFF 创建一个独立项目。来源文件保留在原处。开发时可用 `npm run dev` 启动热更新。
 
 **什么时候点「保存」？** 草图、排序和对白会自动暂存在项目文件夹中（状态栏显示「已自动暂存」）。准备让外部绘画工具看到这次修改时，再点「保存」：点顶栏中央的项目名可以编辑命名信息。保存时按项目名、场次、作者和版本同步工作图与文件名、更新 Pending 位置，并将已删除镜头对应的工作图移到系统废纸篓。点故事板工具栏「新建板」旁的「添加板」时，只会立即写入新加入 Pending 的那批图片。其他画稿仍需显式保存。 在其他工具里改过受支持的 TIFF 后，回到工作台点顶部的文件夹向内箭头图标取回改动。需要独立副本时，先在访达/资源管理器里复制项目文件夹，再用「打开」打开副本。分层 TIFF 交换支持部分图层特性，不保证完整保留 Photoshop 的所有效果。
@@ -57,3 +59,5 @@ Double-click `启动 Storyboard Flow.command` to build and launch the app. On fi
 [产品设计 · Design](docs/DESIGN.md) · [架构 · Architecture](docs/ARCHITECTURE.md) · [开发与验证 · Development](docs/DEVELOPMENT.md) · [当前进度与已知限制 · Status and limitations](docs/CURRENT.md) · [协作规则 · Contributor guidelines](AGENTS.md)
 
 项目自有代码采用 [MIT 许可证](LICENSE)，第三方依赖保留各自许可。 / Original project code is licensed under [MIT](LICENSE); third-party dependencies retain their own licenses.
+
+Extended TIFF/PSD reading and packaging require the explicitly prepared Rust 1.99.1 component; see the [native setup and compatibility limits](native/photocraft/README.md). Complex sources remain protected; normal Save writes Flow TIFF, while the separate PSD export supports only the documented RGB8/sRGB PSD subset.
