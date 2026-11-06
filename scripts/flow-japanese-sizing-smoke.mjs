@@ -136,12 +136,23 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   // 5. Sorting still works on the sheet: drop the first row on the last row's lower half.
   win.setSize(1500,980);await delay(600);await settle();
   const start=order();
-  const grab=await js('(()=>{const c=document.querySelector("[data-board-id=\\"shot0\\"] .wb-card-handle"),r=c.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+10)}})()');
-  const target=await js('(()=>{const c=document.querySelector("[data-board-id=\\"shot2\\"]"),r=c.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.bottom-12)}})()');
+  // The grab and the drop must both land on their own rows: a drop that slips onto the
+  // Pending shelf would move the board there instead of sorting the sheet.
+  await js('(()=>{const b=document.querySelector("[data-panel=board] .wb-panel-body");b.scrollTop=0})()');await delay(260);
+  const grab=await js('(()=>{const c=document.querySelector("[data-board-id=shot0]"),h=c.querySelector(".wb-card-handle"),r=h.getBoundingClientRect();'+
+   'const x=Math.round(r.left+r.width/2),y=Math.round(r.top+10);const hit=document.elementFromPoint(x,y);'+
+   'return hit&&hit.closest("[data-board-id=shot0]")?{x,y}:null})()');
+  assert.ok(grab,'the grab point sits on the first row');
+  const target=await js('(()=>{const c=document.querySelector("[data-board-id=shot2]"),r=c.getBoundingClientRect(),b=c.closest(".wb-panel-body").getBoundingClientRect();'+
+   'const x=Math.round(r.left+r.width/2);'+
+   'for(let y=Math.round(Math.min(r.bottom,b.bottom)-10);y>r.top+4;y-=4){const hit=document.elementFromPoint(x,y);'+
+   'const card=hit&&hit.closest("[data-board-id]");if(card&&card.dataset.boardId==="shot2")return {x,y}}return null})()');
+  assert.ok(target,'the drop point sits on the last row, not on the Pending shelf');
   move(grab.x,grab.y);await delay(80);down(grab.x,grab.y);await delay(100);move(grab.x+8,grab.y+6);await delay(100);
   for(let i=1;i<=8;i++){move(grab.x+(target.x-grab.x)*i/8,grab.y+(target.y-grab.y)*i/8);await delay(70)}
   await delay(160);up(target.x,target.y);await delay(400);await settle();
   assert.deepEqual(order(),['shot1','shot2','shot0'],'a Japanese row sorts by dragging its number rail');
+  assert.deepEqual(read().parkedShots.map(s=>s.id),[],'sorting the sheet leaves Pending empty');
   await js('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="撤销").click()');await delay(300);await settle();
   assert.deepEqual(order(),start,'one undo restores the row order');
   // 6. A reload re-reads the stored layout: the sheet opens in Japanese at the same size.
