@@ -1,6 +1,6 @@
 // Owned Electron only. Sources are read-only; all writes/logs/userData stay under
 // one new system-temp container. No clipboard, Trash or existing windows.
-import {mkdtemp,mkdir,writeFile,readFile,realpath,readdir} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,realpath,readdir,rename} from 'node:fs/promises';
 import {spawn,execFileSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
@@ -10,6 +10,9 @@ const run=await mkdtemp(path.join(await realpath(os.tmpdir()),'flow-photocraft-g
 const source=path.join(run,'sources'),destination=path.join(run,'out'),userData=path.join(run,'userData');
 for(const p of [source,destination,userData])await mkdir(p);
 execFileSync(path.join(repo,'native/photocraft/target/debug/examples/fixtures'),[source]);
+// The untagged-CMYK fixture is an intentional rejection covered by the native
+// adapter test; keep it outside this all-positive import folder.
+await rename(path.join(source,'untagged-cmyk.tiff'),path.join(run,'untagged-cmyk-negative.tiff'));
 // The caller may explicitly supply an authorized read-only real TIFF. It is
 // copied once to this owned test input; no source directory scan or mutation.
 const realFile=process.argv[2];let original=null;

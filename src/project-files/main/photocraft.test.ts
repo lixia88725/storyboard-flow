@@ -43,6 +43,7 @@ describe('pinned PhotoCraft read-only process and retained references',()=>{
    // Independent source-over expectation (2 x 8-bit source layers).
    expect(pixel[3]).toBe(255);for(const [i,v] of [120,90,105].entries())expect(Math.abs(pixel[i]-v)).toBeLessThanOrEqual(1);
   }
+  await expect(readPhotocraft(await fs.readFile(path.join(source,'untagged-cmyk.tiff')),'tiff')).rejects.toThrow('没有嵌入ICC');
   const bytes=await fs.readFile(path.join(source,'p3.tiff')),read=await readPhotocraft(bytes,'tiff');expect(read.reference).toBe(true);
   const actual=(await rgba(read.value.layers[0].png)).slice(0,4);
   const expected=[...await sharp(bytes).toColourspace('srgb').ensureAlpha().raw().toBuffer()].slice(0,4);

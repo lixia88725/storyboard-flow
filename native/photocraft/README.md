@@ -1,9 +1,10 @@
-# Flow PhotoCraft reader
+# Flow PhotoCraft bridge
 
 This is an isolated integration candidate. It reads TIFF/PSD through PhotoCraft's
-`io`, `doc`, `compose` and `cms` crates. It does not implement complex-source
-writeback. Existing Flow pixel tools operate on imported basic raster layers or
-new Flow drawing layers above a protected display reference.
+`io`, `doc`, `compose` and `cms` crates. Existing Flow pixel tools operate on basic
+raster layers or new drawing layers above a protected source display. Explicit
+“另存为 PSD…” appends those new drawing layers to a retained RGB8 PSD file model.
+It is a limited export, separate from normal project Save.
 
 Upstream: https://github.com/storytold/photocraft/tree/a259993118ac7ce1d4c828a385abbc3191841e86
 (version 0.20.1; MIT OR Apache-2.0). The source is an ignored local dependency at
@@ -33,7 +34,9 @@ been updated for this isolated candidate.
 ## Bridge and limits
 
 The one-shot binary receives one private job directory containing protocol-1
-`request.json` (`format: tiff | psd`) and `source.bin`. It writes numbered PNGs
+`request.json` (`format: tiff | psd`) and `source.bin`. The explicit
+`export-psd` operation instead receives the captured canvas dimensions, drawing
+layer properties, `base.png`, numbered layer PNGs and the retained `source.bin`. It writes numbered PNGs
 and `response.json`. A response binds the fixed upstream commit, dimensions,
 layer properties, display-reference flag and compatibility warnings. No user
 paths cross the bridge. Main validates all output PNGs and its version, serializes
@@ -53,7 +56,9 @@ Basic RGB8 stacks require normal/multiply/screen, no masks/groups/effects or
 unmodelled layer blocks, sRGB-equivalent color, and room for one drawing layer.
 Other readable content becomes a protected display reference. RGB composites
 are ICC-converted to sRGB; CMYK/Lab/gray go through PhotoCraft's model-aware
-compositor. PSD merged pixels and independently decoded TIFF composites are
+compositor; CMYK requires an embedded, usable bidirectional CMYK ICC and cannot
+silently fall back to a generic coated profile. Custom ICC on other non-RGB
+models is conservatively refused pending verified conversion coverage. PSD merged pixels and independently decoded TIFF composites are
 checked against layers. When they disagree, the stored composite is explicitly
 used as a protected display, and its original layers remain in retained bytes.
 
@@ -76,6 +81,24 @@ stripped reference instead of installing it as an ordinary external layer.
 Save creates a **new Flow TIFF**, preserving the source as retained bytes. It
 never overwrites the imported complex source. Confirmation and a persistent
 workbench note state that the TIFF is not a round-trip of the complex source.
+The separate PSD export supports only a bottom protected PSD reference with
+new Flow paint layers above it, PSD version 1, RGB8, no extra alpha/spot channels
+and an sRGB-equivalent ICC (untagged sources are assumed sRGB). Non-sRGB drawing
+assets, unsupported source dependencies/depth/mode, inconsistent source-layer
+composition, TIFF complex sources, presentation matte/dialogue and changed
+retained bindings are refused before the destination picker. No source bytes or
+user pixels are silently flattened to make this export pass.
+
+The original PSD file model retains its original layer records, encoded channels,
+unknown blocks and resources. New layers carry order, names, visibility, lock,
+normal/multiply/screen and PSD-precision 8-bit opacity. Merged image and thumbnail
+resources are regenerated and checked against the captured Flow image; retained
+structures are rechecked after serialization. Main owns the file chooser and
+publishes only to a new canonical PSD target using a synced sibling temporary
+file and exclusive hard link. Existing targets are always refused; ambiguous
+publication returns an explicit unknown result with retained evidence. Export
+does not change the project, ordinary TIFF output or the first retained source.
+
 Protection is stored in a v3 Flow TIFF envelope. Older codecs reject v3; older
 checkpoint validators reject the new field. Existing projects without the field
 still use v1/v2 behavior. No migration of user projects is performed. Presentation
@@ -99,5 +122,24 @@ node scripts/flow-photocraft-smoke.mjs [authorized-read-only-TIFF]
 It uses a fresh temporary directory, distinct userData, stubs clipboard/Trash,
 reads an optional authorized sample once into its private inputs, exercises the
 real launcher/import confirmation, drawing, Save, normal close and reopen, and
-checks source hashes. Native Photoshop compatibility is a separate pending
-acceptance; tests and same-codec round trips do not establish it.
+checks source hashes. Independent PSD checks use `scripts/flow-psd-export-oracle.mjs` with an explicit
+`FLOW_PSD_ORACLE_DIR` pointing to a separately installed psd-tools/Pillow oracle.
+It compares original layer records/channels/unknown blocks, new-layer properties,
+raw pixels, merged preview and independent recomposition. The real UI export
+check is `node scripts/flow-psd-export-smoke.mjs` (synthetic sources only).
+
+For an explicitly authorized macOS native check, with zero Photoshop documents
+open, run `node scripts/flow-psd-photoshop-check.mjs <oracle-temp-root>`. It only
+accepts the generated 4x2 oracle fixtures, creates fresh temporary outputs,
+checks source hashes and closes only its own documents. It restores its temporary
+dialog mode and never changes color settings or quits Photoshop.
+
+Native Photoshop 27.6 was additionally exercised on six 4x2 synthetic exports:
+normal/multiply/screen, a hidden layer, transparent source, and embedded sRGB.
+Groups/new layers, visibility, opacity and blend modes loaded correctly; native
+PNG renders differed from captured expected pixels by at most one channel level.
+Photoshop-saved PSD copies reopened with their groups and layers. The check
+started/ended with zero documents and changed no source files or color settings.
+This evidence does not certify arbitrary real PSD effects, text, smart objects,
+large documents, Windows or complex TIFF-to-PSD mapping. Same-codec round trips
+alone do not establish Photoshop compatibility.

@@ -68,6 +68,7 @@ export type FlowEditorBridge = {
   folderStatus(sessionId: string, request: FolderStatusRequest): Promise<FolderStatus>;
   /** Read-only bound filenames; the naming sheet uses them once so its sample equals Save. */
   outputNames(sessionId: string, project: ProjectV1): Promise<{ shotId: string; name: string }[]>;
+  exportPsd(sessionId:string,project:ProjectV1,shotId:string):Promise<{canceled:true}|{ok:true;value:{projectId:string;revision:number;shotId:string;name:string}}|{ok:false;error:{message:string;effect:'none'|'unknown'}}>;
   saveTiff(sessionId: string, project: ProjectV1): Promise<{ ok: true; value: { projectId: string; revision: number; projectHash: string } } | { ok: false; error: { message: string } }>;
   checkpoint(sessionId: string, project: ProjectV1): Promise<ResultV1<CheckpointReceiptV1>>;
   onClose(listener: (requestId: string) => void): () => void;

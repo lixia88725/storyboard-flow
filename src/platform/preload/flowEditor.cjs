@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('flowEditor', {
   refresh: (sessionId, project) => ipcRenderer.invoke('flow-editor:refresh', sessionId, project),
   folderStatus: (sessionId, request) => ipcRenderer.invoke('flow-editor:folderStatus', sessionId, request),
   outputNames: (sessionId, project) => ipcRenderer.invoke('flow-editor:outputNames', sessionId, project),
+  exportPsd: (sessionId, project, shotId) => ipcRenderer.invoke('flow-editor:export-psd', sessionId, project, shotId),
   saveTiff: (sessionId, project) => ipcRenderer.invoke('flow-editor:saveTiff', sessionId, project),
   checkpoint: (sessionId, project) => ipcRenderer.invoke('flow-editor:checkpoint', sessionId, project),
   onClose: listener => listen('flow-editor:close', listener),

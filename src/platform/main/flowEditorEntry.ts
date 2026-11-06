@@ -329,6 +329,13 @@ else app.whenReady().then(async () => {
     currentRoot = candidateRoot;
     return withFolder(bootstrap);
   });
+  ipcMain.handle('flow-editor:export-psd',async(event,token:string,project:ProjectV1,shotId:string)=>{
+    caller(event);if(closing||typeof shotId!=='string'||!shotId)throw Error('Invalid PSD export request');
+    return requireWorkspace().exportPsd(token,project,shotId,async()=>{
+      const chosen=await dialog.showSaveDialog(win,{title:'另存为 PSD…',defaultPath:'Flow-drawing.psd',filters:[{name:'Photoshop PSD',extensions:['psd']}]});
+      return chosen.canceled||!chosen.filePath?null:chosen.filePath;
+    });
+  });
   ipcMain.handle('flow-editor:finish-close', async (event, token, id, project) => {
     caller(event);
     if (!closeId || id !== closeId || closing) return { ok: false, message: 'Stale close request' };

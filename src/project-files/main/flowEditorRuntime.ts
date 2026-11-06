@@ -1,3 +1,7 @@
+import path from 'node:path';
+import { publishPsdExclusive } from './flowPsdExport.js';
+import { writePhotocraftPsd } from './formats/photocraft.js';
+import { snapshotProject } from './persistence/validate.js';
 import { verifySourceReferences } from './flowSourceReferences.js';
 import { flowCodecOptions } from '../../platform/main/flowRuntimePaths.js';
 import type { TrashItem } from './flowOutputTrash.js';
@@ -53,7 +57,7 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
   };
   rememberSources(loaded.value.project);
   const bootstrap=structuredClone(loaded.value.project);
-  let sealed = false, pending = 0, refreshing = false, pendingAddRetained = false;
+  let sealed = false, pending = 0, refreshing = false, exportingPsd = false, pendingAddRetained = false;
   const retainedAdd = () => pendingAddRetained ? { ok: false as const, error: { code: 'busy' as const, message: 'Retry the retained Pending add', effect: 'unknown' as const } } : null;
   const busy = () => ({ ok: false as const, error: { code: 'busy' as const, message: 'Editor is closing', effect: 'none' as const } });
   return {
@@ -62,7 +66,7 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
      * project is the durable checkpoint, writes only this batch, and returns the
      * exact after project (revision + 1) that the Session installs once. */
     async appendPending(project: ProjectV1, input: { source?: PendingAppendInput['source']; recover?: boolean; operationId?: string }, options: PendingAppendOptions) {
-      if (sealed || refreshing) return busy();
+      if (sealed || refreshing || exportingPsd) return busy();
       if (project?.id !== projectId) return { ok: false as const, error: { code: 'conflict' as const, message: 'Different project identity', effect: 'none' as const } };
       if (typeof input?.operationId !== 'string' || !/^[\w.:-]{1,100}$/.test(input.operationId))
         return { ok: false as const, error: { code: 'invalid-input' as const, message: 'A valid Pending operation id is required', effect: 'none' as const } };
@@ -103,11 +107,35 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
           effect: retained ? 'unknown' as const : 'none' as const } };
       } finally { pending--; }
     },
+    async exportPsd(project:ProjectV1,shotId:string,chooseTarget:()=>Promise<string|null>){
+      if(sealed||refreshing||exportingPsd||pending||pendingAddRetained)return {ok:false as const,error:{message:'请等待当前编辑或输出结束',effect:'none' as const}};
+      const captured=snapshotProject(project);
+      if(captured.id!==projectId)return {ok:false as const,error:{message:'PSD export project identity mismatch',effect:'none' as const}};
+      exportingPsd=true;pending++;
+      try{
+        assertProtectedSources(captured);
+        const disk=await store.loadCheckpoint(root);if(!disk.ok||!isDeepStrictEqual(disk.value.project,captured))throw Error('PSD另存需要当前稳定的自动暂存快照');
+        const read=async(id:string)=>{const r=await depot.value.read(id);if(!r.ok)throw Error(r.error.message);return r.value;};
+        await verifySourceReferences(root,captured,read);
+        const shot=captured.shots.find(s=>s.id===shotId);if(!shot)throw Error('请选择一张活动故事板');
+        if(shot.presentation||captured.presentation)throw Error('PSD另存暂不包含遮幅或对白呈现，请先关闭这些呈现设置');
+        const image=captured.images[shot.imageId],ref=image.layers[0]?.sourceReference;
+        if(!ref||ref.format!=='psd')throw Error('PSD另存目前仅支持受保护的PSD来源；TIFF复杂来源到PSD尚未验证');
+        const original=await readImageSource({file:path.join(root,'.storyboard-flow/originals',ref.originalId+'.tif'),name:ref.originalId+'.tif'});
+        if(original.digest!==ref.digest)throw Error('PSD保管原件摘要改变');
+        const bytes=await writePhotocraftPsd(original.bytes,image,read);
+        const target=await chooseTarget();if(!target)return {canceled:true as const};
+        await verifySourceReferences(root,captured,read);
+        await publishPsdExclusive(target,bytes);
+        return {ok:true as const,value:{projectId,revision:captured.revision,shotId,name:path.basename(target)}};
+      }catch(error){return {ok:false as const,error:{message:error instanceof Error?error.message:String(error),effect:(error as {effect?:'unknown'})?.effect==='unknown'?'unknown' as const:'none' as const}};}
+      finally{exportingPsd=false;pending--;}
+    },
     read: depot.value.read,
     folderStatus: output.folderStatus,
     outputNames: (project: ProjectV1) => output.outputNames(project),
     async put(input: Parameters<typeof depot.value.put>[0]) {
-      if (sealed || refreshing) return busy();
+      if (sealed || refreshing || exportingPsd) return busy();
       if (pendingAddRetained) return retainedAdd()!;
       pending++;
       try { return await depot.value.put(input); } finally { pending--; }
@@ -121,7 +149,7 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
       finally{pending--;refreshing=false;}
     },
     async saveTiff(project: ProjectV1) {
-      if (sealed || refreshing) return busy();
+      if (sealed || refreshing || exportingPsd) return busy();
       if (pendingAddRetained) return retainedAdd()!;
       pending++;
       try {
@@ -135,7 +163,7 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
       finally { pending--; }
     },
     async checkpoint(project: ProjectV1) {
-      if (sealed || refreshing) return busy();
+      if (sealed || refreshing || exportingPsd) return busy();
       if (pendingAddRetained) return retainedAdd()!;
       if (project?.id !== projectId) return { ok: false as const, error: { code: 'conflict' as const, message: 'Different project identity' } };
       pending++;

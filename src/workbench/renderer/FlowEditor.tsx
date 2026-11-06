@@ -60,6 +60,7 @@ function bindEditor(sessionId: string) {
     refresh: (project: FlowEditorBootstrap['project']) => api.refresh(sessionId, project),
     folderStatus: (request: Parameters<typeof api.folderStatus>[1]) => api.folderStatus(sessionId, request),
     outputNames: (project: FlowEditorBootstrap['project']) => api.outputNames(sessionId, project),
+    exportPsd: (project:ProjectV1,shotId:string)=>api.exportPsd(sessionId,project,shotId),
     saveTiff: (project: FlowEditorBootstrap['project']) => api.saveTiff(sessionId, project),
     pendingAdd: (project: ProjectV1, request: FlowPendingAdd & { recover: boolean }) => api.pendingAdd(sessionId, project, request)
   };
@@ -302,6 +303,7 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
     setSelection(current => selectShots(order, current, anchor, id, event));
     selectionAnchor.current = nextSelectionAnchor(order, anchor, id, event);
   };
+  const [exportingPsd,setExportingPsd]=useState(false);
   const [refreshing,setRefreshing]=useState(false),[refreshRecovery,setRefreshRecovery]=useState(false);
   const [savingTiff, setSavingTiff] = useState(false);
   const flowSaved = snapshot.checkpoint?.revision === snapshot.project.revision && !snapshot.pending;
@@ -528,7 +530,7 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
     if (preview !== undefined) layer.opacity = preview;
   }
   const rejectTool = () => setIssue('This operation is not connected yet');
-  const active = snapshot.phase === 'active' && !switching && !refreshing && !refreshRecovery;
+  const active = snapshot.phase === 'active' && !exportingPsd && !switching && !refreshing && !refreshRecovery;
   // One admission path for the textarea shortcut, the global shortcut and the rail buttons.
   const historyStep = async (kind: 'undo' | 'redo') => {
     // Reads live state: the global shortcut effect below is installed once per session.
@@ -617,6 +619,29 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
     })();
     outputWork.current = work;
     try { await work; } finally { if (outputWork.current === work) outputWork.current = undefined; }
+  };
+
+  const exportPsd = async () => {
+    if(!active||outputWork.current||paintPresentation.hasInput()||gestures.current||hasUnsettledMountedGesture()||flow.snapshot().pending||inputUnsettled()){
+      setIssue('请先完成当前输入和绘画，再另存PSD');return;
+    }
+    const target=flow.snapshot().project.shots.find(shot=>selectedIds.includes(shot.id));
+    if(!target){setIssue('请选择一张活动故事板');return;}
+    setExportingPsd(true);
+    const work=(async()=>{
+      try{
+        await naming.flush();await request({kind:'checkpoint'});
+        const captured=flow.snapshot().project;
+        const result=await api.exportPsd(captured,target.id);
+        if('canceled'in result){setIssue('');onAlert('');return;}
+        const receipt=required(result);
+        if(receipt.projectId!==captured.id||receipt.revision!==captured.revision||receipt.shotId!==target.id)throw Error('PSD导出回执与当前快照不一致');
+        onAlert('');
+        setIssue(`已另存 ${receipt.name}（新增绘画层的透明度按PSD 8位精度保存）`);
+      }catch(error){setIssue(String(error));onAlert(errorText(error));}
+      finally{setExportingPsd(false);}
+    })();
+    outputWork.current=work;try{await work;}finally{if(outputWork.current===work)outputWork.current=undefined;}
   };
 
   const newShot = () => {
@@ -751,6 +776,7 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
           <div className="wb-menu wb-project-menu-list">
             <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void openFromDisk(); }}>打开…</button>
             <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void create.begin('blank'); }}>新建项目…</button>
+            <button type="button" data-export-psd="true" disabled={!active || !selectedIds.length || !!outputWork.current} onClick={event=>{closeMenu(event);void exportPsd();}}>另存为 PSD…</button>
             <span className="wb-menu-label">最近项目</span>
             {recent.length ? recent.map(project => project.available
               ? <button type="button" key={project.id} data-recent-project={project.id} data-recent-target={project.target}

@@ -21,6 +21,7 @@ export function createFlowWorkspace(initial: FlowWorkspaceTarget) {
     refresh: (token:string,project:ProjectV1)=>requireOwner(token).refresh(project),
     folderStatus: (token: string, request: Parameters<Runtime['folderStatus']>[0]) => requireOwner(token).folderStatus(request),
     outputNames: (token: string, project: ProjectV1) => requireOwner(token).outputNames(project),
+    exportPsd: (token:string,project:ProjectV1,shotId:string,chooseTarget:()=>Promise<string|null>)=>requireOwner(token).exportPsd(project,shotId,chooseTarget),
     saveTiff: (token: string, project: ProjectV1) => requireOwner(token).saveTiff(project),
     appendPending: (token: string, project: ProjectV1, input: Parameters<Runtime['appendPending']>[1], options: Parameters<Runtime['appendPending']>[2]) =>
       requireOwner(token).appendPending(project, input, options),

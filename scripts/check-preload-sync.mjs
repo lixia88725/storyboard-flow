@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-const methods = { open: 'open', read: 'read', put: 'put', refresh: 'refresh', folderStatus: 'folderStatus', outputNames: 'outputNames', saveTiff: 'saveTiff', checkpoint: 'checkpoint', switchProject: 'switch-project', finishClose: 'finish-close',
+const methods = { open: 'open', read: 'read', put: 'put', refresh: 'refresh', folderStatus: 'folderStatus', outputNames: 'outputNames', saveTiff: 'saveTiff', exportPsd: 'export-psd', checkpoint: 'checkpoint', switchProject: 'switch-project', finishClose: 'finish-close',
   launcherState: 'launcher-state', updateRecentName: 'update-recent-name', removeRecent: 'remove-recent', relocateRecent: 'relocate-recent', launch: 'launch', chooseOpen: 'choose-open', createDraft: 'create-draft', createChooseSource: 'create-choose-source', createChooseDestination: 'create-choose-destination',
   createUpdate: 'create-update', createAbort: 'create-abort', createDiscard: 'create-discard', respondCreateIssues: 'create-issues-response',
   pendingCapability: 'pending-capability', pendingAdd: 'pending-add', cancelPendingAdd: 'pending-cancel', respondPendingIssues: 'pending-issues-response' };
@@ -16,6 +16,7 @@ const argsFor = method => {
   if (method === 'launch') return [{ test: true }];
   if (method === 'updateRecentName') return ['session', 'name'];
   if (method === 'removeRecent' || method === 'relocateRecent') return ['recent'];
+  if (method === 'exportPsd') return ['session', { test: true }, 'shot'];
   if (method === 'switchProject') return ['session', { test: true }, { test: true }];
   if (method === 'finishClose') return ['session', { test: true }, 'option'];
   if (method === 'createChooseSource') return ['draft', 'files'];
