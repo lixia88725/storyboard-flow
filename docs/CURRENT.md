@@ -2,15 +2,25 @@
 
 更新：2026-11-06。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 
+## 日式分镜共用尺寸滑杆（本地整合）
+
+日式分镜与普通故事板共用既有尺寸值，切换模式不重置；窄栏按可用空间收窄画面并堆叠正文。产品候选 `70b82ef` 已合入；主管完整构建通过（`/tmp/flow-japanese-chief-build.log`）。此前组合版本完整清单86文件／1009项通过；其后仅增加本节CSS与测试脚本，未重复整套单元测试。执行者尺寸专项与布局专项各连续通过两次，布局脚本已将退役的hover／DOM镜像断言迁移为pointerdown接管及真实屏幕像素检查，保留导航、图层、撤销重做保护。
+
+主管首次日式专项排序失败因脚本落点进入Pending，已加命中校验与Pending不变断言（`aaef531`）；失败证据保留在`/tmp/flow-japanese-chief-gui.log`。修正后的主管专项通过（`flow-japanese-sizing-wwjcX5`，`/tmp/flow-japanese-chief-gui-final.log`）。触控、Windows及极窄面板边界未验；未推送本轮产品改动。
+
+## 工具快捷键（本地验收通过，未推送）
+
+已本地整合工具快捷键候选 `584e39e`；B/E/L/K、短按与按住 E 语义见 [DESIGN](DESIGN.md)。主管整合后完整构建和真实键盘 12 项专项通过（`/tmp/flow-shortcut-chief-build.log`、`/tmp/flow-shortcut-chief-gui.log`）；主管完整获准测试 **86 文件／1009 项全过**（321.03s，`/tmp/flow-shortcut-chief-suite.log`）；Pending 邻近回归亦通过（`flow-pending-table-vmRUTc`）。真实数位笔、Windows 与原生物理 IME 尚未验证；未推送本轮产品改动。
+
 ## 工具栏与 Pending 小卡片修正
 
 逐笔提交会暂时锁定工具切换，原全局 disabled 样式把工具按钮透明度降至 35%，造成明暗闪烁。现在仅在 paint 提交锁定期间保持外观稳定，原生禁用保护保留；保存或冻结等其他禁用仍呈现灰态。Pending 最小尺寸时去掉故事板画面区域 70px 高度下限，限定画面宽度与裁切范围，避免图片撑出卡片边框。
 
-主管构建与共享绘画窗口专项通过（`/tmp/flow-rail-pending-build2.log`、`/tmp/flow-rail-pending-paint2.log`），专项记录真实短暂禁用期间按钮透明度恒为 1。Pending 最小尺寸边界、排序、滚动、键盘与重开回归通过（`flow-pending-table-riJbLX`，`/tmp/flow-rail-pending-table-final.log`）；驱动已避免无必要居中把目标滚出视口，原排序断言保留。完整获准清单当前 83 文件／991 项通过、4 项失败均在两份旧 CI 契约测试（仍要求 npm test／macos-14），由隔离 CI 修复切片同步；本结果不能记为全量通过。首次新增驱动引用错误及几何驱动失败日志保留。未推送本轮 UI 改动，未重启用户窗口。
+主管构建与共享绘画窗口专项通过（`/tmp/flow-rail-pending-build2.log`、`/tmp/flow-rail-pending-paint2.log`），专项记录真实短暂禁用期间按钮透明度恒为 1。Pending 最小尺寸边界、排序、滚动、键盘与重开回归通过（`flow-pending-table-riJbLX`，`/tmp/flow-rail-pending-table-final.log`）；驱动已避免无必要居中把目标滚出视口，原排序断言保留。此前完整清单的4项旧CI契约失败已随CI修复关闭；主管与快捷键整合后完整清单86文件／1009项全过，Pending专项再次通过。首次新增驱动引用错误及几何驱动失败日志保留。未推送本轮 UI 改动，未重启用户窗口。
 
 ## 发布环境修复
 
-2026-11-06 的推送流程在分配 runner 前取消，GitHub 注释为 `macos-14-arm64-us-default` 不再支持；不是该次代码测试失败。测试和 macOS arm64 打包均改用受支持的 `macos-15`，CI 测试同步改为显式枚举获准清单。随后 run `42157957638` 在测试阶段因 V8 默认约 2GB 堆耗尽失败，打包与发布均跳过。隔离复现定位至 `flowTiffSave.test.ts`，2GB 失败、3GB／4GB 通过；测试步骤现设 4096MB 上界，并同步两份旧工作流契约测试。实现者显式全量 85 文件／997 项、构建、preload 校验通过（`/tmp/ci-mem-full-4g.log`）；主管集成 `1a78208` 后独立复跑两份契约测试 9 项通过。真实 runner 与最终发布仍待推送后的实际流程确认，不能以本地验证代替。
+2026-11-06 的推送流程在分配 runner 前取消，GitHub 注释为 `macos-14-arm64-us-default` 不再支持；不是该次代码测试失败。测试和 macOS arm64 打包均改用受支持的 `macos-15`，CI 测试同步改为显式枚举获准清单。随后 run `42157957638` 在测试阶段因 V8 默认约 2GB 堆耗尽失败，打包与发布均跳过。隔离复现定位至 `flowTiffSave.test.ts`，2GB 失败、3GB／4GB 通过；测试步骤现设 4096MB 上界，并同步两份旧工作流契约测试。实现者显式全量 85 文件／997 项、构建、preload 校验通过（`/tmp/ci-mem-full-4g.log`）；主管集成 `1a78208` 后独立复跑两份契约测试 9 项通过。真实runner已通过：run `42161446703`（head `456a258`）全绿，85文件／997项测试通过；macOS arm64与Windows x64打包及发布成功。v0.1.78已正式发布，updates清单已指向该版；未做下载安装验证。本节发布不包含后续本地界面与快捷键改动。
 
 ## 本轮收口：跨画布共享绘画展示
 
