@@ -39,6 +39,8 @@ flowEditorEntry → flowEditor preload → FlowEditor → Workbench / SketchPad 
 
 Pending 与活动故事板共用 `workspace/ShotCard` 卡片外壳、`useMarqueeSelection` 框选与 `useBoardSorting` 二维插入实现。两桌分别持有选择、顺序与滚动几何；Pending 仅呈现静态画面和台词，不挂载编辑画布。成员移动仍通过既有 Session 的 `moveShots`，不改变 `shots` / `parkedShots` 或文件事务格式。
 
+工具按键由 `src/workbench/renderer/toolShortcuts.ts` 控制短按／长按及恢复状态，FlowEditor 在按键事件发生时检查 Session、绘画暂停、输出及手势准入；键盘不绕过关闭或输出保护。SketchPad 以现存草稿判断绘画手势，避免临时工具恢复后把抬笔误作选区结束。普通／日式布局读取同一个故事板 tile 偏好，Pending 尺寸独立；布局切换不创建第二份尺寸状态。
+
 ## 名称与数据
 
 产品 `Storyboard Flow`，代码 `Flow/flow`，环境变量 `FLOW_*`。TIFF使用 `app: "Storyboard Flow"`、`format: "flow-tiff"`、XMP `flow:metadata`、命名空间 `https://storyboard-flow.local/ns/1.0/`。受管子项目标记为 `.storyboard-flow-project`。checkpoint位于 `.storyboard-flow/checkpoints/`：`project.json`、`assets/<sha256>.png`、`versions/<revision>.json`。旧目录/恢复数据不迁移、不自动删。

@@ -46,6 +46,7 @@ node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "
 | 绘画、排序、恢复综合流程 | [flow-workbench-smoke.mjs](../scripts/flow-workbench-smoke.mjs) |
 | 修饰键、框选、整组插入、Pending | [flow-board-selection-smoke.mjs](../scripts/flow-board-selection-smoke.mjs)；`FLOW_GESTURE_SCROLL=1` 加验长日式行滚动 |
 | 分隔条、折叠、弹出面板与布局恢复 | [flow-dock-panels-smoke.mjs](../scripts/flow-dock-panels-smoke.mjs) |
+| 日式布局、共享绘画预览与图层稳定性 | `node scripts/flow-workbench-layout-smoke.mjs`，按下接管、双面屏幕像素、撤销重做及重开 |
 | 适合画布、工具栏、日式对白拖动 | [flow-workbench-polish-smoke.mjs](../scripts/flow-workbench-polish-smoke.mjs) |
 | 对白分组撤销与重开 | [flow-dialogue-undo-smoke.mjs](../scripts/flow-dialogue-undo-smoke.mjs) |
 | 对白提交失败、双编辑器、重试与关闭 | [flow-dialogue-failure-smoke.mjs](../scripts/flow-dialogue-failure-smoke.mjs) |

@@ -11,6 +11,8 @@ Storyboard Flow 是一个本地分镜工作台，帮助你在故事还清晰的�
 - **左栏看整段。** 直接在缩略图上画草图，记下动作和对白。框选几张分镜就能整组移动；普通网格和日式分镜表显示的是同一套镜头。拿不准的镜头可以先放进 Pending 备用区，之后再移回来。
 - **右栏画细节。** 选中一个镜头，打开洋葱皮，参照前面镜头里人物的位置，在单独的图层上画下一个姿势。画布上的修改会同步出现在左栏缩略图中。
 
+**常用操作。** B 画笔、E 橡皮、L 选区、K 模糊；按住 E 临时擦除，松开恢复原工具，短按则保持橡皮。普通网格与日式分镜共用尺寸滑杆，切换视图保留大小；Pending 有独立的尺寸滑杆。
+
 **在 macOS 上从源码启动**
 
 安装 Node.js 22.12 或更高的 22.x 版本，以及 Python 3。在仓库根目录运行以下命令，安装应用依赖和分层 TIFF 工具：
@@ -32,6 +34,8 @@ Storyboard Flow is a local storyboard workspace for sketching a scene while it�
 
 - **Shape the sequence on the left.** Draw directly on thumbnails and jot down action and dialogue. Drag a selection box around several boards to move them together. Switch between the thumbnail grid and a Japanese-style storyboard sheet, or set a shot aside in Pending until you find a place for it.
 - **Refine a shot on the right.** Select a board and use onion skinning to see where a character stood in earlier shots. Sketch the next pose on its own layer. Changes on the canvas appear in the thumbnail, so you can judge the new pose in context.
+
+**Quick controls.** B selects Brush, E Eraser, L Selection, and K Blur. Hold E to erase temporarily and release to return; tap E to keep the eraser selected. Grid and Japanese sheet views share a size slider and retain its value when switching. Pending has its own size slider.
 
 **Run from source on macOS**
 
