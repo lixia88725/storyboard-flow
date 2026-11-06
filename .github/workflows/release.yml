@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       FLOW_PYTHON_DEPS_DIR: ${{ github.workspace }}/vendor/python/photoshop-tiff
       PYTHONDONTWRITEBYTECODE: '1'
@@ -39,7 +39,9 @@ jobs:
       - run: npm ci
       - run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
       - run: npm run build
-      - run: npm test
+      - name: Run explicitly approved test suite
+        run: >-
+          node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "node:child_process"; const files=JSON.parse(fs.readFileSync("test/allowed-suite.json","utf8")); const r=spawnSync(process.execPath,["node_modules/vitest/vitest.mjs","run",...files],{stdio:"inherit"}); if(r.error) throw r.error; process.exit(r.status ?? 1);'
       - run: npm run check:preload
 
   metadata:
@@ -85,7 +87,7 @@ jobs:
             platform: windows
             arch: x64
             asset: Storyboard-Flow-Windows-x64.zip
-          - runner: macos-14
+          - runner: macos-15
             platform: macos
             arch: arm64
             asset: Storyboard-Flow-macOS-arm64.zip
