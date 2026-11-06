@@ -1,3 +1,4 @@
+import { validReferenceLayer } from '../../platform/contracts/flowSourceReference';
 import {validPresentation} from '../../platform/contracts/flowPresentation';
 import type { ChangeSetV1, ImageDocumentV1, ProjectEditResultV1, ProjectV1, ResultV1, ShotV1 } from '../../platform/contracts/refactorV1';
 
@@ -29,7 +30,7 @@ export const validImage = (image: unknown): image is ImageDocumentV1 => {
       !dimension(image.width) || !dimension(image.height) || !Array.isArray(image.layers) || image.layers.length === 0) return false;
   const ids = new Set<string>();
   return Array.from(image.layers).every(layer => {
-    if (!shape(layer, ['id', 'name', 'kind', 'visible', 'locked', 'opacity', 'blendMode', 'width', 'height', 'assetId']) ||
+    if (!shape(layer, ['id', 'name', 'kind', 'visible', 'locked', 'opacity', 'blendMode', 'width', 'height', 'assetId'], ['sourceReference']) || !validReferenceLayer(layer) ||
         !id(layer.id) || ids.has(layer.id) || !text(layer.name) || !['image', 'paint'].includes(layer.kind as string) ||
         typeof layer.visible !== 'boolean' || typeof layer.locked !== 'boolean' ||
         typeof layer.opacity !== 'number' || !Number.isFinite(layer.opacity) || layer.opacity < 0 || layer.opacity > 1 ||

@@ -336,6 +336,12 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
           const source=await read(target);if(hash(source)!==observed)throw Error('Source changed during Refresh');
           const decoded=await codec.decode(source);if(!decoded.ok)throw Error(decoded.error.message);
           const candidate=decoded.value;candidate.image.id=shot.imageId;
+          for(const protectedLayer of captured.images[shot.imageId].layers.filter(layer=>layer.sourceReference)) {
+            const counterpart=candidate.image.layers.find(layer=>layer.id===protectedLayer.id);
+            if(!counterpart || !isDeepStrictEqual(counterpart.sourceReference,protectedLayer.sourceReference) ||
+              await pixelDigest(counterpart.png)!==protectedLayer.sourceReference!.previewPixels)
+              throw Error('Protected source display changed or its binding was removed; retained both TIFF versions without accepting Refresh');
+          }
           const baseline=entry.baseline;
           let identified=candidate.identity==='portable';
           if(candidate.identity==='native'){

@@ -1,3 +1,4 @@
+import { pixelDigest } from './flowPixelIdentity.js';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { DialogueV1, ImageDocumentV1, ProjectV1, ShotV1 } from '../../platform/contracts/refactorV1.js';
@@ -106,11 +107,12 @@ export async function preparePendingAdd(
     if (preparedBytes > MAX_PREPARED_BYTES) throw Error(`Adding images exceeds the ${MAX_PREPARED_BYTES}-byte prepared budget`);
 
     const shotId = randomUUID();
+      const referencePixels = converted.reference ? await pixelDigest(converted.layers[0].png) : undefined;
     const dialogues: DialogueV1[] = (converted.text?.dialogues ?? []).map(dialogue => ({ id: randomUUID(), shotId, text: dialogue.text }));
     const candidate = {
       identity: 'unverified' as const,
       kind: converted.kind === 'tiff' ? 'layered' as const : 'plain' as const,
-      image: { id: randomUUID(), revision: 0, width: converted.width, height: converted.height, layers: converted.layers },
+      image: { id: randomUUID(), revision: 0, width: converted.width, height: converted.height, layers: converted.layers.map(layer => ({...layer, ...(converted.reference ? {sourceReference: {...converted.reference, originalId: shotId, previewPixels: referencePixels!}} : {})})) },
       text: converted.text ? {
         projectId: after.id, projectName: after.name, shotId,
         shotName: converted.text.shotName, scriptText: converted.text.scriptText, dialogues,

@@ -5,6 +5,7 @@ import type { FlowPresentation } from './flowPresentation.js';
 export type BlendModeV1 = 'normal' | 'multiply' | 'screen';
 export type AssetIdV1 = string;
 export type LayerV1 = {
+  sourceReference?: import('./flowSourceReference.js').FlowSourceReference;
   id: string;
   name: string;
   kind: 'image' | 'paint';

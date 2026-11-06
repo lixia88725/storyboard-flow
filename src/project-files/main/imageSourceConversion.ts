@@ -1,3 +1,4 @@
+import { readPhotocraft } from './formats/photocraft.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
@@ -10,7 +11,7 @@ import type { TiffCodec } from './formats/index.js';
 /** Raster/TIFF source reading shared by project creation (and reusable by a later
  * import-into-session flow). Paths are always main-owned absolute paths; nothing
  * here writes a source file. */
-export const SOURCE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.tif', '.tiff']);
+export const SOURCE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.tif', '.tiff', '.psd']);
 export const SOURCE_BYTE_LIMIT = 128 * 1024 * 1024;
 export const SOURCE_PNG_LIMIT = 32 * 1024 * 1024;
 export const SOURCE_PIXEL_LIMIT = 16 * 1024 * 1024;
@@ -27,6 +28,7 @@ export type ReadSource = { bytes: Buffer; digest: string };
 
 type ConvertedLayer = Omit<ImageDocumentV1['layers'][number], 'assetId'> & { png: Uint8Array };
 export type ConvertedSource = {
+  reference?: { digest: string; format: 'psd' | 'tiff' };
   kind: 'raster' | 'tiff';
   width: number;
   height: number;
@@ -76,7 +78,7 @@ export async function scanImageSources(source: { kind: 'files'; files: string[] 
       found.push({ file: path.join(folder, item.name), name: item.name });
     }
   } else throw Error('Unsupported image source kind');
-  if (!found.length) throw Error('No supported images were found (JPEG, PNG, TIFF)');
+  if (!found.length) throw Error('No supported images were found (JPEG, PNG, TIFF, PSD)');
   if (found.length > 10_000) throw Error('Creating a project requires at most 10000 images');
   if (new Set(found.map(entry => entry.file)).size !== found.length) throw Error('The same image source was listed twice');
   return found.sort(order);
@@ -171,7 +173,13 @@ export async function convertImageSource(source: ScannedSource, read: ReadSource
   const extension = path.extname(source.name).toLowerCase();
   if (extension === '.tif' || extension === '.tiff') {
     const decoded = await codec.decode(read.bytes);
-    if (!decoded.ok) return { ok: false, reason: `${decoded.error.code}: ${decoded.error.message}` };
+    if (!decoded.ok) {
+      // A Flow envelope that fails strict checks is never reinterpreted as a
+      // foreign image. That would lose identities or protection metadata.
+      if (decoded.error.code !== 'unsupported-input' || decoded.error.message.includes('Multipage') || read.bytes.includes(Buffer.from('flow:metadata')))
+        return { ok: false, reason: `${decoded.error.code}: ${decoded.error.message}` };
+      return convertPhotocraft(read, 'tiff');
+    }
     const candidate = decoded.value;
     // Layer pixels and properties are authoritative; identity labels only say
     // whether a previous Flow baseline could be matched, which a new project
@@ -183,6 +191,7 @@ export async function convertImageSource(source: ScannedSource, read: ReadSource
         dialogues: candidate.text.dialogues, ...(candidate.text.presentation ? { presentation: candidate.text.presentation } : {}) } : null
     } };
   }
+  if (extension === '.psd') return convertPhotocraft(read, 'psd');
   let meta;
   try {
     meta = await sharp(read.bytes, { failOn: 'error', limitInputPixels: SOURCE_PIXEL_LIMIT }).metadata();
@@ -216,4 +225,14 @@ export async function convertImageSource(source: ScannedSource, read: ReadSource
   }
   if (png.length > SOURCE_PNG_LIMIT) return { ok: false, reason: `prepared PNG exceeds the ${SOURCE_PNG_LIMIT}-byte asset limit` };
   return { ok: true, degradations, value: { kind: 'raster', width, height, layers: [pngLayer(png, width, height)], text: null } };
+}
+
+async function convertPhotocraft(read: ReadSource, format: 'tiff' | 'psd'): Promise<ConversionResult> {
+  try {
+    const result = await readPhotocraft(read.bytes, format);
+    return { ok: true, value: { ...result.value, ...(result.reference ? { reference: { digest: read.digest, format } } : {}) },
+      degradations: [result.reference
+        ? 'PhotoCraft：以不可编辑的来源显示底图导入，可在新增绘画层上作画。复杂图层、蒙版、文字和智能对象仍保存在项目内的完整原件；保存只生成新的 Flow TIFF，它不是原复杂结构的往返文件，也不会覆盖来源。Photoshop 兼容性尚待独立验证。'
+        : 'PhotoCraft：导入可编辑的基础像素层，完整原件保存在项目内；保存生成新的 Flow TIFF，不覆盖来源。Photoshop 兼容性尚待独立验证。', ...result.warnings] };
+  } catch (error) { return { ok: false, reason: `PhotoCraft: ${error instanceof Error ? error.message : String(error)}` }; }
 }

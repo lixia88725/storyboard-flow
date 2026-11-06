@@ -593,7 +593,7 @@ export const LayerPanel = ({
             </select></label>
             <output title="左右拖动图层行可调整不透明度">不透明度 <b>{activeLayer ? Math.round((activeLayer.opacity ?? 1)*100)+"%" : "—"}</b></output>
             <button type="button" aria-label={activeLayer?.locked ? "解锁当前图层" : "锁定当前图层"} aria-pressed={!!activeLayer?.locked}
-              disabled={!activeLayer} title={activeLayer?.locked ? "解锁当前图层" : "锁定当前图层"}
+              disabled={!activeLayer || !!activeLayer.sourceReference} title={activeLayer?.locked ? "解锁当前图层" : "锁定当前图层"}
               onClick={() => activeLayer && onUpdateLayer(shot.id, activeLayer.id, {locked: !activeLayer.locked})}>
               {activeLayer?.locked ? <LockKeyhole size={15}/> : <LockKeyholeOpen size={15}/>}</button>
           </div>}
@@ -679,6 +679,7 @@ export const LayerPanel = ({
                       type="button"
                       className="layer-lock"
                       draggable={false}
+                      disabled={!!layer.sourceReference}
                       title={layer.locked ? "Unlock layer" : "Lock layer"}
                       aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
                       onPointerDown={(event) => event.stopPropagation()}

@@ -86,5 +86,6 @@
   "src/drawing/renderer/paintPresentation.test.ts",
   "src/workbench/renderer/toolShortcuts.test.ts",
   "src/project-files/main/createBlankProject.test.ts",
-  "src/platform/main/projectEntry.test.ts"
+  "src/platform/main/projectEntry.test.ts",
+  "src/project-files/main/photocraft.test.ts"
 ]

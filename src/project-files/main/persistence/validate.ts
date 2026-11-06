@@ -1,3 +1,4 @@
+import { validReferenceLayer, type FlowSourceReference } from '../../../platform/contracts/flowSourceReference.js';
 import {validPresentation} from '../../../platform/contracts/flowPresentation.js';
 import type {
   BlendModeV1,
@@ -92,7 +93,8 @@ const unique = (ids: string[], what: string): void => {
 
 const validateLayer = (value: unknown, index: number, image: { id: string; width: number; height: number }): LayerV1 => {
   const what = `project.images.${image.id}.layers[${index}]`;
-  const layer = exactObject(value, ['id', 'name', 'kind', 'visible', 'locked', 'opacity', 'blendMode', 'width', 'height', 'assetId'], what);
+  const layer = exactObject(value, ['id', 'name', 'kind', 'visible', 'locked', 'opacity', 'blendMode', 'width', 'height', 'assetId', ...(isPlainObject(value)&&Object.hasOwn(value,'sourceReference')?['sourceReference']:[])], what);
+  if (!validReferenceLayer(layer)) invalid(`${what}: invalid protected source reference`);
   const kind = layer.kind;
   if (kind !== 'image' && kind !== 'paint') invalid(`${what}.kind must be "image" or "paint"`);
   const opacity = layer.opacity;
@@ -109,6 +111,7 @@ const validateLayer = (value: unknown, index: number, image: { id: string; width
     invalid(`${what} is ${width}x${height} but its image is ${image.width}x${image.height}; wave-1 layers match the canvas`);
   }
   return {
+    ...(layer.sourceReference ? {sourceReference: structuredClone(layer.sourceReference) as FlowSourceReference} : {}),
     id: identifier(layer.id, `${what}.id`),
     name: text(layer.name, `${what}.name`),
     kind: kind as LayerV1['kind'],

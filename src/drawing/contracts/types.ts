@@ -42,6 +42,7 @@ export type SketchLayer = {
 };
 
 export type BitmapLayer = {
+  sourceReference?: import('../../platform/contracts/flowSourceReference').FlowSourceReference;
   id: string;
   kind: "image" | "paint";
   name: string;

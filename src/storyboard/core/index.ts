@@ -131,6 +131,7 @@ export function applyStoryboardEdit(project: ProjectV1, edit: StoryboardEditV1):
       const current = project.images[r.before.id];
       if (!current) return fail('not-found', 'Image not found');
       if (!same(current, r.before)) return fail('conflict', 'Image baseline differs from installed content');
+      if (current.layers.some(layer=>layer.sourceReference && !same(layer,r.after.layers.find(other=>other.id===layer.id)))) return fail('conflict','Protected source display cannot be changed or removed');
       const changed = !same({ ...r.before, revision: 0 }, { ...r.after, revision: 0 });
       const visualChanged = !same(imageVisual(r.before), imageVisual(r.after));
       if (r.changed !== changed || r.visualChanged !== visualChanged || r.after.revision !== r.before.revision + (changed ? 1 : 0) ||

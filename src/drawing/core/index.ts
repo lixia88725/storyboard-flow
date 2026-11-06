@@ -39,7 +39,7 @@ const changedResult = (
     revision: before.revision + 1,
     width: before.width,
     height: before.height,
-    layers: layers.map((layer) => ({ ...layer }))
+    layers: layers.map((layer) => ({ ...layer, ...(layer.sourceReference ? {sourceReference: {...layer.sourceReference}} : {}) }))
   },
   changed: true,
   visualChanged
@@ -101,6 +101,12 @@ export const applyImageEdit = (
     return { ok: false, error: inputFailure };
   }
 
+  const protectedIds = new Set(image.layers.filter(layer => layer.sourceReference).map(layer => layer.id));
+  const touched = edit.kind === 'insertLayer' ? [] : edit.kind === 'moveLayers' ? edit.layerIds :
+    edit.kind === 'setLayerOpacities' ? edit.changes.map(change => change.layerId) : [edit.layerId];
+  if (touched.some(id => protectedIds.has(id))) return lockedFailure(touched.find(id => protectedIds.has(id))!, 'editing the protected source display; add a drawing layer');
+  // New layers may be added above, but never impersonate a retained reference.
+  if (edit.kind === 'insertLayer' && edit.layer.sourceReference) return {ok:false,error:fail('invalid-input','Protected references can only be installed by source import')};
   switch (edit.kind) {
     case "setLayerOpacities": {
       const changes=new Map(edit.changes.map(change=>[change.layerId,change]));

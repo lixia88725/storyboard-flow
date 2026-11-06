@@ -91,7 +91,7 @@ export function CreateProjectSheet(p: Props) {
       {p.state.phase === 'issues' && p.state.issues && <div className="wb-create-issues" data-create-issues="true" role="alertdialog" aria-label="部分图片需要确认">
         <p>以下图片需要处理。选择继续会按标注的方式处理，或取消整个创建。</p>
         <ul>{p.state.issues.issues.map(item => <li key={item.file}>
-          <code>{item.file}</code><span>{item.reason}</span><b>{item.action === 'skip' ? '跳过' : '扁平化'}</b>
+          <code>{item.file}</code><span>{item.reason}</span><b>{item.action === 'skip' ? '跳过' : item.reason.startsWith('PhotoCraft') ? '兼容导入' : '扁平化'}</b>
         </li>)}</ul>
       </div>}
       {(error || p.state.error) && <p className="wb-sheet-error" role="alert">{p.state.error || error}</p>}

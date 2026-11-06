@@ -1,0 +1,103 @@
+# Flow PhotoCraft reader
+
+This is an isolated integration candidate. It reads TIFF/PSD through PhotoCraft's
+`io`, `doc`, `compose` and `cms` crates. It does not implement complex-source
+writeback. Existing Flow pixel tools operate on imported basic raster layers or
+new Flow drawing layers above a protected display reference.
+
+Upstream: https://github.com/storytold/photocraft/tree/a259993118ac7ce1d4c828a385abbc3191841e86
+(version 0.20.1; MIT OR Apache-2.0). The source is an ignored local dependency at
+`vendor/photocraft`; no user media belongs there. `Cargo.lock` pins the resolved
+Rust graph, including craft-libs commits `c5a1cbfb…` and `b8f7d93b…`.
+
+## Build locally
+
+Requires Rust >=1.95, Node and the existing Flow dependencies:
+
+```sh
+npm run setup:photocraft
+npm run build:photocraft
+npm run build
+```
+
+Dependency preparation is explicit; startup and normal JS builds never install
+Rust or download dependencies. A task-local Rust installation can use independent
+`RUSTUP_HOME` / `CARGO_HOME` and a command-scoped `PATH`; do not modify shell
+profiles. The reader binary can be selected with `FLOW_PHOTOCRAFT_BIN`.
+
+The default build includes the synthetic fixture example required by
+`src/project-files/main/photocraft.test.ts`. CI must prepare this native component
+before running the newly enumerated test; the current JS-only CI has not yet
+been updated for this isolated candidate.
+
+## Bridge and limits
+
+The one-shot binary receives one private job directory containing protocol-1
+`request.json` (`format: tiff | psd`) and `source.bin`. It writes numbered PNGs
+and `response.json`. A response binds the fixed upstream commit, dimensions,
+layer properties, display-reference flag and compatibility warnings. No user
+paths cross the bridge. Main validates all output PNGs and its version, serializes
+native reads, and kills/reaps a timed-out process before returning. Failed jobs
+are retained with an error naming their location; successful private jobs are
+removed. Relative scratch files stay inside the job.
+
+Limits: 128 MiB source; 8192px dimensions; 16 Mi aggregate admitted layer pixels;
+64 source layers; 32 MiB PNG; 512 MiB PSD import estimate; 256 MiB flat decode;
+60s process timeout; two compositor threads. These are admission and decode
+bounds, not a total process RSS guarantee. Multipage/incomplete TIFF, damage,
+missing display caches and unclassified loss warnings fail explicitly. Unequal
+resolution is a nonfatal notice. Linked source files are not supplied to the
+worker. No image data is sent over the network.
+
+Basic RGB8 stacks require normal/multiply/screen, no masks/groups/effects or
+unmodelled layer blocks, sRGB-equivalent color, and room for one drawing layer.
+Other readable content becomes a protected display reference. RGB composites
+are ICC-converted to sRGB; CMYK/Lab/gray go through PhotoCraft's model-aware
+compositor. PSD merged pixels and independently decoded TIFF composites are
+checked against layers. When they disagree, the stored composite is explicitly
+used as a protected display, and its original layers remain in retained bytes.
+
+## Retention and editing
+
+`LayerV1.sourceReference` contains `originalId`, `digest`, `format`,
+`previewPixels` (RGBA SHA-256). It reuses the existing project ledger and first
+snapshot at `.storyboard-flow/originals/<originalId>.tif`. The historical suffix
+also contains PSD bytes; `format` records the actual signature. No new retention
+copies, alternate external paths or cleanup policy are introduced.
+
+Core editing refuses unlocking, visibility/name/opacity/blend changes, moving,
+removing, copying as an ordinary layer, merging, transforming or replacing the
+reference pixels. Normal new layers and their pixel tools remain editable.
+Board membership/removal and complete project-folder copies retain originals.
+Runtime open/Save/checkpoint/close validate the ledger, original format/hash,
+canonical no-follow file reads and display RGBA. Refresh refuses a changed or
+stripped reference instead of installing it as an ordinary external layer.
+
+Save creates a **new Flow TIFF**, preserving the source as retained bytes. It
+never overwrites the imported complex source. Confirmation and a persistent
+workbench note state that the TIFF is not a round-trip of the complex source.
+Protection is stored in a v3 Flow TIFF envelope. Older codecs reject v3; older
+checkpoint validators reject the new field. Existing projects without the field
+still use v1/v2 behavior. No migration of user projects is performed. Presentation
+matte/dialogue exports for references are currently refused explicitly.
+
+`npm run prepare:package-resources` includes the native binary and notices when
+it was built locally. A package without the reader gives an explicit missing
+component error for PSD/extended TIFF. Windows and release CI preparation remain
+unverified; this candidate must not be released as complete broad PSD support.
+
+## Verification
+
+Use the explicitly enumerated `test/allowed-suite.json`, normal `npm run build`,
+and `npm run check:preload`. The native fixture example generates only synthetic
+sources. The isolated Electron smoke is:
+
+```sh
+node scripts/flow-photocraft-smoke.mjs [authorized-read-only-TIFF]
+```
+
+It uses a fresh temporary directory, distinct userData, stubs clipboard/Trash,
+reads an optional authorized sample once into its private inputs, exercises the
+real launcher/import confirmation, drawing, Save, normal close and reopen, and
+checks source hashes. Native Photoshop compatibility is a separate pending
+acceptance; tests and same-codec round trips do not establish it.

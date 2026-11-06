@@ -1,3 +1,4 @@
+import { validReferenceLayer } from '../../platform/contracts/flowSourceReference';
 /**
  * Runtime validation for the image-document edit Interface.
  *
@@ -35,7 +36,8 @@ const layerKeys: readonly string[] = [
   "blendMode",
   "width",
   "height",
-  "assetId"
+  "assetId",
+  "sourceReference"
 ];
 const documentKeys: readonly string[] = ["id", "revision", "width", "height", "layers"];
 const patchKeys: readonly string[] = ["name", "visible", "locked", "opacity", "blendMode"];
@@ -100,6 +102,7 @@ const checkLayerFields = (
   value: Record<string, unknown>,
   where: string
 ): CoreFailureV1 | undefined => {
+  if (!validReferenceLayer(value)) return fail("invalid-input", `${where}: invalid protected source reference`);
   const keyFailure = checkKeys(value, layerKeys, where);
   if (keyFailure) {
     return keyFailure;

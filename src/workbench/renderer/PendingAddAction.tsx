@@ -132,7 +132,7 @@ export function PendingAddAction({ anchor, flow, sessionId, disabled, recovery }
         {state.phase === 'issues' && state.issues && <div className="wb-create-issues" data-pending-issues="true" role="alertdialog" aria-label="部分图片需要确认">
           <p>以下图片需要处理。继续会按标注的方式处理，取消则不加入 Pending。</p>
           <ul>{state.issues.issues.map(issue => <li key={issue.file}>
-            <code>{issue.file}</code><span>{issue.reason}</span><b>{issue.action === 'skip' ? '跳过' : '扁平化'}</b>
+            <code>{issue.file}</code><span>{issue.reason}</span><b>{issue.action === 'skip' ? '跳过' : issue.reason.startsWith('PhotoCraft') ? '兼容导入' : '扁平化'}</b>
           </li>)}</ul>
         </div>}
         {state.error && <p className="wb-sheet-error" role="alert">{state.error}{state.unknown ? '（仍需重试）' : ''}</p>}

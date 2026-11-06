@@ -717,6 +717,10 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
       status={issue || (flowSaved
         ? '已自动暂存 · ' + (savingTiff ? '正在更新文件夹中的故事板…' : folderStatus.label)
         : (snapshot.lastError?.message || '正在自动暂存…'))}
+      notice={Object.values(snapshot.project.images).some(image=>image.layers.some(layer=>layer.sourceReference)) &&
+      <aside data-photocraft-reference="true" role="note" style={{padding:'6px 12px',fontSize:12,flexShrink:0,background:'#3b3324',color:'#ffe2a4'}}>
+        PhotoCraft 来源底图受保护，请在新增绘画层作画。保存生成新的 Flow TIFF；复杂结构保存在项目内完整原件，此 TIFF 不是复杂源的往返文件。
+      </aside>}
       projectBar={<ProjectNamingBar naming={naming} folderName={folderName} disabled={!active || savingTiff} />}
       select={selectShot} focus={focusShot}
       selectAll={()=>{const ids=selectAllShots(flow.snapshot().project.shots.map(s=>s.id));setSelection(ids);selectionAnchor.current=undefined;}}

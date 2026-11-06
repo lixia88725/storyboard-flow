@@ -8,7 +8,7 @@ import { admitTiffCandidate, createTiffCodec, type TiffCodec } from './formats/i
 import { createPresentationCodec } from './formats/presentation.js';
 import { openFlowAssetDepot } from './persistence/depot.js';
 import { createProjectStore } from './persistence/index.js';
-import { imagePixelDigests } from './flowPixelIdentity.js';
+import { imagePixelDigests, pixelDigest } from './flowPixelIdentity.js';
 import { openFlowTiffSave, type CreatedOutputBinding } from './flowTiffSave.js';
 import { assertPhysicalWorkspaceWriterTargets } from './workspacePhysicalWriterGate.js';
 import { convertImageSource, ImageSourceTooLargeError, readImageSource, scanImageSources, SOURCE_PIXEL_LIMIT, SOURCE_PNG_LIMIT, type ImageSourceIssue, type ReadSource, type ScannedSource } from './imageSourceConversion.js';
@@ -175,11 +175,12 @@ export async function createImageProject(input: CreateImageProjectInput, options
       for (const layer of converted.layers) preparedBytes += layer.png.byteLength;
       if (preparedBytes > MAX_PREPARED_BYTES) throw Error(`Project creation exceeds the ${MAX_PREPARED_BYTES}-byte prepared budget`);
       const shotId = randomUUID();
+      const referencePixels = converted.reference ? await pixelDigest(converted.layers[0].png) : undefined;
       const dialogues: DialogueV1[] = (converted.text?.dialogues ?? []).map(dialogue => ({ id: randomUUID(), shotId, text: dialogue.text }));
       const candidate = {
         identity: 'unverified' as const,
         kind: converted.kind === 'tiff' ? 'layered' as const : 'plain' as const,
-        image: { id: randomUUID(), revision: 0, width: converted.width, height: converted.height, layers: converted.layers },
+        image: { id: randomUUID(), revision: 0, width: converted.width, height: converted.height, layers: converted.layers.map(layer => ({...layer, ...(converted.reference ? {sourceReference: {...converted.reference, originalId: shotId, previewPixels: referencePixels!}} : {})})) },
         text: converted.text ? {
           projectId: project.id, projectName: project.name, shotId,
           shotName: converted.text.shotName, scriptText: converted.text.scriptText, dialogues,

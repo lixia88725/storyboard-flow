@@ -23,6 +23,7 @@ export function createPresentationCodec(codec:TiffCodec):TiffCodec{
     if(!validPresentation(settings)||!captured.text)throw Error('Presentation requires valid settings and portable text');
     const t=captured.text;
     snapshotProject({schema:'storyboard-flow.project',version:1,id:t.projectId,name:t.projectName,revision:0,shots:[{id:t.shotId,imageId:captured.image.id,name:t.shotName,scriptText:t.scriptText}],parkedShots:[],dialogues:t.dialogues,images:{[captured.image.id]:captured.image}});
+    if(captured.image.layers.some(l=>l.sourceReference))throw Error('受保护来源暂不支持遮幅/对白导出；原件与内部编辑均已保留');
     const image=captured.image,w=image.width,h=image.height+(settings.mode==='expanded'?MATTE_HEIGHT*2:0),n=image.layers.length+(settings.dialogue?2:1);
     if(w<1||h<1||w>8192||h>8192||w*h*n>16*1024*1024||n>64)throw Error('Presentation exceeds TIFF pixel/layer limits');
     const bytes=new Map<string,Uint8Array>(),layers:LayerV1[]=[];

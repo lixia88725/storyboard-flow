@@ -160,7 +160,7 @@ def decode(root, limits):
                     and all(not node.attrib for node in nodes), 'Unknown XMP fields cannot be preserved')
                 envelope = json.loads(base64.b64decode(entries[0].text, validate=True))
                 require(envelope.get('app') == 'Storyboard Flow' and envelope.get('format') == 'flow-tiff'
-                        and envelope.get('rasterVersion') in (1, 2), 'Unsupported Flow TIFF metadata version')
+                        and envelope.get('rasterVersion') in (1, 2, 3), 'Unsupported Flow TIFF metadata version')
             except Refusal:
                 raise
             except Exception as e:

@@ -147,8 +147,8 @@ else app.whenReady().then(async () => {
     }
     if (entry.kind === 'empty')
       throw Error(entry.legacy
-        ? '这个旧版工作簿文件夹里没有可导入的图片（只读取直属的 JPEG、PNG、TIFF）。'
-        : '这个文件夹里没有可导入的图片（只读取直属的 JPEG、PNG、TIFF），也不是 Storyboard Flow 项目。');
+        ? '这个旧版工作簿文件夹里没有可导入的图片（只读取直属的 JPEG、PNG、TIFF、PSD）。'
+        : '这个文件夹里没有可导入的图片（只读取直属的 JPEG、PNG、TIFF、PSD），也不是 Storyboard Flow 项目。');
     return { kind: 'import', draft: launcher.draftFromFolder(root, entry) };
   };
 
@@ -209,7 +209,7 @@ else app.whenReady().then(async () => {
   const pickPendingSource = async (mode: 'files' | 'folder'): Promise<PendingAddSource | null> => {
     if (mode === 'files') {
       const selection = await dialog.showOpenDialog(win, { title: '添加到 Pending：选择图片', buttonLabel: '选择',
-        properties: ['openFile', 'multiSelections'], filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'tif', 'tiff'] }] });
+        properties: ['openFile', 'multiSelections'], filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'tif', 'tiff', 'psd'] }] });
       if (selection.canceled) return null;
       const files = await Promise.all(selection.filePaths.map(file => fs.realpath(file)));
       return { kind: 'files', files };
@@ -354,7 +354,7 @@ else app.whenReady().then(async () => {
     launcher.view(draftId);
     if (kind === 'files') {
       const selection = await dialog.showOpenDialog(win, { title: '选择故事板图片', buttonLabel: '选择', properties: ['openFile', 'multiSelections'],
-        filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'tif', 'tiff'] }] });
+        filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'tif', 'tiff', 'psd'] }] });
       if (selection.canceled) return { canceled: true as const };
       const files = await Promise.all(selection.filePaths.map(file => fs.realpath(file)));
       return launcher.setSource(draftId, { kind: 'files', files });

@@ -5,7 +5,7 @@ export type ImageReconciliation =
   | { kind: 'replace'; image: ImageDocumentV1 }
   | { kind: 'conflict'; reason: 'identity' | 'canvas' | 'layer' | 'order' };
 const layerValue = (l: LayerV1 | undefined) => l && [l.id, l.name, l.kind, l.visible,
-  l.locked, l.opacity, l.blendMode, l.width, l.height, l.assetId];
+  l.locked, l.opacity, l.blendMode, l.width, l.height, l.assetId, l.sourceReference];
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const sameLayer = (a: LayerV1 | undefined, b: LayerV1 | undefined) => same(layerValue(a), layerValue(b));
 const imageValue = (image: ImageDocumentV1) => [image.width, image.height, image.layers.map(layerValue)];
@@ -18,6 +18,9 @@ export function reconcileExternalImage(baseline: ImageDocumentV1, local: ImageDo
   if (!identified || baseline.id !== local.id || [baseline, local, external].some(image =>
     new Set(image.layers.map(layer => layer.id)).size !== image.layers.length)) return { kind: 'conflict', reason: 'identity' };
   if (same(imageValue(local), imageValue(external)) || same(imageValue(baseline), imageValue(external))) return { kind: 'unchanged' };
+  const references = local.layers.filter(layer => layer.sourceReference);
+  if (references.length && (external.width !== local.width || external.height !== local.height ||
+      references.some(layer => !sameLayer(layer, external.layers.find(other => other.id === layer.id))))) return {kind:'conflict',reason:'layer'};
   const localChanged = !same(imageValue(baseline), imageValue(local));
   const externalCanvas = external.width !== baseline.width || external.height !== baseline.height;
   const localCanvas = local.width !== baseline.width || local.height !== baseline.height;

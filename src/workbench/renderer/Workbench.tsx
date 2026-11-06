@@ -25,6 +25,7 @@ export type WorkbenchProps={
  toolbar:ReactNode;actions:ReactNode;toolRail:ReactNode;boardActions:ReactNode;
  /** Persistent project fields, kept out of the per-session editor panes. */
  projectBar?:ReactNode;
+ notice?:ReactNode;
  select:(id:string,event:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean})=>void;
  focus:(id:string)=>void;selectMany:(ids:string[])=>void;selectAll:()=>void;clearSelection:()=>void;
  /** Pending keeps its own selection: same gestures, its own order, never merged with the board. */
@@ -169,6 +170,7 @@ export function Workbench(p:WorkbenchProps){
    else (e.shiftKey?p.clearPending:p.selectAllPending)();
   }}>
   <header className="wb-header"><nav aria-label="项目操作">{p.actions}{p.projectBar}<details className="wb-panel-menu"><summary>面板</summary><div className="wb-menu">{(Object.keys(labels) as Panel[]).map(id=><label key={id}><input type="checkbox" data-panel-toggle={id} checked={!hidden.includes(id)} onChange={()=>{if(p.canNavigate())setHidden(h=>h.includes(id)?h.filter(v=>v!==id):[...h,id]);}}/>{labels[id]}</label>)}<button onClick={()=>{if(p.canNavigate()){const defaults=defaultWorkspaceLayout();setLayout(defaults.layout);setHidden(defaults.hidden);setHeights(defaults.heights);setJapanese(defaults.japanese);setSplit(defaults.split);setZoom(defaults.zoom);setTile(defaults.tile);setPendingTile(defaults.pendingTile);setCollapsed(defaults.collapsed);setFlyout([undefined,undefined]);}}}>恢复默认布局</button></div></details></nav></header>
+  {p.notice}
   <div className="wb-toolbar">{p.toolbar}</div>
   <div className="wb-main-row">{p.toolRail}<div className="wb-work-area">
   <DndContext autoScroll={false} sensors={sensors} collisionDetection={closestCenter} onDragStart={sorting.start} onDragCancel={sorting.cancel} onDragEnd={sorting.end}>

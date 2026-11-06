@@ -1,3 +1,4 @@
+import { verifySourceReferences } from './flowSourceReferences.js';
 import { flowCodecOptions } from '../../platform/main/flowRuntimePaths.js';
 import type { TrashItem } from './flowOutputTrash.js';
 import { openFlowTiffSave } from './flowTiffSave.js';
@@ -36,6 +37,21 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
     await output.refresh(loaded.value.project,depot.value,checkpointAccess);
     loaded=await store.loadCheckpoint(root);if(!loaded.ok)throw Error(loaded.error.message);
   }
+  await verifySourceReferences(root, loaded.value.project, loaded.value.readAsset);
+  const protectedSources = new Map<string, ProjectV1['images'][string]['layers']>();
+  const rememberSources = (project: ProjectV1) => {
+    for (const image of Object.values(project.images)) {
+      const references = image.layers.filter(layer=>layer.sourceReference);
+      if (references.length) protectedSources.set(image.id, structuredClone(references));
+    }
+  };
+  const assertProtectedSources = (project: ProjectV1) => {
+    for (const [imageId, references] of protectedSources) {
+      if (references.some(layer=>!isDeepStrictEqual(layer,project.images[imageId]?.layers.find(other=>other.id===layer.id))))
+        throw Error('Protected source display or binding was changed; retained original is required');
+    }
+  };
+  rememberSources(loaded.value.project);
   const bootstrap=structuredClone(loaded.value.project);
   let sealed = false, pending = 0, refreshing = false, pendingAddRetained = false;
   const retainedAdd = () => pendingAddRetained ? { ok: false as const, error: { code: 'busy' as const, message: 'Retry the retained Pending add', effect: 'unknown' as const } } : null;
@@ -55,6 +71,7 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
           const resumed = await output.resumePendingAdd(depot.value, checkpointAccess, input.operationId);
           if (!resumed) return { ok: false as const, error: { code: 'not-found' as const, message: 'No retained Pending add to recover', effect: 'none' as const } };
           pendingAddRetained = false;
+          rememberSources(resumed.project);
           return { ok: true as const, value: resumed };
         } catch (error) {
           return { ok: false as const, error: { code: 'io-failure' as const, message: error instanceof Error ? error.message : String(error), effect: 'unknown' as const } };
@@ -76,6 +93,7 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
         const value = await output.appendPending(project, additions,
           async id => { const asset = await depot.value.read(id); if (!asset.ok) throw Error(asset.error.message); return asset.value; },
           checkpointAccess, input.operationId, { signal: options.signal, onProgress: progress => options.onProgress?.({ ...progress, phase: 'write' }) });
+        rememberSources(value.project);
         return { ok: true as const, value };
       } catch (error) {
         let retained = (error as { pendingAddRetained?: boolean })?.pendingAddRetained;
@@ -98,7 +116,7 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
       if(sealed||pending)return {ok:false as const,error:{code:'busy' as const,message:'Editor has pending work',effect:'none' as const}};
       if(pendingAddRetained)return retainedAdd()!;
       pending++;refreshing=true;
-      try{return {ok:true as const,value:await output.refresh(project,depot.value,checkpointAccess)};}
+      try{assertProtectedSources(project);await verifySourceReferences(root,project,async id=>{const r=await depot.value.read(id);if(!r.ok)throw Error(r.error.message);return r.value;});return {ok:true as const,value:await output.refresh(project,depot.value,checkpointAccess)};}
       catch(error){return {ok:false as const,error:{code:'io-failure' as const,message:error instanceof Error?error.message:String(error),effect:(error as {refreshPending?:boolean})?.refreshPending?'unknown' as const:'retained' as const}};}
       finally{pending--;refreshing=false;}
     },
@@ -107,6 +125,8 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
       if (pendingAddRetained) return retainedAdd()!;
       pending++;
       try {
+        assertProtectedSources(project);
+        await verifySourceReferences(root, project, async id=>{const r=await depot.value.read(id);if(!r.ok)throw Error(r.error.message);return r.value;});
         const value = await output.save(project, async id => {
           const asset = await depot.value.read(id); if (!asset.ok) throw Error(asset.error.message); return asset.value;
         });
@@ -121,6 +141,8 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
       pending++;
       try {
         if(await output.hasPendingRefresh())return {ok:false as const,error:{code:'conflict' as const,message:'Retry Refresh before checkpoint'}};
+        assertProtectedSources(project);
+        await verifySourceReferences(root, project, async id=>{const r=await depot.value.read(id);if(!r.ok)throw Error(r.error.message);return r.value;});
         return await store.saveCheckpoint(root, project, async id => {
         const asset = await depot.value.read(id);
         if (!asset.ok) throw new Error(asset.error.message);
@@ -139,6 +161,8 @@ export async function openFlowEditorRuntime(root: string, trashItem?: TrashItem)
         const disk = await store.loadCheckpoint(root);
         // Full strict load checks every referenced asset before permission to close.
         if (!disk.ok || !isDeepStrictEqual(disk.value.project, project)) { sealed = false; return false; }
+        assertProtectedSources(disk.value.project);
+        await verifySourceReferences(root,disk.value.project,disk.value.readAsset);
         const assets = new Set(Object.values(disk.value.project.images).flatMap(image => image.layers.map(layer => layer.assetId)));
         for (const id of assets) {
           const retained = await depot.value.read(id);

@@ -17,6 +17,7 @@ export function validRefreshTransition(before: ProjectV1, after: ProjectV1): boo
   const added=after.parkedShots.slice(before.parkedShots.length);
   if(added.some(s=>Object.hasOwn(before.images,s.imageId)))return false;
   for(const [id,image] of Object.entries(before.images)){
+    if(image.layers.some(layer=>layer.sourceReference && !same(layer,after.images[id]?.layers.find(other=>other.id===layer.id))))return false;
     if(!Object.hasOwn(after.images,id)||(!owners.has(id)&&!same(image,after.images[id])))return false;
   }
   // Newly retained, unowned images preserve external assets across accepted merges.

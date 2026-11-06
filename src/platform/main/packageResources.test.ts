@@ -25,6 +25,17 @@ describe("preparePackageResources", () => {
     ).resolves.toBe("# psdtags\n");
   });
 
+  it('includes an explicitly prepared native PhotoCraft bridge and its licenses', async () => {
+    const repoRoot=await temporaryWorkspace('photocraft-package-');
+    const deps=path.join(repoRoot,'vendor/python/photoshop-tiff/psdtags');await mkdir(deps,{recursive:true});
+    const native=path.join(repoRoot,'native/photocraft'),bin=path.join(native,'target/debug',process.platform==='win32'?'flow-photocraft.exe':'flow-photocraft');
+    await mkdir(path.dirname(bin),{recursive:true});await writeFile(bin,'synthetic bridge');
+    await mkdir(path.join(native,'licenses'));await writeFile(path.join(native,'licenses/NOTICE'),'synthetic license');
+    const result=await preparePackageResources({repoRoot});
+    expect(await readFile(path.join(result.photocraft!.target,path.basename(bin)),'utf8')).toBe('synthetic bridge');
+    expect(await readFile(path.join(result.photocraft!.target,'licenses/NOTICE'),'utf8')).toBe('synthetic license');
+  });
+
   it("fails clearly when Photoshop TIFF Python deps are not installed", async () => {
     const repoRoot = await mkdtemp(path.join(os.tmpdir(), "flow-package-resources-missing-"));
     await mkdir(path.join(repoRoot, "vendor", "python", "photoshop-tiff"), { recursive: true });
