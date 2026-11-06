@@ -679,7 +679,7 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
       </div>}
       renderDialogue={renderDialogue}
       toolbar={null}
-      toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} onToolChange={setTool}
+      toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} paintInFlight={!outputWork.current && paintPresentation.hasInput()} onToolChange={setTool}
         color={color} onColorChange={setColor} size={activePresetValue.size} onSizeChange={setActiveSize}
         blurRadius={blurRadius} onBlurRadiusChange={setBlurRadius} onApplyBlur={applyBlur}
         footer={<><button disabled={!active} title="撤销" aria-label="撤销" onClick={()=>void historyStep('undo')}><Undo2 size={20} strokeWidth={1.5} aria-hidden /><span className="wb-sr-only">撤销</span></button><button disabled={!active} title="重做" aria-label="重做" onClick={()=>void historyStep('redo')}><Redo2 size={20} strokeWidth={1.5} aria-hidden /><span className="wb-sr-only">重做</span></button></>}/>}

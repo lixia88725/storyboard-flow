@@ -43,12 +43,14 @@ async function pixels(imageId,points){
   await js('window.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
   await wait(()=>js('!document.querySelector(".wb-brush-presets")'),'brush panel closed');
   const before=await revision(),points=[[.2,.35],[.5,.35],[.8,.35]];
+  await js(`(()=>{window.__railOpacity=[];window.__railTimer=setInterval(()=>{const list=document.querySelector('.wb-tool-rail-list');if(list?.dataset.waiting==='true')window.__railOpacity.push([...list.querySelectorAll('button')].map(b=>getComputedStyle(b).opacity));},10);return true})()`);
   await dot('viewer:shot0',...points[0]);await dot('grid:shot0',...points[1]);await dot('viewer:shot0',...points[2]);
   const preparing=await state();assert.equal(preparing.filter(s=>s.status==='preparing').length,2);assert.ok(preparing.every(s=>s.width===0&&s.staticDisplay==='none'));
   fs.writeFileSync(path.join(out,'cold-preparing.png'),(await win.webContents.capturePage()).toPNG());
   await wait(async()=>await revision()===before+3,'all three alternating strokes installed');await wait(()=>js('Array.from(document.querySelectorAll("[data-paint-layer=ink]")).every(c=>c.dataset.paintStatus==="ready")'),'both ready');
   await wait(()=>saved().revision===before+3,'checkpoint');const alpha=await pixels('image0',points),shown=await canvasAlpha(points);
   assert.deepEqual(alpha,[255,255,255]);assert.equal(shown.length,2);for(const s of shown)assert.deepEqual(s.alpha,alpha);
+  const rail=await js('clearInterval(window.__railTimer);window.__railOpacity');assert.ok(rail.length>0,'observed transient tool lock');assert.ok(rail.every(row=>row.every(o=>o==="1")),'paint lock never dims tool rail');report.railOpacitySamples=rail.length;
   report.cases.push({name:'700ms A-B-A; cold full down/up before decode',revisionDelta:3,preparing,alpha,shown});
 
   const undoBefore=await revision(),undoAt=Date.now();await js('document.querySelector("button[aria-label=撤销]").click()');

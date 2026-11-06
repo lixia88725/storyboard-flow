@@ -69,7 +69,7 @@ async function dragTo(from,to,steps=8){move(from.x,from.y);await delay(60);down(
  await delay(140);up(to.x,to.y);await delay(350)}
 const settle=async()=>{await wait(()=>js('document.querySelector(".wb-status [role=status]").textContent.startsWith("已自动暂存")'),'autostash');await delay(120)};
 const selPending=()=>js('Array.from(document.querySelectorAll(".flow-pending-shelf [data-pending-shot-id].is-selected")).map(e=>e.dataset.pendingShotId)');
-const cardPoint=async(id,sel)=>{await js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="'+id+'"]')+');if(!c)return;const b=c.closest(".wb-panel-body");b.scrollTop=Math.max(0,c.offsetTop-b.clientHeight/2+c.clientHeight/2)})()');await delay(280);
+const cardPoint=async(id,sel)=>{await js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="'+id+'"]')+');if(!c)return;const b=c.closest(".wb-panel-body");const r=c.querySelector(".wb-card-picture").getBoundingClientRect(),br=b.getBoundingClientRect();if(Math.min(r.bottom,br.bottom)-Math.max(r.top,br.top)<12)c.scrollIntoView({block:"nearest"})})()');await delay(280);
  return js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="'+id+'"]')+'),e=c.querySelector('+JSON.stringify(sel||'.wb-card-picture')+');if(!e)return null;const b=c.closest(".wb-panel-body"),br=b.getBoundingClientRect(),r=e.getBoundingClientRect();const top=Math.max(r.top,br.top,0),bottom=Math.min(r.bottom,br.bottom,innerHeight);if(bottom-top<10)return null;for(let y=Math.round((top+bottom)/2);y<bottom-2;y+=4){const h=document.elementFromPoint(Math.round(r.left+r.width/2),y);if(h&&c.contains(h)&&!h.closest("[data-no-drag]"))return {x:Math.round(r.left+r.width/2),y,hit:((h.className||"")+"|"+h.tagName)}}return null})()')};
 const dropAbove=id=>js('(()=>{const c=document.querySelector('+JSON.stringify('[data-pending-shot-id="'+id+'"]')+'),r=c.getBoundingClientRect();for(let y=Math.round(r.top+5);y<r.top+40;y+=4){const h=document.elementFromPoint(Math.round(r.left+r.width/2),y);if(h&&c.contains(h))return {x:Math.round(r.left+r.width/2),y}}return null})()');
 const undo=async()=>{await js('Array.from(document.querySelectorAll("button")).find(b=>b.textContent==="撤销").click()');await delay(250);await settle()};
@@ -102,6 +102,12 @@ import('file://'+${JSON.stringify(entry)}).then(async()=>{
   const dragOnto=async(id,targetId,where)=>{const from=await cardPoint(id);assert.ok(from,'grab '+id);const to=await point(targetId,where);assert.ok(to,'drop '+targetId);await dragTo(from,to);await settle()};
 
  const start=order(),canvas0=await canvasShot();
+ await js("(()=>{const e=document.querySelector('[aria-label=\"Pending 卡片大小\"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'110');e.dispatchEvent(new Event('input',{bubbles:true}));})()");await delay(200);
+ const small=await js("Array.from(document.querySelectorAll('[data-pending-shot-id]')).map(c=>{const r=c.getBoundingClientRect(),p=c.querySelector('.wb-card-picture').getBoundingClientRect(),s=c.querySelector('.image-stage').getBoundingClientRect();return {card:r.width,picture:p.width,stage:s.width,right:s.right-r.right,left:s.left-r.left}})");
+ assert.ok(small.length>0);for(const r of small){assert.ok(r.picture<=r.card && r.stage<=r.card && r.right<=1 && r.left>=-1,'minimum Pending picture stays in its card: '+JSON.stringify(r));}
+ fs.writeFileSync(path.join(${JSON.stringify(run)},'minimum-picture-bounds.json'),JSON.stringify(small,null,2));fs.writeFileSync(path.join(${JSON.stringify(run)},'minimum-pending.png'),(await win.webContents.capturePage()).toPNG());
+ await js("(()=>{const e=document.querySelector('[aria-label=\"Pending 卡片大小\"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'300');e.dispatchEvent(new Event('input',{bubbles:true}));})()");await delay(200);
+
 
 
  if(${JSON.stringify(phase)}==='edit'){

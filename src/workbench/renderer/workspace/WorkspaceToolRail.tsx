@@ -7,6 +7,8 @@ type Props = {
   tool: WorkspaceTool;
   disabled: boolean;
   canChangeTool: boolean;
+  /** Preserve appearance while a paint acknowledgement temporarily locks switching. */
+  paintInFlight?: boolean;
   onToolChange: (tool: WorkspaceTool) => void;
   color: string;
   onColorChange: (color: string) => void;
@@ -27,7 +29,7 @@ const tools: { id: WorkspaceTool; label: string; glyph: string }[] = [
 
 export function WorkspaceToolRail(p: Props) {
   return <aside className="wb-tool-rail" aria-label="绘制工具">
-    <div className="wb-tool-rail-list">{tools.map(({id,label,glyph}) =>
+    <div className="wb-tool-rail-list" data-waiting={!p.disabled && !p.canChangeTool && p.paintInFlight}>{tools.map(({id,label,glyph}) =>
       <button key={id} type="button" aria-label={label} title={label} aria-pressed={p.tool===id}
         disabled={p.disabled || !p.canChangeTool} onClick={() => p.onToolChange(id)}>
         <svg className="wb-tool-glyph" viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={glyph}/></svg><span>{label}</span>

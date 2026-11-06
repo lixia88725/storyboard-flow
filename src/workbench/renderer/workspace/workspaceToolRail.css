@@ -13,3 +13,6 @@
 .flow-workbench .wb-tool-options .wb-apply-blur { font-size:10px;line-height:1.4;border:1px solid #50575e;background:#30383d;padding:5px 2px; }
 .wb-tool-rail-footer { margin-top:auto; border-top:1px solid var(--wb-line); padding:6px 3px; display:grid;gap:3px; }
 .flow-workbench .wb-tool-rail-footer button { display:grid;place-items:center;width:100%;height:34px;padding:0; }
+
+/* A paint acknowledgement briefly locks switching; keep the rail visually steady. */
+.flow-workbench .wb-tool-rail-list[data-waiting=true] button:disabled { opacity:1; }

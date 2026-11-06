@@ -406,3 +406,6 @@
 .paint-preparing:has(.paint-decisions) > * { flex-shrink:0; }
 .paint-decisions button { color:#222; background:#fff; border:1px solid #aaa; border-radius:4px; padding:5px 8px; }
 .paint-decisions button:disabled { opacity:.45; }
+
+/* Small Pending cards must scale their picture below the board's 70px floor. */
+.flow-workbench .wb-pending-grid .wb-card-picture { min-width:0; min-height:0; width:100%; overflow:hidden; }
