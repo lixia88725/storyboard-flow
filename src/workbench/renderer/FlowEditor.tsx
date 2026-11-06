@@ -23,6 +23,7 @@ import { LayerPanel } from '../../drawing/renderer/LayerPanel';
 import {DialogueBlocks} from '../../storyboard/renderer/dialogueBlocks';
 import {createDialogueCommitState, type DialogueCommitState, type DialogueEditState} from '../../storyboard/renderer/dialogueCommitState';
 import { WorkspaceToolRail } from './workspace/WorkspaceToolRail';
+import { createController, TOOL_KEYS as TOOL_SHORTCUT_KEYS } from './toolShortcuts';
 import { ChevronDown, FolderClosed, FolderInput, Undo2, Redo2, Save } from 'lucide-react';
 import { ProjectLauncher } from './ProjectLauncher';
 import { CreateProjectSheet } from './CreateProjectSheet';
@@ -286,6 +287,42 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
   const flowSaved = snapshot.checkpoint?.revision === snapshot.project.revision && !snapshot.pending;
   const folderStatus = useFolderStatus(snapshot.project, flowSaved, savingTiff || refreshing, api.folderStatus);
   const [tool, setTool] = useState<'brush' | 'eraser' | 'blur' | 'select'>('brush');
+  // Photoshop-style tool keys: B/E/L/K, plus the spring-loaded eraser on E.
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+  const shortcutRef = useRef<ReturnType<typeof createController>>(undefined);
+  useEffect(() => {
+    const controller = createController({
+      current: () => (toolRef.current === 'blur' ? 'select' : toolRef.current),
+      apply: next => setTool(next),
+      isBlocked: () => !!document.querySelector('[role="dialog"][aria-modal="true"]')
+    });
+    shortcutRef.current = controller;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const mapped = TOOL_SHORTCUT_KEYS[event.key.toLowerCase()];
+      // Brush and eraser must stay available while a stroke is in flight; lasso and blur
+      // are ordinary selections and keep the existing settlement gate.
+      if (mapped === 'select' && !canNavigateRef.current()) return;
+      if (event.key.toLowerCase() === 'k' && !canNavigateRef.current()) return;
+      if (controller.keyDown(event) !== 'ignored') event.preventDefault();
+    };
+    const onKeyUp = (event: KeyboardEvent) => { controller.keyUp(event); };
+    const onBlur = () => { controller.blur(); };
+    const onHide = () => { if (document.visibilityState === 'hidden') controller.blur(); };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onHide);
+      controller.dispose();
+      shortcutRef.current = undefined;
+    };
+  }, []);
+  const canNavigateRef = useRef<() => boolean>(() => true);
   const [color, setColor] = useState('#dd3344');
   const pixelSelections = useRef<Record<string, FlowSelection>>({});
   const bitmapSelectionChange = useCallback((shotId: string, layerId: string | undefined, points: FlowSelection | undefined) => {
@@ -610,6 +647,7 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
           }} />;
   const editsSettled = () => !paintInput.isPaused() && active && !paintPresentation.hasInput() && !gestures.current && !flow.snapshot().pending && !hasUnsettledMountedGesture() && !inputUnsettled();
   const canNavigate = () => !outputWork.current && editsSettled();
+  canNavigateRef.current = canNavigate;
   // TIFF output owns its captured revision. A new brush stroke edits the live Session.
   const brushAvailable = () => active && tool === 'brush' && (!outputWork.current || savingTiff) && !gestures.current;
   const canStartCanvasEdit = () => (!outputWork.current || brushAvailable()) && editsSettled();
@@ -679,7 +717,7 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
       </div>}
       renderDialogue={renderDialogue}
       toolbar={null}
-      toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} paintInFlight={!outputWork.current && paintPresentation.hasInput()} onToolChange={setTool}
+      toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} paintInFlight={!outputWork.current && paintPresentation.hasInput()} onToolChange={(next) => { if (next !== 'blur') shortcutRef.current?.toolChosenByUser(next); setTool(next); }}
         color={color} onColorChange={setColor} size={activePresetValue.size} onSizeChange={setActiveSize}
         blurRadius={blurRadius} onBlurRadiusChange={setBlurRadius} onApplyBlur={applyBlur}
         footer={<><button disabled={!active} title="撤销" aria-label="撤销" onClick={()=>void historyStep('undo')}><Undo2 size={20} strokeWidth={1.5} aria-hidden /><span className="wb-sr-only">撤销</span></button><button disabled={!active} title="重做" aria-label="重做" onClick={()=>void historyStep('redo')}><Redo2 size={20} strokeWidth={1.5} aria-hidden /><span className="wb-sr-only">重做</span></button></>}/>}
