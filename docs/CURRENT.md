@@ -4,7 +4,7 @@
 
 ## 本轮收口：跨画布共享绘画展示
 
-候选 `37ad7f3 → 6d53aaa → ac94c9f` 已快进整合至本地 main，未推送或发布。故事板小画面与大画布使用会话级共享展示 owner，移除 DOM LiveMirror 和 hover 起笔依赖；资产回执与覆盖前缀绑定，历史屏障遮住旧像素并保留新输入。关闭／切项目在结算前同步停止新绘画准入，freeze 后复检义务；超限笔不自动提交截断前缀。失败处理及用户明确选择的新顺序语义见 [DESIGN](DESIGN.md)，接口与预算见 [ARCHITECTURE](ARCHITECTURE.md#绘画展示与输入义务)。
+候选 `37ad7f3 → 6d53aaa → ac94c9f` 已快进整合至 main；本次已获用户授权提交／推送，远端同步与发布结果须分别核对。故事板小画面与大画布使用会话级共享展示 owner，移除 DOM LiveMirror 和 hover 起笔依赖；资产回执与覆盖前缀绑定，历史屏障遮住旧像素并保留新输入。关闭／切项目在结算前同步停止新绘画准入，freeze 后复检义务；超限笔不自动提交截断前缀。失败处理及用户明确选择的新顺序语义见 [DESIGN](DESIGN.md)，接口与预算见 [ARCHITECTURE](ARCHITECTURE.md#绘画展示与输入义务)。
 
 实现者最终自测：显式获准 **85 文件／995 项**、构建、跨画布专项、六组关闭／预算／失败恢复专项、五阶段重新叠画与 unknown／retained 正常关闭重开，以及邻近橡皮、选择、综合工作台均通过。五种预设、四个时点的同一固定 seed 输入与独立 FlowPixels 路径整图 RGBA 共 20 组零差异；重叠失败笔的新顺序选择另有 921600 通道零差异对照。Terra 对三次候选进行独立只读复审，最终按已确认的新顺序选择语义关闭阻断，未发现新增阻断；该审查不代替主管运行验证。
 
@@ -20,7 +20,7 @@
 
 完整构建、获准清单 **84 文件／963 项**通过（`/tmp/flow-eraser-chief-build.log`、`/tmp/flow-eraser-chief-suite.log`）。真实合成 Electron 窗口中，viewer/grid 快速橡皮均 8/8，400ms 对照亦 8/8，所有点 alpha=0；已固化 `scripts/flow-eraser-continuation-smoke.mjs` 并复跑通过（`flow-eraser-continuation-GhH1hN`，`/tmp/flow-eraser-chief-stable-gui2.log`）。综合绘画／保存／撤销／重开／恢复三阶段通过（`flow-workbench-smoke-6nRcwe`，`/tmp/flow-eraser-chief-workbench.log`）。首次固化脚本使用临时目录别名被安全拒绝，修正为规范路径后通过，失败日志保留。
 
-跨画布与共享展示基底仍未完成。两份独立只读审查一致要求按会话统一展示像素，明确 paint 回执的资产覆盖关系及历史屏障；方案结论不是实现或验收证据。真实数位笔、Windows 与长期内存仍待验，未重启用户试用窗口、未推送。
+当时跨画布与共享展示基底尚未完成；现已整合并验收，见本轮收口。真实数位笔、Windows 与长期内存仍待验，未重启用户试用窗口、未推送。
 
 ## 本轮：工具栏瘦身与绘画编码优化
 
@@ -30,7 +30,7 @@
 
 主管整合后完整构建与获准清单 **83 文件／958 项**全部通过。工具栏 GUI edit/reopen 通过（`flow-workbench-polish-gqbAk3`），含图标、两桌尺寸独立与恢复默认断言。日志：`/tmp/flow-ui-drawing-chief-build.log`、`/tmp/flow-ui-drawing-chief-suite.log`、`/tmp/flow-ui-drawing-chief-polish-elevated.log`。Pending 小桌子排序、边缘滚动、键盘移回和重开复验亦通过（`flow-pending-table-mX0sMu`），日志 `/tmp/flow-ui-drawing-chief-table.log`。首次受限环境的 GUI 子进程退出，保留 `/tmp/flow-ui-drawing-chief-polish.log`；随后隔离合成窗口正常通过。
 
-**绘画故障尚未整体解决。** 跨画布准入／预览交接仍为未合入候选（同画布橡皮连笔修复见上）；共享基底模块在重复准备时会丢失已接受笔迹，主管未验收。已暂停执行者继续叠加修补，由主管收敛真实资产／笔迹生命周期。未重启用户窗口、未推送或发布。
+当时的共享基底候选未获验收；现已由会话级共享展示实现替代，见本轮收口。
 
 ## 本轮：撤销、重做与取回图标
 
@@ -40,7 +40,7 @@
 
 Pending 卡片与故事板共用外观、选择、框选和二维插入规则，显示只读台词，保留整卡拖动；点击不切右侧画布。候选 `0008ef6` 已本地整合至 `6c77dea`，未推送。执行者在隔离 worktree 完成 82 文件／945 项获准测试、构建，以及 Pending 小桌子、故事板选择、Pending 删除和工具栏四组 GUI 回归；覆盖键盘焦点恢复、内部组排序、跨桌插入、Pending 边缘滚动与重开。主管在实际整合版本 `6c77dea` 上独立完成 `npm run build`、显式枚举获准清单的 82 文件／945 项测试，以及小桌子和主故事板选择两组 GUI 复验，均通过。整合证据：`/tmp/flow-pending-chief-build.log`、`/tmp/flow-pending-chief-suite.log`、`/tmp/flow-pending-chief-gui.log`、`/tmp/flow-pending-chief-selection.log`；GUI 运行目录分别为 `flow-pending-table-s33Lts`、`flow-board-selection-lz56ps`（系统临时目录）。
 
-绘画低风险编码优化与跨画布预览交接修复仍为独立候选，尚未包含在此整合中。未验证触控/Windows，以及故事板侧视口外拖放和连续跨屏长距离滚动；用户试用窗口尚未重启。
+该次整合尚不含绘画优化与跨画布修复；它们已在后续整合，见本轮收口。未验证触控/Windows，以及故事板侧视口外拖放和连续跨屏长距离滚动；用户试用窗口尚未重启。
 
 ## 上一轮：文稿标题与故事板工具栏
 
