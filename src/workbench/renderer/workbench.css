@@ -72,7 +72,11 @@
 /* Japanese sheet row: 镜号 | 画面 | 动作说明 | 台词, in the order of the paper form the
    artists already read. The number column is the whole drag handle, so the card has no
    header strip of its own and the picture starts at the row's top edge. */
-.wb-japanese .wb-card { --wb-split:44%; display:grid; grid-template-columns:44px minmax(120px,32%) minmax(0,1fr); align-items:start; }
+.wb-japanese .wb-card { --wb-split:44%; /* The picture column is the toolbar's tile size, so the same slider drives both
+   layouts; 100% - 254px keeps 210px of 动作/台词 beside it, and 88px is the floor a
+   narrow panel may squeeze it to before the text column takes what is left. */
+  --wb-pic: max(88px, min(var(--tile, 220px), calc(100% - 254px)));
+  display:grid; grid-template-columns:44px minmax(0, var(--wb-pic)) minmax(0, 1fr); align-items:start; }
 .wb-japanese .wb-card-handle { grid-column:1; grid-row:1; align-self:stretch; width:100%; height:auto; flex-direction:column; justify-content:flex-start; gap:8px; padding:7px 0 5px; border-right:1px solid #3a3b40; border-radius:6px 0 0 6px; user-select:none; }
 /* Upright digits read top-to-bottom like the sheet's 镜号 cell. The negative tracking pulls
    the glyph boxes together (3 digits: 42px -> 36.6px) so they read as one number. The digits
@@ -80,8 +84,8 @@
    numeral starts the same drag as pressing the empty rail beside it. */
 .wb-japanese .wb-card-handle b { writing-mode:vertical-rl; text-orientation:upright; letter-spacing:-.15em; line-height:1; pointer-events:none; }
 .wb-japanese .wb-card-grip { margin:auto 0 0; }
-.wb-japanese .wb-info { grid-template-columns:minmax(0,var(--wb-split)) minmax(0,1fr); gap:0; padding:8px 0; height:100%; align-items:stretch; align-content:start; }
-.wb-japanese .wb-row-info { align-self:stretch; position:relative; }
+.wb-japanese .wb-info { grid-template-columns:minmax(0,var(--wb-split)) minmax(0,1fr); gap:0; padding:8px 0; height:100%; min-width:0; align-items:stretch; align-content:start; }
+.wb-japanese .wb-row-info { align-self:stretch; position:relative; min-width:0; overflow-wrap:anywhere; }
 /* The rule between 动作 and 台词 is drawn on the row, not on the text column, so it runs the
    full height of the row instead of stopping where the text ends. Both columns come from
    --wb-split so the rule and the column boundary can never drift apart; the dialogue column
@@ -107,6 +111,17 @@
 .wb-japanese .wb-row-info .flow-dialogue-text:focus { background:#ffffff10; border-color:transparent; outline:none; }
 .wb-japanese .wb-row-info .flow-dialogue-block.is-blank .flow-dialogue-text { border-style:solid; }
 .flow-workbench .wb-japanese .wb-info textarea { min-height:2.4em; }
+/* A narrow panel cannot keep 动作/台词 beside the picture: below ~470px of row the text
+   column would be a sliver, so the row puts the text under the picture instead. The picture
+   still follows the same slider and never grows past the row; the number rail spans both. */
+.wb-grid.wb-japanese { container-type:inline-size; }
+@container (max-width: 500px) {
+  .wb-japanese .wb-card { grid-template-columns:44px minmax(0,1fr); }
+  .wb-japanese .wb-card-handle { grid-row:1 / span 2; align-self:stretch; }
+  .wb-japanese .wb-card-picture { grid-column:2; width:min(100%, var(--tile, 220px)); }
+  .wb-japanese .wb-row-info { grid-column:2; }
+  .wb-japanese .wb-info { height:auto; padding-top:2px; }
+}
 
 .wb-board-dialogue { position:absolute; bottom:0; left:0; right:0; z-index:40; }
 .flow-workbench .wb-board-dialogue>button { width:100%; height:100%; padding:0; border:0; border-radius:0; background:transparent; cursor:text; }
