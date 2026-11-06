@@ -12,7 +12,9 @@ import {useBoardSorting} from '../../storyboard/renderer/workspace/useBoardSorti
 import {defaultWorkspaceLayout, panelLabels as labels, readWorkspaceLayout, workspaceZoomSteps, writeWorkspaceLayout, type WorkspacePanel as Panel} from './workspace/layoutPreferences';
 import {contentBoxOf,fitCanvasBox} from './workspace/canvasFit';
 import {DockResizeHandle} from './workspace/DockResizeHandle';
-import {DockPanelIcon,DockChevron} from './workspace/DockIcons';
+import {DockPanelIcon} from './workspace/DockIcons';
+import {DockColumnDivider} from './workspace/DockColumnDivider';
+import {gridTemplate} from './workspace/dockDivider';
 import {BoardDialogue} from '../../storyboard/renderer/workspace/BoardDialogue';
 import './workbench.css';
 
@@ -46,16 +48,19 @@ export function Workbench(p:WorkbenchProps){
  const [heights,setHeights]=useState(saved.heights);
  const [collapsed,setCollapsed]=useState(saved.collapsed);
  const [flyout,setFlyout]=useState<(Panel|undefined)[]>([undefined,undefined]);
- const toggleColumn=(col:number)=>{if(!p.canNavigate())return;setCollapsed(old=>old.map((v,i)=>i===col?!v:v) as [boolean,boolean]);setFlyout([undefined,undefined]);};
  const [japanese,setJapanese]=useState(saved.japanese);
  const [layout,setLayout]=useState(saved.layout),[hidden,setHidden]=useState(saved.hidden);
  const [split,setSplit]=useState(saved.split),[tile,setTile]=useState(saved.tile),[pendingTile,setPendingTile]=useState(saved.pendingTile),[zoom,setZoom]=useState(saved.zoom),[onion,setOnion]=useState(false);
+ const [dividerDragging,setDividerDragging]=useState(false);
+ const dock=useRef<HTMLDivElement>(null);
  useEffect(()=>{
+   // A drag previews layout on every move; only the settled state may reach the profile.
+   if(dividerDragging)return;
    const timer=window.setTimeout(()=>{
      writeWorkspaceLayout({layout,hidden,split,tile,pendingTile,zoom,japanese,heights,collapsed});
    },100);
    return ()=>window.clearTimeout(timer);
- },[layout,hidden,split,tile,pendingTile,zoom,japanese,heights,collapsed]);
+ },[layout,hidden,split,tile,pendingTile,zoom,japanese,heights,collapsed,dividerDragging]);
  const surfaceInput=useRef(false);
  // Mount on an actual down/drop, never on pointerenter: replacing the native hit
  // target during pointerenter can suppress the immediately following pointerdown.
@@ -174,9 +179,8 @@ export function Workbench(p:WorkbenchProps){
   <div className="wb-toolbar">{p.toolbar}</div>
   <div className="wb-main-row">{p.toolRail}<div className="wb-work-area">
   <DndContext autoScroll={false} sensors={sensors} collisionDetection={closestCenter} onDragStart={sorting.start} onDragCancel={sorting.cancel} onDragEnd={sorting.end}>
-   <div className="wb-dock" style={{gridTemplateColumns:collapsed[0]?(collapsed[1]?'40px minmax(0,1fr) 40px':'40px 5px minmax(260px,1fr)'):(collapsed[1]?'minmax(240px,1fr) 5px 40px':`minmax(240px, ${split}fr) 5px minmax(260px, ${100-split}fr)`)}}>
+   <div className="wb-dock" ref={dock} style={{gridTemplateColumns:gridTemplate({split,collapsed})}}>
     {layout.map((panels,col)=>{const shown=panels.filter(id=>!hidden.includes(id));return <div key={col} className={'wb-column'+(collapsed[col]?' is-collapsed':'')} data-dock-column={col} style={{gridColumn:col?3:1,'--wb-panel-count':Math.max(1,shown.length)} as CSSProperties} onDragOver={e=>{if(!collapsed[col]&&e.dataTransfer.types.includes('application/x-flow-panel'))e.preventDefault();}} onDrop={e=>{if(!collapsed[col])movePanel(e,col);}}>
-     <div className="wb-column-cap"><button aria-label={(collapsed[col]?'展开':'折叠')+(col?'右栏':'左栏')} aria-expanded={!collapsed[col]} title={(collapsed[col]?'展开':'折叠')+(col?'右栏':'左栏')} onClick={()=>toggleColumn(col)}><DockChevron right={collapsed[col]?!col:Boolean(col)}/></button></div>
      {collapsed[col]&&<div className="wb-dock-icons">{shown.map(id=><button key={id} aria-label={'打开'+labels[id]+'面板'} title={labels[id]} aria-expanded={flyout[col]===id} onClick={()=>{if(p.canNavigate())setFlyout(old=>old.map((v,i)=>i===col?(v===id?undefined:id):undefined));}}><DockPanelIcon panel={id}/></button>)}</div>}
      {shown.map((id,i)=><Fragment key={id}>
       {!collapsed[col]&&i>0&&<DockResizeHandle above={shown[i-1]} below={id} canResize={p.canNavigate} onCommit={values=>setHeights(old=>({...old,...values}))}/>}
@@ -187,7 +191,9 @@ export function Workbench(p:WorkbenchProps){
       </section>
      </Fragment>)}
     </div>})}
-    <div className={'wb-divider'+(collapsed.some(Boolean)?' is-inactive':'')} aria-disabled={collapsed.some(Boolean)} role="separator" aria-label="面板分隔" aria-orientation="vertical" tabIndex={collapsed.some(Boolean)?-1:0} onKeyDown={e=>{if(!collapsed.some(Boolean)&&p.canNavigate()&&['ArrowLeft','ArrowRight'].includes(e.key)){e.stopPropagation();e.preventDefault();setSplit(v=>Math.max(25,Math.min(75,v+(e.key==='ArrowRight'?2:-2))));}}} onPointerDown={e=>{if(collapsed.some(Boolean)||!p.canNavigate())return;e.currentTarget.setPointerCapture(e.pointerId);}} onPointerMove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId)){const r=e.currentTarget.parentElement!.getBoundingClientRect();setSplit(Math.max(25,Math.min(75,(e.clientX-r.left)/r.width*100)));}}}/>
+    <DockColumnDivider state={{split,collapsed}} dockRef={dock} canResize={p.canNavigate}
+     onPreview={next=>{setDividerDragging(true);setSplit(next.split);setCollapsed(next.collapsed);}}
+     onFinish={next=>{setSplit(next.split);setCollapsed(next.collapsed);setDividerDragging(false);}}/>
    </div>
   {sorting.overlay}</DndContext>
   </div></div>

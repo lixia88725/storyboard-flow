@@ -238,12 +238,10 @@
 .wb-row-divider {height:5px;flex:0 0 5px;position:relative;background:#17191c;cursor:row-resize;touch-action:none;z-index:6;}
 .wb-row-divider::after {content:"";position:absolute;inset:-2px 0;}
 .wb-row-divider:hover,.wb-row-divider[data-resizing=true],.wb-row-divider:focus-visible {background:#63758b;outline:none;}
-.wb-divider {touch-action:none;}
-.wb-divider.is-inactive {cursor:default;}
-.wb-divider.is-inactive:hover {background:#191a1d;}
-.wb-column-cap {height:22px;flex:0 0 22px;display:flex;justify-content:flex-end;align-items:center;background:#26282b;border-bottom:1px solid #151719;}
-.wb-column:first-child .wb-column-cap {justify-content:flex-start;}
-.flow-workbench .wb-column-cap button {display:grid;place-items:center;width:30px;height:20px;padding:0;border-radius:2px;color:#9ca3ab;}
+.wb-divider {touch-action:none;min-width:5px;}
+.wb-divider:focus-visible {background:#63758b;outline:2px solid #92baff;outline-offset:-2px;}
+.wb-divider[data-resizing=true] {background:#63758b;}
+.wb-divider[data-collapsed=both] {cursor:col-resize;}
 .wb-column.is-collapsed {position:relative;overflow:visible;background:#282a2e;z-index:50;}
 .wb-dock-icons {display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;overflow:auto;min-height:0;}
 .flow-workbench .wb-dock-icons button {width:34px;height:34px;padding:6px;display:grid;place-items:center;border-radius:3px;color:#b5bbc3;flex:none;}

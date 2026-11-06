@@ -53,6 +53,7 @@
   "src/storyboard/renderer/pendingSelection.test.ts",
   "src/storyboard/renderer/workspace/BoardDialogue.test.ts",
   "src/workbench/renderer/workspace/DockResizeHandle.test.ts",
+  "src/workbench/renderer/workspace/dockDivider.test.ts",
   "src/storyboard/renderer/workspace/boardGestures.test.ts",
   "src/workbench/renderer/workspace/canvasFit.test.ts",
   "src/workbench/renderer/workspace/layoutPreferences.test.ts",
