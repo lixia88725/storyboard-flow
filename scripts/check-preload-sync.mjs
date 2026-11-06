@@ -4,14 +4,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const methods = { open: 'open', read: 'read', put: 'put', refresh: 'refresh', folderStatus: 'folderStatus', outputNames: 'outputNames', saveTiff: 'saveTiff', checkpoint: 'checkpoint', switchProject: 'switch-project', finishClose: 'finish-close',
-  launcherState: 'launcher-state', updateRecentName: 'update-recent-name', removeRecent: 'remove-recent', relocateRecent: 'relocate-recent', launch: 'launch', createDraft: 'create-draft', createChooseSource: 'create-choose-source', createChooseDestination: 'create-choose-destination',
+  launcherState: 'launcher-state', updateRecentName: 'update-recent-name', removeRecent: 'remove-recent', relocateRecent: 'relocate-recent', launch: 'launch', chooseOpen: 'choose-open', createDraft: 'create-draft', createChooseSource: 'create-choose-source', createChooseDestination: 'create-choose-destination',
   createUpdate: 'create-update', createAbort: 'create-abort', createDiscard: 'create-discard', respondCreateIssues: 'create-issues-response',
   pendingCapability: 'pending-capability', pendingAdd: 'pending-add', cancelPendingAdd: 'pending-cancel', respondPendingIssues: 'pending-issues-response' };
 const listeners = { onClose: 'close', onCreateProgress: 'create-progress', onCreateIssues: 'create-issues', onPendingProgress: 'pending-progress', onPendingIssues: 'pending-issues' };
 const payloads = { onClose: 'close-id', onCreateProgress: { draftId: 'draft', done: 1, total: 2 }, onCreateIssues: { requestId: 'request', draftId: 'draft', issues: [] },
   onPendingProgress: { operationId: 'operation', done: 1, total: 2 }, onPendingIssues: { requestId: 'request', operationId: 'operation', issues: [] } };
 const argsFor = method => {
-  if (method === 'open' || method === 'launcherState' || method === 'createDraft' || method === 'pendingCapability') return [];
+  if (method === 'open' || method === 'launcherState' || method === 'chooseOpen' || method === 'pendingCapability') return [];
+  if (method === 'createDraft') return ['blank'];
   if (method === 'launch') return [{ test: true }];
   if (method === 'updateRecentName') return ['session', 'name'];
   if (method === 'removeRecent' || method === 'relocateRecent') return ['recent'];

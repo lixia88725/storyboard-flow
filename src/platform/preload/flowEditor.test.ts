@@ -17,8 +17,8 @@ it('typed and sandbox CommonJS bridges have identical bounded calls and removabl
  const b=exposed(fs.readFileSync(new URL('./flowEditor.cjs',import.meta.url),'utf8'));
  expect(Object.keys(a.api)).toEqual(Object.keys(b.api));
  for(const value of [a,b]){
-  await value.api.switchProject('session',{id:'p'},{kind:'dialog'});await value.api.open();await value.api.read('session','asset');await value.api.put('session',{operationId:'op'});await value.api.checkpoint('session',{id:'p'});await value.api.saveTiff('session',{id:'p',revision:1});await value.api.finishClose('session','close',null);
+  await value.api.switchProject('session',{id:'p'},{kind:'pending'});await value.api.open();await value.api.read('session','asset');await value.api.put('session',{operationId:'op'});await value.api.checkpoint('session',{id:'p'});await value.api.saveTiff('session',{id:'p',revision:1});await value.api.finishClose('session','close',null);
   const seen:string[]=[];const off=value.api.onClose((id:string)=>seen.push(id));value.notify('one');off();value.notify('two');expect(seen).toEqual(['one']);
  }
- expect(a.calls).toEqual(b.calls);expect(a.calls).toEqual([['flow-editor:switch-project','session',{id:'p'},{kind:'dialog'}],['flow-editor:open'],['flow-editor:read','session','asset'],['flow-editor:put','session',{operationId:'op'}],['flow-editor:checkpoint','session',{id:'p'}],['flow-editor:saveTiff','session',{id:'p',revision:1}],['flow-editor:finish-close','session','close',null]]);
+ expect(a.calls).toEqual(b.calls);expect(a.calls).toEqual([['flow-editor:switch-project','session',{id:'p'},{kind:'pending'}],['flow-editor:open'],['flow-editor:read','session','asset'],['flow-editor:put','session',{operationId:'op'}],['flow-editor:checkpoint','session',{id:'p'}],['flow-editor:saveTiff','session',{id:'p',revision:1}],['flow-editor:finish-close','session','close',null]]);
 });

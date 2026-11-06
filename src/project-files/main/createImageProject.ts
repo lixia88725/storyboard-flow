@@ -46,7 +46,7 @@ const inside = (parent: string, child: string) => {
 
 /** Destination of a creation: an existing canonical parent plus a new leaf that
  * must not exist under any casing. Nothing is created here. */
-async function bindDestination(destinationParent: string, folderName: string) {
+export async function bindDestination(destinationParent: string, folderName: string) {
   if (typeof destinationParent !== 'string' || !destinationParent || destinationParent.includes('\0') || !path.isAbsolute(destinationParent))
     throw Error('Destination parent must be an absolute path');
   const parent = path.resolve(destinationParent);
@@ -68,7 +68,9 @@ async function bindDestination(destinationParent: string, folderName: string) {
   return { parent, target };
 }
 
-function bindInput(input: CreateImageProjectInput): { naming: ProjectNamingV1; name: string } {
+/** Shared by image import and blank creation: creation never substitutes
+ * defaults for an empty or invalid project name. */
+export function bindInput(input: { name: string; naming: ProjectNamingV1 }): { naming: ProjectNamingV1; name: string } {
   if (!input || typeof input !== 'object') throw Error('Project creation input is required');
   if (!input.naming || typeof input.naming !== 'object') throw Error('Naming settings are required');
   const { sceneCode, artistName, version } = input.naming;

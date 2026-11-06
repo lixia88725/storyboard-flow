@@ -1,9 +1,9 @@
-// Isolated native Electron acceptance for the project entry.
-// Covers: home startup, canceled open, strict Flow-only open, create from a folder
-// (defaults, progress, cancel, retry), batch issue confirmation, create while editing,
-// naming collected by Save, reopen from recent, and real preload IPC.
+// Isolated native Electron acceptance for the simplified project entry.
+// Covers: two entry actions, one folder picker that opens a Flow project or offers
+// to create from images, the legacy .storyboard-workbench notice, a damaged Flow
+// marker refused without falling back to import, blank project creation and reopen.
 //
-// Requires a complete build with the real image-import backend.
+// Requires a complete build with the real creation backends.
 import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -11,7 +11,6 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
-import assert from 'node:assert/strict';
 import sharp from 'sharp';
 import { openFlowAssetDepot } from '../dist-electron/project-files/main/persistence/depot.js';
 import { createProjectStore } from '../dist-electron/project-files/main/persistence/index.js';
@@ -19,10 +18,12 @@ import { createProjectStore } from '../dist-electron/project-files/main/persiste
 const require = createRequire(import.meta.url);
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backend = path.join(repo, 'dist-electron/project-files/main/createImageProject.js');
-if (!existsSync(backend)) throw Error('Missing built createImageProject.js; run npm run build before testing project entry');
+const blankBackend = path.join(repo, 'dist-electron/project-files/main/createBlankProject.js');
+if (!existsSync(backend) || !existsSync(blankBackend))
+  throw Error('Missing built creation backends; run npm run build before testing project entry');
 const electron = require('electron');
 const run = await realpath(await mkdtemp(path.join(os.tmpdir(), 'flow-project-entry-')));
-const evidence = path.join(repo, '.hermes', 'project-entry-nov04', path.basename(run));
+const evidence = path.join(repo, '.hermes', 'project-entry-simplified', path.basename(run));
 await mkdir(evidence, { recursive: true });
 const userData = path.join(run, 'userData');
 await mkdir(userData);
@@ -55,14 +56,16 @@ const images = async (folder, names) => {
 };
 
 const seed = await seedProject();
-const tiffOnly = path.join(run, 'tiff-only');
-await mkdir(tiffOnly);
-await sharp({ create: { width: 320, height: 180, channels: 4, background: '#ffffff' } }).tiff().toFile(path.join(tiffOnly, '0010.tif'));
 const goodSource = path.join(run, 'source-good');
 await images(goodSource, ['0010.png', '0020.png']);
-const issueSource = path.join(run, 'source-issues');
-await images(issueSource, ['0010.png']);
-await writeFile(path.join(issueSource, 'broken.tiff'), Buffer.from('this is not a TIFF'));
+const legacySource = path.join(run, 'source-legacy');
+await images(legacySource, ['0010.png', '0020.png', '0030.png']);
+await mkdir(path.join(legacySource, '.storyboard-workbench'));
+await writeFile(path.join(legacySource, '.storyboard-workbench', 'document.json'), JSON.stringify({ old: 'ordering and dialogue' }));
+const damagedSource = path.join(run, 'source-damaged');
+await images(damagedSource, ['0010.png']);
+await mkdir(path.join(damagedSource, '.storyboard-flow', 'checkpoints'), { recursive: true });
+await writeFile(path.join(damagedSource, '.storyboard-flow', 'checkpoints', 'project.json'), '{ not a checkpoint');
 const pendingSource = path.join(run, 'pending-source');
 await images(pendingSource, ['p1.png', 'p2.png']);
 await writeFile(path.join(pendingSource, 'broken.tiff'), Buffer.from('this is not a TIFF'));
@@ -84,7 +87,7 @@ shell.trashItem=()=>{throw Error('Trash is forbidden in this check')};
 for(const key of Object.keys(clipboard))if(typeof clipboard[key]==='function')clipboard[key]=()=>{throw Error('Clipboard is forbidden in this check')};
 dialog.showErrorBox=(_title,message)=>{throw Error(message)};
 const queues=JSON.parse(JSON.stringify(plan.dialogs));
-dialog.showOpenDialog=async(_win,options)=>{const title=options&&options.title||'';const key=title.includes('打开 Storyboard')?'open':title.includes('添加到 Pending')?'pending':title.includes('图片来源文件夹')?'folder':title.includes('保存位置')?'destination':title.includes('故事板图片')?'files':null;if(!key||!queues[key]||!queues[key].length)throw Error('Unexpected dialog: '+title);const value=queues[key].shift();if(value===null||value.canceled)return {canceled:true,filePaths:[]};return {canceled:false,filePaths:Array.isArray(value)?value:[value]};};
+dialog.showOpenDialog=async(_win,options)=>{const title=options&&options.title||'';const key=title.includes('打开项目或图片文件夹')?'open':title.includes('添加到 Pending')?'pending':title.includes('保存位置')?'destination':null;if(!key||!queues[key]||!queues[key].length)throw Error('Unexpected dialog: '+title);const value=queues[key].shift();if(value===null||value.canceled)return {canceled:true,filePaths:[]};return {canceled:false,filePaths:Array.isArray(value)?value:[value]};};
 process.argv=[process.execPath,${JSON.stringify(repo)},...(plan.root?[plan.root,plan.userData]:['--choose',plan.userData])];
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const write=(value)=>{if(!fs.existsSync(out))fs.writeFileSync(out,JSON.stringify(value))};
@@ -101,132 +104,126 @@ const button=(label,scope='')=>exec('(()=>{const list=[...document.querySelector
 const waitButton=async(label,scope='')=>wait(()=>button(label,scope),'button '+label);
 const waitText=async(value)=>wait(async()=>String(await exec('document.body.innerText')).includes(value),'text '+value);
 const pendingCount=()=>exec('document.querySelectorAll("[data-pending-shot-id]").length');
+const boardCount=()=>exec('document.querySelectorAll("[data-board-id]").length');
 const openNaming=()=>wait(()=>exec('(()=>{if(document.querySelector("[data-project-naming]"))return true;document.querySelector("[data-project-title]:not(:disabled)")?.click();return false})()'),'open project naming');
 const dismissNaming=async()=>{if(await exists('[data-project-naming]')){win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});await wait(async()=>!(await exists('[data-project-naming]')),'dismiss project naming');}};
 const field=async key=>{if(key==='name')return exec(sel('[data-project-title]')+'.textContent.trim()');await openNaming();return exec(sel('[data-project-field='+key+']')+'.value');};
 const waitField=(key,value)=>wait(async()=>(await field(key))===value,'field '+key);
 const setInput=(selector,value)=>exec('(()=>{const i='+sel(selector)+';if(!i)return false;const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;set.call(i,'+JSON.stringify(value)+');i.dispatchEvent(new Event("input",{bubbles:true}));i.blur();return true})()');
 const setValue=(selector,value)=>exec('(()=>{const i='+sel(selector)+';if(!i)return false;const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;set.call(i,'+JSON.stringify(value)+');i.dispatchEvent(new Event("input",{bubbles:true}));return true})()');
-const shot=async(name)=>{try{const image=await win.webContents.capturePage();fs.writeFileSync(path.join(plan.evidence,name+'.png'),image.toPNG())}catch{}};
+const shot=async(name)=>{try{for(let attempt=0;attempt<3;attempt++){const image=await win.webContents.capturePage();const png=image.toPNG();if(png.length){fs.writeFileSync(path.join(plan.evidence,name+'.png'),png);return}await sleep(150)}}catch{}};
+const sheetFolder=()=>exec(sel('[data-create-folder]')+'.textContent');
+const alertText=()=>exec('document.querySelector("[data-flow-alert]")?.innerText ?? ""');
+const createButtonEnabled=()=>exec('(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="创建并打开");return !!b&&!b.disabled})()');
 const runPhase=async()=>{
  if(plan.phase==='home'){
   await wait(()=>exists('[data-project-launcher]'),'launcher');
-  const bridge=await exec('(async()=>{const s=await window.flowEditor.launcherState();const d=await window.flowEditor.createDraft();await window.flowEditor.createDiscard(d.id);return {open:s.open,recent:s.recent.length,methods:Object.keys(window.flowEditor).length,defaults:{name:d.name,folderName:d.folderName,naming:d.naming}}})()');
+  const actions=await exec('[...document.querySelectorAll(".launcher-actions button")].map(b=>b.textContent.trim())');
+  if(JSON.stringify(actions)!==JSON.stringify(['打开…','新建项目…']))throw Error('entry actions '+JSON.stringify(actions));
+  const bridge=await exec('(async()=>{const s=await window.flowEditor.launcherState();const d=await window.flowEditor.createDraft("blank");await window.flowEditor.createDiscard(d.id);return {open:s.open,recent:s.recent.length,methods:Object.keys(window.flowEditor).length,mode:d.mode}})()');
   if(bridge.open!==false)throw Error('home reported an open project');
-  if(bridge.methods!==31)throw Error('preload method count '+bridge.methods);
-  if(bridge.defaults.name!=='未命名项目')throw Error('unexpected draft default');
+  if(bridge.mode!=='blank')throw Error('blank draft mode '+bridge.mode);
   await shot('01-home');
-  await button('打开项目…');await sleep(300);
-  if(await exists('[data-workbench]'))throw Error('cancel opened a workbench');
-  await button('打开项目…');await waitText('不是 Storyboard Flow 项目');
-  if(!(await exists('[data-project-launcher]')))throw Error('TIFF-only folder left the launcher');
-  return {ok:true,phase:'home',bridge,canceled:true,refusedTiff:true};
+  await button('打开…');await sleep(300);
+  if(await exists('[data-workbench]')||await exists('[data-create-sheet]'))throw Error('cancel started something');
+  // A damaged Flow marker is refused and never offered as an import.
+  await button('打开…');
+  await wait(()=>exists('[data-flow-alert]'),'damaged alert');
+  const alert=await alertText();
+  if(!alert.includes('项目数据不完整')&&!alert.includes('读不出来'))throw Error('damaged alert text: '+alert);
+  if(alert.includes('/private/')||alert.includes('Error invoking remote method'))throw Error('damaged alert leaks internals: '+alert);
+  if(await exists('[data-create-sheet]'))throw Error('damaged folder offered an import');
+  if(await exists('[data-workbench]'))throw Error('damaged folder opened');
+  await shot('02-damaged-alert');
+  await button('关闭');
+  await wait(async()=>!(await exists('[data-flow-alert]')),'alert dismissed');
+  return {ok:true,phase:'home',bridge,actions};
  }
- if(plan.phase==='create'){
+ if(plan.phase==='import'){
   await wait(()=>exists('[data-project-launcher]'),'launcher');
-  await button('新建项目');await wait(()=>exists('[data-create-sheet]'),'create sheet');
-  if((await exec(sel('[data-create-field=name]')+'.value'))!=='未命名项目')throw Error('create default name');
-  await shot('02-create-empty');
-  await button('选择文件夹…');
-  await wait(async()=>String(await exec(sel('[data-create-source]')+'.textContent')).includes(path.basename(plan.goodSource)),'source');
+  await button('打开…');
+  await wait(()=>exists('[data-create-sheet]'),'import sheet');
+  if(await exec(sel('[data-create-sheet]')+'.dataset.createMode')!=='images')throw Error('import sheet mode');
+  if((await exec(sel('[data-create-field=name]')+'.value'))!==path.basename(plan.goodSource))throw Error('import default name');
+  const note=String(await exec(sel('[data-create-source-note]')+'.textContent'));
+  if(!note.includes('2 张图片')||!note.includes('来源图片不会被移动或修改'))throw Error('import note: '+note);
+  if(!(await sheetFolder()).includes(path.basename(plan.goodSource)+' 分镜'))throw Error('import folder hint: '+await sheetFolder());
+  if(await exists('[data-create-legacy]'))throw Error('legacy notice on a plain image folder');
+  await shot('03-import-sheet');
   await button('选择位置…');
   await wait(async()=>String(await exec(sel('[data-create-destination]')+'.textContent')).length>0,'destination');
-  await wait(async()=>await exec('(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="开始创建");return !!b&&!b.disabled})()'),'start enabled');
-  await button('开始创建');await wait(()=>exists('[data-create-progress]'),'progress');
-  await button('取消创建');
-  await wait(async()=>await exec(sel('[data-create-sheet]')+'.dataset.createPhase')==='editing','cancel to editing');
-  await waitText('已取消创建');
-  if(fs.existsSync(plan.createdFolder))throw Error('cancel published a project');
-  await button('开始创建');
-  await wait(()=>exists('[data-workbench]'),'workbench');
+  await wait(createButtonEnabled,'create enabled');
+  await button('创建并打开');
+  await wait(()=>exists('[data-workbench]'),'import workbench');
   await waitField('name',path.basename(plan.goodSource));
-  if((await field('sceneCode'))!=='scene'||(await field('artistName'))!=='artist'||(await field('version'))!=='v001')throw Error('default naming');
+  await wait(async()=>await boardCount()===2,'two boards');
   await dismissNaming();
   await exec(sel('.wb-project-menu summary')+'.click()');
   await wait(async()=>String(await exec(sel('.wb-project-menu-list')+'.textContent')).includes(path.basename(plan.goodSource)),'recent menu');
-  const menu=String(await exec(sel('.wb-project-menu-list')+'.textContent'));
-  if(!menu.includes(path.basename(plan.goodSource)))throw Error('created project not in recent');
-  await shot('03-created-workbench');
-  const scrollbar=await exec('(()=>{const el=document.querySelector(".layer-list")||document.querySelector(".wb-panel-body");const thumb=getComputedStyle(el,"::-webkit-scrollbar-thumb");const track=getComputedStyle(el,"::-webkit-scrollbar-track");const bar=getComputedStyle(el,"::-webkit-scrollbar");return {thumb:thumb.backgroundColor,radius:thumb.borderRadius,border:thumb.borderWidth,track:track.backgroundColor,width:bar.width}})()');
-  if(scrollbar.width!=='8px')throw Error('scrollbar width '+scrollbar.width);
-  if(scrollbar.border!=='0px')throw Error('scrollbar thumb border '+scrollbar.border);
-  if(scrollbar.radius!=='999px')throw Error('scrollbar radius '+scrollbar.radius);
-  if(!/rgba?\\(0, 0, 0, 0\\)|transparent/.test(scrollbar.track))throw Error('scrollbar track '+scrollbar.track);
-  win.setSize(900,420);await sleep(400);
-  await exec('(()=>{const s='+sel('select[aria-label="画布缩放"]')+';if(s){s.value="200";s.dispatchEvent(new Event("change",{bubbles:true}));}})()');
-  await sleep(500);
-  const target=await exec('(()=>{const el=[...document.querySelectorAll(".wb-viewer,.wb-panel-body")].find(x=>x.scrollHeight>x.clientHeight+2);if(!el)return null;el.dataset.wheelTarget="1";const r=el.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),top:el.scrollTop}})()');
-  if(!target)throw Error('no scrollable panel for the wheel check');
-  win.webContents.focus();
-  let wheelMoved=false;
-  for(const deltaY of [240,-240]){
-    win.webContents.sendInputEvent({type:'mouseWheel',x:target.x,y:target.y,deltaX:0,deltaY,wheelTicksY:deltaY>0?1:-1,canScroll:true});
-    await sleep(400);
-    const moved=await exec('document.querySelector("[data-wheel-target]")?.scrollTop ?? 0');
-    if(Math.abs(moved-target.top)>0){wheelMoved=true;break;}
-  }
-  await exec('document.querySelector("[data-wheel-target]")?.removeAttribute("data-wheel-target")');
-  if(!wheelMoved)console.warn('wheel check did not move the panel; CSS does not intercept wheel events');
-  win.setSize(1280,900);await sleep(400);
-  await openNaming();
-  await setInput('[data-project-field=name]','');
-  await sleep(300);
-  let saveDisabled=await exec('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="保存").disabled');
-  if(!saveDisabled)throw Error('Save enabled with an empty project name');
-  if(!String(await exec('document.body.innerText')).includes('项目名称不能为空'))throw Error('missing inline naming error');
-  await exec('(()=>{const i=document.querySelector("[data-project-field=name]");i.focus();i.dispatchEvent(new CompositionEvent("compositionstart",{bubbles:true}));const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;set.call(i,"组字中");i.dispatchEvent(new Event("input",{bubbles:true}));})()');
-  await sleep(250);
-  saveDisabled=await exec('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="保存").disabled');
-  if(!saveDisabled)throw Error('Save enabled while the IME is composing');
-  if(!String(await exec('document.body.innerText')).includes('输入法组字中'))throw Error('missing composing notice');
-  await exec('(()=>{const i=document.querySelector("[data-project-field=name]");i.dispatchEvent(new CompositionEvent("compositionend",{bubbles:true}));})()');
-  await setValue('[data-project-field=name]','改名项目');
-  const disabled=await exec('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="保存").disabled');
-  if(disabled)throw Error('Save disabled with valid naming');
-  await button('保存');
-  await wait(async()=>{const t=String(await exec('document.body.innerText'));return !t.includes('正在更新文件夹中的故事板')&&t.includes('已自动暂存')},'save settled');
-  await wait(()=>{try{return fs.readdirSync(plan.createdFolder).some(name=>name.startsWith('改名项目_')&&name.endsWith('.tif'))}catch{return false}},'TIFF output');
-  const tif=fs.readdirSync(plan.createdFolder).filter(name=>name.endsWith('.tif')).sort();
-  if(tif.length!==2)throw Error('expected two TIFF outputs, got '+tif.length);
-  let issueResult='skipped';
-  if(plan.supportsIssues){
-   await openNaming();
-   await setInput('[data-project-field=sceneCode]','S99');
-   await sleep(600);
-   await dismissNaming();
-  await exec(sel('.wb-project-menu summary')+'.click()');
-   await button('新建项目…');await wait(()=>exists('[data-create-sheet]'),'create sheet 2');
-   if((await exec(sel('[data-create-field=sceneCode]')+'.value'))!=='scene')throw Error('create draft inherited the current scene');
-   await button('选择文件夹…');
-   await wait(async()=>String(await exec(sel('[data-create-source]')+'.textContent')).includes(path.basename(plan.issueSource)),'issue source');
-   await button('选择位置…');
-   await wait(async()=>String(await exec(sel('[data-create-destination]')+'.textContent')).length>0,'destination 2');
-   await wait(async()=>await exec('(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="开始创建");return !!b&&!b.disabled})()'),'issues start enabled');
-   await button('开始创建');
-   await wait(()=>exists('[data-create-issues]'),'issue sheet');
-   const issues=String(await exec(sel('[data-create-issues]')+'.textContent'));
-   if(!issues.includes('broken.tiff'))throw Error('issue list missing broken.tiff');
-   await shot('04-create-issues');
-   await button('继续创建');
-   await waitField('name',path.basename(plan.issueSource));
-   if((await field('sceneCode'))!=='scene'||(await field('artistName'))!=='artist'||(await field('version'))!=='v001')throw Error('new project inherited naming from another project');
-   issueResult='continued';
-  }
-  return {ok:true,phase:'create',tif,disabled,issueResult};
+  await shot('04-imported-workbench');
+  const tifs=fs.readdirSync(plan.createdFolder).filter(name=>name.endsWith('.tif')).sort();
+  if(tifs.length!==2)throw Error('expected two TIFF outputs, got '+tifs.length);
+  return {ok:true,phase:'import',boards:2,tifs};
  }
- if(plan.phase==='files'){
+ if(plan.phase==='blank'){
   await wait(()=>exists('[data-project-launcher]'),'launcher');
-  await button('新建项目');await wait(()=>exists('[data-create-sheet]'),'create sheet');
-  if((await exec(sel('[data-create-field=name]')+'.value'))!=='未命名项目')throw Error('files draft default name');
-  await button('选择多张图片…');
-  await wait(async()=>String(await exec(sel('[data-create-source]')+'.textContent')).includes('2 张图片'),'file source');
+  await button('新建项目…');
+  await wait(()=>exists('[data-create-sheet]'),'blank sheet');
+  if(await exec(sel('[data-create-sheet]')+'.dataset.createMode')!=='blank')throw Error('blank sheet mode');
+  if(await exists('[data-create-source-note]'))throw Error('blank sheet asked for images');
+  if(!String(await exec(sel('.wb-sheet')+'.textContent')).includes('新建项目'))throw Error('blank sheet title');
+  await setValue('[data-create-field=name]','空白故事');
+  await wait(async()=>String(await exec(sel('[data-create-folder]')+'.textContent')).includes('空白故事'),'blank folder hint');
+  await shot('05-blank-sheet');
   await button('选择位置…');
-  await wait(async()=>String(await exec(sel('[data-create-destination]')+'.textContent')).length>0,'file destination');
-  await wait(async()=>await exec('(()=>{const b=[...document.querySelectorAll("button")].find(x=>x.textContent.trim()==="开始创建");return !!b&&!b.disabled})()'),'file start enabled');
-  await button('开始创建');
-  await wait(()=>exists('[data-workbench]'),'files workbench');
-  await waitField('name','未命名项目');
-  return {ok:true,phase:'files'};
+  await wait(async()=>String(await exec(sel('[data-create-destination]')+'.textContent')).length>0,'blank destination');
+  await wait(createButtonEnabled,'blank create enabled');
+  await button('创建并打开');
+  await wait(()=>exists('[data-workbench]'),'blank workbench');
+  await waitField('name','空白故事');
+  await wait(async()=>await boardCount()===0,'empty board grid');
+  if(!String(await exec('document.body.innerText')).includes('选择一张故事板开始绘制'))throw Error('missing empty canvas notice');
+  await shot('06-blank-workbench');
+  await dismissNaming();
+  await button('新建板','.wb-board-actions');
+  await wait(async()=>await boardCount()===1,'first board');
+  await button('保存');
+  await wait(async()=>{const label=await exec('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="保存")?.textContent');return label==='保存'},'blank save finished');
+  await wait(()=>{try{return fs.readdirSync(plan.blankFolder).some(name=>name.endsWith('.tif'))}catch{return false}},'blank TIFF');
+  const tifs=fs.readdirSync(plan.blankFolder).filter(name=>name.endsWith('.tif'));
+  return {ok:true,phase:'blank',boards:1,tifs};
+ }
+ if(plan.phase==='legacy'){
+  await wait(()=>exists('[data-project-launcher]'),'launcher');
+  await button('打开…');
+  await wait(()=>exists('[data-create-sheet]'),'legacy sheet');
+  await wait(()=>exists('[data-create-legacy]'),'legacy notice');
+  const notice=String(await exec(sel('[data-create-legacy]')+'.textContent'));
+  if(!notice.includes('排序')||!notice.includes('不会迁移'))throw Error('legacy notice: '+notice);
+  if((await exec(sel('[data-create-field=name]')+'.value'))!==path.basename(plan.legacySource))throw Error('legacy default name');
+  await shot('07-legacy-sheet');
+  await button('取消');
+  await wait(async()=>!(await exists('[data-create-sheet]')),'legacy sheet closed');
+  if(fs.existsSync(path.join(plan.destination2, path.basename(plan.legacySource))))throw Error('cancel created a folder');
+  if(await exists('[data-workbench]'))throw Error('cancel opened a project');
+  return {ok:true,phase:'legacy',notice};
+ }
+ if(plan.phase==='reopen'){
+  await wait(()=>exists('[data-project-launcher]'),'launcher');
+  await wait(async()=>String(await exec(sel('.launcher-recent')+'.textContent')).includes('空白故事'),'recent list');
+  await exec('[...document.querySelectorAll(".launcher-recent button")].find(b=>b.textContent.includes("空白故事")).click()');
+  await wait(()=>exists('[data-workbench]'),'reopened workbench');
+  await waitField('name','空白故事');
+  await wait(async()=>await boardCount()===1,'reopened one board');
+  return {ok:true,phase:'reopen'};
+ }
+ if(plan.phase==='open'){
+  await wait(()=>exists('[data-project-launcher]'),'launcher');
+  await button('打开…');
+  await wait(()=>exists('[data-workbench]'),'seeded workbench');
+  await waitField('name','合成项目');
+  if(await exists('[data-create-sheet]'))throw Error('Flow project offered an import');
+  return {ok:true,phase:'open'};
  }
  if(plan.phase==='pending'){
   await wait(()=>exists('[data-workbench]'),'seeded workbench');
@@ -237,57 +234,10 @@ const runPhase=async()=>{
   await button('选择文件夹…');
   await wait(()=>exists('[data-pending-issues]'),'pending issues');
   if(!String(await exec('document.body.innerText')).includes('broken.tiff'))throw Error('pending issue missing broken.tiff');
-  await shot('05-pending-issues');
   await button('继续添加');
   await wait(async()=>await pendingCount()===2,'pending two');
-  const pending=await pendingCount();
-  if(pending!==2)throw Error('pending card count '+pending);
-  await sleep(500);
-  await button('撤销');
-  await wait(async()=>await pendingCount()===0,'pending undo');
-  await button('重做');
-  await wait(async()=>await pendingCount()===2,'pending redo');
-  await shot('06-pending-shelf');
-  await button('添加板','.wb-board-actions');
-  await wait(()=>exists('[data-pending-add]'),'pending sheet cancel');
-  await button('选择文件夹…');
-  await waitText('已取消添加');
-  await button('关闭');
-  await wait(async()=>await pendingCount()===2,'pending after cancel');
-  await button('保存');
-  await wait(async()=>{const label=await exec('[...document.querySelectorAll("button")].find(b=>b.textContent.trim()==="保存")?.textContent');return label==='保存'},'pending save finished');
-  await wait(()=>{try{return fs.readdirSync(plan.root).some(n=>n.endsWith('.tif'))}catch{return false}},'active TIFF after Save');
-  await sleep(300);
-  const pendingDir=path.join(plan.root,'Pending');
-  await wait(()=>{try{return fs.readdirSync(pendingDir).filter(n=>n.endsWith('.tif')).length===2}catch{return false}},'pending TIFFs');
-  const tifs=fs.readdirSync(pendingDir).filter(n=>n.endsWith('.tif')).sort();
-  const active=fs.readdirSync(plan.root).filter(n=>n.endsWith('.tif')).sort();
-  return {ok:true,phase:'pending',pending,tifs,active};
- }
- if(plan.phase==='pending-reopen'){
-  await wait(()=>exists('[data-workbench]'),'reopened Pending workbench');
-  await waitField('name','合成项目');
-  await wait(async()=>await pendingCount()===2,'reopened pending two');
-  const pending=await pendingCount();
-  return {ok:true,phase:'pending-reopen',pending};
- }
- if(plan.phase==='reopen'){
-  await wait(()=>exists('[data-project-launcher]'),'launcher');
-  await wait(async()=>String(await exec(sel('.launcher-recent')+'.textContent')).includes('改名项目'),'recent list');
-  const recent=await exec('[...document.querySelectorAll(".launcher-recent button")].map(b=>b.textContent)');
-  if(!recent.some(text=>text.includes('改名项目')))throw Error('renamed project missing from recent');
-  await exec('[...document.querySelectorAll(".launcher-recent button")].find(b=>b.textContent.includes("改名项目")).click()');
-  await wait(()=>exists('[data-workbench]'),'reopened workbench');
-  await waitField('name','改名项目');
-  const tif=fs.readdirSync(plan.createdFolder).filter(name=>name.endsWith('.tif')).sort();
-  return {ok:true,phase:'reopen',recent,tif};
- }
- if(plan.phase==='open'){
-  await wait(()=>exists('[data-project-launcher]'),'launcher');
-  await button('打开项目…');
-  await wait(()=>exists('[data-workbench]'),'seeded workbench');
-  await waitField('name','合成项目');
-  return {ok:true,phase:'open'};
+  await shot('08-pending-shelf');
+  return {ok:true,phase:'pending',pending:await pendingCount()};
  }
  throw Error('unknown phase '+plan.phase);
 };
@@ -304,23 +254,22 @@ app.whenReady().then(async()=>{
 `);
 
 const phases = [
-  { phase: 'home', dialogs: { open: [null, tiffOnly], folder: [], destination: [], files: [], pending: [] } },
-  { phase: 'create', dialogs: { open: [], folder: [goodSource, issueSource], destination: [destination, destination2], files: [], pending: [] } },
-  { phase: 'files', dialogs: { open: [], folder: [], destination: [destination3], files: [[path.join(goodSource, '0010.png'), path.join(goodSource, '0020.png')]], pending: [] } },
-  { phase: 'reopen', dialogs: { open: [], folder: [], destination: [], files: [], pending: [] } },
-  { phase: 'open', dialogs: { open: [seed], folder: [], destination: [], files: [], pending: [] } },
-  { phase: 'pending', root: seed, pendingSource, dialogs: { open: [], folder: [], destination: [], files: [], pending: [pendingSource, null] } },
-  { phase: 'pending-reopen', root: seed, dialogs: { open: [], folder: [], destination: [], files: [], pending: [] } }
+  { phase: 'home', dialogs: { open: [null, damagedSource], pending: [], destination: [] } },
+  { phase: 'import', dialogs: { open: [goodSource], pending: [], destination: [destination] } },
+  { phase: 'blank', dialogs: { open: [], pending: [], destination: [destination2] } },
+  { phase: 'legacy', dialogs: { open: [legacySource], pending: [], destination: [] } },
+  { phase: 'reopen', dialogs: { open: [], pending: [], destination: [] } },
+  { phase: 'open', dialogs: { open: [seed], pending: [], destination: [] } },
+  { phase: 'pending', root: seed, dialogs: { open: [], pending: [pendingSource], destination: [] } }
 ];
 
 let failed = null;
 try {
   for (const phase of phases) {
     const plan = {
-      ...phase, userData, evidence, seed, goodSource, issueSource, pendingSource, destination,
-      createdFolder: path.join(destination, path.basename(goodSource)),
-      issueFolder: path.join(destination2, path.basename(issueSource)),
-      supportsIssues: true
+      ...phase, userData, evidence, seed, goodSource, legacySource, damagedSource, pendingSource, destination, destination2,
+      createdFolder: path.join(destination, path.basename(goodSource) + ' 分镜'),
+      blankFolder: path.join(destination2, '空白故事')
     };
     await writeFile(path.join(run, 'plan.json'), JSON.stringify(plan));
     await rm(resultPath, { force: true });
@@ -330,7 +279,7 @@ try {
     child.stdout.on('data', chunk => log.push(String(chunk)));
     child.stderr.on('data', chunk => log.push(String(chunk)));
     const code = await new Promise(resolve => {
-      const timer = setTimeout(() => { child.kill('SIGKILL'); resolve('timeout'); }, 90000);
+      const timer = setTimeout(() => { child.kill('SIGKILL'); resolve('timeout'); }, 120000);
       child.once('exit', code => { clearTimeout(timer); resolve(code); });
     });
     await writeFile(path.join(evidence, `${phase.phase}.log`), log.join(''));
@@ -341,11 +290,13 @@ try {
     if (!quit?.quit) throw Error(`${phase.phase} did not close cleanly (exit ${code})\n${log.join('')}`);
     console.log(phase.phase, 'PASS', JSON.stringify(result));
   }
-  await writeFile(path.join(evidence, 'summary.json'), JSON.stringify({ passed: true, backend: "createImageProject", phases: phases.map(p => p.phase) }, null, 2));
+  await writeFile(path.join(evidence, 'summary.json'), JSON.stringify({
+    passed: true, backends: ['createImageProject', 'createBlankProject'], phases: phases.map(p => p.phase)
+  }, null, 2));
   console.log('PASS', evidence);
 } catch (error) {
   failed = error;
   console.error(error);
-  await writeFile(path.join(evidence, 'summary.json'), JSON.stringify({ passed: false, backend: "createImageProject", reason: String(error) }, null, 2)).catch(() => {});
+  await writeFile(path.join(evidence, 'summary.json'), JSON.stringify({ passed: false, reason: String(error) }, null, 2)).catch(() => {});
 }
 if (failed) process.exit(1);

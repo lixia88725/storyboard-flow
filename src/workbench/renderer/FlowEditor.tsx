@@ -26,6 +26,7 @@ import { WorkspaceToolRail } from './workspace/WorkspaceToolRail';
 import { createController, TOOL_KEYS as TOOL_SHORTCUT_KEYS } from './toolShortcuts';
 import { ChevronDown, FolderClosed, FolderInput, Undo2, Redo2, Save } from 'lucide-react';
 import { ProjectLauncher } from './ProjectLauncher';
+import { FlowAlert, errorText } from './FlowAlert';
 import { CreateProjectSheet } from './CreateProjectSheet';
 import { ProjectNamingBar } from './ProjectNamingBar';
 import { useCreateProject } from './useCreateProject';
@@ -69,6 +70,8 @@ export function FlowEditor() {
   const [owner, setOwner] = useState<EditorOwner>();
   const current = useRef<EditorOwner | undefined>(undefined);
   const [issue, setIssue] = useState('');
+  // Entry failures belong on screen, not only in the corner status line.
+  const [alert, setAlert] = useState('');
   const [switching, setSwitching] = useState(false);
   const [launchBusy, setLaunchBusy] = useState(false);
   const [recent, setRecent] = useState<FlowRecentProject[]>([]);
@@ -144,7 +147,7 @@ export function FlowEditor() {
         previous.paintInput.assertSettled();
         assertSettledGesture();
         const next = await window.flowEditor!.switchProject(previous.sessionId, frozen.snapshot.project, target);
-        if (next) { install(next); void refreshRecent(); return 'opened'; }
+        if (next) { install(next); void refreshRecent(); setAlert(''); return 'opened'; }
         await resume(previous); setIssue(''); return 'unchanged';
       } catch (error) {
         let message = error instanceof Error ? error.message : String(error);
@@ -152,7 +155,7 @@ export function FlowEditor() {
           try { await resume(previous); }
           catch (resumeError) { message += '；输入仍暂停，请重试关闭项目：' + String(resumeError); }
         }
-        setIssue(message);
+        setIssue(message); setAlert(message);
         return { error: message };
       } finally { setSwitching(false); }
     })();
@@ -162,7 +165,7 @@ export function FlowEditor() {
   };
   const launch = async (target: FlowProjectTarget): Promise<TransitionResult> => {
     if (owner || launchBusy) return { error: '项目已经打开' };
-    setLaunchBusy(true); setIssue('');
+    setLaunchBusy(true); setIssue(''); setAlert('');
     try {
       const result = await window.flowEditor!.launch(target);
       if (result.canceled) return 'unchanged';
@@ -170,8 +173,8 @@ export function FlowEditor() {
       void refreshRecent();
       return 'opened';
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setIssue(message);
+      const message = errorText(error);
+      setIssue(message); setAlert(message);
       return { error: message };
     } finally { setLaunchBusy(false); }
   };
@@ -183,6 +186,7 @@ export function FlowEditor() {
         const state = await api.launcherState();
         if (cancelled) return;
         setRecent(state.recent);
+        setCurrentRecentId(state.currentId);
         if (state.open) {
           const value = await api.open();
           if (!cancelled) { install(value); void refreshRecent(); }
@@ -227,34 +231,50 @@ export function FlowEditor() {
     window.addEventListener('beforeunload', beforeUnload);
     return () => window.removeEventListener('beforeunload', beforeUnload);
   }, [owner]);
-  return owner
-    ? <Editor key={owner.sessionId} paintInput={owner.paintInput} flow={owner.flow} api={owner.api} folderName={owner.folderName} sessionId={owner.sessionId} openProject={openProject} switching={switching}
-        issue={issue} setIssue={s => { if (current.current === owner) setIssue(s); }} gestures={gestures} outputWork={outputWork} dialogueCommits={dialogueCommits}
-        beforeTransition={beforeTransition} recent={recent} currentRecentId={currentRecentId} onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent} />
-    : <ProjectHome recent={recent} busy={launchBusy} issue={issue} launch={launch} onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent} />;
+  return <>
+    <FlowAlert message={alert} onDismiss={() => setAlert('')} />
+    {owner
+      ? <Editor key={owner.sessionId} paintInput={owner.paintInput} flow={owner.flow} api={owner.api} folderName={owner.folderName} sessionId={owner.sessionId} openProject={openProject} switching={switching}
+          issue={issue} setIssue={s => { if (current.current === owner) setIssue(s); }} gestures={gestures} outputWork={outputWork} dialogueCommits={dialogueCommits}
+          beforeTransition={beforeTransition} recent={recent} currentRecentId={currentRecentId} onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent} onAlert={setAlert} />
+      : <ProjectHome recent={recent} busy={launchBusy} issue={issue} launch={launch} onAlert={setAlert}
+          onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent} />}
+  </>;
 }
-function ProjectHome({ recent, busy, issue, launch, onRemoveRecent, onRelocateRecent }: {
+function ProjectHome({ recent, busy, issue, launch, onRemoveRecent, onRelocateRecent, onAlert }: {
   recent: FlowRecentProject[]; busy: boolean; issue: string;
   launch: (target: FlowProjectTarget) => Promise<TransitionResult>;
   onRemoveRecent: (id: string) => Promise<void>; onRelocateRecent: (id: string) => Promise<void>;
+  onAlert: (message: string) => void;
 }) {
-  const create = useCreateProject(launch);
+  const create = useCreateProject(launch, onAlert);
+  // Main inspects the chosen folder: a Flow project opens here, an image folder
+  // comes back as a draft, and a damaged project is refused in Main.
+  const open = async () => {
+    try {
+      const choice = await window.flowEditor!.chooseOpen();
+      if ('canceled' in choice) return;
+      if (choice.kind === 'import') await create.adopt(choice.draft);
+      else await launch({ kind: 'pending' });
+    } catch (error) { onAlert(errorText(error)); }
+  };
   return <>
     <ProjectLauncher recent={recent} busy={busy || create.state?.phase === 'creating'} message={issue}
-      onCreate={() => void create.begin()} onOpen={() => void launch({ kind: 'dialog' })}
+      onOpen={() => void open()} onCreate={() => void create.begin('blank')}
       onOpenRecent={id => void launch({ kind: 'recent', id })} onRemoveRecent={onRemoveRecent} onRelocateRecent={onRelocateRecent} />
     {create.state && <CreateProjectSheet key={create.state.draft.id} state={create.state} busy={busy}
-      onChooseSource={kind => void create.chooseSource(kind)} onChooseDestination={() => void create.chooseDestination()}
+      onChooseDestination={() => void create.chooseDestination()}
       onConfirm={fields => void create.confirm(fields)} onCancel={() => void create.cancel()}
       onAbort={() => void create.abort()} onRespond={decision => void create.respond(decision)} onError={create.setError} />}
   </>;
 }
-function Editor({ paintInput, flow, api, folderName, sessionId, openProject, switching, issue, setIssue, gestures, outputWork, dialogueCommits, beforeTransition, recent, currentRecentId, onRemoveRecent, onRelocateRecent }: {
+function Editor({ paintInput, flow, api, folderName, sessionId, openProject, switching, issue, setIssue, gestures, outputWork, dialogueCommits, beforeTransition, recent, currentRecentId, onRemoveRecent, onRelocateRecent, onAlert }: {
   paintInput: ReturnType<typeof createPaintInputGate>; api: ReturnType<typeof bindEditor>; folderName: string; sessionId: string; openProject: (target: FlowProjectTarget) => Promise<TransitionResult>; switching: boolean;
   outputWork: { current: Promise<void> | undefined }; flow: FlowSession; issue: string; setIssue: (s: string) => void; gestures: { current: number };
   dialogueCommits: { current: DialogueCommitState };
   beforeTransition: { current: () => Promise<void> }; recent: FlowRecentProject[]; currentRecentId: string | null;
   onRemoveRecent: (id: string) => Promise<void>; onRelocateRecent: (id: string) => Promise<void>;
+  onAlert: (message: string) => void;
 }) {
   const [demand,setDemand]=useState<string[]>([]);
   const demandRef=useRef(demand);demandRef.current=demand;
@@ -455,7 +475,17 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
     beforeTransition.current = async () => { await naming.flush(); await paintPresentation.settle(); };
     return () => { beforeTransition.current = () => Promise.resolve(); };
   }, [beforeTransition, naming.flush, paintPresentation]);
-  const create = useCreateProject(openProject);
+  const create = useCreateProject(openProject, onAlert);
+  // Same entry as the home screen: Main classifies the chosen folder, an image
+  // folder becomes a draft here, and confirming it switches projects.
+  const openFromDisk = async () => {
+    try {
+      const choice = await window.flowEditor!.chooseOpen();
+      if ('canceled' in choice) return;
+      if (choice.kind === 'import') await create.adopt(choice.draft);
+      else await openProject({ kind: 'pending' });
+    } catch (error) { onAlert(errorText(error)); }
+  };
   // Response-tracked identity, not a render-time read of the state object: several editors can
   // be busy at once, so the held set (not a single shot) decides which cards stay mounted.
   const [dialogueHoldShots, setDialogueHoldShots] = useState<string[]>([]);
@@ -715,8 +745,8 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
         <details className="wb-project-menu">
           <summary className="wb-document-action"><FolderClosed aria-hidden size={15}/>项目<ChevronDown aria-hidden size={11}/></summary>
           <div className="wb-menu wb-project-menu-list">
-            <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void openProject({ kind: 'dialog' }); }}>打开项目…</button>
-            <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void create.begin(); }}>新建项目…</button>
+            <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void openFromDisk(); }}>打开…</button>
+            <button type="button" disabled={!active || switching} onClick={event => { closeMenu(event); void create.begin('blank'); }}>新建项目…</button>
             <span className="wb-menu-label">最近项目</span>
             {recent.length ? recent.map(project => project.available
               ? <button type="button" key={project.id} data-recent-project={project.id} data-recent-target={project.target}
@@ -760,7 +790,7 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
       {folderStatus.recovery.state === 'retry' && <><p>已找到可继续的删除记录。重试会继续上次保存，并把仍待删除的原文件移入系统废纸篓。</p><button disabled={!active || savingTiff} onClick={() => { void saveTiff().catch(() => {}); }}>重试保存 TIFF</button></>}
     </aside>}
     {create.state && <CreateProjectSheet key={create.state.draft.id} state={create.state} busy={switching}
-      onChooseSource={kind => void create.chooseSource(kind)} onChooseDestination={() => void create.chooseDestination()}
+      onChooseDestination={() => void create.chooseDestination()}
       onConfirm={fields => void create.confirm(fields)} onCancel={() => void create.cancel()}
       onAbort={() => void create.abort()} onRespond={decision => void create.respond(decision)} onError={create.setError} />}
   </CanvasPresentationContext.Provider></MediaSourceContext.Provider>;

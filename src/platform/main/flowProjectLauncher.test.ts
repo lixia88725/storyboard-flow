@@ -19,13 +19,18 @@ async function fixture(overrides: Partial<FlowProjectLauncherDeps> = {}) {
     options.onProgress?.({ done: 1, total: 1 });
     return { root };
   });
+  const createBlankProject = vi.fn(async (input: { destinationParent: string; folderName: string }) => {
+    const root = path.join(input.destinationParent, input.folderName);
+    await mkdir(path.join(root, '.storyboard-flow'), { recursive: true });
+    return { root };
+  });
   const onProgress = vi.fn();
   const decideIssues = vi.fn(async () => 'continue' as const);
   const launcher = createFlowProjectLauncher({
-    userData, prepare, createProject, onProgress, decideIssues,
+    userData, prepare, createProject, createBlankProject, onProgress, decideIssues,
     now: () => 100, randomId: () => Math.random().toString(36).slice(2), ...overrides
   });
-  return { launcher, userData, destination, prepare, createProject, onProgress, decideIssues };
+  return { launcher, userData, destination, prepare, createProject, createBlankProject, onProgress, decideIssues };
 }
 
 const projectFolder = async (name = 'flow-project-') => {
@@ -51,7 +56,9 @@ describe('project launcher drafts', () => {
     const first = launcher.begin();
     const fromFolder = launcher.setSource(first.id, { kind: 'folder', folder });
     expect(fromFolder.name).toBe(path.basename(folder));
-    expect(fromFolder.folderName).toBe(path.basename(folder));
+    // The new folder is derived from the name; beside its own source it must not
+    // take the source's name, or choosing the source's parent would collide.
+    expect(fromFolder.folderName).toBe(path.basename(folder) + ' 分镜');
     const second = launcher.begin();
     launcher.setSource(second.id, { kind: 'files', files: [path.join(folder, 'a.png'), path.join(folder, 'b.png')] });
     const view = launcher.setDestination(second.id, destination);
@@ -211,7 +218,8 @@ describe('project launcher creation', () => {
     createProject.mockRejectedValueOnce(new Error('disk full'));
     await expect(launcher.createAndPrepare(draft.id)).rejects.toThrow('disk full');
     expect((await launcher.state()).recent).toEqual([]);
-    expect(launcher.view(draft.id).folderName).toBe(path.basename(folder));
+    expect(launcher.view(draft.id).name).toBe(path.basename(folder));
+    expect(launcher.view(draft.id).folderName).toBe(path.basename(folder) + ' 分镜');
   });
 
   it('forwards batched issues and honors cancel', async () => {
@@ -260,6 +268,7 @@ describe('project launcher creation', () => {
     const draft = launcher.begin();
     launcher.setSource(draft.id, { kind: 'folder', folder });
     launcher.setDestination(draft.id, destination);
+    launcher.update(draft.id, { folderName: path.basename(folder) });
     await mkdir(path.join(destination, path.basename(folder)));
     await expect(launcher.createAndPrepare(draft.id)).rejects.toThrow('已经有同名文件夹');
   });

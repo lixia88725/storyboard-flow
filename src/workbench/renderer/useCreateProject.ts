@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { FlowCreateDraftView, FlowProjectTarget } from '../../platform/contracts/flowEditor';
+import type { FlowCreateDraftView, FlowCreateMode, FlowProjectTarget } from '../../platform/contracts/flowEditor';
 import type { CreateFields, CreateSheetState } from './CreateProjectSheet';
+import { errorText } from './FlowAlert';
 
 export type TransitionResult = 'opened' | 'unchanged' | { error: string };
 
 /** One creation draft at a time. Main owns the source and destination paths; this hook
- * only carries the field values and the create/issue/progress flow. */
-export function useCreateProject(start: (target: FlowProjectTarget) => Promise<TransitionResult>) {
+ * only carries the field values and the create/issue/progress flow. A host reporter
+ * receives failures that happen before a sheet exists, so they stay visible. */
+export function useCreateProject(start: (target: FlowProjectTarget) => Promise<TransitionResult>, report?: (message: string) => void) {
   const [state, setState] = useState<CreateSheetState | null>(null);
   const stateRef = useRef<CreateSheetState | null>(null);
   const draftRef = useRef<string | null>(null);
   const startRef = useRef(start);
+  const reportRef = useRef(report);
   stateRef.current = state;
   startRef.current = start;
+  reportRef.current = report;
 
   useEffect(() => {
     const api = window.flowEditor!;
@@ -33,21 +37,31 @@ export function useCreateProject(start: (target: FlowProjectTarget) => Promise<T
   }, []);
 
   const fail = useCallback((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorText(error);
+    reportRef.current?.(message);
     setState(current => current ? { ...current, phase: 'editing', progress: null, issues: null, error: message } : current);
   }, []);
   const updateDraft = (draft: FlowCreateDraftView) =>
     setState(current => current ? { ...current, draft } : current);
 
-  const begin = useCallback(async () => {
+  const begin = useCallback(async (mode: FlowCreateMode = 'images') => {
     try {
       const previous = draftRef.current;
       if (previous) await window.flowEditor!.createDiscard(previous).catch(() => {});
-      const draft = await window.flowEditor!.createDraft();
+      const draft = await window.flowEditor!.createDraft(mode);
       draftRef.current = draft.id;
       setState({ draft, phase: 'editing', progress: null, issues: null, error: '' });
     } catch (error) { fail(error); }
   }, [fail]);
+
+  /** The entry already classified a folder and Main already holds its path:
+   * adopting that draft skips every source picker. */
+  const adopt = useCallback(async (draft: FlowCreateDraftView) => {
+    const previous = draftRef.current;
+    if (previous && previous !== draft.id) await window.flowEditor!.createDiscard(previous).catch(() => {});
+    draftRef.current = draft.id;
+    setState({ draft, phase: 'editing', progress: null, issues: null, error: '' });
+  }, []);
 
   const chooseSource = useCallback(async (kind: 'files' | 'folder') => {
     const id = draftRef.current;
@@ -116,7 +130,7 @@ export function useCreateProject(start: (target: FlowProjectTarget) => Promise<T
     setState(current => current ? { ...current, error: message } : current);
   }, []);
 
-  return { state, begin, chooseSource, chooseDestination, confirm, abort, respond, cancel, setError };
+  return { state, begin, adopt, chooseSource, chooseDestination, confirm, abort, respond, cancel, setError };
 }
 
 export type CreateProjectState = ReturnType<typeof useCreateProject>;

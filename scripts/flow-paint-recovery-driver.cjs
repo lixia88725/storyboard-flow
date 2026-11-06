@@ -47,7 +47,7 @@ async function overflow(fx,fy){
 }
 async function holdTransition(kind='close'){
   await js(`(()=>{const p=window.__editor,original=p.beforeTransition.current;window.__gap=false;p.beforeTransition.current=async()=>{p.beforeTransition.current=original;await original();window.__gap=true;await new Promise(r=>window.__releaseGap=r);};return true})()`);
-  if(kind==='close')win.close();else await js("window.__switchResult=null;void window.__editor.openProject({kind:'dialog'}).then(r=>window.__switchResult=r);true");await wait(()=>js('window.__gap'),'settled-to-freeze gap');
+  if(kind==='close')win.close();else await js("window.__switchResult=null;void window.__editor.openProject({kind:'pending'}).then(r=>window.__switchResult=r);true");await wait(()=>js('window.__gap'),'settled-to-freeze gap');
 }
 (async()=>{
   await import(pathToFileURL(path.join(repo,'dist-electron/platform/main/flowEditorEntry.js')).href);await app.whenReady();

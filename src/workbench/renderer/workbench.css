@@ -43,6 +43,13 @@
 .wb-sheet { width:min(520px,100%); max-height:78vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; background:#24292d; border:1px solid #3f474d; border-radius:12px; box-shadow:0 24px 64px #000b, inset 0 1px 0 #ffffff0f; }
 .wb-sheet h2 { margin:0; font-size:15px; font-weight:600; color:#eef1f3; letter-spacing:-.01em; }
 .wb-sheet-note { margin:-8px 0 0; font-size:11.5px; color:#8b959d; }
+.wb-sheet-warning { margin:0; padding:8px 10px; border-radius:7px; background:#3a2d18; border:1px solid #6d5427; color:#e8c98a; font-size:11.5px; line-height:1.5; }
+.wb-sheet-hint { margin:0; padding:0 12px 9px; font-size:11px; color:#8b959d; }
+.wb-sheet-hint:empty { display:none; }
+.flow-alert { position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:300; width:min(560px,calc(100% - 32px)); display:grid; grid-template-columns:1fr auto; gap:2px 12px; padding:12px 14px; background:#3a2124; border:1px solid #7d3b40; border-radius:10px; color:#f4dedf; box-shadow:0 18px 48px #000a; }
+.flow-alert strong { font-size:12px; font-weight:650; letter-spacing:.01em; }
+.flow-alert p { margin:0; grid-column:1; font-size:12px; line-height:1.55; color:#f0d3d5; overflow-wrap:anywhere; }
+.flow-alert button { grid-column:2; grid-row:1 / span 2; align-self:center; padding:5px 12px; background:#4a2a2e; border:1px solid #87464b; color:#f4dedf; }
 .wb-sheet-group { background:#1e2326; border:1px solid #363d43; border-radius:9px; overflow:hidden; }
 .wb-sheet-field { display:block; padding:8px 12px 9px; }
 .wb-sheet-field>span { display:block; margin-bottom:3px; font-size:10.5px; color:#8b959d; letter-spacing:.02em; }

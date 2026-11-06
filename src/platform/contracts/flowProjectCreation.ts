@@ -29,3 +29,16 @@ export type CreateImageProject = (
   input: CreateImageProjectInput,
   options: CreateImageProjectOptions
 ) => Promise<{ root: string }>;
+
+/** A project with no shots yet: the same folder, checkpoint and publication
+ * transaction as creation from images, with nothing to read. */
+export type CreateBlankProjectInput = {
+  destinationParent: string;
+  folderName: string;
+  name: string;
+  naming: ProjectNamingV1;
+};
+export type CreateBlankProject = (
+  input: CreateBlankProjectInput,
+  options: { signal: AbortSignal; onProgress?: (progress: { done: number; total: number; phase?: 'read' | 'write' }) => void }
+) => Promise<{ root: string }>;

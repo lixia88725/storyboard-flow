@@ -1,11 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { FlowCreateDraftView, FlowCreatePatch, FlowCreateSourceView, FlowRecentProject } from '../contracts/flowEditor.js';
+import type { FlowCreateDraftView, FlowCreateMode, FlowCreatePatch, FlowCreateSourceView, FlowRecentProject } from '../contracts/flowEditor.js';
 import type { ProjectNamingV1 } from '../contracts/refactorV1.js';
-import type { CreateImageProject, CreateImageProjectIssue, CreateImageProjectSource } from '../contracts/flowProjectCreation.js';
+import type { CreateBlankProject, CreateImageProject, CreateImageProjectIssue, CreateImageProjectSource } from '../contracts/flowProjectCreation.js';
 import { namingIssue } from '../contracts/flowNaming.js';
-import { folderNameIssue, PROJECT_FIELD_LIMIT } from '../contracts/flowProjectFields.js';
+import { folderNameIssue, projectFolderNameFor, PROJECT_FIELD_LIMIT } from '../contracts/flowProjectFields.js';
 import type { FlowWorkspaceTarget } from '../../project-files/main/flowWorkspace.js';
 
 const RECENT_VERSION = 1;
@@ -17,6 +17,9 @@ type StoredRecent = { version: 1; projects: RecentRecord[] };
 
 type Draft = {
   id: string;
+  mode: FlowCreateMode;
+  legacy: boolean;
+  imageCount: number;
   source: CreateImageProjectSource | null;
   destinationParent: string | null;
   folderName: string;
@@ -33,6 +36,8 @@ export type FlowProjectLauncherDeps = {
   prepare: (root: string) => Promise<FlowWorkspaceTarget>;
   /** The file-module implementation is injected; this module never invents a second one. */
   createProject: CreateImageProject;
+  /** Empty project creation; the same transaction without a source. */
+  createBlankProject: CreateBlankProject;
   /** Forwards progress to the window. */
   onProgress: (draftId: string, progress: { done: number; total: number; phase?: 'read' | 'write' }) => void;
   /** Asks the user whether to continue after batched per-file issues. */
@@ -178,6 +183,9 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
 
   const view = (draft: Draft): FlowCreateDraftView => ({
     id: draft.id,
+    mode: draft.mode,
+    legacy: draft.legacy,
+    imageCount: draft.imageCount,
     source: draft.source ? sourceLabel(draft.source) : { kind: 'none' },
     destination: draft.destinationParent ? { label: path.basename(draft.destinationParent) || draft.destinationParent } : null,
     folderName: draft.folderName,
@@ -191,9 +199,19 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
     return draft;
   };
 
-  const begin = (): FlowCreateDraftView => {
+  /** The sheet asks for a name, not a folder name: the folder follows the name.
+   * A folder beside its own source keeps a distinct name so the location the
+   * user just opened is never the target. */
+  const sourceFolderName = (draft: Draft) =>
+    draft.source?.kind === 'folder' ? path.basename(draft.source.folder) : undefined;
+  const syncFolderName = (draft: Draft) => {
+    if (draft.folderTouched) return;
+    draft.folderName = projectFolderNameFor(draft.name, sourceFolderName(draft));
+  };
+
+  const begin = (mode: FlowCreateMode = 'images'): FlowCreateDraftView => {
     const draft: Draft = {
-      id: randomId(), source: null, destinationParent: null,
+      id: randomId(), mode, legacy: false, imageCount: 0, source: null, destinationParent: null,
       folderName: '未命名项目', name: '未命名项目',
       naming: { sceneCode: 'scene', artistName: 'artist', version: 'v001' },
       nameTouched: false, folderTouched: false
@@ -202,8 +220,28 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
     return view(draft);
   };
 
+  /** A folder the entry classified as images (or a retired workbook) becomes a
+   * draft that only needs a location: the project name already defaults to the
+   * folder's name. */
+  const draftFromFolder = (folder: string, entry: { imageCount: number; legacy: boolean }): FlowCreateDraftView => {
+    if (!absolute(folder)) throw Error('图片来源文件夹无效');
+    if (!Number.isSafeInteger(entry?.imageCount) || entry.imageCount < 1) throw Error('这个文件夹里没有可导入的图片');
+    const base = path.basename(folder) || '未命名项目';
+    const draft: Draft = {
+      id: randomId(), mode: 'images', legacy: Boolean(entry.legacy), imageCount: entry.imageCount,
+      source: { kind: 'folder', folder }, destinationParent: null,
+      folderName: base, name: base,
+      naming: { sceneCode: 'scene', artistName: 'artist', version: 'v001' },
+      nameTouched: false, folderTouched: false
+    };
+    syncFolderName(draft);
+    drafts.set(draft.id, draft);
+    return view(draft);
+  };
+
   const setSource = (id: string, source: CreateImageProjectSource): FlowCreateDraftView => {
     const draft = requireDraft(id);
+    if (draft.mode !== 'images') throw Error('空白项目不需要图片来源');
     if (draft.controller) throw Error('正在创建，不能更换来源');
     if (source.kind === 'folder') {
       if (!absolute(source.folder)) throw Error('图片来源文件夹无效');
@@ -216,6 +254,9 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
       if (!draft.folderTouched) draft.folderName = '未命名项目';
     }
     draft.source = source;
+    draft.legacy = false;
+    draft.imageCount = source.kind === 'folder' ? draft.imageCount : source.files.length;
+    syncFolderName(draft);
     return view(draft);
   };
 
@@ -240,6 +281,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
       if (!hasText(patch.name) || (patch.name as string).length > FIELD_LIMIT) throw Error('项目名称无效或过长');
       draft.name = patch.name as string;
       draft.nameTouched = true;
+      syncFolderName(draft);
     }
     if (Object.hasOwn(patch, 'naming')) {
       if (!validNaming(patch.naming)) throw Error('场次、作者或版本无效');
@@ -251,7 +293,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
   /** Publication-boundary check: drafts may hold invalid text while other work
    * continues, but creating a project refuses until the values can be published. */
   const problem = (draft: Draft): string | null => {
-    if (!draft.source) return '请先选择图片或文件夹';
+    if (draft.mode === 'images' && !draft.source) return '请先选择图片或文件夹';
     if (!draft.destinationParent) return '请先选择保存位置';
     const folder = folderNameIssue(draft.folderName);
     if (folder) return folder;
@@ -283,19 +325,29 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
         if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
       }
       if (controller.signal.aborted || canceled) throw new ProjectCreationCanceled();
-      const created = await deps.createProject({
-        source: draft.source!, destinationParent: parent,
-        folderName: draft.folderName, name: draft.name, naming: { ...draft.naming }
-      }, {
-        signal: controller.signal,
-        onProgress: progress => deps.onProgress(id, progress),
-        decideIssues: async issues => {
-          if (controller.signal.aborted) { canceled = true; return 'cancel'; }
-          const decision = await deps.decideIssues(id, issues);
-          if (decision === 'cancel') canceled = true;
-          return decision;
-        }
-      });
+      syncFolderName(draft);
+      const folderProblem = folderNameIssue(draft.folderName);
+      if (folderProblem) throw Error(folderProblem);
+      const created = draft.mode === 'blank'
+        ? await deps.createBlankProject({
+            destinationParent: parent, folderName: draft.folderName, name: draft.name, naming: { ...draft.naming }
+          }, {
+            signal: controller.signal,
+            onProgress: progress => deps.onProgress(id, progress)
+          })
+        : await deps.createProject({
+            source: draft.source!, destinationParent: parent,
+            folderName: draft.folderName, name: draft.name, naming: { ...draft.naming }
+          }, {
+            signal: controller.signal,
+            onProgress: progress => deps.onProgress(id, progress),
+            decideIssues: async issues => {
+              if (controller.signal.aborted) { canceled = true; return 'cancel'; }
+              const decision = await deps.decideIssues(id, issues);
+              if (decision === 'cancel') canceled = true;
+              return decision;
+            }
+          });
       // A successful return means the file module published a complete project;
       // a late cancel click must not hide it.
       if (!created || !absolute(created.root)) throw Error('创建结果没有返回项目位置');
@@ -399,7 +451,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
   };
 
   return {
-    state, idFor, recentProject, forget, relocate, updateName, openRoot, openRecent, begin, setSource, setDestination, update,
+    state, idFor, recentProject, forget, relocate, updateName, openRoot, openRecent, begin, draftFromFolder, setSource, setDestination, update,
     problem: (id: string) => problem(requireDraft(id)),
     createAndPrepare, abort, discard, abortAll,
     view: (id: string) => view(requireDraft(id)),

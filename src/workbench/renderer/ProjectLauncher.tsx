@@ -1,8 +1,9 @@
 import type { FlowRecentProject } from '../../platform/contracts/flowEditor';
 
-/** First window with no project: every action here opens or creates a real target.
- * A recent entry that no longer resolves is shown as unavailable instead of being
- * silently treated as another project. */
+/** First window with no project. The entry offers two actions: Main inspects the
+ * folder behind 「打开…」 and decides whether it opens a Flow project or offers to
+ * create one from the images inside it. Recent projects stay below as a shortcut;
+ * an entry that no longer resolves is shown as unavailable, never recreated. */
 export function ProjectLauncher({ recent, busy, message, onCreate, onOpen, onOpenRecent, onRemoveRecent, onRelocateRecent }: {
   recent: FlowRecentProject[]; busy: boolean; message: string;
   onCreate: () => void; onOpen: () => void; onOpenRecent: (id: string) => void;
@@ -12,11 +13,11 @@ export function ProjectLauncher({ recent, busy, message, onCreate, onOpen, onOpe
     <section className="launcher-card" aria-label="项目入口">
       <header>
         <h1>Storyboard Flow</h1>
-        <p>从故事板图片创建项目，或打开已有的 Flow 项目。</p>
+        <p>打开 Flow 项目或图片文件夹，或者从空白项目开始。</p>
       </header>
       <div className="launcher-actions">
-        <button className="primary" disabled={busy} onClick={onCreate}>{busy ? '处理中…' : '新建项目'}</button>
-        <button disabled={busy} onClick={onOpen}>打开项目…</button>
+        <button className="primary" data-launcher-open="true" disabled={busy} onClick={onOpen}>{busy ? '处理中…' : '打开…'}</button>
+        <button data-launcher-new="true" disabled={busy} onClick={onCreate}>新建项目…</button>
       </div>
       {message && <p className="launcher-message" role="alert">{message}</p>}
       <section className="launcher-recent" aria-label="最近项目">

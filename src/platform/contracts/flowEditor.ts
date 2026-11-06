@@ -10,9 +10,16 @@ export type FolderStatusRequest = { project: ProjectV1; inspectDisk: boolean };
 /** Main owns the roots. The renderer names a target kind and, at most, an opaque
  * recent/draft identifier; it never supplies a path for a write. */
 export type FlowProjectTarget =
-  | { kind: 'dialog' }
+  | { kind: 'pending' }
   | { kind: 'recent'; id: string }
   | { kind: 'create'; draftId: string };
+/** The simplified entry asks Main to inspect one folder. A Flow project is held
+ * as a one-shot pending target; image folders (including a retired
+ * `.storyboard-workbench`) become a creation draft the renderer confirms. */
+export type FlowOpenChoice =
+  | { canceled: true }
+  | { kind: 'project' }
+  | { kind: 'import'; draft: FlowCreateDraftView };
 export type FlowLaunchResult = { canceled: true } | { canceled: false; bootstrap: FlowEditorBootstrap };
 export type FlowRecentProject = { id: string; name: string; available: boolean; /** Display-only shortest unique suffix; never used as a write path. */ target: string };
 export type FlowLauncherState = { recent: FlowRecentProject[]; open: boolean; currentId: string | null };
@@ -22,10 +29,21 @@ export type FlowCreateSourceView =
   | { kind: 'none' }
   | { kind: 'files'; label: string; count: number }
   | { kind: 'folder'; label: string };
+/** `blank` starts from an empty project; `images` reads a folder or a file list.
+ * Both derive the new folder from the project name, so the sheet only asks for
+ * a name and a location. */
+export type FlowCreateMode = 'images' | 'blank';
 export type FlowCreateDraftView = {
   id: string;
+  mode: FlowCreateMode;
+  /** The source folder is a retired `.storyboard-workbench` folder: its images are
+   * imported, its old ordering and dialogue are not. */
+  legacy: boolean;
+  /** Direct supported images in the source folder; 0 for a blank project. */
+  imageCount: number;
   source: FlowCreateSourceView;
   destination: { label: string } | null;
+  /** Derived from the project name; shown so the user sees the folder it creates. */
   folderName: string;
   name: string;
   naming: ProjectNamingV1;
@@ -61,7 +79,11 @@ export type FlowEditorBridge = {
   /** Rebind a missing recent target only after its project identity matches. */
   relocateRecent(id: string): Promise<FlowRelocateResult>;
   launch(target: FlowProjectTarget): Promise<FlowLaunchResult>;
-  createDraft(): Promise<FlowCreateDraftView>;
+  /** Shows one folder picker and classifies it: an existing Flow project is held
+   * as a one-shot pending target, image folders become a creation draft, and a
+   * damaged Flow project is refused instead of being imported as images. */
+  chooseOpen(): Promise<FlowOpenChoice>;
+  createDraft(mode: FlowCreateMode): Promise<FlowCreateDraftView>;
   createChooseSource(draftId: string, kind: 'files' | 'folder'): Promise<FlowCreateDraftView | { canceled: true }>;
   createChooseDestination(draftId: string): Promise<FlowCreateDraftView | { canceled: true }>;
   createUpdate(draftId: string, patch: FlowCreatePatch): Promise<FlowCreateDraftView>;

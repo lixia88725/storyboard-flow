@@ -10,8 +10,9 @@ import { randomUUID } from 'node:crypto';
 import { createFlowWorkspace, type FlowWorkspaceTarget } from '../../project-files/main/flowWorkspace.js';
 import { openFlowEditorRuntime } from '../../project-files/main/flowEditorRuntime.js';
 import { createProjectStore } from '../../project-files/main/persistence/index.js';
-import type { FlowCreatePatch, FlowEditorBootstrap, FlowPendingBridgeRequest, FlowProjectTarget } from '../contracts/flowEditor.js';
-import type { CreateImageProject, CreateImageProjectIssue } from '../contracts/flowProjectCreation.js';
+import { inspectProjectFolder } from '../../project-files/main/projectFolderEntry.js';
+import type { FlowCreateMode, FlowCreatePatch, FlowEditorBootstrap, FlowOpenChoice, FlowPendingBridgeRequest, FlowProjectTarget } from '../contracts/flowEditor.js';
+import type { CreateBlankProject, CreateImageProject, CreateImageProjectIssue } from '../contracts/flowProjectCreation.js';
 import type { FlowResult } from '../contracts/flowWave2.js';
 import type { ProjectV1 } from '../contracts/refactorV1.js';
 import { createFlowProjectLauncher, isProjectCreationCanceled } from './flowProjectLauncher.js';
@@ -81,6 +82,14 @@ else app.whenReady().then(async () => {
       throw Error('当前构建缺少从图片创建项目的组件');
     return implementation.createImageProject as CreateImageProject;
   })();
+  let createBlank: Promise<CreateBlankProject> | null = null;
+  const loadCreateBlankProject = () => createBlank ??= (async () => {
+    const specifier = '../../project-files/main/createBlankProject.js';
+    const implementation = await import(specifier) as { createBlankProject?: unknown };
+    if (typeof implementation.createBlankProject !== 'function')
+      throw Error('当前构建缺少新建空白项目的组件');
+    return implementation.createBlankProject as CreateBlankProject;
+  })();
 
   const prepare = async (root: string): Promise<FlowWorkspaceTarget> => {
     const canonical = await fs.realpath(root);
@@ -91,6 +100,7 @@ else app.whenReady().then(async () => {
     userData,
     prepare,
     createProject: (input, options) => loadCreateProject().then(implementation => implementation(input, options)),
+    createBlankProject: (input, options) => loadCreateBlankProject().then(implementation => implementation(input, options)),
     onProgress: (draftId, progress) => {
       if (!Number.isFinite(progress?.done) || !Number.isFinite(progress?.total) || progress.total < 0) return;
       send('flow-editor:create-progress', { draftId, done: Math.max(0, Math.min(progress.done, progress.total)), total: progress.total,
@@ -107,17 +117,50 @@ else app.whenReady().then(async () => {
   const withFolder = (bootstrap: Pick<FlowEditorBootstrap, 'project' | 'sessionId'>): FlowEditorBootstrap =>
     ({ ...bootstrap, folderName: currentRoot ? path.basename(currentRoot) : '' });
 
-  const selectProject = async (): Promise<string | null> => {
-    const selection = await dialog.showOpenDialog(win, { title: '打开 Storyboard Flow 项目', buttonLabel: '打开', properties: ['openDirectory'] });
+  /** One folder picker for both entry actions. The user does not pick a mode
+   * first: Main inspects the folder and reports what it found. */
+  const chooseOpenFolder = async (): Promise<string | null> => {
+    const selection = await dialog.showOpenDialog(win, { title: '打开项目或图片文件夹', buttonLabel: '打开', properties: ['openDirectory'] });
     if (selection.canceled) return null;
     return fs.realpath(selection.filePaths[0]);
   };
 
+  /** A Flow folder is held for exactly one launch. A damaged Flow project is
+   * refused here: falling back to the image import would silently discard the
+   * project's own ordering and dialogue. */
+  let pendingOpen: string | null = null;
+  const chooseOpen = async (): Promise<FlowOpenChoice> => {
+    const root = await chooseOpenFolder();
+    if (!root) return { canceled: true };
+    const entry = await inspectProjectFolder(root);
+    if (entry.kind === 'damaged')
+      throw Error(`这个文件夹的 Storyboard Flow 项目数据不完整（${entry.reason}）。已停止打开，也不会把里面的图片当作新素材导入。`);
+    if (entry.kind === 'flow') {
+      const loaded = await createProjectStore().loadCheckpoint(root);
+      if (!loaded.ok) {
+        // The store error names absolute paths; Main keeps them, the renderer does not.
+        console.warn('Flow project checkpoint is not usable:', root, loaded.error.message);
+        throw Error('这个文件夹带有 Storyboard Flow 项目标记，但项目数据读不出来。已停止打开，也不会把里面的图片当作新素材导入；请保留这个文件夹以便核对或恢复。');
+      }
+      pendingOpen = root;
+      return { kind: 'project' };
+    }
+    if (entry.kind === 'empty')
+      throw Error(entry.legacy
+        ? '这个旧版工作簿文件夹里没有可导入的图片（只读取直属的 JPEG、PNG、TIFF）。'
+        : '这个文件夹里没有可导入的图片（只读取直属的 JPEG、PNG、TIFF），也不是 Storyboard Flow 项目。');
+    return { kind: 'import', draft: launcher.draftFromFolder(root, entry) };
+  };
+
   const resolveTarget = async (target: FlowProjectTarget): Promise<FlowWorkspaceTarget | null> => {
     if (!target || typeof target !== 'object') throw Error('Unsupported project target');
-    if (target.kind === 'dialog') {
-      const root = await selectProject();
-      return root ? launcher.openRoot(root) : null;
+    if (target.kind === 'pending') {
+      const root = pendingOpen;
+      pendingOpen = null;
+      // No inspected folder (a stale or repeated click) is a cancelled transition,
+      // not an error that would unfreeze the previous project as a failure.
+      if (!root) return null;
+      return launcher.openRoot(root);
     }
     if (target.kind === 'recent' && typeof target.id === 'string' && target.id)
       return launcher.openRecent(target.id);
@@ -300,7 +343,12 @@ else app.whenReady().then(async () => {
     setImmediate(() => win.destroy());
     return { ok: true };
   });
-  ipcMain.handle('flow-editor:create-draft', event => { caller(event); return launcher.begin(); });
+  ipcMain.handle('flow-editor:choose-open', async event => { caller(event); return chooseOpen(); });
+  ipcMain.handle('flow-editor:create-draft', (event, mode: FlowCreateMode) => {
+    caller(event);
+    if (mode !== 'images' && mode !== 'blank') throw Error('不支持的创建方式');
+    return launcher.begin(mode);
+  });
   ipcMain.handle('flow-editor:create-choose-source', async (event, draftId: string, kind: 'files' | 'folder') => {
     caller(event);
     launcher.view(draftId);
