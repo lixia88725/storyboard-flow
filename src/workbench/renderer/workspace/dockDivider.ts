@@ -97,7 +97,7 @@ export const dividerValueText = (state: DividerState): string => {
   const [left, right] = state.collapsed;
   if (left && right) return '两栏已折叠';
   if (left) return '左栏已折叠，右栏占满';
-  if (right) return `左栏 ${Math.round(state.split)}%，右栏已折叠`;
+  if (right) return '左栏占满，右栏已折叠';
   return `左栏 ${Math.round(state.split)}%，右栏 ${Math.round(100 - state.split)}%`;
 };
 

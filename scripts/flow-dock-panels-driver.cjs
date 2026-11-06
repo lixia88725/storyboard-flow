@@ -119,6 +119,29 @@ import(pathToFileURL(entry).href).then(async()=>{
  // Window blur and a lost capture restore too, and neither one writes the profile.
  const blurDx=await foldDistance('left');const bp=await grabDivider();await mouse('mouseMove',bp.x+blurDx,bp.y);await js(`window.dispatchEvent(new Event('blur'))`);await delay(150);assert.deepEqual(await collapsedDom(),[false,false],'blur restores the pre-drag layout');await mouse('mouseUp',bp.x+blurDx,bp.y);await delay(200);assert.equal(JSON.stringify(await prefs()),cancelSplit);
  const lostDx=await foldDistance('left');const lp=await grabDivider();await mouse('mouseMove',lp.x+lostDx,lp.y);const lid=await js('window.dockPointer');await js(`document.querySelector('.wb-divider').dispatchEvent(new PointerEvent('lostpointercapture',{pointerId:${lid}}))`);await delay(150);assert.deepEqual(await collapsedDom(),[false,false],'lost capture restores the pre-drag layout');await mouse('mouseUp',lp.x+lostDx,lp.y);await delay(200);assert.equal(JSON.stringify(await prefs()),cancelSplit);
+ // A layout key during a pointer drag must not end the gesture or write the profile; a
+ // second pointerdown must not stack another gesture on top.
+ const keyGuardStart=JSON.stringify(await prefs());
+ const startSplit=(await prefs()).split;
+ const kg=await grabDivider();
+ await mouse('mouseMove',kg.x+60,kg.y);
+ const previewValue=await js(`document.querySelector('.wb-divider').getAttribute('aria-valuenow')`);
+ await mouse('mouseDown',kg.x+60,kg.y);
+ assert.equal(await js(`document.querySelector('.wb-divider').dataset.resizing`),'true','a second down keeps the original gesture');
+ await keyDivider('Home');await keyDivider('End');await keyDivider('ArrowRight',true);await keyDivider('ArrowLeft');
+ assert.deepEqual(await collapsedDom(),[false,false],'layout keys are ignored while the pointer owns the layout');
+ assert.equal(await js(`document.querySelector('.wb-divider').getAttribute('aria-valuenow')`),previewValue,'keys do not move the pointer preview');
+ await delay(350);
+ assert.equal(JSON.stringify(await prefs()),keyGuardStart,'no write while the pointer gesture is active');
+ win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});await delay(150);
+ assert.deepEqual(await collapsedDom(),[false,false],'Escape still cancels during a drag');
+ assert.equal(await js(`document.querySelector('.wb-divider').getAttribute('aria-valuenow')`),String(Math.round(startSplit)),'Escape restores the pre-drag width');
+ await mouse('mouseUp',kg.x+60,kg.y);await delay(250);
+ assert.equal(JSON.stringify(await prefs()),keyGuardStart,'the cancelled drag never reaches the profile');
+ // A normal pointerup still commits exactly once.
+ const commitDx=40;await dragDivider(commitDx);const committedSplit=(await prefs()).split;
+ assert.ok(committedSplit>startSplit+1,'an ordinary drag commits');await delay(400);
+ assert.equal((await prefs()).split,committedSplit,'the committed value is stable');
  // Fold the right column by dragging well past its minimum.
  const rightDx=await foldDistance('right');await dragDivider(rightDx);assert.deepEqual((await prefs()).collapsed,[false,true]);cases.push(await geometry('right collapsed'));
  assert.equal(await js(`document.querySelectorAll('[data-dock-column="1"] .wb-dock-icons button').length`),3);

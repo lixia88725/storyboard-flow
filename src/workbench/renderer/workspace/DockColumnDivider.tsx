@@ -19,12 +19,14 @@ export function DockColumnDivider({state, dockRef, canResize, onPreview, onFinis
   const live = useRef({state, dockRef, canResize, onPreview, onFinish});
   live.current = {state, dockRef, canResize, onPreview, onFinish};
   const [resizing, setResizing] = useState(false);
+  const dragActive = useRef(false);
   const cancelDrag = useRef<(() => void) | undefined>(undefined);
   // A surface that retires mid-gesture must not leave window listeners behind.
   useEffect(() => () => cancelDrag.current?.(), []);
 
   const begin = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!event.isPrimary || event.button !== 0 || !live.current.canResize()) return;
+    // A second down (another pointer, or a synthetic repeat) must not stack listeners.
+    if (dragActive.current || !event.isPrimary || event.button !== 0 || !live.current.canResize()) return;
     const dock = live.current.dockRef.current;
     if (!dock) return;
     event.preventDefault();
@@ -41,6 +43,7 @@ export function DockColumnDivider({state, dockRef, canResize, onPreview, onFinis
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     handle.dataset.resizing = 'true';
+    dragActive.current = true;
     setResizing(true);
     live.current.onPreview(latest);
 
@@ -67,6 +70,7 @@ export function DockColumnDivider({state, dockRef, canResize, onPreview, onFinis
       document.body.style.cursor = cursor;
       document.body.style.userSelect = select;
       setResizing(false);
+      dragActive.current = false;
       cancelDrag.current = undefined;
       live.current.onFinish(commit ? latest : drag.state, commit);
     };
@@ -90,7 +94,9 @@ export function DockColumnDivider({state, dockRef, canResize, onPreview, onFinis
   };
 
   const keyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!live.current.canResize()) return;
+    // While a pointer gesture owns the layout, only Escape may act, and that runs through
+    // the gesture's own cancel path. A key must never look like pointerup.
+    if (dragActive.current || !live.current.canResize()) return;
     const dock = live.current.dockRef.current;
     const next = keyboardDivider(live.current.state, event.key, event.shiftKey, dock?.getBoundingClientRect().width ?? 0);
     if (!next) return;

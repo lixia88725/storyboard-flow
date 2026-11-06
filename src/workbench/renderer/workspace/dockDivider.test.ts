@@ -105,7 +105,7 @@ describe('dock divider model', () => {
     expect(dividerValue({split: 48, collapsed: [true, false]})).toBe(0);
     expect(dividerValueText({split: 48, collapsed: [true, false]})).toContain('左栏已折叠');
     expect(dividerValue({split: 48, collapsed: [false, true]})).toBe(100);
-    expect(dividerValueText({split: 48, collapsed: [false, true]})).toContain('右栏已折叠');
+    expect(dividerValueText({split: 48, collapsed: [false, true]})).toBe('左栏占满，右栏已折叠');
     expect(dividerValueText({split: 48, collapsed: [true, true]})).toBe('两栏已折叠');
   });
 
