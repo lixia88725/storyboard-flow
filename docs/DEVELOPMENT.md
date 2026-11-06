@@ -7,6 +7,7 @@
 - 用户画稿在 `.hermes/studio-preview/project`，不能当测试夹具。测试配置可用绝对路径 `FLOW_USER_DATA_DIR` 指定。当前数据保护范围见 [CURRENT](CURRENT.md)。
 - 文件系统测试使用 `test/temporaryWorkspace.ts` 创建系统临时容器；副本也放在容器内。清理须核对自有身份，不跟随符号链接；失败或中断保留现场。遇到不明锁或验证退出码75，交主管处理。
 - 完整测试使用 [获准枚举清单](../test/allowed-suite.json)。移动测试时同步路径，新增获准测试明确加入；不因沿用旧清单漏跑。`.hermes/retire-paths-nov03/allowed-suite.json`仅是旧候选证据，不用于当前运行。禁止输入仍以 AGENTS 为准。
+- CI 同样显式枚举获准清单，测试步骤设置 `NODE_OPTIONS=--max-old-space-size=4096`，单 worker 执行。该上界用于最重 TIFF 保存测试；本机单文件峰值 RSS 约 3.4GB，不代表云端或整个应用的内存上界。不得靠删减预算断言降低负载。
 - 下列GUI脚本使用 `dist/`、`dist-electron/` 构建产物；执行前置条件和验证边界统一见 [AGENTS：验证与交付](../AGENTS.md#验证与交付)。
 
 ## 启动与专项检查
