@@ -32,7 +32,8 @@ export function DockColumnDivider({state, dockRef, canResize, onPreview, onFinis
     const handle = event.currentTarget;
     try { handle.setPointerCapture(event.pointerId); } catch { /* Synthetic drivers may lack a native pointer. */ }
     handle.focus({preventScroll: true});
-    const drag = startDividerDrag(live.current.state, dock.getBoundingClientRect().width);
+    const columns = Array.from(dock.querySelectorAll<HTMLElement>(':scope > .wb-column')).map(column => column.getBoundingClientRect().width);
+    const drag = startDividerDrag(live.current.state, dock.getBoundingClientRect().width, {left: columns[0] ?? 0, right: columns[1] ?? 0});
     let latest = drag.state;
     let ended = false;
     const cursor = document.body.style.cursor;

@@ -25,9 +25,29 @@ async function geometry(label){await delay(200);const g=await js(`(()=>{const re
  if(g.canvas[1]?.height>0){assert.ok(g.canvas[1].bottom<=g.canvas[0].bottom+2,label+' canvas fit');}
  return {label,...g};}
 async function mouse(type,x,y){win.webContents.sendInputEvent({type,x:Math.round(x),y:Math.round(y),button:'left',clickCount:1});await delay(90);}
-async function dragStart(){const r=await js(`(()=>{const e=document.querySelector('[aria-label="调整画布与动作与对白高度"]'),r=e.getBoundingClientRect();window.dockPointer=undefined;window.addEventListener('pointerdown',e=>window.dockPointer=e.pointerId,{once:true});return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await mouse('mouseMove',r.x,r.y);await mouse('mouseDown',r.x,r.y);return r;}
+async function dragStart(){
+ const r=await js(`(()=>{const e=document.querySelector('[aria-label="调整画布与动作与对白高度"]'),r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+ for(let attempt=0;attempt<5;attempt++){
+  await js(`window.dockPointer=undefined;window.addEventListener('pointerdown',e=>window.dockPointer=e.pointerId,{once:true,capture:true})`);
+  await mouse('mouseMove',r.x,r.y);await mouse('mouseDown',r.x,r.y);
+  if(await js(`document.querySelector('[aria-label="调整画布与动作与对白高度"]').dataset.resizing==='true'`))return r;
+  await mouse('mouseUp',r.x,r.y);await delay(300);
+ }
+ throw Error('row divider refused the press');
+}
 const dividerPoint=()=>js(`(()=>{const r=document.querySelector('.wb-divider').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
-async function grabDivider(){const p=await dividerPoint();await js(`window.dockPointer=undefined;window.addEventListener('pointerdown',e=>window.dockPointer=e.pointerId,{once:true,capture:true})`);await mouse('mouseMove',p.x,p.y);await mouse('mouseDown',p.x,p.y);return p;}
+async function grabDivider(){
+ const p=await dividerPoint();
+ // The host refuses layout input while a request or gesture is unsettled; wait for the
+ // separator to accept the press instead of racing it.
+ for(let attempt=0;attempt<5;attempt++){
+  await js(`window.dockPointer=undefined;window.addEventListener('pointerdown',e=>window.dockPointer=e.pointerId,{once:true,capture:true})`);
+  await mouse('mouseMove',p.x,p.y);await mouse('mouseDown',p.x,p.y);
+  if(await js(`document.querySelector('.wb-divider').dataset.resizing==='true'`))return p;
+  await mouse('mouseUp',p.x,p.y);await delay(300);
+ }
+ throw Error('divider refused the press');
+}
 async function releaseDivider(p,dx=0){await mouse('mouseUp',p.x+dx,p.y);await delay(400);}
 // Preferences are written after a debounce; poll instead of assuming one timer tick.
 async function prefsWhen(test,label){for(let i=0;i<20;i++){const value=await prefs();if(test(value))return value;await delay(100);}throw Error('preferences did not settle: '+label);}
@@ -36,8 +56,11 @@ async function moveDivider(dx){const p=await dividerPoint();await mouse('mouseMo
 const collapsedDom=()=>js(`[...document.querySelectorAll('.wb-column')].map(c=>c.classList.contains('is-collapsed'))`);
 const keyCodeOf={ArrowLeft:'Left',ArrowRight:'Right',Home:'Home',End:'End'};
 async function keyDivider(key,shift=false){const code=keyCodeOf[key]??key;await js(`document.querySelector('.wb-divider').focus()`);win.webContents.sendInputEvent({type:'keyDown',keyCode:code,modifiers:shift?['shift']:[]});win.webContents.sendInputEvent({type:'keyUp',keyCode:code,modifiers:shift?['shift']:[]});await delay(220);}
-// Drag distance that reaches 8px past a column's fold threshold at the current dock width.
-async function foldDistance(side){const g=await js(`(()=>{const d=document.querySelector('.wb-dock').getBoundingClientRect();const p=JSON.parse(localStorage.getItem('flow.workbench.layout.v2'));return {width:d.width,split:p.split,collapsed:p.collapsed}})()`);const available=g.width-5;if(side==='left'){const left=available*g.split/100;return -(left-(240-24-8));}const right=available*(100-g.split)/100;return right-(260-24-8);}
+// Drag distance that reaches 8px past a column's fold threshold. Measured from the live
+// columns, because preferences are written after a debounce and can lag the real split.
+async function foldDistance(side){const g=await js(`(()=>{const d=document.querySelector('.wb-dock').getBoundingClientRect();const c=[...document.querySelectorAll('.wb-column')].map(x=>x.getBoundingClientRect().width);return {width:d.width,left:c[0],right:c[1]}})()`);
+ if(side==='left')return -(g.left-(240-24-8));
+ return g.right-(260-24-8);}
 app.on('window-all-closed',()=>save(phase+'-closed.json',{}));
 process.argv=[process.argv[0],entry,root,userData,'--workbench'];
 import(pathToFileURL(entry).href).then(async()=>{
@@ -74,8 +97,10 @@ import(pathToFileURL(entry).href).then(async()=>{
  await delay(300);assert.equal((await prefs()).split,widerLeft.split,'pointerup result is not rolled back by its release event');assert.deepEqual(widerLeft.collapsed,[false,false]);assert.deepEqual(read(),before,'resizing writes no project state');
  await dragDivider(-70);const widerRight=await prefsWhen(v=>v.split<widerLeft.split-2,'drag left widens the right column');assert.deepEqual(widerRight.collapsed,[false,false]);
  const beforeReverse=JSON.stringify(await prefs());
- const p=await grabDivider();
+ // Recompute the fold distance for every gesture: the split moves, and the pointer target
+ // must stay inside the window.
  const leftDx=await foldDistance('left');
+ const p=await grabDivider();
  await mouse('mouseMove',p.x+leftDx,p.y);
  assert.deepEqual(await collapsedDom(),[true,false],'past the band folds the left column mid-drag');
  // Reversing inside the same gesture restores it without releasing capture.
@@ -83,16 +108,17 @@ import(pathToFileURL(entry).href).then(async()=>{
  await releaseDivider(p,leftDx+36);assert.deepEqual((await prefs()).collapsed,[false,false]);assert.deepEqual(read(),before);
  // Escape rolls the whole gesture back, including a fold.
  const cancelSplit=JSON.stringify(await prefs());
+ const cancelDx=await foldDistance('left');
  const cp=await grabDivider();
- await mouse('mouseMove',cp.x+leftDx,cp.y);assert.deepEqual(await collapsedDom(),[true,false]);
+ await mouse('mouseMove',cp.x+cancelDx,cp.y);assert.deepEqual(await collapsedDom(),[true,false]);
  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});await delay(120);
- assert.deepEqual(await collapsedDom(),[false,false],'Escape restores the pre-drag layout');await mouse('mouseUp',cp.x+leftDx,cp.y);await delay(200);
+ assert.deepEqual(await collapsedDom(),[false,false],'Escape restores the pre-drag layout');await mouse('mouseUp',cp.x+cancelDx,cp.y);await delay(200);
  assert.equal(JSON.stringify(await prefs()),cancelSplit,'cancelled drag is not persisted');
  // Pointer cancellation does the same.
- const pp=await grabDivider();await mouse('mouseMove',pp.x+leftDx,pp.y);const pid=await js('window.dockPointer');await js(`window.dispatchEvent(new PointerEvent('pointercancel',{pointerId:${pid}}))`);await delay(120);assert.deepEqual(await collapsedDom(),[false,false]);await mouse('mouseUp',pp.x+leftDx,pp.y);
+ const pointerDx=await foldDistance('left');const pp=await grabDivider();await mouse('mouseMove',pp.x+pointerDx,pp.y);const pid=await js('window.dockPointer');await js(`window.dispatchEvent(new PointerEvent('pointercancel',{pointerId:${pid}}))`);await delay(120);assert.deepEqual(await collapsedDom(),[false,false]);await mouse('mouseUp',pp.x+pointerDx,pp.y);
  // Window blur and a lost capture restore too, and neither one writes the profile.
- const bp=await grabDivider();await mouse('mouseMove',bp.x+leftDx,bp.y);await js(`window.dispatchEvent(new Event('blur'))`);await delay(150);assert.deepEqual(await collapsedDom(),[false,false],'blur restores the pre-drag layout');await mouse('mouseUp',bp.x+leftDx,bp.y);await delay(200);assert.equal(JSON.stringify(await prefs()),cancelSplit);
- const lp=await grabDivider();await mouse('mouseMove',lp.x+leftDx,lp.y);const lid=await js('window.dockPointer');await js(`document.querySelector('.wb-divider').dispatchEvent(new PointerEvent('lostpointercapture',{pointerId:${lid}}))`);await delay(150);assert.deepEqual(await collapsedDom(),[false,false],'lost capture restores the pre-drag layout');await mouse('mouseUp',lp.x+leftDx,lp.y);await delay(200);assert.equal(JSON.stringify(await prefs()),cancelSplit);
+ const blurDx=await foldDistance('left');const bp=await grabDivider();await mouse('mouseMove',bp.x+blurDx,bp.y);await js(`window.dispatchEvent(new Event('blur'))`);await delay(150);assert.deepEqual(await collapsedDom(),[false,false],'blur restores the pre-drag layout');await mouse('mouseUp',bp.x+blurDx,bp.y);await delay(200);assert.equal(JSON.stringify(await prefs()),cancelSplit);
+ const lostDx=await foldDistance('left');const lp=await grabDivider();await mouse('mouseMove',lp.x+lostDx,lp.y);const lid=await js('window.dockPointer');await js(`document.querySelector('.wb-divider').dispatchEvent(new PointerEvent('lostpointercapture',{pointerId:${lid}}))`);await delay(150);assert.deepEqual(await collapsedDom(),[false,false],'lost capture restores the pre-drag layout');await mouse('mouseUp',lp.x+lostDx,lp.y);await delay(200);assert.equal(JSON.stringify(await prefs()),cancelSplit);
  // Fold the right column by dragging well past its minimum.
  const rightDx=await foldDistance('right');await dragDivider(rightDx);assert.deepEqual((await prefs()).collapsed,[false,true]);cases.push(await geometry('right collapsed'));
  assert.equal(await js(`document.querySelectorAll('[data-dock-column="1"] .wb-dock-icons button').length`),3);

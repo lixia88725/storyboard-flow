@@ -44,6 +44,14 @@ describe('dock divider model', () => {
     expect(back.split).toBe(25);
   });
 
+  it('starts from the rendered columns when a CSS minimum differs from the split', () => {
+    const start = startDividerDrag({split: 75, collapsed: [false, false]}, DOCK, {left: 1187, right: 260});
+    expect(start.left).toBe(1187);
+    expect(start.right).toBe(260);
+    // 260 is already at the right minimum: a small pull folds it instead of shrinking.
+    expect(dragDivider(start, 30).collapsed[1]).toBe(true);
+  });
+
   it('folds the right column symmetrically against its own minimum', () => {
     const start = startDividerDrag(open(), DOCK);
     expect(start.right).toBeCloseTo(available * 0.52, 5);

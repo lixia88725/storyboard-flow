@@ -50,13 +50,21 @@ export type DividerDrag = {
   dockWidth: number;
 };
 
-export const startDividerDrag = (state: DividerState, dockWidth: number): DividerDrag => {
+export const startDividerDrag = (
+  state: DividerState,
+  dockWidth: number,
+  measured?: { left: number; right: number },
+): DividerDrag => {
   const available = availableOf(dockWidth);
+  // The rendered columns are authoritative: a CSS minimum can make them differ from the
+  // stored split, and the gesture must start from what the user actually sees.
+  const left = measured && !state.collapsed[0] ? measured.left : available * state.split / 100;
+  const right = measured && !state.collapsed[1] ? measured.right : available * (100 - state.split) / 100;
   return {
     state: { split: state.split, collapsed: [state.collapsed[0], state.collapsed[1]] },
     dockWidth,
-    left: state.collapsed[0] ? COLLAPSED_COLUMN : available * state.split / 100,
-    right: state.collapsed[1] ? COLLAPSED_COLUMN : available * (100 - state.split) / 100,
+    left: state.collapsed[0] ? COLLAPSED_COLUMN : left,
+    right: state.collapsed[1] ? COLLAPSED_COLUMN : right,
   };
 };
 
