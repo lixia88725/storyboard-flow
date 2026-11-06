@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {verifyPackagedNative,sealSignedNative} from "../dist-electron/platform/main/photocraftPackage.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootPackageJson = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8"));
@@ -81,6 +82,7 @@ const assertExists = (paths, label) => {
 };
 
 assertExists(requiredSourcePaths, "Package source");
+await verifyPackagedNative(path.join(repoRoot,"dist-resources/photocraft"),"darwin",macArch);
 
 await rm(packageRoot, { recursive: true, force: true });
 await mkdir(packageRoot, { recursive: true });
@@ -170,6 +172,13 @@ if (existsSync(wrongPythonDepsPath)) {
 }
 
 run("codesign", ["--force", "--deep", "--sign", "-", appDir]);
+
+await sealSignedNative(path.join(appResources,"photocraft"),"darwin",macArch);
+// The receipt is a sealed app resource. Refresh only the outer signature after
+// updating it; do not re-sign nested Mach-O files and change their digests again.
+run("codesign", ["--force", "--sign", "-", appDir]);
+run("codesign", ["--verify", "--deep", "--strict", appDir]);
+await verifyPackagedNative(path.join(appResources,"photocraft"),"darwin",macArch);
 
 const zipPath = path.join(packageRoot, `Storyboard-Flow-macOS-${macArch}.zip`);
 run("ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", appDir, zipPath]);

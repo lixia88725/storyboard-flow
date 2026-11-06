@@ -1,7 +1,8 @@
-import {describe,it,expect} from 'vitest';
+import {describe,it,expect,vi} from 'vitest';
 import fs from 'node:fs/promises';import path from 'node:path';import {promisify} from 'node:util';import {execFile} from 'node:child_process';import {createHash} from 'node:crypto';import sharp from 'sharp';
 import {temporaryWorkspace} from '../../../test/temporaryWorkspace';
 import {readPhotocraft,writePhotocraftPsd} from './formats/photocraft';
+import * as platform from '../../platform/main/platform/index';
 import {publishPsdExclusive} from './flowPsdExport';
 import {createImageProject} from './createImageProject';import {openFlowEditorRuntime} from './flowEditorRuntime';import {pixelDigest} from './flowPixelIdentity';
 import type {ImageDocumentV1} from '../../platform/contracts/refactorV1';
@@ -42,6 +43,15 @@ describe('append-only protected PSD export',()=>{
   const alias=path.join(root,'alias.psd');await fs.symlink(file,alias);await expect(publishPsdExclusive(alias,bytes)).rejects.toThrow('已存在');
   const internal=path.join(root,'.storyboard-flow');await fs.mkdir(internal);await expect(publishPsdExclusive(path.join(internal,'no.psd'),bytes)).rejects.toThrow('保管');
   const out=path.join(root,'race.psd');const results=await Promise.allSettled([publishPsdExclusive(out,Buffer.from('first')),publishPsdExclusive(out,Buffer.from('second'))]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect(['first','second']).toContain(await fs.readFile(out,'utf8'));
+ });
+ it('uses the Windows directory-sync contract and retains unknown publication failures',async()=>{
+  const {root}=await setup(),file=path.join(root,'windows.psd');
+  const sync=vi.spyOn(platform,'syncDirectory').mockResolvedValue('skipped');
+  try{await publishPsdExclusive(file,Buffer.from('synced file bytes'));expect(sync).toHaveBeenCalledWith(root);expect(await fs.readFile(file,'utf8')).toBe('synced file bytes');
+   sync.mockRejectedValueOnce(Error('directory sync failed'));
+   const failed=path.join(root,'unknown.psd');await expect(publishPsdExclusive(failed,Buffer.from('retained bytes'))).rejects.toMatchObject({effect:'unknown'});expect(await fs.readFile(failed,'utf8')).toBe('retained bytes');
+   expect((await fs.readdir(root)).some(n=>n.startsWith('.flow-psd-'))).toBe(true);
+  }finally{sync.mockRestore();}
  });
  it('runtime binds durable capture and retained original; cancellation and failure leave the project and destination unchanged',async()=>{
   const{root,source}=await setup(),out=path.join(root,'out');await fs.mkdir(out);

@@ -36904,3 +36904,91 @@ freely, subject to the following restrictions:
 2. Altered source versions must be plainly marked as such, and must not be
    misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
+
+
+Windows x64 additional resolved dependencies
+
+core_detect 1.0.0
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT/Apache-2.0
+Full notices: source-notices/core_detect-1.0.0.txt
+
+cpufeatures 0.3.1
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/cpufeatures-0.3.1.txt
+
+ntapi 0.4.3
+registry+https://github.com/rust-lang/crates.io-index
+License: Apache-2.0 OR MIT
+Full notices: source-notices/ntapi-0.4.3.txt
+
+raw-cpuid 11.6.0
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT
+Full notices: source-notices/raw-cpuid-11.6.0.txt
+
+winapi 0.3.9
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT/Apache-2.0
+Full notices: source-notices/winapi-0.3.9.txt
+
+windows 0.62.2
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-0.62.2.txt
+
+windows-collections 0.3.2
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-collections-0.3.2.txt
+
+windows-core 0.62.2
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-core-0.62.2.txt
+
+windows-future 0.3.2
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-future-0.3.2.txt
+
+windows-implement 0.60.2
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-implement-0.60.2.txt
+
+windows-interface 0.59.3
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-interface-0.59.3.txt
+
+windows-link 0.2.1
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-link-0.2.1.txt
+
+windows-numerics 0.3.1
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-numerics-0.3.1.txt
+
+windows-result 0.4.1
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-result-0.4.1.txt
+
+windows-strings 0.5.1
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-strings-0.5.1.txt
+
+windows-threading 0.2.1
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT OR Apache-2.0
+Full notices: source-notices/windows-threading-0.2.1.txt
+
+winsafe 0.0.29
+registry+https://github.com/rust-lang/crates.io-index
+License: MIT
+Full notices: source-notices/winsafe-0.0.29.txt

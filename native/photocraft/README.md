@@ -13,7 +13,8 @@ Rust graph, including craft-libs commits `c5a1cbfb…` and `b8f7d93b…`.
 
 ## Build locally
 
-Requires Rust >=1.95, Node and the existing Flow dependencies:
+Requires the fixed Rust 1.99.1 toolchain (upstream minimum 1.95), Node and the
+existing Flow dependencies:
 
 ```sh
 npm run setup:photocraft
@@ -26,10 +27,25 @@ Rust or download dependencies. A task-local Rust installation can use independen
 `RUSTUP_HOME` / `CARGO_HOME` and a command-scoped `PATH`; do not modify shell
 profiles. The reader binary can be selected with `FLOW_PHOTOCRAFT_BIN`.
 
-The default build includes the synthetic fixture example required by
-`src/project-files/main/photocraft.test.ts`. CI must prepare this native component
-before running the newly enumerated test; the current JS-only CI has not yet
-been updated for this isolated candidate.
+The build checks the actual `rustc` version/host, uses `--locked --all-targets`
+and an explicit native target, and includes the synthetic fixture example used
+by the enumerated tests. It emits `target/debug/build.json` binding source bytes,
+upstream/toolchain/target, executable digest and every bundled license digest.
+Local builds never install Rust automatically. For the existing task-local
+installation, prefix commands with its independent `RUSTUP_HOME`, `CARGO_HOME`
+and command-scoped `PATH`.
+
+The test and package CI jobs now prepare isolated Rust dependency homes, install
+1.99.1, prepare the fixed source and build the native component before use. The
+test job retains its single-worker, 4 GiB Node heap budget and explicit suite.
+Package targets are `aarch64-apple-darwin` and `x86_64-pc-windows-msvc`.
+The Windows leg checks preinstalled MSVC x64 tools and requests a static CRT
+with `+crt-static`;
+it does not install system libraries. Upstream has a Windows-native CI leg.
+The selected headless dependency graph has no GTK/Wayland/AVIF/dav1d dependency;
+`blake3` does carry a `cc`/MSVC build dependency. Windows-specific resolved Rust
+notices are included. Dependency inspection is not a successful Windows compile:
+real Windows runner compilation, execution and release ZIP testing remain pending.
 
 ## Bridge and limits
 
@@ -104,10 +120,21 @@ checkpoint validators reject the new field. Existing projects without the field
 still use v1/v2 behavior. No migration of user projects is performed. Presentation
 matte/dialogue exports for references are currently refused explicitly.
 
-`npm run prepare:package-resources` includes the native binary and notices when
-it was built locally. A package without the reader gives an explicit missing
-component error for PSD/extended TIFF. Windows and release CI preparation remain
-unverified; this candidate must not be released as complete broad PSD support.
+`npm run prepare:package-resources` requires the matching built native binary,
+source receipt and complete license inventory. Missing, stale, wrong-target or
+changed components fail before replacing prepared resources. Both packaging
+recipes verify native resources and the final ZIP validator checks actual Mach-O
+arm64 / PE x64 headers, fixed receipt identity, executable and license digests.
+macOS ad-hoc signing updates a separate packaged executable digest; the original
+build digest remains recorded. Release publication retains its existing explicit
+gate. No remote workflow or release was triggered for this candidate.
+
+Local macOS package preparation, signing and ZIP validation are exercised.
+Windows/native-runner behavior remains unverified; broad PSD support is not
+certified by the package contract. PSD exclusive publication uses the existing
+platform directory-sync contract: Windows skips unsupported directory fsync after
+the file itself is flushed. This avoids a deterministic post-link error, but does
+not claim directory-entry power-loss durability or replace actual NTFS testing.
 
 ## Verification
 

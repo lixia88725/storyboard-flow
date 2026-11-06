@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "smoke:workbench": "node scripts/flow-workbench-smoke.mjs",
     "setup:photocraft": "node scripts/setup-photocraft.mjs",
-    "build:photocraft": "cargo build --locked --manifest-path native/photocraft/Cargo.toml --all-targets"
+    "build:photocraft": "npm run build:electron && node scripts/build-photocraft.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

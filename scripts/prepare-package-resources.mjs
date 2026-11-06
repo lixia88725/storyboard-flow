@@ -6,6 +6,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 
 try {
   const result = await preparePackageResources({ repoRoot });
+  console.log(`Prepared required PhotoCraft native component: ${result.photocraft.source} -> ${result.photocraft.target}`);
   console.log(
     `Prepared Photoshop TIFF Python deps: ${result.photoshopTiffDeps.source} -> ${result.photoshopTiffDeps.target}`
   );

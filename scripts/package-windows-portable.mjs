@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {verifyPackagedNative} from "../dist-electron/platform/main/photocraftPackage.js";
 
 if (process.platform !== "win32") {
   throw new Error("Windows portable packaging must run on Windows.");
@@ -80,6 +81,8 @@ const assertExists = (paths, label) => {
 };
 
 assertExists(requiredSourcePaths, "Package source");
+if(process.arch!=="x64")throw Error("Windows package requires a native x64 host");
+await verifyPackagedNative(path.join(repoRoot,"dist-resources/photocraft"),"win32","x64");
 
 await rm(packageRoot, { recursive: true, force: true });
 await mkdir(packageRoot, { recursive: true });
@@ -140,6 +143,7 @@ await writeFile(
 await rm(path.join(packagedAppRoot, "node_modules", ".bin"), { recursive: true, force: true });
 
 assertExists(requiredPackagedPaths, "Packaged app");
+await verifyPackagedNative(path.join(appResources,"photocraft"),"win32","x64");
 
 const zipPath = path.join(packageRoot, "Storyboard-Flow-Windows-x64.zip");
 run("powershell", [

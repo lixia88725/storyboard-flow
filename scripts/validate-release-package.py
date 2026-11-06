@@ -1,8 +1,58 @@
 """Inspect actual release ZIPs before uploading them; no extraction or execution."""
+import hashlib
+import re
 import json
 import os
 from pathlib import Path
 import zipfile
+
+
+
+NATIVE_UPSTREAM = "a259993118ac7ce1d4c828a385abbc3191841e86"
+NATIVE_RUST = "1.99.1"
+NATIVE_LICENSES = ["PHOTOCRAFT-MIT.txt", "PHOTOCRAFT-APACHE.txt", "PHOTOCRAFT-NOTICE.txt", "THIRD-PARTY.txt", "OFL-Inter.txt", "OFL-JetBrainsMono.txt", "LICENSE-libfacedetection.txt"]
+
+
+def validate_native(archive, resources, windows):
+    prefix = resources + "photocraft/"
+    binary = prefix + ("flow-photocraft.exe" if windows else "flow-photocraft")
+    names = set(archive.namelist())
+    required = [binary, prefix + "build.json"] + [prefix + "licenses/" + n for n in NATIVE_LICENSES]
+    if any(n not in names or archive.getinfo(n).file_size == 0 for n in required):
+        raise ValueError("PhotoCraft binary/build receipt/licenses missing")
+    receipt = json.loads(archive.read(prefix + "build.json"))
+    expected = {"protocol": 1, "upstream": NATIVE_UPSTREAM, "rust": NATIVE_RUST,
+                "platform": "win32" if windows else "darwin", "arch": "x64" if windows else "arm64",
+                "target": "x86_64-pc-windows-msvc" if windows else "aarch64-apple-darwin"}
+    if any(receipt.get(k) != v for k, v in expected.items()) or not re.fullmatch(r"[a-f0-9]{64}", receipt.get("sourceDigest", "")):
+        raise ValueError("PhotoCraft native build target/version mismatch")
+    with archive.open(binary) as f:
+        header = f.read(64)
+        if windows:
+            offset = int.from_bytes(header[60:64], "little")
+            if len(header) != 64 or header[:2] != b"MZ" or offset > 1024 * 1024:
+                raise ValueError("PhotoCraft PE header missing")
+            f.seek(offset)
+            pe = f.read(26)
+            if len(pe) != 26 or pe[:4] != b"PE\0\0" or pe[4:6] != b"\x64\x86" or pe[24:26] != b"\x0b\x02":
+                raise ValueError("PhotoCraft PE x64 architecture mismatch")
+        elif header[:8] != b"\xcf\xfa\xed\xfe\x0c\x00\x00\x01":
+            raise ValueError("PhotoCraft Mach-O arm64 architecture mismatch")
+        f.seek(0)
+        digest = hashlib.sha256()
+        while chunk := f.read(1024 * 1024):
+            digest.update(chunk)
+        if digest.hexdigest() != receipt.get("packagedBinarySha256", receipt.get("binarySha256")):
+            raise ValueError("PhotoCraft binary digest mismatch")
+    inventory = receipt.get("licenses", {})
+    if not isinstance(inventory, dict) or any(n not in inventory for n in NATIVE_LICENSES) or not any(n.startswith("source-notices/") for n in inventory):
+        raise ValueError("PhotoCraft dependency notice inventory missing")
+    for leaf, digest in inventory.items():
+        if not isinstance(leaf, str) or "\\" in leaf or leaf.startswith("/") or any(p in ["", ".", ".."] for p in leaf.split("/")):
+            raise ValueError("Unsafe PhotoCraft notice path")
+        member = prefix + "licenses/" + leaf
+        if member not in names or hashlib.sha256(archive.read(member)).hexdigest() != digest:
+            raise ValueError("PhotoCraft dependency notice missing or changed: " + leaf)
 
 
 def validate_package(zip_path, version, license_bytes):
@@ -33,6 +83,7 @@ def validate_package(zip_path, version, license_bytes):
                 missing.append(member)
         if missing:
             raise ValueError("Missing packaged files/notices: " + ", ".join(missing))
+        validate_native(archive, resources, windows)
         if json.loads(archive.read(app + "package.json")).get("main") != "dist-electron/platform/main/flowEditorEntry.js":
             raise ValueError("Retired application entry")
         if archive.read(app + "LICENSE") != license_bytes:

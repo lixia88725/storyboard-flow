@@ -1,5 +1,6 @@
 """Generated ZIP fixtures test validation only, not production packaging."""
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -13,7 +14,7 @@ spec.loader.exec_module(validator)
 
 
 class PackageValidation(unittest.TestCase):
-    def fixture(self, windows, omit=None, version="0.1.31", license_bytes=b"project MIT"):
+    def fixture(self, windows, omit=None, version="0.1.31", license_bytes=b"project MIT", native_arch_wrong=False, native_target=None, native_digest=None, native_rust=None, signed=False):
         root = "Storyboard Flow-Windows-x64/" if windows else "Storyboard Flow.app/Contents/"
         res = root + ("resources/" if windows else "Resources/")
         app = res + "app/"
@@ -32,6 +33,32 @@ class PackageValidation(unittest.TestCase):
             files.update({app + "node_modules/@img/sharp-darwin-arm64/LICENSE": b"Apache",
                           app + "node_modules/@img/sharp-libvips-darwin-arm64/versions.json": b"{}",
                           app + "node_modules/@img/sharp-libvips-darwin-arm64/README.md": b"libvips LGPLv3"})
+        prefix = res + "photocraft/"
+        binary = bytearray(128)
+        if windows:
+            binary[:2] = b"MZ"
+            binary[60:64] = (64).to_bytes(4, "little")
+            binary[64:68] = b"PE\0\0"
+            binary[68:70] = (0xAA64 if native_arch_wrong else 0x8664).to_bytes(2, "little")
+            binary[88:90] = b"\x0b\x02"
+        else:
+            binary[:8] = b"\xcf\xfa\xed\xfe" + (0x1000007 if native_arch_wrong else 0x100000C).to_bytes(4, "little")
+        original_digest = hashlib.sha256(binary).hexdigest()
+        if signed:
+            binary.extend(b"synthetic signature")
+        files[prefix + ("flow-photocraft.exe" if windows else "flow-photocraft")] = bytes(binary)
+        licenses = {}
+        for leaf in validator.NATIVE_LICENSES + ["source-notices/dependency.txt"]:
+            data = ("synthetic " + leaf).encode()
+            files[prefix + "licenses/" + leaf] = data
+            licenses[leaf] = hashlib.sha256(data).hexdigest()
+        receipt = {"protocol": 1, "upstream": validator.NATIVE_UPSTREAM, "rust": native_rust or validator.NATIVE_RUST,
+                   "platform": "win32" if windows else "darwin", "arch": "x64" if windows else "arm64",
+                   "target": native_target or ("x86_64-pc-windows-msvc" if windows else "aarch64-apple-darwin"),
+                   "sourceDigest": "a" * 64, "binarySha256": native_digest or original_digest, "licenses": licenses}
+        if signed:
+            receipt["packagedBinarySha256"] = hashlib.sha256(binary).hexdigest()
+        files[prefix + "build.json"] = json.dumps(receipt).encode()
         for script in ["layer-file-permissions.py"]:
             files[app + "scripts/" + script] = b"synthetic helper"
         if omit:
@@ -73,6 +100,37 @@ class PackageValidation(unittest.TestCase):
             for script in ["layer-file-permissions.py"]:
                 with self.subTest(windows=windows, script=script), self.assertRaises(ValueError):
                     validator.validate_package(self.fixture(windows, omit="scripts/" + script), "0.1.31", b"project MIT")
+
+    def test_missing_native_binary(self):
+        for windows in [False, True]:
+            with self.subTest(windows=windows), self.assertRaisesRegex(ValueError, "PhotoCraft"):
+                validator.validate_package(self.fixture(windows, omit="photocraft/flow-photocraft"), "0.1.31", b"project MIT")
+
+    def test_missing_native_license(self):
+        for omit in validator.NATIVE_LICENSES + ["source-notices/dependency.txt", "build.json"]:
+            with self.subTest(omit=omit), self.assertRaisesRegex(ValueError, "PhotoCraft"):
+                validator.validate_package(self.fixture(False, omit=omit), "0.1.31", b"project MIT")
+
+    def test_wrong_native_architecture(self):
+        for windows in [False, True]:
+            with self.subTest(windows=windows), self.assertRaisesRegex(ValueError, "architecture"):
+                validator.validate_package(self.fixture(windows, native_arch_wrong=True), "0.1.31", b"project MIT")
+
+    def test_wrong_native_target(self):
+        for windows in [False, True]:
+            with self.subTest(windows=windows), self.assertRaisesRegex(ValueError, "target/version"):
+                validator.validate_package(self.fixture(windows, native_target="aarch64-pc-windows-msvc"), "0.1.31", b"project MIT")
+
+    def test_wrong_native_toolchain(self):
+        with self.assertRaisesRegex(ValueError, "target/version"):
+            validator.validate_package(self.fixture(False, native_rust="stable"), "0.1.31", b"project MIT")
+
+    def test_changed_native_binary(self):
+        with self.assertRaisesRegex(ValueError, "digest"):
+            validator.validate_package(self.fixture(True, native_digest="b" * 64), "0.1.31", b"project MIT")
+
+    def test_signed_native_binary_receipt(self):
+        validator.validate_package(self.fixture(False, signed=True), "0.1.31", b"project MIT")
 
     def test_release_selection_ignores_embedded_python_archives(self):
         target = self.fixture(True)

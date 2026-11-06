@@ -60,9 +60,25 @@ describe("single-repository workflow contract", () => {
     expect(workflow.match(/persist-credentials: false/g)).toHaveLength(4);
     expect(workflow.match(/ref: \$\{\{ needs.metadata.outputs.sha \}\}/g)).toHaveLength(2);
   });
+  it("prepares pinned native fixtures before CI and requires matching package targets", () => {
+    for(const name of ['test','package']){
+      const text=job(name);
+      for(const part of ['RUSTUP_TOOLCHAIN:', "'1.99.1'",'RUSTUP_HOME=', 'CARGO_HOME=', 'rustup toolchain install 1.99.1 --profile minimal --no-self-update','npm run setup:photocraft','npm run build:photocraft'])expect(text).toContain(part);
+      const native=text.indexOf('run: npm run build:photocraft');
+      expect(native).toBeGreaterThan(text.indexOf('run: npm run setup:photocraft'));
+      expect(native).toBeLessThan(text.indexOf(name==='test'?'Run explicitly approved test suite':'run: npm run package:'));
+    }
+    expect(job('test')).toContain('FLOW_PHOTOCRAFT_TARGET: aarch64-apple-darwin');
+    for(const target of ['x86_64-pc-windows-msvc','aarch64-apple-darwin'])expect(job('package')).toContain('native_target: '+target);
+    expect(job('package')).toContain('Microsoft.VisualStudio.Component.VC.Tools.x86.x64');
+    const mac=readFileSync(new URL('../../../scripts/package-macos-app.mjs',import.meta.url),'utf8');
+    expect(mac.indexOf('await sealSignedNative')).toBeLessThan(mac.indexOf('["--verify", "--deep", "--strict", appDir]'));
+    const build=readFileSync(new URL('../../../scripts/build-photocraft.mjs',import.meta.url),'utf8');
+    for(const part of ["'--locked'","'--all-targets'","'--target'",'target-feature=+crt-static'])expect(build).toContain(part);
+  });
   it("validates real ZIP-reader success and negative fixture boundaries", () => {
     const result = spawnSync("python3", ["scripts/test-release-package.py"], { encoding: "utf8" });
-    expect(result.stderr).toContain("Ran 8 tests");
+    expect(result.stderr).toContain("Ran 15 tests");
     expect(result.status, result.stderr).toBe(0);
   });
 });

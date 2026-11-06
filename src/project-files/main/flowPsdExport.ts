@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {syncDirectory} from '../../platform/main/platform/index.js';
 import {randomUUID} from 'node:crypto';
 import {assertPhysicalWorkspaceWriterTargets} from './workspacePhysicalWriterGate.js';
 /** Exclusive publication only. Existing files, directories and aliases are never
@@ -25,7 +26,9 @@ export async function publishPsdExclusive(target:string,bytes:Uint8Array):Promis
   linkAttempted=true;await fs.link(stage,target);linked=true;
   const published=await fs.lstat(target,{bigint:true});
   if(published.ino!==sourceIdentity.ino||published.dev!==sourceIdentity.dev)throw Error('PSD导出目标身份改变');
-  const dir=await fs.open(parent,'r');try{await dir.sync();}finally{await dir.close();}
+  // Windows skips directory fsync by the shared platform contract. File bytes
+  // were synced before publication; no directory-entry crash durability claim.
+  await syncDirectory(parent);
   const currentStage=await fs.lstat(stage,{bigint:true});
   if(currentStage.ino!==sourceIdentity.ino||currentStage.dev!==sourceIdentity.dev)throw Error('PSD临时文件身份改变');
   await fs.unlink(stage);

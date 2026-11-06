@@ -1,9 +1,10 @@
 import { cp, rm, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import {verifyPreparedNative,nativeName} from "./photocraftPackage.js";
 
 export type PackageResourcesResult = {
-  photocraft?: { source: string; target: string };
+  photocraft: { source: string; target: string };
   photoshopTiffDeps: {
     source: string;
     target: string;
@@ -28,20 +29,17 @@ export const preparePackageResources = async ({
     );
   }
 
-  await rm(target, { recursive: true, force: true });
-  await cp(source, target, { recursive: true });
-
-  const binaryName = process.platform === 'win32' ? 'flow-photocraft.exe' : 'flow-photocraft';
-  const nativeBinary = path.join(repoRoot,'native/photocraft/target/debug',binaryName);
-  const photocraftTarget = path.join(outputRoot,'photocraft');
+  // Validate before replacing any existing prepared resources.
+  const native=await verifyPreparedNative(repoRoot);
+  const photocraftTarget=path.join(outputRoot,'photocraft');
+  await rm(target,{recursive:true,force:true});
+  await cp(source,target,{recursive:true});
   await rm(photocraftTarget,{recursive:true,force:true});
-  if(pathExists(nativeBinary)) {
-    await mkdir(photocraftTarget,{recursive:true});
-    await cp(nativeBinary,path.join(photocraftTarget,binaryName));
-    await cp(path.join(repoRoot,'native/photocraft/licenses'),path.join(photocraftTarget,'licenses'),{recursive:true});
-  }
+  await mkdir(photocraftTarget,{recursive:true});
+  for(const leaf of [nativeName(process.platform),'build.json','licenses'])
+    await cp(path.join(native.source,leaf),path.join(photocraftTarget,leaf),{recursive:true});
   return {
-    ...(pathExists(nativeBinary) ? {photocraft:{source:nativeBinary,target:photocraftTarget}} : {}),
+    photocraft:{source:native.binary,target:photocraftTarget},
     photoshopTiffDeps: {
       source,
       target

@@ -21,6 +21,8 @@ jobs:
     env:
       FLOW_PYTHON_DEPS_DIR: ${{ github.workspace }}/vendor/python/photoshop-tiff
       PYTHONDONTWRITEBYTECODE: '1'
+      RUSTUP_TOOLCHAIN: '1.99.1'
+      FLOW_PHOTOCRAFT_TARGET: aarch64-apple-darwin
     steps:
       - name: Set isolated test temporary directory
         shell: bash
@@ -38,6 +40,16 @@ jobs:
           python-version: '3.12'
       - run: npm ci
       - run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
+      - name: Isolate Rust dependency homes
+        shell: bash
+        run: |
+          printf 'RUSTUP_HOME=%s/flow-rustup\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'CARGO_HOME=%s/flow-cargo\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Install fixed native Rust toolchain
+        shell: bash
+        run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
+      - run: npm run setup:photocraft
+      - run: npm run build:photocraft
       - run: npm run build
       - name: Run explicitly approved test suite
         # macOS arm64 runners have 7 GB RAM and vitest runs a single worker here. The heaviest
@@ -91,16 +103,20 @@ jobs:
           - runner: windows-latest
             platform: windows
             arch: x64
+            native_target: x86_64-pc-windows-msvc
             asset: Storyboard-Flow-Windows-x64.zip
           - runner: macos-15
             platform: macos
             arch: arm64
+            native_target: aarch64-apple-darwin
             asset: Storyboard-Flow-macOS-arm64.zip
     runs-on: ${{ matrix.runner }}
     env:
       STORYBOARD_FLOW_VERSION: ${{ needs.metadata.outputs.version }}
       STORYBOARD_FLOW_PACKAGE_DIR: ${{ github.workspace }}/release-artifacts
       STORYBOARD_FLOW_MAC_ARCH: arm64
+      RUSTUP_TOOLCHAIN: '1.99.1'
+      FLOW_PHOTOCRAFT_TARGET: ${{ matrix.native_target }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -121,6 +137,24 @@ jobs:
         run: node -e "if(process.arch !== process.env.EXPECTED_ARCH) process.exit(1)"
       - run: npm ci
       - run: python -m pip install --target vendor/python/photoshop-tiff -r vendor/python/photoshop-tiff/requirements.txt
+      - name: Check hosted Windows MSVC prerequisites
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (!(Test-Path $vswhere)) { throw 'Hosted runner is missing Visual Studio discovery tools' }
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs) { throw 'Hosted runner is missing MSVC x64 build tools' }
+      - name: Isolate Rust dependency homes
+        shell: bash
+        run: |
+          printf 'RUSTUP_HOME=%s/flow-rustup\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'CARGO_HOME=%s/flow-cargo\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Install fixed native Rust toolchain
+        shell: bash
+        run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
+      - run: npm run setup:photocraft
+      - run: npm run build:photocraft
       - run: npm run package:${{ matrix.platform }}
       - name: Validate ZIP contents and notices
         env:
