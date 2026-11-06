@@ -294,8 +294,15 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
   useEffect(() => {
     const controller = createController({
       current: () => toolRef.current,
-      apply: next => setTool(next),
-      isBlocked: () => !!document.querySelector('[role="dialog"][aria-modal="true"]') || !!outputWork.current || savingTiff
+      // Keep the ref and the state in step: two keys pressed before React renders must not
+      // both read the previous tool.
+      apply: next => { toolRef.current = next; setTool(next); },
+      isBlocked: () => {
+        if (document.querySelector('[role="dialog"][aria-modal="true"]')) return true;
+        if (outputRef.current || savingTiffRef.current || pausedRef.current) return true;
+        // A live lasso/transform gesture owns the pointer; the eraser must not reinterpret it.
+        return toolRef.current === 'select' && hasUnsettledRef.current();
+      }
     });
     shortcutRef.current = controller;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -323,6 +330,10 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
     };
   }, []);
   const canNavigateRef = useRef<() => boolean>(() => false);
+  const outputRef = useRef(false);
+  const savingTiffRef = useRef(false);
+  const pausedRef = useRef(false);
+  const hasUnsettledRef = useRef<() => boolean>(() => false);
   const [color, setColor] = useState('#dd3344');
   const pixelSelections = useRef<Record<string, FlowSelection>>({});
   const bitmapSelectionChange = useCallback((shotId: string, layerId: string | undefined, points: FlowSelection | undefined) => {
@@ -648,6 +659,10 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
   const editsSettled = () => !paintInput.isPaused() && active && !paintPresentation.hasInput() && !gestures.current && !flow.snapshot().pending && !hasUnsettledMountedGesture() && !inputUnsettled();
   const canNavigate = () => !outputWork.current && editsSettled();
   canNavigateRef.current = canNavigate;
+  outputRef.current = !!outputWork.current;
+  savingTiffRef.current = savingTiff;
+  pausedRef.current = paintInput.isPaused();
+  hasUnsettledRef.current = () => !!gestures.current || hasUnsettledMountedGesture() || inputUnsettled();
   // TIFF output owns its captured revision. A new brush stroke edits the live Session.
   const brushAvailable = () => active && tool === 'brush' && (!outputWork.current || savingTiff) && !gestures.current;
   const canStartCanvasEdit = () => (!outputWork.current || brushAvailable()) && editsSettled();
@@ -717,7 +732,7 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
       </div>}
       renderDialogue={renderDialogue}
       toolbar={null}
-      toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} paintInFlight={!outputWork.current && paintPresentation.hasInput()} onToolChange={(next) => { shortcutRef.current?.toolChosenByUser(next); setTool(next); }}
+      toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} paintInFlight={!outputWork.current && paintPresentation.hasInput()} onToolChange={(next) => { toolRef.current = next; shortcutRef.current?.toolChosenByUser(next); setTool(next); }}
         color={color} onColorChange={setColor} size={activePresetValue.size} onSizeChange={setActiveSize}
         blurRadius={blurRadius} onBlurRadiusChange={setBlurRadius} onApplyBlur={applyBlur}
         footer={<><button disabled={!active} title="撤销" aria-label="撤销" onClick={()=>void historyStep('undo')}><Undo2 size={20} strokeWidth={1.5} aria-hidden /><span className="wb-sr-only">撤销</span></button><button disabled={!active} title="重做" aria-label="重做" onClick={()=>void historyStep('redo')}><Redo2 size={20} strokeWidth={1.5} aria-hidden /><span className="wb-sr-only">重做</span></button></>}/>}
