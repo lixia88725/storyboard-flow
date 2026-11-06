@@ -70,6 +70,22 @@ describe("tool keys", () => {
     expect(h.controller.state().holding).toBe(false);
   });
 
+  it("maps K to the blur tool", () => {
+    const h = harness("brush");
+    expect(h.down("k")).toBe("handled");
+    expect(h.tool()).toBe("blur");
+  });
+
+  it("releases the borrowed eraser even when focus moved into a text field", () => {
+    const h = harness("brush");
+    h.down("e");
+    h.tick(300);
+    const field = { tagName: "TEXTAREA", isContentEditable: false } as unknown as EventTarget;
+    expect(h.up("e", { target: field })).toBe("restored");
+    expect(h.tool()).toBe("brush");
+    expect(h.controller.state().holding).toBe(false);
+  });
+
   it("ignores keys typed into text fields, during IME and with modifiers", () => {
     const h = harness("brush");
     const field = { tagName: "INPUT", isContentEditable: false } as unknown as EventTarget;

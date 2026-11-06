@@ -293,9 +293,9 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
   const shortcutRef = useRef<ReturnType<typeof createController>>(undefined);
   useEffect(() => {
     const controller = createController({
-      current: () => (toolRef.current === 'blur' ? 'select' : toolRef.current),
+      current: () => toolRef.current,
       apply: next => setTool(next),
-      isBlocked: () => !!document.querySelector('[role="dialog"][aria-modal="true"]')
+      isBlocked: () => !!document.querySelector('[role="dialog"][aria-modal="true"]') || !!outputWork.current || savingTiff
     });
     shortcutRef.current = controller;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -322,7 +322,7 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
       shortcutRef.current = undefined;
     };
   }, []);
-  const canNavigateRef = useRef<() => boolean>(() => true);
+  const canNavigateRef = useRef<() => boolean>(() => false);
   const [color, setColor] = useState('#dd3344');
   const pixelSelections = useRef<Record<string, FlowSelection>>({});
   const bitmapSelectionChange = useCallback((shotId: string, layerId: string | undefined, points: FlowSelection | undefined) => {
@@ -717,7 +717,7 @@ function Editor({ paintInput, flow, api, folderName, sessionId, openProject, swi
       </div>}
       renderDialogue={renderDialogue}
       toolbar={null}
-      toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} paintInFlight={!outputWork.current && paintPresentation.hasInput()} onToolChange={(next) => { if (next !== 'blur') shortcutRef.current?.toolChosenByUser(next); setTool(next); }}
+      toolRail={<WorkspaceToolRail tool={tool} disabled={!active} canChangeTool={canNavigate()} paintInFlight={!outputWork.current && paintPresentation.hasInput()} onToolChange={(next) => { shortcutRef.current?.toolChosenByUser(next); setTool(next); }}
         color={color} onColorChange={setColor} size={activePresetValue.size} onSizeChange={setActiveSize}
         blurRadius={blurRadius} onBlurRadiusChange={setBlurRadius} onApplyBlur={applyBlur}
         footer={<><button disabled={!active} title="撤销" aria-label="撤销" onClick={()=>void historyStep('undo')}><Undo2 size={20} strokeWidth={1.5} aria-hidden /><span className="wb-sr-only">撤销</span></button><button disabled={!active} title="重做" aria-label="重做" onClick={()=>void historyStep('redo')}><Redo2 size={20} strokeWidth={1.5} aria-hidden /><span className="wb-sr-only">重做</span></button></>}/>}

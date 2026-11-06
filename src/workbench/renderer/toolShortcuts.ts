@@ -1,7 +1,7 @@
-export type ShortcutTool = "brush" | "eraser" | "select";
+export type ShortcutTool = "brush" | "eraser" | "select" | "blur";
 
 /** Photoshop's spring-loaded eraser: a tap keeps the eraser, a hold borrows it. */
-export const TOOL_KEYS: Record<string, ShortcutTool> = { b: "brush", e: "eraser", l: "select" };
+export const TOOL_KEYS: Record<string, ShortcutTool> = { b: "brush", e: "eraser", l: "select", k: "blur" };
 export const HOLD_MS = 200;
 
 export type KeyLike = {
@@ -81,7 +81,8 @@ export const createController = (options: {
 
   const keyUp: Controller["keyUp"] = event => {
     if (disposed) return "ignored";
-    if (shouldIgnoreShortcut(event)) return "ignored";
+    // The release belongs to a keydown this controller captured: later focus in a text
+    // field, IME state or a modifier must not strand the borrowed eraser.
     const tool = TOOL_KEYS[event.key.toLowerCase()];
     if (tool !== "eraser" || holdTool !== "eraser") return "ignored";
     const long = now() - startedAt >= holdMs;
