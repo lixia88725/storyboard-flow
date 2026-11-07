@@ -1,6 +1,8 @@
 //! Stage A native host. One mutable engine context; Flow alone decides global user history.
 //! Host-pinned immutable versions survive process restarts; native History is scratch only.
 mod journal;
+mod output;
+pub use output::OutputFormat;
 mod pipeline;
 pub mod store;
 pub mod wire;
@@ -163,6 +165,14 @@ pub enum Command {
         #[serde(rename = "versionId")]
         version_id: String,
     },
+    Export {
+        #[serde(rename = "versionId")]
+        version_id: String,
+        format: OutputFormat,
+        #[serde(rename = "maxBytes")]
+        max_bytes: usize,
+    },
+    Resume,
     Capture,
     Status {
         #[serde(rename = "targetOperationId")]
@@ -325,6 +335,7 @@ pub struct Host {
     epoch_input_through: u64,
     last_frame: Option<(String, u64, Option<String>)>,
     frozen: bool,
+    resume_receipt: Option<(String, String, Value)>,
     closed: bool,
 }
 fn authorize(id: &str, _params: &Value) -> photocraft_engine::Result<()> {
@@ -380,6 +391,7 @@ impl Host {
             epoch_input_through: 0,
             last_frame: None,
             frozen: false,
+            resume_receipt: None,
             closed: false,
         })
     }
@@ -1016,6 +1028,81 @@ impl Host {
                 self.epoch_input_through = 0;
                 self.last_frame = None;
                 Ok((json!({"kind":"installed","versionId":version_id}), vec![]))
+            }
+            Command::Export {
+                version_id,
+                format,
+                max_bytes,
+            } => {
+                self.base(r)?;
+                if !self.frozen
+                    || self.candidate.is_some()
+                    || self.gesture.is_some()
+                    || !self.store.unresolved()?.is_empty()
+                {
+                    return Err(Error::retained(
+                        "busy",
+                        "export requires a settled frozen host after pipelineStop",
+                    ));
+                }
+                if !store::is_hash(version_id) {
+                    return Err(Error::none(
+                        "invalid-input",
+                        "invalid export version identity",
+                    ));
+                }
+                if *max_bytes == 0 || *max_bytes > wire::MAX_PAYLOAD {
+                    return Err(Error::none("limit", "export maxBytes must be 1..64MiB"));
+                }
+                let loaded = self.store.load(version_id)?;
+                if loaded.doc.id != self.document()?.id {
+                    return Err(Error::none(
+                        "conflict",
+                        "export version belongs to another document",
+                    ));
+                }
+                let (mut receipt, bytes) = output::encode(&loaded.doc, format, *max_bytes)?;
+                receipt["kind"] = json!("exported");
+                receipt["versionId"] = json!(version_id);
+                receipt["documentId"] = json!(loaded.doc.id.0.to_string());
+                Ok((receipt, bytes))
+            }
+            Command::Resume => {
+                self.base(r)?;
+                let fingerprint = self.fingerprint(r)?;
+                if let Some((id, previous, receipt)) = &self.resume_receipt {
+                    if id == &r.operation_id {
+                        if previous != &fingerprint
+                            || self.frozen
+                            || receipt["epoch"].as_u64() != Some(self.display_epoch)
+                        {
+                            return Err(Error::none(
+                                "conflict",
+                                "resume operation cannot cross another freeze/base/epoch",
+                            ));
+                        }
+                        return Ok((receipt.clone(), vec![]));
+                    }
+                }
+                if !self.frozen
+                    || self.candidate.is_some()
+                    || self.gesture.is_some()
+                    || self.engine.active().is_some_and(|s| s.floating.is_some())
+                    || !self.store.unresolved()?.is_empty()
+                {
+                    return Err(Error::retained(
+                        "busy",
+                        "resume requires a settled frozen host; failed chains cannot resume",
+                    ));
+                }
+                let document_id = self.document()?.id.0.to_string();
+                self.frozen = false;
+                self.display_epoch += 1;
+                self.epoch_input_through = 0;
+                self.last_frame = None;
+                let receipt = json!({"kind":"resumed","versionId":self.current,"documentId":document_id,"epoch":self.display_epoch});
+                self.resume_receipt = Some((r.operation_id.clone(), fingerprint, receipt.clone()));
+                Ok((receipt, vec![]))
             }
             Command::Capture => {
                 self.base(r)?;

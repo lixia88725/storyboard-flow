@@ -18,6 +18,7 @@ photocraft-codecs = { path = "../../vendor/photocraft/crates/codecs" }
 photocraft-engine = { path = "../../vendor/photocraft/crates/engine" }
 photocraft-format = { path = "../../vendor/photocraft/crates/format" }
 photocraft-ops = { path = "../../vendor/photocraft/crates/ops" }
+photocraft-raster = { path = "../../vendor/photocraft/crates/raster" }
 photocraft-geom = { path = "../../vendor/photocraft/crates/geom" }
 sha2 = "=0.10.9"
 serde = { version = "1", features = ["derive"] }

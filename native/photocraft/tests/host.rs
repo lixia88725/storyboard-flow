@@ -902,3 +902,102 @@ fn recovered_accept_origin_survives_load_and_journal_failure_then_same_host_retr
         }
     }
 }
+
+#[test]
+fn immutable_export_requires_settlement_bounds_payload_and_resume_continues_editing() {
+    let mut h = Harness::new();
+    let new = h.call("new", json!({"kind":"new","width":64,"height":32}));
+    let blank = h.accept("new", &new);
+    let begin=h.call("begin",json!({"kind":"strokeBegin","previewId":"p","brush":{"size":12,"opacity":0.5,"seed":8,"color":"#ff0000"},"points":[{"x":10,"y":15},{"x":50,"y":15}]}));
+    assert_eq!(begin.header["body"]["kind"], "frame");
+    let pending = h.call(
+        "exportWhileDrawing",
+        json!({"kind":"export","versionId":blank,"format":"psd","maxBytes":67108864}),
+    );
+    assert_eq!(pending.header["body"]["error"]["code"], "busy");
+    assert!(pending.payload.is_empty());
+    let finish = h.call(
+        "finish",
+        json!({"kind":"strokeFinish","previewId":"p","throughSeq":2}),
+    );
+    let painted = h.accept("finish", &finish);
+    let pixels = h.capture();
+    let before = h.call(
+        "exportBeforeFreeze",
+        json!({"kind":"export","versionId":painted,"format":"psd","maxBytes":67108864}),
+    );
+    assert_eq!(before.header["body"]["kind"], "failure");
+    let freeze = h.call("freeze", json!({"kind":"freeze"}));
+    assert_eq!(freeze.header["body"]["kind"], "frozen");
+    for format in ["psd", "tiff"] {
+        let tiny = h.call(
+            &format!("tiny{format}"),
+            json!({"kind":"export","versionId":painted,"format":format,"maxBytes":1}),
+        );
+        assert_eq!(tiny.header["body"]["error"]["code"], "limit");
+        assert!(tiny.payload.is_empty());
+        let exported = h.call(
+            &format!("export{format}"),
+            json!({"kind":"export","versionId":painted,"format":format,"maxBytes":67108864}),
+        );
+        assert_eq!(
+            exported.header["body"]["kind"], "exported",
+            "{}",
+            exported.header
+        );
+        assert_eq!(
+            exported.header["body"]["sha256"],
+            store::sha(&exported.payload)
+        );
+        assert_eq!(
+            exported.header["body"]["byteLength"],
+            exported.payload.len()
+        );
+        let old = h.call(
+            &format!("old{format}"),
+            json!({"kind":"export","versionId":blank,"format":format,"maxBytes":67108864}),
+        );
+        assert_eq!(old.header["body"]["kind"], "exported", "{}", old.header);
+        assert_ne!(old.payload, exported.payload);
+        assert_eq!(
+            h.capture(),
+            pixels,
+            "exporting old immutable version must not install it"
+        );
+    }
+    let old_frame = h.call("capture", json!({"kind":"capture"}));
+    let resumed = h.call("resume", json!({"kind":"resume"}));
+    assert_eq!(resumed.header["body"]["kind"], "resumed");
+    assert!(
+        resumed.header["body"]["epoch"].as_u64().unwrap()
+            > old_frame.header["body"]["frame"]["epoch"].as_u64().unwrap()
+    );
+    let repeated = h.call("resume", json!({"kind":"resume"}));
+    assert_eq!(resumed.header["body"], repeated.header["body"]);
+    let next=h.call("next",json!({"kind":"strokeBegin","previewId":"next","brush":{"size":4,"seed":9},"points":[{"x":20,"y":20}]}));
+    assert_eq!(next.header["body"]["kind"], "frame");
+    assert_eq!(next.header["body"]["frame"]["inputThrough"], 1);
+    h.call("cancel", json!({"kind":"strokeCancel","previewId":"next"}));
+    let retired_epoch = h.call("resume", json!({"kind":"resume"}));
+    assert_eq!(retired_epoch.header["body"]["error"]["code"], "conflict");
+    h.call("freeze2", json!({"kind":"freeze"}));
+    let stale = h.call("resume", json!({"kind":"resume"}));
+    assert_eq!(stale.header["body"]["error"]["code"], "conflict");
+    let fresh = h.call("resume2", json!({"kind":"resume"}));
+    assert_eq!(fresh.header["body"]["kind"], "resumed");
+    let pipeline=h.call("start",json!({"kind":"pipelineStart","maxPendingStrokes":2,"maxPendingPoints":16,"maxRetainedPixelBytes":16777216}));
+    assert_eq!(pipeline.header["body"]["kind"], "pipelineReady");
+    let busy = h.call(
+        "noExportDuringPipeline",
+        json!({"kind":"export","versionId":painted,"format":"tiff","maxBytes":67108864}),
+    );
+    assert_eq!(busy.header["body"]["error"]["code"], "busy");
+    let no_resume = h.call("noResumeDuringPipeline", json!({"kind":"resume"}));
+    assert_eq!(no_resume.header["body"]["kind"], "failure");
+    let stopped = h.call(
+        "stop",
+        json!({"kind":"pipelineStop","pipelineId":pipeline.header["body"]["pipelineId"]}),
+    );
+    assert_eq!(stopped.header["body"]["kind"], "pipelineStopped");
+    eprintln!("immutable export evidence retained: {}", h.root.display());
+}

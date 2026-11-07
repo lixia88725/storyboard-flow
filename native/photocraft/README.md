@@ -355,3 +355,52 @@ volatile queue ACKs, durable preparation and explicit acceptance. Forty 2K/4K
 strokes include semi-transparent reversals and erasers; burst and paced modes are
 separate. Their small dirty regions and uniform background do not certify arbitrary
 brush sizes or large layered scenes. No metric is physical pen-to-screen latency.
+
+`immutableVersionExportV1` adds `export {versionId,format:"psd"|"tiff",maxBytes}`.
+It requires a settled frozen host with the pipeline stopped. The selected immutable
+version must belong to the open document, but may precede its current accepted
+version: export never installs that older version. The response is
+`exported {versionId,documentId,format,sha256,byteLength,width,height,layerCount,
+layered:true,opaqueBlockCount,warnings:[]}` plus raw file bytes. No output pathname,
+user-file publication, project Save acknowledgement or history change is granted.
+Main must independently bind the captured project/version and publish the bytes.
+
+The new Module calls `photocraft_io::encode_with` on the loaded real Document. Its
+Interface exposes only the immutable version and byte budget, hiding the bounded
+PSD seek writer and preservation checks behind the host Seam. It does not use the
+older append-only PSD/PNG Adapter. Options explicitly enable TIFF layers,
+unassociated transparency and alpha preservation, and disable linked-file reads
+and document paths. Any export/import loss warning rejects the entire output;
+a single locked Background that would take the flat TIFF branch is also refused.
+Explicit PSD output refuses automatic PSB promotion. The maximum transport output
+is 64 MiB: PSD checks encoded_len before allocating its output, then enforces that
+bound on write/seek. Upstream TIFF encoding already materializes bytes before its
+length can be checked. This is not a process-memory ceiling or a large-file stream.
+
+A runtime native reimport checks layer identity/order and the multiplicity and
+bytes of opaque resources, global blocks and layer blocks retained in Document.
+This guard is separate from independent compatibility evidence. It does not retain
+the original PSD record layout, channel compression or noncanonical padding.
+Canonical opaque PSD payloads in the synthetic source tests survive a real worker
+restart, native-version load and Document export. An odd 19-byte layer block that
+the exporter normalizes to 20 bytes is refused. PSD unknown blocks that cannot be
+converted to the TIFF encoder's little-endian order produce upstream warnings and
+are refused, with no partial bytes or flattening fallback returned.
+
+`settledResumeV1` adds `resume`: only a settled frozen host without a pipeline,
+live/floating gesture, candidate or unresolved journal may reopen admission.
+`resumed {versionId,documentId,epoch}` establishes a new epoch/keyframe barrier;
+its in-worker reply supports the same operation's lost-ACK retry. That operation
+cannot cross another freeze, base or epoch. A failed pipeline remains blocked. Resuming
+native editing does not certify that Main published a file or completed Save.
+
+Independent output evidence uses `tests/host_output_process.py` with an existing
+isolated Python directory containing psdtags, tifffile, imagecodecs and numpy;
+it installs nothing. PSD section parsing follows the
+[Adobe PSD specification](https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/).
+The oracle separately checks actual layer records/channels (including opacity,
+visibility and normal/multiply/screen), a numpy recomposition, PSD's white-matted
+RGB composite plus alpha, and TIFF's straight RGBA composite and real tag 37724.
+The new-engine LiveStroke -> durable version -> PSD/TIFF -> resume -> continued
+stroke path is also real. These synthetic independent checks do not certify
+Photoshop UI, arbitrary complex source fidelity, Windows or user-file publication.
