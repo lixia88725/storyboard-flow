@@ -187,7 +187,17 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
       if(pending>=32)return Promise.resolve(fail(Object.assign(Error('Main request queue is full'),{code:'resource-limit',effect:'none'})));
       let request:NativeProjectRequest;
       try{request=copy(input);const valid=request?.kind==='paint'?shape(request,['kind','shotId','stroke']):request?.kind==='board'?shape(request,['kind','edit'],['typing']):shape(request,['kind'])&&['undo','redo','recover','freeze'].includes(String(request.kind));if(!valid)throw Error('Invalid Main Session request');}catch{return Promise.resolve(fail(Object.assign(Error('Invalid Main Session request'),{code:'invalid-input',effect:'none'})));}
-      const isBarrier=request.kind==='undo'||request.kind==='redo'||request.kind==='freeze';if(isBarrier){barriers++;pipeline?.seal();}
+      const isBarrier=request.kind==='undo'||request.kind==='redo'||request.kind==='freeze';
+      // Admission-time context matters: an active gesture can end before this
+      // request reaches tail, putting its decision behind the barrier itself.
+      // Refuse now without owning a seal. Its later up remains ordinary FIFO work.
+      if(isBarrier&&phase==='active'&&pipeline?.hasActive){
+        if(request.kind==='undo'||request.kind==='redo'){
+          const context=tail.then(()=>{history.endTyping();notify();});tail=context.then(()=>undefined,()=>undefined);
+        }
+        return Promise.resolve(fail(Object.assign(Error('Finish or cancel the active gesture before retrying this barrier'),{code:'busy',effect:'none'})));
+      }
+      if(isBarrier){barriers++;pipeline?.seal();}
       pending++;notify();
       const work=tail.then(async():Promise<ImageProjectOutcome>=>{
         if(closed)return fail(Object.assign(Error('Session closed'),{code:'closed',effect:'none'}));

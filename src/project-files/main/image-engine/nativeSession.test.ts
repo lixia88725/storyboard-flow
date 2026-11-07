@@ -77,7 +77,19 @@ const submit=(y=20,opacity=0.5)=>{
 };
 const capture=async()=>{const frame=await adapter.capture(),p=frame.payload;return {hash:createHash('sha256').update(p).digest('hex'),alpha:p[(20*64+24)*4+3],red:p[(20*64+24)*4]};};
 const result={};
-if(mode==='pipeline-cas-delay'||mode==='pipeline-intent-delay'){
+if(mode==='pipeline-undo-race'){
+ let release;const gate=new Promise(r=>release=r);let blocked=false,armed=true;const open=fs.open.bind(fs),commitsDir=path.join(root,'.storyboard-flow/image-project-v2/commits');
+ fs.open=async(...args)=>{const handle=await open(...args);if(armed&&args[0]===commitsDir&&args[1]==='r'){const sync=handle.sync.bind(handle);handle.sync=async()=>{if(armed){armed=false;blocked=true;await gate;}return sync();};}return handle;};
+ const first=submit();await until(()=>blocked);
+ const begin=session.pipeline.input({kind:'begin',shotId:'a',stroke:{...stroke,points:[12,32]}});if(begin.kind!=='admitted')throw Error(JSON.stringify(begin));
+ session.pipeline.input({kind:'append',operationId:begin.operationId,fromSeq:2,points:[44,32]});
+ const undo=session.request({kind:'undo'});result.up=session.pipeline.input({kind:'end',operationId:begin.operationId,throughSeq:2});release();
+ let timer;try{result.busyUndo=await Promise.race([undo,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Undo barrier waited for a decision enqueued behind itself')),3000);})]);}finally{clearTimeout(timer);}
+ result.paints=await Promise.all([first,begin.operationId].map(op=>session.pipeline.waitOperation(op)));fs.open=open;
+ result.beforeThird=session.snapshot();const third=session.pipeline.input({kind:'begin',shotId:'a',stroke:{...stroke,points:[12,44]}});result.third=third;
+ if(third.kind==='admitted'){result.cancel=session.pipeline.input({kind:'cancel',operationId:third.operationId});await session.pipeline.waitOperation(third.operationId);}
+ result.retryUndo=await session.request({kind:'undo'});result.afterRetry=session.snapshot();
+}else if(mode==='pipeline-cas-delay'||mode==='pipeline-intent-delay'){
  const blockedDir=path.join(root,'.storyboard-flow/image-project-v2',mode==='pipeline-cas-delay'?'commits':'settlements');
  let release;const gate=new Promise(r=>release=r);let blocked=false,armed=true;const open=fs.open.bind(fs);
  fs.open=async(...args)=>{const handle=await open(...args);if(armed&&args[0]===blockedDir&&args[1]==='r'){const sync=handle.sync.bind(handle);handle.sync=async()=>{if(armed){armed=false;blocked=true;await gate;}return sync();};}return handle;};
@@ -224,4 +236,9 @@ for(const window of ['prepared','cas','accepted','noop-before','noop-after','noo
 
 it('seals pipeline admission for Undo, allows captured up, drains exact work, and admits a fresh gesture after the barrier',async()=>{
   const f=await fixture();await run(f.script,'pipeline-barrier');const r=await result(f.root,'pipeline-barrier');expect(r.begin.kind).toBe('admitted');expect(r.undoActive.kind).toBe('rejected');expect(r.beginSealed).toMatchObject({kind:'rejected',error:{code:'busy'}});expect(r.end.kind).toBe('admitted');expect(r.paint.kind).toBe('settled');expect(r.undo.kind).toBe('settled');expect(r.undone.alpha).toBe(0);expect(r.metadataRefused.kind).toBe('rejected');expect(r.barrierStillSealed).toMatchObject({kind:'rejected',error:{code:'busy'}});expect(r.next.kind).toBe('admitted');expect(r.cancel.kind).toBe('admitted');expect(r.freeze.kind).toBe('settled');expect(r.snapshot.undoDepth).toBe(0);expect(r.snapshot.redoDepth).toBe(1);
+},60000);
+
+
+it('rejects Undo during an active later gesture without a FIFO cycle or an orphan admission seal',async()=>{
+  const f=await fixture();await run(f.script,'pipeline-undo-race');const r=await result(f.root,'pipeline-undo-race');expect(r.up.kind).toBe('admitted');expect(r.busyUndo).toMatchObject({kind:'rejected',error:{code:'busy'}});expect(r.paints.map((o:any)=>o.kind)).toEqual(['settled','settled']);expect(r.beforeThird.project.revision).toBe(2);expect(r.beforeThird.undoDepth).toBe(2);expect(r.third.kind).toBe('admitted');expect(r.cancel.kind).toBe('admitted');expect(r.retryUndo.kind).toBe('settled');expect(r.afterRetry.project.revision).toBe(3);expect(r.afterRetry.undoDepth).toBe(1);expect(r.afterRetry.redoDepth).toBe(1);expect(r.freeze.kind).toBe('settled');
 },60000);

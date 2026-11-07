@@ -160,6 +160,7 @@ export function createMainImagePipeline(options:{
     },
     resumeAdmission(){if(!blocked)sealed=false;},
     assertRecoverable(){if(ready||blocked)throw Object.assign(Error('Reopen the native worker to reconcile this pipeline; unknown input is never replayed'),{effect:'retained'});},
+    get hasActive(){return active!==undefined;},
     get started(){return ready!==undefined||anchor!==undefined;}
   };
 }
