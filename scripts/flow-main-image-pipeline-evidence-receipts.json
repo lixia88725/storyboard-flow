@@ -1,0 +1,37 @@
+{
+  "classification": "Functional PASS; 10ms paced performance FAIL",
+  "receipts": [
+    {
+      "kind": "small",
+      "originalBytes": 67325,
+      "gzipBytes": 6978,
+      "rawSha256": "22e02a5e6c8e8631f6f0f21db376d13f92e389f44dba0e26b26bc96d289fae81",
+      "original": "/private/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-main-image-pipeline-xeDyDy/result.json"
+    },
+    {
+      "kind": "paced",
+      "originalBytes": 3501964,
+      "gzipBytes": 116833,
+      "rawSha256": "a951ef53cd7d21ca2451896bfd569f229f7c74e62c4cfb4589290bf7634199e0",
+      "original": "/private/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-main-image-pipeline-YAfAYs/result.json"
+    }
+  ],
+  "productBase": "af23d2f + 20f288f (local 365ec5b)",
+  "host": "80a701a",
+  "limitations": "Dedicated Main fixture; not default product UI or input-to-photon. Full build before both GUI rounds. Two GUI executions total: one small lifecycle, one paced. Timing helper labels refined offline after GUI; original JSON retained byte-for-byte.",
+  "functionalPassed": true,
+  "pacedPerformancePassed": false,
+  "commands": {
+    "build": "npm run build",
+    "small": "FLOW_IMAGE_HOST=/private/tmp/flow-image-engine-toolchain/bin/flow-photocraft-host-80a701a FLOW_PROJECT_LEASE_BIN=/private/tmp/flow-project-lease-candidate FLOW_MAIN_PIPELINE_MODE=small node scripts/flow-main-image-pipeline-smoke.mjs",
+    "paced": "FLOW_IMAGE_HOST=/private/tmp/flow-image-engine-toolchain/bin/flow-photocraft-host-80a701a FLOW_PROJECT_LEASE_BIN=/private/tmp/flow-project-lease-candidate FLOW_MAIN_PIPELINE_MODE=paced FLOW_MAIN_PIPELINE_LOAD_NOTE=\"Chief coordinated idle window: chief/native/Main heavy tasks paused; own complete build finished before GUI. Other system activity not certified.\" node scripts/flow-main-image-pipeline-smoke.mjs",
+    "offline": "node scripts/flow-main-image-pipeline-service.cjs scripts/flow-main-image-pipeline-evidence-paced.json.gz"
+  },
+  "logs": [
+    "/private/tmp/flow-main-image-pipeline-build.log",
+    "/private/tmp/flow-main-image-pipeline-build-undo-fixed.log",
+    "/private/tmp/flow-main-image-pipeline-small.log",
+    "/private/tmp/flow-main-image-pipeline-paced-idle.log",
+    "/private/tmp/flow-main-image-pipeline-metrics-tests-final.log"
+  ]
+}

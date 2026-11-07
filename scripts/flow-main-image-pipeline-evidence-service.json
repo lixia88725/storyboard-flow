@@ -1,0 +1,573 @@
+{
+  "classification": "FUNCTIONAL PASS; 10ms PACED PERFORMANCE FAIL",
+  "metrics": {
+    "beginOperationCallMs": {
+      "count": 40,
+      "p50Ms": 24.52720799999952,
+      "p95Ms": 28.431416999999783,
+      "p99Ms": 30.855375000000095,
+      "maxMs": 30.855375000000095
+    },
+    "preparedToProjectCommittedMs": {
+      "count": 40,
+      "p50Ms": 318.6219169999995,
+      "p95Ms": 334.6889170000004,
+      "p99Ms": 337.3929170000001,
+      "maxMs": 337.3929170000001
+    },
+    "fifoWaitAfterPreparedLowerBoundMs": {
+      "count": 40,
+      "p50Ms": 238.88695800000005,
+      "p95Ms": 252.98466600000074,
+      "p99Ms": 255.74466600000005,
+      "maxMs": 255.74466600000005
+    },
+    "decisionResidualUpperBoundMs": {
+      "count": 40,
+      "p50Ms": 79.87154199999986,
+      "p95Ms": 87.56475000000046,
+      "p99Ms": 103.85004099999992,
+      "maxMs": 103.85004099999992
+    },
+    "projectCommittedToNativeAcceptedMs": {
+      "count": 40,
+      "p50Ms": 38.26495799999975,
+      "p95Ms": 42.450166999999965,
+      "p99Ms": 45.41883400000006,
+      "maxMs": 45.41883400000006
+    }
+  },
+  "rows": [
+    {
+      "operationId": "d817b94a-6e71-475a-ac5b-08b3c2288798",
+      "preparedAtMainMs": 1781.857584,
+      "projectCommittedAtMainMs": 1831.269375,
+      "nativeAcceptedAtMainMs": 1863.782709,
+      "previousNativeAcceptedAtMainMs": null,
+      "beginOperationCallMs": 21.20379200000002,
+      "preparedToProjectCommittedMs": 49.411790999999994,
+      "fifoWaitAfterPreparedLowerBoundMs": 0,
+      "decisionResidualUpperBoundMs": 49.411790999999994,
+      "projectCommittedToNativeAcceptedMs": 32.513333999999986
+    },
+    {
+      "operationId": "f451ff74-77e8-4a1e-adac-5e9ac8e47854",
+      "preparedAtMainMs": 1859.679292,
+      "projectCommittedAtMainMs": 1961.608375,
+      "nativeAcceptedAtMainMs": 2007.027209,
+      "previousNativeAcceptedAtMainMs": 1863.782709,
+      "beginOperationCallMs": 20.605749999999944,
+      "preparedToProjectCommittedMs": 101.92908299999999,
+      "fifoWaitAfterPreparedLowerBoundMs": 4.103417000000036,
+      "decisionResidualUpperBoundMs": 97.82566599999996,
+      "projectCommittedToNativeAcceptedMs": 45.41883400000006
+    },
+    {
+      "operationId": "ad697386-7e22-4da0-8d27-7210a361e710",
+      "preparedAtMainMs": 1946.4176250000003,
+      "projectCommittedAtMainMs": 2110.87725,
+      "nativeAcceptedAtMainMs": 2152.1112089999997,
+      "previousNativeAcceptedAtMainMs": 2007.027209,
+      "beginOperationCallMs": 24.502915999999914,
+      "preparedToProjectCommittedMs": 164.45962499999973,
+      "fifoWaitAfterPreparedLowerBoundMs": 60.60958399999981,
+      "decisionResidualUpperBoundMs": 103.85004099999992,
+      "projectCommittedToNativeAcceptedMs": 41.233958999999686
+    },
+    {
+      "operationId": "cc8543b6-ea6b-41be-873c-e0c31b3f8dfa",
+      "preparedAtMainMs": 2001.1879999999999,
+      "projectCommittedAtMainMs": 2232.912417,
+      "nativeAcceptedAtMainMs": 2269.937125,
+      "previousNativeAcceptedAtMainMs": 2152.1112089999997,
+      "beginOperationCallMs": 30.855375000000095,
+      "preparedToProjectCommittedMs": 231.72441700000013,
+      "fifoWaitAfterPreparedLowerBoundMs": 150.92320899999982,
+      "decisionResidualUpperBoundMs": 80.80120800000032,
+      "projectCommittedToNativeAcceptedMs": 37.02470799999992
+    },
+    {
+      "operationId": "fe655815-403d-4b54-8119-101e77a5171a",
+      "preparedAtMainMs": 2087.1267089999997,
+      "projectCommittedAtMainMs": 2353.812375,
+      "nativeAcceptedAtMainMs": 2394.236959,
+      "previousNativeAcceptedAtMainMs": 2269.937125,
+      "beginOperationCallMs": 27.940165999999863,
+      "preparedToProjectCommittedMs": 266.6856660000003,
+      "fifoWaitAfterPreparedLowerBoundMs": 182.81041600000026,
+      "decisionResidualUpperBoundMs": 83.87525000000005,
+      "projectCommittedToNativeAcceptedMs": 40.42458399999987
+    },
+    {
+      "operationId": "2fda3201-75a1-4869-9fd1-c2d616edc2f4",
+      "preparedAtMainMs": 2146.8905419999996,
+      "projectCommittedAtMainMs": 2472.4820419999996,
+      "nativeAcceptedAtMainMs": 2509.7777499999997,
+      "previousNativeAcceptedAtMainMs": 2394.236959,
+      "beginOperationCallMs": 28.474499999999807,
+      "preparedToProjectCommittedMs": 325.5915,
+      "fifoWaitAfterPreparedLowerBoundMs": 247.3464170000002,
+      "decisionResidualUpperBoundMs": 78.2450829999998,
+      "projectCommittedToNativeAcceptedMs": 37.295708000000104
+    },
+    {
+      "operationId": "0b2f3861-5df1-4c9a-82ea-b8006f68c5ef",
+      "preparedAtMainMs": 2266.1897089999998,
+      "projectCommittedAtMainMs": 2590.02175,
+      "nativeAcceptedAtMainMs": 2625.640292,
+      "previousNativeAcceptedAtMainMs": 2509.7777499999997,
+      "beginOperationCallMs": 23.55341700000008,
+      "preparedToProjectCommittedMs": 323.8320410000001,
+      "fifoWaitAfterPreparedLowerBoundMs": 243.58804099999998,
+      "decisionResidualUpperBoundMs": 80.24400000000014,
+      "projectCommittedToNativeAcceptedMs": 35.61854200000016
+    },
+    {
+      "operationId": "ee361a8c-791c-4766-9f83-136340562283",
+      "preparedAtMainMs": 2387.272125,
+      "projectCommittedAtMainMs": 2707.388375,
+      "nativeAcceptedAtMainMs": 2745.0155,
+      "previousNativeAcceptedAtMainMs": 2625.640292,
+      "beginOperationCallMs": 27.35187500000029,
+      "preparedToProjectCommittedMs": 320.11625000000004,
+      "fifoWaitAfterPreparedLowerBoundMs": 238.36816700000008,
+      "decisionResidualUpperBoundMs": 81.74808299999995,
+      "projectCommittedToNativeAcceptedMs": 37.62712499999998
+    },
+    {
+      "operationId": "d3c4748d-2403-4953-b716-5a29179d8391",
+      "preparedAtMainMs": 2506.128542,
+      "projectCommittedAtMainMs": 2821.7629589999997,
+      "nativeAcceptedAtMainMs": 2861.282625,
+      "previousNativeAcceptedAtMainMs": 2745.0155,
+      "beginOperationCallMs": 25.26504100000011,
+      "preparedToProjectCommittedMs": 315.63441699999976,
+      "fifoWaitAfterPreparedLowerBoundMs": 238.88695800000005,
+      "decisionResidualUpperBoundMs": 76.74745899999971,
+      "projectCommittedToNativeAcceptedMs": 39.51966600000014
+    },
+    {
+      "operationId": "40ccca83-fc37-4620-8f81-7a9411c953d6",
+      "preparedAtMainMs": 2622.142292,
+      "projectCommittedAtMainMs": 2939.2517089999997,
+      "nativeAcceptedAtMainMs": 2978.0273749999997,
+      "previousNativeAcceptedAtMainMs": 2861.282625,
+      "beginOperationCallMs": 23.473083999999744,
+      "preparedToProjectCommittedMs": 317.10941699999967,
+      "fifoWaitAfterPreparedLowerBoundMs": 239.14033299999983,
+      "decisionResidualUpperBoundMs": 77.96908399999984,
+      "projectCommittedToNativeAcceptedMs": 38.775666
+    },
+    {
+      "operationId": "2d52371d-4b98-4b8b-8bcb-83fa8f0c89d7",
+      "preparedAtMainMs": 2739.821584,
+      "projectCommittedAtMainMs": 3057.902334,
+      "nativeAcceptedAtMainMs": 3096.142167,
+      "previousNativeAcceptedAtMainMs": 2978.0273749999997,
+      "beginOperationCallMs": 24.844958000000133,
+      "preparedToProjectCommittedMs": 318.0807500000001,
+      "fifoWaitAfterPreparedLowerBoundMs": 238.20579099999986,
+      "decisionResidualUpperBoundMs": 79.87495900000022,
+      "projectCommittedToNativeAcceptedMs": 38.23983300000009
+    },
+    {
+      "operationId": "eceee42b-8b03-451b-aff2-afcb8edb6c91",
+      "preparedAtMainMs": 2856.0647919999997,
+      "projectCommittedAtMainMs": 3176.013709,
+      "nativeAcceptedAtMainMs": 3219.1901249999996,
+      "previousNativeAcceptedAtMainMs": 3096.142167,
+      "beginOperationCallMs": 27.465167000000292,
+      "preparedToProjectCommittedMs": 319.94891700000016,
+      "fifoWaitAfterPreparedLowerBoundMs": 240.0773750000003,
+      "decisionResidualUpperBoundMs": 79.87154199999986,
+      "projectCommittedToNativeAcceptedMs": 43.17641599999979
+    },
+    {
+      "operationId": "3628fb5e-fbba-44f2-8d29-98c93e309166",
+      "preparedAtMainMs": 2970.1223339999997,
+      "projectCommittedAtMainMs": 3298.2677089999997,
+      "nativeAcceptedAtMainMs": 3339.0544999999997,
+      "previousNativeAcceptedAtMainMs": 3219.1901249999996,
+      "beginOperationCallMs": 23.47524999999996,
+      "preparedToProjectCommittedMs": 328.14537500000006,
+      "fifoWaitAfterPreparedLowerBoundMs": 249.06779099999994,
+      "decisionResidualUpperBoundMs": 79.07758400000012,
+      "projectCommittedToNativeAcceptedMs": 40.786790999999994
+    },
+    {
+      "operationId": "4d7859b7-20c3-460e-82a6-4fec282f8c40",
+      "preparedAtMainMs": 3091.153209,
+      "projectCommittedAtMainMs": 3423.491667,
+      "nativeAcceptedAtMainMs": 3464.077667,
+      "previousNativeAcceptedAtMainMs": 3339.0544999999997,
+      "beginOperationCallMs": 23.765833999999813,
+      "preparedToProjectCommittedMs": 332.3384579999997,
+      "fifoWaitAfterPreparedLowerBoundMs": 247.90129099999967,
+      "decisionResidualUpperBoundMs": 84.43716700000004,
+      "projectCommittedToNativeAcceptedMs": 40.58600000000024
+    },
+    {
+      "operationId": "f87e7a34-73e4-472c-8195-519380a8a9b2",
+      "preparedAtMainMs": 3210.7387919999996,
+      "projectCommittedAtMainMs": 3548.131709,
+      "nativeAcceptedAtMainMs": 3587.7821249999997,
+      "previousNativeAcceptedAtMainMs": 3464.077667,
+      "beginOperationCallMs": 24.25991699999986,
+      "preparedToProjectCommittedMs": 337.3929170000001,
+      "fifoWaitAfterPreparedLowerBoundMs": 253.33887500000037,
+      "decisionResidualUpperBoundMs": 84.05404199999975,
+      "projectCommittedToNativeAcceptedMs": 39.65041599999995
+    },
+    {
+      "operationId": "0a94d76a-f127-4b8a-a7e3-0349741bf0e7",
+      "preparedAtMainMs": 3332.0374589999997,
+      "projectCommittedAtMainMs": 3667.059667,
+      "nativeAcceptedAtMainMs": 3706.0235,
+      "previousNativeAcceptedAtMainMs": 3587.7821249999997,
+      "beginOperationCallMs": 25.25025000000005,
+      "preparedToProjectCommittedMs": 335.0222080000003,
+      "fifoWaitAfterPreparedLowerBoundMs": 255.74466600000005,
+      "decisionResidualUpperBoundMs": 79.27754200000027,
+      "projectCommittedToNativeAcceptedMs": 38.963832999999795
+    },
+    {
+      "operationId": "454de09e-a34f-4b20-8408-5c159cacc319",
+      "preparedAtMainMs": 3456.0297499999997,
+      "projectCommittedAtMainMs": 3788.592875,
+      "nativeAcceptedAtMainMs": 3827.889834,
+      "previousNativeAcceptedAtMainMs": 3706.0235,
+      "beginOperationCallMs": 28.007583000000068,
+      "preparedToProjectCommittedMs": 332.5631250000001,
+      "fifoWaitAfterPreparedLowerBoundMs": 249.9937500000001,
+      "decisionResidualUpperBoundMs": 82.56937500000004,
+      "projectCommittedToNativeAcceptedMs": 39.29695900000024
+    },
+    {
+      "operationId": "db6ceb83-be3c-4bfb-ba4a-a09d42573900",
+      "preparedAtMainMs": 3582.6490839999997,
+      "projectCommittedAtMainMs": 3907.784625,
+      "nativeAcceptedAtMainMs": 3950.2347919999997,
+      "previousNativeAcceptedAtMainMs": 3827.889834,
+      "beginOperationCallMs": 25.6167089999999,
+      "preparedToProjectCommittedMs": 325.1355410000001,
+      "fifoWaitAfterPreparedLowerBoundMs": 245.2407500000004,
+      "decisionResidualUpperBoundMs": 79.89479099999971,
+      "projectCommittedToNativeAcceptedMs": 42.450166999999965
+    },
+    {
+      "operationId": "30b83e15-92fe-46c6-bc87-0421b1b5d5ce",
+      "preparedAtMainMs": 3701.0546249999998,
+      "projectCommittedAtMainMs": 4033.298125,
+      "nativeAcceptedAtMainMs": 4072.812375,
+      "previousNativeAcceptedAtMainMs": 3950.2347919999997,
+      "beginOperationCallMs": 26.241375000000062,
+      "preparedToProjectCommittedMs": 332.24350000000004,
+      "fifoWaitAfterPreparedLowerBoundMs": 249.18016699999998,
+      "decisionResidualUpperBoundMs": 83.06333300000006,
+      "projectCommittedToNativeAcceptedMs": 39.514250000000175
+    },
+    {
+      "operationId": "ecea0ffb-f1fd-4ef1-a163-cae87dea9448",
+      "preparedAtMainMs": 3822.7205839999997,
+      "projectCommittedAtMainMs": 4156.576667,
+      "nativeAcceptedAtMainMs": 4194.661375000001,
+      "previousNativeAcceptedAtMainMs": 4072.812375,
+      "beginOperationCallMs": 27.608541999999943,
+      "preparedToProjectCommittedMs": 333.8560830000006,
+      "fifoWaitAfterPreparedLowerBoundMs": 250.09179100000028,
+      "decisionResidualUpperBoundMs": 83.7642920000003,
+      "projectCommittedToNativeAcceptedMs": 38.08470800000032
+    },
+    {
+      "operationId": "e3a7ddb7-ee37-4d82-a643-cf5ea77659ea",
+      "preparedAtMainMs": 3941.676709,
+      "projectCommittedAtMainMs": 4274.360459,
+      "nativeAcceptedAtMainMs": 4315.736459000001,
+      "previousNativeAcceptedAtMainMs": 4194.661375000001,
+      "beginOperationCallMs": 23.064624999999978,
+      "preparedToProjectCommittedMs": 332.6837500000006,
+      "fifoWaitAfterPreparedLowerBoundMs": 252.98466600000074,
+      "decisionResidualUpperBoundMs": 79.69908399999986,
+      "projectCommittedToNativeAcceptedMs": 41.376000000000204
+    },
+    {
+      "operationId": "90ace5b8-c3e9-4b5d-88fc-05b48ec33792",
+      "preparedAtMainMs": 4066.1053339999994,
+      "projectCommittedAtMainMs": 4398.882667,
+      "nativeAcceptedAtMainMs": 4437.723917,
+      "previousNativeAcceptedAtMainMs": 4315.736459000001,
+      "beginOperationCallMs": 23.96849999999995,
+      "preparedToProjectCommittedMs": 332.77733300000045,
+      "fifoWaitAfterPreparedLowerBoundMs": 249.63112500000125,
+      "decisionResidualUpperBoundMs": 83.1462079999992,
+      "projectCommittedToNativeAcceptedMs": 38.8412500000004
+    },
+    {
+      "operationId": "04ef66be-7321-4e7d-a401-b9d3b790943b",
+      "preparedAtMainMs": 4191.066042,
+      "projectCommittedAtMainMs": 4516.021542,
+      "nativeAcceptedAtMainMs": 4555.788292,
+      "previousNativeAcceptedAtMainMs": 4437.723917,
+      "beginOperationCallMs": 27.631792000000132,
+      "preparedToProjectCommittedMs": 324.95550000000003,
+      "fifoWaitAfterPreparedLowerBoundMs": 246.65787499999988,
+      "decisionResidualUpperBoundMs": 78.29762500000015,
+      "projectCommittedToNativeAcceptedMs": 39.766749999999774
+    },
+    {
+      "operationId": "bdd99a74-66ee-442d-9651-497e5a521020",
+      "preparedAtMainMs": 4308.664125,
+      "projectCommittedAtMainMs": 4643.353042000001,
+      "nativeAcceptedAtMainMs": 4680.74125,
+      "previousNativeAcceptedAtMainMs": 4555.788292,
+      "beginOperationCallMs": 26.179333000000042,
+      "preparedToProjectCommittedMs": 334.6889170000004,
+      "fifoWaitAfterPreparedLowerBoundMs": 247.12416699999994,
+      "decisionResidualUpperBoundMs": 87.56475000000046,
+      "projectCommittedToNativeAcceptedMs": 37.388207999999395
+    },
+    {
+      "operationId": "f1721407-ddea-424d-9be8-1e54f9e7e3c5",
+      "preparedAtMainMs": 4432.7161670000005,
+      "projectCommittedAtMainMs": 4762.263709000001,
+      "nativeAcceptedAtMainMs": 4796.750542000001,
+      "previousNativeAcceptedAtMainMs": 4680.74125,
+      "beginOperationCallMs": 24.742457999999715,
+      "preparedToProjectCommittedMs": 329.54754200000025,
+      "fifoWaitAfterPreparedLowerBoundMs": 248.02508299999954,
+      "decisionResidualUpperBoundMs": 81.52245900000071,
+      "projectCommittedToNativeAcceptedMs": 34.48683299999993
+    },
+    {
+      "operationId": "fd65e3a4-c629-48ff-bcd2-ee79e2f5c78a",
+      "preparedAtMainMs": 4551.214542000001,
+      "projectCommittedAtMainMs": 4874.006,
+      "nativeAcceptedAtMainMs": 4911.6085840000005,
+      "previousNativeAcceptedAtMainMs": 4796.750542000001,
+      "beginOperationCallMs": 24.328166000000238,
+      "preparedToProjectCommittedMs": 322.7914579999997,
+      "fifoWaitAfterPreparedLowerBoundMs": 245.53600000000006,
+      "decisionResidualUpperBoundMs": 77.25545799999963,
+      "projectCommittedToNativeAcceptedMs": 37.602584000000206
+    },
+    {
+      "operationId": "b2fdc3f7-6e87-4644-b958-b4ab0ace8319",
+      "preparedAtMainMs": 4675.659542,
+      "projectCommittedAtMainMs": 4991.369084,
+      "nativeAcceptedAtMainMs": 5029.1509590000005,
+      "previousNativeAcceptedAtMainMs": 4911.6085840000005,
+      "beginOperationCallMs": 28.431416999999783,
+      "preparedToProjectCommittedMs": 315.7095419999996,
+      "fifoWaitAfterPreparedLowerBoundMs": 235.9490420000002,
+      "decisionResidualUpperBoundMs": 79.76049999999941,
+      "projectCommittedToNativeAcceptedMs": 37.78187500000058
+    },
+    {
+      "operationId": "08f410d5-96c7-454f-94d5-f52ca58ea638",
+      "preparedAtMainMs": 4793.2565,
+      "projectCommittedAtMainMs": 5107.973834,
+      "nativeAcceptedAtMainMs": 5145.137625,
+      "previousNativeAcceptedAtMainMs": 5029.1509590000005,
+      "beginOperationCallMs": 20.519542,
+      "preparedToProjectCommittedMs": 314.71733399999994,
+      "fifoWaitAfterPreparedLowerBoundMs": 235.8944590000001,
+      "decisionResidualUpperBoundMs": 78.82287499999984,
+      "projectCommittedToNativeAcceptedMs": 37.16379099999995
+    },
+    {
+      "operationId": "14449578-1f3f-4b6a-bc3c-7d353cc87cd5",
+      "preparedAtMainMs": 4908.109459,
+      "projectCommittedAtMainMs": 5231.314584000001,
+      "nativeAcceptedAtMainMs": 5260.737,
+      "previousNativeAcceptedAtMainMs": 5145.137625,
+      "beginOperationCallMs": 23.156332999999904,
+      "preparedToProjectCommittedMs": 323.2051250000004,
+      "fifoWaitAfterPreparedLowerBoundMs": 237.02816600000006,
+      "decisionResidualUpperBoundMs": 86.17695900000035,
+      "projectCommittedToNativeAcceptedMs": 29.42241599999943
+    },
+    {
+      "operationId": "69dda2d4-d2e1-4713-a1e2-a709e523951a",
+      "preparedAtMainMs": 5024.115292,
+      "projectCommittedAtMainMs": 5338.194292,
+      "nativeAcceptedAtMainMs": 5375.65175,
+      "previousNativeAcceptedAtMainMs": 5260.737,
+      "beginOperationCallMs": 24.189500000000407,
+      "preparedToProjectCommittedMs": 314.0789999999997,
+      "fifoWaitAfterPreparedLowerBoundMs": 236.62170799999967,
+      "decisionResidualUpperBoundMs": 77.45729200000005,
+      "projectCommittedToNativeAcceptedMs": 37.45745799999986
+    },
+    {
+      "operationId": "9807d1c7-cfea-4e50-aee1-6b7471301586",
+      "preparedAtMainMs": 5139.961834000001,
+      "projectCommittedAtMainMs": 5455.632542,
+      "nativeAcceptedAtMainMs": 5494.800709,
+      "previousNativeAcceptedAtMainMs": 5375.65175,
+      "beginOperationCallMs": 26.479291999999987,
+      "preparedToProjectCommittedMs": 315.67070799999965,
+      "fifoWaitAfterPreparedLowerBoundMs": 235.68991599999936,
+      "decisionResidualUpperBoundMs": 79.98079200000029,
+      "projectCommittedToNativeAcceptedMs": 39.16816699999981
+    },
+    {
+      "operationId": "681b3197-f14e-4674-9ab8-e75df0f85627",
+      "preparedAtMainMs": 5257.175959,
+      "projectCommittedAtMainMs": 5574.752,
+      "nativeAcceptedAtMainMs": 5614.0022500000005,
+      "previousNativeAcceptedAtMainMs": 5494.800709,
+      "beginOperationCallMs": 25.33374999999978,
+      "preparedToProjectCommittedMs": 317.57604100000026,
+      "fifoWaitAfterPreparedLowerBoundMs": 237.62474999999995,
+      "decisionResidualUpperBoundMs": 79.95129100000031,
+      "projectCommittedToNativeAcceptedMs": 39.25025000000005
+    },
+    {
+      "operationId": "64175e9b-ba4e-414d-a890-c47dab1ef287",
+      "preparedAtMainMs": 5370.967042,
+      "projectCommittedAtMainMs": 5691.848209000001,
+      "nativeAcceptedAtMainMs": 5730.113167,
+      "previousNativeAcceptedAtMainMs": 5614.0022500000005,
+      "beginOperationCallMs": 22.994666000000507,
+      "preparedToProjectCommittedMs": 320.88116700000046,
+      "fifoWaitAfterPreparedLowerBoundMs": 243.03520800000024,
+      "decisionResidualUpperBoundMs": 77.84595900000022,
+      "projectCommittedToNativeAcceptedMs": 38.26495799999975
+    },
+    {
+      "operationId": "6e11f9bb-ed4a-43e9-bc25-1979e62c921d",
+      "preparedAtMainMs": 5491.120167,
+      "projectCommittedAtMainMs": 5807.141792,
+      "nativeAcceptedAtMainMs": 5845.905417,
+      "previousNativeAcceptedAtMainMs": 5730.113167,
+      "beginOperationCallMs": 26.329249999999774,
+      "preparedToProjectCommittedMs": 316.0216250000003,
+      "fifoWaitAfterPreparedLowerBoundMs": 238.9930000000004,
+      "decisionResidualUpperBoundMs": 77.02862499999992,
+      "projectCommittedToNativeAcceptedMs": 38.76362499999959
+    },
+    {
+      "operationId": "c863ba1f-9fd4-4038-9300-ff2d62865495",
+      "preparedAtMainMs": 5608.843792000001,
+      "projectCommittedAtMainMs": 5921.756667000001,
+      "nativeAcceptedAtMainMs": 5961.176959,
+      "previousNativeAcceptedAtMainMs": 5845.905417,
+      "beginOperationCallMs": 25.162916999999652,
+      "preparedToProjectCommittedMs": 312.912875,
+      "fifoWaitAfterPreparedLowerBoundMs": 237.06162499999937,
+      "decisionResidualUpperBoundMs": 75.85125000000062,
+      "projectCommittedToNativeAcceptedMs": 39.42029199999979
+    },
+    {
+      "operationId": "2aff9f52-ed1d-4471-8934-c0649e4cbcad",
+      "preparedAtMainMs": 5725.132667,
+      "projectCommittedAtMainMs": 6038.842625,
+      "nativeAcceptedAtMainMs": 6076.962834,
+      "previousNativeAcceptedAtMainMs": 5961.176959,
+      "beginOperationCallMs": 24.52720799999952,
+      "preparedToProjectCommittedMs": 313.70995800000037,
+      "fifoWaitAfterPreparedLowerBoundMs": 236.0442920000005,
+      "decisionResidualUpperBoundMs": 77.66566599999987,
+      "projectCommittedToNativeAcceptedMs": 38.120208999999704
+    },
+    {
+      "operationId": "1bf723d1-71e6-4376-a6fb-906df2145ac8",
+      "preparedAtMainMs": 5840.751667,
+      "projectCommittedAtMainMs": 6159.373584,
+      "nativeAcceptedAtMainMs": 6191.1575840000005,
+      "previousNativeAcceptedAtMainMs": 6076.962834,
+      "beginOperationCallMs": 22.32533400000011,
+      "preparedToProjectCommittedMs": 318.6219169999995,
+      "fifoWaitAfterPreparedLowerBoundMs": 236.21116699999948,
+      "decisionResidualUpperBoundMs": 82.41075000000001,
+      "projectCommittedToNativeAcceptedMs": 31.78400000000056
+    },
+    {
+      "operationId": "0f7bb542-22ac-41d6-80dd-db1b40cf7a0f",
+      "preparedAtMainMs": 5956.040667,
+      "projectCommittedAtMainMs": 6261.755125000001,
+      "nativeAcceptedAtMainMs": 6268.406417,
+      "previousNativeAcceptedAtMainMs": 6191.1575840000005,
+      "beginOperationCallMs": 23.837999999999738,
+      "preparedToProjectCommittedMs": 305.7144580000004,
+      "fifoWaitAfterPreparedLowerBoundMs": 235.11691700000029,
+      "decisionResidualUpperBoundMs": 70.59754100000009,
+      "projectCommittedToNativeAcceptedMs": 6.6512919999995574
+    },
+    {
+      "operationId": "a00c62e7-e1a0-4d62-9c05-ad6119ad993d",
+      "preparedAtMainMs": 6071.924209000001,
+      "projectCommittedAtMainMs": 6336.447209,
+      "nativeAcceptedAtMainMs": 6344.138917,
+      "previousNativeAcceptedAtMainMs": 6268.406417,
+      "beginOperationCallMs": 23.871415999999954,
+      "preparedToProjectCommittedMs": 264.52299999999923,
+      "fifoWaitAfterPreparedLowerBoundMs": 196.48220799999945,
+      "decisionResidualUpperBoundMs": 68.04079199999978,
+      "projectCommittedToNativeAcceptedMs": 7.69170800000029
+    },
+    {
+      "operationId": "120368b4-323a-4fb2-80a5-b2717cad542b",
+      "preparedAtMainMs": 6187.821334,
+      "projectCommittedAtMainMs": 6411.750834,
+      "nativeAcceptedAtMainMs": 6420.24125,
+      "previousNativeAcceptedAtMainMs": 6344.138917,
+      "beginOperationCallMs": 18.50787500000024,
+      "preparedToProjectCommittedMs": 223.9295000000002,
+      "fifoWaitAfterPreparedLowerBoundMs": 156.317583,
+      "decisionResidualUpperBoundMs": 67.61191700000018,
+      "projectCommittedToNativeAcceptedMs": 8.490415999999641
+    }
+  ],
+  "firstKeyframe": {
+    "phase": "paced",
+    "previewId": "d817b94a-6e71-475a-ac5b-08b3c2288798",
+    "frameSeq": 3,
+    "baseFrameSeq": null,
+    "epoch": 2,
+    "inputThrough": 1,
+    "pendingOperationIds": [],
+    "imageVersionRef": "8bd7173a7dd6de6fac63b95d84255a7ce315fe87f783b9c9520e5290a31bbf5a",
+    "nativeFrameReceivedAtMainMs": 1675.529084,
+    "dualCanvasInstalledAtAckMainMs": 1843.7150840000002,
+    "rendererInstallMs": 17.199999999254942,
+    "oracleMs": 131.89999999850988,
+    "payloadBytes": 16777216
+  },
+  "oracleAfterFirstKeyframeMs": 32.900000002235174,
+  "lateProgression": [
+    {
+      "stroke": 0,
+      "firstAttemptLatenessMs": 0.18666600000005928,
+      "successfulAdmissionLatenessMs": 0.18666600000005928
+    },
+    {
+      "stroke": 9,
+      "firstAttemptLatenessMs": 143.82816599999978,
+      "successfulAdmissionLatenessMs": 261.5470829999995
+    },
+    {
+      "stroke": 19,
+      "firstAttemptLatenessMs": 637.6847499999994,
+      "successfulAdmissionLatenessMs": 757.7638329999995
+    },
+    {
+      "stroke": 29,
+      "firstAttemptLatenessMs": 1145.6483749999998,
+      "successfulAdmissionLatenessMs": 1262.5956660000002
+    },
+    {
+      "stroke": 39,
+      "firstAttemptLatenessMs": 1610.862583,
+      "successfulAdmissionLatenessMs": 1726.6209159999999
+    }
+  ],
+  "limits": [
+    "beginOperationCallMs is measured real API entry to durable return; includes its internal queue, budget/lease/path checks and file publication. It is not a single fsync syscall measurement.",
+    "Decision tail includes previous native accept, store.settle and resolveOperation before the next decision. The observed previous nativeAccepted is only a lower bound for next commit work start.",
+    "fifoWaitAfterPreparedLowerBoundMs is guaranteed FIFO waiting until previous accepted. decisionResidualUpperBoundMs includes unknown previous post-accept settlement, own resolve/history/CAS work, and observer scheduling. It is NOT pure CAS service time.",
+    "projectCommittedToNativeAcceptedMs includes actual accept command, native publication, wire scheduling and progress-poll observation; native IO and observation delay cannot be split here.",
+    "The first paced keyframe synchronous oracle is retained and affects initial ACKs. Later >1s deadline backlog with small subsequent oracle cannot all be attributed to that first oracle.",
+    "No GUI rerun. A later coordinated run may wrap actual commit/settle/resolve/accept API entry and exit without changing product behavior."
+  ]
+}
