@@ -4,16 +4,16 @@ function createProfile({clock,phase,root,fs}){
  const context=new AsyncLocalStorage(),spans=[],restore=[],handles=new WeakSet();let sequence=0,enabled=true;
  function invoke(original,self,args,label,operationId,detail={}){
   if(!enabled)return Reflect.apply(original,self,args);
-  const parent=context.getStore(),span={id:++sequence,label,phase:phase(),operationId:operationId??parent?.operationId??null,parentSpanId:parent?.id??null,startedAtMainMs:clock(),...detail};spans.push(span);
+  const parent=context.getStore(),span={id:++sequence,label,phase:phase(),operationId:operationId??parent?.operationId??null,operationIds:operationId?[operationId]:parent?.operationIds,batchId:parent?.batchId,parentSpanId:parent?.id??null,startedAtMainMs:clock(),...detail};spans.push(span);
   const finish=(status,error)=>{span.endedAtMainMs=clock();span.durationMs=span.endedAtMainMs-span.startedAtMainMs;span.status=status;if(error!==undefined)span.error=String(error);};
-  try{const result=context.run({id:span.id,operationId:span.operationId},()=>Reflect.apply(original,self,args));
+  try{const result=context.run({id:span.id,operationId:span.operationId,operationIds:span.operationIds,batchId:span.batchId},()=>Reflect.apply(original,self,args));
    if(result&&typeof result.then==='function')void result.then(()=>finish('fulfilled'),e=>finish('rejected',e)).catch(()=>{});else finish('returned');
    return result;
   }catch(error){finish('threw',error);throw error;}
  }
  function wrap(object,key,label,operation){
   const original=object[key],descriptor=Object.getOwnPropertyDescriptor(object,key);
-  const replacement=function(...args){return invoke(original,this,args,label,operation?.(args));};object[key]=replacement;
+  const replacement=function(...args){const identity=operation?.(args);return invoke(original,this,args,label,typeof identity==='string'?identity:undefined,identity&&typeof identity==='object'?identity:{});};object[key]=replacement;
   restore.push(()=>{if(object[key]===replacement){if(descriptor)Object.defineProperty(object,key,descriptor);else delete object[key];}});
  }
  const classify=p=>{

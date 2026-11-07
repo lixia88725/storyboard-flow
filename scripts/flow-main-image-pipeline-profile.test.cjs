@@ -20,3 +20,8 @@ test('observer failures are consumed and restoring before an open resolves canno
  const target={run:()=>Promise.resolve(3)};p.wrap(target,'run','store.commit');assert.equal(await target.run(),3);await new Promise(r=>setImmediate(r));
  fs.open('/owned/entry');p.restore();resolve(handle);await opened;await new Promise(r=>setImmediate(r));assert.equal(handle.sync,originalSync);
 });
+test('one batch span propagates the complete operation set to nested lease observations',async()=>{
+ let time=0;const fs={open:()=>Promise.resolve({})},p=createProfile({clock:()=>++time,phase:()=> 'paced',root:'/owned',fs}),lease={check:()=>Promise.resolve()},store={confirmOperations(){return lease.check();}};
+ p.wrap(lease,'check','lease.assertHeld');p.wrap(store,'confirmOperations','store.confirmOperations',()=>({operationId:null,operationIds:['a','b'],batchId:'confirmation-1'}));await store.confirmOperations();await Promise.resolve();
+ assert.equal(p.spans.length,2);assert.equal(p.spans[0].operationId,null);assert.deepEqual(p.spans[1].operationIds,['a','b']);assert.equal(p.spans[1].batchId,'confirmation-1');assert.equal(p.spans[1].parentSpanId,p.spans[0].id);p.restore();
+});

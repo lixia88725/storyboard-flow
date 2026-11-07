@@ -2,6 +2,7 @@ const assert=require('node:assert/strict');
 function stats(values){assert.ok(values.length);assert.ok(values.every(v=>Number.isFinite(v)&&v>=0));const a=[...values].sort((a,b)=>a-b),q=p=>a[Math.ceil(a.length*p)-1];return{count:a.length,p50Ms:q(.5),p95Ms:q(.95),p99Ms:q(.99),maxMs:a.at(-1)};}
 function summarize(report){
  const ops=report.operations.filter(o=>o.phase==='paced'),events=report.progress.filter(p=>p.phase==='paced');
+ for(const name of ['projectCommitted','nativeAccepted'])assert.deepEqual([...new Set(events.filter(e=>e.stage===name).map(e=>e.operationId))],ops.map(o=>o.operationId),name+' must preserve operation FIFO');
  const stage=(id,s)=>events.find(e=>e.operationId===id&&e.stage===s)?.atMainMs;
  const rows=ops.map((op,i)=>{const frames=report.frames.filter(f=>f.previewId===op.operationId);assert.equal(frames.length,7,'Every captured batch must reach native and both Canvas');
   const first=frames[0],last=frames.at(-1),next=ops[i+1],intentWrite=report.intentWrites?.find(w=>w.operationId===op.operationId);
