@@ -3,6 +3,7 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { startImageEngine } from '../../../platform/main/imageEngineConnection.js';
+import type { createImageEngineWorkerOwner } from '../../../platform/main/imageEngineWorkerOwner.js';
 import type { NativeFrame } from '../../../platform/main/imageEngineFraming.js';
 import type { NativeImageRef } from '../../../platform/contracts/imageProject.js';
 import type { FlowStroke } from '../../../platform/contracts/flowWave2.js';
@@ -13,6 +14,7 @@ import type { NativePipelineDriver, PipelineLimits, PipelineReady, PipelineQueue
 import type { RetainedSourceObject } from './sourceStore.js';
 
 type Connection=ReturnType<typeof startImageEngine>;
+type WorkerOwner=Awaited<ReturnType<typeof createImageEngineWorkerOwner>>;
 const sha=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 function refuse(message:string,code='conflict',effect:'none'|'retained'|'unknown'='none'):never{throw Object.assign(Error(message),{code,effect});}
 async function boundedFile(file:string,limit:number,expected?:RetainedSourceObject['identity']){
@@ -30,8 +32,14 @@ async function boundedFile(file:string,limit:number,expected?:RetainedSourceObje
 
 /** Real Node transport adapter. Only these Flow operations cross the seam. No
  * file Save, native user Undo, arbitrary command or renderer path. */
-export function createNativeSessionAdapter(options:{connection:Connection;storeRoot:string;storeId:string;onFrame?:(frame:NativeFrame)=>void}){
-  const connection=options.connection,storeId=options.storeId,storeRoot=options.storeRoot;
+export function createNativeSessionAdapter(options:{storeRoot:string;storeId:string;onFrame?:(frame:NativeFrame)=>void}&({connection:Connection;workerOwner?:never}|{workerOwner:WorkerOwner;connection?:never})){
+  const owner=options.workerOwner,initial=owner?.current(),storeId=options.storeId,storeRoot=options.storeRoot;
+  if(!initial&&!options.connection)refuse('Worker owner has no available native connection','unavailable','unknown');
+  let connection:Connection=initial?.connection??options.connection!,generation=initial?.generation??0,fenced=false,closing=false,faultNotified=false;
+  const faultListeners=new Set<()=>void>();
+  const fault=()=>{if(owner)fenced=true;if(closing||faultNotified)return;faultNotified=true;for(const f of faultListeners)try{void Promise.resolve(f()).catch(()=>{});}catch{/* Session remains fenced */}};
+  const armExit=()=>{const captured=connection,epoch=generation;void captured.exited.then(()=>{if(epoch===generation&&captured===connection)fault();});};armExit();
+  const requireCurrent=()=>{if(owner&&(fenced||owner.current()?.connection!==connection||owner.current()?.generation!==generation)){fault();refuse('Worker generation is unavailable; reconcile original input','worker-unavailable','unknown');}return connection;};
   let current:NativeImageRef|null=null,candidate:string|undefined,previewOperation:string|undefined,serial=0;
   const next=()=>`control-${++serial}`;
   type Job={input:boolean;run():Promise<void>};const jobs:Job[]=[];let running=false,inputRun=0;
@@ -43,11 +51,14 @@ export function createNativeSessionAdapter(options:{connection:Connection;storeR
     if(!running){running=true;void(async()=>{while(jobs.length){const control=jobs.findIndex(j=>!j.input);let index=inputRun>=8&&control>=0?control:jobs.findIndex(j=>j.input);if(index<0)index=0;const [job]=jobs.splice(index,1);if(job.input)inputRun++;else inputRun=0;await job.run();}running=false;})();}
   });
   const call=async(operationId:string,body:Record<string,unknown>,base:string|null=current?.versionId??null,payload?:Uint8Array,input=false)=>{
-    const captured=structuredClone(body),capturedPayload=payload?new Uint8Array(payload):undefined;
-    const frame=await wire(input,()=>connection.request(operationId,captured,base,capturedPayload));const reply=frame.header.body;
-    if(!record(reply)||typeof reply.kind!=='string')refuse('Malformed native reply','protocol','unknown');
-    if(reply.kind==='failure'){const error=reply.error;if(!record(error)||typeof error.message!=='string')refuse('Malformed native failure','protocol','unknown');refuse(error.message,String(error.code??'native'),error.effect==='none'?'none':error.effect==='retained'?'retained':'unknown');}
-    if(record(reply.frame))try{void Promise.resolve(options.onFrame?.(frame)).catch(()=>{});}catch{/* presentation observers cannot change an accepted native operation */}return{reply,frame};
+    const captured=structuredClone(body),capturedPayload=payload?new Uint8Array(payload):undefined,target=requireCurrent(),epoch=generation;
+    const assertGeneration=()=>{if(epoch!==generation||target!==requireCurrent())refuse('Old worker reply/command fenced','worker-unavailable','unknown');};
+    try{
+      const frame=await wire(input,async()=>{assertGeneration();return target.request(operationId,captured,base,capturedPayload);});assertGeneration();const reply=frame.header.body;
+      if(!record(reply)||typeof reply.kind!=='string')refuse('Malformed native reply','protocol','unknown');
+      if(reply.kind==='failure'){const error=reply.error;if(!record(error)||typeof error.message!=='string')refuse('Malformed native failure','protocol','unknown');refuse(error.message,String(error.code??'native'),error.effect==='none'?'none':error.effect==='retained'?'retained':'unknown');}
+      if(record(reply.frame))try{void Promise.resolve(options.onFrame?.(frame)).catch(()=>{});}catch{/* presentation only */}return{reply,frame};
+    }catch(e){if(epoch===generation&&target===connection&&(e as {effect?:unknown})?.effect!=='none')fault();throw e;}
   };
   const nativeRef=(receipt:unknown):NativeImageRef=>{
     if(!record(receipt)||receipt.schema!=='flow.image-version'||receipt.version!==1)refuse('Invalid native version receipt','protocol','unknown');
@@ -95,9 +106,9 @@ export function createNativeSessionAdapter(options:{connection:Connection;storeR
     return r as unknown as PipelineQueued;
   };
   const pipeline:NativePipelineDriver={
-    validateStroke:brushFor,
+    validateStroke(stroke){requireCurrent();brushFor(stroke);},
     async start(base,limits){
-      if(!connection.supports('strokePipelineV1'))refuse('Native binary does not support strokePipelineV1','unsupported');
+      if(!requireCurrent().supports('strokePipelineV1'))refuse('Native binary does not support strokePipelineV1','unsupported');
       await install(base);const{reply}=await call(next(),{kind:'pipelineStart',...limits},base.versionId);
       if(reply.kind!=='pipelineReady'||typeof reply.pipelineId!=='string'||typeof reply.documentId!=='string'||typeof reply.anchorVersion!=='string'||!Number.isSafeInteger(reply.epoch)||!same(reply.limits,limits))refuse('Invalid native pipeline start','protocol','unknown');
       pipelineReady={pipelineId:reply.pipelineId,anchorVersion:reply.anchorVersion,documentId:reply.documentId,epoch:Number(reply.epoch),limits:{...limits}};return structuredClone(pipelineReady);
@@ -131,6 +142,13 @@ export function createNativeSessionAdapter(options:{connection:Connection;storeR
     async stop(){const{reply}=await call(next(),{kind:'pipelineStop',pipelineId:pipelineReady?.pipelineId},pipelineBase());if(reply.kind!=='pipelineStopped'||reply.versionId!==current?.versionId)refuse('Native pipeline barrier mismatch','protocol','unknown');pipelineReady=undefined;}
   };
   const driver:NativeSessionDriver={
+    ...(owner?{async restartForRecovery(){
+      fenced=true;generation++; // Fence queued Adapter jobs before awaiting owned exit.
+      const handle=await owner.restart();connection=handle.connection;generation=handle.generation;
+      current=null;candidate=undefined;previewOperation=undefined;pipelineReady=undefined;
+      faultNotified=false;closing=false;fenced=false;armExit();
+    }}:{}),
+    onFault(listener){faultListeners.add(listener);return()=>faultListeners.delete(listener);},
     pipeline,
 
     async preparePaint(operationId,base,stroke){
@@ -162,7 +180,7 @@ export function createNativeSessionAdapter(options:{connection:Connection;storeR
       if(status.state==='accepted'){if(!same(status.native,ref))refuse('Accepted native receipt disagrees with Main');if(!current)await install(ref);await confirm(ref,base);return;}
       if(status.state!=='prepared'||!same(status.prepared?.native,ref))refuse('Cannot settle unknown native candidate','conflict','unknown');
       if(!candidate){
-        if(connection.supports('recoveredCandidateAcceptAtInstalledVersion'))await install(ref);
+        if(requireCurrent().supports('recoveredCandidateAcceptAtInstalledVersion'))await install(ref);
         else if(base)await install(base);
       }
       const {reply}=await call(next(),{kind:'accept',candidateId});
@@ -180,7 +198,7 @@ export function createNativeSessionAdapter(options:{connection:Connection;storeR
     },
     install,
     async freeze(){const{reply}=await call(next(),{kind:'freeze'});if(reply.kind!=='frozen'||reply.versionId!==(current?.versionId??null))refuse('Native freeze identity failed','protocol','unknown');},
-    async close(){const{reply}=await call(next(),{kind:'close'});if(reply.kind!=='closed')refuse('Native close failed','protocol','unknown');await connection.exited;}
+    async close(){closing=true;const{reply}=await call(next(),{kind:'close'});if(reply.kind!=='closed')refuse('Native close failed','protocol','unknown');await connection.exited;if(owner)await owner.dispose();}
   };
   return {
     driver,verifyNative,capture,

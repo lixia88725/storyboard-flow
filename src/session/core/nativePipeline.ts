@@ -1,5 +1,5 @@
 import type { FlowStroke } from '../../platform/contracts/flowWave2.js';
-import type { ImageBindingV2, ImagePipelineAdmission, ImagePipelineInput, ImagePipelineProgress, ImageProjectOutcome, NativeImageRef, PipelineImageOperationIntent } from '../../platform/contracts/imageProject.js';
+import type { ImageBindingV2, ImagePipelineAdmission, ImagePipelineInput, ImagePipelineProgress, ImageProjectOutcome, NativeImageRef, RetainedImageInput, PipelineImageOperationIntent } from '../../platform/contracts/imageProject.js';
 import type { PreparedImage } from './nativeSession.js';
 import { validProjectStroke } from './imageProjectModel.js';
 import { copy, same, shape } from './imageProjectValues.js';
@@ -29,7 +29,7 @@ export type PipelineEntry={
   preparedWait:ReturnType<typeof deferred<PipelinePrepared>>;acceptedWait:ReturnType<typeof deferred<NativeImageRef>>;
   completed:ReturnType<typeof deferred<ImageProjectOutcome>>;
 };
-export type PipelineAnchor={imageId:string;expected:ImageBindingV2;commitHash:string;native:Promise<NativeImageRef>};
+export type PipelineAnchor={imageId:string;expected:ImageBindingV2;commitHash:string;native():Promise<NativeImageRef>};
 /** Bounded volatile capture + native IO pump. Project/history authority is supplied
  * by the existing Session; this module owns no history stack and no project CAS. */
 export function createMainImagePipeline(options:{
@@ -55,9 +55,10 @@ export function createMainImagePipeline(options:{
   const queue=(f:()=>Promise<void>)=>{commands++;const work=inputTail.then(async()=>{if(blocked)throw blocked;await f();});inputTail=work.then(()=>undefined,e=>{fail(e);}).finally(()=>{commands--;});};
   const start=async()=>{
     if(ready)return;
-    if(!anchor)throw Error('Missing pipeline anchor');anchorRef=await anchor.native;
-    ready=await driver.start(anchorRef,limits);
-    if(ready.anchorVersion!==anchorRef.versionId||ready.documentId!==anchorRef.documentId||!same(ready.limits,limits))throw Error('Native pipeline anchor/limits mismatch');
+    if(!anchor)throw Error('Missing pipeline anchor');anchorRef=await anchor.native();
+    const proposed=await driver.start(anchorRef,limits);
+    if(proposed.anchorVersion!==anchorRef.versionId||proposed.documentId!==anchorRef.documentId||!same(proposed.limits,limits))throw Error('Native pipeline anchor/limits mismatch');
+    ready=proposed;
   };
   const pump=async()=>{
     if(!ready||blocked)return;
@@ -103,10 +104,10 @@ export function createMainImagePipeline(options:{
         // Validate before copying, then sever all caller-owned sample buffers.
         const stroke=copy(value.stroke);if(stroke.points.length/2>4096)return rejected('Begin batch exceeds native point bound');
         const nextAnchor=options.anchor(value.shotId);if(anchor&&nextAnchor.imageId!==anchor.imageId)return rejected('Pipeline target change requires a settled barrier','busy');
-        if(!anchor){anchor=nextAnchor;void anchor.native.catch(()=>{});}
+        if(!anchor)anchor=nextAnchor;
         const entry:PipelineEntry={operationId:options.mintId(),shotId:value.shotId,imageId:nextAnchor.imageId,stroke,predecessorOperationId:last,through:stroke.points.length/2,ended:false,retired:false,preparedWait:deferred(),acceptedWait:deferred(),completed:deferred()};
         entries.set(entry.operationId,entry);issued++;active=entry;points+=entry.through;progress(entry,'admitted');
-        queue(async()=>{await start();await driver.begin(entry.operationId,entry.predecessorOperationId,stroke);progress(entry,'preview',false,stroke.points.length/2);});return admission(entry);
+        queue(async()=>{await start();if(blocked)throw blocked;await driver.begin(entry.operationId,entry.predecessorOperationId,stroke);progress(entry,'preview',false,stroke.points.length/2);});return admission(entry);
       }
       if(!value||!['append','end','cancel'].includes(value.kind)||!active||value.operationId!==active.operationId)return rejected('Unknown active pipeline gesture');
       const entry=active;
@@ -133,6 +134,7 @@ export function createMainImagePipeline(options:{
         if(!ready||!anchor||!anchorRef)throw Error('Pipeline begin was not installed');
         const intent:PipelineImageOperationIntent={schema:'flow.image-edit-intent',version:2,operationId:entry.operationId,sessionId:options.sessionId,incarnation:options.incarnation,imageId:entry.imageId,pipelineId:ready.pipelineId,anchorCommitHash:anchor.commitHash,anchor:copy(anchorRef),expectedAtAnchor:copy(anchor.expected),predecessorOperationId:entry.predecessorOperationId,inputThrough:entry.through,stroke:copy(entry.stroke)};
         await options.persist(intent);entry.intent=intent;progress(entry,'intentDurable',true);
+        if(blocked)throw blocked;
         const queued=await driver.end(entry.operationId,entry.through);
         if(queued.candidateId!==entry.operationId||queued.pipelineId!==ready.pipelineId||queued.predecessorOperationId!==entry.predecessorOperationId||queued.inputThrough!==entry.through||queued.epoch!==ready.epoch||queued.durable!==false)throw Error('Native queue admission differs from Main intent');
         entry.queued=copy(queued);progress(entry,'queued');schedule();
@@ -159,6 +161,24 @@ export function createMainImagePipeline(options:{
       }catch(e){fail(e);throw e;}
     },
     resumeAdmission(){if(!blocked)sealed=false;},
+    fence:fail,
+    async drainInput(){await inputTail;if(polling)await polling;},
+    async retainForRecovery():Promise<RetainedImageInput[]>{
+      // The worker has exited. Await Main-owned fsyncs too: worker death cannot
+      // cancel an in-flight project-store publication or make it safe to forget.
+      await inputTail;if(polling)await polling;
+      const retained:RetainedImageInput[]=[];
+      for(const entry of entries.values()){
+        if(entry.retired)continue;
+        if(!entry.ended||!ready||!anchor||!anchorRef){retained.push({operationId:entry.operationId,shotId:entry.shotId,imageId:entry.imageId,stroke:copy(entry.stroke),ended:entry.ended,reason:!ready?'missing-pipeline-identity':'incomplete-gesture'});continue;}
+        if(!entry.intent){
+          const intent:PipelineImageOperationIntent={schema:'flow.image-edit-intent',version:2,operationId:entry.operationId,sessionId:options.sessionId,incarnation:options.incarnation,imageId:entry.imageId,pipelineId:ready.pipelineId,anchorCommitHash:anchor.commitHash,anchor:copy(anchorRef),expectedAtAnchor:copy(anchor.expected),predecessorOperationId:entry.predecessorOperationId,inputThrough:entry.through,stroke:copy(entry.stroke)};
+          await options.persist(intent);entry.intent=intent;progress(entry,'intentDurable',true);
+        }
+      }
+      return retained;
+    },
+    retainedInputs():RetainedImageInput[]{return [...entries.values()].filter(e=>!e.retired&&!e.intent).map(e=>({operationId:e.operationId,shotId:e.shotId,imageId:e.imageId,stroke:copy(e.stroke),ended:e.ended,reason:ready?'incomplete-gesture':'missing-pipeline-identity'}));},
     assertRecoverable(){if(ready||blocked)throw Object.assign(Error('Reopen the native worker to reconcile this pipeline; unknown input is never replayed'),{effect:'retained'});},
     get hasActive(){return active!==undefined;},
     get started(){return ready!==undefined||anchor!==undefined;}

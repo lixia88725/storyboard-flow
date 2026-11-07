@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
-import type { HydrationRecord, ImageOperationDecision, NativeDecision, UnchangedImageDecision, ImageOperationIntent, ImageOperationResolution, NativeImageRef, NativeSettlement, ProjectCommitV2, ProjectHeadV2, ProjectV2, SourceImageRef } from '../../../platform/contracts/imageProject.js';
+import type { HydrationRecord, ImageOperationDecision, NativeDecision, UnchangedImageDecision, ImageOperationPage, ImageOperationRecord, ImageOperationIntent, ImageOperationResolution, NativeImageRef, NativeSettlement, ProjectCommitV2, ProjectHeadV2, ProjectV2, SourceImageRef } from '../../../platform/contracts/imageProject.js';
 import { imageHash, snapshotImageProject, validNativeDecision, validNativeImageRef, validSourceImageRef, validImageBinding, validProjectStroke } from '../../../session/core/imageProjectModel.js';
 import { same, shape } from '../../../session/core/imageProjectValues.js';
 import { canonicalJson } from '../persistence/canonicalJson.js';
@@ -30,6 +30,8 @@ export type ProjectStoreV2={
   pendingHydrations():Promise<HydrationRecord[]>;
   beginOperation(intent:ImageOperationIntent):Promise<void>;
   pendingOperations():Promise<ImageOperationIntent[]>;
+  /** At most 16 full inputs per page; continue after the last operationId. */
+  operationRecords(page?:ImageOperationPage):Promise<ImageOperationRecord[]>;
   resolveOperation(operationId:string,decision:'discarded'|'committed',commitHash:string|null):Promise<void>;
   close():Promise<void>;
 };
@@ -217,14 +219,32 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
     }
     const verified=clone(v as unknown as UnchangedImageDecision);verifiedUnchanged.set(operationId,verified);return clone(verified);
   };
-  const operationDecision=async(operationId:string):Promise<ImageOperationDecision|null>=>{
-    const list=await chain(),c=list.find(c=>c.commit.nativeDecision?.operationId===operationId);if(c){if(await read(path.join(settlements,`${operationId}.unchanged.json`)))bad('Operation has two project decisions');return{commitHash:c.commitHash,decision:clone(c.commit.nativeDecision!),unchanged:false};}
+  const operationDecision=async(operationId:string,verified?:ProjectCommitReceipt[]):Promise<ImageOperationDecision|null>=>{
+    const list=verified??await chain(),c=list.find(c=>c.commit.nativeDecision?.operationId===operationId);if(c){if(await read(path.join(settlements,`${operationId}.unchanged.json`)))bad('Operation has two project decisions');return{commitHash:c.commitHash,decision:clone(c.commit.nativeDecision!),unchanged:false};}
     const n=await unchanged(operationId,list);return n?{commitHash:n.commitHash,decision:n.decision,unchanged:true}:null;
   };
   const settlementFile=(d:ImageOperationDecision)=>path.join(settlements,d.unchanged?`${d.decision.operationId}.unchanged-settlement.json`:`${d.commitHash}.json`);
   const settlementValue=(d:ImageOperationDecision):NativeSettlement=>({schema:'flow.native-settlement',version:1,commitHash:d.commitHash,operationId:d.decision.operationId,candidateId:d.decision.candidateId,native:d.decision.prepared});
   const load=async()=>{const list=await chain(),last=list.at(-1)??null;if(last)await verify(last.commit.after);return clone(last);};
   const pending=async()=>{const list=await chain(),result:ProjectCommitReceipt[]=[];for(const c of list)if(c.commit.nativeDecision){const raw=await read(path.join(settlements,`${c.commitHash}.json`));if(!raw)result.push(c);else{const d=c.commit.nativeDecision;const expected:NativeSettlement={schema:'flow.native-settlement',version:1,commitHash:c.commitHash,operationId:d.operationId,candidateId:d.candidateId,native:d.prepared};if(!same(parse(raw),expected))bad('Native settlement contradicts committed decision');}}return result;};
+  const operationRecords=async(onlyPending:boolean,page:ImageOperationPage={}):Promise<ImageOperationRecord[]>=>{
+    const list=await chain(),result:ImageOperationRecord[]=[];
+    for(const leaf of (await fs.readdir(settlements)).sort((a,b)=>a.slice(0,-12)<b.slice(0,-12)?-1:a.slice(0,-12)>b.slice(0,-12)?1:0)){
+      if(!leaf.endsWith('.intent.json'))continue;const name=leaf.slice(0,-12);if(!token(name))bad('Invalid input intent filename');
+      if(!onlyPending&&page.afterOperationId&&name<=page.afterOperationId)continue;
+      const raw=await read(path.join(settlements,leaf));if(!raw)bad('Input intent disappeared');const intent=readIntent(raw);if(intent.operationId!==name)bad('Input intent identity mismatch');
+      const resolution=await read(path.join(settlements,`${name}.resolution.json`));
+      if(!resolution)result.push({intent,resolution:null});
+      else{
+        const value=parse(resolution);
+        if(!shape(value,['schema','version','operationId','decision','commitHash'])||value.schema!=='flow.image-edit-resolution'||value.version!==1||value.operationId!==name||!['discarded','committed'].includes(String(value.decision))||(value.decision==='committed'?!imageHash(value.commitHash):value.commitHash!==null))bad('Invalid input resolution');
+        const committed=await operationDecision(name,list);if(value.decision==='committed'?(!committed||committed.commitHash!==value.commitHash):!!committed)bad('Input resolution contradicts reachable project decision');
+        if(!onlyPending)result.push({intent,resolution:clone(value as unknown as ImageOperationResolution)});
+      }
+      if(!onlyPending&&result.length>=(page.maxRecords??16))break;
+    }
+    return result;
+  };
   try{for(const p of [hidden,store,commits,settlements,hydrations])bindings.set(p,await dir(p,true));await load();await refreshInventory();}catch(e){owners.delete(root);throw e;}
   return {
     load:()=>queue(load),validateRecovery:()=>{
@@ -285,7 +305,8 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
       }
       const file=path.join(settlements,`${intent.operationId}.intent.json`),data=intentBytes(intent);if(data.length>META)throw new ImageProjectStoreError('resource-limit','Input intent exceeds metadata budget');await admit((await read(file))?0:data.length);await immutable(file,data);
     },intent.version===2);},
-    pendingOperations:()=>queue(async(admit)=>{await chain();const result:ImageOperationIntent[]=[];for(const leaf of await fs.readdir(settlements)){if(!leaf.endsWith('.intent.json'))continue;const name=leaf.slice(0,-12);if(!token(name))bad('Invalid input intent filename');const raw=await read(path.join(settlements,leaf));if(!raw)bad('Input intent disappeared');const intent=readIntent(raw);if(intent.operationId!==name)bad('Input intent identity mismatch');const resolution=await read(path.join(settlements,`${name}.resolution.json`));if(!resolution)result.push(intent);else{const value=parse(resolution);if(!shape(value,['schema','version','operationId','decision','commitHash'])||value.schema!=='flow.image-edit-resolution'||value.version!==1||value.operationId!==name||!['discarded','committed'].includes(String(value.decision))||(value.decision==='committed'?!imageHash(value.commitHash):value.commitHash!==null))bad('Invalid input resolution');const committed=await operationDecision(name);if(value.decision==='committed'?(!committed||committed.commitHash!==value.commitHash):!!committed)bad('Input resolution contradicts reachable project decision');}}return result;}),
+    pendingOperations:()=>queue(async()=>{const records=await operationRecords(true);return records.map(r=>r.intent);}),
+    operationRecords:page=>{const captured=clone(page??{});if(!shape(captured,[],['afterOperationId','maxRecords'])||(captured.afterOperationId!==undefined&&!token(captured.afterOperationId))||(captured.maxRecords!==undefined&&(!Number.isSafeInteger(captured.maxRecords)||captured.maxRecords<1||captured.maxRecords>16)))return Promise.reject(new ImageProjectStoreError('invalid-input','Invalid input record page'));return queue(async()=>clone(await operationRecords(false,captured)));},
     resolveOperation:(operationId,decision,commitHash)=>queue(async(admit)=>{if(!token(operationId)||!['discarded','committed'].includes(decision))bad('Invalid operation resolution');await chain();const raw=await read(path.join(settlements,`${operationId}.intent.json`));if(!raw)bad('Resolution has no operation intent');readIntent(raw);const committed=await operationDecision(operationId);if(decision==='committed'?(!committed||committed.commitHash!==commitHash):(!!committed||commitHash!==null))bad('Resolution contradicts project decision');const record:ImageOperationResolution={schema:'flow.image-edit-resolution',version:1,operationId,decision,commitHash},data=bytes(record),file=path.join(settlements,`${operationId}.resolution.json`);await admit((await read(file))?0:data.length);await immutable(file,data);}),
     close:()=>{if(closeWork)return closeWork;closing=true;closeWork=Promise.all([tail,intentTail,budgetTail,auditWork]).then(async()=>{await bound();owners.delete(root);closed=true;});return closeWork;}
   };

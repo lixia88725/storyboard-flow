@@ -1,5 +1,5 @@
 import type { FlowStroke } from '../../platform/contracts/flowWave2.js';
-import type { ImageOperationIntent, ImagePipelineAdmission, ImagePipelineInput, ImagePipelineProgress, ImageProjectEdit, ImageProjectOutcome, ImageProjectSnapshot, NativeDecision, NativeImageRef, ProjectCommitV2, ProjectV2 } from '../../platform/contracts/imageProject.js';
+import type { ImageOperationIntent, ImageOperationRecord, ImageOperationPage, ImageRecoveryDisposition, RetainedImageInput, ImagePipelineAdmission, ImagePipelineInput, ImagePipelineProgress, ImageProjectEdit, ImageProjectOutcome, ImageProjectSnapshot, NativeDecision, NativeImageRef, ProjectCommitV2, ProjectV2 } from '../../platform/contracts/imageProject.js';
 import type { ProjectCommitReceipt, ProjectStoreV2 } from '../../project-files/main/image-engine/projectStore.js';
 import { applyImageProjectEdit, validImageProject, validNativeImageRef, validProjectStroke } from './imageProjectModel.js';
 import { copy, same, shape } from './imageProjectValues.js';
@@ -11,6 +11,8 @@ export type NativeOperationStatus={state:'absent'|'intent'|'prepared'|'accepted'
 /** Typed Main port. No raw native command, user path, file publication or user history. */
 export interface NativeSessionDriver {
   pipeline?:NativePipelineDriver;
+  restartForRecovery?():Promise<void>;
+  onFault?(listener:()=>void):()=>void;
   preparePaint(operationId:string,base:NativeImageRef,stroke:FlowStroke):Promise<PreparedImage>;
   accept(prepared:PreparedImage,base:NativeImageRef):Promise<NativeImageRef>;
   status(operationId:string):Promise<NativeOperationStatus>;
@@ -29,7 +31,7 @@ export type NativeProjectRequest=
  * progress means a native frame acknowledgement, not a displayed screen. The
  * last 64 completed operations may be awaited; older identities require durable
  * store queries. Unknown work never returns a false settled acknowledgement. */
-export type NativeProjectSession={snapshot():ImageProjectSnapshot;subscribe(listener:()=>void):()=>void;request(request:NativeProjectRequest):Promise<ImageProjectOutcome>;close():Promise<void>;pipeline?:{input(value:ImagePipelineInput):ImagePipelineAdmission;waitOperation(operationId:string):Promise<ImageProjectOutcome>;subscribe(listener:(event:ImagePipelineProgress)=>void):()=>void}};
+export type NativeProjectSession={snapshot():ImageProjectSnapshot;subscribe(listener:()=>void):()=>void;request(request:NativeProjectRequest):Promise<ImageProjectOutcome>;close():Promise<void>;operationRecords(page?:ImageOperationPage):Promise<ImageOperationRecord[]>;pipeline?:{recoveryInputs():RetainedImageInput[];input(value:ImagePipelineInput):ImagePipelineAdmission;waitOperation(operationId:string):Promise<ImageProjectOutcome>;subscribe(listener:(event:ImagePipelineProgress)=>void):()=>void}};
 
 /** One Main Flow history and durable project authority. The pipeline is opt-in;
  * this module does not claim renderer/screen latency or full product migration.
@@ -46,9 +48,11 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
   let barriers=0;
   let nativeMayBeFrozen=false,pendingInstall:NativeImageRef|undefined;
   const pendingPlans=new Map<string,HistoryPlan<ProjectV2>>();
+  let retainedRecoveryInputs:RetainedImageInput[]=[];const recoveryReports=new Map<string,ImageRecoveryDisposition>(),recoveredWait=new Map<string,ImageProjectOutcome>();
+  const progressListeners=new Set<(event:ImagePipelineProgress)=>void>();
   let recovery:ImageProjectSnapshot['recovery'];const listeners=new Set<()=>void>();
   const current=()=>{const result=history.current();if(!result.ok)throw Error(result.error.message);return result.value;};
-  const snapshot=():ImageProjectSnapshot=>({sessionId,incarnation,eventSeq,project:current(),phase,pending,undoDepth:history.undoDepth(),redoDepth:history.redoDepth(),...(recovery?{recovery:copy(recovery)}:{})});
+  const snapshot=():ImageProjectSnapshot=>({sessionId,incarnation,eventSeq,project:current(),phase,pending,undoDepth:history.undoDepth(),redoDepth:history.redoDepth(),...(recovery?{recovery:copy(recovery)}:{}),...(recoveryReports.size?{recoveryOutcomes:copy([...recoveryReports.values()])}:{})});
   const notify=()=>{eventSeq++;for(const f of listeners)try{void Promise.resolve(f()).catch(()=>{});}catch{/* observers own no authority */}};
   const settled=():ImageProjectOutcome=>({kind:'settled',commitHash:head!.commitHash,snapshot:snapshot()});
   const fail=(e:unknown):ImageProjectOutcome=>({kind:'rejected',error:{code:typeof(e as {code?:unknown})?.code==='string'?(e as {code:string}).code:'io-failure',message:typeof(e as {message?:unknown})?.message==='string'?(e as {message:string}).message:String(e),effect:((e as {effect?:unknown})?.effect==='none'?'none':(e as {effect?:unknown})?.effect==='retained'?'retained':'unknown')}});
@@ -68,8 +72,17 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     if(target)await install(await resolve(target));
     else for(const shot of p.shots){const binding=p.images[shot.imageId].content;if(binding.kind==='source'){const h=await store.hydration(binding.source);if(h){await install(h.native);break;}}}
   };
-  const reconcile=async()=>{
-    phase='recovering';notify();pipeline?.assertRecoverable();
+  const reconcile=async(replaceWorker=false)=>{
+    phase='recovering';notify();const freezeAfterRecovery=nativeMayBeFrozen;
+    if(replaceWorker){
+      if(!native.restartForRecovery)throw Error('This native driver has no owned worker replacement');
+      pipeline?.fence(Error('Main is replacing its native worker for reconciliation'));
+      await native.restartForRecovery(); // Old worker is confirmed exited, lease still held.
+      await pipeline?.drainInput(); // Main store writes are separate obligations.
+      await store.validateRecovery();
+      retainedRecoveryInputs=await pipeline?.retainForRecovery()??[];
+      nativeMayBeFrozen=false;
+    }else pipeline?.assertRecoverable();
     if(nativeMayBeFrozen){
       // This host has no Resume. A lost Freeze reply or failed store audit cannot
       // authorize painting again; only complete certification and remain frozen.
@@ -94,11 +107,13 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
         if(status.state==='prepared')await native.recoverAccept(d.candidateId,d.baseNative,d.prepared);
         else if(status.state!=='accepted'||!same(status.native,d.prepared))throw Error('Committed project image has no matching native prepared/accepted record');
         await store.settle(c.commitHash,d.operationId,d.prepared);await store.resolveOperation(d.operationId,'committed',c.commitHash);
+        recoveryReports.set(intent.operationId,{operationId:intent.operationId,imageId:intent.imageId,inputThrough:intent.stroke.points.length/2,original:'durable-intent',decision:'committed',commitHash:c.commitHash});
       }else{
         if(status.state==='accepted')throw Error('Native accepted without a reachable project decision; evidence preserved');
         await native.cancelPreview(intent.operationId);
         if(status.state==='prepared'||status.state==='intent')await native.discard(intent.operationId);
         await store.resolveOperation(intent.operationId,'discarded',null);pendingPlans.delete(intent.operationId);
+        recoveryReports.set(intent.operationId,{operationId:intent.operationId,imageId:intent.imageId,inputThrough:intent.stroke.points.length/2,original:'durable-intent',decision:'notCommitted',commitHash:null});
       }
     }
     // Also settle a committed receipt whose intent resolution was already durable.
@@ -111,7 +126,12 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     }
     const latest=await store.load();if(!latest)throw Error('Project head disappeared during recovery');
     if(!same(current(),latest.commit.after)){const plan=pendingPlans.get(latest.commit.commitId);if(!plan)throw Error('Durable project/history reconciliation requires reopening this Session');const result=history.commit(plan);if(!result.ok||!same(result.value.after,latest.commit.after))throw Error('Pending history plan differs from committed project');pendingPlans.delete(latest.commit.commitId);}
-    head=latest;await installSelected();recovery=undefined;phase='active';notify();
+    head=latest;await installSelected();
+    while(recoveryReports.size>64)recoveryReports.delete(recoveryReports.keys().next().value!);
+    if(retainedRecoveryInputs.length){recovery={operationId:retainedRecoveryInputs[0].operationId,commitHash:null};phase='recovering';notify();return;}
+    if(replaceWorker)initializePipeline();
+    recovery=undefined;
+    if(freezeAfterRecovery){nativeMayBeFrozen=true;await native.freeze();await store.validateRecovery();phase='frozen';}else phase='active';notify();
   };
   const commitPlan=async(plan:HistoryPlan<ProjectV2>,operationId:string,decision?:NativeDecision)=>{
     const record:ProjectCommitV2={schema:'flow.project-commit',version:1,commitId:operationId,previousCommitHash:head!.commitHash,beforeRevision:current().revision,after:copy(plan.result.after),...(decision?{nativeDecision:decision}:{})};
@@ -151,11 +171,10 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
       if((e as {effect?:unknown})?.effect==='none')try{await native.cancelPreview(operationId);const status=await native.status(operationId);if(['absent','failed','discarded'].includes(status.state)){await store.resolveOperation(operationId,'discarded',null);pendingPlans.delete(operationId);return fail(Object.assign(Error(typeof(e as {message?:unknown}).message==='string'?(e as {message:string}).message:String(e)),{code:(e as {code?:unknown}).code??'native',effect:'retained'}));}}catch{/* unknown settlement stays blocked */}
       phase='recovering';recovery={operationId,commitHash:null};notify();return{kind:'recoveryPending',operationId,snapshot:snapshot()};}
   };
-  await reconcile();
-  if(options.pipeline){
+  const initializePipeline=()=>{if(options.pipeline){
     if(!native.pipeline)throw Error('Opt-in Main pipeline requires a typed native pipeline driver');
     pipeline=createMainImagePipeline({sessionId,incarnation,driver:native.pipeline,limits:copy(options.pipeline),mintId:mint,canAdmit:()=>!closed&&phase==='active',
-      anchor(shotId){const p=current(),shot=p.shots.find(s=>s.id===shotId);if(!shot)throw Error('Only active shots can start painting');return{imageId:shot.imageId,expected:copy(p.images[shot.imageId].content),commitHash:head!.commitHash,native:resolve(shot.imageId)};},
+      anchor(shotId){const p=current(),shot=p.shots.find(s=>s.id===shotId);if(!shot)throw Error('Only active shots can start painting');return{imageId:shot.imageId,expected:copy(p.images[shot.imageId].content),commitHash:head!.commitHash,native:()=>resolve(shot.imageId)};},
       persist:intent=>store.beginOperation(intent),
       blocked(operationId){phase='recovering';if(!recovery?.commitHash)recovery={operationId,commitHash:null};notify();},
       decide(entry:PipelineEntry){
@@ -179,9 +198,13 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
         }).finally(()=>{pending--;notify();});tail=work.then(()=>undefined,()=>undefined);return work;
       }
     });
-  }
+    pipeline.subscribe(event=>{for(const f of progressListeners)try{void Promise.resolve(f(copy(event))).catch(()=>{});}catch{/* presentation only */}});
+  }};
+  const detachFault=native.onFault?.(()=>{if(closed)return;phase='recovering';pipeline?.fence(Error('Owned native worker fault'));notify();});
+  try{await reconcile();}catch(e){detachFault?.();throw e;}initializePipeline();
   return {
-    ...(pipeline?{pipeline:{input:pipeline.input,waitOperation:pipeline.waitOperation,subscribe:pipeline.subscribe}}:{}),
+    ...(pipeline?{pipeline:{input:(value:ImagePipelineInput)=>pipeline!.input(value),waitOperation:(operationId:string)=>{const recovered=recoveredWait.get(operationId);return recovered?Promise.resolve(copy(recovered)):pipeline!.waitOperation(operationId);},subscribe:(f:(event:ImagePipelineProgress)=>void)=>{progressListeners.add(f);return()=>progressListeners.delete(f);},recoveryInputs:()=>phase==='recovering'?copy(retainedRecoveryInputs.length?retainedRecoveryInputs:pipeline!.retainedInputs()):[]}}:{}),
+    operationRecords:page=>store.operationRecords(page),
     snapshot,subscribe:f=>{listeners.add(f);return()=>listeners.delete(f);},
     request(input){
       if(pending>=32)return Promise.resolve(fail(Object.assign(Error('Main request queue is full'),{code:'resource-limit',effect:'none'})));
@@ -204,7 +227,12 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
         if(phase==='recovering'&&request.kind!=='recover')return fail(Object.assign(Error('Reconcile the pending operation first'),{code:'busy',effect:'retained'}));
         try{
           if(phase==='frozen'&&request.kind!=='freeze')throw Object.assign(Error('Frozen Session can only close'),{code:'busy',effect:'none'});
-          if(request.kind==='recover'){await reconcile();return settled();}
+          if(request.kind==='recover'){
+            const replacing=phase==='recovering'&&Boolean(native.restartForRecovery);await reconcile(replacing);
+            if(retainedRecoveryInputs.length)return{kind:'recoveryPending',operationId:retainedRecoveryInputs[0].operationId,snapshot:snapshot(),retainedInputs:copy(retainedRecoveryInputs),reconciled:copy([...recoveryReports.values()])};
+            if(replacing||recoveryReports.size){const outcome:ImageProjectOutcome={kind:'recovered',commitHash:head!.commitHash,snapshot:snapshot(),operations:copy([...recoveryReports.values()])};for(const report of recoveryReports.values())recoveredWait.set(report.operationId,outcome);while(recoveredWait.size>64)recoveredWait.delete(recoveredWait.keys().next().value!);return outcome;}
+            return settled();
+          }
           if(request.kind==='freeze'){await pipeline?.barrier();phase='freezing';nativeMayBeFrozen=true;await native.freeze();await store.validateRecovery();if((await store.pendingOperations()).length||(await store.unsettledDecisions()).length||(await store.pendingHydrations()).length)throw Error('Unsettled project obligations');phase='frozen';notify();return settled();}
           if(phase!=='active')throw Object.assign(Error('Session admission is frozen'),{code:'busy',effect:'none'});
           if(request.kind==='paint'){if(pipeline)throw Object.assign(Error('Use bounded pipeline input in this opt-in Session'),{code:'invalid-input',effect:'none'});return await paint(request.shotId,request.stroke);}
@@ -222,6 +250,6 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
         }catch(e){if(phase==='freezing'||pendingPlans.size)phase='recovering';return fail(e);}
       }).finally(()=>{if(isBarrier)barriers--;pending--;notify();});tail=work.then(()=>undefined,()=>undefined);return work.then(result=>'snapshot'in result?{...result,snapshot:snapshot()}:result);
     },
-    close:async()=>{await tail;if(phase!=='frozen')throw Error('Freeze and settle before close');await native.close();await store.close();closed=true;}
+    close:async()=>{await tail;if(phase!=='frozen')throw Error('Freeze and settle before close');await native.close();await store.close();closed=true;detachFault?.();}
   };
 }

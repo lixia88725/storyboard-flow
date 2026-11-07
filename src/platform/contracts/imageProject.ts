@@ -65,6 +65,10 @@ export type ImagePipelineProgress = {
   operationId:string;stage:'admitted'|'preview'|'intentDurable'|'queued'|'prepared'|'projectCommitted'|'nativeAccepted'|'cancelled'|'blocked';
   inputThrough:number;durable:boolean;commitHash?:string;
 };
+export type RetainedImageInput={operationId:string;shotId:string;imageId:string;stroke:FlowStroke;ended:boolean;reason:'missing-pipeline-identity'|'incomplete-gesture'};
+export type ImageRecoveryDisposition={operationId:string;imageId:string;inputThrough:number;original:'durable-intent';decision:'committed'|'notCommitted';commitHash:string|null};
+export type ImageOperationPage={afterOperationId?:string;maxRecords?:number};
+export type ImageOperationRecord={intent:ImageOperationIntent;resolution:ImageOperationResolution|null};
 export type ImageOperationResolution = {
   schema:'flow.image-edit-resolution';version:1;operationId:string;
   decision:'discarded'|'committed';commitHash:string|null;
@@ -80,9 +84,11 @@ export type ImageProjectSnapshot = {
   phase: 'active' | 'recovering' | 'freezing' | 'frozen';
   pending: number; undoDepth: number; redoDepth: number;
   recovery?: { operationId: string; commitHash: string|null; target?:NativeImageRef };
+  recoveryOutcomes?:ImageRecoveryDisposition[];
 };
 export type ImageProjectOutcome =
   | { kind: 'settled'; commitHash: string; snapshot: ImageProjectSnapshot }
   | { kind: 'settlementPending'; commitHash: string; operationId: string; snapshot: ImageProjectSnapshot }
-  | { kind:'recoveryPending';operationId:string;snapshot:ImageProjectSnapshot }
+  | { kind:'recoveryPending';operationId:string;snapshot:ImageProjectSnapshot;retainedInputs?:RetainedImageInput[];reconciled?:ImageRecoveryDisposition[] }
+  | {kind:'recovered';commitHash:string;snapshot:ImageProjectSnapshot;operations:ImageRecoveryDisposition[]}
   | { kind: 'rejected'; error: { code: string; message: string; effect: 'none' | 'retained' | 'unknown' } };

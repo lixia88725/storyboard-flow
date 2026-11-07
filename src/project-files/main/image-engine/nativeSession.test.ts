@@ -11,7 +11,7 @@ import { temporaryWorkspace } from '../../../../test/temporaryWorkspace';
 // Adapter pauses after a completed effect; it never supplies fake native pixels.
 const modules=[
   'session/core/nativeSession','session/core/nativePipeline','session/core/snapshotHistory','session/core/grouping','session/core/imageProjectModel','session/core/imageProjectValues',
-  'platform/contracts/flowPresentation','platform/main/imageEngineConnection','platform/main/imageEngineFraming','platform/main/imageProjectLease',
+  'platform/contracts/flowPresentation','platform/main/imageEngineWorkerOwner','platform/main/imageEngineConnection','platform/main/imageEngineFraming','platform/main/imageProjectLease',
   'project-files/main/image-engine/projectStore','project-files/main/image-engine/sourceStore','project-files/main/image-engine/nativeSessionAdapter',
   'project-files/main/workspacePhysicalWriterGate','project-files/main/persistence/canonicalJson','project-files/main/persistence/fileOps','project-files/main/persistence/errors'
 ];
@@ -29,6 +29,7 @@ async function fixture(){
   await fs.writeFile(script,`
 import fs from 'node:fs/promises';import path from 'node:path';import {createHash,randomUUID} from 'node:crypto';
 import {startImageEngine} from './platform/main/imageEngineConnection.js';
+import {createImageEngineWorkerOwner} from './platform/main/imageEngineWorkerOwner.js';
 import {acquireImageProjectLease} from './platform/main/imageProjectLease.js';
 import {createSourceBackedImport,openSourceBackedImport} from './project-files/main/image-engine/sourceStore.js';
 import {openImageProjectStore} from './project-files/main/image-engine/projectStore.js';
@@ -44,9 +45,10 @@ const hasHead=await fs.stat(path.join(root,'.storyboard-flow/image-project-v2/he
 const sources=hasHead?await openSourceBackedImport({root,importId:'batch',limits:{maxStoredBytes:8<<20,maxSourceBytes:8<<20}}):await createSourceBackedImport({root,importId:'batch',limits:{maxStoredBytes:8<<20,maxSourceBytes:8<<20},sources:['a','b'].map(id=>({id,sourcePath:path.join(root,id+'.png'),formatHint:'png'}))});
 if(!hasHead)await sources.retain('a');
 await fs.mkdir(path.join(root,'.storyboard-flow/image-native'),{recursive:true,mode:0o700});
-const connection=startImageEngine({binary,store:path.join(root,'.storyboard-flow/image-native/native'),sessionId:'session',incarnation:randomUUID(),budgetBytes:32<<20});await connection.ready.catch(e=>{console.error(connection.diagnostics());throw e;});
+const workerConfig={binary,store:path.join(root,'.storyboard-flow/image-native/native'),sessionId:'session',incarnation:randomUUID(),budgetBytes:32<<20};const owned=mode.startsWith('owned-'),owner=owned?await createImageEngineWorkerOwner({...workerConfig,lease}):undefined;
+const connection=owner?.current().connection??startImageEngine(workerConfig);await connection.ready.catch(e=>{console.error(connection.diagnostics());throw e;});
 let failAppend=mode==='append-error';const request=connection.request.bind(connection);connection.request=async(...args)=>{if(failAppend&&args[1].kind==='strokeAppend'){failAppend=false;args[1]={...args[1],fromSeq:999};}return request(...args);};
-const adapter=createNativeSessionAdapter({connection,storeId:'native',storeRoot:path.join(root,'.storyboard-flow/image-native/native')});
+const adapter=createNativeSessionAdapter({...(owner?{workerOwner:owner}:{connection}),storeId:'native',storeRoot:path.join(root,'.storyboard-flow/image-native/native')});
 const store=await openImageProjectStore({root,writerAuthority:lease,maxRecoveryBytes:64<<20,reservedRecoveryBytes:async()=>(32+8)<<20,verifyNative:adapter.verifyNative,verifySource:async(ref,retained)=>{
   if(ref.importId!=='batch'||ref.interpretationId!=='reader1'||!sources.snapshot().items.some(i=>i.id===ref.itemId))throw Error('Unknown source ref');
   if(retained){const object=await sources.object(ref.itemId);if(object.digest!==retained.digest||object.byteLength!==retained.byteLength)throw Error('Source digest mismatch');}
@@ -66,7 +68,7 @@ const driver={...realDriver,
 };
 const actualAudit=store.validateRecovery.bind(store);store.validateRecovery=async()=>{if(failAudit){failAudit=false;throw Error('synthetic store audit failure after native Freeze');}return actualAudit();};
 const actualCommit=store.commit.bind(store);store.commit=async(...args)=>{const result=await actualCommit(...args);if(mode==='cas'&&args[1].nativeDecision)await pause('cas',{commitHash:result.commitHash});return result;};
-const isPipeline=mode.startsWith('pipeline');
+const isPipeline=mode.startsWith('pipeline')||owned;
 const session=await openNativeProjectSession({sessionId:'main',incarnation:randomUUID(),store,native:driver,mintId:()=>randomUUID(),now:()=>performance.now(),...(isPipeline?{pipeline:{maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:16<<20}}:{})});
 const progress=[];session.pipeline?.subscribe(event=>progress.push(event));
 const until=async(test)=>{const deadline=performance.now()+15000;while(!test()){if(performance.now()>deadline)throw Error('Pipeline fixture condition timed out: '+JSON.stringify({progress,snapshot:session.snapshot()}));await new Promise(r=>setTimeout(r,2));}};
@@ -77,7 +79,33 @@ const submit=(y=20,opacity=0.5)=>{
 };
 const capture=async()=>{const frame=await adapter.capture(),p=frame.payload;return {hash:createHash('sha256').update(p).digest('hex'),alpha:p[(20*64+24)*4+3],red:p[(20*64+24)*4]};};
 const result={};
-if(mode==='pipeline-undo-race'){
+if(owned){
+ const window=mode.slice('owned-'.length);result.mainPid=process.pid;result.oldWorker={pid:owner.current().connection.pid,generation:owner.current().generation};
+ let fault=true,failRead=false;
+ if(window==='prepared'){const poll=driver.pipeline.poll.bind(driver.pipeline);driver.pipeline.poll=async()=>{const r=await poll();if(fault&&r.events.some(e=>e.kind==='prepared')){fault=false;throw Object.assign(Error('prepared reply lost'),{effect:'unknown'});}return r;};}
+ if(window==='cas'){const commit=store.commit.bind(store),committed=store.committed.bind(store);store.commit=async(...args)=>{const r=await commit(...args);if(fault&&args[1].nativeDecision){fault=false;failRead=true;throw Object.assign(Error('CAS acknowledgement unknown'),{effect:'unknown'});}return r;};store.committed=async()=>{if(failRead){failRead=false;throw Object.assign(Error('CAS readback unavailable'),{effect:'unknown'});}return committed();};}
+ if(window==='accept'||window==='noop-accept'){const accept=driver.pipeline.accept.bind(driver.pipeline);driver.pipeline.accept=async(...args)=>{const r=await accept(...args);if(fault){fault=false;throw Object.assign(Error('acceptQueued reply lost'),{effect:'unknown'});}return r;};if(window==='noop-accept')fault=false;}
+ if(window==='no-ready'){const start=driver.pipeline.start.bind(driver.pipeline);driver.pipeline.start=async(...args)=>{const r=await start(...args);if(fault){fault=false;throw Object.assign(Error('pipelineReady reply lost before any begin'),{effect:'unknown'});}return r;};}
+ if(window==='noop-accept'){const warm=submit(20,0);await session.pipeline.waitOperation(warm);fault=true;}
+ if(window==='inflight-intent'){
+  let release,blocked=false,armed=true;const gate=new Promise(r=>release=r),open=fs.open.bind(fs),at=path.join(root,'.storyboard-flow/image-project-v2/settlements');
+  fs.open=async(...args)=>{const h=await open(...args);if(armed&&args[0]===at&&args[1]==='r'){const sync=h.sync.bind(h);h.sync=async()=>{if(armed){armed=false;blocked=true;await gate;}return sync();};}return h;};
+  const a=submit();await until(()=>blocked);const b=submit(32);connection.terminateOwnedProcess();await connection.exited;
+  result.initial=await Promise.all([a,b].map(op=>session.pipeline.waitOperation(op)));let recovered=false;const recovering=session.request({kind:'recover'}).then(r=>{recovered=true;return r;});await until(()=>owner.current()?.generation===2);
+  result.beforeRelease={recovered,phase:session.snapshot().phase,admission:session.pipeline.input({kind:'begin',shotId:'a',stroke:{...stroke,points:[12,44]}})};release();result.recover=await recovering;fs.open=open;
+ }else if(window==='active'){
+  const begin=session.pipeline.input({kind:'begin',shotId:'a',stroke:{...stroke,points:[12,20]}});await until(()=>progress.some(e=>e.stage==='preview'));connection.terminateOwnedProcess();await connection.exited;result.operationId=begin.operationId;result.recover=await session.request({kind:'recover'});
+ }else{
+  const op=submit(20,window==='noop-accept'?0:0.5);result.operationId=op;result.initial=await session.pipeline.waitOperation(op);
+  if(window==='undo-install'){failInstall=true;result.undo=await session.request({kind:'undo'});}
+  if(window==='freeze-audit'){failAudit=true;result.firstFreeze=await session.request({kind:'freeze'});}
+  result.whilePending=session.snapshot();result.recover=await session.request({kind:'recover'});
+ }
+ result.newWorker={pid:owner.current()?.connection.pid,generation:owner.current()?.generation};result.afterRecover=session.snapshot();result.retained=session.pipeline.recoveryInputs();result.records=await session.operationRecords();result.recoveredCapture=await capture();
+ if(window==='no-ready'||window==='active'){result.blocked=session.pipeline.input({kind:'begin',shotId:'a',stroke:{...stroke,points:[12,44]}});await pause(mode,{result,newNativePid:owner.current().connection.pid});}
+ if(window!=='freeze-audit'){const next=submit(20);result.next=await session.pipeline.waitOperation(next);result.nextCapture=await capture();}
+ result.progress=progress;
+}else if(mode==='pipeline-undo-race'){
  let release;const gate=new Promise(r=>release=r);let blocked=false,armed=true;const open=fs.open.bind(fs),commitsDir=path.join(root,'.storyboard-flow/image-project-v2/commits');
  fs.open=async(...args)=>{const handle=await open(...args);if(armed&&args[0]===commitsDir&&args[1]==='r'){const sync=handle.sync.bind(handle);handle.sync=async()=>{if(armed){armed=false;blocked=true;await gate;}return sync();};}return handle;};
  const first=submit();await until(()=>blocked);
@@ -180,7 +208,7 @@ for(const window of ['prepared','cas','accepted'])it(`reconciles real SIGKILL of
 
 it('returns settlementPending after an actual accepted reply is lost and blocks further edits until reconciliation',async()=>{
   const f=await fixture();await run(f.script,'lost-ack');const r=await result(f.root,'lost-ack');
-  expect(r.paint.kind).toBe('settlementPending');expect(r.closeRejected).toBe(true);expect(r.freezeWhilePending.kind).toBe('rejected');expect(r.pendingBeforeRecover).toHaveLength(1);expect(r.whilePending.phase).toBe('recovering');expect(r.whilePending.project.revision).toBe(1);expect(r.blocked.kind).toBe('rejected');expect(r.recover.kind).toBe('settled');expect(r.capture.alpha).toBe(128);expect(r.snapshot.undoDepth).toBe(1);
+  expect(r.paint.kind).toBe('settlementPending');expect(r.closeRejected).toBe(true);expect(r.freezeWhilePending.kind).toBe('rejected');expect(r.pendingBeforeRecover).toHaveLength(1);expect(r.whilePending.phase).toBe('recovering');expect(r.whilePending.project.revision).toBe(1);expect(r.blocked.kind).toBe('rejected');expect(r.recover.kind).toBe('recovered');expect(r.recover.operations).toContainEqual(expect.objectContaining({decision:'committed',original:'durable-intent'}));expect(r.capture.alpha).toBe(128);expect(r.snapshot.undoDepth).toBe(1);
 },60000);
 
 it('explicitly refuses unmigrated pencil dynamics and retains their exact submitted input',async()=>{
@@ -189,7 +217,7 @@ it('explicitly refuses unmigrated pencil dynamics and retains their exact submit
 },60000);
 
 it('keeps a pre-CAS unknown prepared operation and complete input until explicit discard recovery',async()=>{
-  const f=await fixture();await run(f.script,'prepared-error');const r=await result(f.root,'prepared-error');expect(r.paint.kind).toBe('recoveryPending');expect(r.closeRejected).toBe(true);expect(r.freezeWhilePending.kind).toBe('rejected');expect(r.pendingBeforeRecover).toHaveLength(1);expect(r.pendingBeforeRecover[0].stroke.points).toEqual([12,20,44,20]);expect(r.recover.kind).toBe('settled');expect(r.snapshot.project.revision).toBe(0);expect(r.snapshot.undoDepth).toBe(0);expect(r.capture.alpha).toBe(0);
+  const f=await fixture();await run(f.script,'prepared-error');const r=await result(f.root,'prepared-error');expect(r.paint.kind).toBe('recoveryPending');expect(r.closeRejected).toBe(true);expect(r.freezeWhilePending.kind).toBe('rejected');expect(r.pendingBeforeRecover).toHaveLength(1);expect(r.pendingBeforeRecover[0].stroke.points).toEqual([12,20,44,20]);expect(r.recover.kind).toBe('recovered');expect(r.recover.operations).toContainEqual(expect.objectContaining({decision:'notCommitted',original:'durable-intent'}));expect(r.snapshot.project.revision).toBe(0);expect(r.snapshot.undoDepth).toBe(0);expect(r.capture.alpha).toBe(0);
 },60000);
 
 it('retains a committed Undo target when native install fails and blocks edits until exact recovery',async()=>{
@@ -241,4 +269,23 @@ it('seals pipeline admission for Undo, allows captured up, drains exact work, an
 
 it('rejects Undo during an active later gesture without a FIFO cycle or an orphan admission seal',async()=>{
   const f=await fixture();await run(f.script,'pipeline-undo-race');const r=await result(f.root,'pipeline-undo-race');expect(r.up.kind).toBe('admitted');expect(r.busyUndo).toMatchObject({kind:'rejected',error:{code:'busy'}});expect(r.paints.map((o:any)=>o.kind)).toEqual(['settled','settled']);expect(r.beforeThird.project.revision).toBe(2);expect(r.beforeThird.undoDepth).toBe(2);expect(r.third.kind).toBe('admitted');expect(r.cancel.kind).toBe('admitted');expect(r.retryUndo.kind).toBe('settled');expect(r.afterRetry.project.revision).toBe(3);expect(r.afterRetry.undoDepth).toBe(1);expect(r.afterRetry.redoDepth).toBe(1);expect(r.freeze.kind).toBe('settled');
+},60000);
+
+
+for(const window of ['prepared','cas','accept','inflight-intent','undo-install','freeze-audit','noop-accept'])it(`replaces only the owned native worker in the same Main after ${window} and preserves original mixed history`,async()=>{
+ const f=await fixture(),mode='owned-'+window;await run(f.script,mode);const r=await result(f.root,mode);expect(r.newWorker.generation).toBe(2);expect(r.newWorker.pid).not.toBe(r.oldWorker.pid);expect(r.mainPid).toBeGreaterThan(0);expect(r.recover.kind).toBe('recovered');expect(r.recover.snapshot.phase).toBe(window==='freeze-audit'?'frozen':'active');expect(r.retained).toEqual([]);
+ if(window==='inflight-intent'){expect(r.beforeRelease.recovered).toBe(false);expect(r.beforeRelease.phase).toBe('recovering');expect(r.beforeRelease.admission.kind).toBe('rejected');expect(r.recover.operations.filter((o:any)=>o.decision==='notCommitted')).toHaveLength(2);expect(r.afterRecover.project.revision).toBe(0);}
+ else if(window==='prepared'){expect(r.initial.kind).toBe('recoveryPending');expect(r.recover.operations).toContainEqual(expect.objectContaining({operationId:r.operationId,decision:'notCommitted',original:'durable-intent'}));expect(r.afterRecover.project.revision).toBe(0);expect(r.afterRecover.undoDepth).toBe(0);}
+ else if(window==='undo-install'){expect(r.undo.kind).toBe('settlementPending');expect(r.afterRecover.project.revision).toBe(2);expect(r.afterRecover.redoDepth).toBe(1);}
+ else{expect(r.afterRecover.project.revision).toBe(1);expect(r.afterRecover.undoDepth).toBe(1);if(window==='cas'||window==='accept'||window==='noop-accept')expect(r.recover.operations).toContainEqual(expect.objectContaining({operationId:r.operationId,decision:'committed'}));}
+ expect(r.records.every((e:any)=>e.resolution!==null)).toBe(true);expect(r.records.every((e:any)=>e.intent.stroke.points.length>0)).toBe(true);
+ const changedBefore=['cas','accept','freeze-audit'].includes(window);expect(r.recoveredCapture.alpha).toBe(changedBefore?128:0);if(window!=='freeze-audit'){expect(r.next.kind).toBe('settled');expect(r.nextCapture.alpha).toBe(changedBefore?192:128);}expect(r.freeze.kind).toBe('settled');
+},60000);
+
+for(const window of ['no-ready','active'])it(`retains ${window} volatile input explicitly instead of inventing identity or claiming recovery completion`,async()=>{
+ const f=await fixture(),mode='owned-'+window,c=child(f.script,mode);let barrier:any;
+ try{for(let n=0;n<1500;n++){barrier=await fs.readFile(path.join(f.root,'barrier.json'),'utf8').then(s=>JSON.parse(s),()=>null);if(barrier)break;if(c.process.exitCode!==null)throw Error((await c.done).output);await new Promise(r=>setTimeout(r,10));}expect(barrier?.stage).toBe(mode);const r=barrier.result;expect(r.newWorker.generation).toBe(2);expect(r.recover.kind).toBe('recoveryPending');expect(r.afterRecover.phase).toBe('recovering');expect(r.afterRecover.project.revision).toBe(0);expect(r.retained).toHaveLength(1);expect(r.retained[0].reason).toBe(window==='no-ready'?'missing-pipeline-identity':'incomplete-gesture');expect(r.retained[0].stroke.points).toEqual(window==='no-ready'?[12,20,44,20]:[12,20]);expect(r.blocked.kind).toBe('rejected');expect(r.recoveredCapture.alpha).toBe(0);
+ }finally{if(c.process.exitCode===null&&c.process.signalCode===null){c.process.kill('SIGKILL');await c.done;}
+  if(barrier){let alive=true;for(let n=0;n<500;n++){alive=[barrier.newNativePid,barrier.guardPid].some(pid=>{try{process.kill(pid,0);return true;}catch{return false;}});if(!alive)break;await new Promise(r=>setTimeout(r,10));}expect(alive).toBe(false);}
+ }
 },60000);
