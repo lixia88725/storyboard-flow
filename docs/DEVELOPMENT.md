@@ -86,3 +86,5 @@ macOS 包附带 TIFF 组件，不附带 Python 解释器。第一次处理 TIFF 
 Main 项目实际连接专项：`FLOW_IMAGE_HOST=<固定宿主> FLOW_PROJECT_LEASE_BIN=<真实lease> node node_modules/vitest/vitest.mjs run src/project-files/main/image-engine/nativeSession.test.ts`。冻结版本输出专项使用 `FLOW_PROJECT_LEASE_BINARY`（注意当前两个专项变量名不同）与支持 `immutableVersionExportV1` 的 `FLOW_IMAGE_HOST`，运行 `src/platform/main/imageEngineOutput.test.ts`。都需要真实组件；临时专项尚未并入无环境设置的通用清单。
 
 双 Canvas 节拍专项设置 `FLOW_PIPELINE_SAMPLE_INTERVAL_MS=10`；默认 0 为 burst。报告绝对 deadline、所有积压/重试与 oracle 开销，截图移出 paced 输入窗口。构建/全量等并发负载需记录，不把 native accepted 的轮询观察时间当硬盘持久耗时。
+
+原生发动机施工的附加获准清单为 `test/allowed-image-engine-suite.json`，当前 4 个真实连接专项。完整发动机验收须同时报告通用清单与该附加清单，不能因原生环境缺失静默跳过。准备固定宿主后，设置 `FLOW_IMAGE_HOST`、`FLOW_PROJECT_LEASE_BINARY`，并暂令 `FLOW_PROJECT_LEASE_BIN` 指向同一 guard；使用上方显式枚举命令，将清单路径改为该附加清单即可。当前正式 CI 尚未接这组施工专项，不把通用 CI 通过当新发动机整体验收。
