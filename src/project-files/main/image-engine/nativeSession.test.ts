@@ -10,7 +10,7 @@ import { temporaryWorkspace } from '../../../../test/temporaryWorkspace';
 // Actual Main/guard/native processes and real project storage. The only fault
 // Adapter pauses after a completed effect; it never supplies fake native pixels.
 const modules=[
-  'session/core/nativeSession','session/core/nativePipeline','session/core/snapshotHistory','session/core/grouping','session/core/imageProjectModel','session/core/imageProjectValues',
+  'session/core/nativeSession','session/core/nativeSettlementQueue','session/core/nativePipeline','session/core/snapshotHistory','session/core/grouping','session/core/imageProjectModel','session/core/imageProjectValues',
   'platform/contracts/flowPresentation','platform/main/imageEngineWorkerOwner','platform/main/imageEngineConnection','platform/main/imageEngineFraming','platform/main/imageProjectLease',
   'project-files/main/image-engine/projectStore','project-files/main/image-engine/sourceStore','project-files/main/image-engine/nativeSessionAdapter',
   'project-files/main/workspacePhysicalWriterGate','project-files/main/persistence/canonicalJson','project-files/main/persistence/fileOps','project-files/main/persistence/errors'
@@ -47,7 +47,7 @@ if(!hasHead)await sources.retain('a');
 await fs.mkdir(path.join(root,'.storyboard-flow/image-native'),{recursive:true,mode:0o700});
 const workerConfig={binary,store:path.join(root,'.storyboard-flow/image-native/native'),sessionId:'session',incarnation:randomUUID(),budgetBytes:32<<20};const owned=mode.startsWith('owned-'),owner=owned?await createImageEngineWorkerOwner({...workerConfig,lease}):undefined;
 const connection=owner?.current().connection??startImageEngine(workerConfig);await connection.ready.catch(e=>{console.error(connection.diagnostics());throw e;});
-let failAppend=mode==='append-error';const request=connection.request.bind(connection);connection.request=async(...args)=>{if(failAppend&&args[1].kind==='strokeAppend'){failAppend=false;args[1]={...args[1],fromSeq:999};}return request(...args);};
+let failAppend=mode==='append-error',acceptIsBlocked=false,releaseOldAccept;const oldAcceptGate=new Promise(r=>releaseOldAccept=r);const request=connection.request.bind(connection);connection.request=async(...args)=>{if(failAppend&&args[1].kind==='strokeAppend'){failAppend=false;args[1]={...args[1],fromSeq:999};}return request(...args);};
 const adapter=createNativeSessionAdapter({...(owner?{workerOwner:owner}:{connection}),storeId:'native',storeRoot:path.join(root,'.storyboard-flow/image-native/native')});
 const store=await openImageProjectStore({root,writerAuthority:lease,maxRecoveryBytes:64<<20,reservedRecoveryBytes:async()=>(32+8)<<20,verifyNative:adapter.verifyNative,verifySource:async(ref,retained)=>{
   if(ref.importId!=='batch'||ref.interpretationId!=='reader1'||!sources.snapshot().items.some(i=>i.id===ref.itemId))throw Error('Unknown source ref');
@@ -69,7 +69,7 @@ const driver={...realDriver,
 const actualAudit=store.validateRecovery.bind(store);store.validateRecovery=async()=>{if(failAudit){failAudit=false;throw Error('synthetic store audit failure after native Freeze');}return actualAudit();};
 const actualCommit=store.commit.bind(store);store.commit=async(...args)=>{const result=await actualCommit(...args);if(mode==='cas'&&args[1].nativeDecision)await pause('cas',{commitHash:result.commitHash});return result;};
 const isPipeline=mode.startsWith('pipeline')||owned;
-const session=await openNativeProjectSession({sessionId:'main',incarnation:randomUUID(),store,native:driver,mintId:()=>randomUUID(),now:()=>performance.now(),...(isPipeline?{pipeline:{maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:16<<20}}:{})});
+let mintSequence=0;const session=await openNativeProjectSession({sessionId:'main',incarnation:randomUUID(),store,native:driver,mintId:()=>mode.startsWith('owned-multi')?(['z-first','a-second','m-third'][mintSequence++]??('later'+mintSequence)):randomUUID(),now:()=>performance.now(),...(isPipeline?{pipeline:{maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:16<<20}}:{})});
 const progress=[];session.pipeline?.subscribe(event=>progress.push(event));
 const until=async(test)=>{const deadline=performance.now()+15000;while(!test()){if(performance.now()>deadline)throw Error('Pipeline fixture condition timed out: '+JSON.stringify({progress,snapshot:session.snapshot()}));await new Promise(r=>setTimeout(r,2));}};
 const submit=(y=20,opacity=0.5)=>{
@@ -81,13 +81,22 @@ const capture=async()=>{const frame=await adapter.capture(),p=frame.payload;retu
 const result={};
 if(owned){
  const window=mode.slice('owned-'.length);result.mainPid=process.pid;result.oldWorker={pid:owner.current().connection.pid,generation:owner.current().generation};
- let fault=true,failRead=false;
+ let fault=true,failRead=false,restoreConfirmationOpen;
+ if(window==='confirmation-unknown'){const open=fs.open.bind(fs),at=path.join(root,'.storyboard-flow/image-project-v2/settlements');restoreConfirmationOpen=()=>fs.open=open;fs.open=async(...args)=>{const h=await open(...args);if(args[0]===at&&args[1]==='r'){const sync=h.sync.bind(h);h.sync=async()=>{const hasResolution=(await fs.readdir(at)).some(n=>n.endsWith('.resolution.json'));if(fault&&hasResolution){fault=false;throw Error('Actual confirmation directory sync outcome unknown');}return sync();};}return h;};}
  if(window==='prepared'){const poll=driver.pipeline.poll.bind(driver.pipeline);driver.pipeline.poll=async()=>{const r=await poll();if(fault&&r.events.some(e=>e.kind==='prepared')){fault=false;throw Object.assign(Error('prepared reply lost'),{effect:'unknown'});}return r;};}
  if(window==='cas'){const commit=store.commit.bind(store),committed=store.committed.bind(store);store.commit=async(...args)=>{const r=await commit(...args);if(fault&&args[1].nativeDecision){fault=false;failRead=true;throw Object.assign(Error('CAS acknowledgement unknown'),{effect:'unknown'});}return r;};store.committed=async()=>{if(failRead){failRead=false;throw Object.assign(Error('CAS readback unavailable'),{effect:'unknown'});}return committed();};}
  if(window==='accept'||window==='noop-accept'){const accept=driver.pipeline.accept.bind(driver.pipeline);driver.pipeline.accept=async(...args)=>{const r=await accept(...args);if(fault){fault=false;throw Object.assign(Error('acceptQueued reply lost'),{effect:'unknown'});}return r;};if(window==='noop-accept')fault=false;}
  if(window==='no-ready'){const start=driver.pipeline.start.bind(driver.pipeline);driver.pipeline.start=async(...args)=>{const r=await start(...args);if(fault){fault=false;throw Object.assign(Error('pipelineReady reply lost before any begin'),{effect:'unknown'});}return r;};}
  if(window==='noop-accept'){const warm=submit(20,0);await session.pipeline.waitOperation(warm);fault=true;}
- if(window==='start-read-race'){
+ if(window.startsWith('multi')){
+  const accept=driver.pipeline.accept.bind(driver.pipeline),generation=owner.current().generation;driver.pipeline.accept=async(...args)=>{if(args[0].candidateId==='z-first'){acceptIsBlocked=true;await oldAcceptGate;if(owner.current()?.generation!==generation)throw Object.assign(Error('Old paused accept submission fenced'),{effect:'unknown'});}return accept(...args);};
+  let decided=0;const commit=store.commit.bind(store),unchanged=store.decideUnchanged.bind(store);store.commit=async(...args)=>{if(window==='multi-suffix'&&args[1].commitId==='m-third')throw Object.assign(Error('Uncommitted prepared suffix retained'),{effect:'unknown'});const r=await commit(...args);if(args[1].nativeDecision)decided++;return r;};store.decideUnchanged=async(...args)=>{const r=await unchanged(...args);decided++;return r;};
+  const a=submit(20,window==='multi-noop'?0:0.5),b=submit(window==='multi-noop'?20:32,window==='multi-noop'?0:0.5),ops=[a,b];if(window==='multi-suffix')ops.push(submit(44));await until(()=>decided===2&&acceptIsBlocked&&(window!=='multi-suffix'||session.snapshot().phase==='recovering'));
+  result.beforeReplacement=session.snapshot();connection.terminateOwnedProcess();await connection.exited;result.initial=await Promise.all(ops.map(op=>session.pipeline.waitOperation(op)));const recovering=session.request({kind:'recover'});await until(()=>owner.current()?.generation===2);
+  if(window==='multi-contradiction'){const a=await driver.status('z-first'),b=await driver.status('a-second');await driver.recoverAccept('a-second',a.prepared.native,b.prepared.native);}
+  releaseOldAccept();result.recover=await recovering;console.log('multi-recovery-proof '+JSON.stringify(result.recover));result.operationIds=ops;
+  if(window==='multi-contradiction'){result.afterRecover=session.snapshot();result.parent=await driver.status('z-first');result.child=await driver.status('a-second');result.records=await session.operationRecords();await pause(mode,{result,newNativePid:owner.current().connection.pid});}
+ }else if(window==='start-read-race'){
   const base=(await store.hydration(source)).native,versionFile=path.join(root,'.storyboard-flow/image-native/native/versions',base.versionId+'.json');
   let releaseRead,readBlocked=false,armed=true;const readGate=new Promise(r=>releaseRead=r),open=fs.open.bind(fs);
   fs.open=async(...args)=>{const h=await open(...args);if(armed&&args[0]===versionFile){armed=false;const read=h.read.bind(h);h.read=async(...r)=>{if(!readBlocked){readBlocked=true;await readGate;}return read(...r);};}return h;};
@@ -105,7 +114,7 @@ if(owned){
  }else if(window==='active'){
   const begin=session.pipeline.input({kind:'begin',shotId:'a',stroke:{...stroke,points:[12,20]}});await until(()=>progress.some(e=>e.stage==='preview'));connection.terminateOwnedProcess();await connection.exited;result.operationId=begin.operationId;result.recover=await session.request({kind:'recover'});
  }else{
-  const op=submit(20,window==='noop-accept'?0:0.5);result.operationId=op;result.initial=await session.pipeline.waitOperation(op);
+  const op=submit(20,window==='noop-accept'?0:0.5);result.operationId=op;result.initial=await session.pipeline.waitOperation(op);restoreConfirmationOpen?.();
   if(window==='undo-install'){failInstall=true;result.undo=await session.request({kind:'undo'});}
   if(window==='freeze-audit'){failAudit=true;result.firstFreeze=await session.request({kind:'freeze'});}
   result.whilePending=session.snapshot();result.recover=await session.request({kind:'recover'});
@@ -114,6 +123,18 @@ if(owned){
  if(window==='no-ready'||window==='active'){result.blocked=session.pipeline.input({kind:'begin',shotId:'a',stroke:{...stroke,points:[12,44]}});await pause(mode,{result,newNativePid:owner.current().connection.pid});}
  if(window!=='freeze-audit'){const next=submit(20);result.next=await session.pipeline.waitOperation(next);result.nextCapture=await capture();}
  result.progress=progress;
+}else if(mode==='pipeline-confirmation-credit'){
+ let release;const gate=new Promise(r=>release=r),confirm=store.confirmOperations.bind(store),batches=[];let blocked=false;store.confirmOperations=async records=>{batches.push(records.map(r=>r.operationId));if(!blocked){blocked=true;await gate;}return confirm(records);};
+ const ops=[20,32,44,56].map(y=>submit(y));let settled=0;const waiting=ops.map(op=>session.pipeline.waitOperation(op).then(r=>{settled++;return r;}));await until(()=>progress.filter(e=>e.stage==='nativeAccepted').length===4);
+ result.beforeConfirmation={settled,project:session.snapshot().project,admission:session.pipeline.input({kind:'begin',shotId:'a',stroke:{...stroke,points:[12,8]}})};release();result.outcomes=await Promise.all(waiting);result.batches=batches;
+ const next=session.pipeline.input({kind:'begin',shotId:'a',stroke:{...stroke,points:[12,8]}});result.nextAdmission=next;session.pipeline.input({kind:'cancel',operationId:next.operationId});await session.pipeline.waitOperation(next.operationId);
+}else if(mode==='pipeline-split-accept'){
+ let held=true,target,delayed=[],commits=0,secondAccept=0;const poll=driver.pipeline.poll.bind(driver.pipeline),accept=driver.pipeline.accept.bind(driver.pipeline),commit=store.commit.bind(store);
+ driver.pipeline.poll=async()=>{const state=await poll(),events=[];for(const event of state.events){if(held&&event.operationId===target&&event.kind==='accepted')delayed.push(event);else events.push(event);}if(!held&&delayed.length)events.unshift(...delayed.splice(0));return{...state,events};};
+ driver.pipeline.accept=async(...args)=>{if(args[0].candidateId!==target)secondAccept++;return accept(...args);};store.commit=async(...args)=>{const result=await commit(...args);if(args[1].nativeDecision)commits++;return result;};
+ target=submit();const second=submit(32);let firstSettled=false,secondSettled=false;const firstWait=session.pipeline.waitOperation(target).then(r=>{firstSettled=true;return r;}),secondWait=session.pipeline.waitOperation(second).then(r=>{secondSettled=true;return r;});
+ const deadline=performance.now()+3000;while(commits<2){if(performance.now()>deadline)throw Error('Second project CAS waited for prior native accept/confirmation');await new Promise(r=>setTimeout(r,2));}
+ result.beforeAccepted={commits,secondAccept,firstSettled,secondSettled,project:session.snapshot().project};held=false;result.outcomes=await Promise.all([firstWait,secondWait]);result.records=await session.operationRecords();result.progress=progress;
 }else if(mode==='pipeline-undo-race'){
  let release;const gate=new Promise(r=>release=r);let blocked=false,armed=true;const open=fs.open.bind(fs),commitsDir=path.join(root,'.storyboard-flow/image-project-v2/commits');
  fs.open=async(...args)=>{const handle=await open(...args);if(armed&&args[0]===commitsDir&&args[1]==='r'){const sync=handle.sync.bind(handle);handle.sync=async()=>{if(armed){armed=false;blocked=true;await gate;}return sync();};}return handle;};
@@ -281,23 +302,14 @@ it('rejects Undo during an active later gesture without a FIFO cycle or an orpha
 },60000);
 
 
-for(const window of ['prepared','cas','accept','inflight-intent','undo-install','freeze-audit','noop-accept'])it(`replaces only the owned native worker in the same Main after ${window} and preserves original mixed history`,async()=>{
+for(const window of ['prepared','cas','accept','inflight-intent','undo-install','freeze-audit','noop-accept','confirmation-unknown'])it(`replaces only the owned native worker in the same Main after ${window} and preserves original mixed history`,async()=>{
  const f=await fixture(),mode='owned-'+window;await run(f.script,mode);const r=await result(f.root,mode);expect(r.newWorker.generation).toBe(2);expect(r.newWorker.pid).not.toBe(r.oldWorker.pid);expect(r.mainPid).toBeGreaterThan(0);expect(r.recover.kind).toBe('recovered');expect(r.recover.snapshot.phase).toBe(window==='freeze-audit'?'frozen':'active');expect(r.retained).toEqual([]);
- if(window==='start-read-race'){
-  const base=(await store.hydration(source)).native,versionFile=path.join(root,'.storyboard-flow/image-native/native/versions',base.versionId+'.json');
-  let releaseRead,readBlocked=false,armed=true;const readGate=new Promise(r=>releaseRead=r),open=fs.open.bind(fs);
-  fs.open=async(...args)=>{const h=await open(...args);if(armed&&args[0]===versionFile){armed=false;const read=h.read.bind(h);h.read=async(...r)=>{if(!readBlocked){readBlocked=true;await readGate;}return read(...r);};}return h;};
-  const oldStart=driver.pipeline.start(base,{maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:16<<20}).then(value=>({kind:'resolved',value}),e=>({kind:'rejected',code:e.code,message:e.message}));await until(()=>readBlocked);
-  let releaseAudit,auditBlocked=false;const auditGate=new Promise(r=>releaseAudit=r),audit=store.validateRecovery.bind(store);store.validateRecovery=async()=>{if(!auditBlocked){auditBlocked=true;await auditGate;}return audit();};
-  connection.terminateOwnedProcess();await connection.exited;const recovering=session.request({kind:'recover'});await until(()=>owner.current()?.generation===2&&auditBlocked);
-  const fresh=owner.current().connection,request=fresh.request.bind(fresh),calls=[];fresh.request=async(...args)=>{calls.push(args[1].kind);return request(...args);};
-  releaseRead();result.oldStart=await oldStart;result.oldGenerationCalls=[...calls];console.log('generation-read-proof '+JSON.stringify({oldStart:result.oldStart,calls}));fs.open=open;releaseAudit();result.recover=await recovering;store.validateRecovery=audit;
- }else if(window==='inflight-intent'){expect(r.beforeRelease.recovered).toBe(false);expect(r.beforeRelease.phase).toBe('recovering');expect(r.beforeRelease.admission.kind).toBe('rejected');expect(r.recover.operations.filter((o:any)=>o.decision==='notCommitted')).toHaveLength(2);expect(r.afterRecover.project.revision).toBe(0);}
+ if(window==='inflight-intent'){expect(r.beforeRelease.recovered).toBe(false);expect(r.beforeRelease.phase).toBe('recovering');expect(r.beforeRelease.admission.kind).toBe('rejected');expect(r.recover.operations.filter((o:any)=>o.decision==='notCommitted')).toHaveLength(2);expect(r.afterRecover.project.revision).toBe(0);}
  else if(window==='prepared'){expect(r.initial.kind).toBe('recoveryPending');expect(r.recover.operations).toContainEqual(expect.objectContaining({operationId:r.operationId,decision:'notCommitted',original:'durable-intent'}));expect(r.afterRecover.project.revision).toBe(0);expect(r.afterRecover.undoDepth).toBe(0);}
  else if(window==='undo-install'){expect(r.undo.kind).toBe('settlementPending');expect(r.afterRecover.project.revision).toBe(2);expect(r.afterRecover.redoDepth).toBe(1);}
- else{expect(r.afterRecover.project.revision).toBe(1);expect(r.afterRecover.undoDepth).toBe(1);if(window==='cas'||window==='accept'||window==='noop-accept')expect(r.recover.operations).toContainEqual(expect.objectContaining({operationId:r.operationId,decision:'committed'}));}
- expect(r.records.every((e:any)=>e.resolution!==null)).toBe(true);expect(r.records.every((e:any)=>e.intent.stroke.points.length>0)).toBe(true);
- const changedBefore=['cas','accept','freeze-audit'].includes(window);expect(r.recoveredCapture.alpha).toBe(changedBefore?128:0);if(window!=='freeze-audit'){expect(r.next.kind).toBe('settled');expect(r.nextCapture.alpha).toBe(changedBefore?192:128);}expect(r.freeze.kind).toBe('settled');
+ else{expect(r.afterRecover.project.revision).toBe(1);expect(r.afterRecover.undoDepth).toBe(1);if(window==='cas'||window==='accept'||window==='noop-accept'||window==='confirmation-unknown')expect(r.recover.operations).toContainEqual(expect.objectContaining({operationId:r.operationId,decision:'committed'}));}
+ if(window==='confirmation-unknown')expect(r.initial.kind).toBe('settlementPending');expect(r.records.every((e:any)=>e.resolution!==null)).toBe(true);expect(r.records.every((e:any)=>e.intent.stroke.points.length>0)).toBe(true);
+ const changedBefore=['cas','accept','freeze-audit','confirmation-unknown'].includes(window);expect(r.recoveredCapture.alpha).toBe(changedBefore?128:0);if(window!=='freeze-audit'){expect(r.next.kind).toBe('settled');expect(r.nextCapture.alpha).toBe(changedBefore?192:128);}expect(r.freeze.kind).toBe('settled');
 },60000);
 
 for(const window of ['no-ready','active'])it(`retains ${window} volatile input explicitly instead of inventing identity or claiming recovery completion`,async()=>{
@@ -311,4 +323,27 @@ for(const window of ['no-ready','active'])it(`retains ${window} volatile input e
 
 it('fences a typed old start stalled in real manifest IO before it can Load or Start the replacement worker',async()=>{
  const f=await fixture(),mode='owned-start-read-race';await run(f.script,mode);const r=await result(f.root,mode);expect(r.oldStart.kind).toBe('rejected');expect(r.oldStart.code).toBe('worker-unavailable');expect(r.oldGenerationCalls).toEqual([]);expect(r.newWorker.generation).toBe(2);expect(r.recover.kind).toBe('recovered');expect(r.afterRecover.phase).toBe('active');expect(r.next.kind).toBe('settled');expect(r.nextCapture.alpha).toBe(128);expect(r.freeze.kind).toBe('settled');
+},60000);
+
+
+it('advances the unique CAS FIFO while native acceptance is withheld and keeps later accept behind its predecessor',async()=>{
+ const f=await fixture(),mode='pipeline-split-accept';await run(f.script,mode);const r=await result(f.root,mode);expect(r.beforeAccepted.commits).toBe(2);expect(r.beforeAccepted.project.revision).toBe(2);expect(r.beforeAccepted.secondAccept).toBe(0);expect(r.beforeAccepted.firstSettled).toBe(false);expect(r.beforeAccepted.secondSettled).toBe(false);expect(r.outcomes.map((o:any)=>o.kind)).toEqual(['settled','settled']);expect(r.records.every((row:any)=>row.resolution?.decision==='committed')).toBe(true);expect(r.snapshot.undoDepth).toBe(2);expect(r.freeze.kind).toBe('settled');
+},60000);
+
+
+for(const window of ['multi-cas','multi-noop','multi-suffix'])it(`reconciles ${window} by real predecessor order despite reverse lexical operation IDs`,async()=>{
+ const f=await fixture(),mode='owned-'+window;await run(f.script,mode);const r=await result(f.root,mode);expect(r.newWorker.generation).toBe(2);expect(r.recover.kind).toBe('recovered');expect(r.afterRecover.phase).toBe('active');expect(r.recover.operations.slice(0,2).map((o:any)=>o.operationId)).toEqual(['z-first','a-second']);expect(r.recover.operations.slice(0,2).every((o:any)=>o.decision==='committed')).toBe(true);
+ expect(r.afterRecover.project.revision).toBe(window==='multi-noop'?1:2);expect(r.afterRecover.undoDepth).toBe(window==='multi-noop'?1:2);expect(r.recoveredCapture.alpha).toBe(window==='multi-noop'?0:128);if(window==='multi-suffix')expect(r.recover.operations).toContainEqual(expect.objectContaining({operationId:'m-third',decision:'notCommitted'}));expect(r.records.every((o:any)=>o.resolution!==null)).toBe(true);expect(r.next.kind).toBe('settled');expect(r.nextCapture.alpha).toBe(window==='multi-noop'?128:192);expect(r.freeze.kind).toBe('settled');
+},60000);
+
+
+it('keeps four independent confirmation credits after native admission slots release and waits for durable batches',async()=>{
+ const f=await fixture(),mode='pipeline-confirmation-credit';await run(f.script,mode);const r=await result(f.root,mode);expect(r.beforeConfirmation.project.revision).toBe(4);expect(r.beforeConfirmation.settled).toBe(0);expect(r.beforeConfirmation.admission).toMatchObject({kind:'rejected',error:{code:'backpressure'}});expect(r.outcomes.map((o:any)=>o.kind)).toEqual(['settled','settled','settled','settled']);expect(r.batches.flat()).toHaveLength(4);expect(r.batches.every((b:any)=>b.length<=4)).toBe(true);expect(r.nextAdmission.kind).toBe('admitted');expect(r.freeze.kind).toBe('settled');
+},60000);
+
+
+it('blocks an accepted descendant with a prepared predecessor instead of manufacturing a settled prefix',async()=>{
+ const f=await fixture(),mode='owned-multi-contradiction',c=child(f.script,mode);let barrier:any;
+ try{for(let n=0;n<1500;n++){barrier=await fs.readFile(path.join(f.root,'barrier.json'),'utf8').then(s=>JSON.parse(s),()=>null);if(barrier)break;if(c.process.exitCode!==null)throw Error((await c.done).output);await new Promise(r=>setTimeout(r,10));}expect(barrier?.stage).toBe(mode);const r=barrier.result;expect(r.recover).toMatchObject({kind:'rejected',error:{message:'Native accepted descendant has an unaccepted predecessor'}});expect(r.afterRecover.phase).toBe('recovering');expect(r.afterRecover.project.revision).toBe(2);expect(r.parent.state).toBe('prepared');expect(r.child.state).toBe('accepted');expect(r.records.every((row:any)=>row.resolution===null)).toBe(true);
+ }finally{if(c.process.exitCode===null&&c.process.signalCode===null){c.process.kill('SIGKILL');await c.done;}if(barrier)for(let n=0;n<500;n++){const alive=[barrier.newNativePid,barrier.guardPid].some(pid=>{try{process.kill(pid,0);return true;}catch{return false;}});if(!alive)break;await new Promise(r=>setTimeout(r,10));}}
 },60000);

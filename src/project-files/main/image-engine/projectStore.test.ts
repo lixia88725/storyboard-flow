@@ -162,3 +162,49 @@ it('enumerates complete immutable input and resolution in bounded pages',async()
  const first=await store.operationRecords();expect(first).toHaveLength(16);expect(first[0].intent.stroke.points).toEqual([1,1,2,2]);expect(first[0].resolution).toMatchObject({decision:'discarded',commitHash:null});
  const second=await store.operationRecords({afterOperationId:first.at(-1)!.intent.operationId});expect(second.map(r=>r.intent.operationId)).toEqual(['op16','op17','prefix','prefix-child']);expect((await store.operationRecords({afterOperationId:'op17',maxRecords:1}))[0].intent.operationId).toBe('prefix');expect((await store.operationRecords({afterOperationId:'prefix',maxRecords:1}))[0].intent.operationId).toBe('prefix-child');expect(await store.operationRecords({afterOperationId:'prefix-child'})).toEqual([]);await expect(store.operationRecords({maxRecords:17})).rejects.toMatchObject({code:'invalid-input'});expect(await store.pendingOperations()).toEqual([]);await store.close();
 });
+
+async function confirmations(extra:Partial<ImageProjectStoreOptions>={}){
+ const f=await fixture(extra),g=genesis();g.after.images.ia.content={kind:'native',native:ref};const anchor=await f.store.commit(null,g);let head=anchor,base=ref;const records=[];
+ for(const [index,operationId]of ['first','second'].entries()){
+  const next={...ref,versionId:String(index+1).repeat(64),manifestSha256:String(index+1).repeat(64)},predecessorOperationId=index?'first':null;
+  await f.store.beginOperation({schema:'flow.image-edit-intent',version:2,operationId,sessionId:'session',incarnation:'one',imageId:'ia',pipelineId:'pipe',anchorCommitHash:anchor.commitHash,anchor:ref,expectedAtAnchor:g.after.images.ia.content,predecessorOperationId,inputThrough:2,stroke:{tool:'brush',color:'#ff0000',size:10,opacity:0.5,softness:0,points:[1,1,2,2]}});
+  head=await f.store.commit(head.commitHash,{schema:'flow.project-commit',version:1,commitId:operationId,previousCommitHash:head.commitHash,beforeRevision:index,after:{...g.after,revision:index+1,images:{ia:{id:'ia',content:{kind:'native',native:next}}}},nativeDecision:{kind:'image',operationId,candidateId:operationId,imageId:'ia',expected:{kind:'native',native:base},baseNative:base,prepared:next,pipeline:{pipelineId:'pipe',anchorCommitHash:anchor.commitHash,predecessorOperationId}}});records.push({operationId,commitHash:head.commitHash,native:next});base=next;
+ }
+ return{...f,head,records};
+}
+it('fsyncs every confirmation file and shares one directory sync without blocking a newer project CAS',async()=>{
+ const {root,store,head,records}=await confirmations();let release!:()=>void,entered!:()=>void,count=0;const gate=new Promise<void>(r=>release=r),blocked=new Promise<void>(r=>entered=r),open=fs.open.bind(fs);
+ const spy=vi.spyOn(fs,'open').mockImplementation(async(...args)=>{const h=await open(...args);if(args[0]===path.join(location(root),'settlements')&&args[1]==='r'){const sync=h.sync.bind(h);h.sync=async()=>{count++;entered();await gate;await sync();};}return h;});
+ try{
+  const confirming=store.confirmOperations(records);await blocked;
+  const commit=store.commit(head.commitHash,{schema:'flow.project-commit',version:1,commitId:'metadata',previousCommitHash:head.commitHash,beforeRevision:2,after:{...head.commit.after,revision:3,name:'parallel metadata'}});
+  let timeout:ReturnType<typeof setTimeout>|undefined;try{const result=await Promise.race([commit,new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(Error('CAS blocked behind confirmation IO')),3000);})]);expect(result.commit.after.revision).toBe(3);}finally{clearTimeout(timeout);}
+  release();await confirming;expect(count).toBe(1);expect(await store.pendingOperations()).toEqual([]);expect(await store.unsettledDecisions()).toEqual([]);
+ }finally{release();spy.mockRestore();await store.close();}
+});
+for(const fault of ['partial-link','directory-sync'])it(`preserves a ${fault} confirmation batch and retries immutable evidence after a drained audit`,async()=>{
+ const {root,store,records}=await confirmations();const open=fs.open.bind(fs),link=fs.link.bind(fs);let links=0,fail=true;
+ const linkSpy=vi.spyOn(fs,'link').mockImplementation(async(...args)=>{if(fault==='partial-link'&&fail&&++links===3){fail=false;throw Error('synthetic partial batch publication');}return link(...args);});
+ const openSpy=vi.spyOn(fs,'open').mockImplementation(async(...args)=>{const h=await open(...args);if(args[0]===path.join(location(root),'settlements')&&args[1]==='r'){const sync=h.sync.bind(h);h.sync=async()=>{if(fault==='directory-sync'&&fail){fail=false;throw Error('synthetic confirmation directory sync');}await sync();};}return h;});
+ try{
+  await expect(store.confirmOperations(records)).rejects.toMatchObject({effect:'unknown'});expect((await store.load())?.commit.after.revision).toBe(2);const evidence=await store.operationRecords();expect(evidence).toHaveLength(2);expect(evidence[0].resolution?.decision).toBe('committed');if(fault==='partial-link')expect(evidence[1].resolution).toBeNull();
+  await expect(store.confirmOperations(records)).rejects.toMatchObject({code:'busy'});await store.validateRecovery();await store.confirmOperations(records);expect(await store.pendingOperations()).toEqual([]);expect(await store.unsettledDecisions()).toEqual([]);expect((await store.committed()).length).toBe(3);
+ }finally{linkSpy.mockRestore();openSpy.mockRestore();await store.close();}
+});
+
+it('flushes a newly created namespace bottom-up before returning its writer',async()=>{
+ const root=await temporaryWorkspace('image-project-hierarchy-'),open=fs.open.bind(fs),synced:string[]=[];
+ const spy=vi.spyOn(fs,'open').mockImplementation(async(...args)=>{const h=await open(...args);if(args[1]==='r'){const sync=h.sync.bind(h);h.sync=async()=>{synced.push(String(args[0]));await sync();};}return h;});
+ try{const store=await openImageProjectStore({root,writerAuthority:authority,verifyNative:async()=>{},verifySource:async()=>{}});const at=location(root);expect(synced.slice(-6)).toEqual(['commits','settlements','hydrations'].map(n=>path.join(at,n)).concat([at,path.dirname(at),root]));await store.close();}finally{spy.mockRestore();}
+});
+
+it('reserves confirmation and CAS expenditure from the same atomic budget',async()=>{
+ let other=0;const {root,store,head,records}=await confirmations({maxRecoveryBytes:100_000,reservedRecoveryBytes:async()=>other}),at=location(root);
+ let used=(await fs.stat(path.join(at,'head.json'))).size;for(const dir of ['commits','settlements','hydrations'])for(const leaf of await fs.readdir(path.join(at,dir)))used+=(await fs.stat(path.join(at,dir,leaf))).size;
+ const metadata:ProjectCommitV2={schema:'flow.project-commit',version:1,commitId:'metadata',previousCommitHash:head.commitHash,beforeRevision:2,after:{...head.commit.after,revision:3,name:'x'.repeat(2000)}};
+ const commitAdd=Buffer.byteLength(canonicalJson(metadata)+'\n')+Buffer.byteLength(canonicalJson(head.head)+'\n'),confirmationAdd=records.reduce((sum,r)=>sum+Buffer.byteLength(canonicalJson({schema:'flow.native-settlement',version:1,commitHash:r.commitHash,operationId:r.operationId,candidateId:r.operationId,native:r.native})+'\n')+Buffer.byteLength(canonicalJson({schema:'flow.image-edit-resolution',version:1,operationId:r.operationId,decision:'committed',commitHash:r.commitHash})+'\n'),0);
+ other=100_000-used-Math.max(commitAdd,confirmationAdd)-100;
+ let release!:()=>void,entered!:()=>void;const gate=new Promise<void>(r=>release=r),blocked=new Promise<void>(r=>entered=r),open=fs.open.bind(fs);
+ const spy=vi.spyOn(fs,'open').mockImplementation(async(...args)=>{const h=await open(...args);if(args[0]===path.join(at,'settlements')&&args[1]==='r'){const sync=h.sync.bind(h);h.sync=async()=>{entered();await gate;await sync();};}return h;});
+ try{const confirmation=store.confirmOperations(records);await blocked;await expect(store.commit(head.commitHash,metadata)).rejects.toMatchObject({code:'resource-limit'});release();await confirmation;expect((await store.load())?.commit.after.revision).toBe(2);}finally{release();spy.mockRestore();await store.close();}
+});

@@ -12,6 +12,7 @@ import { assertPhysicalWorkspaceWriterTargets } from '../workspacePhysicalWriter
 export class ImageProjectStoreError extends Error {
   constructor(readonly code:'invalid-input'|'conflict'|'busy'|'closed'|'resource-limit'|'io-failure',message:string,readonly effect:'none'|'retained'|'unknown'='none'){super(message);}
 }
+export type ProjectConfirmation={commitHash:string;operationId:string;native:NativeImageRef};
 export type ProjectCommitReceipt={commitHash:string;commit:ProjectCommitV2;head:ProjectHeadV2};
 export type ProjectStoreV2={
   load():Promise<ProjectCommitReceipt|null>;
@@ -23,6 +24,7 @@ export type ProjectStoreV2={
   decideUnchanged(commitHash:string,decision:NativeDecision):Promise<void>;
   operationDecision(operationId:string):Promise<ImageOperationDecision|null>;
   unsettledDecisions():Promise<ImageOperationDecision[]>;
+  confirmOperations(records:readonly ProjectConfirmation[]):Promise<void>;
   settle(commitHash:string,operationId:string,native:NativeImageRef):Promise<void>;
   hydration(source:SourceImageRef):Promise<HydrationRecord|null>;
   publishHydration(record:HydrationRecord):Promise<string>;
@@ -114,7 +116,7 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
   let prefix:ProjectCommitReceipt[]|undefined,prefixHead:ProjectHeadV2|undefined,tailStamp:Awaited<ReturnType<typeof stamp>>|undefined;
   const byId=new Map<string,ProjectCommitReceipt>(),byHash=new Map<string,ProjectCommitReceipt>(),verifiedRefs=new Set<string>(),verifiedUnchanged=new Map<string,UnchangedImageDecision>();
   let inventoryBytes=0,budgetDirty=true;const inventorySizes=new Map<string,number>();
-  const bindings=new Map<string,Identity>();let closed=false,closing=false,auditing=false,tail=Promise.resolve(),intentTail=Promise.resolve(),budgetTail=Promise.resolve();let closeWork:Promise<void>|undefined,auditWork:Promise<void>|undefined;
+  const bindings=new Map<string,Identity>();let closed=false,closing=false,auditing=false,tail=Promise.resolve(),intentTail=Promise.resolve(),confirmationTail=Promise.resolve(),budgetTail=Promise.resolve();let closeWork:Promise<void>|undefined,auditWork:Promise<void>|undefined;
   let reservedBytes=0; // Shared across both queues; an unknown write retains its credit until an explicit drained audit.
   const bound=async()=>{
     if(closed)throw new ImageProjectStoreError('closed','Image-project store closed');
@@ -122,9 +124,9 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
     await assertPhysicalWorkspaceWriterTargets([root]);await authority({...rootBinding});
     for(const [p,identity]of bindings)if(!sameFile(identity,await dir(p)))bad(`Storage directory changed: ${p}`);
   };
-  const queue=<T>(f:(admit:(bytes:number)=>Promise<void>)=>Promise<T>,intentLane=false):Promise<T>=>{
+  const queue=<T>(f:(admit:(bytes:number)=>Promise<void>)=>Promise<T>,intentLane:boolean|'confirmation'=false):Promise<T>=>{
     if(closing||closed||auditing)return Promise.reject(new ImageProjectStoreError(auditing?'busy':'closed','Image-project store admission closed'));
-    const result=(intentLane?intentTail:tail).then(async()=>{
+    const result=(intentLane==='confirmation'?confirmationTail:intentLane?intentTail:tail).then(async()=>{
       let credit=0;
       const admit=async(add:number)=>{
         const work=budgetTail.then(async()=>{
@@ -138,7 +140,7 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
       try{const value=await f(admit);reservedBytes-=credit;return value;}
       catch(e){if(credit)budgetDirty=true;throw e;}
     });
-    if(intentLane)intentTail=result.then(()=>undefined,()=>undefined);else tail=result.then(()=>undefined,()=>undefined);return result;
+    if(intentLane==='confirmation')confirmationTail=result.then(()=>undefined,()=>undefined);else if(intentLane)intentTail=result.then(()=>undefined,()=>undefined);else tail=result.then(()=>undefined,()=>undefined);return result;
   };
   const verify=async(p:ProjectV2)=>{for(const image of Object.values(p.images)){const key=canonicalJson(image.content);if(verifiedRefs.has(key))continue;if(image.content.kind==='native')await verifyNative(clone(image.content.native));else await verifySource(clone(image.content.source));verifiedRefs.add(key);}};
   // Only open or explicit drained recovery audits inventory every recovery file.
@@ -245,11 +247,11 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
     }
     return result;
   };
-  try{for(const p of [hidden,store,commits,settlements,hydrations])bindings.set(p,await dir(p,true));await load();await refreshInventory();}catch(e){owners.delete(root);throw e;}
+  try{for(const p of [hidden,store,commits,settlements,hydrations])bindings.set(p,await dir(p,true));for(const p of [commits,settlements,hydrations,store,hidden,root])await sync(p);await bound();await load();await refreshInventory();}catch(e){owners.delete(root);throw e;}
   return {
     load:()=>queue(load),validateRecovery:()=>{
       if(closing||closed||auditing)return Promise.reject(new ImageProjectStoreError('busy','Image-project audit admission closed'));auditing=true;
-      auditWork=Promise.all([tail,intentTail,budgetTail]).then(async()=>{prefix=undefined;prefixHead=undefined;tailStamp=undefined;verifiedRefs.clear();verifiedUnchanged.clear();await load();await refreshInventory();reservedBytes=0;await sync(commits);await sync(settlements);await sync(store);await bound();}).catch(e=>{budgetDirty=true;throw e;}).finally(()=>{auditing=false;});return auditWork;
+      auditWork=Promise.all([tail,intentTail,confirmationTail,budgetTail]).then(async()=>{prefix=undefined;prefixHead=undefined;tailStamp=undefined;verifiedRefs.clear();verifiedUnchanged.clear();await load();await refreshInventory();reservedBytes=0;await sync(commits);await sync(settlements);await sync(store);await bound();}).catch(e=>{budgetDirty=true;throw e;}).finally(()=>{auditing=false;});return auditWork;
     },committed:()=>queue(async(admit)=>clone(await chain())),unsettled:()=>queue(async(admit)=>clone(await pending())),
     commit:(expectedHead,input)=>{const captured=commitRecord(input);return queue(async(admit)=>{
       if(expectedHead!==null&&!imageHash(expectedHead))bad('Invalid expected head');
@@ -283,6 +285,34 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
       for(const leaf of await fs.readdir(settlements))if(leaf.endsWith('.unchanged.json')){const op=leaf.slice(0,-15);if(!token(op))bad('Invalid unchanged filename');const d=await operationDecision(op);if(!d||!d.unchanged)bad('Missing/conflicting unchanged decision');decisions.push(d);}
       const pending:ImageOperationDecision[]=[];for(const d of decisions){const s=await read(settlementFile(d));if(!s)pending.push(d);else if(!same(parse(s),settlementValue(d)))bad('Native settlement contradicts project decision');}return pending;
     }),
+    confirmOperations:input=>{
+      const records=clone(input);
+      if(!Array.isArray(records)||records.length<1||records.length>4||records.some(r=>!shape(r,['commitHash','operationId','native'])||!imageHash(r.commitHash)||!token(r.operationId)||!validNativeImageRef(r.native))||new Set(records.map(r=>r.operationId)).size!==records.length)return Promise.reject(new ImageProjectStoreError('invalid-input','Confirmation batch requires 1..4 unique operations'));
+      return queue(async(admit)=>{
+        const list=await chain(),writes:Array<{file:string;data:Buffer}>=[];
+        // Validate every decision before reserving or publishing any file.
+        for(const record of records){
+          const d=await operationDecision(record.operationId,list);
+          if(!d||d.commitHash!==record.commitHash||!same(d.decision.prepared,record.native))bad('Confirmation has no reachable project decision');
+          const intent=await read(path.join(settlements,`${record.operationId}.intent.json`));if(!intent||readIntent(intent).operationId!==record.operationId)bad('Confirmation input is missing');
+          const resolution:ImageOperationResolution={schema:'flow.image-edit-resolution',version:1,operationId:record.operationId,decision:'committed',commitHash:record.commitHash};
+          for(const value of [{file:settlementFile(d),data:bytes(settlementValue(d))},{file:path.join(settlements,`${record.operationId}.resolution.json`),data:bytes(resolution)}]){
+            const prior=await read(value.file);if(prior){if(!prior.equals(value.data))bad('Confirmation contradicts immutable evidence');}else writes.push(value);
+          }
+        }
+        await admit(writes.reduce((sum,w)=>sum+w.data.length,0));
+        const temps:Array<Awaited<ReturnType<typeof writeTemporaryFile>>>=[];
+        try{
+          for(const write of writes){
+            const temp=await writeTemporaryFile(settlements,'confirmation',write.data);temps.push(temp);await bound();
+            await fs.link(temp.path,write.file).catch(async e=>{if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;const raced=await read(write.file);if(!raced?.equals(write.data))bad('Confirmation publication collision','retained');});
+          }
+          await bound();await sync(settlements);await bound();
+          for(const write of writes)account(write.file,write.data.length);
+          for(const temp of temps)await releaseTemporary(temp);
+        }catch(e){throw new ImageProjectStoreError('io-failure',`Confirmation batch needs reconciliation: ${String(e)}`,'unknown');}
+      },'confirmation');
+    },
     settle:(commitHash,operationId,native)=>{const captured=clone(native);return queue(async(admit)=>{
       const d=await operationDecision(operationId);if(!d||d.commitHash!==commitHash||!same(d.decision.prepared,captured))bad('Settlement has no reachable project decision');
       const data=bytes(settlementValue(d)),file=settlementFile(d);await admit((await read(file))?0:data.length);await immutable(file,data);
@@ -308,6 +338,6 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
     pendingOperations:()=>queue(async()=>{const records=await operationRecords(true);return records.map(r=>r.intent);}),
     operationRecords:page=>{const captured=clone(page??{});if(!shape(captured,[],['afterOperationId','maxRecords'])||(captured.afterOperationId!==undefined&&!token(captured.afterOperationId))||(captured.maxRecords!==undefined&&(!Number.isSafeInteger(captured.maxRecords)||captured.maxRecords<1||captured.maxRecords>16)))return Promise.reject(new ImageProjectStoreError('invalid-input','Invalid input record page'));return queue(async()=>clone(await operationRecords(false,captured)));},
     resolveOperation:(operationId,decision,commitHash)=>queue(async(admit)=>{if(!token(operationId)||!['discarded','committed'].includes(decision))bad('Invalid operation resolution');await chain();const raw=await read(path.join(settlements,`${operationId}.intent.json`));if(!raw)bad('Resolution has no operation intent');readIntent(raw);const committed=await operationDecision(operationId);if(decision==='committed'?(!committed||committed.commitHash!==commitHash):(!!committed||commitHash!==null))bad('Resolution contradicts project decision');const record:ImageOperationResolution={schema:'flow.image-edit-resolution',version:1,operationId,decision,commitHash},data=bytes(record),file=path.join(settlements,`${operationId}.resolution.json`);await admit((await read(file))?0:data.length);await immutable(file,data);}),
-    close:()=>{if(closeWork)return closeWork;closing=true;closeWork=Promise.all([tail,intentTail,budgetTail,auditWork]).then(async()=>{await bound();owners.delete(root);closed=true;});return closeWork;}
+    close:()=>{if(closeWork)return closeWork;closing=true;closeWork=Promise.all([tail,intentTail,confirmationTail,budgetTail,auditWork]).then(async()=>{await bound();owners.delete(root);closed=true;});return closeWork;}
   };
 }

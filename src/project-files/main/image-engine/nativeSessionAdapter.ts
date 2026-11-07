@@ -184,21 +184,23 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       if(reply.kind!=='status'||!['absent','intent','prepared','accepted','discarded','failed'].includes(String(reply.state)))refuse('Invalid native operation status','protocol','unknown');
       if(reply.state==='prepared'){
         if(!record(reply.result))refuse('Missing native prepared status','protocol','unknown');
-        const r=reply.result;if(typeof r.candidateId!=='string'||(r.baseVersion!==null&&typeof r.baseVersion!=='string'))refuse('Invalid native prepared status','protocol','unknown');
+        const r=reply.result;if(r.kind!=='prepared'||r.candidateId!==operationId||(r.baseVersion!==null&&typeof r.baseVersion!=='string'))refuse('Invalid native prepared status','protocol','unknown');
         return{state:'prepared',prepared:{candidateId:r.candidateId,baseVersion:r.baseVersion,native:nativeRef(r.receipt)}};
       }
-      if(reply.state==='accepted'){if(!record(reply.result))refuse('Missing native accepted status','protocol','unknown');return{state:'accepted',native:nativeRef(reply.result.receipt)};}
+      if(reply.state==='accepted'){if(!record(reply.result)||reply.result.kind!=='accepted'||reply.result.candidateId!==operationId)refuse('Missing or mismatched native accepted status','protocol','unknown');return{state:'accepted',native:nativeRef(reply.result.receipt)};}
       return{state:reply.state as 'absent'|'intent'|'discarded'|'failed'};
     },
     async recoverAccept(candidateId,base,ref){
       const op=operationContext();
       const status=await driver.status(candidateId);op.check();
-      if(status.state==='accepted'){if(!same(status.native,ref))refuse('Accepted native receipt disagrees with Main');if(!current){await install(ref);op.check();}await confirm(ref,base);op.check();return;}
-      if(status.state!=='prepared'||!same(status.prepared?.native,ref))refuse('Cannot settle unknown native candidate','conflict','unknown');
-      if(!candidate){
+      // Accepted is a historical fact, not permission to move a newer context
+      // back to this prefix. Main installs its selected final target afterwards.
+      if(status.state==='accepted'){if(!same(status.native,ref))refuse('Accepted native receipt disagrees with Main');return;}
+      if(status.state!=='prepared'||status.prepared?.candidateId!==candidateId||status.prepared.baseVersion!==(base?.versionId??null)||!same(status.prepared.native,ref))refuse('Cannot settle unknown native candidate','conflict','unknown');
+      if(!current){
         if(requireCurrent().supports('recoveredCandidateAcceptAtInstalledVersion')){await install(ref);op.check();}
         else if(base){await install(base);op.check();}
-      }
+      }else if(!same(current,ref)&&!same(current,base))refuse('Recovery does not follow the installed native predecessor','conflict','retained');
       const {reply}=await call(next(),{kind:'accept',candidateId});op.check();
       if(reply.kind!=='accepted'||!same(nativeRef(reply.receipt),ref))refuse('Recovered accept receipt mismatch','protocol','unknown');candidate=undefined;await confirm(ref,base);op.check();
     },
