@@ -2,7 +2,11 @@
 
 ## 图片发动机替换：施工中（2026-11-07）
 
-主管本轮补充：当前集成源码自编译宿主与 lease 的附加清单 4 文件/31 项通过（`/private/tmp/flow-engine-research/integration-native-approved.log`）。新增 WorkerOwner 生命周期接点 5 项通过（`worker-owner-focused-final.log`）：真实进程替换、旧代拒绝、未接受候选保留、并发重启、dispose 中断和正常释放 lease 后拒绝新请求。独立只读审查指出正常 release 不发送 invalidated 的缺口，已加同步 held 检查并实测；恢复接点不自动激活 Session，尚待连续笔链接入，不把这一层通过当自动恢复已完成。
+真实 Main→双 Canvas 组合脚本 `50d975e` 已合 `e883079`：小闭环 3 笔+对白混合历史、Undo/Redo、冻结正常关闭、删合成外部来源后重开通过；2K/40 笔/280 batch、285 帧与 208,052,104 通道逐值相同、revision 40 重开一致。但 **10ms paced 性能失败**：2993 次背压、242 batch 迟到至少一拍、积压峰值 104；首次 down 尝试至双 Canvas ACK P95 126.81ms，含全部重试，deadline→ACK P95 1627.66ms。下一笔 native preview P95 125.55ms，39/39 都在前笔 intentDurable 后。首次 keyframe oracle 131.9ms 单列，不能解释后续累积延迟；ACK 非物理显示时延。原始 gzip、截图、服务界限和逐笔统计见 `scripts/flow-main-image-pipeline-evidence-*`，原 JSON 无损保留。正在进一步分解 commit/settle/resolution 与 lease 开销；未把 native-only 快路径当真实项目体验完成。
+
+Main 连续笔链候选 `8a1a780` 已合入为 `af23d2f`：内部 opt-in input/progress/waitOperation、独立 intent 写入及 FIFO 项目决定、真实 no-op 结算、共享预算与屏障。执行者 6 文件/166 项及最后 10 项状态回归、完整 build 通过（`/tmp/flow-main-pipeline-final-verified.log`、`flow-main-pipeline-gates-verified.log`、`flow-main-pipeline-build-gates.log`）。主管在集成 `af23d2f` 上完成通用加原生附加清单：102 文件/1190 项全部通过、376.90s（`/private/tmp/flow-engine-research/integration-pipeline-full.log`），完整 build 通过（`integration-pipeline-build.log`）。之后组合审查发现 A 保存未回、B 已起笔、Undo 排队、B 抬笔可循环等待；执行者真实红测复现后以 `20f288f` 修复，合入 `43be087`：活动笔期间 Undo/Redo/Freeze 同步 busy，不进入屏障、不留下封口。该补修 36 项及 build 单独通过；1190 项全量证据属于补修前基线，未冒称同一源码。尚未接默认 UI；local admitted 不等于已显示，intent fsync 仍会阻止下一笔 native preview，正在另测实际 Main→双 Canvas 节拍。同 Main 自动 worker 替换恢复仍在接入，不宣称用户无需退出的恢复已闭合。
+
+主管本轮补充：当前集成源码自编译宿主与 lease 的附加清单 4 文件/31 项通过（`/private/tmp/flow-engine-research/integration-native-approved.log`）。新增 WorkerOwner 生命周期接点 5 项及完整 build 通过（`worker-owner-focused-final.log`）：真实进程替换、旧代拒绝、未接受候选保留、并发重启、dispose 中断和正常释放 lease 后拒绝新请求。独立只读审查指出正常 release 不发送 invalidated 的缺口，已加同步 held 检查并实测；恢复接点不自动激活 Session，尚待连续笔链接入，不把这一层通过当自动恢复已完成。
 
 用户已批准完整替换计划：常驻原生 PhotoCraft 负责图像编辑；Flow 保留分镜、对白、Pending、统一历史与文件事务。目标包括先进入项目再后台保管/准备图片、新内部文档版本，以及旧有效 Flow 项目复制升级；不是原地改写用户旧项目，也不宣称任意 Photoshop 文件全面往返。
 
