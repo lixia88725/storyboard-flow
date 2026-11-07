@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { createNativeFrameDecoder, type NativeFrame } from './imageEngineFraming.js';
 
+export type ImageEngineCapability = 'recoveredCandidateAcceptAtInstalledVersion' | 'strokePipelineV1';
+
 /** One explicitly owned native process. Transport failure means UNKNOWN, never cancellation.
  * At most one request is outstanding in protocol v1; caller owns operation reconciliation.
  */
@@ -8,6 +10,7 @@ export function startImageEngine(options: { binary: string; store: string; sessi
   if (!Number.isSafeInteger(options.budgetBytes) || options.budgetBytes <= 0) throw Error('Invalid storage budget');
   const child = spawn(options.binary, ['--store', options.store, '--budget', String(options.budgetBytes)], { stdio: ['pipe', 'pipe', 'pipe'] });
   let workerEpoch: number | undefined, sequence = 0, stopped = false, requestActive = false, stderr = '';
+  let capabilities = new Set<string>();
   let pending: { id: string; operationId: string; resolve(f: NativeFrame): void; reject(e: Error): void } | undefined;
   let readyResolve!: (epoch: number) => void, readyReject!: (e: Error) => void;
   const ready = new Promise<number>((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
@@ -24,6 +27,11 @@ export function startImageEngine(options: { binary: string; store: string; sessi
     if (workerEpoch === undefined) {
       if (h.protocol !== 1 || h.kind !== 'hello' || !Number.isSafeInteger(h.workerEpoch) || (h.workerEpoch as number) < 0 || frame.payload.length)
         throw Error('Invalid native handshake');
+      const offered = h.capabilities ?? [];
+      if (!Array.isArray(offered) || offered.length > 32 ||
+          offered.some(value => typeof value !== 'string' || !value.length || value.length > 128) ||
+          new Set(offered).size !== offered.length) throw Error('Invalid native capabilities');
+      capabilities = new Set(offered);
       workerEpoch = h.workerEpoch as number; readyResolve(workerEpoch); return;
     }
     if (!pending || h.protocol !== 1 || h.requestId !== pending.id || h.operationId !== pending.operationId ||
@@ -42,6 +50,8 @@ export function startImageEngine(options: { binary: string; store: string; sessi
   return {
     ready, exited, pid: child.pid,
     diagnostics: () => stderr,
+    /** False until handshake; protocol=1 alone never opts into newer recovery semantics. */
+    supports: (capability: ImageEngineCapability) => !stopped && capabilities.has(capability),
     async request(operationId: string, body: Record<string, unknown>, baseVersion: string | null = null, payload = new Uint8Array()): Promise<NativeFrame> {
       if (requestActive) throw Object.assign(Error('Native request is still in flight'), { effect: 'none' });
       requestActive = true;

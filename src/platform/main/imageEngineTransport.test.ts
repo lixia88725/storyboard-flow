@@ -61,3 +61,21 @@ it('reserves its single request slot before startup and before reading another r
     expect((await first).header.operationId).toBe('first');
   } finally { client.terminateOwnedProcess(); await client.exited; }
 });
+
+it('only enables explicitly advertised capabilities, not merely protocol version one', async () => {
+  const old = await peer(`hello();function receive(h,p){send(h,p);}`);
+  try { await old.ready; expect(old.supports('strokePipelineV1')).toBe(false); }
+  finally { old.terminateOwnedProcess(); await old.exited; }
+  const modern = await peer(`send({protocol:1,kind:'hello',workerEpoch:1,capabilities:['strokePipelineV1','recoveredCandidateAcceptAtInstalledVersion']});function receive(h,p){send(h,p);}`);
+  try {
+    await modern.ready;
+    expect(modern.supports('strokePipelineV1')).toBe(true);
+    expect(modern.supports('recoveredCandidateAcceptAtInstalledVersion')).toBe(true);
+  } finally { modern.terminateOwnedProcess(); await modern.exited; }
+  expect(modern.supports('strokePipelineV1')).toBe(false);
+});
+it('refuses malformed capability negotiation', async () => {
+  const client = await peer(`send({protocol:1,kind:'hello',workerEpoch:1,capabilities:'strokePipelineV1'});function receive(){}`);
+  try { await expect(client.ready).rejects.toMatchObject({ effect: 'unknown' }); }
+  finally { client.terminateOwnedProcess(); await client.exited; }
+});

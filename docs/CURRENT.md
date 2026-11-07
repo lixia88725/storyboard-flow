@@ -16,7 +16,7 @@
 
 继续集成：显示 Canvas Adapter `bfcf77b` 与增量笔迹残影修复 `364c758` 已合入隔离树。后者累计真实 damage，覆盖平滑笔迹反向时被移除的旧尾部；执行者原生 2K 连续 40 笔逐帧/提交像素一致。此前串行抬笔至 prepared P95 45.47ms、至 accepted 50.81ms 是原生链路基线，不是用户屏幕延迟；异步持久队列仍在实施，不能宣称已消除等待。
 
-主管接线补充：输入在等待启动握手前快照，并预占单请求容量；错会话回包、半截 EOF 按 unknown 保留义务，不自动重试。帧元数据明确已接纳版本与尚未落盘笔链，限制四项、独立复制、校验 pipeline/epoch，不能把预览当保存。已完成完整 JS/Electron 构建（`integration-build.log`）、56 项接点测试（`integration-pipeline-focused.log`）和固定 `364c758` 宿主连接测试（`connection-damage-fixed.log`）；新增启动容量断言后的最终组合 4 文件/58 项通过（`integration-wire-final.log`），最终 Electron 类型检查通过（`integration-typecheck-final.log`）。日志均在 `/private/tmp/flow-engine-research/`。显示执行者此前真实 Electron 双 Canvas 证据回放录制帧，实时 native→双 Canvas 专项正在补齐，不将二者混称为整链通过。混合历史、Main Session、产品入口和全量组合验收仍待完成。
+主管接线补充：输入在等待启动握手前快照，并预占单请求容量；错会话回包、半截 EOF 按 unknown 保留义务，不自动重试。帧元数据明确已接纳版本与尚未落盘笔链，限制四项、独立复制、校验 pipeline/epoch，不能把预览当保存。已完成完整 JS/Electron 构建（`integration-build.log`）、56 项接点测试（`integration-pipeline-focused.log`）和固定 `364c758` 宿主连接测试（`connection-damage-fixed.log`）；新增启动容量断言后的最终组合 4 文件/58 项通过（`integration-wire-final.log`），最终 Electron 类型检查通过（`integration-typecheck-final.log`）。日志均在 `/private/tmp/flow-engine-research/`。显示执行者此前真实 Electron 双 Canvas 证据回放录制帧，实时 native→双 Canvas 专项正在补齐，不将二者混称为整链通过。混合历史、Main Session、产品入口和全量组合验收仍待完成。宿主能力协商补充 7 项 transport 检查通过（`transport-capabilities.log`），旧宿主缺少 capabilities 时不启用新恢复协议。
 
 更新：2026-11-06。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 

@@ -4,7 +4,7 @@
 
 本节为隔离施工树已落地的接点，不表示默认运行链已迁移；完整状态见 CURRENT。
 
-`platform/main/imageEngineConnection` 独占一个原生子进程及单个在途请求，启动等待也占用容量。发送前快照输入；stdout 使用有界长度拆包，握手和响应核对 session/incarnation/workerEpoch/request/operation 身份。通道断裂只报告 unknown，不能证明原生操作取消，调用方仍负责结算。日志与图像协议分流，Main 不把二进制通道直接暴露给页面。
+`platform/main/imageEngineConnection` 独占一个原生子进程及单个在途请求，启动等待也占用容量。发送前快照输入；stdout 使用有界长度拆包，握手和响应核对 session/incarnation/workerEpoch/request/operation 身份。通道断裂只报告 unknown，不能证明原生操作取消，调用方仍负责结算。日志与图像协议分流，Main 不把二进制通道直接暴露给页面。握手 capabilities 显式标记 `recoveredCandidateAcceptAtInstalledVersion` 和 `strokePipelineV1`；缺省按不支持处理，不能凭 protocol=1 推断新恢复语义。
 
 `drawing/renderer/image-engine/frames` 安装完整帧或连续增量，透明像素绝对覆盖，身份切换显式 reset。Canvas Adapter 只呈现该共享 FrameView，无第二份正式绘画计算。Main 到 renderer 当前为结构化克隆；只在脏区域复制，不宣称跨进程零拷贝。
 
