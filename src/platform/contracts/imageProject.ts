@@ -17,7 +17,10 @@ export type ProjectV2 = Omit<ProjectV1, 'version' | 'images'> & {
 export type NativeDecision = {
   kind: 'image'; operationId: string; candidateId: string; imageId: string;
   expected: ImageBindingV2; baseNative: NativeImageRef | null; prepared: NativeImageRef;
+  pipeline?: {pipelineId:string;anchorCommitHash:string;predecessorOperationId:string|null};
 };
+export type ImageOperationDecision={commitHash:string;decision:NativeDecision;unchanged:boolean};
+export type UnchangedImageDecision={schema:'flow.image-unchanged-decision';version:1;commitHash:string;decision:NativeDecision};
 export type ProjectCommitV2 = {
   schema: 'flow.project-commit'; version: 1; commitId: string;
   previousCommitHash: string | null; beforeRevision: number | null;
@@ -35,10 +38,32 @@ export type NativeSettlement = {
   schema: 'flow.native-settlement'; version: 1; commitHash: string;
   operationId: string; candidateId: string; native: NativeImageRef;
 };
-export type ImageOperationIntent = {
+export type SerialImageOperationIntent = {
   schema:'flow.image-edit-intent';version:1;operationId:string;
   sessionId:string;incarnation:string;imageId:string;expected:ImageBindingV2;
   baseNative:NativeImageRef;stroke:FlowStroke;
+};
+/** The pointer-down predecessor may not yet have a native version. Its immutable
+ * anchor and original input survive independently of prepared/project settlement. */
+export type PipelineImageOperationIntent = {
+  schema:'flow.image-edit-intent';version:2;operationId:string;
+  sessionId:string;incarnation:string;imageId:string;pipelineId:string;
+  anchorCommitHash:string;anchor:NativeImageRef;expectedAtAnchor:ImageBindingV2;
+  predecessorOperationId:string|null;inputThrough:number;stroke:FlowStroke;
+};
+export type ImageOperationIntent = SerialImageOperationIntent | PipelineImageOperationIntent;
+export type ImagePipelineInput =
+  | {kind:'begin';shotId:string;stroke:FlowStroke}
+  | {kind:'append';operationId:string;fromSeq:number;points:readonly number[];pressures?:readonly number[]}
+  | {kind:'end';operationId:string;throughSeq:number}
+  | {kind:'cancel';operationId:string};
+/** Local capture acknowledgement only; neither native display nor crash durability. */
+export type ImagePipelineAdmission =
+  | {kind:'admitted';operationId:string;inputThrough:number;durable:false}
+  | {kind:'rejected';error:{code:string;message:string;effect:'none'|'retained'|'unknown'}};
+export type ImagePipelineProgress = {
+  operationId:string;stage:'admitted'|'preview'|'intentDurable'|'queued'|'prepared'|'projectCommitted'|'nativeAccepted'|'cancelled'|'blocked';
+  inputThrough:number;durable:boolean;commitHash?:string;
 };
 export type ImageOperationResolution = {
   schema:'flow.image-edit-resolution';version:1;operationId:string;

@@ -45,9 +45,10 @@ export function snapshotImageProject(v: unknown): ProjectV2 {
   return copy(v);
 }
 export function validNativeDecision(v: unknown): v is NativeDecision {
-  return shape(v,['kind','operationId','candidateId','imageId','expected','baseNative','prepared']) && v.kind==='image' &&
+  return shape(v,['kind','operationId','candidateId','imageId','expected','baseNative','prepared'],['pipeline']) && v.kind==='image' &&
     token(v.operationId) && token(v.candidateId) && id(v.imageId) && validImageBinding(v.expected) &&
-    (v.baseNative===null || validNativeImageRef(v.baseNative)) && validNativeImageRef(v.prepared);
+    (v.baseNative===null || validNativeImageRef(v.baseNative)) && validNativeImageRef(v.prepared) &&
+    (v.pipeline===undefined || shape(v.pipeline,['pipelineId','anchorCommitHash','predecessorOperationId']) && token(v.pipeline.pipelineId) && imageHash(v.pipeline.anchorCommitHash) && (v.pipeline.predecessorOperationId===null || token(v.pipeline.predecessorOperationId)));
 }
 
 /** Only image bindings change here. Native nodes/pixels are never projected to a

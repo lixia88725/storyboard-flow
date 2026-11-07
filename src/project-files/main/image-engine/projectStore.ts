@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
 import { createHash } from 'node:crypto';
-import type { HydrationRecord, ImageOperationIntent, ImageOperationResolution, NativeImageRef, NativeSettlement, ProjectCommitV2, ProjectHeadV2, ProjectV2, SourceImageRef } from '../../../platform/contracts/imageProject.js';
+import type { HydrationRecord, ImageOperationDecision, NativeDecision, UnchangedImageDecision, ImageOperationIntent, ImageOperationResolution, NativeImageRef, NativeSettlement, ProjectCommitV2, ProjectHeadV2, ProjectV2, SourceImageRef } from '../../../platform/contracts/imageProject.js';
 import { imageHash, snapshotImageProject, validNativeDecision, validNativeImageRef, validSourceImageRef, validImageBinding, validProjectStroke } from '../../../session/core/imageProjectModel.js';
 import { same, shape } from '../../../session/core/imageProjectValues.js';
 import { canonicalJson } from '../persistence/canonicalJson.js';
@@ -20,6 +20,9 @@ export type ProjectStoreV2={
   commit(expectedHead:string|null,record:ProjectCommitV2):Promise<ProjectCommitReceipt>;
   committed():Promise<ProjectCommitReceipt[]>;
   unsettled():Promise<ProjectCommitReceipt[]>;
+  decideUnchanged(commitHash:string,decision:NativeDecision):Promise<void>;
+  operationDecision(operationId:string):Promise<ImageOperationDecision|null>;
+  unsettledDecisions():Promise<ImageOperationDecision[]>;
   settle(commitHash:string,operationId:string,native:NativeImageRef):Promise<void>;
   hydration(source:SourceImageRef):Promise<HydrationRecord|null>;
   publishHydration(record:HydrationRecord):Promise<string>;
@@ -83,7 +86,10 @@ function hydrationRecord(v:unknown):HydrationRecord{
   return clone(v as unknown as HydrationRecord);
 }
 function operationIntent(v:unknown):ImageOperationIntent{
-  if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId','expected','baseNative','stroke'])||v.schema!=='flow.image-edit-intent'||v.version!==1||![v.operationId,v.sessionId,v.incarnation,v.imageId].every(token)||!validImageBinding(v.expected)||!validNativeImageRef(v.baseNative)||!validProjectStroke(v.stroke))bad('Invalid image operation intent');
+  if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId','expected','baseNative','stroke']) || v.version!==1){
+    if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId','pipelineId','anchorCommitHash','anchor','expectedAtAnchor','predecessorOperationId','inputThrough','stroke'])||v.version!==2||!token(v.pipelineId)||!imageHash(v.anchorCommitHash)||!validNativeImageRef(v.anchor)||!validImageBinding(v.expectedAtAnchor)||(v.predecessorOperationId!==null&&(!token(v.predecessorOperationId)||v.predecessorOperationId===v.operationId))||!Number.isSafeInteger(v.inputThrough)||Number(v.inputThrough)!==(Array.isArray((v.stroke as {points?:unknown})?.points)?(v.stroke as {points:unknown[]}).points.length/2:-1))bad('Invalid pipeline input intent');
+  }else if(!validImageBinding(v.expected)||!validNativeImageRef(v.baseNative))bad('Invalid serial input baseline');
+  if(v.schema!=='flow.image-edit-intent'||![v.operationId,v.sessionId,v.incarnation,v.imageId].every(token)||!validProjectStroke(v.stroke))bad('Invalid image operation intent');
   return clone(v as unknown as ImageOperationIntent);
 }
 const intentBytes=(intent:ImageOperationIntent)=>bytes({schema:'flow.image-intent-envelope',version:1,sha256:sha(bytes(intent)),intent});
@@ -104,20 +110,36 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
   const owner=Symbol();owners.set(root,owner);
   const hidden=path.join(root,'.storyboard-flow'),store=path.join(hidden,'image-project-v2'),commits=path.join(store,'commits'),settlements=path.join(store,'settlements'),hydrations=path.join(store,'hydrations'),headFile=path.join(store,'head.json');
   let prefix:ProjectCommitReceipt[]|undefined,prefixHead:ProjectHeadV2|undefined,tailStamp:Awaited<ReturnType<typeof stamp>>|undefined;
-  const byId=new Map<string,ProjectCommitReceipt>(),byHash=new Map<string,ProjectCommitReceipt>(),verifiedRefs=new Set<string>();
+  const byId=new Map<string,ProjectCommitReceipt>(),byHash=new Map<string,ProjectCommitReceipt>(),verifiedRefs=new Set<string>(),verifiedUnchanged=new Map<string,UnchangedImageDecision>();
   let inventoryBytes=0,budgetDirty=true;const inventorySizes=new Map<string,number>();
-  const bindings=new Map<string,Identity>();let closed=false,closing=false,tail=Promise.resolve();let closeWork:Promise<void>|undefined;
+  const bindings=new Map<string,Identity>();let closed=false,closing=false,auditing=false,tail=Promise.resolve(),intentTail=Promise.resolve(),budgetTail=Promise.resolve();let closeWork:Promise<void>|undefined,auditWork:Promise<void>|undefined;
+  let reservedBytes=0; // Shared across both queues; an unknown write retains its credit until an explicit drained audit.
   const bound=async()=>{
     if(closed)throw new ImageProjectStoreError('closed','Image-project store closed');
     if(owners.get(root)!==owner||!sameFile(rootIdentity,await dir(root)))bad('Project writer/root identity changed');
     await assertPhysicalWorkspaceWriterTargets([root]);await authority({...rootBinding});
     for(const [p,identity]of bindings)if(!sameFile(identity,await dir(p)))bad(`Storage directory changed: ${p}`);
   };
-  const queue=<T>(f:()=>Promise<T>):Promise<T>=>{if(closing||closed)return Promise.reject(new ImageProjectStoreError('closed','Image-project store closing'));const result=tail.then(f);tail=result.then(()=>undefined,()=>undefined);return result;};
+  const queue=<T>(f:(admit:(bytes:number)=>Promise<void>)=>Promise<T>,intentLane=false):Promise<T>=>{
+    if(closing||closed||auditing)return Promise.reject(new ImageProjectStoreError(auditing?'busy':'closed','Image-project store admission closed'));
+    const result=(intentLane?intentTail:tail).then(async()=>{
+      let credit=0;
+      const admit=async(add:number)=>{
+        const work=budgetTail.then(async()=>{
+          if(budgetDirty)throw new ImageProjectStoreError('busy','Uncertain recovery expenditure requires a drained audit','retained');
+          const other=reserved?await reserved():0;
+          if(!Number.isSafeInteger(add)||add<0||!Number.isSafeInteger(other)||other<0||inventoryBytes+reservedBytes+other+add>budget)throw new ImageProjectStoreError('resource-limit','Recovery actual/reserved budget exceeded');
+          // No await between the shared check and reservation.
+          reservedBytes+=add;credit+=add;
+        });budgetTail=work.then(()=>undefined,()=>undefined);await work;
+      };
+      try{const value=await f(admit);reservedBytes-=credit;return value;}
+      catch(e){if(credit)budgetDirty=true;throw e;}
+    });
+    if(intentLane)intentTail=result.then(()=>undefined,()=>undefined);else tail=result.then(()=>undefined,()=>undefined);return result;
+  };
   const verify=async(p:ProjectV2)=>{for(const image of Object.values(p.images)){const key=canonicalJson(image.content);if(verifiedRefs.has(key))continue;if(image.content.kind==='native')await verifyNative(clone(image.content.native));else await verifySource(clone(image.content.source));verifiedRefs.add(key);}};
-  // Snapshot actual recovery data on open/recovery or an uncertain effect.
-  // While authority is held, own writes update this ledger; other owned writers
-  // must fit their supplied full reservations. No per-stroke recursive scan/GC.
+  // Only open or explicit drained recovery audits inventory every recovery file.
   const refreshInventory=async()=>{
     let count=0,used=0;const sizes=new Map<string,number>();
     const walk=async(p:string,depth:number):Promise<void>=>{
@@ -126,15 +148,10 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
     };
     await walk(hidden,0);inventoryBytes=used;inventorySizes.clear();for(const [file,size]of sizes)inventorySizes.set(file,size);budgetDirty=false;
   };
-  const admit=async(add:number)=>{
-    if(budgetDirty)await refreshInventory();
-    const other=reserved?await reserved():0;
-    if(!Number.isSafeInteger(other)||other<0||inventoryBytes+other+add>budget)throw new ImageProjectStoreError('resource-limit','Recovery actual/reserved budget exceeded');
-  };
   const account=(file:string,size:number)=>{inventoryBytes+=size-(inventorySizes.get(file)??0);inventorySizes.set(file,size);};
   const immutable=async(file:string,data:Buffer)=>{
     const prior=await read(file);if(prior){if(!prior.equals(data))bad(`Immutable record conflict: ${file}`);await sync(path.dirname(file));return;}
-    budgetDirty=true;const temp=await writeTemporaryFile(path.dirname(file),'record',data);
+    const temp=await writeTemporaryFile(path.dirname(file),'record',data);
     await bound();
     await fs.link(temp.path,file).catch(async e=>{if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;const raced=await read(file);if(!raced?.equals(data))bad('Immutable publication collision','retained');});
     await sync(path.dirname(file));await releaseTemporary(temp);account(file,data.length);
@@ -157,55 +174,119 @@ export async function openImageProjectStore(options:ImageProjectStoreOptions):Pr
       if(!previous){if(c.beforeRevision!==null||c.after.revision!==0||c.nativeDecision)bad('Invalid genesis commit');}
       else{
         if(c.beforeRevision!==previous.after.revision||c.after.revision!==c.beforeRevision+1)bad('Commit revision chain mismatch');
-        if(c.nativeDecision){const d=c.nativeDecision,image=previous.after.images[d.imageId];await checkNativeBase(d);if(!image||!same(image.content,d.expected)||!same(c.after,{...previous.after,revision:c.after.revision,images:{...previous.after.images,[d.imageId]:{id:d.imageId,content:{kind:'native',native:d.prepared}}}}))bad('Native decision differs from project transition');}
+        if(c.nativeDecision){const d=c.nativeDecision,image=previous.after.images[d.imageId];await checkNativeBase(d,result.slice(0,i));if(!image||!same(image.content,d.expected)||!same(c.after,{...previous.after,revision:c.after.revision,images:{...previous.after.images,[d.imageId]:{id:d.imageId,content:{kind:'native',native:d.prepared}}}}))bad('Native decision differs from project transition');}
       }
     }
     byId.clear();byHash.clear();for(const c of result){if(byId.has(c.commit.commitId))bad('Duplicate reachable commit identity');byId.set(c.commit.commitId,c);byHash.set(c.commitHash,c);}
     prefix=result;prefixHead=head;tailStamp=await stamp(path.join(commits,`${head.commitHash}.json`));return result;
   };
-  const checkNativeBase=async(d:NonNullable<ProjectCommitV2['nativeDecision']>)=>{
+  const checkNativeBase=async(d:NonNullable<ProjectCommitV2['nativeDecision']>,ancestors:readonly ProjectCommitReceipt[],seen=new Set<string>())=>{
+    if(seen.has(d.operationId)||seen.size>=65536)bad('Cyclic/overlong input predecessor chain');seen.add(d.operationId);
     const intentRaw=await read(path.join(settlements,`${d.operationId}.intent.json`));if(!intentRaw)bad('Native project decision has no recoverable input intent');const intent=readIntent(intentRaw);
-    if(intent.imageId!==d.imageId||intent.operationId!==d.candidateId||!same(intent.expected,d.expected)||!same(intent.baseNative,d.baseNative))bad('Native project decision differs from original intent');
+    if(intent.imageId!==d.imageId||intent.operationId!==d.operationId||intent.operationId!==d.candidateId)bad('Native project decision differs from original intent');
+    if(intent.version===1){if(d.pipeline||!same(intent.expected,d.expected)||!same(intent.baseNative,d.baseNative))bad('Serial decision differs from input baseline');}
+    else{
+      if(!same(d.pipeline,{pipelineId:intent.pipelineId,anchorCommitHash:intent.anchorCommitHash,predecessorOperationId:intent.predecessorOperationId}))bad('Pipeline decision chain differs from original intent');
+      const anchor=ancestors.find(c=>c.commitHash===intent.anchorCommitHash);
+      if(!anchor||!same(anchor.commit.after.images[intent.imageId]?.content,intent.expectedAtAnchor))bad('Pipeline anchor is not a reachable project decision');
+      if(intent.expectedAtAnchor.kind==='native'){if(!same(intent.anchor,intent.expectedAtAnchor.native))bad('Pipeline anchor native identity mismatch');}
+      else{const h=await read(path.join(hydrations,`${hydrationKey(intent.expectedAtAnchor.source)}.json`));if(!h||!same(hydrationRecord(parse(h)).native,intent.anchor))bad('Pipeline anchor source identity mismatch');}
+      if(intent.predecessorOperationId===null){if(!same(d.baseNative,intent.anchor)||!same(d.expected,intent.expectedAtAnchor))bad('Pipeline first base differs from anchor');}
+      else{
+        const changed=ancestors.find(c=>c.commit.nativeDecision?.operationId===intent.predecessorOperationId)?.commit.nativeDecision;
+        const noop=changed?null:await unchanged(intent.predecessorOperationId,ancestors,seen),predecessor=changed??noop?.decision;
+        const expected=changed?{kind:'native',native:changed.prepared}:noop?.decision.expected;
+        if(!predecessor||predecessor.imageId!==intent.imageId||predecessor.pipeline?.pipelineId!==intent.pipelineId||predecessor.pipeline.anchorCommitHash!==intent.anchorCommitHash||!same(d.baseNative,predecessor.prepared)||!same(d.expected,expected))bad('Pipeline predecessor has no matching reachable project decision');
+      }
+    }
     if(d.expected.kind==='native'){if(!same(d.baseNative,d.expected.native))bad('Native decision base differs from current content');}
     else{const raw=await read(path.join(hydrations,`${hydrationKey(d.expected.source)}.json`));if(!raw||!same(hydrationRecord(parse(raw)).native,d.baseNative))bad('Native decision source base has no matching hydration');}
     if(!d.baseNative||d.baseNative.documentId!==d.prepared.documentId||d.baseNative.storeId!==d.prepared.storeId)bad('Native edit changed document/store identity');
   };
+  const unchanged=async(operationId:string,ancestors:readonly ProjectCommitReceipt[],seen=new Set<string>()):Promise<UnchangedImageDecision|null>=>{
+    const cached=verifiedUnchanged.get(operationId);if(cached&&ancestors.some(c=>c.commitHash===cached.commitHash))return clone(cached);
+    const raw=await read(path.join(settlements,`${operationId}.unchanged.json`));if(!raw)return null;const v=parse(raw);
+    if(!shape(v,['schema','version','commitHash','decision'])||v.schema!=='flow.image-unchanged-decision'||v.version!==1||!imageHash(v.commitHash)||!validNativeDecision(v.decision)||v.decision.operationId!==operationId||!same(v.decision.baseNative,v.decision.prepared))bad('Invalid unchanged decision');
+    const c=ancestors.find(c=>c.commitHash===v.commitHash);if(!c||!same(c.commit.after.images[v.decision.imageId]?.content,v.decision.expected))bad('Unchanged decision has no matching reachable head');
+    await checkNativeBase(v.decision,ancestors.slice(0,ancestors.indexOf(c)+1),seen);
+    // A source binding requires a settled interpretation, not just a publication.
+    if(v.decision.expected.kind==='source'){
+      const key=hydrationKey(v.decision.expected.source),h=await read(path.join(hydrations,`${key}.json`)),s=await read(path.join(settlements,`${key}.hydration.json`));
+      if(!h||!s)bad('Unchanged source decision requires settled hydration');const hydration=hydrationRecord(parse(h));
+      if(!same(parse(s),{schema:'flow.hydration-settlement',version:1,hydrationKey:key,operationId:hydration.operationId,native:hydration.native})||!same(hydration.native,v.decision.baseNative))bad('Unchanged hydration settlement mismatch');
+    }
+    const verified=clone(v as unknown as UnchangedImageDecision);verifiedUnchanged.set(operationId,verified);return clone(verified);
+  };
+  const operationDecision=async(operationId:string):Promise<ImageOperationDecision|null>=>{
+    const list=await chain(),c=list.find(c=>c.commit.nativeDecision?.operationId===operationId);if(c){if(await read(path.join(settlements,`${operationId}.unchanged.json`)))bad('Operation has two project decisions');return{commitHash:c.commitHash,decision:clone(c.commit.nativeDecision!),unchanged:false};}
+    const n=await unchanged(operationId,list);return n?{commitHash:n.commitHash,decision:n.decision,unchanged:true}:null;
+  };
+  const settlementFile=(d:ImageOperationDecision)=>path.join(settlements,d.unchanged?`${d.decision.operationId}.unchanged-settlement.json`:`${d.commitHash}.json`);
+  const settlementValue=(d:ImageOperationDecision):NativeSettlement=>({schema:'flow.native-settlement',version:1,commitHash:d.commitHash,operationId:d.decision.operationId,candidateId:d.decision.candidateId,native:d.decision.prepared});
   const load=async()=>{const list=await chain(),last=list.at(-1)??null;if(last)await verify(last.commit.after);return clone(last);};
   const pending=async()=>{const list=await chain(),result:ProjectCommitReceipt[]=[];for(const c of list)if(c.commit.nativeDecision){const raw=await read(path.join(settlements,`${c.commitHash}.json`));if(!raw)result.push(c);else{const d=c.commit.nativeDecision;const expected:NativeSettlement={schema:'flow.native-settlement',version:1,commitHash:c.commitHash,operationId:d.operationId,candidateId:d.candidateId,native:d.prepared};if(!same(parse(raw),expected))bad('Native settlement contradicts committed decision');}}return result;};
   try{for(const p of [hidden,store,commits,settlements,hydrations])bindings.set(p,await dir(p,true));await load();await refreshInventory();}catch(e){owners.delete(root);throw e;}
   return {
-    load:()=>queue(load),validateRecovery:()=>queue(async()=>{prefix=undefined;prefixHead=undefined;tailStamp=undefined;verifiedRefs.clear();await load();await refreshInventory();await sync(commits);await sync(store);await bound();}),committed:()=>queue(async()=>clone(await chain())),unsettled:()=>queue(async()=>clone(await pending())),
-    commit:(expectedHead,input)=>{const captured=commitRecord(input);return queue(async()=>{
+    load:()=>queue(load),validateRecovery:()=>{
+      if(closing||closed||auditing)return Promise.reject(new ImageProjectStoreError('busy','Image-project audit admission closed'));auditing=true;
+      auditWork=Promise.all([tail,intentTail,budgetTail]).then(async()=>{prefix=undefined;prefixHead=undefined;tailStamp=undefined;verifiedRefs.clear();verifiedUnchanged.clear();await load();await refreshInventory();reservedBytes=0;await sync(commits);await sync(settlements);await sync(store);await bound();}).catch(e=>{budgetDirty=true;throw e;}).finally(()=>{auditing=false;});return auditWork;
+    },committed:()=>queue(async(admit)=>clone(await chain())),unsettled:()=>queue(async(admit)=>clone(await pending())),
+    commit:(expectedHead,input)=>{const captured=commitRecord(input);return queue(async(admit)=>{
       if(expectedHead!==null&&!imageHash(expectedHead))bad('Invalid expected head');
       const list=await chain(),current=list.at(-1),data=bytes(captured),hash=sha(data),existing=byId.get(captured.commitId);
       if(existing){if(existing.commitHash!==hash)bad('Commit identity reused with different content');await bound();await sync(commits);await sync(store);await bound();const actual=await read(headFile);if(!actual||!same(parse(actual),prefixHead))bad('Head changed during durability confirmation','unknown');return clone(existing);}
       if((current?.commitHash??null)!==expectedHead||captured.previousCommitHash!==expectedHead)bad('Project compare-and-swap conflict');
       if(current){if(captured.after.id!==current.commit.after.id||captured.beforeRevision!==current.commit.after.revision||captured.after.revision!==captured.beforeRevision+1)bad('Project revision/identity conflict');}
       else if(captured.beforeRevision!==null||captured.after.revision!==0||captured.nativeDecision)bad('Invalid initial project');
-      if(captured.nativeDecision){const d=captured.nativeDecision,before=current!.commit.after;await checkNativeBase(d);if(!same(before.images[d.imageId]?.content,d.expected)||!same(captured.after,{...before,revision:captured.after.revision,images:{...before.images,[d.imageId]:{id:d.imageId,content:{kind:'native',native:d.prepared}}}}))bad('Invalid native project CAS');}
+      if(captured.nativeDecision){const d=captured.nativeDecision,before=current!.commit.after;if(await read(path.join(settlements,`${d.operationId}.unchanged.json`)))bad('Operation already has an unchanged decision');await checkNativeBase(d,list);if(!same(before.images[d.imageId]?.content,d.expected)||!same(captured.after,{...before,revision:captured.after.revision,images:{...before.images,[d.imageId]:{id:d.imageId,content:{kind:'native',native:d.prepared}}}}))bad('Invalid native project CAS');}
       await verify(captured.after);const head:ProjectHeadV2={schema:'flow.project-head',version:1,projectId:captured.after.id,commitHash:hash},headBytes=bytes(head);
       if(data.length>META)throw new ImageProjectStoreError('resource-limit','Project commit exceeds metadata budget');
       await admit(data.length+headBytes.length);await immutable(path.join(commits,`${hash}.json`),data);await bound();
       const actual=await chain();if((actual.at(-1)?.commitHash??null)!==expectedHead)bad('Head changed before publication','retained');
-      budgetDirty=true;const temp=await writeTemporaryFile(store,'head',headBytes);
+      const temp=await writeTemporaryFile(store,'head',headBytes);
       try{await bound();if(expectedHead===null){await fs.link(temp.path,headFile);await releaseTemporary(temp);}else await fs.rename(temp.path,headFile);await sync(store);await bound();const check=await read(headFile);if(!check?.equals(headBytes))bad('Published head differs','unknown');}
       catch(e){throw new ImageProjectStoreError('io-failure',`Project head publication needs reconciliation: ${String(e)}`,'unknown');}
-      account(headFile,headBytes.length);budgetDirty=false;const receipt={commitHash:hash,commit:clone(captured),head};
+      account(headFile,headBytes.length);const receipt={commitHash:hash,commit:clone(captured),head};
       prefix=[...list,receipt];prefixHead=head;tailStamp=await stamp(path.join(commits,`${hash}.json`));byId.set(captured.commitId,receipt);byHash.set(hash,receipt);return clone(receipt);
     });},
-    settle:(commitHash,operationId,native)=>{const captured=clone(native);return queue(async()=>{
-      await chain();const c=byHash.get(commitHash),d=c?.commit.nativeDecision;
-      if(!d||d.operationId!==operationId||!same(d.prepared,captured))bad('Settlement has no reachable project decision');
-      const record:NativeSettlement={schema:'flow.native-settlement',version:1,commitHash,operationId,candidateId:d.candidateId,native:captured};
-      const data=bytes(record);await admit(data.length);await immutable(path.join(settlements,`${commitHash}.json`),data);budgetDirty=false;
+    decideUnchanged:(commitHash,input)=>{const d=clone(input);return queue(async(admit)=>{
+      const list=await chain();if(list.some(c=>c.commit.nativeDecision?.operationId===d.operationId))bad('Operation already has a changed project decision');if(!validNativeDecision(d)||!same(d.baseNative,d.prepared)||!list.some(c=>c.commitHash===commitHash))bad('Invalid unchanged decision');
+      const record:UnchangedImageDecision={schema:'flow.image-unchanged-decision',version:1,commitHash,decision:d},file=path.join(settlements,`${d.operationId}.unchanged.json`),prior=await read(file);
+      if(!prior&&list.at(-1)?.commitHash!==commitHash)bad('Unchanged project compare-and-swap conflict');
+      const c=list.find(c=>c.commitHash===commitHash)!;if(!same(c.commit.after.images[d.imageId]?.content,d.expected))bad('Unchanged binding differs from head');await checkNativeBase(d,list.slice(0,list.indexOf(c)+1));
+      if(d.expected.kind==='source'){const key=hydrationKey(d.expected.source),raw=await read(path.join(settlements,`${key}.hydration.json`)),h=await read(path.join(hydrations,`${key}.json`));if(!raw||!h)bad('Unchanged source requires settled hydration');const hydration=hydrationRecord(parse(h));if(!same(parse(raw),{schema:'flow.hydration-settlement',version:1,hydrationKey:key,operationId:hydration.operationId,native:hydration.native})||!same(hydration.native,d.baseNative))bad('Unchanged source settlement differs');}
+      const data=bytes(record);await admit(prior?0:data.length);await immutable(file,data);await unchanged(d.operationId,list);
     });},
-    hydration:source=>{const captured=clone(source);return queue(async()=>{if(!validSourceImageRef(captured))bad('Invalid hydration lookup');await bound();const raw=await read(path.join(hydrations,`${hydrationKey(captured)}.json`));if(!raw)return null;const record=hydrationRecord(parse(raw));if(!same({importId:record.source.importId,itemId:record.source.itemId,interpretationId:record.source.interpretationId},captured))bad('Hydration identity mismatch');await verifySource(captured);await verifyNative(record.native);return record;});},
-    publishHydration:input=>{const record=hydrationRecord(input);return queue(async()=>{await bound();await verifySource({importId:record.source.importId,itemId:record.source.itemId,interpretationId:record.source.interpretationId},{digest:record.source.digest,byteLength:record.source.byteLength});await verifyNative(record.native);const data=bytes(record),key=hydrationKey(record.source);await admit(data.length);await immutable(path.join(hydrations,`${key}.json`),data);budgetDirty=false;return key;});},
-    settleHydration:(source,operationId,native)=>{const s=clone(source),n=clone(native);return queue(async()=>{if(!validSourceImageRef(s)||!validNativeImageRef(n)||!token(operationId))bad('Invalid hydration settlement');await bound();const key=hydrationKey(s),raw=await read(path.join(hydrations,`${key}.json`));if(!raw)bad('Unknown hydration');const record=hydrationRecord(parse(raw));if(record.operationId!==operationId||!same(record.native,n))bad('Hydration settlement identity mismatch');const data=bytes({schema:'flow.hydration-settlement',version:1,hydrationKey:key,operationId,native:n});await admit(data.length);await immutable(path.join(settlements,`${key}.hydration.json`),data);budgetDirty=false;});},
-    pendingHydrations:()=>queue(async()=>{await bound();const result:HydrationRecord[]=[];for(const leaf of await fs.readdir(hydrations)){if(!/^[a-f0-9]{64}\.json$/.test(leaf)){if(leaf.endsWith('.tmp'))continue;bad('Unknown hydration evidence');}const raw=await read(path.join(hydrations,leaf));if(!raw)bad('Hydration disappeared');const record=hydrationRecord(parse(raw)),key=hydrationKey(record.source);if(leaf!==`${key}.json`)bad('Hydration key mismatch');const settled=await read(path.join(settlements,`${key}.hydration.json`));if(!settled)result.push(record);else if(!same(parse(settled),{schema:'flow.hydration-settlement',version:1,hydrationKey:key,operationId:record.operationId,native:record.native}))bad('Hydration settlement conflict');}return result;}),
-    beginOperation:input=>{const intent=operationIntent(input);return queue(async()=>{await bound();const current=await load();if(!current||!same(current.commit.after.images[intent.imageId]?.content,intent.expected))bad('Operation intent baseline changed');const file=path.join(settlements,`${intent.operationId}.intent.json`),data=intentBytes(intent);if(data.length>META)throw new ImageProjectStoreError('resource-limit','Input intent exceeds metadata budget');await admit((await read(file))?0:data.length);await immutable(file,data);budgetDirty=false;});},
-    pendingOperations:()=>queue(async()=>{await chain();const result:ImageOperationIntent[]=[];for(const leaf of await fs.readdir(settlements)){if(!leaf.endsWith('.intent.json'))continue;const name=leaf.slice(0,-12);if(!token(name))bad('Invalid input intent filename');const raw=await read(path.join(settlements,leaf));if(!raw)bad('Input intent disappeared');const intent=readIntent(raw);if(intent.operationId!==name)bad('Input intent identity mismatch');const resolution=await read(path.join(settlements,`${name}.resolution.json`));if(!resolution)result.push(intent);else{const value=parse(resolution);if(!shape(value,['schema','version','operationId','decision','commitHash'])||value.schema!=='flow.image-edit-resolution'||value.version!==1||value.operationId!==name||!['discarded','committed'].includes(String(value.decision))||(value.decision==='committed'?!imageHash(value.commitHash):value.commitHash!==null))bad('Invalid input resolution');const committed=[...byHash.values()].find(c=>c.commit.nativeDecision?.operationId===name);if(value.decision==='committed'?(!committed||committed.commitHash!==value.commitHash):!!committed)bad('Input resolution contradicts reachable project decision');}}return result;}),
-    resolveOperation:(operationId,decision,commitHash)=>queue(async()=>{if(!token(operationId)||!['discarded','committed'].includes(decision))bad('Invalid operation resolution');await chain();const raw=await read(path.join(settlements,`${operationId}.intent.json`));if(!raw)bad('Resolution has no operation intent');readIntent(raw);const committed=[...byHash.values()].find(c=>c.commit.nativeDecision?.operationId===operationId);if(decision==='committed'?(!committed||committed.commitHash!==commitHash):(!!committed||commitHash!==null))bad('Resolution contradicts project decision');const record:ImageOperationResolution={schema:'flow.image-edit-resolution',version:1,operationId,decision,commitHash},data=bytes(record),file=path.join(settlements,`${operationId}.resolution.json`);await admit((await read(file))?0:data.length);await immutable(file,data);budgetDirty=false;}),
-    close:()=>{if(closeWork)return closeWork;closing=true;closeWork=tail.then(async()=>{await bound();owners.delete(root);closed=true;});return closeWork;}
+    operationDecision:operationId=>queue(async()=>{if(!token(operationId))bad('Invalid operation identity');return operationDecision(operationId);}),
+    unsettledDecisions:()=>queue(async()=>{
+      const list=await chain(),decisions:ImageOperationDecision[]=list.filter(c=>c.commit.nativeDecision).map(c=>({commitHash:c.commitHash,decision:clone(c.commit.nativeDecision!),unchanged:false}));
+      for(const leaf of await fs.readdir(settlements))if(leaf.endsWith('.unchanged.json')){const op=leaf.slice(0,-15);if(!token(op))bad('Invalid unchanged filename');const d=await operationDecision(op);if(!d||!d.unchanged)bad('Missing/conflicting unchanged decision');decisions.push(d);}
+      const pending:ImageOperationDecision[]=[];for(const d of decisions){const s=await read(settlementFile(d));if(!s)pending.push(d);else if(!same(parse(s),settlementValue(d)))bad('Native settlement contradicts project decision');}return pending;
+    }),
+    settle:(commitHash,operationId,native)=>{const captured=clone(native);return queue(async(admit)=>{
+      const d=await operationDecision(operationId);if(!d||d.commitHash!==commitHash||!same(d.decision.prepared,captured))bad('Settlement has no reachable project decision');
+      const data=bytes(settlementValue(d)),file=settlementFile(d);await admit((await read(file))?0:data.length);await immutable(file,data);
+    });},
+    hydration:source=>{const captured=clone(source);return queue(async(admit)=>{if(!validSourceImageRef(captured))bad('Invalid hydration lookup');await bound();const raw=await read(path.join(hydrations,`${hydrationKey(captured)}.json`));if(!raw)return null;const record=hydrationRecord(parse(raw));if(!same({importId:record.source.importId,itemId:record.source.itemId,interpretationId:record.source.interpretationId},captured))bad('Hydration identity mismatch');await verifySource(captured);await verifyNative(record.native);return record;});},
+    publishHydration:input=>{const record=hydrationRecord(input);return queue(async(admit)=>{await bound();await verifySource({importId:record.source.importId,itemId:record.source.itemId,interpretationId:record.source.interpretationId},{digest:record.source.digest,byteLength:record.source.byteLength});await verifyNative(record.native);const data=bytes(record),key=hydrationKey(record.source);await admit(data.length);await immutable(path.join(hydrations,`${key}.json`),data);return key;});},
+    settleHydration:(source,operationId,native)=>{const s=clone(source),n=clone(native);return queue(async(admit)=>{if(!validSourceImageRef(s)||!validNativeImageRef(n)||!token(operationId))bad('Invalid hydration settlement');await bound();const key=hydrationKey(s),raw=await read(path.join(hydrations,`${key}.json`));if(!raw)bad('Unknown hydration');const record=hydrationRecord(parse(raw));if(record.operationId!==operationId||!same(record.native,n))bad('Hydration settlement identity mismatch');const data=bytes({schema:'flow.hydration-settlement',version:1,hydrationKey:key,operationId,native:n});await admit(data.length);await immutable(path.join(settlements,`${key}.hydration.json`),data);});},
+    pendingHydrations:()=>queue(async(admit)=>{await bound();const result:HydrationRecord[]=[];for(const leaf of await fs.readdir(hydrations)){if(!/^[a-f0-9]{64}\.json$/.test(leaf)){if(leaf.endsWith('.tmp'))continue;bad('Unknown hydration evidence');}const raw=await read(path.join(hydrations,leaf));if(!raw)bad('Hydration disappeared');const record=hydrationRecord(parse(raw)),key=hydrationKey(record.source);if(leaf!==`${key}.json`)bad('Hydration key mismatch');const settled=await read(path.join(settlements,`${key}.hydration.json`));if(!settled)result.push(record);else if(!same(parse(settled),{schema:'flow.hydration-settlement',version:1,hydrationKey:key,operationId:record.operationId,native:record.native}))bad('Hydration settlement conflict');}return result;}),
+    beginOperation:input=>{const intent=operationIntent(input);return queue(async(admit)=>{
+      await bound();
+      if(intent.version===1){const current=await load();if(!current||!same(current.commit.after.images[intent.imageId]?.content,intent.expected))bad('Operation intent baseline changed');}
+      else{
+        // The anchor was verified by this leased Session. Never await/read a CAS
+        // which may currently be publishing a newer head in the other queue.
+        const anchor=byHash.get(intent.anchorCommitHash);
+        if(!anchor||!same(anchor.commit.after.images[intent.imageId]?.content,intent.expectedAtAnchor))bad('Input anchor is not reachable');
+        if(intent.expectedAtAnchor.kind==='native'){if(!same(intent.anchor,intent.expectedAtAnchor.native))bad('Input anchor content mismatch');}
+        else{const h=await read(path.join(hydrations,`${hydrationKey(intent.expectedAtAnchor.source)}.json`));if(!h||!same(hydrationRecord(parse(h)).native,intent.anchor))bad('Input anchor hydration mismatch');}
+        if(intent.predecessorOperationId){const raw=await read(path.join(settlements,`${intent.predecessorOperationId}.intent.json`));if(!raw)bad('Input predecessor has no durable intent');const predecessor=readIntent(raw);if(predecessor.version!==2||predecessor.pipelineId!==intent.pipelineId||predecessor.anchorCommitHash!==intent.anchorCommitHash||predecessor.imageId!==intent.imageId||!same(predecessor.anchor,intent.anchor)||!same(predecessor.expectedAtAnchor,intent.expectedAtAnchor))bad('Input predecessor chain mismatch');}
+      }
+      const file=path.join(settlements,`${intent.operationId}.intent.json`),data=intentBytes(intent);if(data.length>META)throw new ImageProjectStoreError('resource-limit','Input intent exceeds metadata budget');await admit((await read(file))?0:data.length);await immutable(file,data);
+    },intent.version===2);},
+    pendingOperations:()=>queue(async(admit)=>{await chain();const result:ImageOperationIntent[]=[];for(const leaf of await fs.readdir(settlements)){if(!leaf.endsWith('.intent.json'))continue;const name=leaf.slice(0,-12);if(!token(name))bad('Invalid input intent filename');const raw=await read(path.join(settlements,leaf));if(!raw)bad('Input intent disappeared');const intent=readIntent(raw);if(intent.operationId!==name)bad('Input intent identity mismatch');const resolution=await read(path.join(settlements,`${name}.resolution.json`));if(!resolution)result.push(intent);else{const value=parse(resolution);if(!shape(value,['schema','version','operationId','decision','commitHash'])||value.schema!=='flow.image-edit-resolution'||value.version!==1||value.operationId!==name||!['discarded','committed'].includes(String(value.decision))||(value.decision==='committed'?!imageHash(value.commitHash):value.commitHash!==null))bad('Invalid input resolution');const committed=await operationDecision(name);if(value.decision==='committed'?(!committed||committed.commitHash!==value.commitHash):!!committed)bad('Input resolution contradicts reachable project decision');}}return result;}),
+    resolveOperation:(operationId,decision,commitHash)=>queue(async(admit)=>{if(!token(operationId)||!['discarded','committed'].includes(decision))bad('Invalid operation resolution');await chain();const raw=await read(path.join(settlements,`${operationId}.intent.json`));if(!raw)bad('Resolution has no operation intent');readIntent(raw);const committed=await operationDecision(operationId);if(decision==='committed'?(!committed||committed.commitHash!==commitHash):(!!committed||commitHash!==null))bad('Resolution contradicts project decision');const record:ImageOperationResolution={schema:'flow.image-edit-resolution',version:1,operationId,decision,commitHash},data=bytes(record),file=path.join(settlements,`${operationId}.resolution.json`);await admit((await read(file))?0:data.length);await immutable(file,data);}),
+    close:()=>{if(closeWork)return closeWork;closing=true;closeWork=Promise.all([tail,intentTail,budgetTail,auditWork]).then(async()=>{await bound();owners.delete(root);closed=true;});return closeWork;}
   };
 }

@@ -106,3 +106,52 @@ it('retains original submitted input with a checksum and rejects a forged resolu
   const file=path.join(location(root),'settlements','paint.intent.json'),raw=JSON.parse(await fs.readFile(file,'utf8'));raw.intent.stroke.points[0]=77;await fs.writeFile(file,JSON.stringify(raw));
   await expect(store.pendingOperations()).rejects.toThrow('checksum');await store.close();
 });
+
+it('uses one atomic recovery budget for independent intent and CAS writers without rescanning',async()=>{
+  let other=0;const {root,store}=await fixture({maxRecoveryBytes:100_000,reservedRecoveryBytes:async()=>other});
+  const g=genesis();g.after.images.ia.content={kind:'native',native:ref};const first=await store.commit(null,g);
+  const intent={schema:'flow.image-edit-intent' as const,version:2 as const,operationId:'second',sessionId:'session',incarnation:'one',imageId:'ia',pipelineId:'pipe',anchorCommitHash:first.commitHash,anchor:ref,expectedAtAnchor:g.after.images.ia.content,predecessorOperationId:null,inputThrough:2,stroke:{tool:'brush' as const,color:'#ff0000',size:10,opacity:0.5,softness:0,points:[1,1,2,2]}};
+  const record={...g,commitId:'metadata',previousCommitHash:first.commitHash,beforeRevision:0,after:{...g.after,revision:1,name:'n'.repeat(2000)}};
+  const data=Buffer.from(canonicalJson(record)+'\n'),headBytes=Buffer.from(canonicalJson({...first.head,commitHash:sha(data)})+'\n');
+  const intentRaw=Buffer.from(canonicalJson(intent)+'\n'),intentSize=Buffer.byteLength(canonicalJson({schema:'flow.image-intent-envelope',version:1,sha256:sha(intentRaw),intent})+'\n');
+  const used=Buffer.byteLength(canonicalJson(g)+'\n')+Buffer.byteLength(canonicalJson(first.head)+'\n');other=100_000-used-Math.max(data.length+headBytes.length,intentSize)-100;
+  let release!:()=>void,entered!:()=>void;const gate=new Promise<void>(r=>release=r),blocked=new Promise<void>(r=>entered=r);const open=fs.open.bind(fs);
+  const spy=vi.spyOn(fs,'open').mockImplementation(async(...args)=>{const handle=await open(...args);if(args[0]===path.join(location(root),'commits')&&args[1]==='r'){const sync=handle.sync.bind(handle);handle.sync=async()=>{entered();await gate;await sync();};}return handle;});const scan=vi.spyOn(fs,'readdir');
+  try{const cas=store.commit(first.commitHash,record);await blocked;await expect(store.beginOperation(intent)).rejects.toMatchObject({code:'resource-limit'});expect(scan).not.toHaveBeenCalled();release();await cas;expect(await store.pendingOperations()).toEqual([]);}finally{release();scan.mockRestore();spy.mockRestore();await store.close();}
+});
+
+it('retains unknown intent expenditure until a drained audit and closes both admission queues',async()=>{
+  const {root,store}=await fixture();const g=genesis();g.after.images.ia.content={kind:'native',native:ref};const first=await store.commit(null,g);
+  const intent={schema:'flow.image-edit-intent' as const,version:2 as const,operationId:'paint',sessionId:'session',incarnation:'one',imageId:'ia',pipelineId:'pipe',anchorCommitHash:first.commitHash,anchor:ref,expectedAtAnchor:g.after.images.ia.content,predecessorOperationId:null,inputThrough:2,stroke:{tool:'brush' as const,color:'#ff0000',size:10,opacity:0.5,softness:0,points:[1,1,2,2]}};
+  const open=fs.open.bind(fs);let fail=true;const spy=vi.spyOn(fs,'open').mockImplementation(async(...args)=>{const handle=await open(...args);if(args[0]===path.join(location(root),'settlements')&&args[1]==='r'){const sync=handle.sync.bind(handle);handle.sync=async()=>{if(fail){fail=false;throw Error('synthetic intent directory sync failure');}await sync();};}return handle;});
+  try{await expect(store.beginOperation(intent)).rejects.toThrow('synthetic');await expect(store.beginOperation({...intent,operationId:'later'})).rejects.toMatchObject({code:'busy',effect:'retained'});expect((await store.pendingOperations())[0].operationId).toBe('paint');await store.validateRecovery();await store.beginOperation({...intent,operationId:'later'});}finally{spy.mockRestore();await store.close();}
+  await expect(store.beginOperation(intent)).rejects.toMatchObject({code:'closed'});
+});
+
+it('binds no-op and following native decisions to durable input and reachable predecessors without user history',async()=>{
+  const {root,store}=await fixture();const g=genesis();g.after.images.ia.content={kind:'native',native:ref};const first=await store.commit(null,g);
+  const intent={schema:'flow.image-edit-intent' as const,version:2 as const,operationId:'noop',sessionId:'session',incarnation:'one',imageId:'ia',pipelineId:'pipe',anchorCommitHash:first.commitHash,anchor:ref,expectedAtAnchor:g.after.images.ia.content,predecessorOperationId:null,inputThrough:2,stroke:{tool:'brush' as const,color:'#ff0000',size:10,opacity:0,softness:0,points:[1,1,2,2]}};
+  await store.beginOperation(intent);const pipeline={pipelineId:'pipe',anchorCommitHash:first.commitHash,predecessorOperationId:null};
+  const decision={kind:'image' as const,operationId:'noop',candidateId:'noop',imageId:'ia',expected:g.after.images.ia.content,baseNative:ref,prepared:ref,pipeline};
+  await store.decideUnchanged(first.commitHash,decision);expect((await store.load())?.commit.after.revision).toBe(0);expect(await store.unsettledDecisions()).toEqual([{commitHash:first.commitHash,decision,unchanged:true}]);
+  await store.settle(first.commitHash,'noop',ref);await store.resolveOperation('noop','committed',first.commitHash);
+  await store.beginOperation({...intent,operationId:'paint',predecessorOperationId:'noop',stroke:{...intent.stroke,opacity:0.5}});
+  const next={...ref,versionId:'c'.repeat(64),manifestSha256:'d'.repeat(64)};
+  const changed={...decision,operationId:'paint',candidateId:'paint',prepared:next,pipeline:{...pipeline,predecessorOperationId:'noop'}};
+  const c=await store.commit(first.commitHash,{...g,commitId:'paint',previousCommitHash:first.commitHash,beforeRevision:0,after:{...g.after,revision:1,images:{ia:{id:'ia',content:{kind:'native',native:next}}}},nativeDecision:changed});
+  expect((await store.operationDecision('noop'))?.unchanged).toBe(true);await store.settle(c.commitHash,'paint',next);await store.resolveOperation('paint','committed',c.commitHash);await store.close();
+  const reopened=await openImageProjectStore({root,writerAuthority:authority,verifySource:async()=>{},verifyNative:async()=>{}});expect((await reopened.load())?.commit.after.revision).toBe(1);expect(await reopened.pendingOperations()).toEqual([]);expect(await reopened.unsettledDecisions()).toEqual([]);await reopened.close();
+});
+
+it('requires settled hydration for a source-backed no-op and preserves that source binding for its successor',async()=>{
+  const {root,store}=await fixture();const g=genesis(),first=await store.commit(null,g),source=(g.after.images.ia.content as {kind:'source';source:HydrationRecord['source']}).source;
+  const hydration:HydrationRecord={schema:'flow.image-hydration',version:1,source:{...source,digest:'c'.repeat(64),byteLength:10},hostBuildDigest:'d'.repeat(64),optionsHash:'e'.repeat(64),native:ref,operationId:'hydrate'};
+  await store.publishHydration(hydration);
+  const intent={schema:'flow.image-edit-intent' as const,version:2 as const,operationId:'noop',sessionId:'session',incarnation:'one',imageId:'ia',pipelineId:'pipe',anchorCommitHash:first.commitHash,anchor:ref,expectedAtAnchor:g.after.images.ia.content,predecessorOperationId:null,inputThrough:2,stroke:{tool:'brush' as const,color:'#ff0000',size:10,opacity:0,softness:0,points:[1,1,2,2]}};
+  await store.beginOperation(intent);const pipeline={pipelineId:'pipe',anchorCommitHash:first.commitHash,predecessorOperationId:null};
+  const d={kind:'image' as const,operationId:'noop',candidateId:'noop',imageId:'ia',expected:g.after.images.ia.content,baseNative:ref,prepared:ref,pipeline};
+  await expect(store.decideUnchanged(first.commitHash,d)).rejects.toThrow('settled hydration');expect((await fs.readdir(path.join(location(root),'settlements'))).some(f=>f.endsWith('.unchanged.json'))).toBe(false);
+  await store.settleHydration(source,'hydrate',ref);await store.decideUnchanged(first.commitHash,d);await store.settle(first.commitHash,'noop',ref);await store.resolveOperation('noop','committed',first.commitHash);
+  await store.beginOperation({...intent,operationId:'paint',predecessorOperationId:'noop',stroke:{...intent.stroke,opacity:0.5}});const next={...ref,versionId:'c'.repeat(64),manifestSha256:'d'.repeat(64)};
+  await store.commit(first.commitHash,{...g,commitId:'paint',previousCommitHash:first.commitHash,beforeRevision:0,after:{...g.after,revision:1,images:{ia:{id:'ia',content:{kind:'native',native:next}}}},nativeDecision:{...d,operationId:'paint',candidateId:'paint',prepared:next,pipeline:{...pipeline,predecessorOperationId:'noop'}}});await store.validateRecovery();await store.close();
+});

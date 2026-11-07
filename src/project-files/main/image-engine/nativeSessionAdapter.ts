@@ -9,6 +9,7 @@ import type { FlowStroke } from '../../../platform/contracts/flowWave2.js';
 import type { NativeOperationStatus, NativeSessionDriver, PreparedImage } from '../../../session/core/nativeSession.js';
 import { validNativeImageRef, validProjectStroke } from '../../../session/core/imageProjectModel.js';
 import { record, same } from '../../../session/core/imageProjectValues.js';
+import type { NativePipelineDriver, PipelineLimits, PipelineReady, PipelineQueued, PipelinePrepared, PipelineState, PipelineEvent } from '../../../session/core/nativePipeline.js';
 import type { RetainedSourceObject } from './sourceStore.js';
 
 type Connection=ReturnType<typeof startImageEngine>;
@@ -28,16 +29,25 @@ async function boundedFile(file:string,limit:number,expected?:RetainedSourceObje
 }
 
 /** Real Node transport adapter. Only these Flow operations cross the seam. No
- * pipeline, file Save, native user Undo, arbitrary command or renderer path. */
+ * file Save, native user Undo, arbitrary command or renderer path. */
 export function createNativeSessionAdapter(options:{connection:Connection;storeRoot:string;storeId:string;onFrame?:(frame:NativeFrame)=>void}){
   const connection=options.connection,storeId=options.storeId,storeRoot=options.storeRoot;
   let current:NativeImageRef|null=null,candidate:string|undefined,previewOperation:string|undefined,serial=0;
   const next=()=>`control-${++serial}`;
-  const call=async(operationId:string,body:Record<string,unknown>,base:string|null=current?.versionId??null,payload?:Uint8Array)=>{
-    const frame=await connection.request(operationId,body,base,payload?new Uint8Array(payload):undefined);const reply=frame.header.body;
+  type Job={input:boolean;run():Promise<void>};const jobs:Job[]=[];let running=false,inputRun=0;
+  // Single wire owner. A waiting CAS is never enqueued here; after at most eight
+  // input commands one waiting poll/accept gets a turn, so IO cannot starve.
+  const wire=<T>(input:boolean,work:()=>Promise<T>):Promise<T>=>new Promise((resolve,reject)=>{
+    if(jobs.length>=512){reject(Object.assign(Error('Native short-command queue full'),{code:'backpressure',effect:'none'}));return;}
+    jobs.push({input,run:async()=>{try{resolve(await work());}catch(e){reject(e);}}});
+    if(!running){running=true;void(async()=>{while(jobs.length){const control=jobs.findIndex(j=>!j.input);let index=inputRun>=8&&control>=0?control:jobs.findIndex(j=>j.input);if(index<0)index=0;const [job]=jobs.splice(index,1);if(job.input)inputRun++;else inputRun=0;await job.run();}running=false;})();}
+  });
+  const call=async(operationId:string,body:Record<string,unknown>,base:string|null=current?.versionId??null,payload?:Uint8Array,input=false)=>{
+    const captured=structuredClone(body),capturedPayload=payload?new Uint8Array(payload):undefined;
+    const frame=await wire(input,()=>connection.request(operationId,captured,base,capturedPayload));const reply=frame.header.body;
     if(!record(reply)||typeof reply.kind!=='string')refuse('Malformed native reply','protocol','unknown');
     if(reply.kind==='failure'){const error=reply.error;if(!record(error)||typeof error.message!=='string')refuse('Malformed native failure','protocol','unknown');refuse(error.message,String(error.code??'native'),error.effect==='none'?'none':error.effect==='retained'?'retained':'unknown');}
-    if(record(reply.frame))try{options.onFrame?.(frame);}catch{/* presentation observers cannot change an accepted native operation */}return{reply,frame};
+    if(record(reply.frame))try{void Promise.resolve(options.onFrame?.(frame)).catch(()=>{});}catch{/* presentation observers cannot change an accepted native operation */}return{reply,frame};
   };
   const nativeRef=(receipt:unknown):NativeImageRef=>{
     if(!record(receipt)||receipt.schema!=='flow.image-version'||receipt.version!==1)refuse('Invalid native version receipt','protocol','unknown');
@@ -62,7 +72,7 @@ export function createNativeSessionAdapter(options:{connection:Connection;storeR
     const result=await call(next(),current?{kind:'install',versionId:ref.versionId}:{kind:'load',versionId:ref.versionId});
     if(!['installed','loaded'].includes(result.reply.kind as string)||result.reply.versionId!==ref.versionId)refuse('Native install identity mismatch','protocol','unknown');current={...ref};
   };
-  const capture=async()=>{if(!current)refuse('No native editing target');return(await call(next(),{kind:'capture'})).frame;};
+  const capture=async()=>{if(!current)refuse('No native editing target');return(await call(next(),{kind:'capture'},pipelineReady?.anchorVersion??current.versionId)).frame;};
   const confirm=async(ref:NativeImageRef,base:NativeImageRef|null)=>{
     // An accepted journal record alone does not prove that context installation
     // succeeded. A successful base-checked Capture confirms the actual context.
@@ -71,13 +81,61 @@ export function createNativeSessionAdapter(options:{connection:Connection;storeR
     if(!base)refuse('Native accepted context remains unknown','conflict','unknown');
     await call(next(),{kind:'capture'},base.versionId);current={...base};await install(ref);
   };
+  const brushFor=(stroke:FlowStroke)=>{
+    if(!validProjectStroke(stroke))refuse('Invalid stroke');
+    if(stroke.brush&&(stroke.brush.tip!=='hard'||stroke.brush.grain!==0||stroke.brush.pressureSize!==0||stroke.brush.pressureOpacity!==0))refuse('Stage-A brush preset unsupported: tip must be hard; grain, pressureSize and pressureOpacity must be zero. Original input is retained.','unsupported-brush');
+    const seed=stroke.brush?.seed??0;if(!Number.isSafeInteger(seed)||seed<0)refuse('Native pipeline requires a nonnegative safe integer seed');
+    return{size:stroke.size,opacity:stroke.opacity,color:stroke.color,erase:stroke.tool==='eraser',hardness:stroke.brush?.hardness??1-stroke.softness,spacing:stroke.brush?.spacing??0.06,seed,brush:{pressureSize:false,pressureOpacity:false}};
+  };
+  const pointBatch=(xy:readonly number[],pressures?:readonly number[])=>Array.from({length:xy.length/2},(_,i)=>({x:xy[i*2],y:xy[i*2+1],pressure:pressures?.[i]??1}));
+  let pipelineReady:PipelineReady|undefined;
+  const pipelineBase=()=>{if(!pipelineReady)refuse('No active native pipeline');return pipelineReady.anchorVersion;};
+  const queued=(r:Record<string,unknown>):PipelineQueued=>{
+    if(r.kind!=='queued'||r.durable!==false||typeof r.candidateId!=='string'||typeof r.pipelineId!=='string'||(r.predecessorOperationId!==null&&typeof r.predecessorOperationId!=='string')||!Number.isSafeInteger(r.inputThrough)||!Number.isSafeInteger(r.frameInputThrough)||!Number.isSafeInteger(r.epoch)||typeof r.inputDigest!=='string'||!/^[a-f0-9]{64}$/.test(r.inputDigest))refuse('Invalid native volatile queue receipt','protocol','unknown');
+    return r as unknown as PipelineQueued;
+  };
+  const pipeline:NativePipelineDriver={
+    validateStroke:brushFor,
+    async start(base,limits){
+      if(!connection.supports('strokePipelineV1'))refuse('Native binary does not support strokePipelineV1','unsupported');
+      await install(base);const{reply}=await call(next(),{kind:'pipelineStart',...limits},base.versionId);
+      if(reply.kind!=='pipelineReady'||typeof reply.pipelineId!=='string'||typeof reply.documentId!=='string'||typeof reply.anchorVersion!=='string'||!Number.isSafeInteger(reply.epoch)||!same(reply.limits,limits))refuse('Invalid native pipeline start','protocol','unknown');
+      pipelineReady={pipelineId:reply.pipelineId,anchorVersion:reply.anchorVersion,documentId:reply.documentId,epoch:Number(reply.epoch),limits:{...limits}};return structuredClone(pipelineReady);
+    },
+    async begin(operationId,predecessorOperationId,stroke){
+      const points=pointBatch(stroke.points,stroke.pressures);previewOperation=operationId;
+      const{reply}=await call(`${operationId}-begin`,{kind:'strokeBegin',previewId:operationId,predecessorOperationId,brush:brushFor(stroke),points:points.slice(0,256)},pipelineBase(),undefined,true);
+      if(reply.kind!=='frame')refuse('Native begin did not confirm preview','protocol','unknown');
+      for(let offset=256;offset<points.length;offset+=256)await pipeline.append(operationId,offset+1,stroke.points.slice(offset*2,(offset+256)*2),stroke.pressures?.slice(offset,offset+256));
+    },
+    async append(operationId,fromSeq,xy,pressure){
+      const points=pointBatch(xy,pressure);for(let offset=0;offset<points.length;offset+=256){
+        const{reply}=await call(`${operationId}-points-${fromSeq+offset}`,{kind:'strokeAppend',previewId:operationId,fromSeq:fromSeq+offset,points:points.slice(offset,offset+256)},pipelineBase(),undefined,true);
+        if(reply.kind!=='frame')refuse('Native append did not confirm preview','protocol','unknown');
+      }
+    },
+    async end(operationId,throughSeq){const{reply}=await call(operationId,{kind:'strokeFinish',previewId:operationId,throughSeq},pipelineBase(),undefined,true);const value=queued(reply);previewOperation=undefined;return value;},
+    async cancel(operationId){const{reply}=await call(next(),{kind:'strokeCancel',previewId:operationId},pipelineBase(),undefined,true);if(reply.kind!=='cancelled')refuse('Native pipeline preview cancellation unconfirmed','protocol','unknown');previewOperation=undefined;},
+    async poll(){
+      const{reply}=await call(next(),{kind:'pipelinePoll',pipelineId:pipelineReady?.pipelineId},pipelineBase());
+      if(reply.kind!=='pipelineState'||typeof reply.pipelineId!=='string'||typeof reply.anchorVersion!=='string'||typeof reply.acceptedVersion!=='string'||!Array.isArray(reply.events)||!Number.isSafeInteger(reply.availableSlots)||!Number.isSafeInteger(reply.queueDepth))refuse('Invalid native pipeline poll','protocol','unknown');
+      const events:PipelineEvent[]=reply.events.map(event=>{
+        if(!record(event)||typeof event.operationId!=='string'||!record(event.result))refuse('Invalid native pipeline event','protocol','unknown');const r=event.result;
+        if(r.kind==='accepted')return{operationId:event.operationId,kind:'accepted',native:nativeRef(r.receipt)};
+        if(r.kind!=='prepared'||typeof r.candidateId!=='string'||typeof r.baseVersion!=='string'||(r.predecessorOperationId!==null&&typeof r.predecessorOperationId!=='string')||!Number.isSafeInteger(r.inputThrough)||!Number.isSafeInteger(r.frameInputThrough)||!Number.isSafeInteger(r.epoch)||typeof r.inputDigest!=='string'||!/^[a-f0-9]{64}$/.test(r.inputDigest))refuse('Native pipeline preparation failed or has malformed prefix','protocol','retained');
+        const p:PipelinePrepared={candidateId:r.candidateId,baseVersion:r.baseVersion,native:nativeRef(r.receipt),predecessorOperationId:r.predecessorOperationId as string|null,inputThrough:Number(r.inputThrough),frameInputThrough:Number(r.frameInputThrough),epoch:Number(r.epoch),inputDigest:r.inputDigest};return{operationId:event.operationId,kind:'prepared',prepared:p};
+      });
+      return{pipelineId:reply.pipelineId,anchorVersion:reply.anchorVersion,acceptedVersion:reply.acceptedVersion,events,blocked:reply.blocked,availableSlots:Number(reply.availableSlots),queueDepth:Number(reply.queueDepth)};
+    },
+    async accept(value,base){const{reply}=await call(next(),{kind:'accept',candidateId:value.candidateId},base.versionId);if(reply.kind==='accepted'){if(!same(nativeRef(reply.receipt),value.native))refuse('Native repeated accept mismatch','protocol','unknown');return;}if(reply.kind!=='acceptQueued'||reply.durable!==false||reply.candidateId!==value.candidateId)refuse('Native pipeline accept admission mismatch','protocol','unknown');current={...value.native};},
+    async stop(){const{reply}=await call(next(),{kind:'pipelineStop',pipelineId:pipelineReady?.pipelineId},pipelineBase());if(reply.kind!=='pipelineStopped'||reply.versionId!==current?.versionId)refuse('Native pipeline barrier mismatch','protocol','unknown');pipelineReady=undefined;}
+  };
   const driver:NativeSessionDriver={
+    pipeline,
+
     async preparePaint(operationId,base,stroke){
-      if(!validProjectStroke(stroke))refuse('Invalid stroke');
-      if(stroke.brush&&(stroke.brush.tip!=='hard'||stroke.brush.grain!==0||stroke.brush.pressureSize!==0||stroke.brush.pressureOpacity!==0))refuse('Stage-A brush preset unsupported: tip must be hard; grain, pressureSize and pressureOpacity must be zero. Original input is retained.','unsupported-brush');
-      await install(base);
-      const points=Array.from({length:stroke.points.length/2},(_,i)=>({x:stroke.points[i*2],y:stroke.points[i*2+1],pressure:stroke.pressures?.[i]??1}));
-      const brush={size:stroke.size,opacity:stroke.opacity,color:stroke.color,erase:stroke.tool==='eraser',hardness:stroke.brush?.hardness??1-stroke.softness,spacing:stroke.brush?.spacing??0.06,seed:stroke.brush?.seed??0,brush:{pressureSize:false,pressureOpacity:false}};
+      const brush=brushFor(stroke);await install(base);
+      const points=pointBatch(stroke.points,stroke.pressures);
       previewOperation=operationId;
       await call(`${operationId}-begin`,{kind:'strokeBegin',previewId:operationId,brush,points:points.slice(0,1)});
       for(let offset=1;offset<points.length;offset+=256)await call(`${operationId}-points-${offset}`,{kind:'strokeAppend',previewId:operationId,fromSeq:offset+1,points:points.slice(offset,offset+256)});

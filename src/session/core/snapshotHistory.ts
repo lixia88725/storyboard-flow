@@ -9,6 +9,7 @@ export type HistoryPlan<P> = { readonly result:HistoryResult<P> };
 export type SnapshotHistory<P,C> = {
   current():ResultV1<P>;
   prepare(command:C,typing?:{group:string}):ResultV1<HistoryPlan<P>>;
+  endTyping():void;
   prepareUndo():ResultV1<HistoryPlan<P>>;
   prepareRedo():ResultV1<HistoryPlan<P>>;
   commit(plan:HistoryPlan<P>):ResultV1<HistoryResult<P>>;
@@ -31,10 +32,11 @@ export function createSnapshotHistory<P extends HistoryProjectShape,C>(project:P
     const publicPlan:HistoryPlan<P>=Object.freeze({result:freeze(copy(result))});
     plans.set(publicPlan,{generation,next,result:copy(result)});return ok(publicPlan);
   };
+  const endTyping=()=>{if(state.group){state={...state,group:null};generation++;}};
   const restore=(kind:'undo'|'redo')=>{
     // Even a refused Undo/Redo ends typing. This changes grouping context only,
     // never the project revision or either stack. Invalidate pre-existing plans.
-    if(state.group){state={...state,group:null};generation++;}
+    endTyping();
     const from=state[kind],to=kind==='undo'?'redo':'undo';
     if(!from.length)return fail<HistoryPlan<P>>('not-found','No history entry');
     if(!revision(state.project.revision+1))return fail<HistoryPlan<P>>('invalid-input','Project revision overflow');
@@ -56,7 +58,7 @@ export function createSnapshotHistory<P extends HistoryProjectShape,C>(project:P
       const group=!backwards&&key!==null&&at!==null&&token!==null?{key,token,at}:null;
       return plan(result.value,{project:copy(result.value.after),undo:fold?state.undo:push(state.undo,state.project),redo:[],group});
     },
-    prepareUndo:()=>restore('undo'),prepareRedo:()=>restore('redo'),
+    endTyping,prepareUndo:()=>restore('undo'),prepareRedo:()=>restore('redo'),
     commit(publicPlan){
       const owned=plans.get(publicPlan);
       if(!owned||owned.generation!==generation)return fail('conflict','Foreign, used or stale history plan');
