@@ -1,5 +1,6 @@
 // Real pipeline display acceptance, NOT a Main Project Session/CAS or physical-pen benchmark.
 // Run after npm run build. Copies only two explicitly named connection sources into temp.
+// FLOW_PIPELINE_SAMPLE_INTERVAL_MS=10 uses global absolute deadlines; default 0 is burst.
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -11,7 +12,8 @@ import { build } from 'esbuild';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const run = await mkdtemp(path.join(await realpath(os.tmpdir()), 'flow-image-engine-pipeline-'));
 await mkdir(path.join(run, 'profile')); await mkdir(path.join(run, 'connection-source'));
-const size=Number(process.env.FLOW_PIPELINE_SIZE??2048);if(![2048,4096].includes(size))throw Error('Invalid pipeline canvas size');
+const size=Number(process.env.FLOW_PIPELINE_SIZE??2048),interval=Number(process.env.FLOW_PIPELINE_SAMPLE_INTERVAL_MS??0);
+if(![2048,4096].includes(size)||!Number.isInteger(interval)||interval<0||interval>1000)throw Error('Invalid pipeline canvas size/sample interval');
 const connectionRoot = process.env.FLOW_IMAGE_CONNECTION_DIR ?? path.join(repo, 'src/platform/main'), sourceHashes = {};
 for (const name of ['imageEngineConnection.ts','imageEngineFraming.ts']) {
   const bytes = await readFile(path.join(connectionRoot,name)); sourceHashes[name] = createHash('sha256').update(bytes).digest('hex');

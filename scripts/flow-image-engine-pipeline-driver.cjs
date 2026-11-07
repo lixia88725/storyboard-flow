@@ -2,6 +2,7 @@
 const {app,BrowserWindow,MessageChannelMain,clipboard,shell,session}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),{createHash}=require('node:crypto'),{pathToFileURL}=require('node:url');
 const {deriveTiming,stats}=require('./flow-image-engine-pipeline-metrics.cjs');
+const {createPacer}=require('./flow-image-engine-pipeline-pacing.cjs');
 const repo=process.env.FLOW_PIPELINE_REPO,run=process.env.FLOW_PIPELINE_RUN,binary=process.env.FLOW_PIPELINE_HOST;
 const temp=fs.realpathSync(require('node:os').tmpdir());
 if(!run||path.dirname(run)!==temp||!path.basename(run).startsWith('flow-image-engine-pipeline-')||fs.realpathSync(run)!==run||!path.isAbsolute(repo)||!path.isAbsolute(binary))throw Error('Owned canonical temp paths required');
@@ -9,18 +10,18 @@ for(const k of Object.keys(clipboard))if(typeof clipboard[k]==='function')clipbo
 shell.trashItem=()=>{throw Error('Trash prohibited');};shell.openExternal=()=>{throw Error('External launch prohibited');};
 app.setPath('userData',path.join(run,'profile'));app.setPath('sessionData',path.join(run,'profile'));app.setAppLogsPath(path.join(run,'profile','logs'));
 app.commandLine.appendSwitch('disable-background-networking');
-const size=Number(process.env.FLOW_PIPELINE_SIZE??2048),ioDelay=Number(process.env.FLOW_PIPELINE_IO_DELAY_MS??0);
-if(![2048,4096].includes(size)||!Number.isInteger(ioDelay)||ioDelay<0||ioDelay>20)throw Error('Invalid synthetic pipeline parameters');
+const size=Number(process.env.FLOW_PIPELINE_SIZE??2048),ioDelay=Number(process.env.FLOW_PIPELINE_IO_DELAY_MS??0),sampleIntervalMs=Number(process.env.FLOW_PIPELINE_SAMPLE_INTERVAL_MS??0);
+if(![2048,4096].includes(size)||!Number.isInteger(ioDelay)||ioDelay<0||ioDelay>20||!Number.isInteger(sampleIntervalMs)||sampleIntervalMs<0||sampleIntervalMs>1000)throw Error('Invalid synthetic pipeline parameters');
 process.env.FLOW_IMAGE_ENGINE_TEST_IO_DELAY_MS=String(ioDelay);
 const {startImageEngine}=require(path.join(run,'connection.cjs'));
 const now=()=>performance.now(),startedAt=now(),elapsed=()=>now()-startedAt;
 const report={completed:false,error:null,binary,source:JSON.parse(fs.readFileSync(path.join(run,'connection-source.json'),'utf8')),platform:process.platform,versions:process.versions,
-  concurrentLoad:'Chief 97-file/4GB single-worker full suite and native build may overlap this functional acceptance. Timing samples are diagnostic, not a stable latency benchmark.',
+  concurrentLoad:process.env.FLOW_PIPELINE_LOAD_NOTE??'Uncoordinated diagnostic run; no idle-machine or stable latency certification.',
   scope:'Real native pipeline → owned Node connection → real MessagePort → two Canvas projections. Native durable acceptance only; no Main Project Session/checkpoint/CAS certification.',
-  parameters:{size,strokes:40,ioDelayPerPublicationMs:ioDelay,pendingLimit:4,viewports:['1x clipped to 512 CSS pixels','2x clipped to 512 CSS pixels']},calls:[],frames:[],strokes:[],events:[],acceptDecisions:[],screenshots:[],backpressure:[],
+  parameters:{size,strokes:40,batchesPerStroke:7,sampleIntervalMs,ioDelayPerPublicationMs:ioDelay,pendingLimit:4,viewports:['1x clipped to 512 CSS pixels','2x clipped to 512 CSS pixels'],screenshotPolicy:sampleIntervalMs===0?'Burst functional round retains intermediate half-opacity screenshot':'Paced round captures initial and final states outside input window; no intermediate screenshot'},calls:[],frames:[],strokes:[],events:[],acceptDecisions:[],screenshots:[],backpressure:[],
   timingMeaning:{sampleRequestAtMainMs:'Synthetic command dispatch, not hardware input acquisition',nativeFrameReceivedAtMainMs:'Decoded native response received by Main',
     dualCanvasInstalledAtAckMainMs:'Main observed renderer ACK after both synchronous Canvas writes AND independent pixel verification; not compositor/physical presentation',
-    displayMs:'Renderer synchronous FrameStore and both Canvas writes, excludes following oracle verificationMs',durableConfirmationAtMainMs:'Main observed native accepted event; not project CAS/Save',
+    displayMs:'Renderer synchronous FrameStore and both Canvas writes, excludes following oracle verificationMs',durableConfirmationAtMainMs:'Main observed native accepted event by serial pipelinePoll (serviced after each stroke or on admission refusal); includes observation delay, not native completion timestamp/project CAS/Save',
     screenshotMs:'capturePage after selected ACKs; independent compositor capture completion, not physical tip latency'}};
 let win,port,client,envelope=null,acceptedVersion=null,pipelineId,identity=null,nativeClosed=false,portSeq=0,pollSeq=0;
 const acks=new Map(),entries=new Map(),order=[],preparedOrder=[],acceptedOrder=[];
@@ -63,13 +64,13 @@ async function pump({acceptLast=true}={}){
  return s;
 }
 async function summary(){const s=await evaluate('summary',[{x:220,y:200},{x:260,y:200}]);for(const r of s.rasters)assert.equal(r.hash,s.referenceHash,'full Canvas must match native patch reference');return s;}
-async function screenshot(label,point){const s=await summary(),p=s.probes.find(p=>p.x===point.x&&p.y===point.y);await evaluate('swatch',p.rgba);
+async function screenshot(label,point){const fixtureStart=elapsed(),s=await summary(),p=s.probes.find(p=>p.x===point.x&&p.y===point.y);await evaluate('swatch',p.rgba);
  await Promise.race([win.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))'),new Promise((_,reject)=>setTimeout(()=>reject(Error('CSS reference paint opportunity timeout')),3000))]);
  const referenceStyle=await win.webContents.executeJavaScript("getComputedStyle(document.getElementById('reference')).backgroundColor");const start=elapsed();const png=(await win.webContents.capturePage(undefined,{stayHidden:true})).toPNG(),screenshotMs=elapsed()-start;fs.writeFileSync(path.join(run,label+'.png'),png);
  const sharp=(await import(pathToFileURL(path.join(repo,'node_modules/sharp/lib/index.js')).href)).default,{data,info}=await sharp(png).ensureAlpha().raw().toBuffer({resolveWithObject:true}),scale=info.width/await win.webContents.executeJavaScript('innerWidth');
  const css=Array.from(data.subarray((Math.floor(340*scale)*info.width+Math.floor(580*scale))*4,(Math.floor(340*scale)*info.width+Math.floor(580*scale))*4+3)),samples=[];
  for(const r of s.rasters){const x=Math.floor((r.rect.x+(p.x+.5)*r.rect.width/size)*scale),y=Math.floor((r.rect.y+(p.y+.5)*r.rect.height/size)*scale),actual=Array.from(data.subarray((y*info.width+x)*4,(y*info.width+x)*4+3));actual.forEach((v,c)=>assert.ok(Math.abs(v-css[c])<=1,label+' screen differs from independent same-RGBA CSS reference: '+actual+'/'+css));samples.push({surface:r.id,actual});}
- report.screenshots.push({label,screenshotMs,sourceRgba:p.rgba,cssReference:css,referenceStyle,samples,scope:'same RGBA/background compositor comparison; not opaque sRGB premix equivalence'});return s;}
+ report.screenshots.push({label,screenshotMs,fixtureStartedAtMainMs:fixtureStart,fixtureEndedAtMainMs:elapsed(),fixtureTotalMs:elapsed()-fixtureStart,sourceRgba:p.rgba,cssReference:css,referenceStyle,samples,scope:'same RGBA/background compositor comparison; not opaque sRGB premix equivalence'});return s;}
 (async()=>{
  await app.whenReady();session.defaultSession.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*']},(_d,cb)=>cb({cancel:true}));session.defaultSession.setPermissionRequestHandler((_w,_p,cb)=>cb(false));
  win=new BrowserWindow({show:false,width:1100,height:600,webPreferences:{preload:path.join(run,'preload.cjs'),sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('will-navigate',e=>e.preventDefault());
@@ -81,22 +82,30 @@ async function screenshot(label,point){const s=await summary(),p=s.probes.find(p
  const opened=await call('accept-open',{kind:'accept',candidateId:'open'});envelope=opened.reply.receipt.versionId;acceptedVersion=envelope;
  const start=await call('pipeline-start',{kind:'pipelineStart',maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:256*1024*1024});assert.equal(start.reply.kind,'pipelineReady');pipelineId=start.reply.pipelineId;assert.equal(start.reply.anchorVersion,envelope);
  await call('capture-start',{kind:'capture'});
+ if(sampleIntervalMs>0)await screenshot('before-paced-input',{x:220,y:200});
+ const pacer=createPacer({intervalMs:sampleIntervalMs,total:280,clock:elapsed,sleep:ms=>new Promise(r=>setTimeout(r,ms))});
+ report.pacing=pacer.trace();
+ let sampleIndex=0,inputWindowEnd;
  for(let i=0;i<40;i++){
-  const previewId='preview-'+i,op='stroke-'+i,erase=i%4===3,firstAt=elapsed(),predecessor=i?'stroke-'+(i-1):null;
+  const previewId='preview-'+i,op='stroke-'+i,erase=i%4===3,predecessor=i?'stroke-'+(i-1):null;
   const brush={size:24,opacity:erase?1:.5,flow:1,hardness:1,spacing:.1,seed:i+1,erase,color:'#ff0000'},xs=erase?[250,255,260,265,260,255,250]:[200,240,280,320,280,240,200];
-  let begin,tries=0;
+  const beginSchedule=await pacer.before(sampleIndex++);let begin,tries=0,firstRequestAt;
   for(;;){begin=await call('begin-'+i,{kind:'strokeBegin',previewId,predecessorOperationId:predecessor,brush,points:[{x:xs[0],y:200,pressure:1}]},{allowFailure:true,sample:true});
+   firstRequestAt??=begin.requestAt;
    if(begin.reply.kind==='frame')break;assert.equal(begin.reply.error.code,'backpressure',JSON.stringify(begin.reply));report.backpressure.push({stroke:i,atMainMs:elapsed(),reply:begin.reply});await pump();if(++tries>1000)throw Error('Admission did not recover');await new Promise(r=>setTimeout(r,1));}
-  const trace={operationId:op,erase,firstSampleRequestedAtMainMs:firstAt,admittedSampleAtMainMs:begin.requestAt,budgetWaitMs:begin.requestAt-firstAt,
-   previousStrokeStillPendingAtNative:begin.reply.frame.pendingOperationIds.length>0,samples:[{fromSeq:1,requestAtMainMs:begin.requestAt,nativeFrameReceivedAtMainMs:begin.receivedAt,dualCanvasInstalledAtAckMainMs:begin.frame.dualCanvasInstalledAtAckMainMs}]};
-  for(let n=1;n<xs.length;n++){const step=await call('append-'+i+'-'+n,{kind:'strokeAppend',previewId,fromSeq:n+1,points:[{x:xs[n],y:200,pressure:1}]},{sample:true});trace.samples.push({fromSeq:n+1,requestAtMainMs:step.requestAt,nativeFrameReceivedAtMainMs:step.receivedAt,dualCanvasInstalledAtAckMainMs:step.frame.dualCanvasInstalledAtAckMainMs});}
+  pacer.dispatched(beginSchedule,{firstRequestAt,successfulRequestAt:begin.requestAt,refusedAttempts:tries});
+  const trace={operationId:op,erase,firstSampleRequestedAtMainMs:firstRequestAt,admittedSampleAtMainMs:begin.requestAt,budgetWaitMs:begin.requestAt-firstRequestAt,
+   previousStrokeStillPendingAtNative:begin.reply.frame.pendingOperationIds.length>0,samples:[{fromSeq:1,pacingIndex:beginSchedule.index,requestAtMainMs:begin.requestAt,nativeFrameReceivedAtMainMs:begin.receivedAt,dualCanvasInstalledAtAckMainMs:begin.frame.dualCanvasInstalledAtAckMainMs}]};
+  for(let n=1;n<xs.length;n++){const scheduled=await pacer.before(sampleIndex++),step=await call('append-'+i+'-'+n,{kind:'strokeAppend',previewId,fromSeq:n+1,points:[{x:xs[n],y:200,pressure:1}]},{sample:true});pacer.dispatched(scheduled,{firstRequestAt:step.requestAt,successfulRequestAt:step.requestAt,refusedAttempts:0});trace.samples.push({fromSeq:n+1,pacingIndex:scheduled.index,requestAtMainMs:step.requestAt,nativeFrameReceivedAtMainMs:step.receivedAt,dualCanvasInstalledAtAckMainMs:step.frame.dualCanvasInstalledAtAckMainMs});}
+  inputWindowEnd=trace.samples.at(-1).dualCanvasInstalledAtAckMainMs;
   const end=await call(op,{kind:'strokeFinish',previewId,throughSeq:7});assert.equal(end.reply.kind,'queued');assert.equal(end.reply.durable,false);assert.equal(end.reply.pipelineId,pipelineId);assert.equal(end.reply.predecessorOperationId,predecessor);
-  const e={...trace,endRequestedAtMainMs:end.requestAt,volatileQueuedAtMainMs:end.receivedAt};entries.set(op,e);order.push(op);
-  if(i===0){const s=await screenshot('first-half-opacity',{x:220,y:200});assert.ok(s.probes[0].rgba[3]>=127&&s.probes[0].rgba[3]<=128);}
+  const e={...trace,endRequestedAtMainMs:end.requestAt,volatileQueuedAtMainMs:end.receivedAt};entries.set(op,e);order.push(op);report.strokes.push(e);
+  if(i===0){const alpha=sampleIntervalMs===0?(await screenshot('first-half-opacity',{x:220,y:200})).probes[0].rgba[3]:(await evaluate('probes',[{x:220,y:200}]))[0].rgba[3];assert.ok(alpha>=127&&alpha<=128);}
   if(i===1){const p=await evaluate('probes',[{x:220,y:200}]);e.overlapAlpha=p[0].rgba[3];assert.ok(p[0].rgba[3]>=190&&p[0].rgba[3]<=192,'separate half-opacity strokes compound');}
   if(erase){const p=await evaluate('probes',[{x:260,y:200}]);e.erasedAlpha=p[0].rgba[3];assert.equal(p[0].rgba[3],0,'eraser clears overlapping centre');}
   await pump({acceptLast:false});
  }
+ report.pacing=pacer.result();report.inputWindow={startedAtMainMs:report.pacing.originAtMainMs,endedAtMainMs:inputWindowEnd};
  const volatile=await screenshot('volatile-40-strokes',{x:220,y:200});assert.ok(volatile.header.pendingOperationIds.length>0);report.volatileHash=volatile.referenceHash;
  const freeze=await call('freeze-pending',{kind:'freeze'},{allowFailure:true});assert.equal(freeze.reply.kind,'failure');assert.equal(freeze.reply.error.code,'busy');report.freezeBeforeDrain=freeze.reply;
  const refused=await call('after-freeze-begin',{kind:'strokeBegin',previewId:'refused',predecessorOperationId:'stroke-39',brush:{size:24,opacity:.5,seed:99,color:'#ff0000'},points:[{x:200,y:200,pressure:1}]},{allowFailure:true});assert.equal(refused.reply.kind,'failure');assert.equal(refused.reply.error.code,'frozen');
@@ -111,5 +120,11 @@ async function screenshot(label,point){const s=await summary(),p=s.probes.find(p
  report.statistics={sampleToNativeFrame:stats(report.calls.filter(c=>c.sampleRequest&&c.reply==='frame').map(c=>c.nativeRoundTripMs)),firstAttemptToCanvasAckIncludingBackpressureAndOracle:stats(report.strokes.map(s=>s.samples[0].dualCanvasInstalledAtAckMainMs-s.firstSampleRequestedAtMainMs)),sampleToCanvasAckIncludingOracle:stats(report.strokes.flatMap(s=>s.samples.map(p=>p.dualCanvasInstalledAtAckMainMs-p.requestAtMainMs))),
   rendererInstall:stats(report.frames.map(f=>f.displayMs)),pixelOracle:stats(report.frames.map(f=>f.verificationMs)),endToVolatileQueued:stats(report.strokes.map(e=>e.volatileQueuedAtMainMs-e.endRequestedAtMainMs)),endToNativeAcceptedConfirmation:stats(report.strokes.map(e=>e.durableConfirmationAtMainMs-e.endRequestedAtMainMs)),budgetWait:stats(report.strokes.map(e=>e.budgetWaitMs))};
  report.cumulativeTiming=deriveTiming(report);
+ const inputFrames=report.frames.filter(f=>f.nativeFrameReceivedAtMainMs>=report.inputWindow.startedAtMainMs&&f.nativeFrameReceivedAtMainMs<=report.inputWindow.endedAtMainMs);
+ report.instrumentation={synchronousPixelOracleTotalMs:inputFrames.reduce((sum,f)=>sum+f.verificationMs,0),synchronousPixelOracle:stats(inputFrames.map(f=>f.verificationMs)),
+   rendererInstallTotalMs:inputFrames.reduce((sum,f)=>sum+f.displayMs,0),
+   screenshotFixtureSpansInsideInputWindow:report.screenshots.filter(s=>s.fixtureStartedAtMainMs<report.inputWindow.endedAtMainMs&&s.fixtureEndedAtMainMs>report.inputWindow.startedAtMainMs),
+   meaning:'Both-Canvas ACK includes synchronous per-frame exact-pixel oracle. Timings are instrumented upper bounds, not physical/compositor presentation. Full-raster checks, CSS setup, paint opportunities and PNG decoding are included in each screenshot fixtureTotalMs separately from capturePage screenshotMs.'};
+ if(sampleIntervalMs>0)assert.equal(report.instrumentation.screenshotFixtureSpansInsideInputWindow.length,0,'Paced input must not be blocked by screenshot fixtures');
  report.projectDurabilityCertified=false;report.nativeDiagnostics=client.diagnostics();await evaluate('dispose');report.completed=true;
 })().catch(error=>{report.error=String(error.stack||error);console.error(report.error);}).finally(async()=>{if(client&&!nativeClosed){client.terminateOwnedProcess();report.nativeExit=await client.exited;report.nativeDiagnostics=client.diagnostics();}fs.writeFileSync(path.join(run,'result.json'),JSON.stringify(report,null,2));port?.close();if(win&&!win.isDestroyed())win.destroy();app.exit(report.error?1:0);});
