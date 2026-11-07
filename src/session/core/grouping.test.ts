@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectV1 } from '../../platform/contracts/refactorV1';
 import { dialogueTypingGroupWindowMs, typingFoldKey, validTypingGroup } from './grouping';
+import { createProjectHistory } from './history';
 
 const project = (): ProjectV1 => ({
   schema: 'storyboard-flow.project', version: 1, id: 'project', revision: 7, name: 'Board',
@@ -18,6 +19,12 @@ const committed = (base: ProjectV1, dialogues: ProjectV1['dialogues']): ProjectV
 
 const typeInto = (base: ProjectV1, text: string, id = 'd0', shotId = 's0'): ProjectV1 =>
   committed(base, base.dialogues.map(row => (row.id === id ? { ...row, text } : row)));
+
+it('V1 empty Redo ends typing without adding a revision or another history stack',()=>{
+  let time=0;const result=createProjectHistory(project(),{maxEntries:60,group:{now:()=>time,windowMs:800}});if(!result.ok)throw Error(result.error.message);const h=result.value;
+  const type=(text:string)=>{const p=h.current();if(!p.ok)throw Error(p.error.message);return h.apply({kind:'setDialogues',shotId:'s0',dialogues:p.value.dialogues.filter(d=>d.shotId==='s0').map(d=>({...d,text}))},{group:'same-run'});};
+  expect(type('first').ok).toBe(true);const before=h.current();expect(h.redo()).toMatchObject({ok:false,error:{code:'not-found'}});expect(h.current()).toEqual(before);time=20;expect(type('second').ok).toBe(true);expect(h.undoDepth()).toBe(2);
+});
 
 describe('typing fold key', () => {
   it('names the one dialogue whose text a typing commit rewrote', () => {

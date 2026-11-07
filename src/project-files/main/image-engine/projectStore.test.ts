@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -66,4 +66,32 @@ it('accounts prior retained recovery bytes and reservations before publishing',a
 it('waits for injected reference verification and leaves head unchanged when it refuses',async()=>{
   const {store}=await fixture({verifySource:async()=>{throw Error('retained original unavailable');}});
   await expect(store.commit(null,genesis())).rejects.toThrow('retained original unavailable');expect(await store.load()).toBeNull();await store.close();
+});
+
+it('retries the head directory sync before acknowledging an idempotent CAS after unknown publication',async()=>{
+  const {root,store}=await fixture();const first=await store.commit(null,genesis());
+  const next={...genesis(),commitId:'text',previousCommitHash:first.commitHash,beforeRevision:0,after:{...project(),revision:1,name:'committed'}};
+  const original=fs.open.bind(fs);let attempts=0;
+  const spy=vi.spyOn(fs,'open').mockImplementation(async(...args)=>{
+    const handle=await original(...args);
+    if(args[0]===location(root)&&args[1]==='r'){
+      const sync=handle.sync.bind(handle);handle.sync=async()=>{attempts++;if(attempts===1)throw Error('synthetic head directory sync failure');await sync();};
+    }
+    return handle;
+  });
+  try{
+    await expect(store.commit(first.commitHash,next)).rejects.toMatchObject({effect:'unknown'});
+    expect((await store.load())?.commit.after.revision).toBe(1);
+    const result=await store.commit(first.commitHash,next);expect(result.commit.after.revision).toBe(1);expect(attempts).toBe(2);expect((await store.committed()).length).toBe(2);
+  }finally{spy.mockRestore();await store.close();}
+});
+
+it('keeps verified history and recovery inventory off the normal metadata commit path',async()=>{
+  let sourceChecks=0;const {store}=await fixture({verifySource:async()=>{sourceChecks++;}});
+  let current=await store.commit(null,genesis());expect(sourceChecks).toBe(1);
+  const readdir=vi.spyOn(fs,'readdir');
+  try{
+    for(let n=1;n<=8;n++)current=await store.commit(current.commitHash,{...genesis(),commitId:`edit${n}`,previousCommitHash:current.commitHash,beforeRevision:n-1,after:{...project(),revision:n,name:`name ${n}`}});
+    expect(sourceChecks).toBe(1);expect(readdir).not.toHaveBeenCalled();expect((await store.load())?.commit.after.revision).toBe(8);
+  }finally{readdir.mockRestore();await store.close();}
 });

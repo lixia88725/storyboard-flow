@@ -11,7 +11,7 @@ const native={storeId:'native',documentId:'doc',versionId:'a'.repeat(64),manifes
 it('prepares without changing either stack and rejects used, foreign and stale plans',()=>{
   const h=history(),a=required(h.prepare({kind:'setScriptText',shotId:'a',text:'one'})),b=required(h.prepare({kind:'setScriptText',shotId:'a',text:'two'}));
   expect(required(h.current()).shots[0].scriptText).toBe('');expect(h.undoDepth()).toBe(0);
-  a.result.after.shots[0].scriptText='forged public plan';
+  expect(()=>{a.result.after.shots[0].scriptText='forged public plan';}).toThrow();
   expect(required(h.commit(a)).after.shots[0].scriptText).toBe('one');
   expect(h.commit(a)).toMatchObject({ok:false,error:{code:'conflict'}});expect(h.commit(b)).toMatchObject({ok:false,error:{code:'conflict'}});
   expect(history().commit(required(h.prepareUndo()))).toMatchObject({ok:false,error:{code:'conflict'}});
@@ -45,4 +45,10 @@ it('refuses a false image baseline and validates V2 without accepting PNG layer 
   const h=history();expect(h.prepare({kind:'installNativeImage',imageId:'ia',expected:{kind:'native',native},next:native})).toMatchObject({ok:false,error:{code:'conflict'}});
   const p=projectFixture();expect(validImageProject({...p,version:1})).toBe(false);
   expect(validImageProject({...p,images:{...p.images,ia:{id:'ia',layers:[]}}})).toBe(false);
+});
+
+it('an empty Redo still ends the typing run without changing project revision',()=>{
+  let time=0;const h=history(()=>time);
+  const type=(text:string)=>required(h.commit(required(h.prepare({kind:'setDialogues',shotId:'a',dialogues:[{id:'line',shotId:'a',text}]},{group:'typing'}))));
+  type('h');const revision=required(h.current()).revision;expect(h.prepareRedo()).toMatchObject({ok:false,error:{code:'not-found'}});expect(required(h.current()).revision).toBe(revision);time=20;type('he');expect(h.undoDepth()).toBe(2);
 });

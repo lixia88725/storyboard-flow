@@ -26,11 +26,15 @@ export function createSnapshotHistory<P extends HistoryProjectShape,C>(project:P
   let state:State={project:copy(project),undo:[],redo:[],group:null},generation=0;
   const plans=new WeakMap<HistoryPlan<P>,{generation:number;next:State;result:HistoryResult<P>}>();
   const push=(stack:P[],p:P)=>[...stack,p].slice(-options.maxEntries);
+  const freeze=<T>(value:T):T=>{if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
   const plan=(result:HistoryResult<P>,next:State):ResultV1<HistoryPlan<P>>=>{
-    const publicPlan:HistoryPlan<P>=Object.freeze({result:copy(result)});
+    const publicPlan:HistoryPlan<P>=Object.freeze({result:freeze(copy(result))});
     plans.set(publicPlan,{generation,next,result:copy(result)});return ok(publicPlan);
   };
   const restore=(kind:'undo'|'redo')=>{
+    // Even a refused Undo/Redo ends typing. This changes grouping context only,
+    // never the project revision or either stack. Invalidate pre-existing plans.
+    if(state.group){state={...state,group:null};generation++;}
     const from=state[kind],to=kind==='undo'?'redo':'undo';
     if(!from.length)return fail<HistoryPlan<P>>('not-found','No history entry');
     if(!revision(state.project.revision+1))return fail<HistoryPlan<P>>('invalid-input','Project revision overflow');
