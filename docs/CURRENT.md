@@ -28,6 +28,8 @@
 
 项目单写者保护 `b3cde7a` 已合入：真实 OS 锁加持久 Main 身份。只崩溃锁辅助进程时，旧 Main 停止新写，新 Main 也不能趁隙接管；确认旧 Main 退出后才恢复。执行者 18 项真实进程专项与 build 通过，证据 `/private/tmp/flow-image-project-lease-receipt.json`。当前仅本机 macOS 验证，Windows 安全拒绝；生产入口、网络文件系统和完整打包未认证。
 
+传输补充：等待宿主启动期间，调用方可转移 ArrayBuffer；发送长度与内容现均取预先快照，启动配置身份也独立保存。真实 transfer 回归在内的 8 项 transport 测试通过（`/private/tmp/flow-engine-research/transport-transfer.log`），完整构建通过（同目录 `integration-transfer-build.log`）。
+
 主管最新组合：完整构建通过（`/private/tmp/flow-engine-research/integration-project-lease-build.log`）；真实 native 连续笔链、连接身份、项目 CAS 和混合历史基础共 4 文件/23 项通过（同目录 `project-pipeline-combined.log`）。项目 Session 端到端与最终获准全量仍待完成。
 
 更新：2026-11-06。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。

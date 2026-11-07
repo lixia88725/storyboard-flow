@@ -26,6 +26,16 @@ it('snapshots input before a delayed startup handshake', async () => {
     expect([...reply.payload]).toEqual([1,2]);
   } finally { client.terminateOwnedProcess(); await client.exited; }
 });
+it('keeps the captured payload when the caller transfers its original buffer during startup', async () => {
+  const client = await peer(`setTimeout(hello,80);function receive(h,p){send(h,p);}`);
+  try {
+    const payload = new Uint8Array([7,8,9]);
+    const result = client.request('transfer', { kind: 'input' }, null, payload);
+    structuredClone(payload.buffer, { transfer: [payload.buffer] });
+    expect(payload.byteLength).toBe(0);
+    expect([...(await result).payload]).toEqual([7,8,9]);
+  } finally { client.terminateOwnedProcess(); await client.exited; }
+});
 it('rejects wrong-incarnation replies as unknown and never retries an operation', async () => {
   const client = await peer(`hello();function receive(h,p){send({...h,incarnation:'other'},p);}`);
   try {

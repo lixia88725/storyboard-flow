@@ -7,6 +7,7 @@ export type ImageEngineCapability = 'recoveredCandidateAcceptAtInstalledVersion'
  * At most one request is outstanding in protocol v1; caller owns operation reconciliation.
  */
 export function startImageEngine(options: { binary: string; store: string; sessionId: string; incarnation: string; budgetBytes: number }) {
+  options = { ...options }; // Bind process/session identity independently of the caller's mutable config.
   if (!Number.isSafeInteger(options.budgetBytes) || options.budgetBytes <= 0) throw Error('Invalid storage budget');
   const child = spawn(options.binary, ['--store', options.store, '--budget', String(options.budgetBytes)], { stdio: ['pipe', 'pipe', 'pipe'] });
   let workerEpoch: number | undefined, sequence = 0, stopped = false, requestActive = false, stderr = '';
@@ -67,13 +68,12 @@ export function startImageEngine(options: { binary: string; store: string; sessi
         await ready;
         if (stopped) throw Object.assign(Error('Native process is unavailable'), { effect: 'unknown' });
         if (pending) throw Object.assign(Error('Native request is still in flight'), { effect: 'none' });
-        if (payload.byteLength > 64 * 1024 * 1024) throw Object.assign(Error('Native payload exceeds budget'), { effect: 'none' });
         const requestId = `request-${++sequence}`;
         const header = Buffer.from(JSON.stringify({ protocol: 1, requestId, sessionId: options.sessionId,
           incarnation: options.incarnation, workerEpoch, operationId, baseVersion, body: capturedBody }), 'utf8');
         if (header.length > 65536) throw Object.assign(Error('Native header exceeds budget'), { effect: 'none' });
-        const message = Buffer.alloc(8 + header.length + payload.byteLength);
-        message.writeUInt32LE(header.length, 0); message.writeUInt32LE(payload.byteLength, 4);
+        const message = Buffer.alloc(8 + header.length + capturedPayload.byteLength);
+        message.writeUInt32LE(header.length, 0); message.writeUInt32LE(capturedPayload.byteLength, 4);
         header.copy(message, 8); message.set(capturedPayload, 8 + header.length);
         return await new Promise<NativeFrame>((resolve, reject) => {
           pending = { id: requestId, operationId, resolve, reject };
