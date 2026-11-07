@@ -7,7 +7,7 @@ def png(w,h):
     return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+chunk(b'IDAT',zlib.compress((b'\0'+bytes([0,0,0,0])*w)*h))+chunk(b'IEND',b'')
 class Client:
     def __init__(self,binary,root,base=None,record=False):
-        self.root=root;self.base=base;self.seq=0;self.record=record
+        self.root=root;self.base=base;self.seq=0;self.record=record;self.prefixes={}
         self.log=open(root.parent/(root.name+'-stderr.log'),'ab')
         self.p=subprocess.Popen([binary,'--store',str(root)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.log)
         self.hello=self.read()[0];assert self.hello['kind']=='hello',self.hello
@@ -22,6 +22,10 @@ class Client:
     def read(self):
         h,p=struct.unpack('<II',self.exact(8));assert 0<h<=65536 and p<=67108864,(h,p)
         header=json.loads(self.exact(h));payload=self.exact(p)
+        if header.get('body',{}).get('kind')=='frame':
+            frame=header['body']['frame'];identity=(frame['workerEpoch'],frame['epoch'],frame['documentId'])
+            previous=self.prefixes.get(identity,0);assert frame['inputThrough']>=previous,('epoch input prefix moved backwards',previous,frame)
+            self.prefixes[identity]=frame['inputThrough']
         if self.record and header.get('body',{}).get('kind')=='frame':
             frame=header['body']['frame'];directory=self.root.parent/'frames';directory.mkdir(exist_ok=True)
             stem=directory/(str(header['workerEpoch'])+'-'+str(frame['frameSeq']))

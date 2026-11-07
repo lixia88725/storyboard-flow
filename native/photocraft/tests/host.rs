@@ -444,3 +444,42 @@ fn discarded_candidate_is_idempotent_and_cannot_later_be_accepted() {
     let illegal = h.call("late", json!({"kind":"accept","candidateId":"edit"}));
     assert_eq!(illegal.header["body"]["error"]["code"], "conflict");
 }
+
+#[test]
+fn display_input_prefix_accumulates_across_accept_capture_and_next_stroke() {
+    let mut h = Harness::new();
+    let n = h.call("n", json!({"kind":"new","width":64,"height":64}));
+    h.accept("n", &n);
+    let initial = h.call("initial", json!({"kind":"capture"}));
+    let epoch = initial.header["body"]["frame"]["epoch"].clone();
+    assert_eq!(initial.header["body"]["frame"]["inputThrough"], 0);
+    for i in 0..3 {
+        let p = format!("p{i}");
+        let op = format!("stroke{i}");
+        let begin=h.call(&format!("begin{i}"),json!({"kind":"strokeBegin","previewId":p,"brush":{"size":5,"opacity":0.5},"points":[{"x":10,"y":10}]}));
+        assert_eq!(begin.header["body"]["frame"]["inputThrough"], i * 2 + 1);
+        assert_eq!(begin.header["body"]["frame"]["epoch"], epoch);
+        let append = h.call(
+            &format!("append{i}"),
+            json!({"kind":"strokeAppend","previewId":p,"fromSeq":2,"points":[{"x":20,"y":20}]}),
+        );
+        assert_eq!(append.header["body"]["frame"]["inputThrough"], i * 2 + 2);
+        let finish = h.call(
+            &op,
+            json!({"kind":"strokeFinish","previewId":p,"throughSeq":2}),
+        );
+        h.accept(&op, &finish);
+        let capture = h.call(&format!("capture{i}"), json!({"kind":"capture"}));
+        assert_eq!(capture.header["body"]["frame"]["inputThrough"], i * 2 + 2);
+        assert_eq!(capture.header["body"]["frame"]["epoch"], epoch);
+    }
+    let begin=h.call("cancelBegin",json!({"kind":"strokeBegin","previewId":"cancel","brush":{"size":5},"points":[{"x":30,"y":30}]}));
+    assert_eq!(begin.header["body"]["frame"]["inputThrough"], 7);
+    h.call(
+        "cancel",
+        json!({"kind":"strokeCancel","previewId":"cancel"}),
+    );
+    let reset = h.call("reset", json!({"kind":"capture"}));
+    assert_ne!(reset.header["body"]["frame"]["epoch"], epoch);
+    assert_eq!(reset.header["body"]["frame"]["inputThrough"], 0);
+}

@@ -241,6 +241,7 @@ pub struct Host {
     gesture: Option<Gesture>,
     frame_seq: u64,
     display_epoch: u64,
+    epoch_input_through: u64,
     last_frame: Option<(String, u64, Option<String>)>,
     frozen: bool,
     closed: bool,
@@ -294,6 +295,7 @@ impl Host {
             gesture: None,
             frame_seq: 0,
             display_epoch: 0,
+            epoch_input_through: 0,
             last_frame: None,
             frozen: false,
             closed: false,
@@ -561,6 +563,7 @@ impl Host {
                     .map_err(native)?;
                 self.current = Some(version_id.clone());
                 self.display_epoch += 1;
+                self.epoch_input_through = 0;
                 self.last_frame = None;
                 Ok((json!({"kind":"loaded","versionId":version_id}), vec![]))
             }
@@ -612,12 +615,18 @@ impl Host {
                         "settle floating selection before a stroke",
                     ));
                 }
+                let next_input = self
+                    .epoch_input_through
+                    .checked_add(points.len() as u64)
+                    .filter(|v| *v <= 9_007_199_254_740_991)
+                    .ok_or_else(|| Error::none("limit", "epoch input sequence exhausted"))?;
                 let checkpoint = self.engine.host_checkpoint().map_err(native)?;
                 let mut params = brush.clone();
                 params["points"] = serde_json::to_value(points).map_err(native)?;
                 let live = LiveStroke::begin(&self.engine, &params).map_err(native)?;
                 params["seed"] = json!(live.seed);
                 let through = points.len() as u64;
+                self.epoch_input_through = next_input;
                 self.gesture = Some(Gesture {
                     id: preview_id.clone(),
                     params,
@@ -638,6 +647,11 @@ impl Host {
                 points,
             } => {
                 self.base(r)?;
+                let next_input = self
+                    .epoch_input_through
+                    .checked_add(points.len() as u64)
+                    .filter(|v| *v <= 9_007_199_254_740_991)
+                    .ok_or_else(|| Error::none("limit", "epoch input sequence exhausted"))?;
                 let g = self
                     .gesture
                     .as_mut()
@@ -655,6 +669,7 @@ impl Host {
                 g.live.push(points).map_err(native)?;
                 g.points.extend_from_slice(points);
                 g.through += points.len() as u64;
+                self.epoch_input_through = next_input;
                 self.preview(r)
             }
             Command::StrokeFinish {
@@ -718,6 +733,7 @@ impl Host {
                     .ok_or_else(|| Error::none("not-found", "gesture missing"))?;
                 self.engine.host_restore(g.checkpoint).map_err(native)?;
                 self.display_epoch += 1;
+                self.epoch_input_through = 0;
                 self.last_frame = None;
                 Ok((json!({"kind":"cancelled"}), vec![]))
             }
@@ -797,6 +813,7 @@ impl Host {
                     }
                 } else {
                     self.display_epoch += 1;
+                    self.epoch_input_through = 0;
                     self.last_frame = None;
                 }
                 self.candidate = None;
@@ -841,6 +858,7 @@ impl Host {
                     self.source = None;
                 }
                 self.display_epoch += 1;
+                self.epoch_input_through = 0;
                 self.last_frame = None;
                 Ok((result, vec![]))
             }
@@ -884,6 +902,7 @@ impl Host {
                 self.source = loaded.source;
                 self.current = Some(version_id.clone());
                 self.display_epoch += 1;
+                self.epoch_input_through = 0;
                 self.last_frame = None;
                 Ok((json!({"kind":"installed","versionId":version_id}), vec![]))
             }
@@ -931,11 +950,10 @@ impl Host {
         }
     }
     fn preview(&mut self, r: &Request) -> Result<(Value, Vec<u8>)> {
-        let (doc, preview_id, input_through, dirty) = if let Some(g) = &self.gesture {
+        let (doc, preview_id, dirty) = if let Some(g) = &self.gesture {
             (
                 g.live.doc.clone(),
                 Some(g.id.clone()),
-                g.through,
                 Some(g.live.bounds()),
             )
         } else {
@@ -948,7 +966,6 @@ impl Host {
                     .map(Arc::new)
                     .unwrap_or_else(|| st.doc.clone()),
                 None,
-                0,
                 None,
             )
         };
@@ -991,7 +1008,7 @@ impl Host {
         };
         let mut frame = json!({"sessionId":r.session_id,"incarnation":r.incarnation,"workerEpoch":self.worker_epoch,"documentId":document_id,
             "epoch":self.display_epoch,"frameSeq":self.frame_seq,"baseFrameSeq":base,"imageVersionRef":self.current,"previewId":preview_id,
-            "inputThrough":input_through,"width":doc.size.width,"height":doc.size.height,"encoding":"srgb-rgba8-straight","tiles":tiles});
+            "inputThrough":self.epoch_input_through,"width":doc.size.width,"height":doc.size.height,"encoding":"srgb-rgba8-straight","tiles":tiles});
         if preview_id.is_none() {
             frame
                 .as_object_mut()
