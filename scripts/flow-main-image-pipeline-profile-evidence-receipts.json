@@ -1,0 +1,84 @@
+{
+  "classification": "Functional PASS; steady-state paced performance FAIL",
+  "receipts": [
+    {
+      "kind": "small",
+      "source": "/private/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-main-image-pipeline-C4HmWC/result.json",
+      "rawBytes": 175357,
+      "gzipBytes": 17167,
+      "rawSha256": "c67ad8711182bcd0eb8ef9254812cb5f67f9ae0a2c11cfad795168cf21e42500"
+    },
+    {
+      "kind": "warmup-fixture-failure",
+      "source": "/private/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-main-image-pipeline-77TbRL/result.json",
+      "rawBytes": 48268,
+      "gzipBytes": 6513,
+      "rawSha256": "276ae5360127b0f010e672db8eec0c20338d714a7a9cbfa2945c03817da25acc"
+    },
+    {
+      "kind": "paced",
+      "source": "/private/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-main-image-pipeline-G34OEE/result.json",
+      "rawBytes": 4125985,
+      "gzipBytes": 164434,
+      "rawSha256": "7fceb86a4063cdd095bd916624822a83d110c737bf4314c9713fddee94ead214"
+    }
+  ],
+  "productBase": "af23d2f +20f288f; product unchanged from prior baseline",
+  "host": "80a701a",
+  "profileSmallEquivalentToUnprofiledProjectAndPixels": true,
+  "pacedFinalPixelsEqualOriginalBaseline": true,
+  "warmup": {
+    "kind": "real transparent Main operation before steady-state profile; not side-effect-free product prewarming",
+    "beforeRevision": 0,
+    "afterRevision": 1,
+    "elapsedMs": 519.478959
+  },
+  "verification": {
+    "frames": 293,
+    "channels": 241807416,
+    "nativeReferenceSha256": "0e35e9803a836befcf5ed6b68eb2d00759d59560c14ba680667bb27be87bcfec",
+    "canvasHashes": [
+      "0e35e9803a836befcf5ed6b68eb2d00759d59560c14ba680667bb27be87bcfec",
+      "0e35e9803a836befcf5ed6b68eb2d00759d59560c14ba680667bb27be87bcfec"
+    ]
+  },
+  "connections": [
+    {
+      "pid": 51440,
+      "incarnation": "initializing",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "pidCheck": "ESRCH"
+    },
+    {
+      "pid": 51445,
+      "incarnation": "reopen",
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "pidCheck": "ESRCH"
+    }
+  ],
+  "profileHooksRestored": true,
+  "notes": [
+    "First attempt failed before any paced input because test driver omitted opacity:0 when invoking warmup. Failure and original assertion retained; corrected one argument then executed the only actual 40-stroke profile run.",
+    "Original cold-start baseline is unchanged. Profile has an explicit durable transparent warmup; it advances revision and is not an implemented product first-stroke solution.",
+    "Profile records are memory-only during paced input; offline helpers write JSON/CSV/SVG afterwards. Sidechain observer errors consumed; original promises/this/errors preserved.",
+    "Timeline APIs overlap. API and sync durations must not be added as separate wall time. Head-temp classification is refined offline from recorded path, original JSON unchanged."
+  ],
+  "logs": [
+    "/private/tmp/flow-main-image-pipeline-profile-build.log",
+    "/private/tmp/flow-main-image-pipeline-profile-small.log",
+    "/private/tmp/flow-main-image-pipeline-profile-paced-idle.log",
+    "/private/tmp/flow-main-image-pipeline-profile-paced-idle-fixed.log",
+    "/private/tmp/flow-main-image-pipeline-profile-tests-final.log"
+  ],
+  "commands": {
+    "small": "FLOW_MAIN_PIPELINE_PROFILE=1 FLOW_MAIN_PIPELINE_MODE=small node scripts/flow-main-image-pipeline-smoke.mjs",
+    "paced": "FLOW_MAIN_PIPELINE_PROFILE=1 FLOW_MAIN_PIPELINE_MODE=paced node scripts/flow-main-image-pipeline-smoke.mjs",
+    "offline": "node scripts/flow-main-image-pipeline-profile-report.cjs scripts/flow-main-image-pipeline-profile-evidence-paced.json.gz /private/tmp/main-profile"
+  }
+}

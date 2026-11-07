@@ -1,0 +1,45 @@
+// Offline only. Does not launch a worker, Electron, or write during the input window.
+const assert=require('node:assert/strict'),{stats}=require('./flow-main-image-pipeline-metrics.cjs');
+function summarizeProfile(r){
+ assert.equal(r.profile.enabled,true);const spans=r.profile.spans,byId=new Map(spans.map(s=>[s.id,s]));
+ const selected=r.operations.some(o=>o.phase==='paced')?'paced':'small',ops=r.operations.filter(o=>o.phase===selected);
+ const span=(op,label)=>{const found=spans.filter(s=>s.operationId===op&&s.label===label);assert.equal(found.length,1,op+' '+label);assert.ok(found[0].endedAtMainMs>=found[0].startedAtMainMs);return found[0];};
+ const stage=(op,name)=>{const e=r.progress.find(e=>e.operationId===op&&e.stage===name);assert.ok(e);return e.atMainMs;};
+ const descends=(s,id)=>{let p=s.parentSpanId;for(let n=0;p!==null&&p!==undefined&&n<32;n++){if(p===id)return true;p=byId.get(p)?.parentSpanId;}return false;};
+ const union=(items,start,end)=>{const intervals=items.map(s=>[Math.max(start,s.startedAtMainMs),Math.min(end,s.endedAtMainMs)]).filter(([a,b])=>b>a).sort((a,b)=>a[0]-b[0]);let total=0,last=-Infinity;for(const[a,b]of intervals){total+=Math.max(0,b-Math.max(a,last));last=Math.max(last,b);}return total;};
+ const breakdown=s=>{const children=spans.filter(c=>descends(c,s.id));const sync=children.filter(c=>c.label==='fs.handle.sync'),lease=children.filter(c=>c.label==='lease.assertHeld');const known=union([...sync,...lease],s.startedAtMainMs,s.endedAtMainMs);return{callMs:s.durationMs,syncCount:sync.length,syncWallUnionMs:union(sync,s.startedAtMainMs,s.endedAtMainMs),leaseCallCount:lease.length,leaseWallUnionMs:union(lease,s.startedAtMainMs,s.endedAtMainMs),otherIncludingQueueChecksAndSchedulingMs:Math.max(0,s.durationMs-known)};};
+ const rows=ops.map((o,i)=>{const intent=span(o.operationId,'store.beginOperation'),commit=span(o.operationId,'store.commit'),accept=span(o.operationId,'driver.pipeline.accept'),settle=span(o.operationId,'store.settle'),resolve=span(o.operationId,'store.resolveOperation'),prepared=stage(o.operationId,'prepared'),accepted=stage(o.operationId,'nativeAccepted'),previous=i?span(ops[i-1].operationId,'store.resolveOperation'):null;
+  assert.ok(commit.startedAtMainMs>=prepared);assert.ok(!previous||commit.startedAtMainMs>=previous.endedAtMainMs);const queueUntil=Math.max(prepared,previous?.endedAtMainMs??prepared);
+  return{index:i,operationId:o.operationId,endAtMainMs:o.endAtMainMs,preparedAtMainMs:prepared,nativeAcceptedAtMainMs:accepted,
+   api:{intent,commit,accept,settle,resolve},apiBreakdown:{intent:breakdown(intent),commit:breakdown(commit),accept:breakdown(accept),settle:breakdown(settle),resolve:breakdown(resolve)},
+   preparedToCommitCallStartMs:commit.startedAtMainMs-prepared,
+   commitCallStartToResolutionEndMs:resolve.endedAtMainMs-commit.startedAtMainMs,
+   preparedToPreviousResolutionEndWaitMs:queueUntil-prepared,
+   afterPreviousResolutionUntilCommitCallMs:commit.startedAtMainMs-queueUntil,
+   commitCallEndToNativeAcceptedMs:accepted-commit.endedAtMainMs,
+   acceptAdmissionReturnedToNativeAcceptedMs:accepted-accept.endedAtMainMs,
+   nativeAcceptedToResolutionEndMs:resolve.endedAtMainMs-accepted};
+ });
+ const metrics={};for(const k of ['preparedToCommitCallStartMs','commitCallStartToResolutionEndMs','preparedToPreviousResolutionEndWaitMs','afterPreviousResolutionUntilCommitCallMs','commitCallEndToNativeAcceptedMs','acceptAdmissionReturnedToNativeAcceptedMs','nativeAcceptedToResolutionEndMs'])metrics[k]=stats(rows.map(x=>x[k]));
+ const apiRanking=['intent','commit','accept','settle','resolve'].map(api=>({api,count:rows.length,totalInclusiveMs:rows.reduce((sum,r)=>sum+r.api[api].durationMs,0),duration:stats(rows.map(r=>r.api[api].durationMs)),syncUnion:stats(rows.map(r=>r.apiBreakdown[api].syncWallUnionMs)),leaseUnion:stats(rows.map(r=>r.apiBreakdown[api].leaseWallUnionMs)),other:stats(rows.map(r=>r.apiBreakdown[api].otherIncludingQueueChecksAndSchedulingMs))})).sort((a,b)=>b.totalInclusiveMs-a.totalInclusiveMs);
+ const syncs=spans.filter(s=>s.phase===selected&&s.label==='fs.handle.sync'),leases=spans.filter(s=>s.phase===selected&&s.label==='lease.assertHeld'),syncCategory=s=>s.path?.startsWith('.storyboard-flow/image-project-v2/head.')?'head-temporary-file':s.category;const syncCategories=[...new Set(syncs.map(syncCategory))].map(category=>{const group=syncs.filter(s=>syncCategory(s)===category);return{category,count:group.length,totalWallMs:group.reduce((n,s)=>n+s.durationMs,0),duration:stats(group.map(s=>s.durationMs))};}).sort((a,b)=>b.totalWallMs-a.totalWallMs);
+ return{classification:selected==='paced'?'Functional PASS; steady-state 10ms paced performance FAIL':'Small functional-equivalence diagnostic; no performance certification',phase:selected,rows,metrics,apiRanking,syncCategories,
+  leaseCalls:{count:leases.length,totalWallMs:leases.reduce((n,s)=>n+s.durationMs,0),duration:stats(leases.map(s=>s.durationMs))},
+  paced:r.pacing?{...r.pacing,records:undefined}:undefined,warmup:r.warmup,deadlineToCanvasAck:r.metrics?.deadlineToCanvasAck,
+  limits:[
+   'API entry/settlement timing is measured, not inferred from stage gaps. API calls include internal queues, validation, IO and scheduling.',
+   'preparedToCommitCallStart is Main FIFO admission delay plus pre-CAS checks. Previous resolution return tightens that boundary; tiny Main promise/history setup remains in afterPreviousResolutionUntilCommitCall.',
+   'Sync wall union measures actual Node FileHandle.sync promise lifetimes, including libuv/OS scheduling. It is not kernel active time or a hardware durability certification. Rust host/guard sync calls are outside this hook.',
+   'Lease and sync spans are nested in API spans. Inclusive totals overlap; do not sum them into wall time. Other is uninstrumented checks/reads/writes/internal queue/scheduling, not pure CPU.',
+   'Profiler records arrays in memory during input and restores hooks before report writes. Its own CPU/microtask overhead is present; no claim that a profiled run is an uninstrumented latency benchmark.',
+   'Transparent warmup is a real durable Main operation and may advance revision. It does not prove side-effect-free product prewarming or solve first-user-stroke latency.'
+  ]};
+}
+function csv(s){const header=['index','operationId','preparedToCommitCallStartMs','intentMs','commitMs','acceptAdmissionMs','settleMs','resolveMs','nativeAcceptedToResolutionEndMs'];return[header.join(','),...s.rows.map(r=>[r.index,r.operationId,r.preparedToCommitCallStartMs,r.api.intent.durationMs,r.api.commit.durationMs,r.api.accept.durationMs,r.api.settle.durationMs,r.api.resolve.durationMs,r.nativeAcceptedToResolutionEndMs].join(','))].join('\n')+'\n';}
+function svg(s){const width=1200,rowH=29,left=80,top=100,height=top+s.rows.length*rowH+50,max=Math.max(...s.rows.map(r=>r.api.resolve.endedAtMainMs-r.endAtMainMs)),scale=(width-left-40)/max;
+ const esc=v=>String(v).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+ const parts=[`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/><g font-family="sans-serif" font-size="12"><text x="16" y="24" font-size="17">Main pipeline profile: actual calls and queue per stroke, relative to local end (ms)</text><text x="16" y="46">Gray: prepared→commit call; blue: intent; green: CAS; purple: accept admission; orange/red: settle/resolution</text><text x="16" y="65">Spans overlap. Native acceptance wait is between accept admission and settle. Steady-state only; not input-to-photon.</text>`];
+ for(let x=0;x<=max;x+=50)parts.push(`<line x1="${left+x*scale}" y1="${top-15}" x2="${left+x*scale}" y2="${height-20}" stroke="#e5e7eb"/><text x="${left+x*scale}" y="${top-22}">${x}</text>`);
+ s.rows.forEach((r,i)=>{const y=top+i*rowH;parts.push(`<text x="12" y="${y+13}">${i+1}</text>`);const bar=(start,end,color,label)=>parts.push(`<rect x="${left+(start-r.endAtMainMs)*scale}" y="${y}" width="${Math.max(.5,(end-start)*scale)}" height="17" fill="${color}"><title>${esc(label)}: ${(end-start).toFixed(3)}ms</title></rect>`);bar(r.preparedAtMainMs,r.api.commit.startedAtMainMs,'#cbd5e1','Main FIFO/pre-CAS');for(const[key,color]of Object.entries({intent:'#3b82f6',commit:'#16a34a',accept:'#9333ea',settle:'#f59e0b',resolve:'#ef4444'}))bar(r.api[key].startedAtMainMs,r.api[key].endedAtMainMs,color,key);});parts.push('</g></svg>');return parts.join('');}
+module.exports={summarizeProfile,csv,svg};
+if(require.main===module){const fs=require('node:fs'),zlib=require('node:zlib'),file=process.argv[2],prefix=process.argv[3];if(!file)throw Error('Expected result.json[.gz] [output-prefix]');const raw=fs.readFileSync(file),s=summarizeProfile(JSON.parse(file.endsWith('.gz')?zlib.gunzipSync(raw):raw));if(prefix){fs.writeFileSync(prefix+'.json',JSON.stringify(s,null,2));fs.writeFileSync(prefix+'-rows.csv',csv(s));fs.writeFileSync(prefix+'-timeline.svg',svg(s));}else console.log(JSON.stringify(s,null,2));}

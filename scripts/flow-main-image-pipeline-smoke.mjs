@@ -1,5 +1,7 @@
 // Run npm run build first. Default is the small real-project GUI lifecycle check.
 // FLOW_MAIN_PIPELINE_MODE=paced requires a separately coordinated idle window.
+// FLOW_MAIN_PIPELINE_PROFILE=1 records real API/sync spans. Paced profile explicitly
+// warms the real Session before its deadline origin; warmup may advance revision.
 import {createRequire} from 'node:module';import {fileURLToPath} from 'node:url';
 import {spawn} from 'node:child_process';import fs from 'node:fs/promises';import {createHash} from 'node:crypto';
 import os from 'node:os';import path from 'node:path';import {build} from 'esbuild';

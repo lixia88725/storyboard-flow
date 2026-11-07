@@ -1,0 +1,4959 @@
+{
+  "classification": "Functional PASS; steady-state 10ms paced performance FAIL",
+  "phase": "paced",
+  "rows": [
+    {
+      "index": 0,
+      "operationId": "c68c0a4c-fca1-47e8-ba3c-843aec8b36e2",
+      "endAtMainMs": 2245.550417,
+      "preparedAtMainMs": 2309.7302090000003,
+      "nativeAcceptedAtMainMs": 2394.604667,
+      "api": {
+        "intent": {
+          "id": 80,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "c68c0a4c-fca1-47e8-ba3c-843aec8b36e2",
+          "parentSpanId": null,
+          "startedAtMainMs": 2246.3058340000002,
+          "endedAtMainMs": 2264.921667,
+          "durationMs": 18.61583299999984,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 85,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "c68c0a4c-fca1-47e8-ba3c-843aec8b36e2",
+          "parentSpanId": null,
+          "startedAtMainMs": 2309.9539170000003,
+          "endedAtMainMs": 2355.0135,
+          "durationMs": 45.05958299999975,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 101,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "c68c0a4c-fca1-47e8-ba3c-843aec8b36e2",
+          "parentSpanId": null,
+          "startedAtMainMs": 2355.068625,
+          "endedAtMainMs": 2355.195834,
+          "durationMs": 0.12720900000022084,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 105,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "c68c0a4c-fca1-47e8-ba3c-843aec8b36e2",
+          "parentSpanId": null,
+          "startedAtMainMs": 2394.614459,
+          "endedAtMainMs": 2413.1119590000003,
+          "durationMs": 18.4975000000004,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 112,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "c68c0a4c-fca1-47e8-ba3c-843aec8b36e2",
+          "parentSpanId": null,
+          "startedAtMainMs": 2413.118625,
+          "endedAtMainMs": 2433.873167,
+          "durationMs": 20.75454200000013,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 18.61583299999984,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.484541999999692,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 1.090458000000126,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.0408330000000205
+        },
+        "commit": {
+          "callMs": 45.05958299999975,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.337209000000257,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.289209999999912,
+          "otherIncludingQueueChecksAndSchedulingMs": 22.43316399999958
+        },
+        "accept": {
+          "callMs": 0.12720900000022084,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.12720900000022084
+        },
+        "settle": {
+          "callMs": 18.4975000000004,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.806583000000046,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7349170000002232,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.956000000000131
+        },
+        "resolve": {
+          "callMs": 20.75454200000013,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.028874999999971,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.058875000000171,
+          "otherIncludingQueueChecksAndSchedulingMs": 10.666791999999987
+        }
+      },
+      "preparedToCommitCallStartMs": 0.2237079999999878,
+      "commitCallStartToResolutionEndMs": 123.91924999999992,
+      "preparedToPreviousResolutionEndWaitMs": 0,
+      "afterPreviousResolutionUntilCommitCallMs": 0.2237079999999878,
+      "commitCallEndToNativeAcceptedMs": 39.59116700000004,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 39.40883299999996,
+      "nativeAcceptedToResolutionEndMs": 39.26850000000013
+    },
+    {
+      "index": 1,
+      "operationId": "49b5bf72-c800-45c2-93b7-a792fac161cf",
+      "endAtMainMs": 2311.384125,
+      "preparedAtMainMs": 2387.6546670000002,
+      "nativeAcceptedAtMainMs": 2549.159709,
+      "api": {
+        "intent": {
+          "id": 87,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "49b5bf72-c800-45c2-93b7-a792fac161cf",
+          "parentSpanId": null,
+          "startedAtMainMs": 2312.006417,
+          "endedAtMainMs": 2337.156167,
+          "durationMs": 25.14975000000004,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 118,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "49b5bf72-c800-45c2-93b7-a792fac161cf",
+          "parentSpanId": null,
+          "startedAtMainMs": 2434.108209,
+          "endedAtMainMs": 2496.830167,
+          "durationMs": 62.721958000000086,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 134,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "49b5bf72-c800-45c2-93b7-a792fac161cf",
+          "parentSpanId": null,
+          "startedAtMainMs": 2496.8687090000003,
+          "endedAtMainMs": 2496.95775,
+          "durationMs": 0.08904099999972459,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 140,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "49b5bf72-c800-45c2-93b7-a792fac161cf",
+          "parentSpanId": null,
+          "startedAtMainMs": 2549.166875,
+          "endedAtMainMs": 2568.1273340000002,
+          "durationMs": 18.960459000000355,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 145,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "49b5bf72-c800-45c2-93b7-a792fac161cf",
+          "parentSpanId": null,
+          "startedAtMainMs": 2568.133334,
+          "endedAtMainMs": 2591.5564170000002,
+          "durationMs": 23.423083000000133,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 25.14975000000004,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.641417000000274,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.705124999999498,
+          "otherIncludingQueueChecksAndSchedulingMs": 14.803208000000268
+        },
+        "commit": {
+          "callMs": 62.721958000000086,
+          "syncCount": 4,
+          "syncWallUnionMs": 31.196707999999944,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.299833999999919,
+          "otherIncludingQueueChecksAndSchedulingMs": 29.225416000000223
+        },
+        "accept": {
+          "callMs": 0.08904099999972459,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.08904099999972459
+        },
+        "settle": {
+          "callMs": 18.960459000000355,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.00774999999976,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.5779579999993985,
+          "otherIncludingQueueChecksAndSchedulingMs": 8.374751000001197
+        },
+        "resolve": {
+          "callMs": 23.423083000000133,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.17145900000014,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1134570000003805,
+          "otherIncludingQueueChecksAndSchedulingMs": 11.138166999999612
+        }
+      },
+      "preparedToCommitCallStartMs": 46.45354199999974,
+      "commitCallStartToResolutionEndMs": 157.44820800000025,
+      "preparedToPreviousResolutionEndWaitMs": 46.21849999999995,
+      "afterPreviousResolutionUntilCommitCallMs": 0.23504199999979392,
+      "commitCallEndToNativeAcceptedMs": 52.32954199999995,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 52.20195899999999,
+      "nativeAcceptedToResolutionEndMs": 42.39670800000022
+    },
+    {
+      "index": 2,
+      "operationId": "2b267e60-ce63-4806-80c6-a2316757c92d",
+      "endAtMainMs": 2381.763917,
+      "preparedAtMainMs": 2492.4121250000003,
+      "nativeAcceptedAtMainMs": 2676.824042,
+      "api": {
+        "intent": {
+          "id": 102,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "2b267e60-ce63-4806-80c6-a2316757c92d",
+          "parentSpanId": null,
+          "startedAtMainMs": 2382.30425,
+          "endedAtMainMs": 2408.2242920000003,
+          "durationMs": 25.920042000000194,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 151,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "2b267e60-ce63-4806-80c6-a2316757c92d",
+          "parentSpanId": null,
+          "startedAtMainMs": 2591.758834,
+          "endedAtMainMs": 2645.414667,
+          "durationMs": 53.6558329999998,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 167,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "2b267e60-ce63-4806-80c6-a2316757c92d",
+          "parentSpanId": null,
+          "startedAtMainMs": 2645.451,
+          "endedAtMainMs": 2645.569125,
+          "durationMs": 0.11812499999996362,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 168,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "2b267e60-ce63-4806-80c6-a2316757c92d",
+          "parentSpanId": null,
+          "startedAtMainMs": 2676.832917,
+          "endedAtMainMs": 2692.373917,
+          "durationMs": 15.540999999999713,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 173,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "2b267e60-ce63-4806-80c6-a2316757c92d",
+          "parentSpanId": null,
+          "startedAtMainMs": 2692.380209,
+          "endedAtMainMs": 2710.6405,
+          "durationMs": 18.260291000000052,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 25.920042000000194,
+          "syncCount": 2,
+          "syncWallUnionMs": 14.395583000000443,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7258749999996326,
+          "otherIncludingQueueChecksAndSchedulingMs": 10.798584000000119
+        },
+        "commit": {
+          "callMs": 53.6558329999998,
+          "syncCount": 4,
+          "syncWallUnionMs": 25.20899899999995,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.1019170000004124,
+          "otherIncludingQueueChecksAndSchedulingMs": 26.34491699999944
+        },
+        "accept": {
+          "callMs": 0.11812499999996362,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.11812499999996362
+        },
+        "settle": {
+          "callMs": 15.540999999999713,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.131123999999545,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7606249999998909,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.649251000000277
+        },
+        "resolve": {
+          "callMs": 18.260291000000052,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.766166999999768,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.0701659999995172,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.423958000000766
+        }
+      },
+      "preparedToCommitCallStartMs": 99.34670899999992,
+      "commitCallStartToResolutionEndMs": 118.88166599999977,
+      "preparedToPreviousResolutionEndWaitMs": 99.14429199999995,
+      "afterPreviousResolutionUntilCommitCallMs": 0.20241699999996854,
+      "commitCallEndToNativeAcceptedMs": 31.409375000000182,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 31.254917000000205,
+      "nativeAcceptedToResolutionEndMs": 33.816457999999784
+    },
+    {
+      "index": 3,
+      "operationId": "61ae46ef-780c-4699-bcae-66a91746764f",
+      "endAtMainMs": 2451.1328750000002,
+      "preparedAtMainMs": 2541.011042,
+      "nativeAcceptedAtMainMs": 2796.981542,
+      "api": {
+        "intent": {
+          "id": 122,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "61ae46ef-780c-4699-bcae-66a91746764f",
+          "parentSpanId": null,
+          "startedAtMainMs": 2451.5575,
+          "endedAtMainMs": 2483.83525,
+          "durationMs": 32.2777500000002,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 179,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "61ae46ef-780c-4699-bcae-66a91746764f",
+          "parentSpanId": null,
+          "startedAtMainMs": 2710.8495000000003,
+          "endedAtMainMs": 2757.338584,
+          "durationMs": 46.48908399999982,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 195,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "61ae46ef-780c-4699-bcae-66a91746764f",
+          "parentSpanId": null,
+          "startedAtMainMs": 2757.3735420000003,
+          "endedAtMainMs": 2757.502959,
+          "durationMs": 0.1294169999996484,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 196,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "61ae46ef-780c-4699-bcae-66a91746764f",
+          "parentSpanId": null,
+          "startedAtMainMs": 2796.990625,
+          "endedAtMainMs": 2811.752084,
+          "durationMs": 14.761459000000286,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 201,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "61ae46ef-780c-4699-bcae-66a91746764f",
+          "parentSpanId": null,
+          "startedAtMainMs": 2811.757959,
+          "endedAtMainMs": 2829.771125,
+          "durationMs": 18.013166000000183,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 32.2777500000002,
+          "syncCount": 2,
+          "syncWallUnionMs": 18.776625000000422,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8313339999999698,
+          "otherIncludingQueueChecksAndSchedulingMs": 12.669790999999805
+        },
+        "commit": {
+          "callMs": 46.48908399999982,
+          "syncCount": 4,
+          "syncWallUnionMs": 19.42149999999947,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.6192080000000715,
+          "otherIncludingQueueChecksAndSchedulingMs": 24.44837600000028
+        },
+        "accept": {
+          "callMs": 0.1294169999996484,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.1294169999996484
+        },
+        "settle": {
+          "callMs": 14.761459000000286,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.841291999999612,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.721625000000131,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.198542000000543
+        },
+        "resolve": {
+          "callMs": 18.013166000000183,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.732042000000092,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1221650000002228,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.158958999999868
+        }
+      },
+      "preparedToCommitCallStartMs": 169.83845800000017,
+      "commitCallStartToResolutionEndMs": 118.92162499999995,
+      "preparedToPreviousResolutionEndWaitMs": 169.6294579999999,
+      "afterPreviousResolutionUntilCommitCallMs": 0.2090000000002874,
+      "commitCallEndToNativeAcceptedMs": 39.64295799999991,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 39.47858300000007,
+      "nativeAcceptedToResolutionEndMs": 32.78958300000022
+    },
+    {
+      "index": 4,
+      "operationId": "26ad23ab-34e7-4e7d-8558-e559b6d85dbd",
+      "endAtMainMs": 2521.715959,
+      "preparedAtMainMs": 2600.492417,
+      "nativeAcceptedAtMainMs": 2906.442959,
+      "api": {
+        "intent": {
+          "id": 135,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "26ad23ab-34e7-4e7d-8558-e559b6d85dbd",
+          "parentSpanId": null,
+          "startedAtMainMs": 2522.314667,
+          "endedAtMainMs": 2547.012917,
+          "durationMs": 24.698249999999916,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 207,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "26ad23ab-34e7-4e7d-8558-e559b6d85dbd",
+          "parentSpanId": null,
+          "startedAtMainMs": 2829.968542,
+          "endedAtMainMs": 2873.3487090000003,
+          "durationMs": 43.380167000000256,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 223,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "26ad23ab-34e7-4e7d-8558-e559b6d85dbd",
+          "parentSpanId": null,
+          "startedAtMainMs": 2873.385667,
+          "endedAtMainMs": 2873.509584,
+          "durationMs": 0.12391699999989214,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 224,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "26ad23ab-34e7-4e7d-8558-e559b6d85dbd",
+          "parentSpanId": null,
+          "startedAtMainMs": 2906.456542,
+          "endedAtMainMs": 2921.736042,
+          "durationMs": 15.279500000000098,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 229,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "26ad23ab-34e7-4e7d-8558-e559b6d85dbd",
+          "parentSpanId": null,
+          "startedAtMainMs": 2921.742834,
+          "endedAtMainMs": 2940.844292,
+          "durationMs": 19.101458000000093,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 24.698249999999916,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.719833999999992,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.727292000000034,
+          "otherIncludingQueueChecksAndSchedulingMs": 12.25112399999989
+        },
+        "commit": {
+          "callMs": 43.380167000000256,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.73270899999943,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.364125000000513,
+          "otherIncludingQueueChecksAndSchedulingMs": 20.28333300000031
+        },
+        "accept": {
+          "callMs": 0.12391699999989214,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.12391699999989214
+        },
+        "settle": {
+          "callMs": 15.279500000000098,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.028124999999818,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.805084000000079,
+          "otherIncludingQueueChecksAndSchedulingMs": 3.446291000000201
+        },
+        "resolve": {
+          "callMs": 19.101458000000093,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.597207999999682,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.129500999999891,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.37474900000052
+        }
+      },
+      "preparedToCommitCallStartMs": 229.47612500000014,
+      "commitCallStartToResolutionEndMs": 110.87575000000015,
+      "preparedToPreviousResolutionEndWaitMs": 229.27870800000028,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1974169999998594,
+      "commitCallEndToNativeAcceptedMs": 33.09424999999965,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 32.93337500000007,
+      "nativeAcceptedToResolutionEndMs": 34.40133300000025
+    },
+    {
+      "index": 5,
+      "operationId": "77d9e410-14e0-4197-bf11-ba242a670d53",
+      "endAtMainMs": 2592.050334,
+      "preparedAtMainMs": 2671.619459,
+      "nativeAcceptedAtMainMs": 3029.5404590000003,
+      "api": {
+        "intent": {
+          "id": 153,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "77d9e410-14e0-4197-bf11-ba242a670d53",
+          "parentSpanId": null,
+          "startedAtMainMs": 2594.836542,
+          "endedAtMainMs": 2616.245792,
+          "durationMs": 21.409250000000156,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 235,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "77d9e410-14e0-4197-bf11-ba242a670d53",
+          "parentSpanId": null,
+          "startedAtMainMs": 2941.0565420000003,
+          "endedAtMainMs": 2990.4130840000003,
+          "durationMs": 49.35654199999999,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 251,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "77d9e410-14e0-4197-bf11-ba242a670d53",
+          "parentSpanId": null,
+          "startedAtMainMs": 2990.450542,
+          "endedAtMainMs": 2990.5409170000003,
+          "durationMs": 0.09037500000022192,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 252,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "77d9e410-14e0-4197-bf11-ba242a670d53",
+          "parentSpanId": null,
+          "startedAtMainMs": 3029.560375,
+          "endedAtMainMs": 3045.892625,
+          "durationMs": 16.33224999999993,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 257,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "77d9e410-14e0-4197-bf11-ba242a670d53",
+          "parentSpanId": null,
+          "startedAtMainMs": 3045.903959,
+          "endedAtMainMs": 3063.185209,
+          "durationMs": 17.28125,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 21.409250000000156,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.36054200000035,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8066250000001673,
+          "otherIncludingQueueChecksAndSchedulingMs": 11.242082999999639
+        },
+        "commit": {
+          "callMs": 49.35654199999999,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.970334999999523,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.2316249999998945,
+          "otherIncludingQueueChecksAndSchedulingMs": 25.154582000000573
+        },
+        "accept": {
+          "callMs": 0.09037500000022192,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.09037500000022192
+        },
+        "settle": {
+          "callMs": 16.33224999999993,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.319000000000415,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8855840000001081,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.127665999999408
+        },
+        "resolve": {
+          "callMs": 17.28125,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.993709000000308,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.0978739999995923,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.1896670000000995
+        }
+      },
+      "preparedToCommitCallStartMs": 269.43708300000026,
+      "commitCallStartToResolutionEndMs": 122.12866699999995,
+      "preparedToPreviousResolutionEndWaitMs": 269.2248330000002,
+      "afterPreviousResolutionUntilCommitCallMs": 0.21225000000004002,
+      "commitCallEndToNativeAcceptedMs": 39.12737500000003,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 38.99954200000002,
+      "nativeAcceptedToResolutionEndMs": 33.64474999999993
+    },
+    {
+      "index": 6,
+      "operationId": "b1c52689-0ec4-488e-b6da-141570d1d153",
+      "endAtMainMs": 2711.402459,
+      "preparedAtMainMs": 2791.682667,
+      "nativeAcceptedAtMainMs": 3150.4490840000003,
+      "api": {
+        "intent": {
+          "id": 181,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "b1c52689-0ec4-488e-b6da-141570d1d153",
+          "parentSpanId": null,
+          "startedAtMainMs": 2714.538167,
+          "endedAtMainMs": 2740.139,
+          "durationMs": 25.600832999999966,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 263,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "b1c52689-0ec4-488e-b6da-141570d1d153",
+          "parentSpanId": null,
+          "startedAtMainMs": 3063.4153340000003,
+          "endedAtMainMs": 3111.4313340000003,
+          "durationMs": 48.016000000000076,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 279,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "b1c52689-0ec4-488e-b6da-141570d1d153",
+          "parentSpanId": null,
+          "startedAtMainMs": 3111.4657500000003,
+          "endedAtMainMs": 3111.571417,
+          "durationMs": 0.1056669999998121,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 280,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "b1c52689-0ec4-488e-b6da-141570d1d153",
+          "parentSpanId": null,
+          "startedAtMainMs": 3150.460625,
+          "endedAtMainMs": 3166.072125,
+          "durationMs": 15.611499999999978,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 285,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "b1c52689-0ec4-488e-b6da-141570d1d153",
+          "parentSpanId": null,
+          "startedAtMainMs": 3166.078709,
+          "endedAtMainMs": 3185.7603750000003,
+          "durationMs": 19.681666000000405,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 25.600832999999966,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.593666999999641,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7197909999999865,
+          "otherIncludingQueueChecksAndSchedulingMs": 14.287375000000338
+        },
+        "commit": {
+          "callMs": 48.016000000000076,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.325998999999683,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.2377089999995405,
+          "otherIncludingQueueChecksAndSchedulingMs": 24.452292000000853
+        },
+        "accept": {
+          "callMs": 0.1056669999998121,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.1056669999998121
+        },
+        "settle": {
+          "callMs": 15.611499999999978,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.385874999999942,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7728750000005675,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.452749999999469
+        },
+        "resolve": {
+          "callMs": 19.681666000000405,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.818417000000409,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1744160000002921,
+          "otherIncludingQueueChecksAndSchedulingMs": 8.688832999999704
+        }
+      },
+      "preparedToCommitCallStartMs": 271.7326670000002,
+      "commitCallStartToResolutionEndMs": 122.34504100000004,
+      "preparedToPreviousResolutionEndWaitMs": 271.5025420000002,
+      "afterPreviousResolutionUntilCommitCallMs": 0.23012500000004366,
+      "commitCallEndToNativeAcceptedMs": 39.01774999999998,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 38.8776670000002,
+      "nativeAcceptedToResolutionEndMs": 35.31129099999998
+    },
+    {
+      "index": 7,
+      "operationId": "c199c882-938f-4b0e-835b-171935e62b1a",
+      "endAtMainMs": 2830.378209,
+      "preparedAtMainMs": 2902.862709,
+      "nativeAcceptedAtMainMs": 3271.499334,
+      "api": {
+        "intent": {
+          "id": 209,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "c199c882-938f-4b0e-835b-171935e62b1a",
+          "parentSpanId": null,
+          "startedAtMainMs": 2832.0976250000003,
+          "endedAtMainMs": 2851.071542,
+          "durationMs": 18.9739169999998,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 291,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "c199c882-938f-4b0e-835b-171935e62b1a",
+          "parentSpanId": null,
+          "startedAtMainMs": 3186.014959,
+          "endedAtMainMs": 3231.62725,
+          "durationMs": 45.612290999999914,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 307,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "c199c882-938f-4b0e-835b-171935e62b1a",
+          "parentSpanId": null,
+          "startedAtMainMs": 3231.680667,
+          "endedAtMainMs": 3231.7634590000002,
+          "durationMs": 0.08279200000015408,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 308,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "c199c882-938f-4b0e-835b-171935e62b1a",
+          "parentSpanId": null,
+          "startedAtMainMs": 3271.515125,
+          "endedAtMainMs": 3286.517834,
+          "durationMs": 15.002709000000323,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 313,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "c199c882-938f-4b0e-835b-171935e62b1a",
+          "parentSpanId": null,
+          "startedAtMainMs": 3286.526417,
+          "endedAtMainMs": 3304.844917,
+          "durationMs": 18.318499999999858,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 18.9739169999998,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.058459000000312,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8962909999995645,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.019166999999925
+        },
+        "commit": {
+          "callMs": 45.612290999999914,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.97108199999957,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.684667999999874,
+          "otherIncludingQueueChecksAndSchedulingMs": 21.95654100000047
+        },
+        "accept": {
+          "callMs": 0.08279200000015408,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.08279200000015408
+        },
+        "settle": {
+          "callMs": 15.002709000000323,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.290833999999904,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8653749999998581,
+          "otherIncludingQueueChecksAndSchedulingMs": 3.8465000000005602
+        },
+        "resolve": {
+          "callMs": 18.318499999999858,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.712707999999566,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1573330000001079,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.4484590000001845
+        }
+      },
+      "preparedToCommitCallStartMs": 283.1522500000001,
+      "commitCallStartToResolutionEndMs": 118.8299579999998,
+      "preparedToPreviousResolutionEndWaitMs": 282.8976660000003,
+      "afterPreviousResolutionUntilCommitCallMs": 0.2545839999997952,
+      "commitCallEndToNativeAcceptedMs": 39.872084000000086,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 39.73587499999985,
+      "nativeAcceptedToResolutionEndMs": 33.345582999999806
+    },
+    {
+      "index": 8,
+      "operationId": "b9a349eb-e673-4906-bf5b-7377fd389c94",
+      "endAtMainMs": 2941.3692920000003,
+      "preparedAtMainMs": 3022.903875,
+      "nativeAcceptedAtMainMs": 3388.786167,
+      "api": {
+        "intent": {
+          "id": 237,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "b9a349eb-e673-4906-bf5b-7377fd389c94",
+          "parentSpanId": null,
+          "startedAtMainMs": 2944.274792,
+          "endedAtMainMs": 2970.616,
+          "durationMs": 26.341207999999824,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 319,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "b9a349eb-e673-4906-bf5b-7377fd389c94",
+          "parentSpanId": null,
+          "startedAtMainMs": 3305.0875,
+          "endedAtMainMs": 3350.93075,
+          "durationMs": 45.8432499999999,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 335,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "b9a349eb-e673-4906-bf5b-7377fd389c94",
+          "parentSpanId": null,
+          "startedAtMainMs": 3350.985084,
+          "endedAtMainMs": 3351.067167,
+          "durationMs": 0.08208300000023883,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 336,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "b9a349eb-e673-4906-bf5b-7377fd389c94",
+          "parentSpanId": null,
+          "startedAtMainMs": 3388.799292,
+          "endedAtMainMs": 3403.885959,
+          "durationMs": 15.086667000000034,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 341,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "b9a349eb-e673-4906-bf5b-7377fd389c94",
+          "parentSpanId": null,
+          "startedAtMainMs": 3403.896542,
+          "endedAtMainMs": 3423.028709,
+          "durationMs": 19.13216700000021,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 26.341207999999824,
+          "syncCount": 2,
+          "syncWallUnionMs": 15.745499999999993,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7747080000003734,
+          "otherIncludingQueueChecksAndSchedulingMs": 9.820999999999458
+        },
+        "commit": {
+          "callMs": 45.8432499999999,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.155083999999988,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.390291000000616,
+          "otherIncludingQueueChecksAndSchedulingMs": 23.297874999999294
+        },
+        "accept": {
+          "callMs": 0.08208300000023883,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.08208300000023883
+        },
+        "settle": {
+          "callMs": 15.086667000000034,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.14270899999974,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8640000000000327,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.079958000000261
+        },
+        "resolve": {
+          "callMs": 19.13216700000021,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.027708999999504,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.2260839999999007,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.878374000000804
+        }
+      },
+      "preparedToCommitCallStartMs": 282.1836250000001,
+      "commitCallStartToResolutionEndMs": 117.94120900000007,
+      "preparedToPreviousResolutionEndWaitMs": 281.9410419999999,
+      "afterPreviousResolutionUntilCommitCallMs": 0.24258300000019517,
+      "commitCallEndToNativeAcceptedMs": 37.855417000000216,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 37.71900000000005,
+      "nativeAcceptedToResolutionEndMs": 34.24254199999996
+    },
+    {
+      "index": 9,
+      "operationId": "b33ef5be-78b3-4491-8a83-ed9bf30b65e3",
+      "endAtMainMs": 3063.647875,
+      "preparedAtMainMs": 3143.9379590000003,
+      "nativeAcceptedAtMainMs": 3509.8779170000003,
+      "api": {
+        "intent": {
+          "id": 265,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "b33ef5be-78b3-4491-8a83-ed9bf30b65e3",
+          "parentSpanId": null,
+          "startedAtMainMs": 3066.577667,
+          "endedAtMainMs": 3091.922125,
+          "durationMs": 25.34445800000003,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 347,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "b33ef5be-78b3-4491-8a83-ed9bf30b65e3",
+          "parentSpanId": null,
+          "startedAtMainMs": 3423.215459,
+          "endedAtMainMs": 3470.821042,
+          "durationMs": 47.605583000000024,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 363,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "b33ef5be-78b3-4491-8a83-ed9bf30b65e3",
+          "parentSpanId": null,
+          "startedAtMainMs": 3470.862167,
+          "endedAtMainMs": 3470.964,
+          "durationMs": 0.10183299999971496,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 364,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "b33ef5be-78b3-4491-8a83-ed9bf30b65e3",
+          "parentSpanId": null,
+          "startedAtMainMs": 3509.888084,
+          "endedAtMainMs": 3525.9890840000003,
+          "durationMs": 16.101000000000113,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 369,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "b33ef5be-78b3-4491-8a83-ed9bf30b65e3",
+          "parentSpanId": null,
+          "startedAtMainMs": 3525.995625,
+          "endedAtMainMs": 3545.237625,
+          "durationMs": 19.24200000000019,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 25.34445800000003,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.593417000000045,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6540829999994457,
+          "otherIncludingQueueChecksAndSchedulingMs": 14.09695800000054
+        },
+        "commit": {
+          "callMs": 47.605583000000024,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.326500000000124,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.053582000000006,
+          "otherIncludingQueueChecksAndSchedulingMs": 24.225500999999895
+        },
+        "accept": {
+          "callMs": 0.10183299999971496,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.10183299999971496
+        },
+        "settle": {
+          "callMs": 16.101000000000113,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.723749999999654,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7798330000000533,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.597417000000405
+        },
+        "resolve": {
+          "callMs": 19.24200000000019,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.965999999999894,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.2826669999999467,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.993333000000348
+        }
+      },
+      "preparedToCommitCallStartMs": 279.2774999999997,
+      "commitCallStartToResolutionEndMs": 122.0221660000002,
+      "preparedToPreviousResolutionEndWaitMs": 279.09074999999984,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1867499999998472,
+      "commitCallEndToNativeAcceptedMs": 39.05687500000022,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 38.91391700000031,
+      "nativeAcceptedToResolutionEndMs": 35.359707999999955
+    },
+    {
+      "index": 10,
+      "operationId": "90930352-262b-4e63-8459-de85458fa45f",
+      "endAtMainMs": 3186.3529590000003,
+      "preparedAtMainMs": 3265.839375,
+      "nativeAcceptedAtMainMs": 3635.84825,
+      "api": {
+        "intent": {
+          "id": 293,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "90930352-262b-4e63-8459-de85458fa45f",
+          "parentSpanId": null,
+          "startedAtMainMs": 3189.305375,
+          "endedAtMainMs": 3214.190292,
+          "durationMs": 24.884917000000314,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 375,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "90930352-262b-4e63-8459-de85458fa45f",
+          "parentSpanId": null,
+          "startedAtMainMs": 3545.431709,
+          "endedAtMainMs": 3596.353625,
+          "durationMs": 50.92191600000024,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 391,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "90930352-262b-4e63-8459-de85458fa45f",
+          "parentSpanId": null,
+          "startedAtMainMs": 3596.386625,
+          "endedAtMainMs": 3596.483084,
+          "durationMs": 0.09645899999986796,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 392,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "90930352-262b-4e63-8459-de85458fa45f",
+          "parentSpanId": null,
+          "startedAtMainMs": 3635.856959,
+          "endedAtMainMs": 3652.151417,
+          "durationMs": 16.29445799999985,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 397,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "90930352-262b-4e63-8459-de85458fa45f",
+          "parentSpanId": null,
+          "startedAtMainMs": 3652.1567090000003,
+          "endedAtMainMs": 3670.669542,
+          "durationMs": 18.512832999999773,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 24.884917000000314,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.726874999999836,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8999169999997321,
+          "otherIncludingQueueChecksAndSchedulingMs": 14.258125000000746
+        },
+        "commit": {
+          "callMs": 50.92191600000024,
+          "syncCount": 4,
+          "syncWallUnionMs": 24.16550000000052,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.222874000000047,
+          "otherIncludingQueueChecksAndSchedulingMs": 24.53354199999967
+        },
+        "accept": {
+          "callMs": 0.09645899999986796,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.09645899999986796
+        },
+        "settle": {
+          "callMs": 16.29445799999985,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.064792000000125,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7573749999996835,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.472291000000041
+        },
+        "resolve": {
+          "callMs": 18.512832999999773,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.742208999999548,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.3284999999996217,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.442124000000604
+        }
+      },
+      "preparedToCommitCallStartMs": 279.59233399999994,
+      "commitCallStartToResolutionEndMs": 125.23783300000014,
+      "preparedToPreviousResolutionEndWaitMs": 279.3982500000002,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1940839999997479,
+      "commitCallEndToNativeAcceptedMs": 39.494624999999814,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 39.365166000000045,
+      "nativeAcceptedToResolutionEndMs": 34.821292000000085
+    },
+    {
+      "index": 11,
+      "operationId": "80640382-aa84-4612-8e8e-f8a7ebb694ae",
+      "endAtMainMs": 3305.338459,
+      "preparedAtMainMs": 3383.478625,
+      "nativeAcceptedAtMainMs": 3754.8338750000003,
+      "api": {
+        "intent": {
+          "id": 321,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "80640382-aa84-4612-8e8e-f8a7ebb694ae",
+          "parentSpanId": null,
+          "startedAtMainMs": 3307.138209,
+          "endedAtMainMs": 3333.1913750000003,
+          "durationMs": 26.053166000000147,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 403,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "80640382-aa84-4612-8e8e-f8a7ebb694ae",
+          "parentSpanId": null,
+          "startedAtMainMs": 3670.874792,
+          "endedAtMainMs": 3717.064625,
+          "durationMs": 46.18983299999991,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 419,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "80640382-aa84-4612-8e8e-f8a7ebb694ae",
+          "parentSpanId": null,
+          "startedAtMainMs": 3717.097292,
+          "endedAtMainMs": 3717.186125,
+          "durationMs": 0.08883300000024974,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 420,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "80640382-aa84-4612-8e8e-f8a7ebb694ae",
+          "parentSpanId": null,
+          "startedAtMainMs": 3754.841375,
+          "endedAtMainMs": 3769.622084,
+          "durationMs": 14.780709000000115,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 425,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "80640382-aa84-4612-8e8e-f8a7ebb694ae",
+          "parentSpanId": null,
+          "startedAtMainMs": 3769.62675,
+          "endedAtMainMs": 3788.876084,
+          "durationMs": 19.24933400000009,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 26.053166000000147,
+          "syncCount": 2,
+          "syncWallUnionMs": 14.872123999999985,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8752920000001723,
+          "otherIncludingQueueChecksAndSchedulingMs": 10.305749999999989
+        },
+        "commit": {
+          "callMs": 46.18983299999991,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.344250000000102,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.293457999999646,
+          "otherIncludingQueueChecksAndSchedulingMs": 23.55212500000016
+        },
+        "accept": {
+          "callMs": 0.08883300000024974,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.08883300000024974
+        },
+        "settle": {
+          "callMs": 14.780709000000115,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.238749999999982,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8119580000002316,
+          "otherIncludingQueueChecksAndSchedulingMs": 3.730000999999902
+        },
+        "resolve": {
+          "callMs": 19.24933400000009,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.94995900000049,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.2276249999995343,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.0717500000000655
+        }
+      },
+      "preparedToCommitCallStartMs": 287.3961669999999,
+      "commitCallStartToResolutionEndMs": 118.00129199999992,
+      "preparedToPreviousResolutionEndWaitMs": 287.1909169999999,
+      "afterPreviousResolutionUntilCommitCallMs": 0.20524999999997817,
+      "commitCallEndToNativeAcceptedMs": 37.769250000000284,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 37.64775000000009,
+      "nativeAcceptedToResolutionEndMs": 34.04220899999973
+    },
+    {
+      "index": 12,
+      "operationId": "0f971842-b199-457a-967a-a8902934a2f7",
+      "endAtMainMs": 3423.405667,
+      "preparedAtMainMs": 3504.969,
+      "nativeAcceptedAtMainMs": 3873.453667,
+      "api": {
+        "intent": {
+          "id": 349,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "0f971842-b199-457a-967a-a8902934a2f7",
+          "parentSpanId": null,
+          "startedAtMainMs": 3426.399292,
+          "endedAtMainMs": 3450.813584,
+          "durationMs": 24.414291999999932,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 431,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "0f971842-b199-457a-967a-a8902934a2f7",
+          "parentSpanId": null,
+          "startedAtMainMs": 3789.028292,
+          "endedAtMainMs": 3835.0895,
+          "durationMs": 46.06120800000008,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 447,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "0f971842-b199-457a-967a-a8902934a2f7",
+          "parentSpanId": null,
+          "startedAtMainMs": 3835.12975,
+          "endedAtMainMs": 3835.268459,
+          "durationMs": 0.13870899999983521,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 448,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "0f971842-b199-457a-967a-a8902934a2f7",
+          "parentSpanId": null,
+          "startedAtMainMs": 3873.465,
+          "endedAtMainMs": 3888.827917,
+          "durationMs": 15.362916999999925,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 453,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "0f971842-b199-457a-967a-a8902934a2f7",
+          "parentSpanId": null,
+          "startedAtMainMs": 3888.83325,
+          "endedAtMainMs": 3906.107709,
+          "durationMs": 17.27445899999975,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 24.414291999999932,
+          "syncCount": 2,
+          "syncWallUnionMs": 13.601333999999952,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7863750000001346,
+          "otherIncludingQueueChecksAndSchedulingMs": 10.026582999999846
+        },
+        "commit": {
+          "callMs": 46.06120800000008,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.71900000000005,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.449083999999857,
+          "otherIncludingQueueChecksAndSchedulingMs": 22.89312400000017
+        },
+        "accept": {
+          "callMs": 0.13870899999983521,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.13870899999983521
+        },
+        "settle": {
+          "callMs": 15.362916999999925,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.507916999999907,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8015410000002703,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.053458999999748
+        },
+        "resolve": {
+          "callMs": 17.27445899999975,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.62554100000034,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.0997080000001915,
+          "otherIncludingQueueChecksAndSchedulingMs": 5.549209999999221
+        }
+      },
+      "preparedToCommitCallStartMs": 284.0592919999999,
+      "commitCallStartToResolutionEndMs": 117.07941699999992,
+      "preparedToPreviousResolutionEndWaitMs": 283.90708399999994,
+      "afterPreviousResolutionUntilCommitCallMs": 0.15220799999997325,
+      "commitCallEndToNativeAcceptedMs": 38.36416700000018,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 38.18520800000033,
+      "nativeAcceptedToResolutionEndMs": 32.65404199999966
+    },
+    {
+      "index": 13,
+      "operationId": "9abd4c70-bd52-4e1e-ae39-d225fd9e43d1",
+      "endAtMainMs": 3545.651542,
+      "preparedAtMainMs": 3628.7815,
+      "nativeAcceptedAtMainMs": 3994.7927090000003,
+      "api": {
+        "intent": {
+          "id": 377,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "9abd4c70-bd52-4e1e-ae39-d225fd9e43d1",
+          "parentSpanId": null,
+          "startedAtMainMs": 3548.58425,
+          "endedAtMainMs": 3577.029834,
+          "durationMs": 28.445584000000053,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 459,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "9abd4c70-bd52-4e1e-ae39-d225fd9e43d1",
+          "parentSpanId": null,
+          "startedAtMainMs": 3906.2572920000002,
+          "endedAtMainMs": 3956.479042,
+          "durationMs": 50.2217499999997,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 475,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "9abd4c70-bd52-4e1e-ae39-d225fd9e43d1",
+          "parentSpanId": null,
+          "startedAtMainMs": 3956.514,
+          "endedAtMainMs": 3956.6614170000003,
+          "durationMs": 0.14741700000013225,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 476,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "9abd4c70-bd52-4e1e-ae39-d225fd9e43d1",
+          "parentSpanId": null,
+          "startedAtMainMs": 3994.7999170000003,
+          "endedAtMainMs": 4010.0495840000003,
+          "durationMs": 15.249667000000045,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 481,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "9abd4c70-bd52-4e1e-ae39-d225fd9e43d1",
+          "parentSpanId": null,
+          "startedAtMainMs": 4010.054542,
+          "endedAtMainMs": 4029.122792,
+          "durationMs": 19.068250000000262,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 28.445584000000053,
+          "syncCount": 2,
+          "syncWallUnionMs": 16.5442079999998,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7334170000003724,
+          "otherIncludingQueueChecksAndSchedulingMs": 11.167958999999883
+        },
+        "commit": {
+          "callMs": 50.2217499999997,
+          "syncCount": 4,
+          "syncWallUnionMs": 24.132457999999588,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.2810829999993985,
+          "otherIncludingQueueChecksAndSchedulingMs": 23.808209000000716
+        },
+        "accept": {
+          "callMs": 0.14741700000013225,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.14741700000013225
+        },
+        "settle": {
+          "callMs": 15.249667000000045,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.28441600000042,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8387079999993148,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.126543000000311
+        },
+        "resolve": {
+          "callMs": 19.068250000000262,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.764375000000655,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.2783330000002024,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.025541999999405
+        }
+      },
+      "preparedToCommitCallStartMs": 277.4757920000002,
+      "commitCallStartToResolutionEndMs": 122.86549999999988,
+      "preparedToPreviousResolutionEndWaitMs": 277.32620899999984,
+      "afterPreviousResolutionUntilCommitCallMs": 0.14958300000034797,
+      "commitCallEndToNativeAcceptedMs": 38.31366700000035,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 38.13129200000003,
+      "nativeAcceptedToResolutionEndMs": 34.33008299999983
+    },
+    {
+      "index": 14,
+      "operationId": "aa090334-3f3f-41dd-a636-9c7d6a73d535",
+      "endAtMainMs": 3671.325834,
+      "preparedAtMainMs": 3752.976084,
+      "nativeAcceptedAtMainMs": 4114.510209,
+      "api": {
+        "intent": {
+          "id": 405,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "aa090334-3f3f-41dd-a636-9c7d6a73d535",
+          "parentSpanId": null,
+          "startedAtMainMs": 3674.147209,
+          "endedAtMainMs": 3698.1243750000003,
+          "durationMs": 23.977166000000125,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 487,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "aa090334-3f3f-41dd-a636-9c7d6a73d535",
+          "parentSpanId": null,
+          "startedAtMainMs": 4029.305709,
+          "endedAtMainMs": 4075.476167,
+          "durationMs": 46.1704579999996,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 503,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "aa090334-3f3f-41dd-a636-9c7d6a73d535",
+          "parentSpanId": null,
+          "startedAtMainMs": 4075.5046250000005,
+          "endedAtMainMs": 4075.608042,
+          "durationMs": 0.10341699999935372,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 504,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "aa090334-3f3f-41dd-a636-9c7d6a73d535",
+          "parentSpanId": null,
+          "startedAtMainMs": 4114.516417,
+          "endedAtMainMs": 4129.062125,
+          "durationMs": 14.545708000000559,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 509,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "aa090334-3f3f-41dd-a636-9c7d6a73d535",
+          "parentSpanId": null,
+          "startedAtMainMs": 4129.0673750000005,
+          "endedAtMainMs": 4147.6525,
+          "durationMs": 18.585124999999607,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 23.977166000000125,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.774333999999726,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7414590000003045,
+          "otherIncludingQueueChecksAndSchedulingMs": 13.461373000000094
+        },
+        "commit": {
+          "callMs": 46.1704579999996,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.985583999999108,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.146333999999115,
+          "otherIncludingQueueChecksAndSchedulingMs": 23.038540000001376
+        },
+        "accept": {
+          "callMs": 0.10341699999935372,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.10341699999935372
+        },
+        "settle": {
+          "callMs": 14.545708000000559,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.72008299999925,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8196239999997488,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.006001000001561
+        },
+        "resolve": {
+          "callMs": 18.585124999999607,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.601665999999568,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1128319999997984,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.8706270000002405
+        }
+      },
+      "preparedToCommitCallStartMs": 276.3296250000003,
+      "commitCallStartToResolutionEndMs": 118.34679099999994,
+      "preparedToPreviousResolutionEndWaitMs": 276.1467080000002,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1829170000000886,
+      "commitCallEndToNativeAcceptedMs": 39.03404200000023,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 38.90216700000019,
+      "nativeAcceptedToResolutionEndMs": 33.142291000000114
+    },
+    {
+      "index": 15,
+      "operationId": "6fd6e1a5-8244-4bba-a3cf-4a310d32907a",
+      "endAtMainMs": 3789.3891670000003,
+      "preparedAtMainMs": 3867.997792,
+      "nativeAcceptedAtMainMs": 4236.967917,
+      "api": {
+        "intent": {
+          "id": 433,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "6fd6e1a5-8244-4bba-a3cf-4a310d32907a",
+          "parentSpanId": null,
+          "startedAtMainMs": 3791.119834,
+          "endedAtMainMs": 3817.1332500000003,
+          "durationMs": 26.013416000000234,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 515,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "6fd6e1a5-8244-4bba-a3cf-4a310d32907a",
+          "parentSpanId": null,
+          "startedAtMainMs": 4147.7955,
+          "endedAtMainMs": 4196.584917,
+          "durationMs": 48.78941699999996,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 531,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "6fd6e1a5-8244-4bba-a3cf-4a310d32907a",
+          "parentSpanId": null,
+          "startedAtMainMs": 4196.616209,
+          "endedAtMainMs": 4196.665792,
+          "durationMs": 0.04958299999998417,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 532,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "6fd6e1a5-8244-4bba-a3cf-4a310d32907a",
+          "parentSpanId": null,
+          "startedAtMainMs": 4236.977334,
+          "endedAtMainMs": 4251.59825,
+          "durationMs": 14.620915999999852,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 537,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "6fd6e1a5-8244-4bba-a3cf-4a310d32907a",
+          "parentSpanId": null,
+          "startedAtMainMs": 4251.603292,
+          "endedAtMainMs": 4271.749959,
+          "durationMs": 20.14666699999998,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 26.013416000000234,
+          "syncCount": 2,
+          "syncWallUnionMs": 14.723417999999583,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6144999999996799,
+          "otherIncludingQueueChecksAndSchedulingMs": 10.675498000000971
+        },
+        "commit": {
+          "callMs": 48.78941699999996,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.050458000000617,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.4412099999999555,
+          "otherIncludingQueueChecksAndSchedulingMs": 25.297748999999385
+        },
+        "accept": {
+          "callMs": 0.04958299999998417,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.04958299999998417
+        },
+        "settle": {
+          "callMs": 14.620915999999852,
+          "syncCount": 2,
+          "syncWallUnionMs": 8.971541999999317,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8541660000000775,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.795208000000457
+        },
+        "resolve": {
+          "callMs": 20.14666699999998,
+          "syncCount": 2,
+          "syncWallUnionMs": 12.03241700000035,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.0952930000003107,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.018956999999318
+        }
+      },
+      "preparedToCommitCallStartMs": 279.79770800000006,
+      "commitCallStartToResolutionEndMs": 123.95445899999959,
+      "preparedToPreviousResolutionEndWaitMs": 279.654708,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1430000000000291,
+      "commitCallEndToNativeAcceptedMs": 40.38299999999981,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 40.30212500000016,
+      "nativeAcceptedToResolutionEndMs": 34.78204199999982
+    },
+    {
+      "index": 16,
+      "operationId": "077ed522-3903-44e0-aabe-a730b9ca3335",
+      "endAtMainMs": 3906.436417,
+      "preparedAtMainMs": 3989.6115,
+      "nativeAcceptedAtMainMs": 4368.996375,
+      "api": {
+        "intent": {
+          "id": 461,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "077ed522-3903-44e0-aabe-a730b9ca3335",
+          "parentSpanId": null,
+          "startedAtMainMs": 3909.423667,
+          "endedAtMainMs": 3936.645542,
+          "durationMs": 27.221875000000182,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 543,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "077ed522-3903-44e0-aabe-a730b9ca3335",
+          "parentSpanId": null,
+          "startedAtMainMs": 4271.911209,
+          "endedAtMainMs": 4325.5472500000005,
+          "durationMs": 53.63604100000066,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 559,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "077ed522-3903-44e0-aabe-a730b9ca3335",
+          "parentSpanId": null,
+          "startedAtMainMs": 4325.597959,
+          "endedAtMainMs": 4328.274042,
+          "durationMs": 2.6760830000002898,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 560,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "077ed522-3903-44e0-aabe-a730b9ca3335",
+          "parentSpanId": null,
+          "startedAtMainMs": 4369.004709,
+          "endedAtMainMs": 4397.171625,
+          "durationMs": 28.16691600000013,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 565,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "077ed522-3903-44e0-aabe-a730b9ca3335",
+          "parentSpanId": null,
+          "startedAtMainMs": 4397.175375,
+          "endedAtMainMs": 4429.989459,
+          "durationMs": 32.81408400000055,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 27.221875000000182,
+          "syncCount": 2,
+          "syncWallUnionMs": 16.39800000000014,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8010419999995975,
+          "otherIncludingQueueChecksAndSchedulingMs": 10.022833000000446
+        },
+        "commit": {
+          "callMs": 53.63604100000066,
+          "syncCount": 4,
+          "syncWallUnionMs": 19.4037100000005,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.59929000000011,
+          "otherIncludingQueueChecksAndSchedulingMs": 31.63304100000005
+        },
+        "accept": {
+          "callMs": 2.6760830000002898,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 2.6760830000002898
+        },
+        "settle": {
+          "callMs": 28.16691600000013,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.893999000000804,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 1.3797500000000582,
+          "otherIncludingQueueChecksAndSchedulingMs": 15.893166999999266
+        },
+        "resolve": {
+          "callMs": 32.81408400000055,
+          "syncCount": 2,
+          "syncWallUnionMs": 12.345874999999978,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 2.347835000001396,
+          "otherIncludingQueueChecksAndSchedulingMs": 18.120373999999174
+        }
+      },
+      "preparedToCommitCallStartMs": 282.2997089999999,
+      "commitCallStartToResolutionEndMs": 158.07825000000048,
+      "preparedToPreviousResolutionEndWaitMs": 282.1384589999998,
+      "afterPreviousResolutionUntilCommitCallMs": 0.16125000000010914,
+      "commitCallEndToNativeAcceptedMs": 43.449124999999185,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 40.72233299999971,
+      "nativeAcceptedToResolutionEndMs": 60.993084000000636
+    },
+    {
+      "index": 17,
+      "operationId": "5777b3b7-1fb5-42f4-87ed-ec10d8cf6093",
+      "endAtMainMs": 4029.5110839999998,
+      "preparedAtMainMs": 4107.888667,
+      "nativeAcceptedAtMainMs": 4525.92625,
+      "api": {
+        "intent": {
+          "id": 489,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "5777b3b7-1fb5-42f4-87ed-ec10d8cf6093",
+          "parentSpanId": null,
+          "startedAtMainMs": 4032.4252500000002,
+          "endedAtMainMs": 4056.001542,
+          "durationMs": 23.57629199999974,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 571,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "5777b3b7-1fb5-42f4-87ed-ec10d8cf6093",
+          "parentSpanId": null,
+          "startedAtMainMs": 4430.14875,
+          "endedAtMainMs": 4490.320167,
+          "durationMs": 60.171416999999565,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 587,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "5777b3b7-1fb5-42f4-87ed-ec10d8cf6093",
+          "parentSpanId": null,
+          "startedAtMainMs": 4490.352084,
+          "endedAtMainMs": 4490.4445000000005,
+          "durationMs": 0.09241600000041217,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 588,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "5777b3b7-1fb5-42f4-87ed-ec10d8cf6093",
+          "parentSpanId": null,
+          "startedAtMainMs": 4525.938292,
+          "endedAtMainMs": 4542.965292,
+          "durationMs": 17.027000000000044,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 593,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "5777b3b7-1fb5-42f4-87ed-ec10d8cf6093",
+          "parentSpanId": null,
+          "startedAtMainMs": 4542.968667,
+          "endedAtMainMs": 4561.426875,
+          "durationMs": 18.458208000000013,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 23.57629199999974,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.82524899999953,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.629041999999572,
+          "otherIncludingQueueChecksAndSchedulingMs": 13.122001000000637
+        },
+        "commit": {
+          "callMs": 60.171416999999565,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.874958999999762,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 5.9367089999987,
+          "otherIncludingQueueChecksAndSchedulingMs": 33.3597490000011
+        },
+        "accept": {
+          "callMs": 0.09241600000041217,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.09241600000041217
+        },
+        "settle": {
+          "callMs": 17.027000000000044,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.53808299999946,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8294589999995878,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.6594580000009955
+        },
+        "resolve": {
+          "callMs": 18.458208000000013,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.688833000000159,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.2656250000009095,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.503749999998945
+        }
+      },
+      "preparedToCommitCallStartMs": 322.2600830000001,
+      "commitCallStartToResolutionEndMs": 131.27812499999982,
+      "preparedToPreviousResolutionEndWaitMs": 322.1007920000002,
+      "afterPreviousResolutionUntilCommitCallMs": 0.15929099999993923,
+      "commitCallEndToNativeAcceptedMs": 35.60608300000058,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 35.48174999999992,
+      "nativeAcceptedToResolutionEndMs": 35.50062499999967
+    },
+    {
+      "index": 18,
+      "operationId": "ebbcadd2-b128-4213-9d52-c39eb93533a7",
+      "endAtMainMs": 4148.3845,
+      "preparedAtMainMs": 4231.710042,
+      "nativeAcceptedAtMainMs": 4652.920542,
+      "api": {
+        "intent": {
+          "id": 517,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "ebbcadd2-b128-4213-9d52-c39eb93533a7",
+          "parentSpanId": null,
+          "startedAtMainMs": 4151.117834,
+          "endedAtMainMs": 4178.150417,
+          "durationMs": 27.03258300000016,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 599,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "ebbcadd2-b128-4213-9d52-c39eb93533a7",
+          "parentSpanId": null,
+          "startedAtMainMs": 4561.58425,
+          "endedAtMainMs": 4619.946209,
+          "durationMs": 58.36195899999984,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 615,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "ebbcadd2-b128-4213-9d52-c39eb93533a7",
+          "parentSpanId": null,
+          "startedAtMainMs": 4619.980917,
+          "endedAtMainMs": 4620.15225,
+          "durationMs": 0.17133300000023155,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 616,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "ebbcadd2-b128-4213-9d52-c39eb93533a7",
+          "parentSpanId": null,
+          "startedAtMainMs": 4652.927834,
+          "endedAtMainMs": 4670.366334,
+          "durationMs": 17.438500000000204,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 621,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "ebbcadd2-b128-4213-9d52-c39eb93533a7",
+          "parentSpanId": null,
+          "startedAtMainMs": 4670.371542,
+          "endedAtMainMs": 4692.187709,
+          "durationMs": 21.81616699999995,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 27.03258300000016,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.564832999999453,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6477920000006634,
+          "otherIncludingQueueChecksAndSchedulingMs": 14.819958000000042
+        },
+        "commit": {
+          "callMs": 58.36195899999984,
+          "syncCount": 4,
+          "syncWallUnionMs": 31.181291999999303,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.5491670000010345,
+          "otherIncludingQueueChecksAndSchedulingMs": 24.631499999999505
+        },
+        "accept": {
+          "callMs": 0.17133300000023155,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.17133300000023155
+        },
+        "settle": {
+          "callMs": 17.438500000000204,
+          "syncCount": 2,
+          "syncWallUnionMs": 12.002583000000413,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8312500000001819,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.604666999999608
+        },
+        "resolve": {
+          "callMs": 21.81616699999995,
+          "syncCount": 2,
+          "syncWallUnionMs": 12.16020799999933,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.233208999999988,
+          "otherIncludingQueueChecksAndSchedulingMs": 8.422750000000633
+        }
+      },
+      "preparedToCommitCallStartMs": 329.8742080000002,
+      "commitCallStartToResolutionEndMs": 130.60345899999993,
+      "preparedToPreviousResolutionEndWaitMs": 329.7168330000004,
+      "afterPreviousResolutionUntilCommitCallMs": 0.15737499999977445,
+      "commitCallEndToNativeAcceptedMs": 32.974333000000115,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 32.76829199999975,
+      "nativeAcceptedToResolutionEndMs": 39.26716699999997
+    },
+    {
+      "index": 19,
+      "operationId": "172a1c86-ee2b-4be1-af0b-efed774e5663",
+      "endAtMainMs": 4272.345209,
+      "preparedAtMainMs": 4362.659292,
+      "nativeAcceptedAtMainMs": 4783.756709,
+      "api": {
+        "intent": {
+          "id": 545,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "172a1c86-ee2b-4be1-af0b-efed774e5663",
+          "parentSpanId": null,
+          "startedAtMainMs": 4274.404042,
+          "endedAtMainMs": 4302.741584,
+          "durationMs": 28.337542000000212,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 627,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "172a1c86-ee2b-4be1-af0b-efed774e5663",
+          "parentSpanId": null,
+          "startedAtMainMs": 4692.335459,
+          "endedAtMainMs": 4744.7783340000005,
+          "durationMs": 52.44287500000064,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 643,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "172a1c86-ee2b-4be1-af0b-efed774e5663",
+          "parentSpanId": null,
+          "startedAtMainMs": 4744.813584,
+          "endedAtMainMs": 4744.916167,
+          "durationMs": 0.10258299999986775,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 644,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "172a1c86-ee2b-4be1-af0b-efed774e5663",
+          "parentSpanId": null,
+          "startedAtMainMs": 4783.763834,
+          "endedAtMainMs": 4798.751084,
+          "durationMs": 14.987250000000131,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 649,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "172a1c86-ee2b-4be1-af0b-efed774e5663",
+          "parentSpanId": null,
+          "startedAtMainMs": 4798.753875,
+          "endedAtMainMs": 4816.039375,
+          "durationMs": 17.285499999999956,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 28.337542000000212,
+          "syncCount": 2,
+          "syncWallUnionMs": 17.889751000000615,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7604579999997441,
+          "otherIncludingQueueChecksAndSchedulingMs": 9.687332999999853
+        },
+        "commit": {
+          "callMs": 52.44287500000064,
+          "syncCount": 4,
+          "syncWallUnionMs": 24.344959000000927,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 3.0431259999995746,
+          "otherIncludingQueueChecksAndSchedulingMs": 25.05479000000014
+        },
+        "accept": {
+          "callMs": 0.10258299999986775,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.10258299999986775
+        },
+        "settle": {
+          "callMs": 14.987250000000131,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.179665999999997,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6250419999996666,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.182542000000467
+        },
+        "resolve": {
+          "callMs": 17.285499999999956,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.658875999999509,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.139416999999412,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.487207000001035
+        }
+      },
+      "preparedToCommitCallStartMs": 329.6761669999996,
+      "commitCallStartToResolutionEndMs": 123.70391600000039,
+      "preparedToPreviousResolutionEndWaitMs": 329.52841699999954,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1477500000000873,
+      "commitCallEndToNativeAcceptedMs": 38.97837499999969,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 38.840541999999914,
+      "nativeAcceptedToResolutionEndMs": 32.28266600000006
+    },
+    {
+      "index": 20,
+      "operationId": "f83ba177-fd77-41cf-b9d4-8ff1085a9727",
+      "endAtMainMs": 4430.339792,
+      "preparedAtMainMs": 4520.551084,
+      "nativeAcceptedAtMainMs": 4897.63025,
+      "api": {
+        "intent": {
+          "id": 573,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "f83ba177-fd77-41cf-b9d4-8ff1085a9727",
+          "parentSpanId": null,
+          "startedAtMainMs": 4444.919917,
+          "endedAtMainMs": 4470.068,
+          "durationMs": 25.148083000000042,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 655,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "f83ba177-fd77-41cf-b9d4-8ff1085a9727",
+          "parentSpanId": null,
+          "startedAtMainMs": 4816.190625,
+          "endedAtMainMs": 4866.272,
+          "durationMs": 50.08137499999975,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 671,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "f83ba177-fd77-41cf-b9d4-8ff1085a9727",
+          "parentSpanId": null,
+          "startedAtMainMs": 4866.303584,
+          "endedAtMainMs": 4866.416667,
+          "durationMs": 0.1130830000001879,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 672,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "f83ba177-fd77-41cf-b9d4-8ff1085a9727",
+          "parentSpanId": null,
+          "startedAtMainMs": 4897.636167,
+          "endedAtMainMs": 4914.887834,
+          "durationMs": 17.251667000000452,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 677,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "f83ba177-fd77-41cf-b9d4-8ff1085a9727",
+          "parentSpanId": null,
+          "startedAtMainMs": 4914.891334,
+          "endedAtMainMs": 4934.375,
+          "durationMs": 19.483666000000085,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 25.148083000000042,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.12683300000026,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 1.5099170000003141,
+          "otherIncludingQueueChecksAndSchedulingMs": 13.511332999999468
+        },
+        "commit": {
+          "callMs": 50.08137499999975,
+          "syncCount": 4,
+          "syncWallUnionMs": 24.823374999999032,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.3459159999993062,
+          "otherIncludingQueueChecksAndSchedulingMs": 22.912084000001414
+        },
+        "accept": {
+          "callMs": 0.1130830000001879,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.1130830000001879
+        },
+        "settle": {
+          "callMs": 17.251667000000452,
+          "syncCount": 2,
+          "syncWallUnionMs": 12.128623999999945,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8108339999998861,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.312209000000621
+        },
+        "resolve": {
+          "callMs": 19.483666000000085,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.339624999999614,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1453329999994821,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.998708000000988
+        }
+      },
+      "preparedToCommitCallStartMs": 295.63954100000046,
+      "commitCallStartToResolutionEndMs": 118.18437499999982,
+      "preparedToPreviousResolutionEndWaitMs": 295.4882910000006,
+      "afterPreviousResolutionUntilCommitCallMs": 0.15124999999989086,
+      "commitCallEndToNativeAcceptedMs": 31.358250000000226,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 31.213582999999744,
+      "nativeAcceptedToResolutionEndMs": 36.74474999999984
+    },
+    {
+      "index": 21,
+      "operationId": "5da298d0-4ac3-4d68-ad5c-312bf807110a",
+      "endAtMainMs": 4562.346875,
+      "preparedAtMainMs": 4647.640125,
+      "nativeAcceptedAtMainMs": 5022.514334,
+      "api": {
+        "intent": {
+          "id": 601,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "5da298d0-4ac3-4d68-ad5c-312bf807110a",
+          "parentSpanId": null,
+          "startedAtMainMs": 4565.741542,
+          "endedAtMainMs": 4588.9800000000005,
+          "durationMs": 23.23845800000072,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 683,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "5da298d0-4ac3-4d68-ad5c-312bf807110a",
+          "parentSpanId": null,
+          "startedAtMainMs": 4934.532375,
+          "endedAtMainMs": 4983.850375,
+          "durationMs": 49.31800000000021,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 699,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "5da298d0-4ac3-4d68-ad5c-312bf807110a",
+          "parentSpanId": null,
+          "startedAtMainMs": 4983.881042,
+          "endedAtMainMs": 4983.9751670000005,
+          "durationMs": 0.09412500000053114,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 700,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "5da298d0-4ac3-4d68-ad5c-312bf807110a",
+          "parentSpanId": null,
+          "startedAtMainMs": 5022.519834,
+          "endedAtMainMs": 5039.710875,
+          "durationMs": 17.19104100000004,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 705,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "5da298d0-4ac3-4d68-ad5c-312bf807110a",
+          "parentSpanId": null,
+          "startedAtMainMs": 5039.71425,
+          "endedAtMainMs": 5057.9365,
+          "durationMs": 18.222249999999804,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 23.23845800000072,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.580748999999741,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 1.1702090000007956,
+          "otherIncludingQueueChecksAndSchedulingMs": 12.487500000000182
+        },
+        "commit": {
+          "callMs": 49.31800000000021,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.15337500000078,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.19800000000032,
+          "otherIncludingQueueChecksAndSchedulingMs": 26.966624999999112
+        },
+        "accept": {
+          "callMs": 0.09412500000053114,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.09412500000053114
+        },
+        "settle": {
+          "callMs": 17.19104100000004,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.652667000000292,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8455409999996846,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.692833000000064
+        },
+        "resolve": {
+          "callMs": 18.222249999999804,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.630291999999827,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1394579999996495,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.452500000000327
+        }
+      },
+      "preparedToCommitCallStartMs": 286.8922499999999,
+      "commitCallStartToResolutionEndMs": 123.40412500000002,
+      "preparedToPreviousResolutionEndWaitMs": 286.7348750000001,
+      "afterPreviousResolutionUntilCommitCallMs": 0.15737499999977445,
+      "commitCallEndToNativeAcceptedMs": 38.66395900000043,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 38.53916699999991,
+      "nativeAcceptedToResolutionEndMs": 35.42216599999938
+    },
+    {
+      "index": 22,
+      "operationId": "725b498b-c790-4944-99de-5e0c35d7ce87",
+      "endAtMainMs": 4692.524959,
+      "preparedAtMainMs": 4778.71475,
+      "nativeAcceptedAtMainMs": 5143.451917,
+      "api": {
+        "intent": {
+          "id": 629,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "725b498b-c790-4944-99de-5e0c35d7ce87",
+          "parentSpanId": null,
+          "startedAtMainMs": 4695.786459,
+          "endedAtMainMs": 4725.227584,
+          "durationMs": 29.441125000000284,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 711,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "725b498b-c790-4944-99de-5e0c35d7ce87",
+          "parentSpanId": null,
+          "startedAtMainMs": 5058.087584,
+          "endedAtMainMs": 5105.805292,
+          "durationMs": 47.71770800000013,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 727,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "725b498b-c790-4944-99de-5e0c35d7ce87",
+          "parentSpanId": null,
+          "startedAtMainMs": 5105.838292,
+          "endedAtMainMs": 5105.920459,
+          "durationMs": 0.082166999999572,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 728,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "725b498b-c790-4944-99de-5e0c35d7ce87",
+          "parentSpanId": null,
+          "startedAtMainMs": 5143.45825,
+          "endedAtMainMs": 5159.86925,
+          "durationMs": 16.411000000000058,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 733,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "725b498b-c790-4944-99de-5e0c35d7ce87",
+          "parentSpanId": null,
+          "startedAtMainMs": 5159.872167,
+          "endedAtMainMs": 5180.1585000000005,
+          "durationMs": 20.286333000000013,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 29.441125000000284,
+          "syncCount": 2,
+          "syncWallUnionMs": 16.981249999999818,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.9732929999991029,
+          "otherIncludingQueueChecksAndSchedulingMs": 11.486582000001363
+        },
+        "commit": {
+          "callMs": 47.71770800000013,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.8789569999999,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.68412299999909,
+          "otherIncludingQueueChecksAndSchedulingMs": 23.15462800000114
+        },
+        "accept": {
+          "callMs": 0.082166999999572,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.082166999999572
+        },
+        "settle": {
+          "callMs": 16.411000000000058,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.069833000000472,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.605624999999236,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.7355420000003505
+        },
+        "resolve": {
+          "callMs": 20.286333000000013,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.351333000000523,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1389160000007905,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.7960839999987
+        }
+      },
+      "preparedToCommitCallStartMs": 279.3728339999998,
+      "commitCallStartToResolutionEndMs": 122.07091600000058,
+      "preparedToPreviousResolutionEndWaitMs": 279.2217499999997,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1510840000000826,
+      "commitCallEndToNativeAcceptedMs": 37.64662500000031,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 37.531458000000384,
+      "nativeAcceptedToResolutionEndMs": 36.70658300000014
+    },
+    {
+      "index": 23,
+      "operationId": "5084b835-f382-4865-a757-ee1e8de9ce35",
+      "endAtMainMs": 4816.398125,
+      "preparedAtMainMs": 4892.634542,
+      "nativeAcceptedAtMainMs": 5263.586292,
+      "api": {
+        "intent": {
+          "id": 657,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "5084b835-f382-4865-a757-ee1e8de9ce35",
+          "parentSpanId": null,
+          "startedAtMainMs": 4818.385834,
+          "endedAtMainMs": 4838.129167,
+          "durationMs": 19.743333000000348,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 739,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "5084b835-f382-4865-a757-ee1e8de9ce35",
+          "parentSpanId": null,
+          "startedAtMainMs": 5180.3261250000005,
+          "endedAtMainMs": 5227.055625,
+          "durationMs": 46.72949999999946,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 755,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "5084b835-f382-4865-a757-ee1e8de9ce35",
+          "parentSpanId": null,
+          "startedAtMainMs": 5227.087792,
+          "endedAtMainMs": 5227.20075,
+          "durationMs": 0.11295799999970768,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 756,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "5084b835-f382-4865-a757-ee1e8de9ce35",
+          "parentSpanId": null,
+          "startedAtMainMs": 5263.592375,
+          "endedAtMainMs": 5279.074875,
+          "durationMs": 15.482500000000073,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 761,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "5084b835-f382-4865-a757-ee1e8de9ce35",
+          "parentSpanId": null,
+          "startedAtMainMs": 5279.078625,
+          "endedAtMainMs": 5295.418084,
+          "durationMs": 16.339458999999806,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 19.743333000000348,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.347540999999183,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 1.0795409999991534,
+          "otherIncludingQueueChecksAndSchedulingMs": 9.316251000002012
+        },
+        "commit": {
+          "callMs": 46.72949999999946,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.497416000001067,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.187875000000531,
+          "otherIncludingQueueChecksAndSchedulingMs": 24.044208999997863
+        },
+        "accept": {
+          "callMs": 0.11295799999970768,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.11295799999970768
+        },
+        "settle": {
+          "callMs": 15.482500000000073,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.556916999999885,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.9239159999997355,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.001667000000452
+        },
+        "resolve": {
+          "callMs": 16.339458999999806,
+          "syncCount": 2,
+          "syncWallUnionMs": 8.289999999999964,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1455830000004426,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.9038759999994
+        }
+      },
+      "preparedToCommitCallStartMs": 287.6915830000007,
+      "commitCallStartToResolutionEndMs": 115.0919589999994,
+      "preparedToPreviousResolutionEndWaitMs": 287.5239580000007,
+      "afterPreviousResolutionUntilCommitCallMs": 0.16762500000004366,
+      "commitCallEndToNativeAcceptedMs": 36.530666999999994,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 36.38554199999999,
+      "nativeAcceptedToResolutionEndMs": 31.83179199999995
+    },
+    {
+      "index": 24,
+      "operationId": "b2f3a502-3377-4af1-bb35-46b8ae9047e6",
+      "endAtMainMs": 4935.3943340000005,
+      "preparedAtMainMs": 5018.979917,
+      "nativeAcceptedAtMainMs": 5383.000084,
+      "api": {
+        "intent": {
+          "id": 685,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "b2f3a502-3377-4af1-bb35-46b8ae9047e6",
+          "parentSpanId": null,
+          "startedAtMainMs": 4938.402959,
+          "endedAtMainMs": 4964.891584,
+          "durationMs": 26.488624999999956,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 767,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "b2f3a502-3377-4af1-bb35-46b8ae9047e6",
+          "parentSpanId": null,
+          "startedAtMainMs": 5295.568292,
+          "endedAtMainMs": 5343.519417,
+          "durationMs": 47.9511250000005,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 783,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "b2f3a502-3377-4af1-bb35-46b8ae9047e6",
+          "parentSpanId": null,
+          "startedAtMainMs": 5343.554959,
+          "endedAtMainMs": 5343.636,
+          "durationMs": 0.08104100000036851,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 784,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "b2f3a502-3377-4af1-bb35-46b8ae9047e6",
+          "parentSpanId": null,
+          "startedAtMainMs": 5383.005542,
+          "endedAtMainMs": 5397.516209,
+          "durationMs": 14.510667000000467,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 789,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "b2f3a502-3377-4af1-bb35-46b8ae9047e6",
+          "parentSpanId": null,
+          "startedAtMainMs": 5397.518792,
+          "endedAtMainMs": 5413.761084,
+          "durationMs": 16.242291999999907,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 26.488624999999956,
+          "syncCount": 2,
+          "syncWallUnionMs": 12.453457999999046,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8066260000005059,
+          "otherIncludingQueueChecksAndSchedulingMs": 13.228541000000405
+        },
+        "commit": {
+          "callMs": 47.9511250000005,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.124665999998797,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.0732940000007147,
+          "otherIncludingQueueChecksAndSchedulingMs": 24.75316500000099
+        },
+        "accept": {
+          "callMs": 0.08104100000036851,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.08104100000036851
+        },
+        "settle": {
+          "callMs": 14.510667000000467,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.867834000000585,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8172500000000582,
+          "otherIncludingQueueChecksAndSchedulingMs": 3.825582999999824
+        },
+        "resolve": {
+          "callMs": 16.242291999999907,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.254249999999956,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1185410000007323,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.869500999999218
+        }
+      },
+      "preparedToCommitCallStartMs": 276.58837500000027,
+      "commitCallStartToResolutionEndMs": 118.19279199999983,
+      "preparedToPreviousResolutionEndWaitMs": 276.43816700000025,
+      "afterPreviousResolutionUntilCommitCallMs": 0.15020800000002055,
+      "commitCallEndToNativeAcceptedMs": 39.48066699999981,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 39.36408399999982,
+      "nativeAcceptedToResolutionEndMs": 30.760999999999513
+    },
+    {
+      "index": 25,
+      "operationId": "5bfc05f5-2b5d-43c5-a335-83b4ea020e85",
+      "endAtMainMs": 5058.35825,
+      "preparedAtMainMs": 5139.861042,
+      "nativeAcceptedAtMainMs": 5497.339084,
+      "api": {
+        "intent": {
+          "id": 713,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "5bfc05f5-2b5d-43c5-a335-83b4ea020e85",
+          "parentSpanId": null,
+          "startedAtMainMs": 5061.3910000000005,
+          "endedAtMainMs": 5086.4255,
+          "durationMs": 25.034499999999753,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 795,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "5bfc05f5-2b5d-43c5-a335-83b4ea020e85",
+          "parentSpanId": null,
+          "startedAtMainMs": 5413.915542,
+          "endedAtMainMs": 5460.925542,
+          "durationMs": 47.01000000000022,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 811,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "5bfc05f5-2b5d-43c5-a335-83b4ea020e85",
+          "parentSpanId": null,
+          "startedAtMainMs": 5460.968834,
+          "endedAtMainMs": 5461.088084,
+          "durationMs": 0.11924999999973807,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 812,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "5bfc05f5-2b5d-43c5-a335-83b4ea020e85",
+          "parentSpanId": null,
+          "startedAtMainMs": 5497.34775,
+          "endedAtMainMs": 5512.795959,
+          "durationMs": 15.448209000000134,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 817,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "5bfc05f5-2b5d-43c5-a335-83b4ea020e85",
+          "parentSpanId": null,
+          "startedAtMainMs": 5512.7993750000005,
+          "endedAtMainMs": 5531.059167,
+          "durationMs": 18.259791999999834,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 25.034499999999753,
+          "syncCount": 2,
+          "syncWallUnionMs": 15.2582510000002,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7271670000000086,
+          "otherIncludingQueueChecksAndSchedulingMs": 9.049081999999544
+        },
+        "commit": {
+          "callMs": 47.01000000000022,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.87750099999903,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.182791000001089,
+          "otherIncludingQueueChecksAndSchedulingMs": 23.9497080000001
+        },
+        "accept": {
+          "callMs": 0.11924999999973807,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.11924999999973807
+        },
+        "settle": {
+          "callMs": 15.448209000000134,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.398333000000093,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6714160000001357,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.3784599999999045
+        },
+        "resolve": {
+          "callMs": 18.259791999999834,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.719500000000153,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1597909999991316,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.3805010000005495
+        }
+      },
+      "preparedToCommitCallStartMs": 274.0544999999993,
+      "commitCallStartToResolutionEndMs": 117.14362500000061,
+      "preparedToPreviousResolutionEndWaitMs": 273.9000419999993,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1544579999999769,
+      "commitCallEndToNativeAcceptedMs": 36.413542000000234,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 36.251000000000204,
+      "nativeAcceptedToResolutionEndMs": 33.72008300000016
+    },
+    {
+      "index": 26,
+      "operationId": "a1821aed-35b6-4b7b-8d48-74dc431a2a24",
+      "endAtMainMs": 5180.511709,
+      "preparedAtMainMs": 5258.668542,
+      "nativeAcceptedAtMainMs": 5617.740625,
+      "api": {
+        "intent": {
+          "id": 741,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "a1821aed-35b6-4b7b-8d48-74dc431a2a24",
+          "parentSpanId": null,
+          "startedAtMainMs": 5183.448209,
+          "endedAtMainMs": 5209.593834,
+          "durationMs": 26.14562500000011,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 823,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "a1821aed-35b6-4b7b-8d48-74dc431a2a24",
+          "parentSpanId": null,
+          "startedAtMainMs": 5531.213625,
+          "endedAtMainMs": 5584.629834,
+          "durationMs": 53.41620899999998,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 839,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "a1821aed-35b6-4b7b-8d48-74dc431a2a24",
+          "parentSpanId": null,
+          "startedAtMainMs": 5584.662375,
+          "endedAtMainMs": 5584.737917,
+          "durationMs": 0.07554200000049605,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 840,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "a1821aed-35b6-4b7b-8d48-74dc431a2a24",
+          "parentSpanId": null,
+          "startedAtMainMs": 5617.746917,
+          "endedAtMainMs": 5633.947625,
+          "durationMs": 16.200707999999395,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 845,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "a1821aed-35b6-4b7b-8d48-74dc431a2a24",
+          "parentSpanId": null,
+          "startedAtMainMs": 5633.9511250000005,
+          "endedAtMainMs": 5653.1175,
+          "durationMs": 19.16637499999979,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 26.14562500000011,
+          "syncCount": 2,
+          "syncWallUnionMs": 14.833333000000493,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7896240000009129,
+          "otherIncludingQueueChecksAndSchedulingMs": 10.522667999998703
+        },
+        "commit": {
+          "callMs": 53.41620899999998,
+          "syncCount": 4,
+          "syncWallUnionMs": 27.140583000000333,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.4528339999997115,
+          "otherIncludingQueueChecksAndSchedulingMs": 23.822791999999936
+        },
+        "accept": {
+          "callMs": 0.07554200000049605,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.07554200000049605
+        },
+        "settle": {
+          "callMs": 16.200707999999395,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.625417000000198,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8494160000009288,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.725874999998268
+        },
+        "resolve": {
+          "callMs": 19.16637499999979,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.973917999999685,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.2206250000017462,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.971831999998358
+        }
+      },
+      "preparedToCommitCallStartMs": 272.545083,
+      "commitCallStartToResolutionEndMs": 121.90387499999997,
+      "preparedToPreviousResolutionEndWaitMs": 272.390625,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1544579999999769,
+      "commitCallEndToNativeAcceptedMs": 33.11079100000006,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 33.002707999999984,
+      "nativeAcceptedToResolutionEndMs": 35.37687499999993
+    },
+    {
+      "index": 27,
+      "operationId": "eeb8cd70-c6f0-4f2c-a525-7d6c607b2475",
+      "endAtMainMs": 5296.516125,
+      "preparedAtMainMs": 5377.887334,
+      "nativeAcceptedAtMainMs": 5739.804417,
+      "api": {
+        "intent": {
+          "id": 769,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "eeb8cd70-c6f0-4f2c-a525-7d6c607b2475",
+          "parentSpanId": null,
+          "startedAtMainMs": 5298.3901670000005,
+          "endedAtMainMs": 5323.778709,
+          "durationMs": 25.38854199999969,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 851,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "eeb8cd70-c6f0-4f2c-a525-7d6c607b2475",
+          "parentSpanId": null,
+          "startedAtMainMs": 5653.283,
+          "endedAtMainMs": 5699.64025,
+          "durationMs": 46.35725000000002,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 867,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "eeb8cd70-c6f0-4f2c-a525-7d6c607b2475",
+          "parentSpanId": null,
+          "startedAtMainMs": 5699.670667,
+          "endedAtMainMs": 5699.763084,
+          "durationMs": 0.09241699999984121,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 868,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "eeb8cd70-c6f0-4f2c-a525-7d6c607b2475",
+          "parentSpanId": null,
+          "startedAtMainMs": 5739.810459,
+          "endedAtMainMs": 5755.24425,
+          "durationMs": 15.433790999999474,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 873,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "eeb8cd70-c6f0-4f2c-a525-7d6c607b2475",
+          "parentSpanId": null,
+          "startedAtMainMs": 5755.247375,
+          "endedAtMainMs": 5774.463834,
+          "durationMs": 19.216459000000214,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 25.38854199999969,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.495374999999513,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7956659999999829,
+          "otherIncludingQueueChecksAndSchedulingMs": 14.097501000000193
+        },
+        "commit": {
+          "callMs": 46.35725000000002,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.73191599999973,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.3923740000009275,
+          "otherIncludingQueueChecksAndSchedulingMs": 23.232959999999366
+        },
+        "accept": {
+          "callMs": 0.09241699999984121,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.09241699999984121
+        },
+        "settle": {
+          "callMs": 15.433790999999474,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.84166599999935,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7200830000001588,
+          "otherIncludingQueueChecksAndSchedulingMs": 3.872041999999965
+        },
+        "resolve": {
+          "callMs": 19.216459000000214,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.004791999999725,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.0533330000007481,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.158333999999741
+        }
+      },
+      "preparedToCommitCallStartMs": 275.39566600000035,
+      "commitCallStartToResolutionEndMs": 121.18083399999978,
+      "preparedToPreviousResolutionEndWaitMs": 275.2301660000003,
+      "afterPreviousResolutionUntilCommitCallMs": 0.16550000000006548,
+      "commitCallEndToNativeAcceptedMs": 40.16416699999991,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 40.04133300000012,
+      "nativeAcceptedToResolutionEndMs": 34.65941699999985
+    },
+    {
+      "index": 28,
+      "operationId": "fdfc20b6-b0e2-48ba-84b8-77415ebb5ebe",
+      "endAtMainMs": 5414.32125,
+      "preparedAtMainMs": 5493.914042,
+      "nativeAcceptedAtMainMs": 5859.730667,
+      "api": {
+        "intent": {
+          "id": 797,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "fdfc20b6-b0e2-48ba-84b8-77415ebb5ebe",
+          "parentSpanId": null,
+          "startedAtMainMs": 5417.212167,
+          "endedAtMainMs": 5443.460375,
+          "durationMs": 26.248207999999977,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 879,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "fdfc20b6-b0e2-48ba-84b8-77415ebb5ebe",
+          "parentSpanId": null,
+          "startedAtMainMs": 5774.649625,
+          "endedAtMainMs": 5820.460209,
+          "durationMs": 45.810583999999835,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 895,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "fdfc20b6-b0e2-48ba-84b8-77415ebb5ebe",
+          "parentSpanId": null,
+          "startedAtMainMs": 5820.495417,
+          "endedAtMainMs": 5820.550834,
+          "durationMs": 0.055416999999579275,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 896,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "fdfc20b6-b0e2-48ba-84b8-77415ebb5ebe",
+          "parentSpanId": null,
+          "startedAtMainMs": 5859.737667,
+          "endedAtMainMs": 5874.415834,
+          "durationMs": 14.67816700000003,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 901,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "fdfc20b6-b0e2-48ba-84b8-77415ebb5ebe",
+          "parentSpanId": null,
+          "startedAtMainMs": 5874.418334,
+          "endedAtMainMs": 5893.747,
+          "durationMs": 19.32866600000034,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 26.248207999999977,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.196582999999919,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7838749999991705,
+          "otherIncludingQueueChecksAndSchedulingMs": 14.267750000000888
+        },
+        "commit": {
+          "callMs": 45.810583999999835,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.764126000000033,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.448790999999801,
+          "otherIncludingQueueChecksAndSchedulingMs": 22.597667
+        },
+        "accept": {
+          "callMs": 0.055416999999579275,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.055416999999579275
+        },
+        "settle": {
+          "callMs": 14.67816700000003,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.506542000000081,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6162500000000364,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.555374999999913
+        },
+        "resolve": {
+          "callMs": 19.32866600000034,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.984625000000051,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1508329999996931,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.193208000000595
+        }
+      },
+      "preparedToCommitCallStartMs": 280.7355829999997,
+      "commitCallStartToResolutionEndMs": 119.09737500000028,
+      "preparedToPreviousResolutionEndWaitMs": 280.5497919999998,
+      "afterPreviousResolutionUntilCommitCallMs": 0.18579099999988102,
+      "commitCallEndToNativeAcceptedMs": 39.27045799999996,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 39.179833000000144,
+      "nativeAcceptedToResolutionEndMs": 34.016333000000486
+    },
+    {
+      "index": 29,
+      "operationId": "43697474-99e8-425d-b4b4-49fc1bf90b42",
+      "endAtMainMs": 5531.427125,
+      "preparedAtMainMs": 5612.742417,
+      "nativeAcceptedAtMainMs": 5982.8718340000005,
+      "api": {
+        "intent": {
+          "id": 825,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "43697474-99e8-425d-b4b4-49fc1bf90b42",
+          "parentSpanId": null,
+          "startedAtMainMs": 5534.0734170000005,
+          "endedAtMainMs": 5558.352584,
+          "durationMs": 24.27916699999969,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 907,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "43697474-99e8-425d-b4b4-49fc1bf90b42",
+          "parentSpanId": null,
+          "startedAtMainMs": 5893.902167,
+          "endedAtMainMs": 5944.002334,
+          "durationMs": 50.1001669999996,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 923,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "43697474-99e8-425d-b4b4-49fc1bf90b42",
+          "parentSpanId": null,
+          "startedAtMainMs": 5944.040875,
+          "endedAtMainMs": 5944.1245420000005,
+          "durationMs": 0.08366700000078708,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 924,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "43697474-99e8-425d-b4b4-49fc1bf90b42",
+          "parentSpanId": null,
+          "startedAtMainMs": 5982.877042,
+          "endedAtMainMs": 5997.7505,
+          "durationMs": 14.873458000000028,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 929,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "43697474-99e8-425d-b4b4-49fc1bf90b42",
+          "parentSpanId": null,
+          "startedAtMainMs": 5997.754125,
+          "endedAtMainMs": 6018.109,
+          "durationMs": 20.354874999999993,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 24.27916699999969,
+          "syncCount": 2,
+          "syncWallUnionMs": 14.207000999999764,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7035000000014406,
+          "otherIncludingQueueChecksAndSchedulingMs": 9.368665999998484
+        },
+        "commit": {
+          "callMs": 50.1001669999996,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.643332999998165,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.527291999997942,
+          "otherIncludingQueueChecksAndSchedulingMs": 25.929542000003494
+        },
+        "accept": {
+          "callMs": 0.08366700000078708,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.08366700000078708
+        },
+        "settle": {
+          "callMs": 14.873458000000028,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.239125000000968,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6926250000005894,
+          "otherIncludingQueueChecksAndSchedulingMs": 3.9417079999984708
+        },
+        "resolve": {
+          "callMs": 20.354874999999993,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.484375,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1355000000012296,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.734999999998763
+        }
+      },
+      "preparedToCommitCallStartMs": 281.1597499999998,
+      "commitCallStartToResolutionEndMs": 124.20683300000019,
+      "preparedToPreviousResolutionEndWaitMs": 281.0045829999999,
+      "afterPreviousResolutionUntilCommitCallMs": 0.15516699999989214,
+      "commitCallEndToNativeAcceptedMs": 38.8695000000007,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 38.747292000000016,
+      "nativeAcceptedToResolutionEndMs": 35.23716599999989
+    },
+    {
+      "index": 30,
+      "operationId": "560a845a-9d53-4280-89f8-ba0885573974",
+      "endAtMainMs": 5653.534084,
+      "preparedAtMainMs": 5732.825334,
+      "nativeAcceptedAtMainMs": 6105.411042,
+      "api": {
+        "intent": {
+          "id": 853,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "560a845a-9d53-4280-89f8-ba0885573974",
+          "parentSpanId": null,
+          "startedAtMainMs": 5656.627209,
+          "endedAtMainMs": 5681.712584,
+          "durationMs": 25.085374999999658,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 935,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "560a845a-9d53-4280-89f8-ba0885573974",
+          "parentSpanId": null,
+          "startedAtMainMs": 6018.294,
+          "endedAtMainMs": 6066.1181670000005,
+          "durationMs": 47.82416700000067,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 951,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "560a845a-9d53-4280-89f8-ba0885573974",
+          "parentSpanId": null,
+          "startedAtMainMs": 6066.149542,
+          "endedAtMainMs": 6066.227959,
+          "durationMs": 0.07841699999971752,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 952,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "560a845a-9d53-4280-89f8-ba0885573974",
+          "parentSpanId": null,
+          "startedAtMainMs": 6105.416875,
+          "endedAtMainMs": 6121.170042,
+          "durationMs": 15.753166999999848,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 957,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "560a845a-9d53-4280-89f8-ba0885573974",
+          "parentSpanId": null,
+          "startedAtMainMs": 6121.172959,
+          "endedAtMainMs": 6140.173,
+          "durationMs": 19.000040999999328,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 25.085374999999658,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.455333000000792,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6757920000000013,
+          "otherIncludingQueueChecksAndSchedulingMs": 13.954249999998865
+        },
+        "commit": {
+          "callMs": 47.82416700000067,
+          "syncCount": 4,
+          "syncWallUnionMs": 22.370249999999942,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.4891669999988153,
+          "otherIncludingQueueChecksAndSchedulingMs": 22.964750000001914
+        },
+        "accept": {
+          "callMs": 0.07841699999971752,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.07841699999971752
+        },
+        "settle": {
+          "callMs": 15.753166999999848,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.760457999999744,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.77258300000085,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.220125999999254
+        },
+        "resolve": {
+          "callMs": 19.000040999999328,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.432792000000518,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.244208000000981,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.323040999997829
+        }
+      },
+      "preparedToCommitCallStartMs": 285.46866599999976,
+      "commitCallStartToResolutionEndMs": 121.8789999999999,
+      "preparedToPreviousResolutionEndWaitMs": 285.28366600000027,
+      "afterPreviousResolutionUntilCommitCallMs": 0.18499999999949068,
+      "commitCallEndToNativeAcceptedMs": 39.292874999999185,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 39.1830829999999,
+      "nativeAcceptedToResolutionEndMs": 34.76195800000005
+    },
+    {
+      "index": 31,
+      "operationId": "e3fa95fc-0b68-4ce3-9bf2-f418e9ec170c",
+      "endAtMainMs": 5775.34925,
+      "preparedAtMainMs": 5854.575667,
+      "nativeAcceptedAtMainMs": 6231.668209,
+      "api": {
+        "intent": {
+          "id": 881,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "e3fa95fc-0b68-4ce3-9bf2-f418e9ec170c",
+          "parentSpanId": null,
+          "startedAtMainMs": 5776.9550420000005,
+          "endedAtMainMs": 5801.870375,
+          "durationMs": 24.91533299999992,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 963,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "e3fa95fc-0b68-4ce3-9bf2-f418e9ec170c",
+          "parentSpanId": null,
+          "startedAtMainMs": 6140.333209,
+          "endedAtMainMs": 6189.9958750000005,
+          "durationMs": 49.66266600000017,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 979,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "e3fa95fc-0b68-4ce3-9bf2-f418e9ec170c",
+          "parentSpanId": null,
+          "startedAtMainMs": 6190.0286670000005,
+          "endedAtMainMs": 6190.167459,
+          "durationMs": 0.13879199999973935,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 980,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "e3fa95fc-0b68-4ce3-9bf2-f418e9ec170c",
+          "parentSpanId": null,
+          "startedAtMainMs": 6231.673875,
+          "endedAtMainMs": 6245.422417,
+          "durationMs": 13.748541999999361,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 985,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "e3fa95fc-0b68-4ce3-9bf2-f418e9ec170c",
+          "parentSpanId": null,
+          "startedAtMainMs": 6245.425875,
+          "endedAtMainMs": 6262.7875,
+          "durationMs": 17.36162500000046,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 24.91533299999992,
+          "syncCount": 2,
+          "syncWallUnionMs": 13.917665999999372,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6636250000010477,
+          "otherIncludingQueueChecksAndSchedulingMs": 10.3340419999995
+        },
+        "commit": {
+          "callMs": 49.66266600000017,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.363125000000764,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.2319580000003043,
+          "otherIncludingQueueChecksAndSchedulingMs": 26.067582999999104
+        },
+        "accept": {
+          "callMs": 0.13879199999973935,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.13879199999973935
+        },
+        "settle": {
+          "callMs": 13.748541999999361,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.026042000000416,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7661660000003394,
+          "otherIncludingQueueChecksAndSchedulingMs": 3.9563339999986056
+        },
+        "resolve": {
+          "callMs": 17.36162500000046,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.209665999999743,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 0.9252499999993233,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.226709000001392
+        }
+      },
+      "preparedToCommitCallStartMs": 285.7575420000003,
+      "commitCallStartToResolutionEndMs": 122.45429100000001,
+      "preparedToPreviousResolutionEndWaitMs": 285.5973329999997,
+      "afterPreviousResolutionUntilCommitCallMs": 0.16020900000057736,
+      "commitCallEndToNativeAcceptedMs": 41.672333999999864,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 41.50075000000015,
+      "nativeAcceptedToResolutionEndMs": 31.119290999999976
+    },
+    {
+      "index": 32,
+      "operationId": "7e144c80-097b-4af2-95e4-11d4924068c8",
+      "endAtMainMs": 5894.3832090000005,
+      "preparedAtMainMs": 5977.876834,
+      "nativeAcceptedAtMainMs": 6351.809459,
+      "api": {
+        "intent": {
+          "id": 909,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "7e144c80-097b-4af2-95e4-11d4924068c8",
+          "parentSpanId": null,
+          "startedAtMainMs": 5897.161209,
+          "endedAtMainMs": 5924.044042,
+          "durationMs": 26.882833000000574,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 991,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "7e144c80-097b-4af2-95e4-11d4924068c8",
+          "parentSpanId": null,
+          "startedAtMainMs": 6262.925084,
+          "endedAtMainMs": 6311.488459,
+          "durationMs": 48.56337499999972,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 1007,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "7e144c80-097b-4af2-95e4-11d4924068c8",
+          "parentSpanId": null,
+          "startedAtMainMs": 6311.521709000001,
+          "endedAtMainMs": 6311.648417,
+          "durationMs": 0.12670799999978044,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 1008,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "7e144c80-097b-4af2-95e4-11d4924068c8",
+          "parentSpanId": null,
+          "startedAtMainMs": 6351.815584,
+          "endedAtMainMs": 6367.7347500000005,
+          "durationMs": 15.919166000000587,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 1013,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "7e144c80-097b-4af2-95e4-11d4924068c8",
+          "parentSpanId": null,
+          "startedAtMainMs": 6367.737959,
+          "endedAtMainMs": 6386.922709,
+          "durationMs": 19.18475000000035,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 26.882833000000574,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.66504200000054,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7105830000000424,
+          "otherIncludingQueueChecksAndSchedulingMs": 15.507207999999991
+        },
+        "commit": {
+          "callMs": 48.56337499999972,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.72120999999879,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.3342490000004545,
+          "otherIncludingQueueChecksAndSchedulingMs": 25.507916000000478
+        },
+        "accept": {
+          "callMs": 0.12670799999978044,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.12670799999978044
+        },
+        "settle": {
+          "callMs": 15.919166000000587,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.510666999999557,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6956679999993867,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.712831000001643
+        },
+        "resolve": {
+          "callMs": 19.18475000000035,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.545624999999745,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1645399999997608,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.474585000000843
+        }
+      },
+      "preparedToCommitCallStartMs": 285.04825000000073,
+      "commitCallStartToResolutionEndMs": 123.99762499999997,
+      "preparedToPreviousResolutionEndWaitMs": 284.9106660000007,
+      "afterPreviousResolutionUntilCommitCallMs": 0.13758400000006077,
+      "commitCallEndToNativeAcceptedMs": 40.32099999999991,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 40.161041999999725,
+      "nativeAcceptedToResolutionEndMs": 35.113250000000335
+    },
+    {
+      "index": 33,
+      "operationId": "7a5694aa-c023-4706-a5a6-d94b41725fc7",
+      "endAtMainMs": 6018.552209,
+      "preparedAtMainMs": 6100.748292,
+      "nativeAcceptedAtMainMs": 6470.843084,
+      "api": {
+        "intent": {
+          "id": 937,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "7a5694aa-c023-4706-a5a6-d94b41725fc7",
+          "parentSpanId": null,
+          "startedAtMainMs": 6021.346667,
+          "endedAtMainMs": 6046.496917,
+          "durationMs": 25.150250000000597,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 1019,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "7a5694aa-c023-4706-a5a6-d94b41725fc7",
+          "parentSpanId": null,
+          "startedAtMainMs": 6387.09075,
+          "endedAtMainMs": 6433.226042,
+          "durationMs": 46.135291999999936,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 1035,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "7a5694aa-c023-4706-a5a6-d94b41725fc7",
+          "parentSpanId": null,
+          "startedAtMainMs": 6433.261334,
+          "endedAtMainMs": 6433.3700420000005,
+          "durationMs": 0.10870800000066083,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 1036,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "7a5694aa-c023-4706-a5a6-d94b41725fc7",
+          "parentSpanId": null,
+          "startedAtMainMs": 6470.848875,
+          "endedAtMainMs": 6486.895417,
+          "durationMs": 16.046542000000045,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 1041,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "7a5694aa-c023-4706-a5a6-d94b41725fc7",
+          "parentSpanId": null,
+          "startedAtMainMs": 6486.898667,
+          "endedAtMainMs": 6506.2288340000005,
+          "durationMs": 19.330167000000074,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 25.150250000000597,
+          "syncCount": 2,
+          "syncWallUnionMs": 14.640916999999718,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8764999999993961,
+          "otherIncludingQueueChecksAndSchedulingMs": 9.632833000001483
+        },
+        "commit": {
+          "callMs": 46.135291999999936,
+          "syncCount": 4,
+          "syncWallUnionMs": 19.51849999999922,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.1008330000004207,
+          "otherIncludingQueueChecksAndSchedulingMs": 24.515959000000294
+        },
+        "accept": {
+          "callMs": 0.10870800000066083,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.10870800000066083
+        },
+        "settle": {
+          "callMs": 16.046542000000045,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.910208000000239,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7307089999994787,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.405625000000327
+        },
+        "resolve": {
+          "callMs": 19.330167000000074,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.588041999999405,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1477079999995112,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.594417000001158
+        }
+      },
+      "preparedToCommitCallStartMs": 286.3424580000001,
+      "commitCallStartToResolutionEndMs": 119.13808400000016,
+      "preparedToPreviousResolutionEndWaitMs": 286.1744170000002,
+      "afterPreviousResolutionUntilCommitCallMs": 0.16804099999990285,
+      "commitCallEndToNativeAcceptedMs": 37.617041999999856,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 37.47304199999962,
+      "nativeAcceptedToResolutionEndMs": 35.38575000000037
+    },
+    {
+      "index": 34,
+      "operationId": "08a43c8f-a001-43c9-862f-51c8fce1b50a",
+      "endAtMainMs": 6140.509375000001,
+      "preparedAtMainMs": 6226.394,
+      "nativeAcceptedAtMainMs": 6593.770709,
+      "api": {
+        "intent": {
+          "id": 965,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "08a43c8f-a001-43c9-862f-51c8fce1b50a",
+          "parentSpanId": null,
+          "startedAtMainMs": 6143.420417,
+          "endedAtMainMs": 6170.150459,
+          "durationMs": 26.73004200000014,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 1047,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "08a43c8f-a001-43c9-862f-51c8fce1b50a",
+          "parentSpanId": null,
+          "startedAtMainMs": 6506.415417,
+          "endedAtMainMs": 6553.426625,
+          "durationMs": 47.0112079999999,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 1063,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "08a43c8f-a001-43c9-862f-51c8fce1b50a",
+          "parentSpanId": null,
+          "startedAtMainMs": 6553.457917,
+          "endedAtMainMs": 6553.569834,
+          "durationMs": 0.1119170000001759,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 1064,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "08a43c8f-a001-43c9-862f-51c8fce1b50a",
+          "parentSpanId": null,
+          "startedAtMainMs": 6593.7765,
+          "endedAtMainMs": 6611.237542,
+          "durationMs": 17.461041999999907,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 1069,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "08a43c8f-a001-43c9-862f-51c8fce1b50a",
+          "parentSpanId": null,
+          "startedAtMainMs": 6611.240625,
+          "endedAtMainMs": 6628.408792,
+          "durationMs": 17.168166999999812,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 26.73004200000014,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.517416000000594,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7879170000005615,
+          "otherIncludingQueueChecksAndSchedulingMs": 14.424708999998984
+        },
+        "commit": {
+          "callMs": 47.0112079999999,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.23937499999829,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.330125999998927,
+          "otherIncludingQueueChecksAndSchedulingMs": 23.44170700000268
+        },
+        "accept": {
+          "callMs": 0.1119170000001759,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.1119170000001759
+        },
+        "settle": {
+          "callMs": 17.461041999999907,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.80999999999949,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7616670000006707,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.889374999999745
+        },
+        "resolve": {
+          "callMs": 17.168166999999812,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.448374999999942,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.122084000000541,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.597707999999329
+        }
+      },
+      "preparedToCommitCallStartMs": 280.02141699999993,
+      "commitCallStartToResolutionEndMs": 121.99337500000001,
+      "preparedToPreviousResolutionEndWaitMs": 279.8348340000002,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1865829999997004,
+      "commitCallEndToNativeAcceptedMs": 40.344084000000294,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 40.20087500000045,
+      "nativeAcceptedToResolutionEndMs": 34.638082999999824
+    },
+    {
+      "index": 35,
+      "operationId": "93f5ceba-9c96-434d-b7c4-735538af9ddc",
+      "endAtMainMs": 6263.362292,
+      "preparedAtMainMs": 6346.682834,
+      "nativeAcceptedAtMainMs": 6717.8817500000005,
+      "api": {
+        "intent": {
+          "id": 993,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "93f5ceba-9c96-434d-b7c4-735538af9ddc",
+          "parentSpanId": null,
+          "startedAtMainMs": 6265.460459,
+          "endedAtMainMs": 6293.169584,
+          "durationMs": 27.709125000000313,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 1075,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "93f5ceba-9c96-434d-b7c4-735538af9ddc",
+          "parentSpanId": null,
+          "startedAtMainMs": 6628.540917,
+          "endedAtMainMs": 6677.092125,
+          "durationMs": 48.55120799999986,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 1091,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "93f5ceba-9c96-434d-b7c4-735538af9ddc",
+          "parentSpanId": null,
+          "startedAtMainMs": 6677.127417,
+          "endedAtMainMs": 6677.256792,
+          "durationMs": 0.12937500000043656,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 1092,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "93f5ceba-9c96-434d-b7c4-735538af9ddc",
+          "parentSpanId": null,
+          "startedAtMainMs": 6717.887334,
+          "endedAtMainMs": 6732.4267500000005,
+          "durationMs": 14.539416000000529,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 1097,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "93f5ceba-9c96-434d-b7c4-735538af9ddc",
+          "parentSpanId": null,
+          "startedAtMainMs": 6732.429209,
+          "endedAtMainMs": 6749.738,
+          "durationMs": 17.308791000000383,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 27.709125000000313,
+          "syncCount": 2,
+          "syncWallUnionMs": 15.49554199999966,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7810000000008586,
+          "otherIncludingQueueChecksAndSchedulingMs": 11.432582999999795
+        },
+        "commit": {
+          "callMs": 48.55120799999986,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.643082999999024,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.1111239999991085,
+          "otherIncludingQueueChecksAndSchedulingMs": 25.79700100000173
+        },
+        "accept": {
+          "callMs": 0.12937500000043656,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.12937500000043656
+        },
+        "settle": {
+          "callMs": 14.539416000000529,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.275041999999303,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7492499999998472,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.515124000001379
+        },
+        "resolve": {
+          "callMs": 17.308791000000383,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.562291999999616,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 0.9944169999998849,
+          "otherIncludingQueueChecksAndSchedulingMs": 6.7520820000008825
+        }
+      },
+      "preparedToCommitCallStartMs": 281.8580830000001,
+      "commitCallStartToResolutionEndMs": 121.19708300000002,
+      "preparedToPreviousResolutionEndWaitMs": 281.725958,
+      "afterPreviousResolutionUntilCommitCallMs": 0.1321250000000873,
+      "commitCallEndToNativeAcceptedMs": 40.78962500000034,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 40.62495800000033,
+      "nativeAcceptedToResolutionEndMs": 31.856249999999818
+    },
+    {
+      "index": 36,
+      "operationId": "b9a48162-82cb-4c42-a2c9-dc8e73f6252b",
+      "endAtMainMs": 6387.359417,
+      "preparedAtMainMs": 6465.841917,
+      "nativeAcceptedAtMainMs": 6841.362292,
+      "api": {
+        "intent": {
+          "id": 1021,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "b9a48162-82cb-4c42-a2c9-dc8e73f6252b",
+          "parentSpanId": null,
+          "startedAtMainMs": 6390.510167,
+          "endedAtMainMs": 6414.40975,
+          "durationMs": 23.89958299999944,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 1103,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "b9a48162-82cb-4c42-a2c9-dc8e73f6252b",
+          "parentSpanId": null,
+          "startedAtMainMs": 6749.861334,
+          "endedAtMainMs": 6798.305709,
+          "durationMs": 48.444375000000036,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 1119,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "b9a48162-82cb-4c42-a2c9-dc8e73f6252b",
+          "parentSpanId": null,
+          "startedAtMainMs": 6798.338875,
+          "endedAtMainMs": 6798.451334,
+          "durationMs": 0.11245899999994435,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 1120,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "b9a48162-82cb-4c42-a2c9-dc8e73f6252b",
+          "parentSpanId": null,
+          "startedAtMainMs": 6841.368584,
+          "endedAtMainMs": 6856.85125,
+          "durationMs": 15.482665999999881,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 1125,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "b9a48162-82cb-4c42-a2c9-dc8e73f6252b",
+          "parentSpanId": null,
+          "startedAtMainMs": 6856.854875,
+          "endedAtMainMs": 6877.247375,
+          "durationMs": 20.392499999999927,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 23.89958299999944,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.732624999999643,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7115830000002461,
+          "otherIncludingQueueChecksAndSchedulingMs": 13.455374999999549
+        },
+        "commit": {
+          "callMs": 48.444375000000036,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.2993349999997,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.4596649999994042,
+          "otherIncludingQueueChecksAndSchedulingMs": 24.68537500000093
+        },
+        "accept": {
+          "callMs": 0.11245899999994435,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.11245899999994435
+        },
+        "settle": {
+          "callMs": 15.482665999999881,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.53833399999985,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.810750999999982,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.133581000000049
+        },
+        "resolve": {
+          "callMs": 20.392499999999927,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.51825000000008,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.2352499999997235,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.639000000000124
+        }
+      },
+      "preparedToCommitCallStartMs": 284.01941700000043,
+      "commitCallStartToResolutionEndMs": 127.38604099999975,
+      "preparedToPreviousResolutionEndWaitMs": 283.89608300000054,
+      "afterPreviousResolutionUntilCommitCallMs": 0.12333399999988615,
+      "commitCallEndToNativeAcceptedMs": 43.05658299999959,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 42.91095799999948,
+      "nativeAcceptedToResolutionEndMs": 35.88508300000012
+    },
+    {
+      "index": 37,
+      "operationId": "4ac964f9-cc68-482b-8894-bdd342db0180",
+      "endAtMainMs": 6506.631042,
+      "preparedAtMainMs": 6586.789667,
+      "nativeAcceptedAtMainMs": 6919.042834,
+      "api": {
+        "intent": {
+          "id": 1049,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "4ac964f9-cc68-482b-8894-bdd342db0180",
+          "parentSpanId": null,
+          "startedAtMainMs": 6509.622875,
+          "endedAtMainMs": 6533.794042,
+          "durationMs": 24.171167000000423,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 1131,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "4ac964f9-cc68-482b-8894-bdd342db0180",
+          "parentSpanId": null,
+          "startedAtMainMs": 6877.412792,
+          "endedAtMainMs": 6912.531667,
+          "durationMs": 35.118875000000116,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 1142,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "4ac964f9-cc68-482b-8894-bdd342db0180",
+          "parentSpanId": null,
+          "startedAtMainMs": 6912.582875,
+          "endedAtMainMs": 6912.674167,
+          "durationMs": 0.09129200000006676,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 1143,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "4ac964f9-cc68-482b-8894-bdd342db0180",
+          "parentSpanId": null,
+          "startedAtMainMs": 6919.046959,
+          "endedAtMainMs": 6933.749625,
+          "durationMs": 14.702666000000136,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 1148,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "4ac964f9-cc68-482b-8894-bdd342db0180",
+          "parentSpanId": null,
+          "startedAtMainMs": 6933.752417,
+          "endedAtMainMs": 6952.136875,
+          "durationMs": 18.38445800000045,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 24.171167000000423,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.165667000000212,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8691669999989244,
+          "otherIncludingQueueChecksAndSchedulingMs": 13.136333000001287
+        },
+        "commit": {
+          "callMs": 35.118875000000116,
+          "syncCount": 4,
+          "syncWallUnionMs": 21.056916999999885,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.0682919999999285,
+          "otherIncludingQueueChecksAndSchedulingMs": 11.993666000000303
+        },
+        "accept": {
+          "callMs": 0.09129200000006676,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.09129200000006676
+        },
+        "settle": {
+          "callMs": 14.702666000000136,
+          "syncCount": 2,
+          "syncWallUnionMs": 10.406584000000294,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6816250000001673,
+          "otherIncludingQueueChecksAndSchedulingMs": 3.6144569999996747
+        },
+        "resolve": {
+          "callMs": 18.38445800000045,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.452500000000327,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.026374000000942,
+          "otherIncludingQueueChecksAndSchedulingMs": 5.90558399999918
+        }
+      },
+      "preparedToCommitCallStartMs": 290.6231250000001,
+      "commitCallStartToResolutionEndMs": 74.72408300000006,
+      "preparedToPreviousResolutionEndWaitMs": 290.4577079999999,
+      "afterPreviousResolutionUntilCommitCallMs": 0.16541700000016135,
+      "commitCallEndToNativeAcceptedMs": 6.511166999999659,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 6.368666999999732,
+      "nativeAcceptedToResolutionEndMs": 33.09404100000029
+    },
+    {
+      "index": 38,
+      "operationId": "5acd03c2-16c7-4725-b11a-2f7f22439e8b",
+      "endAtMainMs": 6629.398,
+      "preparedAtMainMs": 6711.388209,
+      "nativeAcceptedAtMainMs": 6997.319709,
+      "api": {
+        "intent": {
+          "id": 1077,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "5acd03c2-16c7-4725-b11a-2f7f22439e8b",
+          "parentSpanId": null,
+          "startedAtMainMs": 6632.346625,
+          "endedAtMainMs": 6658.0725840000005,
+          "durationMs": 25.72595900000033,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 1154,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "5acd03c2-16c7-4725-b11a-2f7f22439e8b",
+          "parentSpanId": null,
+          "startedAtMainMs": 6952.329417,
+          "endedAtMainMs": 6989.130292,
+          "durationMs": 36.800874999999905,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 1165,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "5acd03c2-16c7-4725-b11a-2f7f22439e8b",
+          "parentSpanId": null,
+          "startedAtMainMs": 6989.169959,
+          "endedAtMainMs": 6989.3240000000005,
+          "durationMs": 0.15404100000068865,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 1166,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "5acd03c2-16c7-4725-b11a-2f7f22439e8b",
+          "parentSpanId": null,
+          "startedAtMainMs": 6997.325375,
+          "endedAtMainMs": 7014.226334,
+          "durationMs": 16.900958999999602,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 1171,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "5acd03c2-16c7-4725-b11a-2f7f22439e8b",
+          "parentSpanId": null,
+          "startedAtMainMs": 7014.229959,
+          "endedAtMainMs": 7033.149584,
+          "durationMs": 18.91962499999954,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 25.72595900000033,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.473458000000392,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8370420000001104,
+          "otherIncludingQueueChecksAndSchedulingMs": 13.415458999999828
+        },
+        "commit": {
+          "callMs": 36.800874999999905,
+          "syncCount": 4,
+          "syncWallUnionMs": 19.950957999999446,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.476790999999139,
+          "otherIncludingQueueChecksAndSchedulingMs": 14.37312600000132
+        },
+        "accept": {
+          "callMs": 0.15404100000068865,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.15404100000068865
+        },
+        "settle": {
+          "callMs": 16.900958999999602,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.703583000000435,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.6871240000000398,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.510251999999127
+        },
+        "resolve": {
+          "callMs": 18.91962499999954,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.923540999999204,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1391659999990225,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.856918000001315
+        }
+      },
+      "preparedToCommitCallStartMs": 240.9412080000002,
+      "commitCallStartToResolutionEndMs": 80.82016699999986,
+      "preparedToPreviousResolutionEndWaitMs": 240.7486660000004,
+      "afterPreviousResolutionUntilCommitCallMs": 0.19254199999977573,
+      "commitCallEndToNativeAcceptedMs": 8.189417000000503,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 7.995708999999806,
+      "nativeAcceptedToResolutionEndMs": 35.82987499999945
+    },
+    {
+      "index": 39,
+      "operationId": "ff0f3fcf-ce61-4e6c-b7b8-12d16b2056bd",
+      "endAtMainMs": 6750.383167,
+      "preparedAtMainMs": 6838.062084,
+      "nativeAcceptedAtMainMs": 7078.608084,
+      "api": {
+        "intent": {
+          "id": 1105,
+          "label": "store.beginOperation",
+          "phase": "paced",
+          "operationId": "ff0f3fcf-ce61-4e6c-b7b8-12d16b2056bd",
+          "parentSpanId": null,
+          "startedAtMainMs": 6752.673042,
+          "endedAtMainMs": 6780.3225,
+          "durationMs": 27.649457999999868,
+          "status": "fulfilled"
+        },
+        "commit": {
+          "id": 1177,
+          "label": "store.commit",
+          "phase": "paced",
+          "operationId": "ff0f3fcf-ce61-4e6c-b7b8-12d16b2056bd",
+          "parentSpanId": null,
+          "startedAtMainMs": 7033.32725,
+          "endedAtMainMs": 7070.078875,
+          "durationMs": 36.751624999999876,
+          "status": "fulfilled"
+        },
+        "accept": {
+          "id": 1188,
+          "label": "driver.pipeline.accept",
+          "phase": "paced",
+          "operationId": "ff0f3fcf-ce61-4e6c-b7b8-12d16b2056bd",
+          "parentSpanId": null,
+          "startedAtMainMs": 7070.112917,
+          "endedAtMainMs": 7070.23225,
+          "durationMs": 0.1193329999996422,
+          "status": "fulfilled"
+        },
+        "settle": {
+          "id": 1189,
+          "label": "store.settle",
+          "phase": "paced",
+          "operationId": "ff0f3fcf-ce61-4e6c-b7b8-12d16b2056bd",
+          "parentSpanId": null,
+          "startedAtMainMs": 7078.6155,
+          "endedAtMainMs": 7095.16475,
+          "durationMs": 16.54925000000003,
+          "status": "fulfilled"
+        },
+        "resolve": {
+          "id": 1194,
+          "label": "store.resolveOperation",
+          "phase": "paced",
+          "operationId": "ff0f3fcf-ce61-4e6c-b7b8-12d16b2056bd",
+          "parentSpanId": null,
+          "startedAtMainMs": 7095.167209,
+          "endedAtMainMs": 7113.464,
+          "durationMs": 18.296790999999757,
+          "status": "fulfilled"
+        }
+      },
+      "apiBreakdown": {
+        "intent": {
+          "callMs": 27.649457999999868,
+          "syncCount": 2,
+          "syncWallUnionMs": 15.887957999999344,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.7419589999999516,
+          "otherIncludingQueueChecksAndSchedulingMs": 11.019541000000572
+        },
+        "commit": {
+          "callMs": 36.751624999999876,
+          "syncCount": 4,
+          "syncWallUnionMs": 20.011626999999862,
+          "leaseCallCount": 6,
+          "leaseWallUnionMs": 2.220666000000165,
+          "otherIncludingQueueChecksAndSchedulingMs": 14.51933199999985
+        },
+        "accept": {
+          "callMs": 0.1193329999996422,
+          "syncCount": 0,
+          "syncWallUnionMs": 0,
+          "leaseCallCount": 0,
+          "leaseWallUnionMs": 0,
+          "otherIncludingQueueChecksAndSchedulingMs": 0.1193329999996422
+        },
+        "settle": {
+          "callMs": 16.54925000000003,
+          "syncCount": 2,
+          "syncWallUnionMs": 11.169582000000446,
+          "leaseCallCount": 2,
+          "leaseWallUnionMs": 0.8085829999990892,
+          "otherIncludingQueueChecksAndSchedulingMs": 4.571085000000494
+        },
+        "resolve": {
+          "callMs": 18.296790999999757,
+          "syncCount": 2,
+          "syncWallUnionMs": 9.929708000000574,
+          "leaseCallCount": 3,
+          "leaseWallUnionMs": 1.1715830000002825,
+          "otherIncludingQueueChecksAndSchedulingMs": 7.195499999998901
+        }
+      },
+      "preparedToCommitCallStartMs": 195.26516600000014,
+      "commitCallStartToResolutionEndMs": 80.13674999999967,
+      "preparedToPreviousResolutionEndWaitMs": 195.08749999999964,
+      "afterPreviousResolutionUntilCommitCallMs": 0.17766600000049948,
+      "commitCallEndToNativeAcceptedMs": 8.529209000000264,
+      "acceptAdmissionReturnedToNativeAcceptedMs": 8.375834000000395,
+      "nativeAcceptedToResolutionEndMs": 34.855915999999525
+    }
+  ],
+  "metrics": {
+    "preparedToCommitCallStartMs": {
+      "count": 40,
+      "p50Ms": 280.02141699999993,
+      "p95Ms": 322.2600830000001,
+      "p99Ms": 329.8742080000002,
+      "maxMs": 329.8742080000002
+    },
+    "commitCallStartToResolutionEndMs": {
+      "count": 40,
+      "p50Ms": 121.8789999999999,
+      "p95Ms": 131.27812499999982,
+      "p99Ms": 158.07825000000048,
+      "maxMs": 158.07825000000048
+    },
+    "preparedToPreviousResolutionEndWaitMs": {
+      "count": 40,
+      "p50Ms": 279.8348340000002,
+      "p95Ms": 322.1007920000002,
+      "p99Ms": 329.7168330000004,
+      "maxMs": 329.7168330000004
+    },
+    "afterPreviousResolutionUntilCommitCallMs": {
+      "count": 40,
+      "p50Ms": 0.16550000000006548,
+      "p95Ms": 0.23504199999979392,
+      "p99Ms": 0.2545839999997952,
+      "maxMs": 0.2545839999997952
+    },
+    "commitCallEndToNativeAcceptedMs": {
+      "count": 40,
+      "p50Ms": 38.97837499999969,
+      "p95Ms": 43.05658299999959,
+      "p99Ms": 52.32954199999995,
+      "maxMs": 52.32954199999995
+    },
+    "acceptAdmissionReturnedToNativeAcceptedMs": {
+      "count": 40,
+      "p50Ms": 38.840541999999914,
+      "p95Ms": 41.50075000000015,
+      "p99Ms": 52.20195899999999,
+      "maxMs": 52.20195899999999
+    },
+    "nativeAcceptedToResolutionEndMs": {
+      "count": 40,
+      "p50Ms": 34.65941699999985,
+      "p95Ms": 39.26850000000013,
+      "p99Ms": 60.993084000000636,
+      "maxMs": 60.993084000000636
+    }
+  },
+  "apiRanking": [
+    {
+      "api": "commit",
+      "count": 40,
+      "totalInclusiveMs": 1930.0627489999997,
+      "duration": {
+        "count": 40,
+        "p50Ms": 47.82416700000067,
+        "p95Ms": 58.36195899999984,
+        "p99Ms": 62.721958000000086,
+        "maxMs": 62.721958000000086
+      },
+      "syncUnion": {
+        "count": 40,
+        "p50Ms": 20.985583999999108,
+        "p95Ms": 27.140583000000333,
+        "p99Ms": 31.196707999999944,
+        "maxMs": 31.196707999999944
+      },
+      "leaseUnion": {
+        "count": 40,
+        "p50Ms": 2.330125999998927,
+        "p95Ms": 2.684667999999874,
+        "p99Ms": 5.9367089999987,
+        "maxMs": 5.9367089999987
+      },
+      "other": {
+        "count": 40,
+        "p50Ms": 24.044208999997863,
+        "p95Ms": 29.225416000000223,
+        "p99Ms": 33.3597490000011,
+        "maxMs": 33.3597490000011
+      }
+    },
+    {
+      "api": "intent",
+      "count": 40,
+      "totalInclusiveMs": 1013.3629150000029,
+      "duration": {
+        "count": 40,
+        "p50Ms": 25.34445800000003,
+        "p95Ms": 28.445584000000053,
+        "p99Ms": 32.2777500000002,
+        "maxMs": 32.2777500000002
+      },
+      "syncUnion": {
+        "count": 40,
+        "p50Ms": 11.517416000000594,
+        "p95Ms": 16.981249999999818,
+        "p99Ms": 18.776625000000422,
+        "maxMs": 18.776625000000422
+      },
+      "leaseUnion": {
+        "count": 40,
+        "p50Ms": 0.7810000000008586,
+        "p95Ms": 1.090458000000126,
+        "p99Ms": 1.5099170000003141,
+        "maxMs": 1.5099170000003141
+      },
+      "other": {
+        "count": 40,
+        "p50Ms": 11.486582000001363,
+        "p95Ms": 14.803208000000268,
+        "p99Ms": 15.507207999999991,
+        "maxMs": 15.507207999999991
+      }
+    },
+    {
+      "api": "resolve",
+      "count": 40,
+      "totalInclusiveMs": 768.665832000001,
+      "duration": {
+        "count": 40,
+        "p50Ms": 19.000040999999328,
+        "p95Ms": 21.81616699999995,
+        "p99Ms": 32.81408400000055,
+        "maxMs": 32.81408400000055
+      },
+      "syncUnion": {
+        "count": 40,
+        "p50Ms": 10.601665999999568,
+        "p95Ms": 12.03241700000035,
+        "p99Ms": 12.345874999999978,
+        "maxMs": 12.345874999999978
+      },
+      "leaseUnion": {
+        "count": 40,
+        "p50Ms": 1.1394579999996495,
+        "p95Ms": 1.2826669999999467,
+        "p99Ms": 2.347835000001396,
+        "maxMs": 2.347835000001396
+      },
+      "other": {
+        "count": 40,
+        "p50Ms": 7.025541999999405,
+        "p95Ms": 10.666791999999987,
+        "p99Ms": 18.120373999999174,
+        "maxMs": 18.120373999999174
+      }
+    },
+    {
+      "api": "settle",
+      "count": 40,
+      "totalInclusiveMs": 644.2327090000022,
+      "duration": {
+        "count": 40,
+        "p50Ms": 15.482665999999881,
+        "p95Ms": 18.4975000000004,
+        "p99Ms": 28.16691600000013,
+        "maxMs": 28.16691600000013
+      },
+      "syncUnion": {
+        "count": 40,
+        "p50Ms": 10.507916999999907,
+        "p95Ms": 11.80999999999949,
+        "p99Ms": 12.128623999999945,
+        "maxMs": 12.128623999999945
+      },
+      "leaseUnion": {
+        "count": 40,
+        "p50Ms": 0.7728750000005675,
+        "p95Ms": 0.8855840000001081,
+        "p99Ms": 1.3797500000000582,
+        "maxMs": 1.3797500000000582
+      },
+      "other": {
+        "count": 40,
+        "p50Ms": 4.3784599999999045,
+        "p95Ms": 7.956000000000131,
+        "p99Ms": 15.893166999999266,
+        "maxMs": 15.893166999999266
+      }
+    },
+    {
+      "api": "accept",
+      "count": 40,
+      "totalInclusiveMs": 6.798001000001477,
+      "duration": {
+        "count": 40,
+        "p50Ms": 0.10341699999935372,
+        "p95Ms": 0.15404100000068865,
+        "p99Ms": 2.6760830000002898,
+        "maxMs": 2.6760830000002898
+      },
+      "syncUnion": {
+        "count": 40,
+        "p50Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0
+      },
+      "leaseUnion": {
+        "count": 40,
+        "p50Ms": 0,
+        "p95Ms": 0,
+        "p99Ms": 0,
+        "maxMs": 0
+      },
+      "other": {
+        "count": 40,
+        "p50Ms": 0.10341699999935372,
+        "p95Ms": 0.15404100000068865,
+        "p99Ms": 2.6760830000002898,
+        "maxMs": 2.6760830000002898
+      }
+    }
+  ],
+  "syncCategories": [
+    {
+      "category": "settlements-file",
+      "count": 120,
+      "totalWallMs": 725.3515849999949,
+      "duration": {
+        "count": 120,
+        "p50Ms": 5.504374999999527,
+        "p95Ms": 10.237417000000278,
+        "p99Ms": 12.179957999999715,
+        "maxMs": 12.63220900000033
+      }
+    },
+    {
+      "category": "settlements-directory",
+      "count": 120,
+      "totalWallMs": 626.4742100000008,
+      "duration": {
+        "count": 120,
+        "p50Ms": 5.033042000000023,
+        "p95Ms": 6.083666999999878,
+        "p99Ms": 7.844957999999679,
+        "maxMs": 9.435124999999971
+      }
+    },
+    {
+      "category": "head-temporary-file",
+      "count": 40,
+      "totalWallMs": 230.4484989999978,
+      "duration": {
+        "count": 40,
+        "p50Ms": 5.449000000000524,
+        "p95Ms": 9.672000000000025,
+        "p99Ms": 15.964707999999519,
+        "maxMs": 15.964707999999519
+      }
+    },
+    {
+      "category": "commits-file",
+      "count": 40,
+      "totalWallMs": 222.38508599999886,
+      "duration": {
+        "count": 40,
+        "p50Ms": 5.102084000000104,
+        "p95Ms": 7.860666999999921,
+        "p99Ms": 9.855499999999665,
+        "maxMs": 9.855499999999665
+      }
+    },
+    {
+      "category": "project-store-directory",
+      "count": 40,
+      "totalWallMs": 215.95791899999722,
+      "duration": {
+        "count": 40,
+        "p50Ms": 5.046792000000096,
+        "p95Ms": 5.943292000000838,
+        "p99Ms": 10.699416999999812,
+        "maxMs": 10.699416999999812
+      }
+    },
+    {
+      "category": "commits-directory",
+      "count": 40,
+      "totalWallMs": 208.8664189999963,
+      "duration": {
+        "count": 40,
+        "p50Ms": 4.919917000000169,
+        "p95Ms": 6.008042000000387,
+        "p99Ms": 6.897375000000466,
+        "maxMs": 6.897375000000466
+      }
+    }
+  ],
+  "leaseCalls": {
+    "count": 520,
+    "totalWallMs": 208.43936600000006,
+    "duration": {
+      "count": 520,
+      "p50Ms": 0.38754100000005565,
+      "p95Ms": 0.5191249999998035,
+      "p99Ms": 0.825542000000496,
+      "maxMs": 3.5730419999999867
+    }
+  },
+  "paced": {
+    "mode": "absolute-deadline",
+    "intervalMs": 10,
+    "originAtMainMs": 2180.54275,
+    "plannedBatches": 280,
+    "definition": "Deadline = one origin + global batch index * interval, never rebased after retries, screenshots or oracle. Backlog is following scheduled batches already due; all retained in FIFO. Synthetic dispatch only, not physical input-to-photon.",
+    "dispatchedBatches": 280,
+    "droppedBatches": 0,
+    "firstRequestLateness": {
+      "count": 280,
+      "p50Ms": 741.7711249999998,
+      "p95Ms": 1716.0586249999997,
+      "p99Ms": 1809.8162919999995,
+      "maxMs": 1829.778042
+    },
+    "successfulDispatchLateness": {
+      "count": 280,
+      "p50Ms": 761.6909170000004,
+      "p95Ms": 1728.8510419999993,
+      "p99Ms": 1819.7904999999992,
+      "maxMs": 1839.6503749999993
+    },
+    "firstRequestLateOver1Ms": 260,
+    "successfulDispatchLateOver1Ms": 261,
+    "successfulDispatchMissedWholeInterval": 244,
+    "maxOverdueFollowingBatches": 107
+  },
+  "warmup": {
+    "kind": "real transparent Main operation before steady-state profile; not side-effect-free product prewarming",
+    "operationId": "ada81448-afaf-4100-a76a-d249b2b86bea",
+    "startedAtMainMs": 1414.1392500000002,
+    "completedAtMainMs": 1933.6182090000002,
+    "before": {
+      "sessionId": "main-session",
+      "incarnation": "9f57bf55-8525-4793-869e-17a2596bff28",
+      "eventSeq": 2,
+      "project": {
+        "schema": "storyboard-flow.project",
+        "version": 2,
+        "id": "project",
+        "revision": 0,
+        "name": "Main Canvas synthetic",
+        "shots": [
+          {
+            "id": "a",
+            "imageId": "ia",
+            "name": "A",
+            "scriptText": ""
+          }
+        ],
+        "parkedShots": [],
+        "dialogues": [],
+        "images": {
+          "ia": {
+            "id": "ia",
+            "content": {
+              "kind": "source",
+              "source": {
+                "importId": "batch",
+                "itemId": "a",
+                "interpretationId": "reader1"
+              }
+            }
+          }
+        }
+      },
+      "phase": "active",
+      "pending": 0,
+      "undoDepth": 0,
+      "redoDepth": 0
+    },
+    "after": {
+      "sessionId": "main-session",
+      "incarnation": "9f57bf55-8525-4793-869e-17a2596bff28",
+      "eventSeq": 5,
+      "project": {
+        "schema": "storyboard-flow.project",
+        "version": 2,
+        "id": "project",
+        "revision": 1,
+        "name": "Main Canvas synthetic",
+        "shots": [
+          {
+            "id": "a",
+            "imageId": "ia",
+            "name": "A",
+            "scriptText": ""
+          }
+        ],
+        "parkedShots": [],
+        "dialogues": [],
+        "images": {
+          "ia": {
+            "id": "ia",
+            "content": {
+              "kind": "native",
+              "native": {
+                "storeId": "native",
+                "documentId": "1",
+                "versionId": "91949f9e554f019cd47c16d1fc93aed0928573adeee50728c56a952e68a80d94",
+                "manifestSha256": "91949f9e554f019cd47c16d1fc93aed0928573adeee50728c56a952e68a80d94",
+                "width": 2048,
+                "height": 2048
+              }
+            }
+          }
+        }
+      },
+      "phase": "active",
+      "pending": 0,
+      "undoDepth": 1,
+      "redoDepth": 0
+    },
+    "referenceHash": "080acf35a507ac9849cfcba47dc2ad83e01b75663a516279c8b9d243b719643e"
+  },
+  "deadlineToCanvasAck": {
+    "count": 280,
+    "p50Ms": 762.8897090000005,
+    "p95Ms": 1734.6738339999993,
+    "p99Ms": 1822.7641669999994,
+    "maxMs": 1841.1595419999994
+  },
+  "limits": [
+    "API entry/settlement timing is measured, not inferred from stage gaps. API calls include internal queues, validation, IO and scheduling.",
+    "preparedToCommitCallStart is Main FIFO admission delay plus pre-CAS checks. Previous resolution return tightens that boundary; tiny Main promise/history setup remains in afterPreviousResolutionUntilCommitCall.",
+    "Sync wall union measures actual Node FileHandle.sync promise lifetimes, including libuv/OS scheduling. It is not kernel active time or a hardware durability certification. Rust host/guard sync calls are outside this hook.",
+    "Lease and sync spans are nested in API spans. Inclusive totals overlap; do not sum them into wall time. Other is uninstrumented checks/reads/writes/internal queue/scheduling, not pure CPU.",
+    "Profiler records arrays in memory during input and restores hooks before report writes. Its own CPU/microtask overhead is present; no claim that a profiled run is an uninstrumented latency benchmark.",
+    "Transparent warmup is a real durable Main operation and may advance revision. It does not prove side-effect-free product prewarming or solve first-user-stroke latency."
+  ]
+}
