@@ -1,5 +1,6 @@
 import type { ImageBindingV2, ImageProjectEdit, ImageProjectEditResult, NativeDecision, NativeImageRef, ProjectV2, SourceImageRef } from '../../platform/contracts/imageProject.js';
 import type { ResultV1 } from '../../platform/contracts/refactorV1.js';
+import type { FlowStroke } from '../../platform/contracts/flowWave2.js';
 import { validPresentation } from '../../platform/contracts/flowPresentation.js';
 import { copy, fail, id, ok, record, revision, same, shape, text } from './imageProjectValues.js';
 
@@ -12,6 +13,12 @@ export const validNativeImageRef = (v: unknown): v is NativeImageRef => shape(v,
 export const validImageBinding = (v: unknown): v is ImageBindingV2 =>
   shape(v,['kind','source']) && v.kind==='source' && validSourceImageRef(v.source) ||
   shape(v,['kind','native']) && v.kind==='native' && validNativeImageRef(v.native);
+export function validProjectStroke(v:unknown):v is FlowStroke{
+  if(!shape(v,['tool','color','size','opacity','softness','points'],['brush','pressures'])||!['brush','eraser'].includes(String(v.tool))||typeof v.color!=='string'||!/^#[a-f0-9]{6}$/i.test(v.color)||typeof v.size!=='number'||!Number.isFinite(v.size)||v.size<=0||v.size>1000||typeof v.opacity!=='number'||!Number.isFinite(v.opacity)||v.opacity<0||v.opacity>1||typeof v.softness!=='number'||!Number.isFinite(v.softness)||v.softness<0||v.softness>1||!Array.isArray(v.points)||v.points.length<2||v.points.length>200_000||v.points.length%2!==0||!Array.from(v.points).every(n=>typeof n==='number'&&Number.isFinite(n)&&Math.abs(n)<=1e7))return false;
+  if(v.pressures!==undefined&&(!Array.isArray(v.pressures)||v.pressures.length!==v.points.length/2||!Array.from(v.pressures).every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1)))return false;
+  if(v.brush!==undefined&&(!shape(v.brush,['tip','spacing','hardness','grain','seed','pressureSize','pressureOpacity'])||!['hard','soft','pencil','charcoal'].includes(String(v.brush.tip))||Object.entries(v.brush).some(([key,n])=>key!=='tip'&&(typeof n!=='number'||!Number.isFinite(n)))))return false;
+  return true;
+}
 
 export function validImageProject(v: unknown): v is ProjectV2 {
   if(!shape(v,['schema','version','id','revision','name','shots','parkedShots','dialogues','images'],['naming','presentation']) ||

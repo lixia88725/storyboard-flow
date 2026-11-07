@@ -38,6 +38,7 @@ it('records native settlement only for the exact reachable project decision',asy
   const {store}=await fixture();const first=await store.commit(null,genesis());
   await store.publishHydration({schema:'flow.image-hydration',version:1,source:{importId:'batch',itemId:'a',interpretationId:'reader1',digest:'c'.repeat(64),byteLength:10},hostBuildDigest:'d'.repeat(64),optionsHash:'e'.repeat(64),native:ref,operationId:'hydrate'});
   const record:ProjectCommitV2={schema:'flow.project-commit',version:1,commitId:'paint',previousCommitHash:first.commitHash,beforeRevision:0,after:{...project(),revision:1,images:{ia:{id:'ia',content:{kind:'native',native:ref}}}},nativeDecision:{kind:'image',operationId:'paint',candidateId:'paint',imageId:'ia',expected:project().images.ia.content,baseNative:ref,prepared:ref}};
+  await store.beginOperation({schema:'flow.image-edit-intent',version:1,operationId:'paint',sessionId:'session',incarnation:'one',imageId:'ia',expected:project().images.ia.content,baseNative:ref,stroke:{tool:'brush',color:'#ff0000',size:10,opacity:0.5,softness:0,points:[1,1,2,2]}});
   const committed=await store.commit(first.commitHash,record);expect((await store.unsettled()).length).toBe(1);
   await expect(store.settle(committed.commitHash,'wrong',ref)).rejects.toMatchObject({code:'conflict'});
   await store.settle(committed.commitHash,'paint',ref);await store.settle(committed.commitHash,'paint',ref);expect(await store.unsettled()).toEqual([]);await store.close();
@@ -94,4 +95,14 @@ it('keeps verified history and recovery inventory off the normal metadata commit
     for(let n=1;n<=8;n++)current=await store.commit(current.commitHash,{...genesis(),commitId:`edit${n}`,previousCommitHash:current.commitHash,beforeRevision:n-1,after:{...project(),revision:n,name:`name ${n}`}});
     expect(sourceChecks).toBe(1);expect(readdir).not.toHaveBeenCalled();expect((await store.load())?.commit.after.revision).toBe(8);
   }finally{readdir.mockRestore();await store.close();}
+});
+
+it('retains original submitted input with a checksum and rejects a forged resolution',async()=>{
+  const {root,store}=await fixture();await store.commit(null,genesis());
+  const intent={schema:'flow.image-edit-intent' as const,version:1 as const,operationId:'paint',sessionId:'session',incarnation:'one',imageId:'ia',expected:project().images.ia.content,baseNative:ref,stroke:{tool:'brush' as const,color:'#ff0000',size:10,opacity:0.5,softness:0,points:[1,1,2,2]}};
+  const recording=store.beginOperation(intent);intent.stroke.points[0]=999;await recording;
+  expect((await store.pendingOperations())[0].stroke.points[0]).toBe(1);
+  await expect(store.resolveOperation('paint','committed','a'.repeat(64))).rejects.toMatchObject({code:'conflict'});
+  const file=path.join(location(root),'settlements','paint.intent.json'),raw=JSON.parse(await fs.readFile(file,'utf8'));raw.intent.stroke.points[0]=77;await fs.writeFile(file,JSON.stringify(raw));
+  await expect(store.pendingOperations()).rejects.toThrow('checksum');await store.close();
 });

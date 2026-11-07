@@ -1,4 +1,5 @@
 import type { ChangeSetV1, ProjectV1 } from './refactorV1.js';
+import type { FlowStroke } from './flowWave2.js';
 
 /** These are content references, never native handles or user filesystem paths. */
 export type NativeImageRef = {
@@ -34,6 +35,15 @@ export type NativeSettlement = {
   schema: 'flow.native-settlement'; version: 1; commitHash: string;
   operationId: string; candidateId: string; native: NativeImageRef;
 };
+export type ImageOperationIntent = {
+  schema:'flow.image-edit-intent';version:1;operationId:string;
+  sessionId:string;incarnation:string;imageId:string;expected:ImageBindingV2;
+  baseNative:NativeImageRef;stroke:FlowStroke;
+};
+export type ImageOperationResolution = {
+  schema:'flow.image-edit-resolution';version:1;operationId:string;
+  decision:'discarded'|'committed';commitHash:string|null;
+};
 export type ImageProjectEdit =
   | { kind: 'setDialogues'; shotId: string; dialogues: ProjectV2['dialogues'] }
   | { kind: 'setScriptText'; shotId: string; text: string }
@@ -44,9 +54,10 @@ export type ImageProjectSnapshot = {
   sessionId: string; incarnation: string; eventSeq: number; project: ProjectV2;
   phase: 'active' | 'recovering' | 'freezing' | 'frozen';
   pending: number; undoDepth: number; redoDepth: number;
-  recovery?: { operationId: string; commitHash: string };
+  recovery?: { operationId: string; commitHash: string|null; target?:NativeImageRef };
 };
 export type ImageProjectOutcome =
   | { kind: 'settled'; commitHash: string; snapshot: ImageProjectSnapshot }
   | { kind: 'settlementPending'; commitHash: string; operationId: string; snapshot: ImageProjectSnapshot }
+  | { kind:'recoveryPending';operationId:string;snapshot:ImageProjectSnapshot }
   | { kind: 'rejected'; error: { code: string; message: string; effect: 'none' | 'retained' | 'unknown' } };
