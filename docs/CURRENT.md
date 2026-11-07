@@ -18,6 +18,18 @@
 
 主管接线补充：输入在等待启动握手前快照，并预占单请求容量；错会话回包、半截 EOF 按 unknown 保留义务，不自动重试。帧元数据明确已接纳版本与尚未落盘笔链，限制四项、独立复制、校验 pipeline/epoch，不能把预览当保存。已完成完整 JS/Electron 构建（`integration-build.log`）、56 项接点测试（`integration-pipeline-focused.log`）和固定 `364c758` 宿主连接测试（`connection-damage-fixed.log`）；新增启动容量断言后的最终组合 4 文件/58 项通过（`integration-wire-final.log`），最终 Electron 类型检查通过（`integration-typecheck-final.log`）。日志均在 `/private/tmp/flow-engine-research/`。显示执行者此前真实 Electron 双 Canvas 证据回放录制帧，实时 native→双 Canvas 专项正在补齐，不将二者混称为整链通过。混合历史、Main Session、产品入口和全量组合验收仍待完成。宿主能力协商补充 7 项 transport 检查通过（`transport-capabilities.log`），旧宿主缺少 capabilities 时不启用新恢复协议。
 
+实时显示接点已补齐（执行者 `ab6de0f`，主管集成 `a1fd3ad`）：固定 `364c758` 宿主→Main Node connection→MessagePort→两个真实 Canvas，23 次请求/12 帧逐字节一致，半透明往返单笔、橡皮透明洞、版本 Undo/Redo/回空白、正常 freeze/close 通过。结果在系统临时目录 `flow-image-engine-live-A3xZkW/result.json`；日志 `/private/tmp/flow-image-engine-live-{build-final,gui-final}.log`。屏幕同 RGBA/同背景的独立 CSS 参考差≤1，不透明 sRGB 算术预混色与透明合成截图不等价（保留 `srgbPremixMatches:false` 和原始失败）。该专项为合成隐藏窗口和程序输入，不认证产品工作台、真实数位笔或物理显示延迟。
+
+原生恢复接点 `c8ec773` 已合入；主管复核发现同宿主恢复 accept 失败后二次重试会丢失 recovered 身份，已由 `461ceca` 修复并合入。候选显式记录来源，旧/新基底分别覆盖 load 与 accepted journal 失败后同宿主重试，15 项原生测试通过；项目线使用与该提交绑定的独立二进制。Main 项目 V2 schema/CAS 与同一套 Flow 混合历史开始实施；不能用 native accepted 反推项目已提交，也不把后台 hydration 算作用户 Undo。
+
+项目基础切片 `fb8ecdd` 与复核修复 `4eb1409` 已合入：V2 图片引用、不可变 commit/head CAS、hydration/settlement 索引与 V1/V2 共用历史算法。公共历史计划深冻结；常规提交复用已验证前缀，仅检查变动引用；未知结果的幂等重试补做目录同步；失败 Undo/Redo 仍断开文字分组。修复切片执行者 4 文件/137 项与 build 通过。真实 Main/native 混合历史与故障恢复正在接线，基础模块不等于整体验收。
+
+连续绘画队列 `8adc75f` 已合入：原生输入与持久化分线程，有界四笔队列，项目确认前不会把预览称为已保存。执行者 2K/4K 各 40 笔与串行参考逐字节一致；2K 采样请求 P95 0.422ms、持久确认 P95 72.8ms；4K 慢盘注入会触发明确背压，不静默丢输入。这些是原生协议测量，不是笔尖到屏幕延迟或全进程内存上界。主管真实 Node 连接新增连续笔链验收，两项通过（`/private/tmp/flow-engine-research/pipeline-node-integration.log`），覆盖队列身份、接受前后像素不变与 epoch 切换；尚不替代真实项目 CAS。
+
+项目单写者保护 `b3cde7a` 已合入：真实 OS 锁加持久 Main 身份。只崩溃锁辅助进程时，旧 Main 停止新写，新 Main 也不能趁隙接管；确认旧 Main 退出后才恢复。执行者 18 项真实进程专项与 build 通过，证据 `/private/tmp/flow-image-project-lease-receipt.json`。当前仅本机 macOS 验证，Windows 安全拒绝；生产入口、网络文件系统和完整打包未认证。
+
+主管最新组合：完整构建通过（`/private/tmp/flow-engine-research/integration-project-lease-build.log`）；真实 native 连续笔链、连接身份、项目 CAS 和混合历史基础共 4 文件/23 项通过（同目录 `project-pipeline-combined.log`）。项目 Session 端到端与最终获准全量仍待完成。
+
 更新：2026-11-06。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 
 ## Photocraft 与分隔条：本地组合验收（2026-11-06）

@@ -10,6 +10,12 @@
 
 连续绘画协议区分 `imageVersionRef` 已接纳前缀和 `pendingOperationIds` 未 durable-accepted 的完整笔链；`workingHeadOperationId` 等于待确认链尾，活动笔另用 previewId。pipeline 开始/结束提升 epoch，同 epoch 的 pipelineId 不变；pending 为空也不能替代项目 checkpoint/Save 成功判据。帧接收器只验证展示身份，不承担项目持久化认证。原生异步队列实现与 Main 项目接纳仍在施工。
 
+项目 V2 在 `platform/contracts/imageProject.ts` 定义图片内容联合引用：source 指向固定来源及解释身份，native 指向 store/document/version/manifest 摘要；项目不保存另一份可写 PNG 图层树。后台 hydration 写持久派生索引，不改变项目引用、不产生用户 Undo；第一笔才由 source 引用变成新 native 版本，撤销可回到同一固定来源解释。
+
+`session/core/snapshotHistory` 为 V1/V2 共用的唯一历史算法。新路径先 prepare 历史计划，Main 的 V2 store 发布可达 commit/head 后再 commit 同一计划；native accepted 是项目决定后的结算，不是项目提交权威。孤立 commit 文件不自动认领，未结算 native 决定单列恢复账本。当前重开继续沿用清空进程内 Undo 栈的行为，不声称已实现跨重启 Undo。
+
+V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目录保护都不等于跨进程锁。全项目恢复预算包括实际留存与工作进程预留，不能把各子模块的局部额度相加后仍声称受 8 GiB 总额保护。相关 Main Session、真实 writer guard 和常规提交性能接线尚在施工，不启用默认产品入口。
+
 ## 运行链与职责
 
 源码按六个概念根组织：`src/workbench` 负责工作台布局和界面接线，`src/storyboard` 负责故事板组织、Pending、动作与对白的模型及界面，`src/drawing` 负责画布与图层，`src/session` 负责编辑状态、队列和历史，`src/project-files` 负责项目文件、资产与 TIFF，`src/platform` 负责 Electron、操作系统和桥接。各根内按运行环境区分，避免浏览器引入 Node 实现。

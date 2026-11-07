@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createNativeFrameDecoder, type NativeFrame } from './imageEngineFraming.js';
 
-export type ImageEngineCapability = 'recoveredCandidateAcceptAtInstalledVersion' | 'strokePipelineV1';
+export type ImageEngineCapability = 'recoveredCandidateAcceptAtInstalledVersion' | 'strokePipelineV1' | 'immutableVersionExportV1' | 'settledResumeV1';
 
 /** One explicitly owned native process. Transport failure means UNKNOWN, never cancellation.
  * At most one request is outstanding in protocol v1; caller owns operation reconciliation.

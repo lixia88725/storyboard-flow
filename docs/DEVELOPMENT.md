@@ -75,3 +75,8 @@ macOS 包附带 TIFF 组件，不附带 Python 解释器。第一次处理 TIFF 
 当前宿主连接专项 `src/platform/main/imageEngineConnection.test.ts` 需要显式 `FLOW_IMAGE_HOST` 指向与受验提交绑定的真实 `flow-photocraft-host`。未指定时失败，不跳过、不替换 fake；在宿主构建准备尚未接入通用清单前，该测试单独执行。`imageEngineTransport.test.ts` 的合成子进程只认证故障协议，不能替代真实宿主证据。固定二进制、SHA 与构建回执应随日志记录。
 
 帧拆包、接收器、原件保管与 transport 故障测试已明确加入获准清单。Canvas 专项 `node scripts/flow-image-frame-display-smoke.mjs` 使用隔离 Electron、双 Canvas 和录制原生帧；录制回放不证明实时 native 整链性能。使用 dist 的检查仍须先完整 build。
+
+
+真实串行宿主显示专项：完整构建后显式设置 `FLOW_IMAGE_HOST`，运行 `node scripts/flow-image-engine-live-smoke.mjs`。它实际调用宿主并将实时帧经 Main/MessagePort 交给两 Canvas；结果分别记录请求 RTT、Canvas ACK 和截图耗时，不能称作物理笔到屏幕延迟。截图同时保留独立透明 CSS 参考和不透明算术预混对照。默认固定候选路径只用于施工证据复现，正式环境应显式指定受验宿主。
+
+图片发动机施工专项（不自动混入无需原生组件的测试）：`FLOW_IMAGE_HOST=<固定宿主绝对路径> node node_modules/vitest/vitest.mjs run src/platform/main/imageEngineConnection.test.ts`；连续笔链要求 `strokePipelineV1` 能力。项目锁专项：`FLOW_PROJECT_LEASE_BINARY=<锁辅助程序绝对路径> node node_modules/vitest/vitest.mjs run src/platform/main/imageProjectLease.test.ts`。两者缺少真实组件时明确失败，不使用假后端代替；执行前记录组件提交及摘要。

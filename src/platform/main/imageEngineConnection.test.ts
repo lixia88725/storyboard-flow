@@ -67,3 +67,82 @@ it('connects real native pixels to the renderer FrameStore across strokes and hi
     expect((await client.exited).code).toBe(0);
   } finally { client.terminateOwnedProcess(); await client.exited; }
 }, 30000);
+
+it('keeps volatile pipeline frames distinct from durable acceptance across epoch barriers', async () => {
+  const binary = process.env.FLOW_IMAGE_HOST;
+  if (!binary) throw Error('Prepare pipeline-capable native host and set FLOW_IMAGE_HOST');
+  const root = await temporaryWorkspace('native-pipeline-connection-');
+  const client = startImageEngine({ binary, store: path.join(root, 'native'), sessionId: 'pipeline-integration', incarnation: 'one', budgetBytes: 32 * 1024 * 1024 });
+  try {
+    await client.ready;
+    expect(client.supports('strokePipelineV1')).toBe(true);
+    let envelope: string | null = null;
+    const call = async (id: string, body: Record<string, unknown>, base = envelope) => {
+      const frame = await client.request(id, body, base);
+      const reply = frame.header.body as Record<string, any>;
+      expect(reply.kind, JSON.stringify(reply)).not.toBe('failure');
+      return { reply, pixels: frame.payload };
+    };
+    expect((await call('new', { kind: 'new', width: 64, height: 64 })).reply.kind).toBe('prepared');
+    envelope = (await call('accept-new', { kind: 'accept', candidateId: 'new' })).reply.receipt.versionId;
+    const initial = await call('initial', { kind: 'capture' });
+    const store = createImageFrameStore(initial.reply.frame as ImageFrameHeader);
+    expect(store.accept(initial.reply.frame, initial.pixels).ok).toBe(true);
+    const start = await call('pipeline-start', { kind: 'pipelineStart', maxPendingStrokes: 4, maxPendingPoints: 128, maxRetainedPixelBytes: 1024 * 1024 });
+    expect(start.reply.kind).toBe('pipelineReady');
+    expect(start.reply.anchorVersion).toBe(envelope);
+    const pipelineId = start.reply.pipelineId;
+    const startFrame = await call('start-frame', { kind: 'capture' });
+    expect(store.accept(startFrame.reply.frame, startFrame.pixels)).toMatchObject({ code: 'wrong-identity' });
+    expect(store.reset(startFrame.reply.frame).ok).toBe(true);
+    expect(store.accept(startFrame.reply.frame, startFrame.pixels).ok).toBe(true);
+    for (let i = 0; i < 2; i++) {
+      const previewId = `preview-${i}`;
+      const begin = await call(`begin-${i}`, { kind: 'strokeBegin', previewId, predecessorOperationId: i ? 'stroke-0' : null,
+        brush: { size: 10, opacity: 0.5, seed: 42, color: '#ff0000', erase: i === 1 }, points: [{ x: 20, y: 20, pressure: 1 }] });
+      expect(store.accept(begin.reply.frame, begin.pixels).ok).toBe(true);
+      const append = await call(`append-${i}`, { kind: 'strokeAppend', previewId, fromSeq: 2, points: [{ x: 40, y: 20, pressure: 1 }] });
+      expect(store.accept(append.reply.frame, append.pixels).ok).toBe(true);
+      const ended = await call(`stroke-${i}`, { kind: 'strokeFinish', previewId, throughSeq: 2 });
+      expect(ended.reply).toMatchObject({ kind: 'queued', durable: false, pipelineId });
+    }
+    const pending = await call('pending-frame', { kind: 'capture' });
+    expect(store.accept(pending.reply.frame, pending.pixels).ok).toBe(true);
+    expect(store.view().header).toMatchObject({ imageVersionRef: envelope, pipelineId,
+      pendingOperationIds: ['stroke-0', 'stroke-1'], workingHeadOperationId: 'stroke-1' });
+    const previewPixels = store.snapshot().frame!.pixels;
+    const events = new Map<string, any>(); let poll = 0;
+    async function until(operationId: string, kind: string) {
+      for (let tries = 0; tries < 1000; tries++) {
+        const state = (await call(`poll-${++poll}`, { kind: 'pipelinePoll', pipelineId })).reply;
+        expect(state.blocked).toBeNull();
+        for (const event of state.events) events.set(`${event.operationId}/${event.result.kind}`, event.result);
+        const result = events.get(`${operationId}/${kind}`); if (result) return result;
+        await new Promise(resolve => setTimeout(resolve, 2));
+      }
+      throw Error(`Pipeline did not settle ${operationId}/${kind}`);
+    }
+    let acceptedVersion = envelope;
+    for (let i = 0; i < 2; i++) {
+      const candidateId = `stroke-${i}`, prepared = await until(candidateId, 'prepared');
+      expect(prepared.baseVersion).toBe(acceptedVersion);
+      // This transport/frames test deliberately does not certify a real project CAS.
+      expect((await call(`accept-${i}`, { kind: 'accept', candidateId }, acceptedVersion)).reply).toMatchObject({ kind: 'acceptQueued', durable: false });
+      acceptedVersion = (await until(candidateId, 'accepted')).receipt.versionId;
+    }
+    const durable = await call('durable-frame', { kind: 'capture' });
+    expect(store.accept(durable.reply.frame, durable.pixels).ok).toBe(true);
+    expect(store.view().header).toMatchObject({ imageVersionRef: acceptedVersion, pipelineId, pendingOperationIds: [] });
+    expect(store.view().header!.workingHeadOperationId).toBeUndefined();
+    expect(Buffer.compare(Buffer.from(previewPixels), Buffer.from(store.snapshot().frame!.pixels))).toBe(0);
+    const stopped = await call('pipeline-stop', { kind: 'pipelineStop', pipelineId });
+    expect(stopped.reply.kind).toBe('pipelineStopped'); envelope = acceptedVersion;
+    const final = await call('final-frame', { kind: 'capture' });
+    expect(store.accept(final.reply.frame, final.pixels)).toMatchObject({ code: 'wrong-identity' });
+    expect(store.reset(final.reply.frame).ok).toBe(true);
+    expect(store.accept(final.reply.frame, final.pixels).ok).toBe(true);
+    expect(store.view().header!.pipelineId).toBeUndefined();
+    await call('freeze', { kind: 'freeze' }); await call('close', { kind: 'close' });
+    expect((await client.exited).code).toBe(0);
+  } finally { client.terminateOwnedProcess(); await client.exited; }
+}, 30000);
