@@ -6,7 +6,8 @@
  * split, a reorder, a cross-board move or a programmatic `setDialogues` can never fold even
  * when it carries a token.
  */
-import type { ProjectV1 } from '../../platform/contracts/refactorV1';
+import type { ProjectV1 } from '../../platform/contracts/refactorV1.js';
+type TypingProject = Omit<ProjectV1, 'version' | 'images'> & { version: number; images: unknown };
 
 /**
  * One adjustable pause. It is deliberately unrelated to the checkpoint debounce: this number
@@ -30,7 +31,7 @@ export type TypingGroupTarget = { shotId: string; dialogueId: string };
  * `dialogues` (and the revision) on the project it was given. A caller that deep-cloned the
  * project in between therefore never folds, which is the safe direction.
  */
-const untouchedOutsideDialogues = (before: ProjectV1, after: ProjectV1): boolean =>
+const untouchedOutsideDialogues = (before: TypingProject, after: TypingProject): boolean =>
   before.id === after.id && before.schema === after.schema && before.version === after.version &&
   before.name === after.name && before.shots === after.shots && before.parkedShots === after.parkedShots &&
   before.images === after.images && before.naming === after.naming && before.presentation === after.presentation;
@@ -49,7 +50,7 @@ const textChanged = (row: { text: string }): boolean => row.text.trim() !== '';
  * Blank text is excluded: emptying a row removes it from the payload, which is a structure
  * change and must stand alone.
  */
-export function typingFoldKey(before: ProjectV1, after: ProjectV1): TypingGroupTarget | null {
+export function typingFoldKey(before: TypingProject, after: TypingProject): TypingGroupTarget | null {
   if (!Array.isArray(before?.dialogues) || !Array.isArray(after?.dialogues)) return null;
   if (!untouchedOutsideDialogues(before, after)) return null;
   const previous = before.dialogues, next = after.dialogues;
