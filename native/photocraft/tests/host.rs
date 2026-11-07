@@ -527,3 +527,47 @@ fn incremental_frames_erase_removed_tail_on_reversing_pressure_stroke() {
     }
     eprintln!("reversing-tail evidence retained: {}", h.root.display());
 }
+
+#[test]
+fn explicit_recovered_accept_can_settle_exact_main_installed_candidate_version() {
+    let mut h = Harness::new();
+    let n = h.call("new", json!({"kind":"new","width":64,"height":32}));
+    h.accept("new", &n);
+    let prepared = h.edit("lostAccept", json!({"kind":"fill","color":"#1144aa"}));
+    assert_eq!(prepared.header["body"]["kind"], "prepared");
+    let version = prepared.header["body"]["receipt"]["versionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let root = h.root.clone();
+    drop(h);
+    let mut h = Harness {
+        host: Host::open(&root, 128 << 20).unwrap(),
+        root,
+        base: None,
+        seq: 0,
+    };
+    let load = h.call("load", json!({"kind":"load","versionId":version}));
+    assert_eq!(load.header["body"]["kind"], "loaded");
+    h.base = Some(version.clone());
+    let status = h.call(
+        "status",
+        json!({"kind":"status","targetOperationId":"lostAccept"}),
+    );
+    assert_eq!(status.header["body"]["state"], "prepared");
+    let explicit = h.call(
+        "settle",
+        json!({"kind":"accept","candidateId":"lostAccept"}),
+    );
+    assert_eq!(
+        explicit.header["body"]["kind"], "accepted",
+        "{}",
+        explicit.header
+    );
+    assert_eq!(explicit.header["body"]["receipt"]["versionId"], version);
+    let status = h.call(
+        "statusAfter",
+        json!({"kind":"status","targetOperationId":"lostAccept"}),
+    );
+    assert_eq!(status.header["body"]["state"], "accepted");
+}

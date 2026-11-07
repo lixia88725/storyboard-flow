@@ -271,3 +271,8 @@ it excludes Electron, screen presentation, physical pen input and Windows.
 `FLOW_IMAGE_ENGINE_TRACE=1` emits internal phase timings on stderr. Native
 persistence latency is still a gate for wider integration; a fast preview number
 does not establish continuous whole-application drawing performance.
+
+The hello capability `recoveredCandidateAcceptAtInstalledVersion` explicitly permits
+an explicit recovered accept when Main has already installed that exact prepared
+version. A missing capability does not certify this recovery branch. Loading a
+version alone never creates an accepted operation receipt.

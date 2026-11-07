@@ -776,7 +776,11 @@ impl Host {
                     .candidate
                     .as_ref()
                     .ok_or_else(|| Error::none("not-found", "candidate missing"))?;
-                if &c.id != candidate_id || c.base != self.current {
+                // Main may already have installed this exact durable candidate before the
+                // native accept receipt was flushed. Explicit recovery settles that same version.
+                let recovering_installed = recovered
+                    && self.current.as_deref() == Some(&c.receipt.version_id);
+                if &c.id != candidate_id || (c.base != self.current && !recovering_installed) {
                     return Err(Error::none("conflict", "candidate base mismatch"));
                 }
                 // Same-host acceptance retains its COW document and tool context. Only recovery
