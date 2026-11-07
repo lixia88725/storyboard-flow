@@ -2,7 +2,7 @@
 //! Host-pinned immutable versions survive process restarts; native History is scratch only.
 mod context;
 mod journal;
-pub use context::FloatingAction;
+pub use context::{FloatingAction, LayerIdInput};
 mod output;
 pub use output::OutputFormat;
 mod pipeline;
@@ -102,7 +102,7 @@ pub enum Command {
     },
     SelectLayerContext {
         #[serde(rename = "layerId")]
-        layer_id: u64,
+        layer_id: LayerIdInput,
         #[serde(rename = "expectedContextGeneration")]
         expected_context_generation: u64,
     },
@@ -626,7 +626,7 @@ impl Host {
             Command::SelectLayerContext {
                 layer_id,
                 expected_context_generation,
-            } => self.select_context(r, *layer_id, *expected_context_generation),
+            } => self.select_context(r, layer_id, *expected_context_generation),
             Command::Floating {
                 preview_id,
                 expected_context_generation,

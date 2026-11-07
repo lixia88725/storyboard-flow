@@ -20,7 +20,7 @@ def main():
     parser=argparse.ArgumentParser();parser.add_argument('binary');args=parser.parse_args()
     evidence=pathlib.Path(tempfile.mkdtemp(prefix='flow-native-context-process-'));events=[]
     c=Client(args.binary,evidence/'tools',record=True)
-    for capability in ['toolContextSummaryV1','contextLayerSelectionV1','floatingGestureV1']:
+    for capability in ['toolContextSummaryV1','contextLayerSelectionV1','floatingGestureV1','decimalLayerIdsV1']:
         assert capability in c.hello['capabilities'],c.hello
     def call(op,body):
         result,payload=c.call(op,body);events.append({'op':op,'body':result,'payloadBytes':len(payload)});return result,payload
@@ -34,7 +34,7 @@ def main():
     p,_=call('layer',{'kind':'edit','edit':{'kind':'newLayer','name':'top'}});c.accept('layer',p)
     p,_=call('fill',{'kind':'edit','edit':{'kind':'fill','color':'#ff0000'}});c.accept('fill',p)
     p,_=call('mask',{'kind':'edit','edit':{'kind':'rect','x':4,'y':5,'width':8,'height':7}});base=c.accept('mask',p)
-    original,_=c.capture();s=summary();top=s['activeLayerId'];bottom=s['layers'][1]['layerId'];version_count=len(list((c.root/'versions').iterdir()))
+    original,_=c.capture();s=summary();top=s['activeLayerId'];bottom=s['layers'][1]['layerId'];assert isinstance(top,str) and isinstance(bottom,str);version_count=len(list((c.root/'versions').iterdir()))
     result,_=call('choose',{'kind':'selectLayerContext','layerId':bottom,'expectedContextGeneration':s['contextGeneration']});assert result['kind']=='contextUpdated' and result['imageVersionRef']==base,result
     assert len(list((c.root/'versions').iterdir()))==version_count
     s=summary();assert s['activeLayerId']==bottom and s['imageVersionRef']==base

@@ -3,6 +3,38 @@ use super::*;
 use photocraft_doc::LayerId;
 
 pub const MAX_SUMMARY_BYTES: usize = 48 << 10;
+/// Valid wire identities are canonical decimal strings. Keep malformed JSON only
+/// long enough to return a normal rejection, never coerce a legacy Number to u64.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LayerIdInput {
+    Decimal(String),
+    Invalid(Value),
+}
+impl LayerIdInput {
+    fn parse(&self) -> Result<LayerId> {
+        let Self::Decimal(value) = self else {
+            return Err(Error::none(
+                "invalid-input",
+                "layerId must be a canonical decimal string; numeric IDs are unsupported",
+            ));
+        };
+        let id = value.parse::<u64>().map_err(|_| {
+            Error::none(
+                "invalid-input",
+                "layerId must be a canonical decimal u64 string",
+            )
+        })?;
+        if id.to_string() != *value {
+            return Err(Error::none(
+                "invalid-input",
+                "layerId must be a canonical decimal u64 string",
+            ));
+        }
+        Ok(LayerId(id))
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum FloatingAction {
@@ -136,11 +168,11 @@ impl Host {
             json!([r.x0, r.y0, r.width(), r.height()])
         }
         fn tree(doc: &Document, layers: &[Layer]) -> Vec<Value> {
-            layers.iter().rev().map(|l|json!({"layerId":l.id.0,"name":l.name,"kind":match l.content {LayerContent::Raster(_)=>"raster",LayerContent::Group(_)=>"group",_=>"unsupported"},"visible":l.visible,"opacity":l.opacity,"blend":l.blend,"locks":l.locks,"effectiveLocks":doc.effective_locks(l.id),"children":l.children().map(|c|tree(doc,c)).unwrap_or_default()})).collect()
+            layers.iter().rev().map(|l|json!({"layerId":l.id.0.to_string(),"name":l.name,"kind":match l.content {LayerContent::Raster(_)=>"raster",LayerContent::Group(_)=>"group",_=>"unsupported"},"visible":l.visible,"opacity":l.opacity,"blend":l.blend,"locks":l.locks,"effectiveLocks":doc.effective_locks(l.id),"children":l.children().map(|c|tree(doc,c)).unwrap_or_default()})).collect()
         }
         let floating=self.floating_context.as_ref().map(|g| {
             let phase=if g.blocked.is_some(){"blocked"}else if self.candidate.as_ref().is_some_and(|c|c.from_floating){"dropPrepared"}else{"active"};
-            json!({"previewId":g.id,"throughSeq":g.through,"sourceLayerId":g.layer,"offset":[g.offset.0,g.offset.1],"phase":phase,"baseVersion":g.base,"outlineBounds":g.outline.map(|r|json!([i64::from(r.x0)+i64::from(g.offset.0),i64::from(r.y0)+i64::from(g.offset.1),r.width(),r.height()]))})
+            json!({"previewId":g.id,"throughSeq":g.through,"sourceLayerId":g.layer.to_string(),"offset":[g.offset.0,g.offset.1],"phase":phase,"baseVersion":g.base,"outlineBounds":g.outline.map(|r|json!([i64::from(r.x0)+i64::from(g.offset.0),i64::from(r.y0)+i64::from(g.offset.1),r.width(),r.height()]))})
         });
         let general_busy = self.frozen
             || self.candidate.is_some()
@@ -206,7 +238,7 @@ impl Host {
         let erased_to_background = state
             .active_layer
             .is_some_and(|id| doc.effective_locks(id).transparency);
-        let result = json!({"kind":"contextSummary","documentId":doc.id.0.to_string(),"imageVersionRef":self.current,"epoch":self.display_epoch,"contextGeneration":self.context_generation,"maxSummaryBytes":MAX_SUMMARY_BYTES,"layerCount":doc.layer_count(),"layers":tree(doc,&doc.layers),"activeLayerId":state.active_layer.map(|id|id.0),"selectedLayerIds":state.selected_layers.iter().map(|id|id.0).collect::<Vec<_>>(),"selection":{"present":doc.selection.is_some(),"token":self.selection_token(),"bounds":doc.selection.as_ref().map(|s|bounds(s.content_bounds()))},"floating":floating,"candidateId":self.candidate.as_ref().map(|c|&c.id),"inputActive":self.gesture.is_some(),"pipelineActive":pipeline_active,"frozen":self.frozen,"settlementRequired":self.store.context_unsettled()||self.candidate.is_some(),"tools":tools,"eraserBehavior":if erased_to_background {"backgroundColor"}else{"alpha"}});
+        let result = json!({"kind":"contextSummary","documentId":doc.id.0.to_string(),"imageVersionRef":self.current,"epoch":self.display_epoch,"contextGeneration":self.context_generation,"maxSummaryBytes":MAX_SUMMARY_BYTES,"layerCount":doc.layer_count(),"layers":tree(doc,&doc.layers),"activeLayerId":state.active_layer.map(|id|id.0.to_string()),"selectedLayerIds":state.selected_layers.iter().map(|id|id.0.to_string()).collect::<Vec<_>>(),"selection":{"present":doc.selection.is_some(),"token":self.selection_token(),"bounds":doc.selection.as_ref().map(|s|bounds(s.content_bounds()))},"floating":floating,"candidateId":self.candidate.as_ref().map(|c|&c.id),"inputActive":self.gesture.is_some(),"pipelineActive":pipeline_active,"frozen":self.frozen,"settlementRequired":self.store.context_unsettled()||self.candidate.is_some(),"tools":tools,"eraserBehavior":if erased_to_background {"backgroundColor"}else{"alpha"}});
         if serde_json::to_vec(&result).map_err(native)?.len() > max_bytes {
             return Err(Error::none(
                 "limit",
@@ -218,19 +250,18 @@ impl Host {
     pub(super) fn select_context(
         &mut self,
         r: &Request,
-        layer_id: u64,
+        layer_id: &LayerIdInput,
         generation: u64,
     ) -> Result<(Value, Vec<u8>)> {
+        let layer_id = layer_id.parse()?;
         self.base(r)?;
         self.check_context(generation)?;
         self.context_idle()?;
         // Public upstream context operation: no dispatch auto-drop and no native/Flow history step.
-        self.engine
-            .select_layer(LayerId(layer_id))
-            .map_err(native)?;
+        self.engine.select_layer(layer_id).map_err(native)?;
         self.advance_context();
         Ok((
-            json!({"kind":"contextUpdated","documentId":self.document()?.id.0.to_string(),"imageVersionRef":self.current,"contextGeneration":self.context_generation,"activeLayerId":layer_id,"selectedLayerIds":[layer_id]}),
+            json!({"kind":"contextUpdated","documentId":self.document()?.id.0.to_string(),"imageVersionRef":self.current,"contextGeneration":self.context_generation,"activeLayerId":layer_id.0.to_string(),"selectedLayerIds":[layer_id.0.to_string()]}),
             vec![],
         ))
     }

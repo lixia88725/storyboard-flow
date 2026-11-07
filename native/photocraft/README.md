@@ -406,7 +406,7 @@ stroke path is also real. These synthetic independent checks do not certify
 Photoshop UI, arbitrary complex source fidelity, Windows or user-file publication.
 
 `toolContextSummaryV1` adds `summary {maxBytes:1..49152}`. Its read-only response
-contains the actual tree in top-to-bottom display order (numeric native layer IDs,
+contains the actual tree in top-to-bottom display order (canonical decimal-string native layer IDs,
 name/kind/visibility/opacity/blend, local and inherited locks), active/selected IDs,
 selection presence/content bounds/token, floating ownership/offset/prefix/outline,
 context generation, and known typed tool availability. It contains no paths,
@@ -471,3 +471,16 @@ outside this slice. Export currently requires the entire host frozen and the sam
 open document. It does not provide simultaneous drawing/output or multi-board
 stable Save capture; a future pinned-version read-only output worker still needs
 Main's publication transaction.
+
+`decimalLayerIdsV1` is required together with the tool-context capabilities.
+Every LayerId in summary/contextUpdated (tree IDs, active/selected IDs and floating
+source ID) is a canonical decimal string; null stays null and absent selections
+stay empty arrays. `selectLayerContext.layerId` accepts the same representation,
+with the full u64 range. Numbers, signs, leading zeros and overflow reject without
+coercion or changing the target. Clients must refuse the older numeric shape and
+must never convert IDs through JavaScript Number. Internal native-version u64
+serialization is unchanged. PSD's separate `psd_id` is u32, but runtime LayerId
+and the shared allocator are u64 and have no JavaScript-safe bound. A real Node
+subprocess test uses two adjacent IDs above 2^53 through JSON.parse, production
+wire framing and the real Host/Session to verify exact round trips and rejection
+of the rounded numeric neighbour, without adding a production fixture command.

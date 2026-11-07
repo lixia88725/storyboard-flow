@@ -145,10 +145,10 @@ fn readonly_tree_budget_and_context_only_layer_selection() {
     let before = state(&h.h);
     let files = fs::read_dir(h.root.join("versions")).unwrap().count();
     let s = h.summary();
-    assert_eq!(s["layers"][0]["layerId"], top);
-    assert_eq!(s["layers"][1]["layerId"], bottom);
+    assert_eq!(s["layers"][0]["layerId"], top.to_string());
+    assert_eq!(s["layers"][1]["layerId"], bottom.to_string());
     assert_eq!(s["layerCount"], 2);
-    assert_eq!(s["activeLayerId"], top);
+    assert_eq!(s["activeLayerId"], top.to_string());
     assert_eq!(s["selection"]["bounds"], json!([4, 5, 8, 7]));
     assert_eq!(s["tools"]["floatBegin"]["enabled"], true);
     assert!(s["layers"][0]["effectiveLocks"].is_object());
@@ -160,7 +160,7 @@ fn readonly_tree_budget_and_context_only_layer_selection() {
     );
     assert_eq!(h.h.context_generation, generation);
     assert_eq!(state(&h.h), before);
-    let out=h.body("choose",json!({"kind":"selectLayerContext","layerId":bottom,"expectedContextGeneration":generation}));
+    let out=h.body("choose",json!({"kind":"selectLayerContext","layerId":bottom.to_string(),"expectedContextGeneration":generation}));
     assert_eq!(out["kind"], "contextUpdated", "{out}");
     assert_eq!(out["imageVersionRef"], saved);
     assert_eq!(out["contextGeneration"], generation + 1);
@@ -181,9 +181,9 @@ fn readonly_tree_budget_and_context_only_layer_selection() {
         ))
     );
     assert_ne!(token, h.summary()["selection"]["token"]);
-    assert_eq!(h.body("stale",json!({"kind":"selectLayerContext","layerId":top,"expectedContextGeneration":generation}))["error"]["code"],"stale-context");
+    assert_eq!(h.body("stale",json!({"kind":"selectLayerContext","layerId":top.to_string(),"expectedContextGeneration":generation}))["error"]["code"],"stale-context");
     let generation = h.h.context_generation;
-    assert_eq!(h.body("missing",json!({"kind":"selectLayerContext","layerId":999999,"expectedContextGeneration":generation}))["kind"],"failure");
+    assert_eq!(h.body("missing",json!({"kind":"selectLayerContext","layerId":"999999","expectedContextGeneration":generation}))["kind"],"failure");
     assert_eq!(h.h.context_generation, generation);
     assert_eq!(
         h.edit("legacySelect", json!({"kind":"selectLayer","layerId":top}))["error"]["code"],
@@ -226,7 +226,7 @@ fn actual_mask_target_accept_discard_install_load_and_failure_matrix() {
     assert_eq!(state(&h.h), baseline);
     assert!(!h.summary()["settlementRequired"].as_bool().unwrap());
     let generation = h.h.context_generation;
-    let v=h.body("bottom",json!({"kind":"selectLayerContext","layerId":bottom,"expectedContextGeneration":generation}));
+    let v=h.body("bottom",json!({"kind":"selectLayerContext","layerId":bottom.to_string(),"expectedContextGeneration":generation}));
     assert_eq!(v["kind"], "contextUpdated");
     let v = h.edit(
         "newLasso",
@@ -245,7 +245,7 @@ fn actual_mask_target_accept_discard_install_load_and_failure_matrix() {
     );
     h.base = Some(rect);
     assert_eq!(state(&h.h), baseline);
-    assert_eq!(h.summary()["activeLayerId"], top);
+    assert_eq!(h.summary()["activeLayerId"], top.to_string());
     assert_eq!(
         h.body("lassoRedo", json!({"kind":"install","versionId":lasso}))["kind"],
         "installed"
@@ -275,7 +275,7 @@ fn floating_preview_drop_discard_continue_and_cancel_full_checkpoint() {
     assert_eq!(frame.header["body"]["frame"]["previewId"], "floatPreview");
     assert_ne!(frame.payload, original.pixels);
     let s = h.summary();
-    assert_eq!(s["floating"]["sourceLayerId"], top);
+    assert_eq!(s["floating"]["sourceLayerId"], top.to_string());
     assert_eq!(s["floating"]["outlineBounds"], json!([7, 7, 8, 7]));
     assert_eq!(s["tools"]["floatCancel"]["enabled"], true);
     assert_eq!(s["tools"]["paint"]["enabled"], false);
@@ -311,7 +311,7 @@ fn floating_preview_drop_discard_continue_and_cancel_full_checkpoint() {
         assert_eq!(h.edit("noImplicitDrop", edit)["kind"], "failure");
         assert!(photocraft_engine::float_cmds::floating(h.h.engine.active().unwrap()).is_some());
     }
-    assert_eq!(h.body("blockedSelect",json!({"kind":"selectLayerContext","layerId":top,"expectedContextGeneration":generation}))["error"]["code"],"busy");
+    assert_eq!(h.body("blockedSelect",json!({"kind":"selectLayerContext","layerId":top.to_string(),"expectedContextGeneration":generation}))["error"]["code"],"busy");
     assert_eq!(
         h.body("blockedInstall", json!({"kind":"install","versionId":base}))["error"]["code"],
         "busy"
@@ -481,13 +481,13 @@ fn context_guards_candidate_paint_pipeline_and_frozen_without_dropping_input() {
     let p = h.edit("blur", json!({"kind":"blur","radius":1}));
     assert_eq!(p["kind"], "prepared");
     let generation = h.h.context_generation;
-    assert_eq!(h.body("chooseBusy",json!({"kind":"selectLayerContext","layerId":bottom,"expectedContextGeneration":generation}))["error"]["code"],"busy");
+    assert_eq!(h.body("chooseBusy",json!({"kind":"selectLayerContext","layerId":bottom.to_string(),"expectedContextGeneration":generation}))["error"]["code"],"busy");
     assert_eq!(h.summary()["candidateId"], "blur");
     h.body("discard", json!({"kind":"discard","candidateId":"blur"}));
     let v=h.body("begin",json!({"kind":"strokeBegin","previewId":"paint","brush":{"seed":1,"size":3},"points":[{"x":20,"y":20}]}));
     assert_eq!(v["kind"], "frame", "{v}");
     let generation = h.h.context_generation;
-    assert_eq!(h.body("choosePainting",json!({"kind":"selectLayerContext","layerId":bottom,"expectedContextGeneration":generation}))["error"]["code"],"busy");
+    assert_eq!(h.body("choosePainting",json!({"kind":"selectLayerContext","layerId":bottom.to_string(),"expectedContextGeneration":generation}))["error"]["code"],"busy");
     assert_eq!(h.summary()["inputActive"], true);
     let p = h.body(
         "finish",
@@ -501,14 +501,14 @@ fn context_guards_candidate_paint_pipeline_and_frozen_without_dropping_input() {
     assert_eq!(s["pipelineActive"], true);
     assert_eq!(s["tools"]["selectLayerContext"]["enabled"], false);
     let generation = h.h.context_generation;
-    assert_eq!(h.body("choosePipeline",json!({"kind":"selectLayerContext","layerId":bottom,"expectedContextGeneration":generation}))["kind"],"failure");
+    assert_eq!(h.body("choosePipeline",json!({"kind":"selectLayerContext","layerId":bottom.to_string(),"expectedContextGeneration":generation}))["kind"],"failure");
     assert_eq!(
         h.body("stop", json!({"kind":"pipelineStop","pipelineId":id}))["kind"],
         "pipelineStopped"
     );
     assert_eq!(h.body("freeze", json!({"kind":"freeze"}))["kind"], "frozen");
     let generation = h.h.context_generation;
-    assert_eq!(h.body("chooseFrozen",json!({"kind":"selectLayerContext","layerId":bottom,"expectedContextGeneration":generation}))["error"]["code"],"frozen");
+    assert_eq!(h.body("chooseFrozen",json!({"kind":"selectLayerContext","layerId":bottom.to_string(),"expectedContextGeneration":generation}))["error"]["code"],"frozen");
     assert_eq!(h.summary()["tools"]["floatBegin"]["enabled"], false);
 }
 #[test]
@@ -532,9 +532,12 @@ fn real_group_tree_and_inherited_lock_capabilities_and_bounded_names() {
     h.base = Some(receipt.version_id.clone());
     let before = state(&h.h);
     let s = h.summary();
-    assert_eq!(s["layers"][0]["layerId"], group_id.0);
+    assert_eq!(s["layers"][0]["layerId"], group_id.0.to_string());
     assert_eq!(s["layers"][0]["kind"], "group");
-    assert_eq!(s["layers"][0]["children"][0]["layerId"], child_id.0);
+    assert_eq!(
+        s["layers"][0]["children"][0]["layerId"],
+        child_id.0.to_string()
+    );
     assert_eq!(s["layers"][0]["children"][0]["effectiveLocks"]["all"], true);
     assert_eq!(s["tools"]["paint"]["enabled"], false);
     assert_eq!(s["tools"]["fill"]["enabled"], false);
@@ -635,4 +638,77 @@ fn upstream_restore_refusal_blocks_owner_and_does_not_certify_a_frame() {
         h.body("captureBlocked", json!({"kind":"capture"}))["kind"],
         "failure"
     );
+}
+#[test]
+fn decimal_layer_ids_real_node_roundtrip_preserves_adjacent_unsafe_integers() {
+    use photocraft_color::PixelFormat;
+    use photocraft_doc::LayerId;
+    use std::process::{Command as ProcessCommand, Stdio};
+    let mut fixture = Harness::new();
+    let mut doc = Document::new(
+        "Node exact IDs",
+        Size::new(4, 4),
+        ColorMode::Rgb,
+        SampleType::U8,
+    );
+    let a = LayerId(9_007_199_254_740_995);
+    let b = LayerId(9_007_199_254_740_996);
+    for (id, color) in [(a, [1.0, 0.0, 0.0, 1.0]), (b, [0.0, 0.0, 1.0, 1.0])] {
+        let mut l = Layer::raster(id.0.to_string(), doc.pixel_format());
+        l.id = id;
+        l.surface_mut().unwrap().fill_rect(doc.bounds(), &color);
+        doc.layers.push(l);
+    }
+    let mut mask = photocraft_raster::Surface::new(PixelFormat::new(
+        ColorMode::Grayscale,
+        SampleType::U8,
+        false,
+    ));
+    mask.fill_rect(doc.bounds(), &[1.0]);
+    doc.selection = Some(mask);
+    fixture.h.engine.add_document(doc, None);
+    fixture.h.engine.select_layer(b).unwrap();
+    fixture.h.engine.host_clear_history().unwrap();
+    let receipt = fixture
+        .h
+        .store
+        .save(
+            &fixture.h.document().unwrap(),
+            &fixture.h.target().unwrap(),
+            None,
+        )
+        .unwrap();
+    fixture.h.current = Some(receipt.version_id.clone());
+    fixture.h.advance_context();
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/context_layer_ids.mjs");
+    let mut child = ProcessCommand::new("node")
+        .arg(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("installed Node required for the real cross-language test");
+    let mut to_node = child.stdin.take().unwrap();
+    let mut from_node = child.stdout.take().unwrap();
+    wire::write(&mut to_node,&Response{header:json!({"protocol":1,"kind":"hello","workerEpoch":fixture.h.worker_epoch,"baseVersion":receipt.version_id,"capabilities":["decimalLayerIdsV1"]}),payload:vec![]}).unwrap();
+    while let Some((request, payload)) = wire::read(&mut from_node).unwrap() {
+        let response = fixture.h.handle(request, payload);
+        wire::write(&mut to_node, &response).unwrap();
+        if fixture.h.is_closed() {
+            break;
+        }
+    }
+    drop(to_node);
+    drop(from_node);
+    let result = child.wait_with_output().unwrap();
+    fs::write(fixture.root.join("node-result.log"), &result.stderr).unwrap();
+    assert!(
+        result.status.success(),
+        "real Node failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(fixture.h.engine.active().unwrap().active_layer, Some(a));
+    assert_eq!(fixture.h.current, Some(receipt.version_id));
+    eprintln!("Node exact-ID evidence: {}", fixture.root.display());
+    eprintln!("{}", String::from_utf8_lossy(&result.stderr));
 }
