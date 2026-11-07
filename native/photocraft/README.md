@@ -170,3 +170,100 @@ started/ended with zero documents and changed no source files or color settings.
 This evidence does not certify arbitrary real PSD effects, text, smart objects,
 large documents, Windows or complex TIFF-to-PSD mapping. Same-codec round trips
 alone do not establish Photoshop compatibility.
+
+## Experimental hosted engine (stage A, not wired into Flow)
+
+`flow-photocraft-host` is a separate persistent binary. The existing reader/export
+binary and normal Flow entry remain separate. This prototype admits one document
+per native host and synthetic/simple RGB8 raster/group PNG/TIFF/PSD inputs only
+(up to 8 MiB source, 8192 px side, 16 Mi canvas pixels, 64 layers and 512 MiB
+materialized native surface bytes). These are admission bounds, not a process RSS
+limit or certification of arbitrary PSD/TIFF structures.
+
+Before an explicit native build, apply the digest-bound fixed-upstream patch:
+
+```sh
+python3 native/photocraft/apply-host-patches.py
+cargo test --locked --offline --manifest-path native/photocraft/Cargo.toml --all-targets
+RAYON_NUM_THREADS=2 python3 native/photocraft/tests/host_process.py native/photocraft/target/debug/flow-photocraft-host
+RAYON_NUM_THREADS=2 python3 native/photocraft/tests/host_bench.py native/photocraft/target/debug/flow-photocraft-host
+```
+
+Use the explicitly prepared 1.99.1 toolchain with task-local `RUSTUP_HOME`,
+`CARGO_HOME` and command-only PATH. No setup or build installs dependencies.
+The patch helper verifies four enumerated upstream files and their before/after
+SHA-256 values; it refuses unrelated dependency changes. The host must not be
+packaged until setup/build, binary receipts, full dependency notices and target
+verification are integrated by the coordinator.
+
+Wire framing is `u32le headerLength`, `u32le payloadLength`, UTF-8 JSON header,
+then raw bytes; 64 KiB header / 64 MiB payload caps are checked before allocation.
+The host first emits a `hello` with protocol 1, a numeric safe `workerEpoch` and
+its object verification policy. Requests carry `requestId`, `sessionId`,
+`incarnation`, `workerEpoch`, `operationId`, nullable `baseVersion`, and a typed
+`body.kind`. Invalid framing terminates the channel; command failures are typed
+responses. stderr is independent of framed stdout.
+
+`new`/`open`, typed `edit`, or `strokeBegin` → ordered `strokeAppend` →
+`strokeFinish` prepares an immutable candidate. `open` consumes only budgeted
+retained bytes and `{digest,byteLength,formatHint}`; `digest` is SHA-256 and the
+format hint is not a certification. It never receives an external source path.
+The first sample has sequence 1; `fromSeq` must equal the next unaccepted sample,
+`throughSeq` must match the exact finishing prefix. Appends are volatile preview
+ACKs, not durable input receipts. Main must preserve input before sending it.
+
+A `prepared` response is returned only after file-flushed native objects, the
+object directory barrier, the immutable version manifest, and the operation
+receipt are durable. Flow then checks its own project base and calls `accept` or
+`discard`. Only one candidate/gesture is admitted at a time in this prototype.
+Duplicate operation IDs bind to the original session/base/body fingerprint;
+status queries expose durable prepared/accepted/failed/intent states. An
+intent-only outcome is unknown and is not replayed. `abandon` explicitly retains
+and retires recovered private evidence; it cannot undo an accepted operation.
+`freeze` refuses unresolved operations/gestures; `close` requires freeze.
+
+`load` opens a persisted version at startup; `install` restores a specified version
+for host-owned Undo/Redo. Native History is only transaction scratch and is
+cleared after acceptance. Document, target, tools and floating continuations are
+captured before dispatch and restored on failure, including dispatch's floating
+drop before admission. A restored floating continuation follows the new monotonic
+native revision. The broader type/action/plugin/file command families are not
+exposed by this prototype's allowlist.
+
+Versions use SHA-256 identities over a wrapper containing the complete native
+manifest, source binding and layer target. Compressed native tile/blob names use
+PhotoCraft's BLAKE3 scheme. Objects/versions are exclusively published and never
+repaired or garbage-collected. Strong stable file identity enables verified-object
+reuse only on detected APFS; other filesystems retain full content verification.
+Same-size writes with restored mtime invalidate the APFS cache via inode/ctime.
+Operation records use file-flushed, checksummed append-only segments. Restart
+retains torn tails, reads only complete validated prefixes and opens a new segment;
+checksum damage refuses access instead of inventing success. An OS file lease
+permits only one writable host for this store, and releases on process exit.
+
+`--store PRIVATE_ROOT [--budget BYTES]` grants only an internal engine namespace.
+The 8 GiB maximum is a native-store cap; the Main coordinator must allocate it
+within the single workspace's combined source/recovery budget. A version receipt's
+`logicalBytes` captures usage at version publication, not a later whole-project
+accounting snapshot. Windows directory-entry power-loss durability and its full
+runtime remain unverified; no APFS metadata shortcut is enabled there.
+
+Frames contain numeric `workerEpoch` and document `epoch`, `documentId`,
+`frameSeq`, nullable `baseFrameSeq`, accepted `imageVersionRef`, optional
+`previewId`, `inputThrough`, canvas dimensions, encoding
+`srgb-rgba8-straight`, and absolute replacement tile rectangles with byte ranges.
+Capture emits a complete keyframe; consecutive live updates emit cumulative dirty
+rectangles. Exact native live adoption promotes the existing visual baseline
+without uploading a whole canvas on each pen-up. Undo/cancel/recovery creates an
+explicit epoch/keyframe barrier. No PNG/base64 is used for frames, and no
+Rust-to-Electron-to-screen zero-copy claim is made.
+
+The dedicated Rust tests and actual subprocess script use synthetic temporary
+stores, verify native preview/commit equality, persistence and old-version
+installation, failure rollback, duplicate operations, corruption refusal,
+SIGKILL/restart and unknown results. The subprocess script retains raw frame
+headers and RGBA payloads. `host_bench.py` measures native subprocess round trips;
+it excludes Electron, screen presentation, physical pen input and Windows.
+`FLOW_IMAGE_ENGINE_TRACE=1` emits internal phase timings on stderr. Native
+persistence latency is still a gate for wider integration; a fast preview number
+does not establish continuous whole-application drawing performance.

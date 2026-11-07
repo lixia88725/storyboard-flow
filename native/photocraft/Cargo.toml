@@ -15,9 +15,17 @@ photocraft-doc = { path = "../../vendor/photocraft/crates/doc" }
 photocraft-color = { path = "../../vendor/photocraft/crates/color" }
 photocraft-cms = { path = "../../vendor/photocraft/crates/cms" }
 photocraft-codecs = { path = "../../vendor/photocraft/crates/codecs" }
+photocraft-engine = { path = "../../vendor/photocraft/crates/engine" }
+photocraft-format = { path = "../../vendor/photocraft/crates/format" }
+photocraft-ops = { path = "../../vendor/photocraft/crates/ops" }
+photocraft-geom = { path = "../../vendor/photocraft/crates/geom" }
+sha2 = "=0.10.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [profile.dev]
 debug = 0
 opt-level = 1
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1", default-features = false, features = ["std", "fs"] }
