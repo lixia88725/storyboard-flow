@@ -87,7 +87,16 @@ if(owned){
  if(window==='accept'||window==='noop-accept'){const accept=driver.pipeline.accept.bind(driver.pipeline);driver.pipeline.accept=async(...args)=>{const r=await accept(...args);if(fault){fault=false;throw Object.assign(Error('acceptQueued reply lost'),{effect:'unknown'});}return r;};if(window==='noop-accept')fault=false;}
  if(window==='no-ready'){const start=driver.pipeline.start.bind(driver.pipeline);driver.pipeline.start=async(...args)=>{const r=await start(...args);if(fault){fault=false;throw Object.assign(Error('pipelineReady reply lost before any begin'),{effect:'unknown'});}return r;};}
  if(window==='noop-accept'){const warm=submit(20,0);await session.pipeline.waitOperation(warm);fault=true;}
- if(window==='inflight-intent'){
+ if(window==='start-read-race'){
+  const base=(await store.hydration(source)).native,versionFile=path.join(root,'.storyboard-flow/image-native/native/versions',base.versionId+'.json');
+  let releaseRead,readBlocked=false,armed=true;const readGate=new Promise(r=>releaseRead=r),open=fs.open.bind(fs);
+  fs.open=async(...args)=>{const h=await open(...args);if(armed&&args[0]===versionFile){armed=false;const read=h.read.bind(h);h.read=async(...r)=>{if(!readBlocked){readBlocked=true;await readGate;}return read(...r);};}return h;};
+  const oldStart=driver.pipeline.start(base,{maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:16<<20}).then(value=>({kind:'resolved',value}),e=>({kind:'rejected',code:e.code,message:e.message}));await until(()=>readBlocked);
+  let releaseAudit,auditBlocked=false;const auditGate=new Promise(r=>releaseAudit=r),audit=store.validateRecovery.bind(store);store.validateRecovery=async()=>{if(!auditBlocked){auditBlocked=true;await auditGate;}return audit();};
+  connection.terminateOwnedProcess();await connection.exited;const recovering=session.request({kind:'recover'});await until(()=>owner.current()?.generation===2&&auditBlocked);
+  const fresh=owner.current().connection,request=fresh.request.bind(fresh),calls=[];fresh.request=async(...args)=>{calls.push(args[1].kind);return request(...args);};
+  releaseRead();result.oldStart=await oldStart;result.oldGenerationCalls=[...calls];console.log('generation-read-proof '+JSON.stringify({oldStart:result.oldStart,calls}));fs.open=open;releaseAudit();result.recover=await recovering;store.validateRecovery=audit;
+ }else if(window==='inflight-intent'){
   let release,blocked=false,armed=true;const gate=new Promise(r=>release=r),open=fs.open.bind(fs),at=path.join(root,'.storyboard-flow/image-project-v2/settlements');
   fs.open=async(...args)=>{const h=await open(...args);if(armed&&args[0]===at&&args[1]==='r'){const sync=h.sync.bind(h);h.sync=async()=>{if(armed){armed=false;blocked=true;await gate;}return sync();};}return h;};
   const a=submit();await until(()=>blocked);const b=submit(32);connection.terminateOwnedProcess();await connection.exited;
@@ -274,7 +283,16 @@ it('rejects Undo during an active later gesture without a FIFO cycle or an orpha
 
 for(const window of ['prepared','cas','accept','inflight-intent','undo-install','freeze-audit','noop-accept'])it(`replaces only the owned native worker in the same Main after ${window} and preserves original mixed history`,async()=>{
  const f=await fixture(),mode='owned-'+window;await run(f.script,mode);const r=await result(f.root,mode);expect(r.newWorker.generation).toBe(2);expect(r.newWorker.pid).not.toBe(r.oldWorker.pid);expect(r.mainPid).toBeGreaterThan(0);expect(r.recover.kind).toBe('recovered');expect(r.recover.snapshot.phase).toBe(window==='freeze-audit'?'frozen':'active');expect(r.retained).toEqual([]);
- if(window==='inflight-intent'){expect(r.beforeRelease.recovered).toBe(false);expect(r.beforeRelease.phase).toBe('recovering');expect(r.beforeRelease.admission.kind).toBe('rejected');expect(r.recover.operations.filter((o:any)=>o.decision==='notCommitted')).toHaveLength(2);expect(r.afterRecover.project.revision).toBe(0);}
+ if(window==='start-read-race'){
+  const base=(await store.hydration(source)).native,versionFile=path.join(root,'.storyboard-flow/image-native/native/versions',base.versionId+'.json');
+  let releaseRead,readBlocked=false,armed=true;const readGate=new Promise(r=>releaseRead=r),open=fs.open.bind(fs);
+  fs.open=async(...args)=>{const h=await open(...args);if(armed&&args[0]===versionFile){armed=false;const read=h.read.bind(h);h.read=async(...r)=>{if(!readBlocked){readBlocked=true;await readGate;}return read(...r);};}return h;};
+  const oldStart=driver.pipeline.start(base,{maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:16<<20}).then(value=>({kind:'resolved',value}),e=>({kind:'rejected',code:e.code,message:e.message}));await until(()=>readBlocked);
+  let releaseAudit,auditBlocked=false;const auditGate=new Promise(r=>releaseAudit=r),audit=store.validateRecovery.bind(store);store.validateRecovery=async()=>{if(!auditBlocked){auditBlocked=true;await auditGate;}return audit();};
+  connection.terminateOwnedProcess();await connection.exited;const recovering=session.request({kind:'recover'});await until(()=>owner.current()?.generation===2&&auditBlocked);
+  const fresh=owner.current().connection,request=fresh.request.bind(fresh),calls=[];fresh.request=async(...args)=>{calls.push(args[1].kind);return request(...args);};
+  releaseRead();result.oldStart=await oldStart;result.oldGenerationCalls=[...calls];console.log('generation-read-proof '+JSON.stringify({oldStart:result.oldStart,calls}));fs.open=open;releaseAudit();result.recover=await recovering;store.validateRecovery=audit;
+ }else if(window==='inflight-intent'){expect(r.beforeRelease.recovered).toBe(false);expect(r.beforeRelease.phase).toBe('recovering');expect(r.beforeRelease.admission.kind).toBe('rejected');expect(r.recover.operations.filter((o:any)=>o.decision==='notCommitted')).toHaveLength(2);expect(r.afterRecover.project.revision).toBe(0);}
  else if(window==='prepared'){expect(r.initial.kind).toBe('recoveryPending');expect(r.recover.operations).toContainEqual(expect.objectContaining({operationId:r.operationId,decision:'notCommitted',original:'durable-intent'}));expect(r.afterRecover.project.revision).toBe(0);expect(r.afterRecover.undoDepth).toBe(0);}
  else if(window==='undo-install'){expect(r.undo.kind).toBe('settlementPending');expect(r.afterRecover.project.revision).toBe(2);expect(r.afterRecover.redoDepth).toBe(1);}
  else{expect(r.afterRecover.project.revision).toBe(1);expect(r.afterRecover.undoDepth).toBe(1);if(window==='cas'||window==='accept'||window==='noop-accept')expect(r.recover.operations).toContainEqual(expect.objectContaining({operationId:r.operationId,decision:'committed'}));}
@@ -288,4 +306,9 @@ for(const window of ['no-ready','active'])it(`retains ${window} volatile input e
  }finally{if(c.process.exitCode===null&&c.process.signalCode===null){c.process.kill('SIGKILL');await c.done;}
   if(barrier){let alive=true;for(let n=0;n<500;n++){alive=[barrier.newNativePid,barrier.guardPid].some(pid=>{try{process.kill(pid,0);return true;}catch{return false;}});if(!alive)break;await new Promise(r=>setTimeout(r,10));}expect(alive).toBe(false);}
  }
+},60000);
+
+
+it('fences a typed old start stalled in real manifest IO before it can Load or Start the replacement worker',async()=>{
+ const f=await fixture(),mode='owned-start-read-race';await run(f.script,mode);const r=await result(f.root,mode);expect(r.oldStart.kind).toBe('rejected');expect(r.oldStart.code).toBe('worker-unavailable');expect(r.oldGenerationCalls).toEqual([]);expect(r.newWorker.generation).toBe(2);expect(r.recover.kind).toBe('recovered');expect(r.afterRecover.phase).toBe('active');expect(r.next.kind).toBe('settled');expect(r.nextCapture.alpha).toBe(128);expect(r.freeze.kind).toBe('settled');
 },60000);

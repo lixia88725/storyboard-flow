@@ -40,6 +40,13 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
   const fault=()=>{if(owner)fenced=true;if(closing||faultNotified)return;faultNotified=true;for(const f of faultListeners)try{void Promise.resolve(f()).catch(()=>{});}catch{/* Session remains fenced */}};
   const armExit=()=>{const captured=connection,epoch=generation;void captured.exited.then(()=>{if(epoch===generation&&captured===connection)fault();});};armExit();
   const requireCurrent=()=>{if(owner&&(fenced||owner.current()?.connection!==connection||owner.current()?.generation!==generation)){fault();refuse('Worker generation is unavailable; reconcile original input','worker-unavailable','unknown');}return connection;};
+  // Bind the whole logical operation before any local IO. Per-call fencing alone
+  // would let a coroutine stalled in a manifest/source read adopt a new worker.
+  const operationContext=()=>{
+    const target=requireCurrent(),epoch=generation;
+    const identity=()=>{if(epoch!==generation||target!==connection)refuse('Old native operation fenced','worker-unavailable','unknown');};
+    return{connection:target,identity,check(){identity();if(requireCurrent()!==target)refuse('Native operation context changed','worker-unavailable','unknown');}};
+  };
   let current:NativeImageRef|null=null,candidate:string|undefined,previewOperation:string|undefined,serial=0;
   const next=()=>`control-${++serial}`;
   type Job={input:boolean;run():Promise<void>};const jobs:Job[]=[];let running=false,inputRun=0;
@@ -79,18 +86,19 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     // a live prepared receipt already follows native durable object publication.
   };
   const install=async(ref:NativeImageRef)=>{
-    await verifyNative(ref);if(current&&same(current,ref))return;
-    const result=await call(next(),current?{kind:'install',versionId:ref.versionId}:{kind:'load',versionId:ref.versionId});
+    const op=operationContext();await verifyNative(ref);op.check();if(current&&same(current,ref))return;
+    const result=await call(next(),current?{kind:'install',versionId:ref.versionId}:{kind:'load',versionId:ref.versionId});op.check();
     if(!['installed','loaded'].includes(result.reply.kind as string)||result.reply.versionId!==ref.versionId)refuse('Native install identity mismatch','protocol','unknown');current={...ref};
   };
-  const capture=async()=>{if(!current)refuse('No native editing target');return(await call(next(),{kind:'capture'},pipelineReady?.anchorVersion??current.versionId)).frame;};
+  const capture=async()=>{const op=operationContext();if(!current)refuse('No native editing target');const result=await call(next(),{kind:'capture'},pipelineReady?.anchorVersion??current.versionId);op.check();return result.frame;};
   const confirm=async(ref:NativeImageRef,base:NativeImageRef|null)=>{
+    const op=operationContext();
     // An accepted journal record alone does not prove that context installation
     // succeeded. A successful base-checked Capture confirms the actual context.
-    try{await call(next(),{kind:'capture'},ref.versionId);current={...ref};return;}
+    try{await call(next(),{kind:'capture'},ref.versionId);op.check();current={...ref};return;}
     catch(e){if((e as {code?:string}).code!=='conflict')throw e;}
     if(!base)refuse('Native accepted context remains unknown','conflict','unknown');
-    await call(next(),{kind:'capture'},base.versionId);current={...base};await install(ref);
+    await call(next(),{kind:'capture'},base.versionId);op.check();current={...base};await install(ref);op.check();
   };
   const brushFor=(stroke:FlowStroke)=>{
     if(!validProjectStroke(stroke))refuse('Invalid stroke');
@@ -108,27 +116,31 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
   const pipeline:NativePipelineDriver={
     validateStroke(stroke){requireCurrent();brushFor(stroke);},
     async start(base,limits){
+      const op=operationContext();
       if(!requireCurrent().supports('strokePipelineV1'))refuse('Native binary does not support strokePipelineV1','unsupported');
-      await install(base);const{reply}=await call(next(),{kind:'pipelineStart',...limits},base.versionId);
+      await install(base);op.check();const{reply}=await call(next(),{kind:'pipelineStart',...limits},base.versionId);op.check();
       if(reply.kind!=='pipelineReady'||typeof reply.pipelineId!=='string'||typeof reply.documentId!=='string'||typeof reply.anchorVersion!=='string'||!Number.isSafeInteger(reply.epoch)||!same(reply.limits,limits))refuse('Invalid native pipeline start','protocol','unknown');
       pipelineReady={pipelineId:reply.pipelineId,anchorVersion:reply.anchorVersion,documentId:reply.documentId,epoch:Number(reply.epoch),limits:{...limits}};return structuredClone(pipelineReady);
     },
     async begin(operationId,predecessorOperationId,stroke){
+      const op=operationContext();
       const points=pointBatch(stroke.points,stroke.pressures);previewOperation=operationId;
-      const{reply}=await call(`${operationId}-begin`,{kind:'strokeBegin',previewId:operationId,predecessorOperationId,brush:brushFor(stroke),points:points.slice(0,256)},pipelineBase(),undefined,true);
+      const{reply}=await call(`${operationId}-begin`,{kind:'strokeBegin',previewId:operationId,predecessorOperationId,brush:brushFor(stroke),points:points.slice(0,256)},pipelineBase(),undefined,true);op.check();
       if(reply.kind!=='frame')refuse('Native begin did not confirm preview','protocol','unknown');
-      for(let offset=256;offset<points.length;offset+=256)await pipeline.append(operationId,offset+1,stroke.points.slice(offset*2,(offset+256)*2),stroke.pressures?.slice(offset,offset+256));
+      for(let offset=256;offset<points.length;offset+=256){await pipeline.append(operationId,offset+1,stroke.points.slice(offset*2,(offset+256)*2),stroke.pressures?.slice(offset,offset+256));op.check();}
     },
     async append(operationId,fromSeq,xy,pressure){
+      const op=operationContext();
       const points=pointBatch(xy,pressure);for(let offset=0;offset<points.length;offset+=256){
-        const{reply}=await call(`${operationId}-points-${fromSeq+offset}`,{kind:'strokeAppend',previewId:operationId,fromSeq:fromSeq+offset,points:points.slice(offset,offset+256)},pipelineBase(),undefined,true);
+        const{reply}=await call(`${operationId}-points-${fromSeq+offset}`,{kind:'strokeAppend',previewId:operationId,fromSeq:fromSeq+offset,points:points.slice(offset,offset+256)},pipelineBase(),undefined,true);op.check();
         if(reply.kind!=='frame')refuse('Native append did not confirm preview','protocol','unknown');
       }
     },
-    async end(operationId,throughSeq){const{reply}=await call(operationId,{kind:'strokeFinish',previewId:operationId,throughSeq},pipelineBase(),undefined,true);const value=queued(reply);previewOperation=undefined;return value;},
-    async cancel(operationId){const{reply}=await call(next(),{kind:'strokeCancel',previewId:operationId},pipelineBase(),undefined,true);if(reply.kind!=='cancelled')refuse('Native pipeline preview cancellation unconfirmed','protocol','unknown');previewOperation=undefined;},
+    async end(operationId,throughSeq){const op=operationContext();const{reply}=await call(operationId,{kind:'strokeFinish',previewId:operationId,throughSeq},pipelineBase(),undefined,true);op.check();const value=queued(reply);previewOperation=undefined;return value;},
+    async cancel(operationId){const op=operationContext();const{reply}=await call(next(),{kind:'strokeCancel',previewId:operationId},pipelineBase(),undefined,true);op.check();if(reply.kind!=='cancelled')refuse('Native pipeline preview cancellation unconfirmed','protocol','unknown');previewOperation=undefined;},
     async poll(){
-      const{reply}=await call(next(),{kind:'pipelinePoll',pipelineId:pipelineReady?.pipelineId},pipelineBase());
+      const op=operationContext();
+      const{reply}=await call(next(),{kind:'pipelinePoll',pipelineId:pipelineReady?.pipelineId},pipelineBase());op.check();
       if(reply.kind!=='pipelineState'||typeof reply.pipelineId!=='string'||typeof reply.anchorVersion!=='string'||typeof reply.acceptedVersion!=='string'||!Array.isArray(reply.events)||!Number.isSafeInteger(reply.availableSlots)||!Number.isSafeInteger(reply.queueDepth))refuse('Invalid native pipeline poll','protocol','unknown');
       const events:PipelineEvent[]=reply.events.map(event=>{
         if(!record(event)||typeof event.operationId!=='string'||!record(event.result))refuse('Invalid native pipeline event','protocol','unknown');const r=event.result;
@@ -138,13 +150,13 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       });
       return{pipelineId:reply.pipelineId,anchorVersion:reply.anchorVersion,acceptedVersion:reply.acceptedVersion,events,blocked:reply.blocked,availableSlots:Number(reply.availableSlots),queueDepth:Number(reply.queueDepth)};
     },
-    async accept(value,base){const{reply}=await call(next(),{kind:'accept',candidateId:value.candidateId},base.versionId);if(reply.kind==='accepted'){if(!same(nativeRef(reply.receipt),value.native))refuse('Native repeated accept mismatch','protocol','unknown');return;}if(reply.kind!=='acceptQueued'||reply.durable!==false||reply.candidateId!==value.candidateId)refuse('Native pipeline accept admission mismatch','protocol','unknown');current={...value.native};},
-    async stop(){const{reply}=await call(next(),{kind:'pipelineStop',pipelineId:pipelineReady?.pipelineId},pipelineBase());if(reply.kind!=='pipelineStopped'||reply.versionId!==current?.versionId)refuse('Native pipeline barrier mismatch','protocol','unknown');pipelineReady=undefined;}
+    async accept(value,base){const op=operationContext();const{reply}=await call(next(),{kind:'accept',candidateId:value.candidateId},base.versionId);op.check();if(reply.kind==='accepted'){if(!same(nativeRef(reply.receipt),value.native))refuse('Native repeated accept mismatch','protocol','unknown');return;}if(reply.kind!=='acceptQueued'||reply.durable!==false||reply.candidateId!==value.candidateId)refuse('Native pipeline accept admission mismatch','protocol','unknown');current={...value.native};},
+    async stop(){const op=operationContext();const{reply}=await call(next(),{kind:'pipelineStop',pipelineId:pipelineReady?.pipelineId},pipelineBase());op.check();if(reply.kind!=='pipelineStopped'||reply.versionId!==current?.versionId)refuse('Native pipeline barrier mismatch','protocol','unknown');pipelineReady=undefined;}
   };
   const driver:NativeSessionDriver={
     ...(owner?{async restartForRecovery(){
       fenced=true;generation++; // Fence queued Adapter jobs before awaiting owned exit.
-      const handle=await owner.restart();connection=handle.connection;generation=handle.generation;
+      const restarting=generation,handle=await owner.restart();if(restarting!==generation)refuse('Old worker replacement fenced','worker-unavailable','unknown');connection=handle.connection;generation=handle.generation;
       current=null;candidate=undefined;previewOperation=undefined;pipelineReady=undefined;
       faultNotified=false;closing=false;fenced=false;armExit();
     }}:{}),
@@ -152,20 +164,23 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     pipeline,
 
     async preparePaint(operationId,base,stroke){
-      const brush=brushFor(stroke);await install(base);
+      const op=operationContext();
+      const brush=brushFor(stroke);await install(base);op.check();
       const points=pointBatch(stroke.points,stroke.pressures);
       previewOperation=operationId;
-      await call(`${operationId}-begin`,{kind:'strokeBegin',previewId:operationId,brush,points:points.slice(0,1)});
-      for(let offset=1;offset<points.length;offset+=256)await call(`${operationId}-points-${offset}`,{kind:'strokeAppend',previewId:operationId,fromSeq:offset+1,points:points.slice(offset,offset+256)});
-      const value=prepared((await call(operationId,{kind:'strokeFinish',previewId:operationId,throughSeq:points.length})).reply);previewOperation=undefined;return value;
+      await call(`${operationId}-begin`,{kind:'strokeBegin',previewId:operationId,brush,points:points.slice(0,1)});op.check();
+      for(let offset=1;offset<points.length;offset+=256){await call(`${operationId}-points-${offset}`,{kind:'strokeAppend',previewId:operationId,fromSeq:offset+1,points:points.slice(offset,offset+256)});op.check();}
+      const finished=await call(operationId,{kind:'strokeFinish',previewId:operationId,throughSeq:points.length});op.check();const value=prepared(finished.reply);previewOperation=undefined;return value;
     },
     async accept(value,base){
-      const result=await call(next(),{kind:'accept',candidateId:value.candidateId},base.versionId);
+      const op=operationContext();
+      const result=await call(next(),{kind:'accept',candidateId:value.candidateId},base.versionId);op.check();
       if(result.reply.kind!=='accepted'||result.reply.candidateId!==value.candidateId)refuse('Native acceptance mismatch','protocol','unknown');
       const ref=nativeRef(result.reply.receipt);if(!same(ref,value.native))refuse('Native accepted wrong content','protocol','unknown');current=ref;candidate=undefined;return ref;
     },
     async status(operationId):Promise<NativeOperationStatus>{
-      const {reply}=await call(next(),{kind:'status',targetOperationId:operationId});
+      const op=operationContext();
+      const {reply}=await call(next(),{kind:'status',targetOperationId:operationId});op.check();
       if(reply.kind!=='status'||!['absent','intent','prepared','accepted','discarded','failed'].includes(String(reply.state)))refuse('Invalid native operation status','protocol','unknown');
       if(reply.state==='prepared'){
         if(!record(reply.result))refuse('Missing native prepared status','protocol','unknown');
@@ -176,29 +191,32 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       return{state:reply.state as 'absent'|'intent'|'discarded'|'failed'};
     },
     async recoverAccept(candidateId,base,ref){
-      const status=await driver.status(candidateId);
-      if(status.state==='accepted'){if(!same(status.native,ref))refuse('Accepted native receipt disagrees with Main');if(!current)await install(ref);await confirm(ref,base);return;}
+      const op=operationContext();
+      const status=await driver.status(candidateId);op.check();
+      if(status.state==='accepted'){if(!same(status.native,ref))refuse('Accepted native receipt disagrees with Main');if(!current){await install(ref);op.check();}await confirm(ref,base);op.check();return;}
       if(status.state!=='prepared'||!same(status.prepared?.native,ref))refuse('Cannot settle unknown native candidate','conflict','unknown');
       if(!candidate){
-        if(requireCurrent().supports('recoveredCandidateAcceptAtInstalledVersion'))await install(ref);
-        else if(base)await install(base);
+        if(requireCurrent().supports('recoveredCandidateAcceptAtInstalledVersion')){await install(ref);op.check();}
+        else if(base){await install(base);op.check();}
       }
-      const {reply}=await call(next(),{kind:'accept',candidateId});
-      if(reply.kind!=='accepted'||!same(nativeRef(reply.receipt),ref))refuse('Recovered accept receipt mismatch','protocol','unknown');candidate=undefined;await confirm(ref,base);
+      const {reply}=await call(next(),{kind:'accept',candidateId});op.check();
+      if(reply.kind!=='accepted'||!same(nativeRef(reply.receipt),ref))refuse('Recovered accept receipt mismatch','protocol','unknown');candidate=undefined;await confirm(ref,base);op.check();
     },
     async cancelPreview(operationId){
+      const op=operationContext();
       if(previewOperation===undefined)return;
       if(previewOperation!==operationId)refuse('Another native preview remains active','conflict','unknown');
-      const {reply}=await call(next(),{kind:'strokeCancel',previewId:operationId});
+      const {reply}=await call(next(),{kind:'strokeCancel',previewId:operationId});op.check();
       if(reply.kind!=='cancelled')refuse('Native preview cancellation not confirmed','protocol','unknown');previewOperation=undefined;
     },
     async discard(operationId){
-      const {reply}=await call(next(),candidate===operationId?{kind:'discard',candidateId:operationId}:{kind:'abandon',targetOperationId:operationId});
+      const op=operationContext();
+      const {reply}=await call(next(),candidate===operationId?{kind:'discard',candidateId:operationId}:{kind:'abandon',targetOperationId:operationId});op.check();
       if(reply.kind!=='discarded'||reply.candidateId!==operationId)refuse('Native discard receipt mismatch','protocol','unknown');candidate=undefined;
     },
     install,
-    async freeze(){const{reply}=await call(next(),{kind:'freeze'});if(reply.kind!=='frozen'||reply.versionId!==(current?.versionId??null))refuse('Native freeze identity failed','protocol','unknown');},
-    async close(){closing=true;const{reply}=await call(next(),{kind:'close'});if(reply.kind!=='closed')refuse('Native close failed','protocol','unknown');await connection.exited;if(owner)await owner.dispose();}
+    async freeze(){const op=operationContext();const{reply}=await call(next(),{kind:'freeze'});op.check();if(reply.kind!=='frozen'||reply.versionId!==(current?.versionId??null))refuse('Native freeze identity failed','protocol','unknown');},
+    async close(){const op=operationContext();closing=true;const{reply}=await call(next(),{kind:'close'});op.identity();if(reply.kind!=='closed')refuse('Native close failed','protocol','unknown');await op.connection.exited;op.identity();if(owner){await owner.dispose();op.identity();}}
   };
   return {
     driver,verifyNative,capture,
@@ -207,10 +225,11 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
      * One bound handle streams into one bounded transport payload, identity is
      * checked before/after and native independently checks the declared SHA. */
     async openRetained(operationId:string,source:RetainedSourceObject,formatHint:string){
-      const payload=await boundedFile(source.path,64<<20,source.identity);
+      const op=operationContext();
+      const payload=await boundedFile(source.path,64<<20,source.identity);op.check();
       if(payload.length!==source.byteLength||sha(payload)!==source.digest)refuse('Retained source digest changed','corrupt','retained');
-      return prepared((await call(operationId,{kind:'open',source:{digest:source.digest,byteLength:source.byteLength,formatHint}},null,payload)).reply);
+      const opened=await call(operationId,{kind:'open',source:{digest:source.digest,byteLength:source.byteLength,formatHint}},null,payload);op.check();return prepared(opened.reply);
     },
-    async acceptOpened(value:PreparedImage){const{reply}=await call(next(),{kind:'accept',candidateId:value.candidateId},null);if(reply.kind!=='accepted')refuse('Source acceptance failed','protocol','unknown');const ref=nativeRef(reply.receipt);if(!same(ref,value.native))refuse('Source acceptance identity mismatch');current=ref;candidate=undefined;return ref;}
+    async acceptOpened(value:PreparedImage){const op=operationContext();const{reply}=await call(next(),{kind:'accept',candidateId:value.candidateId},null);op.check();if(reply.kind!=='accepted')refuse('Source acceptance failed','protocol','unknown');const ref=nativeRef(reply.receipt);if(!same(ref,value.native))refuse('Source acceptance identity mismatch');current=ref;candidate=undefined;return ref;}
   };
 }
