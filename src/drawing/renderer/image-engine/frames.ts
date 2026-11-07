@@ -183,9 +183,9 @@ export function createImageFrameStore(initialIdentity: FrameIdentity, limits: Fr
     return { identity: current.identity, needsKeyframe: current.needsKeyframe,
       frame: current.header ? { header: current.header, pixels: current.readRegion()! } : null };
   };
-  const emit = () => {
+  const emit = (includeDisposed = false) => {
     publishing = true;
-    try { for (const listener of [...listeners]) { if (disposed) break; if (listeners.has(listener)) try { listener(view()); } catch { /* Consumers cannot roll back pixels. */ } } }
+    try { for (const listener of [...listeners]) { if (disposed && !includeDisposed) break; if (listeners.has(listener)) try { listener(view()); } catch { /* Consumers cannot roll back pixels. */ } } }
     finally { publishing = false; }
   };
   const blocked = () => disposed ? fail('disposed', 'Frame store is disposed') : publishing ? fail('busy', 'Frame publication in progress') : null;
@@ -226,6 +226,10 @@ export function createImageFrameStore(initialIdentity: FrameIdentity, limits: Fr
       } catch { return fail('resource-limit', 'Could not allocate frame tiles'); }
       emit(); return { ok: true, value: h.frameSeq };
     },
-    dispose() { disposed = true; frame = null; needsKeyframe = true; listeners.clear(); },
+    dispose() {
+      if (disposed) return;
+      disposed = true; frame = null; needsKeyframe = true;
+      try { emit(true); } finally { listeners.clear(); }
+    },
   };
 }

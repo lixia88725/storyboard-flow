@@ -77,3 +77,40 @@ The pure tests do not certify Electron MessagePort copying, a real Canvas,
 GUI timing, pressure hardware, worker crashes, storage, or Windows rendering.
 Integration must test those paths independently and add frames.test.ts to the
 approved explicit suite list when integrating this isolated file cluster.
+
+## Canvas display Adapter
+
+`bindImageFrameCanvas(canvas, store)` projects the same FrameStore into each
+surface. First mount, explicit refresh, generation change, sequence jump or
+intrinsic resize reads the complete view. Consecutive updates read only damage
+regions, using absolute `putImageData` so alpha-zero erases prior pixels.
+The Adapter sets the intrinsic bitmap to document dimensions; DOM/CSS owns its
+screen geometry, zoom and scaling. It performs no image edits or compositing of
+layers. Preparing/error states clear and hide pixels before another generation
+can appear. Disposing a binding unsubscribes and clears only that local bitmap;
+other surfaces and the owner keep working. Disposing the owner emits a final
+concealed view to all bindings before releasing listeners.
+
+Run `node scripts/flow-image-frame-display-smoke.mjs` after a successful build.
+The dedicated driver uses a hidden Electron window, a fresh canonical system-temp
+profile and synthetic frames. Clipboard, Trash, external launches, network and
+permissions are blocked. It exercises MessageChannelMain → sandboxed preload →
+main-world DOM MessagePort → FrameStore → two real canvases at different CSS
+scales, with actual pixel comparison and capturePage screen samples. Main rejects
+ArrayBuffer in its transfer list; regular messages clone exact Uint8Array bytes.
+The probe verifies sender mutation does not change received pixels, and separately
+checks DOM MessagePort transfer detaches a buffer.
+
+Optional `FLOW_NATIVE_FRAME_GOLDENS=/absolute/flow-native-process-*/frames`
+replays the native synthetic runner's first four recorded frames (keyframe,
+LiveStroke deltas, full capture). The driver restricts this input to a canonical
+system-temp native-runner directory and regular bounded JSON/RGBA files. This is
+recorded-frame interoperability, not a live native process or product integration.
+The chief's native-process/project-session check remains separate.
+
+Evidence is saved in each flow-image-frame-display-* temp directory: result.json,
+scaled-surfaces.png and epoch-preparing.png. On macOS this isolated Electron
+launch may require the Harness's sandbox escalation; no user window is targeted.
+Canvas2D internally premultiplies colors, so general low-alpha RGB round trips
+must be evaluated separately. The smoke uses exact opaque/clear/saturated-color
+RGBA and checks actual screenshot composites within one code value.

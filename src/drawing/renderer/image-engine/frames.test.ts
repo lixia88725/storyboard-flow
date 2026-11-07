@@ -184,6 +184,12 @@ describe('one complete frame owner for both surfaces', () => {
       expect(Buffer.compare(store.snapshot().frame!.pixels, reference)).toBe(0);
     }
   });
+  it('notifies both borrowed surfaces to conceal pixels when the owner is disposed', () => {
+    const store = seed(), a: FrameView[] = [], b: FrameView[] = []; store.subscribe(v => a.push(v)); store.subscribe(v => b.push(v));
+    store.dispose(); expect(a).toHaveLength(1); expect(b).toHaveLength(1);
+    for (const v of [a[0], b[0]]) { expect(v.header).toBeNull(); expect(v.needsKeyframe).toBe(true); expect(v.readRegion()).toBeNull(); }
+    store.dispose(); expect(a).toHaveLength(1); expect(b).toHaveLength(1);
+  });
   it('refuses reentrant mutation and releases listener ownership on dispose', () => {
     const store = seed(), results: unknown[] = []; store.subscribe(() => {
       results.push(store.accept(delta(3), rgba(...clear)), store.reset(who));
