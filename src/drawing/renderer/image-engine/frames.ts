@@ -112,28 +112,87 @@ export function validateImageFrame(header: unknown, payload: unknown, limits: Fr
 }
 
 export type FrameSnapshot = { identity: FrameIdentity; needsKeyframe: boolean; frame: { header: InstalledFrameHeader; pixels: Uint8Array } | null };
-/** One session-scoped pixel owner. Surfaces subscribe and borrow snapshots; unmounting a
- * surface never resets this owner. Snapshot byte arrays are private to each caller.
- * Mutating entry points refuse observer reentrancy. Subscribers cannot fail an install.
+export type FrameRegion = { x: number; y: number; w: number; h: number };
+/** A stable immutable generation, with copies made only for regions explicitly read.
+ * Keeping an old view retains its old tiles, just as keeping a captured snapshot retains bytes.
+ */
+export type FrameView = { identity: FrameIdentity; needsKeyframe: boolean; header: InstalledFrameHeader | null;
+  damage: readonly FrameRegion[];
+  readRegion(region?: FrameRegion): Uint8Array | null };
+const TILE_SIDE = 256;
+type Backing = { width: number; height: number; columns: number; tiles: Map<number, Uint8Array> };
+function readRegion(backing: Backing, region?: FrameRegion): Uint8Array {
+  const r = region ?? { x: 0, y: 0, w: backing.width, h: backing.height };
+  if (!integer(r.x) || !integer(r.y) || !integer(r.w, 1) || !integer(r.h, 1) || r.w > backing.width || r.h > backing.height ||
+      r.x > backing.width - r.w || r.y > backing.height - r.h) throw RangeError('Invalid frame read region');
+  const pixels = new Uint8Array(r.w * r.h * 4);
+  for (let row = 0; row < r.h; row++) {
+    const y = r.y + row, cy = Math.floor(y / TILE_SIDE);
+    for (let col = 0; col < r.w;) {
+      const x = r.x + col, cx = Math.floor(x / TILE_SIDE), chunkWidth = Math.min(TILE_SIDE, backing.width - cx * TILE_SIDE);
+      const count = Math.min(r.w - col, chunkWidth - x % TILE_SIDE);
+      const chunk = backing.tiles.get(cy * backing.columns + cx)!;
+      const start = ((y % TILE_SIDE) * chunkWidth + x % TILE_SIDE) * 4;
+      pixels.set(chunk.subarray(start, start + count * 4), (row * r.w + col) * 4); col += count;
+    }
+  }
+  return pixels;
+}
+function applyFrame(header: ImageFrameHeader, pixels: Uint8Array, previous: Backing | null): Backing {
+  const next: Backing = { width: header.width, height: header.height, columns: Math.ceil(header.width / TILE_SIDE),
+    tiles: new Map(previous?.tiles) };
+  const writable = new Set<number>();
+  for (const tile of header.tiles) for (let row = 0; row < tile.h; row++) {
+    const y = tile.y + row, cy = Math.floor(y / TILE_SIDE);
+    for (let col = 0; col < tile.w;) {
+      const x = tile.x + col, cx = Math.floor(x / TILE_SIDE), chunkWidth = Math.min(TILE_SIDE, header.width - cx * TILE_SIDE);
+      const count = Math.min(tile.w - col, chunkWidth - x % TILE_SIDE), id = cy * next.columns + cx;
+      if (!writable.has(id)) {
+        const old = next.tiles.get(id);
+        next.tiles.set(id, old ? new Uint8Array(old) : new Uint8Array(chunkWidth * Math.min(TILE_SIDE, header.height - cy * TILE_SIDE) * 4));
+        writable.add(id);
+      }
+      const start = tile.offset + (row * tile.w + col) * 4;
+      next.tiles.get(id)!.set(pixels.subarray(start, start + count * 4), ((y % TILE_SIDE) * chunkWidth + x % TILE_SIDE) * 4);
+      col += count;
+    }
+  }
+  return next;
+}
+
+/** One session-scoped pixel owner. Installation copies only touched internal tiles.
+ * Notifications carry stable region views, never automatic full-canvas byte copies.
+ * snapshot() explicitly captures a complete private raster; surfaces should read dirty
+ * regions from view() instead. Mutating entry points refuse observer reentrancy.
  */
 export function createImageFrameStore(initialIdentity: FrameIdentity, limits: FrameLimits = defaultFrameLimits) {
   let owner = identity(initialIdentity);
   if (!owner) throw Error('Invalid frame store identity');
   const cap = limitsOf(limits);
   let disposed = false, publishing = false, needsKeyframe = true, lastSeq = 0, lastInputThrough = 0, hasVersion = false;
-  let frame: { header: ImageFrameHeader; pixels: Uint8Array } | null = null;
-  const listeners = new Set<(snapshot: FrameSnapshot) => void>();
-  const snapshot = (): FrameSnapshot => ({ identity: { ...owner! }, needsKeyframe,
-    frame: disposed || needsKeyframe || !frame ? null : { header: installedHeader(frame.header), pixels: frame.pixels.slice() } });
+  let frame: { header: ImageFrameHeader; backing: Backing } | null = null;
+  const listeners = new Set<(view: FrameView) => void>();
+  const view = (): FrameView => {
+    const held = disposed || needsKeyframe ? null : frame;
+    return { identity: { ...owner! }, needsKeyframe, header: held ? installedHeader(held.header) : null,
+      damage: held ? held.header.tiles.map(({ x, y, w, h }) => ({ x, y, w, h })) : [],
+      readRegion: region => held ? readRegion(held.backing, region) : null };
+  };
+  const snapshot = (): FrameSnapshot => {
+    const current = view();
+    return { identity: current.identity, needsKeyframe: current.needsKeyframe,
+      frame: current.header ? { header: current.header, pixels: current.readRegion()! } : null };
+  };
   const emit = () => {
     publishing = true;
-    try { for (const listener of [...listeners]) { if (disposed) break; if (listeners.has(listener)) try { listener(snapshot()); } catch { /* Consumer failure cannot roll back pixels. */ } } }
+    try { for (const listener of [...listeners]) { if (disposed) break; if (listeners.has(listener)) try { listener(view()); } catch { /* Consumers cannot roll back pixels. */ } } }
     finally { publishing = false; }
   };
   const blocked = () => disposed ? fail('disposed', 'Frame store is disposed') : publishing ? fail('busy', 'Frame publication in progress') : null;
   return {
     snapshot,
-    subscribe(listener: (snapshot: FrameSnapshot) => void) {
+    view,
+    subscribe(listener: (view: FrameView) => void) {
       if (disposed) return () => {};
       listeners.add(listener); return () => { listeners.delete(listener); };
     },
@@ -161,14 +220,10 @@ export function createImageFrameStore(initialIdentity: FrameIdentity, limits: Fr
       if (hasVersion && h.imageVersionRef === null)
         return fail('invalid-frame', 'An installed document version cannot become unversioned');
       try {
-        const next = h.baseFrameSeq === null ? new Uint8Array(h.width * h.height * 4) : frame!.pixels.slice();
-        for (const t of h.tiles) for (let row = 0; row < t.h; row++) {
-          const start = t.offset + row * t.w * 4;
-          next.set(pixels.subarray(start, start + t.w * 4), ((t.y + row) * h.width + t.x) * 4);
-        }
-        frame = { header: h, pixels: next }; lastSeq = h.frameSeq; lastInputThrough = h.inputThrough;
+        const backing = applyFrame(h, pixels, h.baseFrameSeq === null ? null : frame!.backing);
+        frame = { header: h, backing }; lastSeq = h.frameSeq; lastInputThrough = h.inputThrough;
         hasVersion ||= h.imageVersionRef !== null; needsKeyframe = false;
-      } catch { return fail('resource-limit', 'Could not allocate a complete frame'); }
+      } catch { return fail('resource-limit', 'Could not allocate frame tiles'); }
       emit(); return { ok: true, value: h.frameSeq };
     },
     dispose() { disposed = true; frame = null; needsKeyframe = true; listeners.clear(); },

@@ -46,16 +46,26 @@ Hosts may tighten them. Validation uses only data properties, not accessors.
 
 ## Surface ownership and recovery
 
-All validated tiles are applied to private staging pixels before publishing.
-Both surfaces subscribe to the one store, then consume complete snapshots.
-Snapshot pixels are always the entire width×height×4 backing, never the transport
-patch payload. InstalledFrameHeader deliberately omits tiles/baseFrameSeq to
-avoid interpreting full-backing offsets as incoming packed tile offsets.
-Each snapshot has its own metadata/bytes, so a consumer cannot corrupt another
-surface or the owner. Unsubscribe removes only that listener. It does not clear
-pixels; a remounted surface calls snapshot to get the entire current backing.
-Mutating entry points refuse observer reentrancy; observer exceptions cannot
-roll back a successful frame. Dispose releases backing and listeners.
+All validated tiles are applied to copy-on-write 256-pixel chunks before publishing.
+Only touched chunks are copied on a delta. Both surfaces subscribe to one store;
+notifications carry a stable FrameView (metadata, damage rectangles and readRegion),
+not automatic full-canvas byte copies. readRegion returns private tightly packed
+bytes for the requested region. A view captures its generation: later installs
+cannot change its pixels. Consumers holding old views retain those old chunks.
+
+On first mount a surface reads the entire view once; subsequent notifications
+read only damage rectangles. Unsubscribe removes only that listener and does not
+clear pixels. view() is cheap; snapshot() is an explicit full-raster capture for
+export, diagnostics and tests. Snapshot pixels are always width×height×4 bytes.
+InstalledFrameHeader omits tiles/baseFrameSeq so full-backing offsets cannot be
+confused with the incoming packed tile directory. Notification damage contains
+only geometry, with no packed-payload offsets.
+
+Metadata and region output are private to each caller, so consumers cannot
+corrupt each other or the owner. Mutating entry points refuse observer reentrancy;
+observer exceptions cannot roll back installation. Dispose releases current
+backing and listeners; already borrowed views remain immutable caller-owned
+captures. No Canvas, port, pressure or input queue is implemented here.
 
 The transport must bound queued frames and acknowledge an installed sequence.
 When coalescing, recompose the union of dirty regions since that acknowledged

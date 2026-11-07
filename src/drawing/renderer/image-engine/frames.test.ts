@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createImageFrameStore, validateImageFrame, type FrameIdentity, type ImageFrameHeader, type FrameSnapshot } from './frames';
+import { createImageFrameStore, validateImageFrame, type FrameIdentity, type ImageFrameHeader, type FrameView } from './frames';
 
 const who: FrameIdentity = { sessionId: 'session', incarnation: 'incarnation', documentId: 'doc', workerEpoch: 0, epoch: 0 };
 const rgba = (...v: number[]) => new Uint8Array(v);
@@ -140,9 +140,9 @@ describe('one complete frame owner for both surfaces', () => {
     expect(store.accept(key({ frameSeq: 3, imageVersionRef: null, previewId: 'new-live', inputThrough: 3 }), new Uint8Array(16))).toMatchObject({ code: 'invalid-frame' });
   });
   it('publishes the same complete state to two subscribers, isolating bytes and observer failures', () => {
-    const store = seed(), a: FrameSnapshot[] = [], b: FrameSnapshot[] = [];
-    const stop = store.subscribe(s => { a.push(structuredClone(s)); s.frame!.pixels.fill(9); s.frame!.header.width = 9; throw Error('bad consumer'); });
-    store.subscribe(s => b.push(s)); expect(store.accept(delta(), rgba(...blue)).ok).toBe(true);
+    const store = seed(), a: { header: unknown; pixels: number[] }[] = [], b: { header: unknown; pixels: number[] }[] = [];
+    const stop = store.subscribe(s => { a.push({ header: { ...s.header }, pixels: Array.from(s.readRegion()!) }); s.readRegion()!.fill(9); s.header!.width = 9; throw Error('bad consumer'); });
+    store.subscribe(s => b.push({ header: { ...s.header }, pixels: Array.from(s.readRegion()!) })); expect(store.accept(delta(), rgba(...blue)).ok).toBe(true);
     expect(a[0]).toEqual(b[0]); expect(pixels(store)).toEqual([...blue, ...red, ...red, ...red]);
     stop(); expect(store.accept(delta(3), rgba(...clear)).ok).toBe(true); expect(a).toHaveLength(1); expect(b).toHaveLength(2);
     // A newly mounted surface starts from this entire backing, not the latest one-pixel patch.
@@ -153,6 +153,36 @@ describe('one complete frame owner for both surfaces', () => {
     expect(store.accept(key({ frameSeq: 3, inputThrough: 1 }), new Uint8Array(16))).toMatchObject({ code: 'stale-frame' });
     expect(store.accept(key({ frameSeq: 3, inputThrough: 3, imageVersionRef: null, previewId: 'live' }), new Uint8Array(16))).toMatchObject({ code: 'invalid-frame' });
     expect(store.accept(key({ frameSeq: 3, inputThrough: 3 }), new Uint8Array(16)).ok).toBe(true);
+  });
+  it('keeps old views stable across a delta and reads only requested regions across internal tile seams', () => {
+    const store = createImageFrameStore(who), width = 258;
+    const bytes = new Uint8Array(width * 2 * 4);
+    for (let i = 0; i < width * 2; i++) bytes.set(red, i * 4);
+    const h = key({ width, height: 2, tiles: [{ x: 0, y: 0, w: width, h: 2, offset: 0, length: bytes.length }] });
+    expect(store.accept(h, bytes).ok).toBe(true); const old = store.view();
+    const notifications: FrameView[] = []; store.subscribe(v => notifications.push(v));
+    expect(store.accept(delta(2, { width, height: 2, tiles: [{ x: 255, y: 0, w: 3, h: 2, offset: 0, length: 24 }] }), rgba(...blue, ...clear, ...blue, ...clear, ...blue, ...clear)).ok).toBe(true);
+    expect(Array.from(old.readRegion({ x: 255, y: 0, w: 3, h: 2 })!)).toEqual([...red, ...red, ...red, ...red, ...red, ...red]);
+    expect(Array.from(notifications[0].readRegion({ x: 255, y: 0, w: 3, h: 2 })!)).toEqual([...blue, ...clear, ...blue, ...clear, ...blue, ...clear]);
+    expect(notifications[0]).not.toHaveProperty('pixels');
+    expect(notifications[0].damage).toEqual([{ x: 255, y: 0, w: 3, h: 2 }]);
+    expect(() => old.readRegion({ x: 258, y: 0, w: 1, h: 1 })).toThrow(RangeError);
+    expect(() => old.readRegion({ x: 0, y: 0, w: Number.MAX_SAFE_INTEGER, h: 1 })).toThrow(RangeError);
+    store.dispose(); expect(store.view().readRegion()).toBeNull();
+  });
+  it('matches a flat reference after overlapping updates across horizontal and vertical chunk seams', () => {
+    const store = createImageFrameStore(who), width = 259, height = 258;
+    const reference = new Uint8Array(width * height * 4);
+    expect(store.accept(key({ width, height, tiles: [{ x: 0, y: 0, w: width, h: height, offset: 0, length: reference.length }] }), reference).ok).toBe(true);
+    const regions = [{ x: 254, y: 254, w: 5, h: 4 }, { x: 0, y: 255, w: 259, h: 2 }, { x: 255, y: 0, w: 4, h: 258 }, { x: 12, y: 12, w: 3, h: 3 }];
+    for (let i = 0; i < 16; i++) {
+      const r = regions[i % regions.length], patch = new Uint8Array(r.w * r.h * 4);
+      for (let j = 0; j < patch.length; j++) patch[j] = (i * 17 + j * 11) % 256;
+      for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) for (let c = 0; c < 4; c++)
+        reference[((r.y + y) * width + r.x + x) * 4 + c] = patch[(y * r.w + x) * 4 + c];
+      expect(store.accept(delta(i + 2, { width, height, tiles: [{ ...r, offset: 0, length: patch.length }] }), patch).ok).toBe(true);
+      expect(Buffer.compare(store.snapshot().frame!.pixels, reference)).toBe(0);
+    }
   });
   it('refuses reentrant mutation and releases listener ownership on dispose', () => {
     const store = seed(), results: unknown[] = []; store.subscribe(() => {
