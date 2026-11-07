@@ -1,6 +1,8 @@
 //! Stage A native host. One mutable engine context; Flow alone decides global user history.
 //! Host-pinned immutable versions survive process restarts; native History is scratch only.
+mod context;
 mod journal;
+pub use context::FloatingAction;
 mod output;
 pub use output::OutputFormat;
 mod pipeline;
@@ -94,6 +96,23 @@ pub struct Request {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Command {
+    Summary {
+        #[serde(rename = "maxBytes")]
+        max_bytes: usize,
+    },
+    SelectLayerContext {
+        #[serde(rename = "layerId")]
+        layer_id: u64,
+        #[serde(rename = "expectedContextGeneration")]
+        expected_context_generation: u64,
+    },
+    Floating {
+        #[serde(rename = "previewId")]
+        preview_id: String,
+        #[serde(rename = "expectedContextGeneration")]
+        expected_context_generation: u64,
+        action: FloatingAction,
+    },
     New {
         width: u32,
         height: u32,
@@ -262,6 +281,7 @@ struct Candidate {
     checkpoint: Option<Checkpoint>,
     from_live: bool,
     recovered: bool,
+    from_floating: bool,
 }
 struct StoreSlot {
     value: Option<Store>,
@@ -296,6 +316,9 @@ impl StoreSlot {
         self.value = Some(store);
         Ok(())
     }
+    fn context_unsettled(&self) -> bool {
+        self.value.as_ref().is_none_or(|s| s.context_unsettled())
+    }
     fn cache_policy(&self) -> &'static str {
         self.policy
     }
@@ -325,6 +348,8 @@ pub struct Host {
     store: StoreSlot,
     pipeline: Option<pipeline::Pipeline>,
     engine: Session,
+    context_generation: u64,
+    floating_context: Option<context::FloatingContext>,
     identity: Option<(String, String)>,
     current: Option<String>,
     source: Option<Source>,
@@ -381,6 +406,8 @@ impl Host {
             store,
             pipeline: None,
             engine,
+            context_generation: 0,
+            floating_context: None,
             identity: None,
             current: None,
             source: None,
@@ -471,6 +498,8 @@ impl Host {
             .clone())
     }
     pub fn handle(&mut self, r: Request, payload: Vec<u8>) -> Response {
+        let before = self.context_stamp();
+        let generation = self.context_generation;
         let result = self.check(&r).and_then(|_| {
             if self.pipeline.is_some()
                 || matches!(
@@ -485,6 +514,9 @@ impl Host {
                 self.run(&r, &payload)
             }
         });
+        if self.context_generation == generation && self.context_stamp() != before {
+            self.advance_context();
+        }
         let (body, payload) = match result {
             Ok(v) => v,
             Err(e) => (json!({"kind":"failure","error":e}), vec![]),
@@ -543,19 +575,32 @@ impl Host {
             Ok(v) => v,
             Err(e) => {
                 if let Some(c) = checkpoint {
-                    self.engine.host_restore(c).map_err(native)?;
+                    if let Some(id) = self.floating_context.as_ref().map(|g| g.id.clone()) {
+                        self.restore_float_checkpoint(&id, c)?;
+                    } else {
+                        self.engine.host_restore(c).map_err(native)?;
+                    }
                 }
                 return Err(e);
             }
         };
         let mut body = json!({"kind":"prepared","candidateId":r.operation_id,"baseVersion":r.base_version,"receipt":receipt});
+        if let Some(floating) = &self.floating_context {
+            body["floatingPreviewId"] = json!(floating.id);
+            body["floatingThroughSeq"] = json!(floating.through);
+            body["contextGeneration"] = json!(self.context_generation);
+        }
         if let Some(through) = live_input {
             body["fromLive"] = json!(true);
             body["inputThrough"] = json!(through);
         }
         if let Err(e) = self.store.op_write(&r.operation_id, "prepared", &body) {
             if let Some(c) = checkpoint {
-                self.engine.host_restore(c).map_err(native)?;
+                if let Some(id) = self.floating_context.as_ref().map(|g| g.id.clone()) {
+                    self.restore_float_checkpoint(&id, c)?;
+                } else {
+                    self.engine.host_restore(c).map_err(native)?;
+                }
             }
             return Err(e);
         }
@@ -566,6 +611,7 @@ impl Host {
             checkpoint,
             from_live: live_input.is_some(),
             recovered: false,
+            from_floating: self.floating_context.is_some(),
         });
         Ok(body)
     }
@@ -574,6 +620,18 @@ impl Host {
             return Err(Error::none("invalid-input", "unexpected binary payload"));
         }
         match &r.body {
+            Command::Summary { max_bytes } => {
+                Ok((self.context_summary(*max_bytes, false)?, vec![]))
+            }
+            Command::SelectLayerContext {
+                layer_id,
+                expected_context_generation,
+            } => self.select_context(r, *layer_id, *expected_context_generation),
+            Command::Floating {
+                preview_id,
+                expected_context_generation,
+                action,
+            } => self.floating_command(r, preview_id, *expected_context_generation, action),
             Command::New { width, height } => {
                 if let Some(v) = self.replay(r)? {
                     return Ok((v, vec![]));
@@ -676,6 +734,21 @@ impl Host {
                 Ok((json!({"kind":"loaded","versionId":version_id}), vec![]))
             }
             Command::Edit { edit } => {
+                if matches!(
+                    edit,
+                    ImageEdit::SelectLayer { .. } | ImageEdit::Float { .. } | ImageEdit::DropFloat
+                ) {
+                    return Err(Error::none(
+                        "unsupported",
+                        "legacy context edit retired; use selectLayerContext/floating with explicit identity",
+                    ));
+                }
+                if self.floating_context.is_some() {
+                    return Err(Error::none(
+                        "busy",
+                        "explicitly cancel or drop floating selection before another edit",
+                    ));
+                }
                 if let Some(v) = self.replay(r)? {
                     return Ok((v, vec![]));
                 }
@@ -697,12 +770,6 @@ impl Host {
                     self.store.op_write(&r.operation_id, "failed", &failure)?;
                     return Ok((failure, vec![]));
                 }
-                // Move/floating gesture is transient until explicit DropFloat. Preserve its context and show it, without version success.
-                if matches!(edit, ImageEdit::Float { .. }) {
-                    let transient = json!({"kind":"transient","durable":false});
-                    self.store.op_write(&r.operation_id,"failed",&json!({"kind":"failure","error":Error::retained("unsettled","floating gesture was transient; explicit drop/cancel required")}))?;
-                    return Ok((transient, vec![]));
-                }
                 let v = self.prepare(r, Some(checkpoint), None)?;
                 Ok((v, vec![]))
             }
@@ -721,6 +788,9 @@ impl Host {
                     ));
                 }
                 valid_id(preview_id)?;
+                if self.floating_context.is_some() {
+                    return Err(Error::none("busy", "settle floating owner before a stroke"));
+                }
                 if points.is_empty() || points.len() > 4096 || !brush.is_object() {
                     return Err(Error::none("invalid-input", "stroke begin points/brush"));
                 }
@@ -884,6 +954,7 @@ impl Host {
                         checkpoint: None,
                         from_live: v["fromLive"] == true,
                         recovered: true,
+                        from_floating: v["floatingPreviewId"].is_string(),
                     });
                 }
                 let c = self
@@ -927,6 +998,7 @@ impl Host {
                         ))
                     })?;
                 }
+                let from_floating = c.from_floating;
                 self.current = Some(c.receipt.version_id.clone());
                 if !recovered && c.from_live {
                     // The exact live pixels were adopted. Promote the previous visual prefix
@@ -940,6 +1012,9 @@ impl Host {
                     self.last_frame = None;
                 }
                 self.candidate = None;
+                if from_floating {
+                    self.floating_context = None;
+                }
                 Ok((result, vec![]))
             }
             Command::Discard { candidate_id } => {
@@ -953,6 +1028,41 @@ impl Host {
                         "accepted candidate cannot be discarded",
                     ));
                 }
+                self.base(r)?;
+                if self.candidate.is_none() {
+                    if self.pipeline.is_some()
+                        || self.gesture.is_some()
+                        || self.floating_context.is_some()
+                        || self.engine.active().is_some_and(|s| s.floating.is_some())
+                    {
+                        return Err(Error::none(
+                            "busy",
+                            "settle transient context before recovered discard",
+                        ));
+                    }
+                    let v = self
+                        .store
+                        .op_read(candidate_id, "prepared")?
+                        .ok_or_else(|| {
+                            Error::none("not-found", "candidate has no durable prepared receipt")
+                        })?;
+                    let base = v["baseVersion"].as_str().map(str::to_owned);
+                    if base != self.current {
+                        return Err(Error::none(
+                            "conflict",
+                            "recovered discard requires original base installed",
+                        ));
+                    }
+                    self.candidate = Some(Candidate {
+                        id: candidate_id.clone(),
+                        base,
+                        receipt: serde_json::from_value(v["receipt"].clone()).map_err(native)?,
+                        checkpoint: None,
+                        from_live: v["fromLive"] == true,
+                        recovered: true,
+                        from_floating: v["floatingPreviewId"].is_string(),
+                    });
+                }
                 let c = self
                     .candidate
                     .as_ref()
@@ -960,6 +1070,22 @@ impl Host {
                 if &c.id != candidate_id {
                     return Err(Error::none("conflict", "candidate id mismatch"));
                 }
+                if c.base != self.current {
+                    return Err(Error::none(
+                        "conflict",
+                        "discard requires original candidate base installed",
+                    ));
+                }
+                // Validate a recovered base before recording retirement. On read failure the
+                // durable prepared candidate remains queryable and the same host may retry.
+                let recovered_base = if c.checkpoint.is_none() {
+                    c.base
+                        .as_ref()
+                        .map(|base| self.store.load(base))
+                        .transpose()?
+                } else {
+                    None
+                };
                 let result = json!({"kind":"discarded","candidateId":candidate_id});
                 // Keep the candidate and its rollback obligation until the durable retirement
                 // receipt succeeds. A failed journal write must not unlock new edits on its pixels.
@@ -971,11 +1097,11 @@ impl Host {
                     self.engine.host_restore(checkpoint).map_err(|e| {
                         Error::unknown(format!("discard persisted but restore failed: {e}"))
                     })?;
-                } else if let Some(base) = &c.base {
-                    let l = self.store.load(base)?;
+                } else if let Some(l) = recovered_base {
                     self.engine.host_install(l.doc, l.target).map_err(|e| {
                         Error::unknown(format!("discard persisted but install failed: {e}"))
                     })?;
+                    self.source = l.source;
                 } else if let Some(i) = self.engine.active_index() {
                     self.engine.close(i);
                     self.source = None;
@@ -1016,7 +1142,7 @@ impl Host {
                 Ok((v, vec![]))
             }
             Command::Install { version_id } => {
-                self.idle()?;
+                self.context_idle_for_install()?;
                 self.base(r)?;
                 let loaded = self.store.load(version_id)?;
                 self.engine
@@ -1087,6 +1213,7 @@ impl Host {
                 if !self.frozen
                     || self.candidate.is_some()
                     || self.gesture.is_some()
+                    || self.floating_context.is_some()
                     || self.engine.active().is_some_and(|s| s.floating.is_some())
                     || !self.store.unresolved()?.is_empty()
                 {
@@ -1131,6 +1258,7 @@ impl Host {
                 }
                 if self.gesture.is_some()
                     || self.candidate.is_some()
+                    || self.floating_context.is_some()
                     || self.engine.active().is_some_and(|s| s.floating.is_some())
                 {
                     return Err(Error::none("busy", "unsettled image obligations"));
@@ -1151,6 +1279,16 @@ impl Host {
         }
     }
     fn preview(&mut self, r: &Request) -> Result<(Value, Vec<u8>)> {
+        if self
+            .floating_context
+            .as_ref()
+            .is_some_and(|g| g.blocked.is_some())
+        {
+            return Err(Error::retained(
+                "engine",
+                "floating rollback remains blocked; no frame certified",
+            ));
+        }
         let (doc, preview_id, dirty) = if let Some(g) = &self.gesture {
             (g.live.doc.clone(), Some(g.id.clone()), Some(g.dirty))
         } else {
@@ -1159,10 +1297,22 @@ impl Host {
                 .active()
                 .ok_or_else(|| Error::none("not-found", "no document"))?;
             (
-                photocraft_engine::float_cmds::displayed(st, (0, 0))
-                    .map(Arc::new)
-                    .unwrap_or_else(|| st.doc.clone()),
-                None,
+                if let Some(f) = photocraft_engine::float_cmds::floating(st) {
+                    // Do not silently substitute the base document when floating display fails.
+                    Arc::new(
+                        f.parts
+                            .moved(&st.doc, f.offset.0, f.offset.1)
+                            .map_err(native)?,
+                    )
+                } else if self.floating_context.is_some() {
+                    return Err(Error::retained(
+                        "engine",
+                        "floating preview owner has no valid engine continuation",
+                    ));
+                } else {
+                    st.doc.clone()
+                },
+                self.floating_context.as_ref().map(|g| g.id.clone()),
                 None,
             )
         };
@@ -1237,3 +1387,6 @@ fn render_srgb(doc: &Document, rect: Rect) -> Result<Vec<u8>> {
     }
     Ok(b.to_rgba8().pixels)
 }
+
+#[cfg(test)]
+mod context_tests;

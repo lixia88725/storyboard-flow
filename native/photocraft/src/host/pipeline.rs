@@ -218,6 +218,7 @@ impl Pipeline {
                                 );
                                 self.accepted_doc = entry.doc.clone();
                                 entry.accepted = true;
+                                h.advance_context();
                             } else if body["kind"] == "prepared" {
                                 entry.prepared = Some(body.clone());
                             } else {
@@ -361,6 +362,7 @@ impl Pipeline {
         }
         self.drain(h)?;
         match &r.body {
+            Command::Summary { max_bytes } => Ok((h.context_summary(*max_bytes, true)?, vec![])),
             Command::PipelinePoll { pipeline_id } => {
                 if pipeline_id != &self.id {
                     return Err(Error::none("conflict", "pipeline ID mismatch"));
@@ -844,7 +846,7 @@ pub(super) fn dispatch(h: &mut Host, r: &Request, payload: &[u8]) -> Result<(Val
         if h.pipeline.is_some() {
             return Err(Error::none("busy", "pipeline already active"));
         }
-        h.idle()?;
+        h.context_idle_for_install()?;
         h.base(r)?;
         if !payload.is_empty() {
             return Err(Error::none("invalid-input", "unexpected pipeline payload"));

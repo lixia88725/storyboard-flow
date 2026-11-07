@@ -6,7 +6,7 @@ use super::{Error, Result, valid_id};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
@@ -31,6 +31,7 @@ pub(super) struct Journal {
     number: u64,
     length: usize,
     failed: bool,
+    unsettled: HashSet<String>,
     records: HashMap<String, Value>,
     files: HashMap<String, FileStamp>,
 }
@@ -121,6 +122,16 @@ impl Journal {
                 .ok_or_else(|| Error::retained("limit", "segment generation exhausted"))?,
         )?;
         files.insert(current.clone(), signature);
+        let unsettled = records
+            .keys()
+            .filter_map(|key| key.strip_suffix(".intent"))
+            .filter(|id| {
+                !["accepted", "discarded", "failed"]
+                    .iter()
+                    .any(|state| records.contains_key(&format!("{id}.{state}")))
+            })
+            .map(str::to_owned)
+            .collect();
         Ok(Self {
             root: root.to_owned(),
             current,
@@ -128,9 +139,13 @@ impl Journal {
             number: max + 1,
             length: 0,
             failed: false,
+            unsettled,
             records,
             files,
         })
+    }
+    pub(super) fn context_unsettled(&self) -> bool {
+        self.failed || !self.unsettled.is_empty()
     }
     fn verify(&self) -> Result<()> {
         for (name, signature) in &self.files {
@@ -226,6 +241,11 @@ impl Journal {
         }
         self.length += len;
         self.records.insert(k, data.clone());
+        if state == "intent" {
+            self.unsettled.insert(id.to_owned());
+        } else if ["accepted", "discarded", "failed"].contains(&state) {
+            self.unsettled.remove(id);
+        }
         if std::env::var_os("FLOW_IMAGE_ENGINE_TRACE").is_some() {
             eprintln!(
                 "flow-host-trace {}",

@@ -454,6 +454,9 @@ impl Store {
         }
         Ok(())
     }
+    pub(super) fn context_unsettled(&self) -> bool {
+        self.journal.context_unsettled()
+    }
     pub fn cache_policy(&self) -> &'static str {
         if self.cache_allowed {
             "apfs-stable-file-identity"

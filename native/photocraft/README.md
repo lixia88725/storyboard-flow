@@ -404,3 +404,70 @@ RGB composite plus alpha, and TIFF's straight RGBA composite and real tag 37724.
 The new-engine LiveStroke -> durable version -> PSD/TIFF -> resume -> continued
 stroke path is also real. These synthetic independent checks do not certify
 Photoshop UI, arbitrary complex source fidelity, Windows or user-file publication.
+
+`toolContextSummaryV1` adds `summary {maxBytes:1..49152}`. Its read-only response
+contains the actual tree in top-to-bottom display order (numeric native layer IDs,
+name/kind/visibility/opacity/blend, local and inherited locks), active/selected IDs,
+selection presence/content bounds/token, floating ownership/offset/prefix/outline,
+context generation, and known typed tool availability. It contains no paths,
+History records or pixel buffers. Oversized trees/names/depth/encoded JSON reject
+as a whole; there is no partial tree. Availability is a current-context hint for
+the host's typed operations, not proof that arbitrary parameters will execute.
+`selection.token` is an opaque worker/document/context-generation fence, not a
+mask-content digest. Read-only summary does not alter the generation. Mutation,
+rollback or acceptance may advance it even when accepted content stays unchanged.
+
+`contextLayerSelectionV1` adds
+`selectLayerContext {layerId,expectedContextGeneration}`. It calls the upstream
+context operation directly, advances only context generation, and returns
+`contextUpdated {documentId,imageVersionRef,contextGeneration,activeLayerId,
+selectedLayerIds}`. It creates no immutable version, durable operation record or
+Flow Undo step. Paint, candidate, pipeline, frozen, floating or unresolved durable
+obligations refuse selection without implicitly dropping them. Load/Install still
+restore the target saved with that immutable version; a later real edit captures
+the currently chosen target in its own version. The formerly writable
+`edit.selectLayer` is intentionally retired and replies unsupported. Callers must
+check capabilities and use the new context command; PNGs cannot supply layer IDs.
+
+`floatingGestureV1` adds `floating {previewId,expectedContextGeneration,action}`:
+`begin {dx,dy}` establishes prefix 1 and retains the full pre-begin engine
+checkpoint; `move {fromSeq,dx,dy}` requires the next exact prefix and adds integer
+pixel offsets; `cancel {throughSeq}` restores that original checkpoint without
+Undo or a durable version; `drop {throughSeq}` prepares a durable candidate for
+Main's explicit CAS/accept. Each coordinate and cumulative offset is limited to
+±10000000 rather than silently clamping native input. Whole-prefix/identity/generation
+mismatches reject without moving again. Lost transient ACKs require summary; never
+blindly replay a move. `floatingPreview` replies are explicitly `durable:false`;
+Capture frames carry the floating `previewId`. Cancel advances epoch and forces a
+keyframe. A prepared drop refuses Capture until explicit settlement, as other
+candidates do. Legacy `edit.float`/`edit.dropFloat` now refuse; they cannot silently
+start or settle an unidentified floating gesture.
+
+The native Document owns the selection mask and serializes it into immutable
+versions. Version wrappers also save active/selected layer targets. Session owns
+the transient floating cut/offset and tool state: it is not serialized. Normal
+Accept keeps the exact working mask/target and retires floating ownership; recovered
+Accept installs the durable candidate mask/target. Same-host Discard of a drop
+restores the checkpoint immediately before drop, including its live floating
+continuation, so it is different from Cancel. Recovered Discard requires the
+original base installed and restores that base without claiming any recovered
+floating gesture. Install refuses an active floating owner; Load starts with no
+floating continuation. Cancel restores the pre-begin mask/target/tools/pixels;
+failed move/drop restores its pre-command checkpoint and retains ownership. A
+failed durable preparation may still require explicit operation reconciliation;
+Cancel does not erase its journal evidence. A failed checkpoint restoration stays
+blocked instead of presenting successful cancellation.
+
+`src/host/context_tests.rs` compares real mask samples, targets, tools, native
+History state and composite pixels across this matrix. `tests/host_context_process.py`
+checks the actual framed subprocess, lost drop ACK + SIGKILL/reopen and persisted
+layer/mask summaries. It also builds synthetic no-ICC/invalid-ICC CMYK TIFFs: the
+current Open gate refuses all non-RGB8 content before Session/version acceptance.
+This preserves refusal, not CMYK support or independent positive color validation.
+
+Flow preset visual mapping (including pencil grain/dynamics), wider layer CRUD,
+UI selection-mask rendering, Windows and physical input/display acceptance remain
+outside this slice. Export currently requires the entire host frozen and the same
+open document. It does not provide simultaneous drawing/output or multi-board
+stable Save capture; a future pinned-version read-only output worker still needs
+Main's publication transaction.
