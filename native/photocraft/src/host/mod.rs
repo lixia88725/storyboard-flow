@@ -1,6 +1,7 @@
 //! Stage A native host. One mutable engine context; Flow alone decides global user history.
 //! Host-pinned immutable versions survive process restarts; native History is scratch only.
 mod journal;
+mod pipeline;
 pub mod store;
 pub mod wire;
 use photocraft_color::{ColorMode, SampleType};
@@ -105,7 +106,25 @@ pub enum Command {
     Edit {
         edit: ImageEdit,
     },
+    PipelineStart {
+        #[serde(rename = "maxPendingStrokes")]
+        max_pending_strokes: usize,
+        #[serde(rename = "maxPendingPoints")]
+        max_pending_points: usize,
+        #[serde(rename = "maxRetainedPixelBytes")]
+        max_retained_pixel_bytes: usize,
+    },
+    PipelinePoll {
+        #[serde(rename = "pipelineId")]
+        pipeline_id: String,
+    },
+    PipelineStop {
+        #[serde(rename = "pipelineId")]
+        pipeline_id: String,
+    },
     StrokeBegin {
+        #[serde(default, rename = "predecessorOperationId")]
+        predecessor_operation_id: Option<String>,
         #[serde(rename = "previewId")]
         preview_id: String,
         brush: Value,
@@ -224,6 +243,7 @@ struct Gesture {
     through: u64,
     checkpoint: Checkpoint,
     base: String,
+    predecessor: Option<String>,
 }
 struct Candidate {
     id: String,
@@ -233,9 +253,67 @@ struct Candidate {
     from_live: bool,
     recovered: bool,
 }
+struct StoreSlot {
+    value: Option<Store>,
+    policy: &'static str,
+}
+impl StoreSlot {
+    fn new(store: Store) -> Self {
+        Self {
+            policy: store.cache_policy(),
+            value: Some(store),
+        }
+    }
+    fn get(&self) -> Result<&Store> {
+        self.value
+            .as_ref()
+            .ok_or_else(|| Error::none("busy", "store owned by pipeline IO"))
+    }
+    fn get_mut(&mut self) -> Result<&mut Store> {
+        self.value
+            .as_mut()
+            .ok_or_else(|| Error::none("busy", "store owned by pipeline IO"))
+    }
+    fn take(&mut self) -> Result<Store> {
+        self.value
+            .take()
+            .ok_or_else(|| Error::none("busy", "store already moved"))
+    }
+    fn put(&mut self, store: Store) -> Result<()> {
+        if self.value.is_some() {
+            return Err(Error::unknown("store owner already installed"));
+        }
+        self.value = Some(store);
+        Ok(())
+    }
+    fn cache_policy(&self) -> &'static str {
+        self.policy
+    }
+    fn unresolved(&self) -> Result<Vec<String>> {
+        self.get()?.unresolved()
+    }
+    fn op_read(&self, id: &str, state: &str) -> Result<Option<Value>> {
+        self.get()?.op_read(id, state)
+    }
+    fn op_write(&mut self, id: &str, state: &str, value: &Value) -> Result<()> {
+        self.get_mut()?.op_write(id, state, value)
+    }
+    fn load(&self, id: &str) -> Result<store::Loaded> {
+        self.get()?.load(id)
+    }
+    fn save(
+        &mut self,
+        doc: &Document,
+        target: &LayerTarget,
+        source: Option<Source>,
+    ) -> Result<VersionReceipt> {
+        self.get_mut()?.save(doc, target, source)
+    }
+}
 pub struct Host {
     pub worker_epoch: u64,
-    store: Store,
+    store: StoreSlot,
+    pipeline: Option<pipeline::Pipeline>,
     engine: Session,
     identity: Option<(String, String)>,
     current: Option<String>,
@@ -273,7 +351,7 @@ fn authorize(id: &str, _params: &Value) -> photocraft_engine::Result<()> {
 }
 impl Host {
     pub fn open(root: &Path, budget: u64) -> Result<Self> {
-        let store = Store::open(root, budget)?;
+        let store = StoreSlot::new(Store::open(root, budget)?);
         let worker_epoch = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(native)?
@@ -290,6 +368,7 @@ impl Host {
         Ok(Self {
             worker_epoch,
             store,
+            pipeline: None,
             engine,
             identity: None,
             current: None,
@@ -380,7 +459,20 @@ impl Host {
             .clone())
     }
     pub fn handle(&mut self, r: Request, payload: Vec<u8>) -> Response {
-        let result = self.check(&r).and_then(|_| self.run(&r, &payload));
+        let result = self.check(&r).and_then(|_| {
+            if self.pipeline.is_some()
+                || matches!(
+                    r.body,
+                    Command::PipelineStart { .. }
+                        | Command::PipelinePoll { .. }
+                        | Command::PipelineStop { .. }
+                )
+            {
+                pipeline::dispatch(self, &r, &payload)
+            } else {
+                self.run(&r, &payload)
+            }
+        });
         let (body, payload) = match result {
             Ok(v) => v,
             Err(e) => (json!({"kind":"failure","error":e}), vec![]),
@@ -603,12 +695,19 @@ impl Host {
                 Ok((v, vec![]))
             }
             Command::StrokeBegin {
+                predecessor_operation_id,
                 preview_id,
                 brush,
                 points,
             } => {
                 self.idle()?;
                 self.base(r)?;
+                if predecessor_operation_id.is_some() {
+                    return Err(Error::none(
+                        "invalid-input",
+                        "predecessor requires opt-in pipeline",
+                    ));
+                }
                 valid_id(preview_id)?;
                 if points.is_empty() || points.len() > 4096 || !brush.is_object() {
                     return Err(Error::none("invalid-input", "stroke begin points/brush"));
@@ -639,6 +738,7 @@ impl Host {
                     live,
                     through,
                     checkpoint,
+                    predecessor: None,
                     base: self
                         .current
                         .clone()
@@ -781,8 +881,8 @@ impl Host {
                 let recovered = c.recovered;
                 // Main may already have installed this exact durable candidate before the
                 // native accept receipt was flushed. Explicit recovery settles that same version.
-                let recovering_installed = recovered
-                    && self.current.as_deref() == Some(&c.receipt.version_id);
+                let recovering_installed =
+                    recovered && self.current.as_deref() == Some(&c.receipt.version_id);
                 if &c.id != candidate_id || (c.base != self.current && !recovering_installed) {
                     return Err(Error::none("conflict", "candidate base mismatch"));
                 }
@@ -951,6 +1051,9 @@ impl Host {
                 self.frozen = true;
                 Ok((json!({"kind":"frozen","versionId":self.current}), vec![]))
             }
+            Command::PipelineStart { .. }
+            | Command::PipelinePoll { .. }
+            | Command::PipelineStop { .. } => Err(Error::none("not-found", "pipeline not active")),
             Command::Close => {
                 if !self.frozen {
                     return Err(Error::none("busy", "freeze before close"));

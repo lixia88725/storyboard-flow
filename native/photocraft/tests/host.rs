@@ -1,6 +1,7 @@
 use flow_photocraft::host::{Host, Request, Response, store};
 use serde_json::{Value, json};
 use std::{fs, path::PathBuf};
+static NEXT_FIXTURE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 struct Harness {
     host: Host,
     root: PathBuf,
@@ -10,12 +11,13 @@ struct Harness {
 impl Harness {
     fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
-            "flow-native-host-{}-{:?}",
+            "flow-native-host-{}-{:?}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT_FIXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let host = Host::open(&root, 128 << 20).unwrap();
         Self {
@@ -516,16 +518,247 @@ fn incremental_frames_erase_removed_tail_on_reversing_pressure_stroke() {
             apply(&mut display, 512, frame);
         }
         // Compare the transported delta chain with the native preview before pen-up.
-        assert!(display == h.capture(), "stale removed tail before finish {i}");
+        assert!(
+            display == h.capture(),
+            "stale removed tail before finish {i}"
+        );
         let finish = format!("finish{i}");
         let prepared = h.call(
             &finish,
             json!({"kind":"strokeFinish","previewId":id,"throughSeq":7}),
         );
         h.accept(&finish, &prepared);
-        assert!(display == h.capture(), "live adoption differs at stroke {i}");
+        assert!(
+            display == h.capture(),
+            "live adoption differs at stroke {i}"
+        );
     }
     eprintln!("reversing-tail evidence retained: {}", h.root.display());
+}
+
+#[test]
+fn bounded_pipeline_preserves_fixed_bases_fifo_and_explicit_durable_accept() {
+    let mut h = Harness::new();
+    let n = h.call("new", json!({"kind":"new","width":512,"height":64}));
+    h.accept("new", &n);
+    let anchor = h.base.clone();
+    let old = h.call("capture", json!({"kind":"capture"}));
+    let started=h.call("start",json!({"kind":"pipelineStart","maxPendingStrokes":2,"maxPendingPoints":8,"maxRetainedPixelBytes":16777216}));
+    assert_eq!(
+        started.header["body"]["kind"], "pipelineReady",
+        "{}",
+        started.header
+    );
+    let pipeline = started.header["body"]["pipelineId"].clone();
+    let mut last = None;
+    let mut expected = None;
+    for i in 0..2 {
+        let id = format!("p{i}");
+        let begin=h.call(&format!("begin{i}"),json!({"kind":"strokeBegin","previewId":id,"predecessorOperationId":last,"brush":{"size":12,"opacity":0.5,"seed":i+1,"color":"#ff0000"},"points":[{"x":20,"y":20,"pressure":1}]}));
+        assert_eq!(begin.header["body"]["kind"], "frame", "{}", begin.header);
+        assert!(
+            begin.header["body"]["frame"]["epoch"].as_u64().unwrap()
+                > old.header["body"]["frame"]["epoch"].as_u64().unwrap()
+        );
+        let append=h.call(&format!("append{i}"),json!({"kind":"strokeAppend","previewId":id,"fromSeq":2,"points":[{"x":60,"y":20,"pressure":1}]}));
+        assert_eq!(append.header["body"]["kind"], "frame");
+        expected = Some(h.capture());
+        let op = format!("finish{i}");
+        let finish = h.call(
+            &op,
+            json!({"kind":"strokeFinish","previewId":id,"throughSeq":2}),
+        );
+        assert_eq!(finish.header["body"]["kind"], "queued", "{}", finish.header);
+        assert_eq!(finish.header["body"]["durable"], false);
+        let again = h.call(
+            &op,
+            json!({"kind":"strokeFinish","previewId":id,"throughSeq":2}),
+        );
+        assert_ne!(again.header["body"]["kind"], "failure");
+        last = Some(op);
+    }
+    let full=h.call("full",json!({"kind":"strokeBegin","previewId":"full","predecessorOperationId":last,"brush":{},"points":[{"x":100,"y":20}]}));
+    assert_eq!(full.header["body"]["error"]["code"], "backpressure");
+    let mut prepared = std::collections::HashMap::new();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while prepared.len() < 2 {
+        let poll = h.call("poll", json!({"kind":"pipelinePoll","pipelineId":pipeline}));
+        for event in poll.header["body"]["events"].as_array().unwrap() {
+            if event["result"]["kind"] == "prepared" {
+                prepared.insert(
+                    event["operationId"].as_str().unwrap().to_owned(),
+                    event["result"].clone(),
+                );
+            }
+        }
+        assert!(std::time::Instant::now() < deadline, "{}", poll.header);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(prepared["finish0"]["baseVersion"], json!(anchor));
+    assert_eq!(
+        prepared["finish1"]["baseVersion"],
+        prepared["finish0"]["receipt"]["versionId"]
+    );
+    let wrong = h.call("wrong", json!({"kind":"accept","candidateId":"finish1"}));
+    assert_eq!(wrong.header["body"]["error"]["code"], "conflict");
+    for i in 0..2 {
+        let op = format!("finish{i}");
+        let request = h.call(
+            &format!("accept{i}"),
+            json!({"kind":"accept","candidateId":op}),
+        );
+        assert_eq!(
+            request.header["body"]["kind"], "acceptQueued",
+            "{}",
+            request.header
+        );
+        assert_eq!(request.header["body"]["durable"], false);
+        loop {
+            // Poll is control-plane; input envelopes retain anchor, accept uses current Main CAS base.
+            h.base = anchor.clone();
+            let poll = h.call("poll", json!({"kind":"pipelinePoll","pipelineId":pipeline}));
+            if poll.header["body"]["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["operationId"] == op && e["result"]["kind"] == "accepted")
+            {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "{}", poll.header);
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        h.base = Some(
+            prepared[&op]["receipt"]["versionId"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        );
+        let duplicate = h.call(
+            &format!("acceptDuplicate{i}"),
+            json!({"kind":"accept","candidateId":op}),
+        );
+        assert_eq!(duplicate.header["body"]["kind"], "accepted");
+    }
+    let accepted = h.base.clone();
+    h.base = anchor;
+    assert_eq!(h.capture(), expected.unwrap());
+    let stopped = h.call("stop", json!({"kind":"pipelineStop","pipelineId":pipeline}));
+    assert_eq!(
+        stopped.header["body"]["kind"], "pipelineStopped",
+        "{}",
+        stopped.header
+    );
+    h.base = accepted;
+    assert!(!h.capture().is_empty());
+    eprintln!("pipeline evidence retained: {}", h.root.display());
+}
+
+#[test]
+fn pipeline_batches_reject_whole_prefix_and_freeze_keeps_admitted_obligation() {
+    let mut h = Harness::new();
+    let n = h.call("new", json!({"kind":"new","width":512,"height":64}));
+    h.accept("new", &n);
+    let started=h.call("start",json!({"kind":"pipelineStart","maxPendingStrokes":2,"maxPendingPoints":3,"maxRetainedPixelBytes":16777216}));
+    let pipeline = started.header["body"]["pipelineId"].clone();
+    let unseeded = h.call("unseeded", json!({"kind":"strokeBegin","previewId":"missingSeed","brush":{"size":12},"points":[{"x":20,"y":20}]}));
+    assert_eq!(unseeded.header["body"]["error"]["code"], "invalid-input");
+    let begin=h.call("begin",json!({"kind":"strokeBegin","previewId":"p","brush":{"size":12,"seed":8},"points":[{"x":20,"y":20}]}));
+    assert_eq!(begin.header["body"]["frame"]["inputThrough"], 1);
+    let original = h.capture();
+    let bad=h.call("invalid",json!({"kind":"strokeAppend","previewId":"p","fromSeq":2,"points":[{"x":30,"y":20},{"x":1e30,"y":20}]}));
+    assert_eq!(bad.header["body"]["kind"], "failure");
+    assert_eq!(original, h.capture());
+    let over=h.call("over",json!({"kind":"strokeAppend","previewId":"p","fromSeq":2,"points":[{"x":30,"y":20},{"x":40,"y":20},{"x":50,"y":20}]}));
+    assert_eq!(over.header["body"]["error"]["code"], "backpressure");
+    assert_eq!(original, h.capture());
+    let poll = h.call("poll", json!({"kind":"pipelinePoll","pipelineId":pipeline}));
+    assert_eq!(poll.header["body"]["active"]["throughSeq"], 1);
+    assert_eq!(poll.header["body"]["pendingPoints"], 1);
+    let freeze = h.call("freeze", json!({"kind":"freeze"}));
+    assert_eq!(freeze.header["body"]["error"]["effect"], "retained");
+    let append = h.call(
+        "appendFrozen",
+        json!({"kind":"strokeAppend","previewId":"p","fromSeq":2,"points":[{"x":30,"y":20}]}),
+    );
+    assert_eq!(append.header["body"]["error"]["code"], "frozen");
+    let close = h.call("close", json!({"kind":"close"}));
+    assert_eq!(close.header["body"]["kind"], "failure");
+    let finish = h.call(
+        "finish",
+        json!({"kind":"strokeFinish","previewId":"p","throughSeq":1}),
+    );
+    assert_eq!(finish.header["body"]["kind"], "queued", "{}", finish.header);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let poll = h.call("poll", json!({"kind":"pipelinePoll","pipelineId":pipeline}));
+        if poll.header["body"]["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["result"]["kind"] == "prepared")
+        {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let accepted = h.call("accept", json!({"kind":"accept","candidateId":"finish"}));
+    assert_eq!(accepted.header["body"]["kind"], "acceptQueued");
+    loop {
+        let poll = h.call("poll", json!({"kind":"pipelinePoll","pipelineId":pipeline}));
+        if poll.header["body"]["queueDepth"] == 0 {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let frozen = h.call("freezeAgain", json!({"kind":"freeze"}));
+    assert_eq!(frozen.header["body"]["kind"], "frozen");
+    let stopped = h.call("stop", json!({"kind":"pipelineStop","pipelineId":pipeline}));
+    assert_eq!(stopped.header["body"]["kind"], "pipelineStopped");
+    let closed = h.call("close", json!({"kind":"close"}));
+    assert_eq!(closed.header["body"]["kind"], "closed");
+}
+
+#[test]
+fn pipeline_pixel_budget_rejects_entire_append_without_losing_old_samples() {
+    let mut h = Harness::new();
+    let n = h.call("new", json!({"kind":"new","width":512,"height":64}));
+    h.accept("new", &n);
+    let started=h.call("start",json!({"kind":"pipelineStart","maxPendingStrokes":2,"maxPendingPoints":20,"maxRetainedPixelBytes":262144}));
+    assert_eq!(
+        started.header["body"]["kind"], "pipelineReady",
+        "{}",
+        started.header
+    );
+    let pipeline = started.header["body"]["pipelineId"].clone();
+    let begin=h.call("begin",json!({"kind":"strokeBegin","previewId":"p","brush":{"size":12,"seed":8},"points":[{"x":20,"y":20}]}));
+    assert_eq!(begin.header["body"]["kind"], "frame", "{}", begin.header);
+    let old = h.capture();
+    let append=h.call("over",json!({"kind":"strokeAppend","previewId":"p","fromSeq":2,"points":[{"x":40,"y":20},{"x":300,"y":20}]}));
+    assert_eq!(
+        append.header["body"]["error"]["code"], "backpressure",
+        "{}",
+        append.header
+    );
+    assert_eq!(h.capture(), old);
+    let poll = h.call("poll", json!({"kind":"pipelinePoll","pipelineId":pipeline}));
+    assert_eq!(poll.header["body"]["active"]["throughSeq"], 1);
+    assert_eq!(poll.header["body"]["pendingPoints"], 1);
+    let valid = h.call(
+        "valid",
+        json!({"kind":"strokeAppend","previewId":"p","fromSeq":2,"points":[{"x":40,"y":20}]}),
+    );
+    assert_eq!(
+        valid.header["body"]["frame"]["inputThrough"], 2,
+        "{}",
+        valid.header
+    );
+    let cancelled = h.call("cancel", json!({"kind":"strokeCancel","previewId":"p"}));
+    assert_eq!(cancelled.header["body"]["kind"], "cancelled");
+    let stop = h.call("stop", json!({"kind":"pipelineStop","pipelineId":pipeline}));
+    assert_eq!(stop.header["body"]["kind"], "pipelineStopped");
 }
 
 #[test]

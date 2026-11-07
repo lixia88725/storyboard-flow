@@ -70,6 +70,7 @@ pub struct Store {
     pending_verification: HashMap<String, FileStamp>,
     last_publication: Option<FileStamp>,
     pending_directories: BTreeSet<PathBuf>,
+    test_io_delay_ms: u64,
     pub new_object_bytes: u64,
     pub object_count: usize,
 }
@@ -312,6 +313,17 @@ impl Store {
             pending_verification: HashMap::new(),
             last_publication: None,
             pending_directories: BTreeSet::new(),
+            test_io_delay_ms: match std::env::var("FLOW_IMAGE_ENGINE_TEST_IO_DELAY_MS") {
+                Ok(value) => value
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|v| *v <= 1000)
+                    .ok_or_else(|| {
+                        Error::none("invalid-input", "test IO delay must be 0..1000ms")
+                    })?,
+                Err(std::env::VarError::NotPresent) => 0,
+                Err(_) => return Err(Error::none("invalid-input", "invalid test IO delay")),
+            },
             new_object_bytes: 0,
             object_count: 0,
         })
@@ -341,6 +353,13 @@ impl Store {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(io(e)),
             Ok(_) => regular_read(&p, max).map(Some),
+        }
+    }
+    fn test_io_delay(&self) {
+        // Explicit synthetic-test injection. Real writes/flushes and their errors still run.
+        // Every configured publication/journal call is delayed on its owner, including hydration.
+        if self.test_io_delay_ms > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(self.test_io_delay_ms));
         }
     }
     /// File flush -> exclusive hardlink -> directory flush. Unknown publication retains stage.
@@ -390,6 +409,7 @@ impl Store {
             .create_new(true)
             .open(&stage)
             .map_err(io)?;
+        self.test_io_delay();
         f.write_all(bytes).map_err(io)?;
         let file_sync_started = std::time::Instant::now();
         f.sync_all().map_err(io)?;
@@ -445,6 +465,7 @@ impl Store {
         self.journal.get(id, state)
     }
     pub fn op_write(&mut self, id: &str, state: &str, value: &serde_json::Value) -> Result<()> {
+        self.test_io_delay();
         if self.budget_dirty {
             self.used = usage(&self.root)?;
             self.budget_dirty = false;

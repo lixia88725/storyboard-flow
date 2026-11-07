@@ -279,3 +279,79 @@ version alone never creates an accepted operation receipt.
 Candidate recovery origin is pinned on the candidate itself. A failed load or
 accepted-receipt append keeps that origin for a retry in the same worker; a retry
 never promotes an old document merely by changing its version label.
+
+Opt-in `strokePipelineV1` (hello capability; absent means unsupported) moves the
+Store, native writer and journal into one exclusive IO thread. The input actor is
+the sole writer of Session, tools, live gestures and display state. IO receives
+immutable COW documents only. There is no shared mutable Document or disk mutex in
+input handling, and no native project/history acceptance authority.
+
+`pipelineStart {maxPendingStrokes,maxPendingPoints,maxRetainedPixelBytes}` requires
+an accepted settled document. Host caps are 4 completed-or-active strokes, 65536
+retained points and 256 MiB unique pixel allocations; callers can lower them.
+`pipelineReady` returns `pipelineId`, fixed `anchorVersion`, `limits`, `documentId`
+and new `epoch`. Input/capture envelopes retain that anchor until stop; explicit
+accept requests use the actual accepted predecessor. Each pipeline `strokeBegin`
+names `predecessorOperationId` (null for the first, then the last completed ID),
+binding its pointer-down COW base. An accepted predecessor never installs over a
+newer working document or changes an active gesture's base/revision.
+
+Pipeline finish responds `queued {durable:false,candidateId,pipelineId,
+predecessorOperationId,inputThrough,frameInputThrough,epoch,inputDigest,
+queueDepth,availableSlots}`. It is volatile admission, and Main must already retain
+all samples and the brush seed. Pipeline begin requires an explicit nonnegative
+safe integer seed; native does not silently generate one in this mode. `pipelinePoll {pipelineId}` returns
+`pipelineState {pipelineId,anchorVersion,acceptedVersion,events,blocked,active,
+operations,queueDepth,pendingPoints,retainedPixelBytes,limits,availableSlots}`.
+Events are `{operationId,result}` where prepared has the ordinary durable receipt
+plus predecessor, captured epoch/frame prefix and input digest. `active` identifies
+its preview, admitted throughSeq and canonical input digest; `operations` retains
+bounded admission metadata even if IO fails. `inputThrough` in a stroke receipt is
+local; frameInputThrough records that stroke's epoch-cumulative end prefix.
+
+Main alone installs prepared candidates FIFO with its project CAS, then explicitly
+calls `accept`. The immediate `acceptQueued {durable:false,...}` is not settlement;
+only the later durable `accepted` result confirms the native receipt flush. Poll
+never auto-accepts. Prepared snapshots save FIFO; explicit acceptance is prioritized
+over not-yet-started descendant snapshots. Failed/unknown IO freezes descendants,
+retains all admitted samples/snapshots and reports the obligation. It does not
+rerender, rebase, reorder, discard or accept them. A queued-only ACK does not promise
+crash recovery without Main's retained input. Main-CAS-installed/native-unsettled
+versions use the explicit recovered-accept capability after restart.
+
+The actor only try-sends work and try-receives completions. Ten work slots and
+sixteen completion slots exceed the maximum four entries × prepare/accept pair;
+only IO may wait for a consumer. Accepted entries release an admission slot after
+their event is polled. A 64-result recent cache supports lost poll replies; older
+queries require settled stop and durable status, never an invented absent result.
+A pipeline retains at most 65536 operation identities; it refuses another begin
+when exhausted. Whole invalid/over-limit batches reject before advancing the
+prefix. If a new batch exceeds the pixel budget, its preview alone is rebuilt
+from the unchanged base and earlier admitted prefix/seed; earlier samples remain.
+Pixel accounting counts shared COW tiles once, not process RSS or renderer buffers.
+
+Pipeline frames additionally contain `pipelineId` and ordered unique
+`pendingOperationIds` (at most four). If nonempty, `workingHeadOperationId` equals
+the last pending ID and identifies the unaccepted completed base; `previewId`
+identifies an active stroke, or `working-<head>` for its queued-only display.
+`imageVersionRef` still names only the accepted prefix. Empty pending metadata is
+not a project-save acknowledgement. Start and settled stop advance document epoch,
+clear the frame input prefix and force a keyframe; pipelineId is fixed per epoch.
+
+Freeze seals new begin/append admission immediately, still allows finish/cancel of
+already admitted input and explicit FIFO accepts, and refuses completion while
+obligations remain. `pipelineStop {pipelineId}` requires no active/retained/unsettled
+operation or undelivered event; it returns the exclusive Store to synchronous mode
+and replies with `epoch`/`documentId`/`versionId`. Undo/Refresh/other edits use this
+barrier. Close never cancels in-flight IO. Failed unresolved chains remain frozen
+for Main reconciliation, including preservation of the original input journal.
+
+Dedicated `host_continuous_bench.py`, `host_pipeline_process.py` and
+`host_pipeline_failures.py` run real native processes against synthetic stores.
+`FLOW_IMAGE_ENGINE_TEST_IO_DELAY_MS=0..1000` delays each actual object/version
+publication and journal append, including initial hydration; writes and errors still
+execute. The tests distinguish admitted input latency, pre-admission backpressure,
+volatile queue ACKs, durable preparation and explicit acceptance. Forty 2K/4K
+strokes include semi-transparent reversals and erasers; burst and paced modes are
+separate. Their small dirty regions and uniform background do not certify arbitrary
+brush sizes or large layered scenes. No metric is physical pen-to-screen latency.

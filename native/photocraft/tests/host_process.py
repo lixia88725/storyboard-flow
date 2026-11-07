@@ -6,10 +6,10 @@ def png(w,h):
     def chunk(kind,data): return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data)&0xffffffff)
     return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',w,h,8,6,0,0,0))+chunk(b'IDAT',zlib.compress((b'\0'+bytes([0,0,0,0])*w)*h))+chunk(b'IEND',b'')
 class Client:
-    def __init__(self,binary,root,base=None,record=False):
+    def __init__(self,binary,root,base=None,record=False,budget=None):
         self.root=root;self.base=base;self.seq=0;self.record=record;self.prefixes={}
         self.log=open(root.parent/(root.name+'-stderr.log'),'ab')
-        self.p=subprocess.Popen([binary,'--store',str(root)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.log)
+        self.p=subprocess.Popen([binary,'--store',str(root)]+([] if budget is None else ['--budget',str(budget)]),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.log)
         self.hello=self.read()[0];assert self.hello['kind']=='hello',self.hello
         self.epoch=self.hello['workerEpoch']
     def exact(self,n):
