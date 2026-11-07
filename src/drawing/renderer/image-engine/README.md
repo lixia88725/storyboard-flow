@@ -48,6 +48,9 @@ Hosts may tighten them. Validation uses only data properties, not accessors.
 
 All validated tiles are applied to private staging pixels before publishing.
 Both surfaces subscribe to the one store, then consume complete snapshots.
+Snapshot pixels are always the entire width×height×4 backing, never the transport
+patch payload. InstalledFrameHeader deliberately omits tiles/baseFrameSeq to
+avoid interpreting full-backing offsets as incoming packed tile offsets.
 Each snapshot has its own metadata/bytes, so a consumer cannot corrupt another
 surface or the owner. Unsubscribe removes only that listener. It does not clear
 pixels; a remounted surface calls snapshot to get the entire current backing.

@@ -56,7 +56,11 @@ function limitsOf(v: FrameLimits): FrameLimits {
 }
 const sameIdentity = (a: FrameIdentity, b: FrameIdentity) => a.sessionId === b.sessionId && a.incarnation === b.incarnation &&
   a.documentId === b.documentId && a.workerEpoch === b.workerEpoch && a.epoch === b.epoch;
-const copyHeader = (h: ImageFrameHeader): ImageFrameHeader => ({ ...h, tiles: h.tiles.map(t => ({ ...t })) });
+export type InstalledFrameHeader = Omit<ImageFrameHeader, 'tiles' | 'baseFrameSeq'>;
+const installedHeader = (h: ImageFrameHeader): InstalledFrameHeader => {
+  const { tiles: _tiles, baseFrameSeq: _base, ...meta } = h;
+  return meta;
+};
 
 /** Validates a complete transport frame, then takes a private copy of its exact byte view.
  * Sparse lists, overlapping rectangles/ranges, unused payload and partial keyframes are refused.
@@ -107,7 +111,7 @@ export function validateImageFrame(header: unknown, payload: unknown, limits: Fr
   } catch { return fail('invalid-frame', 'Frame could not be snapshotted'); }
 }
 
-export type FrameSnapshot = { identity: FrameIdentity; needsKeyframe: boolean; frame: { header: ImageFrameHeader; pixels: Uint8Array } | null };
+export type FrameSnapshot = { identity: FrameIdentity; needsKeyframe: boolean; frame: { header: InstalledFrameHeader; pixels: Uint8Array } | null };
 /** One session-scoped pixel owner. Surfaces subscribe and borrow snapshots; unmounting a
  * surface never resets this owner. Snapshot byte arrays are private to each caller.
  * Mutating entry points refuse observer reentrancy. Subscribers cannot fail an install.
@@ -120,7 +124,7 @@ export function createImageFrameStore(initialIdentity: FrameIdentity, limits: Fr
   let frame: { header: ImageFrameHeader; pixels: Uint8Array } | null = null;
   const listeners = new Set<(snapshot: FrameSnapshot) => void>();
   const snapshot = (): FrameSnapshot => ({ identity: { ...owner! }, needsKeyframe,
-    frame: disposed || needsKeyframe || !frame ? null : { header: copyHeader(frame.header), pixels: frame.pixels.slice() } });
+    frame: disposed || needsKeyframe || !frame ? null : { header: installedHeader(frame.header), pixels: frame.pixels.slice() } });
   const emit = () => {
     publishing = true;
     try { for (const listener of [...listeners]) { if (disposed) break; if (listeners.has(listener)) try { listener(snapshot()); } catch { /* Consumer failure cannot roll back pixels. */ } } }

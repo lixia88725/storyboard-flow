@@ -80,6 +80,8 @@ describe('one complete frame owner for both surfaces', () => {
   it('publishes exact absolute replacement pixels including zero alpha and does not reblend', () => {
     const store = seed(); expect(store.accept(delta(), rgba(...clear)).ok).toBe(true);
     expect(pixels(store)).toEqual([...clear, ...red, ...red, ...red]);
+    expect(store.snapshot().frame!.header).not.toHaveProperty('tiles');
+    expect(store.snapshot().frame!.header).not.toHaveProperty('baseFrameSeq');
     expect(store.accept(delta(3, { tiles: [{ x: 1, y: 1, w: 1, h: 1, offset: 0, length: 4 }] }), rgba(...blue)).ok).toBe(true);
     expect(pixels(store)).toEqual([...clear, ...red, ...red, ...blue]);
   });
@@ -139,7 +141,7 @@ describe('one complete frame owner for both surfaces', () => {
   });
   it('publishes the same complete state to two subscribers, isolating bytes and observer failures', () => {
     const store = seed(), a: FrameSnapshot[] = [], b: FrameSnapshot[] = [];
-    const stop = store.subscribe(s => { a.push(structuredClone(s)); s.frame!.pixels.fill(9); s.frame!.header.tiles[0].x = 9; throw Error('bad consumer'); });
+    const stop = store.subscribe(s => { a.push(structuredClone(s)); s.frame!.pixels.fill(9); s.frame!.header.width = 9; throw Error('bad consumer'); });
     store.subscribe(s => b.push(s)); expect(store.accept(delta(), rgba(...blue)).ok).toBe(true);
     expect(a[0]).toEqual(b[0]); expect(pixels(store)).toEqual([...blue, ...red, ...red, ...red]);
     stop(); expect(store.accept(delta(3), rgba(...clear)).ok).toBe(true); expect(a).toHaveLength(1); expect(b).toHaveLength(2);
