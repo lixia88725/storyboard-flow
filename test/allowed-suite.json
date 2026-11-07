@@ -89,5 +89,9 @@
   "src/project-files/main/createBlankProject.test.ts",
   "src/platform/main/projectEntry.test.ts",
   "src/project-files/main/photocraft.test.ts",
-  "src/project-files/main/flowPsdExport.test.ts"
+  "src/project-files/main/flowPsdExport.test.ts",
+  "src/platform/main/imageEngineFraming.test.ts",
+  "src/drawing/renderer/image-engine/frames.test.ts",
+  "src/project-files/main/image-engine/sourceStore.test.ts",
+  "src/platform/main/imageEngineTransport.test.ts"
 ]

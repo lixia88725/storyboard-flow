@@ -68,3 +68,10 @@ macOS 包附带 TIFF 组件，不附带 Python 解释器。第一次处理 TIFF 
 源码运行扩展 TIFF/PSD 和打包前，显式准备固定 Rust 1.99.1，再运行 `npm run setup:photocraft`、`npm run build:photocraft`；普通启动与 JS 构建不自动安装工具链。可用独立 RUSTUP_HOME/CARGO_HOME，操作入口、固定上游及许可证见 [组件说明](../native/photocraft/README.md)。原生 fixtures 是相关获准测试前置；缺失组件/过期回执会阻止打包。CI test 和 macOS/Windows package 均准备原生目标，真实 Windows runner 仍待验证。
 
 组合专项：`node scripts/flow-dock-panels-smoke.mjs` 检查分隔条调宽/折叠/取消/键盘/重开；`node scripts/flow-photocraft-smoke.mjs` 检查扩展导入与保护；`node scripts/flow-psd-export-smoke.mjs` 检查真实导出入口、取消和已有目标保护。均使用合成数据及独立 userData。独立像素、Photoshop 验证入口和边界见组件说明，不用同一解码器的往返代替兼容性证明。
+
+
+## 新图片发动机隔离接线验证
+
+当前宿主连接专项 `src/platform/main/imageEngineConnection.test.ts` 需要显式 `FLOW_IMAGE_HOST` 指向与受验提交绑定的真实 `flow-photocraft-host`。未指定时失败，不跳过、不替换 fake；在宿主构建准备尚未接入通用清单前，该测试单独执行。`imageEngineTransport.test.ts` 的合成子进程只认证故障协议，不能替代真实宿主证据。固定二进制、SHA 与构建回执应随日志记录。
+
+帧拆包、接收器、原件保管与 transport 故障测试已明确加入获准清单。Canvas 专项 `node scripts/flow-image-frame-display-smoke.mjs` 使用隔离 Electron、双 Canvas 和录制原生帧；录制回放不证明实时 native 整链性能。使用 dist 的检查仍须先完整 build。

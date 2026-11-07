@@ -201,3 +201,46 @@ describe('one complete frame owner for both surfaces', () => {
     let called = false; store.subscribe(() => { called = true; }); store.dispose(); expect(called).toBe(false);
   });
 });
+
+
+describe('pipeline frame display lineage', () => {
+  it('retains pending pixel identity separately from the accepted version without exposing mutable lists', () => {
+    const store = createImageFrameStore(who);
+    const pending = ['a', 'b'];
+    expect(store.accept(key({ pipelineId: 'pipe', pendingOperationIds: pending, workingHeadOperationId: 'b' }), new Uint8Array(16)).ok).toBe(true);
+    pending[0] = 'changed';
+    const h = store.view().header!;
+    expect(h.imageVersionRef).toBe('version-1');
+    expect(h.pendingOperationIds).toEqual(['a', 'b']);
+    (h.pendingOperationIds as string[])[0] = 'consumer';
+    expect(store.view().header!.pendingOperationIds).toEqual(['a', 'b']);
+    expect(store.accept(delta(2, { pipelineId: 'pipe', imageVersionRef: 'version-2', pendingOperationIds: ['b'], workingHeadOperationId: 'b' }), new Uint8Array(4)).ok).toBe(true);
+    expect(store.view().header!.pendingOperationIds).toEqual(['b']);
+  });
+  it('rejects malformed or unbound lineage rather than silently treating it as persisted', () => {
+    const payload = new Uint8Array(16);
+    for (const patch of [
+      { pendingOperationIds: ['a'] },
+      { pipelineId: 'pipe' },
+      { pipelineId: 'pipe', pendingOperationIds: ['a', 'a'], workingHeadOperationId: 'a' },
+      { pipelineId: 'pipe', pendingOperationIds: ['a'], workingHeadOperationId: 'b' },
+      { pipelineId: 'pipe', pendingOperationIds: new Array(1) },
+      { pipelineId: 'pipe', pendingOperationIds: ['a','b','c','d','e'], workingHeadOperationId: 'e' },
+      { pipelineId: 'pipe', pendingOperationIds: [], workingHeadOperationId: 'a' },
+    ]) bad(key(patch), payload);
+    expect(validateImageFrame(key({ pipelineId: 'pipe', pendingOperationIds: [], previewId: 'active' }), payload).ok).toBe(true);
+  });
+});
+
+it('requires a new epoch when starting, stopping or replacing a pipeline, including same-epoch resync', () => {
+  const store = seed();
+  const p = { pipelineId: 'pipe', pendingOperationIds: [] };
+  expect(store.accept(key({ ...p, frameSeq: 2 }), new Uint8Array(16))).toMatchObject({ code: 'wrong-identity' });
+  expect(store.reset({ ...who, epoch: 1 }).ok).toBe(true);
+  expect(store.accept(key({ ...p, epoch: 1 }), new Uint8Array(16)).ok).toBe(true);
+  expect(store.reset({ ...who, epoch: 1 }).ok).toBe(true);
+  expect(store.accept(key({ ...p, epoch: 1, frameSeq: 2, pipelineId: 'other' }), new Uint8Array(16))).toMatchObject({ code: 'wrong-identity' });
+  expect(store.accept(key({ epoch: 1, frameSeq: 2 }), new Uint8Array(16))).toMatchObject({ code: 'wrong-identity' });
+  expect(store.reset({ ...who, epoch: 2 }).ok).toBe(true);
+  expect(store.accept(key({ epoch: 2 }), new Uint8Array(16)).ok).toBe(true);
+});

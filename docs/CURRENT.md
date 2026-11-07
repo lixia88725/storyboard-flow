@@ -1,5 +1,23 @@
 # 当前状态与剩余工作
 
+## 图片发动机替换：施工中（2026-11-07）
+
+用户已批准完整替换计划：常驻原生 PhotoCraft 负责图像编辑；Flow 保留分镜、对白、Pending、统一历史与文件事务。目标包括先进入项目再后台保管/准备图片、新内部文档版本，以及旧有效 Flow 项目复制升级；不是原地改写用户旧项目，也不宣称任意 Photoshop 文件全面往返。
+
+施工基线 `da18b06`。隔离分支 `codex/image-engine-integration` 负责接点与组合验收，原生执行与原件保管分别由 `codex/image-engine-native`、`codex/image-engine-storage` 实施。首个验收闭环为打开、双画布绘画、混合历史、持久化、关闭重开与输出；当前尚未通过该闭环，默认产品路径尚未替换。
+
+已确认 Electron 36 Main MessagePort 的 transfer 列表只支持消息端口，Main 至 renderer 的像素仍需结构化克隆；不把专用通道称为零拷贝。显示协议须包含完整身份及帧基准，透明像素按覆盖更新，不能用 source-over 粘贴增量来显示橡皮。
+
+环境准备：用户批准的任务局部 Rust 1.99.1 与锁定依赖已准备在 `/private/tmp/flow-image-engine-toolchain`，没有修改系统 PATH 或全局配置。原生宿主已在 macOS 编译并执行；真实 Windows、正式打包与产品集成验收未完成。主树既有 `D CLAUDE.md` 未触碰。
+
+三条候选已在隔离集成树合入：原生 `85d1cf9`、原件保管 `bced170`、帧接收完整链至 `4f5f30c`。组合接点聚焦 3 文件/65 项通过（`/private/tmp/flow-engine-research/combined-focused.log`），Electron 类型检查通过。新增 Main 常驻进程连接与有界二进制拆包器；真实 binary 到 FrameStore 的首次连接发现 accept 后 capture 的 `inputThrough` 回退，被接收器正确拒绝（`connection-first.log`），已交原生负责人修复，不弱化序号保护。尚未接产品入口或真实 Canvas，不宣称双画布闭环通过。
+
+该序号问题由 `1c52a3f` 修复并合入：显示帧使用 epoch 内累计输入数，单笔命令仍使用笔内序号。真实连接测试现已通过（`connection-prefix-fixed.log`）：合成 PNG 保管后删除外部来源、重开保管库、Main 启动真实 Rust binary、两笔连续预览与提交像素一致、Undo 后显式新 epoch 安装恢复透明基底、正常 freeze/close。此证据使用执行者同修复构建的 debug binary；未认证正式打包、真实屏幕或整个项目 Session。性能线继续优化磁盘结算与连续输入；显示线接真实端口及双 Canvas。
+
+继续集成：显示 Canvas Adapter `bfcf77b` 与增量笔迹残影修复 `364c758` 已合入隔离树。后者累计真实 damage，覆盖平滑笔迹反向时被移除的旧尾部；执行者原生 2K 连续 40 笔逐帧/提交像素一致。此前串行抬笔至 prepared P95 45.47ms、至 accepted 50.81ms 是原生链路基线，不是用户屏幕延迟；异步持久队列仍在实施，不能宣称已消除等待。
+
+主管接线补充：输入在等待启动握手前快照，并预占单请求容量；错会话回包、半截 EOF 按 unknown 保留义务，不自动重试。帧元数据明确已接纳版本与尚未落盘笔链，限制四项、独立复制、校验 pipeline/epoch，不能把预览当保存。已完成完整 JS/Electron 构建（`integration-build.log`）、56 项接点测试（`integration-pipeline-focused.log`）和固定 `364c758` 宿主连接测试（`connection-damage-fixed.log`）；新增启动容量断言后的最终组合 4 文件/58 项通过（`integration-wire-final.log`），最终 Electron 类型检查通过（`integration-typecheck-final.log`）。日志均在 `/private/tmp/flow-engine-research/`。显示执行者此前真实 Electron 双 Canvas 证据回放录制帧，实时 native→双 Canvas 专项正在补齐，不将二者混称为整链通过。混合历史、Main Session、产品入口和全量组合验收仍待完成。
+
 更新：2026-11-06。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 
 ## Photocraft 与分隔条：本地组合验收（2026-11-06）

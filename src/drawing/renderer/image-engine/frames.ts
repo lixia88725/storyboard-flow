@@ -16,6 +16,11 @@ export type ImageFrameHeader = FrameIdentity & {
   baseFrameSeq: number | null;
   imageVersionRef: string | null;
   previewId?: string;
+  /** Display lineage only; these completed strokes are not yet durable-accepted.
+   * imageVersionRef identifies only the accepted prefix, not all displayed pixels. */
+  pipelineId?: string;
+  pendingOperationIds?: readonly string[];
+  workingHeadOperationId?: string;
   inputThrough: number;
   width: number;
   height: number;
@@ -59,7 +64,7 @@ const sameIdentity = (a: FrameIdentity, b: FrameIdentity) => a.sessionId === b.s
 export type InstalledFrameHeader = Omit<ImageFrameHeader, 'tiles' | 'baseFrameSeq'>;
 const installedHeader = (h: ImageFrameHeader): InstalledFrameHeader => {
   const { tiles: _tiles, baseFrameSeq: _base, ...meta } = h;
-  return meta;
+  return { ...meta, ...(meta.pendingOperationIds ? { pendingOperationIds: [...meta.pendingOperationIds] } : {}) };
 };
 
 /** Validates a complete transport frame, then takes a private copy of its exact byte view.
@@ -68,7 +73,7 @@ const installedHeader = (h: ImageFrameHeader): InstalledFrameHeader => {
  */
 export function validateImageFrame(header: unknown, payload: unknown, limits: FrameLimits = defaultFrameLimits): FrameResult<{ header: ImageFrameHeader; pixels: Uint8Array }> {
   try {
-    header = dataFields(header, [...identityKeys, 'frameSeq', 'baseFrameSeq', 'imageVersionRef', 'previewId', 'inputThrough', 'width', 'height', 'encoding', 'tiles']);
+    header = dataFields(header, [...identityKeys, 'frameSeq', 'baseFrameSeq', 'imageVersionRef', 'previewId', 'pipelineId', 'pendingOperationIds', 'workingHeadOperationId', 'inputThrough', 'width', 'height', 'encoding', 'tiles']);
     const cap = limitsOf(limits), own = identity(header);
     if (!own || !record(header) || !integer(header.frameSeq, 1) ||
         !(header.baseFrameSeq === null || (integer(header.baseFrameSeq, 1) && header.baseFrameSeq < header.frameSeq)) ||
@@ -76,6 +81,24 @@ export function validateImageFrame(header: unknown, payload: unknown, limits: Fr
         !(header.previewId === undefined || text(header.previewId)) || (header.imageVersionRef === null && !text(header.previewId)) ||
         !integer(header.inputThrough) || !integer(header.width, 1) || !integer(header.height, 1) || header.encoding !== 'srgb-rgba8-straight')
       return fail('invalid-frame', 'Invalid frame identity, sequence, version or dimensions');
+    const pipeline = header.pipelineId;
+    const pending = header.pendingOperationIds;
+    const head = header.workingHeadOperationId;
+    let pendingIds: string[] | undefined;
+    if (pipeline === undefined) {
+      if (pending !== undefined || head !== undefined) return fail('invalid-frame', 'Pending lineage requires a pipeline identity');
+    } else {
+      if (!text(pipeline) || !Array.isArray(pending) || pending.length > 4)
+        return fail('invalid-frame', 'Invalid pipeline identity or bounded pending list');
+      pendingIds = [];
+      for (let i = 0; i < pending.length; i++) {
+        const entry = Object.getOwnPropertyDescriptor(pending, String(i));
+        if (!entry || !Object.hasOwn(entry, 'value') || !text(entry.value) || pendingIds.includes(entry.value))
+          return fail('invalid-frame', 'Pending operations must be distinct own string entries');
+        pendingIds.push(entry.value);
+      }
+      if (head !== pendingIds.at(-1)) return fail('invalid-frame', 'Working head must equal the pending tail');
+    }
     if (header.width > cap.maxDimension || header.height > cap.maxDimension || header.width > Math.floor(cap.maxPixels / header.height))
       return fail('resource-limit', 'Frame exceeds canvas budget');
     if (!(payload instanceof Uint8Array) || !(payload.buffer instanceof ArrayBuffer)) return fail('invalid-frame', 'Payload must be an unshared Uint8Array');
@@ -106,6 +129,7 @@ export function validateImageFrame(header: unknown, payload: unknown, limits: Fr
     if (header.baseFrameSeq === null && bytes !== header.width * header.height * 4) return fail('invalid-frame', 'Keyframe must cover the entire canvas');
     const h: ImageFrameHeader = { ...own, frameSeq: header.frameSeq, baseFrameSeq: header.baseFrameSeq,
       imageVersionRef: header.imageVersionRef, ...(header.previewId === undefined ? {} : { previewId: header.previewId }),
+      ...(pipeline === undefined ? {} : { pipelineId: pipeline as string, pendingOperationIds: pendingIds!, ...(head === undefined ? {} : { workingHeadOperationId: head as string }) }),
       inputThrough: header.inputThrough, width: header.width, height: header.height, encoding: 'srgb-rgba8-straight', tiles };
     return { ok: true, value: { header: h, pixels: new Uint8Array(payload) } };
   } catch { return fail('invalid-frame', 'Frame could not be snapshotted'); }
@@ -170,6 +194,7 @@ export function createImageFrameStore(initialIdentity: FrameIdentity, limits: Fr
   if (!owner) throw Error('Invalid frame store identity');
   const cap = limitsOf(limits);
   let disposed = false, publishing = false, needsKeyframe = true, lastSeq = 0, lastInputThrough = 0, hasVersion = false;
+  let pipelineId: string | undefined;
   let frame: { header: ImageFrameHeader; backing: Backing } | null = null;
   const listeners = new Set<(view: FrameView) => void>();
   const view = (): FrameView => {
@@ -202,7 +227,7 @@ export function createImageFrameStore(initialIdentity: FrameIdentity, limits: Fr
       if (checked.sessionId === owner!.sessionId && checked.incarnation === owner!.incarnation &&
           (checked.workerEpoch < owner!.workerEpoch || (checked.workerEpoch === owner!.workerEpoch && checked.epoch < owner!.epoch)))
         return fail('stale-frame', 'Reset cannot move an incarnation backwards');
-      if (!sameIdentity(checked, owner!)) { lastSeq = 0; lastInputThrough = 0; hasVersion = false; }
+      if (!sameIdentity(checked, owner!)) { lastSeq = 0; lastInputThrough = 0; hasVersion = false; pipelineId = undefined; }
       owner = checked; frame = null; needsKeyframe = true; emit(); return { ok: true, value: true };
     },
     accept(header: unknown, payload: unknown): FrameResult<number> {
@@ -210,6 +235,7 @@ export function createImageFrameStore(initialIdentity: FrameIdentity, limits: Fr
       const result = validateImageFrame(header, payload, cap); if (!result.ok) return result;
       const { header: h, pixels } = result.value;
       if (!sameIdentity(h, owner!)) return fail('wrong-identity', 'Reset is required before a different identity can be installed');
+      if (lastSeq > 0 && h.pipelineId !== pipelineId) return fail('wrong-identity', 'Pipeline changes require a new epoch');
       if (h.frameSeq <= lastSeq) return fail('stale-frame', 'Frame is older than the installed sequence');
       if (h.baseFrameSeq !== null && (needsKeyframe || !frame || h.baseFrameSeq !== lastSeq || h.frameSeq !== lastSeq + 1)) {
         needsKeyframe = true; emit(); return fail('needs-keyframe', 'Delta does not extend the installed complete frame');
@@ -221,7 +247,7 @@ export function createImageFrameStore(initialIdentity: FrameIdentity, limits: Fr
         return fail('invalid-frame', 'An installed document version cannot become unversioned');
       try {
         const backing = applyFrame(h, pixels, h.baseFrameSeq === null ? null : frame!.backing);
-        frame = { header: h, backing }; lastSeq = h.frameSeq; lastInputThrough = h.inputThrough;
+        frame = { header: h, backing }; lastSeq = h.frameSeq; lastInputThrough = h.inputThrough; pipelineId = h.pipelineId;
         hasVersion ||= h.imageVersionRef !== null; needsKeyframe = false;
       } catch { return fail('resource-limit', 'Could not allocate frame tiles'); }
       emit(); return { ok: true, value: h.frameSeq };

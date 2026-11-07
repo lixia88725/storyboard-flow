@@ -1,5 +1,15 @@
 # 架构与数据契约
 
+## 原生图片发动机施工接点
+
+本节为隔离施工树已落地的接点，不表示默认运行链已迁移；完整状态见 CURRENT。
+
+`platform/main/imageEngineConnection` 独占一个原生子进程及单个在途请求，启动等待也占用容量。发送前快照输入；stdout 使用有界长度拆包，握手和响应核对 session/incarnation/workerEpoch/request/operation 身份。通道断裂只报告 unknown，不能证明原生操作取消，调用方仍负责结算。日志与图像协议分流，Main 不把二进制通道直接暴露给页面。
+
+`drawing/renderer/image-engine/frames` 安装完整帧或连续增量，透明像素绝对覆盖，身份切换显式 reset。Canvas Adapter 只呈现该共享 FrameView，无第二份正式绘画计算。Main 到 renderer 当前为结构化克隆；只在脏区域复制，不宣称跨进程零拷贝。
+
+连续绘画协议区分 `imageVersionRef` 已接纳前缀和 `pendingOperationIds` 未 durable-accepted 的完整笔链；`workingHeadOperationId` 等于待确认链尾，活动笔另用 previewId。pipeline 开始/结束提升 epoch，同 epoch 的 pipelineId 不变；pending 为空也不能替代项目 checkpoint/Save 成功判据。帧接收器只验证展示身份，不承担项目持久化认证。原生异步队列实现与 Main 项目接纳仍在施工。
+
 ## 运行链与职责
 
 源码按六个概念根组织：`src/workbench` 负责工作台布局和界面接线，`src/storyboard` 负责故事板组织、Pending、动作与对白的模型及界面，`src/drawing` 负责画布与图层，`src/session` 负责编辑状态、队列和历史，`src/project-files` 负责项目文件、资产与 TIFF，`src/platform` 负责 Electron、操作系统和桥接。各根内按运行环境区分，避免浏览器引入 Node 实现。
