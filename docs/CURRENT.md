@@ -2,6 +2,8 @@
 
 ## 图片发动机替换：施工中（2026-11-07）
 
+主管本轮补充：当前集成源码自编译宿主与 lease 的附加清单 4 文件/31 项通过（`/private/tmp/flow-engine-research/integration-native-approved.log`）。新增 WorkerOwner 生命周期接点 5 项通过（`worker-owner-focused-final.log`）：真实进程替换、旧代拒绝、未接受候选保留、并发重启、dispose 中断和正常释放 lease 后拒绝新请求。独立只读审查指出正常 release 不发送 invalidated 的缺口，已加同步 held 检查并实测；恢复接点不自动激活 Session，尚待连续笔链接入，不把这一层通过当自动恢复已完成。
+
 用户已批准完整替换计划：常驻原生 PhotoCraft 负责图像编辑；Flow 保留分镜、对白、Pending、统一历史与文件事务。目标包括先进入项目再后台保管/准备图片、新内部文档版本，以及旧有效 Flow 项目复制升级；不是原地改写用户旧项目，也不宣称任意 Photoshop 文件全面往返。
 
 施工基线 `da18b06`。隔离分支 `codex/image-engine-integration` 负责接点与组合验收，原生执行与原件保管分别由 `codex/image-engine-native`、`codex/image-engine-storage` 实施。首个验收闭环为打开、双画布绘画、混合历史、持久化、关闭重开与输出；当前尚未通过该闭环，默认产品路径尚未替换。

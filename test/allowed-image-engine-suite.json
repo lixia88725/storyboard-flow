@@ -2,5 +2,6 @@
   "src/platform/main/imageEngineConnection.test.ts",
   "src/platform/main/imageProjectLease.test.ts",
   "src/project-files/main/image-engine/nativeSession.test.ts",
-  "src/platform/main/imageEngineOutput.test.ts"
+  "src/platform/main/imageEngineOutput.test.ts",
+  "src/platform/main/imageEngineWorkerOwner.test.ts"
 ]
