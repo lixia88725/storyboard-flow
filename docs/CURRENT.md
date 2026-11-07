@@ -32,6 +32,8 @@
 
 主管最新组合：完整构建通过（`/private/tmp/flow-engine-research/integration-project-lease-build.log`）；真实 native 连续笔链、连接身份、项目 CAS 和混合历史基础共 4 文件/23 项通过（同目录 `project-pipeline-combined.log`）。项目 Session 端到端与最终获准全量仍待完成。
 
+隔离集成提交 `306c9a6`：主管独立从固定源码构建原生全部目标成功（`/private/tmp/flow-engine-research/integration-native-build.log`），完整获准清单 **97 文件／1139 项通过**（同目录 `integration-approved-suite.log`，359.87s），preload 检查通过（`integration-preload.log`）。此全量对应该提交，不覆盖随后尚未合入的 Main Session、导出或显示专项；默认产品未迁移、未发布。
+
 更新：2026-11-06。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 
 ## Photocraft 与分隔条：本地组合验收（2026-11-06）
