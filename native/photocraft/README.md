@@ -276,3 +276,6 @@ The hello capability `recoveredCandidateAcceptAtInstalledVersion` explicitly per
 an explicit recovered accept when Main has already installed that exact prepared
 version. A missing capability does not certify this recovery branch. Loading a
 version alone never creates an accepted operation receipt.
+Candidate recovery origin is pinned on the candidate itself. A failed load or
+accepted-receipt append keeps that origin for a retry in the same worker; a retry
+never promotes an old document merely by changing its version label.

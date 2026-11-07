@@ -571,3 +571,101 @@ fn explicit_recovered_accept_can_settle_exact_main_installed_candidate_version()
     );
     assert_eq!(status.header["body"]["state"], "accepted");
 }
+
+#[test]
+fn recovered_accept_origin_survives_load_and_journal_failure_then_same_host_retry() {
+    fn usage(root: &std::path::Path) -> u64 {
+        fs::read_dir(root)
+            .unwrap()
+            .map(|e| {
+                let p = e.unwrap().path();
+                if p.is_dir() {
+                    usage(&p)
+                } else {
+                    p.metadata().unwrap().len()
+                }
+            })
+            .sum()
+    }
+    for installed in [false, true] {
+        for journal_failure in [false, true] {
+            let mut h = Harness::new();
+            let n = h.call("new", json!({"kind":"new","width":64,"height":32}));
+            let old = h.accept("new", &n);
+            let old_pixels = h.capture();
+            let prepared = h.edit("candidate", json!({"kind":"fill","color":"#33aa66"}));
+            let new = prepared.header["body"]["receipt"]["versionId"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            let root = h.root.clone();
+            drop(h);
+            let reservation = root.join("staging/test-reservation.tmp");
+            fs::write(&reservation, vec![0u8; 16384]).unwrap();
+            let budget = if journal_failure {
+                usage(&root)
+            } else {
+                128 << 20
+            };
+            let mut h = Harness {
+                host: Host::open(&root, budget).unwrap(),
+                root: root.clone(),
+                base: None,
+                seq: 0,
+            };
+            let base = if installed { new.clone() } else { old.clone() };
+            let loaded = h.call("load", json!({"kind":"load","versionId":base}));
+            assert_eq!(loaded.header["body"]["kind"], "loaded");
+            h.base = Some(base);
+            let _before = h.capture();
+            let manifest = root.join(format!("versions/{new}.json"));
+            let retained = root.with_extension("retained-candidate.json");
+            if !journal_failure {
+                fs::rename(&manifest, &retained).unwrap();
+            }
+            let failed = h.call(
+                "firstAccept",
+                json!({"kind":"accept","candidateId":"candidate"}),
+            );
+            assert_eq!(
+                failed.header["body"]["kind"], "failure",
+                "installed={installed} journal={journal_failure}: {}",
+                failed.header
+            );
+            let status = h.call(
+                "afterFailure",
+                json!({"kind":"status","targetOperationId":"candidate"}),
+            );
+            assert_eq!(
+                status.header["body"]["state"], "prepared",
+                "failure cannot claim accepted"
+            );
+            if journal_failure {
+                fs::rename(
+                    &reservation,
+                    root.with_extension("retained-test-reservation"),
+                )
+                .unwrap();
+            } else {
+                fs::rename(&retained, &manifest).unwrap();
+            }
+            let retry = h.call(
+                "retryAccept",
+                json!({"kind":"accept","candidateId":"candidate"}),
+            );
+            assert_eq!(
+                retry.header["body"]["kind"], "accepted",
+                "installed={installed} journal={journal_failure}: {}",
+                retry.header
+            );
+            h.base = Some(new.clone());
+            let after = h.capture();
+            assert_ne!(after, old_pixels);
+            assert!(after.chunks_exact(4).all(|p| p == [51, 170, 102, 255]));
+            eprintln!(
+                "recovery retry evidence retained: installed={installed} journal_failure={journal_failure} {}",
+                root.display()
+            );
+        }
+    }
+}

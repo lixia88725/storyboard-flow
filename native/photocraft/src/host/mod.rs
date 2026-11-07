@@ -231,6 +231,7 @@ struct Candidate {
     receipt: VersionReceipt,
     checkpoint: Option<Checkpoint>,
     from_live: bool,
+    recovered: bool,
 }
 pub struct Host {
     pub worker_epoch: u64,
@@ -460,6 +461,7 @@ impl Host {
             receipt,
             checkpoint,
             from_live: live_input.is_some(),
+            recovered: false,
         });
         Ok(body)
     }
@@ -753,8 +755,7 @@ impl Host {
                     ));
                 }
                 self.base(r)?;
-                let recovered = self.candidate.is_none();
-                if recovered {
+                if self.candidate.is_none() {
                     let v = self
                         .store
                         .op_read(candidate_id, "prepared")?
@@ -770,12 +771,14 @@ impl Host {
                         receipt,
                         checkpoint: None,
                         from_live: v["fromLive"] == true,
+                        recovered: true,
                     });
                 }
                 let c = self
                     .candidate
                     .as_ref()
                     .ok_or_else(|| Error::none("not-found", "candidate missing"))?;
+                let recovered = c.recovered;
                 // Main may already have installed this exact durable candidate before the
                 // native accept receipt was flushed. Explicit recovery settles that same version.
                 let recovering_installed = recovered
