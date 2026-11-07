@@ -87,6 +87,8 @@ Main 项目实际连接专项：`FLOW_IMAGE_HOST=<固定宿主> FLOW_PROJECT_LEA
 
 双 Canvas 节拍专项设置 `FLOW_PIPELINE_SAMPLE_INTERVAL_MS=10`；默认 0 为 burst。报告绝对 deadline、所有积压/重试与 oracle 开销，截图移出 paced 输入窗口。构建/全量等并发负载需记录，不把 native accepted 的轮询观察时间当硬盘持久耗时。
 
-原生发动机施工的附加获准清单为 `test/allowed-image-engine-suite.json`，当前 5 个真实连接专项。完整发动机验收须同时报告通用清单与该附加清单，不能因原生环境缺失静默跳过。准备固定宿主后，设置 `FLOW_IMAGE_HOST`、`FLOW_PROJECT_LEASE_BINARY`，并暂令 `FLOW_PROJECT_LEASE_BIN` 指向同一 guard；使用上方显式枚举命令，将清单路径改为该附加清单即可。当前正式 CI 尚未接这组施工专项，不把通用 CI 通过当新发动机整体验收。
+原生发动机施工的附加获准清单为 `test/allowed-image-engine-suite.json`，当前 6 个真实连接专项。完整发动机验收须同时报告通用清单与该附加清单，不能因原生环境缺失静默跳过。准备固定宿主后，设置 `FLOW_IMAGE_HOST`、`FLOW_PROJECT_LEASE_BINARY`，并暂令 `FLOW_PROJECT_LEASE_BIN` 指向同一 guard；使用上方显式枚举命令，将清单路径改为该附加清单即可。当前正式 CI 尚未接这组施工专项，不把通用 CI 通过当新发动机整体验收。
 
 真实 Main 项目双画布专项：设置 `FLOW_IMAGE_HOST`、`FLOW_PROJECT_LEASE_BIN` 指向固定真实组件，再运行 `node scripts/flow-main-image-pipeline-smoke.mjs`，脚本先使用真实 ProjectStore/lease/NativeSession；`FLOW_MAIN_PIPELINE_MODE=paced` 启用 40 笔节拍（运行前核对脚本当前参数）。保留全部背压重试，metrics/service 派生文件不能把 API 总耗时当单次 fsync。统计测试 `node --test scripts/flow-main-image-pipeline-metrics.test.cjs` 不需要 GUI；性能窗口需协调暂停其他重负载。
+
+上下文接点专项 `imageEngineContext.test.ts` 使用支持四项 context/decimal 能力的真实宿主，覆盖选层不改版本、浮动选区及取消后显式展示代次切换。纯 Main 输入控制测试 `src/session/core/nativePipeline.test.ts` 纳入通用获准清单。

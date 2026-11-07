@@ -22,6 +22,10 @@ V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目�
 
 `platform/main/imageEngineOutput` 从 Main Session 的冻结快照取得目标原生引用，校验宿主导出回执的版本、文档、尺寸、格式、字节数、摘要和分层状态，再复核 Session 未变。仅返回捕获字节，不发布文件、不推进 head、不认证外部 Save。原生 export 只读取不可变版本，拒绝损失警告和无法保留的未知块；输出仍受独立传输预算约束。
 
+原生上下文通过显式能力 `toolContextSummaryV1`、`contextLayerSelectionV1`、`floatingGestureV1`、`decimalLayerIdsV1` 准入。图层 ID 跨 Node 边界一律规范十进制字符串，避免 JavaScript 数值精度丢失。选层更新上下文代次，不制造作品版本或 Undo；浮动选区以 previewId、代次和输入序号绑定，取消恢复起始像素并提升展示 epoch，接收器须显式 reset，不能接受旧代增量。当前 summary 整体受 48 KiB 限制，超限拒绝，尚未分页；不是默认工具栏已接入。
+
+同 Main 恢复通过 Adapter 的可选 WorkerOwner 替换自有原生进程；原 Main 历史、待提交计划及项目 head 保留。先隔离旧代并确认退出，再排空 Main 输入记录写入，以唯一可达项目决定核对 native 状态，不自动重放。恢复结果区分 committed/notCommitted；完整原始意图通过 operationRecords 分页读取。未取得 ready 身份或未抬笔的缓存仍是显式 recoveryPending，不能算恢复绘画成功，也不能据此正常关闭。
+
 ## 运行链与职责
 
 源码按六个概念根组织：`src/workbench` 负责工作台布局和界面接线，`src/storyboard` 负责故事板组织、Pending、动作与对白的模型及界面，`src/drawing` 负责画布与图层，`src/session` 负责编辑状态、队列和历史，`src/project-files` 负责项目文件、资产与 TIFF，`src/platform` 负责 Electron、操作系统和桥接。各根内按运行环境区分，避免浏览器引入 Node 实现。

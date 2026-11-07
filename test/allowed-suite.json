@@ -95,5 +95,6 @@
   "src/project-files/main/image-engine/sourceStore.test.ts",
   "src/platform/main/imageEngineTransport.test.ts",
   "src/session/core/imageProjectHistory.test.ts",
-  "src/project-files/main/image-engine/projectStore.test.ts"
+  "src/project-files/main/image-engine/projectStore.test.ts",
+  "src/session/core/nativePipeline.test.ts"
 ]
