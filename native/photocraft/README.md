@@ -256,7 +256,8 @@ Frames contain numeric `workerEpoch` and document `epoch`, `documentId`,
 document epoch; pen-up, accept and capture never reset it. Gesture `fromSeq` /
 `throughSeq` and prepared stroke `inputThrough` remain local to that gesture.
 Only an explicit new epoch resets the frame prefix. Capture emits a complete keyframe; consecutive live updates emit cumulative dirty
-rectangles. Exact native live adoption promotes the existing visual baseline
+rectangles, including regions restored when a reversing pressure stroke removes
+an earlier smoothing tail. Exact native live adoption promotes the existing visual baseline
 without uploading a whole canvas on each pen-up. Undo/cancel/recovery creates an
 explicit epoch/keyframe barrier. No PNG/base64 is used for frames, and no
 Rust-to-Electron-to-screen zero-copy claim is made.

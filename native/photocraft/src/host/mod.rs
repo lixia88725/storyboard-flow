@@ -219,6 +219,8 @@ struct Gesture {
     params: Value,
     points: Vec<photocraft_engine::paint::StrokePoint>,
     live: LiveStroke,
+    // Includes removed smoothing tails, which may lie outside the latest live bounds.
+    dirty: Rect,
     through: u64,
     checkpoint: Checkpoint,
     base: String,
@@ -631,6 +633,7 @@ impl Host {
                     id: preview_id.clone(),
                     params,
                     points: points.clone(),
+                    dirty: live.bounds(),
                     live,
                     through,
                     checkpoint,
@@ -666,7 +669,8 @@ impl Host {
                 {
                     return Err(Error::none("limit", "stroke sample budget"));
                 }
-                g.live.push(points).map_err(native)?;
+                let damage = g.live.push(points).map_err(native)?;
+                g.dirty = g.dirty.union(&damage);
                 g.points.extend_from_slice(points);
                 g.through += points.len() as u64;
                 self.epoch_input_through = next_input;
@@ -951,11 +955,7 @@ impl Host {
     }
     fn preview(&mut self, r: &Request) -> Result<(Value, Vec<u8>)> {
         let (doc, preview_id, dirty) = if let Some(g) = &self.gesture {
-            (
-                g.live.doc.clone(),
-                Some(g.id.clone()),
-                Some(g.live.bounds()),
-            )
+            (g.live.doc.clone(), Some(g.id.clone()), Some(g.dirty))
         } else {
             let st = self
                 .engine

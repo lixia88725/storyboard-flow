@@ -483,3 +483,47 @@ fn display_input_prefix_accumulates_across_accept_capture_and_next_stroke() {
     assert_ne!(reset.header["body"]["frame"]["epoch"], epoch);
     assert_eq!(reset.header["body"]["frame"]["inputThrough"], 0);
 }
+
+#[test]
+fn incremental_frames_erase_removed_tail_on_reversing_pressure_stroke() {
+    fn apply(dst: &mut [u8], width: usize, r: Response) {
+        assert_eq!(r.header["body"]["kind"], "frame", "{}", r.header);
+        for tile in r.header["body"]["frame"]["tiles"].as_array().unwrap() {
+            let x = tile["x"].as_u64().unwrap() as usize;
+            let y = tile["y"].as_u64().unwrap() as usize;
+            let w = tile["w"].as_u64().unwrap() as usize;
+            let h = tile["h"].as_u64().unwrap() as usize;
+            let offset = tile["offset"].as_u64().unwrap() as usize;
+            for row in 0..h {
+                let target = ((y + row) * width + x) * 4;
+                let source = offset + row * w * 4;
+                dst[target..target + w * 4].copy_from_slice(&r.payload[source..source + w * 4]);
+            }
+        }
+    }
+    let mut h = Harness::new();
+    let n = h.call("n", json!({"kind":"new","width":512,"height":256}));
+    h.accept("n", &n);
+    let fill = h.edit("fill", json!({"kind":"fill","color":"#778899"}));
+    h.accept("fill", &fill);
+    let mut display = h.capture();
+    for i in 0..8 {
+        let id = format!("p{i}");
+        let begin = h.call(&format!("begin{i}"), json!({"kind":"strokeBegin","previewId":id,"brush":{"size":24,"opacity":0.5,"flow":1,"seed":i+1,"erase":i%4==3,"color":"#ee2244"},"points":[{"x":200,"y":200,"pressure":1}]}));
+        apply(&mut display, 512, begin);
+        for (index, x) in [240, 280, 320, 280, 240, 200].iter().enumerate() {
+            let frame = h.call(&format!("append{i}_{index}"), json!({"kind":"strokeAppend","previewId":id,"fromSeq":index+2,"points":[{"x":x,"y":200,"pressure":0.75}]}));
+            apply(&mut display, 512, frame);
+        }
+        // Compare the transported delta chain with the native preview before pen-up.
+        assert!(display == h.capture(), "stale removed tail before finish {i}");
+        let finish = format!("finish{i}");
+        let prepared = h.call(
+            &finish,
+            json!({"kind":"strokeFinish","previewId":id,"throughSeq":7}),
+        );
+        h.accept(&finish, &prepared);
+        assert!(display == h.capture(), "live adoption differs at stroke {i}");
+    }
+    eprintln!("reversing-tail evidence retained: {}", h.root.display());
+}
