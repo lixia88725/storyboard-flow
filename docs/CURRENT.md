@@ -34,6 +34,14 @@
 
 隔离集成提交 `306c9a6`：主管独立从固定源码构建原生全部目标成功（`/private/tmp/flow-engine-research/integration-native-build.log`），完整获准清单 **97 文件／1139 项通过**（同目录 `integration-approved-suite.log`，359.87s），preload 检查通过（`integration-preload.log`）。此全量对应该提交，不覆盖随后尚未合入的 Main Session、导出或显示专项；默认产品未迁移、未发布。
 
+连续队列真实双 Canvas 专项 `b33646f` 已合入，主管核对其 Connection/Framing 源摘要与集成树相同。固定 `8adc75f`、2K 40 笔/283 帧/107339456 通道逐字节一致，最终两 Canvas 与 native 摘要一致，40 次 prepared/accepted FIFO，39 笔在前笔未确认时开始，freeze 封输入后排空正常关闭。证据目录 `flow-image-engine-pipeline-5WKxVW`；离线统计 `/private/tmp/flow-image-engine-pipeline-display-final-metrics.json`。无节拍 burst／并发负载下 810 次背压拒绝，逐笔累计首 down→双 Canvas ACK P95 **43.63ms**、末点→ACK **1.56ms**、末点→native accepted **294.88ms**；不能只用末点或原生请求时间声称起笔无等待。ACK 含像素校验，未认证物理延迟、稳定性能或 Main 项目 CAS，10ms 采样节拍待测。
+
+空闲窗口 paced 专项（`flow-image-engine-pipeline-NE63J4`）一次通过：40 笔、280 batch、全局 10ms deadline，不丢输入，零背压、队列峰值 2；deadline→双 Canvas ACK P95 4.64ms，实际派发→ACK P95 1.29ms，均含像素 oracle，未认证物理显示延迟。末点→accepted 观察 P95 144.32ms 包含串行轮询，尾笔还跨越窗口后的截图，不能当 native 落盘耗时。统计 `/private/tmp/flow-image-engine-pipeline-paced-idle-summary.json`；不得混同此前 burst 的起笔等待。
+
+Main 串行闭环 `1f0c382` 已合入，主管在自建 pipeline 版宿主和真实 lease 上复验 3 文件／25 项通过（`/private/tmp/flow-engine-research/main-session-integrated.log`）。包括混合历史、三种崩溃窗口、回执丢失、撤销后画面安装失败、冻结审计失败、Append 拒绝后明确取消草稿。该 Session 尚未接连续输入；下一项是 Main 的短命令调度与项目持久队列分离。
+
+原生稳定版本 PSD/分层 TIFF 输出与 Resume `80a701a` 已合入，执行者 21 native 测试、18 项独立格式检查通过；未知块转换、规范化或损失警告拒绝，无平图替代。主管新增 Main 冻结版本输出捕获，真实项目绘画→冻结→PSD/TIFF bytes→正常关闭通过，捕获期间项目变更和传输字节损坏拒绝，项目 head 不变、未发布用户文件（`/private/tmp/flow-engine-research/main-output-capture.log`）。这不是完整 Save/重命名/Trash/Refresh 集成，也不外推任意复杂文件全面往返。
+
 更新：2026-11-06。这里记录状态；操作约束见 [AGENTS](../AGENTS.md)，接口见[架构](ARCHITECTURE.md)。
 
 ## Photocraft 与分隔条：本地组合验收（2026-11-06）

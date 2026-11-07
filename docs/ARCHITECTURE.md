@@ -8,13 +8,15 @@
 
 `drawing/renderer/image-engine/frames` 安装完整帧或连续增量，透明像素绝对覆盖，身份切换显式 reset。Canvas Adapter 只呈现该共享 FrameView，无第二份正式绘画计算。Main 到 renderer 当前为结构化克隆；只在脏区域复制，不宣称跨进程零拷贝。
 
-连续绘画协议区分 `imageVersionRef` 已接纳前缀和 `pendingOperationIds` 未 durable-accepted 的完整笔链；`workingHeadOperationId` 等于待确认链尾，活动笔另用 previewId。pipeline 开始/结束提升 epoch，同 epoch 的 pipelineId 不变；pending 为空也不能替代项目 checkpoint/Save 成功判据。帧接收器只验证展示身份，不承担项目持久化认证。原生异步队列实现与 Main 项目接纳仍在施工。
+连续绘画协议区分 `imageVersionRef` 已接纳前缀和 `pendingOperationIds` 未 durable-accepted 的完整笔链；`workingHeadOperationId` 等于待确认链尾，活动笔另用 previewId。pipeline 开始/结束提升 epoch，同 epoch 的 pipelineId 不变；pending 为空也不能替代项目 checkpoint/Save 成功判据。帧接收器只验证展示身份，不承担项目持久化认证。原生异步队列已实现：输入线程与持久化线程分开，四笔有界队列，失败冻结依赖链而不自动重试。Main 项目接纳与默认产品接线仍在施工。
 
 项目 V2 在 `platform/contracts/imageProject.ts` 定义图片内容联合引用：source 指向固定来源及解释身份，native 指向 store/document/version/manifest 摘要；项目不保存另一份可写 PNG 图层树。后台 hydration 写持久派生索引，不改变项目引用、不产生用户 Undo；第一笔才由 source 引用变成新 native 版本，撤销可回到同一固定来源解释。
 
 `session/core/snapshotHistory` 为 V1/V2 共用的唯一历史算法。新路径先 prepare 历史计划，Main 的 V2 store 发布可达 commit/head 后再 commit 同一计划；native accepted 是项目决定后的结算，不是项目提交权威。孤立 commit 文件不自动认领，未结算 native 决定单列恢复账本。当前重开继续沿用清空进程内 Undo 栈的行为，不声称已实现跨重启 Undo。
 
-V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目录保护都不等于跨进程锁。全项目恢复预算包括实际留存与工作进程预留，不能把各子模块的局部额度相加后仍声称受 8 GiB 总额保护。相关 Main Session、真实 writer guard 和常规提交性能接线尚在施工，不启用默认产品入口。
+V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目录保护都不等于跨进程锁。全项目恢复预算包括实际留存与工作进程预留，不能把各子模块的局部额度相加后仍声称受 8 GiB 总额保护。`platform/main/imageProjectLease` 通过独立原生 guard 持有固定 inode 的 OS 锁，同时持久记录 Main 身份。guard 异常退出关闭当前写门，但不发布正常释放；旧 Main 未确认退出时，新 guard 也拒绝接管，保护仍在途的文件副作用。正常 release 必须由调用方先排空义务，不能把锁失效当取消。当前仅本机 macOS 验证；默认产品入口尚未接入。
+
+`platform/main/imageEngineOutput` 从 Main Session 的冻结快照取得目标原生引用，校验宿主导出回执的版本、文档、尺寸、格式、字节数、摘要和分层状态，再复核 Session 未变。仅返回捕获字节，不发布文件、不推进 head、不认证外部 Save。原生 export 只读取不可变版本，拒绝损失警告和无法保留的未知块；输出仍受独立传输预算约束。
 
 ## 运行链与职责
 

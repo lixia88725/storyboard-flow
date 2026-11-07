@@ -80,3 +80,9 @@ macOS 包附带 TIFF 组件，不附带 Python 解释器。第一次处理 TIFF 
 真实串行宿主显示专项：完整构建后显式设置 `FLOW_IMAGE_HOST`，运行 `node scripts/flow-image-engine-live-smoke.mjs`。它实际调用宿主并将实时帧经 Main/MessagePort 交给两 Canvas；结果分别记录请求 RTT、Canvas ACK 和截图耗时，不能称作物理笔到屏幕延迟。截图同时保留独立透明 CSS 参考和不透明算术预混对照。默认固定候选路径只用于施工证据复现，正式环境应显式指定受验宿主。
 
 图片发动机施工专项（不自动混入无需原生组件的测试）：`FLOW_IMAGE_HOST=<固定宿主绝对路径> node node_modules/vitest/vitest.mjs run src/platform/main/imageEngineConnection.test.ts`；连续笔链要求 `strokePipelineV1` 能力。项目锁专项：`FLOW_PROJECT_LEASE_BINARY=<锁辅助程序绝对路径> node node_modules/vitest/vitest.mjs run src/platform/main/imageProjectLease.test.ts`。两者缺少真实组件时明确失败，不使用假后端代替；执行前记录组件提交及摘要。
+
+连续绘画真实显示专项：`node scripts/flow-image-engine-pipeline-smoke.mjs`（先完整构建）；`FLOW_IMAGE_HOST` 指向固定 `strokePipelineV1` 宿主，`FLOW_IMAGE_CONNECTION_DIR` 可指定需验证的 Main 接点源码。脚本复制两个明确文件并记录摘要，使用独立临时项目/profile。该专项检查原生队列到双 Canvas，不伪造 Main 项目 CAS。`node scripts/flow-image-engine-pipeline-metrics.cjs <result.json>` 从原始 trace 派生包含所有准入重试的逐笔区间；无节拍 burst 不等同于正常采样节拍。
+
+Main 项目实际连接专项：`FLOW_IMAGE_HOST=<固定宿主> FLOW_PROJECT_LEASE_BIN=<真实lease> node node_modules/vitest/vitest.mjs run src/project-files/main/image-engine/nativeSession.test.ts`。冻结版本输出专项使用 `FLOW_PROJECT_LEASE_BINARY`（注意当前两个专项变量名不同）与支持 `immutableVersionExportV1` 的 `FLOW_IMAGE_HOST`，运行 `src/platform/main/imageEngineOutput.test.ts`。都需要真实组件；临时专项尚未并入无环境设置的通用清单。
+
+双 Canvas 节拍专项设置 `FLOW_PIPELINE_SAMPLE_INTERVAL_MS=10`；默认 0 为 burst。报告绝对 deadline、所有积压/重试与 oracle 开销，截图移出 paced 输入窗口。构建/全量等并发负载需记录，不把 native accepted 的轮询观察时间当硬盘持久耗时。
