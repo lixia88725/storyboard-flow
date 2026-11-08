@@ -504,6 +504,17 @@ impl Host {
         }
         Ok(())
     }
+    fn admit_product_brush(&self, brush: &Value) -> Result<()> {
+        if (brush.get("flowBrush").is_some() || brush.get("flowProduct") == Some(&json!(true)))
+            && self.document()?.selection.is_some()
+        {
+            return Err(Error::none(
+                "unsupported-source-selection",
+                "source document contains an intrinsic selection; product paint is refused until this source constraint is explicitly supported",
+            ));
+        }
+        Ok(())
+    }
     fn target(&self) -> Result<LayerTarget> {
         let s = self
             .engine
@@ -854,6 +865,7 @@ impl Host {
                     .filter(|v| *v <= 9_007_199_254_740_991)
                     .ok_or_else(|| Error::none("limit", "epoch input sequence exhausted"))?;
                 let checkpoint = self.engine.host_checkpoint().map_err(native)?;
+                self.admit_product_brush(brush)?;
                 let mut params = flow_brush::params(brush)?;
                 params["points"] = serde_json::to_value(points).map_err(native)?;
                 let live = LiveStroke::begin(&self.engine, &params).map_err(native)?;

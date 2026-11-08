@@ -109,6 +109,6 @@ export type ImageEngineContextSummary = {
   temporarySelection:ImageEngineTemporarySelection|null;
   floating:{previewId:string;throughSeq:number;sourceLayerId:ImageEngineLayerId;phase:'active'|'dropPrepared'|'blocked';baseVersion:string;offset:readonly[number,number];outlineBounds:readonly[number,number,number,number]|null}|null;
   candidateId:string|null;inputActive:boolean;pipelineActive:boolean;frozen:boolean;settlementRequired:boolean;
-  tools:Readonly<Record<string,{enabled:boolean;reason?:string|null}>>;eraserBehavior:'alpha'|'backgroundColor';
+  tools:Readonly<Record<string,{enabled:boolean;reason?:string|null}>>;paintScope:'full-layer'|'source-selection-refused';eraserBehavior:'alpha'|'backgroundColor';
 };
 export type ImageEngineEditContext = {expectedContextGeneration:number;preview?:ImageEnginePreviewStamp};

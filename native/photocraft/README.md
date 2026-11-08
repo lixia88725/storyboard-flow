@@ -569,3 +569,13 @@ state, not only a PNG. Unaccepted ordinary candidates remain unavailable to
 Capture; opacity/transform COW live preview is a separate subsequent capability.
 Formal UI, physical pen behaviour and Windows execution require independent
 acceptance; these tests do not provide that evidence.
+
+`intrinsicSelectionPaintGuardV1` makes that source selection boundary explicit:
+all product Adapter strokes carry `flowProduct:true` (also when their optional
+preset is absent). Serial and pipeline begin refuse them with
+`unsupported-source-selection`, effect `none`, before admitting any point. The
+summary reports `paintScope: source-selection-refused` and a disabled paint tool.
+Legacy raw native fixture commands retain their original mask semantics and are
+not a formal workbench entry. Formal startup must require the guard capability;
+`flowBrushPresetsV1` alone does not prove it. Known non-admission clears only that
+Adapter preview marker, so cancellation never invents an unaccepted stroke.

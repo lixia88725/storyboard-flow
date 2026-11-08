@@ -45,3 +45,31 @@ it('executes typed product edits and temporary selection across a real native co
   await adapter.driver.freeze();await adapter.driver.close();expect((await connection.exited).code).toBe(0);
  }finally{connection.terminateOwnedProcess();await connection.exited;}
 },30000);
+
+it('refuses hidden source-selection clipping before admitting product paint in serial and pipeline modes',async()=>{
+ const binary=process.env.FLOW_IMAGE_HOST;if(!binary)throw Error('Product guard native binary required');
+ const root=await temporaryWorkspace('product-selection-guard-'),store=path.join(root,'native');
+ const connection=startImageEngine({binary,store,sessionId:'guard',incarnation:'one',budgetBytes:64<<20});
+ const adapter=createNativeSessionAdapter({connection,storeRoot:store,storeId:'native'});
+ try{
+  await connection.ready;expect(connection.supports('intrinsicSelectionPaintGuardV1')).toBe(true);
+  const created=(await connection.request('new',{kind:'new',width:32,height:24})).header.body as any;
+  let native:NativeImageRef={storeId:'native',...Object.fromEntries(['documentId','versionId','manifestSha256','width','height'].map(k=>[k,created.receipt[k]]))} as NativeImageRef;
+  await adapter.acceptOpened({candidateId:'new',baseVersion:null,native});
+  const selected=(await connection.request('intrinsic',{kind:'edit',edit:{kind:'rect',x:4,y:5,width:8,height:7}},native.versionId)).header.body as any;
+  const prepared={candidateId:'intrinsic',baseVersion:native.versionId,native:{...native,versionId:selected.receipt.versionId,manifestSha256:selected.receipt.manifestSha256}};
+  native=await adapter.driver.accept(prepared,native);
+  const summary=await adapter.driver.summary(),before=(await adapter.capture()).payload;
+  expect(summary.paintScope).toBe('source-selection-refused');expect(summary.tools.paint.enabled).toBe(false);
+  const stroke={tool:'brush' as const,color:'#224466',size:7,opacity:1,softness:.5,points:[2,2],brush:{tip:'pencil' as const,hardness:.5,grain:.55,spacing:.035,pressureSize:.45,pressureOpacity:.6,seed:42}};
+  await expect(adapter.driver.preparePaint('blocked-serial',native,stroke)).rejects.toMatchObject({code:'unsupported-source-selection',effect:'none'});
+  await adapter.driver.cancelPreview('blocked-serial');
+  await expect(adapter.driver.preparePaint('blocked-basic',native,{...stroke,brush:undefined})).rejects.toMatchObject({code:'unsupported-source-selection',effect:'none'});
+  await adapter.driver.cancelPreview('blocked-basic');expect(await adapter.driver.status('blocked-serial')).toEqual({state:'absent'});
+  const pipeline=adapter.driver.pipeline!;await pipeline.start(native,{maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:16<<20});
+  await expect(pipeline.begin('blocked-pipeline',null,stroke)).rejects.toMatchObject({code:'unsupported-source-selection',effect:'none'});
+  const polled=await pipeline.poll();expect(polled.queueDepth).toBe(0);await pipeline.stop();
+  expect((await adapter.capture()).payload).toEqual(before);expect((await adapter.driver.summary()).selection.bounds).toEqual([4,5,8,7]);
+  await adapter.driver.freeze();await adapter.driver.close();
+ }finally{connection.terminateOwnedProcess();await connection.exited;}
+},15000);

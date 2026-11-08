@@ -125,7 +125,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     if(stroke.brush&&!product&&(stroke.brush.tip!=='hard'||stroke.brush.grain!==0||stroke.brush.pressureSize!==0||stroke.brush.pressureOpacity!==0))refuse('Native binary lacks flowBrushPresetsV1 for this product preset; original input retained.','unsupported-brush');
     if(stroke.brush&&(!['hard','soft','pencil'].includes(stroke.brush.tip)||![stroke.brush.hardness,stroke.brush.grain,stroke.brush.pressureSize,stroke.brush.pressureOpacity].every(n=>n>=0&&n<=1)||stroke.brush.spacing<0.01||stroke.brush.spacing>1||!Number.isInteger(stroke.brush.seed)||stroke.brush.seed<0||stroke.brush.seed>0xffffffff))refuse('Invalid product brush settings','invalid-input');
     const seed=stroke.brush?.seed??0;if(!Number.isSafeInteger(seed)||seed<0)refuse('Native pipeline requires a nonnegative safe integer seed');
-    return{size:stroke.size,opacity:stroke.opacity,color:stroke.color,erase:stroke.tool==='eraser',hardness:stroke.brush?.hardness??1-stroke.softness,spacing:stroke.brush?.spacing??0.06,seed,...(product?{flowBrush:structuredClone(stroke.brush)}:{brush:{pressureSize:false,pressureOpacity:false}})};
+    return{flowProduct:true,size:stroke.size,opacity:stroke.opacity,color:stroke.color,erase:stroke.tool==='eraser',hardness:stroke.brush?.hardness??1-stroke.softness,spacing:stroke.brush?.spacing??0.06,seed,...(product?{flowBrush:structuredClone(stroke.brush)}:{brush:{pressureSize:false,pressureOpacity:false}})};
   };
   const pointBatch=(xy:readonly number[],pressures?:readonly number[])=>Array.from({length:xy.length/2},(_,i)=>({x:xy[i*2],y:xy[i*2+1],pressure:pressures?.[i]??1}));
   let pipelineReady:PipelineReady|undefined;
@@ -146,7 +146,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     async begin(operationId,predecessorOperationId,stroke){
       const op=operationContext();
       const points=pointBatch(stroke.points,stroke.pressures);previewOperation=operationId;
-      const{reply}=await call(`${operationId}-begin`,{kind:'strokeBegin',previewId:operationId,predecessorOperationId,brush:brushFor(stroke),points:points.slice(0,256)},pipelineBase(),undefined,true);op.check();
+      const{reply}=await call(`${operationId}-begin`,{kind:'strokeBegin',previewId:operationId,predecessorOperationId,brush:brushFor(stroke),points:points.slice(0,256)},pipelineBase(),undefined,true).catch(e=>{if((e as {effect?:unknown}).effect==='none'&&previewOperation===operationId)previewOperation=undefined;throw e;});op.check();
       if(reply.kind!=='frame')refuse('Native begin did not confirm preview','protocol','unknown');
       for(let offset=256;offset<points.length;offset+=256){await pipeline.append(operationId,offset+1,stroke.points.slice(offset*2,(offset+256)*2),stroke.pressures?.slice(offset,offset+256));op.check();}
     },
@@ -176,7 +176,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
   };
   const contextSummary=async()=>{
     const op=operationContext();
-    if(!op.connection.supports('toolContextSummaryV1')||!op.connection.supports('decimalLayerIdsV1')||!op.connection.supports('temporarySelectionContextV1'))refuse('Native binary lacks typed product context','unsupported');
+    if(!op.connection.supports('toolContextSummaryV1')||!op.connection.supports('decimalLayerIdsV1')||!op.connection.supports('temporarySelectionContextV1')||!op.connection.supports('intrinsicSelectionPaintGuardV1'))refuse('Native binary lacks typed product context','unsupported');
     const{reply}=await call(next(),{kind:'summary',maxBytes:49152},pipelineReady?.anchorVersion??current?.versionId??null);op.check();
     if(!display)refuse('Native context has no display identity','protocol','unknown');return parseNativeProductContext(reply,display);
   };
@@ -220,7 +220,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       const brush=brushFor(stroke);await install(base);op.check();
       const points=pointBatch(stroke.points,stroke.pressures);
       previewOperation=operationId;
-      await call(`${operationId}-begin`,{kind:'strokeBegin',previewId:operationId,brush,points:points.slice(0,1)});op.check();
+      await call(`${operationId}-begin`,{kind:'strokeBegin',previewId:operationId,brush,points:points.slice(0,1)}).catch(e=>{if((e as {effect?:unknown}).effect==='none'&&previewOperation===operationId)previewOperation=undefined;throw e;});op.check();
       for(let offset=1;offset<points.length;offset+=256){await call(`${operationId}-points-${offset}`,{kind:'strokeAppend',previewId:operationId,fromSeq:offset+1,points:points.slice(offset,offset+256)});op.check();}
       const finished=await call(operationId,{kind:'strokeFinish',previewId:operationId,throughSeq:points.length});op.check();const value=prepared(finished.reply);previewOperation=undefined;return value;
     },
