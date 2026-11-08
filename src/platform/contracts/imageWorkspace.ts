@@ -68,6 +68,11 @@ export type ImageWorkspaceBoardCommand =
 /** Product intent. The native Adapter supplies operation IDs/base versions and
  * translates these into the typed host protocol; arbitrary host JSON is absent. */
 export type ImageWorkspaceEdit = ImageEngineEdit;
+export type ImageWorkspacePreviewEdit=Extract<ImageEngineEdit,{kind:'setLayerOpacities'|'transform'}>;
+export type ImageWorkspacePreviewStatus=
+ | {state:'active';stamp:ImageEnginePreviewStamp;pendingOperationId:null}
+ | {state:'candidate'|'unknown';stamp:ImageEnginePreviewStamp|null;pendingOperationId:string|null}
+ | {state:'resolved';decision:'committed'|'notCommitted';recordId:string;edit:ImageWorkspaceEdit;expectedNative:NativeImageRef;expectedContextGeneration:number};
 export type ImageWorkspaceCommand =
  | {kind:'board';command:ImageWorkspaceBoardCommand}
  | {kind:'activateShot';shotId:string}
@@ -75,6 +80,10 @@ export type ImageWorkspaceCommand =
  | {kind:'inspectCapture';captureId:string}
  | {kind:'resolveInput';captureId:string;action:'retainAndDiscard'|'exportAndDiscard';original:ImageWorkspaceCapturedInput}
  | {kind:'selectLayer';shotId:string;layerId:ImageWorkspaceLayerId;expectedContextGeneration:number}
+ | {kind:'previewImageEdit';shotId:string;expectedNative:NativeImageRef;expectedContextGeneration:number;previewId:string;fromSeq:number;edit:ImageWorkspacePreviewEdit}
+ | {kind:'cancelImagePreview';shotId:string;expectedNative:NativeImageRef;expectedContextGeneration:number;stamp:ImageEnginePreviewStamp}
+ | {kind:'inspectImagePreview';previewId:string}
+ | {kind:'resolveImagePreview';previewId:string;action:'retainAndDiscard'|'exportAndDiscard';original:{shotId:string;expectedNative:NativeImageRef;expectedContextGeneration:number;edit:ImageWorkspaceEdit}}
  | {kind:'selection';shotId:string;expectedContextGeneration:number;selection:FlowSelection|null}
  | {kind:'imageEdit';shotId:string;expectedContextGeneration:number;expectedNative:NativeImageRef;edit:ImageWorkspaceEdit;preview?:ImageEnginePreviewStamp}
  | {kind:'floating';shotId:string;expectedContextGeneration:number;previewId:string;action:
@@ -94,6 +103,9 @@ export type ImageWorkspaceOutcome =
  | {kind:'closePrepared';snapshot:ImageWorkspaceSnapshot;operationId:string;ticket:string}
  | {kind:'closed';operationId:string;ticket:string}
  | {kind:'canceled';operationId:string}
+ | {kind:'previewed';operationId:string;stamp:ImageEnginePreviewStamp;displayIdentity:FrameIdentity}
+ | {kind:'previewCanceled';operationId:string;displayIdentity:FrameIdentity}
+ | {kind:'previewStatus';operationId:string;previewId:string;status:ImageWorkspacePreviewStatus}
  | {kind:'captureStatus';operationId:string;captureId:string;state:'absent'|'admitted'|'recovering'|'resolved';mainOperationId:string|null;inputThrough:number}
  | {kind:'inputResolved';operationId:string;captureId:string;snapshot:ImageWorkspaceSnapshot;
      operation:{operationId:string;decision:'committed'|'notCommitted';inputThrough:number}|null;
@@ -125,6 +137,7 @@ export type ImageWorkspaceEvent =
  | {kind:'snapshot';snapshot:ImageWorkspaceSnapshot}
  | {kind:'pipeline';owner:ImageWorkspaceOwner;progress:ImagePipelineProgress}
  | {kind:'import';owner:ImageWorkspaceOwner;importId:string;done:number;total:number;phase:'queued'|'retaining'|'hydrating'|'paused'|'complete'|'failed'}
+ | {kind:'display';owner:ImageWorkspaceOwner;stateSeq:number;imageId:string;displayIdentity:FrameIdentity|null;displayNative:NativeImageRef|null}
  | {kind:'frameStream';identity:ImageWorkspaceFrameIdentity}
  | {kind:'fault';owner:ImageWorkspaceOwner;error:ImageWorkspaceFailure};
 /** Every port message is bound to one owner, nonce and delivery generation.
