@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { temporaryWorkspace } from '../../../../test/temporaryWorkspace';
 import type { HydrationRecord, NativeImageRef, ProjectCommitV2, ProjectV2 } from '../../../platform/contracts/imageProject';
-import { openImageProjectStore, type ImageProjectStoreOptions } from './projectStore';
+import { openLegacyImageProjectStore as openImageProjectStore, type ImageProjectStoreOptions } from './legacyProjectStore';
 import { canonicalJson } from '../persistence/canonicalJson';
 
 const project=():ProjectV2=>({schema:'storyboard-flow.project',version:2,id:'project',revision:0,name:'Synthetic',shots:[{id:'a',imageId:'ia',name:'A',scriptText:''}],parkedShots:[],dialogues:[],images:{ia:{id:'ia',content:{kind:'source',source:{importId:'batch',itemId:'a',interpretationId:'reader1'}}}}});

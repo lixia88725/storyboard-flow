@@ -12,10 +12,10 @@ import { temporaryWorkspace } from '../../../../test/temporaryWorkspace';
 const modules=[
   'session/core/nativeSession','session/core/nativeSettlementQueue','session/core/nativePipeline','session/core/snapshotHistory','session/core/grouping','session/core/imageProjectModel','session/core/imageProjectValues',
   'platform/contracts/flowPresentation','platform/main/imageEngineWorkerOwner','platform/main/imageEngineConnection','platform/main/imageEngineFraming','platform/main/imageProjectLease',
-  'project-files/main/image-engine/projectStore','project-files/main/image-engine/sourceStore','project-files/main/image-engine/nativeSessionAdapter',
+  'project-files/main/image-engine/projectStore','project-files/main/image-engine/legacyProjectStore','project-files/main/image-engine/journalProjectStore','project-files/main/image-engine/recoveryJournal','project-files/main/image-engine/projectStoreRecords','project-files/main/image-engine/sourceStore','project-files/main/image-engine/nativeSessionAdapter',
   'project-files/main/workspacePhysicalWriterGate','project-files/main/persistence/canonicalJson','project-files/main/persistence/fileOps','project-files/main/persistence/errors'
 ];
-async function fixture(){
+async function fixture(format:'legacy'|'journal'='legacy'){
   const binary=process.env.FLOW_IMAGE_HOST,leaseBinary=process.env.FLOW_PROJECT_LEASE_BIN;
   if(!binary||!leaseBinary)throw Error('Prepare fixed native host/lease and set FLOW_IMAGE_HOST and FLOW_PROJECT_LEASE_BIN; no fake worker fallback');
   const root=await temporaryWorkspace('native-project-'),runtime=path.join(root,'runtime');await fs.mkdir(runtime);
@@ -32,7 +32,7 @@ import {startImageEngine} from './platform/main/imageEngineConnection.js';
 import {createImageEngineWorkerOwner} from './platform/main/imageEngineWorkerOwner.js';
 import {acquireImageProjectLease} from './platform/main/imageProjectLease.js';
 import {createSourceBackedImport,openSourceBackedImport} from './project-files/main/image-engine/sourceStore.js';
-import {openImageProjectStore} from './project-files/main/image-engine/projectStore.js';
+import {${format==='legacy'?'openLegacyImageProjectStore as openImageProjectStore':'openImageProjectStore'}} from './project-files/main/image-engine/${format==='legacy'?'legacyProjectStore':'projectStore'}.js';
 import {createNativeSessionAdapter} from './project-files/main/image-engine/nativeSessionAdapter.js';
 import {openNativeProjectSession} from './session/core/nativeSession.js';
 setTimeout(()=>{console.error('Owned Main fixture timed out');process.exit(23);},45000).unref();
@@ -49,6 +49,8 @@ const workerConfig={binary,store:path.join(root,'.storyboard-flow/image-native/n
 const connection=owner?.current().connection??startImageEngine(workerConfig);await connection.ready.catch(e=>{console.error(connection.diagnostics());throw e;});
 let failAppend=mode==='append-error',acceptIsBlocked=false,releaseOldAccept;const oldAcceptGate=new Promise(r=>releaseOldAccept=r);const request=connection.request.bind(connection);connection.request=async(...args)=>{if(failAppend&&args[1].kind==='strokeAppend'){failAppend=false;args[1]={...args[1],fromSeq:999};}return request(...args);};
 const adapter=createNativeSessionAdapter({...(owner?{workerOwner:owner}:{connection}),storeId:'native',storeRoot:path.join(root,'.storyboard-flow/image-native/native')});
+let armJournalTail=false;
+if(mode==='journal-kill-tail'){const open=fs.open.bind(fs);fs.open=async(...args)=>{const h=await open(...args);if(String(args[0]).endsWith('/image-project-journal-v1/segment-0.log')&&typeof args[1]==='number'){const write=h.write.bind(h);h.write=async(...a)=>{if(armJournalTail){armJournalTail=false;await write(a[0],a[1],100,a[3]);await pause('journal-tail',{before:session.snapshot()});}return write(...a);};}return h;};}
 const store=await openImageProjectStore({root,writerAuthority:lease,maxRecoveryBytes:64<<20,reservedRecoveryBytes:async()=>(32+8)<<20,verifyNative:adapter.verifyNative,verifySource:async(ref,retained)=>{
   if(ref.importId!=='batch'||ref.interpretationId!=='reader1'||!sources.snapshot().items.some(i=>i.id===ref.itemId))throw Error('Unknown source ref');
   if(retained){const object=await sources.object(ref.itemId);if(object.digest!==retained.digest||object.byteLength!==retained.byteLength)throw Error('Source digest mismatch');}
@@ -178,6 +180,8 @@ if(owned){
  const nativePoll=driver.pipeline.poll.bind(driver.pipeline);driver.pipeline.poll=async()=>{const r=await nativePoll();if(window==='prepared'&&r.events.some(e=>e.kind==='prepared'))await pause(window,{operationId:r.events.find(e=>e.kind==='prepared').operationId});return r;};
  const nativeAccept=driver.pipeline.accept.bind(driver.pipeline);driver.pipeline.accept=async(...args)=>{const r=await nativeAccept(...args);if(window==='accepted'||window==='noop-accepted')await pause(window,{operationId:args[0].candidateId});return r;};
  const operation=submit(20,noop?0:0.5);result.paint=await session.pipeline.waitOperation(operation);if(window==='noop-before')await pause(window,{operationId:operation,outcome:result.paint});
+}else if(mode==='journal-kill-tail'){
+ result.paint=await session.request({kind:'paint',shotId:'a',stroke});result.dialogue=await session.request({kind:'board',edit:{kind:'setScriptText',shotId:'a',text:'confirmed prefix'}});armJournalTail=true;await session.request({kind:'board',edit:{kind:'setScriptText',shotId:'a',text:'unconfirmed partial tail'}});
 }else if(mode==='normal'){
  result.before=await capture();result.paint=await session.request({kind:'paint',shotId:'a',stroke});result.painted=await capture();
  result.dialogue=await session.request({kind:'board',edit:{kind:'setDialogues',shotId:'a',dialogues:[{id:'line',shotId:'a',text:'hello'}]}});
@@ -191,7 +195,7 @@ if(owned){
 }else if(mode==='freeze-error'){
  result.paint=await session.request({kind:'paint',shotId:'a',stroke});failAudit=true;result.firstFreeze=await session.request({kind:'freeze'});result.whilePending=session.snapshot();result.blocked=await session.request({kind:'paint',shotId:'a',stroke});result.recover=await session.request({kind:'recover'});result.afterRecover=session.snapshot();result.stillBlocked=await session.request({kind:'paint',shotId:'a',stroke});
 }else if(mode==='inspect'){
- result.capture=await capture();result.pendingOperations=await store.pendingOperations();result.unsettled=await store.unsettled();
+ result.capture=await capture();result.pendingOperations=await store.pendingOperations();result.unsettled=await store.unsettled();result.operationRecords=await store.operationRecords();
 }else{
  const input=mode==='unsupported'?{...stroke,brush:{tip:'pencil',spacing:0.035,hardness:0.5,grain:0.55,seed:19,pressureSize:0.45,pressureOpacity:0.6}}:stroke;
  result.paint=await session.request({kind:'paint',shotId:'a',stroke:input});
@@ -346,4 +350,24 @@ it('blocks an accepted descendant with a prepared predecessor instead of manufac
  const f=await fixture(),mode='owned-multi-contradiction',c=child(f.script,mode);let barrier:any;
  try{for(let n=0;n<1500;n++){barrier=await fs.readFile(path.join(f.root,'barrier.json'),'utf8').then(s=>JSON.parse(s),()=>null);if(barrier)break;if(c.process.exitCode!==null)throw Error((await c.done).output);await new Promise(r=>setTimeout(r,10));}expect(barrier?.stage).toBe(mode);const r=barrier.result;expect(r.recover).toMatchObject({kind:'rejected',error:{message:'Native accepted descendant has an unaccepted predecessor'}});expect(r.afterRecover.phase).toBe('recovering');expect(r.afterRecover.project.revision).toBe(2);expect(r.parent.state).toBe('prepared');expect(r.child.state).toBe('accepted');expect(r.records.every((row:any)=>row.resolution===null)).toBe(true);
  }finally{if(c.process.exitCode===null&&c.process.signalCode===null){c.process.kill('SIGKILL');await c.done;}if(barrier)for(let n=0;n<500;n++){const alive=[barrier.newNativePid,barrier.guardPid].some(pid=>{try{process.kill(pid,0);return true;}catch{return false;}});if(!alive)break;await new Promise(r=>setTimeout(r,10));}}
+},60000);
+
+// The old multi-file fault matrix above remains intact. These cross the same
+// Session Interface using the replacement journal and actual owned processes.
+it('journal: real paint/dialogue/Pending mixed Undo/Redo, originals and clean reopen',async()=>{
+ const f=await fixture('journal');await run(f.script,'normal');const r=await result(f.root,'normal');expect([r.paint.kind,r.dialogue.kind,r.move.kind]).toEqual(['settled','settled','settled']);expect(r.snapshot.project.revision).toBe(9);expect(r.snapshot.undoDepth).toBe(3);expect(r.undone.hash).toBe(r.before.hash);expect(r.redone.hash).toBe(r.painted.hash);expect(r.undo[0].snapshot.project.parkedShots).toEqual([]);expect(r.undo[1].snapshot.project.dialogues).toEqual([]);await fs.unlink(path.join(f.root,'a.png'));await run(f.script,'inspect');const opened=await result(f.root,'inspect');expect(opened.snapshot.project).toEqual(r.snapshot.project);expect(opened.capture.hash).toBe(r.painted.hash);expect(opened.snapshot.undoDepth).toBe(0);expect(opened.pendingOperations).toEqual([]);expect(opened.unsettled).toEqual([]);
+},60000);
+for(const window of ['prepared','cas','accepted'])it(`journal: actual Main SIGKILL after ${window} keeps original input and exactly one project decision`,async()=>{
+ const f=await fixture('journal'),c=child(f.script,window);let barrier:any;
+ try{for(let n=0;n<1000;n++){barrier=await fs.readFile(path.join(f.root,'barrier.json'),'utf8').then(s=>JSON.parse(s),()=>null);if(barrier)break;if(c.process.exitCode!==null)throw Error((await c.done).output);await new Promise(r=>setTimeout(r,10));}expect(barrier.stage).toBe(window);c.process.kill('SIGKILL');await c.done;for(let n=0;n<500;n++){if([barrier.nativePid,barrier.guardPid].every(pid=>{try{process.kill(pid,0);return false;}catch{return true;}}))break;await new Promise(r=>setTimeout(r,10));}await run(f.script,'inspect');const r=await result(f.root,'inspect');expect(r.snapshot.project.revision).toBe(window==='prepared'?0:1);expect(r.capture.alpha).toBe(window==='prepared'?0:128);expect(r.pendingOperations).toEqual([]);expect(r.unsettled).toEqual([]);expect(r.operationRecords).toHaveLength(1);expect(r.operationRecords[0].intent.stroke.points).toEqual([12,20,44,20]);expect(r.operationRecords[0].resolution.decision).toBe(window==='prepared'?'discarded':'committed');expect(await fs.readdir(path.join(f.root,'.storyboard-flow/image-native/native/versions'))).toHaveLength(2);
+ }finally{if(c.process.exitCode===null&&c.process.signalCode===null){c.process.kill('SIGKILL');await c.done;}}
+},60000);
+for(const mode of ['pipeline-noop','pipeline-split-accept','owned-multi','owned-multi-noop','owned-multi-suffix'])it(`journal: real FIFO native recovery/confirmation ${mode}`,async()=>{
+ const f=await fixture('journal');await run(f.script,mode);const r=await result(f.root,mode);expect(r.freeze.kind).toBe('settled');if(mode==='pipeline-noop'){expect(r.noop.kind).toBe('settled');expect(r.afterNoop.project).toEqual(r.beforeNoop.project);expect(r.afterNoop.undoDepth).toBe(r.beforeNoop.undoDepth);}else if(mode.startsWith('owned-')){expect(r.recover.kind).toBe('recovered');expect(r.newWorker.generation).toBe(2);expect(r.recover.snapshot.phase).toBe('active');}await run(f.script,'inspect');const opened=await result(f.root,'inspect');expect(opened.snapshot.project).toEqual(r.snapshot.project);expect(opened.pendingOperations).toEqual([]);expect(opened.unsettled).toEqual([]);
+},60000);
+
+it('journal: real SIGKILL in a partial group preserves confirmed mixed prefix and resumes without truncating evidence',async()=>{
+ const f=await fixture('journal'),c=child(f.script,'journal-kill-tail');let barrier:any;
+ try{for(let n=0;n<1000;n++){barrier=await fs.readFile(path.join(f.root,'barrier.json'),'utf8').then(s=>JSON.parse(s),()=>null);if(barrier)break;if(c.process.exitCode!==null)throw Error((await c.done).output);await new Promise(r=>setTimeout(r,10));}expect(barrier.stage).toBe('journal-tail');expect(barrier.before.project.revision).toBe(2);c.process.kill('SIGKILL');await c.done;for(let n=0;n<500;n++){if([barrier.nativePid,barrier.guardPid].every(pid=>{try{process.kill(pid,0);return false;}catch{return true;}}))break;await new Promise(r=>setTimeout(r,10));}const file=path.join(f.root,'.storyboard-flow/image-project-journal-v1/segment-0.log'),original=await fs.readFile(file);await run(f.script,'inspect');const r=await result(f.root,'inspect');expect(r.snapshot.project.revision).toBe(2);expect(r.snapshot.project.shots[0].scriptText).toBe('confirmed prefix');expect(r.capture.alpha).toBe(128);expect(r.pendingOperations).toEqual([]);expect(await fs.readFile(file)).toEqual(original);expect(await fs.readdir(path.dirname(file))).toContain('continuation-1.json');await run(f.script,'normal');const continued=await result(f.root,'normal');expect(continued.freeze.kind).toBe('settled');
+ }finally{if(c.process.exitCode===null&&c.process.signalCode===null){c.process.kill('SIGKILL');await c.done;}}
 },60000);

@@ -1,0 +1,71 @@
+import { createHash } from 'node:crypto';
+import type { HydrationRecord, ImageOperationDecision, NativeDecision, ImageOperationPage, ImageOperationRecord, ImageOperationIntent, NativeImageRef, ProjectCommitV2, ProjectHeadV2, SourceImageRef } from '../../../platform/contracts/imageProject.js';
+import { imageHash, snapshotImageProject, validNativeDecision, validNativeImageRef, validSourceImageRef, validImageBinding, validProjectStroke } from '../../../session/core/imageProjectModel.js';
+import { shape } from '../../../session/core/imageProjectValues.js';
+import { canonicalJson } from '../persistence/canonicalJson.js';
+
+export class ImageProjectStoreError extends Error {
+  constructor(readonly code:'invalid-input'|'conflict'|'busy'|'closed'|'resource-limit'|'io-failure',message:string,readonly effect:'none'|'retained'|'unknown'='none'){super(message);}
+}
+export type ProjectConfirmation={commitHash:string;operationId:string;native:NativeImageRef};
+export type ProjectCommitReceipt={commitHash:string;commit:ProjectCommitV2;head:ProjectHeadV2};
+export type ProjectStoreV2={
+  load():Promise<ProjectCommitReceipt|null>;
+  /** Explicit checkpoint/close audit; normal commits reuse the verified leased prefix. */
+  validateRecovery():Promise<void>;
+  commit(expectedHead:string|null,record:ProjectCommitV2):Promise<ProjectCommitReceipt>;
+  committed():Promise<ProjectCommitReceipt[]>;
+  unsettled():Promise<ProjectCommitReceipt[]>;
+  decideUnchanged(commitHash:string,decision:NativeDecision):Promise<void>;
+  operationDecision(operationId:string):Promise<ImageOperationDecision|null>;
+  unsettledDecisions():Promise<ImageOperationDecision[]>;
+  confirmOperations(records:readonly ProjectConfirmation[]):Promise<void>;
+  settle(commitHash:string,operationId:string,native:NativeImageRef):Promise<void>;
+  hydration(source:SourceImageRef):Promise<HydrationRecord|null>;
+  publishHydration(record:HydrationRecord):Promise<string>;
+  settleHydration(source:SourceImageRef,operationId:string,native:NativeImageRef):Promise<void>;
+  pendingHydrations():Promise<HydrationRecord[]>;
+  beginOperation(intent:ImageOperationIntent):Promise<void>;
+  pendingOperations():Promise<ImageOperationIntent[]>;
+  /** At most 16 full inputs per page; continue after the last operationId. */
+  operationRecords(page?:ImageOperationPage):Promise<ImageOperationRecord[]>;
+  resolveOperation(operationId:string,decision:'discarded'|'committed',commitHash:string|null):Promise<void>;
+  close():Promise<void>;
+};
+export type ImageProjectStoreOptions={
+  root:string;maxRecoveryBytes?:number;
+  /** Required external project lease. A process-local test authority is not a production lock. */
+  writerAuthority:{assertHeld(root:{path:string;dev:string;ino:string}):Promise<void>};
+  /** Main reserves the full fixed quotas of concurrent native/source/output
+   * writers (or equivalent shared actual+reserved accounting), including bytes
+   * they may create after this store's inventory. Never pass only their current
+   * pending writes: their durable growth is outside this journal's ledger. */
+  reservedRecoveryBytes?:()=>Promise<number>;
+  /** Prepared native versions are valid references before native acceptance. */
+  verifyNative(ref:NativeImageRef):Promise<void>;
+  verifySource(ref:SourceImageRef,retained?:{digest:string;byteLength:number}):Promise<void>;
+};
+const TOKEN=/^[A-Za-z0-9_-]{1,128}$/;
+const clone=<T>(v:T):T=>structuredClone(v);
+const sha=(v:Uint8Array)=>createHash('sha256').update(v).digest('hex');
+const bytes=(v:unknown)=>Buffer.from(canonicalJson(v)+'\n');
+const token=(v:unknown):v is string=>typeof v==='string'&&TOKEN.test(v);
+function bad(message:string):never{throw new ImageProjectStoreError('conflict',message);}
+export function commitRecord(v:unknown):ProjectCommitV2{
+  if(!shape(v,['schema','version','commitId','previousCommitHash','beforeRevision','after'],['nativeDecision'])||v.schema!=='flow.project-commit'||v.version!==1||!token(v.commitId)||(v.previousCommitHash!==null&&!imageHash(v.previousCommitHash))||(v.beforeRevision!==null&&(!Number.isSafeInteger(v.beforeRevision)||Number(v.beforeRevision)<0)))bad('Invalid project commit');
+  const after=snapshotImageProject(v.after);
+  if(v.nativeDecision!==undefined&&!validNativeDecision(v.nativeDecision))bad('Invalid native decision');
+  return {...clone(v as unknown as ProjectCommitV2),after};
+}
+export function hydrationRecord(v:unknown):HydrationRecord{
+  if(!shape(v,['schema','version','source','hostBuildDigest','optionsHash','native','operationId'])||v.schema!=='flow.image-hydration'||v.version!==1||!shape(v.source,['importId','itemId','interpretationId','digest','byteLength'])||!validSourceImageRef({importId:v.source.importId,itemId:v.source.itemId,interpretationId:v.source.interpretationId})||!imageHash(v.source.digest)||!Number.isSafeInteger(v.source.byteLength)||Number(v.source.byteLength)<0||!imageHash(v.hostBuildDigest)||!imageHash(v.optionsHash)||!validNativeImageRef(v.native)||!token(v.operationId))bad('Invalid hydration record');
+  return clone(v as unknown as HydrationRecord);
+}
+export function operationIntent(v:unknown):ImageOperationIntent{
+  if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId','expected','baseNative','stroke']) || v.version!==1){
+    if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId','pipelineId','anchorCommitHash','anchor','expectedAtAnchor','predecessorOperationId','inputThrough','stroke'])||v.version!==2||!token(v.pipelineId)||!imageHash(v.anchorCommitHash)||!validNativeImageRef(v.anchor)||!validImageBinding(v.expectedAtAnchor)||(v.predecessorOperationId!==null&&(!token(v.predecessorOperationId)||v.predecessorOperationId===v.operationId))||!Number.isSafeInteger(v.inputThrough)||Number(v.inputThrough)!==(Array.isArray((v.stroke as {points?:unknown})?.points)?(v.stroke as {points:unknown[]}).points.length/2:-1))bad('Invalid pipeline input intent');
+  }else if(!validImageBinding(v.expected)||!validNativeImageRef(v.baseNative))bad('Invalid serial input baseline');
+  if(v.schema!=='flow.image-edit-intent'||![v.operationId,v.sessionId,v.incarnation,v.imageId].every(token)||!validProjectStroke(v.stroke))bad('Invalid image operation intent');
+  return clone(v as unknown as ImageOperationIntent);
+}
+export const hydrationKey=(s:SourceImageRef)=>sha(bytes({importId:s.importId,itemId:s.itemId,interpretationId:s.interpretationId}));
