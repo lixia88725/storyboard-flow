@@ -724,3 +724,221 @@ fn settled_empty_host_resume_preserves_absent_image_until_new_document_is_prepar
     let new = h.body("new", json!({"kind":"new","width":32,"height":32}));
     h.accept("new", &new);
 }
+
+fn product(h: &mut Harness, id: &str, edit: Value) -> Value {
+    h.body(id,json!({"kind":"productEdit","expectedContextGeneration":h.h.context_generation,"edit":edit}))
+}
+fn temporary(h: &mut Harness, layer: u64, selection: Value) -> Value {
+    h.body("temporary",json!({"kind":"selectionContext","layerId":layer.to_string(),"selection":selection,"expectedContextGeneration":h.h.context_generation}))
+}
+fn polygon_fixture() -> Value {
+    json!([{"x":4,"y":5},{"x":12,"y":5},{"x":12,"y":12},{"x":4,"y":12}])
+}
+#[test]
+fn product_temporary_selection_never_enters_content_and_discard_restores_context() {
+    let mut h = Harness::new();
+    let (saved, _bottom, top) = h.selected_fixture();
+    let before = state(&h.h);
+    let count = fs::read_dir(h.root.join("versions")).unwrap().count();
+    let v = temporary(&mut h, top, polygon_fixture());
+    assert_eq!(v["kind"], "selectionContextUpdated", "{v}");
+    assert_eq!(state(&h.h), before);
+    assert_eq!(h.base.as_deref(), Some(saved.as_str()));
+    assert_eq!(
+        fs::read_dir(h.root.join("versions")).unwrap().count(),
+        count
+    );
+    let generation = h.h.context_generation;
+    let p = product(
+        &mut h,
+        "opacity",
+        json!({"kind":"setLayerOpacities","changes":[{"layerId":top.to_string(),"before":1,"opacity":0.4}]}),
+    );
+    assert_eq!(p["kind"], "prepared", "{p}");
+    assert_ne!(state(&h.h).pixels, before.pixels);
+    assert!(h.h.temporary_selection.is_none());
+    let d = h.body("discard", json!({"kind":"discard","candidateId":"opacity"}));
+    assert_eq!(d["kind"], "discarded", "{d}");
+    assert_eq!(state(&h.h), before);
+    assert!(h.h.temporary_selection.is_some());
+    assert_eq!(h.h.context_generation, generation);
+    assert_mask(&h.h, Rect::new(4, 5, 12, 12));
+    let clear = temporary(&mut h, top, Value::Null);
+    assert_eq!(clear["kind"], "selectionContextUpdated");
+    assert!(h.h.temporary_selection.is_none());
+    assert_eq!(state(&h.h), before);
+}
+#[test]
+fn product_transform_blur_fill_are_real_candidates_and_preserve_intrinsic_and_layer_masks() {
+    let mut h = Harness::new();
+    let (_, bottom, top) = h.selected_fixture();
+    // Persist a source layer mask; UI temporary selection must never overwrite it.
+    Arc::make_mut(&mut h.h.engine.active_mut().unwrap().doc)
+        .layer_mut(photocraft_doc::LayerId(top))
+        .unwrap()
+        .mask = Some(photocraft_doc::LayerMask::reveal_all());
+    let original_mask =
+        h.h.document()
+            .unwrap()
+            .layer(photocraft_doc::LayerId(top))
+            .unwrap()
+            .mask
+            .clone();
+    let intrinsic = state(&h.h).mask;
+    let t = product(
+        &mut h,
+        "transformProduct",
+        json!({"kind":"transform","layerId":top.to_string(),"selection":polygon_fixture(),"matrix":[1,0,0,1,6,3]}),
+    );
+    assert_eq!(t["kind"], "prepared", "{t}");
+    let moved = state(&h.h).pixels;
+    assert_ne!(
+        moved[(6 * 32 + 6) * 4..(6 * 32 + 6) * 4 + 4],
+        [255, 0, 0, 255]
+    );
+    assert_eq!(state(&h.h).mask, intrinsic);
+    h.accept("transformProduct", &t);
+    assert_eq!(
+        h.h.document()
+            .unwrap()
+            .layer(photocraft_doc::LayerId(top))
+            .unwrap()
+            .mask
+            .clone(),
+        original_mask
+    );
+    let b = product(
+        &mut h,
+        "blurProduct",
+        json!({"kind":"blur","layerId":top.to_string(),"selection":polygon_fixture(),"radius":3}),
+    );
+    assert_eq!(b["kind"], "prepared", "{b}");
+    assert_ne!(state(&h.h).pixels, moved);
+    h.accept("blurProduct", &b);
+    assert_eq!(state(&h.h).mask, intrinsic);
+    let f = product(
+        &mut h,
+        "bucketProduct",
+        json!({"kind":"fill","layerId":bottom.to_string(),"x":1,"y":1,"color":[0,255,0,128],"tolerance":0}),
+    );
+    assert_eq!(f["kind"], "prepared", "{f}");
+    let version = h.accept("bucketProduct", &f);
+    let expected = state(&h.h);
+    let h = h.reopen(&version);
+    assert_eq!(state(&h.h), expected);
+    assert_eq!(
+        h.h.document()
+            .unwrap()
+            .layer(photocraft_doc::LayerId(top))
+            .unwrap()
+            .mask
+            .clone(),
+        original_mask
+    );
+}
+#[test]
+fn product_layer_edit_sequence_and_failure_are_atomic() {
+    let mut h = Harness::new();
+    let (_, bottom, top) = h.selected_fixture();
+    let p = product(
+        &mut h,
+        "props",
+        json!({"kind":"setLayer","layerId":top.to_string(),"patch":{"name":"named","opacity":0.5,"blendMode":"multiply","visible":false}}),
+    );
+    h.accept("props", &p);
+    let doc = h.h.document().unwrap();
+    let l = doc.layer(photocraft_doc::LayerId(top)).unwrap();
+    assert_eq!(l.name, "named");
+    assert_eq!(l.opacity, 0.5);
+    assert!(!l.visible);
+    assert_eq!(l.blend, photocraft_color::BlendMode::Multiply);
+    let p = product(
+        &mut h,
+        "move",
+        json!({"kind":"moveLayers","layerIds":[top.to_string()],"targetLayerId":bottom.to_string(),"placement":"after"}),
+    );
+    h.accept("move", &p);
+    assert_eq!(h.h.document().unwrap().layers[0].id.0, top);
+    let p = product(
+        &mut h,
+        "show",
+        json!({"kind":"setLayer","layerId":top.to_string(),"patch":{"visible":true}}),
+    );
+    h.accept("show", &p);
+    let p = product(
+        &mut h,
+        "clear",
+        json!({"kind":"clear","layerId":top.to_string()}),
+    );
+    h.accept("clear", &p);
+    assert!(
+        h.h.document()
+            .unwrap()
+            .layer(photocraft_doc::LayerId(top))
+            .unwrap()
+            .surface()
+            .unwrap()
+            .content_bounds()
+            .is_empty()
+    );
+    let p = product(
+        &mut h,
+        "merge",
+        json!({"kind":"merge","layerIds":[bottom.to_string(),top.to_string()]}),
+    );
+    h.accept("merge", &p);
+    assert_eq!(h.h.document().unwrap().layer_count(), 1);
+    let id = h.h.engine.active().unwrap().active_layer.unwrap().0;
+    let before = state(&h.h);
+    let failure = product(
+        &mut h,
+        "deleteLast",
+        json!({"kind":"removeLayer","layerId":id.to_string()}),
+    );
+    assert_eq!(failure["kind"], "failure", "{failure}");
+    assert_eq!(state(&h.h), before);
+    assert_eq!(
+        h.body(
+            "status",
+            json!({"kind":"status","targetOperationId":"deleteLast"})
+        )["state"],
+        "failed"
+    );
+    let p = product(
+        &mut h,
+        "lock",
+        json!({"kind":"setLayer","layerId":id.to_string(),"patch":{"locked":true}}),
+    );
+    h.accept("lock", &p);
+    let before = state(&h.h);
+    let fail = product(
+        &mut h,
+        "lockedBlur",
+        json!({"kind":"blur","layerId":id.to_string(),"radius":3}),
+    );
+    assert_eq!(fail["error"]["code"], "locked");
+    assert_eq!(state(&h.h), before);
+    assert!(h.h.store.op_read("lockedBlur", "intent").unwrap().is_none());
+}
+#[test]
+fn product_paint_preserves_context_generation_and_temporary_outline_until_install() {
+    let mut h = Harness::new();
+    let (saved, _, top) = h.selected_fixture();
+    assert_eq!(
+        temporary(&mut h, top, polygon_fixture())["kind"],
+        "selectionContextUpdated"
+    );
+    let generation = h.h.context_generation;
+    let v=h.body("begin",json!({"kind":"strokeBegin","previewId":"paint","brush":{"size":3,"opacity":0.5,"color":"#00ff00","brush":{"pressureSize":false,"pressureOpacity":false}},"points":[{"x":8,"y":8,"pressure":1}]}));
+    assert_eq!(v["kind"], "frame", "{v}");
+    let p = h.body(
+        "paint",
+        json!({"kind":"strokeFinish","previewId":"paint","throughSeq":1}),
+    );
+    h.accept("paint", &p);
+    assert_eq!(h.h.context_generation, generation);
+    assert!(h.h.temporary_selection.is_some());
+    let v = h.body("undo", json!({"kind":"install","versionId":saved}));
+    assert_eq!(v["kind"], "installed", "{v}");
+    assert!(h.h.temporary_selection.is_none());
+}

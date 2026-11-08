@@ -12,7 +12,7 @@ pub enum LayerIdInput {
     Invalid(Value),
 }
 impl LayerIdInput {
-    fn parse(&self) -> Result<LayerId> {
+    pub(super) fn parse(&self) -> Result<LayerId> {
         let Self::Decimal(value) = self else {
             return Err(Error::none(
                 "invalid-input",
@@ -69,28 +69,31 @@ pub(super) struct FloatingContext {
 }
 #[derive(PartialEq)]
 pub(super) struct Stamp {
-    doc: Option<(u64, u64)>,
-    current: Option<String>,
-    candidate: Option<String>,
-    painting: bool,
-    pipeline: bool,
-    frozen: bool,
-    unsettled: bool,
+    doc: Option<u64>,
+    active: Option<u64>,
+    selected: Vec<u64>,
 }
 impl Host {
     pub(super) fn context_stamp(&self) -> Stamp {
         Stamp {
-            doc: self.engine.active().map(|s| (s.doc.id.0, s.revision)),
-            current: self.current.clone(),
-            candidate: self.candidate.as_ref().map(|c| c.id.clone()),
-            painting: self.gesture.is_some(),
-            pipeline: self.pipeline.is_some(),
-            frozen: self.frozen,
-            unsettled: self.store.context_unsettled(),
+            doc: self.engine.active().map(|s| s.doc.id.0),
+            active: self
+                .engine
+                .active()
+                .and_then(|s| s.active_layer)
+                .map(|id| id.0),
+            selected: self
+                .engine
+                .active()
+                .map(|s| s.selected_layers.iter().map(|id| id.0).collect())
+                .unwrap_or_default(),
         }
     }
     pub(super) fn advance_context(&mut self) {
         self.context_generation = self.context_generation.saturating_add(1);
+        if let Some(selection) = self.temporary_selection.as_mut() {
+            selection.generation = self.context_generation;
+        }
     }
     fn selection_token(&self) -> Option<String> {
         self.engine
@@ -103,7 +106,7 @@ impl Host {
                 )
             })
     }
-    fn check_context(&self, generation: u64) -> Result<()> {
+    pub(super) fn check_context(&self, generation: u64) -> Result<()> {
         if generation != self.context_generation {
             return Err(Error::none(
                 "stale-context",
@@ -112,7 +115,7 @@ impl Host {
         }
         Ok(())
     }
-    fn context_idle(&self) -> Result<()> {
+    pub(super) fn context_idle(&self) -> Result<()> {
         if self.pipeline.is_some() {
             return Err(Error::none(
                 "busy",
@@ -187,7 +190,14 @@ impl Host {
             ("lasso", "select.lasso"),
             ("transform", "edit.transform"),
             ("blur", "filter.blur.gaussianBlur"),
-            ("fill", "edit.fill"),
+            ("fill", "paint.bucket"),
+            ("setLayer", "layer.setProps"),
+            ("setLayerOpacities", "layer.setProps"),
+            ("removeLayer", "layer.delete"),
+            ("moveLayers", "layer.moveTo"),
+            ("clear", "edit.clear"),
+            ("merge", "layer.mergeLayers"),
+            ("mergeVisible", "layer.mergeVisible"),
             ("paint", "paint.stroke"),
             ("floatBegin", "select.float"),
         ] {
@@ -229,6 +239,7 @@ impl Host {
             "selectLayerContext".into(),
             json!({"enabled":!general_busy&&!float_active}),
         );
+        tools.insert("selectionContext".into(),json!({"enabled":!general_busy&&!float_active&&state.active_layer.is_some_and(|id|doc.layer(id).is_some_and(|l|matches!(l.content,LayerContent::Raster(_))))}));
         tools.insert("floatMove".into(), json!({"enabled":float_ready}));
         tools.insert("floatCancel".into(), json!({"enabled":float_ready}));
         tools.insert(
@@ -238,7 +249,7 @@ impl Host {
         let erased_to_background = state
             .active_layer
             .is_some_and(|id| doc.effective_locks(id).transparency);
-        let result = json!({"kind":"contextSummary","documentId":doc.id.0.to_string(),"imageVersionRef":self.current,"epoch":self.display_epoch,"contextGeneration":self.context_generation,"maxSummaryBytes":MAX_SUMMARY_BYTES,"layerCount":doc.layer_count(),"layers":tree(doc,&doc.layers),"activeLayerId":state.active_layer.map(|id|id.0.to_string()),"selectedLayerIds":state.selected_layers.iter().map(|id|id.0.to_string()).collect::<Vec<_>>(),"selection":{"present":doc.selection.is_some(),"token":self.selection_token(),"bounds":doc.selection.as_ref().map(|s|bounds(s.content_bounds()))},"floating":floating,"candidateId":self.candidate.as_ref().map(|c|&c.id),"inputActive":self.gesture.is_some(),"pipelineActive":pipeline_active,"frozen":self.frozen,"settlementRequired":self.store.context_unsettled()||self.candidate.is_some(),"tools":tools,"eraserBehavior":if erased_to_background {"backgroundColor"}else{"alpha"}});
+        let result = json!({"kind":"contextSummary","documentId":doc.id.0.to_string(),"imageVersionRef":self.current,"epoch":self.display_epoch,"contextGeneration":self.context_generation,"maxSummaryBytes":MAX_SUMMARY_BYTES,"layerCount":doc.layer_count(),"layers":tree(doc,&doc.layers),"activeLayerId":state.active_layer.map(|id|id.0.to_string()),"selectedLayerIds":state.selected_layers.iter().map(|id|id.0.to_string()).collect::<Vec<_>>(),"temporarySelection":self.temporary_selection.as_ref().map(|s|s.summary(self)),"selection":{"present":doc.selection.is_some(),"token":self.selection_token(),"bounds":doc.selection.as_ref().map(|s|bounds(s.content_bounds()))},"floating":floating,"candidateId":self.candidate.as_ref().map(|c|&c.id),"inputActive":self.gesture.is_some(),"pipelineActive":pipeline_active,"frozen":self.frozen,"settlementRequired":self.store.context_unsettled()||self.candidate.is_some(),"tools":tools,"eraserBehavior":if erased_to_background {"backgroundColor"}else{"alpha"}});
         if serde_json::to_vec(&result).map_err(native)?.len() > max_bytes {
             return Err(Error::none(
                 "limit",
@@ -259,6 +270,7 @@ impl Host {
         self.context_idle()?;
         // Public upstream context operation: no dispatch auto-drop and no native/Flow history step.
         self.engine.select_layer(layer_id).map_err(native)?;
+        self.temporary_selection = None;
         self.advance_context();
         Ok((
             json!({"kind":"contextUpdated","documentId":self.document()?.id.0.to_string(),"imageVersionRef":self.current,"contextGeneration":self.context_generation,"activeLayerId":layer_id.0.to_string(),"selectedLayerIds":[layer_id.0.to_string()]}),

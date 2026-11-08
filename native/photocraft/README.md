@@ -519,3 +519,53 @@ and the returned version/document identity plus epoch are checked under the same
 operation-generation token. Failure does not authorize Main to become active.
 A settled empty host may resume with null version/document identities, without
 inventing an image; this allows an empty project's later document creation.
+
+## Product image intents and temporary selection
+
+The persistent host additionally advertises `productImageEditsV1` and
+`temporarySelectionContextV1`. `productEdit` accepts the shared product
+`ImageEngineEdit` shape and an exact `expectedContextGeneration`. It produces the
+existing durable `prepared` candidate. Only Main's single project CAS followed by
+explicit `accept` chooses that version; layer controls, bucket fill, blur and
+transform do not acquire a separate native Undo history. Every operation validates
+all IDs/locks before mutation and rolls its complete hosted checkpoint back on
+native failure or discard. Layer sets are unique and bounded to 64. The wire keeps
+canonical decimal u64 IDs. Generic edit input contains the complete polygon,
+matrix, colour, tolerance or layer-property changes for Main's journal replay.
+
+`selectionContext` sets or clears one temporary polygon for the current raster
+layer and exact context generation. It does not publish a version, write an
+operation receipt, change source `Document.selection` or change any source layer
+mask. A bounded summary returns its token, point count and bounds (no mask pixels
+or full polygon). Its raster mask uses the pinned engine's lasso rasterizer in an
+isolated COW scratch context and is bounded by the existing 16 Mi-pixel canvas
+limit. Main/UI retain the complete temporary geometry. Pixel edits attach that
+mask only while executing and restore the source intrinsic selection before the
+version is saved. Whole-layer clear/bucket/blur without a polygon do not silently
+use an unrelated source selection.
+
+Selecting another layer and loading/installing versions invalidate this temporary
+selection. Ordinary live paint keeps its context generation and temporary
+outline; non-paint acceptance invalidates the outline and advances the generation.
+Discard restores the previous outline and source document; source layer masks and
+intrinsic selection survive preparation, acceptance, failure and reopening. Native
+paint still honours an intrinsic imported `Document.selection`; this is separate
+from Flow's temporary tool geometry and is not silently deleted. Source Background
+transparency locks retain the native background-colour eraser behaviour exposed
+by the context summary. This is not a claim of arbitrary Photoshop round-trip
+fidelity.
+
+Control replies supply the actual worker/display epoch and document ID. The Node
+Adapter's typed summary projects the real layer tree, supported product blend
+mapping, raw native blend name, locks and tool state, and provides the exact
+`FrameIdentity`. It never guesses display epochs. `prepareEdit` refuses an image
+that is not already installed, so applying a toolbar action cannot silently switch
+the active document or stale its supplied context generation.
+
+Focused verification entry points are `host::context_tests::product_*` and the
+real Node `imageEngineProductEdit.test.ts`; the existing hosted context matrix is
+also exercised. Native tests inspect both actual pixels and source mask/target
+state, not only a PNG. Unaccepted ordinary candidates remain unavailable to
+Capture; opacity/transform COW live preview is a separate subsequent capability.
+Formal UI, physical pen behaviour and Windows execution require independent
+acceptance; these tests do not provide that evidence.

@@ -4,6 +4,8 @@ mod context;
 mod flow_brush;
 mod journal;
 pub use context::{FloatingAction, LayerIdInput};
+mod product;
+pub use product::{ProductEdit, SelectionPoint};
 mod output;
 pub use output::OutputFormat;
 mod pipeline;
@@ -104,6 +106,18 @@ pub enum Command {
     SelectLayerContext {
         #[serde(rename = "layerId")]
         layer_id: LayerIdInput,
+        #[serde(rename = "expectedContextGeneration")]
+        expected_context_generation: u64,
+    },
+    SelectionContext {
+        #[serde(rename = "layerId")]
+        layer_id: LayerIdInput,
+        #[serde(rename = "expectedContextGeneration")]
+        expected_context_generation: u64,
+        selection: Option<Vec<SelectionPoint>>,
+    },
+    ProductEdit {
+        edit: ProductEdit,
         #[serde(rename = "expectedContextGeneration")]
         expected_context_generation: u64,
     },
@@ -283,6 +297,7 @@ struct Candidate {
     from_live: bool,
     recovered: bool,
     from_floating: bool,
+    temporary_checkpoint: Option<product::TemporarySelection>,
 }
 struct StoreSlot {
     value: Option<Store>,
@@ -351,6 +366,7 @@ pub struct Host {
     engine: Session,
     context_generation: u64,
     floating_context: Option<context::FloatingContext>,
+    temporary_selection: Option<product::TemporarySelection>,
     identity: Option<(String, String)>,
     current: Option<String>,
     source: Option<Source>,
@@ -376,6 +392,13 @@ fn authorize(id: &str, _params: &Value) -> photocraft_engine::Result<()> {
         "edit.transform",
         "filter.blur.gaussianBlur",
         "edit.fill",
+        "edit.clear",
+        "paint.bucket",
+        "layer.setProps",
+        "layer.delete",
+        "layer.moveTo",
+        "layer.mergeLayers",
+        "layer.mergeVisible",
     ]
     .contains(&id)
     {
@@ -409,6 +432,7 @@ impl Host {
             engine,
             context_generation: 0,
             floating_context: None,
+            temporary_selection: None,
             identity: None,
             current: None,
             source: None,
@@ -518,10 +542,15 @@ impl Host {
         if self.context_generation == generation && self.context_stamp() != before {
             self.advance_context();
         }
-        let (body, payload) = match result {
+        let (mut body, payload) = match result {
             Ok(v) => v,
             Err(e) => (json!({"kind":"failure","error":e}), vec![]),
         };
+        // Display identity comes from the actual actor, including non-frame replies.
+        body["workerEpoch"] = json!(self.worker_epoch);
+        body["epoch"] = json!(self.display_epoch);
+        body["documentId"] = json!(self.engine.active().map(|s| s.doc.id.0.to_string()));
+        body["contextGeneration"] = json!(self.context_generation);
         Response {
             header: json!({"protocol":1,"requestId":r.request_id,"sessionId":r.session_id,"incarnation":r.incarnation,"workerEpoch":self.worker_epoch,"operationId":r.operation_id,"body":body}),
             payload,
@@ -613,6 +642,7 @@ impl Host {
             from_live: live_input.is_some(),
             recovered: false,
             from_floating: self.floating_context.is_some(),
+            temporary_checkpoint: self.temporary_selection.clone(),
         });
         Ok(body)
     }
@@ -628,6 +658,20 @@ impl Host {
                 layer_id,
                 expected_context_generation,
             } => self.select_context(r, layer_id, *expected_context_generation),
+            Command::SelectionContext {
+                layer_id,
+                expected_context_generation,
+                selection,
+            } => self.selection_context(
+                r,
+                layer_id,
+                *expected_context_generation,
+                selection.as_deref(),
+            ),
+            Command::ProductEdit {
+                edit,
+                expected_context_generation,
+            } => self.product_edit(r, edit, *expected_context_generation),
             Command::Floating {
                 preview_id,
                 expected_context_generation,
@@ -728,6 +772,8 @@ impl Host {
                 self.engine
                     .host_install(loaded.doc, loaded.target)
                     .map_err(native)?;
+                self.temporary_selection = None;
+                self.advance_context();
                 self.current = Some(version_id.clone());
                 self.display_epoch += 1;
                 self.epoch_input_through = 0;
@@ -772,6 +818,7 @@ impl Host {
                     return Ok((failure, vec![]));
                 }
                 let v = self.prepare(r, Some(checkpoint), None)?;
+                self.advance_context();
                 Ok((v, vec![]))
             }
             Command::StrokeBegin {
@@ -956,6 +1003,7 @@ impl Host {
                         from_live: v["fromLive"] == true,
                         recovered: true,
                         from_floating: v["floatingPreviewId"].is_string(),
+                        temporary_checkpoint: None,
                     });
                 }
                 let c = self
@@ -1000,6 +1048,7 @@ impl Host {
                     })?;
                 }
                 let from_floating = c.from_floating;
+                let clear_temporary = !c.from_live;
                 self.current = Some(c.receipt.version_id.clone());
                 if !recovered && c.from_live {
                     // The exact live pixels were adopted. Promote the previous visual prefix
@@ -1013,6 +1062,10 @@ impl Host {
                     self.last_frame = None;
                 }
                 self.candidate = None;
+                if clear_temporary {
+                    self.temporary_selection = None;
+                    self.advance_context();
+                }
                 if from_floating {
                     self.floating_context = None;
                 }
@@ -1062,6 +1115,7 @@ impl Host {
                         from_live: v["fromLive"] == true,
                         recovered: true,
                         from_floating: v["floatingPreviewId"].is_string(),
+                        temporary_checkpoint: None,
                     });
                 }
                 let c = self
@@ -1094,6 +1148,7 @@ impl Host {
                 let c = self.candidate.take().ok_or_else(|| {
                     Error::unknown("discard persisted but candidate context missing")
                 })?;
+                self.temporary_selection = c.temporary_checkpoint;
                 if let Some(checkpoint) = c.checkpoint {
                     self.engine.host_restore(checkpoint).map_err(|e| {
                         Error::unknown(format!("discard persisted but restore failed: {e}"))
@@ -1150,6 +1205,8 @@ impl Host {
                     .host_install(loaded.doc, loaded.target)
                     .map_err(native)?;
                 self.source = loaded.source;
+                self.temporary_selection = None;
+                self.advance_context();
                 self.current = Some(version_id.clone());
                 self.display_epoch += 1;
                 self.epoch_input_through = 0;

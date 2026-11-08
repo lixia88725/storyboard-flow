@@ -87,3 +87,28 @@ export function validImageEngineEdit(value:unknown):value is ImageEngineEdit {
 export function validImageEnginePreviewStamp(v:unknown):v is ImageEnginePreviewStamp {
  try{return shape(v,['documentId','workerEpoch','epoch','previewId','throughSeq','baseVersion','sourceContextGeneration','editDigest'])&&layerId(v.documentId)&&integer(v.workerEpoch,1)&&integer(v.epoch)&&typeof v.previewId==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(v.previewId)&&integer(v.throughSeq,1)&&integer(v.sourceContextGeneration)&&[v.baseVersion,v.editDigest].every(s=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s));}catch{return false;}
 }
+
+export type ImageEngineDisplayIdentity = import('../../drawing/renderer/image-engine/frames.js').FrameIdentity;
+export type ImageEngineLocks = {all:boolean;pixels:boolean;position:boolean;transparency:boolean;artboard:boolean};
+export type ImageEngineLayerSummary = {
+  layerId:ImageEngineLayerId;name:string;kind:'raster'|'group'|'unsupported';visible:boolean;opacity:number;
+  blendMode:ImageEngineBlendMode|null;nativeBlend:string;locks:ImageEngineLocks;effectiveLocks:ImageEngineLocks;
+  children:readonly ImageEngineLayerSummary[];
+};
+export type ImageEngineTemporarySelection = {
+  layerId:ImageEngineLayerId;documentId:string;contextGeneration:number;pointCount:number;token:string;
+  bounds:readonly [number,number,number,number];
+};
+/** Bounded actor context, separate from project versions and source-file masks.
+ * Temporary polygon geometry remains in its owning Main/UI request; this summary
+ * returns only its bounded identity and bounds, never mask pixels or paths. */
+export type ImageEngineContextSummary = {
+  displayIdentity:ImageEngineDisplayIdentity;imageVersionRef:string|null;contextGeneration:number;
+  layers:readonly ImageEngineLayerSummary[];activeLayerId:ImageEngineLayerId|null;selectedLayerIds:readonly ImageEngineLayerId[];
+  selection:{present:boolean;token:string|null;bounds:readonly[number,number,number,number]|null};
+  temporarySelection:ImageEngineTemporarySelection|null;
+  floating:{previewId:string;throughSeq:number;sourceLayerId:ImageEngineLayerId;phase:'active'|'dropPrepared'|'blocked';baseVersion:string;offset:readonly[number,number];outlineBounds:readonly[number,number,number,number]|null}|null;
+  candidateId:string|null;inputActive:boolean;pipelineActive:boolean;frozen:boolean;settlementRequired:boolean;
+  tools:Readonly<Record<string,{enabled:boolean;reason?:string|null}>>;eraserBehavior:'alpha'|'backgroundColor';
+};
+export type ImageEngineEditContext = {expectedContextGeneration:number;preview?:ImageEnginePreviewStamp};

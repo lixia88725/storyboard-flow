@@ -6,6 +6,11 @@ import type { startImageEngine } from '../../../platform/main/imageEngineConnect
 import type { createImageEngineWorkerOwner } from '../../../platform/main/imageEngineWorkerOwner.js';
 import type { NativeFrame } from '../../../platform/main/imageEngineFraming.js';
 import type { NativeImageRef } from '../../../platform/contracts/imageProject.js';
+import { validImageEngineEdit, validImageEnginePreviewStamp } from '../../../platform/contracts/imageEngine.js';
+import type { ImageEngineEdit, ImageEngineEditContext, ImageEngineContextSummary, ImageEngineDisplayIdentity } from '../../../platform/contracts/imageEngine.js';
+import { validSelection } from '../../../platform/contracts/flowSelection.js';
+import type { FlowSelection } from '../../../platform/contracts/flowSelection.js';
+import { parseNativeProductContext } from './nativeProductContext.js';
 import type { FlowStroke } from '../../../platform/contracts/flowWave2.js';
 import type { NativeOperationStatus, NativeSessionDriver, PreparedImage } from '../../../session/core/nativeSession.js';
 import { validNativeImageRef, validProjectStroke } from '../../../session/core/imageProjectModel.js';
@@ -13,6 +18,14 @@ import { record, same } from '../../../session/core/imageProjectValues.js';
 import type { NativePipelineDriver, PipelineLimits, PipelineReady, PipelineQueued, PipelinePrepared, PipelineState, PipelineEvent } from '../../../session/core/nativePipeline.js';
 import type { RetainedSourceObject } from './sourceStore.js';
 
+export type NativeProductDriver = {
+  prepareEdit(operationId:string,base:NativeImageRef,edit:ImageEngineEdit,context:ImageEngineEditContext):Promise<PreparedImage>;
+  summary():Promise<ImageEngineContextSummary>;
+  selectLayerContext(base:NativeImageRef,layerId:string,expectedContextGeneration:number):Promise<ImageEngineContextSummary>;
+  selectionContext(base:NativeImageRef,layerId:string,selection:FlowSelection|null,expectedContextGeneration:number):Promise<ImageEngineContextSummary>;
+  displayIdentity():ImageEngineDisplayIdentity|null;
+  contextGeneration():number|null;
+};
 type Connection=ReturnType<typeof startImageEngine>;
 type WorkerOwner=Awaited<ReturnType<typeof createImageEngineWorkerOwner>>;
 const sha=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
@@ -47,6 +60,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     const identity=()=>{if(epoch!==generation||target!==connection)refuse('Old native operation fenced','worker-unavailable','unknown');};
     return{connection:target,identity,check(){identity();if(requireCurrent()!==target)refuse('Native operation context changed','worker-unavailable','unknown');}};
   };
+  let display:ImageEngineDisplayIdentity|null=null,contextGeneration:number|null=null;
   let current:NativeImageRef|null=null,candidate:string|undefined,previewOperation:string|undefined,serial=0;
   const next=()=>`control-${++serial}`;
   type Job={input:boolean;run():Promise<void>};const jobs:Job[]=[];let running=false,inputRun=0;
@@ -64,6 +78,11 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       const frame=await wire(input,async()=>{assertGeneration();return target.request(operationId,captured,base,capturedPayload);});assertGeneration();const reply=frame.header.body;
       if(!record(reply)||typeof reply.kind!=='string')refuse('Malformed native reply','protocol','unknown');
       if(reply.kind==='failure'){const error=reply.error;if(!record(error)||typeof error.message!=='string')refuse('Malformed native failure','protocol','unknown');refuse(error.message,String(error.code??'native'),error.effect==='none'?'none':error.effect==='retained'?'retained':'unknown');}
+      const shown=record(reply.frame)?reply.frame:reply;
+      if(typeof shown.documentId==='string'&&Number.isSafeInteger(shown.epoch)&&Number(shown.epoch)>=0){
+        display={sessionId:String(frame.header.sessionId),incarnation:String(frame.header.incarnation),documentId:shown.documentId,workerEpoch:Number(frame.header.workerEpoch),epoch:Number(shown.epoch)};
+      }else if(reply.documentId===null)display=null;
+      if(Number.isSafeInteger(reply.contextGeneration)&&Number(reply.contextGeneration)>=0)contextGeneration=Number(reply.contextGeneration);
       if(record(reply.frame))try{void Promise.resolve(options.onFrame?.(frame)).catch(()=>{});}catch{/* presentation only */}return{reply,frame};
     }catch(e){if(epoch===generation&&target===connection&&(e as {effect?:unknown})?.effect!=='none')fault();throw e;}
   };
@@ -155,15 +174,46 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     async accept(value,base){const op=operationContext();const{reply}=await call(next(),{kind:'accept',candidateId:value.candidateId},base.versionId);op.check();if(reply.kind==='accepted'){if(!same(nativeRef(reply.receipt),value.native))refuse('Native repeated accept mismatch','protocol','unknown');return;}if(reply.kind!=='acceptQueued'||reply.durable!==false||reply.candidateId!==value.candidateId)refuse('Native pipeline accept admission mismatch','protocol','unknown');current={...value.native};},
     async stop(){const op=operationContext();const{reply}=await call(next(),{kind:'pipelineStop',pipelineId:pipelineReady?.pipelineId},pipelineBase());op.check();if(reply.kind!=='pipelineStopped'||reply.versionId!==current?.versionId)refuse('Native pipeline barrier mismatch','protocol','unknown');pipelineReady=undefined;}
   };
-  const driver:NativeSessionDriver & {resume():Promise<void>}={
+  const contextSummary=async()=>{
+    const op=operationContext();
+    if(!op.connection.supports('toolContextSummaryV1')||!op.connection.supports('decimalLayerIdsV1')||!op.connection.supports('temporarySelectionContextV1'))refuse('Native binary lacks typed product context','unsupported');
+    const{reply}=await call(next(),{kind:'summary',maxBytes:49152},pipelineReady?.anchorVersion??current?.versionId??null);op.check();
+    if(!display)refuse('Native context has no display identity','protocol','unknown');return parseNativeProductContext(reply,display);
+  };
+  const layerContext=async(kind:'selectLayerContext'|'selectionContext',base:NativeImageRef,layerId:string,expectedContextGeneration:number,selection?:FlowSelection|null)=>{
+    const op=operationContext();
+    if(!op.connection.supports('temporarySelectionContextV1')||!op.connection.supports('decimalLayerIdsV1'))refuse('Native binary lacks temporarySelectionContextV1','unsupported');
+    if(!current||!same(base,current))refuse('Context target is not the installed image');
+    if(!/^(0|[1-9][0-9]{0,19})$/.test(layerId)||BigInt(layerId)>18446744073709551615n||!Number.isSafeInteger(expectedContextGeneration)||expectedContextGeneration<0||(kind==='selectionContext'&&selection!==null&&!validSelection(selection)))refuse('Invalid temporary context input','invalid-input');
+    const{reply}=await call(next(),{kind,layerId,expectedContextGeneration,...(kind==='selectionContext'?{selection:structuredClone(selection)}:{})},base.versionId);op.check();
+    if(reply.kind!==(kind==='selectionContext'?'selectionContextUpdated':'contextUpdated')||reply.imageVersionRef!==base.versionId)refuse('Native context identity mismatch','protocol','unknown');
+    const summary=await contextSummary();op.check();return summary;
+  };
+  const driver:NativeSessionDriver & NativeProductDriver & {resume():Promise<void>}={
     ...(owner?{async restartForRecovery(){
       fenced=true;generation++; // Fence queued Adapter jobs before awaiting owned exit.
       const restarting=generation,handle=await owner.restart();if(restarting!==generation)refuse('Old worker replacement fenced','worker-unavailable','unknown');connection=handle.connection;generation=handle.generation;
-      current=null;candidate=undefined;previewOperation=undefined;pipelineReady=undefined;
+      display=null;contextGeneration=null;current=null;candidate=undefined;previewOperation=undefined;pipelineReady=undefined;
       faultNotified=false;closing=false;fenced=false;armExit();
     }}:{}),
     onFault(listener){faultListeners.add(listener);return()=>faultListeners.delete(listener);},
     pipeline,
+    summary:contextSummary,
+    displayIdentity:()=>display?{...display}:null,
+    contextGeneration:()=>contextGeneration,
+    selectLayerContext:(base,layerId,generation)=>layerContext('selectLayerContext',base,layerId,generation),
+    selectionContext:(base,layerId,selection,generation)=>layerContext('selectionContext',base,layerId,generation,selection),
+    async prepareEdit(operationId,base,edit,context){
+      const op=operationContext();
+      if(!op.connection.supports('productImageEditsV1'))refuse('Native binary lacks productImageEditsV1','unsupported');
+      if(!validImageEngineEdit(edit)||!context||!Number.isSafeInteger(context.expectedContextGeneration)||context.expectedContextGeneration<0||(context.preview!==undefined&&!validImageEnginePreviewStamp(context.preview)))refuse('Invalid product image edit/context','invalid-input');
+      if(context.preview)refuse('Native product preview adoption is not yet supported','unsupported');
+      const captured=structuredClone(edit),generation=context.expectedContextGeneration;
+      if(!current||!same(current,base))refuse('Product edit target is not installed');
+      await verifyNative(base);op.check();
+      const{reply}=await call(operationId,{kind:'productEdit',edit:captured,expectedContextGeneration:generation},base.versionId);op.check();
+      const value=prepared(reply);if(value.baseVersion!==base.versionId||value.native.documentId!==base.documentId)refuse('Native product edit prepared wrong target','protocol','unknown');return value;
+    },
 
     async preparePaint(operationId,base,stroke){
       const op=operationContext();

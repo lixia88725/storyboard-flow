@@ -27,7 +27,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     wire::write(
         &mut stdout,
         &Response {
-            header: json!({"protocol":1,"kind":"hello","workerEpoch":host.worker_epoch,"upstream":"a259993118ac7ce1d4c828a385abbc3191841e86","stage":"A","capabilities":["recoveredCandidateAcceptAtInstalledVersion","strokePipelineV1","immutableVersionExportV1","settledResumeV1","toolContextSummaryV1","contextLayerSelectionV1","floatingGestureV1","decimalLayerIdsV1","flowBrushPresetsV1"],"objectVerification":host.cache_policy(),"maxHeaderBytes":wire::MAX_HEADER,"maxPayloadBytes":wire::MAX_PAYLOAD}),
+            header: json!({"protocol":1,"kind":"hello","workerEpoch":host.worker_epoch,"upstream":"a259993118ac7ce1d4c828a385abbc3191841e86","stage":"A","capabilities":["recoveredCandidateAcceptAtInstalledVersion","strokePipelineV1","immutableVersionExportV1","settledResumeV1","toolContextSummaryV1","contextLayerSelectionV1","floatingGestureV1","decimalLayerIdsV1","flowBrushPresetsV1","temporarySelectionContextV1","productImageEditsV1"],"objectVerification":host.cache_policy(),"maxHeaderBytes":wire::MAX_HEADER,"maxPayloadBytes":wire::MAX_PAYLOAD}),
             payload: vec![],
         },
     )?;
