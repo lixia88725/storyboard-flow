@@ -28,6 +28,9 @@ export type NativeVersionOutput={bytes:Uint8Array;sha256:string;byteLength:numbe
 export type NativeRetainedPreparation={kind:'editable';prepared:PreparedImage;proof:ImageEngineSourceDisplayProof}|{kind:'reference';prepared:PreparedImage;proof:ImageEngineSourceDisplayProof;policy:ImageEngineProtectedSourcePolicy;reason:{code:string;message:string}};
 export type NativeWorkingRefreshResult={prepared:PreparedImage;policy:ImageEngineProtectedSourcePolicy|null;workingInput:ImageEngineWorkingInput};
 export type NativeProductDriver = {
+  /** Fixed immutable pin; no active-doc switch or freeze. Cancellation drains. */
+  exportInactiveVersion(ref:NativeImageRef,format:'psd'|'tiff',metadata:WorkspaceOutputMetadataEnvelope,maxBytes?:number,expectedSourcePolicy?:ImageEngineProtectedSourcePolicy|null):Promise<NativeVersionOutput>;
+  drainInactiveExports():Promise<void>;
   prepareWorkingRefresh(operationId:string,working:RetainedSourceObject,reservation:ImageEngineJobReservation,authorizedOrigin?:ImageEngineAuthorizedOrigin):Promise<NativeWorkingRefreshResult>;
   versionWorkingInput(ref:NativeImageRef):Promise<ImageEngineWorkingInput|null>;
   /** Reads the authenticated immutable version JSON; no actor IO/thumbnail gate. */
@@ -225,6 +228,34 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       await new Promise(resolve=>setTimeout(resolve,8));op.check();value=await call(next(),{kind:'detachedPoll',jobId},null);op.check();
     }
   };
+  let readonlyExport:{key:string;jobId:string;promise:Promise<NativeVersionOutput>}|undefined;
+  const drainInactiveExports=async()=>{if(readonlyExport)await readonlyExport.promise;};
+  const exportInactiveVersion=(ref:NativeImageRef,format:'psd'|'tiff',metadata:WorkspaceOutputMetadataEnvelope,maxBytes=64<<20,expectedSourcePolicy:ImageEngineProtectedSourcePolicy|null=null):Promise<NativeVersionOutput>=>{
+    const pinned=structuredClone(ref),envelope=structuredClone(metadata),policy=structuredClone(expectedSourcePolicy),key=JSON.stringify([pinned,format,envelope,maxBytes,policy]);
+    if(readonlyExport){if(readonlyExport.key===key)return readonlyExport.promise;return Promise.reject(Object.assign(Error('Drain the existing readonly output handle first'),{code:'backpressure',effect:'none'}));}
+    const op=operationContext(),jobId=next();let safelyReleased=true;
+    const promise=(async()=>{
+      if(!op.connection.supports('inactiveVersionExportV1'))refuse('Native binary lacks inactiveVersionExportV1','unsupported');
+      if(!validNativeImageRef(pinned)||!['psd','tiff'].includes(format)||!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>(64<<20)||!validWorkspaceOutputMetadataEnvelope(envelope)||(policy!==null&&!validImageEngineProtectedSourcePolicy(policy)))refuse('Invalid immutable output request','invalid-input');
+      const actual=(await verifyNativeFile(pinned)).policy;op.check();if(!same(actual,policy))refuse('Main protected origin does not match immutable output','protected-source');
+      const bytes=new TextEncoder().encode(JSON.stringify(envelope)),metadataSha256=sha(bytes);let admitted=false,finished=false;
+      const release=async()=>{const{reply}=await call(next(),{kind:'releaseExport',jobId},null);op.check();if(reply.kind!=='exportReleased'||reply.jobId!==jobId)refuse('Readonly output release mismatch','protocol','unknown');safelyReleased=true;};
+      try{
+        let state:Record<string,unknown>;safelyReleased=false;const started=await call(jobId,{kind:'exportImmutable',source:versionIdentity(pinned),format,maxBytes,metadata:{sha256:metadataSha256,byteLength:bytes.length},expectedSourcePolicy:policy},null,bytes);op.check();admitted=true;state=started.reply;
+        while(state.kind==='detachedQueued'||(state.kind==='detachedState'&&state.finished===false)){
+          await new Promise(resolve=>setTimeout(resolve,8));op.check();const value=await call(next(),{kind:'detachedPoll',jobId},null);op.check();if(value.frame.payload.length)refuse('Background output poll must not carry pixel/file payload','protocol','unknown');state=value.reply;
+        }
+        if(state.kind!=='detachedState'||state.jobId!==jobId||state.finished!==true||!record(state.result))refuse('Invalid readonly output state','protocol','unknown');finished=true;const r=state.result;
+        if(r.kind==='failed'){await release();const error=r.error;if(!record(error))refuse('Malformed readonly output failure','protocol','unknown');refuse(String(error.message),String(error.code),error.effect==='none'?'none':error.effect==='retained'?'retained':'unknown');}
+        if(r.kind!=='exported'||r.exportedDocumentId!==pinned.documentId||r.versionId!==pinned.versionId||r.format!==format||r.width!==pinned.width||r.height!==pinned.height||!Number.isSafeInteger(r.byteLength)||Number(r.byteLength)<1||Number(r.byteLength)>maxBytes||r.metadataSha256!==metadataSha256||r.layered!==true||!Number.isSafeInteger(r.layerCount)||Number(r.layerCount)<1||Number(r.layerCount)>64||!Array.isArray(r.warnings)||r.warnings.length!==0)refuse('Readonly output receipt differs from fixed immutable pin','protocol','unknown');
+        if(policy&&(r.sourceReferenceVersion!==1||typeof r.sourceReferenceSha256!=='string'||!/^[0-9a-f]{64}$/.test(r.sourceReferenceSha256)))refuse('Missing protected readonly output marker','protocol','unknown');
+        const output=new Uint8Array(Number(r.byteLength));for(let offset=0;offset<output.length;offset+=1<<20){const length=Math.min(1<<20,output.length-offset),chunk=await call(next(),{kind:'readExport',jobId,offset,length},null);op.check();if(chunk.reply.kind!=='exportChunk'||chunk.reply.jobId!==jobId||chunk.reply.offset!==offset||chunk.reply.length!==length||chunk.reply.byteLength!==output.length||chunk.frame.payload.length!==length)refuse('Readonly output chunk binding mismatch','protocol','unknown');output.set(chunk.frame.payload,offset);}
+        const sha256=sha(output),signature=Buffer.from(output.subarray(0,4)).toString('hex');if(r.sha256!==sha256||(format==='psd'?signature!=='38425053':!['49492a00','4d4d002a'].includes(signature)))refuse('Readonly output digest/signature mismatch','protocol','unknown');await release();
+        return{bytes:output,sha256,byteLength:output.length,width:pinned.width,height:pinned.height,layerCount:Number(r.layerCount),versionId:pinned.versionId,documentId:pinned.documentId,metadataSha256,...(policy?{sourceReferenceSha256:String(r.sourceReferenceSha256)}:{})};
+      }catch(error){if(!admitted&&(error as {effect?:string})?.effect==='none')safelyReleased=true;else if(finished&&!safelyReleased&&(error as {effect?:string})?.effect==='none')await release();throw error;}
+    })();
+    const handle={key,jobId,promise};readonlyExport=handle;void promise.finally(()=>{if(safelyReleased&&readonlyExport===handle)readonlyExport=undefined;}).catch(()=>{});return promise;
+  };
   const retainedPayload=async(op:ReturnType<typeof operationContext>,captured:RetainedSourceObject,formatHint:string)=>{
        const original=await boundedFile(captured.path,8<<20,captured.identity);op.check();if(original.length!==captured.byteLength||sha(original)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
        let payload:Uint8Array=original,display:Record<string,unknown>|null=null;
@@ -268,10 +299,11 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     const summary=await contextSummary();op.check();return summary;
   };
   const driver:NativeSessionDriver & NativeProductDriver & {resume():Promise<void>}={
+    exportInactiveVersion,drainInactiveExports,
     async versionSourcePolicy(ref){return (await verifyNativeFile(structuredClone(ref))).policy;},
     ...(owner?{async restartForRecovery(){
       fenced=true;generation++; // Fence queued Adapter jobs before awaiting owned exit.
-      const restarting=generation,handle=await owner.restart();if(restarting!==generation)refuse('Old worker replacement fenced','worker-unavailable','unknown');connection=handle.connection;generation=handle.generation;
+      const restarting=generation,handle=await owner.restart();if(restarting!==generation)refuse('Old worker replacement fenced','worker-unavailable','unknown');connection=handle.connection;generation=handle.generation;readonlyExport=undefined;
       immutableJobToken=undefined;inspectionCache.clear();display=null;contextGeneration=null;current=null;candidate=undefined;previewOperation=undefined;pipelineReady=undefined;
       faultNotified=false;closing=false;fenced=false;armExit();
     }}:{}),
@@ -456,8 +488,8 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       const{reply}=await call(next(),{kind:'resume'},expected?.versionId??null);op.check();
       if(reply.kind!=='resumed'||reply.versionId!==(expected?.versionId??null)||reply.documentId!==(expected?.documentId??null)||!Number.isSafeInteger(reply.epoch)||Number(reply.epoch)<0)refuse('Native Resume identity/epoch mismatch','protocol','unknown');
     },
-    async freeze(){const op=operationContext();const{reply}=await call(next(),{kind:'freeze'});op.check();if(reply.kind!=='frozen'||reply.versionId!==(current?.versionId??null))refuse('Native freeze identity failed','protocol','unknown');},
-    async close(){const op=operationContext();closing=true;const{reply}=await call(next(),{kind:'close'});op.identity();if(reply.kind!=='closed')refuse('Native close failed','protocol','unknown');await op.connection.exited;op.identity();if(owner){await owner.dispose();op.identity();}}
+    async freeze(){const op=operationContext();await drainInactiveExports();op.check();const{reply}=await call(next(),{kind:'freeze'});op.check();if(reply.kind!=='frozen'||reply.versionId!==(current?.versionId??null))refuse('Native freeze identity failed','protocol','unknown');},
+    async close(){const op=operationContext();await drainInactiveExports();op.check();closing=true;const{reply}=await call(next(),{kind:'close'});op.identity();if(reply.kind!=='closed')refuse('Native close failed','protocol','unknown');await op.connection.exited;op.identity();if(owner){await owner.dispose();op.identity();}}
   };
   return {
     driver,verifyNative,capture,

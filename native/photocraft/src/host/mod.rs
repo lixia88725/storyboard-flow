@@ -126,6 +126,25 @@ pub enum Command {
         source: VersionIdentity,
         thumbnail: ThumbnailOptions,
     },
+    ExportImmutable {
+        source: VersionIdentity,
+        format: output::OutputFormat,
+        #[serde(rename = "maxBytes")]
+        max_bytes: usize,
+        metadata: output_metadata::MetadataRef,
+        #[serde(rename = "expectedSourcePolicy", default)]
+        expected_source_policy: Option<source_guard::ProtectedPolicy>,
+    },
+    ReadExport {
+        #[serde(rename = "jobId")]
+        job_id: String,
+        offset: usize,
+        length: usize,
+    },
+    ReleaseExport {
+        #[serde(rename = "jobId")]
+        job_id: String,
+    },
     DetachedPoll {
         #[serde(rename = "jobId")]
         job_id: String,
@@ -1610,10 +1629,10 @@ impl Host {
                         "settle all immutable candidates before freeze",
                     ));
                 }
-                if self.detached.has_inflight() {
+                if self.detached.has_inflight() || self.detached.has_export_result() {
                     return Err(Error::none(
                         "busy",
-                        "background immutable job is in flight; wait for its explicit result",
+                        "background immutable job/result must be drained and released",
                     ));
                 }
                 if !self.store.unresolved()?.is_empty() {
@@ -1636,6 +1655,9 @@ impl Host {
             Command::ListDetached { .. }
             | Command::DetachedPrepare { .. }
             | Command::InspectVersion { .. }
+            | Command::ExportImmutable { .. }
+            | Command::ReadExport { .. }
+            | Command::ReleaseExport { .. }
             | Command::DetachedPoll { .. }
             | Command::DetachedStatus { .. }
             | Command::SettleDetached { .. }
@@ -1646,7 +1668,10 @@ impl Host {
             | Command::PipelinePoll { .. }
             | Command::PipelineStop { .. } => Err(Error::none("not-found", "pipeline not active")),
             Command::Close => {
-                if self.detached.has_inflight() || self.store.shared.context_unsettled() {
+                if self.detached.has_inflight()
+                    || self.detached.has_export_result()
+                    || self.store.shared.context_unsettled()
+                {
                     return Err(Error::none(
                         "busy",
                         "settle immutable jobs and receipts before close",

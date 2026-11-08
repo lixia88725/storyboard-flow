@@ -57,7 +57,7 @@ enum Mode {
 fn refused(message: impl Into<String>) -> Error {
     Error::none("output-metadata-refused", message)
 }
-fn validate(bytes: &[u8], reference: &MetadataRef) -> Result<()> {
+pub(super) fn validate(bytes: &[u8], reference: &MetadataRef) -> Result<()> {
     if bytes.is_empty()
         || bytes.len() > MAX_METADATA
         || reference.byte_length != bytes.len()

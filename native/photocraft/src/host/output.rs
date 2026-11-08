@@ -205,7 +205,10 @@ pub(super) fn encode(
         ));
     }
     if decoded.document.metadata.xmp.as_deref() != doc.metadata.xmp.as_deref() {
-        return Err(Error::none("export-loss", "source/output XMP bytes were not preserved"));
+        return Err(Error::none(
+            "export-loss",
+            "source/output XMP bytes were not preserved",
+        ));
     }
     let blocks = opaque_preserved(doc, &decoded.document)?;
     let receipt = json!({"format":format,"sha256":sha(&bytes),"byteLength":bytes.len(),"width":doc.size.width,"height":doc.size.height,"layerCount":doc.layer_count(),"layered":true,"opaqueBlockCount":blocks,"warnings":[]});
@@ -230,4 +233,44 @@ mod tests {
         let flat = encode(&doc, &OutputFormat::Tiff, wire::MAX_PAYLOAD).unwrap_err();
         assert_eq!(flat.code, "unsupported");
     }
+}
+
+// Shared metadata/policy output path for bounded immutable background reads.
+pub(super) fn immutable(
+    version_id: &str,
+    loaded: store::Loaded,
+    format: &OutputFormat,
+    max: usize,
+    metadata: &output_metadata::MetadataRef,
+    expected: Option<&source_guard::ProtectedPolicy>,
+    payload: &[u8],
+) -> Result<(Value, Vec<u8>)> {
+    let policy = loaded
+        .source
+        .as_ref()
+        .and_then(|s| s.display_policy.as_ref());
+    if policy != expected {
+        return Err(Error::none(
+            "protected-source",
+            "Main protected origin does not match pinned native source policy",
+        ));
+    }
+    let mut doc = output_metadata::overlay(&loaded.doc, metadata, payload)?;
+    let source_sha = if let Some(policy) = policy {
+        let (d, sha) = output_metadata::overlay_source(&doc, policy)?;
+        doc = d;
+        Some(sha)
+    } else {
+        None
+    };
+    let (mut receipt, bytes) = encode(&doc, format, max)?;
+    receipt["kind"] = json!("exported");
+    receipt["versionId"] = json!(version_id);
+    receipt["exportedDocumentId"] = json!(doc.id.0.to_string());
+    receipt["metadataSha256"] = json!(metadata.sha256);
+    if let Some(sha) = source_sha {
+        receipt["sourceReferenceSha256"] = json!(sha);
+        receipt["sourceReferenceVersion"] = json!(1);
+    }
+    Ok((receipt, bytes))
 }

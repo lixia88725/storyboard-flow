@@ -103,6 +103,7 @@ struct State {
 }
 struct Job {
     control: bool,
+    streamed: bool,
     fingerprint: String,
     state: Arc<Mutex<State>>,
     thread: Option<JoinHandle<()>>,
@@ -135,6 +136,65 @@ impl DetachedLedger {
             }
         }
     }
+    pub(super) fn has_export_result(&self) -> bool {
+        self.jobs.values().any(|j| {
+            j.streamed
+                && j.state.lock().map_or(true, |s| {
+                    !s.finished
+                        || !matches!(
+                            s.result.as_ref().and_then(|v| v["kind"].as_str()),
+                            Some("exportReleased")
+                        )
+                })
+        })
+    }
+    fn read_export(&self, id: &str, offset: usize, length: usize) -> Result<(Value, Vec<u8>)> {
+        if length == 0 || length > 1 << 20 {
+            return Err(Error::none("limit", "export chunk must be 1..1MiB"));
+        }
+        let job = self
+            .jobs
+            .get(id)
+            .filter(|j| j.streamed)
+            .ok_or_else(|| Error::none("not-found", "readonly export handle absent"))?;
+        let s = job
+            .state
+            .lock()
+            .map_err(|_| Error::unknown("readonly export owner unavailable"))?;
+        if !s.finished || s.result.as_ref().is_none_or(|r| r["kind"] != "exported") {
+            return Err(Error::none("busy", "export not ready for bounded read"));
+        }
+        let end = offset
+            .checked_add(length)
+            .filter(|e| *e <= s.payload.len())
+            .ok_or_else(|| Error::none("invalid-input", "export chunk outside result"))?;
+        Ok((
+            json!({"kind":"exportChunk","jobId":id,"offset":offset,"length":length,"byteLength":s.payload.len()}),
+            s.payload[offset..end].to_vec(),
+        ))
+    }
+    fn release_export(&mut self, id: &str) -> Result<(Value, Vec<u8>)> {
+        let job = self
+            .jobs
+            .get_mut(id)
+            .filter(|j| j.streamed)
+            .ok_or_else(|| Error::none("not-found", "readonly export handle absent"))?;
+        let mut s = job
+            .state
+            .lock()
+            .map_err(|_| Error::unknown("readonly export owner unavailable"))?;
+        if !s.finished {
+            return Err(Error::none(
+                "busy",
+                "export is in flight; drain before release",
+            ));
+        }
+        s.payload.clear();
+        s.payload.shrink_to_fit();
+        s.result = Some(json!({"kind":"exportReleased","jobId":id}));
+        s.phase = "exportReleased".into();
+        Ok((json!({"kind":"exportReleased","jobId":id}), vec![]))
+    }
     pub(super) fn has_inflight(&self) -> bool {
         self.jobs
             .values()
@@ -165,10 +225,20 @@ impl DetachedLedger {
                 self.jobs.get(id).is_some_and(|j| {
                     j.state.lock().is_ok_and(|s| {
                         s.finished
+                            && (!j.streamed
+                                || s.result
+                                    .as_ref()
+                                    .is_some_and(|r| r["kind"] == "exportReleased"))
                             && s.result.as_ref().is_some_and(|r| {
                                 matches!(
                                     r["kind"].as_str(),
-                                    Some("accepted" | "discarded" | "failed" | "inspected")
+                                    Some(
+                                        "accepted"
+                                            | "discarded"
+                                            | "failed"
+                                            | "inspected"
+                                            | "exportReleased"
+                                    )
                                 )
                             })
                     })
@@ -198,7 +268,11 @@ impl DetachedLedger {
             .map_err(|_| Error::unknown("background result owner unavailable"))?;
         Ok((
             json!({"kind":"detachedState","jobId":id,"phase":s.phase,"finished":s.finished,"result":s.result}),
-            s.payload.clone(),
+            if job.streamed {
+                vec![]
+            } else {
+                s.payload.clone()
+            },
         ))
     }
     fn begin(
@@ -262,6 +336,7 @@ impl DetachedLedger {
             id.into(),
             Job {
                 control,
+                streamed: false,
                 fingerprint,
                 state,
                 thread: Some(handle),
@@ -285,6 +360,9 @@ pub(super) fn is_command(command: &Command) -> bool {
         Command::ListDetached { .. }
             | Command::DetachedPrepare { .. }
             | Command::InspectVersion { .. }
+            | Command::ExportImmutable { .. }
+            | Command::ReadExport { .. }
+            | Command::ReleaseExport { .. }
             | Command::DetachedPoll { .. }
             | Command::DetachedStatus { .. }
             | Command::SettleDetached { .. }
@@ -735,7 +813,8 @@ impl Host {
                 input: DetachedInput::WorkingRefresh { .. },
                 ..
             }
-        ) && !payload.is_empty()
+        ) && !matches!(r.body, Command::ExportImmutable { .. })
+            && !payload.is_empty()
         {
             return Err(Error::none(
                 "invalid-input",
@@ -743,6 +822,78 @@ impl Host {
             ));
         }
         match &r.body {
+            Command::ReadExport {
+                job_id,
+                offset,
+                length,
+            } => {
+                valid_id(job_id)?;
+                self.detached.read_export(job_id, *offset, *length)
+            }
+            Command::ReleaseExport { job_id } => {
+                valid_id(job_id)?;
+                self.detached.release_export(job_id)
+            }
+            Command::ExportImmutable {
+                source,
+                format,
+                max_bytes,
+                metadata,
+                expected_source_policy,
+            } => {
+                source.validate()?;
+                if *max_bytes == 0 || *max_bytes > wire::MAX_PAYLOAD {
+                    return Err(Error::none("limit", "export budget must be 1..64MiB"));
+                }
+                output_metadata::validate(payload, metadata)?;
+                if !self.detached.jobs.contains_key(&r.operation_id)
+                    && self.detached.has_export_result()
+                {
+                    return Err(Error::none(
+                        "backpressure",
+                        "drain/release the existing bounded output before another export",
+                    ));
+                }
+                let (proxy, source, format, max, metadata, expected, bytes) = (
+                    self.store.proxy(),
+                    source.clone(),
+                    format.clone(),
+                    *max_bytes,
+                    metadata.clone(),
+                    expected_source_policy.clone(),
+                    payload.to_vec(),
+                );
+                self.store.shared.set_background(true);
+                let result = self.detached.begin(
+                    &r.operation_id,
+                    self.fingerprint(r)?,
+                    false,
+                    move |state| {
+                        progress(&state, "waitingForIdleIo");
+                        let identity = source.clone();
+                        let loaded = proxy.call(true, move |s| {
+                            let l = s.load(&identity.version_id)?;
+                            identity.matches(&l)?;
+                            Ok(l)
+                        })?;
+                        idle_cpu(&proxy, &state);
+                        progress(&state, "encodingImmutableVersion");
+                        output::immutable(
+                            &source.version_id,
+                            loaded,
+                            &format,
+                            max,
+                            &metadata,
+                            expected.as_ref(),
+                            &bytes,
+                        )
+                    },
+                )?;
+                if let Some(j) = self.detached.jobs.get_mut(&r.operation_id) {
+                    j.streamed = true;
+                }
+                Ok(result)
+            }
             Command::ListDetached {
                 cursor,
                 limit,
