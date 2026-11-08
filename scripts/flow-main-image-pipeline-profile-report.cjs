@@ -37,6 +37,7 @@ function summarizeProfile(r){
    'CAS and native acceptance retain their own FIFO. projectCommitted/nativeAccepted do not mean final confirmation; immediate waitOperation completion is the final marker.',
    'A confirmation batch API span and its sync/lease children are counted once. Per-operation rows reference batchId; batch duration is never copied as per-operation IO service.',
    'Sync spans are Node FileHandle.sync promise wall time, not kernel active time. Rust host/guard sync calls are excluded. Nested inclusive totals overlap and cannot be summed into wall time.',
+   'A shared journal flush can include records from several API calls. Async parentSpanId identifies the scheduling context, not exclusive IO ownership. Use journal syncCategories for total physical-call observations; per-API child sync counts are not a per-operation durability cost.',
    'Last Canvas ACK, all-final-confirmed and freeze/close/lease-release are separate times. A fast preview/CAS/native accepted result cannot conceal confirmation backlog or close tail.',
    'Legacy archived traces lack immediate wait completion and may use resolve API return as a historical proxy. New batched traces require the actual immediate Promise timestamp.',
    'Warmup is a real durable operation and may advance revision. Profile CPU/microtask overhead remains; no input-to-photon or side-effect-free product prewarming claim.'

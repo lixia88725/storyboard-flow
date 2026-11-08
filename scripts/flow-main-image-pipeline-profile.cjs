@@ -18,6 +18,9 @@ function createProfile({clock,phase,root,fs}){
  }
  const classify=p=>{
   const rel=path.relative(root,p);if(rel==='..'||rel.startsWith('..'+path.sep)||path.isAbsolute(rel))return;
+  const journal='.storyboard-flow/image-project-journal-v1';
+  if(rel===journal)return{path:rel,category:'journal-directory'};
+  if(rel.startsWith(journal+'/'))return{path:rel,category:/\/segment-[^/]+\.log$/.test(rel)?'journal-segment-file':/\/continuation-[^/]+\.json$/.test(rel)?'journal-continuation-file':'journal-other-entry'};
   if(rel==='.storyboard-flow/image-project-v2')return{path:rel,category:'project-store-directory'};
   for(const category of ['commits','settlements','hydrations']){const base='.storyboard-flow/image-project-v2/'+category;if(rel===base)return{path:rel,category:category+'-directory'};if(rel.startsWith(base+'/'))return{path:rel,category:category+'-file'};}
   if(rel.startsWith('.storyboard-flow/image-project-v2/head.'))return{path:rel,category:'head-temporary-file'};

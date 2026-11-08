@@ -25,3 +25,14 @@ test('one batch span propagates the complete operation set to nested lease obser
  p.wrap(lease,'check','lease.assertHeld');p.wrap(store,'confirmOperations','store.confirmOperations',()=>({operationId:null,operationIds:['a','b'],batchId:'confirmation-1'}));await store.confirmOperations();await Promise.resolve();
  assert.equal(p.spans.length,2);assert.equal(p.spans[0].operationId,null);assert.deepEqual(p.spans[1].operationIds,['a','b']);assert.equal(p.spans[1].batchId,'confirmation-1');assert.equal(p.spans[1].parentSpanId,p.spans[0].id);p.restore();
 });
+test('a persistent journal handle attributes every sync to its current caller and excludes outside files',async()=>{
+ let time=0,syncCalls=0;const fs={open:async()=>({sync:async()=>{syncCalls++;}})};
+ const p=createProfile({clock:()=>++time,phase:()=> 'paced',root:'/owned',fs});
+ const handle=await fs.open('/owned/.storyboard-flow/image-project-journal-v1/segment-0.log','r+');
+ const store={append:()=>handle.sync()};p.wrap(store,'append','store.beginOperation',args=>args[0]);
+ await store.append('first');await store.append('second');
+ const outside=await fs.open('/elsewhere/segment-0.log','r+');await outside.sync();await Promise.resolve();
+ const syncs=p.spans.filter(s=>s.label==='fs.handle.sync');assert.equal(syncs.length,2);assert.equal(syncCalls,3);
+ assert.deepEqual(syncs.map(s=>s.operationId),['first','second']);assert.ok(syncs.every(s=>s.category==='journal-segment-file'));
+ p.restore();await handle.sync();assert.equal(p.spans.filter(s=>s.label==='fs.handle.sync').length,2);
+});

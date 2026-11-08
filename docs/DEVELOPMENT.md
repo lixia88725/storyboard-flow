@@ -94,3 +94,5 @@ Main 项目实际连接专项：`FLOW_IMAGE_HOST=<固定宿主> FLOW_PROJECT_LEA
 上下文接点专项 `imageEngineContext.test.ts` 使用支持四项 context/decimal 能力的真实宿主，覆盖选层不改版本、浮动选区及取消后显式展示代次切换。纯 Main 输入控制测试 `src/session/core/nativePipeline.test.ts` 纳入通用获准清单。
 
 Main 保存链性能复测：使用同一固定 release 宿主，完整构建后先跑 small 生命周期，再以 `FLOW_MAIN_PIPELINE_MODE=paced FLOW_MAIN_PIPELINE_PROFILE=1` 跑 40 笔/280 batch。profile 的透明 warmup 是真实操作，不等于产品无副作用预热。`flow-main-image-pipeline-profile-report.cjs <result.json> <output-prefix>` 分别输出逐笔和批次统计；每笔 end 后立即观察 waitOperation，最后 Canvas ACK、最终确认及 freeze/close 分开计时。不得把旧“下一 CAS 等前笔 resolution”当新架构要求；CAS 与 native acceptance 各自 FIFO，最终确认和预算保护仍须断言。
+
+统一 journal 施工验收：沿用上述同宿主、同输入和全部重试计时，新增段文件/续段清单同步分类。长期开启的文件句柄也须统计；合批 flush 的异步父调用只表示调度来源，不能把整个同步成本归给该笔，使用 journal 汇总次数与真实最终确认时间。文件恢复聚焦须覆盖未封口尾部、完整封口回执丢失、中间损坏、续段发布各失败点、旧 writer 拒绝新格式，以及全项目实际占用加预留预算。普通崩溃恢复必须保留旧段、确认前缀与完整输入；测试用自有临时项目，不迁移用户数据。
