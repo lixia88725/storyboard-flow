@@ -52,7 +52,7 @@ export type RetainedSourceObject = RetainedSource & { path: string; identity: So
 export type SourceImportStore = {
   snapshot(): SourceImportManifest;
   retain(itemId: string): Promise<SourceImportItem>;
-  resume(options?: { signal?: AbortSignal; onProgress?: (snapshot: SourceImportManifest) => void }): Promise<SourceImportManifest>;
+  resume(options?: { signal?: AbortSignal; onProgress?: (snapshot: SourceImportManifest) => void;itemIds?:readonly string[] }): Promise<SourceImportManifest>;
   cancel(): Promise<SourceImportManifest>;
   object(itemId: string): Promise<RetainedSourceObject>;
   readRange(itemId: string, offset: number, length: number): Promise<Uint8Array>;
@@ -332,10 +332,13 @@ async function openStore(options: SourceStoreOptions, sources?: readonly SourceI
   return {
     snapshot:()=>clone(manifest),
     retain:itemId=>schedule(()=>{if(paused) fail('busy','Import is paused; resume it before retaining another item');return retain(itemId);}),
-    resume:(opts={})=>{const admittedCancellation=cancellation;return schedule(async()=>{
+    resume:(opts={})=>{const admittedCancellation=cancellation,requested=opts.itemIds===undefined?undefined:clone(opts.itemIds);return schedule(async()=>{
+      if(requested!==undefined&&(!Array.isArray(requested)||requested.length>limits.maxItems||new Set(requested).size!==requested.length||requested.some(id=>!manifest.items.some(item=>item.id===id))))fail('invalid-input','Invalid or unknown resume item IDs');
+      const selected=requested===undefined?undefined:new Set(requested);
       paused=cancellation!==admittedCancellation;
       await update(m=>{m.phase='active';});
       for(const entry of manifest.items) {
+        if(selected&&!selected.has(entry.id))continue;
         if(paused || opts.signal?.aborted) {paused=true;break;}
         await retain(entry.id);
         try {opts.onProgress?.(clone(manifest));} catch { /* advisory observers cannot change a settled retention */ }
@@ -361,7 +364,12 @@ async function openStore(options: SourceStoreOptions, sources?: readonly SourceI
     close:()=>{
       if(closeWork)return closeWork;
       closing=true;paused=true;cancellation++;
-      closeWork=(async()=>{await tail;await assertBound();if(writers.get(root)===writer)writers.delete(root);closed=true;})();
+      closeWork=(async()=>{await tail;await assertBound();if(writers.get(root)===writer)writers.delete(root);closed=true;})().catch(error=>{
+        // An identity refusal keeps the original writer. If its exact directory
+        // is restored, that same owner can retry draining/closing; a rejected
+        // promise must not permanently prevent lawful resource release.
+        closing=false;closeWork=undefined;throw error;
+      });
       return closeWork;
     }
   };
@@ -372,3 +380,17 @@ export const createSourceBackedImport = (options: SourceStoreOptions & { sources
   return openStore(options,options.sources);
 };
 export const openSourceBackedImport = (options: SourceStoreOptions): Promise<SourceImportStore> => openStore(options);
+
+/** Readonly metadata inspection for Main's lazy registry. This validates the
+ * complete existing manifest and directory identities, but deliberately does
+ * not verify original-object bytes. It returns no writer or ready image claim;
+ * object()/retain() remain the authority for actual source use. */
+export async function inspectSourceBackedImport(options:SourceStoreOptions):Promise<{manifest:SourceImportManifest;verification:'manifest-only'}>{
+ validPath(options.root);if(!idPattern.test(options.importId))fail('invalid-input','Invalid import ID');const limits=limitsFor(options.limits),root=options.root;
+ const storage=path.join(root,'.storyboard-flow/image-engine'),batch=path.join(storage,'imports',options.importId),head=path.join(batch,'manifest.json');
+ const paths=[root,path.join(root,'.storyboard-flow'),storage,path.join(storage,'originals'),path.join(storage,'imports'),batch,path.join(batch,'manifests')];
+ const identities=await Promise.all(paths.map(p=>directory(p,false))),before=await inspectImportSource(head),bytes=await fileBytes(head,META_CAP),manifest=validateManifest(JSON.parse(bytes.toString('utf8')),options.importId,limits);
+ if(!sameIdentity(before,await inspectImportSource(head)))fail('conflict','Source manifest identity changed during inspection');
+ for(let i=0;i<paths.length;i++){const now=await directory(paths[i],false);if(now.dev!==identities[i].dev||now.ino!==identities[i].ino)fail('conflict','Source inspection directory identity changed');}
+ return{manifest:clone(manifest),verification:'manifest-only'};
+}
