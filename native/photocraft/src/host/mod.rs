@@ -280,6 +280,12 @@ pub enum Command {
         document_id: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         metadata: Option<output_metadata::MetadataRef>,
+        #[serde(
+            rename = "expectedSourcePolicy",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        expected_source_policy: Option<source_guard::ProtectedPolicy>,
     },
     Resume,
     Capture,
@@ -1459,6 +1465,7 @@ impl Host {
                 max_bytes,
                 document_id,
                 metadata,
+                expected_source_policy,
             } => {
                 self.base(r)?;
                 if !self.frozen
@@ -1481,14 +1488,20 @@ impl Host {
                     return Err(Error::none("limit", "export maxBytes must be 1..64MiB"));
                 }
                 let loaded = self.store.load(version_id)?;
-                if loaded
+                let policy = loaded
                     .source
                     .as_ref()
-                    .is_some_and(|s| s.display_policy.is_some())
-                {
+                    .and_then(|s| s.display_policy.as_ref());
+                if policy != expected_source_policy.as_ref() {
                     return Err(Error::none(
-                        "unsupported-protected-output",
-                        "protected source output requires the forthcoming explicit source-reference metadata contract; original retained",
+                        "protected-source",
+                        "Main protected origin does not match pinned native source policy",
+                    ));
+                }
+                if policy.is_some() && metadata.is_none() {
+                    return Err(Error::none(
+                        "protected-source",
+                        "protected output requires Flow metadata and explicit origin binding",
                     ));
                 }
                 if document_id
@@ -1502,12 +1515,24 @@ impl Host {
                         "export version belongs to another document",
                     ));
                 }
-                let export_doc = if let Some(reference) = metadata {
+                let mut export_doc = if let Some(reference) = metadata {
                     output_metadata::overlay(&loaded.doc, reference, payload)?
                 } else {
                     loaded.doc.as_ref().clone()
                 };
+                let source_reference_sha = if let Some(policy) = policy {
+                    let (overlay, digest) = output_metadata::overlay_source(&export_doc, policy)?;
+                    export_doc = overlay;
+                    Some(digest)
+                } else {
+                    None
+                };
                 let (mut receipt, bytes) = output::encode(&export_doc, format, *max_bytes)?;
+                if let Some(digest) = source_reference_sha {
+                    receipt["sourceReferenceSha256"] = json!(digest);
+                    receipt["sourceReferenceVersion"] = json!(1);
+                }
+
                 if let Some(reference) = metadata {
                     receipt["metadataSha256"] = json!(reference.sha256);
                 }

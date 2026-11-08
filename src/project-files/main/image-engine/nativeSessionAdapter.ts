@@ -24,13 +24,13 @@ import type {ImageEngineSourceDisplayProof,ImageEngineProtectedSourcePolicy} fro
 
 export type NativeCreationPage={snapshotToken:string;totalUnsettled:number;entries:{operationId:string;state:'intent'|'prepared';prepared?:PreparedImage}[];nextCursor:string|null};
 export type NativeCreationStatus=NativeOperationStatus|{state:'pending';phase:string};
-export type NativeVersionOutput={bytes:Uint8Array;sha256:string;byteLength:number;width:number;height:number;layerCount:number;versionId:string;documentId:string;metadataSha256:string};
+export type NativeVersionOutput={bytes:Uint8Array;sha256:string;byteLength:number;width:number;height:number;layerCount:number;versionId:string;documentId:string;metadataSha256:string;sourceReferenceSha256?:string};
 export type NativeRetainedPreparation={kind:'editable';prepared:PreparedImage;proof:ImageEngineSourceDisplayProof}|{kind:'reference';prepared:PreparedImage;proof:ImageEngineSourceDisplayProof;policy:ImageEngineProtectedSourcePolicy;reason:{code:string;message:string}};
 export type NativeProductDriver = {
   /** Reads the authenticated immutable version JSON; no actor IO/thumbnail gate. */
   versionSourcePolicy(ref:NativeImageRef):Promise<ImageEngineProtectedSourcePolicy|null>;
   prepareRetainedGuarded(operationId:string,source:RetainedSourceObject,formatHint:'tiff'|'psd',reservation:ImageEngineJobReservation,options?:ImageEngineSourceOptions):Promise<NativeRetainedPreparation>;
-  exportVersion(ref:NativeImageRef,format:'psd'|'tiff',metadata:WorkspaceOutputMetadataEnvelope,maxBytes?:number):Promise<NativeVersionOutput>;
+  exportVersion(ref:NativeImageRef,format:'psd'|'tiff',metadata:WorkspaceOutputMetadataEnvelope,maxBytes?:number,expectedSourcePolicy?:ImageEngineProtectedSourcePolicy|null):Promise<NativeVersionOutput>;
   prepareCreation(operationId:string,input:ImageEngineCreationInput,reservation:ImageEngineJobReservation):Promise<PreparedImage>;
   prepareRetained(operationId:string,source:RetainedSourceObject,formatHint:string,reservation:ImageEngineJobReservation,options?:ImageEngineSourceOptions):Promise<PreparedImage>;
   settleCreation(value:PreparedImage):Promise<NativeImageRef>;
@@ -259,15 +259,16 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     pipeline,
     summary:contextSummary,
     activate,
-    async exportVersion(ref,format,metadata,maxBytes=64<<20){
+    async exportVersion(ref,format,metadata,maxBytes=64<<20,expectedSourcePolicy=null){
       const op=operationContext();if(!op.connection.supports('readonlyExportMetadataV1'))refuse('Native binary lacks readonlyExportMetadataV1','unsupported');
-      const pinned=structuredClone(ref),envelope=structuredClone(metadata);
+      const pinned=structuredClone(ref),envelope=structuredClone(metadata),policy=structuredClone(expectedSourcePolicy);if(policy!==null&&!validImageEngineProtectedSourcePolicy(policy))refuse("Invalid expected protected source policy","invalid-input");if(policy&&!op.connection.supports("protectedReferenceOutputV1"))refuse("Native binary lacks protectedReferenceOutputV1","unsupported");
       if(!['psd','tiff'].includes(format)||!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>(64<<20)||!validWorkspaceOutputMetadataEnvelope(envelope))refuse('Invalid readonly output metadata, format or budget','invalid-input');
-      const payload=new TextEncoder().encode(JSON.stringify(envelope)),metadataSha256=sha(payload);await verifyNative(pinned);op.check();
-      const {reply:r,frame}=await call(next(),{kind:'export',versionId:pinned.versionId,documentId:pinned.documentId,format,maxBytes,metadata:{sha256:metadataSha256,byteLength:payload.length}},current?.versionId??null,payload);op.check();
+      const payload=new TextEncoder().encode(JSON.stringify(envelope)),metadataSha256=sha(payload);const actualPolicy=await verifyNativeFile(pinned);op.check();if(!same(actualPolicy,policy))refuse("Main protected source does not match pinned version policy","protected-source");
+      const {reply:r,frame}=await call(next(),{kind:'export',versionId:pinned.versionId,documentId:pinned.documentId,format,maxBytes,metadata:{sha256:metadataSha256,byteLength:payload.length},...(policy?{expectedSourcePolicy:policy}:{})},current?.versionId??null,payload);op.check();
       const bytes=new Uint8Array(frame.payload),sha256=sha(bytes),signature=Buffer.from(bytes.subarray(0,4)).toString('hex');
       if(r.kind!=='exported'||r.exportedDocumentId!==pinned.documentId||r.versionId!==pinned.versionId||r.format!==format||r.width!==pinned.width||r.height!==pinned.height||r.byteLength!==bytes.length||!bytes.length||bytes.length>maxBytes||r.sha256!==sha256||r.metadataSha256!==metadataSha256||r.layered!==true||!Number.isSafeInteger(r.layerCount)||Number(r.layerCount)<1||Number(r.layerCount)>64||!Array.isArray(r.warnings)||r.warnings.length!==0||(format==='psd'?signature!=='38425053':!['49492a00','4d4d002a'].includes(signature)))refuse('Readonly output bytes do not match pinned metadata/version receipt','protocol','unknown');
-      return{bytes,sha256,byteLength:bytes.length,width:pinned.width,height:pinned.height,layerCount:Number(r.layerCount),versionId:pinned.versionId,documentId:pinned.documentId,metadataSha256};
+      if(policy&&(r.sourceReferenceVersion!==1||typeof r.sourceReferenceSha256!=="string"||! /^[0-9a-f]{64}$/.test(r.sourceReferenceSha256)))refuse("Missing protected source output receipt","protocol","unknown");
+      return{bytes,sha256,byteLength:bytes.length,width:pinned.width,height:pinned.height,layerCount:Number(r.layerCount),versionId:pinned.versionId,documentId:pinned.documentId,metadataSha256,...(policy?{sourceReferenceSha256:String(r.sourceReferenceSha256)}:{})};
     },
     async prepareCreation(operationId,input,reservation){
       input=structuredClone(input);

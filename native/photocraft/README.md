@@ -829,10 +829,9 @@ check does not independently decode pixels. Repeated accepted same-owner source 
 original durable fingerprint; restart recovery uses status and exact refs instead
 of replaying input. The guarded result classification/proof survive settlement.
 
-At this slice, exporting a protected version deliberately returns
-`unsupported-protected-output`: the next source-reference XMP/output binding
-capability must land before a Flow working-file Save can retain origin. No locked
-flat layer is allowed to masquerade as a complete saved complex original.
+Protected versions require the explicit origin-bound output capability below.
+No locked flat layer is allowed to masquerade as a complete saved complex
+original. Older guard-only binaries refuse protected output.
 32M capacity and broader source/CMYK coverage remain separate unfinished gates;
 current 16 Mi-pixel/8192-edge/8 MiB source bounds reject explicitly without resize.
 
@@ -854,3 +853,48 @@ duplicate, exact undo/redo installs and SIGKILL/reopen. Native fingerprint tests
 independently mutate pixels, lock/name, ancestor, bottom order and geometry and
 verify rejection plus unchanged older immutable versions. Original and failed
 verification evidence is retained in task directories, never the user directory.
+
+
+## Origin-bound protected working-file output
+
+`protectedReferenceOutputV1` extends the existing readonly metadata export with
+an optional fifth `expectedSourcePolicy` argument. Main must first verify its
+`ProjectImage.protectedSource` exact retained SourceRef/original identity against
+`versionSourcePolicy(ref)`, then pass the complete actual policy. Native compares
+that expectation with the loaded immutable version too. A protected version with
+missing/wrong policy, or a policy supplied for an unprotected version, rejects
+with effect `none`. Protected output requires the v2 Flow storyboard metadata;
+the v2 envelope and ordinary output API behavior stay unchanged.
+
+The output-only COW packet contains a separate `flow:sourceReference` property,
+base64 UTF-8 JSON bounded to 16 KiB:
+`{schema:'flow.protected-source-reference',version:1,
+original:{digest,byteLength,format},referenceRgbaSha256,basePsdLayerId,width,height}`.
+The PSD layer identity comes from the actual native base, independently of its
+runtime u64 layer ID. This marker contains no NativeRef, user path, SourceRef
+capability or project authorization. It never grants permission to locate an
+original. The receipt and typed output additionally return
+`sourceReferenceSha256`; the normal full output digest/length and metadata digest
+are still checked. Unknown XMP properties remain, and both Flow properties
+coexist. No persistent Document or source bytes are changed.
+
+A new protected working TIFF/PSD imported through the ordinary source guard
+without an authorized origin interpretation returns
+`protected-source-origin-required`. This prevents silently reclassifying its
+base as ordinary editable data. Opening the same project by its retained
+NativeRef, history and Main protectedSource binding remains supported. Authorized
+cross-project re-import or external working-file Refresh is not implemented by
+this slice; no XMP-directed path lookup or implicit origin migration occurs.
+Main publication and actual Save/close/reopen acceptance remain separate from
+these native module tests.
+
+`imageEngineProtectedOutput.test.ts` checks real protected base + upper stroke,
+missing/wrong Main policy and raw-native bypass refusal, TIFF/PSD layers and
+merged pixels, independently decoded base RGBA and stable PSD ID, source envelope
+and v2 dialogue/presentation, unchanged version/original bytes and resume pixels.
+It also checks the unbound-working-source refusal. The independent oracle uses
+already-installed Python `numpy`, `tifffile`, `psdtags` and `imagecodecs`; no test
+installs them. Synthetic guard/output tests allow `FLOW_SOURCE_GUARD_PYTHON` and
+`FLOW_SOURCE_GUARD_PYTHONPATH` overrides. Defaults preserve the task's macOS
+Python 3.14 and independent `/private/tmp/flow-image-engine-export-python` copy.
+The opt-in user-corpus audit is not part of a generic all-tests run.

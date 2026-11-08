@@ -99,14 +99,17 @@ fn validate(bytes: &[u8], reference: &MetadataRef) -> Result<()> {
     }
     Ok(())
 }
-fn property(bytes: &[u8]) -> String {
+fn property(bytes: &[u8], name: &str) -> String {
     format!(
-        "<rdf:Description xmlns:rdf=\"{RDF_NS}\" xmlns:flow=\"{FLOW_NS}\"><flow:metadata>{}</flow:metadata></rdf:Description>",
+        "<rdf:Description xmlns:rdf=\"{RDF_NS}\" xmlns:flow=\"{FLOW_NS}\"><flow:{name}>{}</flow:{name}></rdf:Description>",
         base64::engine::general_purpose::STANDARD.encode(bytes)
     )
 }
 pub(super) fn merge_xmp(source: Option<&str>, bytes: &[u8]) -> Result<String> {
-    let property = property(bytes);
+    merge_property(source, bytes, "metadata")
+}
+fn merge_property(source: Option<&str>, bytes: &[u8], name: &str) -> Result<String> {
+    let property = property(bytes, name);
     let Some(source) = source else {
         return Ok(format!(
             "<x:xmpmeta xmlns:x=\"{XMP_NS}\"><rdf:RDF xmlns:rdf=\"{RDF_NS}\">{property}</rdf:RDF></x:xmpmeta>"
@@ -123,7 +126,7 @@ pub(super) fn merge_xmp(source: Option<&str>, bytes: &[u8]) -> Result<String> {
     let rdf = rdf[0];
     let mut removals = Vec::new();
     for node in parsed.descendants().filter(|n| n.is_element()) {
-        if node.has_tag_name((FLOW_NS, "metadata")) {
+        if node.has_tag_name((FLOW_NS, name)) {
             if !node
                 .parent()
                 .is_some_and(|p| p.has_tag_name((RDF_NS, "Description")) && p.parent() == Some(rdf))
@@ -136,7 +139,7 @@ pub(super) fn merge_xmp(source: Option<&str>, bytes: &[u8]) -> Result<String> {
         }
         for attr in node
             .attributes()
-            .filter(|a| a.namespace() == Some(FLOW_NS) && a.name() == "metadata")
+            .filter(|a| a.namespace() == Some(FLOW_NS) && a.name() == name)
         {
             if !node.has_tag_name((RDF_NS, "Description")) || node.parent() != Some(rdf) {
                 return Err(refused(
@@ -298,4 +301,28 @@ mod tests {
             }
         }
     }
+}
+
+/// An external source-reference marker is provenance only. It carries no path,
+/// SourceRef capability or permission to resolve a retained original.
+pub(super) fn overlay_source(
+    doc: &Document,
+    policy: &source_guard::ProtectedPolicy,
+) -> Result<(Document, String)> {
+    let id = policy.base_layer_id.parse::<u64>().map_err(native)?;
+    let layer = doc
+        .layer(photocraft_doc::LayerId(id))
+        .ok_or_else(|| refused("protected base missing for output"))?;
+    let psd_id = layer
+        .psd_id
+        .ok_or_else(|| refused("protected base has no stable PSD layer identity"))?;
+    let envelope = json!({"schema":"flow.protected-source-reference","version":1,"original":policy.original,"referenceRgbaSha256":policy.reference_rgba_sha256,"basePsdLayerId":psd_id,"width":doc.size.width,"height":doc.size.height});
+    let bytes = serde_json::to_vec(&envelope).map_err(native)?;
+    if bytes.len() > 16384 {
+        return Err(refused("source-reference output envelope exceeds 16KiB"));
+    }
+    let merged = merge_property(doc.metadata.xmp.as_deref(), &bytes, "sourceReference")?;
+    let mut copy = doc.clone();
+    copy.metadata.xmp = Some(Arc::from(merged));
+    Ok((copy, sha(&bytes)))
 }

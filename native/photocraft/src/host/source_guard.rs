@@ -36,6 +36,30 @@ pub(super) fn rgb_transform(profile: Option<&[u8]>) -> Result<Option<photocraft_
         })
     }
 }
+fn refuse_unbound_working_marker(xml: Option<&str>) -> Result<()> {
+    let Some(xml) = xml else { return Ok(()) };
+    if !xml.contains("sourceReference") {
+        return Ok(());
+    }
+    let parsed = source_metadata::parse_xmp(xml).map_err(|_| {
+        Error::none(
+            "protected-source-origin-required",
+            "protected working-source XML needs explicit Main origin authorization",
+        )
+    })?;
+    if parsed.descendants().any(|n| {
+        n.has_tag_name((source_metadata::FLOW_NS, "sourceReference"))
+            || n.attributes().any(|a| {
+                a.namespace() == Some(source_metadata::FLOW_NS) && a.name() == "sourceReference"
+            })
+    }) {
+        return Err(Error::none(
+            "protected-source-origin-required",
+            "external protected working source needs explicit Main origin binding; ordinary source interpretation refused",
+        ));
+    }
+    Ok(())
+}
 fn embedded(source: &Source, bytes: &[u8]) -> Result<(u32, u32, Vec<u8>)> {
     match source.format_hint.as_str() {
         "tiff" => {
@@ -60,6 +84,7 @@ fn embedded(source: &Source, bytes: &[u8]) -> Result<(u32, u32, Vec<u8>)> {
                 },
             )
             .map_err(native)?;
+            refuse_unbound_working_marker(decoded.meta.xmp.as_deref())?;
             let (w, h) = decoded.dimensions();
             dimensions(w, h)?;
             if !decoded.layout().is_rgb() {
@@ -91,6 +116,10 @@ fn embedded(source: &Source, bytes: &[u8]) -> Result<(u32, u32, Vec<u8>)> {
         }
         "psd" => {
             let file = photocraft_psd::PsdFile::from_bytes(bytes).map_err(native)?;
+            if let Some(xmp) = file.resources.iter().find(|r| r.id == 1060) {
+                let xml = String::from_utf8_lossy(&xmp.data);
+                refuse_unbound_working_marker(Some(&xml))?;
+            }
             let (w, h) = (file.header.width, file.header.height);
             dimensions(w, h)?;
             if file.header.color_mode != photocraft_psd::ColorMode::Rgb
