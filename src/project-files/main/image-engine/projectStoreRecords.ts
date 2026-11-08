@@ -1,3 +1,4 @@
+import{validImageReplacementDecision}from'../../../session/core/imageReplacement.js';
 import{validHydrationDisplay}from'../../../session/core/sourceProtection.js';
 import{validImageCreationDecision}from'../../../session/core/imageCreation.js';
 import type {WorkspaceRecoveryRecord} from './workspaceRecords.js';
@@ -56,6 +57,7 @@ export type ImageProjectStoreOptions={
   recoveryBudget?:import('./workspaceOutputContract.js').WorkspaceOutputBudget;
   /** Prepared native versions are valid references before native acceptance. */
   verifyNative(ref:NativeImageRef):Promise<void>;
+  verifyWorkingInput?(ref:NativeImageRef,working:{digest:string;byteLength:number;format:'tiff'}):Promise<void>;
   verifyNativeProvenance?(ref:NativeImageRef,origin:import('../../../platform/contracts/imageProject.js').ProtectedSourceV2|undefined):Promise<void>;
   verifySource(ref:SourceImageRef,retained?:{digest:string;byteLength:number}):Promise<void>;
 };
@@ -66,9 +68,11 @@ const bytes=(v:unknown)=>Buffer.from(canonicalJson(v)+'\n');
 const token=(v:unknown):v is string=>typeof v==='string'&&TOKEN.test(v);
 function bad(message:string):never{throw new ImageProjectStoreError('conflict',message);}
 export function commitRecord(v:unknown):ProjectCommitV2{
-  if(!shape(v,['schema','version','commitId','previousCommitHash','beforeRevision','after'],['nativeDecision','creationDecision'])||v.schema!=='flow.project-commit'||v.version!==1||!token(v.commitId)||(v.previousCommitHash!==null&&!imageHash(v.previousCommitHash))||(v.beforeRevision!==null&&(!Number.isSafeInteger(v.beforeRevision)||Number(v.beforeRevision)<0)))bad('Invalid project commit');
+  if(!shape(v,['schema','version','commitId','previousCommitHash','beforeRevision','after'],['nativeDecision','creationDecision','replacementDecision'])||v.schema!=='flow.project-commit'||v.version!==1||!token(v.commitId)||(v.previousCommitHash!==null&&!imageHash(v.previousCommitHash))||(v.beforeRevision!==null&&(!Number.isSafeInteger(v.beforeRevision)||Number(v.beforeRevision)<0)))bad('Invalid project commit');
   const after=snapshotImageProject(v.after);
   if(v.creationDecision!==undefined&&(!validImageCreationDecision(v.creationDecision)||v.nativeDecision!==undefined))bad('Invalid creation decision');
+  if([v.nativeDecision,v.creationDecision,v.replacementDecision].filter(x=>x!==undefined).length>1)bad('A project commit has multiple decisions');
+  if(v.replacementDecision!==undefined&&!validImageReplacementDecision(v.replacementDecision))bad('Invalid replacement decision');
   if(v.nativeDecision!==undefined&&!validNativeDecision(v.nativeDecision))bad('Invalid native decision');
   return {...clone(v as unknown as ProjectCommitV2),after};
 }

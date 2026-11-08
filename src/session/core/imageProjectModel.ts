@@ -104,6 +104,11 @@ export function applyImageProjectEdit(project: ProjectV2, edit: ImageProjectEdit
       dest.splice(edit.beforeId===undefined?dest.length:dest.findIndex(s=>s.id===edit.beforeId),0,...all.filter(s=>selected.has(s.id)).map(s=>{if(edit.destination!=='active')return s;const {presentation:_old,...rest}=s;return {...rest,...(project.presentation?{presentation:copy(project.presentation)}:{})};}));
       after={...project,shots:active,parkedShots:pending};break;
     }
+    case 'replaceNativeImages': {
+      if(!shape(edit,['kind','changes'])||!Array.isArray(edit.changes)||!edit.changes.length||edit.changes.length>64||new Set(edit.changes.map(c=>c?.imageId)).size!==edit.changes.length)return fail('invalid-input','Invalid image replacement batch');
+      const images={...project.images};for(const c of edit.changes){if(!shape(c,['imageId','expected','native'],['protectedSource'])||!id(c.imageId)||!validImageBinding(c.expected)||!validNativeImageRef(c.native)||c.protectedSource!==undefined&&!validProtectedSource(c.protectedSource)||!all.some(s=>s.imageId===c.imageId)||!same(images[c.imageId]?.content,c.expected))return fail('conflict','Image replacement baseline changed');images[c.imageId]={id:c.imageId,content:{kind:'native',native:copy(c.native)},...(c.protectedSource?{protectedSource:copy(c.protectedSource)}:{})};}
+      after={...project,images};break;
+    }
     case 'installNativeImage': {
       if(!shape(edit,['kind','imageId','expected','next'],['protectedSource']) || !id(edit.imageId) || !validImageBinding(edit.expected) || !validNativeImageRef(edit.next)||edit.protectedSource!==undefined&&!validProtectedSource(edit.protectedSource))return fail('invalid-input','Invalid native image edit');
       const image=project.images[edit.imageId];

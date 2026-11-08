@@ -24,6 +24,9 @@ export type ImageCreationBatchIntent={
  items:readonly {candidateId:string;imageId:string;input:NativeImageCreationInput;originImageId?:string;protectedSource?:ProtectedSourceV2}[];
  placement:{shots:ProjectV2['shots'];dialogues:ProjectV2['dialogues'];destination:'active'|'pending';beforeId?:string};
 };
+/** Main-private immutable working-file replacement, one mixed history step. */
+export type ImageReplacementBatchIntent={schema:'flow.image-replacement-batch';version:1;operationId:string;sessionId:string;incarnation:string;anchorCommitHash:string;items:readonly{shotId:string;imageId:string;candidateId:string;expected:ImageBindingV2;baseNative:NativeImageRef;working:SourceImageRef&{digest:string;byteLength:number};observation:{name:string;location:'active'|'parked';expectedDigest:string;observedDigest:string;observedIdentity:{dev:string;ino:string}};protectedSource?:ProtectedSourceV2}[]};
+export type ImageReplacementBatchDecision={kind:'replacement-batch';operationId:string;intentId:string;items:readonly{imageId:string;candidateId:string;native:NativeImageRef;protectedSource?:ProtectedSourceV2}[]};
 export type ImageCreationBatchDecision={kind:'creation-batch';operationId:string;intentId:string;items:readonly{candidateId:string;imageId:string;native:NativeImageRef}[]};
 export type NativeDecision = {
   kind: 'image'; operationId: string; candidateId: string; imageId: string;
@@ -35,7 +38,7 @@ export type UnchangedImageDecision={schema:'flow.image-unchanged-decision';versi
 export type ProjectCommitV2 = {
   schema: 'flow.project-commit'; version: 1; commitId: string;
   previousCommitHash: string | null; beforeRevision: number | null;
-  after: ProjectV2; nativeDecision?: NativeDecision;creationDecision?:ImageCreationBatchDecision;
+  after: ProjectV2; nativeDecision?: NativeDecision;creationDecision?:ImageCreationBatchDecision;replacementDecision?:ImageReplacementBatchDecision;
 };
 export type ProjectHeadV2 = {
   schema: 'flow.project-head'; version: 1; projectId: string; commitHash: string;
@@ -104,6 +107,7 @@ export type ImageProjectEdit =
   | { kind: 'setDialogues'; shotId: string; dialogues: ProjectV2['dialogues'] }
   | { kind: 'setScriptText'; shotId: string; text: string }
   | { kind: 'moveShots'; shotIds: string[]; destination: 'active' | 'pending'; beforeId?: string }
+  | {kind:'replaceNativeImages';changes:readonly {imageId:string;expected:ImageBindingV2;native:NativeImageRef;protectedSource?:ProtectedSourceV2}[]}
   | { kind: 'installNativeImage'; imageId: string; expected: ImageBindingV2; next: NativeImageRef;protectedSource?:ProtectedSourceV2 };
 export type ImageProjectEditResult = { before: ProjectV2; after: ProjectV2; changed: boolean; changes: ChangeSetV1 };
 export type ImageProjectSnapshot = {
