@@ -131,3 +131,11 @@ export type ImageEngineThumbnail = {format:'png';width:number;height:number;byte
 export type ImageEngineInspection = {summary:ImageEngineVersionSummary;thumbnail:ImageEngineThumbnail;bytes:Uint8Array};
 
 export type ImageEngineSourceOptions={interpretationId?:'photocraft-v1'|'flow-v1-upgrade'};
+
+/** Exact retained-source provenance, never a user path or Main image authority. */
+export type ImageEngineRetainedIdentity={digest:string;byteLength:number;formatHint:'tiff'|'psd'|'png';interpretationId?:'photocraft-v1'|'flow-v1-upgrade'};
+export type ImageEngineSourceDisplayProof={schema:'flow.source-display-proof';version:1;source:ImageEngineRetainedIdentity;width:number;height:number;embeddedRgbaSha256:string;nativeRgbaSha256:string|null;maxChannelDifference:number|null;tolerance:2};
+/** A readonly derived display. No native document/version or edit capability. */
+export type ImageEngineReferenceDisplay={bytes:Uint8Array;format:'png';width:number;height:number;byteLength:number;sha256:string;rgbaSha256:string};
+/** Persistent native protection policy; Main separately binds its exact SourceRef. */
+export type ImageEngineProtectedSourcePolicy={kind:'protected-reference';baseLayerId:ImageEngineLayerId;referenceRgbaSha256:string;original:{digest:string;byteLength:number;format:'tiff'|'psd'}};
