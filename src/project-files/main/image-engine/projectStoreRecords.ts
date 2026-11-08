@@ -1,3 +1,4 @@
+import type {WorkspaceRecoveryRecord} from './workspaceRecords.js';
 import { validImageEngineEdit } from '../../../platform/contracts/imageEngine.js';
 import { createHash } from 'node:crypto';
 import type { HydrationRecord, ImageOperationDecision, NativeDecision, ImageOperationPage, ImageOperationRecord, ImageOperationIntent, NativeImageRef, ProjectCommitV2, ProjectHeadV2, SourceImageRef } from '../../../platform/contracts/imageProject.js';
@@ -12,6 +13,9 @@ export type ProjectConfirmation={commitHash:string;operationId:string;native:Nat
 export type ProjectCommitReceipt={commitHash:string;commit:ProjectCommitV2;head:ProjectHeadV2};
 export type ProjectStoreV2={
   load():Promise<ProjectCommitReceipt|null>;
+  recordWorkspace?(record:WorkspaceRecoveryRecord):Promise<void>;
+  workspaceRecord?(id:string):Promise<WorkspaceRecoveryRecord|null>;
+  workspaceRecords?(page?:{afterId?:string;maxRecords?:number}):Promise<WorkspaceRecoveryRecord[]>;
   /** Explicit checkpoint/close audit; normal commits reuse the verified leased prefix. */
   validateRecovery():Promise<void>;
   commit(expectedHead:string|null,record:ProjectCommitV2):Promise<ProjectCommitReceipt>;

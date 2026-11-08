@@ -1,3 +1,4 @@
+import {workspaceRecoveryRecord,type WorkspaceRecoveryRecord} from './workspaceRecords.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
@@ -19,6 +20,7 @@ function bad(m:string):never{throw new ImageProjectStoreError('conflict',m);}
 const owners=new Map<string,symbol>();
 type Summary=ImageOperationIntent extends infer T?T extends ImageOperationIntent?Omit<T,'stroke'>:never:never;
 type Fact=
+ |{kind:'workspace';record:WorkspaceRecoveryRecord}
  |{kind:'format';formatId:string}
  |{kind:'input';intent:ImageOperationIntent}
  |{kind:'commit';expectedHead:string|null;record:ProjectCommitV2}
@@ -27,12 +29,13 @@ type Fact=
  |{kind:'hydration';record:HydrationRecord}
  |{kind:'hydrationAccepted';source:SourceImageRef;operationId:string;native:NativeImageRef}
  |{kind:'resolution';resolution:ImageOperationResolution};
-type State={sequence:number;format:boolean;commits:ProjectCommitReceipt[];byId:Map<string,ProjectCommitReceipt>;byHash:Map<string,ProjectCommitReceipt>;inputs:Map<string,{sequence:number;summary:Summary;digest:string}>;captures:Map<string,string>;decisions:Map<string,ImageOperationDecision>;confirmations:Set<string>;hydrations:Map<string,HydrationRecord>;hydrated:Set<string>;resolutions:Map<string,ImageOperationResolution>};
-const empty=():State=>({sequence:0,format:false,commits:[],byId:new Map(),byHash:new Map(),inputs:new Map(),captures:new Map(),decisions:new Map(),confirmations:new Set(),hydrations:new Map(),hydrated:new Set(),resolutions:new Map()});
+type State={workspace:Map<string,{sequence:number;digest:string}>;sequence:number;format:boolean;commits:ProjectCommitReceipt[];byId:Map<string,ProjectCommitReceipt>;byHash:Map<string,ProjectCommitReceipt>;inputs:Map<string,{sequence:number;summary:Summary;digest:string}>;captures:Map<string,string>;decisions:Map<string,ImageOperationDecision>;confirmations:Set<string>;hydrations:Map<string,HydrationRecord>;hydrated:Set<string>;resolutions:Map<string,ImageOperationResolution>};
+const empty=():State=>({workspace:new Map(),sequence:0,format:false,commits:[],byId:new Map(),byHash:new Map(),inputs:new Map(),captures:new Map(),decisions:new Map(),confirmations:new Set(),hydrations:new Map(),hydrated:new Set(),resolutions:new Map()});
 const captureKey=(i:{sessionId:string;incarnation:string},o:{workspaceEpoch:number;captureId:string})=>`${i.sessionId}\n${i.incarnation}\n${o.workspaceEpoch}\n${o.captureId}`;
 function apply(s:State,f:Fact,sequence:number){
  s.sequence=sequence;
  switch(f.kind){
+  case'workspace':s.workspace.set(f.record.id,{sequence,digest:sha(bytes(f.record))});break;
   case'format':s.format=true;break;
   case'input':{const{stroke:_stroke,...summary}={...f.intent,stroke:'stroke'in f.intent?f.intent.stroke:undefined};if(f.intent.origin)s.captures.set(captureKey(f.intent,f.intent.origin),f.intent.operationId);s.inputs.set(f.intent.operationId,{sequence,summary,digest:sha(bytes(f.intent))});break;}
   case'commit':{const hash=sha(bytes(f.record)),head={schema:'flow.project-head' as const,version:1 as const,projectId:f.record.after.id,commitHash:hash},r={commitHash:hash,commit:copy(f.record),head};s.commits.push(r);s.byId.set(f.record.commitId,r);s.byHash.set(hash,r);if(f.record.nativeDecision)s.decisions.set(f.record.nativeDecision.operationId,{commitHash:hash,decision:copy(f.record.nativeDecision),unchanged:false});break;}
@@ -86,6 +89,7 @@ export async function openJournalProjectStore(options:ImageProjectStoreOptions):
  const validate=async(s:State,f:Fact,replay=false)=>{
   if(f.kind!=='format'&&!s.format)bad('Journal has no format record');
   switch(f.kind){
+   case'workspace':{const r=workspaceRecoveryRecord(f.record);if(s.workspace.has(r.id))bad('Duplicate workspace recovery fact');if(r.kind==='requestResolution'){const c=s.byId.get(r.operationId),d=s.decisions.get(r.operationId);if(r.decision==='committed'?(c?.commitHash!==r.commitHash&&d?.commitHash!==r.commitHash):(Boolean(c)||Boolean(d)))bad('Workspace resolution contradicts Main decision');}break;}
    case'format':if(s.sequence!==0||f.formatId!==formatId)bad('Journal format/project identity changed');break;
    case'input':{
     const i=operationIntent(f.intent);if(i.origin&&s.captures.has(captureKey(i,i.origin)))bad('Capture identity already belongs to an operation');if(s.inputs.has(i.operationId))bad('Duplicate input journal record');
@@ -113,7 +117,7 @@ export async function openJournalProjectStore(options:ImageProjectStoreOptions):
    default:bad('Unknown journal record');
   }
  };
- const parseFact=(v:unknown):Fact=>{if(!v||typeof v!=='object'||typeof(v as {kind?:unknown}).kind!=='string')bad('Malformed journal fact');const f=v as Fact;const fields:Record<string,string[]>={format:['kind','formatId'],input:['kind','intent'],commit:['kind','expectedHead','record'],unchanged:['kind','commitHash','decision'],confirmation:['kind','records','resolve'],hydration:['kind','record'],hydrationAccepted:['kind','source','operationId','native'],resolution:['kind','resolution']};if(!fields[f.kind]||!shape(v,fields[f.kind]))bad('Unknown journal record shape');return f;};
+ const parseFact=(v:unknown):Fact=>{if(!v||typeof v!=='object'||typeof(v as {kind?:unknown}).kind!=='string')bad('Malformed journal fact');const f=v as Fact;const fields:Record<string,string[]>={workspace:['kind','record'],format:['kind','formatId'],input:['kind','intent'],commit:['kind','expectedHead','record'],unchanged:['kind','commitHash','decision'],confirmation:['kind','records','resolve'],hydration:['kind','record'],hydrationAccepted:['kind','source','operationId','native'],resolution:['kind','resolution']};if(!fields[f.kind]||!shape(v,fields[f.kind]))bad('Unknown journal record shape');return f;};
  const open=()=>openRecoveryJournal({directory:home,formatId,assertHeld:bound,reserve,manualFlush:true,createInitial:creating,onGrowth:n=>{actual+=n;}});
  const replay=async()=>{const s=empty();for(const sequence of journal.sequences()){const f=parseFact(await journal.read(sequence));await validate(s,f,true);apply(s,f,sequence);}if(!s.format&&!creating)bad('Journal initialization incomplete or damaged: existing gate has no durable format record');for(const c of s.commits)for(const image of Object.values(c.commit.after.images))await verify(image.content);for(const h of s.hydrations.values()){await options.verifySource({importId:h.source.importId,itemId:h.source.itemId,interpretationId:h.source.interpretationId},{digest:h.source.digest,byteLength:h.source.byteLength});await options.verifyNative(copy(h.native));}durable=s;staged=copy(s);};
  // Admission is serialized only through validation/reservation, never through IO
@@ -142,6 +146,9 @@ export async function openJournalProjectStore(options:ImageProjectStoreOptions):
   await syncDir(legacy);await syncDir(hidden);await syncDir(root);journal=await open();await inventory();await replay();if(!durable.format)await mutate(async()=>({fact:{kind:'format',formatId},result:undefined}));creating=false;
  }catch(e){await journal!?.close().catch(()=>{});owners.delete(root);throw e;}
  return{
+  recordWorkspace:input=>{const record=workspaceRecoveryRecord(input);return mutate(async s=>{const old=s.workspace.get(record.id);if(old){if(old.digest!==sha(bytes(record)))bad('Workspace record ID conflict');return{result:undefined};}return{fact:{kind:'workspace',record},result:undefined};});},
+  workspaceRecord:id=>read(async s=>{if(!token(id))bad('Invalid workspace recovery ID');const at=s.workspace.get(id);if(!at)return null;const f=parseFact(await journal.read(at.sequence));if(f.kind!=='workspace')bad('Workspace index changed');return workspaceRecoveryRecord(f.record);}),
+  workspaceRecords:(page={})=>read(async s=>{if(!shape(page,[],['afterId','maxRecords'])||(page.afterId!==undefined&&!token(page.afterId))||(page.maxRecords!==undefined&&(!Number.isSafeInteger(page.maxRecords)||page.maxRecords<1||page.maxRecords>16)))bad('Invalid workspace page');const out:WorkspaceRecoveryRecord[]=[];for(const id of [...s.workspace.keys()].sort())if(!page.afterId||id>page.afterId){const f=parseFact(await journal.read(s.workspace.get(id)!.sequence));if(f.kind!=='workspace')bad('Workspace index changed');out.push(workspaceRecoveryRecord(f.record));if(out.length>=(page.maxRecords??16))break;}return out;}),
   load:()=>read(s=>s.commits.at(-1)??null),committed:()=>read(s=>s.commits),
   commit:(expectedHead,input)=>{const record=commitRecord(input);if(expectedHead!==null&&!imageHash(expectedHead))throw new ImageProjectStoreError('invalid-input','Invalid expected head');return mutate(async s=>{const existing=s.byId.get(record.commitId),hash=sha(bytes(record));if(existing){if(existing.commitHash!==hash)bad('Commit ID reused with different content');return{result:existing};}const receipt:ProjectCommitReceipt={commitHash:hash,commit:record,head:{schema:'flow.project-head',version:1,projectId:record.after.id,commitHash:hash}};return{fact:{kind:'commit',expectedHead,record},result:receipt};});},
   unsettled:()=>read(s=>s.commits.filter(c=>c.commit.nativeDecision&&!s.confirmations.has(c.commit.nativeDecision.operationId))),
