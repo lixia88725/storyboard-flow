@@ -45,11 +45,19 @@ export type ImageWorkspaceContext = {
  floating:null|{previewId:string;inputThrough:number;offset:{x:number;y:number}};
 };
 export type ImageWorkspaceFolderStatus = 'current'|'pending'|'external'|'both'|'missing'|'unfinished'|'trash-recovery';
+/** Registration is durable project membership, not successful decoding/output.
+ * Background progress never grants a global input pause by itself. */
+export type ImageWorkspaceBackgroundImport={operationId:string;importId:string;shotIds:readonly string[];phase:'queued'|'retaining'|'hydrating'|'publishing'|'completed'|'paused'|'needsAttention'|'recovering';done:number;total:number;issue?:{code:string;message:string}};
+/** Main owns the physical observation and original project binding behind planId.
+ * Rows are display-only; confirming a stale plan has no project/file effects. */
+export type ImageWorkspaceRefreshPreview={planId:string;revision:number;items:readonly{shotId:string;name:string;location:'active'|'parked';change:'modified'|'missing';conflict:boolean;canUseExternal:boolean;issue?:{code:string;message:string}}[]};
+export type ImageWorkspaceRefreshChoice={shotId:string;decision:'keepFlow'|'useExternal'};
 export type ImageWorkspaceFileState = {
  /** Display labels only. Main owns every writable root and bound output path. */
  projectRootLabel:string;folderName:string;status:ImageWorkspaceFolderStatus;
  savedRevision:number|null;outputPending:boolean;
  outputNames:readonly {shotId:string;name:string}[];
+ backgroundImports?:readonly ImageWorkspaceBackgroundImport[];
  recovery?:{id:string;name:string;state:'restore'|'retry'|'inspect'};
 };
 export type ImageWorkspaceSnapshot = {
@@ -98,6 +106,9 @@ export type ImageWorkspaceCommand =
  | {kind:'resumeImport';importId:string}
  | {kind:'pauseImport';importId:string}
  | {kind:'undo'|'redo'|'recover'|'save'|'refresh'}
+ /** Conflicts/missing rows need an explicit choice. Omitted non-conflict rows
+  * useExternal. Main revalidates the original commit and physical observation. */
+ | {kind:'confirmRefresh';planId:string;choices:readonly ImageWorkspaceRefreshChoice[]}
  | {kind:'export';shotId:string;format:'psd'|'tiff'}
  | {kind:'inspectFolder'}
  | {kind:'prepareClose'}
@@ -105,6 +116,8 @@ export type ImageWorkspaceCommand =
  | {kind:'resume';ticket:string};
 export type ImageWorkspaceFailure = {code:string;message:string;effect:'none'|'retained'|'unknown'};
 export type ImageWorkspaceOutcome =
+ | {kind:'imagesRegistered';operationId:string;importId:string;createdShotIds:readonly string[];snapshot:ImageWorkspaceSnapshot}
+ | {kind:'refreshPreview';operationId:string;preview:ImageWorkspaceRefreshPreview;snapshot:ImageWorkspaceSnapshot}
  | {kind:'settled'|'recovered';snapshot:ImageWorkspaceSnapshot;operationId:string;createdShotIds?:readonly string[];outputs?:readonly ImageWorkspaceOutputReceipt[]}
  | {kind:'closePrepared';snapshot:ImageWorkspaceSnapshot;operationId:string;ticket:string}
  | {kind:'closed';operationId:string;ticket:string}
