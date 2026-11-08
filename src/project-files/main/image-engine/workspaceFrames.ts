@@ -3,7 +3,8 @@ import type { ImageWorkspaceFrameIdentity, ImageWorkspaceFrameMessage, ImageWork
 import { validateImageFrame, type FrameIdentity, type ImageFrameHeader } from '../../../drawing/renderer/image-engine/frames.js';
 import type { ImageWorkspaceFrameTransport } from './workspaceRuntimeContract.js';
 
-const equal=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
+import {canonicalJson} from '../persistence/canonicalJson.js';
+const equal=(a:unknown,b:unknown)=>canonicalJson(a)===canonicalJson(b);
 const identity=(h:ImageFrameHeader):FrameIdentity=>({sessionId:h.sessionId,incarnation:h.incarnation,documentId:h.documentId,workerEpoch:h.workerEpoch,epoch:h.epoch});
 type DisplayFrame={header:ImageFrameHeader;pixels:Uint8Array};
 /** Read-only, bounded display delivery. A Canvas ACK controls this transport only;
@@ -25,7 +26,7 @@ export function createWorkspaceFrameDelivery(options:{
  const send=(message:ImageWorkspaceFrameMessage)=>{try{port?.send(message);}catch(e){fault(`Display port send failed: ${String(e)}`);rotate();}};
  const capture=()=>{
   if(!port||!ready||disposed)return;if(capturing){captureAgain=true;return;}capturing=true;const generation=descriptor.streamGeneration;
-  void options.captureKeyframe().catch(e=>{if(generation===descriptor.streamGeneration){fault(`Keyframe capture failed: ${String(e)}`);}}).finally(()=>{capturing=false;if(captureAgain){captureAgain=false;capture();}});
+  void options.captureKeyframe().then(produced=>{if(!produced&&generation===descriptor.streamGeneration)needsKeyframe=true;}).catch(e=>{if(generation===descriptor.streamGeneration){fault(`Keyframe capture failed: ${String(e)}`);}}).finally(()=>{capturing=false;if(captureAgain){captureAgain=false;capture();}});
  };
  const controlFor=(next:FrameIdentity)=>{
   if(!port||!ready)return;current=next;installed=undefined;lastAck=0;inflight=undefined;control=`display-${++serial}`;
@@ -49,10 +50,12 @@ export function createWorkspaceFrameDelivery(options:{
   if(!inflight||reply.id!==inflight.id)return;
   const frame=inflight.header;inflight=undefined;
   if(!reply.result.ok){queued=[];needsKeyframe=true;if(++failures>=3){fault(reply.result.message);rotate();return;}if(current)controlFor(current);return;}
-  failures=0;lastAck=frame.frameSeq;pump();
+  if(!reply.installed||reply.installed.frameSeq!==frame.frameSeq||reply.installed.inputThrough!==frame.inputThrough){queued=[];needsKeyframe=true;fault('Canvas ACK does not match the in-flight frame');capture();return;}failures=0;lastAck=frame.frameSeq;pump();
  };
  return{
   identity:base,
+  /** Runtime idle/settlement/context events wake a busy-deferred keyframe. */
+  wake(){if(needsKeyframe&&!disposed)capture();},
   async connect(request:ImageWorkspaceFrameIdentity,transport:ImageWorkspaceFrameTransport){
    if(disposed||!equal(request,descriptor))throw Error('Stale display stream capability');if(port)throw Error('Display stream already attached');
    port=transport;const generation=descriptor.streamGeneration;off=transport.subscribe(receive);offClose=transport.onClose(()=>{if(generation===descriptor.streamGeneration)rotate();});
