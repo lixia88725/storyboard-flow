@@ -1,5 +1,9 @@
 # 当前状态与剩余工作
 
+## Mac 试用前收口：进行中（2026-11-08）
+
+本轮仅补向现有项目后台添加图片、取回外部改动及异常恢复，尚未宣称可试用。新增图片登记与后台物化分开；Refresh 先列出外部变化，两边均有修改时由用户明确选择。窗口侧冲突选择和恢复入口已接，controller/选择界面18项聚焦通过。真实隔离窗口中终止脚本自有引擎后，点击“核对并恢复”恢复相同画面、继续绘画、Save、正常关闭并新进程重开通过（`/private/tmp/flow-daily-recovery-gui1.log`，现场 `flow-native-workbench-7ut8sY`）；这是引擎中断恢复证据，不替代Source未知保管、后台物化和完整Refresh验收。原生不可变后台输出、保护来源工作TIFF授权Refresh、Main单批替换及文件侧恢复正在实施，完整组合清单与实际日常流程仍待跑。主树、用户项目与默认入口未改。
+
 ## 正式工作台接入：进行中（2026-11-08）
 
 最新保护来源闭环：`bad1150 / a57c014 / d49a61c / 5a23beb` 已集成为 `008178b / aa2bb9f / 5ab686d / 8cfae4a`。主管真实入口合成三图（明显合成差异PSD、轻微差异PSD、PNG）导入→上层绘画→普通Undo/Redo→Save全部工作TIFF→认证关闭→新进程重开通过（`/private/tmp/flow-native-protected-import-gui4.log`，现场 `flow-native-workbench-UGmaYO`）。严重差异为受保护底图+可画上层，轻微差异仍editable；工作TIFF与实际画布最大通道差1，原件摘要、来源绑定和重开文件摘要一致。小样本约510ms进入项目，不代表大批/大图速度。

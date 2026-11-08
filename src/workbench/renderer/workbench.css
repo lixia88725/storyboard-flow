@@ -74,6 +74,12 @@
 
 .wb-recovery { position:fixed; bottom:36px; right:16px; z-index:5; width:min(420px,90vw); padding:14px; background:#312c25; color:#fff3df; border:1px solid #887557; border-radius:6px; }
 .wb-recovery p { line-height:1.5; overflow-wrap:anywhere; }
+.wb-file-recovery { left:16px; right:auto; max-height:32vh; overflow:auto; }
+.wb-file-recovery ul { padding-left:20px; overflow-wrap:anywhere; }
+.wb-file-recovery button { margin:4px 8px 0 0; }
+.wb-refresh-items { display:grid; gap:10px; max-height:48vh; overflow:auto; }
+.wb-refresh-items .wb-sheet-group { padding:12px; overflow-wrap:anywhere; }
+.wb-refresh-items p { font-size:12px; line-height:1.5; }
 
 .wb-grid.wb-japanese { grid-template-columns:1fr; gap:5px; }
 /* Japanese sheet row: 镜号 | 画面 | 动作说明 | 台词, in the order of the paper form the

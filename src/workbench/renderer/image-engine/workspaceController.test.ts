@@ -44,6 +44,14 @@ describe('readonly native workspace controller',()=>{
   expect(h.controller.frames.view().readRegion()).toEqual(new Uint8Array([0,0,255,255]));h.controller.dispose();
  });
 
+ it('clears only the acknowledged fault after recovery and preserves a newer failure',async()=>{
+  const h=setup(),old={code:'old',message:'old failure',effect:'retained' as const},newer={code:'new',message:'new failure',effect:'unknown' as const};
+  h.event({kind:'fault',owner,error:old});await h.controller.request({kind:'undo'});expect(h.controller.fault()).toBe(old);
+  await h.controller.request({kind:'recover'});expect(h.controller.fault()).toBeUndefined();
+  h.event({kind:'fault',owner,error:old});
+  h.bridge.request=async()=>{h.event({kind:'fault',owner,error:newer});return{kind:'recovered',snapshot:{...h.b.snapshot,stateSeq:3},operationId:'recovery'};};
+  await h.controller.request({kind:'recover'});expect(h.controller.fault()).toBe(newer);h.controller.dispose();
+ });
  it('does not resume from a foreign bootstrap',async()=>{
   const h=setup();h.bridge.bootstrap=async()=>({...h.b,snapshot:{...h.b.snapshot,owner:{...owner,incarnation:'other'}}});
   await expect(h.controller.refreshSnapshot()).rejects.toThrow('归属');h.controller.dispose();

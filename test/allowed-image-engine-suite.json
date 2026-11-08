@@ -17,5 +17,6 @@
   "src/project-files/main/image-engine/workspaceSourceRuntime.test.ts",
   "src/project-files/main/image-engine/workspaceColdCopy.test.ts",
   "src/platform/main/imageEngineSourceGuard.test.ts",
-  "src/platform/main/imageEngineProtectedOutput.test.ts"
+  "src/platform/main/imageEngineProtectedOutput.test.ts",
+  "src/workbench/renderer/image-engine/nativeFileChoices.test.ts"
 ]

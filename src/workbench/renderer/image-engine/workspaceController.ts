@@ -45,10 +45,13 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
  }
  function requestTracked(command:ImageWorkspaceCommand){
   if(disposed)throw Error('Workspace controller is disposed');
-  const requestId=`ui-${crypto.randomUUID()}`,captured=structuredClone(command),contextToken=snapshot.context.token;
+  const requestId=`ui-${crypto.randomUUID()}`,captured=structuredClone(command),contextToken=snapshot.context.token,priorFault=fault;
   const result=Promise.resolve().then(()=>bridge.request({owner,requestId,command:captured,...(captured.kind==='activateShot'?{contextToken}:{})})).then(outcome=>{
    if('snapshot' in outcome)install(outcome.snapshot);
    if(outcome.kind==='rejected')setFault(outcome.error);
+   // Only a confirmed recovery acknowledges the previously displayed failure.
+   // An unrelated successful edit, or a new fault arriving meanwhile, cannot.
+   else if(captured.kind==='recover'&&(outcome.kind==='recovered'||outcome.kind==='settled')&&'snapshot' in outcome&&outcome.snapshot.session.phase==='active'&&fault===priorFault){fault=undefined;notify();}
    return outcome;
   });
   return {requestId,result};
