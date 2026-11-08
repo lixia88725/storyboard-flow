@@ -1,3 +1,4 @@
+import { validImageEngineEdit } from '../../../platform/contracts/imageEngine.js';
 import { createHash } from 'node:crypto';
 import type { HydrationRecord, ImageOperationDecision, NativeDecision, ImageOperationPage, ImageOperationRecord, ImageOperationIntent, NativeImageRef, ProjectCommitV2, ProjectHeadV2, SourceImageRef } from '../../../platform/contracts/imageProject.js';
 import { imageHash, snapshotImageProject, validNativeDecision, validNativeImageRef, validSourceImageRef, validImageBinding, validProjectStroke } from '../../../session/core/imageProjectModel.js';
@@ -27,6 +28,7 @@ export type ProjectStoreV2={
   pendingHydrations():Promise<HydrationRecord[]>;
   beginOperation(intent:ImageOperationIntent):Promise<void>;
   pendingOperations():Promise<ImageOperationIntent[]>;
+  captureRecord(owner:{sessionId:string;incarnation:string;workspaceEpoch:number},captureId:string):Promise<ImageOperationRecord|null>;
   /** At most 16 full inputs per page; continue after the last operationId. */
   operationRecords(page?:ImageOperationPage):Promise<ImageOperationRecord[]>;
   resolveOperation(operationId:string,decision:'discarded'|'committed',commitHash:string|null):Promise<void>;
@@ -62,10 +64,13 @@ export function hydrationRecord(v:unknown):HydrationRecord{
   return clone(v as unknown as HydrationRecord);
 }
 export function operationIntent(v:unknown):ImageOperationIntent{
-  if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId','expected','baseNative','stroke']) || v.version!==1){
-    if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId','pipelineId','anchorCommitHash','anchor','expectedAtAnchor','predecessorOperationId','inputThrough','stroke'])||v.version!==2||!token(v.pipelineId)||!imageHash(v.anchorCommitHash)||!validNativeImageRef(v.anchor)||!validImageBinding(v.expectedAtAnchor)||(v.predecessorOperationId!==null&&(!token(v.predecessorOperationId)||v.predecessorOperationId===v.operationId))||!Number.isSafeInteger(v.inputThrough)||Number(v.inputThrough)!==(Array.isArray((v.stroke as {points?:unknown})?.points)?(v.stroke as {points:unknown[]}).points.length/2:-1))bad('Invalid pipeline input intent');
-  }else if(!validImageBinding(v.expected)||!validNativeImageRef(v.baseNative))bad('Invalid serial input baseline');
-  if(v.schema!=='flow.image-edit-intent'||![v.operationId,v.sessionId,v.incarnation,v.imageId].every(token)||!validProjectStroke(v.stroke))bad('Invalid image operation intent');
-  return clone(v as unknown as ImageOperationIntent);
+ if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId'],['expected','baseNative','stroke','pipelineId','anchorCommitHash','anchor','expectedAtAnchor','predecessorOperationId','inputThrough','contextGeneration','edit','origin'])||v.schema!=='flow.image-edit-intent'||![v.operationId,v.sessionId,v.incarnation,v.imageId].every(token))bad('Invalid image operation intent');
+ const optional=v.origin===undefined?[]:['origin'];
+ if(v.origin!==undefined){const o=v.origin;if(!shape(o,['workspaceEpoch','captureId','beginInputId','inputs'])||!Number.isSafeInteger(o.workspaceEpoch)||Number(o.workspaceEpoch)<0||!token(o.captureId)||!token(o.beginInputId)||!Array.isArray(o.inputs)||o.inputs.length<1||o.inputs.length>4096||new Set(o.inputs.map(b=>b?.inputId)).size!==o.inputs.length||o.inputs.some(b=>!shape(b,['inputId','kind','fromSeq','throughSeq','sha256'])||!token(b.inputId)||!['begin','append','end','cancel'].includes(String(b.kind))||!Number.isSafeInteger(b.fromSeq)||Number(b.fromSeq)<1||!Number.isSafeInteger(b.throughSeq)||Number(b.throughSeq)<Number(b.fromSeq)||!imageHash(b.sha256))||o.inputs[0].kind!=='begin'||o.inputs[0].inputId!==o.beginInputId)bad('Invalid input origin');}
+ if(v.version===1){if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId','expected','baseNative','stroke'],optional)||!validImageBinding(v.expected)||!validNativeImageRef(v.baseNative)||!validProjectStroke(v.stroke))bad('Invalid serial input');}
+ else if(v.version===2){if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId','pipelineId','anchorCommitHash','anchor','expectedAtAnchor','predecessorOperationId','inputThrough','stroke'],optional)||!token(v.pipelineId)||!imageHash(v.anchorCommitHash)||!validNativeImageRef(v.anchor)||!validImageBinding(v.expectedAtAnchor)||(v.predecessorOperationId!==null&&(!token(v.predecessorOperationId)||v.predecessorOperationId===v.operationId))||!validProjectStroke(v.stroke)||v.inputThrough!==v.stroke.points.length/2)bad('Invalid pipeline input');}
+ else if(v.version===3){if(!shape(v,['schema','version','operationId','sessionId','incarnation','imageId','expected','baseNative','contextGeneration','edit'],optional)||!validImageBinding(v.expected)||!validNativeImageRef(v.baseNative)||!Number.isSafeInteger(v.contextGeneration)||Number(v.contextGeneration)<0||!validImageEngineEdit(v.edit))bad('Invalid image edit input');}
+ else bad('Unknown image operation version');
+ return clone(v as unknown as ImageOperationIntent);
 }
 export const hydrationKey=(s:SourceImageRef)=>sha(bytes({importId:s.importId,itemId:s.itemId,interpretationId:s.interpretationId}));

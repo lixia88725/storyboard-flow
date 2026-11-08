@@ -1,3 +1,4 @@
+import type { ImageEngineEdit } from './imageEngine.js';
 import type { ChangeSetV1, ProjectV1 } from './refactorV1.js';
 import type { FlowStroke } from './flowWave2.js';
 
@@ -51,7 +52,15 @@ export type PipelineImageOperationIntent = {
   anchorCommitHash:string;anchor:NativeImageRef;expectedAtAnchor:ImageBindingV2;
   predecessorOperationId:string|null;inputThrough:number;stroke:FlowStroke;
 };
-export type ImageOperationIntent = SerialImageOperationIntent | PipelineImageOperationIntent;
+export type ImageEditOperationIntent={
+ schema:'flow.image-edit-intent';version:3;operationId:string;sessionId:string;incarnation:string;
+ imageId:string;expected:ImageBindingV2;baseNative:NativeImageRef;contextGeneration:number;edit:ImageEngineEdit;
+};
+export type ImageOperationOrigin={
+ workspaceEpoch:number;captureId:string;beginInputId:string;
+ inputs:readonly {inputId:string;kind:'begin'|'append'|'end'|'cancel';fromSeq:number;throughSeq:number;sha256:string}[];
+};
+export type ImageOperationIntent = (SerialImageOperationIntent | PipelineImageOperationIntent | ImageEditOperationIntent)&{origin?:ImageOperationOrigin};
 export type ImagePipelineInput =
   | {kind:'begin';shotId:string;stroke:FlowStroke}
   | {kind:'append';operationId:string;fromSeq:number;points:readonly number[];pressures?:readonly number[]}

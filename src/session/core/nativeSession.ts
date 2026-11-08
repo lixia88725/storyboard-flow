@@ -1,5 +1,7 @@
+import type { ImageEngineEdit, ImageEnginePreviewStamp } from '../../platform/contracts/imageEngine.js';
+import { validImageEngineEdit, validImageEnginePreviewStamp } from '../../platform/contracts/imageEngine.js';
 import type { FlowStroke } from '../../platform/contracts/flowWave2.js';
-import type { ImageOperationIntent, ImageOperationRecord, ImageOperationPage, ImageRecoveryDisposition, RetainedImageInput, ImagePipelineAdmission, ImagePipelineInput, ImagePipelineProgress, ImageProjectEdit, ImageProjectOutcome, ImageProjectSnapshot, NativeDecision, NativeImageRef, ProjectCommitV2, ProjectV2 } from '../../platform/contracts/imageProject.js';
+import type { ImageOperationIntent, ImageOperationOrigin, ImageOperationRecord, ImageOperationPage, ImageRecoveryDisposition, RetainedImageInput, ImagePipelineAdmission, ImagePipelineInput, ImagePipelineProgress, ImageProjectEdit, ImageProjectOutcome, ImageProjectSnapshot, NativeDecision, NativeImageRef, ProjectCommitV2, ProjectV2 } from '../../platform/contracts/imageProject.js';
 import type { ProjectCommitReceipt, ProjectConfirmation, ProjectStoreV2 } from '../../project-files/main/image-engine/projectStore.js';
 import { applyImageProjectEdit, validImageProject, validNativeImageRef, validProjectStroke } from './imageProjectModel.js';
 import { copy, same, shape } from './imageProjectValues.js';
@@ -14,6 +16,7 @@ export interface NativeSessionDriver {
   pipeline?:NativePipelineDriver;
   restartForRecovery?():Promise<void>;
   onFault?(listener:()=>void):()=>void;
+  prepareEdit?(operationId:string,base:NativeImageRef,edit:ImageEngineEdit,context:{expectedContextGeneration:number;preview?:ImageEnginePreviewStamp}):Promise<PreparedImage>;
   preparePaint(operationId:string,base:NativeImageRef,stroke:FlowStroke):Promise<PreparedImage>;
   accept(prepared:PreparedImage,base:NativeImageRef):Promise<NativeImageRef>;
   status(operationId:string):Promise<NativeOperationStatus>;
@@ -28,6 +31,7 @@ export interface NativeSessionDriver {
 }
 export type NativeProjectRequest=
   | {kind:'paint';shotId:string;stroke:FlowStroke}
+  | {kind:'imageEdit';shotId:string;expectedNative:NativeImageRef;expectedContextGeneration:number;edit:ImageEngineEdit;preview?:ImageEnginePreviewStamp}
   | {kind:'board';edit:Exclude<ImageProjectEdit,{kind:'installNativeImage'}>;typing?:{group:string}}
   | {kind:'undo'|'redo'|'recover'|'freeze'|'resume'};
 /** Pipeline input acknowledges bounded volatile capture synchronously. Preview
@@ -39,7 +43,7 @@ export type NativeProjectSession={snapshot():ImageProjectSnapshot;subscribe(list
 /** One Main Flow history and durable project authority. The pipeline is opt-in;
  * this module does not claim renderer/screen latency or full product migration.
  * Reopening deliberately starts an empty Undo stack, as the existing product does. */
-export async function openNativeProjectSession(options:{sessionId:string;incarnation:string;store:ProjectStoreV2;native:NativeSessionDriver;mintId():string;now():number;pipeline?:PipelineLimits}):Promise<NativeProjectSession>{
+export async function openNativeProjectSession(options:{sessionId:string;incarnation:string;store:ProjectStoreV2;native:NativeSessionDriver;mintId():string;now():number;pipeline?:PipelineLimits;originForOperation?:(operationId:string)=>ImageOperationOrigin|undefined}):Promise<NativeProjectSession>{
   const sessionId=options.sessionId,incarnation=options.incarnation;
   if(!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)||!/^[A-Za-z0-9_-]{1,128}$/.test(incarnation))throw Error('Invalid Main Session identity');
   const store=options.store,native=options.native,mint=options.mintId.bind(options),now=options.now.bind(options);
@@ -105,7 +109,7 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     }
     type RecoveryItem={operationId:string;imageId:string;inputThrough:number;predecessor:string|null;decision:Awaited<ReturnType<ProjectStoreV2['operationDecision']>>;status:NativeOperationStatus};
     const items=new Map<string,RecoveryItem>();
-    for(const intent of await store.pendingOperations())items.set(intent.operationId,{operationId:intent.operationId,imageId:intent.imageId,inputThrough:intent.stroke.points.length/2,predecessor:intent.version===2?intent.predecessorOperationId:null,decision:await store.operationDecision(intent.operationId),status:await native.status(intent.operationId)});
+    for(const intent of await store.pendingOperations())items.set(intent.operationId,{operationId:intent.operationId,imageId:intent.imageId,inputThrough:'stroke'in intent?intent.stroke.points.length/2:0,predecessor:intent.version===2?intent.predecessorOperationId:null,decision:await store.operationDecision(intent.operationId),status:await native.status(intent.operationId)});
     for(const obligation of confirmationObligations.values())if(!items.has(obligation.record.operationId)){
       const decision=await store.operationDecision(obligation.record.operationId);if(!decision)throw Error('Confirmation obligation has no project decision');
       items.set(obligation.record.operationId,{operationId:obligation.record.operationId,imageId:obligation.imageId,inputThrough:obligation.inputThrough,predecessor:decision.decision.pipeline?.predecessorOperationId??null,decision,status:await native.status(obligation.record.operationId)});
@@ -177,7 +181,7 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     const p=current(),shot=p.shots.find(s=>s.id===shotId);if(!shot)throw Object.assign(Error('Only active shots can be painted'),{code:'not-found',effect:'none'});
     const base=await resolve(shot.imageId),operationId=mint(),expected=copy(p.images[shot.imageId].content);
     const intent:ImageOperationIntent={schema:'flow.image-edit-intent',version:1,operationId,sessionId,incarnation,imageId:shot.imageId,expected,baseNative:base,stroke:copy(stroke)};
-    await store.beginOperation(intent);
+    const origin=options.originForOperation?.(operationId);await store.beginOperation({...intent,...(origin?{origin:copy(origin)}:{})});
     try{
       const prepared=await native.preparePaint(operationId,base,stroke);
       if(prepared.candidateId!==operationId||prepared.baseVersion!==base.versionId||!validNativeImageRef(prepared.native))throw Error('Native prepared receipt mismatch');
@@ -194,11 +198,30 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
       if((e as {effect?:unknown})?.effect==='none')try{await native.cancelPreview(operationId);const status=await native.status(operationId);if(['absent','failed','discarded'].includes(status.state)){await store.resolveOperation(operationId,'discarded',null);pendingPlans.delete(operationId);return fail(Object.assign(Error(typeof(e as {message?:unknown}).message==='string'?(e as {message:string}).message:String(e)),{code:(e as {code?:unknown}).code??'native',effect:'retained'}));}}catch{/* unknown settlement stays blocked */}
       phase='recovering';recovery={operationId,commitHash:null};notify();return{kind:'recoveryPending',operationId,snapshot:snapshot()};}
   };
+  const imageEdit=async(request:Extract<NativeProjectRequest,{kind:'imageEdit'}>):Promise<ImageProjectOutcome>=>{
+    if(!native.prepareEdit)throw Object.assign(Error('Native component does not support product image edits'),{code:'unsupported',effect:'none'});
+    const p=current(),shot=p.shots.find(s=>s.id===request.shotId);if(!shot)throw Object.assign(Error('Only an active shot can be edited'),{code:'not-found',effect:'none'});
+    const base=await resolve(shot.imageId);if(!same(base,request.expectedNative))throw Object.assign(Error('Displayed image version changed; keep the original tool input'),{code:'conflict',effect:'none'});
+    const operationId=mint(),expected=copy(p.images[shot.imageId].content),intent:ImageOperationIntent={schema:'flow.image-edit-intent',version:3,operationId,sessionId,incarnation,imageId:shot.imageId,expected,baseNative:base,contextGeneration:request.expectedContextGeneration,edit:copy(request.edit)};
+    await store.beginOperation(intent);let decided:string|null=null;
+    try{
+      const prepared=await native.prepareEdit(operationId,base,copy(request.edit),{expectedContextGeneration:request.expectedContextGeneration,...(request.preview?{preview:copy(request.preview)}:{})});
+      if(prepared.candidateId!==operationId||prepared.baseVersion!==base.versionId||!validNativeImageRef(prepared.native))throw Error('Native image edit prepared receipt mismatch');
+      const decision:NativeDecision={kind:'image',operationId,candidateId:prepared.candidateId,imageId:shot.imageId,expected,baseNative:base,prepared:prepared.native};
+      if(same(prepared.native,base)){await store.decideUnchanged(head!.commitHash,decision);decided=head!.commitHash;}
+      else{const plan=history.prepare({kind:'installNativeImage',imageId:shot.imageId,expected,next:prepared.native});if(!plan.ok)throw Error(plan.error.message);decided=(await commitPlan(plan.value,operationId,decision)).commitHash;}
+      const accepted=await native.accept(prepared,base);if(!same(accepted,prepared.native))throw Error('Native image edit acceptance mismatch');
+      await store.confirmOperations([{commitHash:decided,operationId,native:accepted}]);return settled();
+    }catch(e){
+      if(!decided&&(e as {effect?:unknown})?.effect==='none')try{const status=await native.status(operationId);if(['absent','failed','discarded'].includes(status.state)){await store.resolveOperation(operationId,'discarded',null);return fail(e);}}catch{/* Original edit stays durable and protected. */}
+      phase='recovering';recovery={operationId,commitHash:decided};notify();return decided?{kind:'settlementPending',operationId,commitHash:decided,snapshot:snapshot()}:{kind:'recoveryPending',operationId,snapshot:snapshot()};
+    }
+  };
   const initializePipeline=()=>{if(options.pipeline){
     if(!native.pipeline)throw Error('Opt-in Main pipeline requires a typed native pipeline driver');
     pipeline=createMainImagePipeline({sessionId,incarnation,driver:native.pipeline,limits:copy(options.pipeline),mintId:mint,canAdmit:()=>!closed&&phase==='active',canBegin:()=>settlement.capacityAvailable,
       anchor(shotId){const p=current(),shot=p.shots.find(s=>s.id===shotId);if(!shot)throw Error('Only active shots can start painting');return{imageId:shot.imageId,expected:copy(p.images[shot.imageId].content),commitHash:head!.commitHash,native:()=>resolve(shot.imageId)};},
-      persist:intent=>store.beginOperation(intent),
+      persist:intent=>{const origin=options.originForOperation?.(intent.operationId);return store.beginOperation({...intent,...(origin?{origin:copy(origin)}:{})});},
       blocked(operationId,error){phase='recovering';if(!recovery?.commitHash)recovery={operationId,commitHash:null};settlement.fence(error);notify();},
       decide(entry:PipelineEntry){
         pending++;notify();let finish!:(outcome:ImageProjectOutcome)=>void;const completed=new Promise<ImageProjectOutcome>(resolve=>finish=resolve);let commitHash:string|null=null;
@@ -233,8 +256,8 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     request(input){
       if(pending>=32)return Promise.resolve(fail(Object.assign(Error('Main request queue is full'),{code:'resource-limit',effect:'none'})));
       let request:NativeProjectRequest;
-      try{request=copy(input);const valid=request?.kind==='paint'?shape(request,['kind','shotId','stroke']):request?.kind==='board'?shape(request,['kind','edit'],['typing']):shape(request,['kind'])&&['undo','redo','recover','freeze','resume'].includes(String(request.kind));if(!valid)throw Error('Invalid Main Session request');}catch{return Promise.resolve(fail(Object.assign(Error('Invalid Main Session request'),{code:'invalid-input',effect:'none'})));}
-      const isBarrier=request.kind==='undo'||request.kind==='redo'||request.kind==='freeze';
+      try{request=copy(input);const valid=request?.kind==='paint'?shape(request,['kind','shotId','stroke']):request?.kind==='imageEdit'?shape(request,['kind','shotId','expectedNative','expectedContextGeneration','edit'],['preview'])&&validNativeImageRef(request.expectedNative)&&Number.isSafeInteger(request.expectedContextGeneration)&&request.expectedContextGeneration>=0&&validImageEngineEdit(request.edit)&&(request.preview===undefined||validImageEnginePreviewStamp(request.preview)):request?.kind==='board'?shape(request,['kind','edit'],['typing']):shape(request,['kind'])&&['undo','redo','recover','freeze','resume'].includes(String(request.kind));if(!valid)throw Error('Invalid Main Session request');}catch{return Promise.resolve(fail(Object.assign(Error('Invalid Main Session request'),{code:'invalid-input',effect:'none'})));}
+      const isBarrier=request.kind==='undo'||request.kind==='redo'||request.kind==='freeze'||request.kind==='imageEdit';
       // Admission-time context matters: an active gesture can end before this
       // request reaches tail, putting its decision behind the barrier itself.
       // Refuse now without owning a seal. Its later up remains ordinary FIFO work.
@@ -265,6 +288,9 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
           }
           if(request.kind==='freeze'){await settlement.drain();await pipeline?.barrier();phase='freezing';nativeMayBeFrozen=true;await native.freeze();await store.validateRecovery();if((await store.pendingOperations()).length||(await store.unsettledDecisions()).length||(await store.pendingHydrations()).length)throw Error('Unsettled project obligations');phase='frozen';notify();return settled();}
           if(phase!=='active')throw Object.assign(Error('Session admission is frozen'),{code:'busy',effect:'none'});
+          if(request.kind==='imageEdit'){
+            await settlement.drain();await pipeline?.barrier();history.endTyping();const result=await imageEdit(request);if(phase==='active'&&barriers===1)pipeline?.resumeAdmission();return result;
+          }
           if(request.kind==='paint'){if(pipeline)throw Object.assign(Error('Use bounded pipeline input in this opt-in Session'),{code:'invalid-input',effect:'none'});return await paint(request.shotId,request.stroke);}
           if(request.kind==='undo'||request.kind==='redo'){history.endTyping();await settlement.drain();await pipeline?.barrier();}
           const prepared=request.kind==='board'?history.prepare(request.edit,request.typing):request.kind==='undo'?history.prepareUndo():history.prepareRedo();
@@ -277,7 +303,7 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
           }
           if((request.kind==='undo'||request.kind==='redo')&&barriers===1)pipeline?.resumeAdmission();
           return settled();
-        }catch(e){if(phase==='freezing'||pendingPlans.size)phase='recovering';return fail(e);}
+        }catch(e){if(phase==='freezing'||pendingPlans.size)phase='recovering';if(isBarrier&&phase==='active'&&barriers===1)pipeline?.resumeAdmission();return fail(e);}
       }).finally(()=>{if(isBarrier)barriers--;pending--;notify();});tail=work.then(()=>undefined,()=>undefined);return work.then(result=>'snapshot'in result?{...result,snapshot:snapshot()}:result);
     },
     close:async()=>{await tail;await settlement.drain();if(phase!=='frozen')throw Error('Freeze and settle before close');await native.close();await store.close();closed=true;detachFault?.();}

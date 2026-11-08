@@ -11,8 +11,8 @@ import { temporaryWorkspace } from '../../../../test/temporaryWorkspace';
 // Adapter pauses after a completed effect; it never supplies fake native pixels.
 const modules=[
   'session/core/nativeSession','session/core/nativeSettlementQueue','session/core/nativePipeline','session/core/snapshotHistory','session/core/grouping','session/core/imageProjectModel','session/core/imageProjectValues',
-  'platform/contracts/flowPresentation','platform/main/imageEngineWorkerOwner','platform/main/imageEngineConnection','platform/main/imageEngineFraming','platform/main/imageProjectLease',
-  'project-files/main/image-engine/projectStore','project-files/main/image-engine/legacyProjectStore','project-files/main/image-engine/journalProjectStore','project-files/main/image-engine/recoveryJournal','project-files/main/image-engine/projectStoreRecords','project-files/main/image-engine/sourceStore','project-files/main/image-engine/nativeSessionAdapter',
+  'platform/contracts/flowPresentation','platform/contracts/imageEngine','platform/contracts/flowSelection','platform/main/imageEngineWorkerOwner','platform/main/imageEngineConnection','platform/main/imageEngineFraming','platform/main/imageProjectLease',
+  'project-files/main/image-engine/projectStore','project-files/main/image-engine/legacyProjectStore','project-files/main/image-engine/journalProjectStore','project-files/main/image-engine/recoveryJournal','project-files/main/image-engine/projectStoreRecords','project-files/main/image-engine/sourceStore','project-files/main/image-engine/nativeSessionAdapter','project-files/main/image-engine/nativeProductContext',
   'project-files/main/workspacePhysicalWriterGate','project-files/main/persistence/canonicalJson','project-files/main/persistence/fileOps','project-files/main/persistence/errors'
 ];
 async function fixture(format:'legacy'|'journal'='legacy'){

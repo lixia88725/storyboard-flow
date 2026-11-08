@@ -27,13 +27,14 @@ type Fact=
  |{kind:'hydration';record:HydrationRecord}
  |{kind:'hydrationAccepted';source:SourceImageRef;operationId:string;native:NativeImageRef}
  |{kind:'resolution';resolution:ImageOperationResolution};
-type State={sequence:number;format:boolean;commits:ProjectCommitReceipt[];byId:Map<string,ProjectCommitReceipt>;byHash:Map<string,ProjectCommitReceipt>;inputs:Map<string,{sequence:number;summary:Summary;digest:string}>;decisions:Map<string,ImageOperationDecision>;confirmations:Set<string>;hydrations:Map<string,HydrationRecord>;hydrated:Set<string>;resolutions:Map<string,ImageOperationResolution>};
-const empty=():State=>({sequence:0,format:false,commits:[],byId:new Map(),byHash:new Map(),inputs:new Map(),decisions:new Map(),confirmations:new Set(),hydrations:new Map(),hydrated:new Set(),resolutions:new Map()});
+type State={sequence:number;format:boolean;commits:ProjectCommitReceipt[];byId:Map<string,ProjectCommitReceipt>;byHash:Map<string,ProjectCommitReceipt>;inputs:Map<string,{sequence:number;summary:Summary;digest:string}>;captures:Map<string,string>;decisions:Map<string,ImageOperationDecision>;confirmations:Set<string>;hydrations:Map<string,HydrationRecord>;hydrated:Set<string>;resolutions:Map<string,ImageOperationResolution>};
+const empty=():State=>({sequence:0,format:false,commits:[],byId:new Map(),byHash:new Map(),inputs:new Map(),captures:new Map(),decisions:new Map(),confirmations:new Set(),hydrations:new Map(),hydrated:new Set(),resolutions:new Map()});
+const captureKey=(i:{sessionId:string;incarnation:string},o:{workspaceEpoch:number;captureId:string})=>`${i.sessionId}\n${i.incarnation}\n${o.workspaceEpoch}\n${o.captureId}`;
 function apply(s:State,f:Fact,sequence:number){
  s.sequence=sequence;
  switch(f.kind){
   case'format':s.format=true;break;
-  case'input':{const{stroke,...summary}=f.intent;s.inputs.set(f.intent.operationId,{sequence,summary,digest:sha(bytes(f.intent))});break;}
+  case'input':{const{stroke:_stroke,...summary}={...f.intent,stroke:'stroke'in f.intent?f.intent.stroke:undefined};if(f.intent.origin)s.captures.set(captureKey(f.intent,f.intent.origin),f.intent.operationId);s.inputs.set(f.intent.operationId,{sequence,summary,digest:sha(bytes(f.intent))});break;}
   case'commit':{const hash=sha(bytes(f.record)),head={schema:'flow.project-head' as const,version:1 as const,projectId:f.record.after.id,commitHash:hash},r={commitHash:hash,commit:copy(f.record),head};s.commits.push(r);s.byId.set(f.record.commitId,r);s.byHash.set(hash,r);if(f.record.nativeDecision)s.decisions.set(f.record.nativeDecision.operationId,{commitHash:hash,decision:copy(f.record.nativeDecision),unchanged:false});break;}
   case'unchanged':s.decisions.set(f.decision.operationId,{commitHash:f.commitHash,decision:copy(f.decision),unchanged:true});break;
   case'confirmation':for(const r of f.records){s.confirmations.add(r.operationId);if(f.resolve)s.resolutions.set(r.operationId,{schema:'flow.image-edit-resolution',version:1,operationId:r.operationId,decision:'committed',commitHash:r.commitHash});}break;
@@ -71,7 +72,7 @@ export async function openJournalProjectStore(options:ImageProjectStoreOptions):
  const verify=async(content:{kind:'source';source:SourceImageRef}|{kind:'native';native:NativeImageRef})=>{const k=canonicalJson(content);if(verifyRefs.has(k))return;if(content.kind==='native')await options.verifyNative(copy(content.native));else await options.verifySource(copy(content.source));verifyRefs.add(k);};
  const checkBase=(s:State,d:NativeDecision)=>{
   const i=s.inputs.get(d.operationId)?.summary;if(!i||i.imageId!==d.imageId||d.operationId!==d.candidateId)bad('Project decision has no matching original input');
-  if(i.version===1){if(d.pipeline||!same(i.expected,d.expected)||!same(i.baseNative,d.baseNative))bad('Serial decision differs from original input');}
+  if(i.version===1||i.version===3){if(d.pipeline||!same(i.expected,d.expected)||!same(i.baseNative,d.baseNative))bad('Serial decision differs from original input');}
   else{
    if(!same(d.pipeline,{pipelineId:i.pipelineId,anchorCommitHash:i.anchorCommitHash,predecessorOperationId:i.predecessorOperationId}))bad('Pipeline decision differs from original input chain');
    const anchor=s.byHash.get(i.anchorCommitHash);if(!anchor||!same(anchor.commit.after.images[i.imageId]?.content,i.expectedAtAnchor))bad('Input anchor is unreachable');
@@ -87,8 +88,8 @@ export async function openJournalProjectStore(options:ImageProjectStoreOptions):
   switch(f.kind){
    case'format':if(s.sequence!==0||f.formatId!==formatId)bad('Journal format/project identity changed');break;
    case'input':{
-    const i=operationIntent(f.intent);if(s.inputs.has(i.operationId))bad('Duplicate input journal record');
-    if(i.version===1){if(!same(s.commits.at(-1)?.commit.after.images[i.imageId]?.content,i.expected))bad('Input baseline changed');}
+    const i=operationIntent(f.intent);if(i.origin&&s.captures.has(captureKey(i,i.origin)))bad('Capture identity already belongs to an operation');if(s.inputs.has(i.operationId))bad('Duplicate input journal record');
+    if(i.version===1||i.version===3){if(!same(s.commits.at(-1)?.commit.after.images[i.imageId]?.content,i.expected))bad('Input baseline changed');}
     else{const anchor=s.byHash.get(i.anchorCommitHash);if(!anchor||!same(anchor.commit.after.images[i.imageId]?.content,i.expectedAtAnchor))bad('Input anchor is not reachable');if(i.expectedAtAnchor.kind==='native'){if(!same(i.anchor,i.expectedAtAnchor.native))bad('Input native anchor mismatch');}else if(!same(s.hydrations.get(hydrationKey(i.expectedAtAnchor.source))?.native,i.anchor))bad('Input source anchor mismatch');if(i.predecessorOperationId){const p=s.inputs.get(i.predecessorOperationId)?.summary;if(!p||p.version!==2||p.pipelineId!==i.pipelineId||p.anchorCommitHash!==i.anchorCommitHash||p.imageId!==i.imageId||!same(p.anchor,i.anchor)||!same(p.expectedAtAnchor,i.expectedAtAnchor))bad('Input predecessor mismatch');}}
     break;
    }
@@ -153,6 +154,7 @@ export async function openJournalProjectStore(options:ImageProjectStoreOptions):
   settleHydration:(ref,operationId,native)=>{const s=copy(ref),n=copy(native);return mutate(async state=>{const fact:Fact={kind:'hydrationAccepted',source:s,operationId,native:n};await validate(state,fact);return{fact:state.hydrated.has(source(s))?undefined:fact,result:undefined};});},
   pendingHydrations:()=>read(s=>[...s.hydrations.entries()].filter(([k])=>!s.hydrated.has(k)).map(([,h])=>h)),
   beginOperation:input=>{const intent=operationIntent(input);return mutate(async s=>{const old=s.inputs.get(intent.operationId);if(old){if(old.digest!==sha(bytes(intent)))bad('Operation ID reused with changed original input');return{result:undefined};}return{fact:{kind:'input',intent},result:undefined};});},
+  captureRecord:(owner,captureId)=>read(async s=>{if(!token(owner.sessionId)||!token(owner.incarnation)||!Number.isSafeInteger(owner.workspaceEpoch)||owner.workspaceEpoch<0||!token(captureId))bad('Invalid capture identity');const id=s.captures.get(captureKey(owner,{workspaceEpoch:owner.workspaceEpoch,captureId}));return id?inputRecord(s,id):null;}),
   pendingOperations:()=>read(async s=>{const out:ImageOperationIntent[]=[];for(const id of s.inputs.keys())if(!s.resolutions.has(id))out.push((await inputRecord(s,id)).intent);return out;}),
   operationRecords:(page:ImageOperationPage={})=>{const p=copy(page);if(!shape(p,[],['afterOperationId','maxRecords'])||(p.afterOperationId!==undefined&&!token(p.afterOperationId))||(p.maxRecords!==undefined&&(!Number.isSafeInteger(p.maxRecords)||p.maxRecords<1||p.maxRecords>16)))return Promise.reject(new ImageProjectStoreError('invalid-input','Invalid input page'));return read(async s=>{const out=[];for(const id of [...s.inputs.keys()].sort())if(!p.afterOperationId||id>p.afterOperationId){out.push(await inputRecord(s,id));if(out.length>=(p.maxRecords??16))break;}return out;});},
   resolveOperation:(operationId,decision,commitHash)=>{const resolution:ImageOperationResolution={schema:'flow.image-edit-resolution',version:1,operationId,decision,commitHash};return mutate(async s=>{await validate(s,{kind:'resolution',resolution});return{fact:s.resolutions.has(operationId)?undefined:{kind:'resolution',resolution},result:undefined};});},
