@@ -28,7 +28,7 @@ export function NativeThumbnail({controller,image}:{controller:ImageWorkspaceCon
   }).catch(()=>{if(alive)setIssue('预览暂时不可用');});
   return()=>{alive=false;node.width=0;node.height=0;};
  },[controller,image?.thumbnailId]);
- return <div className="flow-native-thumbnail" style={{width:'100%',height:'100%',position:'relative',aspectRatio:`${image?.width??640}/${image?.height??360}`}}>
+ return <div className="image-stage flow-native-thumbnail" style={{width:'100%',height:'100%',position:'relative',aspectRatio:`${image?.width??640}/${image?.height??360}`}}>
   <canvas ref={canvas} style={{display:'block',width:'100%',height:'100%',objectFit:'contain'}}/>
   {(!image?.thumbnailId||issue)&&<span role="status" style={{position:'absolute',inset:0,display:'grid',placeItems:'center',fontSize:12,color:'#aeb5bf'}}>{issue||image?.issue?.message||'正在准备预览…'}</span>}
  </div>;

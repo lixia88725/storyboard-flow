@@ -15,12 +15,13 @@ import {createImageWorkspaceController,type ImageWorkspaceController} from './wo
  * after the original Main owner is active again. */
 export function NativeFlowEditor(){
  const [controller,setController]=useState<ImageWorkspaceController>(),[recent,setRecent]=useState<FlowRecentProject[]>([]),[currentRecentId,setCurrentRecentId]=useState<string|null>(null);
- const [busy,setBusy]=useState(false),[issue,setIssue]=useState('');
+ const [busy,setBusy]=useState(false),[issue,setIssue]=useState(''),[retainedProjects,setRetainedProjects]=useState(0);
  const [upgrade,setUpgrade]=useState<import('../../../platform/contracts/imageWorkspace').ImageWorkspaceUpgradeDraft>();
  const current=useRef<ImageWorkspaceController|undefined>(undefined),transition=useRef(false),flush=useRef<()=>Promise<void>>(async()=>{});
  const retainedClose=useRef<{owner:ImageWorkspaceController;ticket:string}|undefined>(undefined);
+ const pendingClose=useRef<string|undefined>(undefined),closeHandler=useRef<((id:string)=>void)|undefined>(undefined);
  const api=window.flowEditor;
- const refreshRecent=async()=>{const state=await api.launcherState();setRecent(state.recent);setCurrentRecentId(state.currentId);return state;};
+ const refreshRecent=async()=>{const state=await api.launcherState();setRecent(state.recent);setCurrentRecentId(state.currentId);setRetainedProjects(state.retainedProjects??0);return state;};
  const install=(bootstrap:ImageWorkspaceBootstrap)=>{
   const previous=current.current;
   if(previous&&!previous.dispose())throw Error('原项目还有未处理输入，不能替换窗口。');
@@ -37,6 +38,7 @@ export function NativeFlowEditor(){
    previous.setInputPause('transition',!refreshed||previous.snapshot().session.phase!=='active');
   }
   transition.current=false;setBusy(false);
+  const closing=pendingClose.current;pendingClose.current=undefined;if(closing)queueMicrotask(()=>closeHandler.current?.(closing));
  };
  const launch=useCallback(async(target:FlowProjectTarget):Promise<TransitionResult>=>{
   if(!beginTransition())return{error:'项目正在切换。'};
@@ -45,19 +47,21 @@ export function NativeFlowEditor(){
    if(previous){await flush.current();await previous.settleCaptured();}
    const result=await api.launch(target,previous?.owner);
    if(result.canceled)return'unchanged';
+   if(result.kind==='copy-upgrade'){setUpgrade(result.draft);return'unchanged';}
    if(result.kind!=='native')throw Error('此项目尚未完成新引擎的副本升级，原项目已保留。');
    install(result.bootstrap);await refreshRecent();setIssue('');return'opened';
   }catch(error){const message=errorText(error);setIssue(message);return{error:message};}
-  finally{await endTransition(previous);}
+  finally{await refreshRecent().catch(()=>{});await endTransition(previous);}
  },[]);
  const create=useCreateProject(launch,setIssue);
  const open=async()=>{try{const choice=await api.chooseOpen();if('canceled' in choice)return;if(choice.kind==='import')await create.adopt(choice.draft);else if(choice.kind==='copy-upgrade')setUpgrade(choice.draft);else await launch({kind:'pending'});}catch(error){setIssue(errorText(error));}};
  useEffect(()=>{
   let live=true;
-  void refreshRecent().then(async state=>{if(state.open){const boot=await api.imageWorkspace.bootstrap();if(live)install(boot);}}).catch(error=>{if(live)setIssue(errorText(error));});
+  void refreshRecent().then(async state=>{if(live&&state.initialIssue)setIssue(state.initialIssue);if(live&&state.upgradeDraft)setUpgrade(state.upgradeDraft);if(state.open){const boot=await api.imageWorkspace.bootstrap();if(live)install(boot);}}).catch(error=>{if(live)setIssue(errorText(error));}).finally(()=>{if(live)requestAnimationFrame(()=>{if(live)void api.nativeWindowReady().catch(error=>setIssue(errorText(error)));});});
   return()=>{live=false;};
  },[]);
- useEffect(()=>api.onClose(id=>{
+ useEffect(()=>{const handle=(id:string)=>{
+  if(transition.current){pendingClose.current=id;return;}
   const owner=current.current;if(!owner||!beginTransition())return;
   void(async()=>{
    let ticket=retainedClose.current?.owner===owner?retainedClose.current.ticket:undefined;
@@ -82,7 +86,7 @@ export function NativeFlowEditor(){
     }
    }finally{await endTransition(owner);}
   })();
- }),[]);
+ };closeHandler.current=handle;const unsubscribe=api.onClose(handle);return()=>{unsubscribe();if(closeHandler.current===handle)closeHandler.current=undefined;};},[]);
  useEffect(()=>{
   const prevent=(event:BeforeUnloadEvent)=>{if(current.current){event.preventDefault();event.returnValue='';}};
   window.addEventListener('beforeunload',prevent);return()=>window.removeEventListener('beforeunload',prevent);
@@ -95,7 +99,13 @@ export function NativeFlowEditor(){
   <button disabled={busy||disabled} data-export-psd="true" onClick={exportPsd}>另存为 PSD…</button>
   <span className="wb-menu-label">最近项目</span>{recent.map(item=>item.available?<button key={item.id} disabled={busy||item.id===currentRecentId} onClick={()=>void launch({kind:'recent',id:item.id})}>{item.name}{item.id===currentRecentId?' · 当前':''}</button>:<div key={item.id}>{item.name} · 不可用<button onClick={()=>void relocateRecent(item.id)}>重新定位…</button><button onClick={()=>void removeRecent(item.id)}>移除</button></div>)}
  </div></details>;
+ const recoverProjects=async()=>{
+  if(!beginTransition())return;const previous=current.current;
+  try{const result=await api.recoverNativeProjects();setRetainedProjects(result.remaining);setIssue(result.ok?'项目资源已恢复，可以继续打开或关闭。':'仍有项目资源待处理，请再次尝试关闭或恢复。');}
+  catch(error){setIssue(errorText(error));}finally{await refreshRecent().catch(()=>{});await endTransition(previous);}
+ };
  return <><FlowAlert message={issue} onDismiss={()=>setIssue('')}/>
+ {retainedProjects>0&&<div role="alert">有未完成的项目资源处理，画稿与恢复记录已保留。<button disabled={busy} onClick={()=>void recoverProjects()}>重试项目资源恢复</button></div>}
   {controller?<NativeWorkbenchEditor key={controller.owner.incarnation} controller={controller} externallyPaused={busy} projectMenu={menu} registerTransition={registerTransition}/>:<ProjectLauncher recent={recent} busy={busy} message="" onOpen={()=>void open()} onCreate={()=>void create.begin('blank')} onOpenRecent={id=>void launch({kind:'recent',id})} onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent}/>}
   {upgrade&&<UpgradeProjectSheet key={upgrade.id} draft={upgrade} busy={busy}
    onChoose={async()=>{const next=await api.upgradeChooseDestination(upgrade.id);if(next)setUpgrade(next);}}

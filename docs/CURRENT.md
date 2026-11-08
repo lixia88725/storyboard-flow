@@ -4,9 +4,13 @@
 
 隔离集成树已接入五种原生画笔、临时选区与图层编辑能力，并新增只读 Main 快照控制器、端口帧接收、双画布输入捕获、图层面板和项目切换协调器。冷准备期间保留原始归一化笔点，准备完成后按权威尺寸提交；帧与快照按身份匹配，不依赖两个通道的到达顺序。输入失败处理须先取得完整原始输入的持久保管回执，不能用已提交前缀替代整笔。关闭/输出/图层操作各自持有暂停原因，释放自己的暂停不解除其他操作。
 
-主管接点聚焦 7 文件55项通过（`/private/tmp/flow-workspace-chief-focused.log`），随后新增冷准备通知和显示序列/暂停并存的边界由各聚焦日志覆盖；renderer/Electron 类型检查、preload契约检查及一次完整build通过（`/private/tmp/flow-workspace-chief-build.log`）。这些是施工模块证据：默认产品入口尚未切换，后续源码还在修改，未做本轮组合全量、真实工作台GUI或发布验收。Main Runtime、完整Save/Refresh/Pending、旧项目副本升级及实时图层预览仍在接线，不能称为整体完成。用户主树和试用窗口未改。
+主管接点聚焦 7 文件55项通过（`/private/tmp/flow-workspace-chief-focused.log`），随后新增冷准备通知和显示序列/暂停并存的边界由各聚焦日志覆盖；renderer/Electron 类型检查、preload契约检查及一次完整build通过（`/private/tmp/flow-workspace-chief-build.log`）。这些是施工模块证据：默认产品入口尚未切换，后续源码还在修改，尚未做本轮组合全量或发布验收。Main Runtime、文件创建与副本升级已进入组合接线；完整Save/Refresh/Pending与后台图像任务仍在施工，不能称为整体完成。用户主树和试用窗口未改。
 
 补充施工证据：图层面板已接入宿主，选区移动/缩放/旋转使用固定起始像素的原生预览，松手才提交一次；本轮三个 UI 接点文件32项通过（`/private/tmp/flow-native-workspace-ui-focused-final.log`），项目生命周期6项通过（`/private/tmp/flow-native-lifecycle-release.log`）。完整renderer/Electron构建通过（`/private/tmp/flow-native-workspace-ui-build.log`）。文件输出候选 `6d6ffac + cb4edc4` 已本地集成：执行者新输出19项及复用文件保护20项通过；尚未与真实Runtime和原生元数据输出串联，不代表正式Save已经可用。新界面由Main明确选择引擎，当前默认入口仍未启用。
+
+主管已接通真实工作台的私有原生入口：命令行、选择文件夹、最近项目统一识别原生项目与旧项目副本升级；损坏项目保留并报错。关闭请求等待创建/初始打开和renderer就绪；已认证但释放失败只重试释放；候选资源保留时提供独立恢复入口。普通图层编辑丢回包时保留确切请求身份，查询或完整原文保管后才能释放输入，不盲重放。组合聚焦6文件67项及完整build通过（`/private/tmp/flow-native-entry-combined-focused-final.log`、`flow-native-entry-build-final.log`）。
+
+真实Electron首轮揭露了显示身份接线缺陷：frame已到达、笔迹已保存，但Runtime仍发送旧epoch，导致双画布持续preparing。修复 `88e9745` 已集成为 `af8cadd`，从当前可信原生帧更新仅展示身份，不把帧ACK当项目提交。修后真实pointer、双surface逐字节RGBA一致、Undo两边清空、Redo逐字节恢复和正常关闭通过（`/private/tmp/flow-native-workbench-yusmrs`，`flow-native-entry-gui-pixels.log`）；最终脚本又完成新进程重开逐字节RGBA一致及初始化期间关闭必须等待认证（`/private/tmp/flow-native-workbench-XtvehS`、`flow-native-workbench-final-smoke.log`）。透明显示恢复既有棋盘格后又通过最终三个阶段（`/private/tmp/flow-native-workbench-sW16OL`、`flow-native-workbench-checker-final-smoke.log`，构建 `flow-native-entry-build-final2.log`）；脚本曾因正常自动退出抢先结束而未写关闭收据，现改在closed事件中记录并强制断言认证次数，失败现场保留。preload契约通过。此证据尚不涵盖Save/Refresh/导入及完整产品矩阵。
 
 本轮发现现有原生帧/输出传输预算尚不覆盖旧32M像素上限，复杂来源自带持久选区也不能被无提示忽略。前者暂按实际额度拒绝而不缩图，后者保留原结构并明确限制正式绘画；完整产品容量与超大图像验收仍待闭合。
 

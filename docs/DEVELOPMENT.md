@@ -100,3 +100,5 @@ Main 保存链性能复测：使用同一固定 release 宿主，完整构建后
 ## 原生工作台施工验证
 
 新的只读控制器、冷输入捕获、Main端口与项目切换测试显式登记在 `test/allowed-suite.json`。真实原生预设与图层命令测试登记在 `test/allowed-image-engine-suite.json`，需以本次能力匹配的原生宿主执行；旧debug binary或只通过TypeScript构建不能替代这些检查。两清单合并去重后才是本轮组合全量。`npm run check:preload`同时检查嵌套imageWorkspace方法、原始输入身份及MessagePort转交；它是隔离桥接检查，不替代真实Electron连接验收。
+
+实际原生工作台专项：完整 `npm run build` 后，设置 `FLOW_IMAGE_HOST` 与 `FLOW_PROJECT_LEASE_BINARY`，运行 `node scripts/flow-native-workbench-smoke.mjs`。它通过私有 `FLOW_NATIVE_WORKSPACE=1` 启动真实入口，使用临时合成原生项目和独立profile，禁止Clipboard/Trash，检查双画布RGBA、真实落笔、Undo/Redo、正常关闭及新进程重开。这个开关只供施工验收，不代表默认入口已迁移；脚本不测试完整Save/Refresh/Pending。原生附加清单中的workspaceCreation还需要已准备的一次性读取组件（见其测试的显式环境变量）。

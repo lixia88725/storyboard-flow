@@ -237,3 +237,29 @@ it('allows a name blur commit through its own input pause while protecting canva
  const owner=createNativeLayerPanelOwner(h.controller);owner.nameDraft(h.image,{layerId:'1',name:'New',composing:false,action:'change'});expect(h.capture.paused).toBe(true);
  await owner.edit(h.image,{kind:'setLayer',layerId:'1',patch:{name:'New'}});expect(owner.busy()).toBe(false);expect(h.capture.paused).toBe(false);
 });
+
+describe('exact request recovery for ordinary layer edits',()=>{
+  function failed(){
+    const h=harness();h.controller.capabilities.commands=[...h.controller.capabilities.commands,'inspectRequest','resolveEdit'];
+    h.controller.requestTracked=command=>({requestId:'lost-edit',result:h.controller.request(command)});
+    h.controller.refreshSnapshot=async()=>{};
+    h.respond(async()=>{throw Error('lost reply');});
+    const owner=createNativeLayerPanelOwner(h.controller),edit={kind:'setLayer' as const,layerId:'1',patch:{name:'retained name'}};
+    return{h,owner,edit};
+  }
+  it('queries the original request without applying it a second time',async()=>{
+    const{h,owner,edit}=failed();await expect(owner.edit(h.image,edit)).rejects.toThrow('lost reply');
+    expect(owner.snapshot().requestId).toBe('lost-edit');
+    h.respond(async command=>{expect(command).toEqual({kind:'inspectRequest',requestId:'lost-edit'});return{kind:'requestStatus',operationId:'query',requestId:'lost-edit',state:'committed',mainOperationId:'original'};});
+    expect(await owner.inspectEdit()).toBe(true);expect(owner.busy()).toBe(false);
+    expect(h.calls.filter(c=>c.kind==='imageEdit')).toHaveLength(1);
+  });
+  it.each(['wrong','missing-record','valid'])('releases only a matching durable original receipt: %s',async mode=>{
+    const{h,owner,edit}=failed();owner.nameDraft(h.image,{layerId:'1',name:'retained name',composing:false,action:'change'});
+    await expect(owner.flush()).rejects.toThrow('lost reply');
+    h.respond(async command=>{expect(command).toEqual({kind:'resolveEdit',requestId:'lost-edit',action:'retainAndDiscard',original:{shotId:'shot',expectedNative:native,expectedContextGeneration:7,edit}});return{kind:'editResolved',operationId:'resolve',requestId:mode==='wrong'?'different':'lost-edit',mainOperationId:null,decision:'notCommitted',original:{recordId:mode==='missing-record'?'':'kept-original'}};});
+    if(mode==='valid'){expect(await owner.resolveEdit('retainAndDiscard')).toBe(true);expect(owner.busy()).toBe(false);expect(owner.snapshot().nameDrafts).toEqual([]);}
+    else{await expect(owner.resolveEdit('retainAndDiscard')).rejects.toThrow();expect(owner.busy()).toBe(true);expect(owner.snapshot().nameDrafts?.[0].name).toBe('retained name');}
+    expect(h.calls.filter(c=>c.kind==='imageEdit')).toHaveLength(1);
+  });
+});

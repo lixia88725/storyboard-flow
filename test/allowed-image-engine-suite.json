@@ -7,5 +7,8 @@
   "src/platform/main/imageEngineContext.test.ts",
   "src/platform/main/imageEngineProductBrush.test.ts",
   "src/platform/main/imageEngineProductEdit.test.ts",
-  "src/platform/main/imageEngineProductPreview.test.ts"
+  "src/platform/main/imageEngineProductPreview.test.ts",
+  "src/project-files/main/image-engine/nativeSessionEditNative.test.ts",
+  "src/project-files/main/image-engine/workspaceRuntime.test.ts",
+  "src/project-files/main/image-engine/workspaceCreation.test.ts"
 ]

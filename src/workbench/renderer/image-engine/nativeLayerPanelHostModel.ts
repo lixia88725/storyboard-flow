@@ -10,6 +10,8 @@ export type NativeLayerPanelController = {
   readonly capabilities: ImageWorkspaceCapabilities;
   snapshot(): ImageWorkspaceSnapshot;
   request(command: ImageWorkspaceCommand): Promise<ImageWorkspaceOutcome>;
+  requestTracked?(command:ImageWorkspaceCommand):{requestId:string;result:Promise<ImageWorkspaceOutcome>};
+  refreshSnapshot?():Promise<void>;
   subscribe(listener: () => void): () => void;
   setInputPause?(reason:string,value:boolean):void;
   inputPausedExcept?(reason:string):boolean;
@@ -42,6 +44,7 @@ export type NativeLayerHostState = {
   readonly changes?: readonly NativeOpacityChange[];
   readonly stamp?: ImageEnginePreviewStamp;
   readonly failure?: NativeLayerHostFailure;
+  readonly requestId?:string;
   readonly pendingOperationId?:string|null;
   readonly attemptedSeq?:number;
   readonly resetToken?:number;
@@ -136,7 +139,9 @@ export function createNativeLayerPanelOwner(controller:NativeLayerPanelControlle
   const commandAllowed=(kind:ImageWorkspaceCommand['kind'])=>{if(!controller.capabilities.commands.includes(kind))throw denied('当前引擎未提供这项图层操作。');};
   const editAllowed=(edit:ImageEngineEdit)=>{commandAllowed('imageEdit');if(!controller.capabilities.imageEdits.includes(edit.kind))throw denied('当前引擎未提供这项图层编辑。');};
   const outcome=async(command:ImageWorkspaceCommand)=>{
-    const result=await controller.request(command);
+    const tracked=controller.requestTracked?.(command);
+    if(tracked)publish({...state,requestId:tracked.requestId});
+    const result=await(tracked?tracked.result:controller.request(command));
     if(result.kind==='settled'||result.kind==='recovered')return result.snapshot;
     if(result.kind==='rejected')throw new LayerHostError(result.error);
     throw new LayerHostError({code:result.kind,message:'图层操作尚未完成，已保留输入和目标。',effect:'retained'},result.operationId);
@@ -269,6 +274,31 @@ export function createNativeLayerPanelOwner(controller:NativeLayerPanelControlle
         const status=result.status;
         if(!status.recordId?.trim()||!['committed','notCommitted'].includes(status.decision)||!sameEdit(edit,status.edit)||!sameLayerNative(target.native,status.expectedNative)||target.generation!==status.expectedContextGeneration)throw new LayerHostError({code:'preview-resolution',message:'原文保管结算记录与保留输入不一致，不能释放义务。',effect:'unknown'});
         clear(true);
+      });
+    },
+    async inspectEdit(){
+      if(!state.requestId||state.previewId||!state.target||!retainedEdit)throw denied('没有可查询的图层编辑。');
+      commandAllowed('inspectRequest');const requestId=state.requestId,target=state.target,edit=clone(retainedEdit);
+      return run(async()=>{
+        const result=await controller.request({kind:'inspectRequest',requestId});
+        if(result.kind!=='requestStatus'||result.requestId!==requestId)throw outcomeFailure(result);
+        if(result.state==='committed'){
+          if(!controller.refreshSnapshot)throw denied('不能确认最新图层状态。');
+          await controller.refreshSnapshot();ackName(target,edit);advanceNames(target,controller.snapshot());clear(true);return true;
+        }
+        if(result.state==='notCommitted')publish({...state,failure:{code:'not-committed',message:'已确认这次图层编辑没有保存，可以重试或放弃。',effect:'none',input:{target,edit}}});
+        return false;
+      });
+    },
+    async resolveEdit(action:'retainAndDiscard'|'exportAndDiscard'){
+      if(!state.requestId||state.previewId||!state.target||!retainedEdit)throw denied('没有保留的图层编辑。');
+      commandAllowed('resolveEdit');const requestId=state.requestId,target=state.target,edit=clone(retainedEdit);
+      return run(async()=>{
+        const result=await controller.request({kind:'resolveEdit',requestId,action,original:{shotId:target.shotId,expectedNative:target.native,expectedContextGeneration:target.generation,edit}});
+        if(result.kind==='canceled')return false;
+        if(result.kind!=='editResolved'||result.requestId!==requestId||!result.original.recordId?.trim()||!['committed','notCommitted'].includes(result.decision))throw outcomeFailure(result);
+        if(!controller.refreshSnapshot)throw denied('不能确认结算后的图层状态。');
+        await controller.refreshSnapshot();ackName(target,edit);advanceNames(target,controller.snapshot());clear(true);return true;
       });
     },
     async flush(){

@@ -102,7 +102,7 @@ export function NativeCanvas(p:NativeCanvasProps){
  const shown=outline??p.selection;
  const selectionBounds=shown?bitmapSelectionBounds([...shown]):undefined;
  const rotationHandle=selectionBounds?bitmapSelectionRotationHandlePoint(selectionBounds,26/scale,p.height):undefined;
- return <div style={presentation?{position:"relative",background:"#000",paddingBlock:presentation.mode==='expanded'?`${75/p.width*100}%`:undefined}:undefined}><div className="stage-overlay flow-native-canvas" style={{position:'relative',width:'100%',aspectRatio:`${p.width}/${p.height}`,touchAction:'none'}}>
+ return <div style={presentation?{position:"relative",background:"#000",paddingBlock:presentation.mode==='expanded'?`${75/p.width*100}%`:undefined}:undefined}><div className="image-stage stage-overlay flow-native-canvas" style={{position:'relative',width:'100%',aspectRatio:`${p.width}/${p.height}`,touchAction:'none'}}>
   <canvas ref={canvas} style={{display:'block',width:'100%',height:'100%',position:'absolute',inset:0}}/>
   {status!=='ready'&&<div role="status" style={{position:'absolute',inset:0,display:'grid',placeItems:'center',background:'#25272a',color:'#aeb5bf'}}>正在准备画面…</div>}
   {p.onion}

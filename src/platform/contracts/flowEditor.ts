@@ -21,9 +21,11 @@ export type FlowOpenChoice =
   | { kind: 'project' }
   | { kind: 'import'; draft: FlowCreateDraftView }
   | {kind:'copy-upgrade';draft:import('./imageWorkspace.js').ImageWorkspaceUpgradeDraft};
-export type FlowLaunchResult = { canceled: true } | { canceled: false; kind?: 'legacy'; bootstrap: FlowEditorBootstrap } | Extract<import('./imageWorkspace.js').ImageWorkspaceLaunchResult,{canceled:false}>;
+export type FlowLaunchResult = { canceled: false; kind:'copy-upgrade'; draft:import('./imageWorkspace.js').ImageWorkspaceUpgradeDraft } | { canceled: true } | { canceled: false; kind?: 'legacy'; bootstrap: FlowEditorBootstrap } | Extract<import('./imageWorkspace.js').ImageWorkspaceLaunchResult,{canceled:false}>;
 export type FlowRecentProject = { id: string; name: string; available: boolean; /** Display-only shortest unique suffix; never used as a write path. */ target: string };
-export type FlowLauncherState = { engine?:'legacy'|'native'; recent: FlowRecentProject[]; open: boolean; currentId: string | null };
+export type FlowLauncherState = {
+  retainedProjects?:number;
+  initialIssue?:string; engine?:'legacy'|'native'; upgradeDraft?:import('./imageWorkspace.js').ImageWorkspaceUpgradeDraft; recent: FlowRecentProject[]; open: boolean; currentId: string | null };
 export type FlowRelocateResult = { canceled: true } | { ok: true } | { ok: false; message: string };
 
 export type FlowCreateSourceView =
@@ -83,6 +85,8 @@ export type FlowEditorBridge = {
   /** Rebind a missing recent target only after its project identity matches. */
   relocateRecent(id: string): Promise<FlowRelocateResult>;
   launch(target: FlowProjectTarget, currentOwner?: import('./imageWorkspace.js').ImageWorkspaceOwner): Promise<FlowLaunchResult>;
+  nativeWindowReady():Promise<void>;
+  recoverNativeProjects():Promise<{ok:boolean;remaining:number}>;
   finishNativeClose(owner: import('./imageWorkspace.js').ImageWorkspaceOwner, requestId: string, ticket: string): Promise<{ok:boolean;message?:string}>;
   /** Shows one folder picker and classifies it: an existing Flow project is held
    * as a one-shot pending target, image folders become a creation draft, and a

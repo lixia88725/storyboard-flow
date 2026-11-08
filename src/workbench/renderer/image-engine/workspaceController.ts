@@ -11,7 +11,7 @@ const sameStream=(a:ImageWorkspaceFrameIdentity,b:ImageWorkspaceFrameIdentity)=>
 export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initial:ImageWorkspaceBootstrap){
  if(!sameOwner(initial.snapshot.owner,initial.frames.owner))throw Error('Bootstrap frame owner mismatch');
  const owner={...initial.snapshot.owner};let snapshot=initial.snapshot,stream=initial.frames;
- let port:MessagePort|undefined,disposed=false,ready=false,requestSequence=0;
+ let port:MessagePort|undefined,disposed=false,ready=false;
  let fault:ImageWorkspaceFailure|undefined;
  let displayOverride:Extract<ImageWorkspaceEvent,{kind:'display'}>|undefined;
  let projected=snapshot;
@@ -36,16 +36,22 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
  async function request(command:ImageWorkspaceCommand){
   if(disposed)throw Error('Workspace controller is disposed');
   if(command.kind==='activateShot'&&activation?.shotId===command.shotId)return activation.work;
-  const work=bridge.request({owner,requestId:`ui-${++requestSequence}`,command}).then(outcome=>{
-   if('snapshot' in outcome)install(outcome.snapshot);
-   if(outcome.kind==='rejected')setFault(outcome.error);
-   return outcome;
-  });
+  const work=requestTracked(command).result;
   if(command.kind==='activateShot'){
    const item={shotId:command.shotId,work};activation=item;
    void work.finally(()=>{if(activation===item)activation=undefined;}).catch(()=>{});
   }
   return work;
+ }
+ function requestTracked(command:ImageWorkspaceCommand){
+  if(disposed)throw Error('Workspace controller is disposed');
+  const requestId=`ui-${crypto.randomUUID()}`,captured=structuredClone(command);
+  const result=Promise.resolve().then(()=>bridge.request({owner,requestId,command:captured})).then(outcome=>{
+   if('snapshot' in outcome)install(outcome.snapshot);
+   if(outcome.kind==='rejected')setFault(outcome.error);
+   return outcome;
+  });
+  return {requestId,result};
  }
  const capture=createImageInputCapture({
   input:(value,trace)=>bridge.input(owner,value,trace),
@@ -122,7 +128,7 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
   subscribe(listener:()=>void){listeners.add(listener);return()=>{listeners.delete(listener);};},
   onEvent(listener:(event:ImageWorkspaceEvent)=>void){eventListeners.add(listener);return()=>{eventListeners.delete(listener);};},
   frames:{view:displayView,subscribe(listener:(view:FrameView)=>void){displayListeners.add(listener);return()=>{displayListeners.delete(listener);};}},
-  request,
+  request,requestTracked,
   async resolveCaptured(captureId:string,action:'retainAndDiscard'|'exportAndDiscard'){
    await capture.waitTransportIdle();
    const record=capture.records().find(item=>item.captureId===captureId);

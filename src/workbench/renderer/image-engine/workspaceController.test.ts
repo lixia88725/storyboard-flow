@@ -19,7 +19,7 @@ function setup(){
 describe('readonly native workspace controller',()=>{
  it('rejects stale and foreign snapshots and sends only intent with Main owner',async()=>{
   const h=setup();h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:99,owner:{...owner,incarnation:'other'}}});expect(h.controller.snapshot().stateSeq).toBe(1);
-  await h.controller.request({kind:'undo'});expect(h.calls[0]).toEqual({owner,requestId:'ui-1',command:{kind:'undo'}});
+  await h.controller.request({kind:'undo'});expect(h.calls[0]).toEqual({owner,requestId:expect.stringMatching(/^ui-/),command:{kind:'undo'}});
   h.event({kind:'snapshot',snapshot:h.b.snapshot});expect(h.controller.snapshot().stateSeq).toBe(2);expect(h.controller.dispose()).toBe(true);
  });
  it('requires initialize, ACKs installed pixels, and conceals an old frame immediately on context change',()=>{
@@ -88,3 +88,11 @@ describe('readonly native workspace controller',()=>{
  });
 
 });
+
+it('returns the request identity before a lost transport reply, without retrying',async()=>{
+ const h=setup();let count=0;h.bridge.request=async request=>{count++;expect(request.requestId).toMatch(/^ui-/);throw Error('lost');};
+ const tracked=h.controller.requestTracked({kind:'undo'});expect(tracked.requestId).toMatch(/^ui-/);
+ await expect(tracked.result).rejects.toThrow('lost');expect(count).toBe(1);h.controller.dispose();
+});
+
+it('does not reuse a request identity when a controller is recreated for the same Main owner',async()=>{const a=setup(),b=setup();const first=a.controller.requestTracked({kind:'undo'}),second=b.controller.requestTracked({kind:'undo'});expect(first.requestId).not.toBe(second.requestId);await Promise.all([first.result,second.result]);a.controller.dispose();b.controller.dispose();});

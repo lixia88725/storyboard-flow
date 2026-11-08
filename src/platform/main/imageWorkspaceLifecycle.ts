@@ -33,7 +33,7 @@ export function createImageWorkspaceLifecycle(options:{
   async recoverRetained(){
    if(busy)throw Error('项目正在切换。');busy=true;
    try{for(const [runtime,state] of retained){
-    if(state==='certified'){await dispose(runtime);continue;}
+    if(state==='certified'){if(runtime===current?.runtime&&closingTicket)continue;await dispose(runtime);continue;}
     const recovered=await invoke(runtime,{kind:'recover'});
     if(recovered.kind!=='recovered'&&recovered.kind!=='settled')throw Error('候选项目仍有未解决操作，已保留现场。');
     await closeCandidate(runtime);

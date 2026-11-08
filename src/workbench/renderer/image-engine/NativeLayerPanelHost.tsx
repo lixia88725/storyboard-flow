@@ -60,6 +60,8 @@ export function NativeLayerPanelHost({controller,image,preview,canBeginGesture,d
         <button type="button" onClick={()=>{void owner.retryOpacityKnownNoEffect().catch(()=>{});}}>重试透明度提交</button>
         <button type="button" onClick={()=>{void owner.cancelRetainedOpacity().catch(()=>{});}}>回滚透明度预览</button>
       </>:<><p style={{margin:0}}>原生结果尚未确认，输入和原始目标已保留。</p>
+        {!host.previewId&&host.requestId&&controller.capabilities.commands.includes('inspectRequest')&&<button type="button" onClick={()=>{void owner.inspectEdit().catch(()=>{});}}>查询这次图层编辑</button>}
+        {!host.previewId&&host.requestId&&controller.capabilities.commands.includes('resolveEdit')&&<><button type="button" onClick={()=>{void owner.resolveEdit('retainAndDiscard').catch(()=>{});}}>保管原始输入并结算</button><button type="button" onClick={()=>{void owner.resolveEdit('exportAndDiscard').catch(()=>{});}}>导出原始输入并结算</button></>}
         {host.previewId&&controller.capabilities.commands.includes('inspectImagePreview')&&<button type="button" onClick={()=>{void owner.inspectPreview().catch(()=>{});}}>查询预览结算</button>}
         {host.previewId&&controller.capabilities.commands.includes('resolveImagePreview')&&<><button type="button" onClick={()=>{void owner.resolvePreview('retainAndDiscard').catch(()=>{});}}>保管原始输入并结算</button><button type="button" onClick={()=>{void owner.resolvePreview('exportAndDiscard').catch(()=>{});}}>导出原始输入并结算</button></>}
       </>}

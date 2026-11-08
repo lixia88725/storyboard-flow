@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('flowEditor', {
   removeRecent: id => ipcRenderer.invoke('flow-editor:remove-recent', id),
   relocateRecent: id => ipcRenderer.invoke('flow-editor:relocate-recent', id),
   launch: (target, currentOwner) => currentOwner ? ipcRenderer.invoke('flow-editor:launch', target, currentOwner) : ipcRenderer.invoke('flow-editor:launch', target),
+  nativeWindowReady: () => ipcRenderer.invoke('flow-editor:native-window-ready'),
+  recoverNativeProjects: () => ipcRenderer.invoke('flow-editor:recover-native-projects'),
   finishNativeClose: (owner, requestId, ticket) => ipcRenderer.invoke('flow-editor:finish-native-close', owner, requestId, ticket),
   chooseOpen: () => ipcRenderer.invoke('flow-editor:choose-open'),
   upgradeChooseDestination: draftId => ipcRenderer.invoke('flow-editor:upgrade-choose-destination', draftId),

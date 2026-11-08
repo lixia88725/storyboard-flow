@@ -109,5 +109,14 @@
   "src/workbench/renderer/image-engine/nativeLayerPanelHostModel.test.ts",
   "src/drawing/renderer/image-engine/selectionGesture.test.ts",
   "src/workbench/renderer/image-engine/transformPreviewOwner.test.ts",
-  "src/project-files/main/image-engine/workspaceOutput.test.ts"
+  "src/project-files/main/image-engine/workspaceOutput.test.ts",
+  "src/platform/main/imageWorkspaceWindow.test.ts",
+  "src/platform/main/flowProjectLauncherNative.test.ts",
+  "src/platform/main/nativeProjectEntry.test.ts",
+  "src/project-files/main/image-engine/workspaceFrames.test.ts",
+  "src/project-files/main/image-engine/workspaceBudget.test.ts",
+  "src/project-files/main/image-engine/workspaceProbe.test.ts",
+  "src/project-files/main/image-engine/workspaceRecords.test.ts",
+  "src/project-files/main/image-engine/workspaceDisplay.test.ts",
+  "src/project-files/main/image-engine/nativeSessionEdit.test.ts"
 ]
