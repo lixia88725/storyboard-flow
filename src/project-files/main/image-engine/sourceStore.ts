@@ -174,7 +174,7 @@ function validateManifest(v: unknown, importId: string, limits: SourceStoreLimit
 
 const writers = new Map<string, symbol>();
 
-async function openStore(options: SourceStoreOptions, sources?: readonly SourceInput[]): Promise<SourceImportStore> {
+async function openStore(options: SourceStoreOptions, sources?: readonly SourceInput[], verifyOriginalsOnOpen=true): Promise<SourceImportStore> {
   if(!options || typeof options!=='object') fail('invalid-input','Source-store options are required');
   validPath(options.root);
   if(typeof options.importId!=='string' || !idPattern.test(options.importId)) fail('invalid-input','Invalid import ID');
@@ -323,7 +323,7 @@ async function openStore(options: SourceStoreOptions, sources?: readonly SourceI
     } else {
       bindings.set(batch,await directory(batch,false)); bindings.set(history,await directory(history,false));
       const bytes=await fileBytes(head,META_CAP); manifest=validateManifest(JSON.parse(bytes.toString('utf8')),importId,limits);headDigest=sha(bytes);paused=manifest.phase==='cancelled';
-      for(const item of manifest.items) if(item.state==='retained') await verifyObject(item.retained!);
+      if(verifyOriginalsOnOpen)for(const item of manifest.items) if(item.state==='retained') await verifyObject(item.retained!);
     }
   } catch(e) {
     if(writers.get(root)===writer) writers.delete(root);
@@ -380,6 +380,14 @@ export const createSourceBackedImport = (options: SourceStoreOptions & { sources
   return openStore(options,options.sources);
 };
 export const openSourceBackedImport = (options: SourceStoreOptions): Promise<SourceImportStore> => openStore(options);
+
+/** Main already holds root writer authority. Opening this writer validates only
+ * metadata, not a batch-wide readiness claim. Existing object()/retain() still
+ * fully verify the particular retained object before returning it. The default
+ * openSourceBackedImport keeps its historical eager full-object audit. */
+export async function openSourceBackedImportForTargetUse(options:SourceStoreOptions):Promise<{store:SourceImportStore;verification:'manifest-only'}>{
+ return{store:await openStore(options,undefined,false),verification:'manifest-only'};
+}
 
 /** Readonly metadata inspection for Main's lazy registry. This validates the
  * complete existing manifest and directory identities, but deliberately does

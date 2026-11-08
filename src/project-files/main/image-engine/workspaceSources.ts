@@ -3,7 +3,7 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import type {SourceImageRef} from '../../../platform/contracts/imageProject.js';
 import type {WorkspaceOutputBudget} from './workspaceOutputContract.js';
-import {createSourceBackedImport,openSourceBackedImport,inspectSourceBackedImport,inspectImportSource,type SourceImportManifest,type SourceImportItem,type SourceInput,type SourceIdentity,type SourceImportStore,type RetainedSourceObject,type SourceStoreLimits} from './sourceStore.js';
+import {createSourceBackedImport,openSourceBackedImportForTargetUse,inspectSourceBackedImport,inspectImportSource,type SourceImportManifest,type SourceImportItem,type SourceInput,type SourceImportStore,type RetainedSourceObject,type SourceStoreLimits} from './sourceStore.js';
 import {publishDirectoryExclusive,syncDirectory} from '../../../platform/main/platform/index.js';
 import {assertPhysicalWorkspaceWriterTargets} from '../workspacePhysicalWriterGate.js';
 import {canonicalUtf8,sha256Hex} from '../persistence/canonicalJson.js';
@@ -41,7 +41,7 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
  const admit=<T>(job:()=>Promise<T>)=>closing||closed?Promise.reject(new WorkspaceSourcesError('closed','Source registry is closing')):enqueue(job);
  const measure=async()=>{await bind();let total=0,count=0;const walk=async(at:string,depth:number):Promise<void>=>{if(depth>32)fail('Source inventory depth exceeded');let names:string[];try{names=await fs.readdir(at);}catch(e){if(missing(e))return;throw e;}await directory(at);for(const name of names){if(++count>1000000)fail('Source inventory entry budget exceeded');const file=path.join(at,name),st=await fs.lstat(file,{bigint:true});if(st.isSymbolicLink())fail('Source inventory contains an alias');if(st.isDirectory())await walk(file,depth+1);else if(st.isFile()){total+=Number(st.size);if(!Number.isSafeInteger(total)||total>limits.maxStoredBytes)throw new WorkspaceSourcesError('resource-limit','Source actual storage budget exceeded','retained');}else fail('Unknown source inventory entry');}};for(const at of[originals,imports,stages])await walk(at,0);return total;};
  const closeCurrent=async()=>{if(current){try{await current.store.close();current=undefined;}catch(e){throw new WorkspaceSourcesError('recovery-pending','Source writer close remains unresolved: '+(e instanceof Error?e.message:String(e)),'unknown');}}};
- const use=async(id:string)=>{requireManifest(id);await bind();if(current?.id===id)return current.store;await closeCurrent();const store=await openSourceBackedImport({root,importId:id,limits});current={id,store};remember(store.snapshot());return store;};
+ const use=async(id:string)=>{requireManifest(id);await bind();if(current?.id===id)return current.store;await closeCurrent();const opened=await openSourceBackedImportForTargetUse({root,importId:id,limits}),store=opened.store;current={id,store};remember(store.snapshot());return store;};
  const refresh=async(id:string)=>{const value=await inspectSourceBackedImport({root,importId:id,limits});return remember(value.manifest);};
  const reconcile=async(id:string)=>{
   if(!unknown.size)return;await bind();if([...unknown.values()].some(item=>item.importId!==id))throw new WorkspaceSourcesError('recovery-pending','Resume the source import with retained expenditure first','retained');await closeCurrent();
@@ -64,6 +64,9 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
  const matching=(m:SourceImportManifest,sources:readonly SourceInput[])=>sources.length===m.items.length&&sources.every((s,i)=>{const item=m.items[i];return s&&s.id===item.id&&s.sourcePath===item.sourcePath&&s.formatHint===item.formatHint&&(s.expected===undefined||same(s.expected,item.expected));});
  const resolveObject=async(ref:SourceImageRef)=>{
   await bind();checkRef(ref);if(unknown.size)throw new WorkspaceSourcesError('recovery-pending','Source expenditure remains unknown','unknown');const key=ref.importId+'\n'+ref.itemId,cached=objectCache.get(key);
+  // This is reuse of a bound receipt, not a new content audit. The native input
+  // consumer must read a bound handle and compare actual byteLength/SHA with the
+  // receipt (nativeSessionAdapter.openRetained does both before native.open).
   if(cached){const now=await inspectImportSource(cached.path);if(same(now,cached.identity))return clone(cached);objectCache.delete(key);}
   const store=await use(ref.importId),object=await store.object(ref.itemId);await bind();objectCache.set(key,clone(object));return clone(object);
  };
