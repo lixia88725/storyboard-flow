@@ -42,7 +42,7 @@ export type ProjectHeadV2 = {
 export type HydrationRecord = {
   schema: 'flow.image-hydration'; version: 1;
   source: SourceImageRef & { digest: string; byteLength: number };
-  hostBuildDigest: string; optionsHash: string; native: NativeImageRef; operationId: string;
+  hostBuildDigest: string; optionsHash: string; native: NativeImageRef; operationId: string;acceptance?:'detached';
 };
 export type NativeSettlement = {
   schema: 'flow.native-settlement'; version: 1; commitHash: string;

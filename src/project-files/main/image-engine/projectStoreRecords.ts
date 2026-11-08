@@ -68,7 +68,7 @@ export function commitRecord(v:unknown):ProjectCommitV2{
   return {...clone(v as unknown as ProjectCommitV2),after};
 }
 export function hydrationRecord(v:unknown):HydrationRecord{
-  if(!shape(v,['schema','version','source','hostBuildDigest','optionsHash','native','operationId'])||v.schema!=='flow.image-hydration'||v.version!==1||!shape(v.source,['importId','itemId','interpretationId','digest','byteLength'])||!validSourceImageRef({importId:v.source.importId,itemId:v.source.itemId,interpretationId:v.source.interpretationId})||!imageHash(v.source.digest)||!Number.isSafeInteger(v.source.byteLength)||Number(v.source.byteLength)<0||!imageHash(v.hostBuildDigest)||!imageHash(v.optionsHash)||!validNativeImageRef(v.native)||!token(v.operationId))bad('Invalid hydration record');
+  if(!shape(v,['schema','version','source','hostBuildDigest','optionsHash','native','operationId'],['acceptance'])||v.acceptance!==undefined&&v.acceptance!=='detached'||v.schema!=='flow.image-hydration'||v.version!==1||!shape(v.source,['importId','itemId','interpretationId','digest','byteLength'])||!validSourceImageRef({importId:v.source.importId,itemId:v.source.itemId,interpretationId:v.source.interpretationId})||!imageHash(v.source.digest)||!Number.isSafeInteger(v.source.byteLength)||Number(v.source.byteLength)<0||!imageHash(v.hostBuildDigest)||!imageHash(v.optionsHash)||!validNativeImageRef(v.native)||!token(v.operationId))bad('Invalid hydration record');
   return clone(v as unknown as HydrationRecord);
 }
 export function operationIntent(v:unknown):ImageOperationIntent{
