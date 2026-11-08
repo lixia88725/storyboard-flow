@@ -756,6 +756,15 @@ formats still use PhotoCraft Document encoding with layered TIFF, alpha
 preservation and linked-file reads disabled; warnings and opaque-block loss
 reject. PSD uses XMP only: existing `metadata.text` loss is still rejected, never
 silently dropped. A native readback also requires exact XMP bytes.
+The host explicitly enables `ExportOptions.tiff_force_layer_data` from the fixed
+`patches/hosted-v1.json` IO patch. This writes a real tag 37724 layer record even
+for a single transparency-locked Background, retaining its name and lock flags;
+it does not relabel flattened bytes as layered output. The upstream option
+default remains false. Missing layer data, warnings and opaque-block loss still
+reject. `imageEngineSingleLayerOutput.test.ts` checks retained PNG/JPEG hydration,
+background output and re-entry with independent exact merged/layer pixels,
+lock flags, actual layer-record count and metadata.
+
 
 `output_metadata` native tests exercise COW, unknown XML, schema and failure
 bounds. `imageEngineOutputMetadata.test.ts` uses the real host and independent

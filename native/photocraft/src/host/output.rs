@@ -130,19 +130,13 @@ pub(super) fn encode(
     }
     let options = photocraft_io::ExportOptions {
         tiff_layers: true,
+        tiff_force_layer_data: true,
         tiff_transparency: Some(true),
         preserve_alpha: true,
         read_linked_files: false,
         document_path: None,
         ..Default::default()
     };
-    if matches!(format, OutputFormat::Tiff) && !photocraft_io::tiff_layers::would_write_layers(doc)
-    {
-        return Err(Error::none(
-            "unsupported",
-            "layered TIFF required; single locked Background flat fallback refused",
-        ));
-    }
     let result = photocraft_io::encode_with(
         doc,
         format.ext(),
@@ -190,6 +184,16 @@ pub(super) fn encode(
     if bytes.len() as u64 != length {
         return Err(Error::none("export", "encoded length mismatch"));
     }
+    if matches!(format, OutputFormat::Tiff)
+        && photocraft_codecs::tiff_photoshop_tags(&bytes)
+            .1
+            .is_none_or(|data| data.is_empty())
+    {
+        return Err(Error::none(
+            "export-loss",
+            "explicit TIFF layer data missing; flat fallback refused",
+        ));
+    }
     let options = photocraft_io::ImportOptions {
         psd_max_pixel_bytes: 512 << 20,
         flat_max_pixel_bytes: 256 << 20,
@@ -219,7 +223,7 @@ pub(super) fn encode(
 mod tests {
     use super::*;
     #[test]
-    fn lossy_metadata_warning_and_flat_tiff_fallback_are_refused() {
+    fn lossy_metadata_warning_refuses_and_locked_single_raster_retains_explicit_tiff_layer_data() {
         let mut doc = Document::new("synthetic", Size::new(8, 4), ColorMode::Rgb, SampleType::U8);
         doc.layers
             .push(Layer::raster("Drawing", doc.pixel_format()));
@@ -230,8 +234,43 @@ mod tests {
         assert_eq!(warning.code, "export-loss");
         doc.metadata.text.clear();
         doc.layers[0].locks.transparency = true;
-        let flat = encode(&doc, &OutputFormat::Tiff, wire::MAX_PAYLOAD).unwrap_err();
-        assert_eq!(flat.code, "unsupported");
+        doc.layers[0].locks.position = true;
+        assert!(!photocraft_io::tiff_layers::would_write_layers(&doc));
+        let before = doc.clone();
+        let (receipt, bytes) = encode(&doc, &OutputFormat::Tiff, wire::MAX_PAYLOAD).unwrap();
+        assert_eq!(receipt["layerCount"], 1);
+        assert_eq!(receipt["layered"], true);
+        assert!(
+            photocraft_codecs::tiff_photoshop_tags(&bytes)
+                .1
+                .is_some_and(|data| !data.is_empty())
+        );
+        let (read, damaged) =
+            photocraft_io::import_for_open("read.tiff", &bytes, &Default::default()).unwrap();
+        assert!(!damaged);
+        assert!(read.warnings.is_empty());
+        assert_eq!(read.document.layers[0].name, doc.layers[0].name);
+        assert_eq!(read.document.layers[0].locks, doc.layers[0].locks);
+        assert_eq!(doc, before);
+        // Upstream's default remains unchanged; only the host opts in.
+        let ordinary = photocraft_io::encode_with(
+            &doc,
+            "tiff",
+            &photocraft_io::ExportOptions {
+                tiff_layers: true,
+                ..Default::default()
+            },
+            &photocraft_raster::Interrupt::NONE,
+        )
+        .unwrap()
+        .encoded
+        .into_bytes()
+        .unwrap();
+        assert!(
+            photocraft_codecs::tiff_photoshop_tags(&ordinary)
+                .1
+                .is_none()
+        );
     }
 }
 
