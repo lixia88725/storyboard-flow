@@ -83,7 +83,9 @@ export type WorkspaceOutputOptions = {
 };
 export type WorkspaceOutput = {
  names(project:ProjectV2):Promise<{shotId:string;name:string;location:WorkspaceOutputLocation}[]>;
- inspect(project:ProjectV2):Promise<WorkspaceOutputObservation[]>;
+ /** Forced live managed IDs expose a stable current observation even when bytes
+  * equal the physical baseline, e.g. after a superseded Main Refresh decision. */
+ inspect(project:ProjectV2,options?:{includeShotIds?:readonly string[]}):Promise<WorkspaceOutputObservation[]>;
  /** Rechecks exact observation and returns a Main-private, settled-identity input.
   * Main retains it through Sources and compares actual object SHA/length. */
  observeSource(observation:WorkspaceOutputObservation,options?:{itemId?:string}):Promise<SourceInput>;
