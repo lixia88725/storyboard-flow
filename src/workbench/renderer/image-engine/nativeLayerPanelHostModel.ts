@@ -120,12 +120,13 @@ export function createNativeLayerPanelOwner(controller:NativeLayerPanelControlle
   let state:NativeLayerHostState={revision:0,phase:'idle'};
   let inFlight:Promise<unknown>|undefined;
   let retainedEdit:ImageEngineEdit|undefined;
+  let retainedSelection:string|undefined;
   let previewImage:ImageWorkspaceImageView|undefined;
   let retainedImage:ImageWorkspaceImageView|undefined;
   const names=new Map<string,{target:LayerPanelTarget;image:ImageWorkspaceImageView;layerId:string;name:string;composing:boolean;version:number}>();let nameSerial=0;
   const listeners=new Set<()=>void>();
   const publish=(next:Omit<NativeLayerHostState,'revision'>)=>{state=freeze({...clone(next),nameDrafts:[...names.values()].map(({image:_image,...draft})=>clone(draft)),revision:state.revision+1});if(controller.inputPausedExcept)controller.setInputPause?.('layer',state.phase!=='idle'||names.size>0);for(const listener of listeners)try{listener();}catch{/* Presentation observers only. */}};
-  const clear=(resetPanel=false)=>{const resetToken=(state.resetToken??0)+(resetPanel?1:0);retainedEdit=undefined;previewImage=undefined;retainedImage=undefined;publish({phase:'idle',resetToken});};
+  const clear=(resetPanel=false)=>{const resetToken=(state.resetToken??0)+(resetPanel?1:0);retainedEdit=undefined;retainedSelection=undefined;previewImage=undefined;retainedImage=undefined;publish({phase:'idle',resetToken});};
   const safeStart=()=>{
     const capture=controller.capture.state();
     if(state.phase!=='idle'||inFlight||capture.activeId!==null||capture.pending||capture.blocked||(controller.inputPausedExcept?controller.inputPausedExcept('layer'):capture.paused))throw denied('请先完成画布输入或之前的图层操作。');
@@ -160,6 +161,7 @@ export function createNativeLayerPanelOwner(controller:NativeLayerPanelControlle
     snapshot:()=>state,
     subscribe(listener:()=>void){listeners.add(listener);return()=>{listeners.delete(listener);};},
     busy:()=>state.phase!=='idle'||names.size>0,
+    canResolveEdit:()=>!!retainedEdit&&!state.previewId,
     nameDraft(image:ImageWorkspaceImageView,event:NativeLayerNameDraftEvent){
       const key=JSON.stringify([image.imageId,event.layerId]),previous=names.get(key);
       if(event.action==='discard'){names.delete(key);publish({...state});return;}
@@ -181,7 +183,7 @@ export function createNativeLayerPanelOwner(controller:NativeLayerPanelControlle
     async select(image:ImageWorkspaceImageView,layerId:string){
       safeStart();commandAllowed('selectLayer');const target=captureLayerPanelTarget(controller,image);
       if(!image.layers.some(l=>l.id===layerId))throw denied('图层已不存在。');
-      publish({phase:'selecting',target});
+      retainedSelection=layerId;publish({phase:'selecting',target});
       return run(async()=>{try{assertCurrent(controller,target);const next=await outcome({kind:'selectLayer',shotId:target.shotId,layerId,expectedContextGeneration:target.generation});advanceNames(target,next);clear();}catch(error){if(failureOf(error).effect==='none'){publish({phase:'idle',failure:{...failureOf(error),input:{layerId,target}}});throw error;}return retain(error,{layerId,target});}});
     },
     async edit(image:ImageWorkspaceImageView,edit:ImageEngineEdit){
@@ -277,15 +279,22 @@ export function createNativeLayerPanelOwner(controller:NativeLayerPanelControlle
       });
     },
     async inspectEdit(){
-      if(!state.requestId||state.previewId||!state.target||!retainedEdit)throw denied('没有可查询的图层编辑。');
-      commandAllowed('inspectRequest');const requestId=state.requestId,target=state.target,edit=clone(retainedEdit);
+      if(!state.requestId||state.previewId||!state.target)throw denied('没有可查询的图层操作。');
+      commandAllowed('inspectRequest');const requestId=state.requestId,target=state.target,edit=retainedEdit?clone(retainedEdit):undefined;
       return run(async()=>{
         const result=await controller.request({kind:'inspectRequest',requestId});
         if(result.kind!=='requestStatus'||result.requestId!==requestId)throw outcomeFailure(result);
-        if(result.state==='committed'){
+        if(result.state==='completed'&&!edit){
+          const proof=result.completion;
+          if(!proof||proof.commandKind!=='selectLayer'||!proof.contextToken||proof.shotId!==target.shotId||proof.layerId!==retainedSelection||proof.contextGeneration===null||proof.outcome!=='completed')throw denied('图层选择回执与原请求不一致。');
           if(!controller.refreshSnapshot)throw denied('不能确认最新图层状态。');
-          await controller.refreshSnapshot();ackName(target,edit);advanceNames(target,controller.snapshot());clear(true);return true;
+          await controller.refreshSnapshot();advanceNames(target,controller.snapshot());clear(true);return true;
         }
+        if(result.state==='committed'&&edit){
+          if(!controller.refreshSnapshot)throw denied('不能确认最新图层状态。');
+          await controller.refreshSnapshot();if(edit)ackName(target,edit);advanceNames(target,controller.snapshot());clear(true);return true;
+        }
+        if(result.state==='notCommitted'&&!edit){if(result.completion?.commandKind!=='selectLayer'||result.completion.outcome!=='rejected')throw denied('图层选择拒绝回执与原请求不一致。');if(!controller.refreshSnapshot)throw denied('不能确认图层状态。');await controller.refreshSnapshot();clear(true);return true;}
         if(result.state==='notCommitted')publish({...state,failure:{code:'not-committed',message:'已确认这次图层编辑没有保存，可以重试或放弃。',effect:'none',input:{target,edit}}});
         return false;
       });

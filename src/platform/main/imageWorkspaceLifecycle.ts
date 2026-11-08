@@ -12,6 +12,7 @@ export function createImageWorkspaceLifecycle(options:{
 }){
  let current:ImageWorkspaceTarget|null=null,busy=false;
  let closingTicket:string|undefined;
+ let bindingPending=false;
  const retained=new Map<ImageWorkspaceRuntime,'unclosed'|'certified'>();
  const invoke=(runtime:ImageWorkspaceRuntime,command:ImageWorkspaceCommand)=>runtime.request({owner:runtime.open().snapshot.owner,requestId:`lifecycle-${randomUUID()}`,command});
  const dispose=async(runtime:ImageWorkspaceRuntime)=>{try{await runtime.dispose();retained.delete(runtime);return true;}catch(error){retained.set(runtime,'certified');options.report(error);return false;}};
@@ -42,7 +43,7 @@ export function createImageWorkspaceLifecycle(options:{
   async launch(plan:ImageWorkspaceProjectPlan,owner?:ImageWorkspaceOwner):Promise<ImageWorkspaceBootstrap>{
    if(busy)throw Error('项目正在切换。');authorized(owner);
    if(closingTicket)throw Error('项目正在完成资源释放，不能重新打开或切换。');
-   if(current?.root===plan.root)return current.runtime.open();
+   if(current?.root===plan.root){if(bindingPending){options.publish(current);bindingPending=false;}return current.runtime.open();}
    if(retained.size)throw Error('仍有未完成的项目资源处理，暂不能切换。');
    busy=true;const previous=current;let ticket:string|undefined,candidate:ImageWorkspaceRuntime|undefined,previousClosed=false;
    try{
@@ -52,8 +53,8 @@ export function createImageWorkspaceLifecycle(options:{
     const bootstrap=candidate.open();
     if(previous){const closed=await invoke(previous.runtime,{kind:'certifyClose',ticket:ticket!});if(closed.kind!=='closed')throw Error('原项目尚未确认关闭。');previousClosed=true;}
     current={kind:'native',root:plan.root,runtime:candidate};candidate=undefined;
-    options.publish(current);
-    if(previous)await dispose(previous.runtime);
+    bindingPending=true;
+    try{options.publish(current);bindingPending=false;}finally{if(previous)await dispose(previous.runtime);}
     return bootstrap;
    }catch(error){
     if(candidate)try{await closeCandidate(candidate);}catch(cleanup){options.report(cleanup);}
@@ -73,7 +74,7 @@ export function createImageWorkspaceLifecycle(options:{
     // A certified Session can no longer resume. Retain its owner until resource
     // release succeeds, and retry release without certifying the Session twice.
     if(!await dispose(target.runtime))return false;
-    current=null;closingTicket=undefined;options.publish(null);return true;
+    current=null;closingTicket=undefined;bindingPending=false;options.publish(null);return true;
    }finally{busy=false;}
   },
  };

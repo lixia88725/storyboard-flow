@@ -45,8 +45,8 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
  }
  function requestTracked(command:ImageWorkspaceCommand){
   if(disposed)throw Error('Workspace controller is disposed');
-  const requestId=`ui-${crypto.randomUUID()}`,captured=structuredClone(command);
-  const result=Promise.resolve().then(()=>bridge.request({owner,requestId,command:captured})).then(outcome=>{
+  const requestId=`ui-${crypto.randomUUID()}`,captured=structuredClone(command),contextToken=snapshot.context.token;
+  const result=Promise.resolve().then(()=>bridge.request({owner,requestId,command:captured,...(captured.kind==='activateShot'?{contextToken}:{})})).then(outcome=>{
    if('snapshot' in outcome)install(outcome.snapshot);
    if(outcome.kind==='rejected')setFault(outcome.error);
    return outcome;

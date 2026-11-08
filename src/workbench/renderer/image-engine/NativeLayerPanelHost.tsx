@@ -53,7 +53,7 @@ export function NativeLayerPanelHost({controller,image,preview,canBeginGesture,d
       allowedEdits={allowedEdits} disabledReason={gateReason} canBeginGesture={()=>!gateReason&&!owner.busy()&&canBeginGesture?.()!==false}/>
     {host.failure&&<div role="alert" style={{padding:'.6em',fontSize:'.8em',color:'#ffd0b9',background:'#392922',overflowWrap:'anywhere'}}>
       <p style={{margin:'0 0 .4em'}}>{host.failure.message}</p>
-      {host.failure.effect==='none'&&!host.previewId?<>
+      {host.failure.effect==='none'&&host.phase==='idle'?<p>可以重新选择图层。</p>:host.failure.effect==='none'&&!host.previewId?<>
         <button type="button" onClick={()=>{void owner.retryKnownNoEffect().catch(()=>{});}}>重试保留的图层操作</button>
         <button type="button" onClick={()=>owner.discardKnownNoEffect()}>放弃未提交的图层操作</button>
       </>:host.previewId&&host.failure.effect==='none'?<>
@@ -61,7 +61,7 @@ export function NativeLayerPanelHost({controller,image,preview,canBeginGesture,d
         <button type="button" onClick={()=>{void owner.cancelRetainedOpacity().catch(()=>{});}}>回滚透明度预览</button>
       </>:<><p style={{margin:0}}>原生结果尚未确认，输入和原始目标已保留。</p>
         {!host.previewId&&host.requestId&&controller.capabilities.commands.includes('inspectRequest')&&<button type="button" onClick={()=>{void owner.inspectEdit().catch(()=>{});}}>查询这次图层编辑</button>}
-        {!host.previewId&&host.requestId&&controller.capabilities.commands.includes('resolveEdit')&&<><button type="button" onClick={()=>{void owner.resolveEdit('retainAndDiscard').catch(()=>{});}}>保管原始输入并结算</button><button type="button" onClick={()=>{void owner.resolveEdit('exportAndDiscard').catch(()=>{});}}>导出原始输入并结算</button></>}
+        {!host.previewId&&host.requestId&&owner.canResolveEdit()&&controller.capabilities.commands.includes('resolveEdit')&&<><button type="button" onClick={()=>{void owner.resolveEdit('retainAndDiscard').catch(()=>{});}}>保管原始输入并结算</button><button type="button" onClick={()=>{void owner.resolveEdit('exportAndDiscard').catch(()=>{});}}>导出原始输入并结算</button></>}
         {host.previewId&&controller.capabilities.commands.includes('inspectImagePreview')&&<button type="button" onClick={()=>{void owner.inspectPreview().catch(()=>{});}}>查询预览结算</button>}
         {host.previewId&&controller.capabilities.commands.includes('resolveImagePreview')&&<><button type="button" onClick={()=>{void owner.resolvePreview('retainAndDiscard').catch(()=>{});}}>保管原始输入并结算</button><button type="button" onClick={()=>{void owner.resolvePreview('exportAndDiscard').catch(()=>{});}}>导出原始输入并结算</button></>}
       </>}

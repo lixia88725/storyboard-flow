@@ -67,3 +67,11 @@ describe('native project lifecycle',()=>{
  });
 
 });
+
+it('releases the certified old owner even if UI binding fails and retries binding without reopening',async()=>{
+ const log:string[]=[],a=runtime('a',log),b=runtime('b',log);let fail=true,opens=0;
+ const life=createImageWorkspaceLifecycle({open:async p=>{opens++;return p.identity.id==='a'?a.r:b.r;},publish:t=>{if(t?.runtime===b.r&&fail){fail=false;throw Error('binding failed');}},report:()=>{}});
+ await life.launch(plan('a'));await expect(life.launch(plan('b'),a.owner)).rejects.toThrow('binding failed');
+ expect(life.current()?.runtime).toBe(b.r);expect(log).toContain('a:dispose');expect(log).not.toContain('a:resume');
+ await life.launch(plan('b'),b.owner);expect(opens).toBe(2);expect(await life.certifyClose(b.owner,'b')).toBe(true);
+});

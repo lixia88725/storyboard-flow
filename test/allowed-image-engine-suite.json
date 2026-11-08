@@ -10,5 +10,6 @@
   "src/platform/main/imageEngineProductPreview.test.ts",
   "src/project-files/main/image-engine/nativeSessionEditNative.test.ts",
   "src/project-files/main/image-engine/workspaceRuntime.test.ts",
-  "src/project-files/main/image-engine/workspaceCreation.test.ts"
+  "src/project-files/main/image-engine/workspaceCreation.test.ts",
+  "src/platform/main/imageEngineDetached.test.ts"
 ]

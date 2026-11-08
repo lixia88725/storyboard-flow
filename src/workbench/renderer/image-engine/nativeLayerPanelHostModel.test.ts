@@ -14,7 +14,7 @@ function harness(){
     {id:'1',parentId:null,name:'First',kind:'raster',visible:true,locked:false,opacity:1,blendMode:'normal',editable:true,capabilities:{paint:true,properties:true,structure:true}},
     {id:'2',parentId:null,name:'Second',kind:'group',visible:true,locked:false,opacity:.5,blendMode:'opaque',editable:false,capabilities:{paint:false,properties:true,structure:true}},
   ]};
-  let state:ImageWorkspaceSnapshot={owner:ownerId,stateSeq:1,session:{sessionId:'session',incarnation:'incarnation',eventSeq:1,phase:'active',pending:0,undoDepth:0,redoDepth:0,project:{schema:'storyboard-flow.project',version:2,id:'p',name:'P',revision:1,images:{img:{id:'img',content:image.content}},shots:[{id:'shot',imageId:'img',name:'Shot',scriptText:''}],parkedShots:[],dialogues:[]}},context:{shotId:'shot',imageId:'img',layerId:'1',generation:7,selection:null,floating:null},images:{img:image},files:{projectRootLabel:'Synthetic',folderName:'Synthetic',status:'current',savedRevision:1,outputPending:false,outputNames:[]}};
+  let state:ImageWorkspaceSnapshot={owner:ownerId,stateSeq:1,session:{sessionId:'session',incarnation:'incarnation',eventSeq:1,phase:'active',pending:0,undoDepth:0,redoDepth:0,project:{schema:'storyboard-flow.project',version:2,id:'p',name:'P',revision:1,images:{img:{id:'img',content:image.content}},shots:[{id:'shot',imageId:'img',name:'Shot',scriptText:''}],parkedShots:[],dialogues:[]}},context:{token:'context-1',shotId:'shot',imageId:'img',layerId:'1',generation:7,selection:null,floating:null},images:{img:image},files:{projectRootLabel:'Synthetic',folderName:'Synthetic',status:'current',savedRevision:1,outputPending:false,outputNames:[]}};
   const capture={activeId:null as number|null,pending:0,blocked:false,paused:false};
   const calls:ImageWorkspaceCommand[]=[];
   let respond:(command:ImageWorkspaceCommand)=>Promise<ImageWorkspaceOutcome>=async()=>({kind:'settled',operationId:'op',snapshot:state});
@@ -262,4 +262,10 @@ describe('exact request recovery for ordinary layer edits',()=>{
     else{await expect(owner.resolveEdit('retainAndDiscard')).rejects.toThrow();expect(owner.busy()).toBe(true);expect(owner.snapshot().nameDrafts?.[0].name).toBe('retained name');}
     expect(h.calls.filter(c=>c.kind==='imageEdit')).toHaveLength(1);
   });
+});
+it('can query a lost layer-selection reply without inventing an image edit to archive',async()=>{
+ const h=harness();h.controller.capabilities.commands=[...h.controller.capabilities.commands,'inspectRequest'];h.controller.requestTracked=command=>({requestId:'selection-request',result:h.controller.request(command)});h.controller.refreshSnapshot=async()=>{};
+ const owner=createNativeLayerPanelOwner(h.controller);h.respond(async()=>{throw Error('lost selection reply');});await expect(owner.select(h.image,'2')).rejects.toThrow();expect(owner.canResolveEdit()).toBe(false);
+ h.respond(async()=>({kind:'requestStatus',operationId:'wrong',requestId:'selection-request',state:'completed',mainOperationId:null,completion:{commandKind:'selectLayer',contextToken:'context-2',shotId:'other-shot',layerId:'2',contextGeneration:8,outcome:'completed'}}));await expect(owner.inspectEdit()).rejects.toThrow('不一致');expect(owner.busy()).toBe(true);
+ h.respond(async command=>{expect(command).toEqual({kind:'inspectRequest',requestId:'selection-request'});return{kind:'requestStatus',operationId:'query',requestId:'selection-request',state:'completed',mainOperationId:null,completion:{commandKind:'selectLayer',contextToken:'context-2',shotId:'shot',layerId:'2',contextGeneration:8,outcome:'completed'}};});expect(await owner.inspectEdit()).toBe(true);expect(owner.busy()).toBe(false);expect(h.calls.filter(c=>c.kind==='selectLayer')).toHaveLength(1);
 });

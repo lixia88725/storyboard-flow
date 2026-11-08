@@ -87,7 +87,7 @@ Main 项目实际连接专项：`FLOW_IMAGE_HOST=<固定宿主> FLOW_PROJECT_LEA
 
 双 Canvas 节拍专项设置 `FLOW_PIPELINE_SAMPLE_INTERVAL_MS=10`；默认 0 为 burst。报告绝对 deadline、所有积压/重试与 oracle 开销，截图移出 paced 输入窗口。构建/全量等并发负载需记录，不把 native accepted 的轮询观察时间当硬盘持久耗时。
 
-原生发动机施工的附加获准清单为 `test/allowed-image-engine-suite.json`，当前 6 个真实连接专项。完整发动机验收须同时报告通用清单与该附加清单，不能因原生环境缺失静默跳过。准备固定宿主后，设置 `FLOW_IMAGE_HOST`、`FLOW_PROJECT_LEASE_BINARY`，并暂令 `FLOW_PROJECT_LEASE_BIN` 指向同一 guard；使用上方显式枚举命令，将清单路径改为该附加清单即可。当前正式 CI 尚未接这组施工专项，不把通用 CI 通过当新发动机整体验收。
+原生发动机施工的附加获准清单为 `test/allowed-image-engine-suite.json`，内容以该清单为准。完整发动机验收须同时报告通用清单与该附加清单，不能因原生环境缺失静默跳过。准备固定宿主后，设置 `FLOW_IMAGE_HOST`、`FLOW_PROJECT_LEASE_BINARY`，并暂令 `FLOW_PROJECT_LEASE_BIN` 指向同一 guard；使用上方显式枚举命令，将清单路径改为该附加清单即可。当前正式 CI 尚未接这组施工专项，不把通用 CI 通过当新发动机整体验收。
 
 真实 Main 项目双画布专项：设置 `FLOW_IMAGE_HOST`、`FLOW_PROJECT_LEASE_BIN` 指向固定真实组件，再运行 `node scripts/flow-main-image-pipeline-smoke.mjs`，脚本先使用真实 ProjectStore/lease/NativeSession；`FLOW_MAIN_PIPELINE_MODE=paced` 启用 40 笔节拍（运行前核对脚本当前参数）。保留全部背压重试，metrics/service 派生文件不能把 API 总耗时当单次 fsync。统计测试 `node --test scripts/flow-main-image-pipeline-metrics.test.cjs` 不需要 GUI；性能窗口需协调暂停其他重负载。
 
@@ -101,4 +101,4 @@ Main 保存链性能复测：使用同一固定 release 宿主，完整构建后
 
 新的只读控制器、冷输入捕获、Main端口与项目切换测试显式登记在 `test/allowed-suite.json`。真实原生预设与图层命令测试登记在 `test/allowed-image-engine-suite.json`，需以本次能力匹配的原生宿主执行；旧debug binary或只通过TypeScript构建不能替代这些检查。两清单合并去重后才是本轮组合全量。`npm run check:preload`同时检查嵌套imageWorkspace方法、原始输入身份及MessagePort转交；它是隔离桥接检查，不替代真实Electron连接验收。
 
-实际原生工作台专项：完整 `npm run build` 后，设置 `FLOW_IMAGE_HOST` 与 `FLOW_PROJECT_LEASE_BINARY`，运行 `node scripts/flow-native-workbench-smoke.mjs`。它通过私有 `FLOW_NATIVE_WORKSPACE=1` 启动真实入口，使用临时合成原生项目和独立profile，禁止Clipboard/Trash，检查双画布RGBA、真实落笔、Undo/Redo、正常关闭及新进程重开。这个开关只供施工验收，不代表默认入口已迁移；脚本不测试完整Save/Refresh/Pending。原生附加清单中的workspaceCreation还需要已准备的一次性读取组件（见其测试的显式环境变量）。
+实际原生工作台专项：完整 `npm run build` 后，设置 `FLOW_IMAGE_HOST` 与 `FLOW_PROJECT_LEASE_BINARY`，运行 `node scripts/flow-native-workbench-smoke.mjs`。它通过私有 `FLOW_NATIVE_WORKSPACE=1` 启动真实入口，使用临时合成原生项目和独立profile，禁止Clipboard/Trash，检查双画布RGBA、真实落笔、Undo/Redo、正常关闭、新进程重开及恢复记录只读入口。这个开关只供施工验收，不代表默认入口已迁移；脚本不测试完整Save/Refresh/Pending。原生附加清单中的workspaceCreation还需要已准备的一次性读取组件（见其测试的显式环境变量）。

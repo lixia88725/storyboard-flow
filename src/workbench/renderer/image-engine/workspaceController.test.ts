@@ -3,7 +3,7 @@ import {createImageWorkspaceController} from './workspaceController';
 import type {ImageWorkspaceBootstrap,ImageWorkspaceBridge,ImageWorkspaceEvent,ImageWorkspaceFramePort,ImageWorkspaceOutcome,ImageWorkspaceRequest} from '../../../platform/contracts/imageWorkspace';
 const owner={sessionId:'session',incarnation:'incarnation',workspaceEpoch:1};
 const displayed={sessionId:'session',incarnation:'incarnation',documentId:'doc',workerEpoch:3,epoch:5};
-const boot=():ImageWorkspaceBootstrap=>({snapshot:{owner,stateSeq:1,session:{sessionId:'session',incarnation:'incarnation',eventSeq:1,project:{schema:'storyboard-flow.project',version:2,id:'p',revision:0,name:'Test',shots:[],parkedShots:[],dialogues:[],images:{}},phase:'active',pending:0,undoDepth:0,redoDepth:0},context:{shotId:'shot',imageId:'img',layerId:'1',generation:1,selection:null,floating:null},images:{img:{imageId:'img',content:{kind:'source',source:{importId:'import',itemId:'item',interpretationId:'interpretation'}},availability:'editable',layers:[],activeLayerId:'1',contextGeneration:1,displayDocumentId:'doc',displayNative:null,displayIdentity:displayed}},files:{projectRootLabel:'Test',folderName:'Test',status:'current',savedRevision:0,outputPending:false,outputNames:[]}},capabilities:{commands:[],imageEdits:[],brushTips:['hard']},frames:{owner,nonce:'nonce',streamGeneration:1}});
+const boot=():ImageWorkspaceBootstrap=>({snapshot:{owner,stateSeq:1,session:{sessionId:'session',incarnation:'incarnation',eventSeq:1,project:{schema:'storyboard-flow.project',version:2,id:'p',revision:0,name:'Test',shots:[],parkedShots:[],dialogues:[],images:{}},phase:'active',pending:0,undoDepth:0,redoDepth:0},context:{token:'context-1',shotId:'shot',imageId:'img',layerId:'1',generation:1,selection:null,floating:null},images:{img:{imageId:'img',content:{kind:'source',source:{importId:'import',itemId:'item',interpretationId:'interpretation'}},availability:'editable',layers:[],activeLayerId:'1',contextGeneration:1,displayDocumentId:'doc',displayNative:null,displayIdentity:displayed}},files:{projectRootLabel:'Test',folderName:'Test',status:'current',savedRevision:0,outputPending:false,outputNames:[]}},capabilities:{commands:[],imageEdits:[],brushTips:['hard']},frames:{owner,nonce:'nonce',streamGeneration:1}});
 function setup(){
  const b=boot();let event!:(e:ImageWorkspaceEvent)=>void,attach!:(p:ImageWorkspaceFramePort)=>void;
  const calls:ImageWorkspaceRequest[]=[];
@@ -96,3 +96,11 @@ it('returns the request identity before a lost transport reply, without retrying
 });
 
 it('does not reuse a request identity when a controller is recreated for the same Main owner',async()=>{const a=setup(),b=setup();const first=a.controller.requestTracked({kind:'undo'}),second=b.controller.requestTracked({kind:'undo'});expect(first.requestId).not.toBe(second.requestId);await Promise.all([first.result,second.result]);a.controller.dispose();b.controller.dispose();});
+
+it('binds navigation to the context at admission rather than a later snapshot',async()=>{
+ const h=setup();const first=h.controller.requestTracked({kind:'activateShot',shotId:'next'});
+ h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:3,context:{...h.b.snapshot.context,token:'context-2'}}});
+ await first.result;expect(h.calls[0].contextToken).toBe('context-1');
+ await h.controller.request({kind:'activateShot',shotId:'third'});expect(h.calls[1].contextToken).toBe('context-2');
+ expect(h.calls[0].requestId).not.toBe(h.calls[1].requestId);h.controller.dispose();
+});

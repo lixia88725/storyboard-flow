@@ -12,6 +12,10 @@
 
 真实Electron首轮揭露了显示身份接线缺陷：frame已到达、笔迹已保存，但Runtime仍发送旧epoch，导致双画布持续preparing。修复 `88e9745` 已集成为 `af8cadd`，从当前可信原生帧更新仅展示身份，不把帧ACK当项目提交。修后真实pointer、双surface逐字节RGBA一致、Undo两边清空、Redo逐字节恢复和正常关闭通过（`/private/tmp/flow-native-workbench-yusmrs`，`flow-native-entry-gui-pixels.log`）；最终脚本又完成新进程重开逐字节RGBA一致及初始化期间关闭必须等待认证（`/private/tmp/flow-native-workbench-XtvehS`、`flow-native-workbench-final-smoke.log`）。透明显示恢复既有棋盘格后又通过最终三个阶段（`/private/tmp/flow-native-workbench-sW16OL`、`flow-native-workbench-checker-final-smoke.log`，构建 `flow-native-entry-build-final2.log`）；脚本曾因正常自动退出抢先结束而未写关闭收据，现改在closed事件中记录并强制断言认证次数，失败现场保留。preload契约通过。此证据尚不涵盖Save/Refresh/导入及完整产品矩阵。
 
+进一步接线：项目菜单新增只读恢复记录与单条导出，取消导出不伪称已保存；旧项目副本保留后可显式核对并重试。导航绑定 Main 上下文 token，丢失的选层回包查询暂态完成证明，不伪装成图像持久提交。界面绑定失败仍释放已认证的旧 owner，并可只重试绑定。主管组合聚焦5文件63项通过（`/private/tmp/flow-native-recovery-combined.log`）。构建通过；固定 `dd976e6` release 宿主下真实工作台三个阶段通过（`/private/tmp/flow-native-workbench-RIFXgv`、`flow-native-context-smoke.log`），包含恢复记录只读检查；后续生命周期小修由上述聚焦覆盖。
+
+Sources 与独立图像创建候选已本地集成。Sources 只登记清单，逐文件保管并优先当前目标；实际读取只核当前原件完整摘要，不先读取整批已保管原件。执行者15项真实文件测试覆盖同批其他坏图不挡当前图、坏图使用时拒绝（`/private/tmp/flow-workspace-sources-target-use.log`）。独立 new/duplicate/source 不切走当前画布，Main 一次批次决定后逐候选确认；原生执行者45项与3个真实连接专项通过。上述仍在 Runtime 接线，尚不能把模块可用称为用户导入、新建及复制流程已经整体完成。
+
 本轮发现现有原生帧/输出传输预算尚不覆盖旧32M像素上限，复杂来源自带持久选区也不能被无提示忽略。前者暂按实际额度拒绝而不缩图，后者保留原结构并明确限制正式绘画；完整产品容量与超大图像验收仍待闭合。
 
 ## 图片发动机替换：施工中（2026-11-07）
