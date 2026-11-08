@@ -57,10 +57,13 @@ export type WorkspaceOutputBudget = {
 };
 export type WorkspaceOutputFile = {shotId:string;imageId:string;name:string;location:WorkspaceOutputLocation;digest:string;native:NativeImageRef;format:'tiff'|'psd'};
 export type WorkspaceOutputReceipt = {operationId:string;projectId:string;revision:number;commitHash:string;files:WorkspaceOutputFile[]};
-export type WorkspaceOutputObservation = {shotId:string;location:WorkspaceOutputLocation;name:string;expectedDigest:string;observedDigest:string|null};
+export type WorkspaceOutputPhysicalIdentity={dev:string;ino:string};
+export type WorkspaceOutputObservation = {shotId:string;location:WorkspaceOutputLocation;name:string;expectedDigest:string;observedDigest:string|null;observedIdentity:WorkspaceOutputPhysicalIdentity|null};
 /** Main calls only after retaining the original and deciding the Refresh CAS.
+ * observedIdentity must travel with the inspected/retained bytes, never be
+ * replaced by a fresh stat merely to acknowledge a different same-byte file.
  * This acknowledges file baselines, never a saved ProjectV2 or a native edit. */
-export type WorkspaceOutputRefreshReceipt={projectId:string;revision:number;commitHash:string;changes:(Omit<WorkspaceOutputObservation,'observedDigest'>&{observedDigest:string;imageId:string;native:NativeImageRef;format:'tiff'})[]};
+export type WorkspaceOutputRefreshReceipt={projectId:string;revision:number;commitHash:string;changes:(Omit<WorkspaceOutputObservation,'observedDigest'|'observedIdentity'>&{observedDigest:string;observedIdentity:WorkspaceOutputPhysicalIdentity;imageId:string;native:NativeImageRef;format:'tiff'})[]};
 export type WorkspaceOutputOptions = {
  root:string;projectId:string;
  writerAuthority:{assertHeld(root:{path:string;dev:string;ino:string}):Promise<void>};
@@ -76,5 +79,6 @@ export type WorkspaceOutput = {
  acceptRefresh(receipt:WorkspaceOutputRefreshReceipt):Promise<void>;
  recover():Promise<void>;
  hasObligations():boolean;
+ /** Successful closure is idempotent; a refused closure retains the same owner. */
  close():Promise<void>;
 };

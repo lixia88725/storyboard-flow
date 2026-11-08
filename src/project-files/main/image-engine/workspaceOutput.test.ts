@@ -18,6 +18,7 @@ async function fixture(overrides:Partial<WorkspaceOutputOptions>={}){
  return{root,trash,capture,options,output:await openWorkspaceOutput(options)};
 }
 const at=(root:string,file:{name:string;location:'active'|'parked'})=>path.join(root,...(file.location==='parked'?['Pending',file.name]:[file.name]));
+const physicalIdentity=async(file:string)=>{const st=await fs.lstat(file);return{dev:String(st.dev),ino:String(st.ino)};};
 
 describe('native workspace physical output',()=>{
  it('publishes frozen native bytes and metadata with immutable identity receipts; repeated Save reuses bytes',async()=>{
@@ -34,7 +35,7 @@ describe('native workspace physical output',()=>{
  });
  it('reports external bytes read-only and refuses external modifications or foreign same-name targets',async()=>{
   const {output,root}=await fixture(),f=frozen(),r=await output.save(f),target=at(root,r.files[0]);await fs.writeFile(target,'external');
-  expect(await output.inspect(f.project)).toEqual([{shotId:'a',location:'active',name:r.files[0].name,expectedDigest:r.files[0].digest,observedDigest:hash('external')}]);
+  expect(await output.inspect(f.project)).toEqual([{shotId:'a',location:'active',name:r.files[0].name,expectedDigest:r.files[0].digest,observedDigest:hash('external'),observedIdentity:await physicalIdentity(target)}]);
   await expect(output.save(f)).rejects.toThrow('External output change');expect(await fs.readFile(target,'utf8')).toBe('external');await output.close();
   const other=await fixture(),name=(await other.output.names(f.project))[0].name;await fs.writeFile(path.join(other.root,name),'foreign');await expect(other.output.save(f)).rejects.toThrow('Foreign output');expect(other.capture).not.toHaveBeenCalled();await other.output.close();
  });
@@ -96,13 +97,13 @@ describe('native workspace physical output',()=>{
  });
  it('accepts only the Main decided Refresh baseline and forces the next Save to overlay authoritative metadata',async()=>{
   const {output,root,capture}=await fixture(),f=frozen(),first=await output.save(f),file=first.files[0];await fs.writeFile(at(root,file),'external layered file');
-  const external=native('external'),change={shotId:'a',imageId:'ia',name:file.name,location:file.location,expectedDigest:file.digest,observedDigest:hash('external layered file'),native:external,format:'tiff' as const},receipt={projectId:'project',revision:2,commitHash:hash('refresh-cas'),changes:[change]};
+  const external=native('external'),change={shotId:'a',imageId:'ia',name:file.name,location:file.location,expectedDigest:file.digest,observedDigest:hash('external layered file'),observedIdentity:await physicalIdentity(at(root,file)),native:external,format:'tiff' as const},receipt={projectId:'project',revision:2,commitHash:hash('refresh-cas'),changes:[change]};
   await output.acceptRefresh(receipt);await output.acceptRefresh(receipt);expect(capture).toHaveBeenCalledTimes(2);expect(await output.inspect(f.project)).toEqual([]);
   f.project.images.ia.content={kind:'native',native:external};f.resolvedImages.ia.native=external;f.project.revision=2;f.commitHash=receipt.commitHash;await output.save(f);expect(capture).toHaveBeenCalledTimes(3);expect(capture.mock.calls[2][0]).toMatchObject({shotId:'a',native:external,metadata:{scriptText:'action'}});await output.close();
  });
  it('refuses a stale Refresh receipt atomically without accepting another changed board',async()=>{
   const {output,root}=await fixture(),f=frozen(),first=await output.save(f);for(const file of first.files)await fs.writeFile(at(root,file),'external-'+file.shotId);
-  const changes=first.files.map(file=>({shotId:file.shotId,imageId:file.imageId,name:file.name,location:file.location,expectedDigest:file.digest,observedDigest:hash('external-'+file.shotId),native:native('external-'+file.imageId),format:'tiff' as const}));changes[1].observedDigest=hash('stale');await expect(output.acceptRefresh({projectId:'project',revision:2,commitHash:hash('refresh'),changes})).rejects.toThrow('changed during Refresh');expect(await output.inspect(f.project)).toHaveLength(2);await output.close();
+  const changes=await Promise.all(first.files.map(async file=>({shotId:file.shotId,imageId:file.imageId,name:file.name,location:file.location,expectedDigest:file.digest,observedDigest:hash('external-'+file.shotId),observedIdentity:await physicalIdentity(at(root,file)),native:native('external-'+file.imageId),format:'tiff' as const})));changes[1].observedDigest=hash('stale');await expect(output.acceptRefresh({projectId:'project',revision:2,commitHash:hash('refresh'),changes})).rejects.toThrow('changed during Refresh');expect(await output.inspect(f.project)).toHaveLength(2);await output.close();
  });
  it('reserves old-file staging before the first user-visible side effect and retires safe preparation failure',async()=>{
   let refuse=false;const broker:WorkspaceOutputBudget={reserve:async({purpose})=>{if(refuse&&purpose==='native-output-backup')throw Error('no backup capacity');return{settleActual(){},retainUnknown(){}};}};
@@ -126,4 +127,21 @@ describe('native output metadata envelope',()=>{
   const value=envelope();value.metadata.scriptText='字'.repeat(Math.ceil(WORKSPACE_OUTPUT_METADATA_LIMIT/3));expect(validWorkspaceOutputMetadataEnvelope(value)).toBe(false);const rows=envelope();rows.metadata.dialogues.push({...rows.metadata.dialogues[0]});expect(validWorkspaceOutputMetadataEnvelope(rows)).toBe(false);expect(validWorkspaceOutputMetadataEnvelope({...envelope(),metadata:{...envelope().metadata,dialogues:new Array(1)}})).toBe(false);
  });
  it('refuses an oversized metadata batch before capturing or publishing any board',async()=>{const {output,capture,root}=await fixture(),f=frozen();f.project.shots[0].scriptText='字'.repeat(Math.ceil(WORKSPACE_OUTPUT_METADATA_LIMIT/3));await expect(output.save(f)).rejects.toThrow('supported envelope');expect(capture).not.toHaveBeenCalled();expect((await fs.readdir(root)).filter(n=>n.endsWith('.tif'))).toEqual([]);await output.close();});
+});
+
+describe('output integration identity and close obligations',()=>{
+ const identity=async(file:string)=>{const st=await fs.lstat(file);return{dev:String(st.dev),ino:String(st.ino)};};
+ it('rejects a repeated old Refresh ACK after same bytes appear at a new inode',async()=>{
+  const g=await fixture(),f=frozen(),saved=await g.output.save(f),file=saved.files[0],target=at(g.root,file);await fs.writeFile(target,'external');const observedIdentity=await identity(target),receipt={projectId:'project',revision:2,commitHash:hash('refresh'),changes:[{shotId:file.shotId,imageId:file.imageId,name:file.name,location:file.location,expectedDigest:file.digest,observedDigest:hash('external'),observedIdentity,native:native('external'),format:'tiff' as const}]};
+  await g.output.acceptRefresh(receipt);await fs.rename(target,target+'.retained');await fs.writeFile(target,'external');expect(await identity(target)).not.toEqual(observedIdentity);await expect(g.output.acceptRefresh(receipt)).rejects.toThrow('identity');await g.output.close();
+ });
+ it('updates only the replacement identity explicitly accepted by a new Main Refresh decision',async()=>{
+  const g=await fixture(),f=frozen(),saved=await g.output.save(f),file=saved.files[0],target=at(g.root,file);await fs.writeFile(target,'external');const first={projectId:'project',revision:2,commitHash:hash('refresh'),changes:[{shotId:file.shotId,imageId:file.imageId,name:file.name,location:file.location,expectedDigest:file.digest,observedDigest:hash('external'),observedIdentity:await identity(target),native:native('external'),format:'tiff' as const}]};await g.output.acceptRefresh(first);await fs.rename(target,target+'.retained');await fs.writeFile(target,'external');const observedIdentity=await identity(target),next={...first,revision:3,commitHash:hash('new-refresh'),changes:[{...first.changes[0],expectedDigest:hash('external'),observedIdentity}]};await g.output.acceptRefresh(next);await g.output.acceptRefresh(next);expect(await g.output.inspect(f.project)).toEqual([]);f.project.images.ia.content={kind:'native',native:native('external')};f.resolvedImages.ia.native=native('external');await expect(g.output.save(f)).resolves.toMatchObject({projectId:'project'});await g.output.close();
+ });
+ it('makes successful close idempotent without releasing a subsequently opened owner',async()=>{
+  const g=await fixture();await g.output.close();const next=await openWorkspaceOutput(g.options);await expect(g.output.close()).resolves.toBeUndefined();await expect(openWorkspaceOutput(g.options)).rejects.toMatchObject({code:'busy'});await next.close();await expect(next.close()).resolves.toBeUndefined();
+ });
+ it('retains the original owner after failed close and permits retry when its authority is restored',async()=>{
+  let held=true;const g=await fixture({writerAuthority:{assertHeld:async()=>{if(!held)throw Error('lease unavailable');}}});held=false;await expect(g.output.close()).rejects.toThrow('lease unavailable');held=true;await expect(openWorkspaceOutput(g.options)).rejects.toMatchObject({code:'busy'});await expect(g.output.close()).resolves.toBeUndefined();await expect(g.output.close()).resolves.toBeUndefined();
+ });
 });

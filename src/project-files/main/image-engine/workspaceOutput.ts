@@ -223,7 +223,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    names(project){const snapshot=structuredClone(project);return run(async()=>{await bind();return plannedNames(checkProject(snapshot));});},
    inspect(project){const snapshot=structuredClone(project);return run(async()=>{await bind();const p=checkProject(snapshot),ids=new Set([...p.shots,...p.parkedShots].map(s=>s.id)),changes=[];
     if(ledger.transaction||blocked)throw new WorkspaceOutputError('recovery-pending','Recover output before inspecting external changes','retained');
-    for(const e of ledger.entries.filter(e=>ids.has(e.shotId))){const file=outputPath(root,e.name,e.location),observedDigest=await observe(file),st=observedDigest===null?null:await fs.lstat(file);if(observedDigest!==e.digest||st&& (String(st.dev)!==e.dev||String(st.ino)!==e.ino))changes.push({shotId:e.shotId,name:e.name,location:e.location,expectedDigest:e.digest,observedDigest});}return changes;});},
+    for(const e of ledger.entries.filter(e=>ids.has(e.shotId))){const file=outputPath(root,e.name,e.location),observed=await inspectFile(file);if(observed.digest!==e.digest||observed.identity&&(observed.identity.dev!==e.dev||observed.identity.ino!==e.ino))changes.push({shotId:e.shotId,name:e.name,location:e.location,expectedDigest:e.digest,observedDigest:observed.digest,observedIdentity:observed.identity});}return changes;});},
    save(frozen){const snapshot=structuredClone(frozen);return run(()=>publish(snapshot));},
    appendPendingBatch(frozen,batch){const snapshot=structuredClone(frozen),selection=structuredClone(batch);return run(()=>publish(snapshot,selection));},
    acceptRefresh(receipt){const input=structuredClone(receipt);return run(async()=>{
@@ -231,8 +231,8 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
     const receiptHash=sha256Hex(canonicalUtf8(input)),repeated=ledger.refresh?.receiptHash===receiptHash,next=[...ledger.entries];
     for(const change of input.changes){
      const index=next.findIndex(e=>e.shotId===change.shotId),entry=next[index];
-     if(!entry||entry.imageId!==change.imageId||entry.location!==change.location||entry.name!==change.name||!digest(change.expectedDigest)||!digest(change.observedDigest)||!validNativeImageRef(change.native)||change.format!=='tiff'||entry.digest!==(repeated?change.observedDigest:change.expectedDigest))fail('Refresh baseline no longer matches');
-     const file=outputPath(root,entry.name,entry.location),observed=await inspectFile(file);if(observed.digest!==change.observedDigest||!observed.identity)fail('External output changed during Refresh acceptance');
+     if(!entry||entry.imageId!==change.imageId||entry.location!==change.location||entry.name!==change.name||!digest(change.expectedDigest)||!digest(change.observedDigest)||!validIdentity(change.observedIdentity)||!validNativeImageRef(change.native)||change.format!=='tiff'||entry.digest!==(repeated?change.observedDigest:change.expectedDigest))fail('Refresh baseline no longer matches');
+     const file=outputPath(root,entry.name,entry.location),observed=await inspectFile(file);if(observed.digest!==change.observedDigest||!observed.identity)fail('External output changed during Refresh acceptance');if(observed.identity!.dev!==change.observedIdentity.dev||observed.identity!.ino!==change.observedIdentity.ino)fail('External output identity changed during Refresh acceptance');
      // A Refresh baseline is deliberately not the project content fingerprint:
      // the next Save must overlay authoritative text onto its native candidate.
      next[index]={...entry,digest:change.observedDigest,native:change.native,...observed.identity,content:sha256Hex(canonicalUtf8({refresh:receiptHash,shotId:entry.shotId}))};
@@ -241,7 +241,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    });},
    recover(){return run(settle);},
    hasObligations(){return active>0||blocked||!!ledger.transaction||grants.size>0||trash.hasPendingAcknowledgements();},
-   close(){return run(async()=>{await bind();if(blocked||ledger.transaction||grants.size>0||trash.hasPendingAcknowledgements())throw new WorkspaceOutputError('recovery-pending','Output obligations prevent close','retained');closed=true;owners.delete(root);});}
+   close(){return run(async()=>{if(closed)return;await bind();if(blocked||ledger.transaction||grants.size>0||trash.hasPendingAcknowledgements())throw new WorkspaceOutputError('recovery-pending','Output obligations prevent close','retained');closed=true;owners.delete(root);});}
   };
  }catch(e){owners.delete(root);throw e;}
 }
