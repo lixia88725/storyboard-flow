@@ -23,6 +23,8 @@ export type ImageWorkspaceRuntimeOptions = {
  root:string;binary:string;leaseBinary:string;workspaceEpoch:number;
  permissions:ImageWorkspacePermissions;
  projectRootLabel?:string;
+ /** Synthetic failure injection, never renderer input. */
+ fileFault?:(point:string)=>Promise<void>;outputFault?:(point:string)=>Promise<void>;
  limits?:{maxRecoveryBytes?:number;nativeBytes?:number;sourceBytes?:number;outputBytes?:number};
 };
 export type ImageWorkspaceRuntime = {
