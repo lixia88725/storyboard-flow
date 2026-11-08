@@ -178,7 +178,7 @@ fn embedded(source: &Source, bytes: &[u8]) -> Result<(u32, u32, Vec<u8>)> {
         )),
     }
 }
-fn difference(a: &[u8], b: &[u8]) -> Result<u8> {
+pub(super) fn difference(a: &[u8], b: &[u8]) -> Result<u8> {
     if a.len() != b.len() {
         return Err(Error::none(
             "unsupported-source-display",
@@ -265,6 +265,44 @@ pub(super) fn preflight(
     }
     Ok(())
 }
+pub(super) fn independent_display(
+    source: &Source,
+    d: &DisplayRef,
+    payload: &[u8],
+) -> Result<Vec<u8>> {
+    let png = photocraft_codecs::decode_as_with(
+        photocraft_codecs::Format::Png,
+        &payload[source.byte_length as usize..],
+        &photocraft_codecs::DecodeOptions {
+            limits: photocraft_codecs::Limits {
+                max_width: 8192,
+                max_height: 8192,
+                max_pixels: 16 << 20,
+                max_alloc: 64 << 20,
+            },
+            ..Default::default()
+        },
+    )
+    .map_err(native)?;
+    if png.dimensions() != (d.width, d.height)
+        || png.icc.is_some()
+        || !png.layout().is_rgb()
+        || !png.warnings.is_empty()
+    {
+        return Err(Error::none(
+            "invalid-input",
+            "independent display must be complete untagged sRGB RGBA8",
+        ));
+    }
+    let reference = png.to_rgba8();
+    if sha(&reference) != d.rgba_sha256 {
+        return Err(Error::none(
+            "invalid-input",
+            "independent display RGBA mismatch",
+        ));
+    }
+    Ok(reference)
+}
 pub(super) fn default_tolerance() -> u8 {
     2
 }
@@ -286,37 +324,7 @@ pub(super) fn prepare(
     // cannot authorize unprofiled CMYK or broken RGB ICC fallback.
     let (mut w, mut h, mut reference) = embedded(&source, original)?;
     if let Some(d) = display {
-        let png = photocraft_codecs::decode_as_with(
-            photocraft_codecs::Format::Png,
-            &payload[source.byte_length as usize..],
-            &photocraft_codecs::DecodeOptions {
-                limits: photocraft_codecs::Limits {
-                    max_width: 8192,
-                    max_height: 8192,
-                    max_pixels: 16 << 20,
-                    max_alloc: 64 << 20,
-                },
-                ..Default::default()
-            },
-        )
-        .map_err(native)?;
-        if png.dimensions() != (d.width, d.height)
-            || png.icc.is_some()
-            || !png.layout().is_rgb()
-            || !png.warnings.is_empty()
-        {
-            return Err(Error::none(
-                "invalid-input",
-                "independent display must be complete untagged sRGB RGBA8",
-            ));
-        }
-        reference = png.to_rgba8();
-        if sha(&reference) != d.rgba_sha256 {
-            return Err(Error::none(
-                "invalid-input",
-                "independent display RGBA mismatch",
-            ));
-        }
+        reference = independent_display(&source, d, payload)?;
         w = d.width;
         h = d.height;
     }

@@ -10,6 +10,7 @@ mod product;
 mod product_preview;
 mod source_guard;
 mod source_metadata;
+mod working_refresh;
 pub use product::{ProductEdit, SelectionPoint};
 pub use product_preview::PreviewStamp;
 mod output;
@@ -97,6 +98,8 @@ pub struct Source {
     pub display_policy: Option<source_guard::ProtectedPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub protected_base_manifest_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_input: Option<working_refresh::WorkingInput>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

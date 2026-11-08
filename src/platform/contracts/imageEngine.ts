@@ -146,3 +146,7 @@ export function validImageEngineProtectedSourcePolicy(v:unknown):v is ImageEngin
  if(!shape(v,['kind','baseLayerId','referenceRgbaSha256','original'])||v.kind!=='protected-reference'||!layerId(v.baseLayerId)||typeof v.referenceRgbaSha256!=='string'||!/^[0-9a-f]{64}$/.test(v.referenceRgbaSha256)||!shape(v.original,['digest','byteLength','format']))return false;
  const o=v.original;return typeof o.digest==='string'&&/^[0-9a-f]{64}$/.test(o.digest)&&Number.isSafeInteger(o.byteLength)&&Number(o.byteLength)>0&&Number(o.byteLength)<=8*1024**2&&(o.format==='tiff'||o.format==='psd');
 }
+
+/** Main supplies already verified original authority; never derived from XMP. */
+export type ImageEngineWorkingInput={digest:string;byteLength:number;format:'tiff'};
+export type ImageEngineAuthorizedOrigin={version:import('./imageProject.js').NativeImageRef;policy:ImageEngineProtectedSourcePolicy};

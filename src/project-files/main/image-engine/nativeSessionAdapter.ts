@@ -20,13 +20,16 @@ import type { NativePipelineDriver, PipelineLimits, PipelineReady, PipelineQueue
 import type { RetainedSourceObject } from './sourceStore.js';
 import { validWorkspaceOutputMetadataEnvelope } from './workspaceOutputContract.js';
 import type { WorkspaceOutputMetadataEnvelope } from './workspaceOutputContract.js';
-import type {ImageEngineSourceDisplayProof,ImageEngineProtectedSourcePolicy} from '../../../platform/contracts/imageEngine.js';
+import type {ImageEngineSourceDisplayProof,ImageEngineProtectedSourcePolicy,ImageEngineWorkingInput,ImageEngineAuthorizedOrigin} from '../../../platform/contracts/imageEngine.js';
 
 export type NativeCreationPage={snapshotToken:string;totalUnsettled:number;entries:{operationId:string;state:'intent'|'prepared';prepared?:PreparedImage}[];nextCursor:string|null};
 export type NativeCreationStatus=NativeOperationStatus|{state:'pending';phase:string};
 export type NativeVersionOutput={bytes:Uint8Array;sha256:string;byteLength:number;width:number;height:number;layerCount:number;versionId:string;documentId:string;metadataSha256:string;sourceReferenceSha256?:string};
 export type NativeRetainedPreparation={kind:'editable';prepared:PreparedImage;proof:ImageEngineSourceDisplayProof}|{kind:'reference';prepared:PreparedImage;proof:ImageEngineSourceDisplayProof;policy:ImageEngineProtectedSourcePolicy;reason:{code:string;message:string}};
+export type NativeWorkingRefreshResult={prepared:PreparedImage;policy:ImageEngineProtectedSourcePolicy|null;workingInput:ImageEngineWorkingInput};
 export type NativeProductDriver = {
+  prepareWorkingRefresh(operationId:string,working:RetainedSourceObject,reservation:ImageEngineJobReservation,authorizedOrigin?:ImageEngineAuthorizedOrigin):Promise<NativeWorkingRefreshResult>;
+  versionWorkingInput(ref:NativeImageRef):Promise<ImageEngineWorkingInput|null>;
   /** Reads the authenticated immutable version JSON; no actor IO/thumbnail gate. */
   versionSourcePolicy(ref:NativeImageRef):Promise<ImageEngineProtectedSourcePolicy|null>;
   prepareRetainedGuarded(operationId:string,source:RetainedSourceObject,formatHint:'tiff'|'psd',reservation:ImageEngineJobReservation,options?:ImageEngineSourceOptions):Promise<NativeRetainedPreparation>;
@@ -117,7 +120,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     if(reply.kind!=='prepared'||typeof reply.candidateId!=='string'||(reply.baseVersion!==null&&typeof reply.baseVersion!=='string'))refuse('Expected durable native prepared receipt','protocol','unknown');
     candidate=reply.candidateId;return{candidateId:reply.candidateId,baseVersion:reply.baseVersion,native:nativeRef(reply.receipt)};
   };
-  const verifyNativeFile=async(ref:NativeImageRef):Promise<ImageEngineProtectedSourcePolicy|null>=>{
+  const verifyNativeFile=async(ref:NativeImageRef):Promise<{policy:ImageEngineProtectedSourcePolicy|null;workingInput:ImageEngineWorkingInput|null}>=>{
     if(!validNativeImageRef(ref)||ref.storeId!==storeId)refuse('Unknown native store/ref');
     const raw=await boundedFile(path.join(storeRoot,'versions',ref.versionId+'.json'),16<<20);
     if(sha(raw)!==ref.versionId||ref.versionId!==ref.manifestSha256)refuse('Native manifest hash changed','corrupt','retained');
@@ -128,7 +131,9 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     if(policy!==undefined&&policy!==null){if(!validImageEngineProtectedSourcePolicy(policy)||!record(source)||source.digest!==policy.original.digest||source.byteLength!==policy.original.byteLength||source.formatHint!==policy.original.format||typeof source.protectedBaseManifestSha256!=='string'||!/^[0-9a-f]{64}$/.test(source.protectedBaseManifestSha256))refuse('Malformed immutable protected source binding','corrupt','retained');}
     // Full compressed object verification occurs inside native load/install;
     // a live prepared receipt already follows native durable object publication.
-    return policy==null?null:structuredClone(policy as ImageEngineProtectedSourcePolicy);
+    const input=record(source)?source.workingInput:undefined;
+    if(input!=null&&(!record(input)||Object.keys(input).length!==3||typeof input.digest!=='string'||!/^[0-9a-f]{64}$/.test(input.digest)||!Number.isSafeInteger(input.byteLength)||Number(input.byteLength)<1||Number(input.byteLength)>(8<<20)||input.format!=='tiff'))refuse('Malformed working input identity','corrupt','retained');
+    return {policy:policy==null?null:structuredClone(policy as ImageEngineProtectedSourcePolicy),workingInput:input==null?null:structuredClone(input as ImageEngineWorkingInput)};
   };
   const verifyNative=async(ref:NativeImageRef)=>{await verifyNativeFile(ref);};
   const install=async(ref:NativeImageRef)=>{
@@ -220,6 +225,21 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       await new Promise(resolve=>setTimeout(resolve,8));op.check();value=await call(next(),{kind:'detachedPoll',jobId},null);op.check();
     }
   };
+  const retainedPayload=async(op:ReturnType<typeof operationContext>,captured:RetainedSourceObject,formatHint:string)=>{
+       const original=await boundedFile(captured.path,8<<20,captured.identity);op.check();if(original.length!==captured.byteLength||sha(original)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
+       let payload:Uint8Array=original,display:Record<string,unknown>|null=null;
+       if(formatHint==='tiff'){
+        // This bounded non-preemptible decoder phase begins only at a confirmed
+        // native idle boundary. New input remains free to use the native actor.
+        while(true){try{await call(next(),{kind:'admitSourceDisplay'},null);op.check();break;}catch(e){op.check();if((e as any)?.code!=='backpressure'||(e as any)?.effect!=='none')throw e;await new Promise(resolve=>setTimeout(resolve,8));op.check();}}
+        const embedded=await sharp(original,{failOn:'error',limitInputPixels:16<<20}).rotate().toColourspace('srgb').ensureAlpha().raw().toBuffer({resolveWithObject:true}).catch(error=>{if(/pixel limit|memory limit/i.test(String(error)))refuse('Source retained but exceeds the current display resource capacity','limit');throw error;});op.check();
+        const {width,height,channels}=embedded.info;if(channels!==4||width>8192||height>8192||width*height>(16<<20))refuse('Independent source display exceeds current canvas budget','limit');
+        for(let i=0;i<embedded.data.length;i+=4)if(embedded.data[i+3]===0)embedded.data.fill(0,i,i+3);
+        const png=await sharp(embedded.data,{raw:{width,height,channels:4}}).png().toBuffer();op.check();if(png.length>(32<<20))refuse('Independent source display exceeds 32MiB PNG budget; original retained without resizing','limit');
+        display={sourceDigest:captured.digest,sha256:sha(png),byteLength:png.length,rgbaSha256:sha(embedded.data),width,height};payload=Buffer.concat([original,png]);
+       }
+    return{payload,display};
+  };
   const detachedPrepared=(operationId:string,r:Record<string,unknown>,payload:Uint8Array):PreparedImage=>{
     if(!['prepared','accepted'].includes(String(r.kind))||r.detached!==true||r.candidateId!==operationId)refuse('Expected detached durable candidate','protocol','unknown');
     const native=nativeRef(r.receipt);if(record(r.summary)&&payload.length){const view=parseNativeInspection(r.summary,payload,native,sha(payload));cacheInspection(native.versionId,view);}
@@ -248,7 +268,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     const summary=await contextSummary();op.check();return summary;
   };
   const driver:NativeSessionDriver & NativeProductDriver & {resume():Promise<void>}={
-    async versionSourcePolicy(ref){return verifyNativeFile(structuredClone(ref));},
+    async versionSourcePolicy(ref){return (await verifyNativeFile(structuredClone(ref))).policy;},
     ...(owner?{async restartForRecovery(){
       fenced=true;generation++; // Fence queued Adapter jobs before awaiting owned exit.
       const restarting=generation,handle=await owner.restart();if(restarting!==generation)refuse('Old worker replacement fenced','worker-unavailable','unknown');connection=handle.connection;generation=handle.generation;
@@ -263,7 +283,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       const op=operationContext();if(!op.connection.supports('readonlyExportMetadataV1'))refuse('Native binary lacks readonlyExportMetadataV1','unsupported');
       const pinned=structuredClone(ref),envelope=structuredClone(metadata),policy=structuredClone(expectedSourcePolicy);if(policy!==null&&!validImageEngineProtectedSourcePolicy(policy))refuse("Invalid expected protected source policy","invalid-input");if(policy&&!op.connection.supports("protectedReferenceOutputV1"))refuse("Native binary lacks protectedReferenceOutputV1","unsupported");
       if(!['psd','tiff'].includes(format)||!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>(64<<20)||!validWorkspaceOutputMetadataEnvelope(envelope))refuse('Invalid readonly output metadata, format or budget','invalid-input');
-      const payload=new TextEncoder().encode(JSON.stringify(envelope)),metadataSha256=sha(payload);const actualPolicy=await verifyNativeFile(pinned);op.check();if(!same(actualPolicy,policy))refuse("Main protected source does not match pinned version policy","protected-source");
+      const payload=new TextEncoder().encode(JSON.stringify(envelope)),metadataSha256=sha(payload);const actualPolicy=(await verifyNativeFile(pinned)).policy;op.check();if(!same(actualPolicy,policy))refuse("Main protected source does not match pinned version policy","protected-source");
       const {reply:r,frame}=await call(next(),{kind:'export',versionId:pinned.versionId,documentId:pinned.documentId,format,maxBytes,metadata:{sha256:metadataSha256,byteLength:payload.length},...(policy?{expectedSourcePolicy:policy}:{})},current?.versionId??null,payload);op.check();
       const bytes=new Uint8Array(frame.payload),sha256=sha(bytes),signature=Buffer.from(bytes.subarray(0,4)).toString('hex');
       if(r.kind!=='exported'||r.exportedDocumentId!==pinned.documentId||r.versionId!==pinned.versionId||r.format!==format||r.width!==pinned.width||r.height!==pinned.height||r.byteLength!==bytes.length||!bytes.length||bytes.length>maxBytes||r.sha256!==sha256||r.metadataSha256!==metadataSha256||r.layered!==true||!Number.isSafeInteger(r.layerCount)||Number(r.layerCount)<1||Number(r.layerCount)>64||!Array.isArray(r.warnings)||r.warnings.length!==0||(format==='psd'?signature!=='38425053':!['49492a00','4d4d002a'].includes(signature)))refuse('Readonly output bytes do not match pinned metadata/version receipt','protocol','unknown');
@@ -287,18 +307,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       if(interpretationId==='flow-v1-upgrade'&&!op.connection.supports('flowV1UpgradeInterpretationV1'))refuse('Native binary lacks flowV1UpgradeInterpretationV1','unsupported');
       const release=immutableClaim();
       try{
-       const original=await boundedFile(captured.path,8<<20,captured.identity);op.check();if(original.length!==captured.byteLength||sha(original)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
-       let payload:Uint8Array=original,display:Record<string,unknown>|null=null;
-       if(formatHint==='tiff'){
-        // This bounded non-preemptible decoder phase begins only at a confirmed
-        // native idle boundary. New input remains free to use the native actor.
-        while(true){try{await call(next(),{kind:'admitSourceDisplay'},null);op.check();break;}catch(e){op.check();if((e as any)?.code!=='backpressure'||(e as any)?.effect!=='none')throw e;await new Promise(resolve=>setTimeout(resolve,8));op.check();}}
-        const embedded=await sharp(original,{failOn:'error',limitInputPixels:16<<20}).rotate().toColourspace('srgb').ensureAlpha().raw().toBuffer({resolveWithObject:true}).catch(error=>{if(/pixel limit|memory limit/i.test(String(error)))refuse('Source retained but exceeds the current display resource capacity','limit');throw error;});op.check();
-        const {width,height,channels}=embedded.info;if(channels!==4||width>8192||height>8192||width*height>(16<<20))refuse('Independent source display exceeds current canvas budget','limit');
-        for(let i=0;i<embedded.data.length;i+=4)if(embedded.data[i+3]===0)embedded.data.fill(0,i,i+3);
-        const png=await sharp(embedded.data,{raw:{width,height,channels:4}}).png().toBuffer();op.check();if(png.length>(32<<20))refuse('Independent source display exceeds 32MiB PNG budget; original retained without resizing','limit');
-        display={sourceDigest:captured.digest,sha256:sha(png),byteLength:png.length,rgbaSha256:sha(embedded.data),width,height};payload=Buffer.concat([original,png]);
-       }
+       const {payload,display}=await retainedPayload(op,captured,formatHint);
        const identity={digest:captured.digest,byteLength:captured.byteLength,formatHint,...(interpretationId?{interpretationId}:{})};const started=await call(operationId,{kind:'detachedPrepare',input:{kind:'guardedSource',source:identity,display,displayTolerance},maxAdditionalBytes:maximum},null,payload);op.check();const done=await waitImmutable(op,operationId,started);op.check();
        const r=done.result;if(r.kind==='discarded')refuse('Guarded source operation was explicitly discarded','conflict');const p=r.sourceDisplayProof,hash=(v:unknown)=>typeof v==='string'&&/^[0-9a-f]{64}$/.test(v);
        if(!record(p)||p.schema!=='flow.source-display-proof'||p.version!==1||!same(p.source,identity)||!Number.isSafeInteger(p.width)||!Number.isSafeInteger(p.height)||Number(p.width)<1||Number(p.height)<1||Number(p.width)>8192||Number(p.height)>8192||Number(p.width)*Number(p.height)>(16<<20)||!hash(p.embeddedRgbaSha256)||p.nativeRgbaSha256!==null&&!hash(p.nativeRgbaSha256)||p.maxChannelDifference!==null&&(!Number.isSafeInteger(p.maxChannelDifference)||Number(p.maxChannelDifference)<0||Number(p.maxChannelDifference)>255)||p.tolerance!==displayTolerance||display&&p.embeddedRgbaSha256!==display.rgbaSha256)refuse('Malformed source display proof','protocol','unknown');
@@ -307,6 +316,18 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
        if(r.classification==='editable'){if(provenance.displayPolicy!==undefined||!hash(p.nativeRgbaSha256)||p.maxChannelDifference===null||Number(p.maxChannelDifference)>displayTolerance)refuse('Unproven editable source classification','protocol','unknown');return{kind:'editable',prepared,proof};}
        const policy=provenance.displayPolicy,reason=p.reason;if(r.classification!=='reference'||!validImageEngineProtectedSourcePolicy(policy)||policy.original.digest!==captured.digest||policy.original.byteLength!==captured.byteLength||policy.original.format!==formatHint||policy.referenceRgbaSha256!==proof.embeddedRgbaSha256||!record(reason)||typeof reason.code!=='string'||typeof reason.message!=='string'||reason.message.length>4096||!hash(provenance.protectedBaseManifestSha256))refuse('Unproven protected reference source classification','protocol','unknown');
        const summary=inspectionCache.get(prepared.native.versionId)?.summary;if(!summary||!same(summary.sourceDisplayPolicy,policy))refuse('Reference inspection/receipt policy mismatch','protocol','unknown');return{kind:'reference',prepared,proof,policy:structuredClone(policy),reason:{code:reason.code,message:reason.message}};
+      }finally{release();}
+    },
+    async versionWorkingInput(ref){return (await verifyNativeFile(structuredClone(ref))).workingInput;},
+    async prepareWorkingRefresh(operationId,working,reservation,authorizedOrigin){
+      const op=operationContext();immutableCap();if(!op.connection.supports('protectedWorkingRefreshV1'))refuse('Native binary lacks protectedWorkingRefreshV1','unsupported');
+      const captured=structuredClone(working),origin=authorizedOrigin===undefined?null:structuredClone(authorizedOrigin),maximum=reservationLimit(structuredClone(reservation));
+      if(captured.byteLength>(8<<20))refuse('Working TIFF exceeds current 8MiB source admission','limit');
+      if(origin){if(!validNativeImageRef(origin.version)||!validImageEngineProtectedSourcePolicy(origin.policy))refuse('Invalid authorized original identity','invalid-input');const actual=(await verifyNativeFile(origin.version)).policy;op.check();if(!same(actual,origin.policy))refuse('Authorized original version/policy mismatch','protected-source');}
+      const release=immutableClaim();try{const{payload,display}=await retainedPayload(op,captured,'tiff');op.check();const source={digest:captured.digest,byteLength:captured.byteLength,formatHint:'tiff',interpretationId:'photocraft-v1'};
+       const started=await call(operationId,{kind:'detachedPrepare',input:{kind:'workingRefresh',source,display,authorizedOrigin:origin?{version:versionIdentity(origin.version),policy:origin.policy}:null},maxAdditionalBytes:maximum},null,payload);op.check();const done=await waitImmutable(op,operationId,started);op.check();const r=done.result;if(r.kind==='discarded')refuse('Working refresh was discarded','conflict');const prepared=detachedPrepared(operationId,r,done.payload),expected:ImageEngineWorkingInput={digest:captured.digest,byteLength:captured.byteLength,format:'tiff'};
+       if(!record(r.receipt)||!same(r.receipt.workingInput,expected))refuse('Working refresh receipt lost exact input binding','protocol','unknown');const meta=await verifyNativeFile(prepared.native);op.check();if(!same(meta.workingInput,expected))refuse('Working refresh version lost input binding','protocol','unknown');if(origin&&(!meta.policy||!same(meta.policy.original,origin.policy.original)||meta.policy.referenceRgbaSha256!==origin.policy.referenceRgbaSha256))refuse('Working refresh changed protected origin','protocol','unknown');
+       return{prepared,policy:meta.policy,workingInput:expected};
       }finally{release();}
     },
     async prepareRetained(operationId,source,formatHint,reservation,sourceOptions={}){

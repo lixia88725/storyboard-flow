@@ -38,6 +38,8 @@ pub struct VersionReceipt {
     pub height: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<Source>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_input: Option<super::working_refresh::WorkingInput>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -608,6 +610,7 @@ impl Store {
                 serde_json::json!({"phase":"snapshot","appendUs":append_us,"totalUs":started.elapsed().as_micros(),"verification":self.cache_policy(),"newObjectBytes":self.new_object_bytes})
             );
         }
+        let working_input = source.as_ref().and_then(|s| s.working_input.clone());
         Ok(VersionReceipt {
             schema: "flow.image-version".into(),
             version: 1,
@@ -620,6 +623,7 @@ impl Store {
             width: doc.size.width,
             height: doc.size.height,
             source,
+            working_input,
         })
     }
     pub fn load(&self, id: &str) -> Result<Loaded> {

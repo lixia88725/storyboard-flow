@@ -76,6 +76,12 @@ pub enum DetachedInput {
     Duplicate {
         source: VersionIdentity,
     },
+    WorkingRefresh {
+        source: Source,
+        display: Option<source_guard::DisplayRef>,
+        #[serde(rename = "authorizedOrigin")]
+        authorized_origin: Option<working_refresh::AuthorizedOrigin>,
+    },
     Source {
         source: Source,
     },
@@ -292,7 +298,10 @@ fn idle_cpu(proxy: &StoreProxy, state: &Arc<Mutex<State>>) {
     }
 }
 pub(super) fn preflight_source(source: &Source, payload: &[u8]) -> Result<()> {
-    if source.display_policy.is_some() || source.protected_base_manifest_sha256.is_some() {
+    if source.display_policy.is_some()
+        || source.protected_base_manifest_sha256.is_some()
+        || source.working_input.is_some()
+    {
         return Err(Error::none(
             "invalid-input",
             "source display policy is native-derived, never caller supplied",
@@ -535,6 +544,46 @@ fn prepare(
                 classification = Some(kind);
                 Ok((doc, target, Some(source)))
             }
+            DetachedInput::WorkingRefresh {
+                source,
+                display,
+                authorized_origin,
+            } => if let Some(authorized) = authorized_origin {
+                progress(&state, "waitingForIdleIo");
+                let identity = authorized.version.clone();
+                let loaded = proxy.call(true, move |s| {
+                    let old = s.load(&identity.version_id)?;
+                    identity.matches(&old)?;
+                    Ok(old)
+                })?;
+                idle_cpu(&proxy, &state);
+                progress(&state, "validatingProtectedWorkingBase");
+                working_refresh::prepare(
+                    source,
+                    &payload,
+                    display.as_ref().ok_or_else(|| {
+                        Error::none(
+                            "independent-display-required",
+                            "working TIFF requires Main display",
+                        )
+                    })?,
+                    loaded,
+                    &authorized,
+                )
+            } else {
+                let identity = working_refresh::WorkingInput {
+                    digest: source.digest.clone(),
+                    byte_length: source.byte_length,
+                    format: "tiff".into(),
+                };
+                let (doc, target, mut source, proof, kind) =
+                    source_guard::prepare(source, display.as_ref(), &payload, 8)?;
+                source.working_input = Some(identity);
+                display_proof = Some(proof);
+                classification = Some(kind);
+                Ok((doc, target, source))
+            }
+            .map(|(doc, target, source)| (doc, target, Some(source))),
             DetachedInput::Source { source } => {
                 let doc = decode_source(&source, &payload)?;
                 let target = initial_target(&doc)?;
@@ -682,6 +731,9 @@ impl Host {
             } | Command::DetachedPrepare {
                 input: DetachedInput::GuardedSource { .. },
                 ..
+            } | Command::DetachedPrepare {
+                input: DetachedInput::WorkingRefresh { .. },
+                ..
             }
         ) && !payload.is_empty()
         {
@@ -773,6 +825,22 @@ impl Host {
                     DetachedInput::New { width, height } => dimensions(*width, *height)?,
                     DetachedInput::Duplicate { source } => source.validate()?,
                     DetachedInput::Source { source } => preflight_source(source, payload)?,
+                    DetachedInput::WorkingRefresh {
+                        source,
+                        display,
+                        authorized_origin,
+                    } => {
+                        if source.format_hint != "tiff" {
+                            return Err(Error::none(
+                                "invalid-input",
+                                "working refresh accepts TIFF only",
+                            ));
+                        }
+                        source_guard::preflight(source, display.as_ref(), payload)?;
+                        if let Some(origin) = authorized_origin {
+                            origin.version.validate()?;
+                        }
+                    }
                     DetachedInput::GuardedSource {
                         source,
                         display,
