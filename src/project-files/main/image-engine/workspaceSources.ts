@@ -11,7 +11,7 @@ import {readBoundFile}from'../persistence/fileOps.js';
 import {canonicalUtf8,sha256Hex} from '../persistence/canonicalJson.js';
 
 export type WorkspaceSourcesOptions={root:string;writerAuthority:{assertHeld(root:{path:string;dev:string;ino:string}):Promise<void>};budget:WorkspaceOutputBudget;limits?:Pick<Partial<SourceStoreLimits>,'maxSourceBytes'|'maxStoredBytes'|'maxItems'>;fault?:(point:string)=>Promise<void>};
-export type WorkspaceSources={snapshot():readonly SourceImportManifest[];verify(ref:SourceImageRef,retained?:{digest:string;byteLength:number}):Promise<void>;object(ref:SourceImageRef):Promise<RetainedSourceObject>;registerBatch(input:{importId:string;sources:readonly SourceInput[]}):Promise<SourceImportManifest>;retain(importId:string,itemId:string):Promise<SourceImportItem>;resume(importId:string,options?:{signal?:AbortSignal;itemIds?:readonly string[];onProgress?:(manifest:SourceImportManifest)=>void}):Promise<SourceImportManifest>;pause(importId:string):Promise<SourceImportManifest>;close():Promise<void>};
+export type WorkspaceSources={snapshot():readonly SourceImportManifest[];verify(ref:SourceImageRef,retained?:{digest:string;byteLength:number}):Promise<void>;object(ref:SourceImageRef,options?:{verify:'full'}):Promise<RetainedSourceObject>;registerBatch(input:{importId:string;sources:readonly SourceInput[]}):Promise<SourceImportManifest>;retain(importId:string,itemId:string):Promise<SourceImportItem>;resume(importId:string,options?:{signal?:AbortSignal;itemIds?:readonly string[];onProgress?:(manifest:SourceImportManifest)=>void}):Promise<SourceImportManifest>;pause(importId:string):Promise<SourceImportManifest>;close():Promise<void>};
 export class WorkspaceSourcesError extends Error{constructor(readonly code:string,message:string,readonly effect:'none'|'retained'|'unknown'='none'){super(message);}}
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,MAX=8*1024**3;
 const clone=<T>(value:T):T=>structuredClone(value);
@@ -76,9 +76,11 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
   return mutate(id,(item.state==='publishing'?0:size*2)+metaBound(m)*5,'source-original-and-manifest-history',async()=>{const value=await store.retain(itemId);remember(store.snapshot());await options.fault?.('after-source-retain');if(value.error?.effect==='unknown')throw new WorkspaceSourcesError(value.error.code,value.error.message,'unknown');return value;});
  };
  const matching=(m:SourceImportManifest,sources:readonly SourceInput[])=>sources.length===m.items.length&&sources.every((s,i)=>{const item=m.items[i];return s&&s.id===item.id&&s.sourcePath===item.sourcePath&&s.formatHint===item.formatHint&&(s.expected===undefined||same(s.expected,item.expected));});
- const resolveObject=async(ref:SourceImageRef)=>{
-  await bind();checkRef(ref);if(unknown.size)throw new WorkspaceSourcesError('recovery-pending','Source expenditure remains unknown','unknown');const key=ref.importId+'\n'+ref.itemId,cached=objectCache.get(key);
-  // This is reuse of a bound receipt, not a new content audit. The native input
+ const resolveObject=async(ref:SourceImageRef,full=false)=>{
+  await bind();checkRef(ref);if(unknown.size)throw new WorkspaceSourcesError('recovery-pending','Source expenditure remains unknown','unknown');const key=ref.importId+'\n'+ref.itemId;if(full)objectCache.delete(key);const cached=objectCache.get(key);
+  // Explicit full verification evicts this receipt before the raw target-only
+  // SourceStore.object call; failure never leaves a known-bad cached receipt.
+  // Default use is reuse of a bound receipt, not a new content audit. The native input
   // consumer must read a bound handle and compare actual byteLength/SHA with the
   // receipt (nativeSessionAdapter.openRetained does both before native.open).
   if(cached){const now=await inspectImportSource(cached.path);if(same(now,cached.identity))return clone(cached);objectCache.delete(key);}
@@ -93,7 +95,7 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
   return{
    snapshot(){return Object.freeze([...manifests.values()]);},
    async verify(ref,retained){const captured=clone(ref),expected=clone(retained);if(closing||closed)throw new WorkspaceSourcesError('closed','Source registry closing');await bind();checkRef(captured);if(expected){const object=await admit(()=>resolveObject(captured));if(object.digest!==expected.digest||object.byteLength!==expected.byteLength)fail('Retained source digest or byte length differs');}},
-   object(ref){const captured=clone(ref);return admit(()=>resolveObject(captured));},
+   object(ref,verification){const captured=clone(ref);if(verification!==undefined&&(!verification||Object.keys(verification).length!==1||verification.verify!=='full'))return Promise.reject(new WorkspaceSourcesError('invalid-input','Unsupported source object verification'));const full=verification?.verify==='full';return admit(()=>resolveObject(captured,full));},
    registerBatch(input){const captured=clone(input);return admit(async()=>{
     await bind();if(!captured||Object.keys(captured).sort().join()!=='importId,sources'||!ID.test(captured.importId)||!Array.isArray(captured.sources)||!captured.sources.length||captured.sources.length>limits.maxItems||new Set(captured.sources.map(s=>s?.id)).size!==captured.sources.length||captured.sources.some(s=>!s||typeof s!=='object'||!Object.hasOwn(s,'id')||!Object.hasOwn(s,'sourcePath')||Object.keys(s).some(k=>!['id','sourcePath','formatHint','expected'].includes(k))))throw new WorkspaceSourcesError('invalid-input','Invalid source batch');
     await reconcile(captured.importId);const existing=manifests.get(captured.importId);if(existing){if(!matching(existing,captured.sources))fail('Source registration identity reused');return clone(existing);}
