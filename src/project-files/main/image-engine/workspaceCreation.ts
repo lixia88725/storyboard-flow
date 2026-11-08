@@ -127,20 +127,24 @@ export function createImageWorkspaceCreation(options:WorkspaceCreationOptions):I
    const prepared=await prepare({stage,budget,bind});checkSignal(operation);await bind();
    const importId=prepared.sources.length?randomUUID():null;
    if(importId){
-    const sources=prepared.sources.map(s=>({...s}));let total=0,largest=0;
-    for(const item of sources){item.expected??=await inspectImportSource(item.sourcePath);const size=Number(item.expected.size);if(size>SOURCE_BYTE_LIMIT)throw Error('Source exceeds retention byte budget');total+=size;largest=Math.max(largest,size);}
+    const sources=prepared.sources.map(s=>({...s})),retainBeforePublish=prepared.copyInput!==undefined;let total=0,largest=0;
+    for(const item of sources){item.expected??=await inspectImportSource(item.sourcePath);const size=Number(item.expected.size);if(retainBeforePublish&&size>SOURCE_BYTE_LIMIT)throw Error('Source exceeds retention byte budget');total+=size;largest=Math.max(largest,size);}
     const sample={schema:'storyboard-flow.source-import',version:1,importId,generation:9_999_999_999,phase:'active',items:sources.map(s=>({...s,state:'publishing',hydration:'unhydrated',copy:{temporary:'copy-'+randomUUID()+'.partial'},candidate:{digest:'f'.repeat(64),byteLength:Number(s.expected!.size)},retained:{digest:'f'.repeat(64),byteLength:Number(s.expected!.size)}}))};
-    const metaMaximum=Buffer.byteLength(JSON.stringify(sample))+8192+1024,reservation=total+largest+metaMaximum*(3*sources.length+5);
-    const before=(await inventory(stage,maximum)).bytes,grant=await budget.reserve({operationId:importId,bytes:reservation,purpose:'creation-source-originals-and-manifest-history'});
+    const queued={schema:'storyboard-flow.source-import',version:1,importId,generation:0,phase:'active',items:sources.map(s=>({id:s.id,sourcePath:s.sourcePath,...(s.formatHint===undefined?{}:{formatHint:s.formatHint}),expected:s.expected!,state:'queued',hydration:'unhydrated'}))};
+    const metaMaximum=Buffer.byteLength(JSON.stringify(sample))+8192+1024,reservation=retainBeforePublish?total+largest+metaMaximum*(3*sources.length+5):canonicalUtf8(queued).length*3+1024;
+    const before=(await inventory(stage,maximum)).bytes,grant=await budget.reserve({operationId:importId,bytes:reservation,purpose:retainBeforePublish?'creation-source-originals-and-manifest-history':'creation-queued-source-manifest'});
     try{
      await bind();source=await createSourceBackedImport({root:stage,importId,sources,limits:{maxStoredBytes:maximum}});
-     for(const[index,item]of sources.entries()){checkSignal(operation);await bind();const retained=await source.retain(item.id);if(retained.state!=='retained')throw Error(retained.error?.message??'Source was not retained');report(operation,index+1,sources.length,'read');}
+     // External image creation enters after identity registration. Runtime owns
+     // background retention and prioritizes the demanded image. Upgrade-derived
+     // files are private stage paths and must be retained before the rename.
+     if(retainBeforePublish)for(const[index,item]of sources.entries()){checkSignal(operation);await bind();const retained=await source.retain(item.id);if(retained.state!=='retained')throw Error(retained.error?.message??'Source was not retained');report(operation,index+1,sources.length,'read');}
      for(const image of Object.values(prepared.project.images)){const ref=image.content;if(ref.kind!=='source')throw Error('Creation cannot install unverified native references');ref.source.importId=importId;}
      await grant.settleActual((await inventory(stage,maximum)).bytes-before);
     }catch(e){await grant.retainUnknown();throw e;}
    }
    await prepared.verifySources?.();checkSignal(operation);await bind();
-   const verifySource=async(ref:SourceImageRef,retained?:{digest:string;byteLength:number})=>{if(!source||ref.importId!==importId||ref.interpretationId!==INTERPRETATION||!source.snapshot().items.some(i=>i.id===ref.itemId))throw Error('Unregistered creation source reference');const object=await source.object(ref.itemId);if(retained&&(object.digest!==retained.digest||object.byteLength!==retained.byteLength))throw Error('Retained creation source differs');};
+   const verifySource=async(ref:SourceImageRef,retained?:{digest:string;byteLength:number})=>{if(!source||ref.importId!==importId||ref.interpretationId!==INTERPRETATION||!source.snapshot().items.some(i=>i.id===ref.itemId))throw Error('Unregistered creation source reference');if(retained){const object=await source.object(ref.itemId);if(object.digest!==retained.digest||object.byteLength!==retained.byteLength)throw Error('Retained creation source differs');}};
    // Source expenditure is fully settled and no other writer runs concurrently.
    // Journal inventories the entire recovery tree, including archived V1 data,
    // so its existing total actual+reserved cap covers its own new bytes as well.
