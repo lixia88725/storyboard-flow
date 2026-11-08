@@ -10,16 +10,16 @@ import { temporaryWorkspace } from '../../../../test/temporaryWorkspace';
 // Actual Main/guard/native processes and real project storage. The only fault
 // Adapter pauses after a completed effect; it never supplies fake native pixels.
 const modules=[
-  'session/core/imageCreation','session/core/nativeSession','session/core/nativeSettlementQueue','session/core/nativePipeline','session/core/snapshotHistory','session/core/grouping','session/core/imageProjectModel','session/core/imageProjectValues',
+  'session/core/imageCreation','session/core/nativeSession','session/core/nativeSettlementQueue','session/core/nativePipeline','session/core/snapshotHistory','session/core/grouping','session/core/sourceProtection','session/core/imageProjectModel','session/core/imageProjectValues',
   'platform/contracts/flowPresentation','platform/contracts/imageEngine','platform/contracts/flowSelection','platform/main/imageEngineWorkerOwner','platform/main/imageEngineConnection','platform/main/imageEngineFraming','platform/main/imageProjectLease',
-  'project-files/main/image-engine/projectStore','project-files/main/image-engine/legacyProjectStore','project-files/main/image-engine/journalProjectStore','project-files/main/image-engine/recoveryJournal','project-files/main/image-engine/projectStoreRecords','project-files/main/image-engine/workspaceRecords','project-files/main/image-engine/sourceStore','project-files/main/image-engine/nativeSessionAdapter','project-files/main/image-engine/nativeProductContext',
+  'project-files/main/image-engine/projectStore','project-files/main/image-engine/legacyProjectStore','project-files/main/image-engine/journalProjectStore','project-files/main/image-engine/recoveryJournal','project-files/main/image-engine/projectStoreRecords','project-files/main/image-engine/workspaceColdCopyContract','project-files/main/image-engine/workspaceOutputContract','project-files/main/image-engine/workspaceRecords','project-files/main/image-engine/sourceStore','project-files/main/image-engine/nativeSessionAdapter','project-files/main/image-engine/nativeProductContext',
   'project-files/main/workspacePhysicalWriterGate','project-files/main/persistence/canonicalJson','project-files/main/persistence/fileOps','project-files/main/persistence/errors'
 ];
 async function fixture(format:'legacy'|'journal'='legacy'){
   const binary=process.env.FLOW_IMAGE_HOST,leaseBinary=process.env.FLOW_PROJECT_LEASE_BIN;
   if(!binary||!leaseBinary)throw Error('Prepare fixed native host/lease and set FLOW_IMAGE_HOST and FLOW_PROJECT_LEASE_BIN; no fake worker fallback');
   const root=await temporaryWorkspace('native-project-'),runtime=path.join(root,'runtime');await fs.mkdir(runtime);
-  await fs.writeFile(path.join(runtime,'package.json'),JSON.stringify({type:'module'}));
+  await fs.writeFile(path.join(runtime,'package.json'),JSON.stringify({type:'module'}));await fs.mkdir(path.join(runtime,'node_modules'));await fs.symlink(path.resolve('node_modules/sharp'),path.join(runtime,'node_modules/sharp'),'dir');
   const src=fileURLToPath(new URL('../../../',import.meta.url));
   // This file lives in src/project-files/main/image-engine, so ../../../ is src.
   for(const name of modules){const code=await fs.readFile(path.join(src,name+'.ts'),'utf8'),out=path.join(runtime,name+'.js');await fs.mkdir(path.dirname(out),{recursive:true});await fs.writeFile(out,ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);}

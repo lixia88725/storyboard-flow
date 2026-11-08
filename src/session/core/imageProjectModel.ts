@@ -1,3 +1,4 @@
+import{validProtectedSource}from'./sourceProtection.js';
 import type { ImageBindingV2, ImageProjectEdit, ImageProjectEditResult, NativeDecision, NativeImageRef, ProjectV2, SourceImageRef } from '../../platform/contracts/imageProject.js';
 import type { ResultV1 } from '../../platform/contracts/refactorV1.js';
 import type { FlowStroke } from '../../platform/contracts/flowWave2.js';
@@ -32,7 +33,7 @@ export function validImageProject(v: unknown): v is ProjectV2 {
     if(!shape(shot,['id','imageId','name','scriptText'],['presentation']) || !id(shot.id) || shots.has(shot.id) || !id(shot.imageId) || owned.has(shot.imageId) || !text(shot.name) || !text(shot.scriptText) || shot.name.length>1_048_576 || shot.scriptText.length>1_048_576 || shot.presentation!==undefined&&!validPresentation(shot.presentation))return false;
     shots.add(shot.id);owned.add(shot.imageId);
   }
-  for(const [key,image] of Object.entries(v.images)) if(!id(key) || !shape(image,['id','content']) || image.id!==key || !validImageBinding(image.content))return false;
+  for(const [key,image] of Object.entries(v.images)) if(!id(key) || !shape(image,['id','content'],['protectedSource']) || image.id!==key || !validImageBinding(image.content)||image.protectedSource!==undefined&&(!validProtectedSource(image.protectedSource)||image.content.kind==='source'&&!same(image.protectedSource.source,image.content.source)))return false;
   if([...owned].some(key=>!Object.hasOwn(v.images as object,key)))return false;
   for(const row of v.dialogues) {
     if(!shape(row,['id','shotId','text']) || !id(row.id) || dialogues.has(row.id) || !id(row.shotId) || !shots.has(row.shotId) || !text(row.text) || row.text.length>1_048_576)return false;
@@ -104,10 +105,11 @@ export function applyImageProjectEdit(project: ProjectV2, edit: ImageProjectEdit
       after={...project,shots:active,parkedShots:pending};break;
     }
     case 'installNativeImage': {
-      if(!shape(edit,['kind','imageId','expected','next']) || !id(edit.imageId) || !validImageBinding(edit.expected) || !validNativeImageRef(edit.next))return fail('invalid-input','Invalid native image edit');
+      if(!shape(edit,['kind','imageId','expected','next'],['protectedSource']) || !id(edit.imageId) || !validImageBinding(edit.expected) || !validNativeImageRef(edit.next)||edit.protectedSource!==undefined&&!validProtectedSource(edit.protectedSource))return fail('invalid-input','Invalid native image edit');
       const image=project.images[edit.imageId];
       if(!image || !same(image.content,edit.expected) || !project.shots.some(s=>s.imageId===edit.imageId))return fail('conflict','Image baseline or active membership changed');
-      after={...project,images:{...project.images,[edit.imageId]:{id:edit.imageId,content:{kind:'native',native:copy(edit.next)}}}};break;
+      if(edit.protectedSource&&(image.protectedSource?!same(edit.protectedSource,image.protectedSource):edit.expected.kind!=='source'||!same(edit.protectedSource.source,edit.expected.source)))return fail('conflict','Protected source origin changed');
+      after={...project,images:{...project.images,[edit.imageId]:{...image,content:{kind:'native',native:copy(edit.next)},...(edit.protectedSource?{protectedSource:copy(edit.protectedSource)}:{})}}};break;
     }
     default:return fail('invalid-input','Unknown image-project edit');
   }

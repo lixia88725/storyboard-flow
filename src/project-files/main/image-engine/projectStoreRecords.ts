@@ -1,3 +1,4 @@
+import{validHydrationDisplay}from'../../../session/core/sourceProtection.js';
 import{validImageCreationDecision}from'../../../session/core/imageCreation.js';
 import type {WorkspaceRecoveryRecord} from './workspaceRecords.js';
 import { validImageEngineEdit } from '../../../platform/contracts/imageEngine.js';
@@ -55,6 +56,7 @@ export type ImageProjectStoreOptions={
   recoveryBudget?:import('./workspaceOutputContract.js').WorkspaceOutputBudget;
   /** Prepared native versions are valid references before native acceptance. */
   verifyNative(ref:NativeImageRef):Promise<void>;
+  verifyNativeProvenance?(ref:NativeImageRef,origin:import('../../../platform/contracts/imageProject.js').ProtectedSourceV2|undefined):Promise<void>;
   verifySource(ref:SourceImageRef,retained?:{digest:string;byteLength:number}):Promise<void>;
 };
 const TOKEN=/^[A-Za-z0-9_-]{1,128}$/;
@@ -71,7 +73,8 @@ export function commitRecord(v:unknown):ProjectCommitV2{
   return {...clone(v as unknown as ProjectCommitV2),after};
 }
 export function hydrationRecord(v:unknown):HydrationRecord{
-  if(!shape(v,['schema','version','source','hostBuildDigest','optionsHash','native','operationId'],['acceptance'])||v.acceptance!==undefined&&v.acceptance!=='detached'||v.schema!=='flow.image-hydration'||v.version!==1||!shape(v.source,['importId','itemId','interpretationId','digest','byteLength'])||!validSourceImageRef({importId:v.source.importId,itemId:v.source.itemId,interpretationId:v.source.interpretationId})||!imageHash(v.source.digest)||!Number.isSafeInteger(v.source.byteLength)||Number(v.source.byteLength)<0||!imageHash(v.hostBuildDigest)||!imageHash(v.optionsHash)||!validNativeImageRef(v.native)||!token(v.operationId))bad('Invalid hydration record');
+  if(!shape(v,['schema','version','source','hostBuildDigest','optionsHash','native','operationId'],['acceptance','sourceDisplay'])||v.acceptance!==undefined&&v.acceptance!=='detached'||v.schema!=='flow.image-hydration'||v.version!==1||!shape(v.source,['importId','itemId','interpretationId','digest','byteLength'])||!validSourceImageRef({importId:v.source.importId,itemId:v.source.itemId,interpretationId:v.source.interpretationId})||!imageHash(v.source.digest)||!Number.isSafeInteger(v.source.byteLength)||Number(v.source.byteLength)<0||!imageHash(v.hostBuildDigest)||!imageHash(v.optionsHash)||!validNativeImageRef(v.native)||!token(v.operationId))bad('Invalid hydration record');
+  if(v.sourceDisplay!==undefined&&!validHydrationDisplay(v.sourceDisplay,(v as unknown as HydrationRecord).source,(v as unknown as HydrationRecord).native))bad('Invalid hydration display proof/policy');
   return clone(v as unknown as HydrationRecord);
 }
 export function operationIntent(v:unknown):ImageOperationIntent{

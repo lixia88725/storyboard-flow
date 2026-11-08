@@ -1,8 +1,9 @@
+import{hydrationProtection,assertVersionProtection}from'./sourceProtection.js';
 import{validImageCreationIntent,validNativeCreationInput,creationProjectEdit}from'./imageCreation.js';
 import type { ImageEngineEdit, ImageEnginePreviewStamp } from '../../platform/contracts/imageEngine.js';
 import { validImageEngineEdit, validImageEnginePreviewStamp } from '../../platform/contracts/imageEngine.js';
 import type { FlowStroke } from '../../platform/contracts/flowWave2.js';
-import type { ImageCreationBatchIntent, ImageCreationBatchDecision, NativeImageCreationInput, ImageOperationIntent, ImageOperationOrigin, ImageOperationRecord, ImageOperationPage, ImageRecoveryDisposition, RetainedImageInput, ImagePipelineAdmission, ImagePipelineInput, ImagePipelineProgress, ImageProjectEdit, ImageProjectOutcome, ImageProjectSnapshot, NativeDecision, NativeImageRef, ProjectCommitV2, ProjectV2 } from '../../platform/contracts/imageProject.js';
+import type { ImageCreationBatchIntent, ImageCreationBatchDecision, NativeImageCreationInput, ImageOperationIntent, ImageOperationOrigin, ImageOperationRecord, ImageOperationPage, ImageRecoveryDisposition, RetainedImageInput, ImagePipelineAdmission, ImagePipelineInput, ImagePipelineProgress, ImageProjectEdit, ImageProjectOutcome, ImageProjectSnapshot, NativeDecision, NativeImageRef, ProtectedSourceV2, ProjectCommitV2, ProjectV2 } from '../../platform/contracts/imageProject.js';
 import type { ProjectCommitReceipt, ProjectConfirmation, ProjectStoreV2 } from '../../project-files/main/image-engine/projectStore.js';
 import { applyImageProjectEdit, validImageProject, validNativeImageRef, validProjectStroke } from './imageProjectModel.js';
 import { copy, same, shape } from './imageProjectValues.js';
@@ -17,6 +18,7 @@ export interface NativeSessionDriver {
   pipeline?:NativePipelineDriver;
   restartForRecovery?():Promise<void>;
   onFault?(listener:()=>void):()=>void;
+  versionSourcePolicy?(ref:NativeImageRef):Promise<import('../../platform/contracts/imageEngine.js').ImageEngineProtectedSourcePolicy|null>;
   prepareCreation?(operationId:string,input:NativeImageCreationInput,reservation:{maxAdditionalBytes:number}):Promise<PreparedImage>;
   creationStatus?(operationId:string):Promise<NativeOperationStatus|{state:'pending';phase:string}>;
   settleCreation?(prepared:PreparedImage):Promise<NativeImageRef>;
@@ -35,7 +37,7 @@ export interface NativeSessionDriver {
   close():Promise<void>;
 }
 export type NativeProjectRequest=
-  | {kind:'createBatch';items:readonly{candidateId:string;imageId:string;input:NativeImageCreationInput}[];placement:ImageCreationBatchIntent['placement'];maxAdditionalBytes:number}
+  | {kind:'createBatch';items:ImageCreationBatchIntent['items'];placement:ImageCreationBatchIntent['placement'];maxAdditionalBytes:number}
   | {kind:'paint';shotId:string;stroke:FlowStroke}
   | {kind:'imageEdit';shotId:string;expectedNative:NativeImageRef;expectedContextGeneration:number;edit:ImageEngineEdit;preview?:ImageEnginePreviewStamp}
   | {kind:'board';edit:Exclude<ImageProjectEdit,{kind:'installNativeImage'}>;typing?:{group:string}}
@@ -60,7 +62,7 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
   let pipeline:ReturnType<typeof createMainImagePipeline>|undefined,settlement:ReturnType<typeof createNativeSettlementQueue>;
   const confirmationObligations=new Map<string,{record:ProjectConfirmation;imageId:string;inputThrough:number}>();
   let barriers=0;
-  let nativeMayBeFrozen=false,pendingInstall:NativeImageRef|undefined;
+  let nativeMayBeFrozen=false,pendingInstall:NativeImageRef|undefined,pendingInstallProtection:ProtectedSourceV2|undefined;
   const pendingPlans=new Map<string,HistoryPlan<ProjectV2>>();
   let retainedRecoveryInputs:RetainedImageInput[]=[];const recoveryReports=new Map<string,ImageRecoveryDisposition>(),recoveredWait=new Map<string,ImageProjectOutcome>();
   const progressListeners=new Set<(event:ImagePipelineProgress)=>void>();
@@ -76,15 +78,18 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     const hydration=await store.hydration(image.content.source);if(!hydration)throw Object.assign(Error('Source retained or queued; image is not hydrated'),{code:'unavailable',effect:'none'});
     return hydration.native;
   };
+  const protectionFor=async(imageId:string):Promise<ProtectedSourceV2|undefined>=>{const image=current().images[imageId];return image?.protectedSource??(image?.content.kind==='source'?hydrationProtection(await store.hydration(image.content.source)):undefined);};
+  const checkProtection=async(ref:NativeImageRef,origin:ProtectedSourceV2|undefined)=>{if(native.versionSourcePolicy)assertVersionProtection(origin,await native.versionSourcePolicy(ref));else if(origin)throw Error('Native component cannot verify protected source provenance');};
+  const installedEdit=async(imageId:string,expected:import('../../platform/contracts/imageProject.js').ImageBindingV2,next:NativeImageRef)=>{const protectedSource=await protectionFor(imageId);return{kind:'installNativeImage' as const,imageId,expected,next,...(protectedSource?{protectedSource}:{})};};
   const installSelected=async()=>{
-    if(pendingInstall){await native.install(copy(pendingInstall));pendingInstall=undefined;return;}
-    const install=async(ref:NativeImageRef)=>{pendingInstall=copy(ref);await native.install(ref);pendingInstall=undefined;};
+    if(pendingInstall){await checkProtection(pendingInstall,pendingInstallProtection);await native.install(copy(pendingInstall));pendingInstall=undefined;pendingInstallProtection=undefined;return;}
+    const install=async(ref:NativeImageRef,imageId:string)=>{const origin=await protectionFor(imageId);await checkProtection(ref,origin);pendingInstall=copy(ref);pendingInstallProtection=copy(origin);await native.install(ref);pendingInstall=undefined;pendingInstallProtection=undefined;};
     // Stage A has one native editing target. Source-only/Pending entries are valid
     // project members without opening every document. Prefer the last native edit.
     const p=current(),image=options.activeImageId?.()??head!.commit.nativeDecision?.imageId;
     const target=image&&p.images[image]?image:[...p.shots,...p.parkedShots].find(s=>p.images[s.imageId].content.kind==='native')?.imageId;
-    if(target){const binding=p.images[target].content;if(binding.kind==='native')await install(binding.native);else{const hydrated=await store.hydration(binding.source);if(hydrated)await install(hydrated.native);}}
-    else for(const shot of p.shots){const binding=p.images[shot.imageId].content;if(binding.kind==='source'){const h=await store.hydration(binding.source);if(h){await install(h.native);break;}}}
+    if(target){const binding=p.images[target].content;if(binding.kind==='native')await install(binding.native,target);else{const hydrated=await store.hydration(binding.source);if(hydrated)await install(hydrated.native,target);}}
+    else for(const shot of p.shots){const binding=p.images[shot.imageId].content;if(binding.kind==='source'){const h=await store.hydration(binding.source);if(h){await install(h.native,shot.imageId);break;}}}
   };
   const reconcile=async(replaceWorker=false)=>{
     phase='recovering';notify();const freezeAfterRecovery=nativeMayBeFrozen;
@@ -215,8 +220,9 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     try{
       const prepared=await native.preparePaint(operationId,base,stroke);
       if(prepared.candidateId!==operationId||prepared.baseVersion!==base.versionId||!validNativeImageRef(prepared.native))throw Error('Native prepared receipt mismatch');
+      await checkProtection(prepared.native,await protectionFor(shot.imageId));
       if(same(prepared.native,base)){await native.discard(operationId);await store.resolveOperation(operationId,'discarded',null);return settled();}
-      const plan=history.prepare({kind:'installNativeImage',imageId:shot.imageId,expected,next:prepared.native});if(!plan.ok)throw Error(plan.error.message);
+      const plan=history.prepare(await installedEdit(shot.imageId,expected,prepared.native));if(!plan.ok)throw Error(plan.error.message);
       const decision:NativeDecision={kind:'image',operationId,candidateId:prepared.candidateId,imageId:shot.imageId,expected,baseNative:base,prepared:prepared.native};
       const c=await commitPlan(plan.value,operationId,decision);
       try{
@@ -238,8 +244,9 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
       const prepared=await native.prepareEdit(operationId,base,copy(request.edit),{expectedContextGeneration:request.expectedContextGeneration,...(request.preview?{preview:copy(request.preview)}:{})});
       if(prepared.candidateId!==operationId||prepared.baseVersion!==base.versionId||!validNativeImageRef(prepared.native))throw Error('Native image edit prepared receipt mismatch');
       const decision:NativeDecision={kind:'image',operationId,candidateId:prepared.candidateId,imageId:shot.imageId,expected,baseNative:base,prepared:prepared.native};
+      await checkProtection(prepared.native,await protectionFor(shot.imageId));
       if(same(prepared.native,base)){await store.decideUnchanged(head!.commitHash,decision);decided=head!.commitHash;}
-      else{const plan=history.prepare({kind:'installNativeImage',imageId:shot.imageId,expected,next:prepared.native});if(!plan.ok)throw Error(plan.error.message);decided=(await commitPlan(plan.value,operationId,decision)).commitHash;}
+      else{const plan=history.prepare(await installedEdit(shot.imageId,expected,prepared.native));if(!plan.ok)throw Error(plan.error.message);decided=(await commitPlan(plan.value,operationId,decision)).commitHash;}
       const accepted=await native.accept(prepared,base);if(!same(accepted,prepared.native))throw Error('Native image edit acceptance mismatch');
       await store.confirmOperations([{commitHash:decided,operationId,native:accepted}]);return settled();
     }catch(e){
@@ -250,12 +257,13 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
   const createBatch=async(request:Extract<NativeProjectRequest,{kind:'createBatch'}>,operationId:string):Promise<ImageProjectOutcome>=>{
     if(!native.prepareCreation||!native.creationStatus||!native.settleCreation||!native.discardCreation||!store.recordWorkspace)throw Object.assign(Error('Detached image creation is unavailable'),{code:'unsupported',effect:'none'});
     const intent:ImageCreationBatchIntent={schema:'flow.image-creation-batch',version:1,operationId,sessionId,incarnation,anchorCommitHash:head!.commitHash,items:copy(request.items),placement:copy(request.placement)};
+    for(const item of intent.items){if(item.input.kind==='duplicate'&&item.originImageId){if(!same(await resolve(item.originImageId),item.input.source))throw Error('Duplicate origin image changed');const origin=await protectionFor(item.originImageId);if(item.protectedSource&&!same(item.protectedSource,origin))throw Error('Duplicate protected origin changed');if(origin)item.protectedSource=copy(origin);await checkProtection(item.input.source,origin);}else if(item.input.kind==='duplicate')await checkProtection(item.input.source,undefined);}
     if(!validImageCreationIntent(intent))throw Object.assign(Error('Invalid detached creation batch'),{code:'invalid-input',effect:'none'});
     const provisional:ImageCreationBatchDecision={kind:'creation-batch',operationId,intentId:`creation-${operationId}`,items:intent.items.map((item,index)=>({candidateId:item.candidateId,imageId:item.imageId,native:{storeId:item.input.kind==='duplicate'?item.input.source.storeId:'preflight',documentId:`preflight-${index}`,versionId:'a'.repeat(64),manifestSha256:'a'.repeat(64),width:item.input.kind==='new'?item.input.width:item.input.source.width,height:item.input.kind==='new'?item.input.height:item.input.source.height}}))};
     const preflight=applyImageProjectEdit(current(),creationProjectEdit(intent,provisional));if(!preflight.ok)throw Object.assign(Error(preflight.error.message),{code:'invalid-input',effect:'none'});
     const intentId=`creation-${operationId}`;await store.recordWorkspace({kind:'creationBatch',id:intentId,owner:{sessionId,incarnation,workspaceEpoch:options.workspaceEpoch??0},intent});let committed:string|null=null;
     try{
-      const prepared:PreparedImage[]=[];for(const item of intent.items){const p=await native.prepareCreation(item.candidateId,copy(item.input),{maxAdditionalBytes:request.maxAdditionalBytes});if(p.candidateId!==item.candidateId||p.baseVersion!==null||!validNativeImageRef(p.native))throw Error('Detached creation receipt changed');prepared.push(p);}
+      const prepared:PreparedImage[]=[];for(const item of intent.items){const p=await native.prepareCreation(item.candidateId,copy(item.input),{maxAdditionalBytes:request.maxAdditionalBytes});if(p.candidateId!==item.candidateId||p.baseVersion!==null||!validNativeImageRef(p.native))throw Error('Detached creation receipt changed');await checkProtection(p.native,item.protectedSource);prepared.push(p);}
       const decision:ImageCreationBatchDecision={kind:'creation-batch',operationId,intentId,items:prepared.map((p,n)=>({candidateId:p.candidateId,imageId:intent.items[n].imageId,native:p.native}))},plan=history.prepare(creationProjectEdit(intent,decision));if(!plan.ok)throw Error(plan.error.message);
       const receipt=await commitPlan(plan.value,operationId,undefined,decision);committed=receipt.commitHash;
       for(const p of prepared){const accepted=await native.settleCreation(p);if(!same(accepted,p.native))throw Error('Detached acceptance receipt changed');}
@@ -277,8 +285,9 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
           const p=current(),image=p.images[entry.imageId];if(!image)throw Error('Pipeline target disappeared');
           const base=await resolve(entry.imageId);if(phase!=='active'||prepared.baseVersion!==base.versionId)throw Error('FIFO decision base differs from current project');
           const decision:NativeDecision={kind:'image',operationId:entry.operationId,candidateId:prepared.candidateId,imageId:entry.imageId,expected:copy(image.content),baseNative:base,prepared:prepared.native,pipeline:{pipelineId:entry.intent.pipelineId,anchorCommitHash:entry.intent.anchorCommitHash,predecessorOperationId:entry.predecessorOperationId}};
+          await checkProtection(prepared.native,await protectionFor(entry.imageId));
           if(same(base,prepared.native)){const unchangedHead=head!.commitHash;await store.decideUnchanged(unchangedHead,decision);commitHash=unchangedHead;}
-          else{const plan=history.prepare({kind:'installNativeImage',imageId:entry.imageId,expected:decision.expected,next:prepared.native});if(!plan.ok)throw Error(plan.error.message);commitHash=(await commitPlan(plan.value,entry.operationId,decision)).commitHash;}
+          else{const plan=history.prepare(await installedEdit(entry.imageId,decision.expected,prepared.native));if(!plan.ok)throw Error(plan.error.message);commitHash=(await commitPlan(plan.value,entry.operationId,decision)).commitHash;}
           const record:ProjectConfirmation={commitHash,operationId:entry.operationId,native:prepared.native};confirmationObligations.set(entry.operationId,{record,imageId:entry.imageId,inputThrough:entry.through});
           pipeline!.projectCommitted(entry,commitHash);
           if(phase!=='active')throw Error('Project decided while native reconciliation became necessary');
@@ -314,7 +323,7 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
       const fixedOperationId=identity?.operationId;if(fixedOperationId!==undefined&&!/^[A-Za-z0-9_-]{1,128}$/.test(fixedOperationId))return Promise.resolve(fail(Object.assign(Error('Invalid Main operation identity'),{effect:'none'})));
       if(pending>=32)return Promise.resolve(fail(Object.assign(Error('Main request queue is full'),{code:'resource-limit',effect:'none'})));
       let request:NativeProjectRequest;
-      try{request=copy(input);const valid=request?.kind==='createBatch'?shape(request,['kind','items','placement','maxAdditionalBytes'])&&Array.isArray(request.items)&&request.items.every(i=>shape(i,['candidateId','imageId','input'])&&validNativeCreationInput(i.input))&&Number.isSafeInteger(request.maxAdditionalBytes)&&request.maxAdditionalBytes>0:request?.kind==='paint'?shape(request,['kind','shotId','stroke']):request?.kind==='imageEdit'?shape(request,['kind','shotId','expectedNative','expectedContextGeneration','edit'],['preview'])&&validNativeImageRef(request.expectedNative)&&Number.isSafeInteger(request.expectedContextGeneration)&&request.expectedContextGeneration>=0&&validImageEngineEdit(request.edit)&&(request.preview===undefined||validImageEnginePreviewStamp(request.preview)):request?.kind==='board'?shape(request,['kind','edit'],['typing']):shape(request,['kind'])&&['undo','redo','recover','freeze','resume','barrier'].includes(String(request.kind));if(!valid)throw Error('Invalid Main Session request');}catch{return Promise.resolve(fail(Object.assign(Error('Invalid Main Session request'),{code:'invalid-input',effect:'none'})));}
+      try{request=copy(input);const valid=request?.kind==='createBatch'?shape(request,['kind','items','placement','maxAdditionalBytes'])&&Array.isArray(request.items)&&request.items.every(i=>shape(i,['candidateId','imageId','input'],['originImageId','protectedSource'])&&validNativeCreationInput(i.input))&&Number.isSafeInteger(request.maxAdditionalBytes)&&request.maxAdditionalBytes>0:request?.kind==='paint'?shape(request,['kind','shotId','stroke']):request?.kind==='imageEdit'?shape(request,['kind','shotId','expectedNative','expectedContextGeneration','edit'],['preview'])&&validNativeImageRef(request.expectedNative)&&Number.isSafeInteger(request.expectedContextGeneration)&&request.expectedContextGeneration>=0&&validImageEngineEdit(request.edit)&&(request.preview===undefined||validImageEnginePreviewStamp(request.preview)):request?.kind==='board'?shape(request,['kind','edit'],['typing']):shape(request,['kind'])&&['undo','redo','recover','freeze','resume','barrier'].includes(String(request.kind));if(!valid)throw Error('Invalid Main Session request');}catch{return Promise.resolve(fail(Object.assign(Error('Invalid Main Session request'),{code:'invalid-input',effect:'none'})));}
       const isBarrier=request.kind==='undo'||request.kind==='redo'||request.kind==='freeze'||request.kind==='imageEdit'||request.kind==='barrier'||request.kind==='createBatch';
       // Admission-time context matters: an active gesture can end before this
       // request reaches tail, putting its decision behind the barrier itself.

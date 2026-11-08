@@ -1,4 +1,4 @@
-import type { ImageEngineEdit } from './imageEngine.js';
+import type { ImageEngineEdit,ImageEngineSourceDisplayProof,ImageEngineProtectedSourcePolicy } from './imageEngine.js';
 import type { ChangeSetV1, ProjectV1 } from './refactorV1.js';
 import type { FlowStroke } from './flowWave2.js';
 
@@ -11,7 +11,8 @@ export type SourceImageRef = { importId: string; itemId: string; interpretationI
 export type ImageBindingV2 =
   | { kind: 'source'; source: SourceImageRef }
   | { kind: 'native'; native: NativeImageRef };
-export type ProjectImageV2 = { id: string; content: ImageBindingV2 };
+export type ProtectedSourceV2={source:SourceImageRef;original:{digest:string;byteLength:number;format:'tiff'|'psd'};referenceRgbaSha256:string};
+export type ProjectImageV2 = { id: string; content: ImageBindingV2;protectedSource?:ProtectedSourceV2 };
 export type ProjectV2 = Omit<ProjectV1, 'version' | 'images'> & {
   version: 2; images: Record<string, ProjectImageV2>;
 };
@@ -20,7 +21,7 @@ export type ProjectV2 = Omit<ProjectV1, 'version' | 'images'> & {
 export type NativeImageCreationInput={kind:'new';width:number;height:number}|{kind:'duplicate';source:NativeImageRef};
 export type ImageCreationBatchIntent={
  schema:'flow.image-creation-batch';version:1;operationId:string;sessionId:string;incarnation:string;anchorCommitHash:string;
- items:readonly {candidateId:string;imageId:string;input:NativeImageCreationInput}[];
+ items:readonly {candidateId:string;imageId:string;input:NativeImageCreationInput;originImageId?:string;protectedSource?:ProtectedSourceV2}[];
  placement:{shots:ProjectV2['shots'];dialogues:ProjectV2['dialogues'];destination:'active'|'pending';beforeId?:string};
 };
 export type ImageCreationBatchDecision={kind:'creation-batch';operationId:string;intentId:string;items:readonly{candidateId:string;imageId:string;native:NativeImageRef}[]};
@@ -43,6 +44,7 @@ export type HydrationRecord = {
   schema: 'flow.image-hydration'; version: 1;
   source: SourceImageRef & { digest: string; byteLength: number };
   hostBuildDigest: string; optionsHash: string; native: NativeImageRef; operationId: string;acceptance?:'detached';
+  sourceDisplay?:{proof:ImageEngineSourceDisplayProof;policy:ImageEngineProtectedSourcePolicy|null;reason?:{code:string;message:string}};
 };
 export type NativeSettlement = {
   schema: 'flow.native-settlement'; version: 1; commitHash: string;
@@ -102,7 +104,7 @@ export type ImageProjectEdit =
   | { kind: 'setDialogues'; shotId: string; dialogues: ProjectV2['dialogues'] }
   | { kind: 'setScriptText'; shotId: string; text: string }
   | { kind: 'moveShots'; shotIds: string[]; destination: 'active' | 'pending'; beforeId?: string }
-  | { kind: 'installNativeImage'; imageId: string; expected: ImageBindingV2; next: NativeImageRef };
+  | { kind: 'installNativeImage'; imageId: string; expected: ImageBindingV2; next: NativeImageRef;protectedSource?:ProtectedSourceV2 };
 export type ImageProjectEditResult = { before: ProjectV2; after: ProjectV2; changed: boolean; changes: ChangeSetV1 };
 export type ImageProjectSnapshot = {
   sessionId: string; incarnation: string; eventSeq: number; project: ProjectV2;

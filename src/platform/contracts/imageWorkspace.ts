@@ -36,6 +36,7 @@ export type ImageWorkspaceImageView = {
  readonly contextGeneration:number|null;
  readonly thumbnailId?:string; // Session-bound read-only display capability.
  readonly issue?:{readonly code:string;readonly message:string};
+ readonly notice?:{readonly code:string;readonly message:string};
 };
 export type ImageWorkspaceContext = {
  token:string; // Opaque Main navigation/context lifetime, independent of display frames.
