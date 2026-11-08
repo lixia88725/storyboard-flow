@@ -1,3 +1,4 @@
+import {inspectProjectFolder,type ProjectFolderEntry} from '../projectFolderEntry.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {constants} from 'node:fs';
@@ -29,4 +30,16 @@ export async function probeImageWorkspaceProject(root:string):Promise<ImageWorks
  }
  if(!formatted||!project)throw Error('Project creation incomplete: no durable genesis');await check();return{kind:'native',root,identity:{id:project.id,name:project.name},format:'journal'};
  }finally{await journal.close();}
+}
+
+export type ImageWorkspaceFolderInspection=
+ |{kind:'native';plan:ImageWorkspaceProjectPlan}|{kind:'legacy'}
+ |{kind:'images';entry:Extract<ProjectFolderEntry,{kind:'images'}>}
+ |{kind:'empty';entry:Extract<ProjectFolderEntry,{kind:'empty'}>}
+ |{kind:'damaged';reason:string};
+/** One classification for chooser/recent/CLI/relocation. A Flow marker never
+ * falls back to ordinary import after any format/read failure. */
+export async function inspectImageWorkspaceFolder(root:string):Promise<ImageWorkspaceFolderInspection>{
+ try{const entry=await inspectProjectFolder(root);if(entry.kind==='images'||entry.kind==='empty')return{kind:entry.kind,entry} as ImageWorkspaceFolderInspection;if(entry.kind==='damaged')return entry;try{return{kind:'native',plan:await probeImageWorkspaceProject(root)};}catch(e){if(e instanceof LegacyImageWorkspaceProjectError)return{kind:'legacy'};throw e;}}
+ catch(e){return{kind:'damaged',reason:e instanceof Error?e.message:String(e)};}
 }
