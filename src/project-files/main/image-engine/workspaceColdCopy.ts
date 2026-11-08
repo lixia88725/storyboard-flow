@@ -18,6 +18,7 @@ export async function prepareWorkspaceColdCopy(root:string):Promise<WorkspaceCol
  const lockPath=path.join(namespace,'writer.lock'),lock=await fs.lstat(lockPath,{bigint:true});if(!lock.isFile()||lock.isSymbolicLink()||lock.nlink!==1n||(await fs.lstat(ownerPath,{bigint:true})).nlink!==1n)throw refused('Copied lease marker or lock is aliased');
  const currentLock=identity(lock),previousRoot=marker.directories[marker.directories.length-3];
  if(currentDirectories.length===marker.directories.length&&currentDirectories.every((s,i)=>same(s,{dev:String(marker.directories[i].dev),ino:String(marker.directories[i].ino)}))&&same(currentLock,{dev:String(marker.lock.dev),ino:String(marker.lock.ino)}))return null;
+ if(same(identity(st),{dev:String(previousRoot.dev),ino:String(previousRoot.ino)}))throw refused('An unchanged project root cannot use cold-copy admission to replace its lock or namespace');
  if(marker.state!=='released')throw refused('Held or unknown copied owner marker cannot be admitted');
  const head=await readImageWorkspaceProject(root);if(!('coldCopySafe'in head)||head.coldCopySafe!==true)throw refused('Main journal has unresolved or unverified cold-copy obligations');
  const previous={dev:String(previousRoot.dev),ino:String(previousRoot.ino)},output=await inspectWorkspaceOutputColdCopy(root,head.plan.identity.id,previous);

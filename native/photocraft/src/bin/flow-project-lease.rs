@@ -300,6 +300,8 @@ mod supported {
             || !hash(&a.files_digest)
             || a.output_head_hash.as_ref().is_some_and(|v| !hash(v))
             || (a.output_ledger_seq == 0) != a.output_head_hash.is_none()
+            || (a.current_root.dev == a.previous_root.dev
+                && a.current_root.ino == a.previous_root.ino)
             || a.current_root.path != root.to_str().ok_or("non UTF8 root")?
             || a.current_root.dev != tree.root_stamp().dev.to_string()
             || a.current_root.ino != tree.root_stamp().ino.to_string()
