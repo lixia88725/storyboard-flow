@@ -8,6 +8,7 @@ mod journal;
 pub use context::{FloatingAction, LayerIdInput};
 mod product;
 mod product_preview;
+mod source_metadata;
 pub use product::{ProductEdit, SelectionPoint};
 pub use product_preview::PreviewStamp;
 mod output;

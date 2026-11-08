@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createNativeFrameDecoder, type NativeFrame } from './imageEngineFraming.js';
 
-export type ImageEngineCapability = 'recoveredCandidateAcceptAtInstalledVersion' | 'strokePipelineV1' | 'immutableVersionExportV1' | 'settledResumeV1' | 'toolContextSummaryV1' | 'contextLayerSelectionV1' | 'floatingGestureV1' | 'decimalLayerIdsV1' | 'flowBrushPresetsV1' | 'temporarySelectionContextV1' | 'productImageEditsV1' | 'intrinsicSelectionPaintGuardV1' | 'productEditPreviewV1' | 'detachedImageJobsV1';
+export type ImageEngineCapability = 'recoveredCandidateAcceptAtInstalledVersion' | 'strokePipelineV1' | 'immutableVersionExportV1' | 'settledResumeV1' | 'toolContextSummaryV1' | 'contextLayerSelectionV1' | 'floatingGestureV1' | 'decimalLayerIdsV1' | 'flowBrushPresetsV1' | 'temporarySelectionContextV1' | 'productImageEditsV1' | 'intrinsicSelectionPaintGuardV1' | 'productEditPreviewV1' | 'detachedImageJobsV1' | 'flowV1UpgradeInterpretationV1';
 
 /** One explicitly owned native process. Transport failure means UNKNOWN, never cancellation.
  * At most one request is outstanding in protocol v1; caller owns operation reconciliation.

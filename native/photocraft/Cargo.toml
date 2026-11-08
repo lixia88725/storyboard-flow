@@ -8,6 +8,8 @@ license = "MIT"
 [workspace]
 
 [dependencies]
+base64 = "=0.22.1"
+roxmltree = "=0.20.0"
 photocraft-psd = { path = "../../vendor/photocraft/crates/psd" }
 photocraft-io = { path = "../../vendor/photocraft/crates/io" }
 photocraft-compose = { path = "../../vendor/photocraft/crates/compose" }

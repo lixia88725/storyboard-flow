@@ -279,7 +279,7 @@ fn preflight_source(source: &Source, payload: &[u8]) -> Result<()> {
     if source
         .interpretation_id
         .as_deref()
-        .is_some_and(|v| v != "photocraft-v1")
+        .is_some_and(|v| v != "photocraft-v1" && v != "flow-v1-upgrade")
     {
         return Err(Error::none(
             "unsupported",
@@ -320,7 +320,7 @@ pub(super) fn decode_source(source: &Source, payload: &[u8]) -> Result<Document>
             "source is damaged, preview-only or reports compatibility warnings",
         ));
     }
-    let doc = import.document;
+    let mut doc = import.document;
     dimensions(doc.size.width, doc.size.height)?;
     if doc.mode != ColorMode::Rgb
         || doc.depth != SampleType::U8
@@ -333,6 +333,15 @@ pub(super) fn decode_source(source: &Source, payload: &[u8]) -> Result<Document>
             "unsupported",
             "immutable hydration admits RGB8 raster/group documents only",
         ));
+    }
+    if source.interpretation_id.as_deref() == Some("flow-v1-upgrade") {
+        if source.format_hint != "tiff" {
+            return Err(Error::none(
+                "unsupported-source-interpretation",
+                "V1 upgrade is a TIFF-only interpretation",
+            ));
+        }
+        source_metadata::restore_v1(&mut doc, payload)?;
     }
     Ok(doc)
 }

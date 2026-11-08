@@ -686,8 +686,21 @@ and larger files are not silently flattened or admitted. Main must retain their
 originals and use an explicit protected reference-display route. This is not
 parity with the older protected `readPhotocraft` reader or a 32 Mi-pixel product
 capacity claim. Source interpretation is bound separately from format hint:
-`photocraft-v1` is supported; `flow-v1-upgrade` remains explicitly unsupported
-until its separate validated opacity/lock hydration capability is implemented.
+`photocraft-v1` uses the ordinary native interpretation. The separate
+`flowV1UpgradeInterpretationV1` capability permits `flow-v1-upgrade` only for a
+Main-granted, SHA-256/length-bound ordinary Flow V1 classic TIFF. Hydration checks
+the actual rasterVersion-2 portable envelope and native PSD layer IDs derived
+from its logical IDs, complete full-canvas raster records, names, visibility,
+blend, lock flags and rounded opacity. It restores the original float opacity
+and V1 full-lock meaning in the detached Document before its immutable version
+is saved; raster tile hashes and source bytes do not change. Unknown metadata,
+protected sourceReference/rasterVersion-3 content, masks, blending ranges and
+unknown structure are rejected. This is not a general external-TIFF repair
+profile. Source Registry and Creation must grant the explicit interpretation;
+formatHint never conveys this authority, and missing capability must not fall
+back to ordinary interpretation. `imageEngineV1Interpretation.test.ts` uses the
+existing independent strict Python TIFF writer, retained-byte grants and a real
+host to test both interpretations, unchanged tile objects, rejection and reopen.
 
 Native tests inspect the unchanged active pixels/mask/target and prepared states,
 background input continuation, quotas and exact activation. The real Node tests
@@ -703,5 +716,5 @@ layer composition with the source's embedded merged display. That is a default
 routing blocker: controlled/synthetic Source tests are not evidence to retire
 protected display. The existing real TIFF corpus must retain its original SHA
 and reference-display meaning; mismatches require explicit reference display or
-refusal. Metadata overlay, the V1 opacity/full-lock interpretation, larger canvas
+refusal. Metadata overlay, larger canvas
 budgets and real Windows evidence are separate unfinished gates.
