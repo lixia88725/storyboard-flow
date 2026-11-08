@@ -11,7 +11,7 @@ import {readBoundFile}from'../persistence/fileOps.js';
 import {canonicalUtf8,sha256Hex} from '../persistence/canonicalJson.js';
 
 export type WorkspaceSourcesOptions={root:string;writerAuthority:{assertHeld(root:{path:string;dev:string;ino:string}):Promise<void>};budget:WorkspaceOutputBudget;limits?:Pick<Partial<SourceStoreLimits>,'maxSourceBytes'|'maxStoredBytes'|'maxItems'>;fault?:(point:string)=>Promise<void>};
-export type WorkspaceSources={snapshot():readonly SourceImportManifest[];verify(ref:SourceImageRef,retained?:{digest:string;byteLength:number}):Promise<void>;object(ref:SourceImageRef,options?:{verify:'full'}):Promise<RetainedSourceObject>;registerBatch(input:{importId:string;sources:readonly SourceInput[]}):Promise<SourceImportManifest>;retain(importId:string,itemId:string):Promise<SourceImportItem>;resume(importId:string,options?:{signal?:AbortSignal;itemIds?:readonly string[];onProgress?:(manifest:SourceImportManifest)=>void}):Promise<SourceImportManifest>;pause(importId:string):Promise<SourceImportManifest>;close():Promise<void>};
+export type WorkspaceSources={snapshot():readonly SourceImportManifest[];pendingRecoveryImports():readonly string[];verify(ref:SourceImageRef,retained?:{digest:string;byteLength:number}):Promise<void>;object(ref:SourceImageRef,options?:{verify:'full'}):Promise<RetainedSourceObject>;registerBatch(input:{importId:string;sources:readonly SourceInput[]}):Promise<SourceImportManifest>;retain(importId:string,itemId:string):Promise<SourceImportItem>;resume(importId:string,options?:{signal?:AbortSignal;itemIds?:readonly string[];onProgress?:(manifest:SourceImportManifest)=>void}):Promise<SourceImportManifest>;pause(importId:string):Promise<SourceImportManifest>;close():Promise<void>};
 export class WorkspaceSourcesError extends Error{constructor(readonly code:string,message:string,readonly effect:'none'|'retained'|'unknown'='none'){super(message);}}
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,MAX=8*1024**3;
 const clone=<T>(value:T):T=>structuredClone(value);
@@ -33,7 +33,8 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
  const directories=new Map<string,{dev:bigint;ino:bigint}>(),manifests=new Map<string,SourceImportManifest>(),objectCache=new Map<string,RetainedSourceObject>(),versions=new Map<string,number>(),resumes=new Set<Promise<SourceImportManifest>>();
  let closed=false,closing=false,tail:Promise<unknown>=Promise.resolve(),current:{id:string;store:SourceImportStore}|undefined;
  type Grant=Awaited<ReturnType<WorkspaceOutputBudget['reserve']>>;
- const unknown=new Map<string,{grant:Grant;before:number;importId:string}>();
+ type RecoveryScope={items?:readonly string[];sourceInputs?:SourceInput[];retained?:Record<string,{digest:string;byteLength:number}>;registration?:SourceImportManifest};
+ const unknown=new Map<string,{grant:Grant;before:number;importId:string;scope?:RecoveryScope}>();
  const fail=(message:string):never=>{throw new WorkspaceSourcesError('conflict',message,'retained');};
  const bind=async()=>{if(closed)throw new WorkspaceSourcesError('closed','Source registry closed');await options.writerAuthority.assertHeld(binding);const now=await directory(root);if(now.dev!==identity.dev||now.ino!==identity.ino)fail('Source root identity changed');await assertPhysicalWorkspaceWriterTargets([root]);for(const [at,id]of directories){const st=await directory(at);if(st.dev!==id.dev||st.ino!==id.ino)fail('Source directory identity changed');}};
  const ensure=async(at:string)=>{await bind();try{await fs.mkdir(at,{mode:0o700});await syncDirectory(path.dirname(at));}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;}const st=await directory(at);directories.set(at,{dev:st.dev,ino:st.ino});};
@@ -58,22 +59,31 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
  const use=async(id:string)=>{requireManifest(id);await bind();if(current?.id===id)return current.store;await closeCurrent();const opened=await openSourceBackedImportForTargetUse({root,importId:id,limits}),store=opened.store;current={id,store};remember(store.snapshot());return store;};
  const refresh=async(id:string)=>{const value=await inspectSourceBackedImport({root,importId:id,limits});return remember(value.manifest);};
  const reconcile=async(id:string)=>{
-  if(!unknown.size)return;await bind();if([...unknown.values()].some(item=>item.importId!==id))throw new WorkspaceSourcesError('recovery-pending','Resume the source import with retained expenditure first','retained');await closeCurrent();
-  try{await refresh(id);}catch(e){if(!missing(e))throw e;if(manifests.has(id))fail('Registered source manifest disappeared; evidence retained');try{await fs.lstat(path.join(imports,id));fail('Published source batch has missing metadata; evidence retained');}catch(probe){if(!missing(probe))throw probe;}}
-  const actual=await measure();for(const [key,item]of unknown){await item.grant.settleActual(actual-item.before);unknown.delete(key);}
+  if(!unknown.size)return;await bind();if([...unknown.values()].some(item=>item.importId!==id))throw new WorkspaceSourcesError('recovery-pending','Resume the source import with retained expenditure first','retained');
+  try{
+   await closeCurrent();let manifest:SourceImportManifest|undefined;
+   try{manifest=await refresh(id);}catch(e){if(!missing(e))throw e;if(manifests.has(id))fail('Registered source manifest disappeared; evidence retained');try{await fs.lstat(path.join(imports,id));fail('Published source batch has missing metadata; evidence retained');}catch(probe){if(!missing(probe))throw probe;}}
+   for(const item of unknown.values())if(item.scope?.registration&&manifest&&!same(item.scope.registration,manifest))fail('Published source registration differs from its retained operation');
+   for(const operation of unknown.values())for(const expected of operation.scope?.sourceInputs??[]){const item=manifest?.items.find(i=>i.id===expected.id);if(!item||!same({id:item.id,sourcePath:item.sourcePath,...(item.formatHint===undefined?{}:{formatHint:item.formatHint}),expected:item.expected},expected)||operation.scope?.retained?.[expected.id]&&!same(operation.scope.retained[expected.id],item.retained))fail('Source retention no longer matches its accepted operation');}
+   const targets=new Set([...unknown.values()].flatMap(item=>item.scope?.items??[]));
+   for(const itemId of targets){const item=manifest?.items.find(i=>i.id===itemId);if(!item)fail('Unknown retained source target disappeared');if(item!.state==='retained'){const store=await use(id);await store.object(itemId);}}
+   const actual=await measure();for(const [key,item]of unknown){await item.grant.settleActual(actual-item.before);unknown.delete(key);}
+  }catch(e){throw new WorkspaceSourcesError('recovery-pending',e instanceof Error?e.message:String(e),'unknown');}
  };
- const mutate=async<T>(id:string,bytes:number,purpose:string,job:()=>Promise<T>):Promise<T>=>{
+ const mutate=async<T>(id:string,bytes:number,purpose:string,job:()=>Promise<T>,scope?:RecoveryScope):Promise<T>=>{
   await bind();if(unknown.size)throw new WorkspaceSourcesError('recovery-pending','Source expenditure is unknown; explicitly resume this import','unknown');const before=await measure();if(before+bytes>limits.maxStoredBytes)throw new WorkspaceSourcesError('resource-limit','Source actual plus reservation exceeds configured storage budget','retained');const key='source-'+randomUUID(),grant=await options.budget.reserve({operationId:key,bytes,purpose});
   try{await bind();const value=await job();await bind();await grant.settleActual((await measure())-before);return value;}
-  catch(e){await grant.retainUnknown();unknown.set(key,{grant,before,importId:id});throw new WorkspaceSourcesError('source-effect-pending',e instanceof Error?e.message:String(e),'unknown');}
+  catch(e){await grant.retainUnknown();unknown.set(key,{grant,before,importId:id,...(scope?{scope:clone(scope)}:{})});throw new WorkspaceSourcesError('source-effect-pending',e instanceof Error?e.message:String(e),'unknown');}
  };
+
  const metaBound=(m:SourceImportManifest)=>canonicalUtf8(m).length+12288;
  const cancel=async(id:string)=>{const m=requireManifest(id);if(m.phase==='cancelled')return clone(m);const store=await use(id);return mutate(id,metaBound(m)*3,'source-pause-manifest',async()=>remember(await store.cancel()));};
  const retain=async(id:string,itemId:string)=>{
   const m=requireManifest(id),item=m.items.find(i=>i.id===itemId);if(!item)throw new WorkspaceSourcesError('invalid-input','Unknown source item');const store=await use(id);
   if(item.state==='retained'||item.state==='source-changed'){const value=await store.retain(itemId);remember(store.snapshot());return value;}
   const size=Number(item.expected.size);if(!Number.isSafeInteger(size)||size>limits.maxSourceBytes)throw new WorkspaceSourcesError('resource-limit','Source exceeds configured byte budget');
-  return mutate(id,(item.state==='publishing'?0:size*2)+metaBound(m)*5,'source-original-and-manifest-history',async()=>{const value=await store.retain(itemId);remember(store.snapshot());await options.fault?.('after-source-retain');if(value.error?.effect==='unknown')throw new WorkspaceSourcesError(value.error.code,value.error.message,'unknown');return value;});
+  const scope:RecoveryScope={items:[itemId],sourceInputs:[{id:item.id,sourcePath:item.sourcePath,...(item.formatHint===undefined?{}:{formatHint:item.formatHint}),expected:clone(item.expected)}]};
+  return mutate(id,(item.state==='publishing'?size:size*2)+metaBound(m)*5,'source-original-and-manifest-history',async()=>{const value=await store.retain(itemId);remember(store.snapshot());if(value.retained)scope.retained={[itemId]:clone(value.retained)};await options.fault?.('after-source-retain');if(value.error?.effect==='unknown')throw new WorkspaceSourcesError(value.error.code,value.error.message,'unknown');return value;},scope);
  };
  const matching=(m:SourceImportManifest,sources:readonly SourceInput[])=>sources.length===m.items.length&&sources.every((s,i)=>{const item=m.items[i];return s&&s.id===item.id&&s.sourcePath===item.sourcePath&&s.formatHint===item.formatHint&&(s.expected===undefined||same(s.expected,item.expected));});
  const resolveObject=async(ref:SourceImageRef,full=false)=>{
@@ -94,6 +104,7 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
   if([...manifests.values()].reduce((n,m)=>n+m.items.length,0)>limits.maxItems)throw new WorkspaceSourcesError('resource-limit','Source registry item budget exceeded');
   return{
    snapshot(){return Object.freeze([...manifests.values()]);},
+   pendingRecoveryImports(){return Object.freeze([...new Set([...unknown.values()].map(item=>item.importId))].sort());},
    async verify(ref,retained){const captured=clone(ref),expected=clone(retained);if(closing||closed)throw new WorkspaceSourcesError('closed','Source registry closing');await bind();checkRef(captured);if(expected){const object=await admit(()=>resolveObject(captured));if(object.digest!==expected.digest||object.byteLength!==expected.byteLength)fail('Retained source digest or byte length differs');}},
    object(ref,verification){const captured=clone(ref);if(verification!==undefined&&(!verification||Object.keys(verification).length!==1||verification.verify!=='full'))return Promise.reject(new WorkspaceSourcesError('invalid-input','Unsupported source object verification'));const full=verification?.verify==='full';return admit(()=>resolveObject(captured,full));},
    registerBatch(input){const captured=clone(input);return admit(async()=>{
@@ -105,13 +116,13 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
     return mutate(captured.importId,canonicalUtf8(sample).length*3+1024,'source-queued-registration',async()=>{
      await closeCurrent();for(const at of[hidden,storage,originals,imports,stages])await ensure(at);const stage=await fs.mkdtemp(path.join(stages,'registration-'));let temporary:SourceImportStore|undefined;
      try{temporary=await createSourceBackedImport({root:stage,importId:captured.importId,sources,limits});const manifest=temporary.snapshot();await temporary.close();temporary=undefined;const batch=path.join(stage,'.storyboard-flow/image-engine/imports',captured.importId),st=await directory(batch);await bind();await publishDirectoryExclusive(batch,path.join(imports,captured.importId),{dev:st.dev,ino:st.ino});await options.fault?.('after-registration-publication');return remember(manifest);}finally{if(temporary)await temporary.close();}
-    });
+    },{registration:sample});
    });},
    retain(importId,itemId){return admit(()=>retain(importId,itemId));},
    resume(importId,opts={}){
-    if(closing||closed)return Promise.reject(new WorkspaceSourcesError('closed','Source registry is closing'));if(opts.itemIds!==undefined&&!Array.isArray(opts.itemIds))return Promise.reject(new WorkspaceSourcesError('invalid-input','Invalid source resume item IDs'));const selection=opts.itemIds===undefined?undefined:[...opts.itemIds],manifest=requireManifest(importId);if(selection&&(new Set(selection).size!==selection.length||selection.some(id=>!manifest.items.some(item=>item.id===id))))return Promise.reject(new WorkspaceSourcesError('invalid-input','Invalid source resume item IDs'));const version=versions.get(importId)??0,signal=opts.signal,onProgress=opts.onProgress,stop=()=>closing||closed||!!signal?.aborted||(versions.get(importId)??0)!==version;
+    if(closing||closed)return Promise.reject(new WorkspaceSourcesError('closed','Source registry is closing'));if(opts.itemIds!==undefined&&!Array.isArray(opts.itemIds))return Promise.reject(new WorkspaceSourcesError('invalid-input','Invalid source resume item IDs'));const selection=opts.itemIds===undefined?undefined:[...opts.itemIds];if(selection&&new Set(selection).size!==selection.length)return Promise.reject(new WorkspaceSourcesError('invalid-input','Invalid source resume item IDs'));const version=versions.get(importId)??0,signal=opts.signal,onProgress=opts.onProgress,stop=()=>closing||closed||!!signal?.aborted||(versions.get(importId)??0)!==version;
     const work=(async()=>{
-     await enqueue(async()=>{await reconcile(importId);const m=requireManifest(importId);if(stop()){await cancel(importId);return;}if(m.phase==='cancelled'){const store=await use(importId);await mutate(importId,metaBound(m)*3,'source-resume-manifest',async()=>remember(await store.resume({itemIds:[]})));}});
+     await enqueue(async()=>{await reconcile(importId);const m=requireManifest(importId);if(selection?.some(id=>!m.items.some(item=>item.id===id)))throw new WorkspaceSourcesError('invalid-input','Invalid source resume item IDs');if(stop()){await cancel(importId);return;}if(m.phase==='cancelled'){const store=await use(importId);await mutate(importId,metaBound(m)*3,'source-resume-manifest',async()=>remember(await store.resume({itemIds:[]})));}});
      const ids=selection??requireManifest(importId).items.map(i=>i.id);
      for(const id of ids){if(stop())break;await enqueue(async()=>{if(stop())return;await retain(importId,id);});try{onProgress?.(clone(requireManifest(importId)));}catch{/* advisory */}}
      if(stop())await enqueue(()=>cancel(importId));return clone(requireManifest(importId));
