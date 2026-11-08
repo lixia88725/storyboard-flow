@@ -6,6 +6,7 @@ mod supported {
     use rustix::fs::{self as rfs, AtFlags, Mode, OFlags};
     use serde::{Deserialize, Serialize};
     use serde_json::{Value, json};
+    use sha2::{Digest, Sha256};
     use std::{
         ffi::OsString,
         fs::File,
@@ -195,6 +196,8 @@ mod supported {
         nonce: String,
         directories: Vec<Stamp>,
         lock: Stamp,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        copy_receipt: Option<Value>,
     }
     fn read_owner(tree: &Tree) -> Result<(Owner, Stamp)> {
         let (mut file, _) = plain(tree.parent(), "owner.json", false, false)?;
@@ -211,6 +214,238 @@ mod supported {
         }
         let marker = serde_json::from_slice(&bytes).map_err(err)?;
         Ok((marker, stamp(&file)?))
+    }
+    fn owner_bytes(tree: &Tree) -> Result<Vec<u8>> {
+        let (mut file, _) = plain(tree.parent(), "owner.json", false, false)?;
+        let mut bytes = Vec::new();
+        Read::by_ref(&mut file)
+            .take(16385)
+            .read_to_end(&mut bytes)
+            .map_err(err)?;
+        if bytes.len() > 16384 {
+            return Err("owner marker exceeds budget".into());
+        }
+        Ok(bytes)
+    }
+    fn sha(bytes: &[u8]) -> String {
+        format!("{:x}", Sha256::digest(bytes))
+    }
+    fn hash(value: &str) -> bool {
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    }
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct TextStamp {
+        dev: String,
+        ino: String,
+    }
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct CopyRoot {
+        path: String,
+        dev: String,
+        ino: String,
+    }
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct CopyAuthorization {
+        schema: String,
+        version: u32,
+        project_id: String,
+        genesis_commit_hash: String,
+        commit_hash: String,
+        current_root: CopyRoot,
+        current_lock: TextStamp,
+        current_directories: Vec<TextStamp>,
+        previous_root: TextStamp,
+        previous_owner_sha256: String,
+        output_head_hash: Option<String>,
+        output_ledger_seq: u64,
+        files_digest: String,
+    }
+    fn text_matches(text: &TextStamp, actual: &Stamp) -> bool {
+        text.dev == actual.dev.to_string() && text.ino == actual.ino.to_string()
+    }
+    fn validate_copy(
+        a: &CopyAuthorization,
+        tree: &Tree,
+        root: &Path,
+        old: &Owner,
+        lock: &Stamp,
+        bytes: &[u8],
+    ) -> Result<()> {
+        let previous = old
+            .directories
+            .get(
+                old.directories
+                    .len()
+                    .checked_sub(3)
+                    .ok_or("old owner has no root")?,
+            )
+            .ok_or("old owner has no root")?;
+        if a.schema != "flow.workspace-cold-copy"
+            || a.version != 1
+            || a.project_id.is_empty()
+            || a.project_id.len() > 80
+            || !a
+                .project_id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+            || !hash(&a.genesis_commit_hash)
+            || !hash(&a.commit_hash)
+            || !hash(&a.previous_owner_sha256)
+            || !hash(&a.files_digest)
+            || a.output_head_hash.as_ref().is_some_and(|v| !hash(v))
+            || (a.output_ledger_seq == 0) != a.output_head_hash.is_none()
+            || a.current_root.path != root.to_str().ok_or("non UTF8 root")?
+            || a.current_root.dev != tree.root_stamp().dev.to_string()
+            || a.current_root.ino != tree.root_stamp().ino.to_string()
+            || !text_matches(&a.current_lock, lock)
+            || a.current_directories.len() != tree.stamps.len()
+            || !a
+                .current_directories
+                .iter()
+                .zip(&tree.stamps)
+                .all(|(x, y)| text_matches(x, y))
+            || !text_matches(&a.previous_root, previous)
+            || a.previous_owner_sha256 != sha(bytes)
+            || old.schema != 1
+            || old.state != "released"
+            || old.main_pid <= 1
+            || old.nonce.is_empty()
+            || old.host.is_empty()
+            || !matches!(old.platform.as_str(), "macos" | "linux")
+        {
+            return Err("cold copy authorization/closed marker/root identity mismatch".into());
+        }
+        Ok(())
+    }
+    fn receipt(a: &CopyAuthorization, bytes: &[u8]) -> Result<Value> {
+        let mut value = serde_json::to_value(a).map_err(err)?;
+        let o = value.as_object_mut().ok_or("copy authorization object")?;
+        let digest = sha(bytes);
+        o.insert("schema".into(), json!("flow.workspace-cold-copy-receipt"));
+        o.insert("authorizationSha256".into(), json!(digest));
+        o.insert(
+            "authorizationFile".into(),
+            json!(format!("copy-admission-{digest}.json")),
+        );
+        o.insert(
+            "previousOwnerFile".into(),
+            json!(format!("copy-owner-{}.json", a.previous_owner_sha256)),
+        );
+        Ok(value)
+    }
+    fn evidence_bytes(tree: &Tree, name: &str) -> Result<Vec<u8>> {
+        let (mut file, _) = plain(tree.parent(), name, false, false)?;
+        let mut bytes = Vec::new();
+        Read::by_ref(&mut file)
+            .take(16385)
+            .read_to_end(&mut bytes)
+            .map_err(err)?;
+        if bytes.len() > 16384 {
+            return Err("copy evidence exceeds budget".into());
+        }
+        Ok(bytes)
+    }
+    fn preserve_evidence(
+        tree: &Tree,
+        name: &str,
+        bytes: &[u8],
+        nonce: &str,
+        phase: &str,
+        wrote: &mut bool,
+    ) -> Result<()> {
+        tree.check()?;
+        match rfs::statat(tree.parent(), name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(_) => {
+                if evidence_bytes(tree, name)? != bytes {
+                    return Err("foreign or partial copy evidence retained".into());
+                }
+                return Ok(());
+            }
+            Err(e) if e == rustix::io::Errno::NOENT => (),
+            Err(e) => return Err(err(e)),
+        }
+        let temporary = format!(".copy-{nonce}-{}-{phase}.tmp", std::process::id());
+        *wrote = true;
+        let fd = rfs::openat(
+            tree.parent(),
+            temporary.as_str(),
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::from_bits_truncate(0o600),
+        )
+        .map_err(err)?;
+        let mut file = File::from(fd);
+        file.write_all(bytes).map_err(err)?;
+        file.sync_all().map_err(err)?;
+        tree.check()?;
+        match rfs::renameat_with(
+            tree.parent(),
+            temporary.as_str(),
+            tree.parent(),
+            name,
+            rfs::RenameFlags::NOREPLACE,
+        ) {
+            Ok(()) => (),
+            Err(e) if e == rustix::io::Errno::EXIST => {
+                if evidence_bytes(tree, name)? != bytes {
+                    return Err("copy evidence publication collision; retained".into());
+                }
+            }
+            Err(e) => return Err(err(e)),
+        }
+        tree.parent().sync_all().map_err(err)?;
+        if evidence_bytes(tree, name)? != bytes {
+            return Err("copy evidence changed after publication".into());
+        }
+        Ok(())
+    }
+    fn verify_receipt(tree: &Tree, value: &Value, old_root: &Stamp) -> Result<()> {
+        let mut a = value
+            .as_object()
+            .ok_or("copy receipt is not object")?
+            .clone();
+        let digest = a
+            .remove("authorizationSha256")
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .ok_or("missing authorization digest")?;
+        let authorization = a
+            .remove("authorizationFile")
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .ok_or("missing authorization file")?;
+        let original = a
+            .remove("previousOwnerFile")
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .ok_or("missing original marker file")?;
+        if a.get("schema") != Some(&json!("flow.workspace-cold-copy-receipt"))
+            || !hash(&digest)
+            || authorization != format!("copy-admission-{digest}.json")
+        {
+            return Err("invalid copy receipt".into());
+        }
+        a.insert("schema".into(), json!("flow.workspace-cold-copy"));
+        let parsed: CopyAuthorization = serde_json::from_value(Value::Object(a)).map_err(err)?;
+        if original != format!("copy-owner-{}.json", parsed.previous_owner_sha256)
+            || parsed.current_root.dev != old_root.dev.to_string()
+            || parsed.current_root.ino != old_root.ino.to_string()
+        {
+            return Err("copy receipt root/evidence mismatch".into());
+        }
+        let auth_bytes = evidence_bytes(tree, &authorization)?;
+        let old = evidence_bytes(tree, &original)?;
+        if serde_json::from_slice::<Value>(&auth_bytes).map_err(err)?
+            != serde_json::to_value(&parsed).map_err(err)?
+            || sha(&auth_bytes) != digest
+            || sha(&old) != parsed.previous_owner_sha256
+            || receipt(&parsed, &auth_bytes)? != *value
+        {
+            return Err("copy receipt evidence is missing or changed".into());
+        }
+        Ok(())
     }
     fn publish_owner(
         tree: &Tree,
@@ -242,6 +477,9 @@ mod supported {
         .map_err(err)?;
         let mut temp = File::from(fd);
         let bytes = serde_json::to_vec(owner).map_err(err)?;
+        if bytes.len() > 16384 {
+            return Err("new owner marker exceeds budget".into());
+        }
         temp.write_all(&bytes).map_err(err)?;
         temp.sync_all().map_err(err)?;
         tree.check()?;
@@ -284,7 +522,13 @@ mod supported {
         owner_stamp: Stamp,
     }
     impl Lease {
-        fn acquire(root: &Path, nonce: String) -> Result<Self> {
+        fn acquire(
+            root: &Path,
+            nonce: String,
+            copy: Option<&str>,
+            fault: Option<&str>,
+            wrote: &mut bool,
+        ) -> Result<Self> {
             let tree = Tree::acquire(root)?;
             let (lock_file, created) = plain(tree.parent(), "writer.lock", true, true)?;
             lock_file
@@ -304,6 +548,7 @@ mod supported {
                 nonce,
                 directories: tree.stamps.clone(),
                 lock: lock.clone(),
+                copy_receipt: None,
             };
             let previous = if created {
                 if rfs::statat(tree.parent(), "owner.json", AtFlags::SYMLINK_NOFOLLOW).is_ok() {
@@ -316,18 +561,78 @@ mod supported {
                     || !matches!(old.state.as_str(), "held" | "released")
                     || old.main_pid <= 1
                     || old.nonce.is_empty()
+                {
+                    return Err("unrecognized owner marker; retained".into());
+                }
+                let original_root = old
+                    .directories
+                    .get(
+                        old.directories
+                            .len()
+                            .checked_sub(3)
+                            .ok_or("old owner has no root")?,
+                    )
+                    .ok_or("old owner has no root")?;
+                if let Some(value) = &old.copy_receipt {
+                    verify_receipt(&tree, value, original_root)?;
+                }
+                if old.directories != owner.directories
+                    || old.lock != lock
                     || old.platform != owner.platform
                     || old.host != owner.host
-                    || old.directories != owner.directories
-                    || old.lock != lock
                 {
-                    return Err("foreign, copied or unrecognized owner marker; retained".into());
-                }
-                if old.state == "held" && !confirmed_dead(old.main_pid) {
-                    return Err(
-                        "previous Main owner is alive or cannot be confirmed exited; retained"
-                            .into(),
-                    );
+                    let input =
+                        copy.ok_or("foreign, copied or unrecognized owner marker; retained")?;
+                    if input.len() > 8192 {
+                        return Err("copy authorization exceeds budget".into());
+                    }
+                    let authorization: CopyAuthorization =
+                        serde_json::from_str(input).map_err(err)?;
+                    let bytes = owner_bytes(&tree)?;
+                    validate_copy(&authorization, &tree, root, &old, &lock, &bytes)?;
+                    let proof = receipt(&authorization, input.as_bytes())?;
+                    preserve_evidence(
+                        &tree,
+                        proof["previousOwnerFile"]
+                            .as_str()
+                            .ok_or("old marker filename")?,
+                        &bytes,
+                        &owner.nonce,
+                        "marker",
+                        wrote,
+                    )?;
+                    preserve_evidence(
+                        &tree,
+                        proof["authorizationFile"]
+                            .as_str()
+                            .ok_or("authorization filename")?,
+                        input.as_bytes(),
+                        &owner.nonce,
+                        "authorization",
+                        wrote,
+                    )?;
+                    if fault == Some("after-evidence") {
+                        return Err("injected stop after copy evidence; retained".into());
+                    }
+                    // Both the source marker identity and bytes must remain the
+                    // inspected released original until the new owner replaces it.
+                    if read_owner(&tree)?.1 != stamp || owner_bytes(&tree)? != bytes {
+                        return Err("old marker changed before copy ownership".into());
+                    }
+                    owner.copy_receipt = Some(proof);
+                } else {
+                    if copy.is_some() {
+                        return Err(
+                            "copy authorization was supplied for an ordinary current owner".into(),
+                        );
+                    }
+                    if old.state == "held" && !confirmed_dead(old.main_pid) {
+                        return Err(
+                            "previous Main owner is alive or cannot be confirmed exited; retained"
+                                .into(),
+                        );
+                    }
+                    owner.copy_receipt = old.copy_receipt.clone();
                 }
                 Some(stamp)
             };
@@ -337,7 +642,11 @@ mod supported {
                 return Err("writer lock path replaced".into());
             }
             owner.state = "held".into();
+            *wrote = true;
             let owner_stamp = publish_owner(&tree, &owner, previous.as_ref(), "acquire")?;
+            if fault == Some("after-owner") {
+                return Err("injected stop after copy owner; retained".into());
+            }
             let lease = Self {
                 tree,
                 lock_file,
@@ -391,24 +700,60 @@ mod supported {
             .ok_or("owner nonce missing")?
             .into_string()
             .map_err(|_| "nonce is not UTF-8")?;
+        let mut copy = None;
+        let mut fault = None;
+        if let Some(flag) = args.next() {
+            if flag != "--copy-admission" {
+                return Err("invalid lease arguments".into());
+            }
+            copy = Some(
+                args.next()
+                    .ok_or("copy authorization missing")?
+                    .into_string()
+                    .map_err(|_| "non UTF8 copy authorization")?,
+            );
+            if let Some(flag) = args.next() {
+                if flag != "--copy-fault" {
+                    return Err("invalid copy fault argument".into());
+                }
+                fault = Some(
+                    args.next()
+                        .ok_or("copy fault missing")?
+                        .into_string()
+                        .map_err(|_| "non UTF8 copy fault")?,
+                );
+            }
+        }
         if args.next().is_some()
             || nonce.is_empty()
             || nonce.len() > 128
             || !nonce
                 .bytes()
                 .all(|v| v.is_ascii_alphanumeric() || v == b'-')
+            || fault
+                .as_deref()
+                .is_some_and(|v| v != "after-evidence" && v != "after-owner")
         {
             return Err("invalid lease arguments".into());
         }
-        let mut lease = match Lease::acquire(&root, nonce.clone()) {
+        let mut wrote = false;
+        let mut lease = match Lease::acquire(
+            &root,
+            nonce.clone(),
+            copy.as_deref(),
+            fault.as_deref(),
+            &mut wrote,
+        ) {
             Ok(v) => v,
             Err(e) => {
-                send(json!({"protocol":1,"kind":"refused","nonce":nonce,"message":e}))?;
+                send(
+                    json!({"protocol":1,"kind":"refused","nonce":nonce,"effect":if wrote{"unknown"}else{"none"},"message":e}),
+                )?;
                 return Err(e);
             }
         };
         send(
-            json!({"protocol":1,"kind":"held","nonce":nonce,"ownerPid":lease.owner.main_pid,"guardPid":std::process::id(),"root":{"path":root,"dev":lease.tree.root_stamp().dev.to_string(),"ino":lease.tree.root_stamp().ino.to_string()}}),
+            json!({"protocol":1,"kind":"held","nonce":nonce,"ownerPid":lease.owner.main_pid,"guardPid":std::process::id(),"copyReceipt":lease.owner.copy_receipt,"root":{"path":root,"dev":lease.tree.root_stamp().dev.to_string(),"ino":lease.tree.root_stamp().ino.to_string()}}),
         )?;
         let (tx, rx) = mpsc::sync_channel(1);
         std::thread::spawn(move || {

@@ -1,0 +1,16 @@
+import {canonicalUtf8,sha256Hex}from'../persistence/canonicalJson.js';
+export type ColdCopyRoot={path:string;dev:string;ino:string};
+export type WorkspaceColdCopyAuthorization={schema:'flow.workspace-cold-copy';version:1;projectId:string;genesisCommitHash:string;commitHash:string;currentRoot:ColdCopyRoot;currentLock:{dev:string;ino:string};currentDirectories:{dev:string;ino:string}[];previousRoot:{dev:string;ino:string};previousOwnerSha256:string;outputHeadHash:string|null;outputLedgerSeq:number;filesDigest:string};
+export type WorkspaceColdCopyReceipt=Omit<WorkspaceColdCopyAuthorization,'schema'>&{schema:'flow.workspace-cold-copy-receipt';authorizationSha256:string;authorizationFile:string;previousOwnerFile:string};
+const hash=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
+const identity=(v:unknown,path=false)=>!!v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')===(path?'dev,ino,path':'dev,ino')&&['dev','ino'].every(k=>typeof(v as Record<string,unknown>)[k]==='string'&&/^\d+$/.test((v as Record<string,string>)[k]))&&(!path||typeof(v as ColdCopyRoot).path==='string'&&(v as ColdCopyRoot).path.startsWith('/')&&!(v as ColdCopyRoot).path.includes('\0'));
+export function validWorkspaceColdCopyAuthorization(v:unknown):v is WorkspaceColdCopyAuthorization{
+ if(!v||typeof v!=='object'||Array.isArray(v))return false;const a=v as WorkspaceColdCopyAuthorization;
+ return Object.keys(a).sort().join(',')==='commitHash,currentDirectories,currentLock,currentRoot,filesDigest,genesisCommitHash,outputHeadHash,outputLedgerSeq,previousOwnerSha256,previousRoot,projectId,schema,version'&&a.schema==='flow.workspace-cold-copy'&&a.version===1&&typeof a.projectId==='string'&&/^[\w-]{1,80}$/.test(a.projectId)&&hash(a.genesisCommitHash)&&hash(a.commitHash)&&identity(a.currentRoot,true)&&identity(a.currentLock)&&Array.isArray(a.currentDirectories)&&a.currentDirectories.length>=4&&a.currentDirectories.length<=256&&a.currentDirectories.every(v=>identity(v))&&identity(a.previousRoot)&&hash(a.previousOwnerSha256)&&(a.outputHeadHash===null||hash(a.outputHeadHash))&&Number.isSafeInteger(a.outputLedgerSeq)&&a.outputLedgerSeq>=0&&(a.outputLedgerSeq===0)===(a.outputHeadHash===null)&&hash(a.filesDigest);
+}
+export const coldCopyAuthorizationHash=(a:WorkspaceColdCopyAuthorization)=>sha256Hex(canonicalUtf8(a));
+export function coldCopyReceipt(a:WorkspaceColdCopyAuthorization):WorkspaceColdCopyReceipt{const authorizationSha256=coldCopyAuthorizationHash(a);return{...a,schema:'flow.workspace-cold-copy-receipt',authorizationSha256,authorizationFile:'copy-admission-'+authorizationSha256+'.json',previousOwnerFile:'copy-owner-'+a.previousOwnerSha256+'.json'};}
+export function validWorkspaceColdCopyReceipt(v:unknown):v is WorkspaceColdCopyReceipt{
+ if(!v||typeof v!=='object'||Array.isArray(v))return false;const{authorizationSha256,authorizationFile,previousOwnerFile,...rest}=v as WorkspaceColdCopyReceipt,a={...rest,schema:'flow.workspace-cold-copy'};
+ return Object.keys(v).length===16&&(v as WorkspaceColdCopyReceipt).schema==='flow.workspace-cold-copy-receipt'&&validWorkspaceColdCopyAuthorization(a)&&hash(authorizationSha256)&&sha256Hex(canonicalUtf8(coldCopyReceipt(a)))===sha256Hex(canonicalUtf8(v));
+}

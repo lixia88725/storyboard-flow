@@ -1,3 +1,4 @@
+import type {WorkspaceColdCopyReceipt}from'./workspaceColdCopyContract.js';
 import type {NativeImageRef, ProjectV2} from '../../../platform/contracts/imageProject.js';
 import type {ImageWorkspaceOwner} from '../../../platform/contracts/imageWorkspace.js';
 import {validPresentation} from '../../../platform/contracts/flowPresentation.js';
@@ -68,7 +69,7 @@ export type WorkspaceOutputObservation = {shotId:string;location:WorkspaceOutput
 export type WorkspaceOutputRefreshReceipt={projectId:string;revision:number;commitHash:string;changes:(Omit<WorkspaceOutputObservation,'observedDigest'|'observedIdentity'>&{observedDigest:string;observedIdentity:WorkspaceOutputPhysicalIdentity;imageId:string;native:NativeImageRef;format:'tiff'})[]};
 export type WorkspaceOutputOptions = {
  root:string;projectId:string;
- writerAuthority:{assertHeld(root:{path:string;dev:string;ino:string}):Promise<void>};
+ writerAuthority:{assertHeld(root:{path:string;dev:string;ino:string}):Promise<void>;copyReceipt?:WorkspaceColdCopyReceipt};
  budget:WorkspaceOutputBudget;captureImage:WorkspaceOutputCapture;trashItem?:(file:string)=>Promise<void>;
  /** Fault injection receives named transaction boundaries; production leaves it absent. */
  fault?:(point:string)=>Promise<void>;

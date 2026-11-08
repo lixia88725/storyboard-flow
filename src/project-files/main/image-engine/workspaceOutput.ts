@@ -13,6 +13,7 @@ import {canonicalUtf8,sha256Hex} from '../persistence/canonicalJson.js';
 import {syncDirectory} from '../../../platform/main/platform/index.js';
 import type {WorkspaceOutput,WorkspaceOutputFile,WorkspaceOutputFrozen,WorkspaceOutputMetadata,WorkspaceOutputOptions,WorkspaceOutputReceipt} from './workspaceOutputContract.js';
 import {validWorkspaceOutputMetadataEnvelope,validWorkspaceOutputNameSeed,validWorkspaceOutputFileName,WORKSPACE_OUTPUT_NAME_SEED,type WorkspaceOutputNameSeed} from './workspaceOutputContract.js';
+import {validWorkspaceColdCopyReceipt,validWorkspaceColdCopyAuthorization,coldCopyReceipt,type WorkspaceColdCopyReceipt}from'./workspaceColdCopyContract.js';
 import {readImageWorkspaceProject} from './workspaceProbe.js';
 
 const LIMIT=128*1024*1024, JOURNAL_LIMIT=8*1024*1024;
@@ -26,7 +27,8 @@ type Move=Identity&{from:string;to:string;digest:string};
 type Transaction={operationId:string;revision:number;commitHash:string;kind:'save'|'append';phase:'preparing'|'deleting'|'staging'|'publishing';
  next:Entry[];stages:Move[];publishes:Move[];deletions:{entry:Entry;intent:OutputDeletion}[];receipt:WorkspaceOutputReceipt};
 type Operation={fingerprint:string;state:'pending'|'completed'|'retained';receipt:WorkspaceOutputReceipt};
-type Ledger={schema:'flow.native-output';version:1;projectId:string;root:Identity;seq:number;previousHash:string|null;entries:Entry[];operationFacts?:Record<string,Operation>;transaction?:Transaction;saved?:{revision:number;commitHash:string};refresh?:{receiptHash:string;revision:number;commitHash:string};nameSeed?:{sha256:string;consumedShotIds:string[]}};
+type CopyBaseline={receipt:WorkspaceColdCopyReceipt;fromLedgerHash:string;fromRoot:Identity};
+type Ledger={schema:'flow.native-output';version:1;projectId:string;root:Identity;seq:number;previousHash:string|null;entries:Entry[];copyBaseline?:CopyBaseline;operationFacts?:Record<string,Operation>;transaction?:Transaction;saved?:{revision:number;commitHash:string};refresh?:{receiptHash:string;revision:number;commitHash:string};nameSeed?:{sha256:string;consumedShotIds:string[]}};
 
 export class WorkspaceOutputError extends Error {
  constructor(readonly code:string,message:string,readonly effect:'none'|'retained'|'unknown'='none'){super(message);}
@@ -35,6 +37,45 @@ const fail=(message:string):never=>{throw new WorkspaceOutputError('conflict',me
 const metadata=(project:ProjectV2,shot:ProjectV2['shots'][number]):WorkspaceOutputMetadata=>({projectName:project.name,shotName:shot.name,scriptText:shot.scriptText,
  dialogues:project.dialogues.filter(d=>d.shotId===shot.id),presentation:shot.presentation??project.presentation??null});
 const publicFile=({shotId,imageId,name,location,digest,native,format}:Entry):WorkspaceOutputFile=>({shotId,imageId,name,location,digest,native,format});
+
+const relative=(e:Entry)=>`${e.location}/${e.name}`;
+const validRelative=(v:unknown):v is string=>typeof v==='string'&&(
+  /^operations\/[a-f0-9-]{36}\/(old|new)-\d+\.tif$/.test(v)||/^active\//.test(v)&&leaf(v.slice(7))||/^parked\//.test(v)&&leaf(v.slice(7)));
+const validIdentity=(v:Identity)=>v&&/^\d+$/.test(v.dev)&&/^\d+$/.test(v.ino);
+ const validEntry=(e:Entry)=>e&&token(e.shotId)&&token(e.imageId)&&leaf(e.name)&&['active','parked'].includes(e.location)&&digest(e.digest)&&digest(e.content)&&validNativeImageRef(e.native)&&e.format==='tiff'&&validIdentity(e);
+ const validEntries=(entries:Entry[])=>Array.isArray(entries)&&entries.length<=10000&&entries.every(validEntry)&&new Set(entries.map(e=>e.shotId)).size===entries.length&&new Set(entries.map(e=>e.name.toLowerCase())).size===entries.length;
+ const operationIdValid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(v);
+ const validReceipt=(r:WorkspaceOutputReceipt,id:string,projectId:string)=>r&&r.operationId===id&&r.projectId===projectId&&Number.isSafeInteger(r.revision)&&r.revision>=0&&digest(r.commitHash)&&Array.isArray(r.files)&&r.files.length<=10000&&r.files.every(e=>e&&token(e.shotId)&&token(e.imageId)&&leaf(e.name)&&['active','parked'].includes(e.location)&&digest(e.digest)&&validNativeImageRef(e.native)&&e.format==='tiff')&&new Set(r.files.map(e=>e.shotId)).size===r.files.length;
+async function readOutputLedger(root:string,projectId:string,bind:()=>Promise<void>,registerDirectory:(at:string,identity:Identity)=>void){
+ const container=path.join(root,'.storyboard-flow/native-output-v1'),operations=path.join(container,'operations');
+ const directory=async(at:string)=>{const st=await fs.lstat(at);if(!st.isDirectory()||st.isSymbolicLink()||await fs.realpath(at)!==at)fail('Unsafe output directory');return st;};
+ await directory(container);await directory(operations);
+  await bind();let previous:string|null=null,sequence=0,latest:Ledger|undefined;
+  const names=(await fs.readdir(container)).filter(n=>n!=='operations').sort();
+  for(const name of names){if(!/^\d{12}\.json$/.test(name)||Number(name.slice(0,12))!==sequence+1)fail('Unknown or missing output journal record');
+   if((await fs.lstat(path.join(container,name))).nlink!==1)fail('Aliased output journal record');
+   const bytes=await readBoundFile(path.join(container,name),JOURNAL_LIMIT);if(!bytes)fail('Output journal disappeared');
+   const v=JSON.parse(bytes!.toString()) as Ledger;
+   if(v.schema!=='flow.native-output'||v.version!==1||v.projectId!==projectId||v.seq!==sequence+1||v.previousHash!==previous||!validIdentity(v.root)||!validEntries(v.entries)||v.refresh&&(!digest(v.refresh.receiptHash)||!digest(v.refresh.commitHash)||!Number.isSafeInteger(v.refresh.revision)||v.refresh.revision<0)||v.nameSeed&&(!digest(v.nameSeed.sha256)||!Array.isArray(v.nameSeed.consumedShotIds)||v.nameSeed.consumedShotIds.length>10000||!v.nameSeed.consumedShotIds.every(token)||new Set(v.nameSeed.consumedShotIds).size!==v.nameSeed.consumedShotIds.length))fail('Invalid output journal');
+   if(v.operationFacts&&(typeof v.operationFacts!=='object'||Array.isArray(v.operationFacts)||Object.entries(v.operationFacts).some(([id,f])=>!operationIdValid(id)||!f||!digest(f.fingerprint)||!['pending','completed','retained'].includes(f.state)||!validReceipt(f.receipt,id,projectId))))fail('Invalid output operation facts');
+   const t=v.transaction;
+   if(t){if(!/^[a-f0-9-]{36}$/.test(t.operationId)||!['save','append'].includes(t.kind)||!['preparing','deleting','staging','publishing'].includes(t.phase)||!Number.isSafeInteger(t.revision)||t.revision<0||!digest(t.commitHash)||!validEntries(t.next)||!Array.isArray(t.stages)||!Array.isArray(t.publishes)||!Array.isArray(t.deletions))fail('Invalid output transaction');
+    for(const m of [...t.stages,...t.publishes])if(!validRelative(m.from)||!validRelative(m.to)||!digest(m.digest)||!validIdentity(m))fail('Unsafe output move');
+    const matches=(m:Move,e:Entry)=>m.digest===e.digest&&m.dev===e.dev&&m.ino===e.ino;
+    for(const m of t.stages)if(!m.to.startsWith(`operations/${t.operationId}/old-`)||!v.entries.some(e=>relative(e)===m.from&&matches(m,e)))fail('Unbound output stage');
+    for(const m of t.publishes)if(!m.from.startsWith(`operations/${t.operationId}/`)||!t.next.some(e=>relative(e)===m.to&&matches(m,e)))fail('Unbound output publication');
+    for(const d of t.deletions)if(!validEntry(d.entry)||!validOutputDeletion(d.intent)||d.intent.digest!==d.entry.digest||d.intent.from!==d.entry.location||!v.entries.some(e=>relative(e)===relative(d.entry)&&e.dev===d.intent.dev&&e.ino===d.intent.ino&&e.digest===d.intent.digest))fail('Invalid output deletion');
+    const operationDirectory=path.join(operations,t.operationId);const st=await directory(operationDirectory);registerDirectory(operationDirectory,{dev:String(st.dev),ino:String(st.ino)});
+   }
+   if(v.operationFacts){for(const [id,f] of Object.entries(v.operationFacts)){if(f.state==='pending'&&t?.operationId!==id)fail('Unbound pending output fact');if(t?.operationId===id&&(f.state!=='pending'||!validReceipt(t.receipt,id,projectId)||sha256Hex(canonicalUtf8(t.receipt))!==sha256Hex(canonicalUtf8(f.receipt))))fail('Output transaction receipt differs from operation fact');}}
+   if(v.copyBaseline&&(sequence===0||!validWorkspaceColdCopyReceipt(v.copyBaseline.receipt)||!digest(v.copyBaseline.fromLedgerHash)||!validIdentity(v.copyBaseline.fromRoot)||v.copyBaseline.receipt.projectId!==projectId))fail('Invalid copied output baseline');
+   if(latest&&(v.root.dev!==latest.root.dev||v.root.ino!==latest.root.ino||v.copyBaseline?.receipt.authorizationSha256!==latest.copyBaseline?.receipt.authorizationSha256)){
+    const portable=({seq,previousHash,root,copyBaseline,entries,...rest}:Ledger)=>({...rest,entries:entries.map(({dev,ino,...e})=>e)});const copy=v.copyBaseline;if(sha256Hex(canonicalUtf8(portable(v)))!==sha256Hex(canonicalUtf8(portable(latest)))||!copy||copy.fromLedgerHash!==previous||copy.fromRoot.dev!==latest.root.dev||copy.fromRoot.ino!==latest.root.ino||copy.receipt.previousRoot.dev!==latest.root.dev||copy.receipt.previousRoot.ino!==latest.root.ino||copy.receipt.outputHeadHash!==previous||copy.receipt.outputLedgerSeq!==sequence||copy.receipt.currentRoot.dev!==v.root.dev||copy.receipt.currentRoot.ino!==v.root.ino||v.transaction||latest.transaction||sha256Hex(canonicalUtf8(v.entries.map(({dev,ino,...e})=>e)))!==sha256Hex(canonicalUtf8(latest.entries.map(({dev,ino,...e})=>e)))||sha256Hex(canonicalUtf8(v.entries))!==copy.receipt.filesDigest)fail('Unbound copied output transition');
+   }
+   latest=v;sequence++;previous=sha256Hex(bytes!);
+  }
+  await bind();return{ledger:latest,lastHash:previous};
+}
 
 /** Physical output ledger only. It never installs a ProjectV2, advances a Session
  * head, rewrites a native version, or sends V2 through a V1 image writer. */
@@ -87,38 +128,26 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
   }catch(e){blocked=true;grants.set('output-journal',[...(grants.get('output-journal')??[]),{grant,file,max:bytes.length}]);await grant.retainUnknown();throw e;}
  };
  const physical=(relative:string)=>path.join(container,relative);
- const validRelative=(v:unknown):v is string=>typeof v==='string'&&(
-  /^operations\/[a-f0-9-]{36}\/(old|new)-\d+\.tif$/.test(v)||/^active\//.test(v)&&leaf(v.slice(7))||/^parked\//.test(v)&&leaf(v.slice(7)));
+
  const resolve=(v:string)=>v.startsWith('active/')?outputPath(root,v.slice(7),'active'):v.startsWith('parked/')?outputPath(root,v.slice(7),'parked'):physical(v);
- const relative=(e:Entry)=>`${e.location}/${e.name}`;
- const validIdentity=(v:Identity)=>v&&/^\d+$/.test(v.dev)&&/^\d+$/.test(v.ino);
- const validEntry=(e:Entry)=>e&&token(e.shotId)&&token(e.imageId)&&leaf(e.name)&&['active','parked'].includes(e.location)&&digest(e.digest)&&digest(e.content)&&validNativeImageRef(e.native)&&e.format==='tiff'&&validIdentity(e);
- const validEntries=(entries:Entry[])=>Array.isArray(entries)&&entries.length<=10000&&entries.every(validEntry)&&new Set(entries.map(e=>e.shotId)).size===entries.length&&new Set(entries.map(e=>e.name.toLowerCase())).size===entries.length;
- const operationIdValid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(v);
- const validReceipt=(r:WorkspaceOutputReceipt,id:string)=>r&&r.operationId===id&&r.projectId===projectId&&Number.isSafeInteger(r.revision)&&r.revision>=0&&digest(r.commitHash)&&Array.isArray(r.files)&&r.files.length<=10000&&r.files.every(e=>e&&token(e.shotId)&&token(e.imageId)&&leaf(e.name)&&['active','parked'].includes(e.location)&&digest(e.digest)&&validNativeImageRef(e.native)&&e.format==='tiff')&&new Set(r.files.map(e=>e.shotId)).size===r.files.length;
+
+
  const load=async()=>{
-  await bind();let previous:string|null=null,sequence=0,latest:Ledger|undefined;
-  const names=(await fs.readdir(container)).filter(n=>n!=='operations').sort();
-  for(const name of names){if(!/^\d{12}\.json$/.test(name)||Number(name.slice(0,12))!==sequence+1)fail('Unknown or missing output journal record');
-   if((await fs.lstat(path.join(container,name))).nlink!==1)fail('Aliased output journal record');
-   const bytes=await readBoundFile(path.join(container,name),JOURNAL_LIMIT);if(!bytes)fail('Output journal disappeared');
-   const v=JSON.parse(bytes!.toString()) as Ledger;
-   if(v.schema!=='flow.native-output'||v.version!==1||v.projectId!==projectId||v.seq!==sequence+1||v.previousHash!==previous||!validIdentity(v.root)||v.root.dev!==binding.dev||v.root.ino!==binding.ino||!validEntries(v.entries)||v.refresh&&(!digest(v.refresh.receiptHash)||!digest(v.refresh.commitHash)||!Number.isSafeInteger(v.refresh.revision)||v.refresh.revision<0)||v.nameSeed&&(!digest(v.nameSeed.sha256)||!Array.isArray(v.nameSeed.consumedShotIds)||v.nameSeed.consumedShotIds.length>10000||!v.nameSeed.consumedShotIds.every(token)||new Set(v.nameSeed.consumedShotIds).size!==v.nameSeed.consumedShotIds.length))fail('Invalid output journal');
-   if(v.operationFacts&&(typeof v.operationFacts!=='object'||Array.isArray(v.operationFacts)||Object.entries(v.operationFacts).some(([id,f])=>!operationIdValid(id)||!f||!digest(f.fingerprint)||!['pending','completed','retained'].includes(f.state)||!validReceipt(f.receipt,id))))fail('Invalid output operation facts');
-   const t=v.transaction;
-   if(t){if(!/^[a-f0-9-]{36}$/.test(t.operationId)||!['save','append'].includes(t.kind)||!['preparing','deleting','staging','publishing'].includes(t.phase)||!Number.isSafeInteger(t.revision)||t.revision<0||!digest(t.commitHash)||!validEntries(t.next)||!Array.isArray(t.stages)||!Array.isArray(t.publishes)||!Array.isArray(t.deletions))fail('Invalid output transaction');
-    for(const m of [...t.stages,...t.publishes])if(!validRelative(m.from)||!validRelative(m.to)||!digest(m.digest)||!validIdentity(m))fail('Unsafe output move');
-    const matches=(m:Move,e:Entry)=>m.digest===e.digest&&m.dev===e.dev&&m.ino===e.ino;
-    for(const m of t.stages)if(!m.to.startsWith(`operations/${t.operationId}/old-`)||!v.entries.some(e=>relative(e)===m.from&&matches(m,e)))fail('Unbound output stage');
-    for(const m of t.publishes)if(!m.from.startsWith(`operations/${t.operationId}/`)||!t.next.some(e=>relative(e)===m.to&&matches(m,e)))fail('Unbound output publication');
-    for(const d of t.deletions)if(!validEntry(d.entry)||!validOutputDeletion(d.intent)||d.intent.digest!==d.entry.digest||d.intent.from!==d.entry.location||!v.entries.some(e=>relative(e)===relative(d.entry)&&e.dev===d.intent.dev&&e.ino===d.intent.ino&&e.digest===d.intent.digest))fail('Invalid output deletion');
-    const operationDirectory=path.join(operations,t.operationId);const st=await directory(operationDirectory);directories.set(operationDirectory,{dev:String(st.dev),ino:String(st.ino)});
-   }
-   if(v.operationFacts){for(const [id,f] of Object.entries(v.operationFacts)){if(f.state==='pending'&&t?.operationId!==id)fail('Unbound pending output fact');if(t?.operationId===id&&(f.state!=='pending'||!validReceipt(t.receipt,id)||sha256Hex(canonicalUtf8(t.receipt))!==sha256Hex(canonicalUtf8(f.receipt))))fail('Output transaction receipt differs from operation fact');}}
-   latest=v;sequence++;previous=sha256Hex(bytes!);
+  const loaded=await readOutputLedger(root,projectId,bind,(at,id)=>directories.set(at,id));ledger=loaded.ledger??{schema:'flow.native-output',version:1,projectId,root:{dev:binding.dev,ino:binding.ino},seq:0,previousHash:null,entries:[]};lastHash=loaded.lastHash;blocked=false;
+  const receipt=options.writerAuthority.copyReceipt===undefined?undefined:structuredClone(options.writerAuthority.copyReceipt);
+  if(ledger.root.dev!==binding.dev||ledger.root.ino!==binding.ino){if(!receipt||!validWorkspaceColdCopyReceipt(receipt)||receipt.outputHeadHash!==lastHash||receipt.previousRoot.dev!==ledger.root.dev||receipt.previousRoot.ino!==ledger.root.ino)fail('Copied output requires an explicit current lease receipt');}
+  await syncDirectory(container);await loadNameSeed();
+  if(receipt&&ledger.copyBaseline?.receipt.authorizationSha256!==receipt.authorizationSha256&&receipt.outputHeadHash!==null){
+   if(!validWorkspaceColdCopyReceipt(receipt)||receipt.projectId!==projectId||receipt.currentRoot.path!==root||receipt.currentRoot.dev!==binding.dev||receipt.currentRoot.ino!==binding.ino||receipt.outputHeadHash!==lastHash||receipt.outputLedgerSeq!==ledger.seq||ledger.transaction||Object.values(ledger.operationFacts??{}).some(f=>f.state==='pending'))fail('Copied output admission no longer matches');
+   const authorization=await readBoundFile(path.join(hidden,'image-project-v2',receipt.authorizationFile),16384),original=await readBoundFile(path.join(hidden,'image-project-v2',receipt.previousOwnerFile),16384);
+   if(!authorization||sha256Hex(authorization)!==receipt.authorizationSha256||!original||sha256Hex(original)!==receipt.previousOwnerSha256)fail('Copied output admission evidence is missing or changed');const parsed=JSON.parse(authorization!.toString());if(!validWorkspaceColdCopyAuthorization(parsed)||sha256Hex(canonicalUtf8(coldCopyReceipt(parsed)))!==sha256Hex(canonicalUtf8(receipt)))fail('Copied output admission proof differs');
+   const project=await readImageWorkspaceProject(root);if(project.plan.identity.id!==projectId||project.genesisCommitHash!==receipt.genesisCommitHash||project.commitHash!==receipt.commitHash)fail('Copied Main project chain changed before output adoption');
+   const next:Entry[]=[];for(const entry of ledger.entries){const observed=await inspectFile(outputPath(root,entry.name,entry.location));if(observed.digest!==entry.digest||!observed.identity)fail('Copied output content changed');next.push({...entry,...observed.identity});}
+   if(sha256Hex(canonicalUtf8(next))!==receipt.filesDigest)fail('Copied output files changed since admission');
+   await options.fault?.('before-copy-baseline');for(const entry of next){const observed=await inspectFile(outputPath(root,entry.name,entry.location));if(observed.digest!==entry.digest||observed.identity?.dev!==entry.dev||observed.identity?.ino!==entry.ino)fail('Copied output changed before baseline publication');}const previousRoot=ledger.root,fromLedgerHash=lastHash!;ledger={...ledger,root:{dev:binding.dev,ino:binding.ino},entries:next,copyBaseline:{receipt,fromLedgerHash,fromRoot:previousRoot}};await persist();await options.fault?.('after-copy-baseline');
   }
-  ledger=latest??{schema:'flow.native-output',version:1,projectId,root:{dev:binding.dev,ino:binding.ino},seq:0,previousHash:null,entries:[]};lastHash=previous;blocked=false;await syncDirectory(container);await loadNameSeed();
  };
+
  const loadNameSeed=async()=>{
   await bind();const file=path.join(root,WORKSPACE_OUTPUT_NAME_SEED),bytes=await readBoundFile(file,JOURNAL_LIMIT);
   if(!bytes){if(ledger.nameSeed)fail('Output naming seed disappeared');nameSeed=undefined;return;}
@@ -256,4 +285,16 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    close(){return run(async()=>{if(closed)return;await bind();if(blocked||ledger.transaction||grants.size>0||trash.hasPendingAcknowledgements())throw new WorkspaceOutputError('recovery-pending','Output obligations prevent close','retained');closed=true;owners.delete(root);});}
   };
  }catch(e){owners.delete(root);throw e;}
+}
+
+/** Read-only evidence for the explicit Main cold-copy lease authorization. */
+export async function inspectWorkspaceOutputColdCopy(root:string,projectId:string,previousRoot:Identity){
+ const st=await fs.lstat(root,{bigint:true});if(!st.isDirectory()||st.isSymbolicLink()||await fs.realpath(root)!==root)fail('Unsafe copied output root');
+ const bind=async()=>{const now=await fs.lstat(root,{bigint:true});if(now.dev!==st.dev||now.ino!==st.ino||!now.isDirectory()||now.isSymbolicLink())fail('Copied output root changed');};
+ let loaded;try{loaded=await readOutputLedger(root,projectId,bind,()=>{});}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT'){const container=path.join(root,'.storyboard-flow/native-output-v1');try{await fs.lstat(container);}catch(missing){if((missing as NodeJS.ErrnoException).code==='ENOENT')return{outputHeadHash:null,outputLedgerSeq:0,filesDigest:sha256Hex(canonicalUtf8([]))};} }throw e;}
+ const ledger=loaded.ledger;if(!ledger&&(await fs.readdir(path.join(root,'.storyboard-flow/native-output-v1/operations'))).length)fail('Output history is missing while operation evidence remains');if(!ledger)return{outputHeadHash:null,outputLedgerSeq:0,filesDigest:sha256Hex(canonicalUtf8([]))};
+ if(ledger.root.dev!==previousRoot.dev||ledger.root.ino!==previousRoot.ino||ledger.transaction||Object.values(ledger.operationFacts??{}).some(f=>f.state==='pending'))fail('Copied output contains unsettled or foreign operations');
+ const observe=createOutputObservation(bind),entries:Entry[]=[];
+ for(const e of ledger.entries){const file=outputPath(root,e.name,e.location),before=await fs.lstat(file,{bigint:true}),value=await observe(file),after=await fs.lstat(file,{bigint:true});if(value!==e.digest||['dev','ino','size','mtimeNs','ctimeNs'].some(k=>before[k as 'dev']!==after[k as 'dev']))fail('Copied managed output is missing or changed');entries.push({...e,dev:String(after.dev),ino:String(after.ino)});}
+ await bind();return{outputHeadHash:loaded.lastHash,outputLedgerSeq:ledger.seq,filesDigest:sha256Hex(canonicalUtf8(entries))};
 }
