@@ -418,7 +418,7 @@ impl Pipeline {
                     .filter(|v| *v <= 9_007_199_254_740_991)
                     .ok_or_else(|| Error::none("limit", "epoch input sequence exhausted"))?;
                 let checkpoint = h.engine.host_checkpoint().map_err(native)?;
-                let mut params = brush.clone();
+                let mut params = flow_brush::params(brush)?;
                 params["points"] = serde_json::to_value(points).map_err(native)?;
                 let live = LiveStroke::begin(&h.engine, &params).map_err(native)?;
                 params["seed"] = json!(live.seed);

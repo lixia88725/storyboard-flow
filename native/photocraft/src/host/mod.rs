@@ -1,6 +1,7 @@
 //! Stage A native host. One mutable engine context; Flow alone decides global user history.
 //! Host-pinned immutable versions survive process restarts; native History is scratch only.
 mod context;
+mod flow_brush;
 mod journal;
 pub use context::{FloatingAction, LayerIdInput};
 mod output;
@@ -806,7 +807,7 @@ impl Host {
                     .filter(|v| *v <= 9_007_199_254_740_991)
                     .ok_or_else(|| Error::none("limit", "epoch input sequence exhausted"))?;
                 let checkpoint = self.engine.host_checkpoint().map_err(native)?;
-                let mut params = brush.clone();
+                let mut params = flow_brush::params(brush)?;
                 params["points"] = serde_json::to_value(points).map_err(native)?;
                 let live = LiveStroke::begin(&self.engine, &params).map_err(native)?;
                 params["seed"] = json!(live.seed);
@@ -1222,7 +1223,7 @@ impl Host {
                         "resume requires a settled frozen host; failed chains cannot resume",
                     ));
                 }
-                let document_id = self.document()?.id.0.to_string();
+                let document_id = self.engine.active().map(|s| s.doc.id.0.to_string());
                 self.frozen = false;
                 self.display_epoch += 1;
                 self.epoch_input_through = 0;

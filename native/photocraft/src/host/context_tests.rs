@@ -712,3 +712,15 @@ fn decimal_layer_ids_real_node_roundtrip_preserves_adjacent_unsafe_integers() {
     eprintln!("Node exact-ID evidence: {}", fixture.root.display());
     eprintln!("{}", String::from_utf8_lossy(&result.stderr));
 }
+
+#[test]
+fn settled_empty_host_resume_preserves_absent_image_until_new_document_is_prepared() {
+    let mut h = Harness::new();
+    assert_eq!(h.body("freeze", json!({"kind":"freeze"}))["kind"], "frozen");
+    let resumed = h.body("resume", json!({"kind":"resume"}));
+    assert_eq!(resumed["kind"], "resumed");
+    assert!(resumed["documentId"].is_null() && resumed["versionId"].is_null());
+    assert!(h.h.engine.active().is_none());
+    let new = h.body("new", json!({"kind":"new","width":32,"height":32}));
+    h.accept("new", &new);
+}

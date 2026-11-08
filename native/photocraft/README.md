@@ -484,3 +484,38 @@ and the shared allocator are u64 and have no JavaScript-safe bound. A real Node
 subprocess test uses two adjacent IDs above 2^53 through JSON.parse, production
 wire framing and the real Host/Session to verify exact round trips and rejection
 of the rounded numeric neighbour, without adding a production fixture command.
+
+`flowBrushPresetsV1` adapts the five current Flow presets to the same native
+LiveStroke/renderer used by the host. Main forwards the complete captured
+`FlowStroke.brush` as `flowBrush`; the native Adapter validates hardness, grain,
+spacing, 32-bit seed and numeric pressure coefficients. Hard/soft/pencil tips use
+the product's procedural coverage as a bounded sampled native tip (up to 256²),
+and native Shape Dynamics / Transfer map each pressure coefficient to a linear
+Pen Pressure control with `minimum = 1 - coefficient`. Implicit pressure switches
+and smoothing are disabled; stroke flow stays full. Pencil retains grain and
+native angle variation, rather than falling back to the hard brush. The person's
+preset preferences and global pressure switch remain in the existing UI; mouse
+or pressure-disabled samples still arrive as pressure 1.
+
+The native sampler, dab layout and seeded random rotation differ from Canvas2D;
+this is a style mapping, not a byte-identical legacy renderer. Fixed-input evidence
+separates those differences from opacity/eraser/pressure regressions. Product startup
+must explicitly require this capability; a binary without it refuses unsupported
+presets. The old simple hard/no-pressure Adapter path remains only for existing
+Stage-A callers, not as a replacement for the formal default pencil.
+
+`tests/host_product_brush.py` exercises all five presets and ten pressure cases
+against a real host, retains raw RGBA, and checks preview/commit equality,
+single-stroke opacity bounds, cross-stroke accumulation and repeated erasing.
+`tests/product_brush_canvas.cjs` runs the actual old `brushStroke.ts`/`brushTips.ts`
+in an own hidden Electron with isolated userData and compares the same fixed input;
+it has no clipboard, Trash, external-open or user-project operations. Its metrics
+include alpha and premultiplied colour differences, since straight RGB at tiny
+alpha magnifies Canvas quantisation. These checks are not tablet or physical
+screen-latency acceptance.
+
+The Node Adapter exposes `driver.resume()` only after `settledResumeV1` capability
+and the returned version/document identity plus epoch are checked under the same
+operation-generation token. Failure does not authorize Main to become active.
+A settled empty host may resume with null version/document identities, without
+inventing an image; this allows an empty project's later document creation.

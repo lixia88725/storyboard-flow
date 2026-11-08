@@ -102,9 +102,11 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
   };
   const brushFor=(stroke:FlowStroke)=>{
     if(!validProjectStroke(stroke))refuse('Invalid stroke');
-    if(stroke.brush&&(stroke.brush.tip!=='hard'||stroke.brush.grain!==0||stroke.brush.pressureSize!==0||stroke.brush.pressureOpacity!==0))refuse('Stage-A brush preset unsupported: tip must be hard; grain, pressureSize and pressureOpacity must be zero. Original input is retained.','unsupported-brush');
+    const product=Boolean(stroke.brush&&requireCurrent().supports('flowBrushPresetsV1'));
+    if(stroke.brush&&!product&&(stroke.brush.tip!=='hard'||stroke.brush.grain!==0||stroke.brush.pressureSize!==0||stroke.brush.pressureOpacity!==0))refuse('Native binary lacks flowBrushPresetsV1 for this product preset; original input retained.','unsupported-brush');
+    if(stroke.brush&&(!['hard','soft','pencil'].includes(stroke.brush.tip)||![stroke.brush.hardness,stroke.brush.grain,stroke.brush.pressureSize,stroke.brush.pressureOpacity].every(n=>n>=0&&n<=1)||stroke.brush.spacing<0.01||stroke.brush.spacing>1||!Number.isInteger(stroke.brush.seed)||stroke.brush.seed<0||stroke.brush.seed>0xffffffff))refuse('Invalid product brush settings','invalid-input');
     const seed=stroke.brush?.seed??0;if(!Number.isSafeInteger(seed)||seed<0)refuse('Native pipeline requires a nonnegative safe integer seed');
-    return{size:stroke.size,opacity:stroke.opacity,color:stroke.color,erase:stroke.tool==='eraser',hardness:stroke.brush?.hardness??1-stroke.softness,spacing:stroke.brush?.spacing??0.06,seed,brush:{pressureSize:false,pressureOpacity:false}};
+    return{size:stroke.size,opacity:stroke.opacity,color:stroke.color,erase:stroke.tool==='eraser',hardness:stroke.brush?.hardness??1-stroke.softness,spacing:stroke.brush?.spacing??0.06,seed,...(product?{flowBrush:structuredClone(stroke.brush)}:{brush:{pressureSize:false,pressureOpacity:false}})};
   };
   const pointBatch=(xy:readonly number[],pressures?:readonly number[])=>Array.from({length:xy.length/2},(_,i)=>({x:xy[i*2],y:xy[i*2+1],pressure:pressures?.[i]??1}));
   let pipelineReady:PipelineReady|undefined;
@@ -153,7 +155,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     async accept(value,base){const op=operationContext();const{reply}=await call(next(),{kind:'accept',candidateId:value.candidateId},base.versionId);op.check();if(reply.kind==='accepted'){if(!same(nativeRef(reply.receipt),value.native))refuse('Native repeated accept mismatch','protocol','unknown');return;}if(reply.kind!=='acceptQueued'||reply.durable!==false||reply.candidateId!==value.candidateId)refuse('Native pipeline accept admission mismatch','protocol','unknown');current={...value.native};},
     async stop(){const op=operationContext();const{reply}=await call(next(),{kind:'pipelineStop',pipelineId:pipelineReady?.pipelineId},pipelineBase());op.check();if(reply.kind!=='pipelineStopped'||reply.versionId!==current?.versionId)refuse('Native pipeline barrier mismatch','protocol','unknown');pipelineReady=undefined;}
   };
-  const driver:NativeSessionDriver={
+  const driver:NativeSessionDriver & {resume():Promise<void>}={
     ...(owner?{async restartForRecovery(){
       fenced=true;generation++; // Fence queued Adapter jobs before awaiting owned exit.
       const restarting=generation,handle=await owner.restart();if(restarting!==generation)refuse('Old worker replacement fenced','worker-unavailable','unknown');connection=handle.connection;generation=handle.generation;
@@ -217,6 +219,12 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       if(reply.kind!=='discarded'||reply.candidateId!==operationId)refuse('Native discard receipt mismatch','protocol','unknown');candidate=undefined;
     },
     install,
+    async resume(){
+      const op=operationContext();if(!op.connection.supports('settledResumeV1'))refuse('Native binary lacks settledResumeV1','unsupported');
+      const expected=current?{...current}:null;
+      const{reply}=await call(next(),{kind:'resume'},expected?.versionId??null);op.check();
+      if(reply.kind!=='resumed'||reply.versionId!==(expected?.versionId??null)||reply.documentId!==(expected?.documentId??null)||!Number.isSafeInteger(reply.epoch)||Number(reply.epoch)<0)refuse('Native Resume identity/epoch mismatch','protocol','unknown');
+    },
     async freeze(){const op=operationContext();const{reply}=await call(next(),{kind:'freeze'});op.check();if(reply.kind!=='frozen'||reply.versionId!==(current?.versionId??null))refuse('Native freeze identity failed','protocol','unknown');},
     async close(){const op=operationContext();closing=true;const{reply}=await call(next(),{kind:'close'});op.identity();if(reply.kind!=='closed')refuse('Native close failed','protocol','unknown');await op.connection.exited;op.identity();if(owner){await owner.dispose();op.identity();}}
   };
