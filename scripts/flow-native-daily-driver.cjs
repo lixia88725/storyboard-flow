@@ -6,7 +6,7 @@ if(!out?.startsWith('/private/tmp/flow-native-workbench-'))throw Error('Syntheti
 const root=path.join(out,'project'),source=path.join(out,'daily-sources'),sha=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const originals=Object.fromEntries(fs.readdirSync(source).map(name=>[name,sha(path.join(source,name))]));
 for(const key of Object.keys(clipboard))if(typeof clipboard[key]==='function')clipboard[key]=()=>{throw Error('Clipboard prohibited');};shell.trashItem=()=>{throw Error('Trash prohibited');};
-let certified=0;const outcomes=[],handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(name,fn)=>handle(name,async(...args)=>{const result=await fn(...args);if(name==='flow-editor:finish-native-close'&&result?.ok)certified++;if(name==='flow-image-workspace:request')outcomes.push({command:args[1]?.command,result});return result;});
+let certified=0;const outcomes=[],inputOutcomes=[],handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(name,fn)=>handle(name,async(...args)=>{const result=await fn(...args);if(name==='flow-editor:finish-native-close'&&result?.ok)certified++;if(name==='flow-image-workspace:input')inputOutcomes.push({kind:args[2]?.kind,result});if(name==='flow-image-workspace:request')outcomes.push({command:args[1]?.command,result});return result;});
 dialog.showOpenDialog=async(_w,options)=>{assert.equal(options.title,'添加图片到 Pending');return{canceled:false,filePaths:options.properties.includes('openDirectory')?[source]:fs.readdirSync(source).map(n=>path.join(source,n))};};
 let sourceFaultInjected=false;
 if(process.env.FLOW_DAILY_SOURCE_FAULT==='1'&&!reopen){
@@ -29,14 +29,14 @@ async function choose(name,decision){await js(`(()=>{const s=document.querySelec
  if(reopen){const expected=JSON.parse(fs.readFileSync(path.join(out,'daily-expected.json'),'utf8'));assert.equal(await pixels(),expected.pixels);const state=await boot();assert.equal(state.session.project.revision,expected.revision);assert.equal(state.session.project.parkedShots.length,expected.pendingCount);for(const f of expected.files)assert.equal(sha(path.join(root,f.name)),f.sha);report.cases.push('new process preserves final picture, Pending, revision and files');}
  else{
   report.stage='baseline-save';await stroke(.3);await save();const baseline=await boot(),file=baseline.files.outputNames.find(n=>n.shotId==='a').name,oldDigest=sha(path.join(root,file));
-  await stroke(.65);let unsaved=await pixels();
+  const baselineStrokeStarted=Date.now();await stroke(.65);report.baselineStrokeMs=Date.now()-baselineStrokeStarted;let unsaved=await pixels();
   if(process.env.FLOW_DAILY_RECOVERY_ONLY!=='1'){
   report.stage='add-pending';await js(`[...document.querySelectorAll('.wb-actions details')].find(d=>d.querySelector('summary')?.textContent==='添加图片').open=true`);await click('选择图片…');
   await wait(async()=>(await boot()).session.project.parkedShots.length===8,'registered Pending batch');
   await wait(()=>outcomes.some(o=>o.command.kind==='addImages'),'Add registration reply');assert.equal(outcomes.find(o=>o.command.kind==='addImages').result.kind,'imagesRegistered');
   const registrationState=await boot();report.additionAtDraw=registrationState.files.backgroundImports;
   assert.ok(registrationState.files.backgroundImports.some(b=>b.phase!=='completed'),'fixture must still be processing during drawing');
-  const started=Date.now();await stroke(.5);report.drawingDuringImportMs=Date.now()-started;assert.ok(report.drawingDuringImportMs<1500,'background import stalls a short real pointer stroke: '+report.drawingDuringImportMs+'ms');unsaved=await pixels();
+  const started=Date.now();await stroke(.5);report.drawingDuringImportMs=Date.now()-started;report.importToBaselineStrokeRatio=report.drawingDuringImportMs/report.baselineStrokeMs;assert.ok(report.drawingDuringImportMs<1500,'background import stalls a short real pointer stroke: '+report.drawingDuringImportMs+'ms');unsaved=await pixels();
   report.cases.push('real pointer drawing commits while newly added images are still processing');
   if(process.env.FLOW_DAILY_SOURCE_FAULT==='1'){
    await wait(()=>sourceFaultInjected,'source publication fault injected');await wait(()=>js(`[...document.querySelectorAll('[aria-label="图片与文件待处理"] button')].some(b=>b.textContent==='核对并恢复'&&!b.disabled)`),'source recovery UI');
@@ -47,6 +47,7 @@ async function choose(name,decision){await js(`(()=>{const s=document.querySelec
 
   await wait(async()=>{const s=await boot();return s.files.backgroundImports?.length&&s.files.backgroundImports.every(b=>b.phase==='completed');},'new batch materialized');
   assert.equal(sha(path.join(root,file)),oldDigest,'Add must not save existing unsaved drawing');assert.equal(await pixels(),unsaved);report.cases.push('Add registers Pending and writes only new batch; unsaved drawing and old working file unchanged');
+  if(process.env.FLOW_DAILY_ADD_ONLY!=='1'){
   report.stage='external-conflict';const sharp=require('sharp');await sharp({create:{width:640,height:360,channels:4,background:{r:210,g:60,b:80,alpha:1}}}).tiff().toFile(path.join(root,file+'.external.tif'));fs.renameSync(path.join(root,file+'.external.tif'),path.join(root,file));const externalDigest=sha(path.join(root,file));
   await preview();assert.equal(await js(`document.querySelector('[aria-label="取回外部改动"]').textContent.includes('都改过')`),true);assert.equal(await js(`document.querySelector('[aria-label="取回外部改动"] button.primary').disabled`),true,'conflicting version requires explicit choice');
   assert.equal(await pixels(),unsaved);assert.equal(sha(path.join(root,file)),externalDigest);fs.writeFileSync(path.join(out,'refresh-conflict.png'),(await win.webContents.capturePage()).toPNG());
@@ -56,14 +57,15 @@ async function choose(name,decision){await js(`(()=>{const s=document.querySelec
   report.cases.push('Refresh conflict is explicit, then one Undo and Redo restore exact prior and external pictures');
   report.stage='keep-flow';await sharp({create:{width:640,height:360,channels:4,background:{r:40,g:210,b:90,alpha:1}}}).tiff().toFile(path.join(root,file+'.external.tif'));fs.renameSync(path.join(root,file+'.external.tif'),path.join(root,file));await preview();await choose(file,'keepFlow');await click('确认选择');await wait(()=>js('!document.querySelector("[aria-label=取回外部改动]")'),'keepFlow accepted');assert.equal(await pixels(),external);await save();assert.equal((await sharp(path.join(root,file)).ensureAlpha().raw().toBuffer()).toString('base64'),external);report.cases.push('keep Flow preserves displayed image and permits explicit later Save');
   }
+  }
   report.stage='worker-recovery';const beforeRecovery=await pixels(),pidPath=process.env.FLOW_DAILY_HOST_PID;
   assert.equal(pidPath,path.join(out,'daily-host.pid'));const pid=Number(fs.readFileSync(pidPath,'utf8'));assert.ok(Number.isSafeInteger(pid)&&pid>1);
   process.kill(pid,'SIGKILL');await wait(async()=>(await boot()).session.phase==='recovering','owned worker failure surfaced');
   await wait(()=>js(`[...document.querySelectorAll('[aria-label="图片与文件待处理"] button')].some(b=>b.textContent==='核对并恢复'&&!b.disabled)`),'usable recovery action');
   fs.writeFileSync(path.join(out,'recovery-action.png'),(await win.webContents.capturePage()).toPNG());await click('核对并恢复');await wait(async()=>(await boot()).session.phase==='active','same-window recovery');await wait(async()=>await pixels()===beforeRecovery,'recovery restores exact pixels');
-  await stroke(.8);await save();report.cases.push('owned worker interruption recovers in the same window and accepts new drawing');
+  report.recoveryUiBeforeDrawing=await js(`({saveDisabled:document.querySelector('.wb-save').disabled,recoveryVisible:!!document.querySelector('[aria-label="图片与文件待处理"]')})`);await wait(()=>js(`!document.querySelector('.wb-save').disabled&&!document.querySelector('[aria-label="图片与文件待处理"]')`),'recovery UI releases input');const priorInputs=inputOutcomes.length;await stroke(.8);report.afterRecoveryInput=inputOutcomes.slice(priorInputs);await save();report.cases.push('owned worker interruption recovers in the same window and accepts new drawing');
   const final=await boot();fs.writeFileSync(path.join(out,'daily-expected.json'),JSON.stringify({pixels:await pixels(),revision:final.session.project.revision,pendingCount:final.session.project.parkedShots.length,files:final.files.outputNames.map(f=>{const name=final.session.project.parkedShots.some(s=>s.id===f.shotId)?path.join('Pending',f.name):f.name;return{name,sha:sha(path.join(root,name))};})}));
  }
  for(const [name,digest]of Object.entries(originals))assert.equal(sha(path.join(source,name)),digest);
- fs.writeFileSync(path.join(out,`${phase}.png`),(await win.webContents.capturePage()).toPNG());win.close();await wait(()=>win.isDestroyed(),'certified close');assert.equal(certified,1);report.cases.push('normal close; imported originals unchanged');report.ok=true;fs.writeFileSync(path.join(out,`${phase}-result.json`),JSON.stringify(report,null,2));app.quit();
-})().catch(async error=>{report.error=String(error.stack||error);if(win&&!win.isDestroyed())try{fs.writeFileSync(path.join(out,`${phase}-failed.txt`),await js('document.body.innerText'));fs.writeFileSync(path.join(out,`${phase}-failed.png`),(await win.webContents.capturePage()).toPNG());}catch{}fs.writeFileSync(path.join(out,`${phase}-result.json`),JSON.stringify(report,null,2));console.error(error);app.exit(1);});
+ fs.writeFileSync(path.join(out,`${phase}.png`),(await win.webContents.capturePage()).toPNG());win.once('closed',()=>{try{assert.equal(certified,1);report.cases.push('normal close; imported originals unchanged');report.ok=true;}catch(error){report.ok=false;report.error=String(error);}fs.writeFileSync(path.join(out,`${phase}-result.json`),JSON.stringify(report,null,2));});win.close();await wait(()=>win.isDestroyed(),'certified close');assert.equal(certified,1);assert.equal(report.ok,true,'closed receipt must certify normal close');app.quit();
+})().catch(async error=>{report.error=String(error.stack||error);report.lastInputOutcomes=inputOutcomes.slice(-6);report.lastOutcomes=outcomes.slice(-4).map(o=>({command:o.command.kind,kind:o.result.kind,error:o.result.error}));if(win&&!win.isDestroyed())try{fs.writeFileSync(path.join(out,`${phase}-failed.txt`),await js('document.body.innerText'));fs.writeFileSync(path.join(out,`${phase}-failed.png`),(await win.webContents.capturePage()).toPNG());}catch{}fs.writeFileSync(path.join(out,`${phase}-result.json`),JSON.stringify(report,null,2));console.error(error);app.exit(1);});

@@ -1,8 +1,18 @@
 # 当前状态与剩余工作
 
-## Mac 试用前收口：进行中（2026-11-08）
+## Mac 独立试用已就绪（2026-11-09）
 
-本轮仅补向现有项目后台添加图片、取回外部改动及异常恢复，尚未宣称可试用。新增图片登记与后台物化分开；Refresh 先列出外部变化，两边均有修改时由用户明确选择。窗口侧冲突选择和恢复入口已接，controller/选择界面18项聚焦通过。真实隔离窗口中终止脚本自有引擎后，点击“核对并恢复”恢复相同画面、继续绘画、Save、正常关闭并新进程重开通过（`/private/tmp/flow-daily-recovery-gui1.log`，现场 `flow-native-workbench-7ut8sY`）；这是引擎中断恢复证据，不替代Source未知保管、后台物化和完整Refresh验收。原生不可变后台输出、保护来源工作TIFF授权Refresh和RGB JPEG读取已集成；原生组合5项通过，release构建与强制资源准备、preload检查通过（`/private/tmp/flow-daily-native-release-build.log`、`/private/tmp/flow-daily-package-resources.log`、`/private/tmp/flow-daily-preload-final.log`）。Main单批替换与文件流程仍在实施，完整组合清单与实际日常流程仍待跑。独立试用启动器已准备，但不据此宣称可试用。主树、用户项目与默认入口未改。
+本轮实现已集成到隔离 `codex/image-engine-integration`，主树、默认入口与用户项目未改。后台Add单次登记即返回，PNG/JPEG等来源继续保管/准备并只物化本批Pending；坏图不阻止正常关闭，Undo/删除不会被后台复活。Refresh明确选择、单批一次Undo/Redo、保管外部版本后keepFlow与失效观察恢复已接正式窗口。
+
+主管完整build通过（`/private/tmp/flow-daily-combined-build.log`）。真实日常GUI通过（`/private/tmp/flow-daily-combined-gui2.log`，`flow-native-workbench-2DjSz7`）：后台8张图期间落笔、其他板未保存画稿和旧工作文件不变、冲突选择、Undo/Redo、keepFlow后Save、引擎中断恢复、正常关闭和新进程重开，画面/版本/文件一致。脚本整笔流程基线226ms、后台210ms，含事件发送和轮询，不是硬件输入延迟指标。
+
+Sources发布回执丢失的真实窗口组合复验通过（`/private/tmp/flow-daily-source-recovery-gui2.log`，`flow-native-workbench-Al9YJ3`），不重复加板、不丢接受绘画，随后引擎中断恢复仍可落笔、Save和重开。首轮正常GUI因关窗后应用退出早于脚本回执写入，已将回执同步写在closed事件；首轮故障GUI在恢复后脚本首笔等待超时，新增可见UI恢复完成门禁及真实输入回执取证后通过。这两轮原始失败均保留，不记为通过。
+
+原生固定版本后台导出、授权保护来源工作TIFF Refresh、RGB JPEG与真实单层TIFF输出均已集成；单层输出保留真实层记录，不用取消保护判定掩盖平面输出。最终release构建通过（`/private/tmp/flow-daily-single-layer-release-build.log`）。Main Refresh真实SIGKILL后的重开/续Save专项由执行者通过（`/private/tmp/flow-file-flows-refresh-main-sigkill-third.log`）；不把该模块证据当独立整体验收。
+
+受保护来源Refresh GUI通过（`/private/tmp/flow-daily-protected-refresh-gui2.log`，`flow-native-workbench-AN7f5I`）：真实外部上层修改、保护底图绑定不变、一次Undo/Redo、Save及新进程重开，保存像素与独立外部TIFF完全一致。首轮把半透明原始像素直接与Canvas回读比较而超时；浏览器premultiply/unpremultiply导致最大1级差异，最终对照先对独立像素执行相同Canvas存储转换，仍逐字节比较，并额外断言Save文件的原始像素完全一致，未增加容差。
+
+preload与最终资源强校验通过（`/private/tmp/flow-daily-final-preload.log`、`/private/tmp/flow-daily-final-resources.log`）。最终完整组合获准清单150文件/1575项全部通过，504.97s（`/private/tmp/flow-daily-final-suite.log`），不含禁止文件。通过独立 `试用新版 Storyboard Flow.command` 再次完整构建并打开项目选择页，已用原生UI确认“打开…”、“新建项目…”及空最近列表；配置位于本worktree的 `.hermes/native-trial/userData`，未打开用户项目。启动日志 `.hermes/launch/20261109-004406-7360.log`。试用窗口留给用户，合成验证实例已退出；主树仅原有 `D CLAUDE.md` 未动，没有推送或发布。额外导出、Windows、真实数位笔及大项目范围未扩大。 原生输入仍限单来源8MiB、单边8192px、单画布16Mi像素；准入上限不等于该范围所有格式/规模都已认证。新引擎试用暂不接额外PSD导出；复杂格式及颜色限制见native组件README。
 
 ## 正式工作台接入：进行中（2026-11-08）
 

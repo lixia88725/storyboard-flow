@@ -8,7 +8,7 @@
 
 `drawing/renderer/image-engine/frames` 安装完整帧或连续增量，透明像素绝对覆盖，身份切换显式 reset。Canvas Adapter 只呈现该共享 FrameView，无第二份正式绘画计算。Main 到 renderer 当前为结构化克隆；只在脏区域复制，不宣称跨进程零拷贝。
 
-连续绘画协议区分 `imageVersionRef` 已接纳前缀和 `pendingOperationIds` 未 durable-accepted 的完整笔链；`workingHeadOperationId` 等于待确认链尾，活动笔另用 previewId。pipeline 开始/结束提升 epoch，同 epoch 的 pipelineId 不变；pending 为空也不能替代项目 checkpoint/Save 成功判据。帧接收器只验证展示身份，不承担项目持久化认证。原生异步队列已实现：输入线程与持久化线程分开，四笔有界队列，失败冻结依赖链而不自动重试。Main 项目接纳与默认产品接线仍在施工。
+连续绘画协议区分 `imageVersionRef` 已接纳前缀和 `pendingOperationIds` 未 durable-accepted 的完整笔链；`workingHeadOperationId` 等于待确认链尾，活动笔另用 previewId。pipeline 开始/结束提升 epoch，同 epoch 的 pipelineId 不变；pending 为空也不能替代项目 checkpoint/Save 成功判据。帧接收器只验证展示身份，不承担项目持久化认证。原生异步队列已实现：输入线程与持久化线程分开，四笔有界队列，失败冻结依赖链而不自动重试。Main项目接纳已接入独立试用路径，默认启动入口保持原路径；验证状态见CURRENT。
 
 Main 连续绘画由 `session/core/nativePipeline` 捕获有界原始输入，Adapter 短命令调度与持久化分开；最多连续八个输入命令后给等待中的控制命令一次机会。end 同步预约唯一混合历史/CAS 队列位置，v2 intent 固定锚点与前驱。CAS 成功后转入独立的原生接纳 FIFO；后一笔 accept 必须等前一笔 durable nativeAccepted，不能将 acceptQueued 当成功。Main 确认队列最多持有四个额度，每批 1..4 笔；确认事实进入下述统一日志，不再逐笔创建确认文件。waitOperation 仅在最终确认后完成，原生接纳不等于最终保存回执。
 
@@ -32,6 +32,12 @@ Source保管出现未知结果时，Runtime先停止新保管工作，沿Sources
 
 显式 Save 由 `workspaceFiles` 绑定冻结 commit、全部活动/Pending 板的精确原生版本与唯一 Output 操作 ID，先记 `fileIntent`，核对持久 Output 完成收据后记 `fileResult`。结果只推进已保存状态，不创建作品历史。重开沿原请求查询或恢复；不拿当前版本代替保存时的版本，未完成的文件义务继续阻止关闭认证与副本准入。后台派生尚未绘画的 SourceRef 在保存时解析输出，不因此变成用户编辑。
 
+工作TIFF显式强制写出真实图层记录，包括只有一个锁定Background的普通PNG/JPEG来源；不能因导出器可简化为平面图片就把带层成功回执交给文件模块。输出后仍核验层数据标记、损失警告和元数据。
+
+后台输出使用固定、不可变的Native版本，不切换当前绘画上下文。编码结果分块读取，未结算结果占有明确额度；发生未知回包时先排空同代只读任务，确认旧任务释放后，Output才允许同UUID、同冻结输入的capture重试。已完成的私有capture按摘要和物理身份复用，未发布的字节不算工作文件保存成功。
+
+Output的外部观察绑定板、文件名、位置、物理身份和基线Native版本；`observeSource`再次核对观察并提供给唯一Sources保管。选择保留Flow前验证外部原件已完整保管，文件缺失只授权后续独占创建，不能覆盖后来出现的文件。物理基线回执可按历史摘要查询，不因外部再次改动而抹掉既有确认；单批Pending输出回执不推进整项目保存版本。
+
 完整且已关闭的项目副本通过 `prepareWorkspaceColdCopy` 显式读取封口 Main 历史、已完成文件义务、Output 全链和托管文件摘要后产生授权；不是清锁或重写原账。只有 root 物理身份不同的完整副本可走此授权，同root换锁不借此修复。原生 guard 在新 root 的 OS 锁下复核目录/锁身份与原释放标记摘要，先独占保管旧标记和授权，再发带 `copyReceipt` 的新 owner。Output 核对同一收据并追加新的物理绑定与前一 head 的关系，保留旧记录；中断后继承同一收据补完，不重复发布。运行中的 root/lock/文件替换仍拒绝。Main 与 guard 共用预算，lease 保留释放所需额度至正常 release，整根目录 audit 在释放后执行。正式 Runtime 接线及真实已保存项目复制验收状态见 CURRENT。
 
 `platform/main/imageEngineWorkerOwner` 固定一个 Session 的原生 store 和执行程序。重启先同步隔离旧代请求及回包，确认自有旧进程退出并复核 writer lease 后才创建新代；并发重启合并，关闭或锁失效不能复活进程。每次协议准入同步检查 lease.held，文件写入/root 身份的异步复核仍属于 Main store，不给每批笔点增加一次磁盘检查。WorkerOwner 不清输入意图、不重放笔迹、不认领项目提交、不释放项目锁；新连接可用后仍须由 Main 按原账本恢复，不能直接开放用户绘画。
@@ -53,6 +59,10 @@ Source保管出现未知结果时，Runtime先停止新保管工作，沿Sources
 工作区导航携带 Main 的不透明 context token；上下文语义变化才更新，展示帧不更新。暂态请求使用有界完成缓存，`completed` 仅证明当前进程已执行上下文操作，不等于项目持久提交；未知请求保留原文和关闭义务。恢复记录按类型与序号分页，单页至多读取16条原文，导出经Main选择器且不重放或删除记录。
 
 `workspaceSources` 统一来源清单及逐文件调度，后台每个文件之间可让当前查看项优先。目标使用入口明确区分 manifest-only 与内容已验证：只登记身份不能证明图片可用，实际目标仍必须核完整摘要，native读取payload再次核长度和摘要。旧 SourceStore 默认整批核验入口保持原契约；快速路径不把未读取的其他原件标成已验证。
+
+`workspaceImportJobs`按统一journal中的批次意图调度现有项目新增：登记一次项目CAS后立即回执，保管、hydration和只读固定版本输出在前台输入门之外继续。物化前复核当前Pending成员及来源绑定，Undo/删除不被后台重新登记；坏图以持久待处理项保留，关闭只等真实在途副作用。
+
+`workspaceRefresh`拥有Main私有观察计划和选择；`workspaceRefreshFacts`验证同一日志中的意图、项目决定和物理ACK。所有采用外部版本通过Core单批替换形成一次混合历史，再结算原生候选及Output基线。CAS后外部再次变化不能回滚已接受画面：先查询历史ACK，确认观察已失效时记新观察证据并结束旧ACK重试，允许显式重新检查。Output可只读强制观察指定仍受管板，即使其字节恰好回到旧基线，也不隐藏这次未解决选择。
 
 `platform/main/nativeProjectEntry` 将命令行、最近项目与文件夹选择统一接入只读分类/计划；旧项目只能走显式副本升级。`imageWorkspaceWindow` 将窗口认证、端口绑定与唯一Runtime生命周期收敛在一起。初始打开前安装close守卫，renderer准备好后重放待处理关闭；候选关闭失败保留在独立集合，须经认证的恢复入口结算，不能靠关闭当前项目掩盖。复制发布后丢回包的同操作重试先核对完成凭据，不再依赖原来源仍在原位置。
 

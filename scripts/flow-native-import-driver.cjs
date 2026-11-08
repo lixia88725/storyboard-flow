@@ -61,13 +61,18 @@ async function wait(fn,label){const deadline=Date.now()+45000;while(Date.now()<d
     assert.equal(await js(`document.querySelector('[aria-label="取回外部改动"] select').value`),'useExternal');
     await js(`document.querySelector('[aria-label="取回外部改动"] .primary').click()`);await wait(()=>js('!document.querySelector("[aria-label=取回外部改动]")'),'protected Refresh applied');
     const externalPixels=(await require('sharp')(working).ensureAlpha().raw().toBuffer()).toString('base64');
-    await wait(async()=>await getPixels()===externalPixels,'protected external upper pixels');
+    // Compare independent TIFF pixels after the browser's documented Canvas
+    // premultiply/unpremultiply storage conversion, still byte-for-byte. File
+    // pixels remain independently checked exactly after Save below.
+    const externalDisplay=await js(`(()=>{const c=document.querySelector(${JSON.stringify(selector)}),v=atob(${JSON.stringify(externalPixels)}),p=Uint8ClampedArray.from(v,x=>x.charCodeAt(0)),oracle=document.createElement('canvas');oracle.width=c.width;oracle.height=c.height;const ctx=oracle.getContext('2d');ctx.putImageData(new ImageData(p,c.width,c.height),0,0);const d=ctx.getImageData(0,0,c.width,c.height).data;let s='';for(let i=0;i<d.length;i+=16384)s+=String.fromCharCode(...d.subarray(i,i+16384));return btoa(s);})()`);
+    const externalRaw=Buffer.from(externalPixels,'base64'),displayRaw=Buffer.from(externalDisplay,'base64');report.externalCanvasRoundTripMaxDifference=Math.max(...externalRaw.map((v,i)=>Math.abs(v-displayRaw[i])));
+    await wait(async()=>await getPixels()===externalDisplay,'protected external upper pixels');
     assert.deepEqual((await boot()).snapshot.session.project.images[first.imageId].protectedSource,protectedSource);
     await js('document.querySelector("[aria-label=撤销]").click()');await wait(async()=>await getPixels()===canvas,'protected Refresh Undo');
-    await js('document.querySelector("[aria-label=重做]").click()');await wait(async()=>await getPixels()===externalPixels,'protected Refresh Redo');
+    await js('document.querySelector("[aria-label=重做]").click()');await wait(async()=>await getPixels()===externalDisplay,'protected Refresh Redo');
     report.revision=(await boot()).snapshot.session.project.revision;
     await js('document.querySelector(".wb-save").click()');await wait(async()=>{const s=(await boot()).snapshot;return s.files.savedRevision===report.revision&&!s.files.outputPending;},'protected Refresh Save');
-    const final=(await boot()).snapshot;assert.deepEqual(final.session.project.images[first.imageId].protectedSource,protectedSource);
+    const final=(await boot()).snapshot;assert.deepEqual(final.session.project.images[first.imageId].protectedSource,protectedSource);assert.deepEqual(await require('sharp')(working).ensureAlpha().raw().toBuffer(),externalRaw,'saved protected Refresh pixels match independent external TIFF exactly');report.protectedRefreshSavedPixelsExact=true;
     report.savedFiles=final.files.outputNames.map(item=>({name:item.name,sha256:sha(path.join(report.root,item.name))}));
     report.cases.push('authorized protected working TIFF external upper edit returns through real Refresh, one Undo/Redo and Save without changing original binding');
    }

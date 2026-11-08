@@ -171,11 +171,13 @@ This evidence does not certify arbitrary real PSD effects, text, smart objects,
 large documents, Windows or complex TIFF-to-PSD mapping. Same-codec round trips
 alone do not establish Photoshop compatibility.
 
-## Experimental hosted engine (stage A, not wired into Flow)
+## Hosted engine (isolated Flow trial path)
 
 `flow-photocraft-host` is a separate persistent binary. The existing reader/export
-binary and normal Flow entry remain separate. This prototype admits one document
-per native host and synthetic/simple RGB8 raster/group PNG/TIFF/PSD inputs only
+binary and normal Flow entry remain separate. The isolated native workspace
+uses this host for editing and output; current integration evidence is in
+`docs/CURRENT.md`. It admits one active document per host and the verified
+RGB8 raster/group PNG/JPEG/TIFF/PSD paths
 (up to 8 MiB source, 8192 px side, 16 Mi canvas pixels, 64 layers and 512 MiB
 materialized native surface bytes). These are admission bounds, not a process RSS
 limit or certification of arbitrary PSD/TIFF structures.
@@ -370,8 +372,11 @@ Interface exposes only the immutable version and byte budget, hiding the bounded
 PSD seek writer and preservation checks behind the host Seam. It does not use the
 older append-only PSD/PNG Adapter. Options explicitly enable TIFF layers,
 unassociated transparency and alpha preservation, and disable linked-file reads
-and document paths. Any export/import loss warning rejects the entire output;
-a single locked Background that would take the flat TIFF branch is also refused.
+and document paths. Any export/import loss warning rejects the entire output.
+The digest-bound upstream patch adds `tiff_force_layer_data` (default false);
+the host explicitly enables it so even one locked Background writes real TIFF
+37724 layer data. Missing layer data still rejects output; names, locks and pixels
+are not rewritten to evade this check.
 Explicit PSD output refuses automatic PSB promotion. The maximum transport output
 is 64 MiB: PSD checks encoded_len before allocating its output, then enforces that
 bound on write/seek. Upstream TIFF encoding already materializes bytes before its
@@ -892,8 +897,9 @@ without an authorized origin interpretation returns
 `protected-source-origin-required`. This prevents silently reclassifying its
 base as ordinary editable data. Opening the same project by its retained
 NativeRef, history and Main protectedSource binding remains supported. Authorized
-cross-project re-import or external working-file Refresh is not implemented by
-this slice; no XMP-directed path lookup or implicit origin migration occurs.
+cross-project re-import remains unsupported. Same-project working-file Refresh
+uses the explicit authorized-origin capability below; no XMP-directed path lookup
+or implicit origin migration occurs.
 Main publication and actual Save/close/reopen acceptance remain separate from
 these native module tests.
 
@@ -907,3 +913,31 @@ installs them. Synthetic guard/output tests allow `FLOW_SOURCE_GUARD_PYTHON` and
 `FLOW_SOURCE_GUARD_PYTHONPATH` overrides. Defaults preserve the task's macOS
 Python 3.14 and independent `/private/tmp/flow-image-engine-export-python` copy.
 The opt-in user-corpus audit is not part of a generic all-tests run.
+
+
+### Daily-workflow native capabilities
+
+`retainedRgbJpegV1` reuses the upstream JPEG codec, normalizes `jpg` to `jpeg`,
+and applies EXIF orientation. RGB with validated ICC or untagged RGB is admitted;
+CMYK and malformed/incomplete ICC segments are refused rather than silently
+assigned a profile. The source bytes remain unchanged.
+
+`protectedWorkingRefreshV1` prepares a retained working TIFF against a
+Main-authorized old version and exact source policy. Source marker, reference
+pixels/properties and origin must match. The candidate persists the observed
+working-file digest/length; Main still owns the single project decision and
+settles the candidate afterwards. External upper-layer changes are allowed;
+changing the protected base or inventing an origin is not.
+
+`inactiveVersionExportV1` encodes an immutable pinned version without switching
+the active drawing context or freezing foreground input. One bounded job/result
+is retained and read in chunks of at most 1 MiB. `drainInactiveExports` reconciles
+and releases an unknown job in its original worker generation; it does not
+publish files or automatically start a new export. Main may explicitly retry the
+same file intention only after that job is settled. Worker replacement never
+queries a new worker as though it owned the old job.
+
+Focused native coverage is in `imageEngineJpeg.test.ts`,
+`imageEngineWorkingRefresh.test.ts`, `imageEngineInactiveExport.test.ts`, and
+`imageEngineSingleLayerOutput.test.ts`. These are distinct from Main/GUI and
+platform acceptance; the explicitly approved manifests enumerate them.
