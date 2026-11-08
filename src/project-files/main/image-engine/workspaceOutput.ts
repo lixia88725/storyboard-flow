@@ -25,7 +25,8 @@ type Entry=WorkspaceOutputFile&Identity&{content:string};
 type Move=Identity&{from:string;to:string;digest:string};
 type Transaction={operationId:string;revision:number;commitHash:string;kind:'save'|'append';phase:'preparing'|'deleting'|'staging'|'publishing';
  next:Entry[];stages:Move[];publishes:Move[];deletions:{entry:Entry;intent:OutputDeletion}[];receipt:WorkspaceOutputReceipt};
-type Ledger={schema:'flow.native-output';version:1;projectId:string;root:Identity;seq:number;previousHash:string|null;entries:Entry[];transaction?:Transaction;saved?:{revision:number;commitHash:string};refresh?:{receiptHash:string;revision:number;commitHash:string};nameSeed?:{sha256:string;consumedShotIds:string[]}};
+type Operation={fingerprint:string;state:'pending'|'completed'|'retained';receipt:WorkspaceOutputReceipt};
+type Ledger={schema:'flow.native-output';version:1;projectId:string;root:Identity;seq:number;previousHash:string|null;entries:Entry[];operationFacts?:Record<string,Operation>;transaction?:Transaction;saved?:{revision:number;commitHash:string};refresh?:{receiptHash:string;revision:number;commitHash:string};nameSeed?:{sha256:string;consumedShotIds:string[]}};
 
 export class WorkspaceOutputError extends Error {
  constructor(readonly code:string,message:string,readonly effect:'none'|'retained'|'unknown'='none'){super(message);}
@@ -93,6 +94,8 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
  const validIdentity=(v:Identity)=>v&&/^\d+$/.test(v.dev)&&/^\d+$/.test(v.ino);
  const validEntry=(e:Entry)=>e&&token(e.shotId)&&token(e.imageId)&&leaf(e.name)&&['active','parked'].includes(e.location)&&digest(e.digest)&&digest(e.content)&&validNativeImageRef(e.native)&&e.format==='tiff'&&validIdentity(e);
  const validEntries=(entries:Entry[])=>Array.isArray(entries)&&entries.length<=10000&&entries.every(validEntry)&&new Set(entries.map(e=>e.shotId)).size===entries.length&&new Set(entries.map(e=>e.name.toLowerCase())).size===entries.length;
+ const operationIdValid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(v);
+ const validReceipt=(r:WorkspaceOutputReceipt,id:string)=>r&&r.operationId===id&&r.projectId===projectId&&Number.isSafeInteger(r.revision)&&r.revision>=0&&digest(r.commitHash)&&Array.isArray(r.files)&&r.files.length<=10000&&r.files.every(e=>e&&token(e.shotId)&&token(e.imageId)&&leaf(e.name)&&['active','parked'].includes(e.location)&&digest(e.digest)&&validNativeImageRef(e.native)&&e.format==='tiff')&&new Set(r.files.map(e=>e.shotId)).size===r.files.length;
  const load=async()=>{
   await bind();let previous:string|null=null,sequence=0,latest:Ledger|undefined;
   const names=(await fs.readdir(container)).filter(n=>n!=='operations').sort();
@@ -101,6 +104,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    const bytes=await readBoundFile(path.join(container,name),JOURNAL_LIMIT);if(!bytes)fail('Output journal disappeared');
    const v=JSON.parse(bytes!.toString()) as Ledger;
    if(v.schema!=='flow.native-output'||v.version!==1||v.projectId!==projectId||v.seq!==sequence+1||v.previousHash!==previous||!validIdentity(v.root)||v.root.dev!==binding.dev||v.root.ino!==binding.ino||!validEntries(v.entries)||v.refresh&&(!digest(v.refresh.receiptHash)||!digest(v.refresh.commitHash)||!Number.isSafeInteger(v.refresh.revision)||v.refresh.revision<0)||v.nameSeed&&(!digest(v.nameSeed.sha256)||!Array.isArray(v.nameSeed.consumedShotIds)||v.nameSeed.consumedShotIds.length>10000||!v.nameSeed.consumedShotIds.every(token)||new Set(v.nameSeed.consumedShotIds).size!==v.nameSeed.consumedShotIds.length))fail('Invalid output journal');
+   if(v.operationFacts&&(typeof v.operationFacts!=='object'||Array.isArray(v.operationFacts)||Object.entries(v.operationFacts).some(([id,f])=>!operationIdValid(id)||!f||!digest(f.fingerprint)||!['pending','completed','retained'].includes(f.state)||!validReceipt(f.receipt,id))))fail('Invalid output operation facts');
    const t=v.transaction;
    if(t){if(!/^[a-f0-9-]{36}$/.test(t.operationId)||!['save','append'].includes(t.kind)||!['preparing','deleting','staging','publishing'].includes(t.phase)||!Number.isSafeInteger(t.revision)||t.revision<0||!digest(t.commitHash)||!validEntries(t.next)||!Array.isArray(t.stages)||!Array.isArray(t.publishes)||!Array.isArray(t.deletions))fail('Invalid output transaction');
     for(const m of [...t.stages,...t.publishes])if(!validRelative(m.from)||!validRelative(m.to)||!digest(m.digest)||!validIdentity(m))fail('Unsafe output move');
@@ -110,6 +114,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
     for(const d of t.deletions)if(!validEntry(d.entry)||!validOutputDeletion(d.intent)||d.intent.digest!==d.entry.digest||d.intent.from!==d.entry.location||!v.entries.some(e=>relative(e)===relative(d.entry)&&e.dev===d.intent.dev&&e.ino===d.intent.ino&&e.digest===d.intent.digest))fail('Invalid output deletion');
     const operationDirectory=path.join(operations,t.operationId);const st=await directory(operationDirectory);directories.set(operationDirectory,{dev:String(st.dev),ino:String(st.ino)});
    }
+   if(v.operationFacts){for(const [id,f] of Object.entries(v.operationFacts)){if(f.state==='pending'&&t?.operationId!==id)fail('Unbound pending output fact');if(t?.operationId===id&&(f.state!=='pending'||!validReceipt(t.receipt,id)||sha256Hex(canonicalUtf8(t.receipt))!==sha256Hex(canonicalUtf8(f.receipt))))fail('Output transaction receipt differs from operation fact');}}
    latest=v;sequence++;previous=sha256Hex(bytes!);
   }
   ledger=latest??{schema:'flow.native-output',version:1,projectId,root:{dev:binding.dev,ino:binding.ino},seq:0,previousHash:null,entries:[]};lastHash=previous;blocked=false;await syncDirectory(container);await loadNameSeed();
@@ -134,7 +139,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
   if(t.phase==='preparing'){
    // No user-visible effect is permitted before the prepared record is durable.
    // Retain private capture bytes after a crash, but never guess missing content.
-   delete ledger.transaction;await persist();await settleGrants();return;
+   if(ledger.operationFacts?.[t.operationId])ledger.operationFacts[t.operationId].state='retained';delete ledger.transaction;await persist();await settleGrants();return;
   }
   if(t.phase==='deleting'){
    for(const d of t.deletions)await trash.settle(d.entry.name,d.intent,persist);
@@ -150,7 +155,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    await settleOutputFileMove(resolve(move.from),target,move,bind);await options.fault?.('after-publish');
   }
   for(const e of t.next){const at=outputPath(root,e.name,e.location);if(await observe(at)!==e.digest)fail('Published output changed before receipt');const st=await fs.lstat(at);if(String(st.dev)!==e.dev||String(st.ino)!==e.ino)fail('Published output identity changed');}
-  ledger.entries=t.next;if(ledger.nameSeed&&nameSeed)ledger.nameSeed.consumedShotIds=[...new Set([...ledger.nameSeed.consumedShotIds,...t.next.filter(f=>nameSeed!.names.some(n=>n.shotId===f.shotId)).map(f=>f.shotId)])];if(t.kind==='save')ledger.saved={revision:t.revision,commitHash:t.commitHash};delete ledger.transaction;await persist();await settleGrants();
+  ledger.entries=t.next;if(ledger.nameSeed&&nameSeed)ledger.nameSeed.consumedShotIds=[...new Set([...ledger.nameSeed.consumedShotIds,...t.next.filter(f=>nameSeed!.names.some(n=>n.shotId===f.shotId)).map(f=>f.shotId)])];if(t.kind==='save')ledger.saved={revision:t.revision,commitHash:t.commitHash};if(ledger.operationFacts?.[t.operationId])ledger.operationFacts[t.operationId]={...ledger.operationFacts[t.operationId],state:'completed',receipt:t.receipt};delete ledger.transaction;await persist();await settleGrants();
  };
  const checkProject=(p:ProjectV2)=>{const project=snapshotImageProject(p);if(project.id!==projectId)throw new WorkspaceOutputError('invalid-input','Wrong output project');return project;};
  const plannedNames=(project:ProjectV2,sourceNames?:Readonly<Record<string,string>>,pendingOnly=false)=>{
@@ -167,8 +172,14 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
   const names=pendingOnly?new Map(entries.map(e=>[e.shotId,e.name])):orderedOutputNames({...project,version:1,images:{}},entries);
   return [...project.shots.map(s=>({shotId:s.id,name:names.get(s.id)!,location:'active' as const})),...project.parkedShots.map(s=>({shotId:s.id,name:names.get(s.id)!,location:'parked' as const}))];
  };
- const publish=async(frozen:WorkspaceOutputFrozen,batch?:{shotIds:readonly string[];sourceNames?:Readonly<Record<string,string>>})=>{
-  await settle();const snapshot=structuredClone(frozen),project=checkProject(snapshot.project);
+ const publish=async(frozen:WorkspaceOutputFrozen,batch?:{shotIds:readonly string[];sourceNames?:Readonly<Record<string,string>>},requestedId?:string)=>{
+  await bind();if(blocked)await load();const fingerprint=sha256Hex(canonicalUtf8({frozen,batch:batch??null}));
+  if(requestedId!==undefined&&!operationIdValid(requestedId))throw new WorkspaceOutputError('invalid-input','Invalid output operation UUID');
+  const prior=requestedId===undefined?undefined:ledger.operationFacts?.[requestedId];
+  if(prior&&prior.fingerprint!==fingerprint)throw new WorkspaceOutputError('conflict','Output operation binding changed','retained');
+  await settle();
+  if(prior){const known=ledger.operationFacts![requestedId!];if(known.state==='completed')return structuredClone(known.receipt);throw new WorkspaceOutputError('operation-retained','Output operation retains preparation evidence; do not replay it','retained');}
+  const snapshot=structuredClone(frozen),project=checkProject(snapshot.project);
   if(!digest(snapshot.commitHash)||!token(snapshot.owner?.sessionId)||!token(snapshot.owner?.incarnation)||!Number.isSafeInteger(snapshot.owner?.workspaceEpoch)||snapshot.owner.workspaceEpoch<0)throw new WorkspaceOutputError('invalid-input','Invalid frozen output identity');
   if(!batch&&project.naming){const issue=namingIssue(project.name,project.naming);if(issue)throw new WorkspaceOutputError('invalid-input',issue);}
   let shots=[...project.shots,...project.parkedShots];
@@ -184,10 +195,10 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    for(const found of await fs.readdir(dir))if(found.toLowerCase()===n.name.toLowerCase()&&!allowed.has(`${n.location}/${found}`))fail(`Foreign output filename collision: ${n.name}`);
   }
   const resolved=shots.map(shot=>{const value=snapshot.resolvedImages?.[shot.imageId],binding=project.images[shot.imageId].content;if(!value||!validNativeImageRef(value.native)||value.format!=='tiff'||binding.kind==='native'&&sha256Hex(canonicalUtf8(binding.native))!==sha256Hex(canonicalUtf8(value.native)))throw new WorkspaceOutputError('unsupported','Ordinary Save requires matching settled native references and TIFF output');const text=metadata(project,shot);if(!validWorkspaceOutputMetadataEnvelope({schema:'flow.native-output-metadata',version:2,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,metadata:text}))throw new WorkspaceOutputError('resource-limit','Native output metadata exceeds its supported envelope');return{shot,value,metadata:text};});
-  const operationId=randomUUID(),dir=path.join(operations,operationId);await ensure(dir);
+  const operationId=requestedId??randomUUID(),dir=path.join(operations,operationId);await ensure(dir);
   const receipt:WorkspaceOutputReceipt={operationId,projectId,revision:project.revision,commitHash:snapshot.commitHash,files:[]};
   const t:Transaction={operationId,revision:project.revision,commitHash:snapshot.commitHash,kind:batch?'append':'save',phase:'preparing',next:batch?[...ledger.entries]:[],stages:[],publishes:[],deletions:[],receipt};
-  ledger.transaction=t;await persist();
+  ledger.operationFacts??={};ledger.operationFacts[operationId]={fingerprint,state:'pending',receipt};ledger.transaction=t;await persist();
   try{
    for(let i=0;i<resolved.length;i++){
     const {shot,value,metadata}=resolved[i],name=names.find(n=>n.shotId===shot.id)!;
@@ -212,7 +223,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    for(const entry of removals){const intent=await trash.prepare(entry.name,entry.location,entry.digest),st=await fs.lstat(outputPath(root,entry.name,entry.location));await hold(operationId,path.join(hidden,'deletions',intent.token,entry.name),st.size,'native-output-trash');t.deletions.push({entry,intent});}
    t.phase='deleting';await persist();await options.fault?.('after-prepared');await settle();return structuredClone(receipt);
   }catch(e){
-   if(t.phase==='preparing'&&!blocked){delete ledger.transaction;try{await persist();await settleGrants(operationId);}catch{blocked=true;}}
+   if(t.phase==='preparing'&&!blocked){ledger.operationFacts![operationId].state='retained';delete ledger.transaction;try{await persist();await settleGrants(operationId);}catch{blocked=true;}}
    if(ledger.transaction||blocked)for(const items of grants.values())for(const item of items)await item.grant.retainUnknown();
    throw new WorkspaceOutputError('output-failed',e instanceof Error?e.message:String(e),ledger.transaction||blocked?'unknown':'retained');
   }
@@ -224,8 +235,9 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    inspect(project){const snapshot=structuredClone(project);return run(async()=>{await bind();const p=checkProject(snapshot),ids=new Set([...p.shots,...p.parkedShots].map(s=>s.id)),changes=[];
     if(ledger.transaction||blocked)throw new WorkspaceOutputError('recovery-pending','Recover output before inspecting external changes','retained');
     for(const e of ledger.entries.filter(e=>ids.has(e.shotId))){const file=outputPath(root,e.name,e.location),observed=await inspectFile(file);if(observed.digest!==e.digest||observed.identity&&(observed.identity.dev!==e.dev||observed.identity.ino!==e.ino))changes.push({shotId:e.shotId,name:e.name,location:e.location,expectedDigest:e.digest,observedDigest:observed.digest,observedIdentity:observed.identity});}return changes;});},
-   save(frozen){const snapshot=structuredClone(frozen);return run(()=>publish(snapshot));},
-   appendPendingBatch(frozen,batch){const snapshot=structuredClone(frozen),selection=structuredClone(batch);return run(()=>publish(snapshot,selection));},
+   save(frozen,operation){const snapshot=structuredClone(frozen),id=operation?.operationId;return run(()=>publish(snapshot,undefined,id));},
+   appendPendingBatch(frozen,batch,operation){const snapshot=structuredClone(frozen),selection=structuredClone(batch),id=operation?.operationId;return run(()=>publish(snapshot,selection,id));},
+   queryOperation(operationId){return run(async()=>{await bind();if(blocked)await load();if(!operationIdValid(operationId))throw new WorkspaceOutputError('invalid-input','Invalid output operation UUID');const known=ledger.operationFacts?.[operationId];if(!known)return{state:'absent' as const};if(known.state==='completed')return{state:'completed' as const,receipt:structuredClone(known.receipt)};return{state:known.state};});},
    acceptRefresh(receipt){const input=structuredClone(receipt);return run(async()=>{
     await settle();if(input.projectId!==projectId||!Number.isSafeInteger(input.revision)||input.revision<0||!digest(input.commitHash)||!Array.isArray(input.changes)||!input.changes.length||input.changes.length>10000||new Set(input.changes.map(c=>c.shotId)).size!==input.changes.length)throw new WorkspaceOutputError('invalid-input','Invalid Main Refresh receipt');
     const receiptHash=sha256Hex(canonicalUtf8(input)),repeated=ledger.refresh?.receiptHash===receiptHash,next=[...ledger.entries];

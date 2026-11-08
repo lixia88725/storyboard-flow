@@ -145,3 +145,26 @@ describe('output integration identity and close obligations',()=>{
   let held=true;const g=await fixture({writerAuthority:{assertHeld:async()=>{if(!held)throw Error('lease unavailable');}}});held=false;await expect(g.output.close()).rejects.toThrow('lease unavailable');held=true;await expect(openWorkspaceOutput(g.options)).rejects.toMatchObject({code:'busy'});await expect(g.output.close()).resolves.toBeUndefined();await expect(g.output.close()).resolves.toBeUndefined();
  });
 });
+
+describe('durable output operation correlation',()=>{
+ const id='11111111-1111-4111-8111-111111111111';
+ it('returns the original completed receipt across reopen without recapture or new disk records',async()=>{
+  const g=await fixture(),f=frozen();expect(await g.output.queryOperation(id)).toEqual({state:'absent'});const receipt=await g.output.save(f,{operationId:id});expect(receipt.operationId).toBe(id);expect(await g.output.queryOperation(id)).toEqual({state:'completed',receipt});await g.output.close();
+  const records=await fs.readdir(path.join(g.root,'.storyboard-flow/native-output-v1')),next=await openWorkspaceOutput(g.options);expect(await next.save(f,{operationId:id})).toEqual(receipt);expect(g.capture).toHaveBeenCalledTimes(2);expect(await fs.readdir(path.join(g.root,'.storyboard-flow/native-output-v1'))).toEqual(records);await next.close();
+ });
+ it('binds the full frozen input and append scope before retrying any side effect',async()=>{
+  const g=await fixture(),f=frozen();await g.output.save(f,{operationId:id});const changed=structuredClone(f);changed.project.shots[0].scriptText='other';await expect(g.output.save(changed,{operationId:id})).rejects.toThrow('binding changed');await expect(g.output.appendPendingBatch(f,{shotIds:['a']},{operationId:id})).rejects.toThrow('binding changed');expect(g.capture).toHaveBeenCalledTimes(2);await g.output.close();
+ });
+ it('queries pending without effects and settles the same interrupted publication on retry',async()=>{
+  let stop=true;const g=await fixture({fault:async p=>{if(stop&&p==='after-publish')throw Error('lost reply');}}),f=frozen();await expect(g.output.save(f,{operationId:id})).rejects.toMatchObject({effect:'unknown'});expect(await g.output.queryOperation(id)).toEqual({state:'pending'});vi.resetModules();stop=false;const next=await(await import('./workspaceOutput')).openWorkspaceOutput(g.options);const receipt=await next.save(f,{operationId:id});expect(receipt.operationId).toBe(id);expect(await next.queryOperation(id)).toEqual({state:'completed',receipt});expect(g.capture).toHaveBeenCalledTimes(2);await next.close();
+ });
+ it('does not repeat Trash after the completion acknowledgement is lost',async()=>{
+  const g=await fixture(),f=frozen();await g.output.save(f);f.project.shots.shift();f.project.dialogues=[];const receipt=await g.output.save(f,{operationId:id});expect(g.trash).toHaveBeenCalledTimes(1);await g.output.close();const next=await openWorkspaceOutput(g.options);expect(await next.save(f,{operationId:id})).toEqual(receipt);expect(g.trash).toHaveBeenCalledTimes(1);await next.close();
+ });
+ it('keeps failed preparation as a retained fact and never guesses a duplicate capture',async()=>{
+  const g=await fixture({captureImage:async()=>{throw Error('unsupported metadata');}}),f=frozen();await expect(g.output.save(f,{operationId:id})).rejects.toThrow('unsupported metadata');expect(await g.output.queryOperation(id)).toEqual({state:'retained'});await g.output.close();const next=await openWorkspaceOutput(g.options);await expect(next.save(f,{operationId:id})).rejects.toMatchObject({code:'operation-retained'});expect(await next.queryOperation(id)).toEqual({state:'retained'});await next.close();
+ });
+ it('accounts durable receipt snapshots with the actual shared budget',async()=>{
+  const g=await fixture();await g.output.close();const broker=await createWorkspaceRecoveryBudget({root:g.root,maxRecoveryBytes:8*1024**3}),out=await openWorkspaceOutput({...g.options,budget:broker});await out.save(frozen(),{operationId:id});expect(broker.reservedBytes).toBe(0);expect(broker.actualBytes).toBe(await broker.measureActual());await out.close();
+ });
+});

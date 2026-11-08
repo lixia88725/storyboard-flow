@@ -57,6 +57,8 @@ export type WorkspaceOutputBudget = {
 };
 export type WorkspaceOutputFile = {shotId:string;imageId:string;name:string;location:WorkspaceOutputLocation;digest:string;native:NativeImageRef;format:'tiff'|'psd'};
 export type WorkspaceOutputReceipt = {operationId:string;projectId:string;revision:number;commitHash:string;files:WorkspaceOutputFile[]};
+export type WorkspaceOutputOperationOptions={operationId?:string};
+export type WorkspaceOutputOperation={state:'absent'}|{state:'pending'|'retained';receipt?:never}|{state:'completed';receipt:WorkspaceOutputReceipt};
 export type WorkspaceOutputPhysicalIdentity={dev:string;ino:string};
 export type WorkspaceOutputObservation = {shotId:string;location:WorkspaceOutputLocation;name:string;expectedDigest:string;observedDigest:string|null;observedIdentity:WorkspaceOutputPhysicalIdentity|null};
 /** Main calls only after retaining the original and deciding the Refresh CAS.
@@ -74,8 +76,10 @@ export type WorkspaceOutputOptions = {
 export type WorkspaceOutput = {
  names(project:ProjectV2):Promise<{shotId:string;name:string;location:WorkspaceOutputLocation}[]>;
  inspect(project:ProjectV2):Promise<WorkspaceOutputObservation[]>;
- save(frozen:WorkspaceOutputFrozen):Promise<WorkspaceOutputReceipt>;
- appendPendingBatch(frozen:WorkspaceOutputFrozen,batch:{shotIds:readonly string[];sourceNames?:Readonly<Record<string,string>>}):Promise<WorkspaceOutputReceipt>;
+ save(frozen:WorkspaceOutputFrozen,options?:WorkspaceOutputOperationOptions):Promise<WorkspaceOutputReceipt>;
+ appendPendingBatch(frozen:WorkspaceOutputFrozen,batch:{shotIds:readonly string[];sourceNames?:Readonly<Record<string,string>>},options?:WorkspaceOutputOperationOptions):Promise<WorkspaceOutputReceipt>;
+ /** Read-only side-effect status, never a Main project commit decision. */
+ queryOperation(operationId:string):Promise<WorkspaceOutputOperation>;
  acceptRefresh(receipt:WorkspaceOutputRefreshReceipt):Promise<void>;
  recover():Promise<void>;
  hasObligations():boolean;
