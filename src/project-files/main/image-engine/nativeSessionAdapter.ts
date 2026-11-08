@@ -228,33 +228,52 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       await new Promise(resolve=>setTimeout(resolve,8));op.check();value=await call(next(),{kind:'detachedPoll',jobId},null);op.check();
     }
   };
-  let readonlyExport:{key:string;jobId:string;promise:Promise<NativeVersionOutput>}|undefined;
-  const drainInactiveExports=async()=>{if(readonlyExport)await readonlyExport.promise;};
+  let readonlyExport:{key:string;jobId:string;promise:Promise<NativeVersionOutput>;recover():Promise<void>}|undefined;
+  const drainInactiveExports=async()=>{const handle=readonlyExport;if(!handle)return;try{await handle.promise;}catch{if(readonlyExport===handle){await handle.recover();if(readonlyExport===handle)readonlyExport=undefined;}}};
   const exportInactiveVersion=(ref:NativeImageRef,format:'psd'|'tiff',metadata:WorkspaceOutputMetadataEnvelope,maxBytes=64<<20,expectedSourcePolicy:ImageEngineProtectedSourcePolicy|null=null):Promise<NativeVersionOutput>=>{
     const pinned=structuredClone(ref),envelope=structuredClone(metadata),policy=structuredClone(expectedSourcePolicy),key=JSON.stringify([pinned,format,envelope,maxBytes,policy]);
     if(readonlyExport){if(readonlyExport.key===key)return readonlyExport.promise;return Promise.reject(Object.assign(Error('Drain the existing readonly output handle first'),{code:'backpressure',effect:'none'}));}
-    const op=operationContext(),jobId=next();let safelyReleased=true;
+    const op=operationContext(),boundGeneration=generation,jobId=next();let safelyReleased=true;
+    const checkJob=()=>{op.identity();if(owner&&(owner.current()?.connection!==op.connection||owner.current()?.generation!==boundGeneration))refuse('Readonly output belongs to an old worker','worker-unavailable','unknown');};
+    // These commands cannot alter active pixels or project authority. An unknown
+    // readonly reply retains this handle; actual transport exit still fences owner.
+    const jobCall=async(id:string,body:Record<string,unknown>,_base:null=null,payload?:Uint8Array)=>{
+      const captured=structuredClone(body),bytes=payload?new Uint8Array(payload):undefined;checkJob();const frame=await wire(false,async()=>{checkJob();return op.connection.request(id,captured,null,bytes);});checkJob();const reply=frame.header.body;
+      if(!record(reply)||typeof reply.kind!=='string')refuse('Malformed readonly output reply','protocol','unknown');if(reply.kind==='failure'){const e=reply.error;if(!record(e))refuse('Malformed readonly output failure','protocol','unknown');refuse(String(e.message),String(e.code),e.effect==='none'?'none':e.effect==='retained'?'retained':'unknown');}return{reply,frame};
+    };
+    let recovery:Promise<void>|undefined;
+    const recover=():Promise<void>=>{
+      if(recovery)return recovery;
+      const attempt=(async()=>{checkJob();if(!op.connection.supports('inactiveVersionExportV1'))refuse('Original readonly worker unavailable; reap/restart before capture','worker-unavailable','unknown');
+        while(true){let state:Record<string,unknown>;try{const result=await jobCall(next(),{kind:'detachedPoll',jobId});if(result.frame.payload.length)refuse('Readonly recovery poll carries payload','protocol','unknown');state=result.reply;}catch(e){if((e as any)?.code==='not-found'&&(e as any)?.effect==='none'){safelyReleased=true;return;}throw e;}
+          if(state.kind!=='detachedState'||state.jobId!==jobId||typeof state.finished!=='boolean')refuse('Malformed original readonly job recovery','protocol','unknown');if(!state.finished){await new Promise(resolve=>setTimeout(resolve,8));continue;}
+          // Safe discard of a readonly byte cache. Main still owns its output
+          // intent; a fresh capture requires its explicit subsequent decision.
+          const{reply}=await jobCall(next(),{kind:'releaseExport',jobId});if(reply.kind!=='exportReleased'||reply.jobId!==jobId)refuse('Readonly recovered release mismatch','protocol','unknown');safelyReleased=true;return;
+        }
+      })();recovery=attempt;void attempt.finally(()=>{if(recovery===attempt)recovery=undefined;}).catch(()=>{});return attempt;
+    };
     const promise=(async()=>{
       if(!op.connection.supports('inactiveVersionExportV1'))refuse('Native binary lacks inactiveVersionExportV1','unsupported');
       if(!validNativeImageRef(pinned)||!['psd','tiff'].includes(format)||!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>(64<<20)||!validWorkspaceOutputMetadataEnvelope(envelope)||(policy!==null&&!validImageEngineProtectedSourcePolicy(policy)))refuse('Invalid immutable output request','invalid-input');
       const actual=(await verifyNativeFile(pinned)).policy;op.check();if(!same(actual,policy))refuse('Main protected origin does not match immutable output','protected-source');
       const bytes=new TextEncoder().encode(JSON.stringify(envelope)),metadataSha256=sha(bytes);let admitted=false,finished=false;
-      const release=async()=>{const{reply}=await call(next(),{kind:'releaseExport',jobId},null);op.check();if(reply.kind!=='exportReleased'||reply.jobId!==jobId)refuse('Readonly output release mismatch','protocol','unknown');safelyReleased=true;};
+      const release=async()=>{const{reply}=await jobCall(next(),{kind:'releaseExport',jobId},null);op.check();if(reply.kind!=='exportReleased'||reply.jobId!==jobId)refuse('Readonly output release mismatch','protocol','unknown');safelyReleased=true;};
       try{
-        let state:Record<string,unknown>;safelyReleased=false;const started=await call(jobId,{kind:'exportImmutable',source:versionIdentity(pinned),format,maxBytes,metadata:{sha256:metadataSha256,byteLength:bytes.length},expectedSourcePolicy:policy},null,bytes);op.check();admitted=true;state=started.reply;
+        let state:Record<string,unknown>;safelyReleased=false;const started=await jobCall(jobId,{kind:'exportImmutable',source:versionIdentity(pinned),format,maxBytes,metadata:{sha256:metadataSha256,byteLength:bytes.length},expectedSourcePolicy:policy},null,bytes);op.check();admitted=true;state=started.reply;
         while(state.kind==='detachedQueued'||(state.kind==='detachedState'&&state.finished===false)){
-          await new Promise(resolve=>setTimeout(resolve,8));op.check();const value=await call(next(),{kind:'detachedPoll',jobId},null);op.check();if(value.frame.payload.length)refuse('Background output poll must not carry pixel/file payload','protocol','unknown');state=value.reply;
+          await new Promise(resolve=>setTimeout(resolve,8));op.check();const value=await jobCall(next(),{kind:'detachedPoll',jobId},null);op.check();if(value.frame.payload.length)refuse('Background output poll must not carry pixel/file payload','protocol','unknown');state=value.reply;
         }
         if(state.kind!=='detachedState'||state.jobId!==jobId||state.finished!==true||!record(state.result))refuse('Invalid readonly output state','protocol','unknown');finished=true;const r=state.result;
         if(r.kind==='failed'){await release();const error=r.error;if(!record(error))refuse('Malformed readonly output failure','protocol','unknown');refuse(String(error.message),String(error.code),error.effect==='none'?'none':error.effect==='retained'?'retained':'unknown');}
         if(r.kind!=='exported'||r.exportedDocumentId!==pinned.documentId||r.versionId!==pinned.versionId||r.format!==format||r.width!==pinned.width||r.height!==pinned.height||!Number.isSafeInteger(r.byteLength)||Number(r.byteLength)<1||Number(r.byteLength)>maxBytes||r.metadataSha256!==metadataSha256||r.layered!==true||!Number.isSafeInteger(r.layerCount)||Number(r.layerCount)<1||Number(r.layerCount)>64||!Array.isArray(r.warnings)||r.warnings.length!==0)refuse('Readonly output receipt differs from fixed immutable pin','protocol','unknown');
         if(policy&&(r.sourceReferenceVersion!==1||typeof r.sourceReferenceSha256!=='string'||!/^[0-9a-f]{64}$/.test(r.sourceReferenceSha256)))refuse('Missing protected readonly output marker','protocol','unknown');
-        const output=new Uint8Array(Number(r.byteLength));for(let offset=0;offset<output.length;offset+=1<<20){const length=Math.min(1<<20,output.length-offset),chunk=await call(next(),{kind:'readExport',jobId,offset,length},null);op.check();if(chunk.reply.kind!=='exportChunk'||chunk.reply.jobId!==jobId||chunk.reply.offset!==offset||chunk.reply.length!==length||chunk.reply.byteLength!==output.length||chunk.frame.payload.length!==length)refuse('Readonly output chunk binding mismatch','protocol','unknown');output.set(chunk.frame.payload,offset);}
+        const output=new Uint8Array(Number(r.byteLength));for(let offset=0;offset<output.length;offset+=1<<20){const length=Math.min(1<<20,output.length-offset),chunk=await jobCall(next(),{kind:'readExport',jobId,offset,length},null);op.check();if(chunk.reply.kind!=='exportChunk'||chunk.reply.jobId!==jobId||chunk.reply.offset!==offset||chunk.reply.length!==length||chunk.reply.byteLength!==output.length||chunk.frame.payload.length!==length)refuse('Readonly output chunk binding mismatch','protocol','unknown');output.set(chunk.frame.payload,offset);}
         const sha256=sha(output),signature=Buffer.from(output.subarray(0,4)).toString('hex');if(r.sha256!==sha256||(format==='psd'?signature!=='38425053':!['49492a00','4d4d002a'].includes(signature)))refuse('Readonly output digest/signature mismatch','protocol','unknown');await release();
         return{bytes:output,sha256,byteLength:output.length,width:pinned.width,height:pinned.height,layerCount:Number(r.layerCount),versionId:pinned.versionId,documentId:pinned.documentId,metadataSha256,...(policy?{sourceReferenceSha256:String(r.sourceReferenceSha256)}:{})};
       }catch(error){if(!admitted&&(error as {effect?:string})?.effect==='none')safelyReleased=true;else if(finished&&!safelyReleased&&(error as {effect?:string})?.effect==='none')await release();throw error;}
     })();
-    const handle={key,jobId,promise};readonlyExport=handle;void promise.finally(()=>{if(safelyReleased&&readonlyExport===handle)readonlyExport=undefined;}).catch(()=>{});return promise;
+    const handle={key,jobId,promise,recover};readonlyExport=handle;void promise.finally(()=>{if(safelyReleased&&readonlyExport===handle)readonlyExport=undefined;}).catch(()=>{});return promise;
   };
   const retainedPayload=async(op:ReturnType<typeof operationContext>,captured:RetainedSourceObject,formatHint:string)=>{
        const original=await boundedFile(captured.path,8<<20,captured.identity);op.check();if(original.length!==captured.byteLength||sha(original)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
