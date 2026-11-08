@@ -6,7 +6,7 @@ import { nativeBlendLabel, nativeLayerGestureKey, nativeLayerReason, nativeLayer
 const layer = (id:string, patch:Partial<NativeLayerView> = {}):NativeLayerView => ({id,parentId:null,name:`Layer ${id}`,kind:'raster',visible:true,locked:false,opacity:1,blendMode:'normal',editable:true,capabilities:{paint:true,properties:true,structure:true},...patch});
 const tick=async()=>{await Promise.resolve();await Promise.resolve();await Promise.resolve();};
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(r=>{resolve=r;});return{promise,resolve};};
-const image=(layers:NativeLayerView[]):NonNullable<NativeLayerPanelProps['image']>=>({imageId:'img',content:{kind:'source',source:{importId:'import',itemId:'item',interpretationId:'interpretation'}},availability:'editable',layers,activeLayerId:layers.at(-1)?.id??null,contextGeneration:1});
+const image=(layers:NativeLayerView[]):NonNullable<NativeLayerPanelProps['image']>=>({imageId:'img',content:{kind:'source',source:{importId:'import',itemId:'item',interpretationId:'interpretation'}},availability:'editable',displayDocumentId:null,displayNative:null,displayIdentity:null,layers,activeLayerId:layers.at(-1)?.id??null,contextGeneration:1});
 
 describe('native layer projection and selection',()=>{
   it('shows nested groups above reversed children without mutating the bottom-to-top snapshot',()=>{

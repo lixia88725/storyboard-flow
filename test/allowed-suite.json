@@ -99,5 +99,11 @@
   "src/session/core/nativePipeline.test.ts",
   "src/session/core/nativeSettlementQueue.test.ts",
   "src/project-files/main/image-engine/journalProjectStore.test.ts",
-  "src/project-files/main/image-engine/recoveryJournal.test.ts"
+  "src/project-files/main/image-engine/recoveryJournal.test.ts",
+  "src/platform/contracts/imageEngine.test.ts",
+  "src/drawing/renderer/image-engine/capture.test.ts",
+  "src/workbench/renderer/image-engine/workspaceController.test.ts",
+  "src/workbench/renderer/image-engine/nativeLayerPanelModel.test.ts",
+  "src/platform/main/imageWorkspaceIpc.test.ts",
+  "src/platform/main/imageWorkspaceLifecycle.test.ts"
 ]

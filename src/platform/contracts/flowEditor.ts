@@ -12,15 +12,16 @@ export type FolderStatusRequest = { project: ProjectV1; inspectDisk: boolean };
 export type FlowProjectTarget =
   | { kind: 'pending' }
   | { kind: 'recent'; id: string }
-  | { kind: 'create'; draftId: string };
+  | { kind: 'create' | 'upgrade'; draftId: string };
 /** The simplified entry asks Main to inspect one folder. A Flow project is held
  * as a one-shot pending target; image folders (including a retired
  * `.storyboard-workbench`) become a creation draft the renderer confirms. */
 export type FlowOpenChoice =
   | { canceled: true }
   | { kind: 'project' }
-  | { kind: 'import'; draft: FlowCreateDraftView };
-export type FlowLaunchResult = { canceled: true } | { canceled: false; bootstrap: FlowEditorBootstrap };
+  | { kind: 'import'; draft: FlowCreateDraftView }
+  | {kind:'copy-upgrade';draft:import('./imageWorkspace.js').ImageWorkspaceUpgradeDraft};
+export type FlowLaunchResult = { canceled: true } | { canceled: false; kind?: 'legacy'; bootstrap: FlowEditorBootstrap } | Extract<import('./imageWorkspace.js').ImageWorkspaceLaunchResult,{canceled:false}>;
 export type FlowRecentProject = { id: string; name: string; available: boolean; /** Display-only shortest unique suffix; never used as a write path. */ target: string };
 export type FlowLauncherState = { recent: FlowRecentProject[]; open: boolean; currentId: string | null };
 export type FlowRelocateResult = { canceled: true } | { ok: true } | { ok: false; message: string };
@@ -60,6 +61,8 @@ export type FlowPendingProgress = { operationId: string; done: number; total: nu
 export type FlowPendingIssues = { requestId: string; operationId: string; issues: CreateImageProjectIssue[] };
 
 export type FlowEditorBridge = {
+  /** Native product bridge; the transferable pixel port is attached in renderer world. */
+  imageWorkspace: Omit<import('./imageWorkspace.js').ImageWorkspaceBridge, 'onFramePort'>;
   read(sessionId: string, id: string): ReturnType<FlowAssetDepot['read']>;
   put(sessionId: string, input: Parameters<FlowAssetDepot['put']>[0]): ReturnType<FlowAssetDepot['put']>;
   switchProject(sessionId: string, project: ProjectV1, target: FlowProjectTarget): Promise<FlowEditorBootstrap | null>;
@@ -79,11 +82,15 @@ export type FlowEditorBridge = {
   removeRecent(id: string): Promise<void>;
   /** Rebind a missing recent target only after its project identity matches. */
   relocateRecent(id: string): Promise<FlowRelocateResult>;
-  launch(target: FlowProjectTarget): Promise<FlowLaunchResult>;
+  launch(target: FlowProjectTarget, currentOwner?: import('./imageWorkspace.js').ImageWorkspaceOwner): Promise<FlowLaunchResult>;
+  finishNativeClose(owner: import('./imageWorkspace.js').ImageWorkspaceOwner, requestId: string, ticket: string): Promise<{ok:boolean;message?:string}>;
   /** Shows one folder picker and classifies it: an existing Flow project is held
    * as a one-shot pending target, image folders become a creation draft, and a
    * damaged Flow project is refused instead of being imported as images. */
   chooseOpen(): Promise<FlowOpenChoice>;
+  upgradeChooseDestination(draftId:string):Promise<import('./imageWorkspace.js').ImageWorkspaceUpgradeDraft|null>;
+  upgradeUpdate(draftId:string,patch:import('./imageWorkspace.js').ImageWorkspaceUpgradePatch):Promise<import('./imageWorkspace.js').ImageWorkspaceUpgradeDraft>;
+  upgradeDiscard(draftId:string):Promise<void>;
   createDraft(mode: FlowCreateMode): Promise<FlowCreateDraftView>;
   createChooseSource(draftId: string, kind: 'files' | 'folder'): Promise<FlowCreateDraftView | { canceled: true }>;
   createChooseDestination(draftId: string): Promise<FlowCreateDraftView | { canceled: true }>;

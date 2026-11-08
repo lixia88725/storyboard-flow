@@ -1,0 +1,175 @@
+import {useCallback,useEffect,useMemo,useRef,useState,useSyncExternalStore,type ReactNode} from 'react';
+import {FolderInput,Undo2,Redo2,Save,Trash2} from 'lucide-react';
+import type {ImageWorkspaceCommand,ImageWorkspaceEdit,ImageWorkspaceImageView} from '../../../platform/contracts/imageWorkspace';
+import type {FlowStroke} from '../../../platform/contracts/flowWave2';
+import type {Shot} from '../../../drawing/contracts/types';
+import {NativeCanvas} from '../../../drawing/renderer/image-engine/NativeCanvas';
+import {BrushPanel} from '../../../drawing/renderer/brushPanel';
+import {preferenceFor,readBrushPreferences,strokeBrushFor,withPreference,writeBrushPreferences} from '../../../drawing/renderer/brushPresets';
+import {CanvasPresentationContext,PresentationPreview} from '../../../drawing/renderer/canvasPresentation';
+import {DialogueBlocks} from '../../../storyboard/renderer/dialogueBlocks';
+import {createDialogueCommitState} from '../../../storyboard/renderer/dialogueCommitState';
+import {pendingDeleteDecision} from '../../../storyboard/renderer/pendingSelection';
+import {selectShots,nextSelectionAnchor} from '../../../storyboard/renderer/boardSelection';
+import {Workbench} from '../Workbench';
+import {errorText} from '../FlowAlert';
+import {WorkspaceToolRail,type WorkspaceTool} from '../workspace/WorkspaceToolRail';
+import {ProjectNamingBar} from '../ProjectNamingBar';
+import {useProjectNaming} from '../useProjectNaming';
+import {createController as createToolController} from '../toolShortcuts';
+import type {ImageWorkspaceController} from './workspaceController';
+import {NativeThumbnail,workspaceShots} from './presentation';
+import {NativeInputRecovery} from './NativeInputRecovery';
+
+type Props={
+ controller:ImageWorkspaceController;externallyPaused:boolean;
+ projectMenu:(exportPsd:()=>void,disabled:boolean)=>ReactNode;
+ renderLayers:(image:ImageWorkspaceImageView|undefined,edit:(edit:ImageWorkspaceEdit)=>Promise<void>)=>ReactNode;
+ registerTransition:(flush:()=>Promise<void>)=>()=>void;
+};
+const success=(kind:string)=>kind==='settled'||kind==='recovered';
+
+/** Existing workbench layout around the native owner. UI drafts are text/input
+ * obligations, not editable image documents. All image changes are Main intents. */
+export function NativeWorkbenchEditor({controller:c,externallyPaused,projectMenu,renderLayers,registerTransition}:Props){
+ const snapshot=useSyncExternalStore(c.subscribe,c.snapshot);
+ useSyncExternalStore(c.subscribe,()=>{const v=c.capture.state();return `${v.activeId}:${v.pending}:${v.blocked}:${v.waiting}:${v.paused}:${c.fault()?.message??''}`;});
+ const project=snapshot.session.project;
+ const [selected,setSelected]=useState<string[]>(()=>project.shots[0]?[project.shots[0].id]:[]),[pendingSelected,setPendingSelected]=useState<string[]>([]);
+ const [issue,setIssue]=useState(''),[tool,setTool]=useState<WorkspaceTool>('brush'),[color,setColor]=useState('#000000'),[blurRadius,setBlurRadius]=useState(8);
+ const [brushPreferences,setBrushPreferences]=useState(readBrushPreferences),[brushPanel,setBrushPanel]=useState<{x:number;y:number}>();
+ const [working,setWorking]=useState(false),[authority,setAuthority]=useState(0),[holdShots,setHoldShots]=useState<string[]>([]);
+ const [scripts,setScripts]=useState<Record<string,string>>({});
+ const toolRef=useRef(tool),anchor=useRef<string|undefined>(undefined),pendingAnchor=useRef<string|undefined>(undefined);toolRef.current=tool;
+ const surfaceGestures=useRef(new Set<string>()),outputActive=useRef(false);
+ const actionComposing=useRef(new Set<string>()),scriptSerial=useRef(0);
+ const text=useRef(createDialogueCommitState()),requests=useRef(new Set<Promise<unknown>>()),scriptVersions=useRef(new Map<string,number>());
+ const active=snapshot.session.phase==='active'&&!externallyPaused;
+ const currentId=selected.find(id=>project.shots.some(s=>s.id===id));
+ const current=project.shots.find(s=>s.id===currentId),image=current?snapshot.images[current.imageId]:undefined;
+ const activeLayer=image?.layers.find(l=>l.id===image.activeLayerId);
+ const live=useRef({active,working,tool});live.current={active,working,tool};
+ const refreshText=()=>setHoldShots(text.current.holdShots());
+ const request=useCallback((command:ImageWorkspaceCommand):Promise<void>=>{
+  const promise=c.request(command).then(outcome=>{if(!success(outcome.kind))throw Error(outcome.kind==='rejected'?outcome.error.message:'操作尚未完成，请先处理保留的内容。');});
+  requests.current.add(promise);void promise.then(()=>requests.current.delete(promise),error=>{requests.current.delete(promise);setIssue(error instanceof Error?error.message:String(error));});return promise;
+ },[c]);
+ const act=(command:ImageWorkspaceCommand)=>{void request(command).catch(()=>{});};
+ const naming=useProjectNaming(project,draft=>request({kind:'board',command:{kind:'setProjectNaming',...draft}}));
+ useEffect(()=>registerTransition(async()=>{
+  if(!c.capture.state().paused)throw Error('关闭前必须先暂停新输入。');
+  if(outputActive.current)throw Error('请等待文件操作结束。');
+  if(surfaceGestures.current.size)throw Error('请先完成当前画布操作。');
+  if(actionComposing.current.size||text.current.composingShots().length)throw Error('请先完成输入法组字。');
+  await naming.flush();await Promise.all([...requests.current]);
+  if(text.current.busy()||scriptVersions.current.size)throw Error('仍有未确认的文字，请先处理。');
+  await c.settleCaptured();
+ }),[registerTransition,naming.flush,c]);
+ useEffect(()=>{void c.start();void c.refreshSnapshot();},[c]);
+ useEffect(()=>{writeBrushPreferences(brushPreferences);},[brushPreferences]);
+ useEffect(()=>{
+  setSelected(ids=>ids.filter(id=>project.shots.some(s=>s.id===id)));
+  setPendingSelected(ids=>ids.filter(id=>project.parkedShots.some(s=>s.id===id)));
+ },[project.shots,project.parkedShots]);
+ const canNavigate=()=>live.current.active&&!live.current.working&&!outputActive.current&&!c.capture.state().paused&&!surfaceGestures.current.size&&!actionComposing.current.size&&!text.current.busy()&&!scriptVersions.current.size&&requests.current.size===0&&c.capture.state().activeId===null&&!c.capture.state().blocked&&c.capture.state().pending===0;
+ const activate=(id:string)=>{if(c.snapshot().context.shotId===id&&c.snapshot().context.layerId!==null)return;void c.request({kind:'activateShot',shotId:id}).then(result=>{if(result.kind==='rejected')setIssue(result.error.message);}).catch(error=>setIssue(errorText(error)));};
+ const focus=(id:string)=>{if(!canNavigate())return;setSelected([id]);anchor.current=id;activate(id);};
+ useEffect(()=>{if(currentId)activate(currentId);},[currentId]);
+ const select=(id:string,event:{shiftKey?:boolean;metaKey?:boolean;ctrlKey?:boolean},pending=false)=>{
+  if(!canNavigate())return;
+  const order=(pending?project.parkedShots:project.shots).map(s=>s.id),ids=pending?pendingSelected:selected,ref=pending?pendingAnchor:anchor;
+  const next=selectShots(order,ids,ref.current,id,event);
+  ref.current=nextSelectionAnchor(order,ref.current,id,event);
+  (pending?setPendingSelected:setSelected)(next);
+  const primary=order.find(id=>next.includes(id));
+  if(!pending&&primary)activate(primary);
+ };
+ const history=async(kind:'undo'|'redo')=>{if(!canNavigate())return;await naming.flush();await request({kind});setAuthority(v=>v+1);};
+ const edit=async(value:ImageWorkspaceEdit)=>{
+  const shown=snapshot.context,now=c.snapshot().context;
+  if(!currentId||shown.shotId!==currentId||now.shotId!==currentId||shown.generation===null||now.generation!==shown.generation)throw Error('画面上下文已变化，请重新选择操作目标。');
+  if(!image?.displayNative)throw Error('请等待画面准备完成。');
+  await request({kind:'imageEdit',shotId:currentId,expectedContextGeneration:shown.generation,expectedNative:image.displayNative,edit:value});
+ };
+ const shortcuts=useMemo(()=>createToolController({current:()=>toolRef.current,apply:next=>{toolRef.current=next;setTool(next);},isBlocked:()=>{
+  const state=c.capture.state();return !live.current.active||live.current.working||outputActive.current||state.paused||c.snapshot().session.phase!=='active'||(toolRef.current==='select'&&surfaceGestures.current.size>0)||actionComposing.current.size>0||text.current.busy()||!!document.querySelector('[aria-modal=true]')||state.blocked;
+ }}),[c]);
+ useEffect(()=>{
+  const down=(e:KeyboardEvent)=>{
+   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'&&!(e.target instanceof Element&&e.target.closest('input,textarea,[contenteditable=true]'))){e.preventDefault();void history(e.shiftKey?'redo':'undo').catch(()=>{});return;}
+   if((e.key.toLowerCase()==='l'||e.key.toLowerCase()==='k')&&!canNavigate())return;
+   if(shortcuts.keyDown(e)!=='ignored')e.preventDefault();
+  };
+  const up=(e:KeyboardEvent)=>{if(shortcuts.keyUp(e)!=='ignored')e.preventDefault();};
+  const blur=()=>shortcuts.blur();const hidden=()=>{if(document.hidden)shortcuts.blur();};
+  window.addEventListener('keydown',down);window.addEventListener('keyup',up);window.addEventListener('blur',blur);document.addEventListener('visibilitychange',hidden);
+  return()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',blur);document.removeEventListener('visibilitychange',hidden);};
+ },[shortcuts,project]);
+ useEffect(()=>()=>shortcuts.dispose(),[shortcuts]);
+ const shots=workspaceShots(snapshot).map(shot=>scripts[shot.id]===undefined?shot:{...shot,scriptText:scripts[shot.id]});
+ const shotImage=(shot:Shot)=>{const board=[...project.shots,...project.parkedShots].find(s=>s.id===shot.id);return board?snapshot.images[board.imageId]:undefined;};
+ const demandShots=useCallback((shotIds:string[])=>{void c.request({kind:'demandShots',shotIds}).catch(()=>{});},[c]);
+ const staticMedia=(shot:Shot)=><PresentationPreview shotId={shot.id} width={shot.flow!.canvasWidth} height={shot.flow!.canvasHeight}><NativeThumbnail controller={c} image={shotImage(shot)}/></PresentationPreview>;
+ const style=(strokeTool:'brush'|'eraser'):Omit<FlowStroke,'points'|'pressures'>=>{
+  const preset=strokeTool==='brush'?brushPreferences.brush:brushPreferences.eraser,pref=preferenceFor(brushPreferences,preset);
+  const seed=crypto.getRandomValues(new Uint32Array(1))[0],brush=strokeBrushFor(preset,seed);
+  if(!brushPreferences.pressure){brush.pressureSize=0;brush.pressureOpacity=0;}
+  return{tool:strokeTool,color,size:pref.size,opacity:pref.opacity,softness:0,brush};
+ };
+ const dialogueText=new Map<string,string>();for(const d of project.dialogues)dialogueText.set(d.shotId,[dialogueText.get(d.shotId),d.text.trim()].filter(Boolean).join(' '));
+ const presentations=Object.fromEntries([...project.shots,...project.parkedShots].filter(s=>s.presentation).map(s=>[s.id,{...s.presentation!,text:dialogueText.get(s.id)??''}]));
+ const dialogue=(shotId:string,compact=false,allowDrag=false)=><DialogueBlocks shotId={shotId} dialogues={project.dialogues} disabled={!active} variant={compact?'compact':'full'} allowDrag={allowDrag} authority={authority}
+  onEditState={(id,state)=>{text.current.report(id,state);refreshText();}}
+  onUndo={()=>{void history('undo').catch(()=>{});}} onRedo={()=>{void history('redo').catch(()=>{});}}
+  onCommit={async(value,editor)=>{
+   if(value.kind==='moveDialogues'){await request({kind:'board',command:{kind:'moveDialogues',dialogueIds:value.dialogueIds,targetShotId:value.targetShotId,beforeId:value.beforeId}});return;}
+   const token=text.current.begin(shotId,editor);refreshText();
+   try{await request({kind:'board',command:{kind:'setDialogues',shotId,dialogues:value.dialogues,typingGroup:value.edit?.group}});text.current.settle(token,true);}finally{refreshText();}
+  }}/>;
+ const script=(shotId:string,value:string)=>{
+  const version=++scriptSerial.current;scriptVersions.current.set(shotId,version);setScripts(old=>({...old,[shotId]:value}));
+  if(actionComposing.current.has(shotId))return;
+  void request({kind:'board',command:{kind:'setScriptText',shotId,text:value}}).then(()=>{if(scriptVersions.current.get(shotId)!==version)return;scriptVersions.current.delete(shotId);setScripts(old=>{const next={...old};delete next[shotId];return next;});}).catch(()=>{});
+ };
+ const save=async(kind:'save'|'refresh'|'export')=>{
+  if(outputActive.current)return;if(surfaceGestures.current.size){setIssue('请先完成当前画布操作。');return;}outputActive.current=true;setWorking(true);c.setInputPause('output',true);
+  try{await naming.flush();await Promise.all([...requests.current]);await c.settleCaptured();if(text.current.busy()||scriptVersions.current.size)throw Error('仍有未确认文字。');if(kind==='export'){if(!currentId)throw Error('请先选择故事板。');const outcome=await c.request({kind:'export',shotId:currentId,format:'psd'});if(outcome.kind!=='canceled'&&!success(outcome.kind))throw Error(outcome.kind==='rejected'?outcome.error.message:'导出尚未确认。');}else await request({kind});}
+  catch(error){setIssue(error instanceof Error?error.message:String(error));}finally{outputActive.current=false;setWorking(false);c.setInputPause('output',c.snapshot().session.phase!=='active');}
+ };
+ const removePending=(shotIds:string[])=>{
+  if(!canNavigate())return;
+  const now=c.snapshot().session,decision=pendingDeleteDecision({pending:now.pending,parked:now.project.parkedShots.map(s=>s.id)},shotIds);
+  if(decision==='empty')return;
+  if(decision!=='delete'){setIssue(decision==='busy'?'还有操作尚未完成，请稍后删除。':'Pending 已变化，请重新选择。');return;}
+  act({kind:'board',command:{kind:'removeShots',shotIds}});
+ };
+ const newShot=async()=>{
+  if(!canNavigate())return;
+  try{const result=await c.request({kind:'board',command:{kind:'newShot',width:image?.width??1920,height:image?.height??1080,afterId:currentId}});
+   if(result.kind==='settled'||result.kind==='recovered'){const id=result.createdShotIds?.[0];if(id){setSelected([id]);anchor.current=id;activate(id);}}
+   else setIssue(result.kind==='rejected'?result.error.message:'新建板尚未完成。');
+  }catch(error){setIssue(errorText(error));}
+ };
+ const preset=tool==='eraser'?brushPreferences.eraser:brushPreferences.brush,pref=preferenceFor(brushPreferences,preset);
+ return <CanvasPresentationContext.Provider value={presentations}>
+  <NativeInputRecovery controller={c}/>
+  <Workbench name={project.name} shots={shots.slice(0,project.shots.length)} parked={shots.slice(project.shots.length)} selected={selected} pendingSelected={pendingSelected} revision={project.revision} disabled={!active||working}
+   dialogueText={dialogueText} renderDialogue={dialogue} status={issue||c.fault()?.message||(working?'正在更新文件…':c.capture.state().pending?'正在自动暂存笔迹…':snapshot.files.outputPending?'已自动暂存 · 文件夹待更新':'已自动暂存')}
+   projectBar={<ProjectNamingBar naming={naming} folderName={snapshot.files.folderName} disabled={!active||working}/>}
+   select={select} focus={focus} selectMany={ids=>{const order=project.shots.map(s=>s.id),next=order.filter(id=>ids.includes(id));setSelected(next);if(next[0])activate(next[0]);}} selectAll={()=>setSelected(project.shots.map(s=>s.id))} clearSelection={()=>setSelected([])}
+   selectPending={(id,event)=>select(id,event,true)} selectManyPending={setPendingSelected} selectAllPending={()=>setPendingSelected(project.parkedShots.map(s=>s.id))} clearPending={()=>setPendingSelected([])}
+   canNavigate={canNavigate} canStartCanvasEdit={canNavigate} canContinueBrush={shot=>active&&!working&&!outputActive.current&&!c.capture.state().paused&&(tool==='brush'||tool==='eraser')&&!actionComposing.current.size&&!scriptVersions.current.size&&!requests.current.size&&!text.current.busy()&&!c.capture.state().blocked&&(c.snapshot().context.shotId===shot.id||c.capture.state().pending===0)} demand={()=>{}} demandShots={demandShots}
+   move={(shotIds,destination,beforeId)=>{if(canNavigate())act({kind:'board',command:{kind:'moveShots',shotIds,destination,beforeId}});}} remove={removePending}
+   holdShots={[...new Set([...holdShots,...Object.keys(scripts)])]} renderStatic={staticMedia}
+   renderLayers={()=>renderLayers(image,edit)}
+   renderInfo={(shot,allowDrag)=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText??''} disabled={!active} onChange={e=>script(shot.id,e.target.value)} onCompositionStart={()=>actionComposing.current.add(shot.id)} onCompositionEnd={e=>{actionComposing.current.delete(shot.id);script(shot.id,e.currentTarget.value);}}/></label>{dialogue(shot.id,false,allowDrag)}</div>}
+   renderCanvas={(shot,previous,next)=><NativeCanvas onion={(previous||next)&&<div className="onion-skin-overlay" aria-hidden="true">{previous&&<div className="onion-skin-ghost onion-skin-ghost-previous"><NativeThumbnail controller={c} image={shotImage(previous)}/></div>}{next&&<div className="onion-skin-ghost onion-skin-ghost-next"><NativeThumbnail controller={c} image={shotImage(next)}/></div>}</div>} key={shot.id} shotId={shot.id} documentId={shotImage(shot)?.displayDocumentId??null} dimensionsKnown={!!shotImage(shot)?.width&&!!shotImage(shot)?.height} cursorSize={pref.size} width={shot.flow!.canvasWidth} height={shot.flow!.canvasHeight} source={c.frames} capture={c.capture} target={snapshot.context.shotId===shot.id&&snapshot.context.layerId!==null&&snapshot.context.generation!==null?{shotId:shot.id,layerId:snapshot.context.layerId,expectedContextGeneration:snapshot.context.generation}:null} tool={tool} style={style} selection={snapshot.context.shotId===shot.id?snapshot.context.selection:null}
+    onSelection={(selection,target)=>act({kind:'selection',shotId:target.shotId,expectedContextGeneration:target.expectedContextGeneration,selection})}
+    onGestureChange={(id,active)=>{active?surfaceGestures.current.add(id):surfaceGestures.current.delete(id);}}
+    onIssue={setIssue} onPickColor={setColor} onOpenBrushPanel={setBrushPanel}/>}
+   actions={<div className="wb-actions">{projectMenu(()=>void save('export'),!active||working||!currentId)}<details><summary>添加图片</summary><button onClick={()=>act({kind:'addImages',mode:'files',destination:'pending'})}>选择图片…</button><button onClick={()=>act({kind:'addImages',mode:'folder',destination:'pending'})}>选择文件夹…</button></details><button className="wb-save wb-document-action" disabled={!active||working||!!naming.issue} onClick={()=>void save('save')}><Save size={15}/>保存</button><button className="wb-refresh" aria-label="从文件夹取回外部改动" disabled={!active||working} onClick={()=>void save('refresh')}><FolderInput size={17}/></button></div>}
+   toolbar={null} boardActions={<><button disabled={!canNavigate()} onClick={()=>void newShot()}>新建故事板</button><button aria-label="删除所选故事板" disabled={!selected.length||!canNavigate()} onClick={()=>act({kind:'board',command:{kind:'removeShots',shotIds:selected}})}><Trash2 size={15}/></button><button aria-label="撤销" disabled={!snapshot.session.undoDepth||!canNavigate()} onClick={()=>void history('undo').catch(()=>{})}><Undo2 size={15}/></button><button aria-label="重做" disabled={!snapshot.session.redoDepth||!canNavigate()} onClick={()=>void history('redo').catch(()=>{})}><Redo2 size={15}/></button></>}
+   toolRail={<WorkspaceToolRail tool={tool} disabled={!active||working} canChangeTool={!text.current.busy()} paintInFlight={snapshot.session.pending>0} onToolChange={next=>{if(!canNavigate()&&!(c.capture.state().pending>0&&!c.capture.state().paused&&!surfaceGestures.current.size&&(next==='brush'||next==='eraser')))return;shortcuts.toolChosenByUser(next);toolRef.current=next;setTool(next);}} color={color} onColorChange={setColor} size={pref.size} onSizeChange={size=>setBrushPreferences(old=>withPreference(old,preset,{...pref,size}))} blurRadius={blurRadius} onBlurRadiusChange={setBlurRadius} onApplyBlur={()=>{if(activeLayer)void edit({kind:'blur',layerId:activeLayer.id,radius:blurRadius,selection:snapshot.context.selection??undefined}).catch(()=>{});}}/>}/>
+  {brushPanel&&(tool==='brush'||tool==='eraser')&&<BrushPanel tool={tool} preferences={brushPreferences} anchor={brushPanel} onChange={setBrushPreferences} onClose={()=>setBrushPanel(undefined)}/>}
+ </CanvasPresentationContext.Provider>;
+}

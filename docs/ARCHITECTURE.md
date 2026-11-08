@@ -32,6 +32,12 @@ V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目�
 
 同 Main 恢复通过 Adapter 的可选 WorkerOwner 替换自有原生进程；原 Main 历史、待提交计划及项目 head 保留。先隔离旧代并确认退出，再排空 Main 输入记录写入，以唯一可达项目决定核对 native 状态，不自动重放。恢复结果区分 committed/notCommitted；完整原始意图通过 operationRecords 分页读取。未取得 ready 身份或未抬笔的缓存仍是显式 recoveryPending，不能算恢复绘画成功，也不能据此正常关闭。
 
+### 正式界面接点（隔离施工）
+
+`workbench/renderer/image-engine/workspaceController`只接受Main快照和类型化意图；展示帧经身份绑定的MessagePort进入FrameStore，不向React逐批回灌像素。display delta独立覆盖展示身份，完整快照可在相同stateSeq安装；旧显示事件不能覆盖较新快照。`drawing/renderer/image-engine/capture`在pointerdown同步保留完整输入，异步IPC的admitted不代表持久成功；冷目标使用归一化坐标，恢复记录保留其坐标空间。captureId/inputId/attemptId分别绑定手势、逻辑输入批次和明确无副作用的重试；未知回包不盲重发。
+
+`platform/main/imageWorkspaceIpc`只负责窗口认证和端口转换，帧节拍与确认属于Runtime。`imageWorkspaceLifecycle`在打开候选前冻结旧Session，候选就绪后由旧Session认证关闭；候选失败恢复旧Session。候选关闭未知则保留对象并阻止下一次切换/退出。renderer各操作通过具名暂停集合协调，不能用一个boolean互相解除关闭与输出门禁。
+
 ## 运行链与职责
 
 源码按六个概念根组织：`src/workbench` 负责工作台布局和界面接线，`src/storyboard` 负责故事板组织、Pending、动作与对白的模型及界面，`src/drawing` 负责画布与图层，`src/session` 负责编辑状态、队列和历史，`src/project-files` 负责项目文件、资产与 TIFF，`src/platform` 负责 Electron、操作系统和桥接。各根内按运行环境区分，避免浏览器引入 Node 实现。

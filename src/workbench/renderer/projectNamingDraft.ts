@@ -7,7 +7,7 @@ export const defaultProjectNaming = (): ProjectNamingV1 => ({ sceneCode: 'scene'
 
 /** A project without an explicit naming block still presents the four fields; committing
  * one of them writes the block. The fields are not inherited from any other project. */
-export const namingDraftOf = (project: ProjectV1): NamingDraft => ({
+export const namingDraftOf = (project: Pick<ProjectV1, 'id' | 'name' | 'naming'>): NamingDraft => ({
   name: project.name,
   naming: project.naming ? { ...project.naming } : defaultProjectNaming()
 });

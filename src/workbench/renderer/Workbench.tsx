@@ -39,6 +39,8 @@ export type WorkbenchProps={
  remove:(ids:string[])=>void;
  /** Boards holding unconfirmed text or an unsettled commit; their cards stay mounted. */
  holdShots?:string[];
+ /** Native documents provide their own immutable composite and visibility demand. */
+ renderStatic?:(shot:Shot)=>ReactNode;demandShots?:(ids:string[])=>void;
  renderCanvas:(shot:Shot,previous?:Shot,next?:Shot)=>ReactNode;
  renderLayers:(shot:Shot)=>ReactNode;renderInfo:(shot:Shot,allowDialogueDrag?:boolean)=>ReactNode;
 };
@@ -71,8 +73,8 @@ export function Workbench(p:WorkbenchProps){
  const root=useRef<HTMLDivElement>(null);
  const sensors=useSensors(useSensor(PointerSensor,pointerSensorOptions));
  const sorting=useBoardSorting(p,root,dragging,()=>{});
- const demandKey=useMemo(()=>JSON.stringify([...p.shots.filter(s=>visible.current.has(s.id)||s.id===current?.id||(onion&&!hidden.includes('canvas')&&(s.id===p.shots[index-1]?.id||s.id===p.shots[index+1]?.id))),...(!hidden.includes('pending')?p.parked.filter(s=>visible.current.has(s.id)):[])].flatMap(s=>(s.layers??[]).map(l=>l.bitmapPath.split('/').at(-1)!))),[p.shots,p.parked,visibilityVersion,current?.id,index,onion,hidden]);
- useEffect(()=>{p.demand(JSON.parse(demandKey));},[demandKey,visibilityVersion]);
+ const demandKey=useMemo(()=>JSON.stringify([...p.shots.filter(s=>visible.current.has(s.id)||s.id===current?.id||(onion&&!hidden.includes('canvas')&&(s.id===p.shots[index-1]?.id||s.id===p.shots[index+1]?.id))),...(!hidden.includes('pending')?p.parked.filter(s=>visible.current.has(s.id)):[])].flatMap(s=>p.demandShots?[s.id]:(s.layers??[]).map(l=>l.bitmapPath.split('/').at(-1)!))),[p.shots,p.parked,visibilityVersion,current?.id,index,onion,hidden,p.demandShots]);
+ useEffect(()=>{(p.demandShots??p.demand)(JSON.parse(demandKey));},[demandKey,visibilityVersion]);
  const reportVisible=(id:string,value:boolean)=>{const changed=value?!visible.current.has(id):visible.current.has(id);if(!changed)return;value?visible.current.add(id):visible.current.delete(id);setVisibilityVersion(v=>v+1);};
  const navigate=(offset:number)=>{if(!current||!p.canNavigate())return;const next=p.shots[Math.max(0,Math.min(p.shots.length-1,index+offset))];p.focus(next.id);};
  useEffect(()=>{
@@ -127,7 +129,7 @@ export function Workbench(p:WorkbenchProps){
    // deliver that very down event once; subsequent samples use native pointer capture.
    if(!hadInput && shouldStartSketchPointer(original)){
     e.preventDefault();e.stopPropagation();
-    const node=host.querySelector('.stage-overlay .konvajs-content');
+    const node=host.querySelector('[data-canvas-input], .stage-overlay .konvajs-content');
     if(node){const forwarded=new PointerEvent('pointerdown',{
      bubbles:true,cancelable:true,pointerId:original.pointerId,pointerType:original.pointerType,isPrimary:original.isPrimary,
      clientX:original.clientX,clientY:original.clientY,button:original.button,buttons:original.buttons,pressure:original.pressure,
@@ -135,7 +137,7 @@ export function Workbench(p:WorkbenchProps){
     });Object.defineProperty(forwarded,'flowForwarded',{value:true});node.dispatchEvent(forwarded);}
    }
   }} onPointerUpCapture={()=>{surfaceInput.current=false;}} onPointerCancelCapture={()=>{surfaceInput.current=false;}}>
-   <div>{editable?p.renderCanvas(shot,where==='viewer'&&onion?p.shots[index-1]:undefined,where==='viewer'&&onion?p.shots[index+1]:undefined):<PresentationPreview shotId={shot.id} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}><ShotStaticMedia shot={shot} folderPath="flow" revision={p.revision}/></PresentationPreview>}</div>
+   <div>{editable?p.renderCanvas(shot,where==='viewer'&&onion?p.shots[index-1]:undefined,where==='viewer'&&onion?p.shots[index+1]:undefined):p.renderStatic?p.renderStatic(shot):<PresentationPreview shotId={shot.id} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}><ShotStaticMedia shot={shot} folderPath="flow" revision={p.revision}/></PresentationPreview>}</div>
    {presentation[shot.id]?.dialogue&&track(shot,key)}
   </div>;
  };
@@ -158,7 +160,7 @@ export function Workbench(p:WorkbenchProps){
    tile={pendingTile} onTile={size=>{if(p.canNavigate())setPendingTile(size);}}
    onSelect={p.selectPending} onSelectMany={p.selectManyPending}
    dialogueText={p.dialogueText} onRestore={id=>p.move([id],'active')} onDelete={p.remove}
-   renderMedia={shot=><PendingPreview shot={shot} revision={p.revision} visible={reportVisible}/>}/>;
+   renderMedia={shot=><PendingPreview shot={shot} revision={p.revision} visible={reportVisible} renderMedia={p.renderStatic}/>}/>;
  };
  const movePanel=(e:React.DragEvent,column:number,before?:Panel)=>{const id=e.dataTransfer.getData('application/x-flow-panel') as Panel;if(!labels[id]||!p.canNavigate())return;e.preventDefault();e.stopPropagation();setLayout(old=>{const next=old.map(col=>col.filter(v=>v!==id));const at=before?next[column].indexOf(before):-1;next[column].splice(at<0?next[column].length:at,0,id);return next;});};
  return <main ref={root} className="flow-workbench" data-flow-editor="true" data-workbench="true" data-revision={p.revision} onClickCapture={e=>{if(sorting.skipClick.current&&e.detail>0){e.preventDefault();e.stopPropagation();}}} onPointerDownCapture={e=>{if(!dragging.current)sorting.skipClick.current=false;if(flyout.some(Boolean)&&e.target instanceof Element&&!e.target.closest('.wb-column.is-collapsed')&&p.canNavigate())setFlyout([undefined,undefined]);}} onKeyDown={e=>{
@@ -227,8 +229,8 @@ function BoardCard({shot,index,selected,disabled,onSelect,visible,children,rowIn
   footer={shown?footer:undefined}
   rowInfo={rowInfo && <div className="wb-row-info">{shown && rowInfo(shot)}</div>} />;
 }
-function PendingPreview({shot,revision,visible}:{shot:Shot;revision:number;visible:(id:string,value:boolean)=>void}) {
+function PendingPreview({shot,revision,visible,renderMedia}:{shot:Shot;revision:number;visible:(id:string,value:boolean)=>void;renderMedia?:(shot:Shot)=>ReactNode}) {
  const element=useRef<HTMLDivElement>(null),[near,setNear]=useState(false),report=useRef(visible);report.current=visible;
  useEffect(()=>{const observer=new IntersectionObserver(entries=>{const value=entries[0].isIntersecting;setNear(value);report.current(shot.id,value);},{rootMargin:'80px'});if(element.current)observer.observe(element.current);return()=>{observer.disconnect();report.current(shot.id,false);};},[shot.id]);
- return <div ref={element} style={{aspectRatio:`${shot.flow?.canvasWidth??640}/${shot.flow?.canvasHeight??360}`}}>{near&&<PresentationPreview shotId={shot.id} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}><ShotStaticMedia shot={shot} folderPath="flow" revision={revision}/></PresentationPreview>}</div>;
+ return <div ref={element} style={{aspectRatio:`${shot.flow?.canvasWidth??640}/${shot.flow?.canvasHeight??360}`}}>{near&&(renderMedia?renderMedia(shot):<PresentationPreview shotId={shot.id} width={shot.flow?.canvasWidth??640} height={shot.flow?.canvasHeight??360}><ShotStaticMedia shot={shot} folderPath="flow" revision={revision}/></PresentationPreview>)}</div>;
 }

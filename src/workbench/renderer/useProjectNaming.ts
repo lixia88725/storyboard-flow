@@ -12,7 +12,7 @@ const AUTO_COMMIT_MS = 600;
  * committed once after a short pause even while the field keeps focus, so an empty or
  * invalid value reaches the checkpoint; explicit Save still refuses it. IME composition
  * is never guessed, and an older commit's reply cannot replace newer local text. */
-export function useProjectNaming(project: ProjectV1, commit: (draft: NamingDraft) => Promise<void>) {
+export function useProjectNaming(project: Pick<ProjectV1, 'id' | 'name' | 'naming'>, commit: (draft: NamingDraft) => Promise<void>) {
   const [draft, setDraft] = useState<NamingDraft>(() => namingDraftOf(project));
   const [composing, setComposing] = useState(false);
   const [, setRevision] = useState(0);

@@ -170,6 +170,7 @@ export function FlowEditor() {
     try {
       const result = await window.flowEditor!.launch(target);
       if (result.canceled) return 'unchanged';
+      if(result.kind==='native')throw Error('原生项目需要使用新版工作台入口。');
       install(result.bootstrap);
       void refreshRecent();
       return 'opened';
