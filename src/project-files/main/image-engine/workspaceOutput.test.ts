@@ -5,6 +5,7 @@ import {describe,it,expect,vi} from 'vitest';
 import {temporaryWorkspace} from '../../../../test/temporaryWorkspace';
 import {openWorkspaceOutput} from './workspaceOutput';
 import type {WorkspaceOutputFrozen,WorkspaceOutputOptions,WorkspaceOutputBudget} from './workspaceOutputContract';
+import {validWorkspaceOutputMetadataEnvelope,WORKSPACE_OUTPUT_METADATA_LIMIT} from './workspaceOutputContract';
 
 const hash=(b:Uint8Array|string)=>createHash('sha256').update(b).digest('hex');
 const native=(id:string)=>({storeId:'store',documentId:id,versionId:hash('version'),manifestSha256:hash(id),width:8,height:8});
@@ -109,4 +110,16 @@ describe('native workspace physical output',()=>{
  it('preserves native-recovery protection markers and refuses multiple local output writers',async()=>{
   const g=await fixture();await expect(openWorkspaceOutput(g.options)).rejects.toMatchObject({code:'busy'});await fs.mkdir(path.join(g.root,'.storyboard-flow/workspace-recovery-v2'));await expect(g.output.save(frozen())).rejects.toThrow('protected by a recovery inventory');
  });
+});
+
+describe('native output metadata envelope',()=>{
+ const envelope=()=>({schema:'flow.native-output-metadata',version:2,projectId:'project',revision:4,shotId:'a',imageId:'ia',metadata:{projectName:'作品',shotName:'A',scriptText:'动作',dialogues:[{id:'line',shotId:'a',text:'你好'}],presentation:{mode:'expanded',dialogue:true}}});
+ it('accepts versioned authoritative storyboard text and presentation without a V1 image tree',()=>{expect(validWorkspaceOutputMetadataEnvelope(envelope())).toBe(true);});
+ it('rejects V1 images, native refs, wrong schema versions and cross-shot dialogue ownership',()=>{
+  expect(validWorkspaceOutputMetadataEnvelope({...envelope(),image:{layers:[]}})).toBe(false);expect(validWorkspaceOutputMetadataEnvelope({...envelope(),native:native('ia')})).toBe(false);expect(validWorkspaceOutputMetadataEnvelope({...envelope(),version:1})).toBe(false);const value=envelope();value.metadata.dialogues[0].shotId='b';expect(validWorkspaceOutputMetadataEnvelope(value)).toBe(false);
+ });
+ it('enforces a UTF-8 byte budget and rejects sparse or duplicate dialogue rows',()=>{
+  const value=envelope();value.metadata.scriptText='字'.repeat(Math.ceil(WORKSPACE_OUTPUT_METADATA_LIMIT/3));expect(validWorkspaceOutputMetadataEnvelope(value)).toBe(false);const rows=envelope();rows.metadata.dialogues.push({...rows.metadata.dialogues[0]});expect(validWorkspaceOutputMetadataEnvelope(rows)).toBe(false);expect(validWorkspaceOutputMetadataEnvelope({...envelope(),metadata:{...envelope().metadata,dialogues:new Array(1)}})).toBe(false);
+ });
+ it('refuses an oversized metadata batch before capturing or publishing any board',async()=>{const {output,capture,root}=await fixture(),f=frozen();f.project.shots[0].scriptText='字'.repeat(Math.ceil(WORKSPACE_OUTPUT_METADATA_LIMIT/3));await expect(output.save(f)).rejects.toThrow('supported envelope');expect(capture).not.toHaveBeenCalled();expect((await fs.readdir(root)).filter(n=>n.endsWith('.tif'))).toEqual([]);await output.close();});
 });

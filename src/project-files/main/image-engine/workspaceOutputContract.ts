@@ -1,5 +1,6 @@
 import type {NativeImageRef, ProjectV2} from '../../../platform/contracts/imageProject.js';
 import type {ImageWorkspaceOwner} from '../../../platform/contracts/imageWorkspace.js';
+import {validPresentation} from '../../../platform/contracts/flowPresentation.js';
 
 export type WorkspaceOutputLocation = 'active'|'parked';
 export type WorkspaceOutputFrozen = {
@@ -11,6 +12,23 @@ export type WorkspaceOutputMetadata = {
  projectName:string;shotName:string;scriptText:string;
  dialogues:ProjectV2['dialogues'];presentation:ProjectV2['presentation']|null;
 };
+/** Versioned Flow namespace payload. Native refs and V1 image/layer trees never
+ * belong inside this metadata. Native COW export base64-encodes its UTF-8 JSON. */
+export type WorkspaceOutputMetadataEnvelope={
+ schema:'flow.native-output-metadata';version:2;projectId:string;revision:number;
+ shotId:string;imageId:string;metadata:WorkspaceOutputMetadata;
+};
+export const WORKSPACE_OUTPUT_METADATA_LIMIT=1024*1024;
+export function validWorkspaceOutputMetadataEnvelope(value:unknown):value is WorkspaceOutputMetadataEnvelope{
+ const shape=(v:unknown,keys:readonly string[]):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&(Object.getPrototypeOf(v)===Object.prototype||Object.getPrototypeOf(v)===null)&&Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
+ const id=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(v);
+ if(!shape(value,['schema','version','projectId','revision','shotId','imageId','metadata'])||value.schema!=='flow.native-output-metadata'||value.version!==2||!id(value.projectId)||!id(value.shotId)||!id(value.imageId)||!Number.isSafeInteger(value.revision)||Number(value.revision)<0)return false;
+ const m=value.metadata;
+ if(!shape(m,['projectName','shotName','scriptText','dialogues','presentation'])||![m.projectName,m.shotName,m.scriptText].every(v=>typeof v==='string'&&v.length<=WORKSPACE_OUTPUT_METADATA_LIMIT)||!Array.isArray(m.dialogues)||m.presentation!==null&&!validPresentation(m.presentation))return false;
+ const ids=new Set<string>();
+ for(const row of m.dialogues){if(!shape(row,['id','shotId','text'])||!id(row.id)||ids.has(row.id)||row.shotId!==value.shotId||typeof row.text!=='string'||row.text.length>WORKSPACE_OUTPUT_METADATA_LIMIT)return false;ids.add(row.id);}
+ return new TextEncoder().encode(JSON.stringify(value)).byteLength<=WORKSPACE_OUTPUT_METADATA_LIMIT;
+}
 /** Main-only capture: readonly native COW export must preserve unknown XMP and layers.
  * Unsupported metadata/format, warnings and unknown results must reject. */
 export type WorkspaceOutputCapture = (input:{

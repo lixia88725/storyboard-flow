@@ -12,6 +12,7 @@ import {createFileExclusive,readBoundFile} from '../persistence/fileOps.js';
 import {canonicalUtf8,sha256Hex} from '../persistence/canonicalJson.js';
 import {syncDirectory} from '../../../platform/main/platform/index.js';
 import type {WorkspaceOutput,WorkspaceOutputFile,WorkspaceOutputFrozen,WorkspaceOutputMetadata,WorkspaceOutputOptions,WorkspaceOutputReceipt} from './workspaceOutputContract.js';
+import {validWorkspaceOutputMetadataEnvelope} from './workspaceOutputContract.js';
 
 const LIMIT=128*1024*1024, JOURNAL_LIMIT=8*1024*1024;
 const owners=new Set<string>();
@@ -163,7 +164,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
   for(const n of names){if(!leaf(n.name))fail('Unsafe output name');const dir=n.location==='active'?root:path.join(root,'Pending');
    for(const found of await fs.readdir(dir))if(found.toLowerCase()===n.name.toLowerCase()&&!allowed.has(`${n.location}/${found}`))fail(`Foreign output filename collision: ${n.name}`);
   }
-  const resolved=shots.map(shot=>{const value=snapshot.resolvedImages?.[shot.imageId],binding=project.images[shot.imageId].content;if(!value||!validNativeImageRef(value.native)||value.format!=='tiff'||binding.kind==='native'&&sha256Hex(canonicalUtf8(binding.native))!==sha256Hex(canonicalUtf8(value.native)))throw new WorkspaceOutputError('unsupported','Ordinary Save requires matching settled native references and TIFF output');return{shot,value,metadata:metadata(project,shot)};});
+  const resolved=shots.map(shot=>{const value=snapshot.resolvedImages?.[shot.imageId],binding=project.images[shot.imageId].content;if(!value||!validNativeImageRef(value.native)||value.format!=='tiff'||binding.kind==='native'&&sha256Hex(canonicalUtf8(binding.native))!==sha256Hex(canonicalUtf8(value.native)))throw new WorkspaceOutputError('unsupported','Ordinary Save requires matching settled native references and TIFF output');const text=metadata(project,shot);if(!validWorkspaceOutputMetadataEnvelope({schema:'flow.native-output-metadata',version:2,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,metadata:text}))throw new WorkspaceOutputError('resource-limit','Native output metadata exceeds its supported envelope');return{shot,value,metadata:text};});
   const operationId=randomUUID(),dir=path.join(operations,operationId);await ensure(dir);
   const receipt:WorkspaceOutputReceipt={operationId,projectId,revision:project.revision,commitHash:snapshot.commitHash,files:[]};
   const t:Transaction={operationId,revision:project.revision,commitHash:snapshot.commitHash,kind:batch?'append':'save',phase:'preparing',next:batch?[...ledger.entries]:[],stages:[],publishes:[],deletions:[],receipt};
