@@ -24,6 +24,10 @@ ProjectStore 保持原 Interface，Implementation 改为 `journalProjectStore` �
 
 V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目录保护都不等于跨进程锁。全项目恢复预算包括实际留存与工作进程预留，不能把各子模块的局部额度相加后仍声称受 8 GiB 总额保护。 Runtime中Sources、Output、journal与lease共用同一根预算；journal按组真实编码增量预留并在同步完成后结算，未知写入保留额度，严格重放后按独占日志目录实际增量核对。Native store额度单独完整保守预留，不把固定小额来源分区当并发限流。`platform/main/imageProjectLease` 通过独立原生 guard 持有固定 inode 的 OS 锁，同时持久记录 Main 身份。guard 异常退出关闭当前写门，但不发布正常释放；旧 Main 未确认退出时，新 guard 也拒绝接管，保护仍在途的文件副作用。正常 release 必须由调用方先排空义务，不能把锁失效当取消。当前仅本机 macOS 验证；默认产品入口尚未接入。
 
+`ProjectImageV2.protectedSource` 绑定完整SourceRef、原件摘要/长度/格式和参考RGBA摘要；hydration的同一日志事实保存Native policy与显示对照proof。第一次source→native CAS、后续编辑、复制和历史都保留此关系；Native版本小记录校验不读取整张原件。受保护底图和祖先不允许改动，上层可画。Main私有displayTolerance=8包含在解释指纹中，轻微色差不制造只读保护。
+
+普通Save在输出意图之前对不同受保护SourceRef各执行一次 `Sources.object(ref,{verify:'full'})`，复用唯一目标核验入口，不扫描整批；之后capture核身份与固定Native版本policy。Native导出必须收到匹配的expectedSourcePolicy，工作文件含独立有界`flow:sourceReference`包络及摘要，既有对白/遮幅元数据不改。该说明不包含路径、不授权寻找任意外部原件；无Main来源绑定的再次导入明确拒绝。Save结束恢复Session后重新capture当前画布，不能只改快照而缺少新代像素。
+
 显式 Save 由 `workspaceFiles` 绑定冻结 commit、全部活动/Pending 板的精确原生版本与唯一 Output 操作 ID，先记 `fileIntent`，核对持久 Output 完成收据后记 `fileResult`。结果只推进已保存状态，不创建作品历史。重开沿原请求查询或恢复；不拿当前版本代替保存时的版本，未完成的文件义务继续阻止关闭认证与副本准入。后台派生尚未绘画的 SourceRef 在保存时解析输出，不因此变成用户编辑。
 
 完整且已关闭的项目副本通过 `prepareWorkspaceColdCopy` 显式读取封口 Main 历史、已完成文件义务、Output 全链和托管文件摘要后产生授权；不是清锁或重写原账。只有 root 物理身份不同的完整副本可走此授权，同root换锁不借此修复。原生 guard 在新 root 的 OS 锁下复核目录/锁身份与原释放标记摘要，先独占保管旧标记和授权，再发带 `copyReceipt` 的新 owner。Output 核对同一收据并追加新的物理绑定与前一 head 的关系，保留旧记录；中断后继承同一收据补完，不重复发布。运行中的 root/lock/文件替换仍拒绝。Main 与 guard 共用预算，lease 保留释放所需额度至正常 release，整根目录 audit 在释放后执行。正式 Runtime 接线及真实已保存项目复制验收状态见 CURRENT。

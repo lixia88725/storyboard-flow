@@ -2,6 +2,12 @@
 
 ## 正式工作台接入：进行中（2026-11-08）
 
+最新保护来源闭环：`bad1150 / a57c014 / d49a61c / 5a23beb` 已集成为 `008178b / aa2bb9f / 5ab686d / 8cfae4a`。主管真实入口合成三图（明显合成差异PSD、轻微差异PSD、PNG）导入→上层绘画→普通Undo/Redo→Save全部工作TIFF→认证关闭→新进程重开通过（`/private/tmp/flow-native-protected-import-gui4.log`，现场 `flow-native-workbench-UGmaYO`）。严重差异为受保护底图+可画上层，轻微差异仍editable；工作TIFF与实际画布最大通道差1，原件摘要、来源绑定和重开文件摘要一致。小样本约510ms进入项目，不代表大批/大图速度。
+
+该组合验收发现并修正两处接点：受保护图的availability原先随当前可画上层误报editable，现按版本保护policy判定；Save恢复Session后原先没有重新发完整画面，导致画布停在preparing，现恢复上下文后capture当前图再返回。首次状态断言失败（gui1）、未就绪即比较像素（gui2）、等待画面超时（gui3）的原始现场均保留，没有放宽画面断言。新增小色差/参考底图提示使用Main notice。完整JS/Electron构建、固定release reader/host/lease重建和组件探测通过（`flow-native-save-display-build.log`、`flow-native-protected-components-build.log`）；本轮组合两份获准清单去重后144文件/1539项：141文件、1535项通过，4项失败（486.85s，`flow-native-protected-combined-suite.log`）。失败分别是过时的“不支持铅笔”假设、保护图availability旧预期、ZIP检查数量15→17、构建脚本遗漏Windows静态CRT标志。前三项迁移到现行契约并保留原保护断言；Windows标志恢复，macOS仍为空RUSTFLAGS，Windows lease未实现的拒绝门不变。修后相关3文件9项全部通过、51项因定点选择未重跑（`flow-native-protected-failed-cases-recheck.log`）；其余全量绿项未重复跑。不把首次全量写成零失败，也不把Windows编译参数当平台验收。 最终完整构建与三组件离线重建/真实探测再次通过（`flow-native-protected-acceptance-build.log`、`flow-native-protected-acceptance-components.log`）；preload一致性通过（`flow-native-protected-preload.log`）。未合主树、未推送、未切默认入口。
+
+仍未完成：Refresh、向现有项目添加图片、额外导出的产品接线；Source保管unknown的界面恢复；带保护标记的工作文件跨项目再次导入/Refresh、旧V1受保护来源项目升级；32M大图与Windows。本闭环仅保证已有Native项目内普通Save/重开，不把输出文件携带来源说明当作跨项目原件授权。
+
 来源显示保护行为 `ece138a` 已本地集成为 `d8418a2`。执行者独立内嵌画面对照、真实Native上层绘画/复制/UndoRedo/被终止后重开通过；原30张TIFF在保守阈值2下24张可编辑、6张保护显示，30张原件摘要不变。用户确认的Flow阈值8由Main绑定，合成分线已通过；既有差值统计预计其中3张轻微差异不需保护，但不把推算写成阈值8的30张全量复跑。严重差异保留原画面为不可改底图、允许上层绘画。当前原生保护版本导出仍显式拒绝，Main protectedSource和独立输出包络正在接线，不能将读取候选称作已完整Save重开。
 
 统一预算与完整副本接线 `9a7a0ec` 已集成为 `b64d4d4`：Sources/Output/journal/lease共用总恢复预算，原会话32MiB新来源增长分区已移除；Native store仍保守预留完整额度。执行者31项日志预算测试、5项真实Runtime保存/中断恢复、2项34MiB保管及副本测试通过，34MiB是保管能力而非大图解码证据。主管完整构建及真实工作台Save→正常关闭→复制整个合成项目→独立profile打开副本通过（`/private/tmp/flow-native-copy-runtime-{build,gui}.log`、现场 `flow-native-workbench-9VMH5l`）。副本双画布与输出文件内容、revision一致，原根24个文件摘要全部不变；后续补齐副本实际点击Save并成功，原件仍不变（`flow-native-copy-save-gui.log`、现场 `flow-native-workbench-aB58OL`）；同轮普通保存重开与初始化关闭也通过。复制指完整已关闭项目，不覆盖运行中复制或任意跨目录移动。 预算变更后的真实外部PNG导入/坏图隔离/绘画UndoRedo/关闭重开复验通过（`flow-native-shared-budget-import-gui.log`、现场 `flow-native-workbench-Lp8N7U`），原件摘要不变，小样本进入约513ms，不外推大批量速度。

@@ -48,7 +48,9 @@ await fs.mkdir(path.join(root,'.storyboard-flow/image-native'),{recursive:true,m
 const workerConfig={binary,store:path.join(root,'.storyboard-flow/image-native/native'),sessionId:'session',incarnation:randomUUID(),budgetBytes:32<<20};const owned=mode.startsWith('owned-'),owner=owned?await createImageEngineWorkerOwner({...workerConfig,lease}):undefined;
 const connection=owner?.current().connection??startImageEngine(workerConfig);await connection.ready.catch(e=>{console.error(connection.diagnostics());throw e;});
 let failAppend=mode==='append-error',acceptIsBlocked=false,releaseOldAccept;const oldAcceptGate=new Promise(r=>releaseOldAccept=r);const request=connection.request.bind(connection);connection.request=async(...args)=>{if(failAppend&&args[1].kind==='strokeAppend'){failAppend=false;args[1]={...args[1],fromSeq:999};}return request(...args);};
-const adapter=createNativeSessionAdapter({...(owner?{workerOwner:owner}:{connection}),storeId:'native',storeRoot:path.join(root,'.storyboard-flow/image-native/native')});
+// Exercise capability refusal explicitly: current hosts now support pencil presets.
+const adapterConnection=mode==='unsupported'?{...connection,supports:cap=>cap==='flowBrushPresetsV1'?false:connection.supports(cap)}:connection;
+const adapter=createNativeSessionAdapter({...(owner?{workerOwner:owner}:{connection:adapterConnection}),storeId:'native',storeRoot:path.join(root,'.storyboard-flow/image-native/native')});
 let armJournalTail=false;
 if(mode==='journal-kill-tail'){const open=fs.open.bind(fs);fs.open=async(...args)=>{const h=await open(...args);if(String(args[0]).endsWith('/image-project-journal-v1/segment-0.log')&&typeof args[1]==='number'){const write=h.write.bind(h);h.write=async(...a)=>{if(armJournalTail){armJournalTail=false;await write(a[0],a[1],100,a[3]);await pause('journal-tail',{before:session.snapshot()});}return write(...a);};}return h;};}
 const store=await openImageProjectStore({root,writerAuthority:lease,maxRecoveryBytes:64<<20,reservedRecoveryBytes:async()=>(32+8)<<20,verifyNative:adapter.verifyNative,verifySource:async(ref,retained)=>{
@@ -245,7 +247,7 @@ it('returns settlementPending after an actual accepted reply is lost and blocks 
   expect(r.paint.kind).toBe('settlementPending');expect(r.closeRejected).toBe(true);expect(r.freezeWhilePending.kind).toBe('rejected');expect(r.pendingBeforeRecover).toHaveLength(1);expect(r.whilePending.phase).toBe('recovering');expect(r.whilePending.project.revision).toBe(1);expect(r.blocked.kind).toBe('rejected');expect(r.recover.kind).toBe('recovered');expect(r.recover.operations).toContainEqual(expect.objectContaining({decision:'committed',original:'durable-intent'}));expect(r.capture.alpha).toBe(128);expect(r.snapshot.undoDepth).toBe(1);
 },60000);
 
-it('explicitly refuses unmigrated pencil dynamics and retains their exact submitted input',async()=>{
+it('refuses pencil dynamics when the host lacks preset capability and retains the exact submitted input',async()=>{
   const f=await fixture();await run(f.script,'unsupported');const r=await result(f.root,'unsupported');expect(r.paint).toMatchObject({kind:'rejected',error:{code:'unsupported-brush',effect:'retained'}});expect(r.snapshot.project.revision).toBe(0);expect(r.snapshot.undoDepth).toBe(0);expect(r.capture.alpha).toBe(0);expect(r.pendingOperations).toEqual([]);
   const dir=path.join(f.root,'.storyboard-flow/image-project-v2/settlements'),leaf=(await fs.readdir(dir)).find(n=>n.endsWith('.intent.json'))!;const envelope=JSON.parse(await fs.readFile(path.join(dir,leaf),'utf8'));expect(envelope.intent.stroke.brush).toMatchObject({tip:'pencil',grain:0.55,pressureSize:0.45,pressureOpacity:0.6});
 },60000);

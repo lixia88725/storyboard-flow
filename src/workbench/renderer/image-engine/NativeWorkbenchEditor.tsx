@@ -172,7 +172,7 @@ export function NativeWorkbenchEditor({controller:c,externallyPaused,projectMenu
  const unavailable=visibleImages.filter(image=>image?.availability==='unavailable').length;
  const sourceUncertain=visibleImages.filter(image=>image?.availability==='recoveryPending').length;
  const sourceStatus=sourceUncertain?`${sourceUncertain} 张图片的处理结果尚待确认`:retaining?`项目已打开 · 正在保管 ${retaining} 张原图`:unavailable?`${unavailable} 张图片需处理，其他故事板仍可使用`:'';
- const referenceStatus=image?.availability==='reference'?'已保留原画面 · 可在上方新建图层绘画':'';
+ const referenceStatus=image?.notice?.message??(image?.availability==='reference'?'已保留原画面 · 可在上方新建图层绘画':'');
  const preset=tool==='eraser'?brushPreferences.eraser:brushPreferences.brush,pref=preferenceFor(brushPreferences,preset);
  return <CanvasPresentationContext.Provider value={presentations}>
   <NativeInputRecovery controller={c}/>

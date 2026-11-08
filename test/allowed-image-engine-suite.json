@@ -16,5 +16,6 @@
   "src/platform/main/imageEngineOutputMetadata.test.ts",
   "src/project-files/main/image-engine/workspaceSourceRuntime.test.ts",
   "src/project-files/main/image-engine/workspaceColdCopy.test.ts",
-  "src/platform/main/imageEngineSourceGuard.test.ts"
+  "src/platform/main/imageEngineSourceGuard.test.ts",
+  "src/platform/main/imageEngineProtectedOutput.test.ts"
 ]

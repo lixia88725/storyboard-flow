@@ -9,7 +9,7 @@ const version=spawnSync('rustc',['--version','--verbose'],{encoding:'utf8'});if(
 const details=version.stdout.replace(/\r/g,'');
 if(!details.includes('release: '+NATIVE_RUST+'\n')||!details.includes('host: '+target+'\n'))throw Error('Use Rust '+NATIVE_RUST+' for '+target+'; no toolchain is installed automatically');
 if((await fs.readFile(path.join(repo,'vendor/photocraft/.flow-upstream-commit'),'utf8')).trim()!==NATIVE_UPSTREAM)throw Error('PhotoCraft source is not pinned');
-const before=await sourceDigest(repo),env={...process.env,CARGO_TARGET_DIR:path.join(root,'target'),RUSTFLAGS:''};delete env.CARGO_ENCODED_RUSTFLAGS;
+const before=await sourceDigest(repo),env={...process.env,CARGO_TARGET_DIR:path.join(root,'target'),RUSTFLAGS:process.platform==='win32'?'-C target-feature=+crt-static':''};delete env.CARGO_ENCODED_RUSTFLAGS;
 const result=spawnSync('cargo',['build','--offline','--locked','--release','--manifest-path',path.join(root,'Cargo.toml'),'--all-targets','--target',target],{stdio:'inherit',env});
 if(result.status!==0)throw Error('Native release build failed; previous artifacts are not package candidates');
 if(await sourceDigest(repo)!==before)throw Error('Native sources changed during build; no receipt published');
