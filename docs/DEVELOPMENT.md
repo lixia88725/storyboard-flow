@@ -92,3 +92,5 @@ Main 项目实际连接专项：`FLOW_IMAGE_HOST=<固定宿主> FLOW_PROJECT_LEA
 真实 Main 项目双画布专项：设置 `FLOW_IMAGE_HOST`、`FLOW_PROJECT_LEASE_BIN` 指向固定真实组件，再运行 `node scripts/flow-main-image-pipeline-smoke.mjs`，脚本先使用真实 ProjectStore/lease/NativeSession；`FLOW_MAIN_PIPELINE_MODE=paced` 启用 40 笔节拍（运行前核对脚本当前参数）。保留全部背压重试，metrics/service 派生文件不能把 API 总耗时当单次 fsync。统计测试 `node --test scripts/flow-main-image-pipeline-metrics.test.cjs` 不需要 GUI；性能窗口需协调暂停其他重负载。
 
 上下文接点专项 `imageEngineContext.test.ts` 使用支持四项 context/decimal 能力的真实宿主，覆盖选层不改版本、浮动选区及取消后显式展示代次切换。纯 Main 输入控制测试 `src/session/core/nativePipeline.test.ts` 纳入通用获准清单。
+
+Main 保存链性能复测：使用同一固定 release 宿主，完整构建后先跑 small 生命周期，再以 `FLOW_MAIN_PIPELINE_MODE=paced FLOW_MAIN_PIPELINE_PROFILE=1` 跑 40 笔/280 batch。profile 的透明 warmup 是真实操作，不等于产品无副作用预热。`flow-main-image-pipeline-profile-report.cjs <result.json> <output-prefix>` 分别输出逐笔和批次统计；每笔 end 后立即观察 waitOperation，最后 Canvas ACK、最终确认及 freeze/close 分开计时。不得把旧“下一 CAS 等前笔 resolution”当新架构要求；CAS 与 native acceptance 各自 FIFO，最终确认和预算保护仍须断言。

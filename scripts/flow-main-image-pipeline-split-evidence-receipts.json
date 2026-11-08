@@ -1,0 +1,51 @@
+{
+  "classification": "Functional PASS; paced performance improved but FAIL",
+  "integrationHead": "48e5dc3",
+  "host": "80a701a",
+  "hostSha256": "58c677ef22d1b8ff5af0db617ac7555a509a9e83cb59af118ebb774d8937fdfa",
+  "comparison": "Same binary, workload and warmup; separate days, not randomized repeated benchmark",
+  "receipts": [
+    {
+      "kind": "small",
+      "source": "/private/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-main-image-pipeline-URDodm/result.json",
+      "rawSha256": "8d75d7d1e65c7fa0845f3cbf026a3c35e123fb752d3b31e96691fd5260de9e29",
+      "rawBytes": 197967,
+      "gzipBytes": 18816,
+      "archive": "flow-main-image-pipeline-split-evidence-small.json.gz"
+    },
+    {
+      "kind": "paced",
+      "source": "/private/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-main-image-pipeline-guJ2Xy/result.json",
+      "rawSha256": "092d0fa55340857bf9ce9f335a18ecbebbeccf886899d7231661f31141ff1e3e",
+      "rawBytes": 3434439,
+      "gzipBytes": 171857,
+      "archive": "flow-main-image-pipeline-split-evidence-paced.json.gz"
+    }
+  ],
+  "suite": {
+    "files": 105,
+    "tests": 1219,
+    "seconds": 390.74,
+    "log": "/private/tmp/flow-engine-research/split-integration-suite.log"
+  },
+  "startupFailure": {
+    "log": "/private/tmp/flow-engine-research/split-gui-small.log",
+    "reason": "Sandbox Electron SIGABRT before result; rerun outside sandbox passed"
+  },
+  "pending": [
+    "Default product UI",
+    "Physical input-to-photon",
+    "Windows",
+    "Sustained cadence target"
+  ],
+  "result": {
+    "deadlineP95Ms": 254.1010840000008,
+    "firstDownP95Ms": 83.51608399999986,
+    "backpressure": 2091,
+    "lateBatches": 221,
+    "drain": {
+      "displayAfterLastLocalInputMs": 5.583792000000358,
+      "finalConfirmationAfterLastLocalInputMs": 289.20229199999994
+    }
+  }
+}
