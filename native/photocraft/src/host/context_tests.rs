@@ -1312,3 +1312,20 @@ fn detached_budget_is_reserved_before_pixels_and_failed_source_keeps_original_ta
     assert_eq!(status["state"], "failed");
     assert!(!h.h.store.shared.context_unsettled());
 }
+
+#[test]
+fn product_bucket_preserves_requested_rgba_alpha_at_full_command_coverage() {
+    for alpha in [255, 128] {
+        let mut h = Harness::new();
+        let created = h.body("new", json!({"kind":"new","width":4,"height":4}));
+        h.accept("new", &created);
+        let layer = h.h.engine.active().unwrap().active_layer.unwrap().0;
+        let before = state(&h.h);
+        let prepared = product(&mut h, "rgbaFill", json!({"kind":"fill","layerId":layer.to_string(),"x":1,"y":1,"color":[255,0,0,alpha],"tolerance":0}));
+        assert_eq!(prepared["kind"], "prepared", "{prepared}");
+        assert!(state(&h.h).pixels.chunks_exact(4).all(|p| p == [255,0,0,alpha]));
+        let discarded = h.body("discard",json!({"kind":"discard","candidateId":"rgbaFill"}));assert_eq!(discarded["kind"],"discarded");assert_eq!(state(&h.h),before);
+        let prepared = product(&mut h, "acceptedFill", json!({"kind":"fill","layerId":layer.to_string(),"x":1,"y":1,"color":[255,0,0,alpha],"tolerance":0}));
+        let version=h.accept("acceptedFill", &prepared);let reopened=h.reopen(&version);assert!(state(&reopened.h).pixels.chunks_exact(4).all(|p| p == [255,0,0,alpha]));
+    }
+}

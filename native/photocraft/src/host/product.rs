@@ -450,7 +450,7 @@ impl Host {
             } => run(
                 self,
                 "paint.bucket",
-                json!({"layer":layer_id.parse()?.0,"x":x,"y":y,"color":color.map(|v|f64::from(v)/255.0),"tolerance":tolerance,"contiguous":true,"antiAlias":false,"sampleAllLayers":false,"opacity":1,"target":"pixels"}),
+                json!({"layer":layer_id.parse()?.0,"x":x,"y":y,"color":color.map(|v|f64::from(v)/255.0),"tolerance":tolerance,"contiguous":true,"antiAlias":false,"sampleAllLayers":false,"opacity":100,"target":"pixels"}),
             ),
             ProductEdit::Transform { matrix, .. } => run(
                 self,

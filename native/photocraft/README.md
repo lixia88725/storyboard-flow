@@ -532,6 +532,10 @@ all IDs/locks before mutation and rolls its complete hosted checkpoint back on
 native failure or discard. Layer sets are unique and bounded to 64. The wire keeps
 canonical decimal u64 IDs. Generic edit input contains the complete polygon,
 matrix, colour, tolerance or layer-property changes for Main's journal replay.
+Typed bucket colour is straight RGBA8 at full command coverage: the host maps
+that coverage to the upstream percentage value 100, independently of the colour's
+alpha. The native alpha regression covers opaque and half-alpha fill, discard
+and accepted-version reopen.
 
 `selectionContext` sets or clears one temporary polygon for the current raster
 layer and exact context generation. It does not publish a version, write an
