@@ -22,12 +22,14 @@ export interface NativeSessionDriver {
   cancelPreview(operationId:string):Promise<void>;
   install(ref:NativeImageRef):Promise<void>;
   freeze():Promise<void>;
+  /** Only a capability-checked settled native Resume ACK may reopen admission. */
+  resume?():Promise<void>;
   close():Promise<void>;
 }
 export type NativeProjectRequest=
   | {kind:'paint';shotId:string;stroke:FlowStroke}
   | {kind:'board';edit:Exclude<ImageProjectEdit,{kind:'installNativeImage'}>;typing?:{group:string}}
-  | {kind:'undo'|'redo'|'recover'|'freeze'};
+  | {kind:'undo'|'redo'|'recover'|'freeze'|'resume'};
 /** Pipeline input acknowledges bounded volatile capture synchronously. Preview
  * progress means a native frame acknowledgement, not a displayed screen. The
  * last 64 completed operations may be awaited; older identities require durable
@@ -231,7 +233,7 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     request(input){
       if(pending>=32)return Promise.resolve(fail(Object.assign(Error('Main request queue is full'),{code:'resource-limit',effect:'none'})));
       let request:NativeProjectRequest;
-      try{request=copy(input);const valid=request?.kind==='paint'?shape(request,['kind','shotId','stroke']):request?.kind==='board'?shape(request,['kind','edit'],['typing']):shape(request,['kind'])&&['undo','redo','recover','freeze'].includes(String(request.kind));if(!valid)throw Error('Invalid Main Session request');}catch{return Promise.resolve(fail(Object.assign(Error('Invalid Main Session request'),{code:'invalid-input',effect:'none'})));}
+      try{request=copy(input);const valid=request?.kind==='paint'?shape(request,['kind','shotId','stroke']):request?.kind==='board'?shape(request,['kind','edit'],['typing']):shape(request,['kind'])&&['undo','redo','recover','freeze','resume'].includes(String(request.kind));if(!valid)throw Error('Invalid Main Session request');}catch{return Promise.resolve(fail(Object.assign(Error('Invalid Main Session request'),{code:'invalid-input',effect:'none'})));}
       const isBarrier=request.kind==='undo'||request.kind==='redo'||request.kind==='freeze';
       // Admission-time context matters: an active gesture can end before this
       // request reaches tail, putting its decision behind the barrier itself.
@@ -248,12 +250,18 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
         if(closed)return fail(Object.assign(Error('Session closed'),{code:'closed',effect:'none'}));
         if(phase==='recovering'&&request.kind!=='recover')return fail(Object.assign(Error('Reconcile the pending operation first'),{code:'busy',effect:'retained'}));
         try{
-          if(phase==='frozen'&&request.kind!=='freeze')throw Object.assign(Error('Frozen Session can only close'),{code:'busy',effect:'none'});
+          if(phase==='frozen'&&request.kind!=='freeze'&&request.kind!=='resume')throw Object.assign(Error('Frozen Session can only close'),{code:'busy',effect:'none'});
           if(request.kind==='recover'){
             const replacing=phase==='recovering'&&Boolean(native.restartForRecovery);await reconcile(replacing);
             if(retainedRecoveryInputs.length)return{kind:'recoveryPending',operationId:retainedRecoveryInputs[0].operationId,snapshot:snapshot(),retainedInputs:copy(retainedRecoveryInputs),reconciled:copy([...recoveryReports.values()])};
             if(replacing||recoveryReports.size){const outcome:ImageProjectOutcome={kind:'recovered',commitHash:head!.commitHash,snapshot:snapshot(),operations:copy([...recoveryReports.values()])};for(const report of recoveryReports.values())recoveredWait.set(report.operationId,outcome);while(recoveredWait.size>64)recoveredWait.delete(recoveredWait.keys().next().value!);return outcome;}
             return settled();
+          }
+          if(request.kind==='resume'){
+            if(phase!=='frozen')throw Object.assign(Error('Only a settled frozen Session can resume'),{code:'busy',effect:'none'});
+            if(!native.resume)throw Object.assign(Error('Native driver does not support settled resume'),{code:'unsupported',effect:'none'});
+            try{await native.resume();}catch(e){phase='recovering';notify();throw e;}
+            nativeMayBeFrozen=false;phase='active';pipeline?.resumeAdmission();notify();return settled();
           }
           if(request.kind==='freeze'){await settlement.drain();await pipeline?.barrier();phase='freezing';nativeMayBeFrozen=true;await native.freeze();await store.validateRecovery();if((await store.pendingOperations()).length||(await store.unsettledDecisions()).length||(await store.pendingHydrations()).length)throw Error('Unsettled project obligations');phase='frozen';notify();return settled();}
           if(phase!=='active')throw Object.assign(Error('Session admission is frozen'),{code:'busy',effect:'none'});

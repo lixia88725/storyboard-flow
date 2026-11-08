@@ -1,0 +1,42 @@
+import type { NativeFrame } from '../../../platform/main/imageEngineFraming.js';
+import type { ImagePipelineAdmission } from '../../../platform/contracts/imageProject.js';
+import type { ImageWorkspaceBootstrap, ImageWorkspaceEvent, ImageWorkspaceFrameIdentity, ImageWorkspaceFrameMessage, ImageWorkspaceFrameReply, ImageWorkspaceInput, ImageWorkspaceOutcome, ImageWorkspaceOwner, ImageWorkspaceRequest } from '../../../platform/contracts/imageWorkspace.js';
+
+/** Adapter supplied by the platform entry. It wraps this window's owned
+ * MessagePortMain; the runtime owns protocol sequencing and keyframe recovery. */
+export type ImageWorkspaceFrameTransport = {
+ send(message:ImageWorkspaceFrameMessage):void;
+ subscribe(listener:(reply:ImageWorkspaceFrameReply)=>void):()=>void;
+ onClose(listener:()=>void):()=>void;
+ close():void;
+};
+export type ImageWorkspacePickedSources = {kind:'files';files:readonly string[]}|{kind:'folder';folder:string};
+/** Main-only permissions. A Session never invokes Electron dialogs or receives
+ * a renderer path. Export/trash paths are validated again by file transactions. */
+export type ImageWorkspacePermissions = {
+ chooseImages(mode:'files'|'folder'):Promise<ImageWorkspacePickedSources|null>;
+ chooseExportTarget(input:{suggestedName:string;format:'psd'|'tiff'}):Promise<string|null>;
+ trashItem(file:string):Promise<void>;
+};
+export type ImageWorkspaceRuntimeOptions = {
+ root:string;binary:string;leaseBinary:string;workspaceEpoch:number;
+ permissions:ImageWorkspacePermissions;
+ projectRootLabel?:string;
+ limits?:{maxRecoveryBytes?:number;nativeBytes?:number;sourceBytes?:number;outputBytes?:number};
+};
+export type ImageWorkspaceRuntime = {
+ open():ImageWorkspaceBootstrap;
+ request(request:ImageWorkspaceRequest):Promise<ImageWorkspaceOutcome>;
+ /** Main-local admission only. The preload/IPC Bridge returns a Promise. */
+ input(owner:ImageWorkspaceOwner,input:ImageWorkspaceInput):ImagePipelineAdmission;
+ waitOperation(owner:ImageWorkspaceOwner,operationId:string):Promise<ImageWorkspaceOutcome>;
+ subscribe(listener:(event:ImageWorkspaceEvent)=>void):()=>void;
+ connectFrames(identity:ImageWorkspaceFrameIdentity,transport:ImageWorkspaceFrameTransport):Promise<void>;
+ thumbnail(owner:ImageWorkspaceOwner,id:string):Promise<{width:number;height:number;rgba:Uint8Array}>;
+ /** Read-only instrumentation, never a second transport or save authority. */
+ onFrame(listener:(frame:NativeFrame)=>void):()=>void;
+ /** Release only after a successful certifyClose; preparation failure leaves
+  * the existing writable owner and its recovery obligations intact. */
+ dispose():Promise<void>;
+};
+export type ImageWorkspaceTarget={kind:'native';root:string;runtime:ImageWorkspaceRuntime};

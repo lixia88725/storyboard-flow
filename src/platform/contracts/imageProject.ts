@@ -74,6 +74,13 @@ export type ImageOperationResolution = {
   decision:'discarded'|'committed';commitHash:string|null;
 };
 export type ImageProjectEdit =
+  | { kind:'setProjectNaming';name:string;naming:NonNullable<ProjectV2['naming']> }
+  | { kind:'setPresentation';presentation:NonNullable<ProjectV2['presentation']>|null }
+  | { kind:'removeShots';shotIds:string[] }
+  | { kind:'moveDialogues';dialogueIds:string[];targetShotId:string;beforeId?:string }
+  /** Main-private insertion of already retained/prepared references. The public
+   * workspace command never accepts these references or whole project trees. */
+  | { kind:'appendShots';shots:ProjectV2['shots'];images:ProjectV2['images'];dialogues?:ProjectV2['dialogues'];destination:'active'|'pending';beforeId?:string }
   | { kind: 'setDialogues'; shotId: string; dialogues: ProjectV2['dialogues'] }
   | { kind: 'setScriptText'; shotId: string; text: string }
   | { kind: 'moveShots'; shotIds: string[]; destination: 'active' | 'pending'; beforeId?: string }

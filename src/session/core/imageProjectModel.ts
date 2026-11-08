@@ -58,6 +58,34 @@ export function applyImageProjectEdit(project: ProjectV2, edit: ImageProjectEdit
   let after=project;
   const all=[...project.shots,...project.parkedShots];
   switch(edit.kind){
+    case 'setProjectNaming': {
+      if(!shape(edit,['kind','name','naming'])||!text(edit.name)||!shape(edit.naming,['sceneCode','artistName','version'])||!Object.values(edit.naming).every(text))return fail('invalid-input','Invalid project naming');
+      after={...project,name:edit.name,naming:copy(edit.naming)};break;
+    }
+    case 'setPresentation': {
+      if(!shape(edit,['kind','presentation'])||(edit.presentation!==null&&!validPresentation(edit.presentation)))return fail('invalid-input','Invalid presentation');
+      const {presentation:_previous,...rest}=project,presentation=edit.presentation;
+      after={...rest,...(presentation?{presentation:copy(presentation)}:{}),shots:project.shots.map(s=>{const{presentation:_old,...shot}=s;return{...shot,...(presentation?{presentation:copy(presentation)}:{})};})};break;
+    }
+    case 'removeShots': {
+      if(!shape(edit,['kind','shotIds'])||!Array.isArray(edit.shotIds)||!edit.shotIds.length||new Set(edit.shotIds).size!==edit.shotIds.length||edit.shotIds.some(x=>!id(x)||!all.some(s=>s.id===x)))return fail('invalid-input','Invalid shot removal');
+      const ids=new Set(edit.shotIds);after={...project,shots:project.shots.filter(s=>!ids.has(s.id)),parkedShots:project.parkedShots.filter(s=>!ids.has(s.id)),dialogues:project.dialogues.filter(d=>!ids.has(d.shotId))};break;
+    }
+    case 'moveDialogues': {
+      if(!shape(edit,['kind','dialogueIds','targetShotId'],['beforeId'])||!Array.isArray(edit.dialogueIds)||!edit.dialogueIds.length||new Set(edit.dialogueIds).size!==edit.dialogueIds.length||edit.dialogueIds.some(x=>!id(x))||!id(edit.targetShotId)||!project.shots.some(s=>s.id===edit.targetShotId))return fail('invalid-input','Invalid dialogue move');
+      const ids=new Set(edit.dialogueIds),moving=project.dialogues.filter(d=>ids.has(d.id));if(moving.length!==ids.size||moving.some(d=>!project.shots.some(s=>s.id===d.shotId)))return fail('invalid-input','Dialogue move requires active sources');
+      const rest=project.dialogues.filter(d=>!ids.has(d.id)),target=rest.filter(d=>d.shotId===edit.targetShotId);
+      if(edit.beforeId!==undefined&&(!id(edit.beforeId)||!target.some(d=>d.id===edit.beforeId)))return fail('invalid-input','Invalid dialogue destination');
+      const index=edit.beforeId===undefined?(target.length?rest.findIndex(d=>d.id===target.at(-1)!.id)+1:rest.length):rest.findIndex(d=>d.id===edit.beforeId);
+      rest.splice(index,0,...moving.map(d=>({...d,shotId:edit.targetShotId})));after={...project,dialogues:rest};break;
+    }
+    case 'appendShots': {
+      if(!shape(edit,['kind','shots','images','destination'],['dialogues','beforeId'])||!Array.isArray(edit.shots)||!edit.shots.length||!record(edit.images)||!['active','pending'].includes(edit.destination)||Object.keys(edit.images).length!==edit.shots.length||edit.shots.some(s=>!record(s)||all.some(old=>old.id===s.id)||!id(s.imageId)||Object.hasOwn(project.images,s.imageId)||!Object.hasOwn(edit.images,s.imageId))||edit.dialogues!==undefined&&(!Array.isArray(edit.dialogues)||edit.dialogues.some(d=>!record(d)||!edit.shots.some(s=>s.id===d.shotId))))return fail('invalid-input','Invalid Main shot insertion');
+      const active=[...project.shots],pending=[...project.parkedShots],destination=edit.destination==='active'?active:pending;
+      if(edit.beforeId!==undefined&&(!id(edit.beforeId)||!destination.some(s=>s.id===edit.beforeId)))return fail('invalid-input','Invalid insertion anchor');
+      destination.splice(edit.beforeId===undefined?destination.length:destination.findIndex(s=>s.id===edit.beforeId),0,...edit.shots.map(s=>{if(edit.destination==='pending')return copy(s);const{presentation:_old,...shot}=s;return{...copy(shot),...(project.presentation?{presentation:copy(project.presentation)}:{})};}));
+      after={...project,shots:active,parkedShots:pending,images:{...project.images,...copy(edit.images)},dialogues:[...project.dialogues,...copy(edit.dialogues??[])]};break;
+    }
     case 'setScriptText': {
       if(!shape(edit,['kind','shotId','text']) || !id(edit.shotId) || !text(edit.text) || !project.shots.some(s=>s.id===edit.shotId))return fail('invalid-input','Text requires an active shot');
       after={...project,shots:project.shots.map(s=>s.id===edit.shotId?{...s,scriptText:edit.text}:s)};break;

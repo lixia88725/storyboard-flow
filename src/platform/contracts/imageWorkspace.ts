@@ -15,7 +15,11 @@ export type ImageWorkspaceLayerView = {
  readonly id:ImageWorkspaceLayerId;readonly parentId:ImageWorkspaceLayerId|null;
  readonly name:string;readonly kind:'raster'|'group'|'reference'|'unsupported';
  readonly visible:boolean;readonly locked:boolean;readonly opacity:number;
- readonly blendMode:string;readonly editable:boolean;
+ readonly blendMode:string;
+ /** Paint alias retained for UI adoption; never means property/structure access. */
+ readonly editable:boolean;
+ readonly capabilities:{readonly paint:boolean;readonly properties:boolean;readonly structure:boolean};
+ readonly readOnlyReason?:string;
 };
 export type ImageWorkspaceImageView = {
  readonly imageId:string;readonly content:ImageBindingV2;
@@ -62,6 +66,7 @@ export type ImageWorkspaceEdit = ImageEngineEdit;
 export type ImageWorkspaceCommand =
  | {kind:'board';command:ImageWorkspaceBoardCommand}
  | {kind:'activateShot';shotId:string}
+ | {kind:'demandShots';shotIds:readonly string[]}
  | {kind:'selectLayer';shotId:string;layerId:ImageWorkspaceLayerId;expectedContextGeneration:number}
  | {kind:'selection';shotId:string;expectedContextGeneration:number;selection:FlowSelection|null}
  | {kind:'imageEdit';shotId:string;expectedContextGeneration:number;edit:ImageWorkspaceEdit}
@@ -135,3 +140,11 @@ export type ImageWorkspaceBridge = {
 };
 /** Immutable receipt for a particular content version; no renderer path. */
 export type ImageWorkspaceOutputReceipt={operationId:string;projectId:string;revision:number;imageId:string;native:NativeImageRef;format:'psd'|'tiff';sha256:string;name:string};
+
+/** Launcher result is explicitly native; never substitute this for the old V1 bootstrap. */
+export type ImageWorkspaceLaunchResult={canceled:true}|{canceled:false;kind:'native';bootstrap:ImageWorkspaceBootstrap};
+export type ImageWorkspaceUpgradeDraft={
+ id:string;kind:'copy-upgrade';sourceLabel:string;destinationLabel:string|null;
+ projectName:string;activeBoards:number;pendingBoards:number;originalPreserved:true;
+ issues:readonly {code:string;message:string}[];
+};
