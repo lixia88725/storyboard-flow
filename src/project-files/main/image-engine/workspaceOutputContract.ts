@@ -1,3 +1,6 @@
+import type {SourceInput}from'./sourceStore.js';
+import type {WorkspaceSources}from'./workspaceSources.js';
+import type {SourceImageRef}from'../../../platform/contracts/imageProject.js';
 import type {WorkspaceColdCopyReceipt}from'./workspaceColdCopyContract.js';
 import type {NativeImageRef, ProjectV2} from '../../../platform/contracts/imageProject.js';
 import type {ImageWorkspaceOwner} from '../../../platform/contracts/imageWorkspace.js';
@@ -61,12 +64,16 @@ export type WorkspaceOutputReceipt = {operationId:string;projectId:string;revisi
 export type WorkspaceOutputOperationOptions={operationId?:string};
 export type WorkspaceOutputOperation={state:'absent'}|{state:'pending'|'retained';receipt?:never}|{state:'completed';receipt:WorkspaceOutputReceipt};
 export type WorkspaceOutputPhysicalIdentity={dev:string;ino:string};
-export type WorkspaceOutputObservation = {shotId:string;location:WorkspaceOutputLocation;name:string;expectedDigest:string;observedDigest:string|null;observedIdentity:WorkspaceOutputPhysicalIdentity|null};
+export type WorkspaceOutputObservation = {shotId:string;imageId:string;location:WorkspaceOutputLocation;name:string;baselineNative:NativeImageRef|null;expectedDigest:string|null;observedDigest:string|null;observedIdentity:WorkspaceOutputPhysicalIdentity|null};
 /** Main calls only after retaining the original and deciding the Refresh CAS.
  * observedIdentity must travel with the inspected/retained bytes, never be
  * replaced by a fresh stat merely to acknowledge a different same-byte file.
  * This acknowledges file baselines, never a saved ProjectV2 or a native edit. */
-export type WorkspaceOutputRefreshReceipt={projectId:string;revision:number;commitHash:string;changes:(Omit<WorkspaceOutputObservation,'observedDigest'|'observedIdentity'>&{observedDigest:string;observedIdentity:WorkspaceOutputPhysicalIdentity;imageId:string;native:NativeImageRef;format:'tiff'})[]};
+export type WorkspaceOutputRefreshReceipt={projectId:string;revision:number;commitHash:string;changes:(Omit<WorkspaceOutputObservation,'observedDigest'|'observedIdentity'|'baselineNative'>&{baselineNative?:NativeImageRef|null;observedDigest:string;observedIdentity:WorkspaceOutputPhysicalIdentity;native:NativeImageRef;format:'tiff'})[]};
+/** Main has durably chosen local Flow pixels. Modified external bytes must be
+ * in the one Sources store first; a SourceRef alone is never custody proof. */
+export type WorkspaceOutputKeepFlowReceipt={projectId:string;revision:number;commitHash:string;operationId:string;changes:(WorkspaceOutputObservation&{retainedSource?:{source:SourceImageRef;digest:string;byteLength:number}})[]};
+export type WorkspaceOutputCustody=Pick<WorkspaceSources,'object'>;
 export type WorkspaceOutputOptions = {
  root:string;projectId:string;
  writerAuthority:{assertHeld(root:{path:string;dev:string;ino:string}):Promise<void>;copyReceipt?:WorkspaceColdCopyReceipt};
@@ -77,11 +84,17 @@ export type WorkspaceOutputOptions = {
 export type WorkspaceOutput = {
  names(project:ProjectV2):Promise<{shotId:string;name:string;location:WorkspaceOutputLocation}[]>;
  inspect(project:ProjectV2):Promise<WorkspaceOutputObservation[]>;
+ /** Rechecks exact observation and returns a Main-private, settled-identity input.
+  * Main retains it through Sources and compares actual object SHA/length. */
+ observeSource(observation:WorkspaceOutputObservation,options?:{itemId?:string}):Promise<SourceInput>;
  save(frozen:WorkspaceOutputFrozen,options?:WorkspaceOutputOperationOptions):Promise<WorkspaceOutputReceipt>;
  appendPendingBatch(frozen:WorkspaceOutputFrozen,batch:{shotIds:readonly string[];sourceNames?:Readonly<Record<string,string>>},options?:WorkspaceOutputOperationOptions):Promise<WorkspaceOutputReceipt>;
  /** Read-only side-effect status, never a Main project commit decision. */
  queryOperation(operationId:string):Promise<WorkspaceOutputOperation>;
+ /** Historical durable ACK; current disk changes never erase this fact. */
+ queryRefreshReceipt(receiptHash:string):Promise<'accepted'|'absent'>;
  acceptRefresh(receipt:WorkspaceOutputRefreshReceipt):Promise<void>;
+ acceptKeepFlow(receipt:WorkspaceOutputKeepFlowReceipt,custody?:WorkspaceOutputCustody):Promise<void>;
  recover():Promise<void>;
  hasObligations():boolean;
  /** Successful closure is idempotent; a refused closure retains the same owner. */

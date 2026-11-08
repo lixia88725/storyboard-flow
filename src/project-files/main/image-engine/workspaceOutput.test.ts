@@ -3,7 +3,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {describe,it,expect,vi} from 'vitest';
 import {temporaryWorkspace} from '../../../../test/temporaryWorkspace';
-import {openWorkspaceOutput} from './workspaceOutput';
+import {openWorkspaceOutput,workspaceOutputDecisionHash} from './workspaceOutput';
 import type {WorkspaceOutputFrozen,WorkspaceOutputOptions,WorkspaceOutputBudget} from './workspaceOutputContract';
 import {validWorkspaceOutputMetadataEnvelope,WORKSPACE_OUTPUT_METADATA_LIMIT} from './workspaceOutputContract';
 import {createWorkspaceRecoveryBudget} from './workspaceBudget';
@@ -35,7 +35,7 @@ describe('native workspace physical output',()=>{
  });
  it('reports external bytes read-only and refuses external modifications or foreign same-name targets',async()=>{
   const {output,root}=await fixture(),f=frozen(),r=await output.save(f),target=at(root,r.files[0]);await fs.writeFile(target,'external');
-  expect(await output.inspect(f.project)).toEqual([{shotId:'a',location:'active',name:r.files[0].name,expectedDigest:r.files[0].digest,observedDigest:hash('external'),observedIdentity:await physicalIdentity(target)}]);
+  expect(await output.inspect(f.project)).toEqual([{shotId:'a',imageId:'ia',baselineNative:native('ia'),location:'active',name:r.files[0].name,expectedDigest:r.files[0].digest,observedDigest:hash('external'),observedIdentity:await physicalIdentity(target)}]);
   await expect(output.save(f)).rejects.toThrow('External output change');expect(await fs.readFile(target,'utf8')).toBe('external');await output.close();
   const other=await fixture(),name=(await other.output.names(f.project))[0].name;await fs.writeFile(path.join(other.root,name),'foreign');await expect(other.output.save(f)).rejects.toThrow('Foreign output');expect(other.capture).not.toHaveBeenCalled();await other.output.close();
  });
@@ -166,5 +166,32 @@ describe('durable output operation correlation',()=>{
  });
  it('accounts durable receipt snapshots with the actual shared budget',async()=>{
   const g=await fixture();await g.output.close();const broker=await createWorkspaceRecoveryBudget({root:g.root,maxRecoveryBytes:8*1024**3}),out=await openWorkspaceOutput({...g.options,budget:broker});await out.save(frozen(),{operationId:id});expect(broker.reservedBytes).toBe(0);expect(broker.actualBytes).toBe(await broker.measureActual());await out.close();
+ });
+});
+
+describe('observed output decisions and batch isolation',()=>{
+ const latest=async(root:string)=>{const dir=path.join(root,'.storyboard-flow/native-output-v1'),names=(await fs.readdir(dir)).filter(n=>n.endsWith('.json')).sort();return JSON.parse(await fs.readFile(path.join(dir,names.at(-1)!),'utf8'));};
+ const withSources=async()=>{const g=await fixture();await g.output.close();const shared=await createWorkspaceRecoveryBudget({root:g.root});const output=await openWorkspaceOutput({...g.options,budget:shared});const {openWorkspaceSources}=await import('./workspaceSources');const sources=await openWorkspaceSources({root:g.root,writerAuthority:g.options.writerAuthority,budget:shared});return{...g,output,sources,shared};};
+ it('keeps batch receipts and saved revision local even when an unrelated existing file changed',async()=>{
+  const g=await fixture(),f=frozen(),saved=await g.output.save(f),target=at(g.root,saved.files[0]);await fs.writeFile(target,'external A');f.project.revision=9;f.commitHash=hash('dirty');f.project.shots[0].scriptText='unsaved B';f.project.parkedShots.push({id:'c',imageId:'ic',name:'C',scriptText:''});f.project.images.ic={id:'ic',content:{kind:'native',native:native('ic')}};f.resolvedImages={ic:{native:native('ic'),format:'tiff'}};
+  const receipt=await g.output.appendPendingBatch(f,{shotIds:['c']});expect(receipt.files.map(e=>e.shotId)).toEqual(['c']);expect(await fs.readFile(target,'utf8')).toBe('external A');expect((await latest(g.root)).saved).toEqual({revision:1,commitHash:hash('head')});expect(g.capture).toHaveBeenCalledTimes(3);expect((await g.output.inspect(f.project))[0].baselineNative).toEqual(native('ia'));await g.output.close();
+ });
+ it('binds observation to full source identity and refuses identical-byte replacement before custody',async()=>{
+  const g=await withSources(),f=frozen(),saved=await g.output.save(f),target=at(g.root,saved.files[0]);await fs.writeFile(target,'external');const row=(await g.output.inspect(f.project))[0],records=await latest(g.root),input=await g.output.observeSource(row);expect(input.expected).toMatchObject(row.observedIdentity!);expect(await latest(g.root)).toEqual(records);
+  await fs.rename(target,target+'.evidence');await fs.writeFile(target,'external');await expect(g.output.observeSource(row)).rejects.toThrow('replaced');await expect(g.sources.registerBatch({importId:'stale',sources:[input]})).rejects.toThrow();expect(await fs.readFile(target+'.evidence','utf8')).toBe('external');await g.sources.close();await g.output.close();
+ });
+ it('requires actual retained external bytes before keepFlow and forces local recapture without claiming a native baseline',async()=>{
+  const g=await withSources(),f=frozen(),saved=await g.output.save(f),target=at(g.root,saved.files[0]);await fs.writeFile(target,'external E1');const row=(await g.output.inspect(f.project))[0],input=await g.output.observeSource(row);await g.sources.registerBatch({importId:'external',sources:[input]});await g.sources.retain('external',input.id);const source={importId:'external',itemId:input.id,interpretationId:'photocraft-v1' as const},object=await g.sources.object(source,{verify:'full'}),receipt={projectId:'project',revision:2,commitHash:hash('choice'),operationId:'choice',changes:[{...row,retainedSource:{source,digest:object.digest,byteLength:object.byteLength}}]};
+  await expect(g.output.acceptKeepFlow(receipt)).rejects.toThrow('custody');await g.output.acceptKeepFlow(receipt,g.sources);expect(await g.output.queryRefreshReceipt(workspaceOutputDecisionHash(receipt))).toBe('accepted');expect((await latest(g.root)).saved.revision).toBe(1);expect(await fs.readFile(target,'utf8')).toBe('external E1');
+  await fs.writeFile(target,'external E2');const changed=(await g.output.inspect(f.project))[0];expect(changed.baselineNative).toBeNull();await expect(g.output.save(f)).rejects.toThrow('External output change');expect(await g.output.queryRefreshReceipt(workspaceOutputDecisionHash(receipt))).toBe('accepted');await fs.writeFile(target,'external E1');await g.output.save(f);expect(g.capture).toHaveBeenCalledTimes(3);expect(await fs.readFile(object.path,'utf8')).toBe('external E1');expect(g.shared.reservedBytes).toBe(0);expect(g.shared.actualBytes).toBe(await g.shared.measureActual());await g.sources.close();await g.output.close();
+ });
+ it('acknowledges a missing slot without Trash and refuses any foreign reappearance before exclusive rebuild',async()=>{
+  const g=await fixture(),f=frozen(),saved=await g.output.save(f),target=at(g.root,saved.files[0]);await fs.rename(target,target+'.evidence');const row=(await g.output.inspect(f.project))[0],receipt={projectId:'project',revision:2,commitHash:hash('missing'),operationId:'missing',changes:[row]};await g.output.acceptKeepFlow(receipt);await fs.writeFile(target,'foreign');await expect(g.output.save(f)).rejects.toThrow('External output change');expect(await fs.readFile(target,'utf8')).toBe('foreign');await fs.rename(target,target+'.foreign');await g.output.save(f);expect(g.capture).toHaveBeenCalledTimes(3);expect(g.trash).not.toHaveBeenCalled();expect(await fs.readFile(target+'.foreign','utf8')).toBe('foreign');await g.output.close();
+ });
+ it('rechecks observation after custody and before durable keepFlow ACK',async()=>{
+  let replace=false;const g=await fixture({fault:async p=>{if(replace&&p==='before-keep-flow-ack')await fs.writeFile(target,'E2');}}),f=frozen(),saved=await g.output.save(f),target=at(g.root,saved.files[0]);await fs.writeFile(target,'E1');const row=(await g.output.inspect(f.project))[0],receipt={projectId:'project',revision:2,commitHash:hash('choice'),operationId:'choice',changes:[{...row,retainedSource:{source:{importId:'external',itemId:'a',interpretationId:'photocraft-v1' as const},digest:hash('E1'),byteLength:2}}]};replace=true;await expect(g.output.acceptKeepFlow(receipt,{object:async()=>({digest:hash('E1'),byteLength:2,path:'unused',identity:{} as never})})).rejects.toThrow('changed');expect(await g.output.queryRefreshReceipt(workspaceOutputDecisionHash(receipt))).toBe('absent');expect((await g.output.inspect(f.project))[0].expectedDigest).toBe(saved.files[0].digest);await g.output.close();
+ });
+ it('queries durable Refresh history after newer disk changes and reopen without acknowledging new bytes',async()=>{
+  const g=await fixture(),f=frozen(),saved=await g.output.save(f),target=at(g.root,saved.files[0]);await fs.writeFile(target,'E1');const row=(await g.output.inspect(f.project))[0],receipt={projectId:'project',revision:2,commitHash:hash('refresh'),changes:[{...row,observedDigest:row.observedDigest!,observedIdentity:row.observedIdentity!,native:native('E1'),format:'tiff' as const}]};await g.output.acceptRefresh(receipt);await fs.writeFile(target,'E2');expect(await g.output.queryRefreshReceipt(workspaceOutputDecisionHash(receipt))).toBe('accepted');await expect(g.output.acceptRefresh(receipt)).rejects.toThrow('changed');await g.output.close();const next=await openWorkspaceOutput(g.options);expect(await next.queryRefreshReceipt(workspaceOutputDecisionHash(receipt))).toBe('accepted');expect(await next.queryRefreshReceipt(hash('not accepted'))).toBe('absent');expect((await next.inspect(f.project))[0]).toMatchObject({expectedDigest:hash('E1'),observedDigest:hash('E2'),baselineNative:native('E1')});await next.close();
  });
 });
