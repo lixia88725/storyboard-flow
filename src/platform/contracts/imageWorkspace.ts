@@ -1,4 +1,4 @@
-import type { ImageEngineEdit } from './imageEngine.js';
+import type { ImageEngineEdit, ImageEnginePreviewStamp } from './imageEngine.js';
 import type { FrameIdentity, ImageFrameHeader, FrameFailureCode } from '../../drawing/renderer/image-engine/frames.js';
 import type { DialogueV1, ProjectNamingV1 } from './refactorV1.js';
 import type { FlowPresentation } from './flowPresentation.js';
@@ -26,6 +26,9 @@ export type ImageWorkspaceImageView = {
  readonly availability:ImageWorkspaceAvailability;
  /** Derived from the retained hydration/native view, including SourceRef content. */
  readonly displayDocumentId:string|null;
+ readonly displayNative:NativeImageRef|null;
+ /** Exact comparable display epoch; null during activation, never guessed. */
+ readonly displayIdentity:FrameIdentity|null;
  readonly width?:number;readonly height?:number;
  /** Bottom to top; parentId expresses groups without a writable UI tree. */
  readonly layers:readonly ImageWorkspaceLayerView[];
@@ -73,7 +76,7 @@ export type ImageWorkspaceCommand =
  | {kind:'resolveInput';captureId:string;action:'retainAndDiscard'|'exportAndDiscard';original:ImageWorkspaceCapturedInput}
  | {kind:'selectLayer';shotId:string;layerId:ImageWorkspaceLayerId;expectedContextGeneration:number}
  | {kind:'selection';shotId:string;expectedContextGeneration:number;selection:FlowSelection|null}
- | {kind:'imageEdit';shotId:string;expectedContextGeneration:number;edit:ImageWorkspaceEdit}
+ | {kind:'imageEdit';shotId:string;expectedContextGeneration:number;expectedNative:NativeImageRef;edit:ImageWorkspaceEdit;preview?:ImageEnginePreviewStamp}
  | {kind:'floating';shotId:string;expectedContextGeneration:number;previewId:string;action:
      {kind:'begin';dx:number;dy:number}|{kind:'move';fromSeq:number;dx:number;dy:number}|{kind:'cancel'|'drop';throughSeq:number}}
  | {kind:'addImages';mode:'files'|'folder';destination:'pending'}
@@ -103,8 +106,10 @@ export type ImageWorkspaceRequest = {owner:ImageWorkspaceOwner;requestId:string;
  * is queried by captureId/inputId and is never blindly sent a second time. */
 export type ImageWorkspaceClientInput={captureId:string;inputId:string;attemptId:string};
 export type ImageWorkspaceCapturedInput={
- originOwner:ImageWorkspaceOwner;shotId:string;layerId:ImageWorkspaceLayerId;
+ originOwner:ImageWorkspaceOwner;shotId:string;layerId:ImageWorkspaceLayerId|null;
  stroke:FlowStroke;ended:boolean;capturedThrough:number;
+ /** Recovery-only original coordinates. Never execute this object directly. */
+ coordinateSpace:'pixels'|'normalized';resolvedDimensions?:{width:number;height:number};
 };
 export type ImageWorkspaceInput =
  | {kind:'begin';shotId:string;layerId:ImageWorkspaceLayerId;expectedContextGeneration:number;stroke:FlowStroke}
@@ -160,7 +165,16 @@ export type ImageWorkspaceOutputReceipt={operationId:string;projectId:string;rev
 /** Launcher result is explicitly native; never substitute this for the old V1 bootstrap. */
 export type ImageWorkspaceLaunchResult={canceled:true}|{canceled:false;kind:'native';bootstrap:ImageWorkspaceBootstrap};
 export type ImageWorkspaceUpgradeDraft={
- id:string;kind:'copy-upgrade';sourceLabel:string;destinationLabel:string|null;
+ id:string;kind:'copy-upgrade';sourceLabel:string;destinationLabel:string|null;folderName:string;
+ state:'chooseDestination'|'ready'|'running'|'retained';
  projectName:string;activeBoards:number;pendingBoards:number;originalPreserved:true;
  issues:readonly {code:string;message:string}[];
 };
+
+export type ImageWorkspaceProjectTarget={kind:'pending'}|{kind:'recent';id:string}|{kind:'create'|'upgrade';draftId:string};
+export type ImageWorkspaceUpgradePatch={projectName?:string;folderName?:string};
+export type ImageWorkspaceOpenChoice=
+ | {canceled:true}
+ | {kind:'project'}
+ | {kind:'import';draft:import('./flowEditor.js').FlowCreateDraftView}
+ | {kind:'copy-upgrade';draft:ImageWorkspaceUpgradeDraft};
