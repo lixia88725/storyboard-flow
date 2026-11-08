@@ -32,8 +32,8 @@ function group(entries:Entry[],previous:string){
 }
 /** Single append owner, bounded group flush. Only a sealed, successfully synced
  * prefix receives durableThrough. Directory IO occurs only at create/continuation. */
-export async function openRecoveryJournal(options:{directory:string;formatId:string;assertHeld():Promise<void>;reserve(bytes:number):Promise<()=>void>;onGrowth(bytes:number):void;manualFlush?:boolean;createInitial:boolean}){
- const {directory,formatId}=options;await options.assertHeld();if(options.createInitial)await fs.mkdir(directory,{mode:0o700}).catch(e=>{if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;});
+export async function openRecoveryJournal(options:{directory:string;formatId:string;assertHeld():Promise<void>;reserve(bytes:number):Promise<()=>void>;onGrowth(bytes:number):void;manualFlush?:boolean;createInitial:boolean;readOnly?:boolean}){
+ const {directory,formatId}=options;if(options.readOnly&&options.createInitial)throw Error('Inspection cannot create a journal');await options.assertHeld();if(options.createInitial)await fs.mkdir(directory,{mode:0o700}).catch(e=>{if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;});
  const ds=await fs.lstat(directory,{bigint:true});if(!ds.isDirectory()||ds.isSymbolicLink()||await fs.realpath(directory)!==directory)throw Error('Unsafe journal directory');
  const checkDir=async()=>{await options.assertHeld();const s=await fs.lstat(directory,{bigint:true});if(s.dev!==ds.dev||s.ino!==ds.ino||!s.isDirectory()||s.isSymbolicLink())throw Error('Journal directory identity changed');};
  const ensureFile=async(file:string,exclusive=false)=>{let created=false;const h=await fs.open(file,constants.O_RDWR|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600).then(h=>{created=true;return h;},async e=>{if(e.code!=='EEXIST'||exclusive)throw e;await regular(file);return fs.open(file,constants.O_RDWR|constants.O_NOFOLLOW);});try{await h.sync();if(created){await syncDir(directory);await syncDir(path.dirname(directory));}}finally{await h.close();}};
@@ -68,17 +68,18 @@ export async function openRecoveryJournal(options:{directory:string;formatId:str
   if(!partial&&continuation===undefined){offset=at;break;}
   if(!partial)throw new RecoveryJournalError('Continuation does not name an unsealed tail',through,at);
   const expected={schema:'flow.journal-continuation',version:1,formatId,generation:generation+1,previousFile:path.basename(file),previousSize:Number(st.size),previousSha256:fileHash,validBytes:at,through,prefixHash:previous};
-  const prior=await fs.open(file,constants.O_RDWR|constants.O_NOFOLLOW);try{await prior.sync();}finally{await prior.close();}
+  if(options.readOnly&&continuation===undefined){offset=at;break;}
+  if(!options.readOnly){const prior=await fs.open(file,constants.O_RDWR|constants.O_NOFOLLOW);try{await prior.sync();}finally{await prior.close();}}
   if(continuation===undefined){
    const next=`segment-${generation+1}-${randomBytes(12).toString('hex')}.log`;await checkDir();await ensureFile(path.join(directory,next),true);
    continuation={...expected,next};const manifestBytes=encode(continuation),release=await options.reserve(manifestBytes.length*2);await immutable(manifestFile,manifestBytes);options.onGrowth(manifestBytes.length);release();
   }
   if(typeof continuation!=='object'||continuation===null)throw Error('Invalid journal continuation');const m=continuation as Record<string,unknown>,{next,...binding}=m;
   if(canonicalJson(binding)!==canonicalJson(expected)||typeof next!=='string'||!new RegExp(`^segment-${generation+1}-[a-f0-9]{24}\\.log$`).test(next))throw new RecoveryJournalError('Journal continuation binding changed',through,at);
-  await checkDir();await syncDir(directory);segments.push({file,size:Number(st.size),hash:fileHash});file=path.join(directory,next);await regular(file);generation++;if(generation>1024)throw Error('Journal continuation budget exhausted');
+  await checkDir();if(!options.readOnly)await syncDir(directory);segments.push({file,size:Number(st.size),hash:fileHash});file=path.join(directory,next);await regular(file);generation++;if(generation>1024)throw Error('Journal continuation budget exhausted');
  }
  for(const leaf of await fs.readdir(directory)){const m=/^continuation-(\d+)\.json$/.exec(leaf);if(m&&(leaf!==`continuation-${Number(m[1])}.json`||Number(m[1])<1||Number(m[1])>generation))throw new RecoveryJournalError('Unreachable continuation manifest',through,offset);}
- await checkDir();const handle=await fs.open(file,constants.O_RDWR|constants.O_NOFOLLOW),identity=await handle.stat({bigint:true});try{await handle.sync();}catch(e){await handle.close();throw e;}
+ await checkDir();const handle=await fs.open(file,(options.readOnly?constants.O_RDONLY:constants.O_RDWR)|constants.O_NOFOLLOW),identity=await handle.stat({bigint:true});try{if(!options.readOnly)await handle.sync();}catch(e){await handle.close();throw e;}
  if(through>1_000_000)throw new RecoveryJournalError('Journal record index budget exceeded',through,offset);
  let nextSequence=through+1,pending:Pending[]=[],pendingBytes=0,pendingCount=0,flushRequested=false,running:Promise<void>|undefined,timer:ReturnType<typeof setTimeout>|undefined,failed:unknown,closing=false,closed=false;
  const releases=new Map<number,()=>void>();
@@ -107,7 +108,7 @@ export async function openRecoveryJournal(options:{directory:string;formatId:str
   },
   get durableThrough(){return through;},get failed(){return failed;},
   async admit(value:unknown):Promise<{sequence:number;completion:Promise<Receipt>}>{
-   if(closing||closed||failed)throw failed??Error('Journal admission closed');const captured=structuredClone(value),n=encode(captured).length+1;
+   if(options.readOnly)throw Error('Read-only journal inspection');if(closing||closed||failed)throw failed??Error('Journal admission closed');const captured=structuredClone(value),n=encode(captured).length+1;
    if(nextSequence>1_000_000||n>MAX_GROUP-2||pendingBytes+n>MAX_PENDING||pendingCount>=64)throw Error('Journal record/pending budget exceeded');
    const release=await options.reserve(n+HEADER+SEAL);
    if(closing||closed||failed||nextSequence>1_000_000||pendingBytes+n>MAX_PENDING||pendingCount>=64){release();throw failed??Error('Journal admission/record budget closed');}
@@ -116,7 +117,7 @@ export async function openRecoveryJournal(options:{directory:string;formatId:str
   },
   flushSoon(){flushRequested=true;flush();},
   async barrier(){if(timer){clearTimeout(timer);timer=undefined;}flush();while(running||pending.length){if(running)await running;else flush();if(failed)throw failed;}if(failed)throw failed;},
-  async audit(){if(running)await running;if(pending.length)throw Error('Journal must be drained before audit');await binding();await handle.sync();if(failed)throw failed;for(const s of segments){const st=await regular(s.file),h=await fs.open(s.file,constants.O_RDONLY|constants.O_NOFOLLOW),digest=createHash('sha256');try{const buf=Buffer.alloc(256<<10);let pos=0;for(;;){const r=await h.read(buf,0,buf.length,pos);if(!r.bytesRead)break;digest.update(buf.subarray(0,r.bytesRead));pos+=r.bytesRead;}if(pos!==s.size||digest.digest('hex')!==s.hash)throw Error('Retained journal segment changed');const after=await h.stat({bigint:true});if(after.dev!==st.dev||after.ino!==st.ino||after.size!==st.size)throw Error('Retained journal identity changed');}finally{await h.close();}}},
+  async audit(){if(running)await running;if(pending.length)throw Error('Journal must be drained before audit');await binding();if(!options.readOnly)await handle.sync();if(failed)throw failed;for(const s of segments){const st=await regular(s.file),h=await fs.open(s.file,constants.O_RDONLY|constants.O_NOFOLLOW),digest=createHash('sha256');try{const buf=Buffer.alloc(256<<10);let pos=0;for(;;){const r=await h.read(buf,0,buf.length,pos);if(!r.bytesRead)break;digest.update(buf.subarray(0,r.bytesRead));pos+=r.bytesRead;}if(pos!==s.size||digest.digest('hex')!==s.hash)throw Error('Retained journal segment changed');const after=await h.stat({bigint:true});if(after.dev!==st.dev||after.ino!==st.ino||after.size!==st.size)throw Error('Retained journal identity changed');}finally{await h.close();}}},
   async close(){closing=true;if(timer){clearTimeout(timer);timer=undefined;}flush();while(running||pending.length){if(running)await running;else flush();if(failed)break;}if(!closed){closed=true;await handle.close();}},
  };
 }
