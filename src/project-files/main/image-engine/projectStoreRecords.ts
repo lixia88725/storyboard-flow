@@ -50,6 +50,9 @@ export type ImageProjectStoreOptions={
    * they may create after this store's inventory. Never pass only their current
    * pending writes: their durable growth is outside this journal's ledger. */
   reservedRecoveryBytes?:()=>Promise<number>;
+  /** Same Root broker as source/output/lease. Journal reserves exact new bytes
+   * before IO and keeps unknown grants until a strict drained scope audit. */
+  recoveryBudget?:import('./workspaceOutputContract.js').WorkspaceOutputBudget;
   /** Prepared native versions are valid references before native acceptance. */
   verifyNative(ref:NativeImageRef):Promise<void>;
   verifySource(ref:SourceImageRef,retained?:{digest:string;byteLength:number}):Promise<void>;

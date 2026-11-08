@@ -9,6 +9,7 @@ const HEADER=88,SEAL=40,MAX_GROUP=16<<20,MAX_PENDING=64<<20,ZERO='0'.repeat(64);
 const MAGIC=Buffer.from('FLOWGRP1'),END=Buffer.from('FLOWEND1');
 const hash=(b:Uint8Array)=>createHash('sha256').update(b).digest('hex');
 const encode=(v:unknown)=>Buffer.from(canonicalJson(v));
+export type JournalBudgetRelease=(actualBytes?:number)=>void|Promise<void>;
 type Entry={sequence:number;value:unknown};
 type Location={file:string;offset:number;bodyBytes:number;index:number;hash:string;dev:bigint;ino:bigint};
 type Receipt={sequence:number;durableThrough:number;groupHash:string};
@@ -32,7 +33,7 @@ function group(entries:Entry[],previous:string){
 }
 /** Single append owner, bounded group flush. Only a sealed, successfully synced
  * prefix receives durableThrough. Directory IO occurs only at create/continuation. */
-export async function openRecoveryJournal(options:{directory:string;formatId:string;assertHeld():Promise<void>;reserve(bytes:number):Promise<()=>void>;onGrowth(bytes:number):void;manualFlush?:boolean;createInitial:boolean;readOnly?:boolean}){
+export async function openRecoveryJournal(options:{directory:string;formatId:string;assertHeld():Promise<void>;reserve(bytes:number):Promise<JournalBudgetRelease>;onGrowth(bytes:number):void;manualFlush?:boolean;createInitial:boolean;readOnly?:boolean}){
  const {directory,formatId}=options;if(options.readOnly&&options.createInitial)throw Error('Inspection cannot create a journal');await options.assertHeld();if(options.createInitial)await fs.mkdir(directory,{mode:0o700}).catch(e=>{if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;});
  const ds=await fs.lstat(directory,{bigint:true});if(!ds.isDirectory()||ds.isSymbolicLink()||await fs.realpath(directory)!==directory)throw Error('Unsafe journal directory');
  const checkDir=async()=>{await options.assertHeld();const s=await fs.lstat(directory,{bigint:true});if(s.dev!==ds.dev||s.ino!==ds.ino||!s.isDirectory()||s.isSymbolicLink())throw Error('Journal directory identity changed');};
@@ -72,7 +73,7 @@ export async function openRecoveryJournal(options:{directory:string;formatId:str
   if(!options.readOnly){const prior=await fs.open(file,constants.O_RDWR|constants.O_NOFOLLOW);try{await prior.sync();}finally{await prior.close();}}
   if(continuation===undefined){
    const next=`segment-${generation+1}-${randomBytes(12).toString('hex')}.log`;await checkDir();await ensureFile(path.join(directory,next),true);
-   continuation={...expected,next};const manifestBytes=encode(continuation),release=await options.reserve(manifestBytes.length*2);await immutable(manifestFile,manifestBytes);options.onGrowth(manifestBytes.length);release();
+   continuation={...expected,next};const manifestBytes=encode(continuation),release=await options.reserve(manifestBytes.length*2);await immutable(manifestFile,manifestBytes);options.onGrowth(manifestBytes.length);await release(manifestBytes.length);
   }
   if(typeof continuation!=='object'||continuation===null)throw Error('Invalid journal continuation');const m=continuation as Record<string,unknown>,{next,...binding}=m;
   if(canonicalJson(binding)!==canonicalJson(expected)||typeof next!=='string'||!new RegExp(`^segment-${generation+1}-[a-f0-9]{24}\\.log$`).test(next))throw new RecoveryJournalError('Journal continuation binding changed',through,at);
@@ -82,7 +83,7 @@ export async function openRecoveryJournal(options:{directory:string;formatId:str
  await checkDir();const handle=await fs.open(file,(options.readOnly?constants.O_RDONLY:constants.O_RDWR)|constants.O_NOFOLLOW),identity=await handle.stat({bigint:true});try{if(!options.readOnly)await handle.sync();}catch(e){await handle.close();throw e;}
  if(through>1_000_000)throw new RecoveryJournalError('Journal record index budget exceeded',through,offset);
  let nextSequence=through+1,pending:Pending[]=[],pendingBytes=0,pendingCount=0,flushRequested=false,running:Promise<void>|undefined,timer:ReturnType<typeof setTimeout>|undefined,failed:unknown,closing=false,closed=false;
- const releases=new Map<number,()=>void>();
+ const releases=new Map<number,JournalBudgetRelease>();
  const binding=async()=>{await checkDir();const entry=await regular(file),s=await handle.stat({bigint:true});if(s.dev!==identity.dev||s.ino!==identity.ino||entry.dev!==s.dev||entry.ino!==s.ino||s.size!==BigInt(offset))throw Error('Journal file identity/length changed');};
  const flush=()=>{
   if(running||failed||!pending.length)return;flushRequested=false;if(timer)clearTimeout(timer);timer=undefined;
@@ -91,7 +92,7 @@ export async function openRecoveryJournal(options:{directory:string;formatId:str
   running=(async()=>{try{
    await binding();let done=0;while(done<encoded.data.length){const r=await handle.write(encoded.data,done,encoded.data.length-done,offset+done);if(!r.bytesWritten)throw Error('Journal append made no progress');done+=r.bytesWritten;}
    offset+=encoded.data.length;await handle.sync();await binding();previous=encoded.digest;through=batch.at(-1)!.entry.sequence;options.onGrowth(encoded.data.length);
-   for(const [index,p] of batch.entries()){locations.set(p.entry.sequence,{file,offset:offset-encoded.data.length+HEADER,bodyBytes:encoded.data.length-HEADER-SEAL,index,hash:previous,dev:identity.dev,ino:identity.ino});pendingBytes-=p.bytes;pendingCount--;releases.get(p.entry.sequence)?.();releases.delete(p.entry.sequence);p.resolve({sequence:p.entry.sequence,durableThrough:through,groupHash:previous});}
+   for(const [index,p] of batch.entries()){locations.set(p.entry.sequence,{file,offset:offset-encoded.data.length+HEADER,bodyBytes:encoded.data.length-HEADER-SEAL,index,hash:previous,dev:identity.dev,ino:identity.ino});pendingBytes-=p.bytes;pendingCount--;await releases.get(p.entry.sequence)?.(p.bytes+(index===0?HEADER+SEAL+1:0));releases.delete(p.entry.sequence);p.resolve({sequence:p.entry.sequence,durableThrough:through,groupHash:previous});}
   }catch(e){failed=new RecoveryJournalError(`Journal append outcome unknown: ${String(e)}`,through,offset,'unknown');for(const p of [...batch,...pending])p.reject(failed);pending=[];}
   })().finally(()=>{running=undefined;if(pending.length&&!failed)flush();});
  };
@@ -110,8 +111,8 @@ export async function openRecoveryJournal(options:{directory:string;formatId:str
   async admit(value:unknown):Promise<{sequence:number;completion:Promise<Receipt>}>{
    if(options.readOnly)throw Error('Read-only journal inspection');if(closing||closed||failed)throw failed??Error('Journal admission closed');const captured=structuredClone(value),n=encode(captured).length+1;
    if(nextSequence>1_000_000||n>MAX_GROUP-2||pendingBytes+n>MAX_PENDING||pendingCount>=64)throw Error('Journal record/pending budget exceeded');
-   const release=await options.reserve(n+HEADER+SEAL);
-   if(closing||closed||failed||nextSequence>1_000_000||pendingBytes+n>MAX_PENDING||pendingCount>=64){release();throw failed??Error('Journal admission/record budget closed');}
+   const release=await options.reserve(n+HEADER+SEAL+1);
+   if(closing||closed||failed||nextSequence>1_000_000||pendingBytes+n>MAX_PENDING||pendingCount>=64){await release(0);throw failed??Error('Journal admission/record budget closed');}
    const entry={sequence:nextSequence++,value:captured};pendingBytes+=n;pendingCount++;releases.set(entry.sequence,release);
    const completion=new Promise<Receipt>((resolve,reject)=>{pending.push({entry,bytes:n,resolve,reject});if(!timer&&!running)timer=setTimeout(()=>{timer=undefined;flush();},options.manualFlush?2:0);});return{sequence:entry.sequence,completion};
   },

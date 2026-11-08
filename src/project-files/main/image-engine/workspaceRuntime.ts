@@ -1,7 +1,7 @@
 import{openWorkspaceOutput}from'./workspaceOutput.js';
 import{createWorkspaceFiles}from'./workspaceFiles.js';
 import {openWorkspaceSources,type WorkspaceSources} from './workspaceSources.js';
-import {createWorkspaceAllowance} from './workspaceAllowance.js';
+import {prepareWorkspaceColdCopy} from './workspaceColdCopy.js';
 import {syncDirectory} from '../../../platform/main/platform/index.js';
 import sharp from 'sharp';
 import {nextWorkspaceDisplayStamp,type WorkspaceDisplayStamp} from './workspaceDisplay.js';
@@ -36,14 +36,14 @@ export async function openImageWorkspaceRuntime(options:ImageWorkspaceRuntimeOpt
  if(!Number.isSafeInteger(options.workspaceEpoch)||options.workspaceEpoch<1)throw Error('Invalid workspace epoch');
  const max=options.limits?.maxRecoveryBytes??8*1024**3,nativeBytes=options.limits?.nativeBytes??(512<<20),sourceBytes=options.limits?.sourceBytes??(32<<20),outputBytes=options.limits?.outputBytes??(32<<20);
  for(const n of[max,nativeBytes,sourceBytes,outputBytes])if(!Number.isSafeInteger(n)||n<8192||n>8*1024**3)throw Error('Invalid runtime budget');
- const external=nativeBytes+sourceBytes+outputBytes+8192,budget=await createWorkspaceRecoveryBudget({root,maxRecoveryBytes:max});
- // Full fixed writer allowances include future durable growth, not only current
- // in-flight bytes. The journal independently counts the whole existing namespace.
- if(budget.actualBytes+external>max)refuse('Recovery actual plus complete native/source/output allowances exceeds quota','resource-limit');
- for(const [purpose,bytes]of [['native',nativeBytes],['sources',sourceBytes],['output',outputBytes],['lease',8192]]as const)await budget.reserve({operationId:`runtime-fixed-${purpose}`,bytes,purpose:`complete ${purpose} allowance`});
- const sourceAllowance=createWorkspaceAllowance(sourceBytes),outputAllowance=createWorkspaceAllowance(outputBytes);
+ const budget=await createWorkspaceRecoveryBudget({root,maxRecoveryBytes:max});
+ // Native alone has a bounded independent append-only store. Its FULL future
+ // allowance stays held; journal/source/output/lease share this exact broker.
+ await budget.reserve({operationId:'runtime-native-'+randomUUID(),bytes:nativeBytes,purpose:'complete native store allowance'});
+ const sourceAllowance=budget,outputAllowance=budget;
  let files:ReturnType<typeof createWorkspaceFiles>|undefined,fileNames:{shotId:string;name:string}[]=[];
- const lease=await acquireImageProjectLease({root,binary:options.leaseBinary});
+ const copyAdmission=await prepareWorkspaceColdCopy(root);
+ const lease=await acquireImageProjectLease({root,binary:options.leaseBinary,budget,...(copyAdmission?{copyAdmission}:{})});
  const owner:ImageWorkspaceOwner={sessionId:randomUUID(),incarnation:randomUUID(),workspaceEpoch:options.workspaceEpoch};
  let sources:WorkspaceSources|undefined,sourcePaused=false,sourceClosed=false,sourceCopies:Promise<void>|undefined,sourceEpoch=0;
  let worker:Awaited<ReturnType<typeof createImageEngineWorkerOwner>>|undefined,store:Awaited<ReturnType<typeof openImageProjectStore>>|undefined,session:NativeProjectSession|undefined;
@@ -177,7 +177,7 @@ export async function openImageWorkspaceRuntime(options:ImageWorkspaceRuntimeOpt
   adapter=createNativeSessionAdapter({workerOwner:worker,storeRoot:nativeRoot,storeId,onFrame:frame=>{frames.publish(frame,header=>{const imageId=selectedImage(),ref=imageId?resolved(imageId):null,handle=worker?.current();if(!imageId||!ref||!handle)return false;const stamp=nextWorkspaceDisplayStamp({owner,ref,generation:handle.generation,prior:displayStamps.get(imageId),header,envelope:frame.header});if(!stamp)return false;displayStamps.set(imageId,stamp);const summary=summaries.get(imageId);if(summary&&!same(summary.displayIdentity,stamp.identity)){summaries.set(imageId,{...summary,displayIdentity:stamp.identity});stateSeq++;emit({kind:'display',owner,stateSeq,imageId,displayIdentity:stamp.identity,displayNative:ref});}return true;});for(const f of frameListeners)try{f(frame);}catch{/* display observer */}}});
   sources=await openWorkspaceSources({root,writerAuthority:lease,budget:sourceAllowance,limits:{maxStoredBytes:max}});for(const m of sources.snapshot())imports.set(m.importId,m);
   const verifySource=async(ref:SourceImageRef,retained?:{digest:string;byteLength:number})=>sources!.verify(ref,retained);
-  store=await openImageProjectStore({root,writerAuthority:lease,maxRecoveryBytes:max,reservedRecoveryBytes:async()=>external,verifyNative:adapter.verifyNative,verifySource});if(!store.recordWorkspace||!store.workspaceRecord)throw Error('Workspace requires the unified recovery journal');
+  store=await openImageProjectStore({root,writerAuthority:lease,maxRecoveryBytes:max,recoveryBudget:budget,verifyNative:adapter.verifyNative,verifySource});if(!store.recordWorkspace||!store.workspaceRecord)throw Error('Workspace requires the unified recovery journal');
   for(const image of Object.values(details.project.images))if(image.content.kind==='source'){const h=await store.hydration(image.content.source);if(h)hydrations.set(hash(image.content.source),h.native);}
   session=await openNativeProjectSession({sessionId:owner.sessionId,incarnation:owner.incarnation,workspaceEpoch:owner.workspaceEpoch,store,native:{...adapter.driver,install:activate,prepareCreation:(op,input,reservation)=>immutable(()=>adapter.driver.prepareCreation(op,input,reservation))},mintId:randomUUID,now:Date.now,activeImageId:selectedImage,originForOperation:op=>origins.get(op),pipeline:{maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:Math.min(256<<20,Math.floor(nativeBytes/2))}});
   const output=await openWorkspaceOutput({root,projectId:details.project.id,writerAuthority:lease,budget:outputAllowance,fault:options.outputFault,trashItem:options.permissions.trashItem,captureImage:async input=>{

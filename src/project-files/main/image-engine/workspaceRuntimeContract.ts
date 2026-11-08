@@ -25,6 +25,9 @@ export type ImageWorkspaceRuntimeOptions = {
  projectRootLabel?:string;
  /** Synthetic failure injection, never renderer input. */
  fileFault?:(point:string)=>Promise<void>;outputFault?:(point:string)=>Promise<void>;
+ /** nativeBytes funds the whole native Store; outputBytes bounds one export.
+  * Sources/output/journal/lease use the shared maxRecoveryBytes actual+reserved
+  * ledger. sourceBytes is retained for callers; it is not a cumulative quota. */
  limits?:{maxRecoveryBytes?:number;nativeBytes?:number;sourceBytes?:number;outputBytes?:number};
 };
 export type ImageWorkspaceRuntime = {
