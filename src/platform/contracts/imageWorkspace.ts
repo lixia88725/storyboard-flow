@@ -24,6 +24,8 @@ export type ImageWorkspaceLayerView = {
 export type ImageWorkspaceImageView = {
  readonly imageId:string;readonly content:ImageBindingV2;
  readonly availability:ImageWorkspaceAvailability;
+ /** Derived from the retained hydration/native view, including SourceRef content. */
+ readonly displayDocumentId:string|null;
  readonly width?:number;readonly height?:number;
  /** Bottom to top; parentId expresses groups without a writable UI tree. */
  readonly layers:readonly ImageWorkspaceLayerView[];
@@ -67,6 +69,8 @@ export type ImageWorkspaceCommand =
  | {kind:'board';command:ImageWorkspaceBoardCommand}
  | {kind:'activateShot';shotId:string}
  | {kind:'demandShots';shotIds:readonly string[]}
+ | {kind:'inspectCapture';captureId:string}
+ | {kind:'resolveInput';captureId:string;action:'retainAndDiscard'|'exportAndDiscard';original:ImageWorkspaceCapturedInput}
  | {kind:'selectLayer';shotId:string;layerId:ImageWorkspaceLayerId;expectedContextGeneration:number}
  | {kind:'selection';shotId:string;expectedContextGeneration:number;selection:FlowSelection|null}
  | {kind:'imageEdit';shotId:string;expectedContextGeneration:number;edit:ImageWorkspaceEdit}
@@ -87,9 +91,21 @@ export type ImageWorkspaceOutcome =
  | {kind:'closePrepared';snapshot:ImageWorkspaceSnapshot;operationId:string;ticket:string}
  | {kind:'closed';operationId:string;ticket:string}
  | {kind:'canceled';operationId:string}
+ | {kind:'captureStatus';operationId:string;captureId:string;state:'absent'|'admitted'|'recovering'|'resolved';mainOperationId:string|null;inputThrough:number}
+ | {kind:'inputResolved';operationId:string;captureId:string;snapshot:ImageWorkspaceSnapshot;
+     operation:{operationId:string;decision:'committed'|'notCommitted';inputThrough:number}|null;
+     original:{recordId:string;capturedThrough:number}}
  | {kind:'settlementPending'|'recoveryPending';snapshot:ImageWorkspaceSnapshot;operationId:string;commitHash:string|null;retainedInputs?:readonly RetainedImageInput[]}
  | {kind:'rejected';operationId:string;error:ImageWorkspaceFailure};
 export type ImageWorkspaceRequest = {owner:ImageWorkspaceOwner;requestId:string;command:ImageWorkspaceCommand};
+/** captureId names the whole renderer gesture; inputId names one logical batch;
+ * a known effect:none backpressure retry gets a new attemptId. Unknown delivery
+ * is queried by captureId/inputId and is never blindly sent a second time. */
+export type ImageWorkspaceClientInput={captureId:string;inputId:string;attemptId:string};
+export type ImageWorkspaceCapturedInput={
+ originOwner:ImageWorkspaceOwner;shotId:string;layerId:ImageWorkspaceLayerId;
+ stroke:FlowStroke;ended:boolean;capturedThrough:number;
+};
 export type ImageWorkspaceInput =
  | {kind:'begin';shotId:string;layerId:ImageWorkspaceLayerId;expectedContextGeneration:number;stroke:FlowStroke}
  | Exclude<ImagePipelineInput,{kind:'begin'}>;
@@ -130,7 +146,7 @@ export type ImageWorkspaceBridge = {
  request(request:ImageWorkspaceRequest):Promise<ImageWorkspaceOutcome>;
  /** This crosses Electron. Renderer capture before this Promise resolves is
   * separately volatile and is never called a synchronous Main admission. */
- input(owner:ImageWorkspaceOwner,input:ImageWorkspaceInput):Promise<ImagePipelineAdmission>;
+ input(owner:ImageWorkspaceOwner,input:ImageWorkspaceInput,identity:ImageWorkspaceClientInput):Promise<ImagePipelineAdmission>;
  waitOperation(owner:ImageWorkspaceOwner,operationId:string):Promise<ImageWorkspaceOutcome>;
  subscribe(listener:(event:ImageWorkspaceEvent)=>void):()=>void;
  connectFrames(identity:ImageWorkspaceFrameIdentity):Promise<void>;

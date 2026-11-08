@@ -1,6 +1,6 @@
 import type { NativeFrame } from '../../../platform/main/imageEngineFraming.js';
 import type { ImagePipelineAdmission } from '../../../platform/contracts/imageProject.js';
-import type { ImageWorkspaceBootstrap, ImageWorkspaceEvent, ImageWorkspaceFrameIdentity, ImageWorkspaceFrameMessage, ImageWorkspaceFrameReply, ImageWorkspaceInput, ImageWorkspaceOutcome, ImageWorkspaceOwner, ImageWorkspaceRequest } from '../../../platform/contracts/imageWorkspace.js';
+import type { ImageWorkspaceBootstrap, ImageWorkspaceClientInput, ImageWorkspaceEvent, ImageWorkspaceFrameIdentity, ImageWorkspaceFrameMessage, ImageWorkspaceFrameReply, ImageWorkspaceInput, ImageWorkspaceOutcome, ImageWorkspaceOwner, ImageWorkspaceRequest } from '../../../platform/contracts/imageWorkspace.js';
 
 /** Adapter supplied by the platform entry. It wraps this window's owned
  * MessagePortMain; the runtime owns protocol sequencing and keyframe recovery. */
@@ -17,6 +17,7 @@ export type ImageWorkspacePermissions = {
  chooseImages(mode:'files'|'folder'):Promise<ImageWorkspacePickedSources|null>;
  chooseExportTarget(input:{suggestedName:string;format:'psd'|'tiff'}):Promise<string|null>;
  trashItem(file:string):Promise<void>;
+ chooseRecoveryInputTarget?(input:{suggestedName:string}):Promise<string|null>;
 };
 export type ImageWorkspaceRuntimeOptions = {
  root:string;binary:string;leaseBinary:string;workspaceEpoch:number;
@@ -28,7 +29,7 @@ export type ImageWorkspaceRuntime = {
  open():ImageWorkspaceBootstrap;
  request(request:ImageWorkspaceRequest):Promise<ImageWorkspaceOutcome>;
  /** Main-local admission only. The preload/IPC Bridge returns a Promise. */
- input(owner:ImageWorkspaceOwner,input:ImageWorkspaceInput):ImagePipelineAdmission;
+ input(owner:ImageWorkspaceOwner,input:ImageWorkspaceInput,identity:ImageWorkspaceClientInput):ImagePipelineAdmission;
  waitOperation(owner:ImageWorkspaceOwner,operationId:string):Promise<ImageWorkspaceOutcome>;
  subscribe(listener:(event:ImageWorkspaceEvent)=>void):()=>void;
  connectFrames(identity:ImageWorkspaceFrameIdentity,transport:ImageWorkspaceFrameTransport):Promise<void>;
@@ -40,3 +41,6 @@ export type ImageWorkspaceRuntime = {
  dispose():Promise<void>;
 };
 export type ImageWorkspaceTarget={kind:'native';root:string;runtime:ImageWorkspaceRuntime};
+
+/** Read-only launcher probe. Acquiring the writable Runtime is a later step. */
+export type ImageWorkspaceProjectPlan={kind:'native';root:string;identity:{id:string;name:string};format:'journal'};
