@@ -8,6 +8,11 @@ const originals=Object.fromEntries(fs.readdirSync(source).map(name=>[name,sha(pa
 for(const key of Object.keys(clipboard))if(typeof clipboard[key]==='function')clipboard[key]=()=>{throw Error('Clipboard prohibited');};shell.trashItem=()=>{throw Error('Trash prohibited');};
 let certified=0;const outcomes=[],handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(name,fn)=>handle(name,async(...args)=>{const result=await fn(...args);if(name==='flow-editor:finish-native-close'&&result?.ok)certified++;if(name==='flow-image-workspace:request')outcomes.push({command:args[1]?.command,result});return result;});
 dialog.showOpenDialog=async(_w,options)=>{assert.equal(options.title,'添加图片到 Pending');return{canceled:false,filePaths:options.properties.includes('openDirectory')?[source]:fs.readdirSync(source).map(n=>path.join(source,n))};};
+let sourceFaultInjected=false;
+if(process.env.FLOW_DAILY_SOURCE_FAULT==='1'&&!reopen){
+ const link=fs.promises.link.bind(fs.promises),originalsRoot=path.join(root,'.storyboard-flow/image-engine/originals')+path.sep;
+ fs.promises.link=async(from,to)=>{const value=await link(from,to);if(!sourceFaultInjected&&typeof to==='string'&&to.startsWith(originalsRoot)&&to.endsWith('.bin')){sourceFaultInjected=true;throw Object.assign(Error('synthetic lost original publication acknowledgement'),{code:'EIO'});}return value;};
+}
 process.argv=[process.execPath,__filename,root,path.join(out,'daily-userData')];
 let win;const report={stage:'boot',cases:[]},pause=ms=>new Promise(r=>setTimeout(r,ms));
 const js=code=>win.webContents.executeJavaScript(code),boot=async()=>(await js('window.flowEditor.imageWorkspace.bootstrap()')).snapshot;
@@ -30,9 +35,16 @@ async function choose(name,decision){await js(`(()=>{const s=document.querySelec
   await wait(async()=>(await boot()).session.project.parkedShots.length===8,'registered Pending batch');
   await wait(()=>outcomes.some(o=>o.command.kind==='addImages'),'Add registration reply');assert.equal(outcomes.find(o=>o.command.kind==='addImages').result.kind,'imagesRegistered');
   const registrationState=await boot();report.additionAtDraw=registrationState.files.backgroundImports;
-  assert.ok(registrationState.files.backgroundImports.some(b=>!['completed','paused','needsAttention','recovering'].includes(b.phase)),'fixture must still be processing during drawing');
-  const started=Date.now();await stroke(.5);report.drawingDuringImportMs=Date.now()-started;unsaved=await pixels();
+  assert.ok(registrationState.files.backgroundImports.some(b=>b.phase!=='completed'),'fixture must still be processing during drawing');
+  const started=Date.now();await stroke(.5);report.drawingDuringImportMs=Date.now()-started;assert.ok(report.drawingDuringImportMs<1500,'background import stalls a short real pointer stroke: '+report.drawingDuringImportMs+'ms');unsaved=await pixels();
   report.cases.push('real pointer drawing commits while newly added images are still processing');
+  if(process.env.FLOW_DAILY_SOURCE_FAULT==='1'){
+   await wait(()=>sourceFaultInjected,'source publication fault injected');await wait(()=>js(`[...document.querySelectorAll('[aria-label="图片与文件待处理"] button')].some(b=>b.textContent==='核对并恢复'&&!b.disabled)`),'source recovery UI');
+   const beforeRecovery=await pixels();await click('核对并恢复');await wait(()=>outcomes.some(o=>o.command.kind==='recover'&&['settled','recovered'].includes(o.result.kind)),'source recovery result');
+   await wait(async()=>await pixels()===beforeRecovery,'accepted drawing survives source reconciliation');assert.equal((await boot()).session.project.parkedShots.length,8);
+   report.cases.push('lost source publication acknowledgement reconciles in the same window without duplicate boards or lost drawing');
+  }
+
   await wait(async()=>{const s=await boot();return s.files.backgroundImports?.length&&s.files.backgroundImports.every(b=>b.phase==='completed');},'new batch materialized');
   assert.equal(sha(path.join(root,file)),oldDigest,'Add must not save existing unsaved drawing');assert.equal(await pixels(),unsaved);report.cases.push('Add registers Pending and writes only new batch; unsaved drawing and old working file unchanged');
   report.stage='external-conflict';const sharp=require('sharp');await sharp({create:{width:640,height:360,channels:4,background:{r:210,g:60,b:80,alpha:1}}}).tiff().toFile(path.join(root,file+'.external.tif'));fs.renameSync(path.join(root,file+'.external.tif'),path.join(root,file));const externalDigest=sha(path.join(root,file));
@@ -50,7 +62,7 @@ async function choose(name,decision){await js(`(()=>{const s=document.querySelec
   await wait(()=>js(`[...document.querySelectorAll('[aria-label="图片与文件待处理"] button')].some(b=>b.textContent==='核对并恢复'&&!b.disabled)`),'usable recovery action');
   fs.writeFileSync(path.join(out,'recovery-action.png'),(await win.webContents.capturePage()).toPNG());await click('核对并恢复');await wait(async()=>(await boot()).session.phase==='active','same-window recovery');await wait(async()=>await pixels()===beforeRecovery,'recovery restores exact pixels');
   await stroke(.8);await save();report.cases.push('owned worker interruption recovers in the same window and accepts new drawing');
-  const final=await boot();fs.writeFileSync(path.join(out,'daily-expected.json'),JSON.stringify({pixels:await pixels(),revision:final.session.project.revision,pendingCount:final.session.project.parkedShots.length,files:final.files.outputNames.map(f=>({name:f.name,sha:sha(path.join(root,f.name))}))}));
+  const final=await boot();fs.writeFileSync(path.join(out,'daily-expected.json'),JSON.stringify({pixels:await pixels(),revision:final.session.project.revision,pendingCount:final.session.project.parkedShots.length,files:final.files.outputNames.map(f=>{const name=final.session.project.parkedShots.some(s=>s.id===f.shotId)?path.join('Pending',f.name):f.name;return{name,sha:sha(path.join(root,name))};})}));
  }
  for(const [name,digest]of Object.entries(originals))assert.equal(sha(path.join(source,name)),digest);
  fs.writeFileSync(path.join(out,`${phase}.png`),(await win.webContents.capturePage()).toPNG());win.close();await wait(()=>win.isDestroyed(),'certified close');assert.equal(certified,1);report.cases.push('normal close; imported originals unchanged');report.ok=true;fs.writeFileSync(path.join(out,`${phase}-result.json`),JSON.stringify(report,null,2));app.quit();

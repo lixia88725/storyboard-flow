@@ -2,7 +2,7 @@
 
 ## Mac 试用前收口：进行中（2026-11-08）
 
-本轮仅补向现有项目后台添加图片、取回外部改动及异常恢复，尚未宣称可试用。新增图片登记与后台物化分开；Refresh 先列出外部变化，两边均有修改时由用户明确选择。窗口侧冲突选择和恢复入口已接，controller/选择界面18项聚焦通过。真实隔离窗口中终止脚本自有引擎后，点击“核对并恢复”恢复相同画面、继续绘画、Save、正常关闭并新进程重开通过（`/private/tmp/flow-daily-recovery-gui1.log`，现场 `flow-native-workbench-7ut8sY`）；这是引擎中断恢复证据，不替代Source未知保管、后台物化和完整Refresh验收。原生不可变后台输出、保护来源工作TIFF授权Refresh、Main单批替换及文件侧恢复正在实施，完整组合清单与实际日常流程仍待跑。主树、用户项目与默认入口未改。
+本轮仅补向现有项目后台添加图片、取回外部改动及异常恢复，尚未宣称可试用。新增图片登记与后台物化分开；Refresh 先列出外部变化，两边均有修改时由用户明确选择。窗口侧冲突选择和恢复入口已接，controller/选择界面18项聚焦通过。真实隔离窗口中终止脚本自有引擎后，点击“核对并恢复”恢复相同画面、继续绘画、Save、正常关闭并新进程重开通过（`/private/tmp/flow-daily-recovery-gui1.log`，现场 `flow-native-workbench-7ut8sY`）；这是引擎中断恢复证据，不替代Source未知保管、后台物化和完整Refresh验收。原生不可变后台输出、保护来源工作TIFF授权Refresh和RGB JPEG读取已集成；原生组合5项通过，release构建与强制资源准备、preload检查通过（`/private/tmp/flow-daily-native-release-build.log`、`/private/tmp/flow-daily-package-resources.log`、`/private/tmp/flow-daily-preload-final.log`）。Main单批替换与文件流程仍在实施，完整组合清单与实际日常流程仍待跑。独立试用启动器已准备，但不据此宣称可试用。主树、用户项目与默认入口未改。
 
 ## 正式工作台接入：进行中（2026-11-08）
 

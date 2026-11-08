@@ -51,6 +51,27 @@ async function wait(fn,label){const deadline=Date.now()+45000;while(Date.now()<d
    await wait(()=>js('document.querySelectorAll("canvas[data-frame-status=ready]").length===2'),'protected Save display restored');
    const canvas=await js(`(()=>{const c=document.querySelector(${JSON.stringify(selector)}),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let s='';for(let i=0;i<d.length;i+=16384)s+=String.fromCharCode(...d.subarray(i,i+16384));return btoa(s);})()`);
    const output=saved.files.outputNames.find(item=>item.shotId===first.id);const actual=await require('sharp')(path.join(report.root,output.name)).ensureAlpha().raw().toBuffer(),expected=Buffer.from(canvas,'base64');assert.equal(actual.length,expected.length);let max=0;for(let i=0;i<actual.length;i++)max=Math.max(max,Math.abs(actual[i]-expected[i]));report.outputMaxDifference=max;fs.writeFileSync(path.join(out,'protected-output.rgba'),actual);fs.writeFileSync(path.join(out,'protected-display.rgba'),expected);assert.ok(max<=8,'protected working TIFF differs from displayed picture: '+max);report.cases.push('protected source and added paint Save together without losing provenance');
+   if(process.env.FLOW_PROTECTED_REFRESH==='1'){
+    report.stage='protected-refresh';
+    const working=path.join(report.root,output.name),external=path.join(out,'protected-external.tiff');
+    await require('node:util').promisify(require('node:child_process').execFile)(process.env.FLOW_SOURCE_GUARD_PYTHON??'/opt/homebrew/bin/python3.14',[path.join(repo,'native/photocraft/tests/working_refresh_fixture.py'),working,external,'good'],{env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONPATH:process.env.FLOW_SOURCE_GUARD_PYTHONPATH??'/private/tmp/flow-image-engine-export-python'}});
+    fs.renameSync(external,working);
+    const getPixels=()=>js(`(()=>{const c=document.querySelector(${JSON.stringify(selector)});if(c.dataset.frameStatus!=='ready')return null;const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let s='';for(let i=0;i<d.length;i+=16384)s+=String.fromCharCode(...d.subarray(i,i+16384));return btoa(s);})()`);
+    await js('document.querySelector("[aria-label=从文件夹取回外部改动]").click()');await wait(()=>js('!!document.querySelector("[aria-label=取回外部改动]")'),'protected Refresh choice');
+    assert.equal(await js(`document.querySelector('[aria-label="取回外部改动"] select').value`),'useExternal');
+    await js(`document.querySelector('[aria-label="取回外部改动"] .primary').click()`);await wait(()=>js('!document.querySelector("[aria-label=取回外部改动]")'),'protected Refresh applied');
+    const externalPixels=(await require('sharp')(working).ensureAlpha().raw().toBuffer()).toString('base64');
+    await wait(async()=>await getPixels()===externalPixels,'protected external upper pixels');
+    assert.deepEqual((await boot()).snapshot.session.project.images[first.imageId].protectedSource,protectedSource);
+    await js('document.querySelector("[aria-label=撤销]").click()');await wait(async()=>await getPixels()===canvas,'protected Refresh Undo');
+    await js('document.querySelector("[aria-label=重做]").click()');await wait(async()=>await getPixels()===externalPixels,'protected Refresh Redo');
+    report.revision=(await boot()).snapshot.session.project.revision;
+    await js('document.querySelector(".wb-save").click()');await wait(async()=>{const s=(await boot()).snapshot;return s.files.savedRevision===report.revision&&!s.files.outputPending;},'protected Refresh Save');
+    const final=(await boot()).snapshot;assert.deepEqual(final.session.project.images[first.imageId].protectedSource,protectedSource);
+    report.savedFiles=final.files.outputNames.map(item=>({name:item.name,sha256:sha(path.join(report.root,item.name))}));
+    report.cases.push('authorized protected working TIFF external upper edit returns through real Refresh, one Undo/Redo and Save without changing original binding');
+   }
+
   }
  }
  for(const [name,digest]of Object.entries(sourceHashes))assert.equal(sha(path.join(source,name)),digest);report.cases.push('all external originals unchanged');

@@ -97,7 +97,7 @@ export function NativeFlowEditor(){
  const relocateRecent=async(id:string)=>{const outcome=await api.relocateRecent(id);if('ok' in outcome&&!outcome.ok)setIssue(outcome.message);await refreshRecent();};
  const menu=(exportPsd:()=>void,disabled:boolean)=><details className="wb-project-menu"><summary className="wb-document-action">项目</summary><div className="wb-menu wb-project-menu-list">
   <button disabled={busy} onClick={()=>void open()}>打开…</button><button disabled={busy} onClick={()=>void create.begin('blank')}>新建项目…</button>
-  <button disabled={busy||disabled} data-export-psd="true" onClick={exportPsd}>另存为 PSD…</button>
+  <button disabled={busy||disabled||!controller?.capabilities.commands.includes('export')} title={controller?.capabilities.commands.includes('export')?undefined:'此项目暂不支持另存为 PSD；保存会更新工作 TIFF。'} data-export-psd="true" onClick={exportPsd}>另存为 PSD…</button>
   <button aria-label="查看恢复记录" disabled={busy||!controller?.capabilities.commands.includes('retainedInputs')} onClick={()=>setArchiveOpen(true)}>恢复记录…</button>
   <span className="wb-menu-label">最近项目</span>{recent.map(item=>item.available?<button key={item.id} disabled={busy||item.id===currentRecentId} onClick={()=>void launch({kind:'recent',id:item.id})}>{item.name}{item.id===currentRecentId?' · 当前':''}</button>:<div key={item.id}>{item.name} · 不可用<button onClick={()=>void relocateRecent(item.id)}>重新定位…</button><button onClick={()=>void removeRecent(item.id)}>移除</button></div>)}
  </div></details>;

@@ -110,4 +110,4 @@ Main 保存链性能复测：使用同一固定 release 宿主，完整构建后
 
 原生混合历史测试的缺少画笔能力场景显式屏蔽 `flowBrushPresetsV1`，验证拒绝与完整输入保管；当前宿主已支持铅笔，不再把“铅笔尚未移植”作为预期。实际预设渲染由附加清单的 `imageEngineProductBrush.test.ts` 覆盖。
 
-Mac日常流程专项（施工中）：完整build及本轮native组件准备后，`FLOW_IMAGE_HOST=<host> FLOW_PROJECT_LEASE_BINARY=<lease> node scripts/flow-native-daily-smoke.mjs`。仅用临时合成项目、独立profile、PNG/JPEG来源，Clipboard/Trash禁用。脚本检查后台新增期间实际落笔、仅本批Pending物化、Refresh明确冲突选择、一次Undo/Redo、保留Flow后的显式Save、脚本自有引擎中断后的窗口恢复及正常关闭重开。`FLOW_DAILY_RECOVERY_ONLY=1`只跑恢复小闭环，不计为完整专项通过。原始日志、失败截图及窗口结果留在脚本打印的目录；当前通过范围见CURRENT。
+Mac日常流程专项（施工中）：完整build及本轮native组件准备后，`FLOW_IMAGE_HOST=<host> FLOW_PROJECT_LEASE_BINARY=<lease> node scripts/flow-native-daily-smoke.mjs`。仅用临时合成项目、独立profile、PNG/JPEG来源，Clipboard/Trash禁用。脚本检查后台新增期间实际落笔、仅本批Pending物化、Refresh明确冲突选择、一次Undo/Redo、保留Flow后的显式Save、脚本自有引擎中断后的窗口恢复及正常关闭重开。`FLOW_DAILY_RECOVERY_ONLY=1`只跑恢复小闭环，不计为完整专项通过。`FLOW_DAILY_SOURCE_FAULT=1`在本脚本独占临时项目的原件发布后丢失一次回执，检查同窗口恢复、不重复加板和保留已接受绘画。保护来源工作TIFF的外部上层修改可用 `FLOW_PROTECTED_REFRESH=1 FLOW_PROTECTED_IMPORT=1 FLOW_SOURCE_IMPORT=1 FLOW_SOURCE_IMPORT_ONLY=1` 运行既有 `flow-native-workbench-smoke.mjs`；它只改本次合成工作文件，检查保护底图不变、外部上层画面、一次Undo/Redo及保存重开。原始日志、失败截图及窗口结果留在脚本打印的目录；当前通过范围见CURRENT。

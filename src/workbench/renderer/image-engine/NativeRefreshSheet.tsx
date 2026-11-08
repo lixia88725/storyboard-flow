@@ -12,11 +12,12 @@ export function NativeRefreshSheet({preview,onConfirm,onCancel}:{
  const [choices,setChoices]=useState<Record<string,RefreshChoice['decision']>>(()=>Object.fromEntries(preview.items.filter(i=>!i.conflict).map(i=>[i.shotId,i.canUseExternal?'useExternal':'keepFlow'])));
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
  const dialog=useRef<HTMLElement>(null);
+ const interaction=useRef({busy,onCancel});interaction.current={busy,onCancel};
  useEffect(()=>{
   const previous=document.activeElement as HTMLElement|null;dialog.current?.focus();
   const key=(event:KeyboardEvent)=>{
    if(event.isComposing)return;
-   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(!busy)onCancel();}
+   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(!interaction.current.busy)interaction.current.onCancel();}
    if(event.key==='Tab'){
     const nodes=[...dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),select:not(:disabled)')??[]];
     if(!nodes.length){event.preventDefault();return;}
@@ -26,11 +27,11 @@ export function NativeRefreshSheet({preview,onConfirm,onCancel}:{
    }
   };
   window.addEventListener('keydown',key,true);return()=>{window.removeEventListener('keydown',key,true);previous?.focus();};
- },[busy,onCancel]);
+ },[]);
  const confirm=async()=>{if(busy)return;setBusy(true);setError('');try{await onConfirm(preview.items.map(i=>({shotId:i.shotId,decision:choices[i.shotId]})));}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
  return <div className="wb-naming"><section ref={dialog} tabIndex={-1} className="wb-sheet" role="dialog" aria-modal="true" aria-label="取回外部改动">
   <h2>取回外部改动</h2>
-  <p className="wb-sheet-note">选择要显示在 Flow 中的版本。此次更新可以撤销；保存时才把 Flow 的画面写回工作文件。</p>
+  <p className="wb-sheet-note">选择要显示在 Flow 中的版本。采用外部画面后可以撤销；保存时才把 Flow 的画面写回工作文件。</p>
   <div className="wb-refresh-items">{preview.items.map(item=><div key={item.shotId} className="wb-sheet-group">
    <strong>{item.name}</strong>
    <p>{item.change==='missing'?'工作文件已不在原位置。保留 Flow 后，可在下次保存时重建文件。':item.conflict?'这张图在 Flow 和外部软件中都改过，请选择保留哪一版。':'外部软件修改了这张图。'}</p>
