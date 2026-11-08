@@ -28,8 +28,9 @@ export type ImageWorkspaceRuntimeOptions = {
 export type ImageWorkspaceRuntime = {
  open():ImageWorkspaceBootstrap;
  request(request:ImageWorkspaceRequest):Promise<ImageWorkspaceOutcome>;
- /** Main-local admission only. The preload/IPC Bridge returns a Promise. */
- input(owner:ImageWorkspaceOwner,input:ImageWorkspaceInput,identity:ImageWorkspaceClientInput):ImagePipelineAdmission;
+ /** Main checks durable origin identity before a new begin. The receipt remains
+  * bounded volatile admission; the preload/IPC Bridge preserves this Promise. */
+ input(owner:ImageWorkspaceOwner,input:ImageWorkspaceInput,identity:ImageWorkspaceClientInput):Promise<ImagePipelineAdmission>;
  waitOperation(owner:ImageWorkspaceOwner,operationId:string):Promise<ImageWorkspaceOutcome>;
  subscribe(listener:(event:ImageWorkspaceEvent)=>void):()=>void;
  connectFrames(identity:ImageWorkspaceFrameIdentity,transport:ImageWorkspaceFrameTransport):Promise<void>;

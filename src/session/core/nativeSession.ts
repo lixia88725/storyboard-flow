@@ -38,7 +38,7 @@ export type NativeProjectRequest=
  * progress means a native frame acknowledgement, not a displayed screen. The
  * last 64 completed operations may be awaited; older identities require durable
  * store queries. Unknown work never returns a false settled acknowledgement. */
-export type NativeProjectSession={snapshot():ImageProjectSnapshot;subscribe(listener:()=>void):()=>void;request(request:NativeProjectRequest,identity?:{operationId:string}):Promise<ImageProjectOutcome>;close():Promise<void>;operationRecords(page?:ImageOperationPage):Promise<ImageOperationRecord[]>;pipeline?:{recoveryInputs():RetainedImageInput[];input(value:ImagePipelineInput):ImagePipelineAdmission;waitOperation(operationId:string):Promise<ImageProjectOutcome>;subscribe(listener:(event:ImagePipelineProgress)=>void):()=>void}};
+export type NativeProjectSession={snapshot():ImageProjectSnapshot;subscribe(listener:()=>void):()=>void;request(request:NativeProjectRequest,identity?:{operationId:string}):Promise<ImageProjectOutcome>;close():Promise<void>;operationRecords(page?:ImageOperationPage):Promise<ImageOperationRecord[]>;resolveRetainedInput(operationId:string,recordId:string):Promise<ImageProjectOutcome>;pipeline?:{recoveryInputs():RetainedImageInput[];input(value:ImagePipelineInput):ImagePipelineAdmission;waitOperation(operationId:string):Promise<ImageProjectOutcome>;subscribe(listener:(event:ImagePipelineProgress)=>void):()=>void}};
 
 /** One Main Flow history and durable project authority. The pipeline is opt-in;
  * this module does not claim renderer/screen latency or full product migration.
@@ -77,7 +77,7 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     // project members without opening every document. Prefer the last native edit.
     const p=current(),image=options.activeImageId?.()??head!.commit.nativeDecision?.imageId;
     const target=image&&p.images[image]?image:[...p.shots,...p.parkedShots].find(s=>p.images[s.imageId].content.kind==='native')?.imageId;
-    if(target)await install(await resolve(target));
+    if(target){const binding=p.images[target].content;if(binding.kind==='native')await install(binding.native);else{const hydrated=await store.hydration(binding.source);if(hydrated)await install(hydrated.native);}}
     else for(const shot of p.shots){const binding=p.images[shot.imageId].content;if(binding.kind==='source'){const h=await store.hydration(binding.source);if(h){await install(h.native);break;}}}
   };
   const reconcile=async(replaceWorker=false)=>{
@@ -251,6 +251,18 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
   try{await reconcile();}catch(e){detachFault?.();throw e;}initializePipeline();
   return {
     ...(pipeline?{pipeline:{input:(value:ImagePipelineInput)=>pipeline!.input(value),waitOperation:(operationId:string)=>{const recovered=recoveredWait.get(operationId);return recovered?Promise.resolve(copy(recovered)):pipeline!.waitOperation(operationId);},subscribe:(f:(event:ImagePipelineProgress)=>void)=>{progressListeners.add(f);return()=>progressListeners.delete(f);},recoveryInputs:()=>phase==='recovering'?copy(retainedRecoveryInputs.length?retainedRecoveryInputs:pipeline!.retainedInputs()):[]}}:{}),
+    resolveRetainedInput(operationId,recordId){
+      const work=tail.then(async():Promise<ImageProjectOutcome>=>{try{
+        if(phase!=='recovering')throw Error('Resolve recovery-only input only while recovering');const input=retainedRecoveryInputs.find(i=>i.operationId===operationId);if(!input)throw Error('No retained input identity');
+        const evidence=await store.workspaceRecord?.(recordId);if(evidence?.kind!=='capturedInput'||evidence.original.shotId!==input.shotId||evidence.original.capturedThrough<input.stroke.points.length/2)throw Error('Missing durable original input evidence');
+        const {points:originalPoints,pressures:originalPressures,...originalStyle}=evidence.original.stroke,{points,pressures,...style}=input.stroke;
+        if(!same(originalStyle,style)||!same(originalPoints.slice(0,points.length),points)||(pressures&&!same((originalPressures??Array(pressures.length).fill(1)).slice(0,pressures.length),pressures)))throw Error('Durable original does not contain the retained input');
+        if(await store.operationDecision(operationId)||(await store.pendingOperations()).some(i=>i.operationId===operationId))throw Error('Retained input acquired a durable native intent; reconcile it first');
+        const status=await native.status(operationId);if(!['absent','discarded','failed'].includes(status.state))throw Error('Native input cannot yet be proven uncommitted');
+        retainedRecoveryInputs=retainedRecoveryInputs.filter(i=>i.operationId!==operationId);const report:ImageRecoveryDisposition={operationId,imageId:input.imageId,inputThrough:0,original:'recovery-only-record',recordId,decision:'notCommitted',commitHash:null};recoveryReports.set(operationId,report);
+        if(!retainedRecoveryInputs.length){await installSelected();initializeSettlement();initializePipeline();recovery=undefined;phase='active';}notify();return{kind:'recovered',commitHash:head!.commitHash,snapshot:snapshot(),operations:[report]};
+      }catch(e){return fail(e);}});tail=work.then(()=>undefined,()=>undefined);return work;
+    },
     operationRecords:page=>store.operationRecords(page),
     snapshot,subscribe:f=>{listeners.add(f);return()=>listeners.delete(f);},
     request(input,identity){

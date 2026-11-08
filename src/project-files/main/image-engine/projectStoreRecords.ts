@@ -32,6 +32,7 @@ export type ProjectStoreV2={
   pendingHydrations():Promise<HydrationRecord[]>;
   beginOperation(intent:ImageOperationIntent):Promise<void>;
   pendingOperations():Promise<ImageOperationIntent[]>;
+  operationRecord?(operationId:string):Promise<ImageOperationRecord|null>;
   captureRecord(owner:{sessionId:string;incarnation:string;workspaceEpoch:number},captureId:string):Promise<ImageOperationRecord|null>;
   /** At most 16 full inputs per page; continue after the last operationId. */
   operationRecords(page?:ImageOperationPage):Promise<ImageOperationRecord[]>;

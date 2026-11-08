@@ -75,7 +75,7 @@ export type ImagePipelineProgress = {
   inputThrough:number;durable:boolean;commitHash?:string;
 };
 export type RetainedImageInput={operationId:string;shotId:string;imageId:string;stroke:FlowStroke;ended:boolean;reason:'missing-pipeline-identity'|'incomplete-gesture'};
-export type ImageRecoveryDisposition={operationId:string;imageId:string;inputThrough:number;original:'durable-intent';decision:'committed'|'notCommitted';commitHash:string|null};
+export type ImageRecoveryDisposition={operationId:string;imageId:string;inputThrough:number;original:'durable-intent'|'recovery-only-record';recordId?:string;decision:'committed'|'notCommitted';commitHash:string|null};
 export type ImageOperationPage={afterOperationId?:string;maxRecords?:number};
 export type ImageOperationRecord={intent:ImageOperationIntent;resolution:ImageOperationResolution|null};
 export type ImageOperationResolution = {
