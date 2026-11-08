@@ -6,6 +6,7 @@ import {temporaryWorkspace} from '../../../../test/temporaryWorkspace';
 import {openWorkspaceOutput} from './workspaceOutput';
 import type {WorkspaceOutputFrozen,WorkspaceOutputOptions,WorkspaceOutputBudget} from './workspaceOutputContract';
 import {validWorkspaceOutputMetadataEnvelope,WORKSPACE_OUTPUT_METADATA_LIMIT} from './workspaceOutputContract';
+import {createWorkspaceRecoveryBudget} from './workspaceBudget';
 
 const hash=(b:Uint8Array|string)=>createHash('sha256').update(b).digest('hex');
 const native=(id:string)=>({storeId:'store',documentId:id,versionId:hash('version'),manifestSha256:hash(id),width:8,height:8});
@@ -109,6 +110,9 @@ describe('native workspace physical output',()=>{
  });
  it('preserves native-recovery protection markers and refuses multiple local output writers',async()=>{
   const g=await fixture();await expect(openWorkspaceOutput(g.options)).rejects.toMatchObject({code:'busy'});await fs.mkdir(path.join(g.root,'.storyboard-flow/workspace-recovery-v2'));await expect(g.output.save(frozen())).rejects.toThrow('protected by a recovery inventory');
+ });
+ it('uses independent grant identities with the real shared broker across captures, journals, backups and Trash',async()=>{
+  const g=await fixture();await g.output.close();const broker=await createWorkspaceRecoveryBudget({root:g.root,maxRecoveryBytes:8*1024**3}),output=await openWorkspaceOutput({...g.options,budget:broker}),f=frozen();await output.save(f);f.project.shots[0].scriptText='new';await output.save(f);f.project.shots.splice(0,1);f.project.dialogues=[];await output.save(f);expect(broker.reservedBytes).toBe(0);expect(broker.actualBytes).toBe(await broker.measureActual());await output.close();
  });
 });
 

@@ -48,7 +48,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
  const directories=new Map<string,Identity>();
  type Grant=Awaited<ReturnType<WorkspaceOutputOptions['budget']['reserve']>>;
  const grants=new Map<string,{grant:Grant;file:string;max:number}[]>();
- const hold=async(operationId:string,file:string,bytes:number,purpose:string)=>{const grant=await options.budget.reserve({operationId,bytes,purpose});grants.set(operationId,[...(grants.get(operationId)??[]),{grant,file,max:bytes}]);return grant;};
+ const hold=async(operationId:string,file:string,bytes:number,purpose:string)=>{const grant=await options.budget.reserve({operationId:operationId+'-'+randomUUID(),bytes,purpose});grants.set(operationId,[...(grants.get(operationId)??[]),{grant,file,max:bytes}]);return grant;};
  const settleGrants=async(operationId?:string)=>{
   for(const [id,items] of grants){if(operationId!==undefined&&id!==operationId)continue;
    for(const item of items){await bind();let actual=0;try{const st=await fs.lstat(item.file);if(!st.isFile()||st.isSymbolicLink()||st.size>item.max)fail('Unknown budgeted output entry');actual=st.size;}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}await item.grant.settleActual(actual);}
@@ -78,7 +78,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
   await bind();const next={...ledger,seq:ledger.seq+1,previousHash:lastHash},bytes=canonicalUtf8(next);
   if(bytes.length>JOURNAL_LIMIT)throw new WorkspaceOutputError('resource-limit','Output ledger exceeds 8 MiB');
   const file=path.join(container,`${String(next.seq).padStart(12,'0')}.json`);let grant:Grant;
-  try{grant=await options.budget.reserve({operationId:ledger.transaction?.operationId??'output-journal',bytes:bytes.length,purpose:'native-output-journal'});}catch(e){blocked=true;throw e;}
+  try{grant=await options.budget.reserve({operationId:(ledger.transaction?.operationId??'output-journal')+'-'+randomUUID(),bytes:bytes.length,purpose:'native-output-journal'});}catch(e){blocked=true;throw e;}
   try{await bind();await createFileExclusive(file,bytes);await syncDirectory(container);
    ledger=next;lastHash=sha256Hex(bytes);await grant.settleActual(bytes.length);
   }catch(e){blocked=true;grants.set('output-journal',[...(grants.get('output-journal')??[]),{grant,file,max:bytes.length}]);await grant.retainUnknown();throw e;}
