@@ -32,13 +32,13 @@ function group(entries:Entry[],previous:string){
 }
 /** Single append owner, bounded group flush. Only a sealed, successfully synced
  * prefix receives durableThrough. Directory IO occurs only at create/continuation. */
-export async function openRecoveryJournal(options:{directory:string;formatId:string;assertHeld():Promise<void>;reserve(bytes:number):Promise<()=>void>;onGrowth(bytes:number):void;manualFlush?:boolean}){
- const {directory,formatId}=options;await options.assertHeld();await fs.mkdir(directory,{mode:0o700}).catch(e=>{if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;});
+export async function openRecoveryJournal(options:{directory:string;formatId:string;assertHeld():Promise<void>;reserve(bytes:number):Promise<()=>void>;onGrowth(bytes:number):void;manualFlush?:boolean;createInitial:boolean}){
+ const {directory,formatId}=options;await options.assertHeld();if(options.createInitial)await fs.mkdir(directory,{mode:0o700}).catch(e=>{if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;});
  const ds=await fs.lstat(directory,{bigint:true});if(!ds.isDirectory()||ds.isSymbolicLink()||await fs.realpath(directory)!==directory)throw Error('Unsafe journal directory');
  const checkDir=async()=>{await options.assertHeld();const s=await fs.lstat(directory,{bigint:true});if(s.dev!==ds.dev||s.ino!==ds.ino||!s.isDirectory()||s.isSymbolicLink())throw Error('Journal directory identity changed');};
  const ensureFile=async(file:string,exclusive=false)=>{let created=false;const h=await fs.open(file,constants.O_RDWR|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600).then(h=>{created=true;return h;},async e=>{if(e.code!=='EEXIST'||exclusive)throw e;await regular(file);return fs.open(file,constants.O_RDWR|constants.O_NOFOLLOW);});try{await h.sync();if(created){await syncDir(directory);await syncDir(path.dirname(directory));}}finally{await h.close();}};
  let file=path.join(directory,'segment-0.log'),generation=0,offset=0,through=0,previous=ZERO;
- await ensureFile(file);
+ if(options.createInitial)await ensureFile(file,true);else await regular(file);
  const locations=new Map<number,Location>(),segments:Array<{file:string;size:number;hash:string}>=[];
  // Every old segment stays intact. A continuation commits only a verified
  // unsealed tail; a fully present but invalid group is corruption, never skipped.

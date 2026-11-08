@@ -91,3 +91,15 @@ it('flushes an admitted decision without waiting for the next slow reference ver
 it('keeps source references exact across hydration publication and replay',async()=>{
  const f=await fixture({verifySource:async(ref)=>{expect(Object.keys(ref).sort()).toEqual(['importId','interpretationId','itemId']);}});await f.store.commit(null,genesis());await f.store.publishHydration(hydration);await f.store.close();const reopened=await openImageProjectStore(f.options);expect(await reopened.hydration(source)).toEqual(hydration);await reopened.close();
 });
+
+for(const missing of ['segment','directory'])it(`refuses an existing project's missing journal ${missing}, preserving the writer gate and all remaining evidence`,async()=>{
+ const f=await fixture();await f.store.commit(null,genesis());await f.store.close();const gate=path.join(f.root,'.storyboard-flow/image-project-v2/head.json'),original=await fs.readFile(gate),file=path.join(home(f.root),'segment-0.log');await fs.unlink(file);if(missing==='directory')await fs.rmdir(home(f.root));await expect(openImageProjectStore(f.options)).rejects.toThrow();expect(await fs.readFile(gate)).toEqual(original);expect(await fs.access(file).then(()=>true,()=>false)).toBe(false);if(missing==='directory')expect(await fs.access(home(f.root)).then(()=>true,()=>false)).toBe(false);
+});
+
+it('does not guess that an existing writer gate with an empty first segment is a fresh project',async()=>{
+ const f=await fixture();await f.store.close();const file=path.join(home(f.root),'segment-0.log');await fs.writeFile(file,'');await expect(openImageProjectStore(f.options)).rejects.toThrow('initialization incomplete');expect((await fs.stat(file)).size).toBe(0);
+});
+
+it('rejects a running audit of a truncated-empty first segment without publishing an empty in-memory head or admitting writes',async()=>{
+ const f=await fixture();const first=await f.store.commit(null,genesis()),file=path.join(home(f.root),'segment-0.log');await fs.writeFile(file,'');await expect(f.store.validateRecovery()).rejects.toThrow('initialization incomplete');expect((await f.store.load())?.commitHash).toBe(first.commitHash);await expect(f.store.commit(first.commitHash,{...genesis(),commitId:'must-not-append',previousCommitHash:first.commitHash,beforeRevision:0,after:{...project(),revision:1}})).rejects.toMatchObject({code:'busy'});expect((await fs.stat(file)).size).toBe(0);await f.store.close();
+});
