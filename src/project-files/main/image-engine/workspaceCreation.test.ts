@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
+import {writeFileSync} from 'node:fs';
 import sharp from 'sharp';
-import {describe,it,expect,vi} from 'vitest';
+import {describe,it,expect} from 'vitest';
 import {temporaryWorkspace} from '../../../../test/temporaryWorkspace';
 import {createImageWorkspaceCreation} from './workspaceCreation';
 import {createWorkspaceRecoveryBudget} from './workspaceBudget';
@@ -61,7 +62,7 @@ describe('native workspace creation with real filesystem and lease',()=>{
  it('retains publication evidence on prepare rejection and refuses changed sources or insufficient shared budget',async()=>{
   const f=await fixture({prepare:async()=>{throw Error('readonly probe rejected');}});await expect(f.factory.createBlankProject(f.input,signal())).rejects.toThrow('evidence retained at '+path.join(f.out,'Created'));expect((await load(path.join(f.out,'Created'))).project.shots).toEqual([]);
   const g=await fixture({maxRecoveryBytes:8192});await expect(g.factory.createBlankProject(g.input,signal())).rejects.toThrow('quota exceeded');expect(await fs.readdir(g.out)).not.toContain('Created');
-  const h=await fixture(),sources=path.join(h.root,'sources');await fs.mkdir(sources);for(const name of['1.png','2.png'])await fs.writeFile(path.join(sources,name),await png('#112233ff'));await expect(h.factory.createImageProject({...h.input,source:{kind:'folder',folder:sources}},{signal:new AbortController().signal,onProgress:p=>{if(p.done===1&&p.phase==='read')void fs.writeFile(path.join(sources,'2.png'),'changed');}})).rejects.toThrow();
+  const h=await fixture(),sources=path.join(h.root,'sources');await fs.mkdir(sources);for(const name of['1.png','2.png'])await fs.writeFile(path.join(sources,name),await png('#112233ff'));await expect(h.factory.createImageProject({...h.input,source:{kind:'folder',folder:sources}},{signal:new AbortController().signal,onProgress:p=>{if(p.done===1&&p.phase==='read')writeFileSync(path.join(sources,'2.png'),'changed');}})).rejects.toThrow();
  });
  it('copies a legal ordinary V1 project with independent layer and composite verification while source bytes stay unchanged',async()=>{
   const f=await fixture(),legacy=await legacyFixture(f.root),before=await digestTree(legacy.source),inspection=await f.factory.inspectUpgrade(legacy.source);expect(inspection.issues).toEqual([]);
@@ -80,5 +81,19 @@ describe('native workspace creation with real filesystem and lease',()=>{
  });
  it('rejects independent reader semantic disagreement and retains immutable archives without executable permissions',async()=>{
   const f=await fixture({verifyLegacyLayers:async({bytes})=>{const read=await readPhotocraft(bytes,'tiff');return{...read.value,reference:read.reference,warnings:read.warnings,layers:read.value.layers.map((l,i)=>({...l,opacity:i===1?0.5:l.opacity}))};}}),old=await legacyFixture(f.root);await fs.writeFile(path.join(old.source,'original.sh'),'echo original',{mode:0o755});const before=await digestTree(old.source),view=await f.factory.inspectUpgrade(old.source);let retained='';try{await f.factory.copyUpgrade({operationId:'op',sourceRoot:old.source,projectId:old.project.id,sourceDigest:view.sourceDigest,destinationParent:f.out,folderName:'Copy',projectName:'Copy'},signal());}catch(e){expect((e as Error).message).toContain('layer semantics differ');retained=(e as{retainedRoot:string}).retainedRoot;}expect(retained).not.toBe('');expect(await digestTree(old.source)).toEqual(before);expect((await fs.stat(path.join(retained,'.storyboard-flow/legacy-copy-v1/original.sh'))).mode&0o111).toBe(0);expect(await fs.readdir(f.out)).not.toContain('Copy');
+ },120000);
+ it('recovers a published copy after reply loss from a new factory without reading the now-missing source or rewriting target bytes',async()=>{
+  let lose=true;const f=await fixture({fault:async(point)=>{if(point==='after-publication'&&lose)throw Error('lost reply');}}),old=await legacyFixture(f.root);await fs.mkdir(path.join(old.source,'.storyboard-flow/empty-recovery-evidence'));const view=await f.factory.inspectUpgrade(old.source),input={operationId:'retry-copy',sourceRoot:old.source,projectId:old.project.id,sourceDigest:view.sourceDigest,destinationParent:f.out,folderName:'Copy',projectName:'Copy'};
+  await expect(f.factory.copyUpgrade(input,signal())).rejects.toThrow('lost reply');const target=path.join(f.out,'Copy'),before=await digestTree(target);expect((await fs.stat(path.join(target,'.storyboard-flow/legacy-copy-v1/.storyboard-flow/empty-recovery-evidence'))).isDirectory()).toBe(true);await fs.rename(old.source,old.source+'-retained');lose=false;
+  const restarted=createImageWorkspaceCreation({leaseBinary:leaseBinary(),budgetFactory:createWorkspaceRecoveryBudget});expect(await restarted.copyUpgrade(input,signal())).toEqual({root:target});expect(await digestTree(target)).toEqual(before);expect((await fs.readdir(f.out)).filter(n=>n.startsWith('.flow-native-create-'))).toEqual([]);
+ },120000);
+ it('retries readonly preparation after publication failure but refuses another operation or an altered input fingerprint',async()=>{
+  let refuse=true;const f=await fixture({prepare:async()=>{if(refuse)throw Error('prepare temporarily unavailable');}}),old=await legacyFixture(f.root),view=await f.factory.inspectUpgrade(old.source),input={operationId:'retry-prepare',sourceRoot:old.source,projectId:old.project.id,sourceDigest:view.sourceDigest,destinationParent:f.out,folderName:'Copy',projectName:'Copy'};
+  await expect(f.factory.copyUpgrade(input,signal())).rejects.toThrow('prepare temporarily');const target=path.join(f.out,'Copy'),before=await digestTree(target);refuse=false;expect(await f.factory.copyUpgrade(input,signal())).toEqual({root:target});expect(await digestTree(target)).toEqual(before);await expect(f.factory.copyUpgrade({...input,operationId:'different'},signal())).rejects.toThrow('does not match');await expect(f.factory.copyUpgrade({...input,projectName:'changed'},signal())).rejects.toThrow('does not match');expect(await digestTree(target)).toEqual(before);
+ },120000);
+ it('refuses a substituted target inode and a damaged genesis rather than guessing a completion',async()=>{
+  const f=await fixture(),old=await legacyFixture(f.root),view=await f.factory.inspectUpgrade(old.source),input={operationId:'retry-proof',sourceRoot:old.source,projectId:old.project.id,sourceDigest:view.sourceDigest,destinationParent:f.out,folderName:'Copy',projectName:'Copy'},created=await f.factory.copyUpgrade(input,signal()),target=created.root,proof=await fs.readFile(path.join(target,'.storyboard-flow/native-creation-complete.json'));
+  await fs.rename(target,target+'-retained');await fs.mkdir(target);await fs.mkdir(path.join(target,'.storyboard-flow'));await fs.writeFile(path.join(target,'.storyboard-flow/native-creation-complete.json'),proof);await expect(f.factory.copyUpgrade(input,signal())).rejects.toThrow('does not match');await fs.rename(target,target+'-foreign');await fs.rename(target+'-retained',target);
+  const segment=path.join(target,'.storyboard-flow/image-project-journal-v1/segment-0.log'),bytes=await fs.readFile(segment);bytes[0]^=1;await fs.writeFile(segment,bytes);const damaged=await digestTree(target);await expect(f.factory.copyUpgrade(input,signal())).rejects.toThrow('corruption');expect(await digestTree(target)).toEqual(damaged);
  },120000);
 });
