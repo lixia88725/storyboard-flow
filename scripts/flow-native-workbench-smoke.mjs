@@ -23,9 +23,16 @@ if(process.env.FLOW_COLD_COPY==='1'){
 }
 if(process.env.FLOW_SOURCE_IMPORT==='1'){
  const sharp=(await import('sharp')).default,source=path.join(out,'sources');await fs.mkdir(source);await fs.mkdir(path.join(out,'destination'));
+ if(process.env.FLOW_PROTECTED_IMPORT==='1'){
+  const fixture=path.join(out,'guard-fixtures'),prepared=await run(process.env.FLOW_SOURCE_GUARD_PYTHON??'/opt/homebrew/bin/python3.14',['native/photocraft/tests/source_guard_fixtures.py',fixture],{...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONPATH:process.env.FLOW_SOURCE_GUARD_PYTHONPATH??'/private/tmp/flow-image-engine-export-python'});
+  if(prepared.code!==0)throw Error('Guard fixture preparation failed: '+prepared.stderr);
+  await fs.copyFile(path.join(fixture,'stale-merged.psd'),path.join(source,'01.psd'));await fs.copyFile(path.join(fixture,'small-difference.psd'),path.join(source,'02.psd'));
+  await sharp({create:{width:640,height:360,channels:4,background:{r:64,g:128,b:192,alpha:1}}}).png().toFile(path.join(source,'03.png'));
+ }else{
  await sharp({create:{width:640,height:360,channels:4,background:{r:250,g:250,b:250,alpha:1}}}).png().toFile(path.join(source,'01.png'));
  await sharp({create:{width:640,height:360,channels:4,background:{r:64,g:128,b:192,alpha:1}}}).png().toFile(path.join(source,'02.png'));
  await fs.writeFile(path.join(source,'03-broken.png'),'synthetic invalid image');
+ }
  for(const phase of ['import','import-reopen']){const result=await run(electron,['scripts/flow-native-import-driver.cjs'],{...process.env,FLOW_NATIVE_WORKSPACE:'1',FLOW_REPO:repo,FLOW_OUT:out,FLOW_IMPORT_REOPEN:phase==='import-reopen'?'1':'0'});await fs.writeFile(path.join(out,phase+'-process.log'),JSON.stringify(result,null,2));if(result.code!==0)throw Error(`${phase} failed: ${out}\n${result.stderr}`);const receipt=JSON.parse(await fs.readFile(path.join(out,phase+'-result.json'),'utf8'));if(receipt.ok!==true)throw Error(`${phase} incomplete: ${out}`);}
 }
 console.log(`PASS ${out}`);
