@@ -1,3 +1,4 @@
+import type { ImageWorkspaceUpgradeDraft, ImageWorkspaceUpgradePatch } from '../contracts/imageWorkspace.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -30,14 +31,22 @@ type Draft = {
   controller?: AbortController;
 };
 
-export type FlowProjectLauncherDeps = {
+export type FlowProjectIdentity={id:string;name:string};
+export type FlowUpgradeInspection={projectId:string;projectName:string;activeBoards:number;pendingBoards:number;sourceDigest:string;issues:readonly {code:string;message:string}[]};
+export type FlowCopyUpgradeInput={operationId:string;sourceRoot:string;projectId:string;sourceDigest:string;destinationParent:string;folderName:string;projectName:string};
+export type FlowProjectLauncherDeps<T extends {root:string}=FlowWorkspaceTarget> = {
   userData: string;
   /** Strictly opens an existing Flow project; must reject when there is no checkpoint. */
-  prepare: (root: string) => Promise<FlowWorkspaceTarget>;
+  prepare: (root: string) => Promise<T>;
+  /** Native plans expose identity without acquiring a writable Session. Legacy
+   * callers omit this and retain their existing bootstrap metadata reader. */
+  describe?: (target:T) => FlowProjectIdentity;
   /** The file-module implementation is injected; this module never invents a second one. */
   createProject: CreateImageProject;
   /** Empty project creation; the same transaction without a source. */
   createBlankProject: CreateBlankProject;
+  inspectUpgrade?:(root:string)=>Promise<FlowUpgradeInspection>;
+  copyUpgrade?:(input:FlowCopyUpgradeInput,options:{signal:AbortSignal;onProgress(progress:{done:number;total:number;phase?:'read'|'write'}):void})=>Promise<{root:string}>;
   /** Forwards progress to the window. */
   onProgress: (draftId: string, progress: { done: number; total: number; phase?: 'read' | 'write' }) => void;
   /** Asks the user whether to continue after batched per-file issues. */
@@ -76,13 +85,49 @@ export const isProjectCreationCanceled = (error: unknown): boolean =>
 
 /** Owns the recent-target list and in-memory creation drafts. All paths stay here;
  * the renderer only receives labels and opaque IDs. */
-export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
+export function createFlowProjectLauncher<T extends {root:string}=FlowWorkspaceTarget>(deps: FlowProjectLauncherDeps<T>) {
+  const identityOf=(target:T):FlowProjectIdentity=>{
+    let identity:unknown;
+    if(deps.describe)identity=deps.describe(target);
+    else{
+      const legacyTarget:unknown=target;if(!isRecord(legacyTarget)||!isRecord(legacyTarget.runtime)||typeof legacyTarget.runtime.open!=='function')throw Error('Launcher target needs an explicit identity reader');
+      const bootstrap:unknown=legacyTarget.runtime.open();if(!isRecord(bootstrap))throw Error('Invalid launcher bootstrap');identity=bootstrap.project;
+    }
+    if(!isRecord(identity)||!hasText(identity.id)||!identity.id||!hasText(identity.name))throw Error('Invalid launcher project identity');
+    return{id:identity.id,name:identity.name};
+  };
   const now = deps.now ?? (() => Date.now());
   const randomId = deps.randomId ?? randomUUID;
   const recentFile = path.join(deps.userData, 'recent-projects.json');
   let recent: RecentRecord[] | null = null;
   let writeChain: Promise<void> = Promise.resolve();
   const drafts = new Map<string, Draft>();
+  type Upgrade={id:string;sourceRoot:string;inspection:FlowUpgradeInspection;destinationParent:string|null;folderName:string;projectName:string;state:ImageWorkspaceUpgradeDraft['state'];controller?:AbortController};
+  const upgrades=new Map<string,Upgrade>();
+  const upgrade=(id:string)=>{const d=upgrades.get(id);if(!d)throw Error('这次复制已经结束，请重新选择项目');return d;};
+  const upgradeView=(id:string):ImageWorkspaceUpgradeDraft=>{const d=upgrade(id);return{id:d.id,kind:'copy-upgrade',sourceLabel:path.basename(d.sourceRoot),destinationLabel:d.destinationParent?path.basename(d.destinationParent):null,folderName:d.folderName,projectName:d.projectName,activeBoards:d.inspection.activeBoards,pendingBoards:d.inspection.pendingBoards,originalPreserved:true,state:d.state,issues:structuredClone(d.inspection.issues)};};
+  const upgradeDraft=async(root:string)=>{
+    if(!deps.inspectUpgrade||!deps.copyUpgrade)throw Error('旧项目复制功能尚未就绪');const sourceRoot=await fs.realpath(root),entry=await fs.lstat(sourceRoot);if(!entry.isDirectory()||entry.isSymbolicLink())throw Error('原项目位置无效');
+    const inspection=await deps.inspectUpgrade(sourceRoot);if(!hasText(inspection.projectId)||!inspection.projectId||!hasText(inspection.projectName)||!Number.isSafeInteger(inspection.activeBoards)||inspection.activeBoards<0||!Number.isSafeInteger(inspection.pendingBoards)||inspection.pendingBoards<0||!(/^[a-f0-9]{64}$/).test(inspection.sourceDigest)||!Array.isArray(inspection.issues))throw Error('无法验证原项目');
+    const id=randomId(),projectName=(clean(inspection.projectName)+' 副本').slice(0,FIELD_LIMIT);upgrades.set(id,{id,sourceRoot,inspection:structuredClone(inspection),destinationParent:null,folderName:projectFolderNameFor(projectName),projectName,state:'chooseDestination'});return upgradeView(id);
+  };
+  const setUpgradeDestination=async(id:string,parent:string)=>{
+    const d=upgrade(id);if(d.controller)throw Error('正在复制，请等待当前操作结束');const canonical=await fs.realpath(parent),entry=await fs.lstat(canonical);if(!entry.isDirectory()||entry.isSymbolicLink())throw Error('复制位置无效');const relative=path.relative(d.sourceRoot,canonical);if(!relative||(!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative)))throw Error('请选择原项目之外的位置');d.destinationParent=canonical;d.state='ready';return upgradeView(id);
+  };
+  const updateUpgrade=(id:string,patch:ImageWorkspaceUpgradePatch)=>{
+    const d=upgrade(id);if(d.controller)throw Error('正在复制，请等待当前操作结束');if(!isRecord(patch)||Object.keys(patch).some(k=>k!=='projectName'&&k!=='folderName'))throw Error('复制设置无效');
+    if(patch.projectName!==undefined){if(!hasText(patch.projectName)||!patch.projectName.trim()||patch.projectName.length>FIELD_LIMIT)throw Error('项目名称无效');}
+    if(patch.folderName!==undefined){if(!hasText(patch.folderName)||folderNameIssue(patch.folderName))throw Error('文件夹名称无效');}if(patch.projectName!==undefined){d.projectName=patch.projectName;d.folderName=projectFolderNameFor(patch.projectName);}if(patch.folderName!==undefined)d.folderName=patch.folderName;return upgradeView(id);
+  };
+  const discardUpgrade=async(id:string)=>{const d=upgrades.get(id);if(!d)return;if(d.controller){d.controller.abort();return;}upgrades.delete(id);};
+  const createAndPrepareUpgrade=async(id:string):Promise<T>=>{
+    const d=upgrade(id);if(!deps.copyUpgrade||!deps.inspectUpgrade)throw Error('旧项目复制功能尚未就绪');if(d.controller||!d.destinationParent)throw Error('请选择新副本的位置');if(folderNameIssue(d.folderName))throw Error('文件夹名称无效');
+    const current=await deps.inspectUpgrade(d.sourceRoot);if(current.projectId!==d.inspection.projectId||current.sourceDigest!==d.inspection.sourceDigest)throw Error('原项目已变化，请重新选择后复制');const controller=new AbortController();d.controller=controller;d.state='running';
+    try{const created=await deps.copyUpgrade({operationId:d.id,sourceRoot:d.sourceRoot,projectId:d.inspection.projectId,sourceDigest:d.inspection.sourceDigest,destinationParent:d.destinationParent,folderName:d.folderName,projectName:d.projectName},{signal:controller.signal,onProgress:p=>{try{deps.onProgress(id,p);}catch{/* advisory */}}});
+      const canonical=await fs.realpath(created.root),expected=await fs.realpath(path.join(d.destinationParent,d.folderName));if(canonical!==created.root||canonical!==expected||path.dirname(canonical)!==d.destinationParent||canonical===d.sourceRoot)throw Error('新副本位置与选择的位置不一致');const target=await deps.prepare(canonical),project=identityOf(target);await remember(target.root,project.id,project.name);upgrades.delete(id);return target;
+    }catch(e){d.state='retained';throw e;}finally{delete d.controller;}
+  };
+
 
   const loadRecent = async (): Promise<RecentRecord[]> => {
     if (recent) return recent;
@@ -145,7 +190,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
     await saveRecent();
   };
 
-  const prepareFlow = async (root: string): Promise<FlowWorkspaceTarget> => {
+  const prepareFlow = async (root: string): Promise<T> => {
     const canonical = await fs.realpath(root).catch(error => {
       if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') throw Error('项目文件夹已不存在');
       throw Error('无法访问项目文件夹');
@@ -164,7 +209,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
 
   const openRoot = async (root: string) => {
     const target = await prepareFlow(root);
-    const project = target.runtime.open().project;
+    const project = identityOf(target);
     await remember(target.root, project.id, project.name);
     return target;
   };
@@ -173,7 +218,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
     const entry = (await loadRecent()).find(candidate => candidate.id === id);
     if (!entry) throw Error('这条最近项目记录已不存在');
     const target = await prepareFlow(entry.root);
-    const project = target.runtime.open().project;
+    const project = identityOf(target);
     // A folder that now holds a different project is not the recorded target.
     if (project.id !== entry.projectId)
       throw Error('这个位置的项目与最近记录不一致；请用“打开项目”重新确认。');
@@ -300,7 +345,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
     return namingIssue(draft.name, draft.naming);
   };
 
-  const createAndPrepare = async (id: string): Promise<FlowWorkspaceTarget> => {
+  const createAndPrepare = async (id: string): Promise<T> => {
     const draft = requireDraft(id);
     if (draft.controller) throw Error('这个项目正在创建');
     const issue = problem(draft);
@@ -359,7 +404,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
       if (canonical !== created.root || expectedCanonical !== canonical || path.dirname(canonical) !== parent)
         throw Error('创建结果位置与请求的保存位置不一致');
       const target = await deps.prepare(canonical);
-      const project = target.runtime.open().project;
+      const project = identityOf(target);
       await remember(target.root, project.id, project.name);
       drafts.delete(id);
       return target;
@@ -390,6 +435,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
   };
   const abortAll = () => {
     for (const draft of drafts.values()) draft.controller?.abort();
+    for (const draft of upgrades.values()) draft.controller?.abort();
   };
 
   const state = async (): Promise<{ recent: FlowRecentProject[] }> => {
@@ -451,6 +497,7 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
   };
 
   return {
+    upgradeDraft,upgradeView,setUpgradeDestination,updateUpgrade,discardUpgrade,createAndPrepareUpgrade,
     state, idFor, recentProject, forget, relocate, updateName, openRoot, openRecent, begin, draftFromFolder, setSource, setDestination, update,
     problem: (id: string) => problem(requireDraft(id)),
     createAndPrepare, abort, discard, abortAll,
@@ -459,4 +506,4 @@ export function createFlowProjectLauncher(deps: FlowProjectLauncherDeps) {
   };
 }
 
-export type FlowProjectLauncher = ReturnType<typeof createFlowProjectLauncher>;
+export type FlowProjectLauncher = ReturnType<typeof createFlowProjectLauncher<FlowWorkspaceTarget>>;
