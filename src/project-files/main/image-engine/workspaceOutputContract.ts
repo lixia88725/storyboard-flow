@@ -89,6 +89,9 @@ export type WorkspaceOutput = {
  observeSource(observation:WorkspaceOutputObservation,options?:{itemId?:string}):Promise<SourceInput>;
  save(frozen:WorkspaceOutputFrozen,options?:WorkspaceOutputOperationOptions):Promise<WorkspaceOutputReceipt>;
  appendPendingBatch(frozen:WorkspaceOutputFrozen,batch:{shotIds:readonly string[];sourceNames?:Readonly<Record<string,string>>},options?:WorkspaceOutputOperationOptions):Promise<WorkspaceOutputReceipt>;
+ /** Main must drain/reap the old readonly job first. Same frozen/scope/UUID only;
+  * retained private captures are verified, never evidence of published files. */
+ retryRetainedCapture(frozen:WorkspaceOutputFrozen,batch:{shotIds:readonly string[];sourceNames?:Readonly<Record<string,string>>}|undefined,options:{operationId:string;readonlyCaptureSettled:true}):Promise<WorkspaceOutputReceipt>;
  /** Read-only side-effect status, never a Main project commit decision. */
  queryOperation(operationId:string):Promise<WorkspaceOutputOperation>;
  /** Historical durable ACK; current disk changes never erase this fact. */

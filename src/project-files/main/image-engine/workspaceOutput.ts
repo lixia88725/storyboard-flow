@@ -25,9 +25,10 @@ const leaf=validWorkspaceOutputFileName;
 type Identity={dev:string;ino:string};
 type Entry=WorkspaceOutputFile&Identity&{content:string;opaque?:true;vacant?:true};
 type Move=Identity&{from:string;to:string;digest:string};
-type Transaction={operationId:string;revision:number;commitHash:string;kind:'save'|'append';phase:'preparing'|'deleting'|'staging'|'publishing';
+type Transaction={operationId:string;storageId?:string;revision:number;commitHash:string;kind:'save'|'append';phase:'preparing'|'deleting'|'staging'|'publishing';
  next:Entry[];stages:Move[];publishes:Move[];deletions:{entry:Entry;intent:OutputDeletion}[];receipt:WorkspaceOutputReceipt};
-type Operation={fingerprint:string;state:'pending'|'completed'|'retained';receipt:WorkspaceOutputReceipt};
+type CaptureFact={file:string;entry:Entry;byteLength:number;layerCount:number};
+type Operation={fingerprint:string;state:'pending'|'completed'|'retained';receipt:WorkspaceOutputReceipt;retryablePreparation?:true;captures?:CaptureFact[]};
 type CopyBaseline={receipt:WorkspaceColdCopyReceipt;fromLedgerHash:string;fromRoot:Identity};
 type Ledger={schema:'flow.native-output';version:1;projectId:string;root:Identity;seq:number;previousHash:string|null;entries:Entry[];copyBaseline?:CopyBaseline;operationFacts?:Record<string,Operation>;transaction?:Transaction;saved?:{revision:number;commitHash:string};refresh?:{receiptHash:string;revision:number;commitHash:string};nameSeed?:{sha256:string;consumedShotIds:string[]};keepFlowAck?:{receiptHash:string;operationId:string;revision:number;commitHash:string}};
 
@@ -62,18 +63,18 @@ async function readOutputLedger(root:string,projectId:string,bind:()=>Promise<vo
    const bytes=await readBoundFile(path.join(container,name),JOURNAL_LIMIT);if(!bytes)fail('Output journal disappeared');
    const v=JSON.parse(bytes!.toString()) as Ledger;
    if(v.schema!=='flow.native-output'||v.version!==1||v.projectId!==projectId||v.seq!==sequence+1||v.previousHash!==previous||!validIdentity(v.root)||!validEntries(v.entries)||v.refresh&&(!digest(v.refresh.receiptHash)||!digest(v.refresh.commitHash)||!Number.isSafeInteger(v.refresh.revision)||v.refresh.revision<0)||v.nameSeed&&(!digest(v.nameSeed.sha256)||!Array.isArray(v.nameSeed.consumedShotIds)||v.nameSeed.consumedShotIds.length>10000||!v.nameSeed.consumedShotIds.every(token)||new Set(v.nameSeed.consumedShotIds).size!==v.nameSeed.consumedShotIds.length))fail('Invalid output journal');
-   if(v.operationFacts&&(typeof v.operationFacts!=='object'||Array.isArray(v.operationFacts)||Object.entries(v.operationFacts).some(([id,f])=>!operationIdValid(id)||!f||!digest(f.fingerprint)||!['pending','completed','retained'].includes(f.state)||!validReceipt(f.receipt,id,projectId))))fail('Invalid output operation facts');
+   if(v.operationFacts&&(typeof v.operationFacts!=='object'||Array.isArray(v.operationFacts)||Object.entries(v.operationFacts).some(([id,f])=>!operationIdValid(id)||!f||!digest(f.fingerprint)||!['pending','completed','retained'].includes(f.state)||!validReceipt(f.receipt,id,projectId)||f.retryablePreparation!==undefined&&f.retryablePreparation!==true||f.captures!==undefined&&(!Array.isArray(f.captures)||f.captures.length>10000||f.captures.some(c=>!c||!validEntry(c.entry)||!/^operations\/[a-f0-9-]{36}\/new-\d+\.tif$/.test(c.file)||!Number.isSafeInteger(c.byteLength)||c.byteLength<1||c.byteLength>LIMIT||!Number.isSafeInteger(c.layerCount)||c.layerCount<1)))))fail('Invalid output operation facts');
    if(v.keepFlowAck&&(!digest(v.keepFlowAck.receiptHash)||!token(v.keepFlowAck.operationId)||!digest(v.keepFlowAck.commitHash)||!Number.isSafeInteger(v.keepFlowAck.revision)||v.keepFlowAck.revision<0))fail('Invalid keep-Flow physical decision');
    const t=v.transaction;
-   if(t){if(!/^[a-f0-9-]{36}$/.test(t.operationId)||!['save','append'].includes(t.kind)||!['preparing','deleting','staging','publishing'].includes(t.phase)||!Number.isSafeInteger(t.revision)||t.revision<0||!digest(t.commitHash)||!validEntries(t.next)||!Array.isArray(t.stages)||!Array.isArray(t.publishes)||!Array.isArray(t.deletions))fail('Invalid output transaction');
+   if(t){if(t.storageId!==undefined&&!operationIdValid(t.storageId)||!/^[a-f0-9-]{36}$/.test(t.operationId)||!['save','append'].includes(t.kind)||!['preparing','deleting','staging','publishing'].includes(t.phase)||!Number.isSafeInteger(t.revision)||t.revision<0||!digest(t.commitHash)||!validEntries(t.next)||!Array.isArray(t.stages)||!Array.isArray(t.publishes)||!Array.isArray(t.deletions))fail('Invalid output transaction');
     for(const m of [...t.stages,...t.publishes])if(!validRelative(m.from)||!validRelative(m.to)||!digest(m.digest)||!validIdentity(m))fail('Unsafe output move');
     const matches=(m:Move,e:Entry)=>m.digest===e.digest&&m.dev===e.dev&&m.ino===e.ino;
-    for(const m of t.stages)if(!m.to.startsWith(`operations/${t.operationId}/old-`)||!v.entries.some(e=>relative(e)===m.from&&matches(m,e)))fail('Unbound output stage');
-    for(const m of t.publishes)if(!m.from.startsWith(`operations/${t.operationId}/`)||!t.next.some(e=>relative(e)===m.to&&matches(m,e)))fail('Unbound output publication');
+    for(const m of t.stages)if(!m.to.startsWith(`operations/${t.storageId??t.operationId}/old-`)||!v.entries.some(e=>relative(e)===m.from&&matches(m,e)))fail('Unbound output stage');
+    for(const m of t.publishes)if(!m.from.startsWith(`operations/${t.storageId??t.operationId}/`)||!t.next.some(e=>relative(e)===m.to&&matches(m,e)))fail('Unbound output publication');
     for(const d of t.deletions)if(!validEntry(d.entry)||!validOutputDeletion(d.intent)||d.intent.digest!==d.entry.digest||d.intent.from!==d.entry.location||!v.entries.some(e=>relative(e)===relative(d.entry)&&e.dev===d.intent.dev&&e.ino===d.intent.ino&&e.digest===d.intent.digest))fail('Invalid output deletion');
-    const operationDirectory=path.join(operations,t.operationId);const st=await directory(operationDirectory);registerDirectory(operationDirectory,{dev:String(st.dev),ino:String(st.ino)});
+    const operationDirectory=path.join(operations,t.storageId??t.operationId);const st=await directory(operationDirectory);registerDirectory(operationDirectory,{dev:String(st.dev),ino:String(st.ino)});
    }
-   if(v.operationFacts){for(const [id,f] of Object.entries(v.operationFacts)){if(f.state==='pending'&&t?.operationId!==id)fail('Unbound pending output fact');if(t?.operationId===id&&(f.state!=='pending'||!validReceipt(t.receipt,id,projectId)||sha256Hex(canonicalUtf8(t.receipt))!==sha256Hex(canonicalUtf8(f.receipt))))fail('Output transaction receipt differs from operation fact');}}
+   if(v.operationFacts){for(const fact of Object.values(v.operationFacts))for(const capture of fact.captures??[]){const at=path.dirname(path.join(container,capture.file)),st=await directory(at);registerDirectory(at,{dev:String(st.dev),ino:String(st.ino)});}for(const [id,f] of Object.entries(v.operationFacts)){if(f.state==='pending'&&t?.operationId!==id)fail('Unbound pending output fact');if(t?.operationId===id&&(f.state!=='pending'||!validReceipt(t.receipt,id,projectId)||sha256Hex(canonicalUtf8(t.receipt))!==sha256Hex(canonicalUtf8(f.receipt))))fail('Output transaction receipt differs from operation fact');}}
    if(v.copyBaseline&&(sequence===0||!validWorkspaceColdCopyReceipt(v.copyBaseline.receipt)||!digest(v.copyBaseline.fromLedgerHash)||!validIdentity(v.copyBaseline.fromRoot)||v.copyBaseline.receipt.projectId!==projectId))fail('Invalid copied output baseline');
    if(latest&&(v.root.dev!==latest.root.dev||v.root.ino!==latest.root.ino||v.copyBaseline?.receipt.authorizationSha256!==latest.copyBaseline?.receipt.authorizationSha256)){
     const portable=({seq,previousHash,root,copyBaseline,entries,...rest}:Ledger)=>({...rest,entries:entries.map(({dev,ino,...e})=>e)});const copy=v.copyBaseline;if(sha256Hex(canonicalUtf8(portable(v)))!==sha256Hex(canonicalUtf8(portable(latest)))||!copy||copy.fromLedgerHash!==previous||copy.fromRoot.dev!==latest.root.dev||copy.fromRoot.ino!==latest.root.ino||copy.receipt.previousRoot.dev!==latest.root.dev||copy.receipt.previousRoot.ino!==latest.root.ino||copy.receipt.outputHeadHash!==previous||copy.receipt.outputLedgerSeq!==sequence||copy.receipt.currentRoot.dev!==v.root.dev||copy.receipt.currentRoot.ino!==v.root.ino||v.transaction||latest.transaction||sha256Hex(canonicalUtf8(v.entries.map(({dev,ino,...e})=>e)))!==sha256Hex(canonicalUtf8(latest.entries.map(({dev,ino,...e})=>e)))||sha256Hex(canonicalUtf8(v.entries))!==copy.receipt.filesDigest)fail('Unbound copied output transition');
@@ -190,7 +191,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    await settleOutputFileMove(resolve(move.from),target,move,bind);await options.fault?.('after-publish');
   }
   for(const e of t.next.filter(e=>t.kind==='save'||t.receipt.files.some(f=>f.shotId===e.shotId))){const at=outputPath(root,e.name,e.location);if(await observe(at)!==e.digest)fail('Published output changed before receipt');const st=await fs.lstat(at);if(String(st.dev)!==e.dev||String(st.ino)!==e.ino)fail('Published output identity changed');}
-  ledger.entries=t.next;if(ledger.nameSeed&&nameSeed)ledger.nameSeed.consumedShotIds=[...new Set([...ledger.nameSeed.consumedShotIds,...t.next.filter(f=>nameSeed!.names.some(n=>n.shotId===f.shotId)).map(f=>f.shotId)])];if(t.kind==='save')ledger.saved={revision:t.revision,commitHash:t.commitHash};if(ledger.operationFacts?.[t.operationId])ledger.operationFacts[t.operationId]={...ledger.operationFacts[t.operationId],state:'completed',receipt:t.receipt};delete ledger.transaction;await persist();await settleGrants();
+  ledger.entries=t.next;if(ledger.nameSeed&&nameSeed)ledger.nameSeed.consumedShotIds=[...new Set([...ledger.nameSeed.consumedShotIds,...t.next.filter(f=>nameSeed!.names.some(n=>n.shotId===f.shotId)).map(f=>f.shotId)])];if(t.kind==='save')ledger.saved={revision:t.revision,commitHash:t.commitHash};if(ledger.operationFacts?.[t.operationId])ledger.operationFacts[t.operationId]={...ledger.operationFacts[t.operationId],state:'completed',receipt:t.receipt,retryablePreparation:undefined,captures:undefined};delete ledger.transaction;await persist();await settleGrants();
  };
  const checkProject=(p:ProjectV2)=>{const project=snapshotImageProject(p);if(project.id!==projectId)throw new WorkspaceOutputError('invalid-input','Wrong output project');return project;};
  const plannedNames=(project:ProjectV2,sourceNames?:Readonly<Record<string,string>>,pendingOnly=false)=>{
@@ -207,13 +208,15 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
   const names=pendingOnly?new Map(entries.map(e=>[e.shotId,e.name])):orderedOutputNames({...project,version:1,images:{}},entries);
   return [...project.shots.map(s=>({shotId:s.id,name:names.get(s.id)!,location:'active' as const})),...project.parkedShots.map(s=>({shotId:s.id,name:names.get(s.id)!,location:'parked' as const}))];
  };
- const publish=async(frozen:WorkspaceOutputFrozen,batch?:{shotIds:readonly string[];sourceNames?:Readonly<Record<string,string>>},requestedId?:string)=>{
+ const publish=async(frozen:WorkspaceOutputFrozen,batch?:{shotIds:readonly string[];sourceNames?:Readonly<Record<string,string>>},requestedId?:string,retryCapture=false)=>{
   await bind();if(blocked)await load();const fingerprint=sha256Hex(canonicalUtf8({frozen,batch:batch??null}));
   if(requestedId!==undefined&&!operationIdValid(requestedId))throw new WorkspaceOutputError('invalid-input','Invalid output operation UUID');
   const prior=requestedId===undefined?undefined:ledger.operationFacts?.[requestedId];
   if(prior&&prior.fingerprint!==fingerprint)throw new WorkspaceOutputError('conflict','Output operation binding changed','retained');
   await settle();
-  if(prior){const known=ledger.operationFacts![requestedId!];if(known.state==='completed')return structuredClone(known.receipt);throw new WorkspaceOutputError('operation-retained','Output operation retains preparation evidence; do not replay it','retained');}
+  if(retryCapture&&!prior)throw new WorkspaceOutputError('invalid-input','No retained output capture operation exists');
+  if(prior){const known=ledger.operationFacts![requestedId!];if(known.state==='completed')return structuredClone(known.receipt);if(!retryCapture||known.state!=='retained'||known.retryablePreparation!==true)throw new WorkspaceOutputError('operation-retained','Output operation retains preparation evidence; do not replay it','retained');}
+  const reusable=structuredClone(prior?.captures??[]);
   const snapshot=structuredClone(frozen),project=checkProject(snapshot.project);
   if(!digest(snapshot.commitHash)||!token(snapshot.owner?.sessionId)||!token(snapshot.owner?.incarnation)||!Number.isSafeInteger(snapshot.owner?.workspaceEpoch)||snapshot.owner.workspaceEpoch<0)throw new WorkspaceOutputError('invalid-input','Invalid frozen output identity');
   if(!batch&&project.naming){const issue=namingIssue(project.name,project.naming);if(issue)throw new WorkspaceOutputError('invalid-input',issue);}
@@ -230,10 +233,10 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    for(const found of await fs.readdir(dir))if(found.toLowerCase()===n.name.toLowerCase()&&!allowed.has(`${n.location}/${found}`))fail(`Foreign output filename collision: ${n.name}`);
   }
   const resolved=shots.map(shot=>{const value=snapshot.resolvedImages?.[shot.imageId],binding=project.images[shot.imageId].content;if(!value||!validNativeImageRef(value.native)||value.format!=='tiff'||binding.kind==='native'&&sha256Hex(canonicalUtf8(binding.native))!==sha256Hex(canonicalUtf8(value.native)))throw new WorkspaceOutputError('unsupported','Ordinary Save requires matching settled native references and TIFF output');const text=metadata(project,shot);if(!validWorkspaceOutputMetadataEnvelope({schema:'flow.native-output-metadata',version:2,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,metadata:text}))throw new WorkspaceOutputError('resource-limit','Native output metadata exceeds its supported envelope');return{shot,value,metadata:text};});
-  const operationId=requestedId??randomUUID(),dir=path.join(operations,operationId);await ensure(dir);
+  const operationId=requestedId??randomUUID(),storageId=retryCapture?randomUUID():operationId,dir=path.join(operations,storageId);await ensure(dir);
   const receipt:WorkspaceOutputReceipt={operationId,projectId,revision:project.revision,commitHash:snapshot.commitHash,files:[]};
-  const t:Transaction={operationId,revision:project.revision,commitHash:snapshot.commitHash,kind:batch?'append':'save',phase:'preparing',next:batch?[...ledger.entries]:[],stages:[],publishes:[],deletions:[],receipt};
-  ledger.operationFacts??={};ledger.operationFacts[operationId]={fingerprint,state:'pending',receipt};ledger.transaction=t;await persist();
+  const t:Transaction={operationId,storageId,revision:project.revision,commitHash:snapshot.commitHash,kind:batch?'append':'save',phase:'preparing',next:batch?[...ledger.entries]:[],stages:[],publishes:[],deletions:[],receipt};
+  ledger.operationFacts??={};ledger.operationFacts[operationId]={fingerprint,state:'pending',receipt,retryablePreparation:true,captures:reusable};ledger.transaction=t;await persist();
   try{
    for(let i=0;i<resolved.length;i++){
     const {shot,value,metadata}=resolved[i],name=names.find(n=>n.shotId===shot.id)!;
@@ -241,15 +244,19 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
     let next:Entry,source:string;
     if(old&&old.content===content){next={...old,...name};source=relative(old);}
     else{
-     const capture=await options.captureImage({owner:snapshot.owner,commitHash:snapshot.commitHash,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,...value,metadata});
+     const previous=reusable.find(c=>c.entry.shotId===shot.id&&c.entry.imageId===shot.imageId&&c.entry.content===content);
+     let capture:Awaited<ReturnType<WorkspaceOutputOptions['captureImage']>>;
+     if(previous){const observed=await inspectFile(physical(previous.file));if(observed.digest!==previous.entry.digest||!same(observed.identity,{dev:previous.entry.dev,ino:previous.entry.ino}))fail('Retained output capture changed or disappeared');const bytes=await readBoundFile(physical(previous.file),LIMIT);if(!bytes||bytes.length!==previous.byteLength||sha256Hex(bytes)!==previous.entry.digest)fail('Retained output capture digest differs');const after=await inspectFile(physical(previous.file));if(!same(observed,after))fail('Retained output capture changed while reading');capture={bytes:bytes!,sha256:previous.entry.digest,layerCount:previous.layerCount};}
+     else capture=await options.captureImage({owner:snapshot.owner,commitHash:snapshot.commitHash,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,...value,metadata});
      if(!(capture.bytes instanceof Uint8Array)||capture.bytes.length===0||capture.bytes.length>LIMIT||!digest(capture.sha256)||sha256Hex(capture.bytes)!==capture.sha256||!Number.isSafeInteger(capture.layerCount)||capture.layerCount<1)fail('Invalid native output capture receipt');
-     source=`operations/${operationId}/new-${i}.tif`;const grant=await hold(operationId,physical(source),capture.bytes.length,'native-output-capture');
+     source=`operations/${storageId}/new-${i}.tif`;const grant=await hold(operationId,physical(source),capture.bytes.length,'native-output-capture');
      try{await bind();const owned=await createFileExclusive(physical(source),capture.bytes);await syncDirectory(dir);
       next={...name,imageId:shot.imageId,native:value.native,format:value.format,digest:capture.sha256,content,dev:owned.dev,ino:owned.ino};
+      const facts=ledger.operationFacts![operationId];facts.captures=[...(facts.captures??[]).filter(c=>c.entry.shotId!==shot.id),{file:source,entry:next,byteLength:capture.bytes.length,layerCount:capture.layerCount}];await persist();
      }catch(e){await grant.retainUnknown();throw e;}
     }
     if(old&&!old.vacant&&(old.content!==content||relative(old)!==relative(next))){const st=await fs.lstat(outputPath(root,old.name,old.location));
-     const backup=`operations/${operationId}/old-${i}.tif`;await hold(operationId,physical(backup),st.size,'native-output-backup');t.stages.push({from:relative(old),to:backup,digest:old.digest,dev:String(st.dev),ino:String(st.ino)});
+     const backup=`operations/${storageId}/old-${i}.tif`;await hold(operationId,physical(backup),st.size,'native-output-backup');t.stages.push({from:relative(old),to:backup,digest:old.digest,dev:String(st.dev),ino:String(st.ino)});
      if(old.content===content)source=backup;
     }
     if(!old||old.content!==content||relative(old)!==relative(next))t.publishes.push({from:source,to:relative(next),digest:next.digest,dev:next.dev,ino:next.ino});
@@ -278,6 +285,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    observeSource(observation,selection){const change=structuredClone(observation),itemId=selection?.itemId??(/^[A-Za-z0-9]/.test(change.shotId)?change.shotId:'observed-'+change.shotId);return run(async()=>{await bind();if(ledger.transaction||blocked)throw new WorkspaceOutputError('recovery-pending','Recover output before retaining an observation','retained');checkObservation(change);if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(itemId)||change.observedDigest===null||!change.observedIdentity)throw new WorkspaceOutputError('invalid-input','A present observed file and valid source item ID required');const file=outputPath(root,change.name,change.location),before=await inspectImportSource(file);await checkObservedFile(change);const after=await inspectImportSource(file);if(!same(before,after)||after.dev!==change.observedIdentity.dev||after.ino!==change.observedIdentity.ino)fail('Observed source changed while binding its complete identity');return{id:itemId,sourcePath:file,formatHint:'tiff',expected:after};});},
    save(frozen,operation){const snapshot=structuredClone(frozen),id=operation?.operationId;return run(()=>publish(snapshot,undefined,id));},
    appendPendingBatch(frozen,batch,operation){const snapshot=structuredClone(frozen),selection=structuredClone(batch),id=operation?.operationId;return run(()=>publish(snapshot,selection,id));},
+   retryRetainedCapture(frozen,batch,operation){const snapshot=structuredClone(frozen),selection=batch===undefined?undefined:structuredClone(batch),id=operation?.operationId,settled=operation?.readonlyCaptureSettled;return run(async()=>{if(settled!==true||!operationIdValid(id))throw new WorkspaceOutputError('invalid-input','Explicit settled readonly capture and original operation UUID required');return publish(snapshot,selection,id,true);});},
    queryOperation(operationId){return run(async()=>{await bind();if(blocked)await load();if(!operationIdValid(operationId))throw new WorkspaceOutputError('invalid-input','Invalid output operation UUID');const known=ledger.operationFacts?.[operationId];if(!known)return{state:'absent' as const};if(known.state==='completed')return{state:'completed' as const,receipt:structuredClone(known.receipt)};return{state:known.state};});},
    queryRefreshReceipt(receiptHash){return run(async()=>{await bind();if(blocked)await load();if(!digest(receiptHash))throw new WorkspaceOutputError('invalid-input','Invalid physical decision hash');return accepted.has(receiptHash)?'accepted' as const:'absent' as const;});},
    acceptRefresh(receipt){const input=structuredClone(receipt);return run(async()=>{
