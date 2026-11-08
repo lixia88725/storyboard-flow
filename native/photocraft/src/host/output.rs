@@ -204,6 +204,9 @@ pub(super) fn encode(
             "output layer structure could not be read without loss warnings",
         ));
     }
+    if decoded.document.metadata.xmp.as_deref() != doc.metadata.xmp.as_deref() {
+        return Err(Error::none("export-loss", "source/output XMP bytes were not preserved"));
+    }
     let blocks = opaque_preserved(doc, &decoded.document)?;
     let receipt = json!({"format":format,"sha256":sha(&bytes),"byteLength":bytes.len(),"width":doc.size.width,"height":doc.size.height,"layerCount":doc.layer_count(),"layered":true,"opaqueBlockCount":blocks,"warnings":[]});
     Ok((receipt, bytes))

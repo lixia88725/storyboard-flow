@@ -17,10 +17,14 @@ import { validNativeImageRef, validProjectStroke } from '../../../session/core/i
 import { record, same } from '../../../session/core/imageProjectValues.js';
 import type { NativePipelineDriver, PipelineLimits, PipelineReady, PipelineQueued, PipelinePrepared, PipelineState, PipelineEvent } from '../../../session/core/nativePipeline.js';
 import type { RetainedSourceObject } from './sourceStore.js';
+import { validWorkspaceOutputMetadataEnvelope } from './workspaceOutputContract.js';
+import type { WorkspaceOutputMetadataEnvelope } from './workspaceOutputContract.js';
 
 export type NativeCreationPage={snapshotToken:string;totalUnsettled:number;entries:{operationId:string;state:'intent'|'prepared';prepared?:PreparedImage}[];nextCursor:string|null};
 export type NativeCreationStatus=NativeOperationStatus|{state:'pending';phase:string};
+export type NativeVersionOutput={bytes:Uint8Array;sha256:string;byteLength:number;width:number;height:number;layerCount:number;versionId:string;documentId:string;metadataSha256:string};
 export type NativeProductDriver = {
+  exportVersion(ref:NativeImageRef,format:'psd'|'tiff',metadata:WorkspaceOutputMetadataEnvelope,maxBytes?:number):Promise<NativeVersionOutput>;
   prepareCreation(operationId:string,input:ImageEngineCreationInput,reservation:ImageEngineJobReservation):Promise<PreparedImage>;
   prepareRetained(operationId:string,source:RetainedSourceObject,formatHint:string,reservation:ImageEngineJobReservation,options?:ImageEngineSourceOptions):Promise<PreparedImage>;
   settleCreation(value:PreparedImage):Promise<NativeImageRef>;
@@ -243,6 +247,16 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     pipeline,
     summary:contextSummary,
     activate,
+    async exportVersion(ref,format,metadata,maxBytes=64<<20){
+      const op=operationContext();if(!op.connection.supports('readonlyExportMetadataV1'))refuse('Native binary lacks readonlyExportMetadataV1','unsupported');
+      const pinned=structuredClone(ref),envelope=structuredClone(metadata);
+      if(!['psd','tiff'].includes(format)||!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>(64<<20)||!validWorkspaceOutputMetadataEnvelope(envelope))refuse('Invalid readonly output metadata, format or budget','invalid-input');
+      const payload=new TextEncoder().encode(JSON.stringify(envelope)),metadataSha256=sha(payload);await verifyNative(pinned);op.check();
+      const {reply:r,frame}=await call(next(),{kind:'export',versionId:pinned.versionId,documentId:pinned.documentId,format,maxBytes,metadata:{sha256:metadataSha256,byteLength:payload.length}},current?.versionId??null,payload);op.check();
+      const bytes=new Uint8Array(frame.payload),sha256=sha(bytes),signature=Buffer.from(bytes.subarray(0,4)).toString('hex');
+      if(r.kind!=='exported'||r.exportedDocumentId!==pinned.documentId||r.versionId!==pinned.versionId||r.format!==format||r.width!==pinned.width||r.height!==pinned.height||r.byteLength!==bytes.length||!bytes.length||bytes.length>maxBytes||r.sha256!==sha256||r.metadataSha256!==metadataSha256||r.layered!==true||!Number.isSafeInteger(r.layerCount)||Number(r.layerCount)<1||Number(r.layerCount)>64||!Array.isArray(r.warnings)||r.warnings.length!==0||(format==='psd'?signature!=='38425053':!['49492a00','4d4d002a'].includes(signature)))refuse('Readonly output bytes do not match pinned metadata/version receipt','protocol','unknown');
+      return{bytes,sha256,byteLength:bytes.length,width:pinned.width,height:pinned.height,layerCount:Number(r.layerCount),versionId:pinned.versionId,documentId:pinned.documentId,metadataSha256};
+    },
     async prepareCreation(operationId,input,reservation){
       input=structuredClone(input);
       const op=operationContext();immutableCap();const release=immutableClaim();

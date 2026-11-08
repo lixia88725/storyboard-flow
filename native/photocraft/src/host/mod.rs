@@ -12,6 +12,7 @@ mod source_metadata;
 pub use product::{ProductEdit, SelectionPoint};
 pub use product_preview::PreviewStamp;
 mod output;
+mod output_metadata;
 pub use output::OutputFormat;
 mod pipeline;
 pub mod store;
@@ -265,6 +266,14 @@ pub enum Command {
         format: OutputFormat,
         #[serde(rename = "maxBytes")]
         max_bytes: usize,
+        #[serde(
+            rename = "documentId",
+            default,
+            skip_serializing_if = "Option::is_none"
+        )]
+        document_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        metadata: Option<output_metadata::MetadataRef>,
     },
     Resume,
     Capture,
@@ -758,7 +767,15 @@ impl Host {
         Ok(body)
     }
     fn run(&mut self, r: &Request, payload: &[u8]) -> Result<(Value, Vec<u8>)> {
-        if !matches!(r.body, Command::Open { .. }) && !payload.is_empty() {
+        if !matches!(
+            r.body,
+            Command::Open { .. }
+                | Command::Export {
+                    metadata: Some(_),
+                    ..
+                }
+        ) && !payload.is_empty()
+        {
             return Err(Error::none("invalid-input", "unexpected binary payload"));
         }
         match &r.body {
@@ -1402,6 +1419,8 @@ impl Host {
                 version_id,
                 format,
                 max_bytes,
+                document_id,
+                metadata,
             } => {
                 self.base(r)?;
                 if !self.frozen
@@ -1409,7 +1428,7 @@ impl Host {
                     || self.gesture.is_some()
                     || !self.store.unresolved()?.is_empty()
                 {
-                    return Err(Error::retained(
+                    return Err(Error::none(
                         "busy",
                         "export requires a settled frozen host after pipelineStop",
                     ));
@@ -1424,16 +1443,32 @@ impl Host {
                     return Err(Error::none("limit", "export maxBytes must be 1..64MiB"));
                 }
                 let loaded = self.store.load(version_id)?;
-                if loaded.doc.id != self.document()?.id {
+                if document_id
+                    .as_ref()
+                    .is_some_and(|id| id != &loaded.doc.id.0.to_string())
+                    || (metadata.is_none() && loaded.doc.id != self.document()?.id)
+                    || (metadata.is_some() && document_id.is_none())
+                {
                     return Err(Error::none(
                         "conflict",
                         "export version belongs to another document",
                     ));
                 }
-                let (mut receipt, bytes) = output::encode(&loaded.doc, format, *max_bytes)?;
+                let export_doc = if let Some(reference) = metadata {
+                    output_metadata::overlay(&loaded.doc, reference, payload)?
+                } else {
+                    loaded.doc.as_ref().clone()
+                };
+                let (mut receipt, bytes) = output::encode(&export_doc, format, *max_bytes)?;
+                if let Some(reference) = metadata {
+                    receipt["metadataSha256"] = json!(reference.sha256);
+                }
                 receipt["kind"] = json!("exported");
                 receipt["versionId"] = json!(version_id);
                 receipt["documentId"] = json!(loaded.doc.id.0.to_string());
+                // Top-level documentId is reserved for the live display actor
+                // and is stamped by handle(), even for detached reads.
+                receipt["exportedDocumentId"] = json!(loaded.doc.id.0.to_string());
                 Ok((receipt, bytes))
             }
             Command::Resume => {

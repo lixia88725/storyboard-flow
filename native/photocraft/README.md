@@ -720,5 +720,49 @@ layer composition with the source's embedded merged display. That is a default
 routing blocker: controlled/synthetic Source tests are not evidence to retire
 protected display. The existing real TIFF corpus must retain its original SHA
 and reference-display meaning; mismatches require explicit reference display or
-refusal. Metadata overlay, larger canvas
-budgets and real Windows evidence are separate unfinished gates.
+refusal. Larger canvas budgets and real Windows evidence are separate unfinished
+gates.
+
+## Readonly output metadata
+
+`readonlyExportMetadataV1` adds `NativeProductDriver.exportVersion(ref, format,
+envelope, maxBytes?)` on the existing fair wire owner. Main supplies the exact
+`WorkspaceOutputMetadataEnvelope` v2 authority from `workspaceOutputContract.ts`;
+the Adapter uses that shared validator, never reconstructs a V1 image/layer tree
+inside metadata. The request puts only `metadata:{sha256,byteLength}` in its
+bounded header and sends <=1 MiB UTF-8 envelope bytes as payload. Native validates
+schema, fields, identities, safe revision, dialogue ownership/uniqueness, shape,
+length and digest again. Unsupported capabilities, malformed data and excessive
+budgets reject. `maxBytes` remains 1..64 MiB, without truncation.
+
+Output requires a settled, frozen host after pipelineStop. An explicit
+`documentId` plus immutable `versionId` permits reading another settled document
+in the same private store without activation. The response's top-level
+`documentId`/epoch always describe the actual display actor;
+`exportedDocumentId` identifies the output version. The typed result returns the
+pinned `documentId`, `versionId`, dimensions, layer count, output digest/length
+and `metadataSha256`. No output command accepts a project version, writes a user
+file, settles a project journal or claims Save succeeded. Legacy exports without
+metadata retain their existing same-document behavior. Busy read-only export
+has effect `none`; it never cancels the outstanding edit.
+
+The loaded immutable Document is COW-cloned for output. Only the Flow namespace
+`metadata` property is replaced with base64 of the v2 envelope. Unknown source
+XMP properties, attributes, namespaces, packet wrappers and processing
+instructions retain their original bytes. Element and RDF-attribute forms of the
+single existing Flow property are supported. Ambiguous/duplicate properties,
+DTD, malformed XML, unrecognized container shape and >2 MiB merged XMP reject.
+Layer surfaces, source masks and retained original bytes are unchanged. Both
+formats still use PhotoCraft Document encoding with layered TIFF, alpha
+preservation and linked-file reads disabled; warnings and opaque-block loss
+reject. PSD uses XMP only: existing `metadata.text` loss is still rejected, never
+silently dropped. A native readback also requires exact XMP bytes.
+
+`output_metadata` native tests exercise COW, unknown XML, schema and failure
+bounds. `imageEngineOutputMetadata.test.ts` uses the real host and independent
+`psdtags`/`tifffile`/`imagecodecs` readers for two-layer active and one-layer
+nonactive immutable PSD/TIFF, verifying metadata, alpha-unbaked layer pixels and
+merged pixels; original version bytes, active context and resume pixels remain
+unchanged. `tests/output_metadata_oracle.py` also checks unknown-XMP artifacts.
+These are module self-tests, not real Main publication, formal Save UI,
+background-export latency, arbitrary source round-trip or Windows acceptance.
