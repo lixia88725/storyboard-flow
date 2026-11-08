@@ -42,6 +42,7 @@ export const nativeLayerGestureKey = (key: string) => key === 'Escape' ? 'cancel
 
 export type NativeOpacityChange = { readonly layerId: string; readonly before: number; readonly opacity: number };
 export type NativeOpacityEvent = { changes: readonly NativeOpacityChange[]; phase: 'preview' | 'commit' | 'cancel' };
+export type NativeLayerNameDraftEvent={layerId:string;name:string;composing:boolean;action:'change'|'confirmed'|'discard'};
 export const nativeOpacityChanges = (layers: readonly NativeLayerView[], ids: readonly string[], opacity: number, delta?: number): NativeOpacityChange[] =>
   layers.filter(l => ids.includes(l.id) && !nativeLayerReason(l, 'properties')).map(l => ({layerId:l.id,before:l.opacity,opacity:Math.round(Math.max(0,Math.min(1,delta === undefined ? opacity : l.opacity + delta))*100)/100}));
 

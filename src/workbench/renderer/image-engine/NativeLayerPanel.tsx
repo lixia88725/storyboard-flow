@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import type { ImageWorkspaceImageView } from '../../../platform/contracts/imageWorkspace';
 import type { ImageEngineEdit, ImageEngineBlendMode } from '../../../platform/contracts/imageEngine';
 import { layerDropPlacementFromClientY, layerOpacityFromClientX, layerRowDragIntentFromDelta, type LayerRowDragIntent } from '../../../drawing/renderer/sketchGeometry';
-import { nativeBlendLabel, nativeLayerRows, nativeLayerReason, nativeLayerGestureKey, nativeLayerSelection, nativeOpacityChanges, NativeOpacityGesture, type NativeLayerView, type NativeOpacityEvent } from './nativeLayerPanelModel';
+import { nativeBlendLabel, nativeLayerRows, nativeLayerReason, nativeLayerGestureKey, nativeLayerSelection, nativeOpacityChanges, NativeOpacityGesture, type NativeLayerView, type NativeOpacityEvent, type NativeLayerNameDraftEvent } from './nativeLayerPanelModel';
 import '../styles/layer-panel.css';
 import './native-layer-panel.css';
 
@@ -12,6 +12,8 @@ export type NativeLayerPanelProps = {
   onSelect: (layerId: string) => void | Promise<void>;
   onEdit: (edit: ImageEngineEdit) => Promise<void>;
   onOpacityGesture: (event: NativeOpacityEvent) => void | Promise<void>;
+  onNameDraftChange?: (event:NativeLayerNameDraftEvent)=>void;
+  nameDrafts?:Readonly<Record<string,{name:string;composing:boolean}>>;
   canBeginGesture?: () => boolean;
   /** Main's explicit edit capability list. Missing capabilities fail closed. */
   allowedEdits?: readonly ImageEngineEdit['kind'][];
@@ -23,11 +25,12 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 
 /** Renders the Session's immutable projection. Only selection, text drafts and
  * transient gesture numbers are local; edits always return to the native owner. */
-export function NativeLayerPanel({image, onSelect, onEdit, onOpacityGesture, canBeginGesture, allowedEdits = [], disabledReason, isOpen = true}: NativeLayerPanelProps) {
+export function NativeLayerPanel({image, onSelect, onEdit, onOpacityGesture, onNameDraftChange, nameDrafts, canBeginGesture, allowedEdits = [], disabledReason, isOpen = true}: NativeLayerPanelProps) {
   const [selected, setSelected] = useState<string[]>([]);
   const anchor = useRef<string | undefined>(undefined);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [names, setNames] = useState<Record<string,string>>({});
+  const nameComposing=useRef(new Set<string>());
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -191,8 +194,8 @@ export function NativeLayerPanel({image, onSelect, onEdit, onOpacityGesture, can
   };
   const submitName = async (layer:NativeLayerView) => {
     const key=JSON.stringify([image?.imageId,layer.id]);
-    const name=names[key]; if(name===undefined || name===layer.name || cancelPointer.current || protectedGesture) return;
-    if(await edit({kind:'setLayer',layerId:layer.id,patch:{name}}))setNames(current=>{if(current[key]!==name)return current;const next={...current};delete next[key];return next;});
+    const name=names[key]??nameDrafts?.[layer.id]?.name; if(name===undefined || name===layer.name || nameComposing.current.has(key) || nameDrafts?.[layer.id]?.composing || cancelPointer.current || protectedGesture) return;
+    if(await edit({kind:'setLayer',layerId:layer.id,patch:{name}})){onNameDraftChange?.({layerId:layer.id,name,composing:false,action:'confirmed'});setNames(current=>{if(current[key]!==name)return current;const next={...current};delete next[key];return next;});}
   };
   const menuLayer=layers.find(l=>l.id===menu?.id);
   const shownOpacity=(layer:NativeLayerView)=>opacity?.changes.find(c=>c.layerId===layer.id)?.opacity??layer.opacity;
@@ -222,7 +225,11 @@ export function NativeLayerPanel({image, onSelect, onEdit, onOpacityGesture, can
           <div className="native-layer-kind" title={`${{raster:'像素层',group:'图层组',reference:'参考内容',unsupported:'不支持的内容'}[layer.kind]}；尚无单层缩略图`}>
             {hasChildren?<button type="button" aria-label={collapsed.has(layer.id)?'展开图层组':'折叠图层组'} onClick={e=>{e.stopPropagation();setCollapsed(current=>{const next=new Set(current);if(next.has(layer.id))next.delete(layer.id);else next.add(layer.id);return next;});}}>{collapsed.has(layer.id)?<ChevronRight size={12}/>:<ChevronDown size={12}/>}</button>:<span className="native-layer-indent"/>}<Icon size={20}/>
           </div>
-          <input aria-label="Layer name" value={names[nameKey]??layer.name} disabled={!available('setLayer')||!!reason(layer,'properties')} title={editReason('setLayer',layer,'properties')} onClick={e=>e.stopPropagation()} onFocus={()=>{if(!selected.includes(layer.id))select(layer.id);}} onChange={e=>setNames(current=>({...current,[nameKey]:e.target.value}))} onBlur={()=>void submitName(layer)} onKeyDown={e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();void submitName(layer);}if(e.key==='Escape'){e.preventDefault();setNames(current=>{const next={...current};delete next[nameKey];return next;});}}}/>
+          <input aria-label="Layer name" value={names[nameKey]??nameDrafts?.[layer.id]?.name??layer.name} disabled={!available('setLayer')||!!reason(layer,'properties')} title={editReason('setLayer',layer,'properties')} onClick={e=>e.stopPropagation()} onFocus={()=>{if(!selected.includes(layer.id))select(layer.id);}}
+            onChange={e=>{const name=e.target.value;setNames(current=>({...current,[nameKey]:name}));onNameDraftChange?.({layerId:layer.id,name,composing:nameComposing.current.has(nameKey),action:'change'});}}
+            onCompositionStart={e=>{nameComposing.current.add(nameKey);onNameDraftChange?.({layerId:layer.id,name:e.currentTarget.value,composing:true,action:'change'});}}
+            onCompositionEnd={e=>{nameComposing.current.delete(nameKey);const name=e.currentTarget.value;setNames(current=>({...current,[nameKey]:name}));onNameDraftChange?.({layerId:layer.id,name,composing:false,action:'change'});}}
+            onBlur={()=>void submitName(layer)} onKeyDown={e=>{e.stopPropagation();if(e.nativeEvent.isComposing||nameComposing.current.has(nameKey))return;if(e.key==='Enter'){e.preventDefault();void submitName(layer);}if(e.key==='Escape'){e.preventDefault();onNameDraftChange?.({layerId:layer.id,name:layer.name,composing:false,action:'discard'});setNames(current=>{const next={...current};delete next[nameKey];return next;});}}}/>
           {layer.locked?<LockKeyhole size={12} aria-label="已锁定"/>:<span/>}
           <button type="button" className={`layer-blend-dot ${modes.includes(layer.blendMode as ImageEngineBlendMode)?`layer-blend-dot-${layer.blendMode}`:'native-blend-unknown'}`} aria-label={`图层混合模式：${nativeBlendLabel(layer.blendMode)}`} title={editReason('setLayer',layer,'properties')??nativeBlendLabel(layer.blendMode)} disabled={!available('setLayer')||!!reason(layer,'properties')} onClick={e=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();openMenu(layer,r.left,r.bottom,true);}}/>
           {layer.readOnlyReason&&<span className="native-layer-reason">{layer.readOnlyReason}</span>}
