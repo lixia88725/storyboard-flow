@@ -1,6 +1,8 @@
 //! Stage A native host. One mutable engine context; Flow alone decides global user history.
 //! Host-pinned immutable versions survive process restarts; native History is scratch only.
 mod context;
+mod detached;
+pub use detached::{DetachedInput, ThumbnailOptions, VersionIdentity};
 mod flow_brush;
 mod journal;
 pub use context::{FloatingAction, LayerIdInput};
@@ -12,6 +14,8 @@ mod output;
 pub use output::OutputFormat;
 mod pipeline;
 pub mod store;
+mod store_owner;
+use store_owner::StoreProxy;
 pub mod wire;
 use photocraft_color::{ColorMode, SampleType};
 use photocraft_doc::{Document, Layer, LayerContent};
@@ -84,6 +88,8 @@ pub struct Source {
     pub digest: String,
     pub byte_length: u64,
     pub format_hint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interpretation_id: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -101,6 +107,43 @@ pub struct Request {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Command {
+    DetachedPrepare {
+        input: DetachedInput,
+        #[serde(rename = "maxAdditionalBytes")]
+        max_additional_bytes: u64,
+    },
+    InspectVersion {
+        source: VersionIdentity,
+        thumbnail: ThumbnailOptions,
+    },
+    DetachedPoll {
+        #[serde(rename = "jobId")]
+        job_id: String,
+    },
+    ListDetached {
+        cursor: Option<String>,
+        limit: usize,
+        #[serde(rename = "snapshotToken")]
+        snapshot_token: Option<String>,
+    },
+    DetachedStatus {
+        #[serde(rename = "targetOperationId")]
+        target_operation_id: String,
+    },
+    SettleDetached {
+        #[serde(rename = "candidateId")]
+        candidate_id: String,
+        #[serde(rename = "versionId")]
+        version_id: String,
+    },
+    DiscardDetached {
+        #[serde(rename = "candidateId")]
+        candidate_id: String,
+    },
+    Activate {
+        #[serde(rename = "versionId")]
+        version_id: String,
+    },
     Summary {
         #[serde(rename = "maxBytes")]
         max_bytes: usize,
@@ -316,32 +359,35 @@ struct Candidate {
     temporary_checkpoint: Option<product::TemporarySelection>,
 }
 struct StoreSlot {
-    value: Option<Store>,
+    value: Option<StoreProxy>,
+    shared: StoreProxy,
     policy: &'static str,
 }
 impl StoreSlot {
     fn new(store: Store) -> Self {
+        let proxy = StoreProxy::new(store);
         Self {
-            policy: store.cache_policy(),
-            value: Some(store),
+            policy: proxy.cache_policy(),
+            value: Some(proxy.clone()),
+            shared: proxy,
         }
     }
-    fn get(&self) -> Result<&Store> {
+    fn get(&self) -> Result<&StoreProxy> {
         self.value
             .as_ref()
             .ok_or_else(|| Error::none("busy", "store owned by pipeline IO"))
     }
-    fn get_mut(&mut self) -> Result<&mut Store> {
+    fn get_mut(&mut self) -> Result<&mut StoreProxy> {
         self.value
             .as_mut()
             .ok_or_else(|| Error::none("busy", "store owned by pipeline IO"))
     }
-    fn take(&mut self) -> Result<Store> {
+    fn take(&mut self) -> Result<StoreProxy> {
         self.value
             .take()
             .ok_or_else(|| Error::none("busy", "store already moved"))
     }
-    fn put(&mut self, store: Store) -> Result<()> {
+    fn put(&mut self, store: StoreProxy) -> Result<()> {
         if self.value.is_some() {
             return Err(Error::unknown("store owner already installed"));
         }
@@ -356,6 +402,12 @@ impl StoreSlot {
     }
     fn unresolved(&self) -> Result<Vec<String>> {
         self.get()?.unresolved()
+    }
+    fn edit_unresolved(&self) -> Result<Vec<String>> {
+        self.get()?.edit_unresolved()
+    }
+    fn proxy(&self) -> StoreProxy {
+        self.shared.clone()
     }
     fn op_read(&self, id: &str, state: &str) -> Result<Option<Value>> {
         self.get()?.op_read(id, state)
@@ -380,6 +432,7 @@ pub struct Host {
     store: StoreSlot,
     pipeline: Option<pipeline::Pipeline>,
     engine: Session,
+    detached: detached::DetachedLedger,
     context_generation: u64,
     floating_context: Option<context::FloatingContext>,
     temporary_selection: Option<product::TemporarySelection>,
@@ -447,6 +500,7 @@ impl Host {
             store,
             pipeline: None,
             engine,
+            detached: detached::DetachedLedger::new(),
             context_generation: 0,
             floating_context: None,
             temporary_selection: None,
@@ -514,7 +568,7 @@ impl Host {
         if self.candidate.is_some() || self.gesture.is_some() || self.edit_preview.is_some() {
             return Err(Error::none("busy", "settle candidate or gesture first"));
         }
-        if !self.store.unresolved()?.is_empty() {
+        if !self.store.edit_unresolved()?.is_empty() {
             return Err(Error::retained(
                 "busy",
                 "settle recovered operation receipts before a new edit",
@@ -552,10 +606,24 @@ impl Host {
             .clone())
     }
     pub fn handle(&mut self, r: Request, payload: Vec<u8>) -> Response {
+        self.detached.reap();
+        self.store
+            .shared
+            .set_background(self.detached.has_inflight());
+        if matches!(
+            r.body,
+            Command::StrokeBegin { .. }
+                | Command::StrokeAppend { .. }
+                | Command::PreviewEdit { .. }
+        ) {
+            self.store.shared.set_input_busy(true);
+        }
         let before = self.context_stamp();
         let generation = self.context_generation;
         let result = self.check(&r).and_then(|_| {
-            if self.pipeline.is_some()
+            if detached::is_command(&r.body) {
+                self.detached_command(&r, &payload)
+            } else if self.pipeline.is_some()
                 || matches!(
                     r.body,
                     Command::PipelineStart { .. }
@@ -571,6 +639,12 @@ impl Host {
         if self.context_generation == generation && self.context_stamp() != before {
             self.advance_context();
         }
+        self.store.shared.set_input_busy(
+            self.candidate.is_some()
+                || self.gesture.is_some()
+                || self.edit_preview.is_some()
+                || self.pipeline.as_ref().is_some_and(|p| p.has_work()),
+        );
         let (mut body, payload) = match result {
             Ok(v) => v,
             Err(e) => (json!({"kind":"failure","error":e}), vec![]),
@@ -745,6 +819,16 @@ impl Host {
                 Ok((v, vec![]))
             }
             Command::Open { source } => {
+                if source
+                    .interpretation_id
+                    .as_deref()
+                    .is_some_and(|v| v != "photocraft-v1")
+                {
+                    return Err(Error::none(
+                        "unsupported",
+                        "legacy open does not support this source interpretation",
+                    ));
+                }
                 if let Some(v) = self.replay(r)? {
                     return Ok((v, vec![]));
                 }
@@ -802,6 +886,31 @@ impl Host {
                 self.engine.add_document(doc, None);
                 let v = self.prepare(r, None, None)?;
                 Ok((v, vec![]))
+            }
+            Command::Activate { version_id } => {
+                self.base(r)?;
+                self.context_idle_for_install()?;
+                let loaded = self.store.load(version_id)?;
+                let mut fresh = Session::new();
+                fresh.authorize = Some(authorize);
+                fresh.prefs.edit(|p| {
+                    p.scratch_disks.disks.clear();
+                    p.performance.history_states = 2;
+                });
+                fresh.tools = self.engine.tools.clone();
+                fresh.add_document((*loaded.doc).clone(), None);
+                fresh
+                    .host_install(loaded.doc, loaded.target)
+                    .map_err(native)?;
+                self.engine = fresh;
+                self.source = loaded.source;
+                self.current = Some(version_id.clone());
+                self.temporary_selection = None;
+                self.advance_context();
+                self.display_epoch += 1;
+                self.epoch_input_through = 0;
+                self.last_frame = None;
+                Ok((json!({"kind":"activated","versionId":version_id}), vec![]))
             }
             Command::Load { version_id } => {
                 if self.frozen
@@ -1025,6 +1134,12 @@ impl Host {
             Command::Accept { candidate_id } => {
                 valid_id(candidate_id)?;
                 if let Some(v) = self.store.op_read(candidate_id, "accepted")? {
+                    if v["detached"] == true {
+                        return Err(Error::none(
+                            "unsupported",
+                            "detached candidate requires settleDetached",
+                        ));
+                    }
                     return Ok((v, vec![]));
                 }
                 if self.store.op_read(candidate_id, "discarded")?.is_some() {
@@ -1041,6 +1156,12 @@ impl Host {
                         .ok_or_else(|| {
                             Error::unknown("candidate has no durable prepared receipt")
                         })?;
+                    if v["detached"] == true {
+                        return Err(Error::none(
+                            "unsupported",
+                            "detached candidate requires explicit settleDetached",
+                        ));
+                    }
                     let receipt: VersionReceipt =
                         serde_json::from_value(v["receipt"].clone()).map_err(native)?;
                     let base = v["baseVersion"].as_str().map(str::to_string);
@@ -1124,6 +1245,12 @@ impl Host {
             Command::Discard { candidate_id } => {
                 valid_id(candidate_id)?;
                 if let Some(v) = self.store.op_read(candidate_id, "discarded")? {
+                    if v["detached"] == true {
+                        return Err(Error::none(
+                            "unsupported",
+                            "detached candidate requires discardDetached",
+                        ));
+                    }
                     return Ok((v, vec![]));
                 }
                 if self.store.op_read(candidate_id, "accepted")?.is_some() {
@@ -1150,6 +1277,12 @@ impl Host {
                         .ok_or_else(|| {
                             Error::none("not-found", "candidate has no durable prepared receipt")
                         })?;
+                    if v["detached"] == true {
+                        return Err(Error::none(
+                            "unsupported",
+                            "detached candidate requires discardDetached",
+                        ));
+                    }
                     let base = v["baseVersion"].as_str().map(str::to_owned);
                     if base != self.current {
                         return Err(Error::none(
@@ -1359,6 +1492,18 @@ impl Host {
                 Ok((json!({"kind":"status","state":"absent"}), vec![]))
             }
             Command::Freeze => {
+                if self.store.shared.detached_unsettled() > 0 {
+                    return Err(Error::none(
+                        "busy",
+                        "settle all immutable candidates before freeze",
+                    ));
+                }
+                if self.detached.has_inflight() {
+                    return Err(Error::none(
+                        "busy",
+                        "background immutable job is in flight; wait for its explicit result",
+                    ));
+                }
                 if !self.store.unresolved()?.is_empty() {
                     return Err(Error::retained(
                         "busy",
@@ -1376,10 +1521,25 @@ impl Host {
                 self.frozen = true;
                 Ok((json!({"kind":"frozen","versionId":self.current}), vec![]))
             }
+            Command::ListDetached { .. }
+            | Command::DetachedPrepare { .. }
+            | Command::InspectVersion { .. }
+            | Command::DetachedPoll { .. }
+            | Command::DetachedStatus { .. }
+            | Command::SettleDetached { .. }
+            | Command::DiscardDetached { .. } => {
+                Err(Error::none("internal", "detached dispatch missing"))
+            }
             Command::PipelineStart { .. }
             | Command::PipelinePoll { .. }
             | Command::PipelineStop { .. } => Err(Error::none("not-found", "pipeline not active")),
             Command::Close => {
+                if self.detached.has_inflight() || self.store.shared.context_unsettled() {
+                    return Err(Error::none(
+                        "busy",
+                        "settle immutable jobs and receipts before close",
+                    ));
+                }
                 if !self.frozen {
                     return Err(Error::none("busy", "freeze before close"));
                 }

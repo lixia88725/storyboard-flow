@@ -1117,3 +1117,198 @@ fn product_preview_failed_persistence_retains_owner_and_requires_main_resolution
         h.root.display()
     );
 }
+
+fn immutable_wait(h: &mut Harness, id: &str) -> Response {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        let reply = h.call("immutablePoll", json!({"kind":"detachedPoll","jobId":id}));
+        if reply.header["body"]["finished"] == true {
+            return reply;
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "immutable job stalled: {}",
+            reply.header
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+}
+fn immutable_new(h: &mut Harness, id: &str, width: u32, height: u32) -> Value {
+    let queued=h.body(id,json!({"kind":"detachedPrepare","input":{"kind":"new","width":width,"height":height},"maxAdditionalBytes":2<<20}));
+    assert_eq!(queued["kind"], "detachedQueued", "{queued}");
+    let result = immutable_wait(h, id);
+    assert_eq!(
+        result.header["body"]["result"]["kind"], "prepared",
+        "{}",
+        result.header
+    );
+    result.header["body"]["result"].clone()
+}
+fn immutable_settle(h: &mut Harness, id: &str, prepared: &Value) -> Value {
+    let queued=h.body("settleImmutable",json!({"kind":"settleDetached","candidateId":id,"versionId":prepared["receipt"]["versionId"]}));
+    assert_eq!(queued["kind"], "detachedQueued", "{queued}");
+    let response = immutable_wait(h, id);
+    let result = response.header["body"]["result"].clone();
+    assert_eq!(result["kind"], "accepted", "{result}");
+    result
+}
+#[test]
+fn detached_candidates_preserve_active_document_and_settle_without_activating() {
+    let mut h = Harness::new();
+    let (base, _, _) = h.selected_fixture();
+    let original = state(&h.h);
+    let identity = h.summary();
+    let first = immutable_new(&mut h, "newDetached", 64, 48);
+    assert_eq!(state(&h.h), original);
+    assert_ne!(first["receipt"]["documentId"], identity["documentId"]);
+    assert_eq!(h.h.current.as_deref(), Some(base.as_str()));
+    let queued=h.body("copyDetached",json!({"kind":"detachedPrepare","input":{"kind":"duplicate","source":{"versionId":base,"documentId":identity["documentId"],"width":32,"height":32}},"maxAdditionalBytes":2<<20}));
+    assert_eq!(queued["kind"], "detachedQueued");
+    let copy = immutable_wait(&mut h, "copyDetached").header["body"]["result"].clone();
+    assert_eq!(copy["kind"], "prepared", "{copy}");
+    assert_ne!(copy["receipt"]["documentId"], identity["documentId"]);
+    assert_eq!(h.capture().payload, original.pixels);
+    assert_eq!(h.summary()["epoch"], identity["epoch"]);
+    assert_eq!(
+        h.summary()["contextGeneration"],
+        identity["contextGeneration"]
+    );
+    assert_eq!(
+        h.body(
+            "wrongAccept",
+            json!({"kind":"accept","candidateId":"newDetached"})
+        )["error"]["code"],
+        "unsupported"
+    );
+    assert_eq!(
+        h.body("freeze", json!({"kind":"freeze"}))["error"]["code"],
+        "busy"
+    );
+    // Synthetic Main-surrogate decision: one durable batch, not two native project decisions.
+    let file = std::fs::File::create(h.root.join("main-batch-decision.json")).unwrap();
+    serde_json::to_writer(
+        &file,
+        &json!({"candidates":[first["receipt"],copy["receipt"]]}),
+    )
+    .unwrap();
+    file.sync_all().unwrap();
+    immutable_settle(&mut h, "newDetached", &first);
+    immutable_settle(&mut h, "copyDetached", &copy);
+    assert_eq!(state(&h.h), original);
+    assert_eq!(h.summary()["documentId"], identity["documentId"]);
+    let activate = h.body(
+        "activateNew",
+        json!({"kind":"activate","versionId":first["receipt"]["versionId"]}),
+    );
+    assert_eq!(activate["kind"], "activated", "{activate}");
+    h.base = Some(first["receipt"]["versionId"].as_str().unwrap().into());
+    assert_eq!(h.h.document().unwrap().size, Size::new(64, 48));
+    assert!(h.capture().payload.iter().all(|v| *v == 255));
+    let restore = h.body("activateOld", json!({"kind":"activate","versionId":base}));
+    assert_eq!(restore["kind"], "activated", "{restore}");
+    h.base = Some(base);
+    assert_eq!(state(&h.h), original);
+    let generation = h.h.context_generation;
+    let epoch = h.h.display_epoch;
+    let v = h.body(
+        "sameActivation",
+        json!({"kind":"activate","versionId":h.base}),
+    );
+    assert_eq!(v["kind"], "activated");
+    assert_eq!(h.h.context_generation, generation + 1);
+    assert_eq!(h.h.display_epoch, epoch + 1);
+}
+#[test]
+fn detached_cpu_and_io_wait_for_live_input_without_blocking_accepted_samples() {
+    let mut h = Harness::new();
+    let p = h.body("new", json!({"kind":"new","width":64,"height":64}));
+    h.accept("new", &p);
+    let earlier = immutable_new(&mut h, "earlier", 16, 16);
+    let frame=h.call("begin",json!({"kind":"strokeBegin","previewId":"live","brush":{"size":8,"opacity":0.5,"color":"#ff0000"},"points":[{"x":12,"y":12,"pressure":1}]}));
+    assert_eq!(frame.header["body"]["kind"], "frame");
+    let epoch = h.h.display_epoch;
+    let q=h.body("background",json!({"kind":"detachedPrepare","input":{"kind":"new","width":32,"height":32},"maxAdditionalBytes":2<<20}));
+    assert_eq!(q["kind"], "detachedQueued");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        let pending = h.body("poll", json!({"kind":"detachedPoll","jobId":"background"}));
+        assert_eq!(pending["finished"], false, "{pending}");
+        if pending["phase"] == "waitingForIdleCpu" {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background admission stalled: {pending}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let proof = std::fs::File::create(h.root.join("earlier-main-decision.json")).unwrap();
+    serde_json::to_writer(&proof, &earlier["receipt"]).unwrap();
+    proof.sync_all().unwrap();
+    // Explicit settlement is control work and must not wait for unrelated B's
+    // idle-only CPU job while A's live foreground gesture is still admitted.
+    immutable_settle(&mut h, "earlier", &earlier);
+    assert_eq!(
+        h.body(
+            "queryEarlier",
+            json!({"kind":"detachedStatus","targetOperationId":"earlier"})
+        )["state"],
+        "accepted"
+    );
+    let frame=h.call("append",json!({"kind":"strokeAppend","previewId":"live","fromSeq":2,"points":[{"x":40,"y":24,"pressure":0.5}]}));
+    assert_eq!(frame.header["body"]["kind"], "frame");
+    assert_eq!(h.h.display_epoch, epoch);
+    let prepared = h.body(
+        "stroke",
+        json!({"kind":"strokeFinish","previewId":"live","throughSeq":2}),
+    );
+    h.accept("stroke", &prepared);
+    let committed = h.capture().payload;
+    let result = immutable_wait(&mut h, "background");
+    assert_eq!(result.header["body"]["result"]["kind"], "prepared");
+    assert_eq!(h.capture().payload, committed);
+    assert_eq!(h.h.display_epoch, epoch);
+    let r = result.header["body"]["result"].clone();
+    immutable_settle(&mut h, "background", &r);
+}
+#[test]
+fn detached_budget_is_reserved_before_pixels_and_failed_source_keeps_original_target() {
+    let mut h = Harness::new();
+    let p = h.body("new", json!({"kind":"new","width":16,"height":16}));
+    h.accept("new", &p);
+    let original = state(&h.h);
+    let mut n = 9327u32;
+    let mut raw = Vec::new();
+    for _ in 0..128 * 128 {
+        for _ in 0..3 {
+            n ^= n << 13;
+            n ^= n >> 17;
+            n ^= n << 5;
+            raw.push(n as u8);
+        }
+        raw.push(255);
+    }
+    let image =
+        photocraft_codecs::Image::from_u8(128, 128, photocraft_codecs::ChannelLayout::Rgba, raw)
+            .unwrap();
+    let bytes =
+        photocraft_codecs::encode(&image, photocraft_codecs::Format::Png, &Default::default())
+            .unwrap();
+    let r:Request=serde_json::from_value(json!({"protocol":1,"requestId":"source","sessionId":"context","incarnation":"one","workerEpoch":h.h.worker_epoch,"operationId":"limited","baseVersion":null,"body":{"kind":"detachedPrepare","input":{"kind":"source","source":{"digest":sha(&bytes),"byteLength":bytes.len(),"formatHint":"png"}},"maxAdditionalBytes":16384}})).unwrap();
+    let response = h.h.handle(r, bytes);
+    assert_eq!(response.header["body"]["kind"], "detachedQueued");
+    let result = immutable_wait(&mut h, "limited");
+    assert_eq!(
+        result.header["body"]["result"]["kind"], "failed",
+        "{}",
+        result.header
+    );
+    assert_eq!(result.header["body"]["result"]["globalFailure"], false);
+    assert_eq!(state(&h.h), original);
+    let status = h.body(
+        "status",
+        json!({"kind":"detachedStatus","targetOperationId":"limited"}),
+    );
+    assert_eq!(status["state"], "failed");
+    assert!(!h.h.store.shared.context_unsettled());
+}

@@ -614,3 +614,94 @@ checks and real `imageEngineProductPreview.test.ts` compare fixed-source pixels,
 matched adoption, cancel/discard, one persisted version, reopen, sequence failures
 and retained IO-failure obligations. Frames are native output evidence, not formal
 LayerPanel/Canvas or physical-input performance acceptance.
+
+## Detached immutable jobs and explicit document activation
+
+`detachedImageJobsV1` supplies independent creation/hydration candidates and
+read-only version inspection. A persistent single Store owner now performs all
+publication, journal records, validation and quota checks. The existing four-slot
+stroke pipeline delegates to that same owner; it is not another writer or user
+history. Foreground paint/accept work has a bounded high-priority queue; one
+immutable CPU job, up to four settlement-control jobs and a bounded low-priority queue wait for an idle foreground
+between non-preemptible phases. `detachedPoll` reports queued/checking, waiting for
+idle CPU/IO, decoding, rendering and persistence phases. An admitted frame/sample
+is never discarded to make room for background work. Settlement/status of a durable candidate does not acquire the CPU-job gate or
+wait for an unrelated background decoder. A low-priority operation
+already in progress has a bounded admission size, not a claim of zero latency.
+
+`detachedPrepare` accepts an editable white canvas (one unlocked native raster
+filled through the native engine; no PNG), duplication of an exact immutable version,
+or bytes granted from Main's retained source object. It returns a volatile job
+admission first; polling returns the durable prepared candidate plus bounded layer
+summary and PNG thumbnail. It never selects, installs, accepts or changes the
+active engine Document. One CPU job runs at a time; at most 64 independent
+candidate/results remain in memory. Candidate receipt records remain in the
+append-only native journal after an in-memory cache is evicted or the process
+restarts. Terminal polling is repeatable and never consumes the only receipt.
+
+Main grants `maxAdditionalBytes` only after reserving the same operation against
+its workspace-wide 8 GiB actual-plus-reserved budget. Native enforces its own
+8 GiB store cap and that per-operation allowance, accounting real retained bytes
+at each IO step and reserving 8 KiB for preparation/settlement records. Native's
+store cap is not a replacement for Main counting originals, project records and
+other outstanding reservations. Exceeding a quota retains evidence and rejects
+new spending; nothing is automatically cleaned up.
+
+Several prepared new/duplicate candidates may coexist before Main's single batch
+CAS. Only explicit `settleDetached(candidateId,versionId)` acknowledges that Main
+choice. It writes a durable native receipt without changing current document or
+project authority. Ordinary active-document Accept/Discard/Abandon refuse these
+candidates. Recovery can query `detachedStatus` or enumerate bounded `listDetached`
+pages with an exact journal snapshot token; a changed token requires restarting
+pagination. An orphan's document ID or matching source digest is not permission
+to guess its project image. Uncommitted candidates require explicit retirement;
+no input is automatically replayed. Freeze/close refuse in-flight jobs or
+unsettled durable records.
+
+`inspectVersion` derives a layer summary and PNG from its exact immutable version
+without activating it, creating a version or changing display epochs. The Node
+Adapter verifies ref geometry, SHA-256, PNG header and bounds; its copied PNG cache
+is capped at 16 entries. `activate` is a separate explicit navigation barrier:
+a fresh hosted context is fully constructed before swapping the active context.
+It clears temporary selection and advances actual context/display generations
+even for the same ref. Its failure retains the old context. Main must use this
+barrier for board changes and product Undo; paint's private same-ref install fast
+path remains to avoid clearing context on every pen-down.
+
+The typed Adapter methods are `prepareCreation`, `prepareRetained`,
+`settleCreation`, `creationStatus`, `discardCreation`, `listCreations`,
+`inspectVersion` and `activate`. Prepare returns the existing `PreparedImage`
+shape with `baseVersion:null`. Inspection returns `{summary,thumbnail,bytes}`;
+thumbnail is PNG with SHA-256 and dimensions, never a replacement original or an
+active frame. Main must not hold the foreground append/pump/CAS gate while waiting
+for an idle background job. New/copy project history and crash decisions still
+require Main's batch input/decision ledger and independent end-to-end acceptance.
+
+Source admission is intentionally still limited: 8 MiB granted bytes, PNG/TIFF/PSD
+hint, RGB8 raster/group Document, no damaged/preview-only/warning result, canvas
+edge <=8192 and <=16 Mi pixels, <=64 layers and <=512 MiB materialized native
+pixels. The live pipeline retains <=256 MiB; a larger admitted reference is not
+advertised as paintable. CMYK, 16-bit, unsupported structure, excessive metadata
+and larger files are not silently flattened or admitted. Main must retain their
+originals and use an explicit protected reference-display route. This is not
+parity with the older protected `readPhotocraft` reader or a 32 Mi-pixel product
+capacity claim. Source interpretation is bound separately from format hint:
+`photocraft-v1` is supported; `flow-v1-upgrade` remains explicitly unsupported
+until its separate validated opacity/lock hydration capability is implemented.
+
+Native tests inspect the unchanged active pixels/mask/target and prepared states,
+background input continuation, quotas and exact activation. The real Node tests
+exercise retained bytes, new/duplicate candidates, PNG decoding, one synthetic
+Main-surrogate batch, SIGKILL and status-driven reopen. These are native Module
+self-tests; they do not certify the real Main batch ledger, formal workbench,
+physical input, arbitrary source fidelity or Windows execution.
+
+The source gate above is not an independent merged-image oracle. Unlike the
+older `flow-photocraft` reader's PSD merged/model comparison and Main's independent
+TIFF sharp comparison, the current hydration gate does not yet compare imported
+layer composition with the source's embedded merged display. That is a default
+routing blocker: controlled/synthetic Source tests are not evidence to retire
+protected display. The existing real TIFF corpus must retain its original SHA
+and reference-display meaning; mismatches require explicit reference display or
+refusal. Metadata overlay, the V1 opacity/full-lock interpretation, larger canvas
+budgets and real Windows evidence are separate unfinished gates.

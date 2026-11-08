@@ -1,5 +1,6 @@
 import { validImageEnginePreviewStamp } from '../../../platform/contracts/imageEngine.js';
-import type { ImageEngineContextSummary, ImageEngineDisplayIdentity, ImageEngineLayerSummary, ImageEngineLocks } from '../../../platform/contracts/imageEngine.js';
+import type { ImageEngineContextSummary, ImageEngineDisplayIdentity, ImageEngineLayerSummary, ImageEngineLocks, ImageEngineInspection } from '../../../platform/contracts/imageEngine.js';
+import type { NativeImageRef } from '../../../platform/contracts/imageProject.js';
 import { record } from '../../../session/core/imageProjectValues.js';
 const fail=():never=>{throw Object.assign(Error('Malformed native product context'),{code:'protocol',effect:'unknown'});};
 const id=(v:unknown):string=>typeof v==='string'&&/^(0|[1-9][0-9]{0,19})$/.test(v)&&BigInt(v)<=18446744073709551615n?v:fail();
@@ -10,10 +11,7 @@ const bool=(v:unknown):boolean=>typeof v==='boolean'?v:fail();
 const hash=(v:unknown):string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)?v:fail();
 const box=(v:unknown):readonly[number,number,number,number]=>Array.isArray(v)&&v.length===4?[integer(v[0],-10_000_000),integer(v[1],-10_000_000),integer(v[2],0,8192),integer(v[3],0,8192)]:fail();
 const locks=(v:unknown):ImageEngineLocks=>{if(!record(v))return fail();return{all:bool(v.all),pixels:bool(v.pixels),position:bool(v.position),transparency:bool(v.transparency),artboard:bool(v.artboard)};};
-/** Decode once at the native trust boundary. Main/UI consume a small projection,
- * never arbitrary Rust Session state, native command names or persistent History. */
-export function parseNativeProductContext(v:Record<string,unknown>,displayIdentity:ImageEngineDisplayIdentity):ImageEngineContextSummary {
- if(v.kind!=='contextSummary'||id(v.documentId)!==displayIdentity.documentId||integer(v.workerEpoch,1)!==displayIdentity.workerEpoch||integer(v.epoch)!==displayIdentity.epoch)return fail();
+function layerTree(value:unknown,count:unknown){
  const seen=new Set<string>();let remaining=4096;
  const tree=(value:unknown,depth=0):ImageEngineLayerSummary[]=>{
   if(!Array.isArray(value)||depth>128)return fail();
@@ -23,7 +21,14 @@ export function parseNativeProductContext(v:Record<string,unknown>,displayIdenti
    return{layerId,name:text(l.name),kind:l.kind as ImageEngineLayerSummary['kind'],visible:bool(l.visible),opacity:num(l.opacity,0,1),blendMode,nativeBlend,locks:locks(l.locks),effectiveLocks:locks(l.effectiveLocks),children:tree(l.children,depth+1)};
   });
  };
- const layers=tree(v.layers);if(integer(v.layerCount)!==seen.size)return fail();
+ const layers=tree(value);if(integer(count)!==seen.size)return fail();return {layers,seen};
+
+}
+/** Decode once at the native trust boundary. Main/UI consume a small projection,
+ * never arbitrary Rust Session state, native command names or persistent History. */
+export function parseNativeProductContext(v:Record<string,unknown>,displayIdentity:ImageEngineDisplayIdentity):ImageEngineContextSummary {
+ if(v.kind!=='contextSummary'||id(v.documentId)!==displayIdentity.documentId||integer(v.workerEpoch,1)!==displayIdentity.workerEpoch||integer(v.epoch)!==displayIdentity.epoch)return fail();
+ const {layers,seen}=layerTree(v.layers,v.layerCount);
  const active=v.activeLayerId===null?null:id(v.activeLayerId);if(active&&!seen.has(active))return fail();
  if(!Array.isArray(v.selectedLayerIds)||v.selectedLayerIds.length>4096)return fail();const selected=v.selectedLayerIds.map(id);if(new Set(selected).size!==selected.length||selected.some(x=>!seen.has(x)))return fail();
  const generation=integer(v.contextGeneration);
@@ -40,4 +45,17 @@ export function parseNativeProductContext(v:Record<string,unknown>,displayIdenti
  if(!['full-layer','source-selection-refused'].includes(String(v.paintScope)))return fail();
  if(!['alpha','backgroundColor'].includes(String(v.eraserBehavior)))return fail();
  return{displayIdentity:{...displayIdentity},imageVersionRef:v.imageVersionRef===null?null:hash(v.imageVersionRef),contextGeneration:generation,layers,activeLayerId:active,selectedLayerIds:selected,selection,temporarySelection,floating,editPreview,candidateId:v.candidateId===null?null:text(v.candidateId,80),inputActive:bool(v.inputActive),pipelineActive:bool(v.pipelineActive),frozen:bool(v.frozen),settlementRequired:bool(v.settlementRequired),tools,paintScope:v.paintScope as 'full-layer'|'source-selection-refused',eraserBehavior:v.eraserBehavior as 'alpha'|'backgroundColor'};
+}
+
+export function parseNativeInspection(value:unknown,payload:Uint8Array,expected:NativeImageRef,payloadSha256:string):ImageEngineInspection{
+ if(!record(value)||value.versionId!==expected.versionId||value.documentId!==expected.documentId||value.width!==expected.width||value.height!==expected.height)return fail();
+ const {layers,seen}=layerTree(value.layers,value.layerCount);
+ const active=value.activeLayerId===null?null:id(value.activeLayerId);if(active&&!seen.has(active))return fail();
+ if(!Array.isArray(value.selectedLayerIds)||value.selectedLayerIds.length>4096)return fail();const selected=value.selectedLayerIds.map(id);if(new Set(selected).size!==selected.length||selected.some(x=>!seen.has(x)))return fail();
+ const sourceSelectionPresent=bool(value.sourceSelectionPresent),paintScope=sourceSelectionPresent?'source-selection-refused' as const:'full-layer' as const;if(value.paintScope!==paintScope)return fail();
+ const t=value.thumbnail;if(!record(t)||t.format!=='png'||hash(t.sha256)!==payloadSha256||integer(t.byteLength,1,1<<20)!==payload.byteLength)return fail();
+ const width=integer(t.width,1,512),height=integer(t.height,1,512);
+ if(payload.byteLength<24||![137,80,78,71,13,10,26,10].every((v,i)=>payload[i]===v))return fail();
+ const view=new DataView(payload.buffer,payload.byteOffset,payload.byteLength);if(view.getUint32(16)!==width||view.getUint32(20)!==height)return fail();
+ return{summary:{versionId:expected.versionId,documentId:expected.documentId,width:expected.width,height:expected.height,layers,activeLayerId:active,selectedLayerIds:selected,sourceSelectionPresent,paintScope},thumbnail:{format:'png',width,height,byteLength:payload.byteLength,sha256:payloadSha256},bytes:new Uint8Array(payload)};
 }

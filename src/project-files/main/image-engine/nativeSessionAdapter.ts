@@ -7,10 +7,10 @@ import type { createImageEngineWorkerOwner } from '../../../platform/main/imageE
 import type { NativeFrame } from '../../../platform/main/imageEngineFraming.js';
 import type { NativeImageRef } from '../../../platform/contracts/imageProject.js';
 import { validImageEngineEdit, validImageEnginePreviewStamp } from '../../../platform/contracts/imageEngine.js';
-import type { ImageEngineEdit, ImageEngineEditContext, ImageEngineContextSummary, ImageEngineDisplayIdentity, ImageEnginePreviewStamp, ImageEnginePreviewResult } from '../../../platform/contracts/imageEngine.js';
+import type { ImageEngineEdit, ImageEngineEditContext, ImageEngineContextSummary, ImageEngineDisplayIdentity, ImageEnginePreviewStamp, ImageEnginePreviewResult, ImageEngineCreationInput, ImageEngineJobReservation, ImageEngineInspection, ImageEngineSourceOptions } from '../../../platform/contracts/imageEngine.js';
 import { validSelection } from '../../../platform/contracts/flowSelection.js';
 import type { FlowSelection } from '../../../platform/contracts/flowSelection.js';
-import { parseNativeProductContext } from './nativeProductContext.js';
+import { parseNativeProductContext, parseNativeInspection } from './nativeProductContext.js';
 import type { FlowStroke } from '../../../platform/contracts/flowWave2.js';
 import type { NativeOperationStatus, NativeSessionDriver, PreparedImage } from '../../../session/core/nativeSession.js';
 import { validNativeImageRef, validProjectStroke } from '../../../session/core/imageProjectModel.js';
@@ -18,7 +18,17 @@ import { record, same } from '../../../session/core/imageProjectValues.js';
 import type { NativePipelineDriver, PipelineLimits, PipelineReady, PipelineQueued, PipelinePrepared, PipelineState, PipelineEvent } from '../../../session/core/nativePipeline.js';
 import type { RetainedSourceObject } from './sourceStore.js';
 
+export type NativeCreationPage={snapshotToken:string;totalUnsettled:number;entries:{operationId:string;state:'intent'|'prepared';prepared?:PreparedImage}[];nextCursor:string|null};
+export type NativeCreationStatus=NativeOperationStatus|{state:'pending';phase:string};
 export type NativeProductDriver = {
+  prepareCreation(operationId:string,input:ImageEngineCreationInput,reservation:ImageEngineJobReservation):Promise<PreparedImage>;
+  prepareRetained(operationId:string,source:RetainedSourceObject,formatHint:string,reservation:ImageEngineJobReservation,options?:ImageEngineSourceOptions):Promise<PreparedImage>;
+  settleCreation(value:PreparedImage):Promise<NativeImageRef>;
+  listCreations(options?:{cursor?:string;snapshotToken?:string;limit?:number}):Promise<NativeCreationPage>;
+  creationStatus(operationId:string):Promise<NativeCreationStatus>;
+  discardCreation(operationId:string):Promise<void>;
+  activate(ref:NativeImageRef):Promise<void>;
+  inspectVersion(ref:NativeImageRef,limits?:{maxEdge:number;maxBytes:number}):Promise<ImageEngineInspection>;
   prepareEdit(operationId:string,base:NativeImageRef,edit:ImageEngineEdit,context:ImageEngineEditContext):Promise<PreparedImage>;
   summary():Promise<ImageEngineContextSummary>;
   selectLayerContext(base:NativeImageRef,layerId:string,expectedContextGeneration:number):Promise<ImageEngineContextSummary>;
@@ -176,6 +186,37 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     async accept(value,base){const op=operationContext();const{reply}=await call(next(),{kind:'accept',candidateId:value.candidateId},base.versionId);op.check();if(reply.kind==='accepted'){if(!same(nativeRef(reply.receipt),value.native))refuse('Native repeated accept mismatch','protocol','unknown');return;}if(reply.kind!=='acceptQueued'||reply.durable!==false||reply.candidateId!==value.candidateId)refuse('Native pipeline accept admission mismatch','protocol','unknown');current={...value.native};},
     async stop(){const op=operationContext();const{reply}=await call(next(),{kind:'pipelineStop',pipelineId:pipelineReady?.pipelineId},pipelineBase());op.check();if(reply.kind!=='pipelineStopped'||reply.versionId!==current?.versionId)refuse('Native pipeline barrier mismatch','protocol','unknown');pipelineReady=undefined;}
   };
+  let immutableJobToken:object|undefined;
+  const inspectionCache=new Map<string,ImageEngineInspection>();
+  const cacheInspection=(key:string,value:ImageEngineInspection)=>{inspectionCache.set(key,value);while(inspectionCache.size>16)inspectionCache.delete(inspectionCache.keys().next().value!);};
+  const copyInspection=(v:ImageEngineInspection):ImageEngineInspection=>({...structuredClone({summary:v.summary,thumbnail:v.thumbnail}),bytes:new Uint8Array(v.bytes)});
+  const immutableClaim=()=>{if(immutableJobToken)refuse('One immutable image job already in flight','backpressure');const token={};immutableJobToken=token;return()=>{if(immutableJobToken===token)immutableJobToken=undefined;};};
+  const immutableCap=()=>{if(!requireCurrent().supports('detachedImageJobsV1'))refuse('Native binary lacks detachedImageJobsV1','unsupported');};
+  const reservationLimit=(v:ImageEngineJobReservation)=>{if(!v||!Number.isSafeInteger(v.maxAdditionalBytes)||v.maxAdditionalBytes<16384||v.maxAdditionalBytes>8*1024**3)refuse('A Main recovery reservation of 16KiB..8GiB is required','invalid-input');return v.maxAdditionalBytes;};
+  const versionIdentity=(v:NativeImageRef)=>({versionId:v.versionId,documentId:v.documentId,width:v.width,height:v.height});
+  const waitImmutable=async(op:ReturnType<typeof operationContext>,jobId:string,started:{reply:Record<string,unknown>;frame:NativeFrame})=>{
+    let value=started;
+    while(true){op.check();const r=value.reply;
+      if(r.kind==='detachedState'&&r.finished===true){if(!record(r.result))refuse('Immutable result missing','protocol','unknown');const result=r.result;
+        if(result.kind==='failed'){const e=result.error;if(!record(e)||typeof e.message!=='string')refuse('Malformed immutable failure','protocol','unknown');if(result.globalFailure===true)fault();refuse(e.message,String(e.code??'native'),e.effect==='none'?'none':e.effect==='retained'?'retained':'unknown');}
+        return{result,payload:value.frame.payload};
+      }
+      if(!['detachedQueued','detachedState'].includes(String(r.kind))||r.jobId!==jobId)refuse('Immutable job identity mismatch','protocol','unknown');
+      await new Promise(resolve=>setTimeout(resolve,8));op.check();value=await call(next(),{kind:'detachedPoll',jobId},null);op.check();
+    }
+  };
+  const detachedPrepared=(operationId:string,r:Record<string,unknown>,payload:Uint8Array):PreparedImage=>{
+    if(!['prepared','accepted'].includes(String(r.kind))||r.detached!==true||r.candidateId!==operationId)refuse('Expected detached durable candidate','protocol','unknown');
+    const native=nativeRef(r.receipt);if(record(r.summary)&&payload.length){const view=parseNativeInspection(r.summary,payload,native,sha(payload));cacheInspection(native.versionId,view);}
+    return{candidateId:operationId,baseVersion:null,native};
+  };
+  const activate=async(ref:NativeImageRef)=>{
+    ref=structuredClone(ref);
+    const op=operationContext();immutableCap();const before=current?{...current}:null;
+    await verifyNative(ref);op.check();if(!same(current,before))refuse('Active target changed while verifying navigation');
+    const{reply}=await call(next(),{kind:'activate',versionId:ref.versionId},before?.versionId??null);op.check();
+    if(reply.kind!=='activated'||reply.versionId!==ref.versionId||reply.documentId!==ref.documentId||!Number.isSafeInteger(reply.epoch))refuse('Native activation identity mismatch','protocol','unknown');current={...ref};candidate=undefined;previewOperation=undefined;
+  };
   const contextSummary=async()=>{
     const op=operationContext();
     if(!op.connection.supports('toolContextSummaryV1')||!op.connection.supports('decimalLayerIdsV1')||!op.connection.supports('temporarySelectionContextV1')||!op.connection.supports('intrinsicSelectionPaintGuardV1'))refuse('Native binary lacks typed product context','unsupported');
@@ -195,12 +236,55 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     ...(owner?{async restartForRecovery(){
       fenced=true;generation++; // Fence queued Adapter jobs before awaiting owned exit.
       const restarting=generation,handle=await owner.restart();if(restarting!==generation)refuse('Old worker replacement fenced','worker-unavailable','unknown');connection=handle.connection;generation=handle.generation;
-      display=null;contextGeneration=null;current=null;candidate=undefined;previewOperation=undefined;pipelineReady=undefined;
+      immutableJobToken=undefined;inspectionCache.clear();display=null;contextGeneration=null;current=null;candidate=undefined;previewOperation=undefined;pipelineReady=undefined;
       faultNotified=false;closing=false;fenced=false;armExit();
     }}:{}),
     onFault(listener){faultListeners.add(listener);return()=>faultListeners.delete(listener);},
     pipeline,
     summary:contextSummary,
+    activate,
+    async prepareCreation(operationId,input,reservation){
+      input=structuredClone(input);
+      const op=operationContext();immutableCap();const release=immutableClaim();
+      try{const maximum=reservationLimit(reservation);let nativeInput:Record<string,unknown>;
+        if(input.kind==='new'){if(!Number.isSafeInteger(input.width)||!Number.isSafeInteger(input.height)||input.width<1||input.height<1||input.width>8192||input.height>8192||input.width*input.height>16*1024**2)refuse('Native creation dimensions exceed current bounds','limit');nativeInput={kind:'new',width:input.width,height:input.height};}
+        else if(input.kind==='duplicate'){const source=structuredClone(input.source);await verifyNative(source);op.check();nativeInput={kind:'duplicate',source:versionIdentity(source)};}else refuse('Unknown creation input','invalid-input');
+        const started=await call(operationId,{kind:'detachedPrepare',input:nativeInput,maxAdditionalBytes:maximum},null);op.check();const value=await waitImmutable(op,operationId,started);op.check();const result=detachedPrepared(operationId,value.result,value.payload);if(result.native.width!==(input.kind==='new'?input.width:input.source.width)||result.native.height!==(input.kind==='new'?input.height:input.source.height)||(input.kind==='duplicate'&&result.native.documentId===input.source.documentId))refuse('Creation geometry/document identity mismatch','protocol','unknown');return result;
+      }finally{release();}
+    },
+    async prepareRetained(operationId,source,formatHint,reservation,sourceOptions={}){
+      const op=operationContext();immutableCap();const release=immutableClaim();
+      try{const maximum=reservationLimit(reservation),interpretationId=sourceOptions.interpretationId;if(interpretationId!==undefined&&interpretationId!=='photocraft-v1')refuse('Native hydration interpretation is not supported by this capability','unsupported');if(source.byteLength>8<<20)refuse('Source retained but exceeds current 8MiB native hydration admission','unsupported');
+        const captured=structuredClone(source),payload=await boundedFile(captured.path,8<<20,captured.identity);op.check();if(payload.length!==captured.byteLength||sha(payload)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
+        if(!['png','tiff','psd'].includes(formatHint))refuse('Unsupported source format hint','unsupported');
+        const sourceIdentity={digest:captured.digest,byteLength:captured.byteLength,formatHint,...(interpretationId?{interpretationId}:{})};const started=await call(operationId,{kind:'detachedPrepare',input:{kind:'source',source:sourceIdentity},maxAdditionalBytes:maximum},null,payload);op.check();const value=await waitImmutable(op,operationId,started);op.check();if(!record(value.result.receipt)||!same(value.result.receipt.source,sourceIdentity))refuse('Hydrated source provenance mismatch','protocol','unknown');return detachedPrepared(operationId,value.result,value.payload);
+      }finally{release();}
+    },
+    async settleCreation(value){value=structuredClone(value);const op=operationContext();immutableCap();if(value.baseVersion!==null)refuse('Creation candidate has an ordinary image base');const started=await call(next(),{kind:'settleDetached',candidateId:value.candidateId,versionId:value.native.versionId},null);op.check();const done=await waitImmutable(op,value.candidateId,started);op.check();if(done.result.kind!=='accepted'||done.result.detached!==true||done.result.candidateId!==value.candidateId||!same(nativeRef(done.result.receipt),value.native))refuse('Detached settlement identity mismatch','protocol','unknown');return{...value.native};},
+    async discardCreation(operationId){const op=operationContext();immutableCap();const started=await call(next(),{kind:'discardDetached',candidateId:operationId},null);op.check();const done=await waitImmutable(op,operationId,started);op.check();if(done.result.kind!=='discarded'||done.result.detached!==true||done.result.candidateId!==operationId)refuse('Detached discard unconfirmed','protocol','unknown');},
+    async listCreations(options={}):Promise<NativeCreationPage>{
+      const op=operationContext();immutableCap();const limit=options.limit??16;if(!Number.isSafeInteger(limit)||limit<1||limit>32)refuse('Invalid recovery page limit','invalid-input');
+      const{reply}=await call(next(),{kind:'listDetached',cursor:options.cursor??null,snapshotToken:options.snapshotToken??null,limit},null);op.check();
+      if(reply.kind!=='detachedOperations'||typeof reply.snapshotToken!=='string'||!Number.isSafeInteger(reply.totalUnsettled)||Number(reply.totalUnsettled)<0||!Array.isArray(reply.entries)||reply.entries.length>limit||(reply.nextCursor!==null&&typeof reply.nextCursor!=='string'))refuse('Malformed immutable recovery page','protocol','unknown');
+      const entries=reply.entries.map(v=>{if(!record(v)||typeof v.operationId!=='string'||!['intent','prepared'].includes(String(v.state)))refuse('Malformed immutable recovery item','protocol','unknown');return{operationId:v.operationId,state:v.state as 'intent'|'prepared',...(v.state==='prepared'?(record(v.result)?{prepared:detachedPrepared(v.operationId,v.result,new Uint8Array())}:refuse('Missing immutable recovery receipt','protocol','unknown')):{})};});
+      return{snapshotToken:reply.snapshotToken,totalUnsettled:Number(reply.totalUnsettled),entries,nextCursor:reply.nextCursor as string|null};
+    },
+    async creationStatus(operationId):Promise<NativeCreationStatus>{
+      const op=operationContext();immutableCap();const{reply}=await call(next(),{kind:'detachedStatus',targetOperationId:operationId},null);op.check();
+      if(reply.kind!=='detachedStatus')refuse('Malformed immutable status','protocol','unknown');
+      if(reply.state==='pending'){if(typeof reply.phase!=='string')refuse('Immutable pending stage missing','protocol','unknown');return{state:'pending',phase:reply.phase};}
+      if(reply.state==='prepared'){if(!record(reply.result))refuse('Immutable prepared result missing','protocol','unknown');return{state:'prepared',prepared:detachedPrepared(operationId,reply.result,new Uint8Array())};}
+      if(reply.state==='accepted'){if(!record(reply.result)||reply.result.detached!==true||reply.result.candidateId!==operationId)refuse('Immutable accepted identity mismatch','protocol','unknown');return{state:'accepted',native:nativeRef(reply.result.receipt)};}
+      if(!['absent','intent','discarded','failed'].includes(String(reply.state)))refuse('Unknown immutable status','protocol','unknown');return{state:reply.state as 'absent'|'intent'|'discarded'|'failed'};
+    },
+    async inspectVersion(ref,limits={maxEdge:256,maxBytes:1<<20}){
+      ref=structuredClone(ref);limits={...limits};
+      const op=operationContext();immutableCap();const release=immutableClaim();
+      try{if(!validNativeImageRef(ref)||ref.storeId!==storeId||!Number.isSafeInteger(limits.maxEdge)||limits.maxEdge<1||limits.maxEdge>512||!Number.isSafeInteger(limits.maxBytes)||limits.maxBytes<1||limits.maxBytes>1<<20)refuse('Invalid immutable inspection bounds','invalid-input');
+        const cached=inspectionCache.get(ref.versionId);if(cached&&cached.thumbnail.width<=limits.maxEdge&&cached.thumbnail.height<=limits.maxEdge&&cached.bytes.length<=limits.maxBytes)return copyInspection(cached);
+        const captured=structuredClone(ref),requestId=next();await verifyNative(captured);op.check();const started=await call(requestId,{kind:'inspectVersion',source:versionIdentity(captured),thumbnail:{...limits}},null);op.check();const done=await waitImmutable(op,requestId,started);op.check();if(done.result.kind!=='inspected')refuse('Immutable inspection failed','protocol','unknown');const view=parseNativeInspection(done.result.summary,done.payload,captured,sha(done.payload));cacheInspection(captured.versionId,view);return copyInspection(view);
+      }finally{release();}
+    },
     async previewEdit(base,previewId,fromSeq,edit,expectedContextGeneration){
       const op=operationContext();if(!op.connection.supports('productEditPreviewV1'))refuse('Native binary lacks productEditPreviewV1','unsupported');
       if(!current||!same(base,current))refuse('Preview target is not installed');
@@ -255,10 +339,10 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       if(reply.kind!=='status'||!['absent','intent','prepared','accepted','discarded','failed'].includes(String(reply.state)))refuse('Invalid native operation status','protocol','unknown');
       if(reply.state==='prepared'){
         if(!record(reply.result))refuse('Missing native prepared status','protocol','unknown');
-        const r=reply.result;if(r.kind!=='prepared'||r.candidateId!==operationId||(r.baseVersion!==null&&typeof r.baseVersion!=='string'))refuse('Invalid native prepared status','protocol','unknown');
+        const r=reply.result;if(r.detached===true)refuse('Use creationStatus for detached candidates','unsupported');if(r.kind!=='prepared'||r.candidateId!==operationId||(r.baseVersion!==null&&typeof r.baseVersion!=='string'))refuse('Invalid native prepared status','protocol','unknown');
         return{state:'prepared',prepared:{candidateId:r.candidateId,baseVersion:r.baseVersion,native:nativeRef(r.receipt)}};
       }
-      if(reply.state==='accepted'){if(!record(reply.result)||reply.result.kind!=='accepted'||reply.result.candidateId!==operationId)refuse('Missing or mismatched native accepted status','protocol','unknown');return{state:'accepted',native:nativeRef(reply.result.receipt)};}
+      if(reply.state==='accepted'){if(record(reply.result)&&reply.result.detached===true)refuse('Use creationStatus for detached candidates','unsupported');if(!record(reply.result)||reply.result.kind!=='accepted'||reply.result.candidateId!==operationId)refuse('Missing or mismatched native accepted status','protocol','unknown');return{state:'accepted',native:nativeRef(reply.result.receipt)};}
       return{state:reply.state as 'absent'|'intent'|'discarded'|'failed'};
     },
     async recoverAccept(candidateId,base,ref){

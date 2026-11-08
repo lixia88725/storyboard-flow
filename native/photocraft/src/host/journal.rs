@@ -144,6 +144,12 @@ impl Journal {
             files,
         })
     }
+    pub(super) fn recovery_token(&self) -> String {
+        format!("{}-{}-{}", self.number, self.length, self.records.len())
+    }
+    pub(super) fn write_failed(&self) -> bool {
+        self.failed
+    }
     pub(super) fn context_unsettled(&self) -> bool {
         self.failed || !self.unsettled.is_empty()
     }
@@ -177,6 +183,17 @@ impl Journal {
             }
         }
         Ok(ids)
+    }
+    pub(super) fn record_bytes(id: &str, state: &str, data: &Value) -> Result<u64> {
+        key(id, state)?;
+        let bytes = serde_json::to_vec(
+            &json!({"schema":"flow.image-operation","operationId":id,"state":state,"data":data}),
+        )
+        .map_err(io)?;
+        if bytes.len() > MAX_RECORD {
+            return Err(Error::none("limit", "operation record budget"));
+        }
+        Ok(36 + bytes.len() as u64)
     }
     pub fn append(&mut self, id: &str, state: &str, data: &Value, remaining: u64) -> Result<u64> {
         self.verify()?;

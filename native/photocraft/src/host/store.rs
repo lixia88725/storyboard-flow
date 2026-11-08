@@ -454,6 +454,9 @@ impl Store {
         }
         Ok(())
     }
+    pub(super) fn journal_write_failed(&self) -> bool {
+        self.journal.write_failed()
+    }
     pub(super) fn context_unsettled(&self) -> bool {
         self.journal.context_unsettled()
     }
@@ -463,6 +466,81 @@ impl Store {
         } else {
             "full-content-verification"
         }
+    }
+    pub(super) fn list_detached(
+        &self,
+        cursor: Option<String>,
+        limit: usize,
+        token: Option<String>,
+    ) -> Result<serde_json::Value> {
+        if !(1..=32).contains(&limit) {
+            return Err(Error::none(
+                "limit",
+                "immutable recovery page limit must be 1..32",
+            ));
+        }
+        let actual = self.journal.recovery_token();
+        if token.as_ref().is_some_and(|v| v != &actual) {
+            return Err(Error::none(
+                "stale-context",
+                "immutable recovery snapshot changed; restart pagination",
+            ));
+        }
+        let mut ids = self.unresolved()?;
+        ids.sort();
+        let mut eligible = Vec::new();
+        for id in ids {
+            let intent = self
+                .op_read(&id, "intent")?
+                .ok_or_else(|| Error::retained("corrupt", "unresolved operation has no intent"))?;
+            if intent["request"]["kind"] == "detachedPrepare" {
+                eligible.push((id, intent));
+            }
+        }
+        let total = eligible.len();
+        let after = eligible
+            .into_iter()
+            .filter(|(id, _)| cursor.as_ref().is_none_or(|c| id > c))
+            .collect::<Vec<_>>();
+        let more = after.len() > limit;
+        let mut entries = Vec::new();
+        let mut last = None;
+        for (id, intent) in after.into_iter().take(limit) {
+            let prepared = self.op_read(&id, "prepared")?;
+            last = Some(id.clone());
+            entries.push(serde_json::json!({"operationId":id,"state":if prepared.is_some(){"prepared"}else{"intent"},"input":intent["request"]["input"],"result":prepared}));
+        }
+        Ok(
+            serde_json::json!({"kind":"detachedOperations","snapshotToken":actual,"totalUnsettled":total,"entries":entries,"nextCursor":if more{last}else{None}}),
+        )
+    }
+    pub(super) fn retained_bytes(&self) -> u64 {
+        self.used
+    }
+    pub(super) fn budgeted<T>(
+        &mut self,
+        max_additional: u64,
+        work: impl FnOnce(&mut Self) -> Result<T>,
+    ) -> Result<(T, u64)> {
+        if max_additional == 0 {
+            return Err(Error::none("limit", "operation reservation exhausted"));
+        }
+        self.used = usage(&self.root)?;
+        self.budget_dirty = false;
+        let before = self.used;
+        let original = self.budget;
+        self.budget = original.min(before.saturating_add(max_additional));
+        let result = work(self);
+        self.budget = original;
+        self.used = usage(&self.root)?;
+        self.budget_dirty = false;
+        let spent = self.used.saturating_sub(before);
+        if spent > max_additional {
+            return Err(Error::unknown(
+                "operation retained bytes exceeded its reserved bound; preserve evidence",
+            ));
+        }
+        result.map(|v| (v, spent))
     }
     pub fn op_read(&self, id: &str, state: &str) -> Result<Option<serde_json::Value>> {
         self.journal.get(id, state)

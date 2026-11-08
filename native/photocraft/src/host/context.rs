@@ -145,33 +145,9 @@ impl Host {
             .active()
             .ok_or_else(|| Error::none("not-found", "no document"))?;
         let doc = &state.doc;
-        // Bound temporary JSON allocation before cloning names or traversing a large tree.
-        fn preflight(layers: &[Layer], depth: usize, remaining: &mut usize) -> Result<()> {
-            if depth > 128 {
-                return Err(Error::none("limit", "layer tree exceeds summary depth"));
-            }
-            for layer in layers {
-                *remaining = remaining
-                    .checked_sub(layer.name.len().saturating_add(64))
-                    .ok_or_else(|| {
-                        Error::none(
-                            "limit",
-                            "layer tree exceeds summary budget; no partial tree returned",
-                        )
-                    })?;
-                if let Some(children) = layer.children() {
-                    preflight(children, depth + 1, remaining)?;
-                }
-            }
-            Ok(())
-        }
-        let mut remaining = max_bytes;
-        preflight(&doc.layers, 0, &mut remaining)?;
+        let layers = bounded_layer_tree(doc, max_bytes)?;
         fn bounds(r: Rect) -> Value {
             json!([r.x0, r.y0, r.width(), r.height()])
-        }
-        fn tree(doc: &Document, layers: &[Layer]) -> Vec<Value> {
-            layers.iter().rev().map(|l|json!({"layerId":l.id.0.to_string(),"name":l.name,"kind":match l.content {LayerContent::Raster(_)=>"raster",LayerContent::Group(_)=>"group",_=>"unsupported"},"visible":l.visible,"opacity":l.opacity,"blend":l.blend,"locks":l.locks,"effectiveLocks":doc.effective_locks(l.id),"children":l.children().map(|c|tree(doc,c)).unwrap_or_default()})).collect()
         }
         let floating=self.floating_context.as_ref().map(|g| {
             let phase=if g.blocked.is_some(){"blocked"}else if self.candidate.as_ref().is_some_and(|c|c.from_floating){"dropPrepared"}else{"active"};
@@ -216,6 +192,12 @@ impl Host {
             {
                 native_reason = Some("active layer pixels are locked".into());
             }
+            if name == "paint" && photocraft_ops::History::new(1).pixel_bytes(doc) > 256 << 20 {
+                native_reason = Some(
+                    "document exceeds the 256MiB current live-pipeline retained-pixel budget"
+                        .into(),
+                );
+            }
             if name == "paint" && doc.selection.is_some() {
                 native_reason=Some("source intrinsic selection is not exposed as a product paint constraint; product painting is refused".into());
             }
@@ -253,7 +235,7 @@ impl Host {
         let erased_to_background = state
             .active_layer
             .is_some_and(|id| doc.effective_locks(id).transparency);
-        let result = json!({"kind":"contextSummary","documentId":doc.id.0.to_string(),"imageVersionRef":self.current,"epoch":self.display_epoch,"contextGeneration":self.context_generation,"maxSummaryBytes":MAX_SUMMARY_BYTES,"layerCount":doc.layer_count(),"layers":tree(doc,&doc.layers),"activeLayerId":state.active_layer.map(|id|id.0.to_string()),"selectedLayerIds":state.selected_layers.iter().map(|id|id.0.to_string()).collect::<Vec<_>>(),"editPreview":self.edit_preview.as_ref().map(|p|p.summary()),"temporarySelection":self.temporary_selection.as_ref().map(|s|s.summary(self)),"selection":{"present":doc.selection.is_some(),"token":self.selection_token(),"bounds":doc.selection.as_ref().map(|s|bounds(s.content_bounds()))},"floating":floating,"candidateId":self.candidate.as_ref().map(|c|&c.id),"inputActive":self.gesture.is_some(),"pipelineActive":pipeline_active,"frozen":self.frozen,"settlementRequired":self.store.context_unsettled()||self.candidate.is_some()||self.edit_preview.is_some(),"tools":tools,"paintScope":if doc.selection.is_some(){"source-selection-refused"}else{"full-layer"},"eraserBehavior":if erased_to_background {"backgroundColor"}else{"alpha"}});
+        let result = json!({"kind":"contextSummary","documentId":doc.id.0.to_string(),"imageVersionRef":self.current,"epoch":self.display_epoch,"contextGeneration":self.context_generation,"maxSummaryBytes":MAX_SUMMARY_BYTES,"layerCount":doc.layer_count(),"layers":layers,"activeLayerId":state.active_layer.map(|id|id.0.to_string()),"selectedLayerIds":state.selected_layers.iter().map(|id|id.0.to_string()).collect::<Vec<_>>(),"background":self.detached.activity(&self.store.shared),"editPreview":self.edit_preview.as_ref().map(|p|p.summary()),"temporarySelection":self.temporary_selection.as_ref().map(|s|s.summary(self)),"selection":{"present":doc.selection.is_some(),"token":self.selection_token(),"bounds":doc.selection.as_ref().map(|s|bounds(s.content_bounds()))},"floating":floating,"candidateId":self.candidate.as_ref().map(|c|&c.id),"inputActive":self.gesture.is_some(),"pipelineActive":pipeline_active,"frozen":self.frozen,"settlementRequired":self.store.context_unsettled()||self.candidate.is_some()||self.edit_preview.is_some(),"tools":tools,"paintScope":if doc.selection.is_some(){"source-selection-refused"}else{"full-layer"},"eraserBehavior":if erased_to_background {"backgroundColor"}else{"alpha"}});
         if serde_json::to_vec(&result).map_err(native)?.len() > max_bytes {
             return Err(Error::none(
                 "limit",
@@ -522,4 +504,39 @@ impl Host {
             None => json!({"kind":"failure","error":Error::unknown("floating owner unavailable")}),
         }
     }
+}
+
+pub(super) fn bounded_layer_tree(doc: &Document, max_bytes: usize) -> Result<Value> {
+    // Bound temporary JSON allocation before cloning names or traversing a large tree.
+    fn preflight(layers: &[Layer], depth: usize, remaining: &mut usize) -> Result<()> {
+        if depth > 128 {
+            return Err(Error::none("limit", "layer tree exceeds summary depth"));
+        }
+        for layer in layers {
+            *remaining = remaining
+                .checked_sub(layer.name.len().saturating_add(64))
+                .ok_or_else(|| {
+                    Error::none(
+                        "limit",
+                        "layer tree exceeds summary budget; no partial tree returned",
+                    )
+                })?;
+            if let Some(children) = layer.children() {
+                preflight(children, depth + 1, remaining)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn tree(doc: &Document, layers: &[Layer]) -> Vec<Value> {
+        layers.iter().rev().map(|l|json!({"layerId":l.id.0.to_string(),"name":l.name,"kind":match l.content {LayerContent::Raster(_)=>"raster",LayerContent::Group(_)=>"group",_=>"unsupported"},"visible":l.visible,"opacity":l.opacity,"blend":l.blend,"locks":l.locks,"effectiveLocks":doc.effective_locks(l.id),"children":l.children().map(|c|tree(doc,c)).unwrap_or_default()})).collect()
+    }
+
+    let mut remaining = max_bytes;
+    preflight(&doc.layers, 0, &mut remaining)?;
+    let value = json!(tree(doc, &doc.layers));
+    if serde_json::to_vec(&value).map_err(native)?.len() > max_bytes {
+        return Err(Error::none("limit", "layer summary exceeds budget"));
+    }
+    Ok(value)
 }

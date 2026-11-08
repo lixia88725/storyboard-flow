@@ -115,3 +115,19 @@ export type ImageEngineContextSummary = {
 export type ImageEngineEditContext = {expectedContextGeneration:number;preview?:ImageEnginePreviewStamp};
 
 export type ImageEnginePreviewResult = {stamp:ImageEnginePreviewStamp;displayIdentity:ImageEngineDisplayIdentity};
+
+/** Main-only immutable job inputs: a caller still needs the project's writer
+ * authority and an already reserved global recovery budget. These are not
+ * renderer commands or permission to install/accept a project version. */
+export type ImageEngineCreationInput = {kind:'new';width:number;height:number}|
+  {kind:'duplicate';source:import('./imageProject.js').NativeImageRef};
+export type ImageEngineJobReservation = {maxAdditionalBytes:number};
+export type ImageEngineVersionSummary = {
+  versionId:string;documentId:string;width:number;height:number;layers:readonly ImageEngineLayerSummary[];
+  activeLayerId:ImageEngineLayerId|null;selectedLayerIds:readonly ImageEngineLayerId[];
+  sourceSelectionPresent:boolean;paintScope:'full-layer'|'source-selection-refused';
+};
+export type ImageEngineThumbnail = {format:'png';width:number;height:number;byteLength:number;sha256:string};
+export type ImageEngineInspection = {summary:ImageEngineVersionSummary;thumbnail:ImageEngineThumbnail;bytes:Uint8Array};
+
+export type ImageEngineSourceOptions={interpretationId?:'photocraft-v1'|'flow-v1-upgrade'};

@@ -63,7 +63,7 @@ pub(super) struct Pipeline {
     limits: Limits,
     tx: Option<SyncSender<Work>>,
     rx: Receiver<Completion>,
-    thread: Option<JoinHandle<Store>>,
+    thread: Option<JoinHandle<StoreProxy>>,
     entries: VecDeque<Entry>,
     events: VecDeque<Value>,
     recent: VecDeque<(String, String, Value)>,
@@ -74,7 +74,7 @@ pub(super) struct Pipeline {
     blocked: Option<Error>,
     sealed: bool,
 }
-fn writer(mut store: Store, rx: Receiver<Work>, tx: SyncSender<Completion>) -> Store {
+fn writer(store: StoreProxy, rx: Receiver<Work>, tx: SyncSender<Completion>) -> StoreProxy {
     let mut blocked = false;
     let mut waiting = VecDeque::new();
     loop {
@@ -198,6 +198,9 @@ fn writer(mut store: Store, rx: Receiver<Work>, tx: SyncSender<Completion>) -> S
     store
 }
 impl Pipeline {
+    pub(super) fn has_work(&self) -> bool {
+        !self.entries.is_empty() || self.failed_active.is_some() || self.blocked.is_some()
+    }
     fn drain(&mut self, h: &mut Host) -> Result<()> {
         loop {
             match self.rx.try_recv() {
@@ -818,7 +821,18 @@ impl Pipeline {
             }
             Command::Freeze => {
                 self.sealed = true;
-                if h.gesture.is_some() || !self.entries.is_empty() || self.blocked.is_some() {
+                if h.detached.has_inflight() || h.store.shared.detached_unsettled() > 0 {
+                    return Err(Error::none(
+                        "busy",
+                        "pipeline sealed; settle immutable jobs before freeze",
+                    ));
+                }
+                if h.detached.has_inflight()
+                    || h.store.shared.context_unsettled()
+                    || h.gesture.is_some()
+                    || !self.entries.is_empty()
+                    || self.blocked.is_some()
+                {
                     return Err(Error::retained(
                         "busy",
                         "pipeline sealed; retain/finish active prefix and settle IO obligations",
