@@ -14,5 +14,6 @@
   "src/platform/main/imageEngineDetached.test.ts",
   "src/platform/main/imageEngineV1Interpretation.test.ts",
   "src/platform/main/imageEngineOutputMetadata.test.ts",
-  "src/project-files/main/image-engine/workspaceSourceRuntime.test.ts"
+  "src/project-files/main/image-engine/workspaceSourceRuntime.test.ts",
+  "src/project-files/main/image-engine/workspaceColdCopy.test.ts"
 ]

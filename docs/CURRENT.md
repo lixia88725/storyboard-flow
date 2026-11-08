@@ -2,6 +2,8 @@
 
 ## 正式工作台接入：进行中（2026-11-08）
 
+最新保存接线：`ff073a2` 已集成为 `18014b9`，冻结作品版本与输出请求绑定到同一持久日志，保存结果不增加作品历史。执行者覆盖两处真实 Main 被终止后的原请求恢复；主管完整构建及实际工作台绘画→Save→重复Save→正常关闭→新进程重开通过（`/private/tmp/flow-native-save-integration-{build,gui}.log`，现场 `/private/tmp/flow-native-workbench-UbwZhV`）。本例输出 TIFF 与显示 RGBA 最大通道差为0，重复保存文件摘要、revision与撤销深度不变；初始化期间关闭仍等待认证。此证据限合成普通原生板，受保护来源输出、Refresh/Pending、冷复制 Runtime 与全局预算仍待接线，未切默认入口或发布。下方按阶段保留的早期“Save未接”记录不代表本次小闭环仍未完成。
+
 隔离集成树已接入五种原生画笔、临时选区与图层编辑能力，并新增只读 Main 快照控制器、端口帧接收、双画布输入捕获、图层面板和项目切换协调器。冷准备期间保留原始归一化笔点，准备完成后按权威尺寸提交；帧与快照按身份匹配，不依赖两个通道的到达顺序。输入失败处理须先取得完整原始输入的持久保管回执，不能用已提交前缀替代整笔。关闭/输出/图层操作各自持有暂停原因，释放自己的暂停不解除其他操作。
 
 主管接点聚焦 7 文件55项通过（`/private/tmp/flow-workspace-chief-focused.log`），随后新增冷准备通知和显示序列/暂停并存的边界由各聚焦日志覆盖；renderer/Electron 类型检查、preload契约检查及一次完整build通过（`/private/tmp/flow-workspace-chief-build.log`）。这些是施工模块证据：默认产品入口尚未切换，后续源码还在修改，尚未做本轮组合全量或发布验收。Main Runtime、文件创建与副本升级已进入组合接线；完整Save/Refresh/Pending与后台图像任务仍在施工，不能称为整体完成。用户主树和试用窗口未改。
@@ -21,6 +23,8 @@ Sources 与独立图像创建候选已本地集成。Sources 只登记清单，�
 PNG 按需导入小片 `b2b0b9d` 已合入 `10be55d`。执行者16项真实来源/冷激活/坏图隔离测试与构建通过；主管真实“打开文件夹”→创建→首次绘画→Undo恢复Source身份/Redo→正常关闭→新进程重开通过，外部原件摘要不变。最终中文坏图提示与完整路径复验为 `/private/tmp/flow-native-workbench-UeBT0M`、`flow-native-cold-import-message-{build,gui}.log`。两张小PNG加一张坏图的本次登记进入约508ms（前次434ms），不是大批量或全格式性能承诺。首次脚本未等待创建页结束即继续读取导致失败，现场 `flow-native-workbench-U2SwdR` 保留；同次基本绘画/新板/关闭三阶段已通过。普通PSD/TIFF仍待来源保真保护接点；Save/Refresh仍在接线，来源分区当前默认只容纳本会话32MiB新增长，不能将该施工额度当最终大批导入能力。
 
 打包接点已改为 release reader/host/lease 三组件及同一回执，源码摘要覆盖全部自有 native 源文件；缺少当前正式功能能力即拒包。执行者10项JS、17项ZIP、3项探测协议检查通过，真实旧宿主因缺metadata能力被正确拒绝。主管实际三组件 release 构建、macOS 完整包和严格签名通过（`/private/tmp/flow-native-three-components-{build,package,signature}.log`）；包内签名后 reader/host/lease 实际版本、正常冻结关闭和获取/核对/释放锁通过（`flow-native-signed-three-components-probe.log`）。真实 ZIP 首次因旧校验器无条件拒绝 Electron Framework 正常链接而失败；现只允许包内已知 Framework 的固定相对链接，拒绝逃逸、悬空、链接下伪造成员和原生组件别名，8项合成安全测试及真实 ZIP 复验通过（`flow-native-package-links-tests.log`、`flow-native-three-components-zip-fixed.log`），原失败日志保留。此包对应 dc05141 原生源码，不含后续来源保护/冷复制，尚未做包内真实 GUI 或安装验收。Windows lease当前未实现，三组件打包明确拒绝该平台，这是实际阻断而非仅未运行验收；不以旧发布版的Windows流水线证据替代。
+
+已关闭项目冷复制候选 `ee0fceb` 已合为 `c263528`：执行者3文件64项通过（12冷复制、34Output、18真实lease），覆盖旧证据保留、竞争替换拒绝和中断后续接；Main journal真实但图像捕获为注入，不能当真实编解码或完整UI验收。Runtime入口/文件终态尚待连接。提交后发现同root只换lock可能误入copy准入，精确补修 `96191cd` 已合为 `9ac8ef4`：Main/native均要求完整副本具有不同root身份，实际拒绝与完整复制正例2项通过（`flow-cold-copy-distinct-focused.log`）；不以复制端口自动修复异常锁。
 
 冷准备输入边界：等待目标激活期间的归一化 down/move/up 仍只在 renderer capture owner 内存，Main 此时仅持久保管来源/hydration事实；不能宣称这段窗口遭遇进程崩溃也不丢笔。正常关闭会等待 capture 结算，显式 resolveInput 获得原文 recordId 后才算持久保管。这不等于已完成独立的冷输入崩溃恢复协议。
 

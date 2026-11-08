@@ -24,6 +24,10 @@ ProjectStore 保持原 Interface，Implementation 改为 `journalProjectStore` �
 
 V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目录保护都不等于跨进程锁。全项目恢复预算包括实际留存与工作进程预留，不能把各子模块的局部额度相加后仍声称受 8 GiB 总额保护。`platform/main/imageProjectLease` 通过独立原生 guard 持有固定 inode 的 OS 锁，同时持久记录 Main 身份。guard 异常退出关闭当前写门，但不发布正常释放；旧 Main 未确认退出时，新 guard 也拒绝接管，保护仍在途的文件副作用。正常 release 必须由调用方先排空义务，不能把锁失效当取消。当前仅本机 macOS 验证；默认产品入口尚未接入。
 
+显式 Save 由 `workspaceFiles` 绑定冻结 commit、全部活动/Pending 板的精确原生版本与唯一 Output 操作 ID，先记 `fileIntent`，核对持久 Output 完成收据后记 `fileResult`。结果只推进已保存状态，不创建作品历史。重开沿原请求查询或恢复；不拿当前版本代替保存时的版本，未完成的文件义务继续阻止关闭认证与副本准入。后台派生尚未绘画的 SourceRef 在保存时解析输出，不因此变成用户编辑。
+
+完整且已关闭的项目副本通过 `prepareWorkspaceColdCopy` 显式读取封口 Main 历史、已完成文件义务、Output 全链和托管文件摘要后产生授权；不是清锁或重写原账。只有 root 物理身份不同的完整副本可走此授权，同root换锁不借此修复。原生 guard 在新 root 的 OS 锁下复核目录/锁身份与原释放标记摘要，先独占保管旧标记和授权，再发带 `copyReceipt` 的新 owner。Output 核对同一收据并追加新的物理绑定与前一 head 的关系，保留旧记录；中断后继承同一收据补完，不重复发布。运行中的 root/lock/文件替换仍拒绝。Main 与 guard 共用预算，lease 保留释放所需额度至正常 release，整根目录 audit 在释放后执行。正式 Runtime 接线及真实已保存项目复制验收状态见 CURRENT。
+
 `platform/main/imageEngineWorkerOwner` 固定一个 Session 的原生 store 和执行程序。重启先同步隔离旧代请求及回包，确认自有旧进程退出并复核 writer lease 后才创建新代；并发重启合并，关闭或锁失效不能复活进程。每次协议准入同步检查 lease.held，文件写入/root 身份的异步复核仍属于 Main store，不给每批笔点增加一次磁盘检查。WorkerOwner 不清输入意图、不重放笔迹、不认领项目提交、不释放项目锁；新连接可用后仍须由 Main 按原账本恢复，不能直接开放用户绘画。
 
 `platform/main/imageEngineOutput` 从 Main Session 的冻结快照取得目标原生引用，校验宿主导出回执的版本、文档、尺寸、格式、字节数、摘要和分层状态，再复核 Session 未变。仅返回捕获字节，不发布文件、不推进 head、不认证外部 Save。原生 export 只读取不可变版本，拒绝损失警告和无法保留的未知块；输出仍受独立传输预算约束。
