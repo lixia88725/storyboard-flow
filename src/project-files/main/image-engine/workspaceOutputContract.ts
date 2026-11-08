@@ -3,6 +3,16 @@ import type {ImageWorkspaceOwner} from '../../../platform/contracts/imageWorkspa
 import {validPresentation} from '../../../platform/contracts/flowPresentation.js';
 
 export type WorkspaceOutputLocation = 'active'|'parked';
+export const WORKSPACE_OUTPUT_NAME_SEED='.storyboard-flow/native-output-name-seed.json';
+/** Planned labels only: no output digest/inode, no saved revision or file claim. */
+export type WorkspaceOutputNameSeed={schema:'flow.native-output-name-seed';version:1;projectId:string;genesisCommitHash:string;sourceProjectId:string;sourceDigest:string;legacyLedgerSha256:string;
+ names:{shotId:string;imageId:string;name:string;location:'parked'}[]};
+export const validWorkspaceOutputFileName=(v:unknown):v is string=>typeof v==='string'&&!v.startsWith('.')&&!/[\\/\0]/.test(v)&&/\.tiff?$/i.test(v)&&new TextEncoder().encode(v).byteLength<=255;
+export function validWorkspaceOutputNameSeed(v:unknown):v is WorkspaceOutputNameSeed{
+ if(!v||typeof v!=='object'||Array.isArray(v))return false;const s=v as WorkspaceOutputNameSeed;
+ const id=(v:unknown)=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(v),hash=(v:unknown)=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
+ return Object.keys(s).sort().join()==='genesisCommitHash,legacyLedgerSha256,names,projectId,schema,sourceDigest,sourceProjectId,version'&&s.schema==='flow.native-output-name-seed'&&s.version===1&&id(s.projectId)&&id(s.sourceProjectId)&&hash(s.genesisCommitHash)&&hash(s.sourceDigest)&&hash(s.legacyLedgerSha256)&&Array.isArray(s.names)&&s.names.length>0&&s.names.length<=10000&&Array.from(s.names).every(n=>n&&typeof n==='object'&&Object.keys(n).sort().join()==='imageId,location,name,shotId'&&id(n.shotId)&&id(n.imageId)&&n.location==='parked'&&validWorkspaceOutputFileName(n.name))&&new Set(s.names.map(n=>n.shotId)).size===s.names.length&&new Set(s.names.map(n=>n.imageId)).size===s.names.length&&new Set(s.names.map(n=>n.name.toLowerCase())).size===s.names.length;
+}
 export type WorkspaceOutputFrozen = {
  owner:ImageWorkspaceOwner;commitHash:string;project:ProjectV2;
  /** Main resolves settled hydration. Save needs every live image; append only its batch. */

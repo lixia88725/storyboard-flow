@@ -12,19 +12,20 @@ import {createFileExclusive,readBoundFile} from '../persistence/fileOps.js';
 import {canonicalUtf8,sha256Hex} from '../persistence/canonicalJson.js';
 import {syncDirectory} from '../../../platform/main/platform/index.js';
 import type {WorkspaceOutput,WorkspaceOutputFile,WorkspaceOutputFrozen,WorkspaceOutputMetadata,WorkspaceOutputOptions,WorkspaceOutputReceipt} from './workspaceOutputContract.js';
-import {validWorkspaceOutputMetadataEnvelope} from './workspaceOutputContract.js';
+import {validWorkspaceOutputMetadataEnvelope,validWorkspaceOutputNameSeed,validWorkspaceOutputFileName,WORKSPACE_OUTPUT_NAME_SEED,type WorkspaceOutputNameSeed} from './workspaceOutputContract.js';
+import {readImageWorkspaceProject} from './workspaceProbe.js';
 
 const LIMIT=128*1024*1024, JOURNAL_LIMIT=8*1024*1024;
 const owners=new Set<string>();
 const digest=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 const token=(v:unknown):v is string=>typeof v==='string'&&/^[\w-]{1,80}$/.test(v);
-const leaf=(v:unknown):v is string=>typeof v==='string'&&!v.startsWith('.')&&!/[\\/\0]/.test(v)&&/\.tif$/i.test(v)&&Buffer.byteLength(v)<=240;
+const leaf=validWorkspaceOutputFileName;
 type Identity={dev:string;ino:string};
 type Entry=WorkspaceOutputFile&Identity&{content:string};
 type Move=Identity&{from:string;to:string;digest:string};
 type Transaction={operationId:string;revision:number;commitHash:string;kind:'save'|'append';phase:'preparing'|'deleting'|'staging'|'publishing';
  next:Entry[];stages:Move[];publishes:Move[];deletions:{entry:Entry;intent:OutputDeletion}[];receipt:WorkspaceOutputReceipt};
-type Ledger={schema:'flow.native-output';version:1;projectId:string;root:Identity;seq:number;previousHash:string|null;entries:Entry[];transaction?:Transaction;saved?:{revision:number;commitHash:string};refresh?:{receiptHash:string;revision:number;commitHash:string}};
+type Ledger={schema:'flow.native-output';version:1;projectId:string;root:Identity;seq:number;previousHash:string|null;entries:Entry[];transaction?:Transaction;saved?:{revision:number;commitHash:string};refresh?:{receiptHash:string;revision:number;commitHash:string};nameSeed?:{sha256:string;consumedShotIds:string[]}};
 
 export class WorkspaceOutputError extends Error {
  constructor(readonly code:string,message:string,readonly effect:'none'|'retained'|'unknown'='none'){super(message);}
@@ -56,6 +57,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
   }
  };
  let closed=false,blocked=false,active=0,queue:Promise<unknown>=Promise.resolve(),lastHash:string|null=null;
+ let nameSeed:WorkspaceOutputNameSeed|undefined;
  let ledger:Ledger={schema:'flow.native-output',version:1,projectId,root:{dev:binding.dev,ino:binding.ino},seq:0,previousHash:null,entries:[]};
  const directory=async(at:string)=>{const st=await fs.lstat(at);if(!st.isDirectory()||st.isSymbolicLink()||await fs.realpath(at)!==at)fail('Unsafe output directory');return st;};
  const bind=async()=>{
@@ -98,7 +100,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    if((await fs.lstat(path.join(container,name))).nlink!==1)fail('Aliased output journal record');
    const bytes=await readBoundFile(path.join(container,name),JOURNAL_LIMIT);if(!bytes)fail('Output journal disappeared');
    const v=JSON.parse(bytes!.toString()) as Ledger;
-   if(v.schema!=='flow.native-output'||v.version!==1||v.projectId!==projectId||v.seq!==sequence+1||v.previousHash!==previous||!validIdentity(v.root)||v.root.dev!==binding.dev||v.root.ino!==binding.ino||!validEntries(v.entries)||v.refresh&&(!digest(v.refresh.receiptHash)||!digest(v.refresh.commitHash)||!Number.isSafeInteger(v.refresh.revision)||v.refresh.revision<0))fail('Invalid output journal');
+   if(v.schema!=='flow.native-output'||v.version!==1||v.projectId!==projectId||v.seq!==sequence+1||v.previousHash!==previous||!validIdentity(v.root)||v.root.dev!==binding.dev||v.root.ino!==binding.ino||!validEntries(v.entries)||v.refresh&&(!digest(v.refresh.receiptHash)||!digest(v.refresh.commitHash)||!Number.isSafeInteger(v.refresh.revision)||v.refresh.revision<0)||v.nameSeed&&(!digest(v.nameSeed.sha256)||!Array.isArray(v.nameSeed.consumedShotIds)||v.nameSeed.consumedShotIds.length>10000||!v.nameSeed.consumedShotIds.every(token)||new Set(v.nameSeed.consumedShotIds).size!==v.nameSeed.consumedShotIds.length))fail('Invalid output journal');
    const t=v.transaction;
    if(t){if(!/^[a-f0-9-]{36}$/.test(t.operationId)||!['save','append'].includes(t.kind)||!['preparing','deleting','staging','publishing'].includes(t.phase)||!Number.isSafeInteger(t.revision)||t.revision<0||!digest(t.commitHash)||!validEntries(t.next)||!Array.isArray(t.stages)||!Array.isArray(t.publishes)||!Array.isArray(t.deletions))fail('Invalid output transaction');
     for(const m of [...t.stages,...t.publishes])if(!validRelative(m.from)||!validRelative(m.to)||!digest(m.digest)||!validIdentity(m))fail('Unsafe output move');
@@ -110,7 +112,21 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    }
    latest=v;sequence++;previous=sha256Hex(bytes!);
   }
-  ledger=latest??{schema:'flow.native-output',version:1,projectId,root:{dev:binding.dev,ino:binding.ino},seq:0,previousHash:null,entries:[]};lastHash=previous;blocked=false;await syncDirectory(container);
+  ledger=latest??{schema:'flow.native-output',version:1,projectId,root:{dev:binding.dev,ino:binding.ino},seq:0,previousHash:null,entries:[]};lastHash=previous;blocked=false;await syncDirectory(container);await loadNameSeed();
+ };
+ const loadNameSeed=async()=>{
+  await bind();const file=path.join(root,WORKSPACE_OUTPUT_NAME_SEED),bytes=await readBoundFile(file,JOURNAL_LIMIT);
+  if(!bytes){if(ledger.nameSeed)fail('Output naming seed disappeared');nameSeed=undefined;return;}
+  const st=await fs.lstat(file);if(st.nlink!==1)fail('Aliased output naming seed');
+  const seed:unknown=JSON.parse(bytes.toString()),sha256=sha256Hex(bytes);
+  if(!validWorkspaceOutputNameSeed(seed)||seed.projectId!==projectId)fail('Invalid or different-project output naming seed');
+  const typed=seed as WorkspaceOutputNameSeed;
+  if(ledger.nameSeed?.sha256!==undefined&&ledger.nameSeed.sha256!==sha256||ledger.seq>0&&!ledger.nameSeed)fail('Output naming seed changed after physical ledger creation');
+  const completion=await readBoundFile(path.join(hidden,'native-creation-complete.json'),JOURNAL_LIMIT);if(!completion)fail('Output naming seed has no creation completion');
+  const proof=JSON.parse(completion!.toString()) as {projectId:string;genesisCommitHash:string;outputNameSeedSha256:string;input:{projectId:string;sourceDigest:string}};
+  if(proof.projectId!==projectId||proof.genesisCommitHash!==typed.genesisCommitHash||proof.outputNameSeedSha256!==sha256||proof.input?.projectId!==typed.sourceProjectId||proof.input.sourceDigest!==typed.sourceDigest)fail('Output naming seed does not match creation evidence');
+  const read=await readImageWorkspaceProject(root);if(read.plan.identity.id!==projectId||read.genesisCommitHash!==typed.genesisCommitHash)fail('Output naming seed genesis no longer matches');
+  nameSeed=typed;ledger.nameSeed??={sha256,consumedShotIds:[]};
  };
  const run=<T>(work:()=>Promise<T>)=>{active++;const result=queue.then(async()=>{try{return await work();}finally{active--;}});queue=result.catch(()=>{});return result;};
  const settle=async()=>{
@@ -134,11 +150,14 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
    await settleOutputFileMove(resolve(move.from),target,move,bind);await options.fault?.('after-publish');
   }
   for(const e of t.next){const at=outputPath(root,e.name,e.location);if(await observe(at)!==e.digest)fail('Published output changed before receipt');const st=await fs.lstat(at);if(String(st.dev)!==e.dev||String(st.ino)!==e.ino)fail('Published output identity changed');}
-  ledger.entries=t.next;if(t.kind==='save')ledger.saved={revision:t.revision,commitHash:t.commitHash};delete ledger.transaction;await persist();await settleGrants();
+  ledger.entries=t.next;if(ledger.nameSeed&&nameSeed)ledger.nameSeed.consumedShotIds=[...new Set([...ledger.nameSeed.consumedShotIds,...t.next.filter(f=>nameSeed!.names.some(n=>n.shotId===f.shotId)).map(f=>f.shotId)])];if(t.kind==='save')ledger.saved={revision:t.revision,commitHash:t.commitHash};delete ledger.transaction;await persist();await settleGrants();
  };
  const checkProject=(p:ProjectV2)=>{const project=snapshotImageProject(p);if(project.id!==projectId)throw new WorkspaceOutputError('invalid-input','Wrong output project');return project;};
  const plannedNames=(project:ProjectV2,sourceNames?:Readonly<Record<string,string>>,pendingOnly=false)=>{
   const entries=ledger.entries.map(e=>({shotId:e.shotId,name:e.name})),used=new Set(entries.map(e=>e.name.toLowerCase()));
+  for(const seed of nameSeed?.names??[])if(!entries.some(e=>e.shotId===seed.shotId)&&!ledger.nameSeed?.consumedShotIds.includes(seed.shotId)&&project.parkedShots.some(s=>s.id===seed.shotId&&s.imageId===seed.imageId)){
+   if(used.has(seed.name.toLowerCase()))fail('Seeded Pending output filename collision');entries.push({shotId:seed.shotId,name:seed.name});used.add(seed.name.toLowerCase());
+  }
   for(const shot of [...project.shots,...project.parkedShots])if(!entries.some(e=>e.shotId===shot.id)){
    const source=sourceNames?.[shot.id]??shot.id+'.tif';if(!source||source.startsWith('.')||/[\\/\0]/.test(source))throw new WorkspaceOutputError('invalid-input','Unsafe Pending source basename');
    const basis=source.replace(/\.[^.]+$/,'');let candidate=basis+'.tif',n=1;while(used.has(candidate.toLowerCase()))candidate=`${basis}_${++n}.tif`;

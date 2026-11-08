@@ -3,7 +3,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
 import sharp from 'sharp';
-import {describe,it,expect} from 'vitest';
+import {describe,it,expect,vi} from 'vitest';
 import {temporaryWorkspace} from '../../../../test/temporaryWorkspace';
 import {createImageWorkspaceCreation} from './workspaceCreation';
 import {createWorkspaceRecoveryBudget} from './workspaceBudget';
@@ -12,6 +12,12 @@ import {openImageProjectStore} from './projectStore';
 import {openSourceBackedImport,type SourceImportStore} from './sourceStore';
 import {createProjectStore} from '../persistence';
 import {readPhotocraft} from '../formats/photocraft';
+import {createTiffCodec} from '../formats';
+import {flowCodecOptions} from '../../../platform/main/flowRuntimePaths';
+import {openWorkspaceOutput} from './workspaceOutput';
+import {WORKSPACE_OUTPUT_NAME_SEED} from './workspaceOutputContract';
+import {readFlowTiffOutputNames,openFlowTiffSave,validateFlowTiffOutputLedger} from '../flowTiffSave';
+import {constants} from 'node:fs';
 import type {WorkspaceCreationOptions} from './workspaceCreationContract';
 import type {ProjectV1} from '../../../platform/contracts/refactorV1';
 const naming={sceneCode:'scene',artistName:'artist',version:'v001'};
@@ -29,7 +35,7 @@ async function load(root:string){
  try{
   const ids=await fs.readdir(imports).catch(e=>{if(e.code==='ENOENT')return[];throw e;});if(ids.length)source=await openSourceBackedImport({root,importId:ids[0]});
   const store=await openImageProjectStore({root,writerAuthority:lease,verifyNative:async()=>{throw Error('No native refs allowed');},verifySource:async ref=>{if(!source||!source.snapshot().items.some(x=>x.id===ref.itemId))throw Error('Unknown source');await source.object(ref.itemId);}});
-  const head=await store.load();await store.close();return{project:head!.commit.after,source:source?.snapshot()};
+  const head=await store.load();await store.close();return{project:head!.commit.after,commitHash:head!.commitHash,source:source?.snapshot()};
  }finally{if(source)await source.close();await lease.release();}
 }
 async function png(color:string){return sharp({create:{width:3,height:2,channels:4,background:color}}).png().toBuffer();}
@@ -40,6 +46,15 @@ async function legacyFixture(root:string,opacity=128/255,protectedLayer=false){
  const saved=await createProjectStore().saveCheckpoint(source,project,async id=>assets.get(id)!);if(!saved.ok)throw Error(saved.error.message);await fs.mkdir(path.join(source,'.storyboard-flow/history'),{recursive:true});await fs.writeFile(path.join(source,'.storyboard-flow/history/keep.bin'),'history evidence');return{source,project,assets};
 }
 async function digestTree(root:string){const values:Record<string,string>={};const walk=async(dir:string,rel:string)=>{for(const name of(await fs.readdir(dir)).sort()){const at=path.join(dir,name),r=rel?rel+'/'+name:name,st=await fs.lstat(at);if(st.isDirectory())await walk(at,r);else values[r]=hash(await fs.readFile(at));}};await walk(root,'');return values;}
+async function bindLegacyPending(old:Awaited<ReturnType<typeof legacyFixture>>,name='自定义 Pending 名称.tiff'){
+ const codec=createTiffCodec(flowCodecOptions()),shot=old.project.parkedShots[0],encoded=await codec.encode({image:old.project.images[shot.imageId],text:null},async id=>old.assets.get(id)!);if(!encoded.ok)throw Error(encoded.error.message);
+ await fs.mkdir(path.join(old.source,'Pending'));await fs.writeFile(path.join(old.source,'Pending',name),encoded.value);const digest=hash(encoded.value),ledger={version:1,projectId:old.project.id,entries:[{shotId:shot.id,name,original:digest,current:digest,location:'parked',published:true,baseline:old.project.images[shot.imageId]}]};await fs.writeFile(path.join(old.source,'.storyboard-flow/tiff-output.json'),JSON.stringify(ledger));return{name,ledger,digest};
+}
+async function upgradeWithNames(extra:Partial<WorkspaceCreationOptions>={}){const f=await fixture(extra),old=await legacyFixture(f.root),binding=await bindLegacyPending(old),view=await f.factory.inspectUpgrade(old.source),input={operationId:'named-copy',sourceRoot:old.source,projectId:old.project.id,sourceDigest:view.sourceDigest,destinationParent:f.out,folderName:'Copy',projectName:'Copy'},created=await f.factory.copyUpgrade(input,signal());return{...f,old,binding,input,created};}
+async function nativeOutput(root:string){
+ const loaded=await load(root),lease=await acquireImageProjectLease({root,binary:leaseBinary()}),budget=await createWorkspaceRecoveryBudget({root}),capture=vi.fn(async(input:{shotId:string})=>{const bytes=Buffer.from('fresh-native-'+input.shotId);return{bytes,sha256:hash(bytes),layerCount:2};});
+ const options={root,projectId:loaded.project.id,writerAuthority:lease,budget,captureImage:capture,trashItem:async(file:string)=>fs.unlink(file)},output=await openWorkspaceOutput(options),resolvedImages=Object.fromEntries(Object.keys(loaded.project.images).map(id=>[id,{native:{storeId:'store',documentId:id,versionId:hash('version'),manifestSha256:hash(id),width:3,height:2},format:'tiff' as const}])),frozen={owner:{sessionId:'session',incarnation:'incarnation',workspaceEpoch:1},commitHash:loaded.commitHash,project:loaded.project,resolvedImages};return{output,lease,budget,capture,frozen,options};
+}
 
 describe('native workspace creation with real filesystem and lease',()=>{
  it('publishes a zero-board journal and reopens it under the real new-root lease',async()=>{
@@ -95,5 +110,40 @@ describe('native workspace creation with real filesystem and lease',()=>{
   const f=await fixture(),old=await legacyFixture(f.root),view=await f.factory.inspectUpgrade(old.source),input={operationId:'retry-proof',sourceRoot:old.source,projectId:old.project.id,sourceDigest:view.sourceDigest,destinationParent:f.out,folderName:'Copy',projectName:'Copy'},created=await f.factory.copyUpgrade(input,signal()),target=created.root,proof=await fs.readFile(path.join(target,'.storyboard-flow/native-creation-complete.json'));
   await fs.rename(target,target+'-retained');await fs.mkdir(target);await fs.mkdir(path.join(target,'.storyboard-flow'));await fs.writeFile(path.join(target,'.storyboard-flow/native-creation-complete.json'),proof);await expect(f.factory.copyUpgrade(input,signal())).rejects.toThrow('does not match');await fs.rename(target,target+'-foreign');await fs.rename(target+'-retained',target);
   const segment=path.join(target,'.storyboard-flow/image-project-journal-v1/segment-0.log'),bytes=await fs.readFile(segment);bytes[0]^=1;await fs.writeFile(segment,bytes);const damaged=await digestTree(target);await expect(f.factory.copyUpgrade(input,signal())).rejects.toThrow('corruption');expect(await digestTree(target)).toEqual(damaged);
+ },120000);
+});
+
+describe('copy upgrade Pending filename seed',()=>{
+ it('retains a valid old Pending binding through the first real capture path without claiming archive bytes as published native output',async()=>{
+  const f=await upgradeWithNames(),archive=path.join(f.created.root,'.storyboard-flow/legacy-copy-v1'),before=await digestTree(archive),o=await nativeOutput(f.created.root);
+  expect((await o.output.names(o.frozen.project)).find(n=>n.shotId==='b')?.name).toBe(f.binding.name);expect(await o.output.inspect(o.frozen.project)).toEqual([]);expect(o.capture).not.toHaveBeenCalled();expect(await fs.readdir(path.join(f.created.root,'.storyboard-flow/native-output-v1'))).toEqual(['operations']);
+  const saved=await o.output.save(o.frozen),pending=saved.files.find(file=>file.shotId==='b')!;expect(pending).toMatchObject({name:f.binding.name,location:'parked',digest:hash('fresh-native-b')});expect(pending.digest).not.toBe(f.binding.digest);expect(o.capture).toHaveBeenCalledTimes(2);expect(await fs.readFile(path.join(f.created.root,'Pending',f.binding.name),'utf8')).toBe('fresh-native-b');expect(await digestTree(archive)).toEqual(before);expect(o.budget.reservedBytes).toBe(0);await o.output.close();await o.lease.release();
+ },120000);
+ it('never replaces a foreign file at the seeded Pending target',async()=>{
+  const f=await upgradeWithNames(),o=await nativeOutput(f.created.root);await fs.mkdir(path.join(f.created.root,'Pending'));await fs.writeFile(path.join(f.created.root,'Pending',f.binding.name),'foreign');await expect(o.output.save(o.frozen)).rejects.toThrow('Foreign output filename collision');expect(o.capture).not.toHaveBeenCalled();expect(await fs.readFile(path.join(f.created.root,'Pending',f.binding.name),'utf8')).toBe('foreign');await o.output.close();await o.lease.release();
+ },120000);
+ it('rejects invalid or case-folded duplicate legacy names before creating a new target',async()=>{
+  const f=await fixture(),old=await legacyFixture(f.root),binding=await bindLegacyPending(old);binding.ledger.entries[0].name='../escape.tif';await fs.writeFile(path.join(old.source,'.storyboard-flow/tiff-output.json'),JSON.stringify(binding.ledger));const view=await f.factory.inspectUpgrade(old.source),input={operationId:'bad-copy',sourceRoot:old.source,projectId:old.project.id,sourceDigest:view.sourceDigest,destinationParent:f.out,folderName:'Copy',projectName:'Copy'};await expect(f.factory.copyUpgrade(input,signal())).rejects.toThrow('Invalid TIFF output ledger');expect(await fs.readdir(f.out)).toEqual([]);
+  binding.ledger.entries[0].name='same.tif';binding.ledger.entries.push({...binding.ledger.entries[0],shotId:'a',name:'SAME.tif'});await fs.writeFile(path.join(old.source,'.storyboard-flow/tiff-output.json'),JSON.stringify(binding.ledger));const changed=await f.factory.inspectUpgrade(old.source);await expect(f.factory.copyUpgrade({...input,sourceDigest:changed.sourceDigest},signal())).rejects.toThrow('Invalid TIFF output ledger');expect(await fs.readdir(f.out)).toEqual([]);
+ },120000);
+ it('rejects a different-project seed or altered seed proof and retains all archive evidence',async()=>{
+  const f=await upgradeWithNames(),seedPath=path.join(f.created.root,WORKSPACE_OUTPUT_NAME_SEED),original=await fs.readFile(seedPath),seed=JSON.parse(original.toString()),archive=path.join(f.created.root,'.storyboard-flow/legacy-copy-v1'),before=await digestTree(archive);seed.projectId='other';await fs.writeFile(seedPath,JSON.stringify(seed));const budget=await createWorkspaceRecoveryBudget({root:f.created.root}),options={root:f.created.root,projectId:JSON.parse(original.toString()).projectId,writerAuthority:{assertHeld:async()=>{}},budget,captureImage:async()=>{throw Error('must not capture');}};await expect(openWorkspaceOutput(options)).rejects.toThrow('different-project');seed.projectId=options.projectId;seed.names[0].name='altered.tif';await fs.writeFile(seedPath,JSON.stringify(seed));await expect(openWorkspaceOutput(options)).rejects.toThrow('does not match creation evidence');expect(await digestTree(archive)).toEqual(before);
+ },120000);
+ it('preserves an unpublished seed across capture failure/reopen and consumes it after actual publication',async()=>{
+  const f=await upgradeWithNames(),o=await nativeOutput(f.created.root);await o.output.close();let first=true;const failed=await openWorkspaceOutput({...o.options,captureImage:async(input)=>{if(first){first=false;throw Error('capture unsupported');}return o.capture(input);}});await expect(failed.save(o.frozen)).rejects.toThrow('capture unsupported');await failed.close();const reopened=await openWorkspaceOutput(o.options);expect((await reopened.names(o.frozen.project)).find(n=>n.shotId==='b')?.name).toBe(f.binding.name);await reopened.save(o.frozen);await reopened.close();await o.lease.release();
+ },120000);
+ it('reads valid legacy names through recovery write protection with no writable open, and old Save remains blocked',async()=>{
+  const f=await fixture(),old=await legacyFixture(f.root),binding=await bindLegacyPending(old),marker=path.join(old.source,'.storyboard-flow/workspace-recovery-v2');await fs.mkdir(marker);await fs.writeFile(path.join(marker,'keep.bin'),'unknown recovery evidence');const before=await digestTree(old.source),open=vi.spyOn(fs,'open');
+  try{expect((await readFlowTiffOutputNames(old.source,old.project))?.names.find(n=>n.shotId==='b')?.name).toBe(binding.name);expect(open.mock.calls.length).toBeGreaterThan(0);for(const call of open.mock.calls){const flags=call[1];expect(typeof flags).toBe('number');expect(Number(flags)&(constants.O_WRONLY|constants.O_RDWR|constants.O_CREAT|constants.O_TRUNC|constants.O_APPEND)).toBe(0);}}finally{open.mockRestore();}
+  const writer=await openFlowTiffSave(old.source,old.project.id,createTiffCodec(flowCodecOptions()));await expect(writer.save(old.project,async id=>old.assets.get(id)!)).rejects.toThrow('protected by a recovery inventory');expect(await digestTree(old.source)).toEqual(before);
+  const view=await f.factory.inspectUpgrade(old.source),created=await f.factory.copyUpgrade({operationId:'protected-names',sourceRoot:old.source,projectId:old.project.id,sourceDigest:view.sourceDigest,destinationParent:f.out,folderName:'Copy',projectName:'Copy'},signal());expect(JSON.parse(await fs.readFile(path.join(created.root,WORKSPACE_OUTPUT_NAME_SEED),'utf8')).names[0].name).toBe(binding.name);expect(await digestTree(old.source)).toEqual(before);expect(await fs.readFile(path.join(created.root,'.storyboard-flow/legacy-copy-v1/.storyboard-flow/workspace-recovery-v2/keep.bin'),'utf8')).toBe('unknown recovery evidence');
+ },120000);
+ it('retains full damage checks in the shared pure validator and read-only path',async()=>{
+  const f=await fixture(),old=await legacyFixture(f.root),binding=await bindLegacyPending(old),at=path.join(old.source,'.storyboard-flow/tiff-output.json');
+  const invalid=[{...binding.ledger,projectId:'other'},{...binding.ledger,rename:{phase:'stage',files:[]}},{...binding.ledger,add:{token:'invalid'}},{...binding.ledger,entries:[{...binding.ledger.entries[0],published:'yes'}]},{...binding.ledger,entries:[{...binding.ledger.entries[0],pixelHashes:{wrong:hash('wrong')}}]}];
+  for(const ledger of invalid){const bytes=Buffer.from(JSON.stringify(ledger));expect(()=>validateFlowTiffOutputLedger(bytes,old.project.id)).toThrow();await fs.writeFile(at,bytes);const before=await digestTree(old.source);await expect(readFlowTiffOutputNames(old.source,old.project)).rejects.toThrow();expect(await digestTree(old.source)).toEqual(before);}
+ },120000);
+ it('refuses read-only ledger aliases and hardlinks without following or modifying them',async()=>{
+  const f=await fixture(),old=await legacyFixture(f.root);await bindLegacyPending(old);const at=path.join(old.source,'.storyboard-flow/tiff-output.json'),retained=at+'.retained';await fs.rename(at,retained);await fs.symlink(retained,at);await expect(readFlowTiffOutputNames(old.source,old.project)).rejects.toThrow('Unsafe readonly output ledger');await fs.unlink(at);await fs.link(retained,at);await expect(readFlowTiffOutputNames(old.source,old.project)).rejects.toThrow('Unsafe readonly output ledger');
  },120000);
 });

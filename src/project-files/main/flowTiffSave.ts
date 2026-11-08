@@ -5,6 +5,7 @@ import { validRefreshTransition } from '../../platform/contracts/flowRefresh.js'
 import { pixelDigest, imagePixelDigests, reconcileTiffPixels } from './flowPixelIdentity.js';
 import { admitTiffCandidate } from './formats/index.js';
 import type { FlowAssetDepot } from '../../platform/contracts/flowWave2.js';
+import { readBoundFile } from './persistence/fileOps.js';
 import { createOutputObservation } from './flowOutputObservation.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -85,6 +86,96 @@ const optionalRead = async (file: string, limit?: number) => {
   try { return await read(file, limit); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; }
 };
 
+/** Pure V1 ledger validation shared by legacy writes and explicit readonly copy upgrade. */
+export function validateFlowTiffOutputLedger(bytes: Uint8Array, projectId: string): Ledger {
+  if (!id(projectId) || !(bytes instanceof Uint8Array) || bytes.length > OUTPUT_LEDGER_LIMIT) throw Error('Invalid TIFF output ledger input');
+  const validateImage = (image: ImageDocumentV1) => snapshotProject({schema:'storyboard-flow.project',version:1,id:projectId,name:'',revision:0,
+    shots:[],parkedShots:[],dialogues:[],images:{[image.id]:image}});
+  const ledger: Ledger = JSON.parse(Buffer.from(bytes).toString());
+  if (ledger.version !== 1 || ledger.projectId !== projectId || !Array.isArray(ledger.entries) || ledger.entries.length > 10000 ||
+      ledger.entries.some(e => !e || !id(e.shotId) || !leaf(e.name) ||
+        e.original !== null && !digest(e.original) || e.current !== null && !digest(e.current) ||
+        e.pending !== undefined && !digest(e.pending) || e.content !== undefined && !digest(e.content) ||
+        e.location !== undefined && !['active', 'parked'].includes(e.location) ||
+        e.retired !== undefined && !['trashed', 'absent-unpublished'].includes(e.retired) ||
+        e.retired !== undefined && (e.current !== null || e.pending !== undefined || e.content !== undefined || e.move !== undefined || e.deletion !== undefined) ||
+        e.deletion !== undefined && (!validOutputDeletion(e.deletion) || e.deletion.digest !== e.current || e.deletion.from !== (e.location ?? 'active') || e.pending !== undefined || e.move !== undefined) ||
+        e.move !== undefined && (!e.move || !['active', 'parked'].includes(e.move.from) ||
+          !['active', 'parked'].includes(e.move.to) || e.move.from === e.move.to ||
+          e.move.from !== (e.location ?? 'active') || !digest(e.move.digest) || e.move.digest !== e.current ||
+          !/^\d+$/.test(e.move.dev) || !/^\d+$/.test(e.move.ino))) ||
+      new Set(ledger.entries.map(e => e.shotId)).size !== ledger.entries.length || new Set(ledger.entries.filter(e => !e.retired).map(e => e.name.toLowerCase())).size !== ledger.entries.filter(e => !e.retired).length)
+    throw Error('Invalid TIFF output ledger');
+  if (ledger.rename !== undefined && (!validOutputRename(ledger.rename) || ledger.rename.files.some(f => !ledger.entries.some(e => e.shotId === f.shotId && !e.retired && !e.deletion && e.name === f.from && e.current === f.digest && (e.location ?? 'active') === 'active' && !e.move && !e.pending)))) throw Error('Invalid bound rename journal');
+  for(const entry of ledger.entries){
+    if(entry.baseline)validateImage(entry.baseline);
+    if(entry.pixelHashes&&(!entry.baseline||Object.keys(entry.pixelHashes).length!==entry.baseline.layers.length||entry.baseline.layers.some(l=>!digest(entry.pixelHashes![l.id]))))throw Error('Invalid pixel baseline');
+    if(entry.published!==undefined&&typeof entry.published!=='boolean')throw Error('Invalid source provenance');
+  }
+  if (ledger.add !== undefined) {
+    const a = ledger.add;
+    if (!a || typeof a !== 'object' || Array.isArray(a) || typeof a.token !== 'string' || !/^[a-z0-9-]{8,80}$/.test(a.token) ||
+        typeof a.operationId !== 'string' || !/^[\w.:-]{1,100}$/.test(a.operationId) ||
+        !digest(a.beforeHash) || !digest(a.afterHash) || a.beforeHash === a.afterHash || typeof a.complete !== 'boolean' ||
+        !Array.isArray(a.additions) || a.additions.length === 0 || a.additions.length > 10000 ||
+        new Set(a.additions.map(x => x.shot.id)).size !== a.additions.length ||
+        new Set(a.additions.map(x => x.name.toLowerCase())).size !== a.additions.length ||
+        new Set(a.additions.map(x => x.staged)).size !== a.additions.length ||
+        a.abandoned !== undefined && (!Number.isInteger(a.abandoned) || a.abandoned < 0 || a.abandoned > 10000)) throw Error('Invalid Pending add journal');
+    for (const add of a.additions) {
+      if (!add || !add.shot || !id(add.shot.id) || !leaf(add.name) || !digest(add.digest) || !digest(add.originalDigest) ||
+          !['source', 'output'].includes(add.original) || !add.pixelHashes || typeof add.pixelHashes !== 'object' || Array.isArray(add.pixelHashes) ||
+          typeof add.staged !== 'string' || !add.staged || add.staged.includes('/') || add.staged.includes('\\') || add.staged.startsWith('.') ||
+          (add.targetDev === undefined) !== (add.targetIno === undefined) || add.targetDev !== undefined && (!/^\d{1,32}$/.test(add.targetDev) || !/^\d{1,32}$/.test(add.targetIno!)) ||
+          (add.originalDev === undefined) !== (add.originalIno === undefined) || add.originalDev !== undefined && (!/^\d{1,32}$/.test(add.originalDev) || !/^\d{1,32}$/.test(add.originalIno!)) ||
+          !/^\d{1,32}$/.test(add.dev) || !/^\d{1,32}$/.test(add.ino)) throw Error('Invalid Pending add record');
+      validateImage(add.image);
+      if (add.shot.imageId !== add.image.id) throw Error('Invalid Pending add shot');
+      snapshotProject({schema:'storyboard-flow.project',version:1,id:projectId,name:'',revision:0,shots:[],parkedShots:[add.shot],dialogues:add.dialogues,images:{[add.image.id]:add.image}});
+      if (Object.keys(add.pixelHashes).length !== add.image.layers.length || add.image.layers.some(l => !digest(add.pixelHashes[l.id]))) throw Error('Invalid Pending add pixel baseline');
+      if (add.original === 'output' && add.originalDigest !== add.digest) throw Error('Invalid Pending add original');
+      if (!a.complete && ledger.entries.some(e => !e.retired && (e.shotId === add.shot.id || e.name.toLowerCase() === add.name.toLowerCase()))) throw Error('Pending add collides with a live output');
+    }
+  }
+  if(ledger.refresh){
+    const j=ledger.refresh;snapshotProject(j.after);
+    if(!digest(j.beforeHash)||j.after.id!==projectId||typeof j.complete!=='boolean'||!Array.isArray(j.updates)||
+      new Set(j.updates.map(u=>u.shotId)).size!==j.updates.length)throw Error('Invalid refresh journal');
+    for(const u of j.updates){validateImage(u.baseline);if(!u.pixelHashes||Object.keys(u.pixelHashes).length!==u.baseline.layers.length||u.baseline.layers.some(l=>!digest(u.pixelHashes[l.id])))throw Error('Invalid refresh pixel baseline');if(!digest(u.digest)||!ledger.entries.some(e=>e.shotId===u.shotId&&!e.retired&&!e.deletion&&!e.move&&!e.pending))throw Error('Invalid bound refresh update');}
+  }
+  return ledger;
+}
+
+const outputNamesFromLedger = (project: ProjectV1, ledger: Ledger): { shotId: string; name: string }[] => {
+  if ((ledger.add && !ledger.add.complete) || ledger.rename || (ledger.refresh && !ledger.refresh.complete) || ledger.entries.some(e => e.move || e.deletion || e.pending))
+    throw Error('请先完成上次保存或刷新，再查看命名预览');
+  const entries = new Map(ledger.entries.map(e => [e.shotId, e]));
+  const parked = new Set(project.parkedShots.map(s => s.id));
+  return [...project.shots, ...project.parkedShots].map(({ id: shotId }) => {
+    const entry = entries.get(shotId);
+    // Restoring a retired Pending entry assigns a fresh random leaf during Save.
+    if (entry?.retired && parked.has(shotId)) throw Error('请先保存恢复的 Pending 故事板，再查看命名预览');
+    return { shotId, name: entry && !entry.retired ? entry.name : firstOutputName(shotId) };
+  });
+};
+
+/** Readonly Main inspection. Recovery markers prohibit writers, not inspection.
+ * No repair, mkdir, writable open, codec, lease or writable capability is used. */
+export async function readFlowTiffOutputNames(root: string, project: ProjectV1): Promise<{ names: {shotId:string;name:string}[]; ledger: Ledger; sha256:string } | null> {
+  const captured = snapshotProject(project);
+  const directory = async (at:string) => { const st=await fs.lstat(at,{bigint:true}); if(!st.isDirectory()||st.isSymbolicLink()||await fs.realpath(at)!==at)throw Error('Unsafe readonly output directory'); return st; };
+  if(!path.isAbsolute(root)||path.normalize(root)!==root||root.includes('\0'))throw Error('Canonical readonly output root required');
+  const identity=await directory(root),hidden=path.join(root,'.storyboard-flow');
+  let hiddenIdentity;try{hiddenIdentity=await directory(hidden);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return null;throw e;}
+  const file=path.join(hidden,'tiff-output.json');let before;try{before=await fs.lstat(file,{bigint:true});}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return null;throw e;}
+  if(!before.isFile()||before.isSymbolicLink()||before.nlink!==1n||await fs.realpath(file)!==file)throw Error('Unsafe readonly output ledger');
+  const bytes=await readBoundFile(file,OUTPUT_LEDGER_LIMIT);if(!bytes)throw Error('Readonly output ledger disappeared');
+  const after=await fs.lstat(file,{bigint:true}),now=await directory(root),hiddenNow=await directory(hidden);
+  if(after.isSymbolicLink()||after.nlink!==1n||['dev','ino','size','mtimeNs','ctimeNs'].some(k=>before[k as 'dev']!==after[k as 'dev'])||now.dev!==identity.dev||now.ino!==identity.ino||hiddenNow.dev!==hiddenIdentity.dev||hiddenNow.ino!==hiddenIdentity.ino||await fs.realpath(file)!==file)throw Error('Readonly output identity changed');
+  const ledger=validateFlowTiffOutputLedger(bytes,captured.id);
+  return {names:outputNamesFromLedger(captured,ledger),ledger,sha256:hash(bytes)};
+}
+
 /** Explicit output only. Native policy/CAS writes, immutable originals and durable
  * per-file pending hashes. A partial failure never returns a Save receipt.
  * Caller serializes one writable project owner; roots/filenames never come from IPC. */
@@ -110,58 +201,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
   const load = async (): Promise<{ ledger: Ledger; bytes: Buffer | null }> => {
     await bind(); const bytes = await optionalRead(ledgerPath, OUTPUT_LEDGER_LIMIT);
     if (!bytes) return { ledger: { version: 1, projectId, entries: [] }, bytes };
-    const ledger: Ledger = JSON.parse(bytes.toString());
-    if (ledger.version !== 1 || ledger.projectId !== projectId || !Array.isArray(ledger.entries) || ledger.entries.length > 10000 ||
-        ledger.entries.some(e => !e || !id(e.shotId) || !leaf(e.name) ||
-          e.original !== null && !digest(e.original) || e.current !== null && !digest(e.current) ||
-          e.pending !== undefined && !digest(e.pending) || e.content !== undefined && !digest(e.content) ||
-          e.location !== undefined && !['active', 'parked'].includes(e.location) ||
-          e.retired !== undefined && !['trashed', 'absent-unpublished'].includes(e.retired) ||
-          e.retired !== undefined && (e.current !== null || e.pending !== undefined || e.content !== undefined || e.move !== undefined || e.deletion !== undefined) ||
-          e.deletion !== undefined && (!validOutputDeletion(e.deletion) || e.deletion.digest !== e.current || e.deletion.from !== (e.location ?? 'active') || e.pending !== undefined || e.move !== undefined) ||
-          e.move !== undefined && (!e.move || !['active', 'parked'].includes(e.move.from) ||
-            !['active', 'parked'].includes(e.move.to) || e.move.from === e.move.to ||
-            e.move.from !== (e.location ?? 'active') || !digest(e.move.digest) || e.move.digest !== e.current ||
-            !/^\d+$/.test(e.move.dev) || !/^\d+$/.test(e.move.ino))) ||
-        new Set(ledger.entries.map(e => e.shotId)).size !== ledger.entries.length || new Set(ledger.entries.filter(e => !e.retired).map(e => e.name.toLowerCase())).size !== ledger.entries.filter(e => !e.retired).length)
-      throw Error('Invalid TIFF output ledger');
-    if (ledger.rename !== undefined && (!validOutputRename(ledger.rename) || ledger.rename.files.some(f => !ledger.entries.some(e => e.shotId === f.shotId && !e.retired && !e.deletion && e.name === f.from && e.current === f.digest && (e.location ?? 'active') === 'active' && !e.move && !e.pending)))) throw Error('Invalid bound rename journal');
-    for(const entry of ledger.entries){
-      if(entry.baseline)validateImage(entry.baseline);
-      if(entry.pixelHashes&&(!entry.baseline||Object.keys(entry.pixelHashes).length!==entry.baseline.layers.length||entry.baseline.layers.some(l=>!digest(entry.pixelHashes![l.id]))))throw Error('Invalid pixel baseline');
-      if(entry.published!==undefined&&typeof entry.published!=='boolean')throw Error('Invalid source provenance');
-    }
-    if (ledger.add !== undefined) {
-      const a = ledger.add;
-      if (!a || typeof a !== 'object' || Array.isArray(a) || typeof a.token !== 'string' || !/^[a-z0-9-]{8,80}$/.test(a.token) ||
-          typeof a.operationId !== 'string' || !/^[\w.:-]{1,100}$/.test(a.operationId) ||
-          !digest(a.beforeHash) || !digest(a.afterHash) || a.beforeHash === a.afterHash || typeof a.complete !== 'boolean' ||
-          !Array.isArray(a.additions) || a.additions.length === 0 || a.additions.length > 10000 ||
-          new Set(a.additions.map(x => x.shot.id)).size !== a.additions.length ||
-          new Set(a.additions.map(x => x.name.toLowerCase())).size !== a.additions.length ||
-          new Set(a.additions.map(x => x.staged)).size !== a.additions.length ||
-          a.abandoned !== undefined && (!Number.isInteger(a.abandoned) || a.abandoned < 0 || a.abandoned > 10000)) throw Error('Invalid Pending add journal');
-      for (const add of a.additions) {
-        if (!add || !add.shot || !id(add.shot.id) || !leaf(add.name) || !digest(add.digest) || !digest(add.originalDigest) ||
-            !['source', 'output'].includes(add.original) || !add.pixelHashes || typeof add.pixelHashes !== 'object' || Array.isArray(add.pixelHashes) ||
-            typeof add.staged !== 'string' || !add.staged || add.staged.includes('/') || add.staged.includes('\\') || add.staged.startsWith('.') ||
-            (add.targetDev === undefined) !== (add.targetIno === undefined) || add.targetDev !== undefined && (!/^\d{1,32}$/.test(add.targetDev) || !/^\d{1,32}$/.test(add.targetIno!)) ||
-            (add.originalDev === undefined) !== (add.originalIno === undefined) || add.originalDev !== undefined && (!/^\d{1,32}$/.test(add.originalDev) || !/^\d{1,32}$/.test(add.originalIno!)) ||
-            !/^\d{1,32}$/.test(add.dev) || !/^\d{1,32}$/.test(add.ino)) throw Error('Invalid Pending add record');
-        validateImage(add.image);
-        if (add.shot.imageId !== add.image.id) throw Error('Invalid Pending add shot');
-        snapshotProject({schema:'storyboard-flow.project',version:1,id:projectId,name:'',revision:0,shots:[],parkedShots:[add.shot],dialogues:add.dialogues,images:{[add.image.id]:add.image}});
-        if (Object.keys(add.pixelHashes).length !== add.image.layers.length || add.image.layers.some(l => !digest(add.pixelHashes[l.id]))) throw Error('Invalid Pending add pixel baseline');
-        if (add.original === 'output' && add.originalDigest !== add.digest) throw Error('Invalid Pending add original');
-        if (!a.complete && ledger.entries.some(e => !e.retired && (e.shotId === add.shot.id || e.name.toLowerCase() === add.name.toLowerCase()))) throw Error('Pending add collides with a live output');
-      }
-    }
-    if(ledger.refresh){
-      const j=ledger.refresh;snapshotProject(j.after);
-      if(!digest(j.beforeHash)||j.after.id!==projectId||typeof j.complete!=='boolean'||!Array.isArray(j.updates)||
-        new Set(j.updates.map(u=>u.shotId)).size!==j.updates.length)throw Error('Invalid refresh journal');
-      for(const u of j.updates){validateImage(u.baseline);if(!u.pixelHashes||Object.keys(u.pixelHashes).length!==u.baseline.layers.length||u.baseline.layers.some(l=>!digest(u.pixelHashes[l.id])))throw Error('Invalid refresh pixel baseline');if(!digest(u.digest)||!ledger.entries.some(e=>e.shotId===u.shotId&&!e.retired&&!e.deletion&&!e.move&&!e.pending))throw Error('Invalid bound refresh update');}
-    }
+    const ledger = validateFlowTiffOutputLedger(bytes, projectId);
     return { ledger, bytes };
   };
   const persist = async (ledger: Ledger, previous: Buffer | null) => {
@@ -272,16 +312,7 @@ export async function openFlowTiffSave(root: string, projectId: string, codec: T
       return serialized(async () => {
         if (project.id !== projectId) throw Error('Different project');
         const { ledger } = await load();
-        if ((ledger.add && !ledger.add.complete) || ledger.rename || (ledger.refresh && !ledger.refresh.complete) || ledger.entries.some(e => e.move || e.deletion || e.pending))
-          throw Error('请先完成上次保存或刷新，再查看命名预览');
-        const entries = new Map(ledger.entries.map(e => [e.shotId, e]));
-        const parked = new Set(project.parkedShots.map(s => s.id));
-        return [...project.shots, ...project.parkedShots].map(({ id: shotId }) => {
-          const entry = entries.get(shotId);
-          // Restoring a retired Pending entry assigns a fresh random leaf during Save.
-          if (entry?.retired && parked.has(shotId)) throw Error('请先保存恢复的 Pending 故事板，再查看命名预览');
-          return { shotId, name: entry && !entry.retired ? entry.name : firstOutputName(shotId) };
-        });
+        return outputNamesFromLedger(project, ledger);
       });
     },
     async hasPendingRefresh(){const j=(await load()).ledger.refresh;return !!j&&!j.complete;},

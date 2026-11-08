@@ -21,12 +21,14 @@ import {assertPhysicalWorkspaceWriterTargets} from '../workspacePhysicalWriterGa
 import {createSourceBackedImport,inspectImportSource,type SourceInput,type SourceImportStore,type SourceIdentity} from './sourceStore.js';
 import {openImageProjectStore,type ProjectStoreV2} from './projectStore.js';
 import {readImageWorkspaceProject} from './workspaceProbe.js';
+import {readFlowTiffOutputNames} from '../flowTiffSave.js';
+import {WORKSPACE_OUTPUT_NAME_SEED,validWorkspaceOutputFileName,type WorkspaceOutputNameSeed} from './workspaceOutputContract.js';
 import type {ImageWorkspaceCreation,WorkspaceCreationOptions,WorkspaceUpgradeInspection,WorkspaceCreationBudget,WorkspaceCopyUpgradeInput} from './workspaceCreationContract.js';
 
 const MAX=8*1024**3,INTERPRETATION='photocraft-v1';
 const COMPLETION_LIMIT=8*1024*1024,COMPLETION_FILE='.storyboard-flow/native-creation-complete.json';
 type CopyCompletion={schema:'flow.native-workspace-creation-complete';version:1;input:WorkspaceCopyUpgradeInput;inputFingerprint:string;projectId:string;genesisCommitHash:string;
- parent:{path:string;dev:string;ino:string};target:{path:string;dev:string;ino:string}};
+ parent:{path:string;dev:string;ino:string};target:{path:string;dev:string;ino:string};outputNameSeedSha256?:string};
 const missing=(e:unknown)=>(e as NodeJS.ErrnoException).code==='ENOENT';
 const inside=(parent:string,child:string)=>{const r=path.relative(parent,child);return r===''||!path.isAbsolute(r)&&r!=='..'&&!r.startsWith('..'+path.sep);};
 const aborted=()=>Object.assign(Error('创建已取消'),{name:'AbortError'});
@@ -70,6 +72,13 @@ const upgradeIssues=(project:ProjectV1)=>{
  return issues;
 };
 async function legacy(root:string){await directory(root);const loaded=await loadCheckpoint(root);if(!loaded.ok)throw Error(loaded.error.message);for(const image of Object.values(loaded.value.project.images))for(const layer of image.layers)await loaded.value.readAsset(layer.assetId);return loaded.value;}
+async function legacyPendingNames(root:string,project:ProjectV1){
+ const source=await readFlowTiffOutputNames(root,project);if(!source)return undefined;
+ const {ledger}=source;
+ const names:WorkspaceOutputNameSeed['names']=[];
+ for(const shot of project.parkedShots){const entry=ledger.entries.find(e=>e.shotId===shot.id&&!e.retired&&e.location==='parked'&&e.current!==null);if(entry){if(!validWorkspaceOutputFileName(entry.name))throw Error('Legacy Pending output filename is invalid');names.push({shotId:shot.id,imageId:shot.imageId,name:entry.name,location:'parked'});}}
+ return{names,legacyLedgerSha256:source.sha256};
+}
 async function rgba(bytes:Uint8Array){return sharp(bytes,{limitInputPixels:16*1024*1024}).toColourspace('srgb').ensureAlpha().raw().toBuffer();}
 async function verifyUpgradeImage(image:ImageDocumentV1,read:AssetReaderV1,bytes:Uint8Array,options:WorkspaceCreationOptions,root:string){
  const external=options.verifyLegacyLayers?await options.verifyLegacyLayers({bytes,projectRoot:root,imageId:image.id}):await readPhotocraft(bytes,'tiff').then(r=>({...r.value,reference:r.reference,warnings:r.warnings}));
@@ -102,10 +111,11 @@ export function createImageWorkspaceCreation(options:WorkspaceCreationOptions):I
   const bytes=await readBoundFile(proofPath,COMPLETION_LIMIT);if(!bytes)throw Error('Copy completion proof disappeared');const proof=JSON.parse(bytes.toString()) as CopyCompletion;
   if(proof.schema!=='flow.native-workspace-creation-complete'||proof.version!==1||proof.inputFingerprint!==sha256Hex(canonicalUtf8(input))||!same(proof.input,input)||proof.parent?.path!==parent||proof.parent.dev!==String(parentIdentity.dev)||proof.parent.ino!==String(parentIdentity.ino)||proof.target?.path!==target||proof.target.dev!==String(current.dev)||proof.target.ino!==String(current.ino)||typeof proof.projectId!=='string'||!/^[a-f0-9]{64}$/.test(proof.genesisCommitHash))throw Error('Existing target does not match this completed operation');
   const read=await readImageWorkspaceProject(target);if(read.plan.identity.id!==proof.projectId||read.genesisCommitHash!==proof.genesisCommitHash)throw Error('Copy completion genesis no longer matches');
+  if(proof.outputNameSeedSha256){const seed=await readBoundFile(path.join(target,WORKSPACE_OUTPUT_NAME_SEED),COMPLETION_LIMIT);if(!seed||sha256Hex(seed)!==proof.outputNameSeedSha256)throw Error('Copy completion naming seed changed');}
   try{await options.prepare?.({root:target,projectId:proof.projectId});const after=await directory(target),afterParent=await directory(parent);if(after.dev!==current.dev||after.ino!==current.ino||afterParent.dev!==parentIdentity.dev||afterParent.ino!==parentIdentity.ino)throw Error('Completed copy identity changed during recovery');return{root:target};}
   catch(e){throw Object.assign(Error(`Completed copy could not be prepared: ${e instanceof Error?e.message:String(e)}; evidence retained at ${target}`),{retainedRoot:target,effect:'retained'});}
  };
- const create=async(input:{destinationParent:string;folderName:string},operation:CreateImageProjectOptions,prepare:(context:{stage:string;budget:WorkspaceCreationBudget;bind:()=>Promise<void>})=>Promise<{project:ProjectV2;sources:SourceInput[];verifySources?:()=>Promise<void>;copyInput?:WorkspaceCopyUpgradeInput}>)=>{
+ const create=async(input:{destinationParent:string;folderName:string},operation:CreateImageProjectOptions,prepare:(context:{stage:string;budget:WorkspaceCreationBudget;bind:()=>Promise<void>})=>Promise<{project:ProjectV2;sources:SourceInput[];verifySources?:()=>Promise<void>;copyInput?:WorkspaceCopyUpgradeInput;pendingNames?:Awaited<ReturnType<typeof legacyPendingNames>>}>)=>{
   checkSignal(operation);const{parent,target}=await bindDestination(input.destinationParent,input.folderName),parentIdentity=await directory(parent);await assertPhysicalWorkspaceWriterTargets([target]);
   let stage:string|undefined,stageIdentity:Awaited<ReturnType<typeof directory>>|undefined,lease:ImageProjectLease|undefined,source:SourceImportStore|undefined,store:ProjectStoreV2|undefined,published=false,budget:WorkspaceCreationBudget|undefined,cleanupGrant:Awaited<ReturnType<WorkspaceCreationBudget['reserve']>>|undefined;
   try{
@@ -139,8 +149,14 @@ export function createImageWorkspaceCreation(options:WorkspaceCreationOptions):I
    const head=await store.load();if(!head||!same(head.commit.after,prepared.project))throw Error('Creation genesis verification failed');await store.validateRecovery();
    await store.close();store=undefined;if(source){await source.close();source=undefined;}await cleanupGrant.settleActual(0);cleanupGrant=undefined;await budget.audit();cleanupGrant=await budget.reserve({operationId:randomUUID(),bytes:8192,purpose:'creation-lease-release'});
    if(prepared.copyInput){
+    let outputNameSeedSha256:string|undefined;
+    if(prepared.pendingNames?.names.length){
+     const seed:WorkspaceOutputNameSeed={schema:'flow.native-output-name-seed',version:1,projectId:prepared.project.id,genesisCommitHash:head.commitHash,sourceProjectId:prepared.copyInput.projectId,sourceDigest:prepared.copyInput.sourceDigest,...prepared.pendingNames};
+     const seedBytes=canonicalUtf8(seed);if(seedBytes.length>COMPLETION_LIMIT)throw Error('Output name seed exceeds its metadata budget');const seedGrant=await budget.reserve({operationId:randomUUID(),bytes:seedBytes.length,purpose:'creation-pending-output-name-seed'});
+     try{await bind();await createFileExclusive(path.join(stage,WORKSPACE_OUTPUT_NAME_SEED),seedBytes);await syncDirectory(path.join(stage,'.storyboard-flow'));await seedGrant.settleActual(seedBytes.length);outputNameSeedSha256=sha256Hex(seedBytes);}catch(e){await seedGrant.retainUnknown();throw e;}
+    }
     const completion:CopyCompletion={schema:'flow.native-workspace-creation-complete',version:1,input:prepared.copyInput,inputFingerprint:sha256Hex(canonicalUtf8(prepared.copyInput)),projectId:prepared.project.id,genesisCommitHash:head.commitHash,
-     parent:{path:parent,dev:String(parentIdentity.dev),ino:String(parentIdentity.ino)},target:{path:target,dev:String(stageIdentity.dev),ino:String(stageIdentity.ino)}};
+     parent:{path:parent,dev:String(parentIdentity.dev),ino:String(parentIdentity.ino)},target:{path:target,dev:String(stageIdentity.dev),ino:String(stageIdentity.ino)},...(outputNameSeedSha256?{outputNameSeedSha256}:{})};
     const bytes=canonicalUtf8(completion);if(bytes.length>COMPLETION_LIMIT)throw Error('Creation completion proof exceeds its metadata budget');const grant=await budget.reserve({operationId:randomUUID(),bytes:bytes.length,purpose:'creation-completion-proof'});
     try{await bind();await createFileExclusive(path.join(stage,COMPLETION_FILE),bytes);await syncDirectory(path.join(stage,'.storyboard-flow'));await grant.settleActual(bytes.length);}catch(e){await grant.retainUnknown();throw e;}
    }
@@ -171,7 +187,7 @@ export function createImageWorkspaceCreation(options:WorkspaceCreationOptions):I
   async copyUpgrade(rawInput,operation){
    const input=structuredClone(rawInput);checkSignal(operation);const completed=await resumeCompletedCopy(input);if(completed){report(operation,1,1,'write');return completed;}
    const loaded=await legacy(input.sourceRoot),old=loaded.project,issues=upgradeIssues(old);if(issues.length)throw Error(issues.map(i=>i.message).join(' '));if(inside(input.sourceRoot,path.join(input.destinationParent,input.folderName)))throw Error('Upgrade destination must be outside the original project');
-   const originalInventory=await inventory(input.sourceRoot,maximum),sourceProjectHash=sha256Hex(canonicalUtf8(old));if(old.id!==input.projectId||sha256Hex(canonicalUtf8({projectHash:sourceProjectHash,inventory:originalInventory}))!==input.sourceDigest||!/^[A-Za-z0-9_-]{1,100}$/.test(input.operationId)||typeof input.projectName!=='string')throw Error('Upgrade source changed since inspection or operation identity is invalid');
+   const originalInventory=await inventory(input.sourceRoot,maximum),sourceProjectHash=sha256Hex(canonicalUtf8(old));if(old.id!==input.projectId||sha256Hex(canonicalUtf8({projectHash:sourceProjectHash,inventory:originalInventory}))!==input.sourceDigest||!/^[A-Za-z0-9_-]{1,100}$/.test(input.operationId)||typeof input.projectName!=='string')throw Error('Upgrade source changed since inspection or operation identity is invalid');const pendingNames=await legacyPendingNames(input.sourceRoot,old);
    return create(input,operation,async({stage,budget,bind})=>{
     const hidden=path.join(stage,'.storyboard-flow');await bind();await directory(hidden);const archive=path.join(hidden,'legacy-copy-v1');await fs.mkdir(archive,{mode:0o700});
     const archiveReceiptMaximum=canonicalUtf8({schema:'flow.legacy-copy',version:1,projectHash:sourceProjectHash,directories:originalInventory.directories,files:originalInventory.files.map(f=>({...f,digest:'f'.repeat(64)}))}).length;
@@ -186,7 +202,7 @@ export function createImageWorkspaceCreation(options:WorkspaceCreationOptions):I
       const sourcePath=path.join(derived,shot.id+'.tif');await createFileExclusive(sourcePath,encoded.value);await syncDirectory(derived);await grant.settleActual(encoded.value.length);const itemId=randomUUID();project.images[shot.imageId]={id:shot.imageId,content:{kind:'source',source:{importId:'pending',itemId,interpretationId:INTERPRETATION}}};sources.push({id:itemId,sourcePath,formatHint:'tiff',expected:await inspectImportSource(sourcePath)});
      }catch(e){await grant.retainUnknown();throw e;}
     }
-    return{project,sources,copyInput:input,verifySources:async()=>{if(!same(originalInventory,await inventory(input.sourceRoot,maximum))||sha256Hex(canonicalUtf8((await legacy(input.sourceRoot)).project))!==sourceProjectHash)throw Error('Original project changed during copy upgrade');}};
+    return{project,sources,copyInput:input,pendingNames,verifySources:async()=>{if(!same(originalInventory,await inventory(input.sourceRoot,maximum))||sha256Hex(canonicalUtf8((await legacy(input.sourceRoot)).project))!==sourceProjectHash)throw Error('Original project changed during copy upgrade');}};
    });
   }
  };
