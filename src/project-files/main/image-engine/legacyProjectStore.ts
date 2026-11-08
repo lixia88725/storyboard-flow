@@ -118,7 +118,7 @@ export async function openLegacyImageProjectStore(options:ImageProjectStoreOptio
     while(hash){
       if(seen.has(hash)||seen.size>=100_000)bad('Invalid project commit chain');seen.add(hash);
       const raw=await read(path.join(commits,`${hash}.json`));if(!raw||sha(raw)!==hash)bad('Missing/damaged reachable project commit');
-      const record=commitRecord(parse(raw));if(record.after.id!==head.projectId)bad('Project identity changed in commit chain');
+      const record=commitRecord(parse(raw));if(record.creationDecision)bad('Detached creation requires the recovery journal');if(record.after.id!==head.projectId)bad('Project identity changed in commit chain');
       result.push({commitHash:hash,commit:record,head});hash=record.previousCommitHash;
     }
     result.reverse();
@@ -202,7 +202,7 @@ export async function openLegacyImageProjectStore(options:ImageProjectStoreOptio
       if(closing||closed||auditing)return Promise.reject(new ImageProjectStoreError('busy','Image-project audit admission closed'));auditing=true;
       auditWork=Promise.all([tail,intentTail,confirmationTail,budgetTail]).then(async()=>{prefix=undefined;prefixHead=undefined;tailStamp=undefined;verifiedRefs.clear();verifiedUnchanged.clear();await load();await refreshInventory();reservedBytes=0;await sync(commits);await sync(settlements);await sync(store);await bound();}).catch(e=>{budgetDirty=true;throw e;}).finally(()=>{auditing=false;});return auditWork;
     },committed:()=>queue(async(admit)=>clone(await chain())),unsettled:()=>queue(async(admit)=>clone(await pending())),
-    commit:(expectedHead,input)=>{const captured=commitRecord(input);return queue(async(admit)=>{
+    commit:(expectedHead,input)=>{const captured=commitRecord(input);if(captured.creationDecision)bad('Detached creation requires the recovery journal');return queue(async(admit)=>{
       if(expectedHead!==null&&!imageHash(expectedHead))bad('Invalid expected head');
       const list=await chain(),current=list.at(-1),data=bytes(captured),hash=sha(data),existing=byId.get(captured.commitId);
       if(existing){if(existing.commitHash!==hash)bad('Commit identity reused with different content');await bound();await sync(commits);await sync(store);await bound();const actual=await read(headFile);if(!actual||!same(parse(actual),prefixHead))bad('Head changed during durability confirmation','unknown');return clone(existing);}

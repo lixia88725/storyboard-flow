@@ -1,3 +1,4 @@
+import{validImageCreationDecision}from'../../../session/core/imageCreation.js';
 import type {WorkspaceRecoveryRecord} from './workspaceRecords.js';
 import { validImageEngineEdit } from '../../../platform/contracts/imageEngine.js';
 import { createHash } from 'node:crypto';
@@ -59,8 +60,9 @@ const bytes=(v:unknown)=>Buffer.from(canonicalJson(v)+'\n');
 const token=(v:unknown):v is string=>typeof v==='string'&&TOKEN.test(v);
 function bad(message:string):never{throw new ImageProjectStoreError('conflict',message);}
 export function commitRecord(v:unknown):ProjectCommitV2{
-  if(!shape(v,['schema','version','commitId','previousCommitHash','beforeRevision','after'],['nativeDecision'])||v.schema!=='flow.project-commit'||v.version!==1||!token(v.commitId)||(v.previousCommitHash!==null&&!imageHash(v.previousCommitHash))||(v.beforeRevision!==null&&(!Number.isSafeInteger(v.beforeRevision)||Number(v.beforeRevision)<0)))bad('Invalid project commit');
+  if(!shape(v,['schema','version','commitId','previousCommitHash','beforeRevision','after'],['nativeDecision','creationDecision'])||v.schema!=='flow.project-commit'||v.version!==1||!token(v.commitId)||(v.previousCommitHash!==null&&!imageHash(v.previousCommitHash))||(v.beforeRevision!==null&&(!Number.isSafeInteger(v.beforeRevision)||Number(v.beforeRevision)<0)))bad('Invalid project commit');
   const after=snapshotImageProject(v.after);
+  if(v.creationDecision!==undefined&&(!validImageCreationDecision(v.creationDecision)||v.nativeDecision!==undefined))bad('Invalid creation decision');
   if(v.nativeDecision!==undefined&&!validNativeDecision(v.nativeDecision))bad('Invalid native decision');
   return {...clone(v as unknown as ProjectCommitV2),after};
 }

@@ -1,7 +1,8 @@
+import{validImageCreationIntent,validNativeCreationInput,creationProjectEdit}from'./imageCreation.js';
 import type { ImageEngineEdit, ImageEnginePreviewStamp } from '../../platform/contracts/imageEngine.js';
 import { validImageEngineEdit, validImageEnginePreviewStamp } from '../../platform/contracts/imageEngine.js';
 import type { FlowStroke } from '../../platform/contracts/flowWave2.js';
-import type { ImageOperationIntent, ImageOperationOrigin, ImageOperationRecord, ImageOperationPage, ImageRecoveryDisposition, RetainedImageInput, ImagePipelineAdmission, ImagePipelineInput, ImagePipelineProgress, ImageProjectEdit, ImageProjectOutcome, ImageProjectSnapshot, NativeDecision, NativeImageRef, ProjectCommitV2, ProjectV2 } from '../../platform/contracts/imageProject.js';
+import type { ImageCreationBatchIntent, ImageCreationBatchDecision, NativeImageCreationInput, ImageOperationIntent, ImageOperationOrigin, ImageOperationRecord, ImageOperationPage, ImageRecoveryDisposition, RetainedImageInput, ImagePipelineAdmission, ImagePipelineInput, ImagePipelineProgress, ImageProjectEdit, ImageProjectOutcome, ImageProjectSnapshot, NativeDecision, NativeImageRef, ProjectCommitV2, ProjectV2 } from '../../platform/contracts/imageProject.js';
 import type { ProjectCommitReceipt, ProjectConfirmation, ProjectStoreV2 } from '../../project-files/main/image-engine/projectStore.js';
 import { applyImageProjectEdit, validImageProject, validNativeImageRef, validProjectStroke } from './imageProjectModel.js';
 import { copy, same, shape } from './imageProjectValues.js';
@@ -16,6 +17,10 @@ export interface NativeSessionDriver {
   pipeline?:NativePipelineDriver;
   restartForRecovery?():Promise<void>;
   onFault?(listener:()=>void):()=>void;
+  prepareCreation?(operationId:string,input:NativeImageCreationInput,reservation:{maxAdditionalBytes:number}):Promise<PreparedImage>;
+  creationStatus?(operationId:string):Promise<NativeOperationStatus|{state:'pending';phase:string}>;
+  settleCreation?(prepared:PreparedImage):Promise<NativeImageRef>;
+  discardCreation?(operationId:string):Promise<void>;
   prepareEdit?(operationId:string,base:NativeImageRef,edit:ImageEngineEdit,context:{expectedContextGeneration:number;preview?:ImageEnginePreviewStamp}):Promise<PreparedImage>;
   preparePaint(operationId:string,base:NativeImageRef,stroke:FlowStroke):Promise<PreparedImage>;
   accept(prepared:PreparedImage,base:NativeImageRef):Promise<NativeImageRef>;
@@ -30,6 +35,7 @@ export interface NativeSessionDriver {
   close():Promise<void>;
 }
 export type NativeProjectRequest=
+  | {kind:'createBatch';items:readonly{candidateId:string;imageId:string;input:NativeImageCreationInput}[];placement:ImageCreationBatchIntent['placement'];maxAdditionalBytes:number}
   | {kind:'paint';shotId:string;stroke:FlowStroke}
   | {kind:'imageEdit';shotId:string;expectedNative:NativeImageRef;expectedContextGeneration:number;edit:ImageEngineEdit;preview?:ImageEnginePreviewStamp}
   | {kind:'board';edit:Exclude<ImageProjectEdit,{kind:'installNativeImage'}>;typing?:{group:string}}
@@ -43,7 +49,7 @@ export type NativeProjectSession={snapshot():ImageProjectSnapshot;subscribe(list
 /** One Main Flow history and durable project authority. The pipeline is opt-in;
  * this module does not claim renderer/screen latency or full product migration.
  * Reopening deliberately starts an empty Undo stack, as the existing product does. */
-export async function openNativeProjectSession(options:{sessionId:string;incarnation:string;store:ProjectStoreV2;native:NativeSessionDriver;mintId():string;now():number;pipeline?:PipelineLimits;activeImageId?:()=>string|null;originForOperation?:(operationId:string)=>ImageOperationOrigin|undefined}):Promise<NativeProjectSession>{
+export async function openNativeProjectSession(options:{sessionId:string;incarnation:string;store:ProjectStoreV2;native:NativeSessionDriver;mintId():string;now():number;pipeline?:PipelineLimits;workspaceEpoch?:number;activeImageId?:()=>string|null;originForOperation?:(operationId:string)=>ImageOperationOrigin|undefined}):Promise<NativeProjectSession>{
   const sessionId=options.sessionId,incarnation=options.incarnation;
   if(!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)||!/^[A-Za-z0-9_-]{1,128}$/.test(incarnation))throw Error('Invalid Main Session identity');
   const store=options.store,native=options.native,mint=options.mintId.bind(options),now=options.now.bind(options);
@@ -99,6 +105,15 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
       recovery=undefined;phase='frozen';notify();return;
     }
     await store.validateRecovery();
+    // Detached candidates are facts, not a second project history. Only a
+    // reachable Main creation vector decides which ones may be accepted.
+    if(store.workspaceRecords&&store.workspaceRecord){const creationCommits=new Map((await store.committed()).map(c=>[c.commit.commitId,c]));let afterId:string|undefined;for(;;){const page=await store.workspaceRecords({...(afterId?{afterId}:{}),maxRecords:16});for(const record of page){if(record.kind!=='creationBatch')continue;const intent=record.intent,resolutionId=`creation-resolution-${intent.operationId}`;if(await store.workspaceRecord(resolutionId))continue;
+      if(!native.creationStatus||!native.settleCreation||!native.discardCreation)throw Error('Native component cannot reconcile detached creation');const committed=creationCommits.get(intent.operationId),decision=committed?.commit.creationDecision;
+      if(committed&&(!decision||decision.intentId!==record.id))throw Error('Creation commit has no exact original vector');
+      for(const [index,item]of intent.items.entries()){const status=await native.creationStatus(item.candidateId),prepared=decision?.items[index];if(decision){if(!prepared||prepared.candidateId!==item.candidateId||prepared.imageId!==item.imageId)throw Error('Creation recovery order/identity changed');if(status.state==='prepared'){if(!status.prepared||status.prepared.baseVersion!==null||status.prepared.candidateId!==item.candidateId||!same(status.prepared.native,prepared.native))throw Error('Committed creation prepared receipt changed');const accepted=await native.settleCreation(status.prepared);if(!same(accepted,prepared.native))throw Error('Creation recovery acceptance changed');}else if(status.state!=='accepted'||!same(status.native,prepared.native))throw Error('Committed creation has no durable native candidate');}
+       else{if(status.state==='accepted')throw Error('Native creation accepted without Main project decision');if(status.state==='pending')throw Error('Creation job is still pending; no cancellation has been proved');if(status.state==='intent'||status.state==='prepared')await native.discardCreation(item.candidateId);}}
+      await store.recordWorkspace!({kind:'requestResolution',id:resolutionId,owner:record.owner,requestId:intent.operationId,operationId:intent.operationId,decision:committed?'committed':'notCommitted',commitHash:committed?.commitHash??null});recoveryReports.set(intent.operationId,{operationId:intent.operationId,imageId:intent.items[0].imageId,inputThrough:0,original:'durable-intent',decision:committed?'committed':'notCommitted',commitHash:committed?.commitHash??null});
+    }if(page.length<16)break;afterId=page.at(-1)!.id;}}
     // Pending hydration is a derived-index decision, never a user history edit.
     for(const h of await store.pendingHydrations()){
       const status=await native.status(h.operationId);
@@ -160,8 +175,8 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     recovery=undefined;
     if(freezeAfterRecovery){nativeMayBeFrozen=true;await native.freeze();await store.validateRecovery();phase='frozen';}else phase='active';notify();
   };
-  const commitPlan=async(plan:HistoryPlan<ProjectV2>,operationId:string,decision?:NativeDecision)=>{
-    const record:ProjectCommitV2={schema:'flow.project-commit',version:1,commitId:operationId,previousCommitHash:head!.commitHash,beforeRevision:current().revision,after:copy(plan.result.after),...(decision?{nativeDecision:decision}:{})};
+  const commitPlan=async(plan:HistoryPlan<ProjectV2>,operationId:string,decision?:NativeDecision,creationDecision?:ImageCreationBatchDecision)=>{
+    const record:ProjectCommitV2={schema:'flow.project-commit',version:1,commitId:operationId,previousCommitHash:head!.commitHash,beforeRevision:current().revision,after:copy(plan.result.after),...(decision?{nativeDecision:decision}:{}),...(creationDecision?{creationDecision}:{})};
     pendingPlans.set(operationId,plan);
     let receipt:ProjectCommitReceipt;
     try{receipt=await store.commit(head!.commitHash,record);}
@@ -217,6 +232,21 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
       phase='recovering';recovery={operationId,commitHash:decided};notify();return decided?{kind:'settlementPending',operationId,commitHash:decided,snapshot:snapshot()}:{kind:'recoveryPending',operationId,snapshot:snapshot()};
     }
   };
+  const createBatch=async(request:Extract<NativeProjectRequest,{kind:'createBatch'}>,operationId:string):Promise<ImageProjectOutcome>=>{
+    if(!native.prepareCreation||!native.creationStatus||!native.settleCreation||!native.discardCreation||!store.recordWorkspace)throw Object.assign(Error('Detached image creation is unavailable'),{code:'unsupported',effect:'none'});
+    const intent:ImageCreationBatchIntent={schema:'flow.image-creation-batch',version:1,operationId,sessionId,incarnation,anchorCommitHash:head!.commitHash,items:copy(request.items),placement:copy(request.placement)};
+    if(!validImageCreationIntent(intent))throw Object.assign(Error('Invalid detached creation batch'),{code:'invalid-input',effect:'none'});
+    const provisional:ImageCreationBatchDecision={kind:'creation-batch',operationId,intentId:`creation-${operationId}`,items:intent.items.map((item,index)=>({candidateId:item.candidateId,imageId:item.imageId,native:{storeId:item.input.kind==='duplicate'?item.input.source.storeId:'preflight',documentId:`preflight-${index}`,versionId:'a'.repeat(64),manifestSha256:'a'.repeat(64),width:item.input.kind==='new'?item.input.width:item.input.source.width,height:item.input.kind==='new'?item.input.height:item.input.source.height}}))};
+    const preflight=applyImageProjectEdit(current(),creationProjectEdit(intent,provisional));if(!preflight.ok)throw Object.assign(Error(preflight.error.message),{code:'invalid-input',effect:'none'});
+    const intentId=`creation-${operationId}`;await store.recordWorkspace({kind:'creationBatch',id:intentId,owner:{sessionId,incarnation,workspaceEpoch:options.workspaceEpoch??0},intent});let committed:string|null=null;
+    try{
+      const prepared:PreparedImage[]=[];for(const item of intent.items){const p=await native.prepareCreation(item.candidateId,copy(item.input),{maxAdditionalBytes:request.maxAdditionalBytes});if(p.candidateId!==item.candidateId||p.baseVersion!==null||!validNativeImageRef(p.native))throw Error('Detached creation receipt changed');prepared.push(p);}
+      const decision:ImageCreationBatchDecision={kind:'creation-batch',operationId,intentId,items:prepared.map((p,n)=>({candidateId:p.candidateId,imageId:intent.items[n].imageId,native:p.native}))},plan=history.prepare(creationProjectEdit(intent,decision));if(!plan.ok)throw Error(plan.error.message);
+      const receipt=await commitPlan(plan.value,operationId,undefined,decision);committed=receipt.commitHash;
+      for(const p of prepared){const accepted=await native.settleCreation(p);if(!same(accepted,p.native))throw Error('Detached acceptance receipt changed');}
+      await store.recordWorkspace({kind:'requestResolution',id:`creation-resolution-${operationId}`,owner:{sessionId,incarnation,workspaceEpoch:options.workspaceEpoch??0},requestId:operationId,operationId,decision:'committed',commitHash:committed});return settled();
+    }catch{phase='recovering';recovery={operationId,commitHash:committed};notify();return committed?{kind:'settlementPending',operationId,commitHash:committed,snapshot:snapshot()}:{kind:'recoveryPending',operationId,snapshot:snapshot()};}
+  };
   const initializePipeline=()=>{if(options.pipeline){
     if(!native.pipeline)throw Error('Opt-in Main pipeline requires a typed native pipeline driver');
     pipeline=createMainImagePipeline({sessionId,incarnation,driver:native.pipeline,limits:copy(options.pipeline),mintId:mint,canAdmit:()=>!closed&&phase==='active',canBegin:()=>settlement.capacityAvailable,
@@ -269,8 +299,8 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
       const fixedOperationId=identity?.operationId;if(fixedOperationId!==undefined&&!/^[A-Za-z0-9_-]{1,128}$/.test(fixedOperationId))return Promise.resolve(fail(Object.assign(Error('Invalid Main operation identity'),{effect:'none'})));
       if(pending>=32)return Promise.resolve(fail(Object.assign(Error('Main request queue is full'),{code:'resource-limit',effect:'none'})));
       let request:NativeProjectRequest;
-      try{request=copy(input);const valid=request?.kind==='paint'?shape(request,['kind','shotId','stroke']):request?.kind==='imageEdit'?shape(request,['kind','shotId','expectedNative','expectedContextGeneration','edit'],['preview'])&&validNativeImageRef(request.expectedNative)&&Number.isSafeInteger(request.expectedContextGeneration)&&request.expectedContextGeneration>=0&&validImageEngineEdit(request.edit)&&(request.preview===undefined||validImageEnginePreviewStamp(request.preview)):request?.kind==='board'?shape(request,['kind','edit'],['typing']):shape(request,['kind'])&&['undo','redo','recover','freeze','resume','barrier'].includes(String(request.kind));if(!valid)throw Error('Invalid Main Session request');}catch{return Promise.resolve(fail(Object.assign(Error('Invalid Main Session request'),{code:'invalid-input',effect:'none'})));}
-      const isBarrier=request.kind==='undo'||request.kind==='redo'||request.kind==='freeze'||request.kind==='imageEdit'||request.kind==='barrier';
+      try{request=copy(input);const valid=request?.kind==='createBatch'?shape(request,['kind','items','placement','maxAdditionalBytes'])&&Array.isArray(request.items)&&request.items.every(i=>shape(i,['candidateId','imageId','input'])&&validNativeCreationInput(i.input))&&Number.isSafeInteger(request.maxAdditionalBytes)&&request.maxAdditionalBytes>0:request?.kind==='paint'?shape(request,['kind','shotId','stroke']):request?.kind==='imageEdit'?shape(request,['kind','shotId','expectedNative','expectedContextGeneration','edit'],['preview'])&&validNativeImageRef(request.expectedNative)&&Number.isSafeInteger(request.expectedContextGeneration)&&request.expectedContextGeneration>=0&&validImageEngineEdit(request.edit)&&(request.preview===undefined||validImageEnginePreviewStamp(request.preview)):request?.kind==='board'?shape(request,['kind','edit'],['typing']):shape(request,['kind'])&&['undo','redo','recover','freeze','resume','barrier'].includes(String(request.kind));if(!valid)throw Error('Invalid Main Session request');}catch{return Promise.resolve(fail(Object.assign(Error('Invalid Main Session request'),{code:'invalid-input',effect:'none'})));}
+      const isBarrier=request.kind==='undo'||request.kind==='redo'||request.kind==='freeze'||request.kind==='imageEdit'||request.kind==='barrier'||request.kind==='createBatch';
       // Admission-time context matters: an active gesture can end before this
       // request reaches tail, putting its decision behind the barrier itself.
       // Refuse now without owning a seal. Its later up remains ordinary FIFO work.
@@ -302,6 +332,7 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
           if(request.kind==='freeze'){await settlement.drain();await pipeline?.barrier();phase='freezing';nativeMayBeFrozen=true;await native.freeze();await store.validateRecovery();if((await store.pendingOperations()).length||(await store.unsettledDecisions()).length||(await store.pendingHydrations()).length)throw Error('Unsettled project obligations');phase='frozen';notify();return settled();}
           if(phase!=='active')throw Object.assign(Error('Session admission is frozen'),{code:'busy',effect:'none'});
           if(request.kind==='barrier'){await settlement.drain();await pipeline?.barrier();history.endTyping();if(barriers===1)pipeline?.resumeAdmission();return settled();}
+          if(request.kind==='createBatch'){await settlement.drain();await pipeline?.barrier();history.endTyping();const result=await createBatch(request,fixedOperationId??mint());if(phase==='active'&&barriers===1)pipeline?.resumeAdmission();return result;}
           if(request.kind==='imageEdit'){
             await settlement.drain();await pipeline?.barrier();history.endTyping();const result=await imageEdit(request,fixedOperationId);if(phase==='active'&&barriers===1)pipeline?.resumeAdmission();return result;
           }

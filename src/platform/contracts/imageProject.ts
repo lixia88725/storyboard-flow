@@ -15,6 +15,15 @@ export type ProjectImageV2 = { id: string; content: ImageBindingV2 };
 export type ProjectV2 = Omit<ProjectV1, 'version' | 'images'> & {
   version: 2; images: Record<string, ProjectImageV2>;
 };
+
+/** Main-private detached image creation, distinct from an edit to an existing document. */
+export type NativeImageCreationInput={kind:'new';width:number;height:number}|{kind:'duplicate';source:NativeImageRef};
+export type ImageCreationBatchIntent={
+ schema:'flow.image-creation-batch';version:1;operationId:string;sessionId:string;incarnation:string;anchorCommitHash:string;
+ items:readonly {candidateId:string;imageId:string;input:NativeImageCreationInput}[];
+ placement:{shots:ProjectV2['shots'];dialogues:ProjectV2['dialogues'];destination:'active'|'pending';beforeId?:string};
+};
+export type ImageCreationBatchDecision={kind:'creation-batch';operationId:string;intentId:string;items:readonly{candidateId:string;imageId:string;native:NativeImageRef}[]};
 export type NativeDecision = {
   kind: 'image'; operationId: string; candidateId: string; imageId: string;
   expected: ImageBindingV2; baseNative: NativeImageRef | null; prepared: NativeImageRef;
@@ -25,7 +34,7 @@ export type UnchangedImageDecision={schema:'flow.image-unchanged-decision';versi
 export type ProjectCommitV2 = {
   schema: 'flow.project-commit'; version: 1; commitId: string;
   previousCommitHash: string | null; beforeRevision: number | null;
-  after: ProjectV2; nativeDecision?: NativeDecision;
+  after: ProjectV2; nativeDecision?: NativeDecision;creationDecision?:ImageCreationBatchDecision;
 };
 export type ProjectHeadV2 = {
   schema: 'flow.project-head'; version: 1; projectId: string; commitHash: string;

@@ -1,3 +1,4 @@
+import{verifyCreationTransition,validImageCreationIntent}from'../../../session/core/imageCreation.js';
 import {workspaceRecoveryRecord,type WorkspaceRecoveryRecord} from './workspaceRecords.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -99,8 +100,9 @@ export async function openJournalProjectStore(options:ImageProjectStoreOptions):
    }
    case'commit':{
     const c=commitRecord(f.record);if(s.workspaceResolutions.get(c.commitId)?.decision==='notCommitted')bad('Discarded request cannot later commit');const current=s.commits.at(-1);if(s.byId.has(c.commitId)||f.expectedHead!==(current?.commitHash??null)||c.previousCommitHash!==f.expectedHead)bad('Project compare-and-swap conflict');
-    if(current){if(c.after.id!==current.commit.after.id||c.beforeRevision!==current.commit.after.revision||c.after.revision!==Number(c.beforeRevision)+1)bad('Project revision/identity conflict');}else if(c.beforeRevision!==null||c.after.revision!==0||c.nativeDecision)bad('Invalid project genesis');
+    if(current){if(c.after.id!==current.commit.after.id||c.beforeRevision!==current.commit.after.revision||c.after.revision!==Number(c.beforeRevision)+1)bad('Project revision/identity conflict');}else if(c.beforeRevision!==null||c.after.revision!==0||c.nativeDecision||c.creationDecision)bad('Invalid project genesis');
     if(c.nativeDecision){const d=c.nativeDecision;if(s.decisions.has(d.operationId))bad('Operation has two project decisions');checkBase(s,d);const before=current!.commit.after;if(!same(before.images[d.imageId]?.content,d.expected)||!same(c.after,{...before,revision:c.after.revision,images:{...before.images,[d.imageId]:{id:d.imageId,content:{kind:'native',native:d.prepared}}}}))bad('Native decision differs from project transition');}
+    if(c.creationDecision){if(!current||c.creationDecision.operationId!==c.commitId)bad('Creation decision has no Main operation');const location=s.workspace.get(c.creationDecision.intentId);if(!location)bad('Creation decision lacks original input');const fact=parseFact(await journal.read(location.sequence));if(fact.kind!=='workspace'||fact.record.kind!=='creationBatch'||!validImageCreationIntent(fact.record.intent)||fact.record.intent.anchorCommitHash!==f.expectedHead)bad('Creation batch anchor changed');verifyCreationTransition(current.commit.after,c.after,fact.record.intent,c.creationDecision);}
     if(!replay)for(const image of Object.values(c.after.images))await verify(image.content);break;
    }
    case'unchanged':{
