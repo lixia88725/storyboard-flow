@@ -62,11 +62,11 @@ export function createWorkspaceFrameDelivery(options:{
    // The platform must transfer the peer port after this Promise resolves. Do
    // not wait for ready here or the transfer and handshake would deadlock.
   },
-  publish(value:NativeFrame){
-   if(!port||!ready||disposed)return;
+  publish(value:NativeFrame,accept?:(header:ImageFrameHeader)=>boolean){
+   if(disposed)return;
    const body=value.header.body,header=body&&typeof body==='object'&&!Array.isArray(body)?(body as Record<string,unknown>).frame:undefined;
    const checked=validateImageFrame(header,value.payload);if(!checked.ok){fault(checked.message);queued=[];needsKeyframe=true;return;}
-   const frame=checked.value,next=identity(frame.header);
+   const frame=checked.value;if(accept&&!accept(frame.header))return;if(!port||!ready)return;const next=identity(frame.header);
    if(current&&!equal(current,next)){queued=[];needsKeyframe=frame.header.baseFrameSeq!==null;current=next;controlFor(next);}
    else current=next;
    if(needsKeyframe&&frame.header.baseFrameSeq!==null)return;
