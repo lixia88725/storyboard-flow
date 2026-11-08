@@ -6,10 +6,12 @@ import type {WorkspaceOutputBudget} from './workspaceOutputContract.js';
 import {createSourceBackedImport,openSourceBackedImportForTargetUse,inspectSourceBackedImport,inspectImportSource,type SourceImportManifest,type SourceImportItem,type SourceInput,type SourceImportStore,type RetainedSourceObject,type SourceStoreLimits} from './sourceStore.js';
 import {publishDirectoryExclusive,syncDirectory} from '../../../platform/main/platform/index.js';
 import {assertPhysicalWorkspaceWriterTargets} from '../workspacePhysicalWriterGate.js';
+import {readImageWorkspaceProject}from'./workspaceProbe.js';
+import {readBoundFile}from'../persistence/fileOps.js';
 import {canonicalUtf8,sha256Hex} from '../persistence/canonicalJson.js';
 
 export type WorkspaceSourcesOptions={root:string;writerAuthority:{assertHeld(root:{path:string;dev:string;ino:string}):Promise<void>};budget:WorkspaceOutputBudget;limits?:Pick<Partial<SourceStoreLimits>,'maxSourceBytes'|'maxStoredBytes'|'maxItems'>;fault?:(point:string)=>Promise<void>};
-export type WorkspaceSources={snapshot():readonly SourceImportManifest[];verify(ref:SourceImageRef,retained?:{digest:string;byteLength:number}):Promise<void>;object(ref:SourceImageRef):Promise<RetainedSourceObject>;registerBatch(input:{importId:string;sources:readonly SourceInput[]}):Promise<SourceImportManifest>;retain(importId:string,itemId:string):Promise<SourceImportItem>;resume(importId:string,options?:{signal?:AbortSignal;onProgress?:(manifest:SourceImportManifest)=>void}):Promise<SourceImportManifest>;pause(importId:string):Promise<SourceImportManifest>;close():Promise<void>};
+export type WorkspaceSources={snapshot():readonly SourceImportManifest[];verify(ref:SourceImageRef,retained?:{digest:string;byteLength:number}):Promise<void>;object(ref:SourceImageRef):Promise<RetainedSourceObject>;registerBatch(input:{importId:string;sources:readonly SourceInput[]}):Promise<SourceImportManifest>;retain(importId:string,itemId:string):Promise<SourceImportItem>;resume(importId:string,options?:{signal?:AbortSignal;itemIds?:readonly string[];onProgress?:(manifest:SourceImportManifest)=>void}):Promise<SourceImportManifest>;pause(importId:string):Promise<SourceImportManifest>;close():Promise<void>};
 export class WorkspaceSourcesError extends Error{constructor(readonly code:string,message:string,readonly effect:'none'|'retained'|'unknown'='none'){super(message);}}
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,MAX=8*1024**3;
 const clone=<T>(value:T):T=>structuredClone(value);
@@ -27,6 +29,7 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
  const identity=await directory(root),binding={path:root,dev:String(identity.dev),ino:String(identity.ino)};
  if(owners.has(root))throw new WorkspaceSourcesError('busy','Source registry already open');owners.add(root);
  const hidden=path.join(root,'.storyboard-flow'),storage=path.join(hidden,'image-engine'),originals=path.join(storage,'originals'),imports=path.join(storage,'imports'),stages=path.join(hidden,'source-registration-v1');
+ const upgradeSources=new Set<string>();
  const directories=new Map<string,{dev:bigint;ino:bigint}>(),manifests=new Map<string,SourceImportManifest>(),objectCache=new Map<string,RetainedSourceObject>(),versions=new Map<string,number>(),resumes=new Set<Promise<SourceImportManifest>>();
  let closed=false,closing=false,tail:Promise<unknown>=Promise.resolve(),current:{id:string;store:SourceImportStore}|undefined;
  type Grant=Awaited<ReturnType<WorkspaceOutputBudget['reserve']>>;
@@ -36,7 +39,15 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
  const ensure=async(at:string)=>{await bind();try{await fs.mkdir(at,{mode:0o700});await syncDirectory(path.dirname(at));}catch(e){if((e as NodeJS.ErrnoException).code!=='EEXIST')throw e;}const st=await directory(at);directories.set(at,{dev:st.dev,ino:st.ino});};
  const remember=(m:SourceImportManifest)=>{const immutable=freeze(clone(m));manifests.set(m.importId,immutable);return clone(immutable);};
  const requireManifest=(id:string)=>{if(!ID.test(id)||!manifests.has(id))throw new WorkspaceSourcesError('invalid-input','Unknown source import');return manifests.get(id)!;};
- const checkRef=(ref:SourceImageRef)=>{if(!ref||!ID.test(ref.importId)||!ID.test(ref.itemId)||ref.interpretationId!=='photocraft-v1')throw new WorkspaceSourcesError('invalid-input','Unsupported source interpretation');const m=requireManifest(ref.importId);if(!m.items.some(i=>i.id===ref.itemId))throw new WorkspaceSourcesError('invalid-input','Unknown source item');};
+ const checkRef=(ref:SourceImageRef)=>{if(!ref||!ID.test(ref.importId)||!ID.test(ref.itemId)||!['photocraft-v1','flow-v1-upgrade'].includes(ref.interpretationId))throw new WorkspaceSourcesError('invalid-input','Unsupported source interpretation');const m=requireManifest(ref.importId);const item=m.items.find(i=>i.id===ref.itemId);if(!item)throw new WorkspaceSourcesError('invalid-input','Unknown source item');const upgrade=upgradeSources.has(ref.importId+'\n'+ref.itemId);if((ref.interpretationId==='flow-v1-upgrade')!==upgrade||upgrade&&(!item.retained||item.state!=='retained'||item.formatHint!=='tiff'))throw new WorkspaceSourcesError('invalid-input','Source interpretation is not authorized by its copy-upgrade genesis');};
+
+ const loadUpgradeAuthorization=async()=>{
+  const file=path.join(hidden,'native-creation-complete.json'),bytes=await readBoundFile(file,8*1024*1024);if(!bytes)return;
+  const st=await fs.lstat(file);if(st.nlink!==1)fail('Aliased copy-upgrade source authorization');const proof=JSON.parse(bytes.toString()) as {schema:string;version:number;projectId:string;genesisCommitHash:string;inputFingerprint:string;input:{sourceDigest:string};target:{path:string;dev:string;ino:string}};
+  const read=await readImageWorkspaceProject(root);
+  if(proof.schema!=='flow.native-workspace-creation-complete'||proof.version!==1||proof.projectId!==read.plan.identity.id||proof.genesisCommitHash!==read.genesisCommitHash||!proof.input||!/^[a-f0-9]{64}$/.test(proof.input.sourceDigest)||proof.inputFingerprint!==sha256Hex(canonicalUtf8(proof.input))||proof.target?.path!==root||proof.target.dev!==binding.dev||proof.target.ino!==binding.ino)fail('Invalid copy-upgrade source authorization');
+  for(const image of Object.values(read.genesisProject.images)){const content=image.content;if(content.kind==='source'&&content.source.interpretationId==='flow-v1-upgrade'){const ref=content.source,item=requireManifest(ref.importId).items.find(i=>i.id===ref.itemId);if(!item?.retained||item.state!=='retained'||item.formatHint!=='tiff')fail('Upgrade genesis lacks a retained TIFF source');upgradeSources.add(ref.importId+'\n'+ref.itemId);}}
+ };
  const enqueue=<T>(job:()=>Promise<T>)=>{const next=tail.then(job);tail=next.catch(()=>{});return next;};
  const admit=<T>(job:()=>Promise<T>)=>closing||closed?Promise.reject(new WorkspaceSourcesError('closed','Source registry is closing')):enqueue(job);
  const measure=async()=>{await bind();let total=0,count=0;const walk=async(at:string,depth:number):Promise<void>=>{if(depth>32)fail('Source inventory depth exceeded');let names:string[];try{names=await fs.readdir(at);}catch(e){if(missing(e))return;throw e;}await directory(at);for(const name of names){if(++count>1000000)fail('Source inventory entry budget exceeded');const file=path.join(at,name),st=await fs.lstat(file,{bigint:true});if(st.isSymbolicLink())fail('Source inventory contains an alias');if(st.isDirectory())await walk(file,depth+1);else if(st.isFile()){total+=Number(st.size);if(!Number.isSafeInteger(total)||total>limits.maxStoredBytes)throw new WorkspaceSourcesError('resource-limit','Source actual storage budget exceeded','retained');}else fail('Unknown source inventory entry');}};for(const at of[originals,imports,stages])await walk(at,0);return total;};
@@ -74,6 +85,7 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
   await bind();for(const at of[hidden,storage,originals,imports,stages])try{const st=await directory(at);directories.set(at,{dev:st.dev,ino:st.ino});}catch(e){if(!missing(e))throw e;}
   let ids:string[];try{ids=await fs.readdir(imports);}catch(e){if(missing(e))ids=[];else throw e;}
   for(const id of ids.sort()){if(!ID.test(id))fail('Unknown source import entry');await refresh(id);}
+  await loadUpgradeAuthorization();
   if([...manifests.values()].reduce((n,m)=>n+m.items.length,0)>limits.maxItems)throw new WorkspaceSourcesError('resource-limit','Source registry item budget exceeded');
   return{
    snapshot(){return Object.freeze([...manifests.values()]);},
@@ -92,10 +104,10 @@ export async function openWorkspaceSources(options:WorkspaceSourcesOptions):Prom
    });},
    retain(importId,itemId){return admit(()=>retain(importId,itemId));},
    resume(importId,opts={}){
-    if(closing||closed)return Promise.reject(new WorkspaceSourcesError('closed','Source registry is closing'));const version=versions.get(importId)??0,signal=opts.signal,onProgress=opts.onProgress,stop=()=>closing||closed||!!signal?.aborted||(versions.get(importId)??0)!==version;
+    if(closing||closed)return Promise.reject(new WorkspaceSourcesError('closed','Source registry is closing'));if(opts.itemIds!==undefined&&!Array.isArray(opts.itemIds))return Promise.reject(new WorkspaceSourcesError('invalid-input','Invalid source resume item IDs'));const selection=opts.itemIds===undefined?undefined:[...opts.itemIds],manifest=requireManifest(importId);if(selection&&(new Set(selection).size!==selection.length||selection.some(id=>!manifest.items.some(item=>item.id===id))))return Promise.reject(new WorkspaceSourcesError('invalid-input','Invalid source resume item IDs'));const version=versions.get(importId)??0,signal=opts.signal,onProgress=opts.onProgress,stop=()=>closing||closed||!!signal?.aborted||(versions.get(importId)??0)!==version;
     const work=(async()=>{
      await enqueue(async()=>{await reconcile(importId);const m=requireManifest(importId);if(stop()){await cancel(importId);return;}if(m.phase==='cancelled'){const store=await use(importId);await mutate(importId,metaBound(m)*3,'source-resume-manifest',async()=>remember(await store.resume({itemIds:[]})));}});
-     const ids=requireManifest(importId).items.map(i=>i.id);
+     const ids=selection??requireManifest(importId).items.map(i=>i.id);
      for(const id of ids){if(stop())break;await enqueue(async()=>{if(stop())return;await retain(importId,id);});try{onProgress?.(clone(requireManifest(importId)));}catch{/* advisory */}}
      if(stop())await enqueue(()=>cancel(importId));return clone(requireManifest(importId));
     })();resumes.add(work);void work.finally(()=>resumes.delete(work)).catch(()=>{});return work;

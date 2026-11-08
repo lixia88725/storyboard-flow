@@ -25,7 +25,7 @@ import {readFlowTiffOutputNames} from '../flowTiffSave.js';
 import {WORKSPACE_OUTPUT_NAME_SEED,validWorkspaceOutputFileName,type WorkspaceOutputNameSeed} from './workspaceOutputContract.js';
 import type {ImageWorkspaceCreation,WorkspaceCreationOptions,WorkspaceUpgradeInspection,WorkspaceCreationBudget,WorkspaceCopyUpgradeInput} from './workspaceCreationContract.js';
 
-const MAX=8*1024**3,INTERPRETATION='photocraft-v1';
+const MAX=8*1024**3,INTERPRETATION='photocraft-v1',UPGRADE_INTERPRETATION='flow-v1-upgrade';
 const COMPLETION_LIMIT=8*1024*1024,COMPLETION_FILE='.storyboard-flow/native-creation-complete.json';
 type CopyCompletion={schema:'flow.native-workspace-creation-complete';version:1;input:WorkspaceCopyUpgradeInput;inputFingerprint:string;projectId:string;genesisCommitHash:string;
  parent:{path:string;dev:string;ino:string};target:{path:string;dev:string;ino:string};outputNameSeedSha256?:string};
@@ -68,7 +68,6 @@ async function copyBoundFile(source:string,target:string,expected:SourceIdentity
 const upgradeIssues=(project:ProjectV1)=>{
  const images=new Set([...project.shots,...project.parkedShots].map(s=>s.imageId)),issues:WorkspaceUpgradeInspection['issues']=[];
  if([...images].some(id=>project.images[id].layers.some(l=>l.sourceReference)))issues.push({code:'protected-source-unsupported',message:'受保护的复杂原件与附加画稿尚无完整保真升级桥；原项目保持不变。'});
- if([...images].some(id=>project.images[id].layers.some(l=>Math.round(l.opacity*255)/255!==l.opacity)))issues.push({code:'opacity-precision-unsupported',message:'此旧项目含 TIFF 255 级无法精确表示的图层透明度；需升级专用原生解释恢复原值，当前不量化或烘焙画稿。'});
  return issues;
 };
 async function legacy(root:string){await directory(root);const loaded=await loadCheckpoint(root);if(!loaded.ok)throw Error(loaded.error.message);for(const image of Object.values(loaded.value.project.images))for(const layer of image.layers)await loaded.value.readAsset(layer.assetId);return loaded.value;}
@@ -86,9 +85,11 @@ async function verifyUpgradeImage(image:ImageDocumentV1,read:AssetReaderV1,bytes
  const composite=new Float64Array(image.width*image.height*4);
  for(let i=0;i<image.layers.length;i++){
   const expected=image.layers[i],actual=external.layers[i];
-  // PhotoCraft stores opacity as f32. Require that exact representation (or the
-  // original f64 value), never a tolerance that could hide TIFF's 255-level loss.
-  if(actual.name!==expected.name||actual.visible!==expected.visible||actual.locked!==expected.locked||(actual.opacity!==expected.opacity&&actual.opacity!==Math.fround(expected.opacity))||actual.blendMode!==expected.blendMode)throw Error('Independent upgrade layer semantics differ: '+JSON.stringify({index:i,expected:{name:expected.name,visible:expected.visible,locked:expected.locked,opacity:expected.opacity,blendMode:expected.blendMode},observed:{name:actual.name,visible:actual.visible,locked:actual.locked,opacity:actual.opacity,blendMode:actual.blendMode}}));
+  // The independent ordinary TIFF reader sees the native quantized byte. The
+  // original floating scalar stays in the strict V2 portable envelope and is
+  // restored only by the explicitly bound native flow-v1-upgrade profile.
+  const quantized=Math.round(expected.opacity*255)/255;
+  if(actual.name!==expected.name||actual.visible!==expected.visible||actual.locked!==expected.locked||(actual.opacity!==quantized&&actual.opacity!==Math.fround(quantized))||actual.blendMode!==expected.blendMode)throw Error('Independent upgrade layer semantics differ: '+JSON.stringify({index:i,expected:{name:expected.name,visible:expected.visible,locked:expected.locked,opacity:expected.opacity,blendMode:expected.blendMode},observed:{name:actual.name,visible:actual.visible,locked:actual.locked,opacity:actual.opacity,blendMode:actual.blendMode}}));
   const original=await rgba(await read(expected.assetId)),observed=await rgba(actual.png);if(!original.equals(observed))throw Error('Independent upgrade layer pixels differ');
   if(!expected.visible)continue;
   for(let k=0;k<original.length;k+=4){const sa=original[k+3]/255*expected.opacity,da=composite[k+3],oa=sa+da*(1-sa);for(let c=0;c<3;c++){const s=original[k+c]/255,b=composite[k+c],blend=expected.blendMode==='multiply'?s*b:expected.blendMode==='screen'?s+b-s*b:s;composite[k+c]=oa?(sa*(1-da)*s+sa*da*blend+da*(1-sa)*b)/oa:0;}composite[k+3]=oa;}
@@ -144,7 +145,7 @@ export function createImageWorkspaceCreation(options:WorkspaceCreationOptions):I
     }catch(e){await grant.retainUnknown();throw e;}
    }
    await prepared.verifySources?.();checkSignal(operation);await bind();
-   const verifySource=async(ref:SourceImageRef,retained?:{digest:string;byteLength:number})=>{if(!source||ref.importId!==importId||ref.interpretationId!==INTERPRETATION||!source.snapshot().items.some(i=>i.id===ref.itemId))throw Error('Unregistered creation source reference');if(retained){const object=await source.object(ref.itemId);if(object.digest!==retained.digest||object.byteLength!==retained.byteLength)throw Error('Retained creation source differs');}};
+   const verifySource=async(ref:SourceImageRef,retained?:{digest:string;byteLength:number})=>{if(!source||ref.importId!==importId||!Object.values(prepared.project.images).some(image=>image.content.kind==='source'&&same(image.content.source,ref))||!source.snapshot().items.some(i=>i.id===ref.itemId))throw Error('Unregistered creation source reference');if(retained){const object=await source.object(ref.itemId);if(object.digest!==retained.digest||object.byteLength!==retained.byteLength)throw Error('Retained creation source differs');}};
    // Source expenditure is fully settled and no other writer runs concurrently.
    // Journal inventories the entire recovery tree, including archived V1 data,
    // so its existing total actual+reserved cap covers its own new bytes as well.
@@ -202,8 +203,8 @@ export function createImageWorkspaceCreation(options:WorkspaceCreationOptions):I
     const derived=path.join(hidden,'legacy-derived-v1');await fs.mkdir(derived,{mode:0o700});const project:ProjectV2={...structuredClone(old),version:2,id:randomUUID(),revision:0,name:input.projectName,images:{}},sources:SourceInput[]=[],codec=options.legacyCodec??createTiffCodec(flowCodecOptions());
     for(const shot of [...project.shots,...project.parkedShots]){
      checkSignal(operation);await bind();const image=old.images[shot.imageId],grant=await budget.reserve({operationId:shot.id,bytes:SOURCE_BYTE_LIMIT,purpose:'creation-layered-v1-upgrade'});
-     try{const encoded=await codec.encode({image,text:{projectId:old.id,projectName:old.name,shotId:shot.id,shotName:shot.name,scriptText:shot.scriptText,dialogues:old.dialogues.filter(d=>d.shotId===shot.id)}},loaded.readAsset);if(!encoded.ok)throw Error(encoded.error.message);if(encoded.value.length>SOURCE_BYTE_LIMIT)throw Error('Upgrade TIFF exceeds byte budget');await verifyUpgradeImage(image,loaded.readAsset,encoded.value,options,input.sourceRoot);
-      const sourcePath=path.join(derived,shot.id+'.tif');await createFileExclusive(sourcePath,encoded.value);await syncDirectory(derived);await grant.settleActual(encoded.value.length);const itemId=randomUUID();project.images[shot.imageId]={id:shot.imageId,content:{kind:'source',source:{importId:'pending',itemId,interpretationId:INTERPRETATION}}};sources.push({id:itemId,sourcePath,formatHint:'tiff',expected:await inspectImportSource(sourcePath)});
+     try{const encoded=await codec.encode({image,text:{projectId:old.id,projectName:old.name,shotId:shot.id,shotName:shot.name,scriptText:shot.scriptText,dialogues:old.dialogues.filter(d=>d.shotId===shot.id)}},loaded.readAsset);if(!encoded.ok)throw Error(encoded.error.message);if(encoded.value.length>SOURCE_BYTE_LIMIT)throw Error('Upgrade TIFF exceeds byte budget');await verifyUpgradeImage(image,loaded.readAsset,encoded.value,options,input.sourceRoot);const decoded=await codec.decode(encoded.value);if(!decoded.ok)throw Error(decoded.error.message);if(decoded.value.image.id!==image.id||decoded.value.image.revision!==image.revision||decoded.value.image.layers.length!==image.layers.length||decoded.value.image.layers.some((l,i)=>l.id!==image.layers[i].id||l.kind!==image.layers[i].kind||l.opacity!==image.layers[i].opacity||l.sourceReference))throw Error('Upgrade portable layer identity or original scalar differs');
+      const sourcePath=path.join(derived,shot.id+'.tif');await createFileExclusive(sourcePath,encoded.value);await syncDirectory(derived);await grant.settleActual(encoded.value.length);const itemId=randomUUID();project.images[shot.imageId]={id:shot.imageId,content:{kind:'source',source:{importId:'pending',itemId,interpretationId:UPGRADE_INTERPRETATION}}};sources.push({id:itemId,sourcePath,formatHint:'tiff',expected:await inspectImportSource(sourcePath)});
      }catch(e){await grant.retainUnknown();throw e;}
     }
     return{project,sources,copyInput:input,pendingNames,verifySources:async()=>{if(!same(originalInventory,await inventory(input.sourceRoot,maximum))||sha256Hex(canonicalUtf8((await legacy(input.sourceRoot)).project))!==sourceProjectHash)throw Error('Original project changed during copy upgrade');}};
