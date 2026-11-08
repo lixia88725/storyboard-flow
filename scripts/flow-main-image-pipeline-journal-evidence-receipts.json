@@ -1,0 +1,73 @@
+{
+  "classification": "Functional PASS and this synthetic 40-stroke/10ms cadence PASS; not physical input or default UI certification",
+  "integrationHead": "438bdfd",
+  "host": "80a701a",
+  "hostSha256": "58c677ef22d1b8ff5af0db617ac7555a509a9e83cb59af118ebb774d8937fdfa",
+  "comparison": "Same binary, workload, warmup and exact final pixels; single samples at different times, not a randomized repeated benchmark",
+  "receipts": [
+    {
+      "kind": "small",
+      "source": "/private/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-main-image-pipeline-esmUF6/result.json",
+      "rawSha256": "744d4c41d1ef7b1fa9939cdc7a007c83dabfe2d09f9fc7d11c36e9b23f47c5be",
+      "rawBytes": 154845,
+      "gzipBytes": 15257,
+      "archive": "scripts/flow-main-image-pipeline-journal-evidence-small.json.gz"
+    },
+    {
+      "kind": "paced",
+      "source": "/private/var/folders/jb/wlvb7qzn5ll_jpsjtkhhz8r40000gn/T/flow-main-image-pipeline-IhFSfm/result.json",
+      "rawSha256": "3a650a1a7a0264e96f9ffcceaa82ce6fedea4951eea06b098f56b74086089d27",
+      "rawBytes": 1282425,
+      "gzipBytes": 114460,
+      "archive": "scripts/flow-main-image-pipeline-journal-evidence-paced.json.gz"
+    }
+  ],
+  "suite": {
+    "files": 107,
+    "tests": 1255,
+    "seconds": 398.41,
+    "log": "/private/tmp/flow-engine-research/journal-integration-suite.log"
+  },
+  "build": "/private/tmp/flow-engine-research/journal-integration-build.log",
+  "result": {
+    "deadlineP95Ms": 4.610666999999921,
+    "firstDownP95Ms": 6.859707999999955,
+    "backpressure": 0,
+    "lateBatches": 0,
+    "backlog": 0,
+    "drain": {
+      "displayAfterLastLocalInputMs": 0.5864169999995283,
+      "finalConfirmationAfterLastLocalInputMs": 84.9136669999998
+    },
+    "syncCategories": [
+      {
+        "category": "journal-segment-file",
+        "count": 115,
+        "totalWallMs": 560.0297089999949,
+        "duration": {
+          "count": 115,
+          "p50Ms": 5.0043329999998605,
+          "p95Ms": 5.779125000000022,
+          "p99Ms": 6.44137499999988,
+          "maxMs": 8.289957999999388
+        }
+      }
+    ],
+    "finalConfirmed": 40,
+    "verification": {
+      "frames": 293,
+      "channels": 241807416,
+      "nativeReferenceSha256": "0e35e9803a836befcf5ed6b68eb2d00759d59560c14ba680667bb27be87bcfec",
+      "canvasHashes": [
+        "0e35e9803a836befcf5ed6b68eb2d00759d59560c14ba680667bb27be87bcfec",
+        "0e35e9803a836befcf5ed6b68eb2d00759d59560c14ba680667bb27be87bcfec"
+      ]
+    }
+  },
+  "pending": [
+    "Default product UI and full Save/Refresh integration",
+    "Physical input-to-photon and real tablet",
+    "Windows and long-running large-project memory",
+    "Copy upgrade of existing projects"
+  ]
+}

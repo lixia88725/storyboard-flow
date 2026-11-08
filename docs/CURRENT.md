@@ -2,7 +2,11 @@
 
 ## 图片发动机替换：施工中（2026-11-07）
 
-2026-11-08 下一轮已获批准并开工：以统一追加日志替换 Main 逐笔多文件持久化，保留 ProjectStore 接口、唯一项目决定、完整输入与共享预算。实施线负责真实文件和中断恢复，主管负责组合冲突、同负载延迟对比及全局验收；当前尚无新实现通过声明。新格式须让旧 writer 明确拒绝，用户旧项目不原地迁移。普通末尾未封口记录保留原段，通过绑定完整原文件与有效前缀的新段恢复；完整封口校验错误仍拒绝。原生 deferred finish 已完成只读可行性分析，暂不实施：先测单日志是否消除连续落笔等待，再决定是否需要该接点；不扩大四笔队列掩盖吞吐不足。
+2026-11-08 统一编辑日志已在隔离树完成：候选 `2f909b8 + cb08cc7` 合入 `77cffb6 + 438bdfd`，Main 逐笔多文件持久化已换为统一追加记录，接口、唯一项目决定、完整输入与有界预算保留。执行者 225 项聚焦通过；最终恢复保护另有真实 FS 26 项、真实 Main/native 10 项及 build 通过。主管组合完整 build、获准 **107 文件/1255 项全部通过**（398.41s，`/private/tmp/flow-engine-research/journal-integration-suite.log`），small 真实窗口混合历史/撤销重做/关闭重开通过。缺首段、缺目录或恢复检查失败不会清成空项目；普通半组中断保留原字节换段续写，旧 writer 实际拒新格式；用户旧项目未原地改写。恢复契约见 ARCHITECTURE。
+
+同一固定 release 宿主 `80a701a`、同 warmup/40 笔/280 batch 的主管实测：deadline→Canvas ACK P95 **254.10→4.61ms**，首次 down 尝试→ACK P95 **83.52→6.86ms**；背压 **2091→0**、整拍迟到 **221→0**、积压峰值 **26→0**、丢输入 0。Node sync **360→115**，该窗口全部为 journal 段文件同步；非所有确认都合批，不能把共享 flush 的异步父调用当独占成本。293 帧/241,807,416 通道逐值一致，最终像素与旧基准相同，40 笔最终确认、关闭重开通过。最后输入后显示排空 **0.59ms**、最终确认 **84.91ms**（旧 289.20ms）。本次合成节拍 PASS；单次分时测量、含像素 oracle，不宣称物理输入时延、真实数位笔、长期负载或默认产品 UI 已达标。完整无损原始证据与派生统计在 `scripts/flow-main-image-pipeline-journal-evidence-*`；窗口现场 `flow-main-image-pipeline-esmUF6`、`flow-main-image-pipeline-IhFSfm`，日志 `/private/tmp/flow-engine-research/journal-{integration-build,gui-small,gui-paced}.log`。自有 Electron 正常退出。此结果不需要继续扩大原生协议，本轮 deferred finish 保持只读备选、不实施。
+
+本轮优化已本地集成，未合主树、未推送、未替换用户正在使用的工作台。发动机整体迁移仍有默认工具/图层接线、完整 Save/Refresh/Pending、旧项目复制升级、正式全局预算接线与 Windows 待验；不能把本轮保存链完成称为整机替换完成。
 
 2026-11-08 组合验收中：完整操作代际隔离 `73a2d76`、CAS/接纳/确认拆分 `c401472`、批次观测脚本 `e20a7db` 已分别合入 `94ff602`、`6120051`、`48e5dc3`。执行者相关 194 项及构建通过；主管组合构建、12 项观测辅助测试、完整获准 105 文件/1219 项全部通过（390.74s，`/private/tmp/flow-engine-research/split-integration-suite.log`）。small 绘画/混合历史/Undo/Redo/关闭重开通过。固定与旧基准相同的 release 宿主 80a701a、透明 warmup 后 40 笔/280 batch 实测：deadline→Canvas ACK P95 1734.67→254.10ms，首次 down 尝试→ACK P95 131.02→83.52ms，背压 2091 次、221 batch 迟到、积压峰值 26；性能改善但仍 FAIL。293 帧/241,807,416 通道与旧基准完全一致，40 笔最终确认及正常关闭重开通过；最后输入后显示排空 5.58ms、最终确认 289.20ms。40 个确认批次全部仅一笔，Node sync 共 360 次，尚未获得有效合批。完整无损原始报告及逐笔/批次统计见 `scripts/flow-main-image-pipeline-split-evidence-*`。首轮 Electron 沙箱内 SIGABRT 未产生结果，保留日志后在授权桌面环境重跑通过；所有自有测试进程已退出。两次测量跨日且非多轮随机基准，不宣称物理输入延迟或正式 UI 达标。下一步继续压缩持久化等待，已交主责分析，尚不扩大原生槽数或降低回执保证。
 

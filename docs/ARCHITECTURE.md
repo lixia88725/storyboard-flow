@@ -10,9 +10,13 @@
 
 连续绘画协议区分 `imageVersionRef` 已接纳前缀和 `pendingOperationIds` 未 durable-accepted 的完整笔链；`workingHeadOperationId` 等于待确认链尾，活动笔另用 previewId。pipeline 开始/结束提升 epoch，同 epoch 的 pipelineId 不变；pending 为空也不能替代项目 checkpoint/Save 成功判据。帧接收器只验证展示身份，不承担项目持久化认证。原生异步队列已实现：输入线程与持久化线程分开，四笔有界队列，失败冻结依赖链而不自动重试。Main 项目接纳与默认产品接线仍在施工。
 
-Main 连续绘画由 `session/core/nativePipeline` 捕获有界原始输入，Adapter 短命令调度与持久化分开；最多连续八个输入命令后给等待中的控制命令一次机会。end 同步预约唯一混合历史/CAS 队列位置，v2 intent 固定锚点与前驱。CAS 成功后转入独立的原生接纳 FIFO；后一笔 accept 必须等前一笔 durable nativeAccepted，不能将 acceptQueued 当成功。Main 确认队列最多持有四个额度，每批 1..4 笔，每个文件仍同步，只合并同目录同步；不为凑满批次无限等待。waitOperation 仅在最终确认后完成，原生接纳不等于最终保存回执。
+Main 连续绘画由 `session/core/nativePipeline` 捕获有界原始输入，Adapter 短命令调度与持久化分开；最多连续八个输入命令后给等待中的控制命令一次机会。end 同步预约唯一混合历史/CAS 队列位置，v2 intent 固定锚点与前驱。CAS 成功后转入独立的原生接纳 FIFO；后一笔 accept 必须等前一笔 durable nativeAccepted，不能将 acceptQueued 当成功。Main 确认队列最多持有四个额度，每批 1..4 笔；确认事实进入下述统一日志，不再逐笔创建确认文件。waitOperation 仅在最终确认后完成，原生接纳不等于最终保存回执。
 
-ProjectStore 的 intent/CAS/confirmation 三条文件队列共用原子预算预留，未知支出保留到关闭准入并排空后的 audit。关闭、Undo/Redo、冻结均排空相关义务；恢复按实际前驱拓扑核对多笔后缀，不按文件名排序，不重画已接纳笔。无变化版本仍写绑定可达 head 的独立决定，不制造假 Undo。完整 intent 持久化仍在 native finish 之前，后续预览可能等待该次 fsync；新流水线的实际节拍必须单独实测。
+ProjectStore 保持原 Interface，Implementation 改为 `journalProjectStore` 与 `recoveryJournal`：完整输入、项目 CAS、无变化决定、hydration、确认和 resolution 进入单写者追加日志。每组绑定序号、前组摘要与完整封口，同步成功才公布持久状态；项目 head 从日志派生，不另写第二份权威。后续验证未完成不阻止已准入组的定时 flush；2ms 是调度触发间隔，不是事件循环的实时期限。未知支出保留到关闭准入并排空后的 audit。外部 native/source/output 写入须保留完整固定额度或接入等价实际加预留账本，不能只报告瞬时在途字节；正式全局协调器尚未接入默认产品。
+
+日志位于 `.storyboard-flow/image-project-journal-v1`，旧 V2 head 位置存不兼容 writer gate。仅本次新建 gate 的流程可创建首段，既有 gate 缺首段、缺目录或缺初始记录一律拒绝，不猜成空项目，也不原地迁移旧格式。正常中断的末尾未封口组保留原段：同步有效前缀、创建并同步新段，再独占发布绑定旧文件摘要/有效长度/前缀的新段清单并同步目录，之后才准入。完整封口损坏或中间异常拒绝；恢复所有格式与历史引用验证完成后才替换内存状态，失败保留旧 head 并停写。
+
+关闭、Undo/Redo、冻结均排空相关义务；恢复按实际前驱拓扑核对多笔后缀，不按文件名排序，不重画已接纳笔。无变化版本仍写绑定可达 head 的独立决定，不制造假 Undo。完整 intent 持久化仍在 native finish 之前，后续预览可能等待该次 fsync；新流水线的实际节拍必须单独实测。
 
 项目 V2 在 `platform/contracts/imageProject.ts` 定义图片内容联合引用：source 指向固定来源及解释身份，native 指向 store/document/version/manifest 摘要；项目不保存另一份可写 PNG 图层树。后台 hydration 写持久派生索引，不改变项目引用、不产生用户 Undo；第一笔才由 source 引用变成新 native 版本，撤销可回到同一固定来源解释。
 
