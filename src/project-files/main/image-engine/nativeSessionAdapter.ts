@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import sharp from 'sharp';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -6,7 +7,7 @@ import type { startImageEngine } from '../../../platform/main/imageEngineConnect
 import type { createImageEngineWorkerOwner } from '../../../platform/main/imageEngineWorkerOwner.js';
 import type { NativeFrame } from '../../../platform/main/imageEngineFraming.js';
 import type { NativeImageRef } from '../../../platform/contracts/imageProject.js';
-import { validImageEngineEdit, validImageEnginePreviewStamp } from '../../../platform/contracts/imageEngine.js';
+import { validImageEngineEdit, validImageEnginePreviewStamp, validImageEngineProtectedSourcePolicy } from '../../../platform/contracts/imageEngine.js';
 import type { ImageEngineEdit, ImageEngineEditContext, ImageEngineContextSummary, ImageEngineDisplayIdentity, ImageEnginePreviewStamp, ImageEnginePreviewResult, ImageEngineCreationInput, ImageEngineJobReservation, ImageEngineInspection, ImageEngineSourceOptions } from '../../../platform/contracts/imageEngine.js';
 import { validSelection } from '../../../platform/contracts/flowSelection.js';
 import type { FlowSelection } from '../../../platform/contracts/flowSelection.js';
@@ -19,11 +20,16 @@ import type { NativePipelineDriver, PipelineLimits, PipelineReady, PipelineQueue
 import type { RetainedSourceObject } from './sourceStore.js';
 import { validWorkspaceOutputMetadataEnvelope } from './workspaceOutputContract.js';
 import type { WorkspaceOutputMetadataEnvelope } from './workspaceOutputContract.js';
+import type {ImageEngineSourceDisplayProof,ImageEngineProtectedSourcePolicy} from '../../../platform/contracts/imageEngine.js';
 
 export type NativeCreationPage={snapshotToken:string;totalUnsettled:number;entries:{operationId:string;state:'intent'|'prepared';prepared?:PreparedImage}[];nextCursor:string|null};
 export type NativeCreationStatus=NativeOperationStatus|{state:'pending';phase:string};
 export type NativeVersionOutput={bytes:Uint8Array;sha256:string;byteLength:number;width:number;height:number;layerCount:number;versionId:string;documentId:string;metadataSha256:string};
+export type NativeRetainedPreparation={kind:'editable';prepared:PreparedImage;proof:ImageEngineSourceDisplayProof}|{kind:'reference';prepared:PreparedImage;proof:ImageEngineSourceDisplayProof;policy:ImageEngineProtectedSourcePolicy;reason:{code:string;message:string}};
 export type NativeProductDriver = {
+  /** Reads the authenticated immutable version JSON; no actor IO/thumbnail gate. */
+  versionSourcePolicy(ref:NativeImageRef):Promise<ImageEngineProtectedSourcePolicy|null>;
+  prepareRetainedGuarded(operationId:string,source:RetainedSourceObject,formatHint:'tiff'|'psd',reservation:ImageEngineJobReservation,options?:ImageEngineSourceOptions):Promise<NativeRetainedPreparation>;
   exportVersion(ref:NativeImageRef,format:'psd'|'tiff',metadata:WorkspaceOutputMetadataEnvelope,maxBytes?:number):Promise<NativeVersionOutput>;
   prepareCreation(operationId:string,input:ImageEngineCreationInput,reservation:ImageEngineJobReservation):Promise<PreparedImage>;
   prepareRetained(operationId:string,source:RetainedSourceObject,formatHint:string,reservation:ImageEngineJobReservation,options?:ImageEngineSourceOptions):Promise<PreparedImage>;
@@ -111,15 +117,20 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     if(reply.kind!=='prepared'||typeof reply.candidateId!=='string'||(reply.baseVersion!==null&&typeof reply.baseVersion!=='string'))refuse('Expected durable native prepared receipt','protocol','unknown');
     candidate=reply.candidateId;return{candidateId:reply.candidateId,baseVersion:reply.baseVersion,native:nativeRef(reply.receipt)};
   };
-  const verifyNative=async(ref:NativeImageRef)=>{
+  const verifyNativeFile=async(ref:NativeImageRef):Promise<ImageEngineProtectedSourcePolicy|null>=>{
     if(!validNativeImageRef(ref)||ref.storeId!==storeId)refuse('Unknown native store/ref');
     const raw=await boundedFile(path.join(storeRoot,'versions',ref.versionId+'.json'),16<<20);
     if(sha(raw)!==ref.versionId||ref.versionId!==ref.manifestSha256)refuse('Native manifest hash changed','corrupt','retained');
     const parsed:unknown=JSON.parse(raw.toString('utf8'));
     if(!record(parsed)||parsed.schema!=='flow.image-native-snapshot'||parsed.version!==1||parsed.documentId!==ref.documentId||!record(parsed.nativeManifest)||!record(parsed.nativeManifest.document)||!record(parsed.nativeManifest.document.size)||parsed.nativeManifest.document.size.width!==ref.width||parsed.nativeManifest.document.size.height!==ref.height)refuse('Native manifest geometry/identity mismatch','corrupt','retained');
+    const source=parsed.source;if(source!==null&&source!==undefined&&!record(source))refuse('Malformed immutable native source','corrupt','retained');
+    const policy=record(source)?source.displayPolicy:undefined;
+    if(policy!==undefined&&policy!==null){if(!validImageEngineProtectedSourcePolicy(policy)||!record(source)||source.digest!==policy.original.digest||source.byteLength!==policy.original.byteLength||source.formatHint!==policy.original.format||typeof source.protectedBaseManifestSha256!=='string'||!/^[0-9a-f]{64}$/.test(source.protectedBaseManifestSha256))refuse('Malformed immutable protected source binding','corrupt','retained');}
     // Full compressed object verification occurs inside native load/install;
     // a live prepared receipt already follows native durable object publication.
+    return policy==null?null:structuredClone(policy as ImageEngineProtectedSourcePolicy);
   };
+  const verifyNative=async(ref:NativeImageRef)=>{await verifyNativeFile(ref);};
   const install=async(ref:NativeImageRef)=>{
     const op=operationContext();await verifyNative(ref);op.check();if(current&&same(current,ref))return;
     const result=await call(next(),current?{kind:'install',versionId:ref.versionId}:{kind:'load',versionId:ref.versionId});op.check();
@@ -237,6 +248,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     const summary=await contextSummary();op.check();return summary;
   };
   const driver:NativeSessionDriver & NativeProductDriver & {resume():Promise<void>}={
+    async versionSourcePolicy(ref){return verifyNativeFile(structuredClone(ref));},
     ...(owner?{async restartForRecovery(){
       fenced=true;generation++; // Fence queued Adapter jobs before awaiting owned exit.
       const restarting=generation,handle=await owner.restart();if(restarting!==generation)refuse('Old worker replacement fenced','worker-unavailable','unknown');connection=handle.connection;generation=handle.generation;
@@ -264,6 +276,36 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
         if(input.kind==='new'){if(!Number.isSafeInteger(input.width)||!Number.isSafeInteger(input.height)||input.width<1||input.height<1||input.width>8192||input.height>8192||input.width*input.height>16*1024**2)refuse('Native creation dimensions exceed current bounds','limit');nativeInput={kind:'new',width:input.width,height:input.height};}
         else if(input.kind==='duplicate'){const source=structuredClone(input.source);await verifyNative(source);op.check();nativeInput={kind:'duplicate',source:versionIdentity(source)};}else refuse('Unknown creation input','invalid-input');
         const started=await call(operationId,{kind:'detachedPrepare',input:nativeInput,maxAdditionalBytes:maximum},null);op.check();const value=await waitImmutable(op,operationId,started);op.check();const result=detachedPrepared(operationId,value.result,value.payload);if(result.native.width!==(input.kind==='new'?input.width:input.source.width)||result.native.height!==(input.kind==='new'?input.height:input.source.height)||(input.kind==='duplicate'&&result.native.documentId===input.source.documentId))refuse('Creation geometry/document identity mismatch','protocol','unknown');return result;
+      }finally{release();}
+    },
+    async prepareRetainedGuarded(operationId,source,formatHint,reservation,sourceOptions={}){
+      const op=operationContext();immutableCap();if(!op.connection.supports('sourceDisplayGuardV1')||!op.connection.supports('protectedReferenceV1'))refuse('Native binary lacks sourceDisplayGuardV1/protectedReferenceV1','unsupported');
+      const captured=structuredClone(source),options=structuredClone(sourceOptions),grant=structuredClone(reservation),maximum=reservationLimit(grant),displayTolerance=options.displayTolerance??2;if(!Number.isSafeInteger(displayTolerance)||displayTolerance<0||displayTolerance>16)refuse('Main display tolerance must be an integer 0..16','invalid-input');
+      if(!['tiff','psd'].includes(formatHint)||captured.byteLength>(8<<20))refuse('Guarded retained source exceeds current format/8MiB admission; original retained','limit');
+      const interpretationId=options.interpretationId;if(interpretationId!==undefined&&interpretationId!=='photocraft-v1'&&interpretationId!=='flow-v1-upgrade')refuse('Unknown source interpretation','unsupported');
+      if(interpretationId==='flow-v1-upgrade'&&!op.connection.supports('flowV1UpgradeInterpretationV1'))refuse('Native binary lacks flowV1UpgradeInterpretationV1','unsupported');
+      const release=immutableClaim();
+      try{
+       const original=await boundedFile(captured.path,8<<20,captured.identity);op.check();if(original.length!==captured.byteLength||sha(original)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
+       let payload:Uint8Array=original,display:Record<string,unknown>|null=null;
+       if(formatHint==='tiff'){
+        // This bounded non-preemptible decoder phase begins only at a confirmed
+        // native idle boundary. New input remains free to use the native actor.
+        while(true){try{await call(next(),{kind:'admitSourceDisplay'},null);op.check();break;}catch(e){op.check();if((e as any)?.code!=='backpressure'||(e as any)?.effect!=='none')throw e;await new Promise(resolve=>setTimeout(resolve,8));op.check();}}
+        const embedded=await sharp(original,{failOn:'error',limitInputPixels:16<<20}).rotate().toColourspace('srgb').ensureAlpha().raw().toBuffer({resolveWithObject:true}).catch(error=>{if(/pixel limit|memory limit/i.test(String(error)))refuse('Source retained but exceeds the current display resource capacity','limit');throw error;});op.check();
+        const {width,height,channels}=embedded.info;if(channels!==4||width>8192||height>8192||width*height>(16<<20))refuse('Independent source display exceeds current canvas budget','limit');
+        for(let i=0;i<embedded.data.length;i+=4)if(embedded.data[i+3]===0)embedded.data.fill(0,i,i+3);
+        const png=await sharp(embedded.data,{raw:{width,height,channels:4}}).png().toBuffer();op.check();if(png.length>(32<<20))refuse('Independent source display exceeds 32MiB PNG budget; original retained without resizing','limit');
+        display={sourceDigest:captured.digest,sha256:sha(png),byteLength:png.length,rgbaSha256:sha(embedded.data),width,height};payload=Buffer.concat([original,png]);
+       }
+       const identity={digest:captured.digest,byteLength:captured.byteLength,formatHint,...(interpretationId?{interpretationId}:{})};const started=await call(operationId,{kind:'detachedPrepare',input:{kind:'guardedSource',source:identity,display,displayTolerance},maxAdditionalBytes:maximum},null,payload);op.check();const done=await waitImmutable(op,operationId,started);op.check();
+       const r=done.result;if(r.kind==='discarded')refuse('Guarded source operation was explicitly discarded','conflict');const p=r.sourceDisplayProof,hash=(v:unknown)=>typeof v==='string'&&/^[0-9a-f]{64}$/.test(v);
+       if(!record(p)||p.schema!=='flow.source-display-proof'||p.version!==1||!same(p.source,identity)||!Number.isSafeInteger(p.width)||!Number.isSafeInteger(p.height)||Number(p.width)<1||Number(p.height)<1||Number(p.width)>8192||Number(p.height)>8192||Number(p.width)*Number(p.height)>(16<<20)||!hash(p.embeddedRgbaSha256)||p.nativeRgbaSha256!==null&&!hash(p.nativeRgbaSha256)||p.maxChannelDifference!==null&&(!Number.isSafeInteger(p.maxChannelDifference)||Number(p.maxChannelDifference)<0||Number(p.maxChannelDifference)>255)||p.tolerance!==displayTolerance||display&&p.embeddedRgbaSha256!==display.rgbaSha256)refuse('Malformed source display proof','protocol','unknown');
+       const proof=structuredClone(p) as ImageEngineSourceDisplayProof,prepared=detachedPrepared(operationId,r,done.payload);if(prepared.native.width!==proof.width||prepared.native.height!==proof.height||!record(r.receipt)||!record(r.receipt.source))refuse('Guarded source receipt mismatch','protocol','unknown');
+       const provenance=r.receipt.source;for(const k of ['digest','byteLength','formatHint','interpretationId'] as const)if(provenance[k]!==identity[k])refuse('Guarded source provenance mismatch','protocol','unknown');
+       if(r.classification==='editable'){if(provenance.displayPolicy!==undefined||!hash(p.nativeRgbaSha256)||p.maxChannelDifference===null||Number(p.maxChannelDifference)>displayTolerance)refuse('Unproven editable source classification','protocol','unknown');return{kind:'editable',prepared,proof};}
+       const policy=provenance.displayPolicy,reason=p.reason;if(r.classification!=='reference'||!validImageEngineProtectedSourcePolicy(policy)||policy.original.digest!==captured.digest||policy.original.byteLength!==captured.byteLength||policy.original.format!==formatHint||policy.referenceRgbaSha256!==proof.embeddedRgbaSha256||!record(reason)||typeof reason.code!=='string'||typeof reason.message!=='string'||reason.message.length>4096||!hash(provenance.protectedBaseManifestSha256))refuse('Unproven protected reference source classification','protocol','unknown');
+       const summary=inspectionCache.get(prepared.native.versionId)?.summary;if(!summary||!same(summary.sourceDisplayPolicy,policy))refuse('Reference inspection/receipt policy mismatch','protocol','unknown');return{kind:'reference',prepared,proof,policy:structuredClone(policy),reason:{code:reason.code,message:reason.message}};
       }finally{release();}
     },
     async prepareRetained(operationId,source,formatHint,reservation,sourceOptions={}){

@@ -224,6 +224,7 @@ impl Host {
     }
     /// Validate every referenced layer before recording intent or changing context.
     pub(super) fn validate_product_edit(&self, edit: &ProductEdit) -> Result<()> {
+        source_guard::check_edit(self, edit)?;
         let doc = self.document()?;
         match edit {
             ProductEdit::NewLayer { name } => {

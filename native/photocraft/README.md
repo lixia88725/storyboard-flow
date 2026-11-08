@@ -713,12 +713,11 @@ Main-surrogate batch, SIGKILL and status-driven reopen. These are native Module
 self-tests; they do not certify the real Main batch ledger, formal workbench,
 physical input, arbitrary source fidelity or Windows execution.
 
-The source gate above is not an independent merged-image oracle. Unlike the
-older `flow-photocraft` reader's PSD merged/model comparison and Main's independent
-TIFF sharp comparison, the current hydration gate does not yet compare imported
-layer composition with the source's embedded merged display. That is a default
-routing blocker: controlled/synthetic Source tests are not evidence to retire
-protected display. The existing real TIFF corpus must retain its original SHA
+The primitive source gate above is not an independent merged-image oracle.
+Product TIFF/PSD routing must use the guarded source Interface below; unlike the
+primitive path, it compares the imported layer composition with the source's
+embedded display (Main sharp for TIFF). Controlled/synthetic primitive Source
+tests alone are not evidence to retire protected display. The existing real TIFF corpus must retain its original SHA
 and reference-display meaning; mismatches require explicit reference display or
 refusal. Larger canvas budgets and real Windows evidence are separate unfinished
 gates.
@@ -766,3 +765,92 @@ merged pixels; original version bytes, active context and resume pixels remain
 unchanged. `tests/output_metadata_oracle.py` also checks unknown-XMP artifacts.
 These are module self-tests, not real Main publication, formal Save UI,
 background-export latency, arbitrary source round-trip or Windows acceptance.
+
+## Source display guard and protected reference base
+
+`sourceDisplayGuardV1` + `protectedReferenceV1` add the Main-only
+`prepareRetainedGuarded(operationId, retainedObject, 'tiff'|'psd', reservation,
+{interpretationId?, displayTolerance?})` Interface. It returns either
+`{kind:'editable', prepared, proof}` or
+`{kind:'reference', prepared, proof, policy, reason}`. Both are durable detached
+candidates, never an automatic install/project decision. Main must bind the
+exact retained SourceRef and, for references, its `protectedSource` record before
+explicit settlement/activation. Layer IDs and policy IDs remain decimal strings.
+The older primitive `prepareRetained` is retained for PNG, controlled V1 upgrade
+and native fixtures; ordinary product TIFF/PSD must use the guarded Interface.
+
+Main verifies the granted retained object's no-follow identity and complete
+SHA-256, then generates TIFF embedded display with installed sharp from those
+actual bytes. No renderer PNG enters this path. A cheap actor admission waits
+for an idle input boundary before this bounded non-preemptible decode begins;
+the native input actor remains available while it runs. Original bytes (<=8 MiB)
+and an untagged sRGB RGBA8 PNG (<=32 MiB) share one <=40 MiB request payload, with
+separate length/hash and source-digest bindings. Native validates those bindings,
+original color interpretation and the full independent reference. PSD uses raw
+merged-image parsing separately from layer interpretation. Invalid RGB ICC and
+CMYK/other models reject without assuming a default profile. The guarded decoder
+uses the old reader's bounded 512 MiB PSD import estimate, in the existing idle
+CPU job; this is not a total RSS guarantee or proof that all old formats work.
+
+Native compares the complete source layer rendering with the embedded display,
+ignoring RGB only when both alpha values are zero. Transparent reference RGB is
+canonicalized to zero. The proof binds source, dimensions, both RGBA digests,
+maximum difference and the actual tolerance. Guard default is 2; Storyboard Flow's
+creative-capture policy explicitly passes **8 from Main**, and may give a brief
+notice for small color differences. This is a product policy, not publication
+color certification. Renderer cannot change it; the operation fingerprint binds
+it, so the same operation cannot silently switch policy. Current protocol bounds
+tolerance to integer 0..16. Unsupported layer interpretation and severe mismatch
+produce a protected reference; pixels are never corrected to force a match.
+
+A reference Document contains a locked visible bottom raster for the reliable
+embedded display and an ordinary transparent `Drawing` layer above it. The full
+original remains retained under its SHA-256/length/format; this is explicitly a
+reference representation, not a full editable import of the original structure.
+`Version.source.displayPolicy`, prepared receipt, active `sourceDisplayPolicy`
+summary and immutable inspection carry the same policy:
+`{kind:'protected-reference', baseLayerId, referenceRgbaSha256,
+original:{digest,byteLength,format}}`. All later versions and duplicate documents
+inherit it. Main's exact SourceRef remains the sole original locator; native
+source digest or PSD IDs never authorize searching arbitrary paths.
+
+Product edits/previews, live paint and floating reject a protected base or its
+ancestor. Moving other layers below it and merging it indirectly also reject.
+Ordinary upper-layer paint/edit and duplication remain valid. Native stores a
+private `protectedBaseManifestSha256` covering the base's properties, immutable
+pixel objects, bottom root position and canvas color/geometry. Save/load validate
+this fingerprint using already computed snapshot object hashes, avoiding a full
+reference render on each stroke. Source policy cannot be supplied to primitive
+Open/Source commands. `versionSourcePolicy(ref)` reads the authenticated immutable
+version JSON without an actor/thumbnail gate, so Main can check a prepared
+pipeline version before CAS without deadlocking on idle input. Full object and
+private-fingerprint validation stays in native save/load; this Main metadata
+check does not independently decode pixels. Repeated accepted same-owner source prepare rechecks the
+original durable fingerprint; restart recovery uses status and exact refs instead
+of replaying input. The guarded result classification/proof survive settlement.
+
+At this slice, exporting a protected version deliberately returns
+`unsupported-protected-output`: the next source-reference XMP/output binding
+capability must land before a Flow working-file Save can retain origin. No locked
+flat layer is allowed to masquerade as a complete saved complex original.
+32M capacity and broader source/CMYK coverage remain separate unfinished gates;
+current 16 Mi-pixel/8192-edge/8 MiB source bounds reject explicitly without resize.
+
+The explicit opt-in `imageEngineSourceGuardCorpus.test.ts` reads only
+`FLOW_AUTHORIZED_TIFF_LIST`, records every original SHA before/after and compares
+full native frames against independent sharp embedded pixels. The conservative
+2-level run covered 30 authorized TIFFs: 24 layer candidates and 6 protected
+references, all displayed within tolerance, originals unchanged. Saved baseline
+RGBA established that three of those six have only 4/7/4-level sparse differences
+and no pixels >8, while the three severe differences affect ~32% of opaque
+pixels. Flow's explicit tolerance 8 therefore admits the former directly; a
+synthetic focused test verifies the 2/8 policy branch and fingerprint conflict,
+without another corpus pass solely for tiny color changes. These measurements
+are module evidence, not final GUI/project/Save certification.
+
+`imageEngineSourceGuard.test.ts` checks real candidates, bad ICC/unprofiled CMYK,
+source preservation, direct/indirect base refusals, preview refusal, upper paint,
+duplicate, exact undo/redo installs and SIGKILL/reopen. Native fingerprint tests
+independently mutate pixels, lock/name, ancestor, bottom order and geometry and
+verify rejection plus unchanged older immutable versions. Original and failed
+verification evidence is retained in task directories, never the user directory.

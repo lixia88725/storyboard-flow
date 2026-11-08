@@ -69,9 +69,25 @@ impl ThumbnailOptions {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum DetachedInput {
-    New { width: u32, height: u32 },
-    Duplicate { source: VersionIdentity },
-    Source { source: Source },
+    New {
+        width: u32,
+        height: u32,
+    },
+    Duplicate {
+        source: VersionIdentity,
+    },
+    Source {
+        source: Source,
+    },
+    GuardedSource {
+        source: Source,
+        display: Option<source_guard::DisplayRef>,
+        #[serde(
+            rename = "displayTolerance",
+            default = "source_guard::default_tolerance"
+        )]
+        display_tolerance: u8,
+    },
 }
 struct State {
     phase: String,
@@ -275,7 +291,13 @@ fn idle_cpu(proxy: &StoreProxy, state: &Arc<Mutex<State>>) {
         thread::sleep(std::time::Duration::from_millis(2));
     }
 }
-fn preflight_source(source: &Source, payload: &[u8]) -> Result<()> {
+pub(super) fn preflight_source(source: &Source, payload: &[u8]) -> Result<()> {
+    if source.display_policy.is_some() || source.protected_base_manifest_sha256.is_some() {
+        return Err(Error::none(
+            "invalid-input",
+            "source display policy is native-derived, never caller supplied",
+        ));
+    }
     if source
         .interpretation_id
         .as_deref()
@@ -304,7 +326,7 @@ fn preflight_source(source: &Source, payload: &[u8]) -> Result<()> {
 pub(super) fn decode_source(source: &Source, payload: &[u8]) -> Result<Document> {
     preflight_source(source, payload)?;
     let options = photocraft_io::ImportOptions {
-        psd_max_pixel_bytes: 256 << 20,
+        psd_max_pixel_bytes: 512 << 20,
         flat_max_pixel_bytes: 64 << 20,
         ..Default::default()
     };
@@ -334,6 +356,7 @@ pub(super) fn decode_source(source: &Source, payload: &[u8]) -> Result<Document>
             "immutable hydration admits RGB8 raster/group documents only",
         ));
     }
+    source_guard::rgb_transform(doc.icc_profile.as_ref().map(|p| p.as_slice()))?;
     if source.interpretation_id.as_deref() == Some("flow-v1-upgrade") {
         if source.format_hint != "tiff" {
             return Err(Error::none(
@@ -345,7 +368,7 @@ pub(super) fn decode_source(source: &Source, payload: &[u8]) -> Result<Document>
     }
     Ok(doc)
 }
-fn initial_target(doc: &Document) -> Result<LayerTarget> {
+pub(super) fn initial_target(doc: &Document) -> Result<LayerTarget> {
     let mut scratch = Session::new();
     scratch.add_document(doc.clone(), None);
     let s = scratch
@@ -473,6 +496,8 @@ fn prepare(
     })?;
     idle_cpu(&proxy, &state);
     progress(&state, "decoding");
+    let mut display_proof = None;
+    let mut classification = None;
     let decoded = (|| -> Result<(Document, LayerTarget, Option<Source>)> {
         match input {
             DetachedInput::New { width, height } => {
@@ -498,6 +523,17 @@ fn prepare(
                     .clone();
                 let target = initial_target(&doc)?;
                 Ok((doc, target, None))
+            }
+            DetachedInput::GuardedSource {
+                source,
+                display,
+                display_tolerance,
+            } => {
+                let (doc, target, source, proof, kind) =
+                    source_guard::prepare(source, display.as_ref(), &payload, display_tolerance)?;
+                display_proof = Some(proof);
+                classification = Some(kind);
+                Ok((doc, target, Some(source)))
             }
             DetachedInput::Source { source } => {
                 let doc = decode_source(&source, &payload)?;
@@ -534,6 +570,8 @@ fn prepare(
             },
         )?;
         view["thumbnail"] = meta;
+        view["sourceDisplayPolicy"] =
+            json!(source.as_ref().and_then(|s| s.display_policy.as_ref()));
         Ok::<_, Error>((view, bytes))
     })();
     let (mut view, bytes) = match prepared_views {
@@ -546,7 +584,8 @@ fn prepare(
     let result=proxy.call_budgeted(true,maximum.saturating_sub(intent_bytes).saturating_sub(SETTLEMENT_RESERVE),move|s|{
         progress(&publishing_state,"persistingImmutableVersion");let before=s.retained_bytes();
         let receipt=s.save(&doc,&target,source)?;let before_prepared=intent_bytes+s.retained_bytes().saturating_sub(before);
-        let prepared=json!({"kind":"prepared","detached":true,"candidateId":op,"baseVersion":null,"receipt":receipt,"reservation":{"maxAdditionalBytes":maximum,"spentBeforePrepared":before_prepared}});
+        let mut prepared=json!({"kind":"prepared","detached":true,"candidateId":op,"baseVersion":null,"receipt":receipt,"reservation":{"maxAdditionalBytes":maximum,"spentBeforePrepared":before_prepared}});
+        if let Some(proof)=display_proof {prepared["sourceDisplayProof"]=proof;prepared["classification"]=json!(classification);}
         let cost=journal::Journal::record_bytes(&op,"prepared",&prepared)?;
         if before_prepared.saturating_add(cost).saturating_add(SETTLEMENT_RESERVE)>maximum{return Err(Error::retained("limit","immutable candidate must retain reserved settlement space"));}
         s.op_write(&op,"prepared",&prepared)?;Ok(prepared)
@@ -595,6 +634,12 @@ fn finish_existing(
         },
     )?;
     view["thumbnail"] = meta;
+    view["sourceDisplayPolicy"] = json!(
+        loaded
+            .source
+            .as_ref()
+            .and_then(|s| s.display_policy.as_ref())
+    );
     result["summary"] = view;
     Ok((result, bytes))
 }
@@ -617,7 +662,8 @@ fn settle(
         if prepared["detached"]!=true||version.as_ref().is_some_and(|v|prepared["receipt"]["versionId"]!=*v){return Err(Error::none("conflict","detached settlement identity mismatch"));}
         let maximum=prepared["reservation"]["maxAdditionalBytes"].as_u64().ok_or_else(||Error::retained("corrupt","candidate reservation missing"))?;
         let spent=prepared["reservation"]["spentBeforePrepared"].as_u64().ok_or_else(||Error::retained("corrupt","candidate expenditure missing"))?+journal::Journal::record_bytes(&id,"prepared",&prepared)?;
-        let result=if discard{json!({"kind":"discarded","detached":true,"candidateId":id})}else{json!({"kind":"accepted","detached":true,"candidateId":id,"receipt":prepared["receipt"]})};
+        let mut result=if discard{json!({"kind":"discarded","detached":true,"candidateId":id})}else{json!({"kind":"accepted","detached":true,"candidateId":id,"receipt":prepared["receipt"]})};
+        if !discard && prepared.get("sourceDisplayProof").is_some(){result["sourceDisplayProof"]=prepared["sourceDisplayProof"].clone();result["classification"]=prepared["classification"].clone();}
         s.budgeted(maximum.saturating_sub(spent),|s|s.op_write(&id,if discard{"discarded"}else{"accepted"},&result))?;Ok(result)
     })?;
     Ok((result, vec![]))
@@ -632,6 +678,9 @@ impl Host {
             r.body,
             Command::DetachedPrepare {
                 input: DetachedInput::Source { .. },
+                ..
+            } | Command::DetachedPrepare {
+                input: DetachedInput::GuardedSource { .. },
                 ..
             }
         ) && !payload.is_empty()
@@ -724,7 +773,35 @@ impl Host {
                     DetachedInput::New { width, height } => dimensions(*width, *height)?,
                     DetachedInput::Duplicate { source } => source.validate()?,
                     DetachedInput::Source { source } => preflight_source(source, payload)?,
+                    DetachedInput::GuardedSource {
+                        source,
+                        display,
+                        display_tolerance,
+                    } => {
+                        if *display_tolerance > 16 {
+                            return Err(Error::none(
+                                "invalid-input",
+                                "display tolerance must be 0..16",
+                            ));
+                        }
+                        source_guard::preflight(source, display.as_ref(), payload)?
+                    }
                 };
+                // A completed settle uses the candidate ID for its control
+                // receipt. Re-enter through the durable original fingerprint;
+                // never mistake the control-cache fingerprint for new input.
+                if let Some(job) = self.detached.jobs.get(&r.operation_id) {
+                    if job.control {
+                        if job.state.lock().map_or(true, |s| !s.finished) {
+                            return Err(Error::none(
+                                "busy",
+                                "immutable settlement still in flight; query status",
+                            ));
+                        }
+                        self.detached.jobs.remove(&r.operation_id);
+                        self.detached.order.retain(|id| id != &r.operation_id);
+                    }
+                }
                 let (proxy, request, input, bytes, maximum, fingerprint) = (
                     self.store.proxy(),
                     r.clone(),
@@ -761,6 +838,12 @@ impl Host {
                         progress(&state, "renderingThumbnail");
                         let (meta, bytes) = thumbnail(&loaded.doc, &options)?;
                         view["thumbnail"] = meta;
+                        view["sourceDisplayPolicy"] = json!(
+                            loaded
+                                .source
+                                .as_ref()
+                                .and_then(|s| s.display_policy.as_ref())
+                        );
                         Ok((json!({"kind":"inspected","summary":view}), bytes))
                     })
             }

@@ -103,6 +103,7 @@ export type ImageEngineTemporarySelection = {
  * Temporary polygon geometry remains in its owning Main/UI request; this summary
  * returns only its bounded identity and bounds, never mask pixels or paths. */
 export type ImageEngineContextSummary = {
+  sourceDisplayPolicy:ImageEngineProtectedSourcePolicy|null;
   displayIdentity:ImageEngineDisplayIdentity;imageVersionRef:string|null;contextGeneration:number;
   layers:readonly ImageEngineLayerSummary[];activeLayerId:ImageEngineLayerId|null;selectedLayerIds:readonly ImageEngineLayerId[];
   selection:{present:boolean;token:string|null;bounds:readonly[number,number,number,number]|null};
@@ -123,6 +124,7 @@ export type ImageEngineCreationInput = {kind:'new';width:number;height:number}|
   {kind:'duplicate';source:import('./imageProject.js').NativeImageRef};
 export type ImageEngineJobReservation = {maxAdditionalBytes:number};
 export type ImageEngineVersionSummary = {
+  sourceDisplayPolicy:ImageEngineProtectedSourcePolicy|null;
   versionId:string;documentId:string;width:number;height:number;layers:readonly ImageEngineLayerSummary[];
   activeLayerId:ImageEngineLayerId|null;selectedLayerIds:readonly ImageEngineLayerId[];
   sourceSelectionPresent:boolean;paintScope:'full-layer'|'source-selection-refused';
@@ -130,12 +132,17 @@ export type ImageEngineVersionSummary = {
 export type ImageEngineThumbnail = {format:'png';width:number;height:number;byteLength:number;sha256:string};
 export type ImageEngineInspection = {summary:ImageEngineVersionSummary;thumbnail:ImageEngineThumbnail;bytes:Uint8Array};
 
-export type ImageEngineSourceOptions={interpretationId?:'photocraft-v1'|'flow-v1-upgrade'};
+export type ImageEngineSourceOptions={interpretationId?:'photocraft-v1'|'flow-v1-upgrade';/** Main-only; Flow explicitly uses 8. */displayTolerance?:number};
 
 /** Exact retained-source provenance, never a user path or Main image authority. */
 export type ImageEngineRetainedIdentity={digest:string;byteLength:number;formatHint:'tiff'|'psd'|'png';interpretationId?:'photocraft-v1'|'flow-v1-upgrade'};
-export type ImageEngineSourceDisplayProof={schema:'flow.source-display-proof';version:1;source:ImageEngineRetainedIdentity;width:number;height:number;embeddedRgbaSha256:string;nativeRgbaSha256:string|null;maxChannelDifference:number|null;tolerance:2};
+export type ImageEngineSourceDisplayProof={schema:'flow.source-display-proof';version:1;source:ImageEngineRetainedIdentity;width:number;height:number;embeddedRgbaSha256:string;nativeRgbaSha256:string|null;maxChannelDifference:number|null;tolerance:number};
 /** A readonly derived display. No native document/version or edit capability. */
 export type ImageEngineReferenceDisplay={bytes:Uint8Array;format:'png';width:number;height:number;byteLength:number;sha256:string;rgbaSha256:string};
 /** Persistent native protection policy; Main separately binds its exact SourceRef. */
 export type ImageEngineProtectedSourcePolicy={kind:'protected-reference';baseLayerId:ImageEngineLayerId;referenceRgbaSha256:string;original:{digest:string;byteLength:number;format:'tiff'|'psd'}};
+
+export function validImageEngineProtectedSourcePolicy(v:unknown):v is ImageEngineProtectedSourcePolicy{
+ if(!shape(v,['kind','baseLayerId','referenceRgbaSha256','original'])||v.kind!=='protected-reference'||!layerId(v.baseLayerId)||typeof v.referenceRgbaSha256!=='string'||!/^[0-9a-f]{64}$/.test(v.referenceRgbaSha256)||!shape(v.original,['digest','byteLength','format']))return false;
+ const o=v.original;return typeof o.digest==='string'&&/^[0-9a-f]{64}$/.test(o.digest)&&Number.isSafeInteger(o.byteLength)&&Number(o.byteLength)>0&&Number(o.byteLength)<=8*1024**2&&(o.format==='tiff'||o.format==='psd');
+}

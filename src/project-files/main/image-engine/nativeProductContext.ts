@@ -1,4 +1,4 @@
-import { validImageEnginePreviewStamp } from '../../../platform/contracts/imageEngine.js';
+import { validImageEnginePreviewStamp,validImageEngineProtectedSourcePolicy } from '../../../platform/contracts/imageEngine.js';
 import type { ImageEngineContextSummary, ImageEngineDisplayIdentity, ImageEngineLayerSummary, ImageEngineLocks, ImageEngineInspection } from '../../../platform/contracts/imageEngine.js';
 import type { NativeImageRef } from '../../../platform/contracts/imageProject.js';
 import { record } from '../../../session/core/imageProjectValues.js';
@@ -44,7 +44,8 @@ export function parseNativeProductContext(v:Record<string,unknown>,displayIdenti
  for(const[k,t]of Object.entries(v.tools)){if(!record(t)||k.length>128)return fail();tools[k]={enabled:bool(t.enabled),...(t.reason===undefined?{}:{reason:t.reason===null?null:text(t.reason,4096)})};}
  if(!['full-layer','source-selection-refused'].includes(String(v.paintScope)))return fail();
  if(!['alpha','backgroundColor'].includes(String(v.eraserBehavior)))return fail();
- return{displayIdentity:{...displayIdentity},imageVersionRef:v.imageVersionRef===null?null:hash(v.imageVersionRef),contextGeneration:generation,layers,activeLayerId:active,selectedLayerIds:selected,selection,temporarySelection,floating,editPreview,candidateId:v.candidateId===null?null:text(v.candidateId,80),inputActive:bool(v.inputActive),pipelineActive:bool(v.pipelineActive),frozen:bool(v.frozen),settlementRequired:bool(v.settlementRequired),tools,paintScope:v.paintScope as 'full-layer'|'source-selection-refused',eraserBehavior:v.eraserBehavior as 'alpha'|'backgroundColor'};
+ const sourceDisplayPolicy=v.sourceDisplayPolicy==null?null:validImageEngineProtectedSourcePolicy(v.sourceDisplayPolicy)?structuredClone(v.sourceDisplayPolicy):fail();if(sourceDisplayPolicy&&!seen.has(sourceDisplayPolicy.baseLayerId))return fail();
+ return{sourceDisplayPolicy,displayIdentity:{...displayIdentity},imageVersionRef:v.imageVersionRef===null?null:hash(v.imageVersionRef),contextGeneration:generation,layers,activeLayerId:active,selectedLayerIds:selected,selection,temporarySelection,floating,editPreview,candidateId:v.candidateId===null?null:text(v.candidateId,80),inputActive:bool(v.inputActive),pipelineActive:bool(v.pipelineActive),frozen:bool(v.frozen),settlementRequired:bool(v.settlementRequired),tools,paintScope:v.paintScope as 'full-layer'|'source-selection-refused',eraserBehavior:v.eraserBehavior as 'alpha'|'backgroundColor'};
 }
 
 export function parseNativeInspection(value:unknown,payload:Uint8Array,expected:NativeImageRef,payloadSha256:string):ImageEngineInspection{
@@ -57,5 +58,6 @@ export function parseNativeInspection(value:unknown,payload:Uint8Array,expected:
  const width=integer(t.width,1,512),height=integer(t.height,1,512);
  if(payload.byteLength<24||![137,80,78,71,13,10,26,10].every((v,i)=>payload[i]===v))return fail();
  const view=new DataView(payload.buffer,payload.byteOffset,payload.byteLength);if(view.getUint32(16)!==width||view.getUint32(20)!==height)return fail();
- return{summary:{versionId:expected.versionId,documentId:expected.documentId,width:expected.width,height:expected.height,layers,activeLayerId:active,selectedLayerIds:selected,sourceSelectionPresent,paintScope},thumbnail:{format:'png',width,height,byteLength:payload.byteLength,sha256:payloadSha256},bytes:new Uint8Array(payload)};
+ const sourceDisplayPolicy=value.sourceDisplayPolicy==null?null:validImageEngineProtectedSourcePolicy(value.sourceDisplayPolicy)?structuredClone(value.sourceDisplayPolicy):fail();if(sourceDisplayPolicy&&!seen.has(sourceDisplayPolicy.baseLayerId))return fail();
+ return{summary:{sourceDisplayPolicy,versionId:expected.versionId,documentId:expected.documentId,width:expected.width,height:expected.height,layers,activeLayerId:active,selectedLayerIds:selected,sourceSelectionPresent,paintScope},thumbnail:{format:'png',width,height,byteLength:payload.byteLength,sha256:payloadSha256},bytes:new Uint8Array(payload)};
 }

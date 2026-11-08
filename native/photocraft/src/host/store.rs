@@ -572,7 +572,7 @@ impl Store {
         &mut self,
         doc: &Document,
         target: &LayerTarget,
-        source: Option<Source>,
+        mut source: Option<Source>,
     ) -> Result<VersionReceipt> {
         admit_document(doc)?;
         let started = std::time::Instant::now();
@@ -586,11 +586,15 @@ impl Store {
         self.writer = writer;
         let append_us = started.elapsed().as_micros();
         let native = prepared.map_err(|e| self.last_error.take().unwrap_or_else(|| io(e)))?;
+        let native_manifest: serde_json::Value = serde_json::from_slice(&native).map_err(io)?;
+        if let Some(source) = source.as_mut() {
+            super::source_guard::bind_manifest(source, &native_manifest, true)?;
+        }
         let version = Version {
             schema: "flow.image-native-snapshot".into(),
             version: 1,
             document_id: doc.id.0.to_string(),
-            native_manifest: serde_json::from_slice(&native).map_err(io)?,
+            native_manifest,
             active_layer: target.active.map(|v| v.0),
             selected_layers: target.selected.iter().map(|v| v.0).collect(),
             source: source.clone(),
@@ -628,7 +632,10 @@ impl Store {
         if sha(&bytes) != id {
             return Err(Error::retained("corrupt", "version hash mismatch"));
         }
-        let v: Version = serde_json::from_slice(&bytes).map_err(io)?;
+        let mut v: Version = serde_json::from_slice(&bytes).map_err(io)?;
+        if let Some(source) = v.source.as_mut() {
+            super::source_guard::bind_manifest(source, &v.native_manifest, false)?;
+        }
         if v.schema != "flow.image-native-snapshot" || v.version != 1 {
             return Err(Error::none("unsupported-version", "native version schema"));
         }

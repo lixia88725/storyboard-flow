@@ -8,6 +8,7 @@ mod journal;
 pub use context::{FloatingAction, LayerIdInput};
 mod product;
 mod product_preview;
+mod source_guard;
 mod source_metadata;
 pub use product::{ProductEdit, SelectionPoint};
 pub use product_preview::PreviewStamp;
@@ -92,6 +93,10 @@ pub struct Source {
     pub format_hint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interpretation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_policy: Option<source_guard::ProtectedPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protected_base_manifest_sha256: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -146,6 +151,7 @@ pub enum Command {
         #[serde(rename = "versionId")]
         version_id: String,
     },
+    AdmitSourceDisplay,
     Summary {
         #[serde(rename = "maxBytes")]
         max_bytes: usize,
@@ -587,6 +593,18 @@ impl Host {
         Ok(())
     }
     fn admit_product_brush(&self, brush: &Value) -> Result<()> {
+        if self
+            .engine
+            .active()
+            .and_then(|s| s.active_layer)
+            .is_some_and(|id| source_guard::protected_target(self, id).unwrap_or(true))
+        {
+            return Err(Error::none(
+                "protected-source",
+                "paint on a new layer above the protected reference base",
+            ));
+        }
+
         if (brush.get("flowBrush").is_some() || brush.get("flowProduct") == Some(&json!(true)))
             && self.document()?.selection.is_some()
         {
@@ -779,6 +797,24 @@ impl Host {
             return Err(Error::none("invalid-input", "unexpected binary payload"));
         }
         match &r.body {
+            Command::AdmitSourceDisplay => {
+                if self.frozen {
+                    return Err(Error::none(
+                        "frozen",
+                        "source display decode cannot begin on a frozen host",
+                    ));
+                }
+                if self.detached.has_inflight() || self.store.shared.input_busy() {
+                    return Err(Error::none(
+                        "backpressure",
+                        "source display decode must begin at an idle input boundary",
+                    ));
+                }
+                Ok((
+                    json!({"kind":"sourceDisplayAdmitted","durable":false}),
+                    vec![],
+                ))
+            }
             Command::Summary { max_bytes } => {
                 Ok((self.context_summary(*max_bytes, false)?, vec![]))
             }
@@ -837,6 +873,7 @@ impl Host {
                 Ok((v, vec![]))
             }
             Command::Open { source } => {
+                detached::preflight_source(source, payload)?;
                 if source
                     .interpretation_id
                     .as_deref()
@@ -900,6 +937,7 @@ impl Host {
                         "stage-A admits RGB8 raster/group documents only",
                     ));
                 }
+                source_guard::rgb_transform(doc.icc_profile.as_ref().map(|p| p.as_slice()))?;
                 self.source = Some(source.clone());
                 self.engine.add_document(doc, None);
                 let v = self.prepare(r, None, None)?;
@@ -1443,6 +1481,16 @@ impl Host {
                     return Err(Error::none("limit", "export maxBytes must be 1..64MiB"));
                 }
                 let loaded = self.store.load(version_id)?;
+                if loaded
+                    .source
+                    .as_ref()
+                    .is_some_and(|s| s.display_policy.is_some())
+                {
+                    return Err(Error::none(
+                        "unsupported-protected-output",
+                        "protected source output requires the forthcoming explicit source-reference metadata contract; original retained",
+                    ));
+                }
                 if document_id
                     .as_ref()
                     .is_some_and(|id| id != &loaded.doc.id.0.to_string())

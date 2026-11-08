@@ -235,7 +235,7 @@ impl Host {
         let erased_to_background = state
             .active_layer
             .is_some_and(|id| doc.effective_locks(id).transparency);
-        let result = json!({"kind":"contextSummary","documentId":doc.id.0.to_string(),"imageVersionRef":self.current,"epoch":self.display_epoch,"contextGeneration":self.context_generation,"maxSummaryBytes":MAX_SUMMARY_BYTES,"layerCount":doc.layer_count(),"layers":layers,"activeLayerId":state.active_layer.map(|id|id.0.to_string()),"selectedLayerIds":state.selected_layers.iter().map(|id|id.0.to_string()).collect::<Vec<_>>(),"background":self.detached.activity(&self.store.shared),"editPreview":self.edit_preview.as_ref().map(|p|p.summary()),"temporarySelection":self.temporary_selection.as_ref().map(|s|s.summary(self)),"selection":{"present":doc.selection.is_some(),"token":self.selection_token(),"bounds":doc.selection.as_ref().map(|s|bounds(s.content_bounds()))},"floating":floating,"candidateId":self.candidate.as_ref().map(|c|&c.id),"inputActive":self.gesture.is_some(),"pipelineActive":pipeline_active,"frozen":self.frozen,"settlementRequired":self.store.context_unsettled()||self.candidate.is_some()||self.edit_preview.is_some(),"tools":tools,"paintScope":if doc.selection.is_some(){"source-selection-refused"}else{"full-layer"},"eraserBehavior":if erased_to_background {"backgroundColor"}else{"alpha"}});
+        let result = json!({"kind":"contextSummary","documentId":doc.id.0.to_string(),"imageVersionRef":self.current,"epoch":self.display_epoch,"contextGeneration":self.context_generation,"maxSummaryBytes":MAX_SUMMARY_BYTES,"layerCount":doc.layer_count(),"layers":layers,"activeLayerId":state.active_layer.map(|id|id.0.to_string()),"selectedLayerIds":state.selected_layers.iter().map(|id|id.0.to_string()).collect::<Vec<_>>(),"background":self.detached.activity(&self.store.shared),"editPreview":self.edit_preview.as_ref().map(|p|p.summary()),"temporarySelection":self.temporary_selection.as_ref().map(|s|s.summary(self)),"selection":{"present":doc.selection.is_some(),"token":self.selection_token(),"bounds":doc.selection.as_ref().map(|s|bounds(s.content_bounds()))},"floating":floating,"candidateId":self.candidate.as_ref().map(|c|&c.id),"inputActive":self.gesture.is_some(),"pipelineActive":pipeline_active,"frozen":self.frozen,"settlementRequired":self.store.context_unsettled()||self.candidate.is_some()||self.edit_preview.is_some(),"tools":tools,"sourceDisplayPolicy":self.source.as_ref().and_then(|s|s.display_policy.as_ref()),"paintScope":if doc.selection.is_some(){"source-selection-refused"}else{"full-layer"},"eraserBehavior":if erased_to_background {"backgroundColor"}else{"alpha"}});
         if serde_json::to_vec(&result).map_err(native)?.len() > max_bytes {
             return Err(Error::none(
                 "limit",
@@ -307,6 +307,17 @@ impl Host {
         }
         match action {
             FloatingAction::Begin { dx, dy } => {
+                if self
+                    .engine
+                    .active()
+                    .and_then(|s| s.active_layer)
+                    .is_some_and(|id| source_guard::protected_target(self, id).unwrap_or(true))
+                {
+                    return Err(Error::none(
+                        "protected-source",
+                        "floating cannot cut the protected reference base",
+                    ));
+                }
                 self.context_idle()?;
                 let checkpoint = self.engine.host_checkpoint().map_err(native)?;
                 if let Err(error) = self
