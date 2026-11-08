@@ -16,6 +16,7 @@ export type ProjectStoreV2={
   load():Promise<ProjectCommitReceipt|null>;
   recordWorkspace?(record:WorkspaceRecoveryRecord):Promise<void>;
   workspaceRecord?(id:string):Promise<WorkspaceRecoveryRecord|null>;
+  workspaceRecordPage?(page:{afterId?:string;maxRecords?:number;kinds:readonly WorkspaceRecoveryRecord['kind'][]}):Promise<{records:WorkspaceRecoveryRecord[];nextAfterId:string|null}>;
   workspaceRecords?(page?:{afterId?:string;maxRecords?:number}):Promise<WorkspaceRecoveryRecord[]>;
   /** Explicit checkpoint/close audit; normal commits reuse the verified leased prefix. */
   validateRecovery():Promise<void>;

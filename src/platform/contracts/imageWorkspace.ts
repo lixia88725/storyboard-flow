@@ -38,6 +38,7 @@ export type ImageWorkspaceImageView = {
  readonly issue?:{readonly code:string;readonly message:string};
 };
 export type ImageWorkspaceContext = {
+ token:string; // Opaque Main navigation/context lifetime, independent of display frames.
  shotId:string|null;imageId:string|null;layerId:ImageWorkspaceLayerId|null;
  generation:number|null;selection:FlowSelection|null;
  floating:null|{previewId:string;inputThrough:number;offset:{x:number;y:number}};
@@ -112,7 +113,7 @@ export type ImageWorkspaceOutcome =
  | {kind:'previewStatus';operationId:string;previewId:string;status:ImageWorkspacePreviewStatus}
  | {kind:'retainedInputRecords';operationId:string;records:readonly {recordId:string;kind:'paint'|'edit';shotId:string;captureId?:string;requestId?:string;capturedThrough?:number}[];nextAfterRecordId:string|null}
  | {kind:'retainedInputExported';operationId:string;recordId:string}
- | {kind:'requestStatus';operationId:string;requestId:string;state:'absent'|'pending'|'committed'|'notCommitted'|'unknown';mainOperationId:string|null}
+ | {kind:'requestStatus';operationId:string;requestId:string;state:'absent'|'pending'|'committed'|'notCommitted'|'unknown'|'completed';mainOperationId:string|null;completion?:{commandKind:ImageWorkspaceCommand['kind'];contextToken:string;shotId:string|null;layerId:string|null;contextGeneration:number|null;outcome:'completed'|'rejected'}}
  | {kind:'editResolved';operationId:string;requestId:string;mainOperationId:string|null;decision:'committed'|'notCommitted';original:{recordId:string}}
  | {kind:'captureStatus';operationId:string;captureId:string;state:'absent'|'admitted'|'recovering'|'resolved';mainOperationId:string|null;inputThrough:number}
  | {kind:'inputResolved';operationId:string;captureId:string;snapshot:ImageWorkspaceSnapshot;
@@ -120,7 +121,7 @@ export type ImageWorkspaceOutcome =
      original:{recordId:string;capturedThrough:number}}
  | {kind:'settlementPending'|'recoveryPending';snapshot:ImageWorkspaceSnapshot;operationId:string;commitHash:string|null;retainedInputs?:readonly RetainedImageInput[]}
  | {kind:'rejected';operationId:string;error:ImageWorkspaceFailure};
-export type ImageWorkspaceRequest = {owner:ImageWorkspaceOwner;requestId:string;command:ImageWorkspaceCommand};
+export type ImageWorkspaceRequest = {owner:ImageWorkspaceOwner;requestId:string;contextToken?:string;command:ImageWorkspaceCommand};
 /** captureId names the whole renderer gesture; inputId names one logical batch;
  * a known effect:none backpressure retry gets a new attemptId. Unknown delivery
  * is queried by captureId/inputId and is never blindly sent a second time. */

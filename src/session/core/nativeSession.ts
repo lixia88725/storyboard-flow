@@ -168,6 +168,15 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     }
     const latest=await store.load();if(!latest)throw Error('Project head disappeared during recovery');
     if(!same(current(),latest.commit.after)){const plan=pendingPlans.get(latest.commit.commitId);if(!plan)throw Error('Durable project/history reconciliation requires reopening this Session');const result=history.commit(plan);if(!result.ok||!same(result.value.after,latest.commit.after))throw Error('Pending history plan differs from committed project');pendingPlans.delete(latest.commit.commitId);}
+    // Auditing drained the old Main writer. A metadata plan absent from the
+    // verified reachable prefix is not committed, and must not hold history/UI
+    // hostage. Its exact accepted request body remains recovery evidence.
+    const reachable=new Set((await store.committed()).map(c=>c.commit.commitId));
+    for(const operationId of [...pendingPlans.keys()])if(!reachable.has(operationId)){
+      if(await store.operationDecision(operationId)||(await store.operationRecord?.(operationId))?.resolution?.decision==='committed')throw Error('Pending plan contradicts a committed image decision');
+      if(store.workspaceRecordPage&&store.recordWorkspace){let cursor:string|undefined;for(;;){const page=await store.workspaceRecordPage({kinds:['request'],maxRecords:16,...(cursor?{afterId:cursor}:{})});const request=page.records.find(r=>r.kind==='request'&&r.operationId===operationId);if(request?.kind==='request'&&request.command.kind==='board'){await store.recordWorkspace({kind:'requestResolution',id:`metadata-resolution-${operationId}`,owner:request.owner,requestId:request.requestId,operationId,decision:'notCommitted',commitHash:null});break;}if(!page.nextAfterId)break;cursor=page.nextAfterId;}}
+      pendingPlans.delete(operationId);
+    }
     head=latest;await installSelected();
     while(recoveryReports.size>64)recoveryReports.delete(recoveryReports.keys().next().value!);
     if(retainedRecoveryInputs.length){recovery={operationId:retainedRecoveryInputs[0].operationId,commitHash:null};phase='recovering';notify();return;}
