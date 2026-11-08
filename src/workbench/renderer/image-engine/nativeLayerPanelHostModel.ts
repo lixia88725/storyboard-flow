@@ -121,11 +121,11 @@ export function createNativeLayerPanelOwner(controller:NativeLayerPanelControlle
   let retainedImage:ImageWorkspaceImageView|undefined;
   const names=new Map<string,{target:LayerPanelTarget;image:ImageWorkspaceImageView;layerId:string;name:string;composing:boolean;version:number}>();let nameSerial=0;
   const listeners=new Set<()=>void>();
-  const publish=(next:Omit<NativeLayerHostState,'revision'>)=>{state=freeze({...clone(next),nameDrafts:[...names.values()].map(({image:_image,...draft})=>clone(draft)),revision:state.revision+1});if(controller.inputPausedExcept)controller.setInputPause?.('layer',state.phase!=='idle');for(const listener of listeners)try{listener();}catch{/* Presentation observers only. */}};
+  const publish=(next:Omit<NativeLayerHostState,'revision'>)=>{state=freeze({...clone(next),nameDrafts:[...names.values()].map(({image:_image,...draft})=>clone(draft)),revision:state.revision+1});if(controller.inputPausedExcept)controller.setInputPause?.('layer',state.phase!=='idle'||names.size>0);for(const listener of listeners)try{listener();}catch{/* Presentation observers only. */}};
   const clear=(resetPanel=false)=>{const resetToken=(state.resetToken??0)+(resetPanel?1:0);retainedEdit=undefined;previewImage=undefined;retainedImage=undefined;publish({phase:'idle',resetToken});};
   const safeStart=()=>{
     const capture=controller.capture.state();
-    if(state.phase!=='idle'||inFlight||capture.activeId!==null||capture.pending||capture.blocked||capture.paused)throw denied('请先完成画布输入或之前的图层操作。');
+    if(state.phase!=='idle'||inFlight||capture.activeId!==null||capture.pending||capture.blocked||(controller.inputPausedExcept?controller.inputPausedExcept('layer'):capture.paused))throw denied('请先完成画布输入或之前的图层操作。');
   };
   const ackName=(target:LayerPanelTarget,edit:ImageEngineEdit)=>{if(edit.kind!=='setLayer'||edit.patch.name===undefined)return;const key=JSON.stringify([target.imageId,edit.layerId]),draft=names.get(key);if(draft&&!draft.composing&&draft.name===edit.patch.name&&sameLayerNative(draft.target.native,target.native)&&draft.target.generation===target.generation)names.delete(key);};
   const advanceNames=(target:LayerPanelTarget,next:ImageWorkspaceSnapshot)=>{

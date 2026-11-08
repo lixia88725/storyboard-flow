@@ -105,5 +105,9 @@
   "src/workbench/renderer/image-engine/workspaceController.test.ts",
   "src/workbench/renderer/image-engine/nativeLayerPanelModel.test.ts",
   "src/platform/main/imageWorkspaceIpc.test.ts",
-  "src/platform/main/imageWorkspaceLifecycle.test.ts"
+  "src/platform/main/imageWorkspaceLifecycle.test.ts",
+  "src/workbench/renderer/image-engine/nativeLayerPanelHostModel.test.ts",
+  "src/drawing/renderer/image-engine/selectionGesture.test.ts",
+  "src/workbench/renderer/image-engine/transformPreviewOwner.test.ts",
+  "src/project-files/main/image-engine/workspaceOutput.test.ts"
 ]

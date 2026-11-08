@@ -53,4 +53,17 @@ describe('native project lifecycle',()=>{
   await life.launch(plan('a'),a.owner);expect(opened).toBe(1);expect(log).toEqual([]);
   expect(await life.certifyClose(a.owner,'a')).toBe(true);expect(log).toEqual(['a:certifyClose','a:dispose']);
  });
+ it('keeps a certified owner when release fails and retries release without a second certification',async()=>{
+  const log:string[]=[],a=runtime('a',log);let attempts=0;
+  a.r.dispose=async()=>{log.push('a:dispose');if(++attempts===1)throw Error('release failed');};
+  const life=createImageWorkspaceLifecycle({open:async()=>a.r,publish:()=>{},report:()=>{}});
+  await life.launch(plan('a'));
+  expect(await life.certifyClose(a.owner,'ticket')).toBe(false);
+  expect(life.current()?.runtime).toBe(a.r);expect(life.retainedCount()).toBe(1);
+  await expect(life.launch(plan('b'),a.owner)).rejects.toThrow('资源释放');
+  expect(await life.certifyClose(a.owner,'ticket')).toBe(true);
+  expect(log).toEqual(['a:certifyClose','a:dispose','a:dispose']);
+  expect(life.current()).toBeNull();expect(life.retainedCount()).toBe(0);
+ });
+
 });

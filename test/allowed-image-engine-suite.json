@@ -6,5 +6,6 @@
   "src/platform/main/imageEngineWorkerOwner.test.ts",
   "src/platform/main/imageEngineContext.test.ts",
   "src/platform/main/imageEngineProductBrush.test.ts",
-  "src/platform/main/imageEngineProductEdit.test.ts"
+  "src/platform/main/imageEngineProductEdit.test.ts",
+  "src/platform/main/imageEngineProductPreview.test.ts"
 ]

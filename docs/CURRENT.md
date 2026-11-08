@@ -6,6 +6,8 @@
 
 主管接点聚焦 7 文件55项通过（`/private/tmp/flow-workspace-chief-focused.log`），随后新增冷准备通知和显示序列/暂停并存的边界由各聚焦日志覆盖；renderer/Electron 类型检查、preload契约检查及一次完整build通过（`/private/tmp/flow-workspace-chief-build.log`）。这些是施工模块证据：默认产品入口尚未切换，后续源码还在修改，未做本轮组合全量、真实工作台GUI或发布验收。Main Runtime、完整Save/Refresh/Pending、旧项目副本升级及实时图层预览仍在接线，不能称为整体完成。用户主树和试用窗口未改。
 
+补充施工证据：图层面板已接入宿主，选区移动/缩放/旋转使用固定起始像素的原生预览，松手才提交一次；本轮三个 UI 接点文件32项通过（`/private/tmp/flow-native-workspace-ui-focused-final.log`），项目生命周期6项通过（`/private/tmp/flow-native-lifecycle-release.log`）。完整renderer/Electron构建通过（`/private/tmp/flow-native-workspace-ui-build.log`）。文件输出候选 `6d6ffac + cb4edc4` 已本地集成：执行者新输出19项及复用文件保护20项通过；尚未与真实Runtime和原生元数据输出串联，不代表正式Save已经可用。新界面由Main明确选择引擎，当前默认入口仍未启用。
+
 本轮发现现有原生帧/输出传输预算尚不覆盖旧32M像素上限，复杂来源自带持久选区也不能被无提示忽略。前者暂按实际额度拒绝而不缩图，后者保留原结构并明确限制正式绘画；完整产品容量与超大图像验收仍待闭合。
 
 ## 图片发动机替换：施工中（2026-11-07）

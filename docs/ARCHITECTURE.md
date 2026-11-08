@@ -38,6 +38,10 @@ V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目�
 
 `platform/main/imageWorkspaceIpc`只负责窗口认证和端口转换，帧节拍与确认属于Runtime。`imageWorkspaceLifecycle`在打开候选前冻结旧Session，候选就绪后由旧Session认证关闭；候选失败恢复旧Session。候选关闭未知则保留对象并阻止下一次切换/退出。renderer各操作通过具名暂停集合协调，不能用一个boolean互相解除关闭与输出门禁。
 
+图层名称草稿、透明度和选区变换由 controller 生命周期内的独立手势 owner 保管，组件卸载不清除未结算输入。预览始终基于固定起始版本；移动事件可合并，松手只提交一次历史编辑，取消需取得对应代次的原生回执。失联或未知结果保留最后接受的完整意图，只有明确的持久保管/结算回执才能解除其关闭义务。
+
+`project-files/main/image-engine/workspaceOutput` 仅维护物理输出账本：冻结的项目决定、原生捕获字节和元数据决定新文件，所有旧名先暂存再独占发布，删除沿用系统废纸篓确认协议。内部输出日志、备份和未知支出使用共享恢复预算。Refresh 先由 Main 安装项目决定，再确认外部文件摘要成为物理基线；该确认不另行安装项目，也不冒充 Save。Session 已认证关闭但资源释放失败时，保留关闭票据，后续只重试释放，不重复认证或恢复已关闭 Session。
+
 ## 运行链与职责
 
 源码按六个概念根组织：`src/workbench` 负责工作台布局和界面接线，`src/storyboard` 负责故事板组织、Pending、动作与对白的模型及界面，`src/drawing` 负责画布与图层，`src/session` 负责编辑状态、队列和历史，`src/project-files` 负责项目文件、资产与 TIFF，`src/platform` 负责 Electron、操作系统和桥接。各根内按运行环境区分，避免浏览器引入 Node 实现。

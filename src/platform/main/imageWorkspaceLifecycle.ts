@@ -11,9 +11,10 @@ export function createImageWorkspaceLifecycle(options:{
  report(error:unknown):void;
 }){
  let current:ImageWorkspaceTarget|null=null,busy=false;
+ let closingTicket:string|undefined;
  const retained=new Map<ImageWorkspaceRuntime,'unclosed'|'certified'>();
  const invoke=(runtime:ImageWorkspaceRuntime,command:ImageWorkspaceCommand)=>runtime.request({owner:runtime.open().snapshot.owner,requestId:`lifecycle-${randomUUID()}`,command});
- const dispose=async(runtime:ImageWorkspaceRuntime)=>{try{await runtime.dispose();retained.delete(runtime);}catch(error){retained.set(runtime,'certified');options.report(error);}};
+ const dispose=async(runtime:ImageWorkspaceRuntime)=>{try{await runtime.dispose();retained.delete(runtime);return true;}catch(error){retained.set(runtime,'certified');options.report(error);return false;}};
  async function closeCandidate(runtime:ImageWorkspaceRuntime){
   retained.set(runtime,'unclosed');
   const prepared=await invoke(runtime,{kind:'prepareClose'});
@@ -40,6 +41,7 @@ export function createImageWorkspaceLifecycle(options:{
   },
   async launch(plan:ImageWorkspaceProjectPlan,owner?:ImageWorkspaceOwner):Promise<ImageWorkspaceBootstrap>{
    if(busy)throw Error('项目正在切换。');authorized(owner);
+   if(closingTicket)throw Error('项目正在完成资源释放，不能重新打开或切换。');
    if(current?.root===plan.root)return current.runtime.open();
    if(retained.size)throw Error('仍有未完成的项目资源处理，暂不能切换。');
    busy=true;const previous=current;let ticket:string|undefined,candidate:ImageWorkspaceRuntime|undefined,previousClosed=false;
@@ -63,10 +65,15 @@ export function createImageWorkspaceLifecycle(options:{
   },
   async certifyClose(owner:ImageWorkspaceOwner,ticket:string){
    if(busy)throw Error('项目正在切换。');authorized(owner);if(!current)throw Error('没有可关闭项目。');
-   if(retained.size)throw Error('仍有未确认关闭的项目资源，不能退出。');
+   if([...retained].some(([runtime,state])=>runtime!==current!.runtime||state!=='certified'))throw Error('仍有未确认关闭的项目资源，不能退出。');
+   if(closingTicket&&closingTicket!==ticket)throw Error('关闭凭据已变化。');
    busy=true;
-   try{const target=current;const result=await invoke(target.runtime,{kind:'certifyClose',ticket});if(result.kind!=='closed')return false;
-    current=null;options.publish(null);await dispose(target.runtime);return true;
+   try{const target=current;
+    if(!closingTicket){const result=await invoke(target.runtime,{kind:'certifyClose',ticket});if(result.kind!=='closed')return false;closingTicket=ticket;}
+    // A certified Session can no longer resume. Retain its owner until resource
+    // release succeeds, and retry release without certifying the Session twice.
+    if(!await dispose(target.runtime))return false;
+    current=null;closingTicket=undefined;options.publish(null);return true;
    }finally{busy=false;}
   },
  };

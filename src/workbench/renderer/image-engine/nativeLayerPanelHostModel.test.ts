@@ -78,7 +78,7 @@ describe('host-owned layer name text obligations',()=>{
     const h=harness(),pauses=new Set<string>();h.controller.setInputPause=(reason,value)=>{value?pauses.add(reason):pauses.delete(reason);h.capture.paused=pauses.size>0;};h.controller.inputPausedExcept=reason=>[...pauses].some(p=>p!==reason);
     const owner=createNativeLayerPanelOwner(h.controller);
     owner.nameDraft(h.image,{layerId:'1',name:'未失焦的完整名称',composing:false,action:'change'});
-    expect(owner.busy()).toBe(true);expect(h.calls).toHaveLength(0);
+    expect(owner.busy()).toBe(true);expect(h.calls).toHaveLength(0);expect(h.capture.paused).toBe(true);expect([...pauses]).toEqual(['layer']);
     h.controller.setInputPause('transition',true);const canBeginGesture=()=>false;expect(canBeginGesture()).toBe(false);
     await owner.flush();
     expect(h.calls).toEqual([{kind:'imageEdit',shotId:'shot',expectedContextGeneration:7,expectedNative:native,edit:{kind:'setLayer',layerId:'1',patch:{name:'未失焦的完整名称'}}}]);
@@ -230,4 +230,10 @@ describe('controller-owned native opacity preview',()=>{
     const h=harness(),owner=createNativeLayerPanelOwner(h.controller);expect(owner.previewAvailable()).toBe(false);
     await expect(owner.opacity(h.image,{phase:'preview',changes})).rejects.toThrow('尚未提供');expect(h.calls).toHaveLength(0);
   });
+});
+
+it('allows a name blur commit through its own input pause while protecting canvas admission',async()=>{
+ const h=harness(),pauses=new Set<string>();h.controller.setInputPause=(reason,value)=>{value?pauses.add(reason):pauses.delete(reason);h.capture.paused=pauses.size>0;};h.controller.inputPausedExcept=reason=>[...pauses].some(p=>p!==reason);
+ const owner=createNativeLayerPanelOwner(h.controller);owner.nameDraft(h.image,{layerId:'1',name:'New',composing:false,action:'change'});expect(h.capture.paused).toBe(true);
+ await owner.edit(h.image,{kind:'setLayer',layerId:'1',patch:{name:'New'}});expect(owner.busy()).toBe(false);expect(h.capture.paused).toBe(false);
 });

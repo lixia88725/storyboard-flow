@@ -1,6 +1,6 @@
-import {useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
 import type {FlowProjectTarget,FlowRecentProject} from '../../../platform/contracts/flowEditor';
-import type {ImageWorkspaceBootstrap,ImageWorkspaceEdit,ImageWorkspaceImageView} from '../../../platform/contracts/imageWorkspace';
+import type {ImageWorkspaceBootstrap} from '../../../platform/contracts/imageWorkspace';
 import {ProjectLauncher} from '../ProjectLauncher';
 import {CreateProjectSheet} from '../CreateProjectSheet';
 import {useCreateProject,type TransitionResult} from '../useCreateProject';
@@ -13,11 +13,12 @@ import {createImageWorkspaceController,type ImageWorkspaceController} from './wo
 /** Project lifecycle shell. A transition first closes renderer admission, then
  * drains drafts, then asks Main to freeze/certify. Failure reopens admission only
  * after the original Main owner is active again. */
-export function NativeFlowEditor({renderLayers}:{renderLayers:(controller:ImageWorkspaceController,image:ImageWorkspaceImageView|undefined,edit:(edit:ImageWorkspaceEdit)=>Promise<void>)=>ReactNode}){
+export function NativeFlowEditor(){
  const [controller,setController]=useState<ImageWorkspaceController>(),[recent,setRecent]=useState<FlowRecentProject[]>([]),[currentRecentId,setCurrentRecentId]=useState<string|null>(null);
  const [busy,setBusy]=useState(false),[issue,setIssue]=useState('');
  const [upgrade,setUpgrade]=useState<import('../../../platform/contracts/imageWorkspace').ImageWorkspaceUpgradeDraft>();
  const current=useRef<ImageWorkspaceController|undefined>(undefined),transition=useRef(false),flush=useRef<()=>Promise<void>>(async()=>{});
+ const retainedClose=useRef<{owner:ImageWorkspaceController;ticket:string}|undefined>(undefined);
  const api=window.flowEditor;
  const refreshRecent=async()=>{const state=await api.launcherState();setRecent(state.recent);setCurrentRecentId(state.currentId);return state;};
  const install=(bootstrap:ImageWorkspaceBootstrap)=>{
@@ -59,21 +60,26 @@ export function NativeFlowEditor({renderLayers}:{renderLayers:(controller:ImageW
  useEffect(()=>api.onClose(id=>{
   const owner=current.current;if(!owner||!beginTransition())return;
   void(async()=>{
-   let ticket:string|undefined;
+   let ticket=retainedClose.current?.owner===owner?retainedClose.current.ticket:undefined;
    try{
     await flush.current();await owner.settleCaptured();
-    const prepared=await owner.request({kind:'prepareClose'});
-    if(prepared.kind!=='closePrepared')throw Error(prepared.kind==='rejected'?prepared.error.message:'项目尚未准备好关闭。');
-    ticket=prepared.ticket;
+    if(!ticket){
+     const prepared=await owner.request({kind:'prepareClose'});
+     if(prepared.kind!=='closePrepared')throw Error(prepared.kind==='rejected'?prepared.error.message:'项目尚未准备好关闭。');
+     ticket=prepared.ticket;retainedClose.current={owner,ticket};
+    }
     // Freeze cannot account for text or pointer samples retained in this renderer.
     await flush.current();await owner.settleCaptured();
     const closed=await api.finishNativeClose(owner.owner,id,ticket);
     if(!closed.ok)throw Error(closed.message??'项目未能确认关闭。');
     if(!owner.dispose())throw Error('窗口仍有未处理输入。');
-    current.current=undefined;
+    current.current=undefined;retainedClose.current=undefined;
    }catch(error){
     setIssue(errorText(error));
-    if(ticket){const resumed=await owner.request({kind:'resume',ticket}).catch(()=>null);if(resumed&&!['settled','recovered'].includes(resumed.kind))setIssue('项目恢复尚未完成，已保留画稿和恢复记录。');}
+    if(ticket){const resumed=await owner.request({kind:'resume',ticket}).catch(()=>null);
+     if(resumed&&['settled','recovered'].includes(resumed.kind))retainedClose.current=undefined;
+     else setIssue('项目关闭或恢复尚未完成，已保留画稿和恢复记录。可以再次尝试关闭。');
+    }
    }finally{await endTransition(owner);}
   })();
  }),[]);
@@ -90,7 +96,7 @@ export function NativeFlowEditor({renderLayers}:{renderLayers:(controller:ImageW
   <span className="wb-menu-label">最近项目</span>{recent.map(item=>item.available?<button key={item.id} disabled={busy||item.id===currentRecentId} onClick={()=>void launch({kind:'recent',id:item.id})}>{item.name}{item.id===currentRecentId?' · 当前':''}</button>:<div key={item.id}>{item.name} · 不可用<button onClick={()=>void relocateRecent(item.id)}>重新定位…</button><button onClick={()=>void removeRecent(item.id)}>移除</button></div>)}
  </div></details>;
  return <><FlowAlert message={issue} onDismiss={()=>setIssue('')}/>
-  {controller?<NativeWorkbenchEditor key={controller.owner.incarnation} controller={controller} externallyPaused={busy} projectMenu={menu} registerTransition={registerTransition} renderLayers={(image,edit)=>renderLayers(controller,image,edit)}/>:<ProjectLauncher recent={recent} busy={busy} message="" onOpen={()=>void open()} onCreate={()=>void create.begin('blank')} onOpenRecent={id=>void launch({kind:'recent',id})} onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent}/>}
+  {controller?<NativeWorkbenchEditor key={controller.owner.incarnation} controller={controller} externallyPaused={busy} projectMenu={menu} registerTransition={registerTransition}/>:<ProjectLauncher recent={recent} busy={busy} message="" onOpen={()=>void open()} onCreate={()=>void create.begin('blank')} onOpenRecent={id=>void launch({kind:'recent',id})} onRemoveRecent={removeRecent} onRelocateRecent={relocateRecent}/>}
   {upgrade&&<UpgradeProjectSheet key={upgrade.id} draft={upgrade} busy={busy}
    onChoose={async()=>{const next=await api.upgradeChooseDestination(upgrade.id);if(next)setUpgrade(next);}}
    onCancel={async()=>{await api.upgradeDiscard(upgrade.id);setUpgrade(undefined);}}
