@@ -3,11 +3,13 @@ import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {verifyPackagedNative} from "../dist-electron/platform/main/photocraftPackage.js";
+import {verifyPackagedNative,assertNativeWorkspacePlatform} from "../dist-electron/platform/main/photocraftPackage.js";
 
 if (process.platform !== "win32") {
   throw new Error("Windows portable packaging must run on Windows.");
 }
+
+assertNativeWorkspacePlatform(process.platform,process.arch);
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootPackageJson = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8"));

@@ -14,7 +14,7 @@ spec.loader.exec_module(validator)
 
 
 class PackageValidation(unittest.TestCase):
-    def fixture(self, windows, omit=None, version="0.1.31", license_bytes=b"project MIT", native_arch_wrong=False, native_target=None, native_digest=None, native_rust=None, signed=False):
+    def fixture(self, windows, omit=None, version="0.1.31", license_bytes=b"project MIT", native_arch_wrong=False, native_target=None, native_digest=None, native_rust=None, signed=False, mutate=None):
         root = "Storyboard Flow-Windows-x64/" if windows else "Storyboard Flow.app/Contents/"
         res = root + ("resources/" if windows else "Resources/")
         app = res + "app/"
@@ -46,18 +46,27 @@ class PackageValidation(unittest.TestCase):
         original_digest = hashlib.sha256(binary).hexdigest()
         if signed:
             binary.extend(b"synthetic signature")
-        files[prefix + ("flow-photocraft.exe" if windows else "flow-photocraft")] = bytes(binary)
+        for name in validator.NATIVE_COMPONENTS.values():
+            files[prefix + name + (".exe" if windows else "")] = bytes(binary)
         licenses = {}
         for leaf in validator.NATIVE_LICENSES + ["source-notices/dependency.txt"]:
             data = ("synthetic " + leaf).encode()
             files[prefix + "licenses/" + leaf] = data
             licenses[leaf] = hashlib.sha256(data).hexdigest()
-        receipt = {"protocol": 1, "upstream": validator.NATIVE_UPSTREAM, "rust": native_rust or validator.NATIVE_RUST,
+        receipt = {"protocol": 2, "profile": "release", "upstream": validator.NATIVE_UPSTREAM, "rust": native_rust or validator.NATIVE_RUST,
                    "platform": "win32" if windows else "darwin", "arch": "x64" if windows else "arm64",
                    "target": native_target or ("x86_64-pc-windows-msvc" if windows else "aarch64-apple-darwin"),
-                   "sourceDigest": "a" * 64, "binarySha256": native_digest or original_digest, "licenses": licenses}
+                   "sourceDigest": "a" * 64, "licenses": licenses}
+        license_digest = hashlib.sha256(json.dumps(licenses, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        receipt["components"] = {kind: {"name": name + (".exe" if windows else ""), "sha256": native_digest or original_digest, "protocol": 1,
+                                      "platform": receipt["platform"], "arch": receipt["arch"], "target": receipt["target"], "profile": "release",
+                                      "capabilities": validator.NATIVE_CAPABILITIES[kind], "licensesSha256": license_digest}
+                                 for kind, name in validator.NATIVE_COMPONENTS.items()}
         if signed:
-            receipt["packagedBinarySha256"] = hashlib.sha256(binary).hexdigest()
+            for component in receipt["components"].values():
+                component["packagedSha256"] = hashlib.sha256(binary).hexdigest()
+        if mutate:
+            mutate(files, receipt, prefix)
         files[prefix + "build.json"] = json.dumps(receipt).encode()
         for script in ["layer-file-permissions.py"]:
             files[app + "scripts/" + script] = b"synthetic helper"
@@ -71,9 +80,10 @@ class PackageValidation(unittest.TestCase):
                 archive.writestr(n, data)
         return target
 
-    def test_both_platforms(self):
-        for windows in [True, False]:
-            validator.validate_package(self.fixture(windows), "0.1.31", b"project MIT")
+    def test_mac_admitted_windows_explicitly_refused(self):
+        validator.validate_package(self.fixture(False), "0.1.31", b"project MIT")
+        with self.assertRaisesRegex(ValueError, "lease is unsupported on Windows"):
+            validator.validate_package(self.fixture(True), "0.1.31", b"project MIT")
 
     def test_missing_notice(self):
         for omit in ["LICENSES.chromium", "sharp-libvips-darwin-arm64/README", "dist-info/LICENSE"]:
@@ -131,6 +141,23 @@ class PackageValidation(unittest.TestCase):
 
     def test_signed_native_binary_receipt(self):
         validator.validate_package(self.fixture(False, signed=True), "0.1.31", b"project MIT")
+
+    def test_each_native_component_required(self):
+        for name in validator.NATIVE_COMPONENTS.values():
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "PhotoCraft"):
+                validator.validate_package(self.fixture(False, omit="photocraft/" + name), "0.1.31", b"project MIT")
+
+    def test_every_component_capability_and_bytes_are_bound(self):
+        for kind in validator.NATIVE_COMPONENTS:
+            def corrupt(files, receipt, prefix):
+                files[prefix + receipt["components"][kind]["name"]] += b"changed"
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, "digest"):
+                validator.validate_package(self.fixture(False, mutate=corrupt), "0.1.31", b"project MIT")
+        for cap in validator.NATIVE_CAPABILITIES["host"]:
+            def remove_cap(files, receipt, prefix):
+                receipt["components"]["host"]["capabilities"] = [c for c in validator.NATIVE_CAPABILITIES["host"] if c != cap]
+            with self.subTest(cap=cap), self.assertRaisesRegex(ValueError, "capability"):
+                validator.validate_package(self.fixture(False, mutate=remove_cap), "0.1.31", b"project MIT")
 
     def test_release_selection_ignores_embedded_python_archives(self):
         target = self.fixture(True)

@@ -3,7 +3,7 @@ import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {verifyPackagedNative,sealSignedNative} from "../dist-electron/platform/main/photocraftPackage.js";
+import {verifyPackagedNative,sealSignedNative,NATIVE_COMPONENTS,nativeName} from "../dist-electron/platform/main/photocraftPackage.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootPackageJson = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8"));
@@ -171,6 +171,7 @@ if (existsSync(wrongPythonDepsPath)) {
   throw new Error(`Python deps were packaged at the wrong nested path: ${wrongPythonDepsPath}`);
 }
 
+for(const kind of NATIVE_COMPONENTS)run('codesign',['--force','--sign','-',path.join(appResources,'photocraft',nativeName('darwin',kind))]);
 run("codesign", ["--force", "--deep", "--sign", "-", appDir]);
 
 await sealSignedNative(path.join(appResources,"photocraft"),"darwin",macArch);

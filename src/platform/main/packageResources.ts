@@ -1,7 +1,7 @@
 import { cp, rm, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import {verifyPreparedNative,nativeName} from "./photocraftPackage.js";
+import {verifyPreparedNative,nativeName,NATIVE_COMPONENTS,verifyPackagedNative} from "./photocraftPackage.js";
 
 export type PackageResourcesResult = {
   photocraft: { source: string; target: string };
@@ -36,8 +36,9 @@ export const preparePackageResources = async ({
   await cp(source,target,{recursive:true});
   await rm(photocraftTarget,{recursive:true,force:true});
   await mkdir(photocraftTarget,{recursive:true});
-  for(const leaf of [nativeName(process.platform),'build.json','licenses'])
+  for(const leaf of [...NATIVE_COMPONENTS.map(k=>nativeName(process.platform,k)),'build.json','licenses'])
     await cp(path.join(native.source,leaf),path.join(photocraftTarget,leaf),{recursive:true});
+  await verifyPackagedNative(photocraftTarget,process.platform,process.arch);
   return {
     photocraft:{source:native.binary,target:photocraftTarget},
     photoshopTiffDeps: {
