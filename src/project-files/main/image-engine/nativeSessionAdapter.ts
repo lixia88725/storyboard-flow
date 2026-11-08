@@ -382,10 +382,11 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       }finally{release();}
     },
     async prepareRetained(operationId,source,formatHint,reservation,sourceOptions={}){
+      formatHint=formatHint==='jpg'?'jpeg':formatHint;
       const op=operationContext();immutableCap();const release=immutableClaim();
       try{const maximum=reservationLimit(reservation),interpretationId=sourceOptions.interpretationId;if(interpretationId!==undefined&&interpretationId!=='photocraft-v1'&&interpretationId!=='flow-v1-upgrade')refuse('Unknown native source interpretation','unsupported');if(interpretationId==='flow-v1-upgrade'&&!op.connection.supports('flowV1UpgradeInterpretationV1'))refuse('Native binary lacks flowV1UpgradeInterpretationV1','unsupported');if(source.byteLength>8<<20)refuse('Source retained but exceeds current 8MiB native hydration admission','unsupported');
         const captured=structuredClone(source),payload=await boundedFile(captured.path,8<<20,captured.identity);op.check();if(payload.length!==captured.byteLength||sha(payload)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
-        if(!['png','tiff','psd'].includes(formatHint))refuse('Unsupported source format hint','unsupported');
+        if(!['png','tiff','psd','jpeg'].includes(formatHint))refuse('Unsupported source format hint','unsupported');if(formatHint==='jpeg'&&!op.connection.supports('retainedRgbJpegV1'))refuse('Native binary lacks retainedRgbJpegV1','unsupported');
         const sourceIdentity={digest:captured.digest,byteLength:captured.byteLength,formatHint,...(interpretationId?{interpretationId}:{})};const started=await call(operationId,{kind:'detachedPrepare',input:{kind:'source',source:sourceIdentity},maxAdditionalBytes:maximum},null,payload);op.check();const value=await waitImmutable(op,operationId,started);op.check();if(!record(value.result.receipt)||!same(value.result.receipt.source,sourceIdentity))refuse('Hydrated source provenance mismatch','protocol','unknown');return detachedPrepared(operationId,value.result,value.payload);
       }finally{release();}
     },

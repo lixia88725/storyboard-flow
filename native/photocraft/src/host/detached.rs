@@ -405,8 +405,13 @@ pub(super) fn preflight_source(source: &Source, payload: &[u8]) -> Result<()> {
             "retained input identity or 8MiB source admission mismatch",
         ));
     }
-    if !["png", "tiff", "psd"].contains(&source.format_hint.as_str()) {
+    if !["png", "tiff", "psd", "jpeg"].contains(&source.format_hint.as_str()) {
         return Err(Error::none("unsupported", "immutable source format hint"));
+    }
+    if source.format_hint == "jpeg"
+        || photocraft_codecs::detect(payload) == Some(photocraft_codecs::Format::Jpeg)
+    {
+        jpeg_admission::validate(payload)?;
     }
     Ok(())
 }

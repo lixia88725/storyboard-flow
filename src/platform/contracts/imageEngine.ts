@@ -135,7 +135,7 @@ export type ImageEngineInspection = {summary:ImageEngineVersionSummary;thumbnail
 export type ImageEngineSourceOptions={interpretationId?:'photocraft-v1'|'flow-v1-upgrade';/** Main-only; Flow explicitly uses 8. */displayTolerance?:number};
 
 /** Exact retained-source provenance, never a user path or Main image authority. */
-export type ImageEngineRetainedIdentity={digest:string;byteLength:number;formatHint:'tiff'|'psd'|'png';interpretationId?:'photocraft-v1'|'flow-v1-upgrade'};
+export type ImageEngineRetainedIdentity={digest:string;byteLength:number;formatHint:'tiff'|'psd'|'png'|'jpeg';interpretationId?:'photocraft-v1'|'flow-v1-upgrade'};
 export type ImageEngineSourceDisplayProof={schema:'flow.source-display-proof';version:1;source:ImageEngineRetainedIdentity;width:number;height:number;embeddedRgbaSha256:string;nativeRgbaSha256:string|null;maxChannelDifference:number|null;tolerance:number};
 /** A readonly derived display. No native document/version or edit capability. */
 export type ImageEngineReferenceDisplay={bytes:Uint8Array;format:'png';width:number;height:number;byteLength:number;sha256:string;rgbaSha256:string};

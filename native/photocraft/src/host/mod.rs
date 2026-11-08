@@ -6,6 +6,7 @@ pub use detached::{DetachedInput, ThumbnailOptions, VersionIdentity};
 mod flow_brush;
 mod journal;
 pub use context::{FloatingAction, LayerIdInput};
+mod jpeg_admission;
 mod product;
 mod product_preview;
 mod source_guard;
@@ -930,8 +931,13 @@ impl Host {
                         "retained input byte identity or budget mismatch",
                     ));
                 }
-                if !["png", "tiff", "psd"].contains(&source.format_hint.as_str()) {
+                if !["png", "tiff", "psd", "jpeg"].contains(&source.format_hint.as_str()) {
                     return Err(Error::none("unsupported", "stage-A input format hint"));
+                }
+                if source.format_hint == "jpeg"
+                    || photocraft_codecs::detect(payload) == Some(photocraft_codecs::Format::Jpeg)
+                {
+                    jpeg_admission::validate(payload)?;
                 }
                 self.intent(r)?;
                 let opts = photocraft_io::ImportOptions {
