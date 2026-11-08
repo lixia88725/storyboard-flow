@@ -223,7 +223,7 @@ impl Host {
         ))
     }
     /// Validate every referenced layer before recording intent or changing context.
-    fn validate_product_edit(&self, edit: &ProductEdit) -> Result<()> {
+    pub(super) fn validate_product_edit(&self, edit: &ProductEdit) -> Result<()> {
         let doc = self.document()?;
         match edit {
             ProductEdit::NewLayer { name } => {
@@ -342,7 +342,7 @@ impl Host {
         }
         Ok(())
     }
-    fn apply_product(&mut self, edit: &ProductEdit) -> Result<()> {
+    pub(super) fn apply_product(&mut self, edit: &ProductEdit) -> Result<()> {
         let selection = self.document()?.selection.clone();
         let geometry = match edit {
             ProductEdit::Blur { selection, .. } => selection.as_deref(),
@@ -470,10 +470,49 @@ impl Host {
         r: &Request,
         edit: &ProductEdit,
         generation: u64,
+        stamp: Option<&PreviewStamp>,
     ) -> Result<(Value, Vec<u8>)> {
         if let Some(v) = self.replay(r)? {
             return Ok((v, vec![]));
         }
+        let preview = if let Some(stamp) = stamp {
+            self.match_edit_preview(stamp, edit)?;
+            let mut p = self
+                .edit_preview
+                .take()
+                .ok_or_else(|| Error::none("not-found", "edit preview missing"))?;
+            p.pending_operation = None;
+            Some(p)
+        } else {
+            None
+        };
+        let result = self.product_edit_transaction(r, edit, generation, preview.as_ref());
+        if match &result {
+            Ok((body, _)) => body["kind"] != "prepared",
+            Err(_) => true,
+        } {
+            if let Some(mut p) = preview {
+                if self
+                    .store
+                    .op_read(&r.operation_id, "intent")
+                    .is_ok_and(|v| v.is_none())
+                {
+                    p.pending_operation = None;
+                } else {
+                    p.pending_operation = Some(r.operation_id.clone());
+                }
+                self.edit_preview = Some(p);
+            }
+        }
+        result
+    }
+    fn product_edit_transaction(
+        &mut self,
+        r: &Request,
+        edit: &ProductEdit,
+        generation: u64,
+        preview: Option<&product_preview::EditPreview>,
+    ) -> Result<(Value, Vec<u8>)> {
         self.base(r)?;
         self.check_context(generation)?;
         self.context_idle()?;
@@ -486,7 +525,14 @@ impl Host {
         self.validate_product_edit(edit)?;
         let checkpoint = self.engine.host_checkpoint().map_err(native)?;
         self.intent(r)?;
-        if let Err(e) = self.apply_product(edit) {
+        let applied = if let Some(p) = preview {
+            self.engine
+                .host_install(p.doc.clone(), p.target.clone())
+                .map_err(native)
+        } else {
+            self.apply_product(edit)
+        };
+        if let Err(e) = applied {
             self.engine.host_restore(checkpoint).map_err(native)?;
             let failure = json!({"kind":"failure","error":Error::retained(&e.code,e.message)});
             self.store.op_write(&r.operation_id, "failed", &failure)?;

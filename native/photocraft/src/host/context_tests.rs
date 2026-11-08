@@ -942,3 +942,178 @@ fn product_paint_preserves_context_generation_and_temporary_outline_until_instal
     assert_eq!(v["kind"], "installed", "{v}");
     assert!(h.h.temporary_selection.is_none());
 }
+
+fn opacity_edit(top: u64, bottom: u64, opacity: f64) -> Value {
+    json!({"kind":"setLayerOpacities","changes":[{"layerId":top.to_string(),"before":1,"opacity":opacity},{"layerId":bottom.to_string(),"before":1,"opacity":opacity}]})
+}
+fn edit_preview(h: &mut Harness, seq: u64, edit: Value) -> Response {
+    h.call("previewControl",json!({"kind":"previewEdit","previewId":"properties","fromSeq":seq,"expectedContextGeneration":h.h.context_generation,"edit":edit}))
+}
+#[test]
+fn product_preview_opacity_is_fixed_cow_atomic_and_cancellable_without_versions() {
+    let mut h = Harness::new();
+    let (_, bottom, top) = h.selected_fixture();
+    let original = state(&h.h);
+    let original_doc = h.h.document().unwrap();
+    let count = fs::read_dir(h.root.join("versions")).unwrap().count();
+    let generation = h.h.context_generation;
+    let first = edit_preview(&mut h, 1, opacity_edit(top, bottom, 0.25));
+    assert_eq!(first.header["body"]["kind"], "frame", "{}", first.header);
+    let first_stamp = first.header["body"]["editPreview"].clone();
+    assert_eq!(state(&h.h), original);
+    assert!(Arc::ptr_eq(&original_doc, &h.h.document().unwrap()));
+    let second = edit_preview(&mut h, 2, opacity_edit(top, bottom, 0.6));
+    let stamp = second.header["body"]["editPreview"].clone();
+    assert_ne!(first.payload, second.payload);
+    assert_eq!(h.h.context_generation, generation);
+    assert_eq!(state(&h.h), original);
+    assert_eq!(
+        fs::read_dir(h.root.join("versions")).unwrap().count(),
+        count
+    );
+    let repeated = edit_preview(&mut h, 2, opacity_edit(top, bottom, 0.6));
+    assert_eq!(repeated.header["body"]["editPreview"], stamp);
+    assert_eq!(repeated.payload, second.payload);
+    let gap = edit_preview(&mut h, 4, opacity_edit(top, bottom, 0.2));
+    assert_eq!(gap.header["body"]["error"]["code"], "conflict");
+    assert_eq!(h.capture().payload, second.payload);
+    assert_eq!(
+        h.body("freeze", json!({"kind":"freeze"}))["error"]["code"],
+        "busy"
+    );
+    assert_eq!(
+        h.body(
+            "oldCancel",
+            json!({"kind":"cancelEditPreview","stamp":first_stamp})
+        )["error"]["code"],
+        "conflict"
+    );
+    assert_eq!(
+        h.body("cancel", json!({"kind":"cancelEditPreview","stamp":stamp}))["kind"],
+        "editPreviewCancelled"
+    );
+    assert_eq!(state(&h.h), original);
+    assert_eq!(h.capture().payload, original.pixels);
+    assert_eq!(h.h.context_generation, generation);
+}
+#[test]
+fn product_preview_adopts_exact_final_pixels_then_main_settles_accept_or_discard() {
+    for accept in [false, true] {
+        let mut h = Harness::new();
+        let (_, bottom, top) = h.selected_fixture();
+        let original = state(&h.h);
+        let count = fs::read_dir(h.root.join("versions")).unwrap().count();
+        let edit = opacity_edit(top, bottom, 0.4);
+        let preview = edit_preview(&mut h, 1, edit.clone());
+        let stamp = preview.header["body"]["editPreview"].clone();
+        let wrong=h.body("wrongFinal",json!({"kind":"productEdit","expectedContextGeneration":h.h.context_generation,"preview":stamp,"edit":opacity_edit(top,bottom,0.2)}));
+        assert_eq!(wrong["error"]["code"], "conflict");
+        assert!(h.h.store.op_read("wrongFinal", "intent").unwrap().is_none());
+        let prepared=h.body("final",json!({"kind":"productEdit","expectedContextGeneration":h.h.context_generation,"preview":stamp,"edit":edit}));
+        assert_eq!(prepared["kind"], "prepared", "{prepared}");
+        assert_eq!(prepared["editPreview"], stamp);
+        assert_eq!(state(&h.h).pixels, preview.payload);
+        let receipt =
+            h.h.store
+                .load(prepared["receipt"]["versionId"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(
+            photocraft_compose::flatten(&receipt.doc).to_rgba8().pixels,
+            preview.payload
+        );
+        assert_eq!(
+            fs::read_dir(h.root.join("versions")).unwrap().count(),
+            count + 1
+        );
+        assert_eq!(
+            h.body(
+                "cancelCandidate",
+                json!({"kind":"cancelEditPreview","stamp":stamp})
+            )["error"]["code"],
+            "busy"
+        );
+        if accept {
+            let version = h.accept("final", &prepared);
+            assert_eq!(h.capture().payload, preview.payload);
+            h = h.reopen(&version);
+            assert_eq!(h.capture().payload, preview.payload);
+        } else {
+            assert_eq!(
+                h.body("discard", json!({"kind":"discard","candidateId":"final"}))["kind"],
+                "discarded"
+            );
+            assert_eq!(state(&h.h), original);
+            assert_eq!(h.capture().payload, original.pixels);
+        }
+        assert!(h.h.edit_preview.is_none());
+    }
+}
+#[test]
+fn product_transform_preview_recomputes_from_original_and_preserves_source_masks() {
+    let mut h = Harness::new();
+    let (_, _, top) = h.selected_fixture();
+    let p = h.edit("selectedColor", json!({"kind":"fill","color":"#000000"}));
+    h.accept("selectedColor", &p);
+    let original = state(&h.h);
+    let edit = |dx| json!({"kind":"transform","layerId":top.to_string(),"selection":polygon_fixture(),"matrix":[1,0,0,1,dx,3]});
+    let checkpoint = h.h.engine.host_checkpoint().unwrap();
+    let final_edit: ProductEdit = serde_json::from_value(edit(7)).unwrap();
+    h.h.apply_product(&final_edit).unwrap();
+    let expected = state(&h.h).pixels;
+    h.h.engine.host_restore(checkpoint).unwrap();
+    let first = edit_preview(&mut h, 1, edit(3));
+    assert_eq!(first.header["body"]["kind"], "frame");
+    let second = edit_preview(&mut h, 2, edit(7));
+    assert_eq!(second.payload, expected);
+    assert_ne!(first.payload, second.payload);
+    assert_eq!(state(&h.h), original);
+    let stamp = second.header["body"]["editPreview"].clone();
+    assert_eq!(
+        h.body("cancel", json!({"kind":"cancelEditPreview","stamp":stamp}))["kind"],
+        "editPreviewCancelled"
+    );
+    assert_eq!(state(&h.h), original);
+}
+#[test]
+fn product_preview_failed_persistence_retains_owner_and_requires_main_resolution() {
+    let mut h = Harness::new();
+    let (_, bottom, top) = h.selected_fixture();
+    let original = state(&h.h);
+    let edit = opacity_edit(top, bottom, 0.4);
+    let preview = edit_preview(&mut h, 1, edit.clone());
+    let stamp = preview.header["body"]["editPreview"].clone();
+    for tile in fs::read_dir(h.root.join("tiles")).unwrap() {
+        fs::write(tile.unwrap().path(), b"retained synthetic corruption").unwrap();
+    }
+    let v=h.body("failedFinal",json!({"kind":"productEdit","expectedContextGeneration":h.h.context_generation,"preview":stamp,"edit":edit}));
+    assert_eq!(v["kind"], "failure", "{v}");
+    assert_eq!(state(&h.h), original);
+    assert_eq!(h.capture().payload, preview.payload);
+    assert_eq!(
+        h.summary()["editPreview"]["pendingOperationId"],
+        "failedFinal"
+    );
+    assert_eq!(
+        h.body("cancel", json!({"kind":"cancelEditPreview","stamp":stamp}))["error"]["code"],
+        "busy"
+    );
+    assert_eq!(
+        h.body(
+            "resolve",
+            json!({"kind":"abandon","targetOperationId":"failedFinal"})
+        )["kind"],
+        "discarded"
+    );
+    assert_eq!(
+        h.body(
+            "cancelAfterDecision",
+            json!({"kind":"cancelEditPreview","stamp":stamp})
+        )["kind"],
+        "editPreviewCancelled"
+    );
+    assert_eq!(state(&h.h), original);
+    eprintln!(
+        "product preview failure evidence retained: {}",
+        h.root.display()
+    );
+}

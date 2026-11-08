@@ -7,7 +7,7 @@ import type { createImageEngineWorkerOwner } from '../../../platform/main/imageE
 import type { NativeFrame } from '../../../platform/main/imageEngineFraming.js';
 import type { NativeImageRef } from '../../../platform/contracts/imageProject.js';
 import { validImageEngineEdit, validImageEnginePreviewStamp } from '../../../platform/contracts/imageEngine.js';
-import type { ImageEngineEdit, ImageEngineEditContext, ImageEngineContextSummary, ImageEngineDisplayIdentity } from '../../../platform/contracts/imageEngine.js';
+import type { ImageEngineEdit, ImageEngineEditContext, ImageEngineContextSummary, ImageEngineDisplayIdentity, ImageEnginePreviewStamp, ImageEnginePreviewResult } from '../../../platform/contracts/imageEngine.js';
 import { validSelection } from '../../../platform/contracts/flowSelection.js';
 import type { FlowSelection } from '../../../platform/contracts/flowSelection.js';
 import { parseNativeProductContext } from './nativeProductContext.js';
@@ -23,6 +23,8 @@ export type NativeProductDriver = {
   summary():Promise<ImageEngineContextSummary>;
   selectLayerContext(base:NativeImageRef,layerId:string,expectedContextGeneration:number):Promise<ImageEngineContextSummary>;
   selectionContext(base:NativeImageRef,layerId:string,selection:FlowSelection|null,expectedContextGeneration:number):Promise<ImageEngineContextSummary>;
+  previewEdit(base:NativeImageRef,previewId:string,fromSeq:number,edit:ImageEngineEdit,expectedContextGeneration:number):Promise<ImageEnginePreviewResult>;
+  cancelEditPreview(base:NativeImageRef,stamp:ImageEnginePreviewStamp):Promise<ImageEngineContextSummary>;
   displayIdentity():ImageEngineDisplayIdentity|null;
   contextGeneration():number|null;
 };
@@ -199,6 +201,22 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     onFault(listener){faultListeners.add(listener);return()=>faultListeners.delete(listener);},
     pipeline,
     summary:contextSummary,
+    async previewEdit(base,previewId,fromSeq,edit,expectedContextGeneration){
+      const op=operationContext();if(!op.connection.supports('productEditPreviewV1'))refuse('Native binary lacks productEditPreviewV1','unsupported');
+      if(!current||!same(base,current))refuse('Preview target is not installed');
+      if(!validImageEngineEdit(edit)||!['setLayerOpacities','transform'].includes(edit.kind)||!Number.isSafeInteger(expectedContextGeneration)||expectedContextGeneration<0||!Number.isSafeInteger(fromSeq)||fromSeq<1||!/^[A-Za-z0-9_-]{1,80}$/.test(previewId))refuse('Invalid product preview input','invalid-input');
+      const{reply}=await call(next(),{kind:'previewEdit',previewId,fromSeq,edit:structuredClone(edit),expectedContextGeneration},base.versionId);op.check();
+      const stamp=reply.editPreview;
+      if(reply.kind!=='frame'||!validImageEnginePreviewStamp(stamp)||stamp.documentId!==base.documentId||stamp.baseVersion!==base.versionId||stamp.previewId!==previewId||stamp.throughSeq!==fromSeq||stamp.sourceContextGeneration!==expectedContextGeneration||stamp.workerEpoch!==display?.workerEpoch||stamp.epoch!==display?.epoch)refuse('Native preview identity mismatch','protocol','unknown');
+      return{stamp:structuredClone(stamp),displayIdentity:{...display!}};
+    },
+    async cancelEditPreview(base,stamp){
+      const op=operationContext();if(!op.connection.supports('productEditPreviewV1'))refuse('Native binary lacks productEditPreviewV1','unsupported');
+      if(!current||!same(base,current)||!validImageEnginePreviewStamp(stamp)||stamp.documentId!==base.documentId||stamp.baseVersion!==base.versionId)refuse('Invalid preview cancellation identity','invalid-input');
+      const captured=structuredClone(stamp),{reply}=await call(next(),{kind:'cancelEditPreview',stamp:captured},base.versionId);op.check();
+      if(reply.kind!=='editPreviewCancelled'||reply.previewId!==captured.previewId||reply.throughSeq!==captured.throughSeq||reply.versionId!==base.versionId||reply.durable!==false)refuse('Native preview cancellation unconfirmed','protocol','unknown');
+      const summary=await contextSummary();op.check();return summary;
+    },
     displayIdentity:()=>display?{...display}:null,
     contextGeneration:()=>contextGeneration,
     selectLayerContext:(base,layerId,generation)=>layerContext('selectLayerContext',base,layerId,generation),
@@ -207,11 +225,12 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       const op=operationContext();
       if(!op.connection.supports('productImageEditsV1'))refuse('Native binary lacks productImageEditsV1','unsupported');
       if(!validImageEngineEdit(edit)||!context||!Number.isSafeInteger(context.expectedContextGeneration)||context.expectedContextGeneration<0||(context.preview!==undefined&&!validImageEnginePreviewStamp(context.preview)))refuse('Invalid product image edit/context','invalid-input');
-      if(context.preview)refuse('Native product preview adoption is not yet supported','unsupported');
-      const captured=structuredClone(edit),generation=context.expectedContextGeneration;
+      if(context.preview&&!op.connection.supports('productEditPreviewV1'))refuse('Native binary lacks productEditPreviewV1','unsupported');
+      const captured=structuredClone(edit),generation=context.expectedContextGeneration,preview=context.preview?structuredClone(context.preview):undefined;
       if(!current||!same(current,base))refuse('Product edit target is not installed');
       await verifyNative(base);op.check();
-      const{reply}=await call(operationId,{kind:'productEdit',edit:captured,expectedContextGeneration:generation},base.versionId);op.check();
+      const{reply}=await call(operationId,{kind:'productEdit',edit:captured,expectedContextGeneration:generation,...(preview?{preview}:{})},base.versionId);op.check();
+      if(preview&&!same(reply.editPreview,preview))refuse('Native preview adoption identity mismatch','protocol','unknown');
       const value=prepared(reply);if(value.baseVersion!==base.versionId||value.native.documentId!==base.documentId)refuse('Native product edit prepared wrong target','protocol','unknown');return value;
     },
 

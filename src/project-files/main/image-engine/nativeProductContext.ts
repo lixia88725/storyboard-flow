@@ -1,3 +1,4 @@
+import { validImageEnginePreviewStamp } from '../../../platform/contracts/imageEngine.js';
 import type { ImageEngineContextSummary, ImageEngineDisplayIdentity, ImageEngineLayerSummary, ImageEngineLocks } from '../../../platform/contracts/imageEngine.js';
 import { record } from '../../../session/core/imageProjectValues.js';
 const fail=():never=>{throw Object.assign(Error('Malformed native product context'),{code:'protocol',effect:'unknown'});};
@@ -26,6 +27,9 @@ export function parseNativeProductContext(v:Record<string,unknown>,displayIdenti
  const active=v.activeLayerId===null?null:id(v.activeLayerId);if(active&&!seen.has(active))return fail();
  if(!Array.isArray(v.selectedLayerIds)||v.selectedLayerIds.length>4096)return fail();const selected=v.selectedLayerIds.map(id);if(new Set(selected).size!==selected.length||selected.some(x=>!seen.has(x)))return fail();
  const generation=integer(v.contextGeneration);
+ let editPreview:ImageEngineContextSummary['editPreview']=null;
+ if(v.editPreview!==null&&v.editPreview!==undefined){const p=v.editPreview;if(!record(p)||!validImageEnginePreviewStamp(p.stamp))return fail();if(p.stamp.documentId!==displayIdentity.documentId||p.stamp.workerEpoch!==displayIdentity.workerEpoch||p.stamp.epoch!==displayIdentity.epoch||p.stamp.sourceContextGeneration!==generation)return fail();editPreview={stamp:structuredClone(p.stamp),pendingOperationId:p.pendingOperationId===null?null:text(p.pendingOperationId,80),blockedReason:p.blockedReason===null?null:text(p.blockedReason,4096)};}
+
  if(!record(v.selection))return fail();const selection={present:bool(v.selection.present),token:v.selection.token===null?null:text(v.selection.token,128),bounds:v.selection.bounds===null?null:box(v.selection.bounds)};
  let temporarySelection:ImageEngineContextSummary['temporarySelection']=null;
  if(v.temporarySelection!==null){const s=v.temporarySelection;if(!record(s))return fail();temporarySelection={layerId:id(s.layerId),documentId:id(s.documentId),contextGeneration:integer(s.contextGeneration),pointCount:integer(s.pointCount,3,4096),token:text(s.token,128),bounds:box(s.bounds)};if(temporarySelection.documentId!==displayIdentity.documentId||!seen.has(temporarySelection.layerId)||temporarySelection.contextGeneration!==generation)return fail();}
@@ -35,5 +39,5 @@ export function parseNativeProductContext(v:Record<string,unknown>,displayIdenti
  for(const[k,t]of Object.entries(v.tools)){if(!record(t)||k.length>128)return fail();tools[k]={enabled:bool(t.enabled),...(t.reason===undefined?{}:{reason:t.reason===null?null:text(t.reason,4096)})};}
  if(!['full-layer','source-selection-refused'].includes(String(v.paintScope)))return fail();
  if(!['alpha','backgroundColor'].includes(String(v.eraserBehavior)))return fail();
- return{displayIdentity:{...displayIdentity},imageVersionRef:v.imageVersionRef===null?null:hash(v.imageVersionRef),contextGeneration:generation,layers,activeLayerId:active,selectedLayerIds:selected,selection,temporarySelection,floating,candidateId:v.candidateId===null?null:text(v.candidateId,80),inputActive:bool(v.inputActive),pipelineActive:bool(v.pipelineActive),frozen:bool(v.frozen),settlementRequired:bool(v.settlementRequired),tools,paintScope:v.paintScope as 'full-layer'|'source-selection-refused',eraserBehavior:v.eraserBehavior as 'alpha'|'backgroundColor'};
+ return{displayIdentity:{...displayIdentity},imageVersionRef:v.imageVersionRef===null?null:hash(v.imageVersionRef),contextGeneration:generation,layers,activeLayerId:active,selectedLayerIds:selected,selection,temporarySelection,floating,editPreview,candidateId:v.candidateId===null?null:text(v.candidateId,80),inputActive:bool(v.inputActive),pipelineActive:bool(v.pipelineActive),frozen:bool(v.frozen),settlementRequired:bool(v.settlementRequired),tools,paintScope:v.paintScope as 'full-layer'|'source-selection-refused',eraserBehavior:v.eraserBehavior as 'alpha'|'backgroundColor'};
 }

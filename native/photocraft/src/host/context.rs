@@ -177,7 +177,8 @@ impl Host {
             let phase=if g.blocked.is_some(){"blocked"}else if self.candidate.as_ref().is_some_and(|c|c.from_floating){"dropPrepared"}else{"active"};
             json!({"previewId":g.id,"throughSeq":g.through,"sourceLayerId":g.layer.to_string(),"offset":[g.offset.0,g.offset.1],"phase":phase,"baseVersion":g.base,"outlineBounds":g.outline.map(|r|json!([i64::from(r.x0)+i64::from(g.offset.0),i64::from(r.y0)+i64::from(g.offset.1),r.width(),r.height()]))})
         });
-        let general_busy = self.frozen
+        let general_busy = self.edit_preview.is_some()
+            || self.frozen
             || self.candidate.is_some()
             || self.gesture.is_some()
             || pipeline_active
@@ -252,7 +253,7 @@ impl Host {
         let erased_to_background = state
             .active_layer
             .is_some_and(|id| doc.effective_locks(id).transparency);
-        let result = json!({"kind":"contextSummary","documentId":doc.id.0.to_string(),"imageVersionRef":self.current,"epoch":self.display_epoch,"contextGeneration":self.context_generation,"maxSummaryBytes":MAX_SUMMARY_BYTES,"layerCount":doc.layer_count(),"layers":tree(doc,&doc.layers),"activeLayerId":state.active_layer.map(|id|id.0.to_string()),"selectedLayerIds":state.selected_layers.iter().map(|id|id.0.to_string()).collect::<Vec<_>>(),"temporarySelection":self.temporary_selection.as_ref().map(|s|s.summary(self)),"selection":{"present":doc.selection.is_some(),"token":self.selection_token(),"bounds":doc.selection.as_ref().map(|s|bounds(s.content_bounds()))},"floating":floating,"candidateId":self.candidate.as_ref().map(|c|&c.id),"inputActive":self.gesture.is_some(),"pipelineActive":pipeline_active,"frozen":self.frozen,"settlementRequired":self.store.context_unsettled()||self.candidate.is_some(),"tools":tools,"paintScope":if doc.selection.is_some(){"source-selection-refused"}else{"full-layer"},"eraserBehavior":if erased_to_background {"backgroundColor"}else{"alpha"}});
+        let result = json!({"kind":"contextSummary","documentId":doc.id.0.to_string(),"imageVersionRef":self.current,"epoch":self.display_epoch,"contextGeneration":self.context_generation,"maxSummaryBytes":MAX_SUMMARY_BYTES,"layerCount":doc.layer_count(),"layers":tree(doc,&doc.layers),"activeLayerId":state.active_layer.map(|id|id.0.to_string()),"selectedLayerIds":state.selected_layers.iter().map(|id|id.0.to_string()).collect::<Vec<_>>(),"editPreview":self.edit_preview.as_ref().map(|p|p.summary()),"temporarySelection":self.temporary_selection.as_ref().map(|s|s.summary(self)),"selection":{"present":doc.selection.is_some(),"token":self.selection_token(),"bounds":doc.selection.as_ref().map(|s|bounds(s.content_bounds()))},"floating":floating,"candidateId":self.candidate.as_ref().map(|c|&c.id),"inputActive":self.gesture.is_some(),"pipelineActive":pipeline_active,"frozen":self.frozen,"settlementRequired":self.store.context_unsettled()||self.candidate.is_some()||self.edit_preview.is_some(),"tools":tools,"paintScope":if doc.selection.is_some(){"source-selection-refused"}else{"full-layer"},"eraserBehavior":if erased_to_background {"backgroundColor"}else{"alpha"}});
         if serde_json::to_vec(&result).map_err(native)?.len() > max_bytes {
             return Err(Error::none(
                 "limit",

@@ -5,7 +5,9 @@ mod flow_brush;
 mod journal;
 pub use context::{FloatingAction, LayerIdInput};
 mod product;
+mod product_preview;
 pub use product::{ProductEdit, SelectionPoint};
+pub use product_preview::PreviewStamp;
 mod output;
 pub use output::OutputFormat;
 mod pipeline;
@@ -118,8 +120,22 @@ pub enum Command {
     },
     ProductEdit {
         edit: ProductEdit,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        preview: Option<PreviewStamp>,
         #[serde(rename = "expectedContextGeneration")]
         expected_context_generation: u64,
+    },
+    PreviewEdit {
+        #[serde(rename = "previewId")]
+        preview_id: String,
+        #[serde(rename = "fromSeq")]
+        from_seq: u64,
+        edit: ProductEdit,
+        #[serde(rename = "expectedContextGeneration")]
+        expected_context_generation: u64,
+    },
+    CancelEditPreview {
+        stamp: PreviewStamp,
     },
     Floating {
         #[serde(rename = "previewId")]
@@ -367,6 +383,7 @@ pub struct Host {
     context_generation: u64,
     floating_context: Option<context::FloatingContext>,
     temporary_selection: Option<product::TemporarySelection>,
+    edit_preview: Option<product_preview::EditPreview>,
     identity: Option<(String, String)>,
     current: Option<String>,
     source: Option<Source>,
@@ -433,6 +450,7 @@ impl Host {
             context_generation: 0,
             floating_context: None,
             temporary_selection: None,
+            edit_preview: None,
             identity: None,
             current: None,
             source: None,
@@ -493,7 +511,7 @@ impl Host {
         if self.frozen {
             return Err(Error::none("frozen", "host frozen"));
         }
-        if self.candidate.is_some() || self.gesture.is_some() {
+        if self.candidate.is_some() || self.gesture.is_some() || self.edit_preview.is_some() {
             return Err(Error::none("busy", "settle candidate or gesture first"));
         }
         if !self.store.unresolved()?.is_empty() {
@@ -626,6 +644,13 @@ impl Host {
             }
         };
         let mut body = json!({"kind":"prepared","candidateId":r.operation_id,"baseVersion":r.base_version,"receipt":receipt});
+        if let Command::ProductEdit {
+            preview: Some(stamp),
+            ..
+        } = &r.body
+        {
+            body["editPreview"] = json!(stamp);
+        }
         if let Some(floating) = &self.floating_context {
             body["floatingPreviewId"] = json!(floating.id);
             body["floatingThroughSeq"] = json!(floating.through);
@@ -682,7 +707,15 @@ impl Host {
             Command::ProductEdit {
                 edit,
                 expected_context_generation,
-            } => self.product_edit(r, edit, *expected_context_generation),
+                preview,
+            } => self.product_edit(r, edit, *expected_context_generation, preview.as_ref()),
+            Command::PreviewEdit {
+                preview_id,
+                from_seq,
+                edit,
+                expected_context_generation,
+            } => self.preview_edit(r, preview_id, *from_seq, edit, *expected_context_generation),
+            Command::CancelEditPreview { stamp } => self.cancel_edit_preview(r, stamp),
             Command::Floating {
                 preview_id,
                 expected_context_generation,
@@ -771,7 +804,11 @@ impl Host {
                 Ok((v, vec![]))
             }
             Command::Load { version_id } => {
-                if self.frozen || self.candidate.is_some() || self.gesture.is_some() {
+                if self.frozen
+                    || self.candidate.is_some()
+                    || self.gesture.is_some()
+                    || self.edit_preview.is_some()
+                {
                     return Err(Error::none("busy", "settle live context before load"));
                 }
                 if self.engine.active().is_some() {
@@ -1076,6 +1113,7 @@ impl Host {
                 self.candidate = None;
                 if clear_temporary {
                     self.temporary_selection = None;
+                    self.edit_preview = None;
                     self.advance_context();
                 }
                 if from_floating {
@@ -1160,6 +1198,7 @@ impl Host {
                 let c = self.candidate.take().ok_or_else(|| {
                     Error::unknown("discard persisted but candidate context missing")
                 })?;
+                self.edit_preview = None;
                 self.temporary_selection = c.temporary_checkpoint;
                 if let Some(checkpoint) = c.checkpoint {
                     self.engine.host_restore(checkpoint).map_err(|e| {
@@ -1326,7 +1365,8 @@ impl Host {
                         "unsettled durable operation receipts; query/accept/discard explicitly",
                     ));
                 }
-                if self.gesture.is_some()
+                if self.edit_preview.is_some()
+                    || self.gesture.is_some()
                     || self.candidate.is_some()
                     || self.floating_context.is_some()
                     || self.engine.active().is_some_and(|s| s.floating.is_some())
@@ -1361,6 +1401,11 @@ impl Host {
         }
         let (doc, preview_id, dirty) = if let Some(g) = &self.gesture {
             (g.live.doc.clone(), Some(g.id.clone()), Some(g.dirty))
+        } else if let Some(p) = &self.edit_preview {
+            if let Some(e) = &p.blocked {
+                return Err(e.clone());
+            }
+            (p.doc.clone(), Some(p.stamp.preview_id.clone()), None)
         } else {
             let st = self
                 .engine

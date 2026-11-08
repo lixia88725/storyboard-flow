@@ -108,7 +108,10 @@ export type ImageEngineContextSummary = {
   selection:{present:boolean;token:string|null;bounds:readonly[number,number,number,number]|null};
   temporarySelection:ImageEngineTemporarySelection|null;
   floating:{previewId:string;throughSeq:number;sourceLayerId:ImageEngineLayerId;phase:'active'|'dropPrepared'|'blocked';baseVersion:string;offset:readonly[number,number];outlineBounds:readonly[number,number,number,number]|null}|null;
+  editPreview:{stamp:ImageEnginePreviewStamp;pendingOperationId:string|null;blockedReason:string|null}|null;
   candidateId:string|null;inputActive:boolean;pipelineActive:boolean;frozen:boolean;settlementRequired:boolean;
   tools:Readonly<Record<string,{enabled:boolean;reason?:string|null}>>;paintScope:'full-layer'|'source-selection-refused';eraserBehavior:'alpha'|'backgroundColor';
 };
 export type ImageEngineEditContext = {expectedContextGeneration:number;preview?:ImageEnginePreviewStamp};
+
+export type ImageEnginePreviewResult = {stamp:ImageEnginePreviewStamp;displayIdentity:ImageEngineDisplayIdentity};

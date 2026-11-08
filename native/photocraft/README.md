@@ -579,3 +579,38 @@ Legacy raw native fixture commands retain their original mask semantics and are
 not a formal workbench entry. Formal startup must require the guard capability;
 `flowBrushPresetsV1` alone does not prove it. Known non-admission clears only that
 Adapter preview marker, so cancellation never invents an unaccepted stroke.
+
+## Volatile product edit preview
+
+`productEditPreviewV1` adds `previewEdit` (first `fromSeq=1`, then consecutive
+prefixes) for absolute multi-layer opacity sets and transforms. It binds one
+preview ID to the accepted version, document, worker/display epoch and source
+context generation. Each update derives a COW document from the fixed original
+and restores the complete real engine checkpoint before returning a frame. A
+repeated prefix is idempotent only with the same edit digest. Only one preview is
+retained; source and result each stay within the 256 MiB retained-pixel admission
+bound. No native version or Undo is created by pointer moves.
+
+The reply supplies the shared `ImageEnginePreviewStamp`. `cancelEditPreview`
+requires its exact final prefix and restores display of the untouched original
+under an explicit epoch barrier. The same ownership handles opacity and transform;
+source intrinsic selection and layer masks do not become preview scratch.
+Selecting a layer, starting paint/pipeline, installing, freezing and closing cannot
+implicitly drop this owner. Main/UI may coalesce not-yet-sent absolute updates but
+must retain admitted identity and final changes across component unmount/failure.
+
+A final `productEdit` can carry the stamp alongside the complete authoritative
+edit. Exact source/digest/prefix matching adopts the already-previewed pixels into
+the normal durable candidate. After that only Main accept/discard settles it;
+preview cancel cannot retire a candidate. If persistence fails or is unknown, the
+volatile owner remains bound to `pendingOperationId`; cancellation/update is
+refused until explicit Main resolution. `summary.editPreview` exposes its stamp,
+pending ID and blocked reason. Restart loses only volatile display state; Main's
+retained full edit and native operation status govern recovery, never an old
+worker's stamp or blind replay.
+
+Verification: the `product_preview_*`/`product_transform_preview_*` native state
+checks and real `imageEngineProductPreview.test.ts` compare fixed-source pixels,
+matched adoption, cancel/discard, one persisted version, reopen, sequence failures
+and retained IO-failure obligations. Frames are native output evidence, not formal
+LayerPanel/Canvas or physical-input performance acceptance.
