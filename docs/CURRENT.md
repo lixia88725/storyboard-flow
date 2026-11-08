@@ -18,6 +18,8 @@ Sources 与独立图像创建候选已本地集成。Sources 只登记清单，�
 
 真实新建按钮组合验收已完成：首次发现 Undo 新板后 Main 已回原板、UI 却过滤成空选择，右侧画布因此消失；原画稿未丢失。主管修复历史成功后的已确认目标选择同步，未改变多选目标时不折叠多选。最终完整 build 与新建白底、一次 Undo、Redo 同身份、原画稿完整 RGBA、关闭重开通过（`/private/tmp/flow-native-workbench-5mLYxZ`、`flow-native-creation-selection-smoke.log`、`flow-native-creation-selection-build.log`）；失败现场 `flow-native-workbench-DwLjxQ` 保留。来源状态提示及真实文件夹导入专项正在接线，尚不计入本次通过。
 
+PNG 按需导入小片 `b2b0b9d` 已合入 `10be55d`。执行者16项真实来源/冷激活/坏图隔离测试与构建通过；主管真实“打开文件夹”→创建→首次绘画→Undo恢复Source身份/Redo→正常关闭→新进程重开通过，外部原件摘要不变。最终中文坏图提示与完整路径复验为 `/private/tmp/flow-native-workbench-UeBT0M`、`flow-native-cold-import-message-{build,gui}.log`。两张小PNG加一张坏图的本次登记进入约508ms（前次434ms），不是大批量或全格式性能承诺。首次脚本未等待创建页结束即继续读取导致失败，现场 `flow-native-workbench-U2SwdR` 保留；同次基本绘画/新板/关闭三阶段已通过。普通PSD/TIFF仍待来源保真保护接点；Save/Refresh仍在接线，来源分区当前默认只容纳本会话32MiB新增长，不能将该施工额度当最终大批导入能力。
+
 打包接点已改为 release reader/host/lease 三组件及同一回执，源码摘要覆盖全部自有 native 源文件；缺少当前正式功能能力即拒包。执行者10项JS、17项ZIP、3项探测协议检查通过，真实旧宿主因缺metadata能力被正确拒绝。主管实际三组件 release 构建、macOS 完整包和严格签名通过（`/private/tmp/flow-native-three-components-{build,package,signature}.log`）；包内签名后 reader/host/lease 实际版本、正常冻结关闭和获取/核对/释放锁通过（`flow-native-signed-three-components-probe.log`）。真实 ZIP 首次因旧校验器无条件拒绝 Electron Framework 正常链接而失败；现只允许包内已知 Framework 的固定相对链接，拒绝逃逸、悬空、链接下伪造成员和原生组件别名，8项合成安全测试及真实 ZIP 复验通过（`flow-native-package-links-tests.log`、`flow-native-three-components-zip-fixed.log`），原失败日志保留。此包对应 dc05141 原生源码，不含后续来源保护/冷复制，尚未做包内真实 GUI 或安装验收。Windows lease当前未实现，三组件打包明确拒绝该平台，这是实际阻断而非仅未运行验收；不以旧发布版的Windows流水线证据替代。
 
 冷准备输入边界：等待目标激活期间的归一化 down/move/up 仍只在 renderer capture owner 内存，Main 此时仅持久保管来源/hydration事实；不能宣称这段窗口遭遇进程崩溃也不丢笔。正常关闭会等待 capture 结算，显式 resolveInput 获得原文 recordId 后才算持久保管。这不等于已完成独立的冷输入崩溃恢复协议。

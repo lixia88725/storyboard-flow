@@ -18,7 +18,7 @@ import {ProjectNamingBar} from '../ProjectNamingBar';
 import {useProjectNaming} from '../useProjectNaming';
 import {createController as createToolController} from '../toolShortcuts';
 import type {ImageWorkspaceController} from './workspaceController';
-import {NativeThumbnail,workspaceShots} from './presentation';
+import {NativeThumbnail,workspaceShots,imageIssueText} from './presentation';
 import {transformPreviewOwnerFor} from './transformPreviewOwner';
 import {NativeLayerPanelHost} from './NativeLayerPanelHost';
 import {layerPanelOwnerFor} from './nativeLayerPanelHostModel';
@@ -170,7 +170,8 @@ export function NativeWorkbenchEditor({controller:c,externallyPaused,projectMenu
  const visibleImages=[...new Set([...project.shots,...project.parkedShots].map(shot=>shot.imageId))].map(id=>snapshot.images[id]);
  const retaining=visibleImages.filter(image=>image?.availability==='queued'||image?.availability==='retaining').length;
  const unavailable=visibleImages.filter(image=>image?.availability==='unavailable').length;
- const sourceStatus=retaining?`项目已打开 · 正在保管 ${retaining} 张原图`:unavailable?`${unavailable} 张图片需处理，其他故事板仍可使用`:'';
+ const sourceUncertain=visibleImages.filter(image=>image?.availability==='recoveryPending').length;
+ const sourceStatus=sourceUncertain?`${sourceUncertain} 张图片的处理结果尚待确认`:retaining?`项目已打开 · 正在保管 ${retaining} 张原图`:unavailable?`${unavailable} 张图片需处理，其他故事板仍可使用`:'';
  const preset=tool==='eraser'?brushPreferences.eraser:brushPreferences.brush,pref=preferenceFor(brushPreferences,preset);
  return <CanvasPresentationContext.Provider value={presentations}>
   <NativeInputRecovery controller={c}/>
@@ -185,7 +186,7 @@ export function NativeWorkbenchEditor({controller:c,externallyPaused,projectMenu
    holdShots={[...new Set([...holdShots,...Object.keys(scripts)])]} renderStatic={staticMedia}
    renderLayers={()=><NativeLayerPanelHost controller={c} image={image} canBeginGesture={canBeginLayer}/>}
    renderInfo={(shot,allowDrag)=><div className="wb-info"><label>动作说明<textarea aria-label={'动作说明 '+shot.id} value={shot.scriptText??''} disabled={!active} onChange={e=>script(shot.id,e.target.value)} onCompositionStart={()=>actionComposing.current.add(shot.id)} onCompositionEnd={e=>{actionComposing.current.delete(shot.id);script(shot.id,e.currentTarget.value);}}/></label>{dialogue(shot.id,false,allowDrag)}</div>}
-   renderCanvas={(shot,previous,next)=><NativeCanvas onion={(previous||next)&&<div className="onion-skin-overlay" aria-hidden="true">{previous&&<div className="onion-skin-ghost onion-skin-ghost-previous"><NativeThumbnail controller={c} image={shotImage(previous)}/></div>}{next&&<div className="onion-skin-ghost onion-skin-ghost-next"><NativeThumbnail controller={c} image={shotImage(next)}/></div>}</div>} key={shot.id} shotId={shot.id} unavailableReason={shotImage(shot)?.availability==='unavailable'?shotImage(shot)?.issue?.message??'这张图片暂时无法打开，请查看提示；其他故事板仍可使用。':undefined} documentId={shotImage(shot)?.displayDocumentId??null} dimensionsKnown={!!shotImage(shot)?.width&&!!shotImage(shot)?.height} cursorSize={pref.size} width={shot.flow!.canvasWidth} height={shot.flow!.canvasHeight} source={c.frames} capture={c.capture} target={snapshot.context.shotId===shot.id&&snapshot.context.layerId!==null&&snapshot.context.generation!==null?{shotId:shot.id,layerId:snapshot.context.layerId,expectedContextGeneration:snapshot.context.generation}:null} tool={tool} style={style} selection={snapshot.context.shotId===shot.id?snapshot.context.selection:null}
+   renderCanvas={(shot,previous,next)=><NativeCanvas onion={(previous||next)&&<div className="onion-skin-overlay" aria-hidden="true">{previous&&<div className="onion-skin-ghost onion-skin-ghost-previous"><NativeThumbnail controller={c} image={shotImage(previous)}/></div>}{next&&<div className="onion-skin-ghost onion-skin-ghost-next"><NativeThumbnail controller={c} image={shotImage(next)}/></div>}</div>} key={shot.id} shotId={shot.id} unavailableReason={['unavailable','recoveryPending'].includes(shotImage(shot)?.availability??'')?imageIssueText(shotImage(shot))??'这张图片暂时无法打开，其他故事板仍可使用。':undefined} documentId={shotImage(shot)?.displayDocumentId??null} dimensionsKnown={!!shotImage(shot)?.width&&!!shotImage(shot)?.height} cursorSize={pref.size} width={shot.flow!.canvasWidth} height={shot.flow!.canvasHeight} source={c.frames} capture={c.capture} target={snapshot.context.shotId===shot.id&&snapshot.context.layerId!==null&&snapshot.context.generation!==null?{shotId:shot.id,layerId:snapshot.context.layerId,expectedContextGeneration:snapshot.context.generation}:null} tool={tool} style={style} selection={snapshot.context.shotId===shot.id?snapshot.context.selection:null}
     onTransform={(phase,selection,matrix,target)=>{
      try{const value:Extract<ImageWorkspaceEdit,{kind:'transform'}>={kind:'transform',layerId:target.layerId,selection,matrix};
       if(phase==='begin'){const view=shotImage(shot),ctx=c.snapshot().context;if(!view||layerOwner.busy()||ctx.shotId!==target.shotId||ctx.generation!==target.expectedContextGeneration)throw Error('变换目标已变化，请重新圈选。');transformOwner.begin(view,value);}

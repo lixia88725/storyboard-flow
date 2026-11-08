@@ -14,6 +14,15 @@ export function workspaceShots(snapshot:ImageWorkspaceSnapshot):Shot[]{
  });
 }
 
+/** Keep low-level codec diagnostics in the snapshot; show an actionable image state. */
+export function imageIssueText(image:ImageWorkspaceImageView|undefined):string|undefined{
+ if(!image?.issue)return undefined;
+ if(image.availability==='recoveryPending')return '这张图片的处理结果尚待确认';
+ if(image.issue.code==='resource-limit'||image.issue.code==='backpressure')return '这张图片超出当前处理额度，原文件未改动';
+ if(image.issue.code==='unsupported')return '这类图片暂时无法编辑，原文件未改动';
+ return '这张图片暂时无法读取，其他图片仍可使用';
+}
+
 export function NativeThumbnail({controller,image}:{controller:ImageWorkspaceController;image:ImageWorkspaceImageView|undefined}){
  const canvas=useRef<HTMLCanvasElement>(null),[issue,setIssue]=useState('');
  useEffect(()=>{
@@ -30,6 +39,6 @@ export function NativeThumbnail({controller,image}:{controller:ImageWorkspaceCon
  },[controller,image?.thumbnailId]);
  return <div className="image-stage flow-native-thumbnail" style={{width:'100%',height:'100%',position:'relative',aspectRatio:`${image?.width??640}/${image?.height??360}`}}>
   <canvas ref={canvas} style={{display:'block',width:'100%',height:'100%',objectFit:'contain'}}/>
-  {(!image?.thumbnailId||issue)&&<span role="status" style={{position:'absolute',inset:0,display:'grid',placeItems:'center',fontSize:12,color:'#aeb5bf'}}>{issue||image?.issue?.message||'正在准备预览…'}</span>}
+  {(!image?.thumbnailId||issue)&&<span role="status" style={{position:'absolute',inset:0,display:'grid',placeItems:'center',fontSize:12,color:'#c5cbd3',background:'#25272a',padding:12,textAlign:'center',boxSizing:'border-box'}}>{issue||imageIssueText(image)||'正在准备预览…'}</span>}
  </div>;
 }

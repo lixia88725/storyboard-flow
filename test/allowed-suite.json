@@ -121,5 +121,6 @@
   "src/project-files/main/image-engine/nativeSessionEdit.test.ts",
   "src/project-files/main/image-engine/nativeSessionCreation.test.ts",
   "src/project-files/main/image-engine/workspaceSources.test.ts",
-  "src/platform/main/photocraftPackage.test.ts"
+  "src/platform/main/photocraftPackage.test.ts",
+  "src/project-files/main/image-engine/workspaceAllowance.test.ts"
 ]

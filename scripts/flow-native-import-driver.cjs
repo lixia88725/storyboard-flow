@@ -10,7 +10,7 @@ dialog.showOpenDialog=async(_window,options)=>{assert.ok(['打开项目或图片
 const receipt=reopen?JSON.parse(fs.readFileSync(path.join(out,'import-result.json'),'utf8')):null;
 process.argv=[process.execPath,__filename,reopen?receipt.root:path.join(out,'project'),path.join(out,'import-userData')];
 const sha=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex'),sourceHashes=Object.fromEntries(fs.readdirSync(source).map(name=>[name,sha(path.join(source,name))]));
-let win;const report={cases:[],stage:'boot'},pause=ms=>new Promise(r=>setTimeout(r,ms)),js=s=>win.webContents.executeJavaScript(s),boot=()=>js('window.flowEditor.imageWorkspace.bootstrap()');
+let win;const report={cases:[],stage:'boot'},pause=ms=>new Promise(r=>setTimeout(r,ms)),js=async s=>{try{return await win.webContents.executeJavaScript(s);}catch(error){throw Error('Renderer expression failed: '+s+'; '+String(error));}},boot=()=>js('window.flowEditor.imageWorkspace.bootstrap()');
 async function wait(fn,label){const deadline=Date.now()+45000;while(Date.now()<deadline){if(await fn())return;await pause(60);}throw Error('timeout '+label);}
 (async()=>{
  await import(pathToFileURL(path.join(repo,'dist-electron/platform/main/flowEditorEntry.js')).href);await app.whenReady();await wait(()=>!!(win=BrowserWindow.getAllWindows()[0]),'window');win.setSize(1400,1000);
@@ -24,6 +24,7 @@ async function wait(fn,label){const deadline=Date.now()+45000;while(Date.now()<d
   await wait(async()=>{try{return(await boot()).snapshot.session.project.shots.length===3;}catch{return false;}},'all three source references registered');report.enteredMs=Date.now()-started;
   const dirs=fs.readdirSync(parent);assert.equal(dirs.length,1);report.root=path.join(parent,dirs[0]);report.cases.push('external folder creates a separate source-backed project via UI');
  }
+ await wait(()=>js('!document.querySelector("[data-create-sheet]")'),'create sheet closed after owner binding');report.stage='first-source';
  const first=(await boot()).snapshot.session.project.shots[0];
  await wait(()=>js('document.querySelectorAll("canvas[data-frame-status=ready]").length===2'),'first source visible');
  const initial=(await boot()).snapshot;assert.equal(initial.session.project.shots.length,3);assert.equal(initial.context.shotId,first.id);
@@ -41,6 +42,7 @@ async function wait(fn,label){const deadline=Date.now()+45000;while(Date.now()<d
   await js('document.querySelector("[aria-label=重做]").click()');
   await wait(async()=> (await boot()).snapshot.session.project.images[first.imageId].content.kind==='native','Redo retains image edit');
   report.revision=(await boot()).snapshot.session.project.revision;report.cases.push('source drawing and ordinary Undo/Redo use one shared history');
+  await wait(()=>js(`document.body.innerText.includes('这张图片暂时无法读取，其他图片仍可使用')`),'bad source isolated with readable explanation');report.cases.push('bad source has a readable message without blocking good images');
  }
  for(const [name,digest]of Object.entries(sourceHashes))assert.equal(sha(path.join(source,name)),digest);report.cases.push('all external originals unchanged');
  fs.writeFileSync(path.join(out,phase+'.png'),(await win.webContents.capturePage()).toPNG());report.stage='close';win.once('closed',()=>{try{assert.equal(certified,1);report.ok=true;}catch(error){report.ok=false;report.error=String(error);}fs.writeFileSync(path.join(out,phase+'-result.json'),JSON.stringify(report,null,2));});win.close();await wait(()=>win.isDestroyed(),'normal close');assert.equal(certified,1);assert.equal(report.ok,true,'closed receipt must certify normal close');app.quit();

@@ -105,3 +105,5 @@ Main 保存链性能复测：使用同一固定 release 宿主，完整构建后
 新的只读控制器、冷输入捕获、Main端口与项目切换测试显式登记在 `test/allowed-suite.json`。真实原生预设与图层命令测试登记在 `test/allowed-image-engine-suite.json`，需以本次能力匹配的原生宿主执行；旧debug binary或只通过TypeScript构建不能替代这些检查。两清单合并去重后才是本轮组合全量。`npm run check:preload`同时检查嵌套imageWorkspace方法、原始输入身份及MessagePort转交；它是隔离桥接检查，不替代真实Electron连接验收。
 
 实际原生工作台专项：完整 `npm run build` 后，设置 `FLOW_IMAGE_HOST` 与 `FLOW_PROJECT_LEASE_BINARY`，运行 `node scripts/flow-native-workbench-smoke.mjs`。它通过私有 `FLOW_NATIVE_WORKSPACE=1` 启动真实入口，使用临时合成原生项目和独立profile，禁止Clipboard/Trash，检查双画布RGBA、真实落笔、Undo/Redo、正常关闭、新进程重开及恢复记录只读入口。`FLOW_CREATION=1` 扩展真实新建板、白底及历史选择回归；`FLOW_SOURCE_IMPORT=1` 扩展合成外部文件夹导入与重开（需已接通来源Runtime，编写存在不等于验收通过）。这个开关只供施工验收，不代表默认入口已迁移；脚本不测试完整Save/Refresh/Pending。原生附加清单中的workspaceCreation还需要已准备的一次性读取组件（见其测试的显式环境变量）。
+
+施工来源GUI：完整build后，`FLOW_SOURCE_IMPORT=1` 增加合成两张PNG/一张坏图的真实打开、绘画历史与重开；仅复验该组可同时设 `FLOW_SOURCE_IMPORT_ONLY=1`。`FLOW_SAVE=1` 的工作文件保存附加断言已准备，尚待Runtime输出接线后执行，不能计为已通过。组件与隔离要求沿用上面的原生工作台脚本。
