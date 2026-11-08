@@ -77,6 +77,8 @@ export type ImageWorkspaceCommand =
  | {kind:'board';command:ImageWorkspaceBoardCommand}
  | {kind:'activateShot';shotId:string}
  | {kind:'demandShots';shotIds:readonly string[]}
+ | {kind:'inspectRequest';requestId:string}
+ | {kind:'resolveEdit';requestId:string;action:'retainAndDiscard'|'exportAndDiscard';original:{shotId:string;expectedNative:NativeImageRef;expectedContextGeneration:number;edit:ImageWorkspaceEdit}}
  | {kind:'inspectCapture';captureId:string}
  | {kind:'resolveInput';captureId:string;action:'retainAndDiscard'|'exportAndDiscard';original:ImageWorkspaceCapturedInput}
  | {kind:'selectLayer';shotId:string;layerId:ImageWorkspaceLayerId;expectedContextGeneration:number}
@@ -106,6 +108,8 @@ export type ImageWorkspaceOutcome =
  | {kind:'previewed';operationId:string;stamp:ImageEnginePreviewStamp;displayIdentity:FrameIdentity}
  | {kind:'previewCanceled';operationId:string;displayIdentity:FrameIdentity}
  | {kind:'previewStatus';operationId:string;previewId:string;status:ImageWorkspacePreviewStatus}
+ | {kind:'requestStatus';operationId:string;requestId:string;state:'absent'|'pending'|'committed'|'notCommitted'|'unknown';mainOperationId:string|null}
+ | {kind:'editResolved';operationId:string;requestId:string;mainOperationId:string|null;decision:'committed'|'notCommitted';original:{recordId:string}}
  | {kind:'captureStatus';operationId:string;captureId:string;state:'absent'|'admitted'|'recovering'|'resolved';mainOperationId:string|null;inputThrough:number}
  | {kind:'inputResolved';operationId:string;captureId:string;snapshot:ImageWorkspaceSnapshot;
      operation:{operationId:string;decision:'committed'|'notCommitted';inputThrough:number}|null;
