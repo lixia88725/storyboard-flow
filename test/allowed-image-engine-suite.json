@@ -11,5 +11,7 @@
   "src/project-files/main/image-engine/nativeSessionEditNative.test.ts",
   "src/project-files/main/image-engine/workspaceRuntime.test.ts",
   "src/project-files/main/image-engine/workspaceCreation.test.ts",
-  "src/platform/main/imageEngineDetached.test.ts"
+  "src/platform/main/imageEngineDetached.test.ts",
+  "src/platform/main/imageEngineV1Interpretation.test.ts",
+  "src/platform/main/imageEngineOutputMetadata.test.ts"
 ]

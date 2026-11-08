@@ -10,6 +10,7 @@ import type {CaptureTarget,CaptureSample,createImageInputCapture} from './captur
 export type NativeCanvasProps={
  shotId:string;documentId:string|null;dimensionsKnown:boolean;cursorSize:number;width:number;height:number;source:FrameViewSource;
  capture:ReturnType<typeof createImageInputCapture>;
+ unavailableReason?:string;
  target:CaptureTarget|null;tool:'brush'|'eraser'|'select'|'blur';
  style(tool:'brush'|'eraser'):Omit<FlowStroke,'points'|'pressures'>;
  selection:FlowSelection|null;onion?:ReactNode;
@@ -69,6 +70,7 @@ export function NativeCanvas(p:NativeCanvasProps){
  },[p.tool]);
  const down=(event:ReactPointerEvent<HTMLDivElement>)=>{
   if(event.button!==0||!event.isPrimary||gesture.current||event.metaKey||event.ctrlKey||event.shiftKey)return;
+  if(p.unavailableReason){event.preventDefault();p.onIssue(p.unavailableReason);return;}
   if(p.capture.state().paused){p.onIssue('正在保存或切换项目，请稍候。');return;}
   event.preventDefault();event.stopPropagation();const point=coordinates(event.nativeEvent);
   if(event.altKey&&p.onPickColor){const view=source.view();if(view.header){const x=Math.floor(point.x),y=Math.floor(point.y);if(x>=0&&y>=0&&x<view.header.width&&y<view.header.height){const rgba=view.readRegion({x,y,w:1,h:1});if(rgba)p.onPickColor('#'+Array.from(rgba.subarray(0,3),v=>v.toString(16).padStart(2,'0')).join(''));}}return;}
@@ -104,7 +106,7 @@ export function NativeCanvas(p:NativeCanvasProps){
  const rotationHandle=selectionBounds?bitmapSelectionRotationHandlePoint(selectionBounds,26/scale,p.height):undefined;
  return <div style={presentation?{position:"relative",background:"#000",paddingBlock:presentation.mode==='expanded'?`${75/p.width*100}%`:undefined}:undefined}><div className="image-stage stage-overlay flow-native-canvas" style={{position:'relative',width:'100%',aspectRatio:`${p.width}/${p.height}`,touchAction:'none'}}>
   <canvas ref={canvas} style={{display:'block',width:'100%',height:'100%',position:'absolute',inset:0}}/>
-  {status!=='ready'&&<div role="status" style={{position:'absolute',inset:0,display:'grid',placeItems:'center',background:'#25272a',color:'#aeb5bf'}}>正在准备画面…</div>}
+  {(status!=='ready'||p.unavailableReason)&&<div role="status" style={{position:'absolute',inset:0,display:'grid',placeItems:'center',background:'#25272a',color:'#aeb5bf'}}>{p.unavailableReason??'正在准备画面…'}</div>}
   {p.onion}
   <div ref={root} data-canvas-input="native" style={{position:'absolute',inset:0,touchAction:'none',cursor:p.tool==='select'?'crosshair':'none'}}
    onPointerDown={down} onPointerMove={move} onPointerLeave={()=>{if(!gesture.current)setCursor(null);}}

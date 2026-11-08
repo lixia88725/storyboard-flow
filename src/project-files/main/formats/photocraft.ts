@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import sharp from 'sharp';
+import {nativeComponentPaths} from '../../../platform/main/photocraftPackage.js';
 import { flowAppRoot } from '../../../platform/main/flowRuntimePaths.js';
 import type { ConvertedSource } from '../imageSourceConversion.js';
 
@@ -21,9 +22,8 @@ async function readJobFile(root:string,leaf:string,cap:number):Promise<Buffer>{
 }
 export function photocraftBinary() {
   const resources = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
-  return (process.env.FLOW_PHOTOCRAFT_BIN ? path.resolve(process.env.FLOW_PHOTOCRAFT_BIN) : undefined) || (path.basename(flowAppRoot) === 'app' && resources
-    ? path.join(resources, 'photocraft', process.platform === 'win32' ? 'flow-photocraft.exe' : 'flow-photocraft')
-    : path.join(flowAppRoot, 'native/photocraft/target/debug', process.platform === 'win32' ? 'flow-photocraft.exe' : 'flow-photocraft'));
+  if(process.env.FLOW_PHOTOCRAFT_BIN)return path.resolve(process.env.FLOW_PHOTOCRAFT_BIN);
+  return nativeComponentPaths({repoRoot:flowAppRoot,resourcesPath:resources,packaged:path.basename(flowAppRoot)==='app'&&!!resources}).reader;
 }
 /** Read-only, one-shot worker. All its writes stay in a private job. A timeout
  * kills and reaps the process before cleanup/return; no original paths cross it. */

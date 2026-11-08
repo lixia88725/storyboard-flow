@@ -16,6 +16,12 @@
 
 Sources 与独立图像创建候选已本地集成。Sources 只登记清单，逐文件保管并优先当前目标；实际读取只核当前原件完整摘要，不先读取整批已保管原件。执行者15项真实文件测试覆盖同批其他坏图不挡当前图、坏图使用时拒绝（`/private/tmp/flow-workspace-sources-target-use.log`）。独立 new/duplicate/source 不切走当前画布，Main 一次批次决定后逐候选确认；原生执行者45项与3个真实连接专项通过。上述仍在 Runtime 接线，尚不能把模块可用称为用户导入、新建及复制流程已经整体完成。
 
+真实新建按钮组合验收已完成：首次发现 Undo 新板后 Main 已回原板、UI 却过滤成空选择，右侧画布因此消失；原画稿未丢失。主管修复历史成功后的已确认目标选择同步，未改变多选目标时不折叠多选。最终完整 build 与新建白底、一次 Undo、Redo 同身份、原画稿完整 RGBA、关闭重开通过（`/private/tmp/flow-native-workbench-5mLYxZ`、`flow-native-creation-selection-smoke.log`、`flow-native-creation-selection-build.log`）；失败现场 `flow-native-workbench-DwLjxQ` 保留。来源状态提示及真实文件夹导入专项正在接线，尚不计入本次通过。
+
+打包接点已改为 release reader/host/lease 三组件及同一回执，源码摘要覆盖全部自有 native 源文件；缺少当前正式功能能力即拒包。执行者10项JS、17项ZIP、3项探测协议检查通过，真实旧宿主因缺metadata能力被正确拒绝。主管实际三组件 release 构建、macOS 完整包和严格签名通过（`/private/tmp/flow-native-three-components-{build,package,signature}.log`）；包内签名后 reader/host/lease 实际版本、正常冻结关闭和获取/核对/释放锁通过（`flow-native-signed-three-components-probe.log`）。真实 ZIP 首次因旧校验器无条件拒绝 Electron Framework 正常链接而失败；现只允许包内已知 Framework 的固定相对链接，拒绝逃逸、悬空、链接下伪造成员和原生组件别名，8项合成安全测试及真实 ZIP 复验通过（`flow-native-package-links-tests.log`、`flow-native-three-components-zip-fixed.log`），原失败日志保留。此包对应 dc05141 原生源码，不含后续来源保护/冷复制，尚未做包内真实 GUI 或安装验收。Windows lease当前未实现，三组件打包明确拒绝该平台，这是实际阻断而非仅未运行验收；不以旧发布版的Windows流水线证据替代。
+
+冷准备输入边界：等待目标激活期间的归一化 down/move/up 仍只在 renderer capture owner 内存，Main 此时仅持久保管来源/hydration事实；不能宣称这段窗口遭遇进程崩溃也不丢笔。正常关闭会等待 capture 结算，显式 resolveInput 获得原文 recordId 后才算持久保管。这不等于已完成独立的冷输入崩溃恢复协议。
+
 本轮发现现有原生帧/输出传输预算尚不覆盖旧32M像素上限，复杂来源自带持久选区也不能被无提示忽略。前者暂按实际额度拒绝而不缩图，后者保留原结构并明确限制正式绘画；完整产品容量与超大图像验收仍待闭合。
 
 ## 图片发动机替换：施工中（2026-11-07）

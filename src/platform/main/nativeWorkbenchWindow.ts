@@ -5,6 +5,7 @@ import {pathToFileURL} from 'node:url';
 import {registerNativeProjectEntry} from './nativeProjectEntry.js';
 import {createImageWorkspaceCreation} from '../../project-files/main/image-engine/workspaceCreation.js';
 import {createWorkspaceRecoveryBudget} from '../../project-files/main/image-engine/workspaceBudget.js';
+import {nativeComponentPaths} from './photocraftPackage.js';
 import {probeImageWorkspaceProject} from '../../project-files/main/image-engine/workspaceProbe.js';
 import type {ImageWorkspaceRuntime,ImageWorkspaceRuntimeOptions} from '../../project-files/main/image-engine/workspaceRuntimeContract.js';
 
@@ -17,7 +18,8 @@ export async function openNativeWorkbenchWindow(options:{window:BrowserWindow;ip
  win.on('close',event=>{if(initializing){wantClose=true;event.preventDefault();}else if(platformEarly?.requestClose())event.preventDefault();});
  win.once('closed',()=>platformEarly?.disposeBridge());
  try{
- const binary=process.env.FLOW_IMAGE_HOST,leaseBinary=process.env.FLOW_PROJECT_LEASE_BINARY;
+ const prepared=process.env.FLOW_IMAGE_HOST&&process.env.FLOW_PROJECT_LEASE_BINARY?undefined:nativeComponentPaths({repoRoot:repo,resourcesPath:process.resourcesPath,packaged:app.isPackaged});
+ const binary=process.env.FLOW_IMAGE_HOST??prepared?.host,leaseBinary=process.env.FLOW_PROJECT_LEASE_BINARY??prepared?.lease;
  for(const file of [binary,leaseBinary]){
   if(!file||!path.isAbsolute(file)||path.normalize(file)!==file)throw Error('新版图片引擎尚未准备好，请先准备已验证的原生组件。');
   const st=await fs.lstat(file);if(!st.isFile()||st.isSymbolicLink()||await fs.realpath(file)!==file)throw Error('原生组件位置无效。');

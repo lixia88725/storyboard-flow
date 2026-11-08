@@ -22,7 +22,7 @@ npm ci
 npm run setup:photoshop-tiff-deps
 ```
 
-扩展 TIFF/PSD 读取及打包还需显式准备 Rust 1.99.1，再运行 `npm run setup:photocraft` 和 `npm run build:photocraft`，详见[组件说明](native/photocraft/README.md)。启动器不会自动安装这些依赖。
+扩展 TIFF/PSD 读取及打包还需显式准备 Rust 1.99.1，再运行 `npm run setup:photocraft` 和 `npm run build:photocraft`，详见[组件说明](native/photocraft/README.md)。启动器不会自动安装这些依赖。图片发动机替换仍在施工，组件准备和当前平台限制见[开发说明](docs/DEVELOPMENT.md#原生工作台施工验证)与[当前进度](docs/CURRENT.md)。
 
 然后双击 `启动 Storyboard Flow.command`。启动器会构建并打开工作台；首次使用时，可以打开已有 Flow 项目，或从 JPEG、PNG、受支持的 TIFF 创建一个独立项目。来源文件保留在原处。开发时可用 `npm run dev` 启动热更新。
 

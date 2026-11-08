@@ -3,6 +3,7 @@ import hashlib
 import re
 import json
 import os
+import posixpath
 from pathlib import Path
 import zipfile
 
@@ -82,6 +83,52 @@ def validate_native(archive, resources, windows):
         raise ValueError("Native workspace lease is unsupported on Windows; packaging is unavailable")
 
 
+def validate_archive_links(archive, windows):
+    """Allow only self-contained macOS framework links, never application aliases."""
+    entries = {item.filename.rstrip("/"): item for item in archive.infolist()}
+    if len(entries) != len(archive.infolist()):
+        raise ValueError("Duplicate or ambiguous ZIP member")
+    for name in entries:
+        if name.startswith("/") or "\\" in name or any(p in ("", ".", "..") for p in name.split("/")):
+            raise ValueError("Unsafe ZIP member path")
+    links = {}
+    for name, item in entries.items():
+        if (item.external_attr >> 16) & 0o170000 != 0o120000:
+            continue
+        match = re.fullmatch(r"(Storyboard Flow\.app/Contents/Frameworks/([^/]+)\.framework)/(.+)", name)
+        if windows or not match or item.file_size > 1024:
+            raise ValueError("Aliased ZIP member")
+        base, framework, leaf = match.groups()
+        if framework not in {"Electron Framework", "Mantle", "ReactiveObjC", "Squirrel"}:
+            raise ValueError("Unexpected framework alias")
+        allowed = {framework, "Resources", "Versions/Current"}
+        if framework == "Electron Framework":
+            allowed.update({"Libraries", "Helpers"})
+        if leaf not in allowed:
+            raise ValueError("Unexpected framework alias")
+        target = archive.read(item).decode("utf-8", errors="strict")
+        expected = "A" if leaf == "Versions/Current" else "Versions/Current/" + leaf
+        if target != expected:
+            raise ValueError("Unsafe framework alias target")
+        links[name] = posixpath.join(posixpath.dirname(name), target)
+    for name in entries:
+        if any(name.startswith(link + "/") for link in links):
+            raise ValueError("ZIP member nested under alias")
+    def resolve(name, seen):
+        parts = name.split("/")
+        for i in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:i])
+            if prefix in links:
+                if prefix in seen:
+                    raise ValueError("Cyclic framework alias")
+                return resolve("/".join([links[prefix]] + parts[i:]), seen | {prefix})
+        if name not in entries and not any(n.startswith(name + "/") for n in entries):
+            raise ValueError("Dangling framework alias")
+        return name
+    for name in links:
+        resolve(name, set())
+
+
 def validate_package(zip_path, version, license_bytes):
     windows = zip_path.name == "Storyboard-Flow-Windows-x64.zip"
     if not windows and zip_path.name != "Storyboard-Flow-macOS-arm64.zip":
@@ -96,8 +143,7 @@ def validate_package(zip_path, version, license_bytes):
         for item in archive.infolist():
             if item.filename.endswith("src/renderer/normalSaveMetadataHistory.test.ts"):
                 raise ValueError("Forbidden source file in package")
-            if (item.external_attr >> 16) & 0o170000 == 0o120000:
-                raise ValueError("Aliased ZIP member")
+        validate_archive_links(archive, windows)
         required = [app + "src/project-files/main/formats/codec.py", app + "src/platform/main/platform/publish_directory.py", app + "src/platform/main/platform/pending_output.py", app + "package.json", app + "LICENSE", app + "dist/index.html",
                     app + "dist-electron/platform/main/flowEditorEntry.js", app + "src/platform/preload/flowEditor.cjs",
                     app + "node_modules/sharp/LICENSE",

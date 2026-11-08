@@ -28,5 +28,22 @@ const before=(await boot()).snapshot.session.project.revision;const mouse=(type,
 win.webContents.sendInputEvent({type:'keyDown',keyCode:'b'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'b'});await delay(100);mouse('mouseDown',r.x+r.w*.3,r.y+r.h*.5);await delay(30);for(let i=1;i<=8;i++){mouse('mouseMove',r.x+r.w*(.3+i*.03),r.y+r.h*.5);await delay(20);}mouse('mouseUp',r.x+r.w*.54,r.y+r.h*.5);
 await wait(async()=> (await boot()).snapshot.session.project.revision===before+1,'paint commit');await wait(()=>js('document.querySelectorAll("canvas[data-frame-status=ready]").length===2'),'paint visible');const painted=await pixels();assert.ok(painted[0].alpha>0);assert.equal(painted[0].rgba,painted[1].rgba);report.cases.push('real pointer stroke committed and equal pixels on both surfaces');fs.writeFileSync(path.join(out,'paint.png'),(await win.webContents.capturePage()).toPNG());
 report.stage='undo';await js('document.querySelector("[aria-label=撤销]").click()');await wait(async()=> (await boot()).snapshot.session.project.revision===before+2,'undo');await wait(async()=>{const p=await pixels();return p.length===2&&p.every(x=>x.alpha===0);},'undo pixels cleared');report.cases.push('undo pixels cleared on both surfaces');report.stage='redo';await js('document.querySelector("[aria-label=重做]").click()');await wait(async()=> (await boot()).snapshot.session.project.revision===before+3,'redo');await wait(async()=>{const p=await pixels();return p.length===2&&p.every(x=>x.rgba===painted[0].rgba);},'redo exact pixels');report.cases.push('redo exact RGBA on both surfaces');
+if(process.env.FLOW_CREATION==='1'){
+ report.stage='new-shot';const revision=(await boot()).snapshot.session.project.revision;
+ await js(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='新建故事板').click()`);
+ await wait(async()=>{const s=(await boot()).snapshot;return s.session.project.shots.length===2&&s.context.shotId!=='a';},'new board activated');
+ const created=(await boot()).snapshot.context.shotId;
+ await wait(async()=>{const p=await pixels();return p.length===2&&p.every(x=>x.alpha===640*360*255);},'new white board visible');
+ const white=await pixels();assert.ok(Buffer.from(white[0].rgba,'base64').every(n=>n===255));assert.equal(white[0].rgba,white[1].rgba);
+ assert.equal((await boot()).snapshot.session.project.revision,revision+1);
+ await js('document.querySelector("[aria-label=撤销]").click()');
+ await wait(async()=>{const s=(await boot()).snapshot;return s.session.project.shots.length===1&&s.context.shotId==='a';},'undo new board');
+ await wait(async()=>{const p=await pixels();return p.length===2&&p.every(x=>x.rgba===painted[0].rgba);},'original drawing remains after new board undo');
+ await js('document.querySelector("[aria-label=重做]").click()');
+ await wait(async()=> (await boot()).snapshot.session.project.shots.some(x=>x.id===created),'redo same board identity');
+ await js('document.querySelector("[aria-label=撤销]").click()');
+ await wait(async()=> (await boot()).snapshot.session.project.shots.length===1,'restore fixture before close');
+ report.cases.push('new white board via UI, one Undo, stable Redo identity, original drawing preserved');
+}
 fs.writeFileSync(path.join(out,'expected-pixels.json'),JSON.stringify(painted[0]));report.stage='close';win.close();await wait(()=>win.isDestroyed(),'certified close');report.cases.push('normal close');report.ok=true;fs.writeFileSync(path.join(out,phase+'-result.json'),JSON.stringify(report,null,2));app.quit();})().catch(async e=>{report.error=String(e.stack||e);if(win&&!win.isDestroyed()){try{fs.writeFileSync(path.join(out,'failed-dom.txt'),await js('document.body.innerText'));fs.writeFileSync(path.join(out,'failed.png'),(await win.webContents.capturePage()).toPNG());}catch{}}
 fs.writeFileSync(path.join(out,phase+'-result.json'),JSON.stringify(report,null,2));console.error(e);app.exit(1);});
