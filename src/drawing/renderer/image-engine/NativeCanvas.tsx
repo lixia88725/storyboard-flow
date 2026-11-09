@@ -94,13 +94,14 @@ export function NativeCanvas(p:NativeCanvasProps){
   const coalesced=event.nativeEvent.getCoalescedEvents?.()??[];
   const samples=(coalesced.length?coalesced:[event.nativeEvent]).map(event=>coordinates(event));
   if(!samples.length)return;g.last=samples.at(-1)!;
-  if(g.captureId!==undefined){if(!p.capture.append(g.captureId,samples))p.onIssue('本笔输入已暂停，请处理保留的笔迹。');}
+  if(g.captureId!==undefined){if(!p.capture.append(g.captureId,samples)){if(!p.capture.contains(g.captureId))end(true);else p.onIssue('本笔输入已暂停，请处理保留的笔迹。');}}
   else if(g.kind==='transform'&&g.transform&&g.target){const next=updateNativeSelectionGesture(g.transform,g.last);g.matrix=next.matrix;setOutline(next.points);p.onTransform('update',g.transform.points,next.matrix,g.target);}
   else if(g.kind==='select'){
    if(g.points.length+samples.length>4096){p.onIssue('选区点数过多，请重新圈选。');end(true);return;}
    g.points.push(...samples);setOutline(g.points.map(({x,y})=>({x,y})));
   }
  };
+ useEffect(()=>{const g=gesture.current;if(g?.captureId!==undefined&&!p.capture.contains(g.captureId))end(true);});
  const shown=outline??p.selection;
  const selectionBounds=shown?bitmapSelectionBounds([...shown]):undefined;
  const rotationHandle=selectionBounds?bitmapSelectionRotationHandlePoint(selectionBounds,26/scale,p.height):undefined;

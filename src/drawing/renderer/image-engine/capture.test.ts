@@ -101,3 +101,25 @@ describe('renderer image input capture',()=>{
  });
 
 });
+
+it('never retargets an already captured concrete gesture after asynchronous resolution',async()=>{
+ const sent:CaptureInput[]=[];const c=createImageInputCapture({resolveTarget:async()=>({ok:true,target:{...target,layerId:'other'}}),input:async input=>{sent.push(input);throw Error('must not send');},settled:async()=>({ok:true})});
+ const b=c.begin(target,style,p(0));if(!b.ok)throw Error();c.end(b.id);await tick();expect(sent).toEqual([]);expect(c.records()[0]).toMatchObject({target,failure:{code:'target'}});expect(c.dispose()).toBe(false);
+});
+it('retains the original when a concrete gesture belongs to a replaced native worker',async()=>{
+ let authority='worker-one';const resolved=deferred<{ok:true;target:typeof target}>();let sends=0;
+ const c=createImageInputCapture({authority:()=>authority,resolveTarget:()=>resolved.promise,input:async()=>{sends++;throw Error();},settled:async()=>({ok:true})});
+ const b=c.begin(target,style,p(0));if(!b.ok)throw Error();c.end(b.id);authority='worker-two';resolved.resolve({ok:true,target});await tick();expect(sends).toBe(0);expect(c.records()[0]).toMatchObject({failure:{code:'target-authority-changed'},stroke:{points:[0,1]}});
+});
+it('releases only a typed cold-layer refusal proven before any begin IPC',async()=>{
+ let notices=0,sends=0;const c=createImageInputCapture({resolveTarget:async()=>({ok:false,notAdmitted:'paint-layer-unavailable',message:'不能绘画'}),notAdmitted:()=>notices++,input:async()=>{sends++;throw Error();},settled:async()=>({ok:true})});
+ const b=c.begin({shotId:'shot',layerId:null,expectedContextGeneration:null},style,p(0));if(!b.ok)throw Error();await tick();expect(sends).toBe(0);expect(notices).toBe(1);expect(c.state()).toMatchObject({pending:0,activeId:null,blocked:false});expect(c.end(b.id)).toBe(false);expect(c.dispose()).toBe(true);
+});
+it('never applies a not-admitted disposition after even a busy begin IPC',async()=>{
+ let resolves=0,sends=0;const c=createImageInputCapture({resolveTarget:async()=>++resolves===1?{ok:true,target}:{ok:false,notAdmitted:'paint-layer-unavailable',message:'不能绘画'},input:async()=>{sends++;return{kind:'rejected',error:{code:'busy',message:'busy',effect:'none'}};},settled:async()=>({ok:true})});
+ const b=c.begin({shotId:'shot',layerId:null,expectedContextGeneration:null},style,p(0));if(!b.ok)throw Error();c.end(b.id);await tick();c.wake();await tick();expect(sends).toBe(1);expect(c.state()).toMatchObject({pending:1,blocked:true});expect(c.records()[0].failure?.effect).toBe('unknown');
+});
+it('preserves a cold candidate when a worker changes before its unpaintable-layer reply',async()=>{
+ let worker='one';const gate=deferred<{ok:false;notAdmitted:'paint-layer-unavailable';message:string}>();const c=createImageInputCapture({workerAuthority:()=>worker,resolveTarget:()=>gate.promise,input:async()=>{throw Error();},settled:async()=>({ok:true})});
+ const b=c.begin({shotId:'shot',layerId:null,expectedContextGeneration:null},style,p(0));if(!b.ok)throw Error();c.end(b.id);worker='two';gate.resolve({ok:false,notAdmitted:'paint-layer-unavailable',message:'不能绘画'});await tick();expect(c.state()).toMatchObject({pending:1,blocked:true});expect(c.records()[0].failure?.code).toBe('target-authority-changed');
+});

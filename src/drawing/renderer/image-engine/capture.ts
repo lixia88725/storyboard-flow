@@ -6,7 +6,7 @@ export type CaptureDestination = CaptureTarget | {shotId:string;layerId:null;exp
 export type CaptureSample = { x:number;y:number;pressure:number };
 export type CaptureFailure = { code:string;message:string;effect:'none'|'retained'|'unknown' };
 export type CaptureRecord = { id:number;captureId:string;coordinateSpace:'pixels'|'normalized';resolvedDimensions?:{width:number;height:number};target:CaptureDestination;stroke:FlowStroke;ended:boolean;operationId?:string;sent:number;failure?:CaptureFailure };
-type Entry = CaptureRecord & { terminalSent:boolean;terminalSending:boolean;cancelled:boolean;batch?:{kind:string;expected:number;inputId:string} };
+type Entry = CaptureRecord & { authority?:string;workerAuthority?:string;beginAttempted:boolean; terminalSent:boolean;terminalSending:boolean;cancelled:boolean;batch?:{kind:string;expected:number;inputId:string} };
 export type CaptureInput = (Extract<ImagePipelineInput,{kind:'begin'}> & CaptureTarget) | Exclude<ImagePipelineInput,{kind:'begin'}>;
 
 /** Synchronous pointer capture, asynchronous Main admission. One queue preserves
@@ -15,8 +15,12 @@ export type CaptureInput = (Extract<ImagePipelineInput,{kind:'begin'}> & Capture
  * neither an IPC receipt nor an end admission is described as durable storage. */
 export function createImageInputCapture(options:{
  input(input:CaptureInput,trace:{captureId:string;inputId:string;attemptId:string}):Promise<ImagePipelineAdmission>;
- resolveTarget?(shotId:string):Promise<{ok:true;target:CaptureTarget;width?:number;height?:number}|{ok:false;error:CaptureFailure}>;
+ authority?():string;
+ workerAuthority?():string|undefined;
+ checkTarget?(target:CaptureDestination):string|undefined;
+ resolveTarget?(shotId:string,expected?:CaptureTarget):Promise<{ok:true;target:CaptureTarget;width?:number;height?:number}|{ok:false;error:CaptureFailure}|{ok:false;notAdmitted:'paint-layer-unavailable';message:string}>;
  settled(operationId:string):Promise<{ok:true}|{ok:false;error:CaptureFailure}>;
+ notAdmitted?(message:string):void;
  changed?():void;
  maxPoints?:number;maxStrokePoints?:number;maxStrokes?:number;
 }) {
@@ -39,6 +43,7 @@ export function createImageInputCapture(options:{
   const beforeWake=wakeVersion;
   let reply:ImagePipelineAdmission;
   if(!e.batch||e.batch.kind!==input.kind||e.batch.expected!==expected)e.batch={kind:input.kind,expected,inputId:crypto.randomUUID()};
+  if(input.kind==='begin')e.beginAttempted=true;
   try{reply=await options.input(input,{captureId:e.captureId,inputId:e.batch.inputId,attemptId:crypto.randomUUID()});}catch{fail(e,{code:'transport',message:'绘画连接中断；已保留输入，未自动重试。',effect:'unknown'});return false;}
   if(reply.kind==='rejected'){
    if(reply.error.effect==='none'&&['backpressure','busy'].includes(reply.error.code)){waiting=true;retryAfterPump=wakeVersion!==beforeWake;notify();return false;}
@@ -56,20 +61,26 @@ export function createImageInputCapture(options:{
     const e=entries.find(item=>!item.terminalSent);if(!e)return;
     if(!e.operationId){
      if(e.cancelled){forget(e);continue;}
-     if(e.target.layerId===null||(e.coordinateSpace==='normalized'&&!e.resolvedDimensions)){
-      if(!options.resolveTarget){fail(e,{code:'target',message:'画布尚未准备好，已保留输入。',effect:'none'});return;}
+     if(options.resolveTarget){
       const beforeResolveWake=wakeVersion;
       let resolved:Awaited<ReturnType<NonNullable<typeof options.resolveTarget>>>;
-      try{resolved=await options.resolveTarget(e.target.shotId);}catch{fail(e,{code:'target-transport',message:'无法确认画布准备结果，已保留输入。',effect:'unknown'});return;}
+      try{resolved=await options.resolveTarget(e.target.shotId,e.target.layerId===null?undefined:e.target);}catch{fail(e,{code:'target-transport',message:'无法确认画布准备结果，已保留输入。',effect:'unknown'});return;}
+      if(e.workerAuthority!==undefined&&e.workerAuthority!==options.workerAuthority?.()){fail(e,{code:'target-authority-changed',message:'原生画布已变化，已保留原始输入。',effect:'none'});return;}
+      // Only an unbound cold candidate proven never sent may end as ordinary admission refusal.
+      // A prior begin attempt, even busy/none, keeps the original recovery obligation.
+      if(!resolved.ok&&'notAdmitted' in resolved){if(e.target.layerId===null&&!e.operationId&&e.sent===0&&!e.beginAttempted){if(active===e)active=undefined;forget(e);options.notAdmitted?.(resolved.message);continue;}fail(e,{code:'invalid-admission',message:resolved.message,effect:'unknown'});return;}
       if(!resolved.ok){if(resolved.error.effect==='none'&&['busy','backpressure'].includes(resolved.error.code)){waiting=true;retryAfterPump=wakeVersion!==beforeResolveWake;notify();return;}fail(e,resolved.error);return;}
-      if(resolved.target.shotId!==e.target.shotId){fail(e,{code:'target',message:'画布准备结果与落笔目标不一致。',effect:'unknown'});return;}
+      if(resolved.target.shotId!==e.target.shotId||(e.target.layerId!==null&&(resolved.target.layerId!==e.target.layerId||resolved.target.expectedContextGeneration!==e.target.expectedContextGeneration))){fail(e,{code:'target',message:'画布准备结果与落笔目标不一致。',effect:'unknown'});return;}
       e.target={...resolved.target};
+      if(e.authority===undefined)e.authority=options.authority?.();
       if(e.coordinateSpace==='normalized'){
        if(!Number.isSafeInteger(resolved.width)||!Number.isSafeInteger(resolved.height)||resolved.width!<=0||resolved.height!<=0){fail(e,{code:'target-size',message:'无法确认图片尺寸，已保留原始输入。',effect:'none'});return;}
        e.resolvedDimensions={width:resolved.width!,height:resolved.height!};
       }
       if(e.cancelled){forget(e);continue;}
      }
+     if(e.authority!==undefined&&e.authority!==options.authority?.()){fail(e,{code:'target-authority-changed',message:'绘画会话或原生画布已变化，已保留原始输入。',effect:'none'});return;}
+     if(e.target.layerId===null||(e.coordinateSpace==='normalized'&&!e.resolvedDimensions)){fail(e,{code:'target',message:'画布尚未准备好，已保留输入。',effect:'none'});return;}
      // Keep begin small even if many samples arrived before the IPC became ready.
      const stroke={...e.stroke,points:nativePoints(e,0,1),pressures:e.stroke.pressures?.slice(0,1)};
      if(!await admitted(e,{kind:'begin',...e.target,stroke},1))return;
@@ -96,11 +107,12 @@ export function createImageInputCapture(options:{
  return {
   begin(target:CaptureDestination,style:Omit<FlowStroke,'points'|'pressures'>,point:CaptureSample,coordinateSpace:'pixels'|'normalized'='pixels'):{ok:true;id:number}|{ok:false;reason:string}{
    if(disposed||paused||active||blocked())return{ok:false,reason:'绘画正在结算或等待处理。'};
+   const reason=options.checkTarget?.(target);if(reason)return{ok:false,reason};
    // Reserve a complete gesture before accepting down. Existing accepted input
    // is never evicted to make room for a new gesture.
    if(entries.length>=maxStrokes||entries.reduce((n,e)=>n+e.stroke.points.length/2,0)+maxStrokePoints>maxPoints)return{ok:false,reason:'正在保存之前的笔迹，请稍候。'};
    if(!sampleValid(point))return{ok:false,reason:'无效的落笔坐标或压力。'};
-   const e:Entry={id:++nextId,captureId:crypto.randomUUID(),coordinateSpace,target:{...target},stroke:{...structuredClone(style),points:[point.x,point.y],pressures:[point.pressure]},ended:false,sent:0,terminalSent:false,terminalSending:false,cancelled:false};
+   const e:Entry={workerAuthority:options.workerAuthority?.(),beginAttempted:false,authority:target.layerId===null?undefined:options.authority?.(),id:++nextId,captureId:crypto.randomUUID(),coordinateSpace,target:{...target},stroke:{...structuredClone(style),points:[point.x,point.y],pressures:[point.pressure]},ended:false,sent:0,terminalSent:false,terminalSending:false,cancelled:false};
    entries.push(e);active=e;notify();kick();return{ok:true,id:e.id};
   },
   append(id:number,points:readonly CaptureSample[]):boolean{
@@ -130,7 +142,8 @@ export function createImageInputCapture(options:{
    if(running||!e||!e.ended||active===e||capturedThrough!==e.stroke.points.length/2)return false;
    forget(e);kick();return true;
   },
-  records():readonly CaptureRecord[]{return entries.map(({terminalSent:_sent,terminalSending:_sending,cancelled:_cancel,batch:_batch,...record})=>structuredClone(record));},
+  contains(id:number){return entries.some(entry=>entry.id===id);},
+  records():readonly CaptureRecord[]{return entries.map(({workerAuthority:_worker,beginAttempted:_attempted,authority:_authority,terminalSent:_sent,terminalSending:_sending,cancelled:_cancel,batch:_batch,...record})=>structuredClone(record));},
   state(){return{activeId:active?.id??null,pending:entries.length,blocked:blocked(),waiting,paused,disposed};},
   /** The caller must settle or explicitly preserve inputs before disposing. */
   dispose(){if(entries.length||running)return false;disposed=true;notify();return true;},

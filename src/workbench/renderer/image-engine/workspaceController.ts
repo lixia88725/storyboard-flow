@@ -74,9 +74,23 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
   });
   return {requestId,result};
  }
+ const paintReason=(shotId:string,layerId:string|null)=>{
+  const ctx=snapshot.context,view=ctx.shotId===shotId&&ctx.imageId?snapshot.images[ctx.imageId]:undefined;
+  if(!view||layerId===null)return undefined; // A cold target is resolved once after activation.
+  const layer=view.layers.find(layer=>layer.id===layerId);
+  return layer?.capabilities.paint?undefined:'当前图层不能绘画，请选择可绘画图层或新建图层。';
+ };
  const capture=createImageInputCapture({
+  notAdmitted:message=>setFault({code:"paint-layer-unavailable",message,effect:"none"}),
+  workerAuthority:()=>{const epoch=displayIdentity(projected)?.workerEpoch;return epoch===undefined?undefined:JSON.stringify([owner,epoch]);},
+  authority:()=>JSON.stringify([owner,snapshot.context.token,displayIdentity(projected)?.workerEpoch??null]),
+  checkTarget:target=>{
+   if(target.layerId!==null&&(snapshot.context.shotId!==target.shotId||snapshot.context.layerId!==target.layerId||snapshot.context.generation!==target.expectedContextGeneration))return '绘画目标已变化，请重新落笔。';
+   return paintReason(target.shotId,target.layerId);
+  },
   input:(value,trace)=>bridge.input(owner,value,trace),
-  async resolveTarget(shotId){
+  async resolveTarget(shotId,expected){
+   if(expected){const ctx=snapshot.context;if(ctx.shotId!==shotId||ctx.layerId!==expected.layerId)return{ok:false,error:{code:"paint-target-changed",message:"绘画目标已变化，已保留原始输入。",effect:"none"}};const reason=paintReason(shotId,expected.layerId);if(reason)return{ok:false,error:{code:"paint-layer-unavailable",message:reason,effect:"none"}};const view=ctx.imageId?snapshot.images[ctx.imageId]:undefined;return{ok:true,target:{...expected},width:view?.width,height:view?.height};}
    let context=snapshot.context;
    if(context.shotId!==shotId||context.layerId===null||context.generation===null){
     const result=await request({kind:'activateShot',shotId});
@@ -86,6 +100,7 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
    }
    if(context.shotId!==shotId||context.layerId===null||context.generation===null)return{ok:false,error:{code:'busy',message:'正在准备落笔目标。',effect:'none'}};
    const view=context.imageId?snapshot.images[context.imageId]:undefined;
+   const reason=paintReason(shotId,context.layerId);if(reason)return{ok:false,notAdmitted:'paint-layer-unavailable',message:reason};
    return{ok:true,target:{shotId,layerId:context.layerId,expectedContextGeneration:context.generation},width:view?.width,height:view?.height};
   },
   async settled(operationId){

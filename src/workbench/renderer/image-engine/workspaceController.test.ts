@@ -3,7 +3,7 @@ import {createImageWorkspaceController} from './workspaceController';
 import type {ImageWorkspaceBootstrap,ImageWorkspaceBridge,ImageWorkspaceEvent,ImageWorkspaceFramePort,ImageWorkspaceOutcome,ImageWorkspaceRequest} from '../../../platform/contracts/imageWorkspace';
 const owner={sessionId:'session',incarnation:'incarnation',workspaceEpoch:1};
 const displayed={sessionId:'session',incarnation:'incarnation',documentId:'doc',workerEpoch:3,epoch:5};
-const boot=():ImageWorkspaceBootstrap=>({snapshot:{owner,stateSeq:1,session:{sessionId:'session',incarnation:'incarnation',eventSeq:1,project:{schema:'storyboard-flow.project',version:2,id:'p',revision:0,name:'Test',shots:[],parkedShots:[],dialogues:[],images:{}},phase:'active',pending:0,undoDepth:0,redoDepth:0},context:{token:'context-1',shotId:'shot',imageId:'img',layerId:'1',generation:1,selection:null,floating:null},images:{img:{imageId:'img',content:{kind:'source',source:{importId:'import',itemId:'item',interpretationId:'interpretation'}},availability:'editable',layers:[],activeLayerId:'1',contextGeneration:1,displayDocumentId:'doc',displayNative:null,displayIdentity:displayed}},files:{projectRootLabel:'Test',folderName:'Test',status:'current',savedRevision:0,outputPending:false,outputNames:[]}},capabilities:{commands:[],imageEdits:[],brushTips:['hard']},frames:{owner,nonce:'nonce',streamGeneration:1}});
+const boot=():ImageWorkspaceBootstrap=>({snapshot:{owner,stateSeq:1,session:{sessionId:'session',incarnation:'incarnation',eventSeq:1,project:{schema:'storyboard-flow.project',version:2,id:'p',revision:0,name:'Test',shots:[],parkedShots:[],dialogues:[],images:{}},phase:'active',pending:0,undoDepth:0,redoDepth:0},context:{token:'context-1',shotId:'shot',imageId:'img',layerId:'1',generation:1,selection:null,floating:null},images:{img:{imageId:'img',content:{kind:'source',source:{importId:'import',itemId:'item',interpretationId:'interpretation'}},availability:'editable',layers:[{id:'1',parentId:null,name:'Paint',kind:'raster',visible:true,locked:false,opacity:1,blendMode:'normal',editable:true,capabilities:{paint:true,properties:true,structure:true}}],activeLayerId:'1',contextGeneration:1,displayDocumentId:'doc',displayNative:null,displayIdentity:displayed}},files:{projectRootLabel:'Test',folderName:'Test',status:'current',savedRevision:0,outputPending:false,outputNames:[]}},capabilities:{commands:[],imageEdits:[],brushTips:['hard']},frames:{owner,nonce:'nonce',streamGeneration:1}});
 function setup(){
  const b=boot();let event!:(e:ImageWorkspaceEvent)=>void,attach!:(p:ImageWorkspaceFramePort)=>void;
  const calls:ImageWorkspaceRequest[]=[];
@@ -141,4 +141,25 @@ it('uses Main phase for input readiness and releases only the pause owned by a c
  h.controller.setInputPause('transition',false);expect(h.controller.capture.state().paused).toBe(false);
  h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:4,session:{...h.b.snapshot.session,phase:'frozen'}}});expect(h.controller.capture.state().paused).toBe(true);
  h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:5}});expect(h.controller.capture.state().paused).toBe(false);h.controller.dispose();
+});
+
+it('refuses a known protected layer before creating any captured input',()=>{
+ const h=setup();
+ h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:2,images:{img:{...h.b.snapshot.images.img,layers:h.b.snapshot.images.img.layers.map(l=>({...l,capabilities:{...l.capabilities,paint:false}}))}}}});
+ const result=h.controller.capture.begin({shotId:'shot',layerId:'1',expectedContextGeneration:1},{tool:'brush',color:'#000000',size:4,opacity:1,softness:0},{x:1,y:2,pressure:1});
+ expect(result).toMatchObject({ok:false});expect(h.controller.capture.records()).toEqual([]);expect(h.controller.dispose()).toBe(true);
+});
+it('refuses a stale concrete generation without retaining a new gesture',()=>{
+ const h=setup();const result=h.controller.capture.begin({shotId:'shot',layerId:'1',expectedContextGeneration:0},{tool:'brush',color:'#000000',size:4,opacity:1,softness:0},{x:1,y:2,pressure:1});
+ expect(result.ok).toBe(false);expect(h.controller.capture.state().pending).toBe(0);h.controller.dispose();
+});
+it('shares cold activation with the immediate first stroke and resolves its original board once',async()=>{
+ const h=setup();h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:2,context:{...h.b.snapshot.context,shotId:'previous',layerId:null,generation:null}}});
+ let release!:()=>void;const gate=new Promise<void>(r=>release=r);let activations=0;const inputs:unknown[]=[];
+ h.bridge.request=async()=>{activations++;await gate;return{kind:'settled',operationId:'activate',snapshot:{...h.b.snapshot,stateSeq:3}};};
+ h.bridge.input=async(_owner,input)=>{inputs.push(input);return{kind:'admitted',operationId:'stroke',inputThrough:1,durable:false};};h.bridge.waitOperation=async()=>({kind:'settled',operationId:'stroke',snapshot:{...h.b.snapshot,stateSeq:4}});
+ const activation=h.controller.request({kind:'activateShot',shotId:'shot'});
+ const b=h.controller.capture.begin({shotId:'shot',layerId:null,expectedContextGeneration:null},{tool:'brush',color:'#000000',size:4,opacity:1,softness:0},{x:1,y:2,pressure:1});if(!b.ok)throw Error();h.controller.capture.end(b.id);
+ expect(inputs).toEqual([]);release();await activation;for(let n=0;n<30;n++)await Promise.resolve();
+ expect(activations).toBe(1);expect(inputs[0]).toMatchObject({kind:'begin',shotId:'shot',layerId:'1',expectedContextGeneration:1});expect(h.controller.capture.state().pending).toBe(0);h.controller.dispose();
 });
