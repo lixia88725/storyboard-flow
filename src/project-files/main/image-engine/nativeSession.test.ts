@@ -213,7 +213,7 @@ function child(script:string,mode:string){
   const processChild=spawn(process.execPath,[script,mode],{stdio:['ignore','pipe','pipe']});let output='';processChild.stdout.on('data',b=>{output+=b;});processChild.stderr.on('data',b=>{output+=b;});
   const done=new Promise<{code:number|null;output:string}>((resolve,reject)=>{processChild.once('error',reject);processChild.once('close',code=>resolve({code,output}));});return{process:processChild,done};
 }
-async function run(script:string,mode:string){const c=child(script,mode),result=await c.done;if(result.code!==0)throw Error(`Main fixture failed (${mode}): ${result.output}`);}
+async function run(script:string,mode:string){const c=child(script,mode),result=await c.done;if(result.code!==0)throw Error(`Main fixture failed (${mode}): ${result.output}`);if(mode==='owned-cas'){expect(result.output).toContain('[Flow paint recovery]');expect(result.output).toContain('committing-project');expect(result.output).toContain('CAS');}}
 async function result(root:string,mode:string){return JSON.parse(await fs.readFile(path.join(root,'result-'+mode+'.json'),'utf8'));}
 
 it('uses one real Main mixed history across native paint/dialogue/Pending and clean reopen',async()=>{

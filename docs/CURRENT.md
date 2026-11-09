@@ -1,5 +1,17 @@
 # 当前状态与剩余工作
 
+## 大批导入期间绘画响应与恢复提示（2026-11-09）
+
+已去掉展示循环内重复整项目防御拷贝：一次snapshot共享一份Session项目，批次资格检查复用成员索引，落笔仅投影当前图。后台来源保管/非当前图准备在任务边界让已接受笔迹先行，普通进度合并通知，绘画确认与显式命令即时发布。没有取消原件核验、修改保存确认条件或删除恢复数据。
+
+300图快照预算测试在旧Runtime失败（`/private/tmp/flow-responsive-snapshot-red.log`），修后通过且外部修改返回值不污染Session。主进程同脚本对照为“向已有项目添加300张320×180图”，不冒充初次导入：背景整笔确认中位6225.85ms→约151ms，落笔准入341.02ms→约2.84ms，快照673ms→约2.5ms；前后结果为 `flow-native-workbench-tOQm1t` / `flow-native-workbench-cmouO3`，命令日志 `/private/tmp/flow-responsive-runtime-after.log`。该对照在通知合并/任务让路之前，不能当最终硬件延迟。
+
+最终真实Electron通过文件夹入口导入300张960×540 PNG/JPEG；约2753ms进入，第一笔时297张仍后台处理，连续12笔确认、像素改变、原件摘要不变、正常关闭重开画面和revision一致；Renderer rAF间隔p95=10ms/max26.7ms，整笔脚本中位309ms（含128ms移动、IPC与轮询）。停笔后原件保管完成还需45602ms，不能宣称整批导入已瞬时完成；本轮完整测试集同时运行，有CPU/IO竞争。日志 `/private/tmp/flow-responsive-300-gui-final.log`，现场 `flow-native-workbench-wHErwT`。首轮同专项 `flow-native-workbench-UiZooR` 亦通过，最终追加了后台完成断言；不把保持后台暂停当流畅。邻近日常GUI保存/Refresh/后台添加/自有worker中断恢复/正常关闭重开通过（`/private/tmp/flow-responsive-daily-gui.log`，`flow-native-workbench-8CLwBR`）。
+
+恢复提示只读核查了profile明确指向的304图TEST2项目：一笔有native prepared、Main未提交，后续已保管原始输入并结算；没有独立Save/Refresh文件失败证据。Session recovering原先也被称为“文件操作需要确认”，现避免与待处理笔迹重复；独立文件恢复仍显示并说明等待原因。Main原异常曾在catch中丢失，无法证明该笔失败由后台加载造成；新增有界operation/stage/code/message诊断，不更改磁盘格式。未操作用户恢复按钮或画稿。
+
+构建通过（`/private/tmp/flow-responsive-build-final2.log`）；聚焦3文件84项通过（`/private/tmp/flow-responsive-focused.log`），含原生CAS回执丢失后错误诊断与恢复、快照/输入安全及恢复UI分组。完整获准清单150文件/1580项通过（504.77s，`/private/tmp/flow-responsive-suite.log`）；preload检查通过（`/private/tmp/flow-responsive-preload.log`）。当前仅隔离试用分支，未合main/推送/发布，Windows、真实数位笔和300张复杂TIFF/PSD不在本轮证据内。
+
 ## 移除旧版工作簿识别与提示（2026-11-09）
 
 已移除 `.storyboard-workbench` 专用探测、创建草稿 legacy 字段和旧版迁移提示，带该目录的图片文件夹按普通图片文件夹处理。原文件及当前 Flow 项目损坏保护不变；本轮没有修改卡顿或恢复提示逻辑。

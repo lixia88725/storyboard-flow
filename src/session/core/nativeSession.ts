@@ -289,20 +289,25 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
       blocked(operationId,error){phase='recovering';if(!recovery?.commitHash)recovery={operationId,commitHash:null};settlement.fence(error);notify();},
       decide(entry:PipelineEntry){
         pending++;notify();let finish!:(outcome:ImageProjectOutcome)=>void;const completed=new Promise<ImageProjectOutcome>(resolve=>finish=resolve);let commitHash:string|null=null;
-        const failed=()=>{phase='recovering';recovery={operationId:entry.operationId,commitHash};notify();finish(commitHash?{kind:'settlementPending',commitHash,operationId:entry.operationId,snapshot:snapshot()}:{kind:'recoveryPending',operationId:entry.operationId,snapshot:snapshot()});};
+        let stage='waiting-prepared';
+        const failed=(error:unknown)=>{
+          const detail=error as {code?:unknown;message?:unknown;effect?:unknown};
+          console.warn('[Flow paint recovery]',JSON.stringify({operationId:entry.operationId,stage,commitHash,code:String(detail?.code??'pipeline-decision-failed').slice(0,128),message:String(detail?.message??error).slice(0,2048),effect:String(detail?.effect??'unknown').slice(0,32)}));
+          phase='recovering';recovery={operationId:entry.operationId,commitHash};notify();finish(commitHash?{kind:'settlementPending',commitHash,operationId:entry.operationId,snapshot:snapshot()}:{kind:'recoveryPending',operationId:entry.operationId,snapshot:snapshot()});};
         const work=tail.then(async()=>{
           if(phase!=='active')throw Error('Main pipeline decision admission blocked');
           const prepared=await entry.preparedWait.promise;if(phase!=='active'||!entry.intent)throw Error('Native prepared without active durable Main intent');
           const p=current(),image=p.images[entry.imageId];if(!image)throw Error('Pipeline target disappeared');
           const base=await resolve(entry.imageId);if(phase!=='active'||prepared.baseVersion!==base.versionId)throw Error('FIFO decision base differs from current project');
           const decision:NativeDecision={kind:'image',operationId:entry.operationId,candidateId:prepared.candidateId,imageId:entry.imageId,expected:copy(image.content),baseNative:base,prepared:prepared.native,pipeline:{pipelineId:entry.intent.pipelineId,anchorCommitHash:entry.intent.anchorCommitHash,predecessorOperationId:entry.predecessorOperationId}};
-          await checkProtection(prepared.native,await protectionFor(entry.imageId));
+          stage='checking-protection';await checkProtection(prepared.native,await protectionFor(entry.imageId));
+          stage='committing-project';
           if(same(base,prepared.native)){const unchangedHead=head!.commitHash;await store.decideUnchanged(unchangedHead,decision);commitHash=unchangedHead;}
           else{const plan=history.prepare(await installedEdit(entry.imageId,decision.expected,prepared.native));if(!plan.ok)throw Error(plan.error.message);commitHash=(await commitPlan(plan.value,entry.operationId,decision)).commitHash;}
           const record:ProjectConfirmation={commitHash,operationId:entry.operationId,native:prepared.native};confirmationObligations.set(entry.operationId,{record,imageId:entry.imageId,inputThrough:entry.through});
           pipeline!.projectCommitted(entry,commitHash);
           if(phase!=='active')throw Error('Project decided while native reconciliation became necessary');
-          void settlement.enqueue(record,async()=>{
+          stage='confirming-native';void settlement.enqueue(record,async()=>{
             const accepted=await pipeline!.accept(entry,prepared,base);if(!same(accepted,prepared.native))throw Error('Pipeline accepted receipt mismatch');pipeline!.releaseInput(entry);
           }).then(()=>{confirmationObligations.delete(entry.operationId);pipeline!.release(entry);finish(settled());},failed);
         }).catch(failed);tail=work.then(()=>undefined,()=>undefined);
