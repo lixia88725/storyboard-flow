@@ -18,6 +18,8 @@ export type NativeLayerPanelProps = {
   /** Main's explicit edit capability list. Missing capabilities fail closed. */
   allowedEdits?: readonly ImageEngineEdit['kind'][];
   disabledReason?: string;
+  /** Routine input can disable controls without inserting a layout-changing notice. */
+  showDisabledNotice?: boolean;
   isOpen?: boolean;
 };
 const modes: ImageEngineBlendMode[] = ['normal', 'multiply', 'screen'];
@@ -25,7 +27,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 
 /** Renders the Session's immutable projection. Only selection, text drafts and
  * transient gesture numbers are local; edits always return to the native owner. */
-export function NativeLayerPanel({image, onSelect, onEdit, onOpacityGesture, onNameDraftChange, nameDrafts, canBeginGesture, allowedEdits = [], disabledReason, isOpen = true}: NativeLayerPanelProps) {
+export function NativeLayerPanel({image, onSelect, onEdit, onOpacityGesture, onNameDraftChange, nameDrafts, canBeginGesture, allowedEdits = [], disabledReason, showDisabledNotice = true, isOpen = true}: NativeLayerPanelProps) {
   const [selected, setSelected] = useState<string[]>([]);
   const anchor = useRef<string | undefined>(undefined);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -211,7 +213,7 @@ export function NativeLayerPanel({image, onSelect, onEdit, onOpacityGesture, onN
       <output title="左右拖动图层行可调整不透明度">不透明度 <b>{active?Math.round(shownOpacity(active)*100)+'%':'—'}</b></output>
       <button type="button" aria-label={active?.locked?'解锁当前图层':'锁定当前图层'} aria-pressed={!!active?.locked} disabled={!active||!available('setLayer')||!!reason(active,'properties',true)} title={editReason('setLayer',active,'properties',true)} onClick={()=>{if(active)void edit({kind:'setLayer',layerId:active.id,patch:{locked:!active.locked}});}}>{active?.locked?<LockKeyhole size={15}/>:<LockKeyholeOpen size={15}/>}</button>
     </div>
-    {globalReason&&<p className="native-layer-notice" role="status">{globalReason}</p>}
+    {globalReason&&(!disabledReason||showDisabledNotice)&&<p className="native-layer-notice" role="status">{globalReason}</p>}
     {!globalReason&&!allowedEdits.length&&<p className="native-layer-notice" role="status">当前引擎未提供图层编辑能力</p>}
     <div className="layer-list" role="tree" aria-label="图层树" aria-multiselectable="true">
       {rows.map(({layer,depth,hasChildren})=>{const v=visual?.ids.includes(layer.id)?visual:undefined;const nameKey=JSON.stringify([image?.imageId,layer.id]);const Icon=layer.kind==='group'?Folder:layer.kind==='raster'?Layers:layer.kind==='reference'?ImageIcon:FileQuestion;

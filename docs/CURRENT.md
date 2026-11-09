@@ -1,10 +1,16 @@
 # 当前状态与剩余工作
 
+## 试用反馈：绘画期间图层列表跳动（2026-11-09）
+
+正常capture active/pending被当成常驻notice插入图层列表上方，落笔/结算交替改变布局。现将操作禁用原因与notice显示分开：普通绘画期间不插入notice，按钮/准入保护保持；失败、blocked、无能力、未准备好与保存/切换原因仍显示。没有修改绘画、持久化或用户项目。
+
+真实Electron旧版红测试复现（`/private/tmp/flow-layer-stability-red.log`）；修复后绘画前/中/后图层行位置、高度、scrollTop相等，画笔按下时新增层仍disabled，故障提示/显式解除/图层编辑/撤销/正常关闭重开通过（`/private/tmp/flow-layer-stability-gui.log`，`flow-native-workbench-KHNKlx`）。完整build通过（`/private/tmp/flow-layer-stability-build.log`）；完整获准清单150文件/1576项通过（533.57s，`/private/tmp/flow-layer-stability-suite.log`）。当前试用窗口未重启，未合main/推送/发布；Windows及硬件输入未验。
+
 ## 试用反馈：绘画后图层操作失败修复（2026-11-09）
 
 用户实际导入、绘画后触发 `stale-context`：原生每笔确认推进工具代次，Runtime 未同步到图层面板，导致新增/隐藏图层携带旧代次被拒。失败状态又被UI当成能力列表为空，误显示“引擎未提供图层编辑能力”。此前试用验证没有覆盖“不先Save/Undo/导航，直接绘画→图层编辑”的衔接；本轮补齐。用户项目只读检查到绘画确认与图层请求notCommitted记录，未修改项目、未处理用户保留操作、未重启试用窗口。
 
-修复同步已验证的原生确认代次，不增加逐笔summary请求；同语义连续笔的旧代begin仍可准入，选层/选区/预览取消/导航/恢复后失效，旧图层操作及未来代次仍拒绝。失败只展示待处理提示，不伪称引擎缺能力。真实Runtime红测试复现，最终29项通过（`/private/tmp/flow-context-generation-{red,runtime-final,queued-final}.log`）；完整build通过（`/private/tmp/flow-context-fix-build-final.log`）。主管真实Electron导入→两笔→新增层→绘画→隐藏/显示像素完全恢复→五次撤销→既有Undo/Redo→正常关闭重开通过（`/private/tmp/flow-context-fix-gui.log`，`flow-native-workbench-nQQseW`），来源摘要未变。额外注入明确无副作用图层拒绝后，首次GUI查出局部错误与状态栏仍重复显示英文（`/private/tmp/flow-context-fix-notice-gui.log`）；保留原始错误回执、统一展示翻译后，最终GUI通过（`/private/tmp/flow-context-fix-notice-gui-final.log`，`flow-native-workbench-mNNtCW`），拒绝前后像素/历史不变，显式放弃只解除该项失败操作，随后正常新增图层与重开。最终完整获准清单150文件/1576项全部通过（527.71s，`/private/tmp/flow-context-fix-suite.log`），覆盖最终Runtime与图层owner代码；完整构建及最终真实GUI均通过。当前用户窗口仍运行修复前代码；本轮未推送或发布，Windows/硬件输入不在本轮验证范围。
+修复同步已验证的原生确认代次，不增加逐笔summary请求；同语义连续笔的旧代begin仍可准入，选层/选区/预览取消/导航/恢复后失效，旧图层操作及未来代次仍拒绝。失败只展示待处理提示，不伪称引擎缺能力。真实Runtime红测试复现，最终29项通过（`/private/tmp/flow-context-generation-{red,runtime-final,queued-final}.log`）；完整build通过（`/private/tmp/flow-context-fix-build-final.log`）。主管真实Electron导入→两笔→新增层→绘画→隐藏/显示像素完全恢复→五次撤销→既有Undo/Redo→正常关闭重开通过（`/private/tmp/flow-context-fix-gui.log`，`flow-native-workbench-nQQseW`），来源摘要未变。额外注入明确无副作用图层拒绝后，首次GUI查出局部错误与状态栏仍重复显示英文（`/private/tmp/flow-context-fix-notice-gui.log`）；保留原始错误回执、统一展示翻译后，最终GUI通过（`/private/tmp/flow-context-fix-notice-gui-final.log`，`flow-native-workbench-mNNtCW`），拒绝前后像素/历史不变，显式放弃只解除该项失败操作，随后正常新增图层与重开。最终完整获准清单150文件/1576项全部通过（527.71s，`/private/tmp/flow-context-fix-suite.log`），覆盖最终Runtime与图层owner代码；完整构建及最终真实GUI均通过。该次交付未重启用户窗口，运行中实例不会自动加载修复；本轮未推送或发布，Windows/硬件输入不在本轮验证范围。
 
 ## Mac 独立试用已就绪（2026-11-09）
 

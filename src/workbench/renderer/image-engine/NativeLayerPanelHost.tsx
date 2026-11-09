@@ -31,6 +31,7 @@ export function NativeLayerPanelHost({controller,image,preview,canBeginGesture,d
   const externallyPaused=controller.inputPausedExcept?controller.inputPausedExcept('layer'):capture.paused;
   const contextReady=!!image&&context.imageId===image.imageId&&context.generation!==null&&image.contextGeneration===context.generation&&sameLayerNative(image.displayNative,snapshot.images[image.imageId]?.displayNative);
   const gateReason=disabledReason??(host.phase==='failed'?'上一项图层操作未完成，请先处理下方提示。':undefined)??(snapshot.session.phase!=='active'?'项目尚未处于可编辑状态。':externallyPaused?'项目正在保存或切换。':capture.activeId!==null||capture.pending||capture.blocked?'请先完成画布输入。':!contextReady?'正在准备当前图层目标。':undefined);
+  const routineDrawing=!disabledReason&&host.phase!=='failed'&&snapshot.session.phase==='active'&&!externallyPaused&&!capture.blocked&&contextReady&&!!image&&['editable','reference'].includes(image.availability)&&(capture.activeId!==null||capture.pending>0);
   const allowedEdits=controller.capabilities.commands.includes('imageEdit')?controller.capabilities.imageEdits.filter(kind=>kind!=='setLayerOpacities'||owner.previewAvailable()):[];
   const select=useCallback(async(layerId:string)=>{
     if(!image)throw Error('请先选择故事板。');
@@ -51,7 +52,7 @@ export function NativeLayerPanelHost({controller,image,preview,canBeginGesture,d
   return <div className="native-layer-host" style={{display:'flex',flexDirection:'column',height:'100%',minHeight:0}}>
     <NativeLayerPanel key={host.resetToken??0} image={image} isOpen={isOpen} onSelect={select} onEdit={edit} onOpacityGesture={opacity}
       nameDrafts={nameDrafts} onNameDraftChange={event=>{if(image)owner.nameDraft(image,event);}}
-      allowedEdits={allowedEdits} disabledReason={gateReason} canBeginGesture={()=>!gateReason&&!owner.busy()&&canBeginGesture?.()!==false}/>
+      allowedEdits={allowedEdits} disabledReason={gateReason} showDisabledNotice={!routineDrawing} canBeginGesture={()=>!gateReason&&!owner.busy()&&canBeginGesture?.()!==false}/>
     {host.failure&&<div role="alert" style={{padding:'.6em',fontSize:'.8em',color:'#ffd0b9',background:'#392922',overflowWrap:'anywhere'}}>
       <p style={{margin:'0 0 .4em'}}>{workspaceFailureMessage(host.failure)}</p>
       {host.failure.effect==='none'&&host.phase==='idle'?<p>可以重新选择图层。</p>:host.failure.effect==='none'&&!host.previewId?<>
