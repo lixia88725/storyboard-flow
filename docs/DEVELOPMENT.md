@@ -122,3 +122,5 @@ Mac日常流程专项：完整build及本轮native组件准备后，`FLOW_IMAGE_
 完整构建后设置 `FLOW_IMAGE_HOST`、`FLOW_PROJECT_LEASE_BIN`、`FLOW_PROJECT_LEASE_BINARY`，运行 `node scripts/flow-native-import-performance-smoke.mjs`。它在独立临时项目/profile中创建300张960×540 PNG/JPEG，经真实文件夹入口打开，在尚有后台来源时连续12笔，检查Renderer帧间隔、版本增加、画面改变、停笔后来源保管完成、原件摘要与认证关闭重开。笔画耗时包含脚本移动、IPC和轮询，不是硬件笔到屏幕延迟；合成平面图不代表复杂TIFF/PSD、Windows或数位笔。运行期负载需随结果说明。
 
 部分原生独立Python对照测试目前使用 `/private/tmp/flow-image-engine-export-python`；执行前核实该目录及兼容Python能导入numpy/imagecodecs/psdtags/tifffile。目录缺失可复制仓库已有且兼容的 `vendor/python/photoshop-tiff` 到独立测试目录，不擅自安装依赖。TIFF调用另按需显式设置 `PYTHONPATH` 指向该现有依赖目录。
+
+预览调度回归位于 `workspaceRuntime.test.ts`：一次可见需求超过4张、画后无需第二次需求即可更新、旧版本检查在途与绘画交错后补新版本。`flow-native-daily-smoke.mjs` 同时检查真实落笔后thumbnail能力变化，再覆盖原有Save/Refresh/恢复/关闭重开流程。

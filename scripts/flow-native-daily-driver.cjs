@@ -28,7 +28,8 @@ async function choose(name,decision){await js(`(()=>{const s=document.querySelec
  await wait(()=>js('!!document.querySelector("[data-workbench]")'),'workbench');await wait(()=>pixels(),'ready canvas');
  if(reopen){const expected=JSON.parse(fs.readFileSync(path.join(out,'daily-expected.json'),'utf8'));assert.equal(await pixels(),expected.pixels);const state=await boot();assert.equal(state.session.project.revision,expected.revision);assert.equal(state.session.project.parkedShots.length,expected.pendingCount);for(const f of expected.files)assert.equal(sha(path.join(root,f.name)),f.sha);report.cases.push('new process preserves final picture, Pending, revision and files');}
  else{
-  report.stage='baseline-save';await stroke(.3);await save();const baseline=await boot(),file=baseline.files.outputNames.find(n=>n.shotId==='a').name,oldDigest=sha(path.join(root,file));
+  report.stage='thumbnail-version';await wait(async()=>!!(await boot()).images.image.thumbnailId,'initial visible thumbnail');const thumbnailBefore=(await boot()).images.image.thumbnailId;
+  report.stage='baseline-save';await stroke(.3);await wait(async()=>{const id=(await boot()).images.image.thumbnailId;return !!id&&id!==thumbnailBefore;},'paint automatically refreshes demanded thumbnail');report.cases.push('paint refreshes visible thumbnail without another viewport demand');await save();const baseline=await boot(),file=baseline.files.outputNames.find(n=>n.shotId==='a').name,oldDigest=sha(path.join(root,file));
   const baselineStrokeStarted=Date.now();await stroke(.65);report.baselineStrokeMs=Date.now()-baselineStrokeStarted;let unsaved=await pixels();
   if(process.env.FLOW_DAILY_RECOVERY_ONLY!=='1'){
   report.stage='add-pending';await js(`[...document.querySelectorAll('.wb-actions details')].find(d=>d.querySelector('summary')?.textContent==='添加图片').open=true`);await click('选择图片…');

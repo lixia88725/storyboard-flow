@@ -150,3 +150,57 @@ it('audits an idle failed worker during normal close and reopens without losing 
  expect((await reopened.waitOperation(owner,begin.operationId)).kind).toBe('settled');
  await close({...f,runtime:reopened,request});
 },30000);
+
+
+it('drains a single visible demand beyond four slots and refreshes a painted version without another demand',async()=>{
+ const f=await fixture(false,{imageCount:9});
+ const until=async(predicate:()=>boolean)=>{const deadline=Date.now()+8000;while(!predicate()&&Date.now()<deadline)await new Promise(r=>setTimeout(r,10));expect(predicate()).toBe(true);};
+ const boot=f.runtime.open().snapshot,ids=boot.session.project.shots.map(s=>s.id);
+ await f.request({kind:'demandShots',shotIds:ids});
+ await until(()=>Object.values(f.runtime.open().snapshot.images).every(i=>!!i.thumbnailId));
+ const before=f.runtime.open().snapshot.images.image.thumbnailId!,pixels=await f.runtime.thumbnail(boot.owner,before),context=f.runtime.open().snapshot.context;
+ const down=await f.runtime.input(boot.owner,{kind:'begin',shotId:'a',layerId:context.layerId!,expectedContextGeneration:context.generation!,stroke:{tool:'brush',color:'#ff0000',size:6,opacity:1,softness:0,points:[10,10]}},{captureId:'thumbnail-paint',inputId:'down',attemptId:'down'});
+ if(down.kind!=='admitted')throw Error(JSON.stringify(down));
+ await f.runtime.input(boot.owner,{kind:'end',operationId:down.operationId,throughSeq:1},{captureId:'thumbnail-paint',inputId:'up',attemptId:'up'});
+ expect((await f.runtime.waitOperation(boot.owner,down.operationId)).kind).toBe('settled');
+ await until(()=>{const id=f.runtime.open().snapshot.images.image.thumbnailId;return !!id&&id!==before;});
+ const after=await f.runtime.thumbnail(boot.owner,f.runtime.open().snapshot.images.image.thumbnailId!);expect(after.rgba).not.toEqual(pixels.rgba);
+ await close(f);
+},30000);
+
+it('requeues the newest thumbnail when paint overtakes an in-flight older inspection',async()=>{
+ const module=await import('./nativeSessionAdapter'),original=module.createNativeSessionAdapter;
+ let release!:()=>void,entered!:()=>void;const held=new Promise<void>(r=>release=r),observed=new Promise<void>(r=>entered=r);let once=true;
+ const spy=vi.spyOn(module,'createNativeSessionAdapter').mockImplementation(options=>{const a=original(options),inspect=a.driver.inspectVersion.bind(a.driver);a.driver.inspectVersion=async(...args)=>{if(once){once=false;entered();await held;}return inspect(...args);};return a;});
+ try{
+  const f=await fixture(),boot=f.runtime.open().snapshot,ctx=boot.context;
+  await f.request({kind:'demandShots',shotIds:['a']});await observed;
+  const down=await f.runtime.input(boot.owner,{kind:'begin',shotId:'a',layerId:ctx.layerId!,expectedContextGeneration:ctx.generation!,stroke:{tool:'brush',color:'#00ff00',size:8,opacity:1,softness:0,points:[12,12]}},{captureId:'race',inputId:'down',attemptId:'down'});if(down.kind!=='admitted')throw Error(JSON.stringify(down));
+  await f.runtime.input(boot.owner,{kind:'end',operationId:down.operationId,throughSeq:1},{captureId:'race',inputId:'up',attemptId:'up'});expect((await f.runtime.waitOperation(boot.owner,down.operationId)).kind).toBe('settled');release();
+  const deadline=Date.now()+8000;while(!f.runtime.open().snapshot.images.image.thumbnailId&&Date.now()<deadline)await new Promise(r=>setTimeout(r,10));
+  const id=f.runtime.open().snapshot.images.image.thumbnailId;expect(id).toBeTruthy();const pixels=await f.runtime.thumbnail(boot.owner,id!);expect([...pixels.rgba].some((v,i)=>i%4===0&&v<200)).toBe(true);await close(f);
+ }finally{release?.();spy.mockRestore();}
+},30000);
+
+it('keeps an unchanged visible preview through more than sixty-four painted versions of another image',async()=>{
+ const f=await fixture(false,{imageCount:2}),owner=f.runtime.open().snapshot.owner;
+ await f.request({kind:'demandShots',shotIds:['a','shot-1']});
+ const until=async(fn:()=>boolean)=>{const end=Date.now()+5000;while(!fn()&&Date.now()<end)await new Promise(r=>setTimeout(r,5));expect(fn()).toBe(true);};
+ await until(()=>!!f.runtime.open().snapshot.images['image-1'].thumbnailId);const other=f.runtime.open().snapshot.images['image-1'].thumbnailId;
+ for(let i=0;i<66;i++){
+  const ctx=f.runtime.open().snapshot.context,old=f.runtime.open().snapshot.images.image.thumbnailId,captureId='cache-'+i;
+  const down=await f.runtime.input(owner,{kind:'begin',shotId:'a',layerId:ctx.layerId!,expectedContextGeneration:ctx.generation!,stroke:{tool:'brush',color:'#'+i.toString(16).padStart(2,'0')+'0000',size:8,opacity:1,softness:0,points:[12,12]}},{captureId,inputId:'down',attemptId:'down'});if(down.kind!=='admitted')throw Error(JSON.stringify(down));
+  await f.runtime.input(owner,{kind:'end',operationId:down.operationId,throughSeq:1},{captureId,inputId:'up',attemptId:'up'});expect((await f.runtime.waitOperation(owner,down.operationId)).kind).toBe('settled');
+  await until(()=>{const id=f.runtime.open().snapshot.images.image.thumbnailId;return !!id&&id!==old;});expect(f.runtime.open().snapshot.images['image-1'].thumbnailId).toBe(other);
+ }
+ expect((await f.runtime.thumbnail(owner,other!)).rgba.length).toBeGreaterThan(0);await close(f);
+},60000);
+
+it('retries an explicitly recovered thumbnail failure once without a same-version retry loop',async()=>{
+ const module=await import('./nativeSessionAdapter'),original=module.createNativeSessionAdapter;let count=0;
+ const spy=vi.spyOn(module,'createNativeSessionAdapter').mockImplementation(options=>{const a=original(options),inspect=a.driver.inspectVersion.bind(a.driver);a.driver.inspectVersion=async(...args)=>{if(++count===1)throw Object.assign(Error('synthetic thumbnail budget'),{code:'limit',effect:'none'});return inspect(...args);};return a;});
+ try{const f=await fixture();await f.request({kind:'demandShots',shotIds:['a']});const until=async(fn:()=>boolean)=>{const end=Date.now()+5000;while(!fn()&&Date.now()<end)await new Promise(r=>setTimeout(r,10));expect(fn()).toBe(true);};
+ await until(()=>f.runtime.open().snapshot.images.image.notice?.code==='thumbnail-unavailable');await f.request({kind:'demandShots',shotIds:['a']});await new Promise(r=>setTimeout(r,100));expect(count).toBe(1);
+ expect((await f.request({kind:'recover'})).kind).toBe('settled');await until(()=>!!f.runtime.open().snapshot.images.image.thumbnailId);expect(count).toBe(2);await close(f);
+ }finally{spy.mockRestore();}
+},30000);

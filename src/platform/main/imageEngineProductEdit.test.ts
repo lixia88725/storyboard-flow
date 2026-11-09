@@ -73,3 +73,20 @@ it('refuses hidden source-selection clipping before admitting product paint in s
   await adapter.driver.freeze();await adapter.driver.close();
  }finally{connection.terminateOwnedProcess();await connection.exited;}
 },15000);
+
+it('preserves native pipeline preparation errors instead of reporting malformed prepared receipts',async()=>{
+ const binary=process.env.FLOW_IMAGE_HOST;if(!binary)throw Error('Real native binary required');
+ const root=await temporaryWorkspace('pipeline-failure-receipt-'),store=path.join(root,'native');
+ const connection=startImageEngine({binary,store,sessionId:'failure-receipt',incarnation:'one',budgetBytes:32<<20});
+ const original=connection.request;
+ connection.request=async(...args)=>{const response=await original(...args);if(args[1].kind==='pipelinePoll')response.header.body={...(response.header.body as object),events:[{operationId:'failed-paint',result:{kind:'failure',error:{code:'storage',message:'Synthetic snapshot persistence failed',effect:'unknown'}}}]};return response;};
+ const adapter=createNativeSessionAdapter({connection,storeRoot:store,storeId:'native'});
+ try{
+  await connection.ready;const p=(await connection.request('new',{kind:'new',width:32,height:24})).header.body as Record<string,any>;
+  const native:NativeImageRef={storeId:'native',documentId:p.receipt.documentId,versionId:p.receipt.versionId,manifestSha256:p.receipt.manifestSha256,width:32,height:24};
+  await adapter.acceptOpened({candidateId:'new',baseVersion:null,native});
+  await adapter.driver.pipeline!.start(native,{maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:16<<20});
+  await expect(adapter.driver.pipeline!.poll()).rejects.toMatchObject({code:'storage',message:'Synthetic snapshot persistence failed',effect:'retained',nativeEffect:'unknown',operationId:'failed-paint',command:'pipelinePoll'});
+  await adapter.driver.pipeline!.stop();await adapter.driver.freeze();await adapter.driver.close();
+ }finally{connection.terminateOwnedProcess();await connection.exited;}
+},15000);

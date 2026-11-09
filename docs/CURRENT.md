@@ -1,5 +1,19 @@
 # 当前状态与剩余工作
 
+## 可见预览排队与画后更新（2026-11-09）
+
+用户报告诊断版绘画不再报错，但可见卡片长期准备中，画后已有预览消失。已查明Runtime超过4任务直接丢需求，Renderer需求只含板ID，版本变化不会重需，旧版本任务完成也不补新版本；另有local thumbnail notice未显示。当前工作区增加待处理队列及Main可见版本跟踪，保留同图旧canvas至新预览就绪，失败显示终态。
+
+最终聚焦四项真实Runtime测试通过（`/private/tmp/flow-thumbnail-focused-final.log`），含66次绘画不淘汰旁边可见板及显式恢复重试；完整构建通过（`/private/tmp/flow-thumbnail-build-final.log`）；最终真实Electron日常GUI通过（`/private/tmp/flow-thumbnail-daily-gui-final.log`，`flow-native-workbench-fo1xxS`），追加画后无需视口变化自动更新thumbnail，原有Save/Refresh/恢复/关闭重开断言保留。首轮全量为补缓存/恢复边界主动停止（exit130，`/private/tmp/flow-thumbnail-suite.log`），不计完成；最终完整获准测试集150文件/1589项全部通过，516.43s（`/private/tmp/flow-thumbnail-suite-final.log`）。未合main/发布。前一轮实际native写入失败根因仍未确定，不因本次用户未再遇到提示宣称其已解决。
+
+启动器正常关闭旧试用实例，完整构建后打开修复版选择页，原生UI已确认；未自动打开用户项目。启动日志 `/private/tmp/flow-thumbnail-trial-launch.log`，旧实例正常退出留在 `/private/tmp/flow-pipeline-receipt-trial-launch.log`。README启动入口与AGENTS规则未变，无需更新；本轮仅本地试用分支，未合main/推送/发布。
+
+## 试用重开首笔再次失败：继续诊断（2026-11-09）
+
+用户在af04177试用版重开后再次遇到笔迹保留提示，不能称前轮已解决用户现场。启动日志 `20261109-131629-27947.log` 的操作 `dff8323d-93bf-4055-9e8e-5a7a574a0f85` 在waiting-prepared报protocol/malformed prefix。已查明adapter把native `failure` 事件混入prepared校验，遮蔽原始错误；当前工作区修正其传递（仍保守保留输入），真实连接注入失败回执测试3项通过，构建通过，尚非本次实际根因修复。
+
+只读现场见native intent而无prepared，随后有同doc14的新tile/version，故重点检查图像发布末端与prepared日志写入；不能凭时间关联断言具体失败函数。原store约64.45MB，低于512MiB上限；同持久资产副本、同铅笔参数及合成坐标的完整begin/append/end/poll成功。隔离副本追加原生历史segments1..7（失败后8/9另行保管）及4次取图穿插仍通过，日志 `/private/tmp/flow-native-history-beforefailure.log`，副本 `/private/tmp/flow-native-history-probe-r7ghx4v8`；不回放用户笔迹。原始故障仍未复现。用户明确允许保留记录并重启后，已通过原生UI选择“保留恢复记录，结束本笔”，再点击窗口关闭，旧启动日志确认正常退出；没有强制退出或清理恢复数据。随后启动诊断版，原生UI确认项目选择页，未自动打开项目，日志 `/private/tmp/flow-pipeline-receipt-trial-launch.log`。诊断补丁随后随上方预览修复通过完整获准测试集；实际写入故障仍待再次重现获取原文，不宣称根因已修复。
+
 ## 绘画准入、局部故障与正常关闭协调（2026-11-09）
 
 本轮继续保留PhotoCraft，在隔离试用树整理协调逻辑，未合main或发布。已确定并复现：只读thumbnail超预算的limit/none被native通用任务错误标成globalFailure，Session随之recovering，后续笔迹被报sealed。修复将明确局部只读错误与全局存储/协议故障分开；Session集中释放控制暂停，Renderer按Main phase与操作自身理由推导输入暂停；缩略图失败按版本记录提示，避免同版本重复失败。关闭先等待后台并核对故障，再排空/冻结；未完成原始输入仍拒绝关闭并保留。
