@@ -3,7 +3,7 @@ const {app,BrowserWindow,clipboard,shell,dialog,ipcMain}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),{createHash}=require('node:crypto'),{pathToFileURL}=require('node:url');
 const out=process.env.FLOW_OUT,repo=process.env.FLOW_REPO,reopen=process.env.FLOW_IMPORT_REOPEN==='1',protectedImport=process.env.FLOW_PROTECTED_IMPORT==='1';
 if(!out?.startsWith('/private/tmp/flow-native-workbench-'))throw Error('isolated fixture required');
-let certified=0;const handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(name,fn)=>handle(name,async(...args)=>{const value=await fn(...args);if(name==='flow-editor:finish-native-close'&&value?.ok)certified++;return value;});
+let certified=0,layerFailureInjected=false;const handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(name,fn)=>handle(name,async(...args)=>{if(process.env.FLOW_LAYER_FAILURE_NOTICE==='1'&&!reopen&&!layerFailureInjected&&name==='flow-image-workspace:request'&&args[1]?.command?.kind==='imageEdit'){layerFailureInjected=true;return{kind:'rejected',operationId:'synthetic-layer-failure',error:{code:'stale-context',effect:'none',message:'context generation changed; query summary before retry'}};}const value=await fn(...args);if(name==='flow-editor:finish-native-close'&&value?.ok)certified++;return value;});
 const phase=reopen?'import-reopen':'import',source=path.join(out,'sources'),parent=path.join(out,'destination');
 for(const key of Object.keys(clipboard))if(typeof clipboard[key]==='function')clipboard[key]=()=>{throw Error('Clipboard prohibited');};shell.trashItem=()=>{throw Error('Trash prohibited');};
 dialog.showOpenDialog=async(_window,options)=>{assert.ok(['打开项目或图片文件夹','选择项目保存位置'].includes(options.title),'unexpected chooser '+options.title);return{canceled:false,filePaths:[options.title==='打开项目或图片文件夹'?source:parent]};};
@@ -38,6 +38,40 @@ async function wait(fn,label){const deadline=Date.now()+45000;while(Date.now()<d
   mouse('mouseDown',r.x+r.w*.3,r.y+r.h*.5);await pause(30);mouse('mouseMove',r.x+r.w*.6,r.y+r.h*.5);await pause(30);mouse('mouseUp',r.x+r.w*.6,r.y+r.h*.5);
   await wait(async()=> (await boot()).snapshot.session.project.revision===initial.session.project.revision+1,'first imported drawing committed');
   assert.equal((await boot()).snapshot.session.project.images[first.imageId].content.kind,'native');
+  if(process.env.FLOW_IMPORT_LAYER_REGRESSION==='1'){
+   report.stage='paint-then-layers';
+   const pixels=()=>js(`(()=>{const c=document.querySelector(${JSON.stringify(selector)});if(c.dataset.frameStatus!=='ready')return null;const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let s='';for(let i=0;i<d.length;i+=16384)s+=String.fromCharCode(...d.subarray(i,i+16384));return btoa(s);})()`);
+   const draw=async y=>{const before=(await boot()).snapshot.session.project.revision;mouse('mouseDown',r.x+r.w*.2,r.y+r.h*y);await pause(30);mouse('mouseMove',r.x+r.w*.55,r.y+r.h*y);await pause(30);mouse('mouseUp',r.x+r.w*.55,r.y+r.h*y);await wait(async()=>(await boot()).snapshot.session.project.revision===before+1,'additional stroke confirmed');await wait(()=>js('!document.querySelector("[aria-label=新增图层]").disabled'),'layer controls ready after painting');};
+   // No Undo/Save/navigation between drawing and the layer action: those used
+   // to refresh the stale context and conceal this user-reported defect.
+   await draw(.65);const beforeLayers=(await boot()).snapshot.images[first.imageId].layers.length;
+   if(process.env.FLOW_LAYER_FAILURE_NOTICE==='1'){
+    const beforeFailure=(await boot()).snapshot.session.project.revision,beforePixels=await pixels();
+    await js('document.querySelector("[aria-label=新增图层]").click()');
+    await wait(()=>js(`document.body.innerText.includes('上一项图层操作未完成，请先处理下方提示。')`),'failed operation is described as pending, not missing capability');
+    assert.equal(await js(`document.body.innerText.includes('当前引擎未提供图层编辑能力')||document.body.innerText.includes('context generation changed')`),false);
+    assert.equal((await boot()).snapshot.session.project.revision,beforeFailure);assert.equal(await pixels(),beforePixels);
+    await js(`Array.from(document.querySelectorAll('.native-layer-host button')).find(b=>b.textContent==='放弃未提交的图层操作').click()`);
+    await wait(()=>js('!document.querySelector("[aria-label=新增图层]").disabled'),'synthetic no-effect operation released');
+    report.cases.push('injected no-effect layer failure keeps pixels/history, shows accurate Chinese notice and releases only the failed operation');
+   }
+   await js('document.querySelector("[aria-label=新增图层]").click()');
+   await wait(async()=>(await boot()).snapshot.images[first.imageId].layers.length===beforeLayers+1,'new layer immediately after two strokes');
+   await wait(()=>js('!document.querySelector("[aria-label=新增图层]").disabled'),'new layer ready');
+   await draw(.3);const afterPaint=(await boot()).snapshot,layerId=afterPaint.context.layerId,painted=await pixels();assert.ok(painted);
+   const row=`.native-layer-panel [data-layer-id="${layerId}"][role=treeitem]`;
+   await js(`document.querySelector(${JSON.stringify(row+' [aria-label=隐藏图层]')}).click()`);
+   await wait(async()=>(await boot()).snapshot.images[first.imageId].layers.find(l=>l.id===layerId)?.visible===false,'hide layer after painting');
+   await wait(async()=>{const p=await pixels();return p&&p!==painted;},'hidden layer changes displayed pixels');
+   await wait(()=>js('!document.querySelector("[aria-label=新增图层]").disabled'),'visibility operation settled');
+   await js(`document.querySelector(${JSON.stringify(row+' [aria-label=显示图层]')}).click()`);
+   await wait(async()=>await pixels()===painted,'show layer restores exact displayed pixels');
+   assert.equal(await js(`document.body.innerText.includes('当前引擎未提供图层编辑能力')||document.body.innerText.includes('context generation changed')`),false);
+   // Return to the first stroke so the existing source Undo/Redo assertions
+   // below still check their original contract, without weakening them.
+   for(let i=0;i<5;i++){await wait(()=>js('!document.querySelector("[aria-label=撤销]").disabled'),'Undo enabled');const revision=(await boot()).snapshot.session.project.revision;await js('document.querySelector("[aria-label=撤销]").click()');await wait(async()=>(await boot()).snapshot.session.project.revision===revision+1,'one history step');}
+   report.cases.push('two imported strokes then new layer; another stroke then hide/show exact pixels; five ordinary Undo steps');
+  }
   await js('document.querySelector("[aria-label=撤销]").click()');
   await wait(async()=> (await boot()).snapshot.session.project.images[first.imageId].content.kind==='source','Undo returns to original source identity');
   await js('document.querySelector("[aria-label=重做]").click()');

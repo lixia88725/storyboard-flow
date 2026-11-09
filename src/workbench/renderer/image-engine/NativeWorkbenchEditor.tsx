@@ -1,3 +1,4 @@
+import {workspaceFailureMessage} from './workspaceFailureMessage';
 import {useCallback,useEffect,useMemo,useRef,useState,useSyncExternalStore,type ReactNode} from 'react';
 import {FolderInput,Undo2,Redo2,Save,Trash2} from 'lucide-react';
 import type {ImageWorkspaceCommand,ImageWorkspaceEdit,ImageWorkspaceImageView} from '../../../platform/contracts/imageWorkspace';
@@ -200,7 +201,7 @@ export function NativeWorkbenchEditor({controller:c,externallyPaused,projectMenu
   <NativeFileRecovery snapshot={snapshot} disabled={externallyPaused||working||surfaceGestures.current.size>0} onRecover={recoverFiles} onRetryImport={async importId=>{await request({kind:'resumeImport',importId});setIssue('');}}/>
   {transformState.failure&&<aside className="wb-recovery" role="alert"><strong>选区变换需要处理</strong><p>{transformState.failure.message} 已保留最后接受的变换输入。</p><button disabled={surfaceGestures.current.size>0} onClick={()=>void transformOwner.resolve('retainAndDiscard').catch(error=>setIssue(errorText(error)))}>保管输入并结束变换</button><button disabled={surfaceGestures.current.size>0} onClick={()=>void transformOwner.resolve('exportAndDiscard').catch(error=>setIssue(errorText(error)))}>导出输入副本并结束变换…</button></aside>}
   <Workbench name={project.name} shots={shots.slice(0,project.shots.length)} parked={shots.slice(project.shots.length)} selected={selected} pendingSelected={pendingSelected} revision={project.revision} disabled={!active||working}
-   dialogueText={dialogueText} renderDialogue={dialogue} status={issue||c.fault()?.message||(working?'正在更新文件…':c.capture.state().pending?'正在自动暂存笔迹…':sourceStatus||backgroundStatus|| [referenceStatus,snapshot.files.outputPending?'已自动暂存 · 文件夹待更新':'已自动暂存'].filter(Boolean).join(' · '))}
+   dialogueText={dialogueText} renderDialogue={dialogue} status={issue||workspaceFailureMessage(c.fault())||(working?'正在更新文件…':c.capture.state().pending?'正在自动暂存笔迹…':sourceStatus||backgroundStatus|| [referenceStatus,snapshot.files.outputPending?'已自动暂存 · 文件夹待更新':'已自动暂存'].filter(Boolean).join(' · '))}
    projectBar={<ProjectNamingBar naming={naming} folderName={snapshot.files.folderName} disabled={!active||working}/>}
    select={select} focus={focus} selectMany={ids=>{const order=project.shots.map(s=>s.id),next=order.filter(id=>ids.includes(id));setSelected(next);if(next[0])activate(next[0]);}} selectAll={()=>setSelected(project.shots.map(s=>s.id))} clearSelection={()=>setSelected([])}
    selectPending={(id,event)=>select(id,event,true)} selectManyPending={setPendingSelected} selectAllPending={()=>setPendingSelected(project.parkedShots.map(s=>s.id))} clearPending={()=>setPendingSelected([])}

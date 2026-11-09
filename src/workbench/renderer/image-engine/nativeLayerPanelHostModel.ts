@@ -1,3 +1,4 @@
+import {workspaceFailureMessage} from './workspaceFailureMessage';
 import { validImageEngineEdit, validImageEnginePreviewStamp, type ImageEngineEdit, type ImageEnginePreviewStamp } from '../../../platform/contracts/imageEngine';
 import type { NativeImageRef } from '../../../platform/contracts/imageProject';
 import type { ImageWorkspaceCapabilities, ImageWorkspaceCommand, ImageWorkspaceFailure, ImageWorkspaceImageView, ImageWorkspaceOutcome, ImageWorkspaceOwner, ImageWorkspaceSnapshot } from '../../../platform/contracts/imageWorkspace';
@@ -53,7 +54,7 @@ export type NativeLayerHostState = {
 const sameOwner=(a:ImageWorkspaceOwner,b:ImageWorkspaceOwner)=>a.sessionId===b.sessionId&&a.incarnation===b.incarnation&&a.workspaceEpoch===b.workspaceEpoch;
 export const sameLayerNative=(a:NativeImageRef|null|undefined,b:NativeImageRef|null|undefined)=>!!a&&!!b&&a.storeId===b.storeId&&a.documentId===b.documentId&&a.versionId===b.versionId&&a.manifestSha256===b.manifestSha256&&a.width===b.width&&a.height===b.height;
 class LayerHostError extends Error {
-  constructor(readonly failure:ImageWorkspaceFailure,readonly pendingOperationId?:string){super(failure.message);}
+  constructor(readonly failure:ImageWorkspaceFailure,readonly pendingOperationId?:string){super(workspaceFailureMessage(failure));}
 }
 const denied=(message:string)=>new LayerHostError({code:'layer-target',message,effect:'none'});
 const failureOf=(error:unknown):ImageWorkspaceFailure=>error instanceof LayerHostError?error.failure:{code:'layer-transport',message:error instanceof Error?error.message:String(error),effect:'unknown'};

@@ -68,6 +68,9 @@ Output的外部观察绑定板、文件名、位置、物理身份和基线Nativ
 
 Main只从当前worker/当前文档的完整验证帧推进display identity；旧worker、旧epoch和旧frame序号不能替换展示目标。只在身份变化时发display事件，逐batch像素仍经帧端口，不触发项目保存或逐批图层summary。普通图层编辑在RPC开始前取得请求身份，未知回包只查询该请求或保管整份原始意图；原文保管回执与身份匹配并重新读取权威快照后才解除renderer义务。
 
+绘画的 nativeAccepted 会推进原生 contextGeneration；Runtime 同步 Adapter 已验证回包中的代次到当前同文档 context/summary，不逐笔追加 summary RPC。同一板、同一图层、同一 worker 的连续绘画保留常量空间代次区间，仅用于接纳已经排队的 begin；选层、选区、图层编辑、预览结算、导航和恢复重新确认上下文后清除该区间。图层编辑、选层与预览仍严格校验精确代次，不能用画笔别名重定位旧操作。
+
+
 `project-files/main/image-engine/workspaceOutput` 仅维护物理输出账本：冻结的项目决定、原生捕获字节和元数据决定新文件，所有旧名先暂存再独占发布，删除沿用系统废纸篓确认协议。内部输出日志、备份和未知支出使用共享恢复预算。Refresh 先由 Main 安装项目决定，再确认外部文件摘要成为物理基线；该确认不另行安装项目，也不冒充 Save。Session 已认证关闭但资源释放失败时，保留关闭票据，后续只重试释放，不重复认证或恢复已关闭 Session。
 
 ## 运行链与职责

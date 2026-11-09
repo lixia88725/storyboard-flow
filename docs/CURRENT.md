@@ -1,5 +1,11 @@
 # 当前状态与剩余工作
 
+## 试用反馈：绘画后图层操作失败修复（2026-11-09）
+
+用户实际导入、绘画后触发 `stale-context`：原生每笔确认推进工具代次，Runtime 未同步到图层面板，导致新增/隐藏图层携带旧代次被拒。失败状态又被UI当成能力列表为空，误显示“引擎未提供图层编辑能力”。此前试用验证没有覆盖“不先Save/Undo/导航，直接绘画→图层编辑”的衔接；本轮补齐。用户项目只读检查到绘画确认与图层请求notCommitted记录，未修改项目、未处理用户保留操作、未重启试用窗口。
+
+修复同步已验证的原生确认代次，不增加逐笔summary请求；同语义连续笔的旧代begin仍可准入，选层/选区/预览取消/导航/恢复后失效，旧图层操作及未来代次仍拒绝。失败只展示待处理提示，不伪称引擎缺能力。真实Runtime红测试复现，最终29项通过（`/private/tmp/flow-context-generation-{red,runtime-final,queued-final}.log`）；完整build通过（`/private/tmp/flow-context-fix-build-final.log`）。主管真实Electron导入→两笔→新增层→绘画→隐藏/显示像素完全恢复→五次撤销→既有Undo/Redo→正常关闭重开通过（`/private/tmp/flow-context-fix-gui.log`，`flow-native-workbench-nQQseW`），来源摘要未变。额外注入明确无副作用图层拒绝后，首次GUI查出局部错误与状态栏仍重复显示英文（`/private/tmp/flow-context-fix-notice-gui.log`）；保留原始错误回执、统一展示翻译后，最终GUI通过（`/private/tmp/flow-context-fix-notice-gui-final.log`，`flow-native-workbench-mNNtCW`），拒绝前后像素/历史不变，显式放弃只解除该项失败操作，随后正常新增图层与重开。最终完整获准清单150文件/1576项全部通过（527.71s，`/private/tmp/flow-context-fix-suite.log`），覆盖最终Runtime与图层owner代码；完整构建及最终真实GUI均通过。当前用户窗口仍运行修复前代码；本轮未推送或发布，Windows/硬件输入不在本轮验证范围。
+
 ## Mac 独立试用已就绪（2026-11-09）
 
 本轮实现已集成到隔离 `codex/image-engine-integration`，主树、默认入口与用户项目未改。后台Add单次登记即返回，PNG/JPEG等来源继续保管/准备并只物化本批Pending；坏图不阻止正常关闭，Undo/删除不会被后台复活。Refresh明确选择、单批一次Undo/Redo、保管外部版本后keepFlow与失效观察恢复已接正式窗口。

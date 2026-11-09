@@ -31,6 +31,8 @@ node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "
 
 测试统一使用根目录 `vitest.config.ts`，完整与聚焦检查共用该配置；测试前置准备在 `vitest.setup.ts`。其余命令以 [package.json](../package.json) 为准。构建会清理旧Electron产物；旧界面与波次验证入口已退役，不从archive恢复运行。
 
+绘画后图层接点回归：在已构建、显式提供 `FLOW_IMAGE_HOST` 和 `FLOW_PROJECT_LEASE_BINARY` 时，执行 `FLOW_IMPORT_LAYER_REGRESSION=1 FLOW_SOURCE_IMPORT=1 FLOW_SOURCE_IMPORT_ONLY=1 node scripts/flow-native-workbench-smoke.mjs`。仅合成项目/独立 userData，覆盖导入后连续两笔直接新增图层、再绘画后隐藏/显示整图像素恢复、普通撤销及正常关闭重开；中间不先用 Save/Undo/导航刷新状态掩盖代次问题。额外设 `FLOW_LAYER_FAILURE_NOTICE=1` 可在测试实例中注入一次明确无副作用的图层拒绝，验证中文提示、能力不被伪装移除，以及明确放弃该操作后像素和历史不变。
+
 ## GUI验证脚本索引
 
 | 检查什么 | 脚本 |
