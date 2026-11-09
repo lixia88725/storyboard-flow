@@ -805,7 +805,7 @@ impl Pipeline {
                 h.epoch_input_through = 0;
                 h.last_frame = None;
                 Ok((
-                    json!({"kind":"cancelled","previewId":preview_id,"durable":false}),
+                    json!({"kind":"cancelled","previewId":preview_id,"durable":false,"pipelineId":self.id,"epoch":h.display_epoch}),
                     vec![],
                 ))
             }

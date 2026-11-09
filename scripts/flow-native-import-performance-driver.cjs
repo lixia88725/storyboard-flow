@@ -36,6 +36,17 @@ const button=label=>js(`(()=>{const b=[...document.querySelectorAll('button')].f
   const r=await js(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}})()`);
   const mouse=(type,x,y)=>win.webContents.sendInputEvent({type,x:Math.round(x),y:Math.round(y),button:'left',clickCount:1});
   win.webContents.sendInputEvent({type:'keyDown',keyCode:'b'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'b'});
+  if(process.env.FLOW_CANCEL_REGRESSION==='1'){
+   report.stage='cancel-preview-before-paint';const revision=(await boot()).session.project.revision;
+   for(let repeat=0;repeat<2;repeat++){
+    mouse('mouseDown',r.x+r.w*.3,r.y+r.h*.6);await pause(80);mouse('mouseMove',r.x+r.w*.6,r.y+r.h*.6);
+    await wait(async()=>(await pixels())!==before,'cancel fixture live stroke visible');
+    win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});mouse('mouseUp',r.x+r.w*.6,r.y+r.h*.6);
+    await wait(async()=>(await pixels())===before,'cancel restores original pixels');
+    assert.equal((await boot()).session.project.revision,revision,'cancel must not add history');
+   }
+   report.cancelledPreviews=2;
+  }
   for(let i=0;i<12;i++){
    report.stage='stroke-'+i;const revision=(await boot()).session.project.revision,started=Date.now(),y=r.y+r.h*(.2+i*.04);
    mouse('mouseDown',r.x+r.w*.2,y);

@@ -1,5 +1,14 @@
 # 当前状态与剩余工作
 
+## TEST2 再次首笔失败：取消后的展示代次（2026-11-09）
+
+用户在上一轮试用后仍触发恢复提示，不视为已修复现场。当前启动日志明确捕获 `Native queue admission differs from Main intent`，operation `70974c86-2899-4074-a396-1b8f2f4144ba`。只读核对profile所指TEST2项目：Main intent为72点，native已有同operation、72点、predecessor=null的prepared，epoch=4；没有据此接受、重画或清理用户数据。旧日志未记录六个比较字段的具体差值，不能把取消认定为现场唯一触发原因。
+
+隔离真实Session复现“begin→cancel→下一笔end”进入recoveryPending（`/private/tmp/flow-cancel-epoch-red2.log`）：native取消递增display_epoch，Main仍按pipelineStart旧epoch核对。现取消回执带pipelineId/epoch，Adapter核对previewId/身份/旧epoch+1，Main再独立核对并推进；其他queued身份校验保留。异常日志增加expected/actual有界字段，便于下一次直接定位；没有放宽未知输入的恢复条件。第一轮红测试误调用了未公开drainInput，仅属脚本失败，已改用公开waitOperation等待取消。
+
+真实native与Main聚焦2文件10项通过（`/private/tmp/flow-cancel-epoch-focused.log`）；完整构建、任务局部固定Rust离线release及组件探测通过（`/private/tmp/flow-cancel-epoch-build-final.log`、`/private/tmp/flow-cancel-epoch-native.log`）。首轮真实GUI发现取消后画面仍显示旧笔迹（`/private/tmp/flow-cancel-epoch-gui.log`），原因是只唤醒已等待的关键帧而没有主动取回撤销预览；Adapter现在取消确认后取回新epoch画面。最终构建通过（`/private/tmp/flow-cancel-epoch-build-final2.log`），组件强验证通过（`/private/tmp/flow-cancel-epoch-resources.log`）。最终300图真实GUI通过（`/private/tmp/flow-cancel-epoch-gui-final.log`，`flow-native-workbench-3HX6wD`）：连续两次真实鼠标落笔/Escape取消，像素恢复且revision不变；随后12笔、锁定/冷图准入专项、正常关闭和重开通过。首轮全量在补显示修复时停止exit130，不计通过；最终完整获准清单151文件/1608项通过，517.57s（`/private/tmp/flow-cancel-epoch-suite-final.log`）。旧用户窗口后来日志记录正常退出，非本轮工具操作；随后启动修复版选择页（`/private/tmp/flow-cancel-epoch-trial-launch.log`，构建通过且已进入启动阶段），未重新做原生窗口可见性确认，不自动打开项目或处理恢复数据。README入口、AGENTS规则与DESIGN取消语义未改变。
+
+
 ## 落笔准入与大批预览调度（2026-11-09）
 
 已集成隔离候选：预览队列 `b2fd864`/`33c9c0f`，落笔准入 `7d12b1f`。已知不可绘画层在创建输入前拒绝；未激活板的临时输入只在明确从未发送且身份不变时解除，未知/已尝试发送仍保留。当前就绪板重复激活不重建context。hydration和immutable工作按前台目标/可见/后台动态排序，保留超额需求并防饥饿；恢复补需求，失败有终态。此前用户截图的具体分支没有足够日志，不把这些复现当成每次现场故障的唯一原因。

@@ -129,3 +129,5 @@ Mac日常流程专项：完整build及本轮native组件准备后，`FLOW_IMAGE_
 
 
 落笔准入与大批导入组合验收：在上述原生导入性能专项环境下增加 `FLOW_ADMISSION_REGRESSION=1`。脚本复用300张合成图，使用真实鼠标检查已激活及未激活锁定板均不发送 begin、不创建恢复记录；注入250ms激活延迟后直接在第80/160/240张静态卡片落笔，核对各自版本与其他图片不变，再正常关闭重开。共享用例位于 `scripts/flow-native-admission-cases.cjs`。Runtime聚焦覆盖24张冷图竞争时前台目标提升、恢复补需求；queue测试进入 `allowed-image-engine-suite.json`。耗时指标仍不等同于真实数位笔延迟。
+
+取消后继续绘画专项：给300图原生导入性能脚本增加 `FLOW_CANCEL_REGRESSION=1`，真实鼠标落笔、等待像素变化、Escape取消并核对像素/历史恢复，连续两次后执行原有12笔及正常关闭重开；可同时开启准入专项。`imageEngineDetached.test.ts` 覆盖真实Session+native取消后绘画持久化及重开；`nativePipeline.test.ts` 验证确认的新epoch与异常取消回执仍保留输入。

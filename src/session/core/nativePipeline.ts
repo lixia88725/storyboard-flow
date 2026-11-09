@@ -17,7 +17,7 @@ export interface NativePipelineDriver{
   begin(operationId:string,predecessorOperationId:string|null,stroke:FlowStroke):Promise<void>;
   append(operationId:string,fromSeq:number,points:readonly number[],pressures?:readonly number[]):Promise<void>;
   end(operationId:string,throughSeq:number):Promise<PipelineQueued>;
-  cancel(operationId:string):Promise<void>;
+  cancel(operationId:string):Promise<{pipelineId:string;epoch:number}>;
   poll():Promise<PipelineState>;
   accept(prepared:PreparedImage,base:NativeImageRef):Promise<void>;
   stop():Promise<void>;
@@ -127,7 +127,7 @@ export function createMainImagePipeline(options:{
       }
       if(value.kind==='cancel'){
         if(!shape(value,['kind','operationId']))return rejected('Invalid cancel');active=undefined;
-        queue(async()=>{await driver.cancel(entry.operationId);retire(entry);progress(entry,'cancelled');entry.completed.resolve({kind:'rejected',error:{code:'cancelled',message:'Preview cancelled before durable finish',effect:'none'}});});return admission(entry);
+        queue(async()=>{const cancelled=await driver.cancel(entry.operationId);if(!ready||cancelled.pipelineId!==ready.pipelineId||cancelled.epoch!==ready.epoch+1)throw Error('Native cancellation identity differs from Main pipeline');ready={...ready,epoch:cancelled.epoch};retire(entry);progress(entry,'cancelled');entry.completed.resolve({kind:'rejected',error:{code:'cancelled',message:'Preview cancelled before durable finish',effect:'none'}});});return admission(entry);
       }
       if(!shape(value,['kind','operationId','throughSeq'])||value.throughSeq!==entry.through)return rejected('End must include the exact captured prefix');
       active=undefined;entry.ended=true;last=entry.operationId;progress(entry,'admitted');
@@ -140,7 +140,7 @@ export function createMainImagePipeline(options:{
         await options.persist(intent);entry.intent=intent;entry.intentDurable=true;progress(entry,'intentDurable',true);
         if(blocked)throw blocked;
         const queued=await driver.end(entry.operationId,entry.through);
-        if(queued.candidateId!==entry.operationId||queued.pipelineId!==ready.pipelineId||queued.predecessorOperationId!==entry.predecessorOperationId||queued.inputThrough!==entry.through||queued.epoch!==ready.epoch||queued.durable!==false)throw Error('Native queue admission differs from Main intent');
+        if(queued.candidateId!==entry.operationId||queued.pipelineId!==ready.pipelineId||queued.predecessorOperationId!==entry.predecessorOperationId||queued.inputThrough!==entry.through||queued.epoch!==ready.epoch||queued.durable!==false)throw Error('Native queue admission differs from Main intent: '+JSON.stringify({expected:{candidateId:entry.operationId,pipelineId:ready.pipelineId,predecessorOperationId:entry.predecessorOperationId,inputThrough:entry.through,epoch:ready.epoch,durable:false},actual:queued}));
         entry.queued=copy(queued);progress(entry,'queued');schedule();
       });return admission(entry);
     }catch(e){return rejected(e instanceof Error?e.message:String(e),typeof(e as {code?:unknown})?.code==='string'?(e as {code:string}).code:'invalid-input');}

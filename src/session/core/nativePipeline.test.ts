@@ -10,7 +10,7 @@ function driver(){
  let began=0;const port:NativePipelineDriver={
   validateStroke:()=>{},start:async(base,limits)=>({pipelineId:'pipeline',anchorVersion:base.versionId,documentId:base.documentId,epoch:1,limits}),
   begin:async()=>{began++;},append:async()=>{},end:async(op,through)=>({candidateId:op,pipelineId:'pipeline',predecessorOperationId:null,inputThrough:through,frameInputThrough:through,epoch:1,inputDigest:'b'.repeat(64),durable:false}),
-  cancel:async()=>{},poll:async()=>({pipelineId:'pipeline',anchorVersion:ref.versionId,acceptedVersion:ref.versionId,events:[],blocked:null,queueDepth:0,availableSlots:4}),accept:async()=>{},stop:async()=>{}
+  cancel:async()=>({pipelineId:'pipeline',epoch:2}),poll:async()=>({pipelineId:'pipeline',anchorVersion:ref.versionId,acceptedVersion:ref.versionId,events:[],blocked:null,queueDepth:0,availableSlots:4}),accept:async()=>{},stop:async()=>{}
  };
  // Explicitly reflect the predecessor/epoch prefix of the two admitted test strokes.
  let last:string|null=null,prefix=0;port.end=async(op,through)=>{const pred=last;last=op;prefix+=through;return{candidateId:op,pipelineId:'pipeline',predecessorOperationId:pred,inputThrough:through,frameInputThrough:prefix,epoch:1,inputDigest:'b'.repeat(64),durable:false};};
@@ -51,4 +51,26 @@ it('separates a temporary admission pause from a fault and cannot resume through
  pipeline.fence(Error('Synthetic transport failure'));pipeline.resumeAdmission();
  expect(pipeline.input(begin)).toMatchObject({kind:'rejected',error:{code:'pipeline-blocked',effect:'retained'}});
  expect(pipeline.retainedInputs()).toHaveLength(1);
+});
+
+it('updates only a confirmed cancellation epoch and keeps the next stroke in the same pipeline',async()=>{
+ const d=driver();let serial=0,error:unknown;const events:string[]=[];
+ const end=d.port.end;d.port.end=async(op,through)=>({...await end(op,through),epoch:2});
+ const pipeline=createMainImagePipeline({sessionId:'s',incarnation:'i',driver:d.port,limits,mintId:()=>`cancel-epoch-${++serial}`,canAdmit:()=>true,
+  anchor:()=>({imageId:'image',expected:{kind:'native',native:ref},commitHash:'c'.repeat(64),native:async()=>ref}),persist:async()=>{},
+  decide:async entry=>{await entry.preparedWait.promise;throw Error('Synthetic fixture does not prepare');},blocked:(_id,e)=>{error=e;}});
+ pipeline.subscribe(e=>events.push(e.stage));
+ try{
+  pipeline.input({kind:'begin',shotId:'a',stroke});pipeline.input({kind:'cancel',operationId:'cancel-epoch-1'});await pipeline.drainInput();
+  pipeline.input({kind:'begin',shotId:'a',stroke});pipeline.input({kind:'end',operationId:'cancel-epoch-2',throughSeq:1});await pipeline.drainInput();
+  expect(error).toBeUndefined();expect(events).toContain('cancelled');expect(events).toContain('queued');
+ }finally{pipeline.fence(Error('Synthetic fixture shutdown'));await pipeline.drainInput();}
+});
+it('retains evidence when a cancellation returns an unrelated epoch',async()=>{
+ const d=driver();d.port.cancel=async()=>({pipelineId:'pipeline',epoch:99});let error:unknown;
+ const pipeline=createMainImagePipeline({sessionId:'s',incarnation:'i',driver:d.port,limits,mintId:()=> 'cancel-invalid',canAdmit:()=>true,
+  anchor:()=>({imageId:'image',expected:{kind:'native',native:ref},commitHash:'c'.repeat(64),native:async()=>ref}),persist:async()=>{},
+  decide:async()=>{throw Error('No end expected');},blocked:(_id,e)=>{error=e;}});
+ pipeline.input({kind:'begin',shotId:'a',stroke});pipeline.input({kind:'cancel',operationId:'cancel-invalid'});await pipeline.drainInput();
+ expect(String(error)).toContain('cancellation identity');expect(pipeline.retainedInputs()).toHaveLength(1);
 });

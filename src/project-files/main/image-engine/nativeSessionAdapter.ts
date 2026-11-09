@@ -193,7 +193,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       }
     },
     async end(operationId,throughSeq){const op=operationContext();const{reply}=await call(operationId,{kind:'strokeFinish',previewId:operationId,throughSeq},pipelineBase(),undefined,true);op.check();const value=queued(reply);previewOperation=undefined;return value;},
-    async cancel(operationId){const op=operationContext();const{reply}=await call(next(),{kind:'strokeCancel',previewId:operationId},pipelineBase(),undefined,true);op.check();if(reply.kind!=='cancelled')refuse('Native pipeline preview cancellation unconfirmed','protocol','unknown');previewOperation=undefined;},
+    async cancel(operationId){const op=operationContext();const{reply}=await call(next(),{kind:'strokeCancel',previewId:operationId},pipelineBase(),undefined,true);op.check();if(!pipelineReady)refuse('Missing cancellation pipeline','protocol','unknown');const before=pipelineReady;if(reply.kind!=='cancelled'||reply.previewId!==operationId||reply.durable!==false||reply.pipelineId!==before.pipelineId||!Number.isSafeInteger(reply.epoch)||reply.epoch!==before.epoch+1)refuse('Native pipeline preview cancellation unconfirmed','protocol','unknown');pipelineReady={...before,epoch:Number(reply.epoch)};previewOperation=undefined;await call(next(),{kind:'capture'},pipelineBase(),undefined,true);op.check();return{pipelineId:reply.pipelineId as string,epoch:Number(reply.epoch)};},
     async poll(){
       const op=operationContext();
       const{reply}=await call(next(),{kind:'pipelinePoll',pipelineId:pipelineReady?.pipelineId},pipelineBase());op.check();
