@@ -10,8 +10,8 @@ const originals=Object.fromEntries(fs.readdirSync(source).map(n=>[n,sha(path.joi
 const previous=reopen?JSON.parse(fs.readFileSync(path.join(out,'performance-paint.json'),'utf8')):null;
 process.argv=[process.execPath,__filename,reopen?previous.root:path.join(out,'project'),path.join(out,'performance-userData')];
 dialog.showOpenDialog=async(_win,options)=>{assert.ok(['打开项目或图片文件夹','选择项目保存位置'].includes(options.title));return{canceled:false,filePaths:[options.title==='打开项目或图片文件夹'?source:parent]};};
-let win,certified=0;const report={phase,strokes:[],stage:'boot'};
-const handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(name,fn)=>handle(name,async(...args)=>{const result=await fn(...args);if(name==='flow-editor:finish-native-close'&&result?.ok)certified++;return result;});
+let win,certified=0,activationDelay=0,extraRevisions=0;const inputEvents=[];const report={phase,strokes:[],stage:'boot'};
+const handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(name,fn)=>handle(name,async(...args)=>{if(name==='flow-image-workspace:input')inputEvents.push(args[2]);if(activationDelay&&name==='flow-image-workspace:request'&&args[1]?.command?.kind==='activateShot')await new Promise(r=>setTimeout(r,activationDelay));const result=await fn(...args);if(name==='flow-editor:finish-native-close'&&result?.ok)certified++;return result;});
 const pause=ms=>new Promise(r=>setTimeout(r,ms)),js=s=>win.webContents.executeJavaScript(s),boot=async()=>(await js('window.flowEditor.imageWorkspace.bootstrap()')).snapshot;
 const wait=async(fn,label,ms=60000)=>{const deadline=Date.now()+ms;while(Date.now()<deadline){if(await fn())return;await pause(30);}throw Error('timeout '+label);};
 const button=label=>js(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('button missing');b.click()})()`);
@@ -28,6 +28,7 @@ const button=label=>js(`(()=>{const b=[...document.querySelectorAll('button')].f
  await wait(()=>js('document.querySelectorAll("canvas[data-frame-status=ready]").length===2'),'first image');
  const initial=await boot(),first=initial.session.project.shots[0];assert.equal(initial.session.project.shots.length,300);
  const selector=`[data-surface="viewer:${first.id}"] canvas`,pixels=()=>js(`(()=>{const c=document.querySelector(${JSON.stringify(selector)});if(c.dataset.frameStatus!=='ready')return null;const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let s='';for(let i=0;i<d.length;i+=16384)s+=String.fromCharCode(...d.subarray(i,i+16384));return btoa(s)})()`);
+ await wait(()=>pixels(),'exact imported first-board frame');
  if(reopen){assert.equal(initial.session.project.revision,previous.revision);assert.equal(createHash('sha256').update(await pixels()).digest('hex'),previous.pixelSha256);}
  else{
   report.remainingAtFirstStroke=Object.values(initial.images).filter(i=>['queued','retaining','hydrating'].includes(i.availability)).length;assert.ok(report.remainingAtFirstStroke>0,'painting must overlap background loading');
@@ -50,13 +51,14 @@ const button=label=>js(`(()=>{const b=[...document.querySelectorAll('button')].f
   await wait(async()=>(await pixels())!==before,'visible paint');
   assert.equal(await js('!!document.querySelector("[aria-label=待处理笔迹]")'),false);
   assert.equal(await js('!!document.querySelector(".wb-file-recovery")'),false);
+  if(process.env.FLOW_ADMISSION_REGRESSION==='1')extraRevisions=await require('./flow-native-admission-cases.cjs')({win,js,boot,wait,pause,report,inputEvents,setActivationDelay:value=>{activationDelay=value;}});
   report.stage='idle-background-completion';const idleStart=Date.now();
   await wait(async()=>Object.values((await boot()).images).every(i=>!['queued','retaining'].includes(i.availability)),'source custody finishes after drawing',60000);
   report.idleCompletionMs=Date.now()-idleStart;
   report.pixelSha256=createHash('sha256').update(await pixels()).digest('hex');
-  report.revision=(await boot()).session.project.revision;assert.equal(report.revision,initial.session.project.revision+12);
+  report.revision=(await boot()).session.project.revision;assert.equal(report.revision,initial.session.project.revision+12+extraRevisions);
  }
  assert.deepEqual(Object.fromEntries(fs.readdirSync(source).map(n=>[n,sha(path.join(source,n))])),originals);
  report.stage='close';win.on('closed',()=>{assert.ok(certified>0,'normal close certified');report.ok=true;report.certified=certified;fs.writeFileSync(path.join(out,'performance-'+phase+'.json'),JSON.stringify(report,null,2));});win.close();
  setTimeout(()=>{if(!win.isDestroyed()){fs.writeFileSync(path.join(out,'performance-'+phase+'-failed.json'),JSON.stringify(report));app.exit(1);}},60000).unref();
-})().catch(error=>{report.error=String(error.stack??error);fs.writeFileSync(path.join(out,'performance-'+phase+'-failed.json'),JSON.stringify(report,null,2));console.error(error);app.exit(1);});
+})().catch(async error=>{if(win&&!win.isDestroyed())try{fs.writeFileSync(path.join(out,'performance-'+phase+'-failed.png'),(await win.webContents.capturePage()).toPNG());fs.writeFileSync(path.join(out,'performance-'+phase+'-failed-dom.txt'),await js('document.body.innerText'));}catch{}report.inputEvents=inputEvents;report.error=String(error.stack??error);fs.writeFileSync(path.join(out,'performance-'+phase+'-failed.json'),JSON.stringify(report,null,2));console.error(error);app.exit(1);});

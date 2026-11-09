@@ -1,5 +1,16 @@
 # 当前状态与剩余工作
 
+## 落笔准入与大批预览调度（2026-11-09）
+
+已集成隔离候选：预览队列 `b2fd864`/`33c9c0f`，落笔准入 `7d12b1f`。已知不可绘画层在创建输入前拒绝；未激活板的临时输入只在明确从未发送且身份不变时解除，未知/已尝试发送仍保留。当前就绪板重复激活不重建context。hydration和immutable工作按前台目标/可见/后台动态排序，保留超额需求并防饥饿；恢复补需求，失败有终态。此前用户截图的具体分支没有足够日志，不把这些复现当成每次现场故障的唯一原因。
+
+组合构建通过（`/private/tmp/flow-admission-combined-build.log`）。旧dist真实窗口红回归证明锁定层点击仍发送begin（`/private/tmp/flow-admission-combined-red2.log`）。修后最终300图组合通过（`/private/tmp/flow-admission-combined-gui-final2.log`，`flow-native-workbench-sD2Df4`）：2.426s进入、首笔时300项仍后台处理、连续12笔；已激活及未激活锁定板点击均零begin/零编辑/无恢复记录；250ms激活延迟下第80/160/240张queued静态卡直接落笔各只提交一笔、其他板不变；正常关闭重开一致。rAF p95约9.9ms/max24.9ms，停笔后后台保管完成仍需41.195s；本次与完整测试并行，合成PNG/JPEG不代表复杂TIFF/PSD。首轮因未传native环境变量未启动，日志保留，不计产品失败。
+
+邻近日常GUI通过（`/private/tmp/flow-admission-combined-daily.log`，`flow-native-workbench-cZb8Kb`），覆盖Save/Refresh/Undo/恢复/正常关闭重开。完整获准清单151文件/1605项通过，504.61s（`/private/tmp/flow-admission-combined-suite.log`）。原生全尺寸合成成本没有消除，单个在途任务不可抢占；真实TEST2整批耗时、Windows及数位笔待验。状态机只读审计见 `/private/tmp/flow-state-machine-audit-20261109.md`，涵盖运行模块及边界，不声称穷举第三方内部状态。README启动入口、AGENTS授权规则未变，无需修改。未合main、推送或发布，未处理用户恢复数据。
+
+试用启动器再次完整构建并启动，日志 `/private/tmp/flow-admission-trial-launch.log`；本次未发现需正常关闭的旧实例。原生窗口检查工具两次连接超时，未取得选择页截图，不将其计为可见页面确认；独立合成窗口的端到端证据如上。未自动打开用户项目或点击恢复按钮。
+
+
 ## 切图时画布准备提示闪现（2026-11-09）
 
 目标图的NativeCanvas随shot重新挂载，初始preparing先呈现，且此前静态预览被卸下，形成切图空档。本轮加入Session内有界缩略图缓存及同步安装、目标预览到实时画布交接；没有改编辑目标、文件流程或隐藏实际故障。

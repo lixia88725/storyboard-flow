@@ -210,3 +210,10 @@ Runtime每次展示投影只取一次Session项目快照，图片、当前选择
 Main绘画决定失败保留有界运行诊断（operationId、阶段、commitHash、错误code/message/effect），不改变作品或恢复日志磁盘格式；原始原因不再被通用recoveryPending结果吞掉。UI按笔迹、Session恢复、来源/输出恢复区分入口，不改变原有结算条件。
 
 工作台缩略图由Runtime的可见图片需求与版本跟踪驱动：待处理集合承接并发4任务之外的需求，任务结束补调度；Session发布时仅对需求版本变化入队，不靠Renderer重复发送相同板ID。旧版本在途结果不会绑定新版本，其完成后补最新需求。缓存仍限64张，预览不作为编辑或保存权威；Renderer同image的canvas在异步替换期间保留，换image清空。
+
+
+### 原生工作台落笔准入与准备队列
+
+`capture` 在创建输入前通过 `checkTarget` 检查已知目标，发送 begin 前再通过 `resolveTarget` 核对。具体目标不重新绑定；只有 layerId 为空的临时候选可在激活原目标板后绑定。该候选仅在无 operationId、未发送数据、从未尝试 begin、worker 身份未变，且明确收到 `paint-layer-unavailable` 的未准入结果时解除；其余失败保留输入。`beginAttempted` 在 IPC 前设置，传输失败不算未开始。NativeCanvas 同步结束已解除候选的本地手势。Runtime 对当前已就绪板的重复激活保持上下文，其他激活仍经过原 barrier。
+
+`workspaceJobQueue` 分别串行调度 hydration 和 immutable 工作，优先级在出队时读取，每第五次选择最早等待项以避免饥饿。同图 hydration 共享 Promise；前台 activate 在等待期间登记引用计数，使尚未成为 activeShot 的目标也能提升优先级。去掉按队列长度拒绝冷图的路径，恢复后重新登记仍可见且未完成的需求。后台让路只发生在任务边界，250ms 是等待 captures 的上限而非原生渲染时限；未抬笔的现有准入限制仍保留。不可变 prepare 缓存可减少随后 inspect 的重复工作，但缓存未命中时仍可能全尺寸合成，尚未加入原生低分辨率专用渲染。

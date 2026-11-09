@@ -23,5 +23,6 @@
   "src/platform/main/imageEngineInactiveExport.test.ts",
   "src/platform/main/imageEngineJpeg.test.ts",
   "src/platform/main/imageEngineSingleLayerOutput.test.ts",
-  "src/session/core/imageReplacement.test.ts"
+  "src/session/core/imageReplacement.test.ts",
+  "src/project-files/main/image-engine/workspaceJobQueue.test.ts"
 ]
