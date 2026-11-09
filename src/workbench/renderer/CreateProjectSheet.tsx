@@ -30,7 +30,6 @@ export function CreateProjectSheet(p: Props) {
   const [name, setName] = useState(p.state.draft.name);
   const [error, setError] = useState('');
   const composing = useRef(false);
-  const legacy = p.state.draft.legacy;
   const mode = p.state.draft.mode;
   const sourceLabel = p.state.draft.source.kind === 'none' ? '' : p.state.draft.source.label;
   // Preview only: Main derives and validates the same leaf again before creating.
@@ -69,7 +68,6 @@ export function CreateProjectSheet(p: Props) {
       {mode === 'images'
         ? <p className="wb-sheet-note" data-create-source-note>{sourceLabel} · {p.state.draft.imageCount} 张图片。项目会保存到新的文件夹，来源图片不会被移动或修改。</p>
         : <p className="wb-sheet-note">项目会保存到新的文件夹。创建后可以在这个项目里新建第一张故事板。</p>}
-      {legacy && <p className="wb-sheet-warning" data-create-legacy="true" role="note">这是旧版工作簿文件夹：只导入其中的图片，旧版的排序和对白不会迁移。</p>}
       <div className="wb-sheet-group">
         <label className="wb-sheet-field"><span>项目名称</span>
           <input value={name} disabled={!editable} spellCheck={false} data-create-field="name" autoFocus

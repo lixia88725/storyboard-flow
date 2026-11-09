@@ -58,17 +58,17 @@ describe('entry folder classification', () => {
   it('counts direct supported images only', async () => {
     const root = await folderWith(['1.png', '10.JPG', 'b.tif', 'notes.txt', '.hidden.png']);
     await mkdir(path.join(root, 'nested.tiff'));
-    expect(await inspectProjectFolder(root)).toEqual({ kind: 'images', imageCount: 3, legacy: false });
+    expect(await inspectProjectFolder(root)).toEqual({ kind: 'images', imageCount: 3 });
   });
 
-  it('treats a retired workbench folder as images with the legacy notice', async () => {
+  it('ignores retired workbook metadata when classifying images', async () => {
     const root = await folderWith(['a.png', 'b.tiff'], '.storyboard-workbench');
-    expect(await inspectProjectFolder(root)).toEqual({ kind: 'images', imageCount: 2, legacy: true });
+    expect(await inspectProjectFolder(root)).toEqual({ kind: 'images', imageCount: 2 });
   });
 
-  it('reports an empty folder and an empty legacy folder apart', async () => {
-    expect(await inspectProjectFolder(await folderWith([]))).toEqual({ kind: 'empty', legacy: false });
-    expect(await inspectProjectFolder(await folderWith([], '.storyboard-workbench'))).toEqual({ kind: 'empty', legacy: true });
+  it('reports the same empty result regardless of retired workbook metadata', async () => {
+    expect(await inspectProjectFolder(await folderWith([]))).toEqual({ kind: 'empty' });
+    expect(await inspectProjectFolder(await folderWith([], '.storyboard-workbench'))).toEqual({ kind: 'empty' });
   });
 });
 
@@ -76,31 +76,33 @@ describe('simplified entry drafts', () => {
   it('turns an image folder into a draft named after it, with a distinct folder', async () => {
     const { launcher } = await fixture();
     const folder = await folderWith(['a.png', 'b.png']);
-    const draft = launcher.draftFromFolder(folder, { imageCount: 2, legacy: false });
+    const draft = launcher.draftFromFolder(folder, { imageCount: 2 });
     expect(draft).toMatchObject({
-      mode: 'images', legacy: false, imageCount: 2, name: path.basename(folder),
+      mode: 'images', imageCount: 2, name: path.basename(folder),
       folderName: path.basename(folder) + ' 分镜', destination: null
     });
     expect(draft.source).toMatchObject({ kind: 'folder', label: path.basename(folder) });
     expect(launcher.problem(draft.id)).toBe('请先选择保存位置');
   });
 
-  it('keeps the legacy flag on a retired workbench draft', async () => {
+  it('creates the same ordinary draft for a folder containing retired metadata', async () => {
     const { launcher } = await fixture();
     const folder = await folderWith(['a.png'], '.storyboard-workbench');
-    expect(launcher.draftFromFolder(folder, { imageCount: 1, legacy: true }).legacy).toBe(true);
+    const draft = launcher.draftFromFolder(folder, { imageCount: 1 });
+    expect(draft).toMatchObject({ mode: 'images', imageCount: 1 });
+    expect(draft).not.toHaveProperty('legacy');
   });
 
   it('refuses a folder draft without images', async () => {
     const { launcher } = await fixture();
     const folder = await folderWith([]);
-    expect(() => launcher.draftFromFolder(folder, { imageCount: 0, legacy: false })).toThrow('没有可导入的图片');
+    expect(() => launcher.draftFromFolder(folder, { imageCount: 0 })).toThrow('没有可导入的图片');
   });
 
   it('starts a blank draft that asks for a location, not a source', async () => {
     const { launcher } = await fixture();
     const draft = launcher.begin('blank');
-    expect(draft).toMatchObject({ mode: 'blank', legacy: false, imageCount: 0, source: { kind: 'none' } });
+    expect(draft).toMatchObject({ mode: 'blank', imageCount: 0, source: { kind: 'none' } });
     expect(launcher.problem(draft.id)).toBe('请先选择保存位置');
     expect(() => launcher.setSource(draft.id, { kind: 'folder', folder: '/tmp' })).toThrow('空白项目');
   });
@@ -122,7 +124,7 @@ describe('simplified entry drafts', () => {
   it('creates from an image folder through the image transaction', async () => {
     const { launcher, destination, createProject, createBlankProject } = await fixture();
     const folder = await folderWith(['a.png', 'b.png']);
-    const draft = launcher.draftFromFolder(folder, { imageCount: 2, legacy: false });
+    const draft = launcher.draftFromFolder(folder, { imageCount: 2 });
     launcher.setDestination(draft.id, destination);
     const opened = await launcher.createAndPrepare(draft.id);
     expect(opened.root).toBe(path.join(destination, path.basename(folder) + ' 分镜'));

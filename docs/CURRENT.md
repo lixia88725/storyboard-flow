@@ -1,5 +1,11 @@
 # 当前状态与剩余工作
 
+## 移除旧版工作簿识别与提示（2026-11-09）
+
+已移除 `.storyboard-workbench` 专用探测、创建草稿 legacy 字段和旧版迁移提示，带该目录的图片文件夹按普通图片文件夹处理。原文件及当前 Flow 项目损坏保护不变；本轮没有修改卡顿或恢复提示逻辑。
+
+完整构建与 preload 检查通过（`/private/tmp/flow-remove-workbook-{build,preload}.log`）；真实隔离 Electron 入口七阶段通过（`/private/tmp/flow-remove-workbook-gui.log`，`flow-project-entry-bsl441`），覆盖旧标记无提示、原元数据不变、取消、新建、重开与 Pending。完整获准清单150文件/1576项首次1567通过、9失败（`/private/tmp/flow-remove-workbook-suite.log`）：8项为独立Python读取器缺依赖，1项为原生Session并发读取冲突。首次定向复跑8文件/60项为53通过、7项仍缺依赖，V1解释与并发读取均通过（`/private/tmp/flow-remove-workbook-rerun.log`）；确认部分用例硬编码的临时依赖目录已不存在后，仅复制仓库现有依赖到该测试目录，余6文件/11项全部通过（`/private/tmp/flow-remove-workbook-oracle-rerun.log`），未安装或改断言。全部失败项已获得复跑通过证据，但不称首次全量全绿；并发读取偶发失败未作产品修复，保留日志供后续核查。改动仅在集成试用分支，未重启用户窗口，未合 main、推送或发布。
+
 ## 试用反馈：绘画期间图层列表跳动（2026-11-09）
 
 正常capture active/pending被当成常驻notice插入图层列表上方，落笔/结算交替改变布局。现将操作禁用原因与notice显示分开：普通绘画期间不插入notice，按钮/准入保护保持；失败、blocked、无能力、未准备好与保存/切换原因仍显示。没有修改绘画、持久化或用户项目。

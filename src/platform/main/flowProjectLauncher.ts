@@ -19,7 +19,6 @@ type StoredRecent = { version: 1; projects: RecentRecord[] };
 type Draft = {
   id: string;
   mode: FlowCreateMode;
-  legacy: boolean;
   imageCount: number;
   source: CreateImageProjectSource | null;
   destinationParent: string | null;
@@ -229,7 +228,6 @@ export function createFlowProjectLauncher<T extends {root:string}=FlowWorkspaceT
   const view = (draft: Draft): FlowCreateDraftView => ({
     id: draft.id,
     mode: draft.mode,
-    legacy: draft.legacy,
     imageCount: draft.imageCount,
     source: draft.source ? sourceLabel(draft.source) : { kind: 'none' },
     destination: draft.destinationParent ? { label: path.basename(draft.destinationParent) || draft.destinationParent } : null,
@@ -256,7 +254,7 @@ export function createFlowProjectLauncher<T extends {root:string}=FlowWorkspaceT
 
   const begin = (mode: FlowCreateMode = 'images'): FlowCreateDraftView => {
     const draft: Draft = {
-      id: randomId(), mode, legacy: false, imageCount: 0, source: null, destinationParent: null,
+      id: randomId(), mode, imageCount: 0, source: null, destinationParent: null,
       folderName: '未命名项目', name: '未命名项目',
       naming: { sceneCode: 'scene', artistName: 'artist', version: 'v001' },
       nameTouched: false, folderTouched: false
@@ -265,15 +263,15 @@ export function createFlowProjectLauncher<T extends {root:string}=FlowWorkspaceT
     return view(draft);
   };
 
-  /** A folder the entry classified as images (or a retired workbook) becomes a
+  /** A folder the entry classified as images becomes a
    * draft that only needs a location: the project name already defaults to the
    * folder's name. */
-  const draftFromFolder = (folder: string, entry: { imageCount: number; legacy: boolean }): FlowCreateDraftView => {
+  const draftFromFolder = (folder: string, entry: { imageCount: number }): FlowCreateDraftView => {
     if (!absolute(folder)) throw Error('图片来源文件夹无效');
     if (!Number.isSafeInteger(entry?.imageCount) || entry.imageCount < 1) throw Error('这个文件夹里没有可导入的图片');
     const base = path.basename(folder) || '未命名项目';
     const draft: Draft = {
-      id: randomId(), mode: 'images', legacy: Boolean(entry.legacy), imageCount: entry.imageCount,
+      id: randomId(), mode: 'images', imageCount: entry.imageCount,
       source: { kind: 'folder', folder }, destinationParent: null,
       folderName: base, name: base,
       naming: { sceneCode: 'scene', artistName: 'artist', version: 'v001' },
@@ -299,7 +297,6 @@ export function createFlowProjectLauncher<T extends {root:string}=FlowWorkspaceT
       if (!draft.folderTouched) draft.folderName = '未命名项目';
     }
     draft.source = source;
-    draft.legacy = false;
     draft.imageCount = source.kind === 'folder' ? draft.imageCount : source.files.length;
     syncFolderName(draft);
     return view(draft);

@@ -2,19 +2,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { SOURCE_EXTENSIONS } from './imageSourceConversion.js';
 
-/** Format markers. A folder is a Flow project when `.storyboard-flow` exists;
- * `.storyboard-workbench` is the retired workbook layout and is only ever read
- * through the ordinary image import. */
+/** Only the current Flow project marker affects folder classification. */
 export const FLOW_PROJECT_DIRECTORY = '.storyboard-flow';
-export const LEGACY_WORKBOOK_DIRECTORY = '.storyboard-workbench';
 
 export type ProjectFolderEntry =
   | { kind: 'flow' }
   /** A Flow marker that cannot be used as a project. Never falls back to import. */
   | { kind: 'damaged'; reason: string }
-  /** A folder of direct images; `legacy` marks a retired workbook folder. */
-  | { kind: 'images'; imageCount: number; legacy: boolean }
-  | { kind: 'empty'; legacy: boolean };
+  /** A folder of direct images. */
+  | { kind: 'images'; imageCount: number }
+  | { kind: 'empty' };
 
 const probe = async (root: string, name: string) => {
   try { return await fs.lstat(path.join(root, name)); }
@@ -43,9 +40,7 @@ export async function inspectProjectFolder(root: string): Promise<ProjectFolderE
       return { kind: 'damaged', reason: `${FLOW_PROJECT_DIRECTORY} 不是普通文件夹` };
     return { kind: 'flow' };
   }
-  const legacyEntry = await probe(root, LEGACY_WORKBOOK_DIRECTORY);
-  const legacy = Boolean(legacyEntry?.isDirectory() && !legacyEntry.isSymbolicLink());
   const imageCount = await countDirectImages(root);
-  if (imageCount) return { kind: 'images', imageCount, legacy };
-  return { kind: 'empty', legacy };
+  if (imageCount) return { kind: 'images', imageCount };
+  return { kind: 'empty' };
 }

@@ -14,8 +14,8 @@ export type FlowProjectTarget =
   | { kind: 'recent'; id: string }
   | { kind: 'create' | 'upgrade'; draftId: string };
 /** The simplified entry asks Main to inspect one folder. A Flow project is held
- * as a one-shot pending target; image folders (including a retired
- * `.storyboard-workbench`) become a creation draft the renderer confirms. */
+ * as a one-shot pending target; image folders become a creation draft
+ * the renderer confirms. */
 export type FlowOpenChoice =
   | { canceled: true }
   | { kind: 'project' }
@@ -39,9 +39,6 @@ export type FlowCreateMode = 'images' | 'blank';
 export type FlowCreateDraftView = {
   id: string;
   mode: FlowCreateMode;
-  /** The source folder is a retired `.storyboard-workbench` folder: its images are
-   * imported, its old ordering and dialogue are not. */
-  legacy: boolean;
   /** Direct supported images in the source folder; 0 for a blank project. */
   imageCount: number;
   source: FlowCreateSourceView;

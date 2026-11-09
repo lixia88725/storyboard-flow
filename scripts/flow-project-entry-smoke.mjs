@@ -1,6 +1,6 @@
 // Isolated native Electron acceptance for the simplified project entry.
 // Covers: two entry actions, one folder picker that opens a Flow project or offers
-// to create from images, the legacy .storyboard-workbench notice, a damaged Flow
+// to create from images, ignored .storyboard-workbench metadata, a damaged Flow
 // marker refused without falling back to import, blank project creation and reopen.
 //
 // Requires a complete build with the real creation backends.
@@ -197,16 +197,15 @@ const runPhase=async()=>{
   await wait(()=>exists('[data-project-launcher]'),'launcher');
   await button('打开…');
   await wait(()=>exists('[data-create-sheet]'),'legacy sheet');
-  await wait(()=>exists('[data-create-legacy]'),'legacy notice');
-  const notice=String(await exec(sel('[data-create-legacy]')+'.textContent'));
-  if(!notice.includes('排序')||!notice.includes('不会迁移'))throw Error('legacy notice: '+notice);
+  if(await exists('[data-create-legacy]'))throw Error('retired metadata must not add an import warning');
+  if(fs.readFileSync(path.join(plan.legacySource,'.storyboard-workbench','document.json'),'utf8')!==JSON.stringify({old:'ordering and dialogue'}))throw Error('retired metadata changed');
   if((await exec(sel('[data-create-field=name]')+'.value'))!==path.basename(plan.legacySource))throw Error('legacy default name');
   await shot('07-legacy-sheet');
   await button('取消');
   await wait(async()=>!(await exists('[data-create-sheet]')),'legacy sheet closed');
   if(fs.existsSync(path.join(plan.destination2, path.basename(plan.legacySource))))throw Error('cancel created a folder');
   if(await exists('[data-workbench]'))throw Error('cancel opened a project');
-  return {ok:true,phase:'legacy',notice};
+  return {ok:true,phase:'legacy',ignoredMetadata:true};
  }
  if(plan.phase==='reopen'){
   await wait(()=>exists('[data-project-launcher]'),'launcher');

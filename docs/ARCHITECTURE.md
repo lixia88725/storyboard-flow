@@ -152,7 +152,7 @@ IME候选只留本地，确认后提交。每个编辑器独立持有未确认�
 
 ## TIFF导入
 
-入口只有一个文件夹选择器。主进程先用 `project-files/main/projectFolderEntry.ts` 分类：有 `.storyboard-flow` 且 checkpoint 可读 → 直接打开；有 `.storyboard-flow` 但标记不是目录或 checkpoint 读不出来 → 报错停止，不降级成图片导入；否则按直属 JPEG、PNG、受支持 TIFF 计数，有图片（含旧版 `.storyboard-workbench` 文件夹）→ 生成一次性创建草稿交给渲染层确认；两者都没有 → 报“没有可导入的图片”。分类只做只读探测，真正的创建仍走下面的创建事务。
+入口只有一个文件夹选择器。主进程先用 `project-files/main/projectFolderEntry.ts` 分类：有 `.storyboard-flow` 且 checkpoint 可读 → 直接打开；有 `.storyboard-flow` 但标记不是目录或 checkpoint 读不出来 → 报错停止，不降级成图片导入；否则按直属 JPEG、PNG、受支持 TIFF 计数，有图片 → 生成一次性创建草稿交给渲染层确认；两者都没有 → 报“没有可导入的图片”。分类只做只读探测，不检查已退役的工作簿标记，不向创建草稿传递旧版标志；真正的创建仍走下面的创建事务。
 
 “打开”只加载已有 Flow checkpoint，不会初始化用户选择的图片目录。由“创建”从多个文件或一个文件夹读取素材；文件夹只扫描直属 JPEG、PNG、受支持的 TIFF 并自然排序。入口当前只以文件夹为来源，多选文件仍只供 Pending 添加使用。新建空白项目走 `createBlankProject.ts`：与图片创建相同的暂存—checkpoint—独占发布—验证流程，只是不读来源、不写工作 TIFF，项目从 0 板开始。主进程持有来源绝对路径，汇总需要跳过或降级的素材供一次确认。在目标父目录内准备独立暂存项目、新身份、资产和已发布的 TIFF 绑定，再独占发布到新目录。失败时保留无法安全清除的暂存现场，不删除来源或覆盖已有项目。新文件夹名由项目名派生（`folderNameFromProjectName`），与来源目录同名时加“分镜”后缀（`projectFolderNameFor`）；渲染层只预览，主进程在创建前重算并校验。
 

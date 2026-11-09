@@ -156,9 +156,7 @@ else app.whenReady().then(async () => {
       return { kind: 'project' };
     }
     if (entry.kind === 'empty')
-      throw Error(entry.legacy
-        ? '这个旧版工作簿文件夹里没有可导入的图片（只读取直属的 JPEG、PNG、TIFF、PSD）。'
-        : '这个文件夹里没有可导入的图片（只读取直属的 JPEG、PNG、TIFF、PSD），也不是 Storyboard Flow 项目。');
+      throw Error('这个文件夹里没有可导入的图片（只读取直属的 JPEG、PNG、TIFF、PSD），也不是 Storyboard Flow 项目。');
     return { kind: 'import', draft: launcher.draftFromFolder(root, entry) };
   };
 
