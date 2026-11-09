@@ -35,6 +35,8 @@ node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "
 
 绘画协调/关闭专项：`FLOW_DAILY_CLOSE_AFTER_FAULT=1 node scripts/flow-native-daily-smoke.mjs`，仍需显式host/lease及完整build。除原有加载中绘画、Save/Refresh/Undo/Redo和故障恢复，还在合成实例空闲时中断自有host，直接正常关窗，再以新进程重开并落笔。未完成输入拒绝关闭由真实Runtime测试覆盖。`imageEngineDetached.test.ts`通过真实host的缩略图预算失败检查Session仍可绘画/关闭/重开；Rust分类测试为`cargo test --offline --locked --manifest-path native/photocraft/Cargo.toml --lib failure_scope_tests`，不能用bin目标的0 tests当通过证据。
 
+切图交接专项：构建后设 `FLOW_CREATION=1` 运行 `scripts/flow-native-workbench-smoke.mjs`（同样显式host/lease）。合成透明绘画板与白板来回切换六次，注入250ms激活延迟，逐rAF检查目标像素、无空白/加载文字，再验证撤销及正常关闭重开；测试实例关闭后台节流确保采样，并在closed事件同步写验收记录。
+
 ## GUI验证脚本索引
 
 | 检查什么 | 脚本 |

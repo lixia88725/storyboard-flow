@@ -1,5 +1,14 @@
 # 当前状态与剩余工作
 
+## 切图时画布准备提示闪现（2026-11-09）
+
+目标图的NativeCanvas随shot重新挂载，初始preparing先呈现，且此前静态预览被卸下，形成切图空档。本轮加入Session内有界缩略图缓存及同步安装、目标预览到实时画布交接；没有改编辑目标、文件流程或隐藏实际故障。
+
+构建通过（`/private/tmp/flow-switch-build-final.log`）；controller聚焦18项通过（`/private/tmp/flow-switch-focused.log`）。真实Electron切图专项通过（`/private/tmp/flow-switch-gui-final5.log`，`flow-native-workbench-Wd1XdB`）：250ms激活延迟下六次交替，逐帧目标预览非空、左右两侧均无加载文字，透明绘画板与白板不串图，撤销、新进程重开和正常关闭保持。首次沙箱实例SIGABRT未启动；其后脚本先遇到退出早于receipt、再遇后台rAF无采样，均保留失败日志；修复脚本同步落receipt及测试实例后台节流后通过，未弱化像素断言。日常真实Electron回归通过（`/private/tmp/flow-switch-daily.log`，`flow-native-workbench-aSznpD`），覆盖绘画/Save/Refresh/Undo/恢复/关闭重开；其后仅让缩略图在ready画布背后预备，完整build及上述切图GUI复验通过。完整获准清单150文件/1591项通过，520.69s（`/private/tmp/flow-switch-suite.log`）。README启动说明及AGENTS规则不变，无需更新；尚未合main/推送/发布。首次没有预览或缓存已淘汰的图片仍需读取；不宣称所有首次切图零等待。
+
+启动器完整构建并启动修复版，本次未发现需要关闭的旧实例（`/private/tmp/flow-switch-trial-launch.log`），原生UI确认新版工作台窗口可见；未自动点击用户项目或绘画、未处理恢复记录。当前仅隔离试用分支。
+
+
 ## 可见预览排队与画后更新（2026-11-09）
 
 用户报告诊断版绘画不再报错，但可见卡片长期准备中，画后已有预览消失。已查明Runtime超过4任务直接丢需求，Renderer需求只含板ID，版本变化不会重需，旧版本任务完成也不补新版本；另有local thumbnail notice未显示。当前工作区增加待处理队列及Main可见版本跟踪，保留同图旧canvas至新预览就绪，失败显示终态。

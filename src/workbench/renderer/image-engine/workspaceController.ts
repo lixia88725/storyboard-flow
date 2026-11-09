@@ -11,6 +11,24 @@ const sameStream=(a:ImageWorkspaceFrameIdentity,b:ImageWorkspaceFrameIdentity)=>
 export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initial:ImageWorkspaceBootstrap){
  if(!sameOwner(initial.snapshot.owner,initial.frames.owner))throw Error('Bootstrap frame owner mismatch');
  const owner={...initial.snapshot.owner};let snapshot=initial.snapshot,stream=initial.frames;
+ // Immutable thumbnail IDs are scoped to this owner. Keep a bounded renderer
+ // copy so remounting a board never needs another IPC round trip to show it.
+ type Thumbnail=Awaited<ReturnType<ImageWorkspaceBridge['thumbnail']>>;
+ const thumbnails=new Map<string,Thumbnail>(),thumbnailLoads=new Map<string,Promise<Thumbnail>>();
+ let thumbnailBytes=0;
+ const cachedThumbnail=(id:string)=>{const value=thumbnails.get(id);if(value){thumbnails.delete(id);thumbnails.set(id,value);}return value;};
+ const thumbnail=(id:string):Promise<Thumbnail>=>{
+  const cached=cachedThumbnail(id);if(cached)return Promise.resolve(cached);
+  const pending=thumbnailLoads.get(id);if(pending)return pending;
+  const load=bridge.thumbnail(owner,id).then(value=>{
+   if(!Number.isSafeInteger(value.width)||!Number.isSafeInteger(value.height)||value.width<1||value.height<1||value.width>512||value.height>512||!(value.rgba instanceof Uint8Array)||value.rgba.byteLength!==value.width*value.height*4)throw Error('Invalid thumbnail');
+   if(!disposed){thumbnails.set(id,value);thumbnailBytes+=value.rgba.byteLength;
+    while(thumbnailBytes>32*1024*1024||thumbnails.size>128){const key=thumbnails.keys().next().value!;thumbnailBytes-=thumbnails.get(key)!.rgba.byteLength;thumbnails.delete(key);}}
+   return value;
+  }).finally(()=>thumbnailLoads.delete(id));
+  thumbnailLoads.set(id,load);return load;
+ };
+
  let port:MessagePort|undefined,disposed=false,ready=false;
  let fault:ImageWorkspaceFailure|undefined;
  let displayOverride:Extract<ImageWorkspaceEvent,{kind:'display'}>|undefined;
@@ -124,7 +142,7 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
  });
  async function connect(){try{await bridge.connectFrames(stream);}catch{setFault({code:'frame-transport',message:'无法连接画布。',effect:'none'});}}
  return {
-  thumbnail:(id:string)=>bridge.thumbnail(owner,id),
+  thumbnail,cachedThumbnail,
   owner,capabilities:initial.capabilities,capture,setInputPause,
   inputPausedExcept:(reason:string)=>[...pauseReasons].some(item=>item!==reason),
   start:connect,
@@ -159,7 +177,7 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
   async refreshSnapshot(){const next=await bridge.bootstrap();if(!sameOwner(owner,next.snapshot.owner))throw Error('项目归属已变化，不能恢复旧窗口输入。');install(next.snapshot);},
   /** Call only after Main certifies close; accepted volatile inputs prevent
    * disposal even if a surface has already unmounted. */
-  dispose(){if(!capture.dispose())return false;disposed=true;unsubscribe();unsubscribePort();detach();frames.dispose();displayListeners.clear();listeners.clear();eventListeners.clear();return true;},
+  dispose(){if(!capture.dispose())return false;disposed=true;thumbnails.clear();thumbnailBytes=0;unsubscribe();unsubscribePort();detach();frames.dispose();displayListeners.clear();listeners.clear();eventListeners.clear();return true;},
  };
 }
 export type ImageWorkspaceController=ReturnType<typeof createImageWorkspaceController>;

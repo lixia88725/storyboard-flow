@@ -1,4 +1,4 @@
-import {useContext,useEffect,useMemo,useRef,useState,type ReactNode,type PointerEvent as ReactPointerEvent} from 'react';
+import {useContext,useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactNode,type PointerEvent as ReactPointerEvent} from 'react';
 import {CanvasPresentationContext,PresentationBars} from '../canvasPresentation';
 import type {FlowStroke} from '../../../platform/contracts/flowWave2';
 import {beginNativeSelectionGesture,updateNativeSelectionGesture,type NativeSelectionGesture} from './selectionGesture';
@@ -10,7 +10,7 @@ import type {CaptureTarget,CaptureSample,createImageInputCapture} from './captur
 export type NativeCanvasProps={
  shotId:string;documentId:string|null;dimensionsKnown:boolean;cursorSize:number;width:number;height:number;source:FrameViewSource;
  capture:ReturnType<typeof createImageInputCapture>;
- unavailableReason?:string;
+ unavailableReason?:string;preview?:ReactNode;
  target:CaptureTarget|null;tool:'brush'|'eraser'|'select'|'blur';
  style(tool:'brush'|'eraser'):Omit<FlowStroke,'points'|'pressures'>;
  selection:FlowSelection|null;onion?:ReactNode;
@@ -35,7 +35,7 @@ export function NativeCanvas(p:NativeCanvasProps){
  const [cursor,setCursor]=useState<CaptureSample|null>(null);
  const source=useMemo(()=>{const onlyOwn=(view:ReturnType<FrameViewSource['view']>)=>view.header?.documentId===p.documentId?view:{...view,header:null,needsKeyframe:true,damage:[],readRegion:()=>null};return{view:()=>onlyOwn(p.source.view()),subscribe:(listener:Parameters<FrameViewSource['subscribe']>[0])=>p.source.subscribe(view=>listener(onlyOwn(view)))};},[p.source,p.documentId]);
  const [status,setStatus]=useState('preparing'),[outline,setOutline]=useState<FlowSelection|null>(null);
- useEffect(()=>{if(!canvas.current)return;const binding=bindImageFrameCanvas(canvas.current,source,{onStatus:setStatus});return()=>binding.dispose();},[source]);
+ useLayoutEffect(()=>{if(!canvas.current)return;const binding=bindImageFrameCanvas(canvas.current,source,{onStatus:setStatus});return()=>binding.dispose();},[source]);
  const coordinates=(event:PointerEvent,space: 'pixels'|'normalized'=gesture.current?.coordinateSpace??(latest.current.dimensionsKnown?'pixels':'normalized')):CaptureSample=>{
   const box=root.current!.getBoundingClientRect();
   return{x:(event.clientX-box.left)*(space==='pixels'?latest.current.width:1)/box.width,y:(event.clientY-box.top)*(space==='pixels'?latest.current.height:1)/box.height,
@@ -106,7 +106,8 @@ export function NativeCanvas(p:NativeCanvasProps){
  const rotationHandle=selectionBounds?bitmapSelectionRotationHandlePoint(selectionBounds,26/scale,p.height):undefined;
  return <div style={presentation?{position:"relative",background:"#000",paddingBlock:presentation.mode==='expanded'?`${75/p.width*100}%`:undefined}:undefined}><div className="image-stage stage-overlay flow-native-canvas" style={{position:'relative',width:'100%',aspectRatio:`${p.width}/${p.height}`,touchAction:'none'}}>
   <canvas ref={canvas} style={{display:'block',width:'100%',height:'100%',position:'absolute',inset:0}}/>
-  {(status!=='ready'||p.unavailableReason)&&<div role="status" style={{position:'absolute',inset:0,display:'grid',placeItems:'center',background:'#25272a',color:'#aeb5bf'}}>{p.unavailableReason??'正在准备画面…'}</div>}
+  {p.preview&&<div data-native-preview style={{display:status==='ready'||p.unavailableReason?'none':undefined,position:'absolute',inset:0,pointerEvents:'none'}}>{p.preview}</div>}
+  {((status!=='ready'&&!p.preview)||p.unavailableReason)&&<div role="status" style={{position:'absolute',inset:0,display:'grid',placeItems:'center',background:'#25272a',color:'#aeb5bf'}}>{p.unavailableReason??'正在准备画面…'}</div>}
   {p.onion}
   <div ref={root} data-canvas-input="native" style={{position:'absolute',inset:0,touchAction:'none',cursor:p.tool==='select'?'crosshair':'none'}}
    onPointerDown={down} onPointerMove={move} onPointerLeave={()=>{if(!gesture.current)setCursor(null);}}

@@ -17,6 +17,25 @@ function setup(){
  return{b,bridge,controller,calls,event:(e:ImageWorkspaceEvent)=>event(e),attach:()=>attach({...b.frames,port:fake as unknown as MessagePort}),fake,messages,send,identity,frame};
 }
 describe('readonly native workspace controller',()=>{
+ it('shares thumbnail loads across surfaces and exposes exact immutable IDs synchronously',async()=>{
+  const h=setup();let calls=0,finish!:(value:{width:number;height:number;rgba:Uint8Array})=>void;
+  h.bridge.thumbnail=()=>{calls++;return new Promise(resolve=>{finish=resolve;});};
+  const a=h.controller.thumbnail('version-a'),b=h.controller.thumbnail('version-a');
+  expect(calls).toBe(1);expect(h.controller.cachedThumbnail('version-a')).toBeUndefined();
+  finish({width:1,height:1,rgba:new Uint8Array([255,0,0,255])});await Promise.all([a,b]);
+  expect(h.controller.cachedThumbnail('version-a')?.rgba).toEqual(new Uint8Array([255,0,0,255]));
+  expect(h.controller.cachedThumbnail('version-b')).toBeUndefined();await h.controller.thumbnail('version-a');expect(calls).toBe(1);
+  h.controller.dispose();expect(h.controller.cachedThumbnail('version-a')).toBeUndefined();
+ });
+ it('bounds thumbnail memory, rejects malformed pixels, and does not cache failed loads',async()=>{
+  const h=setup();h.bridge.thumbnail=async()=>({width:512,height:512,rgba:new Uint8Array(512*512*4)});
+  for(let i=0;i<33;i++)await h.controller.thumbnail('v'+i);
+  expect(h.controller.cachedThumbnail('v0')).toBeUndefined();expect(h.controller.cachedThumbnail('v32')).toBeDefined();
+  h.bridge.thumbnail=async()=>({width:2,height:2,rgba:new Uint8Array(1)});
+  await expect(h.controller.thumbnail('bad')).rejects.toThrow('Invalid thumbnail');expect(h.controller.cachedThumbnail('bad')).toBeUndefined();
+  h.bridge.thumbnail=async()=>({width:1,height:1,rgba:new Uint8Array(4)});
+  await h.controller.thumbnail('bad');expect(h.controller.cachedThumbnail('bad')).toBeDefined();h.controller.dispose();
+ });
  it('rejects stale and foreign snapshots and sends only intent with Main owner',async()=>{
   const h=setup();h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:99,owner:{...owner,incarnation:'other'}}});expect(h.controller.snapshot().stateSeq).toBe(1);
   await h.controller.request({kind:'undo'});expect(h.calls[0]).toEqual({owner,requestId:expect.stringMatching(/^ui-/),command:{kind:'undo'}});

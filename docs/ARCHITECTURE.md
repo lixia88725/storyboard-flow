@@ -1,5 +1,8 @@
 # 架构与数据契约
 
+Renderer workspaceController按本Session内不可变thumbnailId缓存已校验RGBA（最多128项/32MiB，LRU），合并相同ID在途读取，dispose释放；不缓存可写文档。NativeThumbnail在layout effect中同步安装命中缓存，NativeCanvas在layout effect中绑定已有正确帧；等待实时帧时仅呈现该目标图的缩略预览，实时帧ready后移除，透明像素不会叠上旧图。原FrameStore归属过滤与capture目标校验保持，缓存不是编辑或持久化权威。
+
+
 ## 原生图片发动机施工接点
 
 本节为隔离施工树已落地的接点，不表示默认运行链已迁移；完整状态见 CURRENT。

@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useLayoutEffect,useRef,useState} from 'react';
 import type {Shot} from '../../../drawing/contracts/types';
 import type {ImageWorkspaceSnapshot,ImageWorkspaceImageView} from '../../../platform/contracts/imageWorkspace';
 import type {ImageWorkspaceController} from './workspaceController';
@@ -25,16 +25,18 @@ export function imageIssueText(image:ImageWorkspaceImageView|undefined):string|u
 
 export function NativeThumbnail({controller,image}:{controller:ImageWorkspaceController;image:ImageWorkspaceImageView|undefined}){
  const canvas=useRef<HTMLCanvasElement>(null),painted=useRef<string|null>(null),[shownVersion,setShownVersion]=useState<{imageId:string;versionId:string|null}|null>(null),[issue,setIssue]=useState('');
- useEffect(()=>{
+ useLayoutEffect(()=>{
   let alive=true;const node=canvas.current;if(!node)return;
   if(painted.current!==image?.imageId){node.width=0;node.height=0;painted.current=null;setShownVersion(null);}setIssue('');
   if(!image?.thumbnailId)return;
-  void controller.thumbnail(image.thumbnailId).then(value=>{
+  const draw=(value:Awaited<ReturnType<ImageWorkspaceController['thumbnail']>>)=>{
    if(!alive)return;
    if(!Number.isSafeInteger(value.width)||!Number.isSafeInteger(value.height)||value.width<1||value.height<1||value.width>512||value.height>512||!(value.rgba instanceof Uint8Array)||value.rgba.byteLength!==value.width*value.height*4)throw Error('Invalid thumbnail');
    node.width=value.width;node.height=value.height;
    node.getContext('2d',{colorSpace:'srgb'})?.putImageData(new ImageData(new Uint8ClampedArray(value.rgba),value.width,value.height,{colorSpace:'srgb'}),0,0);painted.current=image!.imageId;setShownVersion({imageId:image!.imageId,versionId:image?.displayNative?.versionId??null});
-  }).catch(()=>{if(alive)setIssue('预览暂时不可用');});
+  };
+  const cached=controller.cachedThumbnail(image.thumbnailId);
+  if(cached)draw(cached);else void controller.thumbnail(image.thumbnailId).then(draw).catch(()=>{if(alive)setIssue('预览暂时不可用');});
   return()=>{alive=false;};
  },[controller,image?.imageId,image?.thumbnailId]);
  const shown=shownVersion!==null&&shownVersion.imageId===image?.imageId,updating=shown&&shownVersion.versionId!==(image?.displayNative?.versionId??null);
