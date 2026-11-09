@@ -208,17 +208,20 @@ it('retries an explicitly recovered thumbnail failure once without a same-versio
 it('retains all cold visible hydration demands beyond sixteen and survives changed demands and recovery',async()=>{
  const f=await fixture(true);await close(f);const sharp=(await import('sharp')).default;
  const file=path.join(f.root,'cold.png');await fs.writeFile(file,await sharp({create:{width:32,height:24,channels:4,background:'#4288aa'}}).png().toBuffer());
- const items=Array.from({length:24},(_,i)=>({id:'cold-'+i,sourcePath:file,formatHint:'png'}));
- const sources=await createSourceBackedImport({root:f.root,importId:'cold-batch',sources:items});for(const item of items)await sources.retain(item.id);await sources.close();
+ const items=[];for(let i=0;i<24;i++){const sourcePath=path.join(f.root,'cold-'+i+'.png');await fs.writeFile(sourcePath,await sharp({create:{width:32,height:24,channels:4,background:{r:i,g:80,b:120,alpha:1}}}).png().toBuffer());items.push({id:'cold-'+i,sourcePath,formatHint:'png'});}
+ const sources=await createSourceBackedImport({root:f.root,importId:'cold-batch',sources:items});for(const item of items)await sources.retain(item.id);const targetDigest=sources.snapshot().items.at(-1)!.retained!.digest;await sources.close();
  const store=await openImageProjectStore({root:f.root,writerAuthority:{assertHeld:async()=>{}},verifyNative:async()=>{},verifySource:async()=>{}}),head=(await store.load())!;
  const shots=items.map(i=>({id:i.id,imageId:i.id,name:i.id,scriptText:''})),images=Object.fromEntries(items.map(i=>[i.id,{id:i.id,content:{kind:'source' as const,source:{importId:'cold-batch',itemId:i.id,interpretationId:'photocraft-v1'}}}]));
  await store.commit(head.commitHash,{schema:'flow.project-commit',version:1,commitId:'cold-boards',previousCommitHash:head.commitHash,beforeRevision:head.commit.after.revision,after:{...head.commit.after,revision:head.commit.after.revision+1,shots,images}});await store.close();
- const runtime=await openImageWorkspaceRuntime({...f.options,workspaceEpoch:2});let seq=0;
+ const module=await import('./nativeSessionAdapter'),original=module.createNativeSessionAdapter,prepared:string[]=[];let release!:()=>void,started!:()=>void;const firstStarted=new Promise<void>(r=>{started=r;}),gate=new Promise<void>(r=>{release=r;});
+ const spy=vi.spyOn(module,'createNativeSessionAdapter').mockImplementation(options=>{const adapter=original(options),prepare=adapter.driver.prepareRetained.bind(adapter.driver);adapter.driver.prepareRetained=async(...args)=>{prepared.push(args[1].digest);if(prepared.length===1){started();await gate;}return prepare(...args);};return adapter;});
+ try{const runtime=await openImageWorkspaceRuntime({...f.options,workspaceEpoch:2});let seq=0;
  const request=(command:Parameters<typeof runtime.request>[0]['command'])=>runtime.request({owner:runtime.open().snapshot.owner,requestId:'cold-demand-'+(++seq),command});
  await request({kind:'demandShots',shotIds:shots.map(i=>i.id)});await request({kind:'demandShots',shotIds:shots.slice(16).map(i=>i.id)});await request({kind:'demandShots',shotIds:shots.map(i=>i.id)});
+ await firstStarted;const activation=runtime.request({owner:runtime.open().snapshot.owner,requestId:'foreground-cold',contextToken:runtime.open().snapshot.context.token,command:{kind:'activateShot',shotId:'cold-23'}});await new Promise(r=>setTimeout(r,100));release();expect((await activation).kind).toBe('settled');expect(prepared[1]).toBe(targetDigest);expect(prepared.filter(d=>d===targetDigest)).toHaveLength(1);
  const deadline=Date.now()+15000;while(!Object.values(runtime.open().snapshot.images).every(i=>!!i.thumbnailId)&&Date.now()<deadline)await new Promise(r=>setTimeout(r,10));
  expect(Object.values(runtime.open().snapshot.images).filter(i=>!!i.thumbnailId)).toHaveLength(24);
- expect((await request({kind:'recover'})).kind).toBe('settled');await close({...f,runtime,request});
+ expect((await request({kind:'recover'})).kind).toBe('settled');await close({...f,runtime,request});}finally{release();spy.mockRestore();}
 },30000);
 
 it('ends an unexpected preview failure visibly instead of leaving preparation unbounded',async()=>{
