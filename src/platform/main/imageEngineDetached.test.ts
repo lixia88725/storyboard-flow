@@ -83,3 +83,30 @@ it('hydrates authorized retained PNG bytes and inspects their version without re
   await d.freeze();await d.close();
  }finally{connection.terminateOwnedProcess();await connection.exited;}
 },20000);
+
+it('keeps thumbnail budget failures local through Session, continues painting and closes/reopens normally',async()=>{
+ const binary=process.env.FLOW_IMAGE_HOST;if(!binary)throw Error('Real native binary required');
+ const root=await temporaryWorkspace('readonly-admission-'),storeRoot=path.join(root,'native');
+ const {openImageProjectStore}=await import('../../project-files/main/image-engine/projectStore');
+ const {openNativeProjectSession}=await import('../../session/core/nativeSession');
+ let connection=startImageEngine({binary,store:storeRoot,sessionId:'readonly',incarnation:'one',budgetBytes:64<<20});
+ let store:Awaited<ReturnType<typeof openImageProjectStore>>|undefined;
+ try{
+  await connection.ready;let adapter=createNativeSessionAdapter({connection,storeRoot,storeId:'native'}),faults=0;adapter.driver.onFault(()=>faults++);
+  const first=await adapter.driver.prepareCreation('initial',{kind:'new',width:32,height:24},reservation);await adapter.driver.settleCreation(first);
+  store=await openImageProjectStore({root,writerAuthority:{assertHeld:async()=>{}},verifyNative:ref=>adapter.verifyNative(ref),verifySource:async()=>{}});
+  await store.commit(null,{schema:'flow.project-commit',version:1,commitId:'genesis',previousCommitHash:null,beforeRevision:null,after:{schema:'storyboard-flow.project',version:2,id:'local-failure',revision:0,name:'Synthetic',shots:[{id:'a',imageId:'image',name:'A',scriptText:''}],parkedShots:[],images:{image:{id:'image',content:{kind:'native',native:first.native}}},dialogues:[]}});
+  let sequence=0;
+  const open=()=>openNativeProjectSession({sessionId:'readonly',incarnation:'one',store:store!,native:adapter.driver,mintId:()=>`paint-${++sequence}`,now:Date.now,pipeline:{maxPendingStrokes:4,maxPendingPoints:65536,maxRetainedPixelBytes:64<<20}});
+  let session=await open();
+  await expect(adapter.driver.inspectVersion(first.native,{maxEdge:256,maxBytes:1})).rejects.toMatchObject({code:'limit',effect:'none'});
+  expect(faults).toBe(0);expect(session.snapshot().phase).toBe('active');
+  const draw=async()=>{const down=session.pipeline!.input({kind:'begin',shotId:'a',stroke:{tool:'brush',color:'#ff0000',size:3,opacity:1,softness:0,points:[10,10]}});expect(down.kind).toBe('admitted');if(down.kind!=='admitted')throw Error(JSON.stringify(down));expect(session.pipeline!.input({kind:'end',operationId:down.operationId,throughSeq:1}).kind).toBe('admitted');expect((await session.pipeline!.waitOperation(down.operationId)).kind).toBe('settled');};
+  await draw();const before=session.snapshot().project;
+  expect((await session.request({kind:'freeze'})).kind).toBe('settled');await session.close();await connection.exited;store=undefined;
+  connection=startImageEngine({binary,store:storeRoot,sessionId:'readonly',incarnation:'two',budgetBytes:64<<20});await connection.ready;
+  adapter=createNativeSessionAdapter({connection,storeRoot,storeId:'native'});
+  store=await openImageProjectStore({root,writerAuthority:{assertHeld:async()=>{}},verifyNative:ref=>adapter.verifyNative(ref),verifySource:async()=>{}});session=await open();expect(session.snapshot().project).toEqual(before);
+  await draw();expect((await session.request({kind:'freeze'})).kind).toBe('settled');await session.close();store=undefined;
+ }finally{connection.terminateOwnedProcess();await connection.exited;await store?.close();}
+},30000);

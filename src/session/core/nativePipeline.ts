@@ -95,7 +95,8 @@ export function createMainImagePipeline(options:{
   const rejected=(message:string,code='invalid-input'):ImagePipelineAdmission=>({kind:'rejected',error:{code,message,effect:blocked?'retained':'none'}});
   const admission=(e:PipelineEntry):ImagePipelineAdmission=>({kind:'admitted',operationId:e.operationId,inputThrough:e.through,durable:false});
   const input=(value:ImagePipelineInput):ImagePipelineAdmission=>{
-    if(blocked||(!options.canAdmit())||(sealed&&value?.kind!=='end'&&value?.kind!=='cancel'))return rejected('Main pipeline input is sealed','busy');
+    if(blocked)return rejected('Drawing requires reconciliation after an engine or storage failure','pipeline-blocked');
+    if((!options.canAdmit())||(sealed&&value?.kind!=='end'&&value?.kind!=='cancel'))return rejected('Drawing admission is temporarily paused','busy');
     if(commands>=256)return rejected('Main input command budget full','backpressure');
     try{
       if(value?.kind==='begin'){

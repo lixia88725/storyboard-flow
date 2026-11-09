@@ -39,3 +39,16 @@ it('keeps a failed lazy source resolution as explicit volatile recovery input wi
  await expect(pipeline.waitOperation('op')).rejects.toThrow('Synthetic source hydration unavailable');await pipeline.drainInput();
  expect(resolutions).toBe(1);expect(d.began()).toBe(0);expect(persisted).toBe(0);expect(blocked).toBe(1);expect(pipeline.retainedInputs()).toEqual([{operationId:'op',shotId:'a',imageId:'image',stroke,ended:true,reason:'missing-pipeline-identity'}]);
 });
+
+it('separates a temporary admission pause from a fault and cannot resume through retained failure',async()=>{
+ const d=driver();let canAdmit=true;
+ const pipeline=createMainImagePipeline({sessionId:'s',incarnation:'i',driver:d.port,limits,mintId:()=> 'op',canAdmit:()=>canAdmit,
+  anchor:()=>({imageId:'image',expected:{kind:'native',native:ref},commitHash:'c'.repeat(64),native:async()=>ref}),persist:async()=>{},decide:async()=>{throw Error('No end in this test');},blocked:()=>{}});
+ const begin={kind:'begin' as const,shotId:'a',stroke};
+ pipeline.seal();expect(pipeline.input(begin)).toMatchObject({kind:'rejected',error:{code:'busy',effect:'none'}});
+ pipeline.resumeAdmission();canAdmit=false;expect(pipeline.input(begin)).toMatchObject({kind:'rejected',error:{code:'busy',effect:'none'}});
+ canAdmit=true;expect(pipeline.input(begin).kind).toBe('admitted');await pipeline.drainInput();
+ pipeline.fence(Error('Synthetic transport failure'));pipeline.resumeAdmission();
+ expect(pipeline.input(begin)).toMatchObject({kind:'rejected',error:{code:'pipeline-blocked',effect:'retained'}});
+ expect(pipeline.retainedInputs()).toHaveLength(1);
+});

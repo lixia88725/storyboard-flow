@@ -66,6 +66,18 @@ async function choose(name,decision){await js(`(()=>{const s=document.querySelec
   report.recoveryUiBeforeDrawing=await js(`({saveDisabled:document.querySelector('.wb-save').disabled,recoveryVisible:!!document.querySelector('[aria-label="图片与文件待处理"]')})`);await wait(()=>js(`!document.querySelector('.wb-save').disabled&&!document.querySelector('[aria-label="图片与文件待处理"]')`),'recovery UI releases input');const priorInputs=inputOutcomes.length;await stroke(.8);report.afterRecoveryInput=inputOutcomes.slice(priorInputs);await save();report.cases.push('owned worker interruption recovers in the same window and accepts new drawing');
   const final=await boot();fs.writeFileSync(path.join(out,'daily-expected.json'),JSON.stringify({pixels:await pixels(),revision:final.session.project.revision,pendingCount:final.session.project.parkedShots.length,files:final.files.outputNames.map(f=>{const name=final.session.project.parkedShots.some(s=>s.id===f.shotId)?path.join('Pending',f.name):f.name;return{name,sha:sha(path.join(root,name))};})}));
  }
+ if(process.env.FLOW_DAILY_CLOSE_AFTER_FAULT==='1'){
+  if(!reopen){
+   report.stage='normal-close-after-idle-worker-fault';
+   const pidPath=process.env.FLOW_DAILY_HOST_PID;assert.equal(pidPath,path.join(out,'daily-host.pid'));
+   const pid=Number(fs.readFileSync(pidPath,'utf8'));assert.ok(Number.isSafeInteger(pid)&&pid>1);
+   process.kill(pid,'SIGKILL');await wait(async()=>(await boot()).session.phase==='recovering','close fault surfaced');
+   report.cases.push('normal close must reconcile idle worker fault without a separate recovery click');
+  }else{
+   const before=(await boot()).session.project.revision;await stroke(.15);
+   assert.ok((await boot()).session.project.revision>before);report.cases.push('drawing resumes after reopening an automatically reconciled close');
+  }
+ }
  for(const [name,digest]of Object.entries(originals))assert.equal(sha(path.join(source,name)),digest);
  fs.writeFileSync(path.join(out,`${phase}.png`),(await win.webContents.capturePage()).toPNG());win.once('closed',()=>{try{assert.equal(certified,1);report.cases.push('normal close; imported originals unchanged');report.ok=true;}catch(error){report.ok=false;report.error=String(error);}fs.writeFileSync(path.join(out,`${phase}-result.json`),JSON.stringify(report,null,2));});win.close();await wait(()=>win.isDestroyed(),'certified close');assert.equal(certified,1);assert.equal(report.ok,true,'closed receipt must certify normal close');app.quit();
 })().catch(async error=>{report.error=String(error.stack||error);report.lastInputOutcomes=inputOutcomes.slice(-6);report.lastOutcomes=outcomes.slice(-4).map(o=>({command:o.command.kind,kind:o.result.kind,error:o.result.error}));if(win&&!win.isDestroyed())try{fs.writeFileSync(path.join(out,`${phase}-failed.txt`),await js('document.body.innerText'));fs.writeFileSync(path.join(out,`${phase}-failed.png`),(await win.webContents.capturePage()).toPNG());}catch{}fs.writeFileSync(path.join(out,`${phase}-result.json`),JSON.stringify(report,null,2));console.error(error);app.exit(1);});

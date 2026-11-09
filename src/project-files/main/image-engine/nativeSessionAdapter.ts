@@ -77,9 +77,9 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
   const owner=options.workerOwner,initial=owner?.current(),storeId=options.storeId,storeRoot=options.storeRoot;
   if(!initial&&!options.connection)refuse('Worker owner has no available native connection','unavailable','unknown');
   let connection:Connection=initial?.connection??options.connection!,generation=initial?.generation??0,fenced=false,closing=false,faultNotified=false;
-  const faultListeners=new Set<()=>void>();
-  const fault=()=>{if(owner)fenced=true;if(closing||faultNotified)return;faultNotified=true;for(const f of faultListeners)try{void Promise.resolve(f()).catch(()=>{});}catch{/* Session remains fenced */}};
-  const armExit=()=>{const captured=connection,epoch=generation;void captured.exited.then(()=>{if(epoch===generation&&captured===connection)fault();});};armExit();
+  const faultListeners=new Set<(error?:unknown)=>void>();
+  const fault=(error:unknown=Error('Native worker became unavailable'))=>{if(owner)fenced=true;if(closing||faultNotified)return;faultNotified=true;for(const f of faultListeners)try{void Promise.resolve(f(error)).catch(()=>{});}catch{/* Session remains fenced */}};
+  const armExit=()=>{const captured=connection,epoch=generation;void captured.exited.then(result=>{if(epoch===generation&&captured===connection)fault(Object.assign(Error(`Native worker exited (${result.code??result.signal})`),{code:'worker-exited',effect:'unknown'}));});};armExit();
   const requireCurrent=()=>{if(owner&&(fenced||owner.current()?.connection!==connection||owner.current()?.generation!==generation)){fault();refuse('Worker generation is unavailable; reconcile original input','worker-unavailable','unknown');}return connection;};
   // Bind the whole logical operation before any local IO. Per-call fencing alone
   // would let a coroutine stalled in a manifest/source read adopt a new worker.
@@ -112,7 +112,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       }else if(reply.documentId===null)display=null;
       if(Number.isSafeInteger(reply.contextGeneration)&&Number(reply.contextGeneration)>=0)contextGeneration=Number(reply.contextGeneration);
       if(record(reply.frame))try{void Promise.resolve(options.onFrame?.(frame)).catch(()=>{});}catch{/* presentation only */}return{reply,frame};
-    }catch(e){if(epoch===generation&&target===connection&&(e as {effect?:unknown})?.effect!=='none')fault();throw e;}
+    }catch(e){if(epoch===generation&&target===connection&&(e as {effect?:unknown})?.effect!=='none')fault(Object.assign(Error(e instanceof Error?e.message:String(e)),{code:(e as {code?:unknown})?.code??'native-failure',effect:(e as {effect?:unknown})?.effect??'unknown',operationId,command:String(captured.kind)}));throw e;}
   };
   const nativeRef=(receipt:unknown):NativeImageRef=>{
     if(!record(receipt)||receipt.schema!=='flow.image-version'||receipt.version!==1)refuse('Invalid native version receipt','protocol','unknown');
@@ -221,7 +221,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     let value=started;
     while(true){op.check();const r=value.reply;
       if(r.kind==='detachedState'&&r.finished===true){if(!record(r.result))refuse('Immutable result missing','protocol','unknown');const result=r.result;
-        if(result.kind==='failed'){const e=result.error;if(!record(e)||typeof e.message!=='string')refuse('Malformed immutable failure','protocol','unknown');if(result.globalFailure===true)fault();refuse(e.message,String(e.code??'native'),e.effect==='none'?'none':e.effect==='retained'?'retained':'unknown');}
+        if(result.kind==='failed'){const e=result.error;if(!record(e)||typeof e.message!=='string')refuse('Malformed immutable failure','protocol','unknown');if(result.globalFailure===true)fault(Object.assign(Error(e.message),{code:e.code,effect:e.effect,operationId:jobId,command:'detachedPoll'}));refuse(e.message,String(e.code??'native'),e.effect==='none'?'none':e.effect==='retained'?'retained':'unknown');}
         return{result,payload:value.frame.payload};
       }
       if(!['detachedQueued','detachedState'].includes(String(r.kind))||r.jobId!==jobId)refuse('Immutable job identity mismatch','protocol','unknown');

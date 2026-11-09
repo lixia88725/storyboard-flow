@@ -155,13 +155,13 @@ export function NativeWorkbenchEditor({controller:c,externallyPaused,projectMenu
  const save=async(kind:'save'|'refresh'|'export')=>{
   if(outputActive.current)return;if(surfaceGestures.current.size){setIssue('请先完成当前画布操作。');return;}outputActive.current=true;setWorking(true);c.setInputPause('output',true);
   try{await transformOwner.flush();await layerOwner.flush();await naming.flush();await Promise.all([...requests.current]);await c.settleCaptured();if(text.current.busy()||scriptVersions.current.size)throw Error('仍有未确认文字。');if(kind==='refresh'){const result=await c.request({kind:'refresh'});if(result.kind==='refreshPreview'){if(result.preview.items.length)setRefreshPreview(result.preview);else setIssue('工作文件没有新的外部改动。');}else if(!success(result.kind))throw Error(result.kind==='rejected'?result.error.message:'取回尚未完成。');}else if(kind==='export'){if(!currentId)throw Error('请先选择故事板。');const outcome=await c.request({kind:'export',shotId:currentId,format:'psd'});if(outcome.kind!=='canceled'&&!success(outcome.kind))throw Error(outcome.kind==='rejected'?outcome.error.message:'导出尚未确认。');}else await request({kind});}
-  catch(error){setIssue(error instanceof Error?error.message:String(error));}finally{outputActive.current=false;setWorking(false);c.setInputPause('output',c.snapshot().session.phase!=='active');}
+  catch(error){setIssue(error instanceof Error?error.message:String(error));}finally{outputActive.current=false;setWorking(false);c.setInputPause('output',false);}
  };
  const confirmRefresh=async(choices:RefreshChoice[])=>{
   if(!refreshPreview||outputActive.current)throw Error('请重新检查外部改动。');
   outputActive.current=true;setWorking(true);c.setInputPause('output',true);
   try{await c.settleCaptured();await request({kind:'confirmRefresh',planId:refreshPreview.planId,choices});setRefreshPreview(undefined);setIssue('');setAuthority(v=>v+1);}
-  finally{outputActive.current=false;setWorking(false);c.setInputPause('output',c.snapshot().session.phase!=='active');}
+  finally{outputActive.current=false;setWorking(false);c.setInputPause('output',false);}
  };
  const addImages=(mode:'files'|'folder')=>{if(!canNavigate())return;setIssue('');act({kind:'addImages',mode,destination:'pending'});};
  const removePending=(shotIds:string[])=>{
@@ -191,7 +191,7 @@ export function NativeWorkbenchEditor({controller:c,externallyPaused,projectMenu
   if(c.capture.state().blocked)throw Error('请先处理上方保留的笔迹。');
   outputActive.current=true;setWorking(true);c.setInputPause('output',true);
   try{await transformOwner.flush();await layerOwner.flush();await naming.flush();await Promise.all([...requests.current]);await c.settleCaptured();await request({kind:'recover'});setIssue('');}
-  finally{outputActive.current=false;setWorking(false);c.setInputPause('output',c.snapshot().session.phase!=='active');}
+  finally{outputActive.current=false;setWorking(false);c.setInputPause('output',false);}
  };
  const referenceStatus=image?.notice?.message??(image?.availability==='reference'?'已保留原画面 · 可在上方新建图层绘画':'');
  const preset=tool==='eraser'?brushPreferences.eraser:brushPreferences.brush,pref=preferenceFor(brushPreferences,preset);

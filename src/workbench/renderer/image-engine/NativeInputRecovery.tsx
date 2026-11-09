@@ -1,3 +1,4 @@
+import {workspaceFailureMessage} from './workspaceFailureMessage';
 import {useState,useSyncExternalStore} from 'react';
 import type {ImageWorkspaceController} from './workspaceController';
 
@@ -14,7 +15,7 @@ export function NativeInputRecovery({controller:c}:{controller:ImageWorkspaceCon
  };
  return <section className="flow-alert" role="alert" aria-label="待处理笔迹">
   <div><strong>有笔迹需要处理</strong><p>已保存的画面不会撤销。未确认的完整输入会先保留为恢复记录，处理完成前不能关闭项目。</p>
-   {records.map(r=><div key={r.captureId}><p>{r.failure?.message}</p>
+   {records.map(r=><div key={r.captureId}><p>{workspaceFailureMessage(r.failure)}</p>
     {!r.ended?<p>请先松开画笔。</p>:<>
      {['capture-budget','invalid-sample'].includes(r.failure?.code??'')&&<button disabled={busy} onClick={()=>c.capture.resolveIncomplete(r.id,'submit-prefix')}>仅提交已采集的部分</button>}
      <button disabled={busy} onClick={()=>void resolve(r.captureId,'retainAndDiscard')}>保留恢复记录，结束本笔</button>

@@ -515,6 +515,19 @@ fn thumbnail(doc: &Document, options: &ThumbnailOptions) -> Result<(Value, Vec<u
         bytes,
     ))
 }
+// Read-only presentation/encoding failures have no publication to reconcile.
+// Keep storage, protocol and unknown failures global even when reported as none.
+fn readonly_result(result: Result<(Value, Vec<u8>)>) -> Result<(Value, Vec<u8>)> {
+    match result {
+        Err(error) if error.effect == "none"
+            && matches!(error.code.as_str(), "limit" | "unsupported" | "engine") =>
+        {
+            Ok((json!({"kind":"failed","globalFailure":false,"error":error}), vec![]))
+        }
+        other => other,
+    }
+}
+
 fn read_result(store: &Store, id: &str) -> Result<Option<Value>> {
     for state in ["accepted", "discarded", "prepared", "failed"] {
         if let Some(value) = store.op_read(id, state)? {
@@ -873,7 +886,7 @@ impl Host {
                     &r.operation_id,
                     self.fingerprint(r)?,
                     false,
-                    move |state| {
+                    move |state| readonly_result((|| {
                         progress(&state, "waitingForIdleIo");
                         let identity = source.clone();
                         let loaded = proxy.call(true, move |s| {
@@ -892,7 +905,7 @@ impl Host {
                             expected.as_ref(),
                             &bytes,
                         )
-                    },
+                    })()),
                 )?;
                 if let Some(j) = self.detached.jobs.get_mut(&r.operation_id) {
                     j.streamed = true;
@@ -1050,7 +1063,7 @@ impl Host {
                     (self.store.proxy(), source.clone(), options.clone());
                 self.store.shared.set_background(true);
                 self.detached
-                    .begin(&r.operation_id, self.fingerprint(r)?, false, move |state| {
+                    .begin(&r.operation_id, self.fingerprint(r)?, false, move |state| readonly_result((|| {
                         progress(&state, "waitingForIdleIo");
                         let source_copy = source.clone();
                         let loaded = proxy.call(true, move |s| {
@@ -1069,7 +1082,7 @@ impl Host {
                                 .and_then(|s| s.display_policy.as_ref())
                         );
                         Ok((json!({"kind":"inspected","summary":view}), bytes))
-                    })
+                    })()))
             }
             Command::SettleDetached {
                 candidate_id,
@@ -1126,5 +1139,23 @@ impl Host {
             }
             _ => Err(Error::none("internal", "not an immutable job command")),
         }
+    }
+}
+
+#[cfg(test)]
+mod failure_scope_tests {
+    use super::*;
+    #[test]
+    fn readonly_refusals_do_not_block_editing_but_unknown_and_integrity_errors_do() {
+        for code in ["limit", "unsupported", "engine"] {
+            let (body, _) = readonly_result(Err(Error::none(code, "synthetic refusal"))).unwrap();
+            assert_eq!(body["globalFailure"], false);
+            assert_eq!(body["error"]["effect"], "none");
+            assert!(readonly_result(Err(Error::retained(code, "retained"))).is_err());
+        }
+        for code in ["storage", "corrupt", "journal", "unsafe-path", "protocol"] {
+            assert!(readonly_result(Err(Error::none(code, "integrity failure"))).is_err());
+        }
+        assert!(readonly_result(Err(Error::unknown("unknown result"))).is_err());
     }
 }

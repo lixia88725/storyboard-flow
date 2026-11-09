@@ -30,7 +30,7 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
   if(disposed||!sameOwner(owner,next.owner)||next.stateSeq<=snapshot.stateSeq)return;
   const before=displayIdentity(projected);
   snapshot=next;if(displayOverride&&displayOverride.stateSeq<=next.stateSeq)displayOverride=undefined;projectDisplay();
-  if(!sameDisplay(before,displayIdentity(projected)))displayNotify();capture.wake();notify();
+  if(!sameDisplay(before,displayIdentity(projected)))displayNotify();syncInputPause();capture.wake();notify();
  };
  let activation:{shotId:string;work:Promise<import('../../../platform/contracts/imageWorkspace').ImageWorkspaceOutcome>}|undefined;
  async function request(command:ImageWorkspaceCommand){
@@ -79,7 +79,9 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
   },changed:notify,
  });
  const pauseReasons=new Set<string>();
- const setInputPause=(reason:string,value:boolean)=>{value?pauseReasons.add(reason):pauseReasons.delete(reason);capture.pause(pauseReasons.size>0);};
+ const syncInputPause=()=>capture.pause(pauseReasons.size>0||snapshot.session.phase!=='active');
+ const setInputPause=(reason:string,value:boolean)=>{value?pauseReasons.add(reason):pauseReasons.delete(reason);syncInputPause();};
+ syncInputPause();
  const conceal=()=>{ready=false;frames.reset(frames.view().identity);};
  const detach=()=>{if(port){port.onmessage=null;port.onmessageerror=null;port.close();port=undefined;}conceal();};
  const attach=(attachment:ImageWorkspaceFramePort)=>{

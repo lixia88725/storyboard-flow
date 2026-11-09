@@ -10,6 +10,12 @@
 
 连续绘画协议区分 `imageVersionRef` 已接纳前缀和 `pendingOperationIds` 未 durable-accepted 的完整笔链；`workingHeadOperationId` 等于待确认链尾，活动笔另用 previewId。pipeline 开始/结束提升 epoch，同 epoch 的 pipelineId 不变；pending 为空也不能替代项目 checkpoint/Save 成功判据。帧接收器只验证展示身份，不承担项目持久化认证。原生异步队列已实现：输入线程与持久化线程分开，四笔有界队列，失败冻结依赖链而不自动重试。Main项目接纳已接入独立试用路径，默认启动入口保持原路径；验证状态见CURRENT。
 
+绘画准入的恢复由Session请求队列统一收口：所有控制请求在finally释放计数，只有active且无待处理barrier才恢复；pipeline故障独立保留，普通resume不能清除。Renderer的capture暂停由Main phase与各操作自身暂停理由共同推导，保存/恢复操作结束仅释放自己的理由，不复制一份可永久滞留的Session暂停状态。
+
+后台只读InspectVersion/ExportImmutable的明确无副作用limit/unsupported/engine错误只终止该任务；存储、损坏、协议和未知结果继续走全局保护。缩略图失败按图片版本记录展示notice，避免反复渲染重试同一失败；显式恢复可重试，失败不改变编辑能力或持久画面。Adapter将原始故障code/message/command传到Session有界诊断，临时busy与pipeline-blocked不再共用sealed文本。
+
+正常关闭先暂停后台生产并等待已开始任务，再核对故障Session、排空绘画、冻结认证；有保留的未完成输入或未知文件/编辑操作仍不授关闭票据，不自动丢弃或重画。核对无Main决定的durable笔迹沿既有恢复语义保留原始intent，不能把原生prepared当作项目已保存。
+
 Main 连续绘画由 `session/core/nativePipeline` 捕获有界原始输入，Adapter 短命令调度与持久化分开；最多连续八个输入命令后给等待中的控制命令一次机会。end 同步预约唯一混合历史/CAS 队列位置，v2 intent 固定锚点与前驱。CAS 成功后转入独立的原生接纳 FIFO；后一笔 accept 必须等前一笔 durable nativeAccepted，不能将 acceptQueued 当成功。Main 确认队列最多持有四个额度，每批 1..4 笔；确认事实进入下述统一日志，不再逐笔创建确认文件。waitOperation 仅在最终确认后完成，原生接纳不等于最终保存回执。
 
 ProjectStore 保持原 Interface，Implementation 改为 `journalProjectStore` 与 `recoveryJournal`：完整输入、项目 CAS、无变化决定、hydration、确认和 resolution 进入单写者追加日志。每组绑定序号、前组摘要与完整封口，同步成功才公布持久状态；项目 head 从日志派生，不另写第二份权威。后续验证未完成不阻止已准入组的定时 flush；2ms 是调度触发间隔，不是事件循环的实时期限。未知支出保留到关闭准入并排空后的 audit。外部 native/source/output 写入须保留完整固定额度或接入等价实际加预留账本，不能只报告瞬时在途字节；正式全局协调器尚未接入默认产品。

@@ -33,6 +33,8 @@ node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "
 
 绘画后图层接点回归：在已构建、显式提供 `FLOW_IMAGE_HOST` 和 `FLOW_PROJECT_LEASE_BINARY` 时，执行 `FLOW_IMPORT_LAYER_REGRESSION=1 FLOW_SOURCE_IMPORT=1 FLOW_SOURCE_IMPORT_ONLY=1 node scripts/flow-native-workbench-smoke.mjs`。仅合成项目/独立 userData，覆盖落笔前/中/后的图层行位置、高度与滚动位置不变（绘画期间仍禁用冲突操作），以及导入后连续两笔直接新增图层、再绘画后隐藏/显示整图像素恢复、普通撤销及正常关闭重开；中间不先用 Save/Undo/导航刷新状态掩盖代次问题。额外设 `FLOW_LAYER_FAILURE_NOTICE=1` 可在测试实例中注入一次明确无副作用的图层拒绝，验证中文提示、能力不被伪装移除，以及明确放弃该操作后像素和历史不变。
 
+绘画协调/关闭专项：`FLOW_DAILY_CLOSE_AFTER_FAULT=1 node scripts/flow-native-daily-smoke.mjs`，仍需显式host/lease及完整build。除原有加载中绘画、Save/Refresh/Undo/Redo和故障恢复，还在合成实例空闲时中断自有host，直接正常关窗，再以新进程重开并落笔。未完成输入拒绝关闭由真实Runtime测试覆盖。`imageEngineDetached.test.ts`通过真实host的缩略图预算失败检查Session仍可绘画/关闭/重开；Rust分类测试为`cargo test --offline --locked --manifest-path native/photocraft/Cargo.toml --lib failure_scope_tests`，不能用bin目标的0 tests当通过证据。
+
 ## GUI验证脚本索引
 
 | 检查什么 | 脚本 |

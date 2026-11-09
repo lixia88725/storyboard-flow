@@ -18,7 +18,7 @@ export type NativeOperationStatus={state:'absent'|'intent'|'prepared'|'accepted'
 export interface NativeSessionDriver {
   pipeline?:NativePipelineDriver;
   restartForRecovery?():Promise<void>;
-  onFault?(listener:()=>void):()=>void;
+  onFault?(listener:(error?:unknown)=>void):()=>void;
   versionWorkingInput?(ref:NativeImageRef):Promise<{digest:string;byteLength:number;format:'tiff'}|null>;
   versionSourcePolicy?(ref:NativeImageRef):Promise<import('../../platform/contracts/imageEngine.js').ImageEngineProtectedSourcePolicy|null>;
   prepareCreation?(operationId:string,input:NativeImageCreationInput,reservation:{maxAdditionalBytes:number}):Promise<PreparedImage>;
@@ -283,10 +283,10 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
   };
   const initializePipeline=()=>{if(options.pipeline){
     if(!native.pipeline)throw Error('Opt-in Main pipeline requires a typed native pipeline driver');
-    pipeline=createMainImagePipeline({sessionId,incarnation,driver:native.pipeline,limits:copy(options.pipeline),mintId:mint,canAdmit:()=>!closed&&phase==='active',canBegin:()=>settlement.capacityAvailable,
+    pipeline=createMainImagePipeline({sessionId,incarnation,driver:native.pipeline,limits:copy(options.pipeline),mintId:mint,canAdmit:()=>!closed&&phase==='active'&&barriers===0,canBegin:()=>settlement.capacityAvailable,
       anchor(shotId){const p=current(),shot=p.shots.find(s=>s.id===shotId);if(!shot)throw Error('Only active shots can start painting');return{imageId:shot.imageId,expected:copy(p.images[shot.imageId].content),commitHash:head!.commitHash,native:()=>resolve(shot.imageId)};},
       persist:intent=>{const origin=options.originForOperation?.(intent.operationId);return store.beginOperation({...intent,...(origin?{origin:copy(origin)}:{})});},
-      blocked(operationId,error){phase='recovering';if(!recovery?.commitHash)recovery={operationId,commitHash:null};settlement.fence(error);notify();},
+      blocked(operationId,error){const detail=error as {code?:unknown;message?:unknown;effect?:unknown;operationId?:unknown;command?:unknown};console.warn('[Flow pipeline fault]',JSON.stringify({operationId,sourceOperationId:String(detail?.operationId??'').slice(0,128),command:String(detail?.command??'').slice(0,64),code:String(detail?.code??'pipeline-failed').slice(0,128),message:String(detail?.message??error).slice(0,2048),effect:String(detail?.effect??'unknown').slice(0,32)}));phase='recovering';if(!recovery?.commitHash)recovery={operationId,commitHash:null};settlement.fence(error);notify();},
       decide(entry:PipelineEntry){
         pending++;notify();let finish!:(outcome:ImageProjectOutcome)=>void;const completed=new Promise<ImageProjectOutcome>(resolve=>finish=resolve);let commitHash:string|null=null;
         let stage='waiting-prepared';
@@ -317,7 +317,7 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
     pipeline.subscribe(event=>{for(const f of progressListeners)try{void Promise.resolve(f(copy(event))).catch(()=>{});}catch{/* presentation only */}});
   }};
   const initializeSettlement=()=>{settlement=createNativeSettlementQueue({confirm:records=>store.confirmOperations(records),onFault:error=>{phase='recovering';pipeline?.fence(error);notify();}});};initializeSettlement();
-  const detachFault=native.onFault?.(()=>{if(closed)return;phase='recovering';pipeline?.fence(Error('Owned native worker fault'));settlement.fence(Error('Owned native worker fault'));notify();});
+  const detachFault=native.onFault?.(error=>{if(closed)return;const reason=error??Error('Owned native worker fault');phase='recovering';pipeline?.fence(reason);settlement.fence(reason);notify();});
   try{await reconcile();}catch(e){detachFault?.();throw e;}initializePipeline();
   return {
     ...(pipeline?{pipeline:{input:(value:ImagePipelineInput)=>pipeline!.input(value),waitOperation:(operationId:string)=>{const recovered=recoveredWait.get(operationId);return recovered?Promise.resolve(copy(recovered)):pipeline!.waitOperation(operationId);},subscribe:(f:(event:ImagePipelineProgress)=>void)=>{progressListeners.add(f);return()=>progressListeners.delete(f);},recoveryInputs:()=>phase==='recovering'?copy(retainedRecoveryInputs.length?retainedRecoveryInputs:pipeline!.retainedInputs()):[]}}:{}),
@@ -367,30 +367,36 @@ export async function openNativeProjectSession(options:{sessionId:string;incarna
             if(phase!=='frozen')throw Object.assign(Error('Only a settled frozen Session can resume'),{code:'busy',effect:'none'});
             if(!native.resume)throw Object.assign(Error('Native driver does not support settled resume'),{code:'unsupported',effect:'none'});
             try{await native.resume();}catch(e){phase='recovering';notify();throw e;}
-            nativeMayBeFrozen=false;phase='active';pipeline?.resumeAdmission();notify();return settled();
+            nativeMayBeFrozen=false;phase='active';notify();return settled();
           }
-          if(request.kind==='replaceBatch'){await settlement.drain();await pipeline?.barrier();history.endTyping();const result=await replaceBatch(request,fixedOperationId??mint());if(phase==='active'&&barriers===1)pipeline?.resumeAdmission();return result;}
+          if(request.kind==='replaceBatch'){await settlement.drain();await pipeline?.barrier();history.endTyping();const result=await replaceBatch(request,fixedOperationId??mint());return result;}
           if(request.kind==='freeze'){await settlement.drain();await pipeline?.barrier();phase='freezing';nativeMayBeFrozen=true;await native.freeze();await store.validateRecovery();if((await store.pendingOperations()).length||(await store.unsettledDecisions()).length||(await store.pendingHydrations()).length)throw Error('Unsettled project obligations');phase='frozen';notify();return settled();}
           if(phase!=='active')throw Object.assign(Error('Session admission is frozen'),{code:'busy',effect:'none'});
-          if(request.kind==='barrier'){await settlement.drain();await pipeline?.barrier();history.endTyping();if(barriers===1)pipeline?.resumeAdmission();return settled();}
-          if(request.kind==='createBatch'){await settlement.drain();await pipeline?.barrier();history.endTyping();const result=await createBatch(request,fixedOperationId??mint());if(phase==='active'&&barriers===1)pipeline?.resumeAdmission();return result;}
+          if(request.kind==='barrier'){await settlement.drain();await pipeline?.barrier();history.endTyping();return settled();}
+          if(request.kind==='createBatch'){await settlement.drain();await pipeline?.barrier();history.endTyping();const result=await createBatch(request,fixedOperationId??mint());return result;}
           if(request.kind==='imageEdit'){
-            await settlement.drain();await pipeline?.barrier();history.endTyping();const result=await imageEdit(request,fixedOperationId);if(phase==='active'&&barriers===1)pipeline?.resumeAdmission();return result;
+            await settlement.drain();await pipeline?.barrier();history.endTyping();const result=await imageEdit(request,fixedOperationId);return result;
           }
           if(request.kind==='paint'){if(pipeline)throw Object.assign(Error('Use bounded pipeline input in this opt-in Session'),{code:'invalid-input',effect:'none'});return await paint(request.shotId,request.stroke);}
           if(request.kind==='undo'||request.kind==='redo'){history.endTyping();await settlement.drain();await pipeline?.barrier();}
           const prepared=request.kind==='board'?history.prepare(request.edit,request.typing):request.kind==='undo'?history.prepareUndo():history.prepareRedo();
-          if(!prepared.ok){if(isBarrier&&barriers===1)pipeline?.resumeAdmission();return fail({...prepared.error,effect:'none'});}
-          if(!prepared.value.result.changed){if(isBarrier&&barriers===1)pipeline?.resumeAdmission();return settled();}
+          if(!prepared.ok){return fail({...prepared.error,effect:'none'});}
+          if(!prepared.value.result.changed){return settled();}
           const committed=await commitPlan(prepared.value,fixedOperationId??mint());
           if(request.kind==='undo'||request.kind==='redo')try{await installSelected();}catch{
             phase='recovering';recovery={operationId:committed.commit.commitId,commitHash:committed.commitHash,...(pendingInstall?{target:copy(pendingInstall)}:{})};notify();
             return{kind:'settlementPending',operationId:committed.commit.commitId,commitHash:committed.commitHash,snapshot:snapshot()};
           }
-          if((request.kind==='undo'||request.kind==='redo')&&barriers===1)pipeline?.resumeAdmission();
+
           return settled();
-        }catch(e){if(phase==='freezing'||pendingPlans.size)phase='recovering';if(isBarrier&&phase==='active'&&barriers===1)pipeline?.resumeAdmission();return fail(e);}
-      }).finally(()=>{if(isBarrier)barriers--;pending--;notify();});tail=work.then(()=>undefined,()=>undefined);return work.then(result=>'snapshot'in result?{...result,snapshot:snapshot()}:result);
+        }catch(e){if(phase==='freezing'||pendingPlans.size)phase='recovering';return fail(e);}
+      }).finally(()=>{
+        // One owner releases admission after every success, refusal or exception.
+        // Other queued barriers, frozen Sessions and faulted pipelines stay closed.
+        if(isBarrier)barriers--;pending--;
+        if(!closed&&phase==='active'&&barriers===0)pipeline?.resumeAdmission();
+        notify();
+      });tail=work.then(()=>undefined,()=>undefined);return work.then(result=>'snapshot'in result?{...result,snapshot:snapshot()}:result);
     },
     close:async()=>{await tail;await settlement.drain();if(phase!=='frozen')throw Error('Freeze and settle before close');await native.close();await store.close();closed=true;detachFault?.();}
   };

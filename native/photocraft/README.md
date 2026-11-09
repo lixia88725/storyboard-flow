@@ -941,3 +941,12 @@ Focused native coverage is in `imageEngineJpeg.test.ts`,
 `imageEngineWorkingRefresh.test.ts`, `imageEngineInactiveExport.test.ts`, and
 `imageEngineSingleLayerOutput.test.ts`. These are distinct from Main/GUI and
 platform acceptance; the explicitly approved manifests enumerate them.
+
+### Read-only failure scope
+
+Detached thumbnail/summary and immutable encoding failures with `effect:none`
+and code `limit`, `unsupported`, or `engine` remain local to that read-only job.
+Storage, integrity, protocol and unknown outcomes retain the global stop/reconcile
+behavior. This does not change acceptance, journal durability or source protection.
+The real Session regression lives in `imageEngineDetached.test.ts`; the error
+classification unit test is the library target `failure_scope_tests`.

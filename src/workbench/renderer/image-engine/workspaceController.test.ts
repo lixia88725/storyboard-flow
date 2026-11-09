@@ -112,3 +112,14 @@ it('binds navigation to the context at admission rather than a later snapshot',a
  await h.controller.request({kind:'activateShot',shotId:'third'});expect(h.calls[1].contextToken).toBe('context-2');
  expect(h.calls[0].requestId).not.toBe(h.calls[1].requestId);h.controller.dispose();
 });
+
+it('uses Main phase for input readiness and releases only the pause owned by a completed action',()=>{
+ const h=setup();h.controller.setInputPause('output',true);
+ h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:2,session:{...h.b.snapshot.session,phase:'recovering'}}});
+ h.controller.setInputPause('output',false);expect(h.controller.capture.state().paused).toBe(true);
+ h.controller.setInputPause('transition',true);
+ h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:3}});expect(h.controller.capture.state().paused).toBe(true);
+ h.controller.setInputPause('transition',false);expect(h.controller.capture.state().paused).toBe(false);
+ h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:4,session:{...h.b.snapshot.session,phase:'frozen'}}});expect(h.controller.capture.state().paused).toBe(true);
+ h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:5}});expect(h.controller.capture.state().paused).toBe(false);h.controller.dispose();
+});

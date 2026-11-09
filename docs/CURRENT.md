@@ -1,5 +1,17 @@
 # 当前状态与剩余工作
 
+## 绘画准入、局部故障与正常关闭协调（2026-11-09）
+
+本轮继续保留PhotoCraft，在隔离试用树整理协调逻辑，未合main或发布。已确定并复现：只读thumbnail超预算的limit/none被native通用任务错误标成globalFailure，Session随之recovering，后续笔迹被报sealed。修复将明确局部只读错误与全局存储/协议故障分开；Session集中释放控制暂停，Renderer按Main phase与操作自身理由推导输入暂停；缩略图失败按版本记录提示，避免同版本重复失败。关闭先等待后台并核对故障，再排空/冻结；未完成原始输入仍拒绝关闭并保留。
+
+用户TEST2现场具体初始异常仍不能还原，不能将合成预算错误当作现场直接原因。独立只读核查及不可变资产副本实测65/65版本检查通过，首板doc3/b99807b7的activate/summary/pipeline begin/append/cancel/stop也成功；未复制用户输入或运行锁，未改原项目。没有新durable intent只能证明输入未落盘，不能排除Main曾易失准入后失败。新增原始code/message/command诊断保留故障链。旧试用PID16624后来已退出，启动日志记SIGKILL，非本轮工具关闭，不称作正常关闭证据。
+
+真实host红回归在旧binary失败（`/private/tmp/flow-coordination-local-failure-red.log`）。最终聚焦5文件57项通过（`/private/tmp/flow-coordination-focused.log`），Rust lib分类1项通过（`/private/tmp/flow-coordination-rust-tests-final.log`）；此前bin目标0 tests不算该项验证。追加Main phase暂停及未完成笔迹拒绝关闭聚焦通过（`/private/tmp/flow-coordination-gates.log`）。构建/固定Rust原生release/组件强校验/preload通过（`/private/tmp/flow-coordination-{build-final,native-build,resources,preload}.log`）。工具链与锁定依赖仅恢复到本次任务目录，未改全局配置。
+
+真实Electron日常组合通过（`/private/tmp/flow-coordination-daily-gui.log`，`flow-native-workbench-DR5IfY`）：加载中绘画、Save/Refresh/Undo/Redo、同窗故障恢复、空闲故障后不另点恢复而正常关闭、新进程重开并继续画，原件及保存文件核对不变。300图专项通过（`/private/tmp/flow-coordination-300-gui.log`，`flow-native-workbench-0yvYNr`）：2488ms进入，首笔时298张仍后台处理，12笔确认，rAF p95约9.8ms/max17ms，脚本整笔269–327ms；停笔后保管完成仍需46409ms，不称整批瞬时导入或硬件笔延迟。完整获准测试集150文件/1584项全部通过，501.22s（`/private/tmp/flow-coordination-suite.log`）。Windows/真实数位笔、实际用户故障的精确时序及任意复杂素材不在以上完成证据内。
+
+通过隔离树的 `试用新版 Storyboard Flow.command --choose` 再次完整构建并启动；原生UI确认项目选择页及“打开…”、“新建项目…”，未自动打开最近项目或处理用户恢复数据。启动日志 `/private/tmp/flow-coordination-trial-launch.log`。试用窗口保留给用户；README入口说明及AGENTS授权规则未变，无需修改。
+
 ## 大批导入期间绘画响应与恢复提示（2026-11-09）
 
 已去掉展示循环内重复整项目防御拷贝：一次snapshot共享一份Session项目，批次资格检查复用成员索引，落笔仅投影当前图。后台来源保管/非当前图准备在任务边界让已接受笔迹先行，普通进度合并通知，绘画确认与显式命令即时发布。没有取消原件核验、修改保存确认条件或删除恢复数据。
