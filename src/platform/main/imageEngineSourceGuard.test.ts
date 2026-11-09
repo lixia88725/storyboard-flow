@@ -40,3 +40,16 @@ it('retains reference origin across upper-layer paint, duplicate, undo/redo inst
   expect(await d.creationStatus('reference')).toEqual({state:'accepted',native:b.prepared.native});await d.activate(current);expect((await adapter.capture()).payload).toEqual(after);expect((await d.summary()).sourceDisplayPolicy).toEqual(b.policy);expect((await d.inspectVersion(copy.native)).summary.sourceDisplayPolicy).toEqual(b.policy);expect(sha(await fs.readFile(source.path))).toBe(source.digest);await d.freeze();await d.close();
  }finally{connection.terminateOwnedProcess();await connection.exited;}
 },30000);
+
+it('reads a retained TIFF above 8MiB while enforcing the bounded 32MiB source envelope',async()=>{
+ const binary=process.env.FLOW_IMAGE_HOST;if(!binary)throw Error('Real source guard host required');
+ const root=await temporaryWorkspace('large-retained-tiff-'),file=path.join(root,'large.tiff'),store=path.join(root,'native');
+ const tiff=await sharp({create:{width:32,height:24,channels:4,background:'#ffffff'}}).tiff().toBuffer();
+ await fs.writeFile(file,Buffer.concat([tiff,Buffer.alloc((8<<20)+1-tiff.length)]));const source=await grant(file);
+ const connection=startImageEngine({binary,store,sessionId:'large-source',incarnation:'one',budgetBytes:64<<20});
+ const adapter=createNativeSessionAdapter({connection,storeRoot:store,storeId:'native'}),d=adapter.driver;
+ try{await connection.ready;const result=await d.prepareRetainedGuarded('large',source,'tiff',{maxAdditionalBytes:16<<20});expect(result.kind).toBe('editable');expect(result.proof.maxChannelDifference).toBe(0);await d.discardCreation('large');
+  await expect(d.prepareRetainedGuarded('over-budget',{...source,byteLength:(32<<20)+1},'tiff',{maxAdditionalBytes:16<<20})).rejects.toMatchObject({code:'limit',effect:'none'});
+  expect(sha(await fs.readFile(file))).toBe(source.digest);await d.freeze();await d.close();
+ }finally{connection.terminateOwnedProcess();await connection.exited;}
+},30000);

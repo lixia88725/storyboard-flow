@@ -18,3 +18,17 @@ it('refuses missing resume capability and preserves frozen state',async()=>{
 it('unknown native resume remains recovering and rejects edits until explicit reconciliation, without changing the committed project',async()=>{
  const f=await fixture(async()=>{throw Object.assign(Error('native resume acknowledgement lost'),{effect:'unknown'});});await f.session.request({kind:'freeze'});expect((await f.session.request({kind:'resume'})).kind).toBe('rejected');expect(f.session.snapshot().phase).toBe('recovering');expect((await f.session.request({kind:'board',edit:{kind:'setProjectNaming',name:'must not commit',naming:{sceneCode:'S',artistName:'A',version:'1'}}})).kind).toBe('rejected');expect((await f.store.load())?.commit.after.revision).toBe(0);expect((await f.session.request({kind:'recover'})).kind).toBe('settled');expect(f.session.snapshot().phase).toBe('frozen');await f.session.close();
 });
+
+for(const state of ['absent','failed','discarded','pending','intent','prepared','accepted'] as const)it(`reconciles an earlier source attempt only when its own ${state} status proves no effect`,async()=>{
+ const f=await fixture(),owner={sessionId:'s',incarnation:'i',workspaceEpoch:1},source={importId:'source-batch',itemId:'one',interpretationId:'photocraft-v1'},native={storeId:'native',documentId:'1',versionId:'a'.repeat(64),manifestSha256:'a'.repeat(64),width:32,height:24};
+ const input={source:{...source,digest:'b'.repeat(64),byteLength:100},hostBuildDigest:'c'.repeat(64),optionsHash:'d'.repeat(64)};
+ for(const operationId of ['old-attempt','retry'])await f.store.recordWorkspace!({kind:'sourceHydration',id:`hydrate-${operationId}`,owner,operationId,imageId:'image',...input});
+ const hydration={schema:'flow.image-hydration' as const,version:1 as const,operationId:'retry',acceptance:'detached' as const,native,...input};await f.store.publishHydration(hydration);await f.store.settleHydration(source,'retry',native);
+ await f.store.recordWorkspace!({kind:'sourceHydrationResolution',id:'hydration-resolution-retry',owner,operationId:'retry',source,decision:'hydrated',native});
+ let mutated=0;f.driver.creationStatus=async id=>id==='retry'?{state:'accepted',native}:state==='prepared'?{state,prepared:{candidateId:'old-attempt',baseVersion:null,native}}:state==='accepted'?{state,native}:{state};
+ f.driver.settleCreation=async()=>{mutated++;throw Error('Must not accept an unrelated candidate');};f.driver.discardCreation=async()=>{mutated++;throw Error('Must not discard an uncertain candidate');};
+ const outcome=await f.session.request({kind:'recover'}),safe=['absent','failed','discarded'].includes(state);
+ expect(['settled','recovered'].includes(outcome.kind)).toBe(safe);expect(mutated).toBe(0);expect(await f.store.hydration(source)).toEqual(hydration);expect((await f.store.load())?.commit.after.revision).toBe(0);
+ expect(await f.store.workspaceRecord!('hydration-resolution-old-attempt')).toEqual(safe?expect.objectContaining({decision:'notHydrated',operationId:'old-attempt'}):null);
+ if(safe){await f.session.request({kind:'freeze'});await f.session.close();}else await f.store.close();
+});

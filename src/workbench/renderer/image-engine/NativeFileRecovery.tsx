@@ -4,8 +4,8 @@ import {imageIssueText} from './presentation';
 
 /** Recovery actions resolve Main-owned obligations. A successful request alone
  * does not hide an image that Main still reports as unavailable. */
-export function NativeFileRecovery({snapshot,disabled,inputBlocked=false,onRecover,onRetryImport}:{
- snapshot:ImageWorkspaceSnapshot;disabled:boolean;inputBlocked?:boolean;
+export function NativeFileRecovery({snapshot,disabled,inputBlocked=false,fileOperationActive=false,onRecover,onRetryImport}:{
+ snapshot:ImageWorkspaceSnapshot;disabled:boolean;inputBlocked?:boolean;fileOperationActive?:boolean;
  onRecover:()=>Promise<void>;onRetryImport:(importId:string)=>Promise<void>;
 }){
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -15,7 +15,7 @@ export function NativeFileRecovery({snapshot,disabled,inputBlocked=false,onRecov
   return image&&['unavailable','recoveryPending'].includes(image.availability)?[{shot,image}]:[];
  });
  const batches=(snapshot.files.backgroundImports??[]).filter(b=>['needsAttention','paused','recovering'].includes(b.phase));
- const fileUncertain=!!snapshot.files.recovery||affected.some(({image})=>image.availability==='recoveryPending')||batches.some(b=>b.phase==='recovering');
+ const fileUncertain=(!fileOperationActive&&snapshot.files.status==='unfinished')||!!snapshot.files.recovery||affected.some(({image})=>image.availability==='recoveryPending')||batches.some(b=>b.phase==='recovering');
  // A retained stroke already has its own recovery controls. Do not call it a second file failure.
  const sessionUncertain=snapshot.session.phase==='recovering'&&!inputBlocked;
  const uncertain=fileUncertain||sessionUncertain;

@@ -158,7 +158,7 @@ impl Host {
             || self.candidate.is_some()
             || self.gesture.is_some()
             || pipeline_active
-            || self.store.context_unsettled();
+            || self.store.shared.edit_context_unsettled();
         let float_active = self.floating_context.is_some();
         let mut tools = serde_json::Map::new();
         for (name, id) in [

@@ -64,15 +64,13 @@ fn opaque_preserved(before: &Document, after: &Document) -> Result<usize> {
         None
     }
     let mut count = 0;
-    if missing(
+    if let Some((id, _, bytes)) = missing(
         &before.metadata.psd_resources,
         &after.metadata.psd_resources,
-    )
-    .is_some()
-    {
+    ) {
         return Err(Error::none(
             "export-loss",
-            "retained PSD image resource was not preserved",
+            format!("retained PSD image resource {id} ({} bytes) was not preserved", bytes.len()),
         ));
     }
     count += before.metadata.psd_resources.len();
@@ -222,6 +220,53 @@ pub(super) fn encode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn auto_slice_group_survives_snapshots_and_existing_omitted_field_without_resource_loss() {
+        use photocraft_psd::slices::{SliceRecord, SlicesResource};
+        let root = std::env::temp_dir().join(format!("flow-slice-snapshot-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let mut store = store::Store::open(&root, 16 << 20).unwrap();
+        let mut doc = Document::new("artist", Size::new(8,4), ColorMode::Rgb, SampleType::U8);
+        doc.layers.push(Layer::raster("Drawing",doc.pixel_format()));
+        let raw = SlicesResource {version:6,bounds:[0,0,4,8],group_name:"artist storyboard".into(),slices:vec![SliceRecord {id:1,origin:0,rect:[0,0,8,4],..Default::default()}]};
+        doc.metadata.psd_resources.push((1050,String::new(),raw.to_bytes().into()));
+        doc.metadata.psd_resources.push((4001,String::new(),b"unknown resource".to_vec().into()));
+        photocraft_io::slices_map::import(&mut doc);
+        assert!(doc.slices.list.is_empty());
+        let target = LayerTarget {active:Some(doc.layers[0].id),selected:vec![doc.layers[0].id]};
+        let receipt = store.save(&doc,&target,None).unwrap();
+        let original = std::fs::read(root.join(format!("versions/{}.json",receipt.version_id))).unwrap();
+        let manifest:Value = serde_json::from_slice(&original).unwrap();
+        assert_eq!(manifest["nativeManifest"]["document"]["slices"]["groupName"],"artist storyboard");
+        let loaded = store.load(&receipt.version_id).unwrap();
+        assert_eq!(loaded.doc.slices,doc.slices);
+        for format in [OutputFormat::Tiff,OutputFormat::Psd] { encode(&loaded.doc,&format,wire::MAX_PAYLOAD).unwrap(); }
+        // A legacy omission remains byte-identical on disk; only its verified
+        // original auto-slice group is reconstructed in memory.
+        let mut legacy = manifest.clone();legacy["nativeManifest"]["document"].as_object_mut().unwrap().remove("slices");
+        let bytes = serde_json::to_vec(&legacy).unwrap();let id=sha(&bytes);store.publish(&format!("versions/{id}.json"),&bytes).unwrap();
+        let restored = store.load(&id).unwrap();assert_eq!(restored.doc.slices,doc.slices);
+        encode(&restored.doc,&OutputFormat::Tiff,wire::MAX_PAYLOAD).unwrap();
+        assert_eq!(std::fs::read(root.join(format!("versions/{id}.json"))).unwrap(),bytes);
+        // An explicit empty field is not reinterpreted from the source resource.
+        legacy["nativeManifest"]["document"]["slices"]=json!({"groupName":"","list":[]});
+        let bytes=serde_json::to_vec(&legacy).unwrap();let id=sha(&bytes);store.publish(&format!("versions/{id}.json"),&bytes).unwrap();
+        let empty=store.load(&id).unwrap();assert!(empty.doc.slices.group_name.is_empty());
+        assert!(encode(&empty.doc,&OutputFormat::Tiff,wire::MAX_PAYLOAD).unwrap_err().message.contains("1050"));
+        let mut lost=doc.clone();lost.metadata.psd_resources.retain(|(id,_,_)|*id!=4001);
+        assert!(opaque_preserved(&doc,&lost).unwrap_err().message.contains("4001"));
+        // Ambiguous, malformed, or authored slice resources must not be restored.
+        for kind in ["duplicate","damaged","user"] {
+            let mut variant=doc.clone();variant.slices=Default::default();
+            if kind=="duplicate" {variant.metadata.psd_resources.push((1050,String::new(),raw.to_bytes().into()));}
+            if kind=="damaged" {variant.metadata.psd_resources[0].2=vec![1,2,3].into();}
+            if kind=="user" {let mut r=raw.clone();r.slices[0].origin=2;variant.metadata.psd_resources[0].2=r.to_bytes().into();}
+            let r=store.save(&variant,&target,None).unwrap();
+            let mut m:Value=serde_json::from_slice(&std::fs::read(root.join(format!("versions/{}.json",r.version_id))).unwrap()).unwrap();m["nativeManifest"]["document"].as_object_mut().unwrap().remove("slices");
+            let b=serde_json::to_vec(&m).unwrap();let id=sha(&b);store.publish(&format!("versions/{id}.json"),&b).unwrap();
+            assert!(store.load(&id).unwrap().doc.slices.group_name.is_empty(),"{kind}");
+        }
+    }
+
     #[test]
     fn lossy_metadata_warning_refuses_and_locked_single_raster_retains_explicit_tiff_layer_data() {
         let mut doc = Document::new("synthetic", Size::new(8, 4), ColorMode::Rgb, SampleType::U8);

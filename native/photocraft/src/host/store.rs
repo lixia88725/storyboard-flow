@@ -588,7 +588,10 @@ impl Store {
         self.writer = writer;
         let append_us = started.elapsed().as_micros();
         let native = prepared.map_err(|e| self.last_error.take().unwrap_or_else(|| io(e)))?;
-        let native_manifest: serde_json::Value = serde_json::from_slice(&native).map_err(io)?;
+        let mut native_manifest: serde_json::Value = serde_json::from_slice(&native).map_err(io)?;
+        // Upstream skips Slices when its user-slice list is empty, even when
+        // group_name is nonempty. Preserve the modeled field before binding/hash.
+        native_manifest["document"]["slices"] = serde_json::to_value(&doc.slices).map_err(io)?;
         if let Some(source) = source.as_mut() {
             super::source_guard::bind_manifest(source, &native_manifest, true)?;
         }
@@ -656,7 +659,22 @@ impl Store {
             max_canvas_pixels: 16 << 20,
             ..Default::default()
         };
-        let doc = photocraft_format::load_bytes_source(&src, &opts).map_err(io)?;
+        let mut doc = photocraft_format::load_bytes_source(&src, &opts).map_err(io)?;
+        // Existing Flow snapshots may omit this modeled group name. Recover only
+        // the unambiguous auto-slice case from verified retained bytes, in memory.
+        // Explicit slices (including an intentional empty value) always win.
+        if v.native_manifest["document"].as_object().is_some_and(|m| !m.contains_key("slices")) {
+            let mut resources = doc.metadata.psd_resources.iter().filter(|(id, _, _)| *id == 1050);
+            if let Some((_, _, bytes)) = resources.next() {
+                if resources.next().is_none() {
+                    if let Ok(raw) = photocraft_psd::slices::SlicesResource::from_bytes(bytes) {
+                        if raw.slices.iter().all(|slice| slice.origin == 0) {
+                            doc.slices.group_name = raw.group_name;
+                        }
+                    }
+                }
+            }
+        }
         admit_document(&doc)?;
         if doc.id.0.to_string() != v.document_id {
             return Err(Error::retained("corrupt", "document identity mismatch"));

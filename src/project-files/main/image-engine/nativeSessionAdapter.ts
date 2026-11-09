@@ -135,7 +135,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     // Full compressed object verification occurs inside native load/install;
     // a live prepared receipt already follows native durable object publication.
     const input=record(source)?source.workingInput:undefined;
-    if(input!=null&&(!record(input)||Object.keys(input).length!==3||typeof input.digest!=='string'||!/^[0-9a-f]{64}$/.test(input.digest)||!Number.isSafeInteger(input.byteLength)||Number(input.byteLength)<1||Number(input.byteLength)>(8<<20)||input.format!=='tiff'))refuse('Malformed working input identity','corrupt','retained');
+    if(input!=null&&(!record(input)||Object.keys(input).length!==3||typeof input.digest!=='string'||!/^[0-9a-f]{64}$/.test(input.digest)||!Number.isSafeInteger(input.byteLength)||Number(input.byteLength)<1||Number(input.byteLength)>(32<<20)||input.format!=='tiff'))refuse('Malformed working input identity','corrupt','retained');
     return {policy:policy==null?null:structuredClone(policy as ImageEngineProtectedSourcePolicy),workingInput:input==null?null:structuredClone(input as ImageEngineWorkingInput)};
   };
   const verifyNative=async(ref:NativeImageRef)=>{await verifyNativeFile(ref);};
@@ -277,7 +277,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     const handle={key,jobId,promise,recover};readonlyExport=handle;void promise.finally(()=>{if(safelyReleased&&readonlyExport===handle)readonlyExport=undefined;}).catch(()=>{});return promise;
   };
   const retainedPayload=async(op:ReturnType<typeof operationContext>,captured:RetainedSourceObject,formatHint:string)=>{
-       const original=await boundedFile(captured.path,8<<20,captured.identity);op.check();if(original.length!==captured.byteLength||sha(original)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
+       const original=await boundedFile(captured.path,32<<20,captured.identity);op.check();if(original.length!==captured.byteLength||sha(original)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
        let payload:Uint8Array=original,display:Record<string,unknown>|null=null;
        if(formatHint==='tiff'){
         // This bounded non-preemptible decoder phase begins only at a confirmed
@@ -354,7 +354,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     async prepareRetainedGuarded(operationId,source,formatHint,reservation,sourceOptions={}){
       const op=operationContext();immutableCap();if(!op.connection.supports('sourceDisplayGuardV1')||!op.connection.supports('protectedReferenceV1'))refuse('Native binary lacks sourceDisplayGuardV1/protectedReferenceV1','unsupported');
       const captured=structuredClone(source),options=structuredClone(sourceOptions),grant=structuredClone(reservation),maximum=reservationLimit(grant),displayTolerance=options.displayTolerance??2;if(!Number.isSafeInteger(displayTolerance)||displayTolerance<0||displayTolerance>16)refuse('Main display tolerance must be an integer 0..16','invalid-input');
-      if(!['tiff','psd'].includes(formatHint)||captured.byteLength>(8<<20))refuse('Guarded retained source exceeds current format/8MiB admission; original retained','limit');
+      if(!['tiff','psd'].includes(formatHint)||captured.byteLength>(32<<20))refuse('Guarded retained source exceeds current format/32MiB admission; original retained','limit');
       const interpretationId=options.interpretationId;if(interpretationId!==undefined&&interpretationId!=='photocraft-v1'&&interpretationId!=='flow-v1-upgrade')refuse('Unknown source interpretation','unsupported');
       if(interpretationId==='flow-v1-upgrade'&&!op.connection.supports('flowV1UpgradeInterpretationV1'))refuse('Native binary lacks flowV1UpgradeInterpretationV1','unsupported');
       const release=immutableClaim();
@@ -374,7 +374,7 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     async prepareWorkingRefresh(operationId,working,reservation,authorizedOrigin){
       const op=operationContext();immutableCap();if(!op.connection.supports('protectedWorkingRefreshV1'))refuse('Native binary lacks protectedWorkingRefreshV1','unsupported');
       const captured=structuredClone(working),origin=authorizedOrigin===undefined?null:structuredClone(authorizedOrigin),maximum=reservationLimit(structuredClone(reservation));
-      if(captured.byteLength>(8<<20))refuse('Working TIFF exceeds current 8MiB source admission','limit');
+      if(captured.byteLength>(32<<20))refuse('Working TIFF exceeds current 32MiB source admission','limit');
       if(origin){if(!validNativeImageRef(origin.version)||!validImageEngineProtectedSourcePolicy(origin.policy))refuse('Invalid authorized original identity','invalid-input');const actual=(await verifyNativeFile(origin.version)).policy;op.check();if(!same(actual,origin.policy))refuse('Authorized original version/policy mismatch','protected-source');}
       const release=immutableClaim();try{const{payload,display}=await retainedPayload(op,captured,'tiff');op.check();const source={digest:captured.digest,byteLength:captured.byteLength,formatHint:'tiff',interpretationId:'photocraft-v1'};
        const started=await call(operationId,{kind:'detachedPrepare',input:{kind:'workingRefresh',source,display,authorizedOrigin:origin?{version:versionIdentity(origin.version),policy:origin.policy}:null},maxAdditionalBytes:maximum},null,payload);op.check();const done=await waitImmutable(op,operationId,started);op.check();const r=done.result;if(r.kind==='discarded')refuse('Working refresh was discarded','conflict');const prepared=detachedPrepared(operationId,r,done.payload),expected:ImageEngineWorkingInput={digest:captured.digest,byteLength:captured.byteLength,format:'tiff'};
@@ -385,8 +385,8 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     async prepareRetained(operationId,source,formatHint,reservation,sourceOptions={}){
       formatHint=formatHint==='jpg'?'jpeg':formatHint;
       const op=operationContext();immutableCap();const release=immutableClaim();
-      try{const maximum=reservationLimit(reservation),interpretationId=sourceOptions.interpretationId;if(interpretationId!==undefined&&interpretationId!=='photocraft-v1'&&interpretationId!=='flow-v1-upgrade')refuse('Unknown native source interpretation','unsupported');if(interpretationId==='flow-v1-upgrade'&&!op.connection.supports('flowV1UpgradeInterpretationV1'))refuse('Native binary lacks flowV1UpgradeInterpretationV1','unsupported');if(source.byteLength>8<<20)refuse('Source retained but exceeds current 8MiB native hydration admission','unsupported');
-        const captured=structuredClone(source),payload=await boundedFile(captured.path,8<<20,captured.identity);op.check();if(payload.length!==captured.byteLength||sha(payload)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
+      try{const maximum=reservationLimit(reservation),interpretationId=sourceOptions.interpretationId;if(interpretationId!==undefined&&interpretationId!=='photocraft-v1'&&interpretationId!=='flow-v1-upgrade')refuse('Unknown native source interpretation','unsupported');if(interpretationId==='flow-v1-upgrade'&&!op.connection.supports('flowV1UpgradeInterpretationV1'))refuse('Native binary lacks flowV1UpgradeInterpretationV1','unsupported');if(source.byteLength>32<<20)refuse('Source retained but exceeds current 32MiB native hydration admission','unsupported');
+        const captured=structuredClone(source),payload=await boundedFile(captured.path,32<<20,captured.identity);op.check();if(payload.length!==captured.byteLength||sha(payload)!==captured.digest)refuse('Retained source digest changed','corrupt','retained');
         if(!['png','tiff','psd','jpeg'].includes(formatHint))refuse('Unsupported source format hint','unsupported');if(formatHint==='jpeg'&&!op.connection.supports('retainedRgbJpegV1'))refuse('Native binary lacks retainedRgbJpegV1','unsupported');
         const sourceIdentity={digest:captured.digest,byteLength:captured.byteLength,formatHint,...(interpretationId?{interpretationId}:{})};const started=await call(operationId,{kind:'detachedPrepare',input:{kind:'source',source:sourceIdentity},maxAdditionalBytes:maximum},null,payload);op.check();const value=await waitImmutable(op,operationId,started);op.check();if(!record(value.result.receipt)||!same(value.result.receipt.source,sourceIdentity))refuse('Hydrated source provenance mismatch','protocol','unknown');return detachedPrepared(operationId,value.result,value.payload);
       }finally{release();}

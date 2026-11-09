@@ -59,6 +59,7 @@ export function NativeWorkbenchEditor({controller:c,externallyPaused,projectMenu
  const currentId=selected.find(id=>project.shots.some(s=>s.id===id));
  const current=project.shots.find(s=>s.id===currentId),image=current?snapshot.images[current.imageId]:undefined;
  const activeLayer=image?.layers.find(l=>l.id===image.activeLayerId);
+ useEffect(()=>{if(activeLayer?.capabilities.paint)setIssue(old=>old==='当前图层不能绘画，请选择可绘画图层或新建图层。'?'':old);},[activeLayer?.capabilities.paint]);
  const live=useRef({active,working,tool});live.current={active,working,tool};
  const refreshText=()=>setHoldShots(text.current.holdShots());
  const request=useCallback((command:ImageWorkspaceCommand):Promise<void>=>{
@@ -198,7 +199,7 @@ export function NativeWorkbenchEditor({controller:c,externallyPaused,projectMenu
  return <CanvasPresentationContext.Provider value={presentations}>
   {refreshPreview&&<NativeRefreshSheet key={refreshPreview.planId} preview={refreshPreview} onConfirm={confirmRefresh} onCancel={()=>setRefreshPreview(undefined)}/>}
   <NativeInputRecovery controller={c}/>
-  <NativeFileRecovery snapshot={snapshot} inputBlocked={c.capture.state().blocked} disabled={externallyPaused||working||surfaceGestures.current.size>0} onRecover={recoverFiles} onRetryImport={async importId=>{await request({kind:'resumeImport',importId});setIssue('');}}/>
+  <NativeFileRecovery snapshot={snapshot} fileOperationActive={outputActive.current} inputBlocked={c.capture.state().blocked} disabled={externallyPaused||working||surfaceGestures.current.size>0} onRecover={recoverFiles} onRetryImport={async importId=>{await request({kind:'resumeImport',importId});setIssue('');}}/>
   {transformState.failure&&<aside className="wb-recovery" role="alert"><strong>选区变换需要处理</strong><p>{transformState.failure.message} 已保留最后接受的变换输入。</p><button disabled={surfaceGestures.current.size>0} onClick={()=>void transformOwner.resolve('retainAndDiscard').catch(error=>setIssue(errorText(error)))}>保管输入并结束变换</button><button disabled={surfaceGestures.current.size>0} onClick={()=>void transformOwner.resolve('exportAndDiscard').catch(error=>setIssue(errorText(error)))}>导出输入副本并结束变换…</button></aside>}
   <Workbench name={project.name} shots={shots.slice(0,project.shots.length)} parked={shots.slice(project.shots.length)} selected={selected} pendingSelected={pendingSelected} revision={project.revision} disabled={!active||working}
    dialogueText={dialogueText} renderDialogue={dialogue} status={issue||workspaceFailureMessage(c.fault())||(working?'正在更新文件…':c.capture.state().pending?'正在自动暂存笔迹…':sourceStatus||backgroundStatus|| [referenceStatus,snapshot.files.outputPending?'已自动暂存 · 文件夹待更新':'已自动暂存'].filter(Boolean).join(' · '))}

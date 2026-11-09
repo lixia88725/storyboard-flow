@@ -30,7 +30,7 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
  };
 
  let port:MessagePort|undefined,disposed=false,ready=false;
- let fault:ImageWorkspaceFailure|undefined;
+ let fault:ImageWorkspaceFailure|undefined,admissionFault:ImageWorkspaceFailure|undefined;
  let displayOverride:Extract<ImageWorkspaceEvent,{kind:'display'}>|undefined;
  let projected=snapshot;
  const projectDisplay=()=>{const d=displayOverride,image=d?snapshot.images[d.imageId]:undefined;projected=d&&image?{...snapshot,images:{...snapshot.images,[d.imageId]:{...image,displayIdentity:d.displayIdentity,displayNative:d.displayNative,displayDocumentId:d.displayIdentity?.documentId??null}}}:snapshot;};
@@ -47,7 +47,7 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
  const install=(next:ImageWorkspaceSnapshot)=>{
   if(disposed||!sameOwner(owner,next.owner)||next.stateSeq<=snapshot.stateSeq)return;
   const before=displayIdentity(projected);
-  snapshot=next;if(displayOverride&&displayOverride.stateSeq<=next.stateSeq)displayOverride=undefined;projectDisplay();
+  snapshot=next;if(admissionFault&&fault===admissionFault&&next.context.imageId&&next.images[next.context.imageId]?.layers.find(l=>l.id===next.context.layerId)?.capabilities.paint){fault=undefined;admissionFault=undefined;}if(displayOverride&&displayOverride.stateSeq<=next.stateSeq)displayOverride=undefined;projectDisplay();
   if(!sameDisplay(before,displayIdentity(projected)))displayNotify();syncInputPause();capture.wake();notify();
  };
  let activation:{shotId:string;work:Promise<import('../../../platform/contracts/imageWorkspace').ImageWorkspaceOutcome>}|undefined;
@@ -81,7 +81,7 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
   return layer?.capabilities.paint?undefined:'当前图层不能绘画，请选择可绘画图层或新建图层。';
  };
  const capture=createImageInputCapture({
-  notAdmitted:message=>setFault({code:"paint-layer-unavailable",message,effect:"none"}),
+  notAdmitted:message=>{if(!fault||fault===admissionFault){admissionFault={code:"paint-layer-unavailable",message,effect:"none"};setFault(admissionFault);}},
   workerAuthority:()=>{const epoch=displayIdentity(projected)?.workerEpoch;return epoch===undefined?undefined:JSON.stringify([owner,epoch]);},
   authority:()=>JSON.stringify([owner,snapshot.context.token,displayIdentity(projected)?.workerEpoch??null]),
   checkTarget:target=>{
@@ -112,7 +112,7 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
   },changed:notify,
  });
  const pauseReasons=new Set<string>();
- const syncInputPause=()=>capture.pause(pauseReasons.size>0||snapshot.session.phase!=='active');
+ const syncInputPause=()=>capture.pause(pauseReasons.size>0||snapshot.session.phase!=='active'||snapshot.files.status==='unfinished');
  const setInputPause=(reason:string,value:boolean)=>{value?pauseReasons.add(reason):pauseReasons.delete(reason);syncInputPause();};
  syncInputPause();
  const conceal=()=>{ready=false;frames.reset(frames.view().identity);};

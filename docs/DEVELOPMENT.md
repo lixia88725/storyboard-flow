@@ -131,3 +131,10 @@ Mac日常流程专项：完整build及本轮native组件准备后，`FLOW_IMAGE_
 落笔准入与大批导入组合验收：在上述原生导入性能专项环境下增加 `FLOW_ADMISSION_REGRESSION=1`。脚本复用300张合成图，使用真实鼠标检查已激活及未激活锁定板均不发送 begin、不创建恢复记录；注入250ms激活延迟后直接在第80/160/240张静态卡片落笔，核对各自版本与其他图片不变，再正常关闭重开。共享用例位于 `scripts/flow-native-admission-cases.cjs`。Runtime聚焦覆盖24张冷图竞争时前台目标提升、恢复补需求；queue测试进入 `allowed-image-engine-suite.json`。耗时指标仍不等同于真实数位笔延迟。
 
 取消后继续绘画专项：给300图原生导入性能脚本增加 `FLOW_CANCEL_REGRESSION=1`，真实鼠标落笔、等待像素变化、Escape取消并核对像素/历史恢复，连续两次后执行原有12笔及正常关闭重开；可同时开启准入专项。`imageEngineDetached.test.ts` 覆盖真实Session+native取消后绘画持久化及重开；`nativePipeline.test.ts` 验证确认的新epoch与异常取消回执仍保留输入。
+
+
+授权工作素材体验验收：显式设置 `FLOW_ARTIST_SOURCE=<用户已授权的来源目录>` 后运行 `flow-native-import-performance-smoke.mjs`。只读取来源，项目和profile仍建于脚本独占临时目录；按实际直属图片数量验证，不放入默认全量个人素材清单。覆盖文件夹导入、后台绘画、可选取消/准入检查、多图浏览、新层绘画、Undo/Redo、整批Save及认证关闭重开，前后核对直属来源文件摘要。每阶段写progress回执，记录进入/整笔/切图/Save时间；不把600秒诊断等待上限当作体验合格线。工作素材回归与全量顺序执行，避免CPU竞争混淆测量。
+
+真实素材专项中断后，仅对该脚本自有`/private/tmp/flow-native-workbench-*`测试项目，可配合原`FLOW_ARTIST_SOURCE`指定`FLOW_ARTIST_RESUME_OUT`复测核对恢复、Save、原画面/项目不变、正常关闭与重开；不重做整批导入，不用于自动处理用户项目。其输出为独立save-retry证据，不能伪称首次Save成功。
+
+真实素材重开验收追加实际第一笔与Undo，要求revision变化、像素改变、撤销回原像素、无保留输入并正常关闭。恢复重试receipt不能替代从空目录首次导入全流程结果；绘画/首次切图/首次Save分别记录，已准备项目的再次Save不可冒充首次保存性能。

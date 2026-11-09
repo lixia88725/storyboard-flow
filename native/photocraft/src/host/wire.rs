@@ -2,6 +2,8 @@ use super::{Error, Request, Response, Result};
 use std::io::{Read, Write};
 pub const MAX_HEADER: usize = 64 << 10;
 pub const MAX_PAYLOAD: usize = 64 << 20;
+// Reserve half of a bounded wire message for the independent display PNG.
+pub const MAX_SOURCE: usize = MAX_PAYLOAD / 2;
 pub fn read(reader: &mut impl Read) -> Result<Option<(Request, Vec<u8>)>> {
     let mut lengths = [0u8; 8];
     let mut first = [0u8; 1];

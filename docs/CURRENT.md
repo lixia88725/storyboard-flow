@@ -1,5 +1,19 @@
 # 当前状态与剩余工作
 
+## 用户授权 TEST2 艺术家流程实测（2026-11-09）
+
+来源为用户指定 `/Users/xiali/Pictures/TEST2`：304张直属TIFF、307个直属文件，606392031B。只读导入独立 `/private/tmp/flow-native-workbench-*` 项目/profile，禁止测试使用Clipboard/Trash；用户已删除的桌面项目未查找或恢复。最终所有307个来源文件摘要前后相同。当前仅隔离试用分支，未合main/推送/发布，未重启用户窗口。
+
+本轮真实素材依次暴露并修复：8MiB来源上限拒绝两张普通TIFF；其他板后台准备错误禁用当前图层；512MiB内部磁盘预留不足；原生快照遗漏Photoshop自动切片组名，导致保真导出检查拒绝；旧的无效果准备尝试误与后续成功尝试绑定；Main明确要求文件恢复时前端未显示入口且仍允许捕获画笔。对应边界见ARCHITECTURE；没有移除未知结果保护、丢弃原件或降低保真断言。真实故障日志全部保留，从 `/private/tmp/flow-test2-artist-gui.log`、`flow-test2-artist-gui2.log`、`flow-test2-artist-final.log`、`flow-test2-artist4-unsandboxed.log`、`flow-test2-artist5.log` 到 `flow-test2-artist6.log`。前两次重试故障记录为 `flow-test2-save-retry.log` 和 `flow-test2-save-retry2.log`。
+
+GUI证据分段，不能称最终代码从空目录一次全流程全绿：第六轮 `flow-native-workbench-TuM1sp` 通过真实入口导入、后台加载中12笔、两次取消恢复像素、锁定层拒绝且不产生恢复输入、三张冷图首笔、新图层绘画、撤销/重做，随后首次Save被切片资源保护拒绝。修复后使用同一自有临时项目验证真实“核对并恢复”入口、保存304张TIFF、正常关闭、新进程重开，像素/revision一致（`/private/tmp/flow-test2-save-retry3.log`）。最后在最终代码上再次保存/正常关闭/重开，并真实画一笔、撤销恢复原像素、无保留笔迹提示、正常关闭，PASS（`/private/tmp/flow-test2-save-retry4.log`；同fixture `performance-save-retry.json`、`performance-reopen.json`，`originalsUnchanged=true`、`certified=1`）。原始首次失败文件与中间成功结果分别保留；没有操作用户恢复数据。
+
+速度尚未达标：第六轮2.465s进入，第一笔时291张仍后台处理；12笔脚本299–347ms含128ms移动及IPC/轮询，rAF p95=10.1ms，不是数位笔延迟。已准备邻图约135–253ms；首次切到远图约0.87–4.02s，冷图首笔确认3.41–5.26s（含人为250ms激活延迟）。停笔后原件保管仍需42.232s；首次Save还会准备整批原生文档并生成工作TIFF，分钟级且该轮失败，不可用后续已准备项目的10.697s Save冒充首次保存性能。功能修复通过不等于“丝滑”，冷图就绪/首次整批保存仍需优化，Windows/数位笔和最终从空目录一次完整运行未验。
+
+验证：Rust库37项通过（`/private/tmp/flow-test2-slices-unit2.log`），固定任务工具链离线native release构建通过（`/private/tmp/flow-test2-slices-native.log`）；最终聚焦36项及完整build通过（`/private/tmp/flow-test2-final-recovery-focused.log`、`flow-test2-final-all-build.log`）；组件强校验准备/preload通过（`flow-test2-final-resources.log`、`flow-test2-final-preload.log`）。最终完整获准清单152文件/1614项全部通过、511.08s、exit0（`/private/tmp/flow-test2-complete-suite.log`）。旧两次151文件/1610项全绿只作中间版本证据，不代替最终测试。独立只读审查仅覆盖切片恢复及无效果旧准备尝试，不能称整个产品已独立验收。
+
+桌面旧暂存目录只读核对：`.flow-create-GTBqRS`、`.flow-create-Jj1JFP`为空；`.flow-create-gcHKQ9`含481个checkpoint资产PNG、141088464B，无完整checkpoint项目文件。来自创建失败后保留现场策略，均未删除或迁移。README启动入口、AGENTS授权和DESIGN既定用户行为未变，无需改写；更新ARCHITECTURE/DEVELOPMENT及原生模块README中的实际实现与验证入口。
+
 ## TEST2 再次首笔失败：取消后的展示代次（2026-11-09）
 
 用户在上一轮试用后仍触发恢复提示，不视为已修复现场。当前启动日志明确捕获 `Native queue admission differs from Main intent`，operation `70974c86-2899-4074-a396-1b8f2f4144ba`。只读核对profile所指TEST2项目：Main intent为72点，native已有同operation、72点、predecessor=null的prepared，epoch=4；没有据此接受、重画或清理用户数据。旧日志未记录六个比较字段的具体差值，不能把取消认定为现场唯一触发原因。

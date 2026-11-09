@@ -197,6 +197,12 @@ impl StoreProxy {
             .lock()
             .map_or(true, |s| s.unsettled || s.error.is_some())
     }
+    // Capability queries must match foreground admission: a detached source
+    // awaiting its own receipt does not own the active document. Unknown storage
+    // state and unresolved foreground edits still refuse new input.
+    pub(super) fn edit_context_unsettled(&self) -> bool {
+        self.0.snapshot.lock().map_or(true, |s| !s.edits.is_empty() || s.error.is_some())
+    }
     pub(super) fn edit_unresolved(&self) -> Result<Vec<String>> {
         if self.0.background.load(Ordering::Acquire) {
             let s = self

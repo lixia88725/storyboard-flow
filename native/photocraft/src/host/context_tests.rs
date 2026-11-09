@@ -1329,3 +1329,22 @@ fn product_bucket_preserves_requested_rgba_alpha_at_full_command_coverage() {
         let version=h.accept("acceptedFill", &prepared);let reopened=h.reopen(&version);assert!(state(&reopened.h).pixels.chunks_exact(4).all(|p| p == [255,0,0,alpha]));
     }
 }
+
+#[test]
+fn detached_pending_source_does_not_disable_current_layer_capabilities() {
+    let mut h = Harness::new();
+    let p = h.body("new", json!({"kind":"new","width":32,"height":32}));
+    h.accept("new", &p);
+    let background = immutable_new(&mut h, "backgroundSource", 16, 16);
+    assert!(h.h.store.shared.context_unsettled());
+    let s = h.summary();
+    assert_eq!(s["tools"]["paint"]["enabled"], true, "{s}");
+    assert_eq!(s["tools"]["newLayer"]["enabled"], true, "{s}");
+    // Real foreground commands already allow unrelated detached obligations.
+    let p = h.edit("foregroundLayer", json!({"kind":"newLayer","name":"artist"}));
+    assert_eq!(p["kind"], "prepared");
+    assert_eq!(h.summary()["tools"]["paint"]["enabled"], false);
+    h.accept("foregroundLayer", &p);
+    assert_eq!(h.summary()["tools"]["paint"]["enabled"], true);
+    immutable_settle(&mut h, "backgroundSource", &background);
+}

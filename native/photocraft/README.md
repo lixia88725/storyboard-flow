@@ -178,7 +178,7 @@ binary and normal Flow entry remain separate. The isolated native workspace
 uses this host for editing and output; current integration evidence is in
 `docs/CURRENT.md`. It admits one active document per host and the verified
 RGB8 raster/group PNG/JPEG/TIFF/PSD paths
-(up to 8 MiB source, 8192 px side, 16 Mi canvas pixels, 64 layers and 512 MiB
+(up to 32 MiB source, 8192 px side, 16 Mi canvas pixels, 64 layers and 512 MiB
 materialized native surface bytes). These are admission bounds, not a process RSS
 limit or certification of arbitrary PSD/TIFF structures.
 
@@ -686,7 +686,7 @@ active frame. Main must not hold the foreground append/pump/CAS gate while waiti
 for an idle background job. New/copy project history and crash decisions still
 require Main's batch input/decision ledger and independent end-to-end acceptance.
 
-Source admission is intentionally still limited: 8 MiB granted bytes, PNG/TIFF/PSD
+Source admission is intentionally still limited: 32 MiB granted bytes, PNG/TIFF/PSD
 hint, RGB8 raster/group Document, no damaged/preview-only/warning result, canvas
 edge <=8192 and <=16 Mi pixels, <=64 layers and <=512 MiB materialized native
 pixels. The live pipeline retains <=256 MiB; a larger admitted reference is not
@@ -797,8 +797,8 @@ Main verifies the granted retained object's no-follow identity and complete
 SHA-256, then generates TIFF embedded display with installed sharp from those
 actual bytes. No renderer PNG enters this path. A cheap actor admission waits
 for an idle input boundary before this bounded non-preemptible decode begins;
-the native input actor remains available while it runs. Original bytes (<=8 MiB)
-and an untagged sRGB RGBA8 PNG (<=32 MiB) share one <=40 MiB request payload, with
+the native input actor remains available while it runs. Original bytes (<=32 MiB)
+and an untagged sRGB RGBA8 PNG (<=32 MiB) share one <=64 MiB request payload, with
 separate length/hash and source-digest bindings. Native validates those bindings,
 original color interpretation and the full independent reference. PSD uses raw
 merged-image parsing separately from layer interpretation. Invalid RGB ICC and
@@ -847,7 +847,7 @@ Protected versions require the explicit origin-bound output capability below.
 No locked flat layer is allowed to masquerade as a complete saved complex
 original. Older guard-only binaries refuse protected output.
 32M capacity and broader source/CMYK coverage remain separate unfinished gates;
-current 16 Mi-pixel/8192-edge/8 MiB source bounds reject explicitly without resize.
+current 16 Mi-pixel/8192-edge/32 MiB source bounds reject explicitly without resize.
 
 The explicit opt-in `imageEngineSourceGuardCorpus.test.ts` reads only
 `FLOW_AUTHORIZED_TIFF_LIST`, records every original SHA before/after and compares

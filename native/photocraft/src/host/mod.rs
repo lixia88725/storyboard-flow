@@ -921,7 +921,7 @@ impl Host {
                 if self.engine.active().is_some() {
                     return Err(Error::none("busy", "document already open"));
                 }
-                if payload.len() > 8 << 20
+                if payload.len() > wire::MAX_SOURCE
                     || source.byte_length != payload.len() as u64
                     || !store::is_hash(&source.digest)
                     || sha(payload) != source.digest

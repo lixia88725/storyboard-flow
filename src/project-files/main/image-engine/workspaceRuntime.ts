@@ -38,7 +38,7 @@ const failure=(e:unknown):ImageWorkspaceFailure=>({code:typeof(e as {code?:unkno
 export async function openImageWorkspaceRuntime(options:ImageWorkspaceRuntimeOptions):Promise<ImageWorkspaceRuntime>{
  const details=await readImageWorkspaceProject(options.root),root=details.plan.root;
  if(!Number.isSafeInteger(options.workspaceEpoch)||options.workspaceEpoch<1)throw Error('Invalid workspace epoch');
- const max=options.limits?.maxRecoveryBytes??8*1024**3,nativeBytes=options.limits?.nativeBytes??(512<<20),sourceBytes=options.limits?.sourceBytes??(32<<20),outputBytes=options.limits?.outputBytes??(32<<20);
+ const max=options.limits?.maxRecoveryBytes??8*1024**3,nativeBytes=options.limits?.nativeBytes??(1<<30),sourceBytes=options.limits?.sourceBytes??(32<<20),outputBytes=options.limits?.outputBytes??(32<<20);
  for(const n of[max,nativeBytes,sourceBytes,outputBytes])if(!Number.isSafeInteger(n)||n<8192||n>8*1024**3)throw Error('Invalid runtime budget');
  const budget=await createWorkspaceRecoveryBudget({root,maxRecoveryBytes:max});
  // Native alone has a bounded independent append-only store. Its FULL future

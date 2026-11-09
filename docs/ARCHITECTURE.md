@@ -217,3 +217,14 @@ Main绘画决定失败保留有界运行诊断（operationId、阶段、commitHa
 `capture` 在创建输入前通过 `checkTarget` 检查已知目标，发送 begin 前再通过 `resolveTarget` 核对。具体目标不重新绑定；只有 layerId 为空的临时候选可在激活原目标板后绑定。该候选仅在无 operationId、未发送数据、从未尝试 begin、worker 身份未变，且明确收到 `paint-layer-unavailable` 的未准入结果时解除；其余失败保留输入。`beginAttempted` 在 IPC 前设置，传输失败不算未开始。NativeCanvas 同步结束已解除候选的本地手势。Runtime 对当前已就绪板的重复激活保持上下文，其他激活仍经过原 barrier。
 
 `workspaceJobQueue` 分别串行调度 hydration 和 immutable 工作，优先级在出队时读取，每第五次选择最早等待项以避免饥饿。同图 hydration 共享 Promise；前台 activate 在等待期间登记引用计数，使尚未成为 activeShot 的目标也能提升优先级。去掉按队列长度拒绝冷图的路径，恢复后重新登记仍可见且未完成的需求。后台让路只发生在任务边界，250ms 是等待 captures 的上限而非原生渲染时限；未抬笔的现有准入限制仍保留。不可变 prepare 缓存可减少随后 inspect 的重复工作，但缓存未命中时仍可能全尺寸合成，尚未加入原生低分辨率专用渲染。
+
+
+新图片宿主的可编辑源文件上限为32MiB；受保护TIFF另附独立显示PNG最多32MiB，两者合计不超过现有64MiB wire payload。Main的普通/保护来源读取、工作TIFF重新读取及workingInput校验与native普通/后台preflight同步；原16M像素、图层解码和项目总预算不因此放宽。Source保管层的128MiB上限不等于全部字节范围都已支持编辑。普通未准入绘画提示只在对应目标重新可画后清除，不自动清除持久化失败或未知结果。
+
+当前图层工具准入与原生前台命令使用相同范围：其他图片的 detached source 准备不阻塞当前图层；尚未结算的前台编辑、存储错误和未知状态仍拒绝输入。Summary使用存储Owner的前台操作快照，不能把后台素材的全局未结算状态缓存成当前图层不可画。Freeze/Close仍核对全部后台和前台义务。
+
+原生文档存储默认在8GiB项目恢复总额内预留1GiB（此前512MiB不足以容纳TEST2的304张1920×1080故事板）；这是磁盘总额预留，不是常驻内存额度。原件、输出、记录仍共用剩余总预算，超限不自动删历史或恢复数据。
+
+原生Store显式持久化已有slices字段，避免上游以空user-slice列表省略非空组名。读取当前引擎曾生成的缺字段快照时，先验证原摘要及资源；仅唯一合法1050且全部为自动切片时，从其原字节恢复内存组名。显式slices（含空值）优先，不猜重复/损坏/用户切片；不改旧版本文件，不放宽输出opaque资源校验。
+
+来源准备恢复以operation身份区分尝试：只有旧尝试的native状态明确absent/failed/discarded，且当前derived决策属于不同operation时，才将旧尝试单独结算为notHydrated；不修改新尝试、不重发/接受副作用，其他不明确状态仍拒绝。文件恢复UI和画笔捕获准入读取Main的`files.status=unfinished`，不依赖可选旧`recovery`字段；当前正在执行的输出不展示重复恢复警告，Main的文件闸门仍是最终准入依据。

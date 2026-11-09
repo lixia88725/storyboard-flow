@@ -395,14 +395,14 @@ pub(super) fn preflight_source(source: &Source, payload: &[u8]) -> Result<()> {
             "source interpretation is not supported by this native capability",
         ));
     }
-    if payload.len() > 8 << 20
+    if payload.len() > wire::MAX_SOURCE
         || source.byte_length != payload.len() as u64
         || !store::is_hash(&source.digest)
         || sha(payload) != source.digest
     {
         return Err(Error::none(
             "invalid-input",
-            "retained input identity or 8MiB source admission mismatch",
+            "retained input identity or 32MiB source admission mismatch",
         ));
     }
     if !["png", "tiff", "psd", "jpeg"].contains(&source.format_hint.as_str()) {

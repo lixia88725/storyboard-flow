@@ -163,3 +163,23 @@ it('shares cold activation with the immediate first stroke and resolves its orig
  expect(inputs).toEqual([]);release();await activation;for(let n=0;n<30;n++)await Promise.resolve();
  expect(activations).toBe(1);expect(inputs[0]).toMatchObject({kind:'begin',shotId:'shot',layerId:'1',expectedContextGeneration:1});expect(h.controller.capture.state().pending).toBe(0);h.controller.dispose();
 });
+
+it('clears only its ordinary cold-layer refusal after paint becomes available',async()=>{
+ const h=setup();
+ h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:2,context:{...h.b.snapshot.context,shotId:'previous',layerId:null,generation:null}}});
+ h.bridge.request=async()=>({kind:'settled',operationId:'activate',snapshot:{...h.b.snapshot,stateSeq:3,images:{img:{...h.b.snapshot.images.img,layers:h.b.snapshot.images.img.layers.map(l=>({...l,capabilities:{...l.capabilities,paint:false}}))}}}});
+ const b=h.controller.capture.begin({shotId:'shot',layerId:null,expectedContextGeneration:null},{tool:'brush',color:'#000000',size:4,opacity:1,softness:0},{x:1,y:2,pressure:1});if(!b.ok)throw Error('Missing cold candidate');h.controller.capture.end(b.id);
+ for(let n=0;n<40;n++)await Promise.resolve();expect(h.controller.fault()?.code).toBe('paint-layer-unavailable');expect(h.controller.capture.state().pending).toBe(0);
+ h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:4}});expect(h.controller.fault()).toBeUndefined();
+ const genuine={code:'write-failed',message:'retain',effect:'unknown' as const};h.event({kind:'fault',owner,error:genuine});h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:5}});expect(h.controller.fault()).toBe(genuine);h.controller.dispose();
+});
+
+it('pauses before capture for unfinished file output and resumes for ordinary unsaved changes',()=>{
+ const h=setup();let inputs=0;h.bridge.input=async()=>{inputs++;throw Error('Must refuse before IPC');};
+ h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:2,files:{...h.b.snapshot.files,status:'unfinished',outputPending:true}}});
+ expect(h.controller.capture.state().paused).toBe(true);
+ expect(h.controller.capture.begin({shotId:'shot',layerId:'1',expectedContextGeneration:1},{tool:'brush',color:'#000000',size:4,opacity:1,softness:0},{x:1,y:2,pressure:1}).ok).toBe(false);
+ expect(inputs).toBe(0);expect(h.controller.capture.state().blocked).toBe(false);
+ h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:3,files:{...h.b.snapshot.files,status:'pending',outputPending:true}}});
+ expect(h.controller.capture.state().paused).toBe(false);expect(h.controller.dispose()).toBe(true);
+});
