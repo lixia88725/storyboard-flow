@@ -119,7 +119,7 @@ export function Workbench(p:WorkbenchProps){
   return <div className="wb-surface" data-surface={key} onPointerDownCapture={e=>{
    if(e.target instanceof Element&&e.target.closest('[data-board-dialogue],button'))return;
    if((e.nativeEvent as PointerEvent & {flowForwarded?:boolean}).flowForwarded)return;
-   const continuing=!p.disabled && shouldStartSketchPointer(e.nativeEvent) && p.canContinueBrush(shot);
+   const continuing=editable && !p.disabled && shouldStartSketchPointer(e.nativeEvent) && p.canContinueBrush(shot);
    if(p.disabled || (!continuing && !(editable ? p.canStartCanvasEdit() : p.canNavigate()))){e.preventDefault();e.stopPropagation();return;}
    const original=e.nativeEvent,host=e.currentTarget;
    const hadInput=e.target instanceof Element && !!e.target.closest('.stage-overlay');
@@ -127,7 +127,7 @@ export function Workbench(p:WorkbenchProps){
    flushSync(()=>{p.focus(shot.id);});
    // The pointer may land on a static card before any hover. Mount synchronously and
    // deliver that very down event once; subsequent samples use native pointer capture.
-   if(!hadInput && shouldStartSketchPointer(original)){
+   if(editable && !hadInput && shouldStartSketchPointer(original)){
     e.preventDefault();e.stopPropagation();
     const node=host.querySelector('[data-canvas-input], .stage-overlay .konvajs-content');
     if(node){const forwarded=new PointerEvent('pointerdown',{
@@ -147,7 +147,7 @@ export function Workbench(p:WorkbenchProps){
     {p.shots.map((shot,i)=><BoardCard key={shot.id} shot={shot} index={i} selected={p.selected.includes(shot.id)} disabled={p.disabled} onSelect={e=>{if(p.canNavigate())p.select(shot.id,e);}}
      hold={Boolean(p.holdShots?.includes(shot.id))} force={current?.id===shot.id}
      footer={!japanese&&!presentation[shot.id]?.dialogue?track(shot,'footer:'+shot.id,true):null} rowInfo={japanese ? shot=>p.renderInfo(shot,true) : undefined} visible={reportVisible}>
-     {surface(shot,'grid',current?.id===shot.id)}
+     {surface(shot,'grid',false)}
     </BoardCard>)}
    </BoardGrid></>;
   if(panel==='canvas')return <><div className="wb-panel-tools"><div><button aria-label="上一张" disabled={!current||index===0} onClick={()=>navigate(-1)}>←</button><span className="wb-position">{current?index+1:0} / {p.shots.length}</span><button aria-label="下一张" disabled={!current||index===p.shots.length-1} onClick={()=>navigate(1)}>→</button></div><button aria-pressed={onion} onClick={()=>{if(p.canNavigate())setOnion(!onion);}}>洋葱皮</button><label>画布 <select aria-label="画布缩放" value={String(zoom)} onChange={e=>{if(!p.canNavigate())return;const value=e.target.value;setZoom(value==='fit'?'fit':Number(value));}}><option value="fit">适合</option>{workspaceZoomSteps.map(n=><option key={n} value={n}>{n}%</option>)}</select></label></div>

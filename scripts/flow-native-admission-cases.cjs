@@ -36,9 +36,13 @@ module.exports=async function admissionCases({win,js,boot,wait,pause,report,inpu
   const before=await boot(),shot=before.session.project.shots[index],image=before.images[shot.imageId],seen=inputEvents.length;
   const selector=`[data-board-id="${shot.id}"] .wb-card-picture`;
   const r=await rect(selector);
-  // Real down is delivered to a static card; no preceding header selection,
-  // navigation button or direct activate request may conceal the handoff race.
+  // Grid gestures only select. Painting begins explicitly in the main viewer.
   const started=Date.now();await draw(r);
+  await wait(async()=>(await boot()).context.shotId===shot.id,'grid selects main viewer');
+  assert.equal(inputEvents.slice(seen).filter(e=>e.kind==='begin').length,0,'grid sends no begin');
+  assert.equal((await boot()).session.project.revision,before.session.project.revision,'grid leaves revision unchanged');
+  assert.equal(await js(`document.querySelectorAll('[data-surface^=\"grid:\"] [data-canvas-input]').length`),0,'grid has no canvas input');
+  await draw(await rect(`[data-surface="viewer:${shot.id}"] [data-canvas-input]`));
   await wait(async()=>{await noRecovery();const s=await boot();return s.context.shotId===shot.id&&s.session.project.revision===before.session.project.revision+1;},'cold static-card stroke committed',30000);
   const after=await boot(),sent=inputEvents.slice(seen).filter(e=>e.kind==='begin');assert.equal(sent.length,1,'one down creates exactly one begin');assert.equal(sent[0].shotId,shot.id,'input must remain bound to clicked board');
   assert.notDeepEqual(after.session.project.images[shot.imageId].content,before.session.project.images[shot.imageId].content,'clicked image gains the stroke');
