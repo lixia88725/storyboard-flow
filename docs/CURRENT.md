@@ -8,6 +8,8 @@
 
 最终完整获准两清单合并去重：154文件/1629项通过，543.45s，exit0（`/private/tmp/flow-smooth-complete-suite.log`）。最终完整构建、preload、强制原生资源准备均通过（`flow-smooth-final2-build.log`、`flow-smooth-preload.log`、`flow-smooth-resources.log`，均在 `/private/tmp/`）。主管核对组合接口、快速选择的新上下文绑定、后台排空及冷来源保存；没有另行重复子任务的所有独立单点检查。Windows、数位笔、触控及安装器未验。README启动入口与AGENTS授权未改；DESIGN/ARCHITECTURE/DEVELOPMENT及原生README同步当前行为与契约。
 
+本轮集成提交 `b24fdd7`，隔离工作树代码已提交。试用启动器再次完整构建后进入启动阶段（`/private/tmp/flow-smooth-trial-launch.log`），未自动打开项目；原生界面核对工具报 `native pipe startup failed`，因此本次启动的窗口可见性未确认，前述独立 Electron GUI 证据不受影响。
+
 性能分解仅此机器此样本：300次来源探测累计3.412s、元数据输出6.249s，整个文件事务36.875s；预览/复制/输出还受文件保管与事务开销影响。不以这组样本外推任意 PSD/高位深/Windows；不再引用此前失败的分钟级首次保存作为成功基线。BigTIFF/不支持的来源仍走原生准备路线。所有输出均在自有 `/private/tmp/flow-native-workbench-*`，未触用户桌面暂存目录、恢复记录或已开窗口。
 
 ## 用户授权 TEST2 艺术家流程实测（2026-11-09）
