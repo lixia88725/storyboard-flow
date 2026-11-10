@@ -1,0 +1,28 @@
+import {expect,it}from'vitest';
+import fs from'node:fs/promises';
+import path from'node:path';
+import sharp from'sharp';
+import{createHash,randomUUID}from'node:crypto';
+import{temporaryWorkspace}from'../../../test/temporaryWorkspace';
+import{startImageEngine}from'./imageEngineConnection';
+import{createNativeSessionAdapter}from'../../project-files/main/image-engine/nativeSessionAdapter';
+import type{WorkspaceOutputMetadataEnvelope}from'../../project-files/main/image-engine/workspaceOutputContract';
+const sha=(v:Uint8Array)=>createHash('sha256').update(v).digest('hex');
+const envelope:WorkspaceOutputMetadataEnvelope={schema:'flow.native-output-metadata',version:2,projectId:'project',revision:7,shotId:'shot',imageId:'image',metadata:{projectName:'项目',shotName:'镜头',scriptText:'authoritative <&>',dialogues:[],presentation:null}};
+// Add a known XMP packet and opaque Photoshop tag without moving any source bytes.
+function withOpaqueAndXmp(source:Buffer,xmp:string){
+ const le=source.toString('ascii',0,2)==='II',read16=(at:number)=>le?source.readUInt16LE(at):source.readUInt16BE(at),read32=(at:number)=>le?source.readUInt32LE(at):source.readUInt32BE(at),write16=(b:Buffer,v:number,at:number)=>le?b.writeUInt16LE(v,at):b.writeUInt16BE(v,at),write32=(b:Buffer,v:number,at:number)=>le?b.writeUInt32LE(v,at):b.writeUInt32BE(v,at),at=read32(4),count=read16(at),entries:Buffer[]=[];
+ for(let i=0;i<count;i++){const row=source.subarray(at+2+i*12,at+14+i*12);if(![700,37724].includes(le?row.readUInt16LE(0):row.readUInt16BE(0)))entries.push(row);}
+ const opaque=Buffer.from('8BIM opaque Photoshop layer/tag bytes \0\xff','latin1'),text=Buffer.from(xmp),data=Buffer.concat([source,text,opaque]),ifd=Buffer.alloc(2+(entries.length+2)*12+4);for(const[tag,bytes,offset]of[[700,text,source.length],[37724,opaque,source.length+text.length]]as const){const row=Buffer.alloc(12);write16(row,tag,0);write16(row,7,2);write32(row,bytes.length,4);write32(row,offset,8);entries.push(row);}entries.sort((a,b)=>(le?a.readUInt16LE(0):a.readUInt16BE(0))-(le?b.readUInt16LE(0):b.readUInt16BE(0)));write16(ifd,entries.length,0);entries.forEach((e,i)=>e.copy(ifd,2+i*12));source.copy(ifd,2+entries.length*12,at+2+count*12,at+6+count*12);const output=Buffer.concat([data,ifd]);write32(output,data.length,4);return output;
+}
+function xmp(bytes:Uint8Array){const b=Buffer.from(bytes),le=b.toString('ascii',0,2)==='II',u16=(at:number)=>le?b.readUInt16LE(at):b.readUInt16BE(at),u32=(at:number)=>le?b.readUInt32LE(at):b.readUInt32BE(at),at=u32(4);for(let i=0;i<u16(at);i++){const row=at+2+i*12;if(u16(row)===700)return b.subarray(u32(row+8),u32(row+8)+u32(row+4)).toString();}throw Error('XMP tag missing');}
+it('exports original TIFF with untouched pixel/layer blocks and merged XMP, without native versions or active-context changes',async()=>{
+ const binary=process.env.FLOW_IMAGE_HOST;if(!binary)throw Error('FLOW_IMAGE_HOST must name the real sourceTiffOutputV1 host');
+ const root=await temporaryWorkspace('source-tiff-output-'),store=path.join(root,'native'),connection=startImageEngine({binary,store,sessionId:'source-output',incarnation:randomUUID(),budgetBytes:32<<20});
+ try{await connection.ready;expect(connection.supports('sourceTiffOutputV1')).toBe(true);const adapter=createNativeSessionAdapter({connection,storeRoot:store,storeId:'native'}),base=await sharp({create:{width:4,height:3,channels:4,background:'#b45283ff'}}).tiff({compression:'none'}).toBuffer(),source=withOpaqueAndXmp(base,'<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:test="urn:untouched" test:keep="verbatim &amp; bytes"><test:opaque>private payload</test:opaque></rdf:Description></rdf:RDF></x:xmpmeta>'),file=path.join(root,'source.tif');await fs.writeFile(file,source);
+ const st=await fs.lstat(file,{bigint:true}),object={path:file,digest:sha(source),byteLength:source.length,identity:{dev:String(st.dev),ino:String(st.ino),size:String(st.size),mtimeNs:String(st.mtimeNs),ctimeNs:String(st.ctimeNs)}};
+ expect(await adapter.driver.canExportSourceTiff(object)).toBe(true);const result=await adapter.driver.exportSourceTiff(object,envelope);expect(result.sha256).toBe(sha(result.bytes));expect(result.bytes.subarray(0,4)).toEqual(new Uint8Array(source.subarray(0,4)));expect(result.bytes.subarray(8,source.length)).toEqual(new Uint8Array(source.subarray(8)));expect(await sharp(result.bytes).raw().toBuffer()).toEqual(await sharp(source).raw().toBuffer());const xml=xmp(result.bytes);expect(xml).toContain('test:keep="verbatim &amp; bytes"');expect(xml).toContain('<test:opaque>private payload</test:opaque>');const encoded=xml.match(/<flow:metadata>([^<]+)<\/flow:metadata>/)![1];expect(JSON.parse(Buffer.from(encoded,'base64').toString())).toEqual(envelope);expect(adapter.driver.contextGeneration()).toBe(0);expect(adapter.driver.displayIdentity()).toBeNull();expect(await fs.readFile(file)).toEqual(source);
+ const png=await sharp({create:{width:1,height:1,channels:4,background:'#fff'}}).png().toBuffer(),notTiff=path.join(root,'source.png');await fs.writeFile(notTiff,png);const ps=await fs.lstat(notTiff,{bigint:true});expect(await adapter.driver.canExportSourceTiff({path:notTiff,digest:sha(png),byteLength:png.length,identity:{dev:String(ps.dev),ino:String(ps.ino),size:String(ps.size),mtimeNs:String(ps.mtimeNs),ctimeNs:String(ps.ctimeNs)}})).toBe(false);
+ await expect(adapter.driver.exportSourceTiff(object,envelope,8)).rejects.toThrow('budget');await fs.writeFile(file,Buffer.from('changed'));await expect(adapter.driver.exportSourceTiff(object,envelope)).rejects.toThrow('identity changed');
+ }finally{connection.terminateOwnedProcess();await connection.exited;}
+},30000);

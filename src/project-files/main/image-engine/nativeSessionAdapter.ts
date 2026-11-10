@@ -28,6 +28,8 @@ export type NativeVersionOutput={bytes:Uint8Array;sha256:string;byteLength:numbe
 export type NativeRetainedPreparation={kind:'editable';prepared:PreparedImage;proof:ImageEngineSourceDisplayProof}|{kind:'reference';prepared:PreparedImage;proof:ImageEngineSourceDisplayProof;policy:ImageEngineProtectedSourcePolicy;reason:{code:string;message:string}};
 export type NativeWorkingRefreshResult={prepared:PreparedImage;policy:ImageEngineProtectedSourcePolicy|null;workingInput:ImageEngineWorkingInput};
 export type NativeProductDriver = {
+  canExportSourceTiff(source:RetainedSourceObject):Promise<boolean>;
+  exportSourceTiff(source:RetainedSourceObject,metadata:WorkspaceOutputMetadataEnvelope,maxBytes?:number):Promise<{bytes:Uint8Array;sha256:string;layerCount:number}>;
   /** Fixed immutable pin; no active-doc switch or freeze. Cancellation drains. */
   exportInactiveVersion(ref:NativeImageRef,format:'psd'|'tiff',metadata:WorkspaceOutputMetadataEnvelope,maxBytes?:number,expectedSourcePolicy?:ImageEngineProtectedSourcePolicy|null):Promise<NativeVersionOutput>;
   drainInactiveExports():Promise<void>;
@@ -331,6 +333,21 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
     pipeline,
     summary:contextSummary,
     activate,
+    async canExportSourceTiff(source){
+      const op=operationContext();if(!op.connection.supports('sourceTiffOutputV1')||source.byteLength>63<<20)return false;
+      const captured=structuredClone(source),bytes=await boundedFile(captured.path,63<<20,captured.identity);op.check();if(bytes.length!==captured.byteLength||sha(bytes)!==captured.digest)refuse('Source TIFF probe custody digest differs','corrupt');
+      const{reply:r,frame}=await call(next(),{kind:'sourceTiffProbe',source:{sha256:captured.digest,byteLength:bytes.length}},null,bytes);op.check();
+      if(r.kind!=='sourceTiffProbe'||r.sourceSha256!==captured.digest||typeof r.supported!=='boolean'||frame.payload.length)refuse('Invalid source TIFF probe receipt','protocol','unknown');return r.supported;
+    },
+    async exportSourceTiff(source,metadata,maxBytes=64<<20){
+      const op=operationContext();if(!op.connection.supports('sourceTiffOutputV1'))refuse('Native binary lacks sourceTiffOutputV1','unsupported');
+      const captured=structuredClone(source),envelope=structuredClone(metadata);if(!validWorkspaceOutputMetadataEnvelope(envelope)||!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>64<<20)refuse('Invalid source TIFF output metadata/budget','invalid-input');
+      const bytes=await boundedFile(captured.path,63<<20,captured.identity);op.check();if(bytes.length!==captured.byteLength||sha(bytes)!==captured.digest)refuse('Source TIFF custody digest differs','corrupt');
+      const meta=Buffer.from(JSON.stringify(envelope)),metadataSha256=sha(meta);if(bytes.length+meta.length>64<<20)refuse('Source TIFF output exceeds transport budget','resource-limit');
+      const {reply:r,frame}=await call(next(),{kind:'sourceTiffOutput',source:{sha256:captured.digest,byteLength:bytes.length},metadata:{sha256:metadataSha256,byteLength:meta.length},maxBytes},null,Buffer.concat([bytes,meta]));op.check();
+      const output=new Uint8Array(frame.payload),sha256=sha(output);if(r.kind!=='sourceTiffOutput'||r.sourceSha256!==captured.digest||r.metadataSha256!==metadataSha256||r.preservedSourceBytes!==bytes.length||r.byteLength!==output.length||r.sha256!==sha256||!output.length||output.length>maxBytes||Buffer.compare(Buffer.from(output.subarray(0,4)),bytes.subarray(0,4))!==0||Buffer.compare(Buffer.from(output.subarray(8,bytes.length)),bytes.subarray(8))!==0)refuse('Source TIFF output preservation receipt differs','protocol','unknown');
+      return{bytes:output,sha256,layerCount:1};
+    },
     async exportVersion(ref,format,metadata,maxBytes=64<<20,expectedSourcePolicy=null){
       const op=operationContext();if(!op.connection.supports('readonlyExportMetadataV1'))refuse('Native binary lacks readonlyExportMetadataV1','unsupported');
       const pinned=structuredClone(ref),envelope=structuredClone(metadata),policy=structuredClone(expectedSourcePolicy);if(policy!==null&&!validImageEngineProtectedSourcePolicy(policy))refuse("Invalid expected protected source policy","invalid-input");if(policy&&!op.connection.supports("protectedReferenceOutputV1"))refuse("Native binary lacks protectedReferenceOutputV1","unsupported");

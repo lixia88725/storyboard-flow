@@ -12,7 +12,7 @@ import {createFileExclusive,readBoundFile} from '../persistence/fileOps.js';
 import {canonicalUtf8,sha256Hex} from '../persistence/canonicalJson.js';
 import {syncDirectory} from '../../../platform/main/platform/index.js';
 import type {WorkspaceOutput,WorkspaceOutputFile,WorkspaceOutputFrozen,WorkspaceOutputMetadata,WorkspaceOutputOptions,WorkspaceOutputReceipt,WorkspaceOutputObservation,WorkspaceOutputRefreshReceipt,WorkspaceOutputKeepFlowReceipt} from './workspaceOutputContract.js';
-import {validWorkspaceOutputMetadataEnvelope,validWorkspaceOutputNameSeed,validWorkspaceOutputFileName,WORKSPACE_OUTPUT_NAME_SEED,type WorkspaceOutputNameSeed} from './workspaceOutputContract.js';
+import {validWorkspaceOutputBinding,validWorkspaceOutputMetadataEnvelope,validWorkspaceOutputNameSeed,validWorkspaceOutputFileName,WORKSPACE_OUTPUT_NAME_SEED,type WorkspaceOutputNameSeed} from './workspaceOutputContract.js';
 import {validWorkspaceColdCopyReceipt,validWorkspaceColdCopyAuthorization,coldCopyReceipt,type WorkspaceColdCopyReceipt}from'./workspaceColdCopyContract.js';
 import {inspectImportSource}from'./sourceStore.js';
 import {readImageWorkspaceProject} from './workspaceProbe.js';
@@ -42,16 +42,16 @@ const expectedDigest=(e:Entry)=>e.vacant?null:e.digest;
 const baselineNative=(e:Entry)=>e.opaque?null:e.native;
 export const workspaceOutputDecisionHash=(receipt:WorkspaceOutputRefreshReceipt|WorkspaceOutputKeepFlowReceipt):string=>sha256Hex(canonicalUtf8(receipt));
 const same=(a:unknown,b:unknown)=>sha256Hex(canonicalUtf8(a))===sha256Hex(canonicalUtf8(b));
-const publicFile=({shotId,imageId,name,location,digest,native,format}:Entry):WorkspaceOutputFile=>({shotId,imageId,name,location,digest,native,format});
+const publicFile=({shotId,imageId,name,location,digest,native,source,format}:Entry):WorkspaceOutputFile=>({shotId,imageId,name,location,digest,native,...(source?{source}:{}),format});
 
 const relative=(e:Entry)=>`${e.location}/${e.name}`;
 const validRelative=(v:unknown):v is string=>typeof v==='string'&&(
   /^operations\/[a-f0-9-]{36}\/(old|new)-\d+\.tif$/.test(v)||/^active\//.test(v)&&leaf(v.slice(7))||/^parked\//.test(v)&&leaf(v.slice(7)));
 const validIdentity=(v:Identity)=>v&&/^\d+$/.test(v.dev)&&/^\d+$/.test(v.ino);
- const validEntry=(e:Entry)=>e&&token(e.shotId)&&token(e.imageId)&&leaf(e.name)&&['active','parked'].includes(e.location)&&digest(e.digest)&&digest(e.content)&&validNativeImageRef(e.native)&&e.format==='tiff'&&validIdentity(e)&&(e.opaque===undefined||e.opaque===true)&&(e.vacant===undefined||e.vacant===true)&&(!e.vacant||e.opaque===true);
+ const validEntry=(e:Entry)=>e&&token(e.shotId)&&token(e.imageId)&&leaf(e.name)&&['active','parked'].includes(e.location)&&digest(e.digest)&&digest(e.content)&&validWorkspaceOutputBinding(e)&&e.format==='tiff'&&validIdentity(e)&&(e.opaque===undefined||e.opaque===true)&&(e.vacant===undefined||e.vacant===true)&&(!e.vacant||e.opaque===true);
  const validEntries=(entries:Entry[])=>Array.isArray(entries)&&entries.length<=10000&&entries.every(validEntry)&&new Set(entries.map(e=>e.shotId)).size===entries.length&&new Set(entries.map(e=>e.name.toLowerCase())).size===entries.length;
  const operationIdValid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(v);
- const validReceipt=(r:WorkspaceOutputReceipt,id:string,projectId:string)=>r&&r.operationId===id&&r.projectId===projectId&&Number.isSafeInteger(r.revision)&&r.revision>=0&&digest(r.commitHash)&&Array.isArray(r.files)&&r.files.length<=10000&&r.files.every(e=>e&&token(e.shotId)&&token(e.imageId)&&leaf(e.name)&&['active','parked'].includes(e.location)&&digest(e.digest)&&validNativeImageRef(e.native)&&e.format==='tiff')&&new Set(r.files.map(e=>e.shotId)).size===r.files.length;
+ const validReceipt=(r:WorkspaceOutputReceipt,id:string,projectId:string)=>r&&r.operationId===id&&r.projectId===projectId&&Number.isSafeInteger(r.revision)&&r.revision>=0&&digest(r.commitHash)&&Array.isArray(r.files)&&r.files.length<=10000&&r.files.every(e=>e&&token(e.shotId)&&token(e.imageId)&&leaf(e.name)&&['active','parked'].includes(e.location)&&digest(e.digest)&&validWorkspaceOutputBinding(e)&&e.format==='tiff')&&new Set(r.files.map(e=>e.shotId)).size===r.files.length;
 async function readOutputLedger(root:string,projectId:string,bind:()=>Promise<void>,registerDirectory:(at:string,identity:Identity)=>void){
  const container=path.join(root,'.storyboard-flow/native-output-v1'),operations=path.join(container,'operations');
  const directory=async(at:string)=>{const st=await fs.lstat(at);if(!st.isDirectory()||st.isSymbolicLink()||await fs.realpath(at)!==at)fail('Unsafe output directory');return st;};
@@ -232,7 +232,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
   for(const n of names){if(!leaf(n.name))fail('Unsafe output name');const dir=n.location==='active'?root:path.join(root,'Pending');
    for(const found of await fs.readdir(dir))if(found.toLowerCase()===n.name.toLowerCase()&&!allowed.has(`${n.location}/${found}`))fail(`Foreign output filename collision: ${n.name}`);
   }
-  const resolved=shots.map(shot=>{const value=snapshot.resolvedImages?.[shot.imageId],binding=project.images[shot.imageId].content;if(!value||!validNativeImageRef(value.native)||value.format!=='tiff'||binding.kind==='native'&&sha256Hex(canonicalUtf8(binding.native))!==sha256Hex(canonicalUtf8(value.native)))throw new WorkspaceOutputError('unsupported','Ordinary Save requires matching settled native references and TIFF output');const text=metadata(project,shot);if(!validWorkspaceOutputMetadataEnvelope({schema:'flow.native-output-metadata',version:2,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,metadata:text}))throw new WorkspaceOutputError('resource-limit','Native output metadata exceeds its supported envelope');return{shot,value,metadata:text};});
+  const resolved=shots.map(shot=>{const value=snapshot.resolvedImages?.[shot.imageId],binding=project.images[shot.imageId].content;if(!value||!validWorkspaceOutputBinding(value)||value.format!=='tiff'||(value.native===null?(binding.kind!=='source'||value.source.interpretationId!=='photocraft-v1'||!same(binding.source,value.source)||!options.sourceCustody||!options.captureSource):(binding.kind==='native'&&!same(binding.native,value.native))))throw new WorkspaceOutputError('unsupported','Ordinary Save requires matching settled native references and TIFF output');const text=metadata(project,shot);if(!validWorkspaceOutputMetadataEnvelope({schema:'flow.native-output-metadata',version:2,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,metadata:text}))throw new WorkspaceOutputError('resource-limit','Native output metadata exceeds its supported envelope');return{shot,value,metadata:text};});
   const operationId=requestedId??randomUUID(),storageId=retryCapture?randomUUID():operationId,dir=path.join(operations,storageId);await ensure(dir);
   const receipt:WorkspaceOutputReceipt={operationId,projectId,revision:project.revision,commitHash:snapshot.commitHash,files:[]};
   const t:Transaction={operationId,storageId,revision:project.revision,commitHash:snapshot.commitHash,kind:batch?'append':'save',phase:'preparing',next:batch?[...ledger.entries]:[],stages:[],publishes:[],deletions:[],receipt};
@@ -240,18 +240,23 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
   try{
    for(let i=0;i<resolved.length;i++){
     const {shot,value,metadata}=resolved[i],name=names.find(n=>n.shotId===shot.id)!;
-    const content=sha256Hex(canonicalUtf8({imageId:shot.imageId,native:value.native,format:value.format,metadata})),old=ledger.entries.find(e=>e.shotId===shot.id);
+    const content=sha256Hex(canonicalUtf8({imageId:shot.imageId,native:value.native,...(value.source?{source:value.source}:{}),format:value.format,metadata})),old=ledger.entries.find(e=>e.shotId===shot.id);
+    const sourceObject=value.native===null?await options.sourceCustody!.object(value.source,{verify:'full'}):undefined;
     let next:Entry,source:string;
     if(old&&old.content===content){next={...old,...name};source=relative(old);}
     else{
      const previous=reusable.find(c=>c.entry.shotId===shot.id&&c.entry.imageId===shot.imageId&&c.entry.content===content);
      let capture:Awaited<ReturnType<WorkspaceOutputOptions['captureImage']>>;
      if(previous){const observed=await inspectFile(physical(previous.file));if(observed.digest!==previous.entry.digest||!same(observed.identity,{dev:previous.entry.dev,ino:previous.entry.ino}))fail('Retained output capture changed or disappeared');const bytes=await readBoundFile(physical(previous.file),LIMIT);if(!bytes||bytes.length!==previous.byteLength||sha256Hex(bytes)!==previous.entry.digest)fail('Retained output capture digest differs');const after=await inspectFile(physical(previous.file));if(!same(observed,after))fail('Retained output capture changed while reading');capture={bytes:bytes!,sha256:previous.entry.digest,layerCount:previous.layerCount};}
-     else capture=await options.captureImage({owner:snapshot.owner,commitHash:snapshot.commitHash,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,...value,metadata});
+     else if(value.native===null){
+      const object=sourceObject!;
+      capture=await options.captureSource!({owner:snapshot.owner,commitHash:snapshot.commitHash,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,source:value.source,object,metadata});
+      const after=await options.sourceCustody!.object(value.source,{verify:'full'});if(!same(object,after))fail('Source changed during readonly output');
+     }else capture=await options.captureImage({owner:snapshot.owner,commitHash:snapshot.commitHash,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,native:value.native,format:value.format,metadata});
      if(!(capture.bytes instanceof Uint8Array)||capture.bytes.length===0||capture.bytes.length>LIMIT||!digest(capture.sha256)||sha256Hex(capture.bytes)!==capture.sha256||!Number.isSafeInteger(capture.layerCount)||capture.layerCount<1)fail('Invalid native output capture receipt');
      source=`operations/${storageId}/new-${i}.tif`;const grant=await hold(operationId,physical(source),capture.bytes.length,'native-output-capture');
      try{await bind();const owned=await createFileExclusive(physical(source),capture.bytes);await syncDirectory(dir);
-      next={...name,imageId:shot.imageId,native:value.native,format:value.format,digest:capture.sha256,content,dev:owned.dev,ino:owned.ino};
+      next={...name,imageId:shot.imageId,native:value.native,...(value.source?{source:value.source}:{}),format:value.format,digest:capture.sha256,content,dev:owned.dev,ino:owned.ino};
       const facts=ledger.operationFacts![operationId];facts.captures=[...(facts.captures??[]).filter(c=>c.entry.shotId!==shot.id),{file:source,entry:next,byteLength:capture.bytes.length,layerCount:capture.layerCount}];await persist();
      }catch(e){await grant.retainUnknown();throw e;}
     }
@@ -299,7 +304,7 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
      const file=outputPath(root,entry.name,entry.location),observed=await inspectFile(file);if(observed.digest!==change.observedDigest||!observed.identity)fail('External output changed during Refresh acceptance');if(observed.identity!.dev!==change.observedIdentity.dev||observed.identity!.ino!==change.observedIdentity.ino)fail('External output identity changed during Refresh acceptance');
      // A Refresh baseline is deliberately not the project content fingerprint:
      // the next Save must overlay authoritative text onto its native candidate.
-     const{opaque,vacant,...old}=entry;next[index]={...old,digest:change.observedDigest,native:change.native,...observed.identity,content:sha256Hex(canonicalUtf8({refresh:receiptHash,shotId:entry.shotId}))};
+     const{opaque,vacant,...old}=entry;delete old.source;next[index]={...old,digest:change.observedDigest,native:change.native,...observed.identity,content:sha256Hex(canonicalUtf8({refresh:receiptHash,shotId:entry.shotId}))};
     }
     await options.fault?.('before-refresh-ack');for(const change of input.changes)await checkObservedFile({...change,baselineNative:change.baselineNative??null});
     if(!repeated){ledger={...ledger,entries:next,refresh:{receiptHash,revision:input.revision,commitHash:input.commitHash}};await persist();}

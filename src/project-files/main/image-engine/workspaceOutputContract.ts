@@ -4,6 +4,7 @@ import type {SourceImageRef}from'../../../platform/contracts/imageProject.js';
 import type {WorkspaceColdCopyReceipt}from'./workspaceColdCopyContract.js';
 import type {NativeImageRef, ProjectV2} from '../../../platform/contracts/imageProject.js';
 import type {ImageWorkspaceOwner} from '../../../platform/contracts/imageWorkspace.js';
+import {validNativeImageRef,validSourceImageRef}from'../../../session/core/imageProjectModel.js';
 import {validPresentation} from '../../../platform/contracts/flowPresentation.js';
 
 export type WorkspaceOutputLocation = 'active'|'parked';
@@ -17,10 +18,13 @@ export function validWorkspaceOutputNameSeed(v:unknown):v is WorkspaceOutputName
  const id=(v:unknown)=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(v),hash=(v:unknown)=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
  return Object.keys(s).sort().join()==='genesisCommitHash,legacyLedgerSha256,names,projectId,schema,sourceDigest,sourceProjectId,version'&&s.schema==='flow.native-output-name-seed'&&s.version===1&&id(s.projectId)&&id(s.sourceProjectId)&&hash(s.genesisCommitHash)&&hash(s.sourceDigest)&&hash(s.legacyLedgerSha256)&&Array.isArray(s.names)&&s.names.length>0&&s.names.length<=10000&&Array.from(s.names).every(n=>n&&typeof n==='object'&&Object.keys(n).sort().join()==='imageId,location,name,shotId'&&id(n.shotId)&&id(n.imageId)&&n.location==='parked'&&validWorkspaceOutputFileName(n.name))&&new Set(s.names.map(n=>n.shotId)).size===s.names.length&&new Set(s.names.map(n=>n.imageId)).size===s.names.length&&new Set(s.names.map(n=>n.name.toLowerCase())).size===s.names.length;
 }
+/** Only untouched photocraft-v1 TIFF source interpretations qualify for metadata-only output. */
+export type WorkspaceOutputResolved = {native:NativeImageRef;format:'tiff'|'psd';source?:never}|{native:null;source:SourceImageRef;format:'tiff'};
+export const validWorkspaceOutputBinding=(v:{native?:unknown;source?:unknown})=>v.native===null?validSourceImageRef(v.source):v.source===undefined&&validNativeImageRef(v.native);
 export type WorkspaceOutputFrozen = {
  owner:ImageWorkspaceOwner;commitHash:string;project:ProjectV2;
- /** Main resolves settled hydration. Save needs every live image; append only its batch. */
- resolvedImages:Record<string,{native:NativeImageRef;format:'tiff'|'psd'}>;
+ /** Main pins settled native versions or unchanged retained sources. Save covers all live images; append only its batch. */
+ resolvedImages:Record<string,WorkspaceOutputResolved>;
 };
 export type WorkspaceOutputMetadata = {
  projectName:string;shotName:string;scriptText:string;
@@ -59,7 +63,7 @@ export type WorkspaceOutputBudget = {
   retainUnknown():Promise<void>|void;
  }>;
 };
-export type WorkspaceOutputFile = {shotId:string;imageId:string;name:string;location:WorkspaceOutputLocation;digest:string;native:NativeImageRef;format:'tiff'|'psd'};
+export type WorkspaceOutputFile = {shotId:string;imageId:string;name:string;location:WorkspaceOutputLocation;digest:string;native:NativeImageRef|null;source?:SourceImageRef;format:'tiff'|'psd'};
 export type WorkspaceOutputReceipt = {operationId:string;projectId:string;revision:number;commitHash:string;files:WorkspaceOutputFile[]};
 export type WorkspaceOutputOperationOptions={operationId?:string};
 export type WorkspaceOutputOperation={state:'absent'}|{state:'pending'|'retained';receipt?:never}|{state:'completed';receipt:WorkspaceOutputReceipt};
@@ -77,7 +81,10 @@ export type WorkspaceOutputCustody=Pick<WorkspaceSources,'object'>;
 export type WorkspaceOutputOptions = {
  root:string;projectId:string;
  writerAuthority:{assertHeld(root:{path:string;dev:string;ino:string}):Promise<void>;copyReceipt?:WorkspaceColdCopyReceipt};
- budget:WorkspaceOutputBudget;captureImage:WorkspaceOutputCapture;trashItem?:(file:string)=>Promise<void>;
+ budget:WorkspaceOutputBudget;captureImage:WorkspaceOutputCapture;
+ /** Sources is the sole custody authority. Source output never creates a native version. */
+ sourceCustody?:WorkspaceOutputCustody;
+ captureSource?:(input:Omit<Parameters<WorkspaceOutputCapture>[0],'native'|'format'>&{source:SourceImageRef;object:Awaited<ReturnType<WorkspaceSources['object']>>})=>Promise<{bytes:Uint8Array;sha256:string;layerCount:number}>;trashItem?:(file:string)=>Promise<void>;
  /** Fault injection receives named transaction boundaries; production leaves it absent. */
  fault?:(point:string)=>Promise<void>;
 };

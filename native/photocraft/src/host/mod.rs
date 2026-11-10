@@ -16,6 +16,7 @@ pub use product::{ProductEdit, SelectionPoint};
 pub use product_preview::PreviewStamp;
 mod output;
 mod output_metadata;
+mod source_tiff_output;
 pub use output::OutputFormat;
 mod pipeline;
 pub mod store;
@@ -118,6 +119,8 @@ pub struct Request {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Command {
+    SourceTiffProbe { source:output_metadata::MetadataRef },
+    SourceTiffOutput { source:output_metadata::MetadataRef, metadata:output_metadata::MetadataRef, #[serde(rename="maxBytes")] max_bytes:usize },
     DetachedPrepare {
         input: DetachedInput,
         #[serde(rename = "maxAdditionalBytes")]
@@ -680,6 +683,8 @@ impl Host {
         let result = self.check(&r).and_then(|_| {
             if detached::is_command(&r.body) {
                 self.detached_command(&r, &payload)
+            } else if matches!(r.body,Command::SourceTiffOutput { .. }|Command::SourceTiffProbe { .. }) {
+                self.run(&r,&payload)
             } else if self.pipeline.is_some()
                 || matches!(
                     r.body,
@@ -817,6 +822,8 @@ impl Host {
         if !matches!(
             r.body,
             Command::Open { .. }
+                | Command::SourceTiffOutput { .. }
+                | Command::SourceTiffProbe { .. }
                 | Command::Export {
                     metadata: Some(_),
                     ..
@@ -826,6 +833,17 @@ impl Host {
             return Err(Error::none("invalid-input", "unexpected binary payload"));
         }
         match &r.body {
+            Command::SourceTiffProbe {source}=>{
+                if source.byte_length!=payload.len()||sha(payload)!=source.sha256{return Err(Error::none("invalid-input","source TIFF probe identity differs"));}
+                let metadata=serde_json::to_vec(&json!({"schema":"flow.native-output-metadata","version":2,"projectId":"probe","revision":0,"shotId":"probe","imageId":"probe","metadata":{"projectName":"","shotName":"","scriptText":"","dialogues":[],"presentation":null}})).map_err(native)?;
+                let reference=output_metadata::MetadataRef{sha256:sha(&metadata),byte_length:metadata.len()};
+                match source_tiff_output::output(payload,&metadata,&reference,wire::MAX_PAYLOAD){Ok(_)=>Ok((json!({"kind":"sourceTiffProbe","sourceSha256":source.sha256,"supported":true}),vec![])),Err(e)=>Ok((json!({"kind":"sourceTiffProbe","sourceSha256":source.sha256,"supported":false,"reason":e.message}),vec![]))}
+            }
+            Command::SourceTiffOutput {source,metadata,max_bytes}=>{
+                if source.byte_length.checked_add(metadata.byte_length)!=Some(payload.len())||source.byte_length==0||sha(&payload[..source.byte_length])!=source.sha256||*max_bytes==0||*max_bytes>wire::MAX_PAYLOAD {return Err(Error::none("invalid-input","source output payload digest/length/budget differs"));}
+                let bytes=source_tiff_output::output(&payload[..source.byte_length],&payload[source.byte_length..],metadata,*max_bytes)?;
+                Ok((json!({"kind":"sourceTiffOutput","sourceSha256":source.sha256,"metadataSha256":metadata.sha256,"sha256":sha(&bytes),"byteLength":bytes.len(),"preservedSourceBytes":source.byte_length}),bytes))
+            }
             Command::AdmitSourceDisplay => {
                 if self.frozen {
                     return Err(Error::none(
