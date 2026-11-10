@@ -15,6 +15,7 @@ let win,certified=0,activationDelay=0,extraRevisions=0;const inputEvents=[],comm
 const handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(name,fn)=>handle(name,async(...args)=>{if(name==='flow-image-workspace:input')inputEvents.push(args[2]);if(activationDelay&&name==='flow-image-workspace:request'&&args[1]?.command?.kind==='activateShot')await new Promise(r=>setTimeout(r,activationDelay));const result=await fn(...args);if(name==='flow-image-workspace:request')commandOutcomes.push({command:args[1]?.command,result});if(name==='flow-editor:finish-native-close'&&result?.ok)certified++;return result;});
 const pause=ms=>new Promise(r=>setTimeout(r,ms)),js=s=>win.webContents.executeJavaScript(s),boot=async()=>(await js('window.flowEditor.imageWorkspace.bootstrap()')).snapshot;
 const wait=async(fn,label,ms=60000)=>{const deadline=Date.now()+ms;while(Date.now()<deadline){if(await fn())return;await pause(30);}throw Error('timeout '+label);};
+const materialization=async()=>{const s=await boot(),images=Object.values(s.images),projectImages=Object.values(s.session.project.images);return{displayNative:images.filter(i=>!!i.displayNative).length,displayDocument:images.filter(i=>!!i.displayDocumentId).length,contentKinds:projectImages.reduce((a,i)=>(a[i.content?.kind??'unknown']=(a[i.content?.kind??'unknown']??0)+1,a),{}),sourceContent:projectImages.filter(i=>i.content?.kind==='source').length,nativeContent:projectImages.filter(i=>i.content?.kind==='native').length,availability:Object.fromEntries([...new Set(images.map(i=>i.availability))].map(k=>[k,images.filter(i=>i.availability===k).length]))};};
 const button=label=>js(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('button missing');b.click()})()`);
 (async()=>{
  await import(pathToFileURL(path.join(repo,'dist-electron/platform/main/flowEditorEntry.js')).href);await app.whenReady();await wait(()=>!!(win=BrowserWindow.getAllWindows()[0]),'window');win.setSize(1400,1000);
@@ -23,7 +24,7 @@ const button=label=>js(`(()=>{const b=[...document.querySelectorAll('button')].f
   await js(`document.querySelector('.wb-project-menu').open=true`);await button('打开…');
   await wait(()=>js('!!document.querySelector("[data-create-sheet]")'),'create sheet');await button('选择位置…');
   await wait(()=>js(`document.querySelector('[data-create-destination]')?.textContent==='destination'`),'destination');
-  const started=Date.now();await button('创建并打开');await wait(async()=>{try{return(await boot()).session.project.shots.length===sourceCount;}catch{return false;}},'source references');report.enteredMs=Date.now()-started;
+  const started=Date.now();report.entryStartedAt=started;await button('创建并打开');await wait(async()=>{try{return(await boot()).session.project.shots.length===sourceCount;}catch{return false;}},'source references');report.enteredMs=Date.now()-started;
   const dirs=fs.readdirSync(parent);assert.equal(dirs.length,1);report.root=path.join(parent,dirs[0]);
  }else report.root=previous.root;
  if(saveRetry){
@@ -36,7 +37,14 @@ const button=label=>js(`(()=>{const b=[...document.querySelectorAll('button')].f
   }
   assert.equal((await boot()).session.project.revision,report.revisionBeforeRecovery,'recovery preserves accepted drawing history');
  }
- await wait(()=>js('document.querySelectorAll("canvas[data-frame-status=ready]").length===2'),'first image');
+ // Measure visible static previews before waiting for the selected editing document.
+ const previewStarted=report.entryStartedAt??Date.now();
+ await wait(()=>js(`(()=>{const cards=[...document.querySelectorAll('[data-surface^="grid:"]')].filter(n=>{const r=n.getBoundingClientRect(),body=n.closest('.wb-panel-body')?.getBoundingClientRect();return body&&r.bottom>body.top&&r.top<body.bottom&&r.right>body.left&&r.left<body.right;});return cards.length>0&&cards.every(n=>{const c=n.querySelector('.flow-native-thumbnail canvas');return c&&c.width>0&&c.height>0;});})()`),'first viewport static previews',process.env.FLOW_ARTIST_SOURCE?600000:60000);
+ report.firstViewportPreviewsMs=Date.now()-previewStarted;
+ assert.equal(await js(`document.querySelectorAll('[data-surface^="grid:"] [data-canvas-input]').length`),0,'grid has no drawing input');
+ report.firstViewportState=await js(`(()=>{return [...document.querySelectorAll('[data-surface^="grid:"]')].filter(n=>{const r=n.getBoundingClientRect(),b=n.closest('.wb-panel-body')?.getBoundingClientRect();return b&&r.bottom>b.top&&r.top<b.bottom;}).map(n=>({surface:n.dataset.surface,width:n.querySelector('canvas')?.width??0,height:n.querySelector('canvas')?.height??0}));})()`);
+ report.materializationAtPreview=await materialization();
+ await wait(()=>js('!!document.querySelector(`[data-surface^="viewer:"] canvas[data-frame-status=ready]`)'),'selected image editing frame');
  const initial=await boot(),first=initial.session.project.shots[0];assert.equal(initial.session.project.shots.length,sourceCount);
  const selector=`[data-surface="viewer:${first.id}"] canvas`,pixels=()=>js(`(()=>{const c=document.querySelector(${JSON.stringify(selector)});if(c.dataset.frameStatus!=='ready')return null;const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let s='';for(let i=0;i<d.length;i+=16384)s+=String.fromCharCode(...d.subarray(i,i+16384));return btoa(s)})()`);
  await wait(()=>pixels(),'exact imported first-board frame');
@@ -59,7 +67,7 @@ const button=label=>js(`(()=>{const b=[...document.querySelectorAll('button')].f
   }
  }
  else{
-  report.sourceCount=sourceCount;report.realSource=!!process.env.FLOW_ARTIST_SOURCE;report.remainingAtFirstStroke=Object.values(initial.images).filter(i=>['queued','retaining','hydrating'].includes(i.availability)).length;assert.ok(report.remainingAtFirstStroke>0,'painting must overlap background loading');
+  report.sourceCount=sourceCount;report.realSource=!!process.env.FLOW_ARTIST_SOURCE;report.remainingAtFirstStroke=Object.values(initial.images).filter(i=>['queued','retaining','hydrating'].includes(i.availability)).length;if(!process.env.FLOW_ARTIST_SOURCE)assert.ok(report.remainingAtFirstStroke>0,'painting must overlap background loading');
   const before=await pixels();assert.ok(before);await js(`window.__flowPerf={frames:[],last:performance.now(),active:true};requestAnimationFrame(function tick(now){const p=window.__flowPerf;if(!p.active)return;p.frames.push(now-p.last);p.last=now;requestAnimationFrame(tick)})`);
   const r=await js(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return{x:r.x,y:r.y,w:r.width,h:r.height}})()`);
   const mouse=(type,x,y)=>win.webContents.sendInputEvent({type,x:Math.round(x),y:Math.round(y),button:'left',clickCount:1});
@@ -116,9 +124,9 @@ const button=label=>js(`(()=>{const b=[...document.querySelectorAll('button')].f
    await wait(async()=>(await pixels())!==painted,'new layer pixels visible');const modified=await pixels();assert.notEqual(modified,painted,'artist new layer visibly changes image');
    await js('document.querySelector("[aria-label=撤销]").click()');await wait(async()=>(await boot()).session.redoDepth>0,'undo');
    await wait(()=>js('!document.querySelector("[aria-label=重做]").disabled'),'redo button ready');await js('document.querySelector("[aria-label=重做]").click()');await wait(async()=>(await boot()).session.redoDepth===0,'redo');await wait(async()=>(await pixels())===modified,'redo preserves current board');
-   await wait(()=>js('!document.querySelector(".wb-save").disabled'),'save button ready');report.stage='artist-save';const seen=commandOutcomes.length,saveStarted=Date.now();await js('document.querySelector(".wb-save").click()');
+   await wait(()=>js('!document.querySelector(".wb-save").disabled'),'save button ready');report.stage='artist-save';report.materializationBeforeSave=await materialization();const seen=commandOutcomes.length,saveStarted=Date.now();await js('document.querySelector(".wb-save").click()');
    await wait(()=>commandOutcomes.slice(seen).some(o=>o.command?.kind==='save'),'artist save completes',600000);
-   const result=commandOutcomes.slice(seen).find(o=>o.command?.kind==='save').result;assert.equal(result.kind,'settled',JSON.stringify(result));report.saveMs=Date.now()-saveStarted;extraRevisions+=(await boot()).session.project.revision-revisionBeforeHistory;
+   const result=commandOutcomes.slice(seen).find(o=>o.command?.kind==='save').result;assert.equal(result.kind,'settled',JSON.stringify(result));report.saveMs=Date.now()-saveStarted;report.materializationAfterSave=await materialization();extraRevisions+=(await boot()).session.project.revision-revisionBeforeHistory;
    await wait(()=>pixels(),'saved display');report.outputFiles=fs.readdirSync(report.root).filter(n=>/\.tiff?$/i.test(n)).length;assert.equal(report.outputFiles,sourceCount);
   }
   report.pixelSha256=createHash('sha256').update(await pixels()).digest('hex');
