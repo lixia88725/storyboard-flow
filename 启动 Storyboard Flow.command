@@ -5,6 +5,9 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+# Main now launches the accepted native workbench with fresh, dedicated settings.
+export FLOW_NATIVE_WORKSPACE=1
+export FLOW_USER_DATA_DIR="${FLOW_USER_DATA_DIR:-$REPO/.hermes/native-main/userData}"
 
 fail() { printf '\n启动失败：%s\n' "$*" >&2; exit 1; }
 on_exit() {
@@ -23,7 +26,7 @@ if [ "$#" -gt 0 ]; then
   case "$1" in
     --help|-h)
       printf '用法：双击「启动 Storyboard Flow.command」，或 bash "启动 Storyboard Flow.command" [--check|--choose]\n'
-      printf '默认：正常关闭对应实例、完整编译，继续已有试画项目；没有试画项目则选择项目。\n'
+      printf '默认：正常关闭对应实例、完整编译，打开新版项目选择页。\n'
       printf '%s\n' '--check：仅检查本地运行依赖，不编译、不启动。'
       printf '%s\n' '--choose：打开项目选择器，不自动进入试画项目。'
       printf '可用 FLOW_USER_DATA_DIR 指定独立测试配置目录。\n'

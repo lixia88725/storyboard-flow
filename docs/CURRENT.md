@@ -1,5 +1,15 @@
 # 当前状态与剩余工作
 
+## 合入 main 与工作树清理（2026-11-10）
+
+用户确认新版初步可用后授权合入main、清理工作树，并明确丢弃试用配置、从默认设置重新调试。main从da18b06快进至已验收b403cc1，无产品代码合并冲突；本轮仅调整源码启动脚本与文档。普通启动器设置FLOW_NATIVE_WORKSPACE=1、配置位于`.hermes/native-main/userData`，默认进入选择页；旧试用脚本为同一入口别名。不会自动打开旧studio-preview项目，不将旧项目交给新版后台。已有Application Support配置和项目文件夹不动。已将通过回执校验的native flow-release组件独立复制至main，未安装依赖。
+
+GPT-6.1 Sol独立只读审查8个未提交文件：image-native-product的2个接口文件、image-workspace-output的lease/Output/ColdCopy相关6文件，均为main已有版本或旧草稿，无独有修复；2个与main字节相同。旧workspaceOutput缺少main已有的copyReceipt快照及发布前文件身份复查，旧lease/ColdCopy缺少同物理root拒绝保护，未回收这些旧实现。wt-pending未跟踪内容仅npm日志缓存。按授权丢弃这些旧文件和试用配置。
+
+已移除29个实际工作树及其重复可再生依赖/产物，prune 4个不存在目录的登记，`git worktree list`只剩main。已有分支提交仍保留，未合入main的detached旧性能分支创建本地archive/worktree-20261110-flow-draw-perf引用，未推送。少量失败/验证日志及合成证据集中至`.hermes/worktree-records/20261110-consolidation/`，before.json/result.json记录旧位置与保留位置；不是旧工作树副本。试用profile已删除，未留下设置备份。项目画稿、项目内恢复数据、用户桌面暂存目录未删除。主树原有`D CLAUDE.md`未纳入提交。
+
+产品完整清单复用相同b403cc1代码的154文件/1629项通过证据，本轮不重复单点检查。main本地完整build、preload与原生资源强校验通过（`/private/tmp/flow-main-consolidation-{build,preload,resources}.log`），新启动脚本合成测试11项通过（`flow-main-consolidation-launcher.log`）；main独立合成Electron GUI绘画/按钮稳定/新建/切图/Save/重复Save/正常关闭重开及早关通过（`flow-main-consolidation-gui.log`，`flow-native-workbench-PiPoPv`）。普通main启动器已用全新profile再次完整构建并启动、取得实例锁（`/private/tmp/flow-main-fresh-launch.log`）；未自动打开项目，窗口可见性未做外部原生截图确认。仅本地main整合，未推送、未发布，Windows/安装器/数位笔仍未验。下方各节中的“隔离试用/未合main”为当时记录，以本节为准。
+
 ## 绘画时按钮与预览安静刷新（2026-11-10）
 
 用户反馈每笔结束时故事板工具按钮闪动。原因是临时绘画准入保护切换原生disabled，使通用样式在1与0.35透明度间往返。现将已有操作能力的视觉亮度与短暂准入保护分开；实际disabled/canNavigate不放开，没有历史可撤销/重做及真实不可用状态仍变暗。移除正常“更新预览”浮层，继续保留原预览直至新像素就绪，左下角状态及真实错误保留。

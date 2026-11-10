@@ -22,7 +22,7 @@ Renderer workspaceController按本Session内不可变thumbnailId缓存已校验R
 
 `drawing/renderer/image-engine/frames` 安装完整帧或连续增量，透明像素绝对覆盖，身份切换显式 reset。Canvas Adapter 只呈现该共享 FrameView，无第二份正式绘画计算。Main 到 renderer 当前为结构化克隆；只在脏区域复制，不宣称跨进程零拷贝。
 
-连续绘画协议区分 `imageVersionRef` 已接纳前缀和 `pendingOperationIds` 未 durable-accepted 的完整笔链；`workingHeadOperationId` 等于待确认链尾，活动笔另用 previewId。pipeline 开始/结束及笔画取消会提升展示 epoch；同一 pipeline 内取消不改变 pipelineId。取消回执绑定 previewId/pipelineId/durable=false/epoch，Adapter 与 Main 分别核对旧 epoch+1 并更新；回执缺失或身份不符保留输入，不能在下一笔时接受任意 epoch 来掩盖失配。确认取消后主动capture恢复画面，不只等待下一次落笔刷新。pending 为空也不能替代项目 checkpoint/Save 成功判据。帧接收器只验证展示身份，不承担项目持久化认证。原生异步队列已实现：输入线程与持久化线程分开，四笔有界队列，失败冻结依赖链而不自动重试。Main项目接纳已接入独立试用路径，默认启动入口保持原路径；验证状态见CURRENT。
+连续绘画协议区分 `imageVersionRef` 已接纳前缀和 `pendingOperationIds` 未 durable-accepted 的完整笔链；`workingHeadOperationId` 等于待确认链尾，活动笔另用 previewId。pipeline 开始/结束及笔画取消会提升展示 epoch；同一 pipeline 内取消不改变 pipelineId。取消回执绑定 previewId/pipelineId/durable=false/epoch，Adapter 与 Main 分别核对旧 epoch+1 并更新；回执缺失或身份不符保留输入，不能在下一笔时接受任意 epoch 来掩盖失配。确认取消后主动capture恢复画面，不只等待下一次落笔刷新。pending 为空也不能替代项目 checkpoint/Save 成功判据。帧接收器只验证展示身份，不承担项目持久化认证。原生异步队列已实现：输入线程与持久化线程分开，四笔有界队列，失败冻结依赖链而不自动重试。Main项目接纳已随新版合入main；源码普通启动器显式选择原生路径，使用独立native-main配置，不自动打开旧试画项目。直接平台入口和旧回归仍有显式分支，不以源码启动切换宣称发布包完成迁移；验证状态见CURRENT。
 
 绘画准入的恢复由Session请求队列统一收口：所有控制请求在finally释放计数，只有active且无待处理barrier才恢复；pipeline故障独立保留，普通resume不能清除。Renderer的capture暂停由Main phase与各操作自身暂停理由共同推导，保存/恢复操作结束仅释放自己的理由，不复制一份可永久滞留的Session暂停状态。
 
