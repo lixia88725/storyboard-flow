@@ -1,5 +1,20 @@
 # 架构与数据契约
 
+## 当前图片发动机：PhotoCraft
+
+当前 main 的源码普通启动器使用 **PhotoCraft（Rust）** 图片发动机，不只是用它解码图片。Flow 的常驻宿主组合其文档、像素操作、画笔、合成、色彩及格式模块；Flow 自己仍负责应用协作与安全落盘。固定上游、构建及补丁维护见 [组件 README](../native/photocraft/README.md)，验证入口见 [DEVELOPMENT](DEVELOPMENT.md)。
+
+| 修改内容 | 维护入口与职责 |
+| --- | --- |
+| 图片文档、画笔、图层、合成、格式输出 | `native/photocraft/src/host/`：Flow Rust 宿主与 PhotoCraft 适配；上游依赖见同目录上级 `Cargo.toml` |
+| 原生进程、请求身份与桥接 | `src/platform/main/imageEngine*`、`src/platform/contracts/image*`、preload；宿主协议变化须同步调用方与真实连接验证 |
+| 连续输入、确认与历史 | `src/session/core/nativePipeline*`、`src/project-files/main/image-engine/nativeSessionAdapter.ts`；展示完成不等于持久接纳 |
+| 项目、来源保管、任务调度、Save/Refresh/恢复 | `src/project-files/main/image-engine/` 的 Runtime、Sources、Output、journal 与预算模块；这些不是 PhotoCraft 的项目管理功能 |
+| 实时画面与交互 | `src/drawing/renderer/image-engine/`、工作台控制器；网格仅浏览，主画布绘画 |
+| 快速缩略图 | `sourcePreview.ts` 使用 sharp / PSD 内嵌预览，避免为浏览整批建立编辑文档；缓存不是作品权威 |
+
+源码启动器设置 `FLOW_NATIVE_WORKSPACE=1`。直接 Electron/dev 入口仍有旧引擎分支；不能据此声称所有旧代码已删除或所有发布平台已迁移。当前验收、Windows 和打包限制以 [CURRENT](CURRENT.md) 为准。
+
 ## 轻量浏览与按改动输出（2026-11-10）
 
 `sourcePreview`从已保管来源生成256边长RGBA，不进入原生编辑文档。PNG/JPEG/TIFF走有界sharp解码缩放，PSD仅使用有界内嵌JPEG缩略图，无预览时才回退原生准备。来源每次核identity和SHA；版本化项目缓存独立于作品/恢复权威，缓存损坏保留原文件并生成修复项，写入接共享预算。Renderer沿用thumbnail能力读取，不接触磁盘路径。source内容未变时预览不因背景hydrate而标为过期；变成native编辑版本后从确认版本重新生成缩略图。
@@ -14,9 +29,9 @@ Renderer workspaceController按本Session内不可变thumbnailId缓存已校验R
 
 保存/关闭的后台暂停分为两步：先停止产生新任务，等待已开始的来源复制、预览与原生准备完成结算，再暂停来源上下文并冻结。不能用暂停标志中断已生成但未确认的原生候选。快速连续选择只发送正在执行的选择与最后一个待选目标；新请求在前一项结算后读取新的上下文身份。
 
-## 原生图片发动机施工接点
+## 原生图片发动机接点
 
-本节为隔离施工树已落地的接点，不表示默认运行链已迁移；完整状态见 CURRENT。
+本节描述 main 源码普通启动器使用的原生路径；当前验证范围见 CURRENT。
 
 `platform/main/imageEngineConnection` 独占一个原生子进程及单个在途请求，启动等待也占用容量。发送前快照输入；stdout 使用有界长度拆包，握手和响应核对 session/incarnation/workerEpoch/request/operation 身份。通道断裂只报告 unknown，不能证明原生操作取消，调用方仍负责结算。日志与图像协议分流，Main 不把二进制通道直接暴露给页面。握手 capabilities 显式标记 `recoveredCandidateAcceptAtInstalledVersion` 和 `strokePipelineV1`；缺省按不支持处理，不能凭 protocol=1 推断新恢复语义。
 
@@ -42,7 +57,7 @@ ProjectStore 保持原 Interface，Implementation 改为 `journalProjectStore` �
 
 `session/core/snapshotHistory` 为 V1/V2 共用的唯一历史算法。新路径先 prepare 历史计划，Main 的 V2 store 发布可达 commit/head 后再 commit 同一计划；native accepted 是项目决定后的结算，不是项目提交权威。孤立 commit 文件不自动认领，未结算 native 决定单列恢复账本。当前重开继续沿用清空进程内 Undo 栈的行为，不声称已实现跨重启 Undo。
 
-V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目录保护都不等于跨进程锁。全项目恢复预算包括实际留存与工作进程预留，不能把各子模块的局部额度相加后仍声称受 8 GiB 总额保护。 Runtime中Sources、Output、journal与lease共用同一根预算；journal按组真实编码增量预留并在同步完成后结算，未知写入保留额度，严格重放后按独占日志目录实际增量核对。Native store额度单独完整保守预留，不把固定小额来源分区当并发限流。`platform/main/imageProjectLease` 通过独立原生 guard 持有固定 inode 的 OS 锁，同时持久记录 Main 身份。guard 异常退出关闭当前写门，但不发布正常释放；旧 Main 未确认退出时，新 guard 也拒绝接管，保护仍在途的文件副作用。正常 release 必须由调用方先排空义务，不能把锁失效当取消。当前仅本机 macOS 验证；默认产品入口尚未接入。
+V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目录保护都不等于跨进程锁。全项目恢复预算包括实际留存与工作进程预留，不能把各子模块的局部额度相加后仍声称受 8 GiB 总额保护。 Runtime中Sources、Output、journal与lease共用同一根预算；journal按组真实编码增量预留并在同步完成后结算，未知写入保留额度，严格重放后按独占日志目录实际增量核对。Native store额度单独完整保守预留，不把固定小额来源分区当并发限流。`platform/main/imageProjectLease` 通过独立原生 guard 持有固定 inode 的 OS 锁，同时持久记录 Main 身份。guard 异常退出关闭当前写门，但不发布正常释放；旧 Main 未确认退出时，新 guard 也拒绝接管，保护仍在途的文件副作用。正常 release 必须由调用方先排空义务，不能把锁失效当取消。当前已接入 main 源码普通启动器，仅本机 macOS 验证；Windows 项目锁尚未实现。
 
 Source保管出现未知结果时，Runtime先停止新保管工作，沿Sources现有操作核对磁盘与保留额度，再恢复处理；不能直接close/reopen绕过未知写入。恢复先排空已接受的绘画决定，保留当前NativeRef及撤销记录，失败的图片解码仍单独报告，不被一次恢复成功回执抹掉。
 
@@ -68,7 +83,7 @@ Output的外部观察绑定板、文件名、位置、物理身份和基线Nativ
 
 同 Main 恢复通过 Adapter 的可选 WorkerOwner 替换自有原生进程；原 Main 历史、待提交计划及项目 head 保留。先隔离旧代并确认退出，再排空 Main 输入记录写入，以唯一可达项目决定核对 native 状态，不自动重放。恢复结果区分 committed/notCommitted；完整原始意图通过 operationRecords 分页读取。未取得 ready 身份或未抬笔的缓存仍是显式 recoveryPending，不能算恢复绘画成功，也不能据此正常关闭。
 
-### 正式界面接点（隔离施工）
+### 正式界面接点
 
 `workbench/renderer/image-engine/workspaceController`只接受Main快照和类型化意图；展示帧经身份绑定的MessagePort进入FrameStore，不向React逐批回灌像素。display delta独立覆盖展示身份，完整快照可在相同stateSeq安装；旧显示事件不能覆盖较新快照。`drawing/renderer/image-engine/capture`在pointerdown同步保留完整输入，异步IPC的admitted不代表持久成功；冷目标使用归一化坐标，恢复记录保留其坐标空间。captureId/inputId/attemptId分别绑定手势、逻辑输入批次和明确无副作用的重试；未知回包不盲重发。
 
@@ -93,7 +108,11 @@ Main只从当前worker/当前文档的完整验证帧推进display identity；�
 
 `project-files/main/image-engine/workspaceOutput` 仅维护物理输出账本：冻结的项目决定、原生捕获字节和元数据决定新文件，所有旧名先暂存再独占发布，删除沿用系统废纸篓确认协议。内部输出日志、备份和未知支出使用共享恢复预算。Refresh 先由 Main 安装项目决定，再确认外部文件摘要成为物理基线；该确认不另行安装项目，也不冒充 Save。Session 已认证关闭但资源释放失败时，保留关闭票据，后续只重试释放，不重复认证或恢复已关闭 Session。
 
-## 运行链与职责
+## 旧引擎参考与共享模块
+
+以下至“Photocraft 原件绑定与 PSD 输出”末尾保留 V1 / 一次性桥接的历史契约及共享模块定位，**不是当前原生工作台的运行链**。修改 main 新版先使用上方原生接点；不得把旧 Session/像素模型重新接成第二份编辑权威。共享的命名、对白、Pending 与文件保护原则仍须按当前调用方核实。
+
+### 旧运行链与职责
 
 源码按六个概念根组织：`src/workbench` 负责工作台布局和界面接线，`src/storyboard` 负责故事板组织、Pending、动作与对白的模型及界面，`src/drawing` 负责画布与图层，`src/session` 负责编辑状态、队列和历史，`src/project-files` 负责项目文件、资产与 TIFF，`src/platform` 负责 Electron、操作系统和桥接。各根内按运行环境区分，避免浏览器引入 Node 实现。
 
@@ -134,7 +153,7 @@ Pending 与活动故事板共用 `workspace/ShotCard` 卡片外壳、`useMarquee
 
 工具按键由 `src/workbench/renderer/toolShortcuts.ts` 控制短按／长按及恢复状态，FlowEditor 在按键事件发生时检查 Session、绘画暂停、输出及手势准入；键盘不绕过关闭或输出保护。SketchPad 以现存草稿判断绘画手势，避免临时工具恢复后把抬笔误作选区结束。普通／日式布局读取同一个故事板 tile 偏好，Pending 尺寸独立；布局切换不创建第二份尺寸状态。
 
-## 名称与数据
+### 名称与数据
 
 产品 `Storyboard Flow`，代码 `Flow/flow`，环境变量 `FLOW_*`。TIFF使用 `app: "Storyboard Flow"`、`format: "flow-tiff"`、XMP `flow:metadata`、命名空间 `https://storyboard-flow.local/ns/1.0/`。受管子项目标记为 `.storyboard-flow-project`。checkpoint位于 `.storyboard-flow/checkpoints/`：`project.json`、`assets/<sha256>.png`、`versions/<revision>.json`。旧目录/恢复数据不迁移、不自动删。
 
@@ -142,7 +161,7 @@ Pending 与活动故事板共用 `workspace/ShotCard` 卡片外壳、`useMarquee
 
 Project中无绝对路径、DOM、data URL或像素buffer。未知版本/字段和非法引用拒绝，不静默丢信息。删除成员可保留未引用image以支持历史；资产、版本和原件不自动GC。
 
-## Session与资产
+### Session与资产
 
 Session是唯一可写作品权威；输入在异步边界前验证/快照，返回对象与调用方不共享可变数据。纯编辑失败/no-op不入历史，新编辑清redo；Undo/Redo恢复内容并产生新项目revision。历史保留资产引用而非像素副本，重开不恢复前进程撤销栈。
 
@@ -154,7 +173,7 @@ checkpoint先验证/发布不可变资产和版本，再发布head。相同revis
 
 同一画布的连续画笔／橡皮仅在所有在途 paint 均指向同板同层且无非 paint 请求、冻结、图层手势等保护时放行。保存期间继续绘制的例外只属于画笔；橡皮保持输出保护。
 
-## 绘画展示与输入义务
+### 绘画展示与输入义务
 
 Session 仍是作品与历史的唯一可写权威。`paintPresentation` 是每个 Editor 会话持有的展示 owner，两个 surface 仅订阅同一图层像素；不再从 DOM 抓取 LiveMirror，也不靠 hover 挂载接收首笔。输入身份包含目标板／图像／图层及 epoch；不可变资产使用裸 assetId。
 
@@ -164,13 +183,13 @@ Session 仍是作品与历史的唯一可写权威。`paintPresentation` 是每�
 
 局部预算为最多 32 条记录、总计 20 万点、单笔 10 万点及 3200 万像素。超限笔进入待处理状态，不自动提交前缀；用户可明确提交已接受部分或放弃重画。像素 owner 常驻三张画布，另有双 surface 副本、一个在途解码和一个最新待解码目标；3200 万像素时这六张画布约 732 MiB，不含静态图、生产器、URL 或浏览器缓冲，不是全进程内存上界。
 
-## 对白提交与撤销
+### 对白提交与撤销
 
 连续键入折叠要求同token、同目标、合法纯文本变化且间隔严格小于800ms；800ms断组。实现入口为 `src/session/core/grouping.ts` 与 `src/storyboard/renderer/dialogueBlocks/`。
 
 IME候选只留本地，确认后提交。每个编辑器独立持有未确认提交义务；其他实例成功、卸载或超时都不能代为解除。失败保留最新意图供重试，旧回执不能清掉新请求；成功与宿主回显之间仍须保留用户回退意图。关闭在freeze后复检义务。具体状态机见 `dialogueCommitState.ts` 和 `dialogueBlocks/commitQueue.ts`。
 
-## TIFF导入
+### TIFF导入
 
 入口只有一个文件夹选择器。主进程先用 `project-files/main/projectFolderEntry.ts` 分类：有 `.storyboard-flow` 且 checkpoint 可读 → 直接打开；有 `.storyboard-flow` 但标记不是目录或 checkpoint 读不出来 → 报错停止，不降级成图片导入；否则按直属 JPEG、PNG、受支持 TIFF 计数，有图片 → 生成一次性创建草稿交给渲染层确认；两者都没有 → 报“没有可导入的图片”。分类只做只读探测，不检查已退役的工作簿标记，不向创建草稿传递旧版标志；真正的创建仍走下面的创建事务。
 
@@ -182,7 +201,7 @@ IME候选只留本地，确认后提交。每个编辑器独立持有未确认�
 
 原件字节保留在 `.storyboard-flow/originals/`，后续Save不覆盖首份原件。TIFF原生层ID与XMP映射用于支持子集的身份，不靠名称/数组位置猜测。`portable/native/unverified`是验证级别；native存在不等于已与任意项目基线对应。外来不支持的PS结构安全拒绝。独立副本由用户在文件系统复制完整项目文件夹后经“打开”加载，软件不另设工作副本入口；不承诺PSD/全部图层保真或来源持续追踪。
 
-## 显式Save、命名与删除
+### 显式Save、命名与删除
 
 Save捕获点击时项目；输出期间新的笔画属于后续revision，不能错称已输出。自动暂存不改TIFF。所有候选先准备、预算/身份/碰撞校验后再发起效果；receipt必须对应捕获的projectId/revision。输出ledger记录物理完成状态，不能被Session Undo倒带。
 
@@ -192,7 +211,7 @@ Save捕获点击时项目；输出期间新的笔画属于后续revision，不�
 
 进程若在Trash后、确认持久化前退出，dispatching+缺失仍是未知结果；不扫描私人Trash、不伪造ACK、不删除保留证据。当前恢复提示可要求用户系统“放回”后核验并重试。Undo后Save从保留资产重新生成，不从Trash读取。恢复账本、原件、空staging和tombstone不自动GC；原生硬链接/目录flush能力不足安全拒绝。
 
-## 外部Refresh与项目切换
+### 外部Refresh与项目切换
 
 Refresh区分基线B、本地L、外部E；比较可信稳定图层身份及解码RGBA，而非PNG压缩字节。独立变化可合并，同层/身份不明冲突保留Pending；项目顺序/命名/对白/动作仍由项目拥有。刷新已输出图层映射回原身份，避免双重叠加；本地新增层保留。
 
@@ -202,7 +221,7 @@ Main绑定来源和基线、准备资产、记录before/after intent，验证aft
 
 一个项目仅一个可写Session。默认启动锁不提供跨显式profile的任意并发写入保证。未知原生权限、旧恢复namespace和未结算效果仍是拒绝条件；不因旧恢复UI退役而绕过。
 
-## Photocraft 原件绑定与 PSD 输出
+### Photocraft 原件绑定与 PSD 输出
 
 固定上游版本与组件协议见 [native/photocraft/README.md](../native/photocraft/README.md)。一次性 native worker 负责读取、合成和色彩转换，Main 校验输出和资源限制；这些限制不等同进程 RSS 硬上限。
 
@@ -211,6 +230,8 @@ Main绑定来源和基线、准备资产、记录before/after intent，验证aft
 `exportPsd` 绑定 Session 的稳定 capture、板与保管 PSD，原生 writer 在原文件模型追加新增绘画层，Main 选择目标后以已同步的同目录暂存文件和独占 hardlink 发布新文件。普通 Save 不改变语义。未知发布结果保留证据；Windows 目录同步沿用平台 skipped 契约，不承诺目录项断电持久性。
 
 打包强制校验原生版本、目标架构、桥接源码摘要、二进制和许可清单回执。macOS 签名后更新二进制回执，再签外层应用；ZIP 校验实际 Mach-O/PE 架构及摘要。
+
+## 当前原生工作台的展示与准入
 
 ### 大项目展示与绘画优先
 

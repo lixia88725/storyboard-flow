@@ -1,5 +1,13 @@
 # 当前状态与剩余工作
 
+## 维护交接收口（2026-11-10）
+
+当前图片发动机为 **PhotoCraft（Rust）**，由 Flow 常驻宿主接入；维护边界见 [ARCHITECTURE](ARCHITECTURE.md#当前图片发动机photocraft)，构建、测试与性能定位见 [DEVELOPMENT](DEVELOPMENT.md)，上游版本和补丁见 [组件 README](../native/photocraft/README.md)。
+
+子 Agent 的画布、增量保存及旧工作树审查均已交付并结束，接受的实现已整合到 main。当前仅一个 main 工作树；试用配置已清除，保留的证据目录不参与运行。本次复核 README、AGENTS、DESIGN、ARCHITECTURE、DEVELOPMENT 及组件 README，修正“隔离试用/仅扩展读取”等过时描述，并标明旧引擎参考段落。原先已删除、仅指向 AGENTS.md 的 CLAUDE.md 一并记录删除，规则以 AGENTS.md 为入口。
+
+本次仅文档与规则入口收口，不新增产品验证结论；沿用下节 main 构建与 GUI、上一轮 154 文件 / 1629 项证据。没有推送或发布；未确认的平台能力仍见下节限制。
+
 ## 合入 main 与工作树清理（2026-11-10）
 
 用户确认新版初步可用后授权合入main、清理工作树，并明确丢弃试用配置、从默认设置重新调试。main从da18b06快进至已验收b403cc1，无产品代码合并冲突；本轮仅调整源码启动脚本与文档。普通启动器设置FLOW_NATIVE_WORKSPACE=1、配置位于`.hermes/native-main/userData`，默认进入选择页；旧试用脚本为同一入口别名。不会自动打开旧studio-preview项目，不将旧项目交给新版后台。已有Application Support配置和项目文件夹不动。已将通过回执校验的native flow-release组件独立复制至main，未安装依赖。

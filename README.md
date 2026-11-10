@@ -22,9 +22,9 @@ npm ci
 npm run setup:photoshop-tiff-deps
 ```
 
-扩展 TIFF/PSD 读取及打包还需显式准备 Rust 1.99.1，再运行 `npm run setup:photocraft` 和 `npm run build:photocraft`，详见[组件说明](native/photocraft/README.md)。启动器不会自动安装这些依赖。新版图片发动机已合入本地 main；组件准备和当前平台限制见[开发说明](docs/DEVELOPMENT.md#原生工作台施工验证)与[当前进度](docs/CURRENT.md)。
+当前图片发动机使用 **PhotoCraft（Rust）**，运行新版与打包均需显式准备 Rust 1.99.1，再运行 `npm run setup:photocraft` 和 `npm run build:photocraft`，详见[组件说明](native/photocraft/README.md)。启动器不会自动安装这些依赖。新版图片发动机已合入本地 main；组件准备和当前平台限制见[开发说明](docs/DEVELOPMENT.md#原生工作台施工验证)与[当前进度](docs/CURRENT.md)。
 
-然后双击 `启动 Storyboard Flow.command`。启动器会构建并打开工作台；首次使用时，可以打开已有 Flow 项目，或从 JPEG、PNG、受支持的 TIFF 创建一个独立项目。来源文件保留在原处。开发时可用 `npm run dev` 启动热更新。
+然后双击 `启动 Storyboard Flow.command`。启动器会构建并打开工作台；首次使用时，可以打开已有 Flow 项目，或从 JPEG、PNG、受支持的 TIFF 创建一个独立项目。来源文件保留在原处。开发新版热更新时使用 `FLOW_NATIVE_WORKSPACE=1 npm run dev`；直接入口仍保留旧路径分支，不省略该开关。
 
 普通启动器现进入新版图片引擎，先构建再启动，使用 `.hermes/native-main/userData` 中的独立配置。旧「试用新版」脚本只是同一入口的快捷方式，不再启动另一份版本；原试用配置已按用户要求清除，新版从默认设置开始。当前验证与平台限制见[当前进度](docs/CURRENT.md)。
 
@@ -50,13 +50,15 @@ npm ci
 npm run setup:photoshop-tiff-deps
 ```
 
-Double-click `启动 Storyboard Flow.command` to build and launch the app. On first launch, open an existing Flow project or create a separate project from JPEG, PNG, or supported TIFF images. Source files stay where they are. For development with hot reload, run `npm run dev`.
+Double-click `启动 Storyboard Flow.command` to build and launch the app. On first launch, open an existing Flow project or create a separate project from JPEG, PNG, or supported TIFF images. Source files stay where they are. For native-engine development with hot reload, run `FLOW_NATIVE_WORKSPACE=1 npm run dev`.
 
-Extended TIFF/PSD reading and packaging require the explicitly prepared Rust 1.99.1 component; see the [native setup and compatibility limits](native/photocraft/README.md). Complex sources remain protected; normal Save writes Flow TIFF, while the separate PSD export supports only the documented RGB8/sRGB PSD subset.
+The current image engine is **PhotoCraft (Rust)**. Running this engine and packaging require the explicitly prepared Rust 1.99.1 components; see [native setup and compatibility limits](native/photocraft/README.md). Flow owns storyboard organization, scheduling, persistence and recovery. PhotoCraft support does not imply arbitrary Photoshop fidelity or that every export capability is available in the current UI.
 
 The normal launcher now starts the accepted native image engine from main, with fresh settings in `.hermes/native-main/userData`. The former trial launcher is an alias of the same entry. Existing project folders are not moved or reset. See [CURRENT](docs/CURRENT.md) for validation and platform limits.
 
 **When should I use Save?** Flow automatically checkpoints sketches, shot order, and dialogue in the project folder (the status bar reads "已自动暂存"). Choose **Save** when you want your edits to reach the working image files. It applies the naming rule to filenames, updates pixels and Pending locations, and sends working images for deleted shots to the system Trash. Click the centered project title to edit the naming fields. **添加板** beside **新建板** in the storyboard toolbar writes only the newly added images to Pending. After editing a supported TIFF in another tool, click the folder-with-inward-arrow icon in the header to pull the changes back. For an independent copy, duplicate the project folder in Finder/Explorer and open the copy with **Open**. Layered TIFF exchange supports a subset of layer features; full Photoshop fidelity is not guaranteed.
+
+维护图片发动机先读[架构与模块职责](docs/ARCHITECTURE.md#当前图片发动机photocraft)，构建、回归和性能测量见[开发指南](docs/DEVELOPMENT.md)，Rust 协议及上游补丁见[组件维护说明](native/photocraft/README.md)。
 
 ## 文档 · Documentation
 

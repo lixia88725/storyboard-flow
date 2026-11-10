@@ -1,10 +1,17 @@
 # Flow PhotoCraft bridge
 
-This is an isolated integration candidate. It reads TIFF/PSD through PhotoCraft's
-`io`, `doc`, `compose` and `cms` crates. Existing Flow pixel tools operate on basic
-raster layers or new drawing layers above a protected source display. Explicit
-“另存为 PSD…” appends those new drawing layers to a retained RGB8 PSD file model.
-It is a limited export, separate from normal project Save.
+PhotoCraft is the current image engine used by Flow's normal source launcher on
+main. The persistent `flow-photocraft-host` adapts PhotoCraft document, raster,
+brush/operation, composition, color and format modules. Flow retains storyboard
+organization, project history, scheduling, source custody, save transactions and
+recovery. This is not a wholesale replacement of Flow's application lifecycle.
+
+Start with [the ownership map](../../docs/ARCHITECTURE.md#当前图片发动机photocraft)
+and [development/acceptance](../../docs/DEVELOPMENT.md). Platform and GUI evidence
+is tracked in [CURRENT](../../docs/CURRENT.md); successful decoding is not proof
+of arbitrary Photoshop round-trip fidelity. The one-shot reader and limited PSD
+export described below are retained compatibility components, not the current
+editing model or a promise of a PSD export action in the native UI.
 
 Upstream: https://github.com/storytold/photocraft/tree/a259993118ac7ce1d4c828a385abbc3191841e86
 (version 0.20.1; MIT OR Apache-2.0). The source is an ignored local dependency at
@@ -18,6 +25,7 @@ existing Flow dependencies:
 
 ```sh
 npm run setup:photocraft
+python3 native/photocraft/apply-host-patches.py
 npm run build:photocraft
 npm run build
 ```
@@ -29,8 +37,10 @@ profiles. The reader binary can be selected with `FLOW_PHOTOCRAFT_BIN`.
 
 The build checks the actual `rustc` version/host, uses `--locked --all-targets`
 and an explicit native target, and includes the synthetic fixture example used
-by the enumerated tests. It emits `target/debug/build.json` binding source bytes,
-upstream/toolchain/target, executable digest and every bundled license digest.
+by the enumerated tests. It publishes release reader, host and lease components to
+`native/photocraft/target/flow-release`, with a protocol-2 `build.json` binding
+source bytes, upstream/toolchain/target, capabilities, component digests and
+every bundled license digest.
 Local builds never install Rust automatically. For the existing task-local
 installation, prefix commands with its independent `RUSTUP_HOME`, `CARGO_HOME`
 and command-scoped `PATH`.
@@ -47,7 +57,30 @@ The selected headless dependency graph has no GTK/Wayland/AVIF/dav1d dependency;
 notices are included. Dependency inspection is not a successful Windows compile:
 real Windows runner compilation, execution and release ZIP testing remain pending.
 
-## Bridge and limits
+## Maintaining Flow and upstream changes
+
+- Flow-owned Rust adapters live in `src/host/`; entry binaries live in `src/bin/`.
+  Keep protocol identities and capabilities synchronized with Flow Main adapters
+  and contracts. Use real host tests, not only mocked transports.
+- The ignored `vendor/photocraft` tree is a prepared dependency, not the durable
+  place for a fix. Fixed-upstream changes are recorded in
+  `patches/hosted-v1.json` and applied by `apply-host-patches.py`, which verifies
+  before/after digests. Preserve a reproducible patch, then rebuild the host.
+- Updating the upstream pin or dependency graph requires the project's dependency
+  authorization. Review `Cargo.lock`, patches, licenses, source digest and package
+  receipts together; never hand-edit a receipt to make stale code pass validation.
+- `build:photocraft` builds offline. A missing Cargo cache needs explicit dependency
+  preparation under the existing authorization rules; the build does not fetch it.
+- Current native project leasing is implemented for macOS; Windows packaging is
+  refused until its lease implementation and real-platform checks are complete.
+  The Windows CI configuration below is not evidence of a working Windows app.
+
+## Legacy one-shot reader/export compatibility path
+
+The next three sections document the earlier reader/protected-layer integration.
+For current editing, continue at [Hosted engine](#hosted-engine-current-flow-path).
+
+### Bridge and limits
 
 The one-shot binary receives one private job directory containing protocol-1
 `request.json` (`format: tiff | psd`) and `source.bin`. The explicit
@@ -78,7 +111,7 @@ models is conservatively refused pending verified conversion coverage. PSD merge
 checked against layers. When they disagree, the stored composite is explicitly
 used as a protected display, and its original layers remain in retained bytes.
 
-## Retention and editing
+### Retention and editing
 
 `LayerV1.sourceReference` contains `originalId`, `digest`, `format`,
 `previewPixels` (RGBA SHA-256). It reuses the existing project ledger and first
@@ -136,7 +169,7 @@ platform directory-sync contract: Windows skips unsupported directory fsync afte
 the file itself is flushed. This avoids a deterministic post-link error, but does
 not claim directory-entry power-loss durability or replace actual NTFS testing.
 
-## Verification
+### Verification
 
 Use the explicitly enumerated `test/allowed-suite.json`, normal `npm run build`,
 and `npm run check:preload`. The native fixture example generates only synthetic
@@ -171,12 +204,13 @@ This evidence does not certify arbitrary real PSD effects, text, smart objects,
 large documents, Windows or complex TIFF-to-PSD mapping. Same-codec round trips
 alone do not establish Photoshop compatibility.
 
-## Hosted engine (isolated Flow trial path)
+## Hosted engine (current Flow path)
 
-`flow-photocraft-host` is a separate persistent binary. The existing reader/export
-binary and normal Flow entry remain separate. The isolated native workspace
-uses this host for editing and output; current integration evidence is in
-`docs/CURRENT.md`. It admits one active document per host and the verified
+`flow-photocraft-host` is the persistent editing/output binary selected by the
+normal source launcher (`FLOW_NATIVE_WORKSPACE=1`). The one-shot reader/export
+binary remains separate. Direct entry points retain an older branch when the
+flag is absent; package migration is not implied by the source launcher. Current
+integration evidence is in [CURRENT](../../docs/CURRENT.md). It admits one active document per host and the verified
 RGB8 raster/group PNG/JPEG/TIFF/PSD paths
 (up to 32 MiB source, 8192 px side, 16 Mi canvas pixels, 64 layers and 512 MiB
 materialized native surface bytes). These are admission bounds, not a process RSS

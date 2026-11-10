@@ -14,7 +14,6 @@
 
 | 场景 | 入口 |
 | --- | --- |
-| 启动试用 | 根目录 `启动 Storyboard Flow.command`：先构建再启动；`--choose` 选择项目 |
 | main 新版启动 | 根目录 `启动 Storyboard Flow.command`：先构建、开启原生路径，使用 `.hermes/native-main/userData`，默认进入选择页；旧试用脚本为同一入口别名 |
 | 修改主进程与界面的桥接（preload） | 运行 `npm run check:preload`（TS/CJS桥接一致性检查） |
 | 修改打包资源 | 运行 `npm run prepare:package-resources`；Windows用内置Python，macOS用可用Python3，缺失时报告，不擅自安装 |
@@ -72,12 +71,26 @@ macOS 包附带 TIFF 组件，不附带 Python 解释器。第一次处理 TIFF 
 
 ## Photocraft 原生组件
 
-源码运行扩展 TIFF/PSD 和打包前，显式准备固定 Rust 1.99.1，再运行 `npm run setup:photocraft`、`npm run build:photocraft`；普通启动与 JS 构建不自动安装工具链。可用独立 RUSTUP_HOME/CARGO_HOME，操作入口、固定上游及许可证见 [组件说明](../native/photocraft/README.md)。原生 fixtures 是相关获准测试前置；缺失组件/过期回执会阻止打包。CI test 和 macOS/Windows package 均准备原生目标，真实 Windows runner 仍待验证。
+运行当前 PhotoCraft 图片发动机和打包前，显式准备固定 Rust 1.99.1，再运行 `npm run setup:photocraft`、`npm run build:photocraft`；普通启动与 JS 构建不自动安装工具链。可用独立 RUSTUP_HOME/CARGO_HOME，操作入口、固定上游及许可证见 [组件说明](../native/photocraft/README.md)。原生 fixtures 是相关获准测试前置；缺失组件/过期回执会阻止打包。CI test 和 macOS/Windows package 均准备原生目标，真实 Windows runner 仍待验证。
 
 组合专项：`node scripts/flow-dock-panels-smoke.mjs` 检查分隔条调宽/折叠/取消/键盘/重开；`node scripts/flow-photocraft-smoke.mjs` 检查扩展导入与保护；`node scripts/flow-psd-export-smoke.mjs` 检查真实导出入口、取消和已有目标保护。均使用合成数据及独立 userData。独立像素、Photoshop 验证入口和边界见组件说明，不用同一解码器的往返代替兼容性证明。
 
 
-## 新图片发动机隔离接线验证
+## 修改与优化发动机的工作顺序
+
+1. 先按 [架构职责表](ARCHITECTURE.md#当前图片发动机photocraft) 定位：图片像素/画笔问题看 Rust host；切图、预览争抢、保存或关闭问题同时检查 Flow 调度与 Session。不要把所有延迟都归因于 PhotoCraft。
+2. 修改 Rust 或固定上游补丁后，按 [组件 README](../native/photocraft/README.md) 准备补丁并运行 `npm run build:photocraft`，再完整 `npm run build`。只改 TS/React 仍须完整 JS 构建；不能让 GUI 使用旧 dist 或旧 native 二进制。
+3. 聚焦回归后，运行两份获准清单的并集。设置 `FLOW_IMAGE_HOST` 指向本次 release host，`FLOW_PROJECT_LEASE_BINARY` 与 `FLOW_PROJECT_LEASE_BIN` 指向同一 release guard；需要 reader 的专项按测试约定设置 `FLOW_PHOTOCRAFT_BIN`。不要自动扫描测试目录。
+4. 按改动跑下方真实工作台或日常 GUI：至少涉及的导入/绘画/Undo/Save/关闭/重开链路。保留原始日志、构建身份及未测平台；独立 profile 和合成夹具不替换用户配置。
+5. 优化分别计时：首屏缩略图、当前板可画、连续落笔、持久确认、显式 Save。缩略图缓存命中或 rAF 流畅不等于编辑就绪、落盘完成或真实数位笔延迟；性能测量避免并行全量构建。
+
+原生环境准备好后，完整枚举命令（取代仅通用清单的命令）：
+
+```sh
+NODE_OPTIONS=--max-old-space-size=4096 node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "node:child_process"; const files=[...new Set(["test/allowed-suite.json","test/allowed-image-engine-suite.json"].flatMap(p=>JSON.parse(fs.readFileSync(p,"utf8"))))]; const r=spawnSync(process.execPath,["node_modules/vitest/vitest.mjs","run",...files],{stdio:"inherit"}); if(r.error) throw r.error; process.exit(r.status ?? 1);'
+```
+
+## PhotoCraft 图片发动机接线验证
 
 当前宿主连接专项 `src/platform/main/imageEngineConnection.test.ts` 需要显式 `FLOW_IMAGE_HOST` 指向与受验提交绑定的真实 `flow-photocraft-host`。未指定时失败，不跳过、不替换 fake；在宿主构建准备尚未接入通用清单前，该测试单独执行。`imageEngineTransport.test.ts` 的合成子进程只认证故障协议，不能替代真实宿主证据。固定二进制、SHA 与构建回执应随日志记录。
 
@@ -106,14 +119,14 @@ Main 保存链性能复测：使用同一固定 release 宿主，完整构建后
 
 ## 原生工作台施工验证
 
-施工分支的 `build:photocraft` 现在离线、锁定依赖构建 release reader/host/lease，并在合成目录实际探测后发布到 `native/photocraft/target/flow-release`。`nativeComponentPaths` 统一源码与包内定位，显式测试环境变量仍可指向受验固定候选。回执 protocol2 绑定三个组件、完整自有源码、目标架构、实际能力与许可证；签名后逐组件更新摘要，ZIP再次核验。不能只带一次性reader或沿用debug目录冒充完整引擎。独立脚本检查为 `node --test scripts/package-native-probes.test.mjs` 与 `python3 scripts/validate-release-links.test.py`；真实 ZIP 校验仅允许已知 macOS Framework 的固定、包内可解析相对链接，原生组件与应用文件仍不得为别名。当前Windows项目锁未实现，打包明确拒绝，不宣称Windows可运行。
+当前 main 的 `build:photocraft` 现在离线、锁定依赖构建 release reader/host/lease，并在合成目录实际探测后发布到 `native/photocraft/target/flow-release`。`nativeComponentPaths` 统一源码与包内定位，显式测试环境变量仍可指向受验固定候选。回执 protocol2 绑定三个组件、完整自有源码、目标架构、实际能力与许可证；签名后逐组件更新摘要，ZIP再次核验。不能只带一次性reader或沿用debug目录冒充完整引擎。独立脚本检查为 `node --test scripts/package-native-probes.test.mjs` 与 `python3 scripts/validate-release-links.test.py`；真实 ZIP 校验仅允许已知 macOS Framework 的固定、包内可解析相对链接，原生组件与应用文件仍不得为别名。当前Windows项目锁未实现，打包明确拒绝，不宣称Windows可运行。
 
 
 新的只读控制器、冷输入捕获、Main端口与项目切换测试显式登记在 `test/allowed-suite.json`。真实原生预设与图层命令测试登记在 `test/allowed-image-engine-suite.json`，需以本次能力匹配的原生宿主执行；旧debug binary或只通过TypeScript构建不能替代这些检查。两清单合并去重后才是本轮组合全量。`npm run check:preload`同时检查嵌套imageWorkspace方法、原始输入身份及MessagePort转交；它是隔离桥接检查，不替代真实Electron连接验收。
 
 实际原生工作台专项：完整 `npm run build` 后，设置 `FLOW_IMAGE_HOST` 与 `FLOW_PROJECT_LEASE_BINARY`，运行 `node scripts/flow-native-workbench-smoke.mjs`。它通过私有 `FLOW_NATIVE_WORKSPACE=1` 启动真实入口，使用临时合成原生项目和独立profile，禁止Clipboard/Trash，检查主画布及对应静态缩略图RGBA、真实落笔、Undo/Redo、正常关闭、新进程重开及恢复记录只读入口。`FLOW_CREATION=1` 扩展真实新建板、白底及历史选择回归；`FLOW_SOURCE_IMPORT=1` 扩展合成外部文件夹导入与重开（需已接通来源Runtime，编写存在不等于验收通过）。源码普通启动器现已设置该开关；直接运行专项仍显式设置，不据此宣称发布包已验证；`FLOW_SAVE=1` 检查实际保存按钮、输出TIFF与画布像素、重复保存不改文件和撤销记录、关闭重开；这仍不覆盖受保护来源输出及完整Refresh/Pending。`FLOW_SAVE=1 FLOW_COLD_COPY=1` 另加正常关闭后完整复制、独立profile打开副本及原项目文件摘要不变；Runtime已接入并实测，证据见CURRENT。`FLOW_PROTECTED_IMPORT=1 FLOW_SOURCE_IMPORT=1 FLOW_SOURCE_IMPORT_ONLY=1` 预备复杂PSD/轻微差异PSD/PNG导入绘画与Save重开组合；真实导入、绘画、普通保存及重开已通过，具体证据与范围见CURRENT。合成夹具解释器可通过 `FLOW_SOURCE_GUARD_PYTHON` 与 `FLOW_SOURCE_GUARD_PYTHONPATH` 指定，复用已获准的任务局部Python依赖，不自动安装；授权个人TIFF corpus不加入全量清单。原生附加清单中的workspaceCreation还需要已准备的一次性读取组件（见其测试的显式环境变量）。
 
-施工来源GUI：完整build后，`FLOW_SOURCE_IMPORT=1` 增加合成两张PNG/一张坏图的真实打开、绘画历史与重开；仅复验该组可同时设 `FLOW_SOURCE_IMPORT_ONLY=1`。`FLOW_SAVE=1` 的工作文件保存附加断言已准备，尚待Runtime输出接线后执行，不能计为已通过。组件与隔离要求沿用上面的原生工作台脚本。
+施工来源GUI：完整build后，`FLOW_SOURCE_IMPORT=1` 增加合成两张PNG/一张坏图的真实打开、绘画历史与重开；仅复验该组可同时设 `FLOW_SOURCE_IMPORT_ONLY=1`。`FLOW_SAVE=1` 检查已接入的 Runtime 输出链，通过证据与未覆盖范围见 CURRENT。组件与隔离要求沿用上面的原生工作台脚本。
 
 原生混合历史测试的缺少画笔能力场景显式屏蔽 `flowBrushPresetsV1`，验证拒绝与完整输入保管；当前宿主已支持铅笔，不再把“铅笔尚未移植”作为预期。实际预设渲染由附加清单的 `imageEngineProductBrush.test.ts` 覆盖。
 

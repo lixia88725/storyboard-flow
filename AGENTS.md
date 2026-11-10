@@ -36,6 +36,8 @@
 
 ## 命名与模块边界
 
+- 当前图片发动机为 PhotoCraft（Rust），由 Flow 原生宿主接入。修改导入、画笔、图层、合成、输出或性能调度前，先读 [ARCHITECTURE 的当前发动机与职责](docs/ARCHITECTURE.md#当前图片发动机photocraft)；原生构建和固定上游补丁见 [组件维护说明](native/photocraft/README.md)，组合验证见 DEVELOPMENT。旧引擎参考代码不等于当前普通启动路径。
+
 - 产品名 `Storyboard Flow`，代码标识 `Flow/flow`，环境变量 `FLOW_*`。改磁盘格式、命名或模块职责时，先查 [ARCHITECTURE](docs/ARCHITECTURE.md)；历史证据保留原名。
 - 编排逻辑放在所属专用模块，避免堆入入口组件；模块定位见架构中的代码地图。
 - 修改 IPC/preload 时同步运行中的桥接实现、类型声明和校验；跨边界改动必须做真实连接验证。
