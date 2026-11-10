@@ -22,12 +22,14 @@ const owners=new Set<string>();
 const digest=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 const token=(v:unknown):v is string=>typeof v==='string'&&/^[\w-]{1,80}$/.test(v);
 const leaf=validWorkspaceOutputFileName;
+/** Source preservation never claims to have inspected the layer tree. */
+const validCaptureLayerCount=(native:unknown,count:unknown)=>native===null?count===null:Number.isSafeInteger(count)&&Number(count)>0;
 type Identity={dev:string;ino:string};
 type Entry=WorkspaceOutputFile&Identity&{content:string;opaque?:true;vacant?:true};
 type Move=Identity&{from:string;to:string;digest:string};
 type Transaction={operationId:string;storageId?:string;revision:number;commitHash:string;kind:'save'|'append';phase:'preparing'|'deleting'|'staging'|'publishing';
  next:Entry[];stages:Move[];publishes:Move[];deletions:{entry:Entry;intent:OutputDeletion}[];receipt:WorkspaceOutputReceipt};
-type CaptureFact={file:string;entry:Entry;byteLength:number;layerCount:number};
+type CaptureFact={file:string;entry:Entry;byteLength:number;layerCount:number|null};
 type Operation={fingerprint:string;state:'pending'|'completed'|'retained';receipt:WorkspaceOutputReceipt;retryablePreparation?:true;captures?:CaptureFact[]};
 type CopyBaseline={receipt:WorkspaceColdCopyReceipt;fromLedgerHash:string;fromRoot:Identity};
 type Ledger={schema:'flow.native-output';version:1;projectId:string;root:Identity;seq:number;previousHash:string|null;entries:Entry[];copyBaseline?:CopyBaseline;operationFacts?:Record<string,Operation>;transaction?:Transaction;saved?:{revision:number;commitHash:string};refresh?:{receiptHash:string;revision:number;commitHash:string};nameSeed?:{sha256:string;consumedShotIds:string[]};keepFlowAck?:{receiptHash:string;operationId:string;revision:number;commitHash:string}};
@@ -63,7 +65,7 @@ async function readOutputLedger(root:string,projectId:string,bind:()=>Promise<vo
    const bytes=await readBoundFile(path.join(container,name),JOURNAL_LIMIT);if(!bytes)fail('Output journal disappeared');
    const v=JSON.parse(bytes!.toString()) as Ledger;
    if(v.schema!=='flow.native-output'||v.version!==1||v.projectId!==projectId||v.seq!==sequence+1||v.previousHash!==previous||!validIdentity(v.root)||!validEntries(v.entries)||v.refresh&&(!digest(v.refresh.receiptHash)||!digest(v.refresh.commitHash)||!Number.isSafeInteger(v.refresh.revision)||v.refresh.revision<0)||v.nameSeed&&(!digest(v.nameSeed.sha256)||!Array.isArray(v.nameSeed.consumedShotIds)||v.nameSeed.consumedShotIds.length>10000||!v.nameSeed.consumedShotIds.every(token)||new Set(v.nameSeed.consumedShotIds).size!==v.nameSeed.consumedShotIds.length))fail('Invalid output journal');
-   if(v.operationFacts&&(typeof v.operationFacts!=='object'||Array.isArray(v.operationFacts)||Object.entries(v.operationFacts).some(([id,f])=>!operationIdValid(id)||!f||!digest(f.fingerprint)||!['pending','completed','retained'].includes(f.state)||!validReceipt(f.receipt,id,projectId)||f.retryablePreparation!==undefined&&f.retryablePreparation!==true||f.captures!==undefined&&(!Array.isArray(f.captures)||f.captures.length>10000||f.captures.some(c=>!c||!validEntry(c.entry)||!/^operations\/[a-f0-9-]{36}\/new-\d+\.tif$/.test(c.file)||!Number.isSafeInteger(c.byteLength)||c.byteLength<1||c.byteLength>LIMIT||!Number.isSafeInteger(c.layerCount)||c.layerCount<1)))))fail('Invalid output operation facts');
+   if(v.operationFacts&&(typeof v.operationFacts!=='object'||Array.isArray(v.operationFacts)||Object.entries(v.operationFacts).some(([id,f])=>!operationIdValid(id)||!f||!digest(f.fingerprint)||!['pending','completed','retained'].includes(f.state)||!validReceipt(f.receipt,id,projectId)||f.retryablePreparation!==undefined&&f.retryablePreparation!==true||f.captures!==undefined&&(!Array.isArray(f.captures)||f.captures.length>10000||f.captures.some(c=>!c||!validEntry(c.entry)||!/^operations\/[a-f0-9-]{36}\/new-\d+\.tif$/.test(c.file)||!Number.isSafeInteger(c.byteLength)||c.byteLength<1||c.byteLength>LIMIT||!validCaptureLayerCount(c.entry.native,c.layerCount))))))fail('Invalid output operation facts');
    if(v.keepFlowAck&&(!digest(v.keepFlowAck.receiptHash)||!token(v.keepFlowAck.operationId)||!digest(v.keepFlowAck.commitHash)||!Number.isSafeInteger(v.keepFlowAck.revision)||v.keepFlowAck.revision<0))fail('Invalid keep-Flow physical decision');
    const t=v.transaction;
    if(t){if(t.storageId!==undefined&&!operationIdValid(t.storageId)||!/^[a-f0-9-]{36}$/.test(t.operationId)||!['save','append'].includes(t.kind)||!['preparing','deleting','staging','publishing'].includes(t.phase)||!Number.isSafeInteger(t.revision)||t.revision<0||!digest(t.commitHash)||!validEntries(t.next)||!Array.isArray(t.stages)||!Array.isArray(t.publishes)||!Array.isArray(t.deletions))fail('Invalid output transaction');
@@ -246,14 +248,14 @@ export async function openWorkspaceOutput(options:WorkspaceOutputOptions):Promis
     if(old&&old.content===content){next={...old,...name};source=relative(old);}
     else{
      const previous=reusable.find(c=>c.entry.shotId===shot.id&&c.entry.imageId===shot.imageId&&c.entry.content===content);
-     let capture:Awaited<ReturnType<WorkspaceOutputOptions['captureImage']>>;
+     let capture:{bytes:Uint8Array;sha256:string;layerCount:number|null};
      if(previous){const observed=await inspectFile(physical(previous.file));if(observed.digest!==previous.entry.digest||!same(observed.identity,{dev:previous.entry.dev,ino:previous.entry.ino}))fail('Retained output capture changed or disappeared');const bytes=await readBoundFile(physical(previous.file),LIMIT);if(!bytes||bytes.length!==previous.byteLength||sha256Hex(bytes)!==previous.entry.digest)fail('Retained output capture digest differs');const after=await inspectFile(physical(previous.file));if(!same(observed,after))fail('Retained output capture changed while reading');capture={bytes:bytes!,sha256:previous.entry.digest,layerCount:previous.layerCount};}
      else if(value.native===null){
       const object=sourceObject!;
       capture=await options.captureSource!({owner:snapshot.owner,commitHash:snapshot.commitHash,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,source:value.source,object,metadata});
       const after=await options.sourceCustody!.object(value.source,{verify:'full'});if(!same(object,after))fail('Source changed during readonly output');
      }else capture=await options.captureImage({owner:snapshot.owner,commitHash:snapshot.commitHash,projectId,revision:project.revision,shotId:shot.id,imageId:shot.imageId,native:value.native,format:value.format,metadata});
-     if(!(capture.bytes instanceof Uint8Array)||capture.bytes.length===0||capture.bytes.length>LIMIT||!digest(capture.sha256)||sha256Hex(capture.bytes)!==capture.sha256||!Number.isSafeInteger(capture.layerCount)||capture.layerCount<1)fail('Invalid native output capture receipt');
+     if(!(capture.bytes instanceof Uint8Array)||capture.bytes.length===0||capture.bytes.length>LIMIT||!digest(capture.sha256)||sha256Hex(capture.bytes)!==capture.sha256||!validCaptureLayerCount(value.native,capture.layerCount))fail('Invalid native output capture receipt');
      source=`operations/${storageId}/new-${i}.tif`;const grant=await hold(operationId,physical(source),capture.bytes.length,'native-output-capture');
      try{await bind();const owned=await createFileExclusive(physical(source),capture.bytes);await syncDirectory(dir);
       next={...name,imageId:shot.imageId,native:value.native,...(value.source?{source:value.source}:{}),format:value.format,digest:capture.sha256,content,dev:owned.dev,ino:owned.ino};

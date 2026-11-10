@@ -84,7 +84,7 @@ export type WorkspaceOutputOptions = {
  budget:WorkspaceOutputBudget;captureImage:WorkspaceOutputCapture;
  /** Sources is the sole custody authority. Source output never creates a native version. */
  sourceCustody?:WorkspaceOutputCustody;
- captureSource?:(input:Omit<Parameters<WorkspaceOutputCapture>[0],'native'|'format'>&{source:SourceImageRef;object:Awaited<ReturnType<WorkspaceSources['object']>>})=>Promise<{bytes:Uint8Array;sha256:string;layerCount:number}>;trashItem?:(file:string)=>Promise<void>;
+ captureSource?:(input:Omit<Parameters<WorkspaceOutputCapture>[0],'native'|'format'>&{source:SourceImageRef;object:Awaited<ReturnType<WorkspaceSources['object']>>})=>Promise<{bytes:Uint8Array;sha256:string;layerCount:null}>;trashItem?:(file:string)=>Promise<void>;
  /** Fault injection receives named transaction boundaries; production leaves it absent. */
  fault?:(point:string)=>Promise<void>;
 };

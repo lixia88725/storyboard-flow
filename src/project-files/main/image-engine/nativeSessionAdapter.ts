@@ -29,7 +29,7 @@ export type NativeRetainedPreparation={kind:'editable';prepared:PreparedImage;pr
 export type NativeWorkingRefreshResult={prepared:PreparedImage;policy:ImageEngineProtectedSourcePolicy|null;workingInput:ImageEngineWorkingInput};
 export type NativeProductDriver = {
   canExportSourceTiff(source:RetainedSourceObject):Promise<boolean>;
-  exportSourceTiff(source:RetainedSourceObject,metadata:WorkspaceOutputMetadataEnvelope,maxBytes?:number):Promise<{bytes:Uint8Array;sha256:string;layerCount:number}>;
+  exportSourceTiff(source:RetainedSourceObject,metadata:WorkspaceOutputMetadataEnvelope,maxBytes?:number):Promise<{bytes:Uint8Array;sha256:string;layerCount:null}>;
   /** Fixed immutable pin; no active-doc switch or freeze. Cancellation drains. */
   exportInactiveVersion(ref:NativeImageRef,format:'psd'|'tiff',metadata:WorkspaceOutputMetadataEnvelope,maxBytes?:number,expectedSourcePolicy?:ImageEngineProtectedSourcePolicy|null):Promise<NativeVersionOutput>;
   drainInactiveExports():Promise<void>;
@@ -346,7 +346,8 @@ export function createNativeSessionAdapter(options:{storeRoot:string;storeId:str
       const meta=Buffer.from(JSON.stringify(envelope)),metadataSha256=sha(meta);if(bytes.length+meta.length>64<<20)refuse('Source TIFF output exceeds transport budget','resource-limit');
       const {reply:r,frame}=await call(next(),{kind:'sourceTiffOutput',source:{sha256:captured.digest,byteLength:bytes.length},metadata:{sha256:metadataSha256,byteLength:meta.length},maxBytes},null,Buffer.concat([bytes,meta]));op.check();
       const output=new Uint8Array(frame.payload),sha256=sha(output);if(r.kind!=='sourceTiffOutput'||r.sourceSha256!==captured.digest||r.metadataSha256!==metadataSha256||r.preservedSourceBytes!==bytes.length||r.byteLength!==output.length||r.sha256!==sha256||!output.length||output.length>maxBytes||Buffer.compare(Buffer.from(output.subarray(0,4)),bytes.subarray(0,4))!==0||Buffer.compare(Buffer.from(output.subarray(8,bytes.length)),bytes.subarray(8))!==0)refuse('Source TIFF output preservation receipt differs','protocol','unknown');
-      return{bytes:output,sha256,layerCount:1};
+      // Source TIFF blocks are copied without decoding their layer model.
+      return{bytes:output,sha256,layerCount:null};
     },
     async exportVersion(ref,format,metadata,maxBytes=64<<20,expectedSourcePolicy=null){
       const op=operationContext();if(!op.connection.supports('readonlyExportMetadataV1'))refuse('Native binary lacks readonlyExportMetadataV1','unsupported');
