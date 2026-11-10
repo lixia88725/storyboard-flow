@@ -1,7 +1,18 @@
 # 架构与数据契约
 
+## 轻量浏览与按改动输出（2026-11-10）
+
+`sourcePreview`从已保管来源生成256边长RGBA，不进入原生编辑文档。PNG/JPEG/TIFF走有界sharp解码缩放，PSD仅使用有界内嵌JPEG缩略图，无预览时才回退原生准备。来源每次核identity和SHA；版本化项目缓存独立于作品/恢复权威，缓存损坏保留原文件并生成修复项，写入接共享预算。Renderer沿用thumbnail能力读取，不接触磁盘路径。source内容未变时预览不因背景hydrate而标为过期；变成native编辑版本后从确认版本重新生成缩略图。
+
+Runtime可见需求仅生成预览，原生准备优先当前目标，空闲后至多准备前后邻板。后台任务开始前让已有输入先行，已开始的原生任务仍须结算。控制器快速导航合并尚未发送的中间目标，后续激活使用已结算的新context token；不取消已发送操作，不把显示选择当编辑权威。网格不挂绘画输入，只有主viewer消费实时绘画帧。
+
+Save固定输入允许未修改photocraft-v1 TIFF来源`{native:null,source,format:'tiff'}`；其他来源/编辑版本仍使用固定NativeRef。Main先探测`sourceTiffOutputV1`资格，Output核对原件保管与项目source绑定，native追加首IFD及合并Flow XMP，原像素/Photoshop图层及未知数据保持原始字节与偏移（仅TIFF头部首IFD指针改变）。不支持经典TIFF快速路的输入回退完整准备；不把复制输出当完整可编辑图层验证。输出账本、fileIntent和恢复持久保存真实source基线，未制造假native版本。外部Refresh只为实际变化的冷图按需准备NativeRef，再走既有明确选择与替换事务。
+
+
 Renderer workspaceController按本Session内不可变thumbnailId缓存已校验RGBA（最多128项/32MiB，LRU），合并相同ID在途读取，dispose释放；不缓存可写文档。NativeThumbnail在layout effect中同步安装命中缓存，NativeCanvas在layout effect中绑定已有正确帧；等待实时帧时仅呈现该目标图的缩略预览，实时帧ready后移除，透明像素不会叠上旧图。原FrameStore归属过滤与capture目标校验保持，缓存不是编辑或持久化权威。
 
+
+保存/关闭的后台暂停分为两步：先停止产生新任务，等待已开始的来源复制、预览与原生准备完成结算，再暂停来源上下文并冻结。不能用暂停标志中断已生成但未确认的原生候选。快速连续选择只发送正在执行的选择与最后一个待选目标；新请求在前一项结算后读取新的上下文身份。
 
 ## 原生图片发动机施工接点
 

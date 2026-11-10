@@ -950,3 +950,19 @@ Storage, integrity, protocol and unknown outcomes retain the global stop/reconci
 behavior. This does not change acceptance, journal durability or source protection.
 The real Session regression lives in `imageEngineDetached.test.ts`; the error
 classification unit test is the library target `failure_scope_tests`.
+
+## Source-backed TIFF Save (2026-11-10)
+
+The image host advertises `sourceTiffOutputV1`. `sourceTiffProbe` checks a bounded
+classic TIFF; `sourceTiffOutput` appends Flow XMP and a replacement first IFD,
+changing only the header's first-IFD pointer in the original byte range. Original
+pixel strips, Photoshop layer resources and unknown tags retain their original
+bytes and offsets. This is metadata output, not a claim that every layer was
+parsed: the capture reports `layerCount: null`. BigTIFF, incompatible XMP and
+unsupported bounds take the existing native preparation/output route.
+
+Main binds each source capture to the frozen commit and retained source digest.
+Untouched source-backed images can remain cold through Save and reopen. Edited
+images use native version output. The output journal, exclusive publication and
+external-change checks still apply. Lightweight browsing previews live separately
+in `source-previews-v1`; they never authorize editing or replace output pixels.

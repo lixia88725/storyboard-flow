@@ -33,13 +33,13 @@ export function NativeThumbnail({controller,image}:{controller:ImageWorkspaceCon
    if(!alive)return;
    if(!Number.isSafeInteger(value.width)||!Number.isSafeInteger(value.height)||value.width<1||value.height<1||value.width>512||value.height>512||!(value.rgba instanceof Uint8Array)||value.rgba.byteLength!==value.width*value.height*4)throw Error('Invalid thumbnail');
    node.width=value.width;node.height=value.height;
-   node.getContext('2d',{colorSpace:'srgb'})?.putImageData(new ImageData(new Uint8ClampedArray(value.rgba),value.width,value.height,{colorSpace:'srgb'}),0,0);painted.current=image!.imageId;setShownVersion({imageId:image!.imageId,versionId:image?.displayNative?.versionId??null});
+   node.getContext('2d',{colorSpace:'srgb'})?.putImageData(new ImageData(new Uint8ClampedArray(value.rgba),value.width,value.height,{colorSpace:'srgb'}),0,0);painted.current=image!.imageId;setShownVersion({imageId:image!.imageId,versionId:image?.content.kind==='source'?null:image?.displayNative?.versionId??null});
   };
   const cached=controller.cachedThumbnail(image.thumbnailId);
   if(cached)draw(cached);else void controller.thumbnail(image.thumbnailId).then(draw).catch(()=>{if(alive)setIssue('预览暂时不可用');});
   return()=>{alive=false;};
  },[controller,image?.imageId,image?.thumbnailId]);
- const shown=shownVersion!==null&&shownVersion.imageId===image?.imageId,updating=shown&&shownVersion.versionId!==(image?.displayNative?.versionId??null);
+ const shown=shownVersion!==null&&shownVersion.imageId===image?.imageId,updating=shown&&shownVersion.versionId!==(image?.content.kind==='source'?null:image?.displayNative?.versionId??null);
  const previewIssue=issue||(image?.notice?.code==='thumbnail-unavailable'?image.notice.message:'');
  return <div className="image-stage flow-native-thumbnail" style={{width:'100%',height:'100%',position:'relative',aspectRatio:`${image?.width??640}/${image?.height??360}`}}>
   <canvas ref={canvas} style={{display:'block',width:'100%',height:'100%',objectFit:'contain'}}/>

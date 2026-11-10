@@ -205,7 +205,7 @@ it('retries an explicitly recovered thumbnail failure once without a same-versio
  }finally{spy.mockRestore();}
 },30000);
 
-it('retains all cold visible hydration demands beyond sixteen and survives changed demands and recovery',async()=>{
+it('previews cold visible sources without hydrating them and still prioritizes explicit editing',async()=>{
  const f=await fixture(true);await close(f);const sharp=(await import('sharp')).default;
  const file=path.join(f.root,'cold.png');await fs.writeFile(file,await sharp({create:{width:32,height:24,channels:4,background:'#4288aa'}}).png().toBuffer());
  const items=[];for(let i=0;i<24;i++){const sourcePath=path.join(f.root,'cold-'+i+'.png');await fs.writeFile(sourcePath,await sharp({create:{width:32,height:24,channels:4,background:{r:i,g:80,b:120,alpha:1}}}).png().toBuffer());items.push({id:'cold-'+i,sourcePath,formatHint:'png'});}
@@ -220,7 +220,7 @@ it('retains all cold visible hydration demands beyond sixteen and survives chang
  await request({kind:'demandShots',shotIds:shots.map(i=>i.id)});await request({kind:'demandShots',shotIds:shots.slice(16).map(i=>i.id)});await request({kind:'demandShots',shotIds:shots.map(i=>i.id)});
  await firstStarted;const activation=runtime.request({owner:runtime.open().snapshot.owner,requestId:'foreground-cold',contextToken:runtime.open().snapshot.context.token,command:{kind:'activateShot',shotId:'cold-23'}});await new Promise(r=>setTimeout(r,100));release();expect((await activation).kind).toBe('settled');expect(prepared[1]).toBe(targetDigest);expect(prepared.filter(d=>d===targetDigest)).toHaveLength(1);
  const deadline=Date.now()+15000;while(!Object.values(runtime.open().snapshot.images).every(i=>!!i.thumbnailId)&&Date.now()<deadline)await new Promise(r=>setTimeout(r,10));
- expect(Object.values(runtime.open().snapshot.images).filter(i=>!!i.thumbnailId)).toHaveLength(24);
+ expect(Object.values(runtime.open().snapshot.images).filter(i=>!!i.thumbnailId)).toHaveLength(24);expect(prepared.length).toBeLessThanOrEqual(4);expect(Object.values(runtime.open().snapshot.images).filter(i=>i.displayNative).length).toBeLessThanOrEqual(4);expect(runtime.open().snapshot.images['cold-12'].displayNative).toBeNull();
  expect((await request({kind:'recover'})).kind).toBe('settled');await close({...f,runtime,request});}finally{release();spy.mockRestore();}
 },30000);
 
@@ -249,3 +249,21 @@ it('keeps the ready same-board activation context and display identity unchanged
  expect(outcome.kind).toBe('settled');const after=f.runtime.open().snapshot;
  expect(after.context).toEqual(before.context);expect(after.images.image.displayIdentity).toEqual(before.images.image.displayIdentity);await close(f);
 });
+
+it('saves cold untouched TIFFs without materializing the whole folder and reopens their source baselines',async()=>{
+ const f=await fixture(true);await close(f);const sharp=(await import('sharp')).default,items=[];
+ for(let i=0;i<8;i++){const sourcePath=path.join(f.root,'original-'+i+'.tif');await fs.writeFile(sourcePath,await sharp({create:{width:48,height:32,channels:3,background:{r:30+i,g:70,b:120}}}).tiff().toBuffer());items.push({id:'source-'+i,sourcePath,formatHint:'tiff'});}
+ const sources=await createSourceBackedImport({root:f.root,importId:'cold-save',sources:items});for(const item of items)await sources.retain(item.id);await sources.close();
+ const store=await openImageProjectStore({root:f.root,writerAuthority:{assertHeld:async()=>{}},verifyNative:async()=>{},verifySource:async()=>{}}),head=(await store.load())!;
+ const shots=items.map(i=>({id:i.id,imageId:i.id,name:i.id,scriptText:''})),images=Object.fromEntries(items.map(i=>[i.id,{id:i.id,content:{kind:'source' as const,source:{importId:'cold-save',itemId:i.id,interpretationId:'photocraft-v1'}}}]));
+ await store.commit(head.commitHash,{schema:'flow.project-commit',version:1,commitId:'cold-save-boards',previousCommitHash:head.commitHash,beforeRevision:head.commit.after.revision,after:{...head.commit.after,revision:head.commit.after.revision+1,shots,images}});await store.close();
+ const runtime=await openImageWorkspaceRuntime({...f.options,workspaceEpoch:2});let seq=0;
+ const request=(command:Parameters<typeof runtime.request>[0]['command'])=>runtime.request({owner:runtime.open().snapshot.owner,requestId:'cold-save-'+(++seq),command});
+ const saved=await request({kind:'save'});expect(saved.kind,JSON.stringify(saved)).toBe('settled');
+ const after=runtime.open().snapshot;expect(Object.values(after.images).filter(i=>i.displayNative).length).toBeLessThan(8);expect(Object.values(after.session.project.images).every(i=>i.content.kind==='source')).toBe(true);
+ const names=after.files.outputNames;expect(names).toHaveLength(8);const bytes=await Promise.all(names.map(n=>fs.readFile(path.join(f.root,n.name))));
+ expect((await request({kind:'save'})).kind).toBe('settled');for(let i=0;i<names.length;i++)expect(await fs.readFile(path.join(f.root,names[i].name))).toEqual(bytes[i]);
+ await close({...f,runtime,request});const reopened=await openImageWorkspaceRuntime({...f.options,workspaceEpoch:3});let next=0;
+ expect(reopened.open().snapshot.files.status).toBe('current');expect(reopened.open().snapshot.session.project).toEqual(after.session.project);
+ await close({...f,runtime:reopened,request:command=>reopened.request({owner:reopened.open().snapshot.owner,requestId:'cold-save-reopen-'+(++next),command})});
+},30000);

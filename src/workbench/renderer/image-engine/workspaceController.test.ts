@@ -183,3 +183,13 @@ it('pauses before capture for unfinished file output and resumes for ordinary un
  h.event({kind:'snapshot',snapshot:{...h.b.snapshot,stateSeq:3,files:{...h.b.snapshot.files,status:'pending',outputPending:true}}});
  expect(h.controller.capture.state().paused).toBe(false);expect(h.controller.dispose()).toBe(true);
 });
+
+
+it('coalesces rapid browsing to the latest target after the in-flight activation settles',async()=>{
+ const h=setup();let release!:()=>void;const gate=new Promise<void>(r=>release=r);const sent:any[]=[];
+ h.bridge.request=async req=>{sent.push(req);if(sent.length===1)await gate;return{kind:'settled',operationId:req.requestId,snapshot:{...h.b.snapshot,stateSeq:sent.length+2,context:{...h.b.snapshot.context,token:'navigation-'+sent.length}}};};
+ const a=h.controller.request({kind:'activateShot',shotId:'one'});await Promise.resolve();
+ const b=h.controller.request({kind:'activateShot',shotId:'two'}),c=h.controller.request({kind:'activateShot',shotId:'three'});
+ release();await a;expect((await b).kind).toBe('canceled');await c;
+ expect(sent.map(r=>r.command.shotId)).toEqual(['one','three']);expect(sent[1].contextToken).toBe('navigation-1');h.controller.dispose();
+});

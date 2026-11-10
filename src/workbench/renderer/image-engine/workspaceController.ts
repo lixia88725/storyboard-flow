@@ -50,15 +50,17 @@ export function createImageWorkspaceController(bridge:ImageWorkspaceBridge,initi
   snapshot=next;if(admissionFault&&fault===admissionFault&&next.context.imageId&&next.images[next.context.imageId]?.layers.find(l=>l.id===next.context.layerId)?.capabilities.paint){fault=undefined;admissionFault=undefined;}if(displayOverride&&displayOverride.stateSeq<=next.stateSeq)displayOverride=undefined;projectDisplay();
   if(!sameDisplay(before,displayIdentity(projected)))displayNotify();syncInputPause();capture.wake();notify();
  };
- let activation:{shotId:string;work:Promise<import('../../../platform/contracts/imageWorkspace').ImageWorkspaceOutcome>}|undefined;
+ let activation:{shotId:string;work:Promise<import('../../../platform/contracts/imageWorkspace').ImageWorkspaceOutcome>}|undefined,activationSequence=0;
  async function request(command:ImageWorkspaceCommand){
   if(disposed)throw Error('Workspace controller is disposed');
-  if(command.kind==='activateShot'&&activation?.shotId===command.shotId)return activation.work;
-  const work=requestTracked(command).result;
-  if(command.kind==='activateShot'){
-   const item={shotId:command.shotId,work};activation=item;
-   void work.finally(()=>{if(activation===item)activation=undefined;}).catch(()=>{});
-  }
+  if(command.kind!=='activateShot')return requestTracked(command).result;
+  if(activation?.shotId===command.shotId)return activation.work;
+  // Browse immediately in the UI, but only activate the latest waiting target.
+  // A started native operation still settles; the next request binds its NEW context.
+  const sequence=++activationSequence,previous=activation?.work;
+  const work=previous?previous.catch(()=>undefined).then(()=>sequence===activationSequence?requestTracked(command).result:{kind:'canceled' as const,operationId:'superseded-navigation'}):requestTracked(command).result;
+  const item={shotId:command.shotId,work};activation=item;
+  void work.finally(()=>{if(activation===item)activation=undefined;}).catch(()=>{});
   return work;
  }
  function requestTracked(command:ImageWorkspaceCommand){

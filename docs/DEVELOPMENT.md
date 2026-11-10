@@ -128,7 +128,7 @@ Mac日常流程专项：完整build及本轮native组件准备后，`FLOW_IMAGE_
 预览调度回归位于 `workspaceRuntime.test.ts`：一次可见需求超过4张、画后无需第二次需求即可更新、旧版本检查在途与绘画交错后补新版本。`flow-native-daily-smoke.mjs` 同时检查真实落笔后thumbnail能力变化，再覆盖原有Save/Refresh/恢复/关闭重开流程。
 
 
-落笔准入与大批导入组合验收：在上述原生导入性能专项环境下增加 `FLOW_ADMISSION_REGRESSION=1`。脚本复用300张合成图，使用真实鼠标检查已激活及未激活锁定板均不发送 begin、不创建恢复记录；注入250ms激活延迟后直接在第80/160/240张静态卡片落笔，核对各自版本与其他图片不变，再正常关闭重开。共享用例位于 `scripts/flow-native-admission-cases.cjs`。Runtime聚焦覆盖24张冷图竞争时前台目标提升、恢复补需求；queue测试进入 `allowed-image-engine-suite.json`。耗时指标仍不等同于真实数位笔延迟。
+落笔准入与大批导入组合验收：在上述原生导入性能专项环境下增加 `FLOW_ADMISSION_REGRESSION=1`。脚本复用300张合成图，使用真实鼠标检查已激活及未激活锁定板均不发送 begin、不创建恢复记录；注入250ms激活延迟后在第80/160/240张静态卡片做指针手势，确认不产生绘画输入；再在对应主画布落笔，核对各自版本与其他图片不变，再正常关闭重开。共享用例位于 `scripts/flow-native-admission-cases.cjs`。Runtime聚焦覆盖24张冷图竞争时前台目标提升、恢复补需求；queue测试进入 `allowed-image-engine-suite.json`。耗时指标仍不等同于真实数位笔延迟。
 
 取消后继续绘画专项：给300图原生导入性能脚本增加 `FLOW_CANCEL_REGRESSION=1`，真实鼠标落笔、等待像素变化、Escape取消并核对像素/历史恢复，连续两次后执行原有12笔及正常关闭重开；可同时开启准入专项。`imageEngineDetached.test.ts` 覆盖真实Session+native取消后绘画持久化及重开；`nativePipeline.test.ts` 验证确认的新epoch与异常取消回执仍保留输入。
 
@@ -138,3 +138,7 @@ Mac日常流程专项：完整build及本轮native组件准备后，`FLOW_IMAGE_
 真实素材专项中断后，仅对该脚本自有`/private/tmp/flow-native-workbench-*`测试项目，可配合原`FLOW_ARTIST_SOURCE`指定`FLOW_ARTIST_RESUME_OUT`复测核对恢复、Save、原画面/项目不变、正常关闭与重开；不重做整批导入，不用于自动处理用户项目。其输出为独立save-retry证据，不能伪称首次Save成功。
 
 真实素材重开验收追加实际第一笔与Undo，要求revision变化、像素改变、撤销回原像素、无保留输入并正常关闭。恢复重试receipt不能替代从空目录首次导入全流程结果；绘画/首次切图/首次Save分别记录，已准备项目的再次Save不可冒充首次保存性能。
+
+本轮主画布唯一绘画入口：`flow-native-admission-cases.cjs`先在grid手势断言零begin/零revision/无绘画输入节点，再从viewer画；workbench专项以viewer全尺寸像素与grid静态预览分别比较Undo/Redo/重开，不要求两种分辨率逐字节相等。旧source/protected专项driver的双实时canvas断言尚未迁移，不能直接计为本轮通过。
+
+轻量预览与快速保存新增获准测试`sourcePreview.test.ts`和`imageEngineSourceTiffOutput.test.ts`。真实源专项记录`firstViewportPreviewsMs`及Save前后source/native数量；`FLOW_WORKSPACE_TIMINGS=1`将source-preview/native-thumbnail/native-prepare/save-source-probe/save-source-output/save-publish/save-total分段毫秒写入测试进程日志。性能测量与完整测试串行，禁止用缓存后的Save代替首次Save。
