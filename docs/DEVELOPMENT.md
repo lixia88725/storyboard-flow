@@ -142,3 +142,5 @@ Mac日常流程专项：完整build及本轮native组件准备后，`FLOW_IMAGE_
 本轮主画布唯一绘画入口：`flow-native-admission-cases.cjs`先在grid手势断言零begin/零revision/无绘画输入节点，再从viewer画；workbench专项以viewer全尺寸像素与grid静态预览分别比较Undo/Redo/重开，不要求两种分辨率逐字节相等。旧source/protected专项driver的双实时canvas断言尚未迁移，不能直接计为本轮通过。
 
 轻量预览与快速保存新增获准测试`sourcePreview.test.ts`和`imageEngineSourceTiffOutput.test.ts`。真实源专项记录`firstViewportPreviewsMs`及Save前后source/native数量；`FLOW_WORKSPACE_TIMINGS=1`将source-preview/native-thumbnail/native-prepare/save-source-probe/save-source-output/save-publish/save-total分段毫秒写入测试进程日志。性能测量与完整测试串行，禁止用缓存后的Save代替首次Save。
+
+绘画安静呈现：`flow-native-workbench-smoke.mjs` 的实际落笔阶段逐帧记录 `quiet-paint-frames.json`，核对新建/删除及有能力的历史按钮亮度稳定，实际disabled仍出现，且无“更新预览”浮层；随后仍验证缩略图像素更新、撤销/重做、保存与正常重开。

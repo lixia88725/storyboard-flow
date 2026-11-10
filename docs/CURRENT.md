@@ -1,5 +1,15 @@
 # 当前状态与剩余工作
 
+## 绘画时按钮与预览安静刷新（2026-11-10）
+
+用户反馈每笔结束时故事板工具按钮闪动。原因是临时绘画准入保护切换原生disabled，使通用样式在1与0.35透明度间往返。现将已有操作能力的视觉亮度与短暂准入保护分开；实际disabled/canNavigate不放开，没有历史可撤销/重做及真实不可用状态仍变暗。移除正常“更新预览”浮层，继续保留原预览直至新像素就绪，左下角状态及真实错误保留。
+
+完整build通过（`/private/tmp/flow-quiet-paint-build.log`）。真实隔离Electron GUI通过（`/private/tmp/flow-quiet-paint-gui2.log`、`flow-native-workbench-1CULQR`）：69帧按钮亮度均1，其中37帧实际disabled，更新提示0次；绘画/缩略图更新、撤销/重做、新建白板、6次含延迟的切图、Save/重复Save、正常关闭重开和初始化期间关闭均通过。初次GUI在新建板后的脚本取样超时：旧采样函数把所有卡片算入当前板，现只取当前viewer及同ID缩略图，保留像素断言；失败日志 `flow-quiet-paint-gui.log` 未删除。最终两份获准清单合并去重，154文件/1629项全部通过，561.57s、exit0（`/private/tmp/flow-quiet-paint-suite.log`）。
+
+试用启动器再次完整构建后启动新版进程，并取得独立profile实例锁（`/private/tmp/flow-quiet-paint-trial-launch.log`）；未自动打开项目，未以外部原生截图工具确认该试用窗口可见性。
+
+改动限呈现及对应GUI检查；README启动、AGENTS规则、ARCHITECTURE数据与接口契约不变，无需修改。DESIGN与DEVELOPMENT同步行为和证据入口。未合main/推送，未改用户画稿；数位笔与Windows未验。
+
 ## 浏览与绘画分离、轻量预览、来源 TIFF 增量保存（2026-11-10）
 
 当前仍在 `codex/image-engine-integration` 隔离试用树，未合 main、推送或发布。已组合三个局部切片：故事板卡片只浏览/选择/文字与排序，主画布绘画；可见缩略图由保管原件生成独立小预览，不再为整屏准备完整原生编辑文档；未编辑且符合条件的经典 TIFF 保存时保留像素/图层资源原字节，只追加 Flow 元数据。当前图优先，空闲时预取前后邻图，连续切图合并尚未执行的中间目标。保存和关闭先停止后台生产，再让已启动任务结算，避免暂停中断已准备候选；即时冷项目保存新增真实回归。

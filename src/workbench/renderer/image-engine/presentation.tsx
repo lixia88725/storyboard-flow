@@ -39,11 +39,11 @@ export function NativeThumbnail({controller,image}:{controller:ImageWorkspaceCon
   if(cached)draw(cached);else void controller.thumbnail(image.thumbnailId).then(draw).catch(()=>{if(alive)setIssue('预览暂时不可用');});
   return()=>{alive=false;};
  },[controller,image?.imageId,image?.thumbnailId]);
- const shown=shownVersion!==null&&shownVersion.imageId===image?.imageId,updating=shown&&shownVersion.versionId!==(image?.content.kind==='source'?null:image?.displayNative?.versionId??null);
+ const shown=shownVersion!==null&&shownVersion.imageId===image?.imageId;
  const previewIssue=issue||(image?.notice?.code==='thumbnail-unavailable'?image.notice.message:'');
  return <div className="image-stage flow-native-thumbnail" style={{width:'100%',height:'100%',position:'relative',aspectRatio:`${image?.width??640}/${image?.height??360}`}}>
   <canvas ref={canvas} style={{display:'block',width:'100%',height:'100%',objectFit:'contain'}}/>
   {!shown&&<span role="status" style={{position:'absolute',inset:0,display:'grid',placeItems:'center',fontSize:12,color:'#c5cbd3',background:'#25272a',padding:12,textAlign:'center',boxSizing:'border-box'}}>{previewIssue||imageIssueText(image)||'正在准备预览…'}</span>}
-  {shown&&(updating||previewIssue)&&<span role="status" style={{position:'absolute',right:4,bottom:4,fontSize:11,background:'#25272acc',padding:'2px 4px'}}>{previewIssue||'更新预览…'}</span>}
+  {shown&&previewIssue&&<span role="status" style={{position:'absolute',right:4,bottom:4,fontSize:11,background:'#25272acc',padding:'2px 4px'}}>{previewIssue}</span>}
  </div>;
 }

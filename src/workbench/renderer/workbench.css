@@ -435,3 +435,6 @@
 
 /* Small Pending cards must scale their picture below the board's 70px floor. */
 .flow-workbench .wb-pending-grid .wb-card-picture { min-width:0; min-height:0; width:100%; overflow:hidden; }
+
+/* Keep ordinary paint settlement quiet; actual disabled admission stays intact. */
+.flow-workbench .wb-board-actions button[data-visual-available="true"]:disabled { opacity:1; }
