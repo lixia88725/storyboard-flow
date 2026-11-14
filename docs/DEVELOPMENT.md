@@ -14,7 +14,7 @@
 
 | 场景 | 入口 |
 | --- | --- |
-| main 新版启动 | 根目录 `启动 Storyboard Flow.command`：先构建、开启原生路径，使用 `.hermes/native-main/userData`，默认进入选择页；旧试用脚本为同一入口别名 |
+| main 新版启动 | 根目录 `启动 Storyboard Flow.command`：先构建、开启原生路径，使用 `.hermes/native-main/userData`，默认进入选择页；唯一源码启动脚本，重复试用入口已移除 |
 | 修改主进程与界面的桥接（preload） | 运行 `npm run check:preload`（TS/CJS桥接一致性检查） |
 | 修改打包资源 | 运行 `npm run prepare:package-resources`；Windows用内置Python，macOS用可用Python3，缺失时报告，不擅自安装 |
 

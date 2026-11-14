@@ -1,5 +1,11 @@
 # 当前状态与剩余工作
 
+## 唯一启动脚本（2026-11-14）
+
+移除仅转发到正式启动器的 `试用新版 Storyboard Flow.command`，根目录只保留 `启动 Storyboard Flow.command`。正式启动器及配置、项目和恢复数据均未改动；README 与开发入口同步。仅删除重复别名，不改变运行行为；正式脚本语法通过，启动器专项 11/11 通过（`/private/tmp/flow-single-launcher-tests-unsandboxed.log`）；初次沙箱运行因 `/dev/fd` 权限导致合成 shell 用例失败，原日志保留。不重复产品全量和构建。下方同名试用入口说明为历史记录。
+
+本地清理移除了两份 11 月 4 日的 macOS 试用包、配套的「打开试画」脚本、可重建的 `dist-resources/` 和旧缓存备份，合计约 1.1 GB。旧包的验证日志、试画项目和恢复样本仍保留。
+
 ## 维护交接收口（2026-11-10）
 
 当前图片发动机为 **PhotoCraft（Rust）**，由 Flow 常驻宿主接入；维护边界见 [ARCHITECTURE](ARCHITECTURE.md#当前图片发动机photocraft)，构建、测试与性能定位见 [DEVELOPMENT](DEVELOPMENT.md)，上游版本和补丁见 [组件 README](../native/photocraft/README.md)。

@@ -26,7 +26,7 @@ npm run setup:photoshop-tiff-deps
 
 然后双击 `启动 Storyboard Flow.command`。启动器会构建并打开工作台；首次使用时，可以打开已有 Flow 项目，或从 JPEG、PNG、受支持的 TIFF 创建一个独立项目。来源文件保留在原处。开发新版热更新时使用 `FLOW_NATIVE_WORKSPACE=1 npm run dev`；直接入口仍保留旧路径分支，不省略该开关。
 
-普通启动器现进入新版图片引擎，先构建再启动，使用 `.hermes/native-main/userData` 中的独立配置。旧「试用新版」脚本只是同一入口的快捷方式，不再启动另一份版本；原试用配置已按用户要求清除，新版从默认设置开始。当前验证与平台限制见[当前进度](docs/CURRENT.md)。
+普通启动器现进入新版图片引擎，先构建再启动，使用 `.hermes/native-main/userData` 中的独立配置。重复的「试用新版」脚本已移除，只保留此启动入口。当前验证与平台限制见[当前进度](docs/CURRENT.md)。
 
 **什么时候点「保存」？** 草图、排序和对白会自动暂存在项目文件夹中（状态栏显示「已自动暂存」）。准备让外部绘画工具看到这次修改时，再点「保存」：点顶栏中央的项目名可以编辑命名信息。保存时按项目名、场次、作者和版本同步工作图与文件名、更新 Pending 位置，并将已删除镜头对应的工作图移到系统废纸篓。点故事板工具栏「新建板」旁的「添加板」时，只会立即写入新加入 Pending 的那批图片。其他画稿仍需显式保存。 在其他工具里改过受支持的 TIFF 后，回到工作台点顶部的文件夹向内箭头图标取回改动。需要独立副本时，先在访达/资源管理器里复制项目文件夹，再用「打开」打开副本。分层 TIFF 交换支持部分图层特性，不保证完整保留 Photoshop 的所有效果。
 
@@ -54,7 +54,7 @@ Double-click `启动 Storyboard Flow.command` to build and launch the app. On fi
 
 The current image engine is **PhotoCraft (Rust)**. Running this engine and packaging require the explicitly prepared Rust 1.99.1 components; see [native setup and compatibility limits](native/photocraft/README.md). Flow owns storyboard organization, scheduling, persistence and recovery. PhotoCraft support does not imply arbitrary Photoshop fidelity or that every export capability is available in the current UI.
 
-The normal launcher now starts the accepted native image engine from main, with fresh settings in `.hermes/native-main/userData`. The former trial launcher is an alias of the same entry. Existing project folders are not moved or reset. See [CURRENT](docs/CURRENT.md) for validation and platform limits.
+The normal launcher now starts the accepted native image engine from main, with fresh settings in `.hermes/native-main/userData`. The redundant trial launcher has been removed. Existing project folders are not moved or reset. See [CURRENT](docs/CURRENT.md) for validation and platform limits.
 
 **When should I use Save?** Flow automatically checkpoints sketches, shot order, and dialogue in the project folder (the status bar reads "已自动暂存"). Choose **Save** when you want your edits to reach the working image files. It applies the naming rule to filenames, updates pixels and Pending locations, and sends working images for deleted shots to the system Trash. Click the centered project title to edit the naming fields. **添加板** beside **新建板** in the storyboard toolbar writes only the newly added images to Pending. After editing a supported TIFF in another tool, click the folder-with-inward-arrow icon in the header to pull the changes back. For an independent copy, duplicate the project folder in Finder/Explorer and open the copy with **Open**. Layered TIFF exchange supports a subset of layer features; full Photoshop fidelity is not guaranteed.
 
