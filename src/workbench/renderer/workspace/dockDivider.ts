@@ -11,14 +11,12 @@ export type DividerState = { split: number; collapsed: [boolean, boolean] };
 /** Width of a folded column: the icon rail. */
 export const COLLAPSED_COLUMN = 40;
 export const DIVIDER_WIDTH = 5;
-export const MIN_LEFT_COLUMN = 240;
-export const MIN_RIGHT_COLUMN = 260;
+export const MIN_LEFT_COLUMN = 160;
+export const MIN_RIGHT_COLUMN = 180;
 /** The pointer must pass the minimum by this much before that column folds. */
 export const FOLD_TRAVEL = 24;
 /** Narrow docks share the width instead of overflowing; matches the CSS min() tracks. */
 export const NARROW_SHARE = 0.4;
-export const MIN_SPLIT = 25;
-export const MAX_SPLIT = 75;
 
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 const availableOf = (dockWidth: number) => Math.max(0, dockWidth - DIVIDER_WIDTH);
@@ -32,14 +30,22 @@ export const columnMinimums = (dockWidth: number) => {
   };
 };
 
+const boundedSplit = (split: number, dockWidth: number): number => {
+  const available = availableOf(dockWidth);
+  if (available === 0) return split;
+  const minimum = columnMinimums(dockWidth);
+  return clamp(split, minimum.left / available * 100, (available - minimum.right) / available * 100);
+};
+
 export const gridTemplate = (state: DividerState): string => {
   const [left, right] = state.collapsed;
   if (left && right) return `${COLLAPSED_COLUMN}px minmax(0,1fr) ${COLLAPSED_COLUMN}px`;
   if (left) return `${COLLAPSED_COLUMN}px ${DIVIDER_WIDTH}px minmax(0,1fr)`;
   if (right) return `minmax(0,1fr) ${DIVIDER_WIDTH}px ${COLLAPSED_COLUMN}px`;
-  // min() keeps each minimum inside the dock so a narrow window never overflows.
-  return `minmax(min(${MIN_LEFT_COLUMN}px, ${NARROW_SHARE * 100}%), ${state.split}fr) ${DIVIDER_WIDTH}px `
-    + `minmax(min(${MIN_RIGHT_COLUMN}px, ${NARROW_SHARE * 100}%), ${100 - state.split}fr)`;
+  // Use the same width as the drag model, excluding the divider itself.
+  const narrowMinimum = `calc(${NARROW_SHARE * 100}% - ${DIVIDER_WIDTH * NARROW_SHARE}px)`;
+  return `minmax(min(${MIN_LEFT_COLUMN}px, ${narrowMinimum}), ${state.split}fr) ${DIVIDER_WIDTH}px `
+    + `minmax(min(${MIN_RIGHT_COLUMN}px, ${narrowMinimum}), ${100 - state.split}fr)`;
 };
 
 export type DividerDrag = {
@@ -84,7 +90,7 @@ export const dragDivider = (drag: DividerDrag, dx: number, previous: DividerStat
   const split = collapsed[0] || collapsed[1]
     ? previous.split
     : available > 0
-      ? clamp(left / available * 100, MIN_SPLIT, MAX_SPLIT)
+      ? boundedSplit(left / available * 100, drag.dockWidth)
       : drag.state.split;
   return { split, collapsed };
 };
@@ -118,20 +124,14 @@ export const keyboardDivider = (
     if (collapsed[1]) return undefined;
     return { split: state.split, collapsed: [collapsed[0], true] };
   }
-  if (key === 'ArrowLeft') {
-    if (collapsed[1]) return { split: state.split, collapsed: [collapsed[0], false] };
-    if (collapsed[0]) return undefined;
-    return { split: clamp(state.split - step, MIN_SPLIT, MAX_SPLIT), collapsed };
+  if (key !== 'ArrowLeft' && key !== 'ArrowRight') return undefined;
+  const growing = key === 'ArrowRight' ? 0 : 1;
+  if (collapsed[growing]) {
+    collapsed[growing] = false;
+    return { split: state.split, collapsed };
   }
-  if (key === 'ArrowRight') {
-    if (collapsed[0]) {
-      const minimum = columnMinimums(dockWidth);
-      const available = availableOf(dockWidth);
-      const share = available > 0 ? clamp(minimum.left / available * 100, MIN_SPLIT, MAX_SPLIT) : MIN_SPLIT;
-      return { split: clamp(Math.max(state.split, share), MIN_SPLIT, MAX_SPLIT), collapsed: [false, collapsed[1]] };
-    }
-    if (collapsed[1]) return undefined;
-    return { split: clamp(state.split + step, MIN_SPLIT, MAX_SPLIT), collapsed };
-  }
-  return undefined;
+  if (collapsed[1 - growing] || availableOf(dockWidth) === 0) return undefined;
+  const currentSplit = boundedSplit(state.split, dockWidth);
+  const nextSplit = currentSplit + (growing === 0 ? step : -step);
+  return { split: boundedSplit(nextSplit, dockWidth), collapsed };
 };

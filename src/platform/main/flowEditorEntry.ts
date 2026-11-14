@@ -37,7 +37,7 @@ else app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 1280, height: 900, webPreferences: {
     preload: path.join(repo, 'src/platform/preload/flowEditor.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false
   } });
-  if (process.env.FLOW_NATIVE_WORKSPACE === '1') {
+  if (app.isPackaged || process.env.FLOW_NATIVE_WORKSPACE === '1') {
     // Install before the dynamic import: a user can close the new window while
     // the native platform module or its first project is still loading.
     let closeDuringBoot=false;

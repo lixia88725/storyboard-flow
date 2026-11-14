@@ -13,7 +13,7 @@
 | 实时画面与交互 | `src/drawing/renderer/image-engine/`、工作台控制器；网格仅浏览，主画布绘画 |
 | 快速缩略图 | `sourcePreview.ts` 使用 sharp / PSD 内嵌预览，避免为浏览整批建立编辑文档；缓存不是作品权威 |
 
-源码启动器设置 `FLOW_NATIVE_WORKSPACE=1`。直接 Electron/dev 入口仍有旧引擎分支；不能据此声称所有旧代码已删除或所有发布平台已迁移。当前验收、Windows 和打包限制以 [CURRENT](CURRENT.md) 为准。
+打包应用默认进入新版工作台，从包内读取 PhotoCraft 组件。源码启动器设置 `FLOW_NATIVE_WORKSPACE=1`；直接 Electron/dev 入口在未设置该变量时仍走旧引擎分支。当前验收、Windows 和打包限制以 [CURRENT](CURRENT.md) 为准。
 
 ## 轻量浏览与按改动输出（2026-11-10）
 
@@ -57,7 +57,7 @@ ProjectStore 保持原 Interface，Implementation 改为 `journalProjectStore` �
 
 `session/core/snapshotHistory` 为 V1/V2 共用的唯一历史算法。新路径先 prepare 历史计划，Main 的 V2 store 发布可达 commit/head 后再 commit 同一计划；native accepted 是项目决定后的结算，不是项目提交权威。孤立 commit 文件不自动认领，未结算 native 决定单列恢复账本。当前重开继续沿用清空进程内 Undo 栈的行为，不声称已实现跨重启 Undo。
 
-V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目录保护都不等于跨进程锁。全项目恢复预算包括实际留存与工作进程预留，不能把各子模块的局部额度相加后仍声称受 8 GiB 总额保护。 Runtime中Sources、Output、journal与lease共用同一根预算；journal按组真实编码增量预留并在同步完成后结算，未知写入保留额度，严格重放后按独占日志目录实际增量核对。Native store额度单独完整保守预留，不把固定小额来源分区当并发限流。`platform/main/imageProjectLease` 通过独立原生 guard 持有固定 inode 的 OS 锁，同时持久记录 Main 身份。guard 异常退出关闭当前写门，但不发布正常释放；旧 Main 未确认退出时，新 guard 也拒绝接管，保护仍在途的文件副作用。正常 release 必须由调用方先排空义务，不能把锁失效当取消。当前工作台已在 macOS 验证。Windows 后端使用本地 NTFS 文件锁、句柄身份和进程存活检查；专用验证流程覆盖锁组件。Windows 工作台仍需适配持久化文件操作。
+V2 store 的 writerAuthority 必须由 Main 注入；同进程 Map 与恢复目录保护都不等于跨进程锁。全项目恢复预算包括实际留存与工作进程预留，不能把各子模块的局部额度相加后仍声称受 8 GiB 总额保护。 Runtime中Sources、Output、journal与lease共用同一根预算；journal按组真实编码增量预留并在同步完成后结算，未知写入保留额度，严格重放后按独占日志目录实际增量核对。Native store额度单独完整保守预留，不把固定小额来源分区当并发限流。`platform/main/imageProjectLease` 通过独立原生 guard 持有固定 inode 的 OS 锁，同时持久记录 Main 身份。guard 异常退出关闭当前写门，但不发布正常释放；旧 Main 未确认退出时，新 guard 也拒绝接管，保护仍在途的文件副作用。正常 release 必须由调用方先排空义务，不能把锁失效当取消。macOS 已接入普通启动器并在本机验证。Windows 项目锁后端已实现，限固定本地 NTFS。锁目录和文件按已核对的目录句柄逐级打开，禁止跟随重解析点。所有者标记用已同步的临时文件句柄在同一目录发布，无需重新解析完整路径。标记发布流程不代表工作区日志的目录项落盘已认证。Windows 实测和发布状态见 [CURRENT](CURRENT.md#Windows-项目写入锁候选2026-11-14)。
 
 Source保管出现未知结果时，Runtime先停止新保管工作，沿Sources现有操作核对磁盘与保留额度，再恢复处理；不能直接close/reopen绕过未知写入。恢复先排空已接受的绘画决定，保留当前NativeRef及撤销记录，失败的图片解码仍单独报告，不被一次恢复成功回执抹掉。
 

@@ -224,9 +224,8 @@ mod supported {
         let mut file = create_temporary(tree.parent(), &temporary)?;
         file.write_all(bytes).map_err(err)?;
         file.sync_all().map_err(err)?;
-        drop(file);
         tree.check()?;
-        if !publish(tree.parent(), &temporary, name, false)?
+        if !publish(tree.parent(), file, &temporary, name, false)?
             && evidence_bytes(tree, name)? != bytes
         {
             return Err("copy evidence publication collision; retained".into());
@@ -307,14 +306,13 @@ mod supported {
         }
         temp.write_all(&bytes).map_err(err)?;
         temp.sync_all().map_err(err)?;
-        drop(temp);
         tree.check()?;
         if let Some(expected) = expected {
             if read_owner(tree)?.1 != *expected {
                 return Err("owner marker replaced before publication".into());
             }
         }
-        if !publish(tree.parent(), &name, "owner.json", expected.is_some())? {
+        if !publish(tree.parent(), temp, &name, "owner.json", expected.is_some())? {
             return Err("unexpected owner marker at publication; retained".into());
         }
         Ok(read_owner(tree)?.1)

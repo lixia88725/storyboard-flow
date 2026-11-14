@@ -42,7 +42,7 @@ export function parseWorkspaceLayout(raw: string | null): WorkspaceLayout {
         value.layout.flat().slice().sort().join() !== panels.slice().sort().join() ||
         !Array.isArray(value.hidden) || !value.hidden.every((id: unknown) => typeof id === 'string' && panels.includes(id as WorkspacePanel)) ||
         new Set(value.hidden).size !== value.hidden.length ||
-        !Number.isFinite(value.split) || value.split < 25 || value.split > 75 ||
+        !Number.isFinite(value.split) || value.split < 0 || value.split > 100 ||
         !Number.isFinite(value.tile) || value.tile < 150 || value.tile > 460 ||
         !validZoom(value.zoom) || typeof value.japanese !== 'boolean') return fallback;
     const heights = Object.fromEntries(Object.entries(value.heights ?? {}).filter(([id, height]) =>

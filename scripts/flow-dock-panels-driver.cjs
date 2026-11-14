@@ -54,13 +54,19 @@ async function prefsWhen(test,label){for(let i=0;i<20;i++){const value=await pre
 async function dragDivider(dx,steps){const p=await grabDivider();const count=steps??Math.max(6,Math.ceil(Math.abs(dx)/20));for(let i=1;i<=count;i++){await mouse('mouseMove',p.x+dx*i/count,p.y);}await releaseDivider(p,dx);}
 async function moveDivider(dx){const p=await dividerPoint();await mouse('mouseMove',p.x+dx,p.y);}
 const collapsedDom=()=>js(`[...document.querySelectorAll('.wb-column')].map(c=>c.classList.contains('is-collapsed'))`);
+const minimumWidth={left:160,right:180};
+const columnWidth=side=>js(`document.querySelector('[data-dock-column="${side==='left'?0:1}"]').getBoundingClientRect().width`);
+async function expectNarrowColumn(side){
+ assert.deepEqual(await collapsedDom(),[false,false],side+' stays expanded at its new minimum');
+ assert.ok(Math.abs(await columnWidth(side)-minimumWidth[side])<1,side+' can reach its new minimum');
+ const panel=side==='left'?'board':'canvas';
+ assert.ok(await js(`(()=>{const tools=document.querySelector('.wb-panel-${panel} .wb-panel-tools');return tools.scrollWidth<=tools.clientWidth+1;})()`),panel+' toolbar fits the narrow column');
+}
 const keyCodeOf={ArrowLeft:'Left',ArrowRight:'Right',Home:'Home',End:'End'};
 async function keyDivider(key,shift=false){const code=keyCodeOf[key]??key;await js(`document.querySelector('.wb-divider').focus()`);win.webContents.sendInputEvent({type:'keyDown',keyCode:code,modifiers:shift?['shift']:[]});win.webContents.sendInputEvent({type:'keyUp',keyCode:code,modifiers:shift?['shift']:[]});await delay(220);}
 // Drag distance that reaches 8px past a column's fold threshold. Measured from the live
 // columns, because preferences are written after a debounce and can lag the real split.
-async function foldDistance(side){const g=await js(`(()=>{const d=document.querySelector('.wb-dock').getBoundingClientRect();const c=[...document.querySelectorAll('.wb-column')].map(x=>x.getBoundingClientRect().width);return {width:d.width,left:c[0],right:c[1]}})()`);
- if(side==='left')return -(g.left-(240-24-8));
- return g.right-(260-24-8);}
+async function foldDistance(side){return (await columnWidth(side)-minimumWidth[side]+32)*(side==='left'?-1:1);}
 app.on('window-all-closed',()=>save(phase+'-closed.json',{}));
 process.argv=[process.argv[0],entry,root,userData,'--workbench'];
 import(pathToFileURL(entry).href).then(async()=>{
@@ -75,6 +81,7 @@ import(pathToFileURL(entry).href).then(async()=>{
   assert.equal((await dividerFacts()).text,'两栏已折叠');
   // A saved double fold is restored from the separator alone, with no permanent buttons.
   await keyDivider('ArrowRight');await keyDivider('ArrowLeft');
+  await expectNarrowColumn('left');
   const expected=JSON.parse(fs.readFileSync(path.join(run,'expected-heights.json')));const current=await sizes();for(const k of Object.keys(expected))assert.ok(Math.abs(expected[k]-current[k])<2,'restored '+k);
   await geometry('reopen expanded');save(phase+'-done.json',{ok:true,phase});win.close();return;
  }
@@ -101,6 +108,7 @@ import(pathToFileURL(entry).href).then(async()=>{
  // must stay inside the window.
  const leftDx=await foldDistance('left');
  const p=await grabDivider();
+ await mouse('mouseMove',p.x+leftDx+28,p.y);await expectNarrowColumn('left');
  await mouse('mouseMove',p.x+leftDx,p.y);
  assert.deepEqual(await collapsedDom(),[true,false],'past the band folds the left column mid-drag');
  // Reversing inside the same gesture restores it without releasing capture.
@@ -143,7 +151,10 @@ import(pathToFileURL(entry).href).then(async()=>{
  assert.ok(committedSplit>startSplit+1,'an ordinary drag commits');await delay(400);
  assert.equal((await prefs()).split,committedSplit,'the committed value is stable');
  // Fold the right column by dragging well past its minimum.
- const rightDx=await foldDistance('right');await dragDivider(rightDx);assert.deepEqual((await prefs()).collapsed,[false,true]);cases.push(await geometry('right collapsed'));
+ const rightDx=await foldDistance('right');const rp=await grabDivider();
+ await mouse('mouseMove',rp.x+rightDx-28,rp.y);await expectNarrowColumn('right');
+ await mouse('mouseMove',rp.x+rightDx,rp.y);await releaseDivider(rp,rightDx);
+ assert.deepEqual((await prefs()).collapsed,[false,true]);cases.push(await geometry('right collapsed'));
  assert.equal(await js(`document.querySelectorAll('[data-dock-column="1"] .wb-dock-icons button').length`),3);
  await click('打开画布面板');cases.push(await geometry('canvas flyout'));fs.writeFileSync(path.join(run,'canvas-flyout.png'),(await win.webContents.capturePage()).toPNG());
  await click('打开动作与对白面板');assert.equal(await js(`getComputedStyle(document.querySelector('[data-panel="canvas"]')).display`),'none');assert.notEqual(await js(`getComputedStyle(document.querySelector('[data-panel="info"]')).display`),'none');
@@ -159,10 +170,10 @@ import(pathToFileURL(entry).href).then(async()=>{
  win.setSize(1000,650);cases.push(await geometry('short both collapsed'));
  await keyDivider('ArrowRight');await keyDivider('ArrowLeft');assert.deepEqual(await collapsedDom(),[false,false]);cases.push(await geometry('short expanded'));
  win.setSize(1500,950);await delay(250);
- // Arrow keys resize by 2 and stay inside the accepted preference range.
- await keyDivider('ArrowRight',true);const afterKeys=await prefs();assert.ok(afterKeys.split<=75);assert.deepEqual(afterKeys.collapsed,[false,false]);
+ // Save the narrow layout and ensure the fold shortcut remembers it.
+ await dragDivider(await foldDistance('left')+28);await expectNarrowColumn('left');
  await dragDivider(await foldDistance('left'));assert.deepEqual((await prefs()).collapsed,[true,false]);
- await keyDivider('ArrowRight');assert.deepEqual((await prefs()).collapsed,[false,false]);
+ await keyDivider('ArrowRight');await expectNarrowColumn('left');
  const finalHeights=await sizes();await keyDivider('Home');await keyDivider('End');await delay(250);
  assert.deepEqual(read(),before,'layout must not write project state');
  assert.equal(await js(`document.querySelector('.wb-card.is-selected')?.dataset.boardId??null`),selectedBefore,'layout keeps the board selection');

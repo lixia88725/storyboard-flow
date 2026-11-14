@@ -213,7 +213,13 @@ pub(super) fn create_temporary(parent: &Parent, name: &str) -> Result<File> {
     .map_err(err)
 }
 
-pub(super) fn publish(parent: &Parent, from: &str, to: &str, replace: bool) -> Result<bool> {
+pub(super) fn publish(
+    parent: &Parent,
+    _file: File,
+    from: &str,
+    to: &str,
+    replace: bool,
+) -> Result<bool> {
     let moved = if replace {
         rfs::renameat(parent, from, parent, to).map_err(err)?;
         true

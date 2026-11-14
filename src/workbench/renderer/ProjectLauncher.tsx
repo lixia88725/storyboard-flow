@@ -1,3 +1,4 @@
+import { Clapperboard, FolderOpen, Plus } from 'lucide-react';
 import type { FlowRecentProject } from '../../platform/contracts/flowEditor';
 
 /** First window with no project. The entry offers two actions: Main inspects the
@@ -11,33 +12,38 @@ export function ProjectLauncher({ recent, busy, message, onCreate, onOpen, onOpe
 }) {
   return <main className="flow-launcher" data-project-launcher="true">
     <section className="launcher-card" aria-label="项目入口">
-      <header>
+      <header className="launcher-heading">
+        <span className="launcher-symbol" aria-hidden="true"><Clapperboard size={30} strokeWidth={1.65} /></span>
         <h1>Storyboard Flow</h1>
-        <p>打开 Flow 项目或图片文件夹，或者从空白项目开始。</p>
       </header>
       <div className="launcher-actions">
-        <button className="primary" data-launcher-open="true" disabled={busy} onClick={onOpen}>{busy ? '处理中…' : '打开…'}</button>
-        <button data-launcher-new="true" disabled={busy} onClick={onCreate}>新建项目…</button>
+        <button className="primary" data-launcher-open="true" disabled={busy} onClick={onOpen}><FolderOpen size={16} aria-hidden="true" />{busy ? '处理中…' : '打开…'}</button>
+        <button data-launcher-new="true" disabled={busy} onClick={onCreate}><Plus size={16} aria-hidden="true" />新建项目…</button>
       </div>
       {message && <p className="launcher-message" role="alert">{message}</p>}
-      <section className="launcher-recent" aria-label="最近项目">
+      {recent.length > 0 && <section className="launcher-recent" aria-label="最近项目">
         <h2>最近项目</h2>
-        {recent.length
-          ? <ul>{recent.map(project => <li key={project.id} data-recent-project={project.id} data-recent-available={project.available || undefined} data-recent-target={project.target}>
+        <ul>{recent.map(project => <li key={project.id} data-recent-project={project.id} data-recent-available={project.available || undefined} data-recent-target={project.target}>
               {project.available
                 ? <button disabled={busy} title={project.target} onClick={() => onOpenRecent(project.id)}>
-                    <span className="launcher-recent-label"><span>{project.name}</span><small className="launcher-recent-target">{project.target}</small></span>
+                    <FolderOpen size={17} aria-hidden="true" />
+                    <span className="launcher-recent-label">
+                      <span>{project.name}</span>
+                      {project.target !== project.name && <small className="launcher-recent-target">{project.target}</small>}
+                    </span>
                   </button>
                 : <div className="launcher-recent-missing">
-                    <span className="launcher-recent-label"><span>{project.name} <small>不可用</small></span><small className="launcher-recent-target">{project.target}</small></span>
+                    <span className="launcher-recent-label">
+                      <span>{project.name} <small>不可用</small></span>
+                      {project.target !== project.name && <small className="launcher-recent-target">{project.target}</small>}
+                    </span>
                     <div>
                       <button disabled={busy} onClick={() => void onRelocateRecent(project.id)}>重新定位…</button>
                       <button disabled={busy} onClick={() => void onRemoveRecent(project.id)}>移除</button>
                     </div>
                   </div>}
             </li>)}</ul>
-          : <p>还没有打开过项目。</p>}
-      </section>
+      </section>}
     </section>
   </main>;
 }

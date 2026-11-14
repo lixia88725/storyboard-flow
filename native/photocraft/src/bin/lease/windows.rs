@@ -1,7 +1,6 @@
 use super::{Result, Stamp, err};
-use std::ptr::null_mut;
 use std::{
-    ffi::{OsStr, c_void},
+    ffi::{OsStr, OsString, c_void},
     fs::{self, File, OpenOptions},
     io,
     os::windows::{
@@ -11,17 +10,31 @@ use std::{
     },
     path::{Component, Path, PathBuf, Prefix},
 };
+use std::{mem::size_of, ptr::null_mut};
 
 type Handle = *mut c_void;
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
-const FILE_LIST_DIRECTORY: u32 = 0x1;
+const FILE_TRAVERSE: u32 = 0x20;
 const FILE_READ_ATTRIBUTES: u32 = 0x80;
 const FILE_SHARE_READ_WRITE: u32 = 3;
-const MOVEFILE_WRITE_THROUGH: u32 = 8;
-const MOVEFILE_REPLACE_EXISTING: u32 = 1;
+const GENERIC_READ: u32 = 0x8000_0000;
+const GENERIC_WRITE: u32 = 0x4000_0000;
+const DELETE: u32 = 0x0001_0000;
+const OBJ_CASE_INSENSITIVE: u32 = 0x40;
+const OBJ_DONT_REPARSE: u32 = 0x1000;
+const FILE_OPEN: u32 = 1;
+const FILE_CREATE: u32 = 2;
+const FILE_OPEN_IF: u32 = 3;
+const FILE_CREATED: usize = 2;
+const FILE_DIRECTORY_FILE: u32 = 1;
+const FILE_WRITE_THROUGH: u32 = 2;
+const FILE_SYNCHRONOUS_IO_NONALERT: u32 = 0x20;
+const FILE_NON_DIRECTORY_FILE: u32 = 0x40;
+const FILE_RENAME_INFORMATION_CLASS: u32 = 10;
+const MAX_LEAF_UNITS: usize = 255;
 const DRIVE_FIXED: u32 = 3;
 const TH32CS_SNAPPROCESS: u32 = 2;
 const ERROR_FILE_EXISTS: i32 = 80;
@@ -69,6 +82,64 @@ struct ProcessEntry {
     executable: [u16; 260],
 }
 
+#[repr(C)]
+struct UnicodeString {
+    length: u16,
+    maximum_length: u16,
+    buffer: *const u16,
+}
+
+#[repr(C)]
+struct ObjectAttributes {
+    length: u32,
+    root_directory: Handle,
+    object_name: *const UnicodeString,
+    attributes: u32,
+    security_descriptor: Handle,
+    security_quality_of_service: Handle,
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct IoStatusBlock {
+    // The native union is either an NTSTATUS or a pointer and has pointer alignment.
+    status_or_pointer: usize,
+    information: usize,
+}
+
+#[repr(C)]
+struct RenameInformation {
+    replace_if_exists: u8,
+    root_directory: Handle,
+    file_name_length: u32,
+    file_name: [u16; MAX_LEAF_UNITS],
+}
+
+#[link(name = "ntdll")]
+unsafe extern "system" {
+    fn NtCreateFile(
+        file: *mut Handle,
+        desired_access: u32,
+        attributes: *const ObjectAttributes,
+        status: *mut IoStatusBlock,
+        allocation_size: *const i64,
+        file_attributes: u32,
+        share_access: u32,
+        disposition: u32,
+        options: u32,
+        ea_buffer: Handle,
+        ea_length: u32,
+    ) -> i32;
+    fn NtSetInformationFile(
+        file: Handle,
+        status: *mut IoStatusBlock,
+        information: *const RenameInformation,
+        length: u32,
+        class: u32,
+    ) -> i32;
+    fn RtlNtStatusToDosError(status: i32) -> u32;
+}
+
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn GetFileInformationByHandle(file: Handle, info: *mut FileInfo) -> i32;
@@ -83,7 +154,6 @@ unsafe extern "system" {
         filesystem: *mut u16,
         filesystem_size: u32,
     ) -> i32;
-    fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32;
     fn GetComputerNameW(name: *mut u16, size: *mut u32) -> i32;
     fn CreateToolhelp32Snapshot(flags: u32, process: u32) -> Handle;
     fn Process32FirstW(snapshot: Handle, entry: *mut ProcessEntry) -> i32;
@@ -101,6 +171,76 @@ unsafe extern "system" {
 
 fn wide(value: &OsStr) -> Vec<u16> {
     value.encode_wide().chain(std::iter::once(0)).collect()
+}
+
+fn leaf(name: &OsStr) -> io::Result<Vec<u16>> {
+    let units: Vec<_> = name.encode_wide().collect();
+    if units.is_empty()
+        || units.len() > MAX_LEAF_UNITS
+        || units.iter().any(|c| matches!(*c, 0 | 47 | 58 | 92))
+        || units.ends_with(&[b'.' as u16])
+        || units.ends_with(&[b' ' as u16])
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid lease path component",
+        ));
+    }
+    Ok(units)
+}
+
+fn nt_error(status: i32) -> io::Error {
+    io::Error::from_raw_os_error(unsafe { RtlNtStatusToDosError(status) } as i32)
+}
+
+fn open_child(
+    parent: &File,
+    name: &OsStr,
+    access: u32,
+    disposition: u32,
+    options: u32,
+) -> io::Result<(File, bool)> {
+    let units = leaf(name)?;
+    let bytes = (units.len() * size_of::<u16>()) as u16;
+    let name = UnicodeString {
+        length: bytes,
+        maximum_length: bytes,
+        buffer: units.as_ptr(),
+    };
+    let attributes = ObjectAttributes {
+        length: size_of::<ObjectAttributes>() as u32,
+        root_directory: parent.as_raw_handle(),
+        object_name: &name,
+        attributes: OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
+        security_descriptor: null_mut(),
+        security_quality_of_service: null_mut(),
+    };
+    let mut handle = null_mut();
+    let mut result = IoStatusBlock::default();
+    // The kernel resolves one leaf under the already opened directory. The
+    // reparse policy applies during resolution, before a create can take effect.
+    let status = unsafe {
+        NtCreateFile(
+            &mut handle,
+            access | SYNCHRONIZE,
+            &attributes,
+            &mut result,
+            std::ptr::null(),
+            0,
+            FILE_SHARE_READ_WRITE,
+            disposition,
+            options | FILE_SYNCHRONOUS_IO_NONALERT,
+            null_mut(),
+            0,
+        )
+    };
+    if status < 0 {
+        return Err(nt_error(status));
+    }
+    Ok((
+        unsafe { File::from_raw_handle(handle) },
+        result.information == FILE_CREATED,
+    ))
 }
 
 fn info(file: &File) -> Result<FileInfo> {
@@ -134,19 +274,22 @@ pub(super) struct Parent {
     handle: File,
 }
 
-fn directory(path: PathBuf) -> Result<Parent> {
-    // A retained directory handle denies rename/delete. Earlier components stay
-    // pinned while each child is opened, and the final entry is never followed.
+fn drive_directory(path: &Path) -> Result<File> {
     let handle = OpenOptions::new()
-        .access_mode(FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES)
+        .access_mode(FILE_TRAVERSE | FILE_READ_ATTRIBUTES)
         .share_mode(FILE_SHARE_READ_WRITE)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
-        .open(&path)
+        .open(path)
         .map_err(err)?;
+    require_directory(&handle)?;
+    Ok(handle)
+}
+
+fn require_directory(handle: &File) -> Result<()> {
     if info(&handle)?.attributes & FILE_ATTRIBUTE_DIRECTORY == 0 {
         return Err("not a directory".into());
     }
-    Ok(Parent { path, handle })
+    Ok(())
 }
 
 pub(super) struct Tree {
@@ -164,8 +307,9 @@ impl Tree {
             return Err("local drive-letter project root required".into());
         }
         let canonical_root = fs::canonicalize(root).map_err(err)?;
-        let expanded = PathBuf::from(format!(r"\\?\{}", root.display()));
-        if canonical_root.as_os_str() != expanded.as_os_str() {
+        let mut expanded = OsString::from(r"\\?\");
+        expanded.push(root.as_os_str());
+        if canonical_root.as_os_str() != expanded {
             return Err("symbolic or aliased project root refused".into());
         }
         let drive = PathBuf::from(format!("{}\\", prefix.as_os_str().to_string_lossy()));
@@ -174,7 +318,10 @@ impl Tree {
         {
             return Err("project must be on a fixed local NTFS drive".into());
         }
-        let drive = directory(drive)?;
+        let drive = Parent {
+            handle: drive_directory(&drive)?,
+            path: drive,
+        };
         let mut filesystem = [0u16; 32];
         if unsafe {
             GetVolumeInformationByHandleW(
@@ -205,11 +352,6 @@ impl Tree {
             let Component::Normal(name) = part else {
                 return Err("non-canonical project path".into());
             };
-            if name.encode_wide().any(|c| c == 0 || c == b':' as u16)
-                || name.to_string_lossy().ends_with(['.', ' '])
-            {
-                return Err("invalid project path component".into());
-            }
             canonical.push(name);
             tree.push(name, false)?;
         }
@@ -224,20 +366,24 @@ impl Tree {
     }
 
     fn push(&mut self, name: &OsStr, create: bool) -> Result<()> {
-        let next = self.parent().path.join(name);
-        if create {
-            match fs::create_dir(&next) {
-                Ok(()) => (),
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (),
-                Err(e) => return Err(err(e)),
-            }
-        }
-        let next = directory(next)?;
-        let identity = stamp(&next.handle)?;
+        let parent = self.parent();
+        let (handle, _) = open_child(
+            &parent.handle,
+            name,
+            FILE_TRAVERSE | FILE_READ_ATTRIBUTES,
+            if create { FILE_OPEN_IF } else { FILE_OPEN },
+            FILE_DIRECTORY_FILE,
+        )
+        .map_err(err)?;
+        require_directory(&handle)?;
+        let identity = stamp(&handle)?;
         if identity.dev != self.stamps[0].dev {
             return Err("project path changed volumes".into());
         }
-        self.dirs.push(next);
+        self.dirs.push(Parent {
+            path: parent.path.join(name),
+            handle,
+        });
         self.stamps.push(identity);
         Ok(())
     }
@@ -249,9 +395,24 @@ impl Tree {
         self.dirs.last().expect("tree contains drive root")
     }
     pub(super) fn check(&self) -> Result<()> {
-        for (pinned, expected) in self.dirs.iter().zip(&self.stamps) {
-            let current = directory(pinned.path.clone())?;
-            if stamp(&pinned.handle)? != *expected || stamp(&current.handle)? != *expected {
+        let mut current = drive_directory(&self.dirs[0].path)?;
+        for (index, (pinned, expected)) in self.dirs.iter().zip(&self.stamps).enumerate() {
+            if index > 0 {
+                let name = pinned
+                    .path
+                    .file_name()
+                    .ok_or("missing pinned directory name")?;
+                current = open_child(
+                    &current,
+                    name,
+                    FILE_TRAVERSE | FILE_READ_ATTRIBUTES,
+                    FILE_OPEN,
+                    FILE_DIRECTORY_FILE,
+                )
+                .map_err(err)?
+                .0;
+            }
+            if stamp(&pinned.handle)? != *expected || stamp(&current)? != *expected {
                 return Err("project directory identity changed".into());
             }
         }
@@ -265,24 +426,15 @@ pub(super) fn plain(
     create: bool,
     writable: bool,
 ) -> Result<(File, bool)> {
-    let target = parent.path.join(name);
-    let mut options = OpenOptions::new();
-    options
-        .read(true)
-        .write(writable)
-        .share_mode(FILE_SHARE_READ_WRITE)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
-    let (file, created) = if create {
-        match options.create_new(true).open(&target) {
-            Ok(file) => (file, true),
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                return plain(parent, name, false, writable);
-            }
-            Err(e) => return Err(err(e)),
-        }
-    } else {
-        (options.open(&target).map_err(err)?, false)
-    };
+    let access = GENERIC_READ | if writable { GENERIC_WRITE } else { 0 };
+    let (file, created) = open_child(
+        &parent.handle,
+        OsStr::new(name),
+        access,
+        if create { FILE_OPEN_IF } else { FILE_OPEN },
+        FILE_NON_DIRECTORY_FILE,
+    )
+    .map_err(err)?;
     if !single_link(&file)? {
         return Err("non-regular or multiply linked lease file".into());
     }
@@ -293,7 +445,13 @@ pub(super) fn plain(
 }
 
 pub(super) fn entry_exists(parent: &Parent, name: &str) -> Result<bool> {
-    match fs::symlink_metadata(parent.path.join(name)) {
+    match open_child(
+        &parent.handle,
+        OsStr::new(name),
+        FILE_READ_ATTRIBUTES,
+        FILE_OPEN,
+        0,
+    ) {
         Ok(_) => Ok(true),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(err(e)),
@@ -301,30 +459,52 @@ pub(super) fn entry_exists(parent: &Parent, name: &str) -> Result<bool> {
 }
 
 pub(super) fn create_temporary(parent: &Parent, name: &str) -> Result<File> {
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .share_mode(FILE_SHARE_READ_WRITE)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(parent.path.join(name))
-        .map_err(err)
+    open_child(
+        &parent.handle,
+        OsStr::new(name),
+        GENERIC_WRITE | DELETE,
+        FILE_CREATE,
+        FILE_NON_DIRECTORY_FILE | FILE_WRITE_THROUGH,
+    )
+    .map(|(file, _)| file)
+    .map_err(err)
 }
 
-pub(super) fn publish(parent: &Parent, from: &str, to: &str, replace: bool) -> Result<bool> {
-    // The marker is file-synced before this same-volume move. This does not
-    // establish Windows directory-entry durability for the project journal.
-    let from = wide(parent.path.join(from).as_os_str());
-    let to = wide(parent.path.join(to).as_os_str());
-    let flags = MOVEFILE_WRITE_THROUGH
-        | if replace {
-            MOVEFILE_REPLACE_EXISTING
-        } else {
-            0
-        };
-    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), flags) } != 0 {
+pub(super) fn publish(
+    _parent: &Parent,
+    file: File,
+    _from: &str,
+    to: &str,
+    replace: bool,
+) -> Result<bool> {
+    let name = leaf(OsStr::new(to)).map_err(err)?;
+    if !single_link(&file)? {
+        return Err("non-regular or multiply linked lease temporary file".into());
+    }
+    // A simple destination name and NULL RootDirectory rename the open file
+    // inside its current directory. No DOS pathname is resolved for either end.
+    // The marker was file-synced; this is not a journal directory flush.
+    let mut rename = RenameInformation {
+        replace_if_exists: u8::from(replace),
+        root_directory: null_mut(),
+        file_name_length: (name.len() * size_of::<u16>()) as u32,
+        file_name: [0; MAX_LEAF_UNITS],
+    };
+    rename.file_name[..name.len()].copy_from_slice(&name);
+    let status = unsafe {
+        NtSetInformationFile(
+            file.as_raw_handle(),
+            &mut IoStatusBlock::default(),
+            &rename,
+            size_of::<RenameInformation>() as u32,
+            FILE_RENAME_INFORMATION_CLASS,
+        )
+    };
+    if status >= 0 {
+        file.sync_all().map_err(err)?;
         return Ok(true);
     }
-    let error = io::Error::last_os_error();
+    let error = nt_error(status);
     if !replace
         && matches!(
             error.raw_os_error(),
@@ -334,6 +514,56 @@ pub(super) fn publish(parent: &Parent, from: &str, to: &str, replace: bool) -> R
         return Ok(false);
     }
     Err(err(error))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{io::Write, time::SystemTime};
+
+    #[test]
+    fn lease_mutations_use_open_handles_instead_of_remembered_path() {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let sandbox = std::env::temp_dir().join(format!(
+            "flow-lease-relative-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&sandbox).unwrap();
+        let pinned = sandbox.join("pinned");
+        let other = sandbox.join("other");
+        fs::create_dir(&pinned).unwrap();
+        fs::create_dir(&other).unwrap();
+        let handle = drive_directory(&pinned).unwrap();
+        let identity = stamp(&handle).unwrap();
+
+        // Give the retained handle a different path label to catch accidental
+        // pathname-based creates or publication without relying on race timing.
+        let mut tree = Tree {
+            dirs: vec![Parent {
+                path: other.clone(),
+                handle,
+            }],
+            stamps: vec![identity],
+        };
+        tree.push(OsStr::new("namespace"), true).unwrap();
+        let parent = tree.parent();
+        drop(plain(parent, "writer.lock", true, true).unwrap());
+        let mut temp = create_temporary(parent, "marker.tmp").unwrap();
+        temp.write_all(b"owner").unwrap();
+        temp.sync_all().unwrap();
+        assert!(publish(parent, temp, "marker.tmp", "owner.json", false).unwrap());
+        assert_eq!(
+            fs::read(pinned.join("namespace").join("owner.json")).unwrap(),
+            b"owner"
+        );
+        assert!(pinned.join("namespace").join("writer.lock").is_file());
+        assert!(!other.join("namespace").exists());
+        drop(tree);
+        fs::remove_dir_all(sandbox).unwrap();
+    }
 }
 
 pub(super) fn host() -> Result<String> {

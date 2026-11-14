@@ -128,6 +128,18 @@ describe('lease path and identity admission', () => {
     const target = root + '-outside'; await fs.mkdir(target); await fs.symlink(target, path.join(root, '.storyboard-flow'), windows ? 'junction' : 'dir');
     await expect(acquireImageProjectLease({ root, binary })).rejects.toThrow(); expect(await fs.readdir(target)).toEqual([]);
   });
+  it.runIf(windows)('refuses a junction at the lock namespace without writing to its target', async () => {
+    const root = await temporaryWorkspace('project-lease-junction-');
+    const target = root + '-outside';
+    await fs.mkdir(target);
+    await fs.writeFile(path.join(target, 'sentinel'), 'preserve');
+    await fs.mkdir(path.dirname(namespace(root)));
+    await fs.symlink(target, namespace(root), 'junction');
+
+    await expect(acquireImageProjectLease({ root, binary })).rejects.toThrow('Lease not acquired');
+    expect(await fs.readdir(target)).toEqual(['sentinel']);
+    expect(await fs.readFile(path.join(target, 'sentinel'), 'utf8')).toBe('preserve');
+  });
   it.each(['symlink', 'hardlink', 'directory'] as const)('refuses a %s writer.lock', async kind => {
     const root = await temporaryWorkspace('project-lease-file-kind-'); await fs.mkdir(namespace(root), { recursive: true });
     const target = root + '-target'; await fs.writeFile(target, 'preserve');
@@ -168,6 +180,29 @@ describe('lease path and identity admission', () => {
       expect((await a.request('release')).ok).toBe(true);
       expect((await b.request('acquire')).ok).toBe(true);
       expect((await b.request('release')).ok).toBe(true);
+    } finally { await a.stop(); await b.stop(); }
+  });
+  it.runIf(windows)('publishes, releases and reopens a lease beyond the Win32 path limit', async () => {
+    const parent = await temporaryWorkspace('project-lease-long-path-');
+    const nested = path.join(parent, 'a'.repeat(90), 'b'.repeat(90), 'c'.repeat(90), '分镜 测试');
+    await fs.mkdir(nested, { recursive: true });
+    const root = await fs.realpath(nested);
+    expect(root.length).toBeGreaterThan(260);
+    const a = await fixture(root), b = await fixture(root);
+    try {
+      const acquired = await a.request('acquire');
+      expect(acquired.ok, acquired.error).toBe(true);
+      const identity = await fs.stat(lock(root), { bigint: true });
+      expect(JSON.parse(await fs.readFile(owner(root), 'utf8')).state).toBe('held');
+      expect((await b.request('acquire')).ok).toBe(false);
+      const released = await a.request('release');
+      expect(released.ok, released.error).toBe(true);
+      expect(JSON.parse(await fs.readFile(owner(root), 'utf8')).state).toBe('released');
+      const reopened = await b.request('acquire');
+      expect(reopened.ok, reopened.error).toBe(true);
+      expect((await b.request('release')).ok).toBe(true);
+      expect((await fs.stat(lock(root), { bigint: true })).ino).toBe(identity.ino);
+      expect((await fs.readdir(namespace(root))).sort()).toEqual(['owner.json', 'writer.lock']);
     } finally { await a.stop(); await b.stop(); }
   });
   it.each(['symlink', 'hardlink', 'directory'] as const)('refuses a %s owner marker without changing its target', async kind => {

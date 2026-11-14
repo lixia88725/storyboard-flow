@@ -1,12 +1,40 @@
 # 当前状态与剩余工作
 
+## 工作台左右栏最小宽度（2026-11-14）
+
+左栏最窄 160 像素，右栏 180 像素，按窗口空间限制宽度，取消旧的 25%–75% 比例上限。到达最窄后再拖 24 像素折叠成 40 像素图标栏。窄栏工具栏会换行，布局可重开恢复。见 [工作台设计](DESIGN.md#工作台与选择)。
+
+完整 `npm run build` 及聚焦 3 文件 25 项通过。Mac 合成项目用真实指针验证两栏最窄宽度、工具栏可见、同手势折叠和拖回、Escape 取消、正常关闭及新进程恢复窄栏，项目版本未变。`node scripts/flow-dock-panels-smoke.mjs` 的编辑、重开通过，涵盖键盘、飞出面板和布局恢复。保留独立试用窗口，个人窗口和配置未操作。候选摘要、脚本、原始日志及截图在 `/private/tmp/flow-dock-width.kbnTw7Ra/`。Windows、真实输入法和安装包待验。未独立验收或发布安装包。
+
+合并两份获准测试清单共 154 文件 1631 项，1629 通过、1 项 Windows 专用测试跳过、1 项旧写入器兼容测试因缺少 Git 对象 `c401472` 失败。完整日志为 `allowed-suite.log`，临时 Python 依赖链接已清理。
+
+## 欢迎窗口与新建项目（2026-11-14）
+
+欢迎窗口去掉说明文字和空的最近项目区，重开时去除与项目名相同的重复路径文字。新建项目使用两行表单，位置选中后显示，文件夹名发生变化时才额外显示；导入保留图片数量与原图处理提示。实现见 [设计](DESIGN.md#文件与pending)。未独立验收或发布安装包。
+
+`npm run build` 退出 0。使用合成项目和独立配置的 `node scripts/flow-project-entry-smoke.mjs` 七阶段通过，`node scripts/flow-recent-manage-smoke.mjs` 的移除与重新定位通过。Mac 新工作台实测首次启动、取消位置选择、创建空白项目、导入合成 PNG、主画布和缩略图显示、原图摘要不变、从最近项目重开。选目录脚本返回预设合成路径。旧 `FLOW_SOURCE_IMPORT=1 FLOW_SOURCE_IMPORT_ONLY=1 node scripts/flow-native-workbench-smoke.mjs` 完成创建后卡在等待两个带就绪标记的画布；新工作台的缩略图改用静态预览，本轮聚焦测试分别核对缩略图和画布。Windows、实机输入法与安装包待验。
+
+通用和原生获准清单合并运行，154 文件 1630 项，1628 通过、1 跳过、1 失败。旧写入器兼容测试缺少 Git 对象 `c401472`，未能执行兼容断言。测试用的临时 Python 依赖链接已移除。候选摘要、完整构建、运行日志及独立配置留在 `/private/tmp/flow-entry-ui.vHYp2SB5/`，截图和项目入口证据见 `.hermes/project-entry-simplified/flow-project-entry-rKmzNG/`。
+
 ## Windows 项目写入锁候选（2026-11-14）
 
-测试分支基于 `867a2b8`。新增 Windows 项目锁后端，使用固定本地 NTFS 卷上的系统文件锁、文件身份和进程句柄。首次真实 Windows 验证在候选 `2d14524` 上全部 19 项通过，覆盖进程争用、异常退出、替换拒绝与中文路径。后续提交调整了 Mac 测试夹具及文档。
+Windows 项目锁后端已合入 `e627e61`，限固定本地 NTFS，沿用原有锁协议。初版候选 `2d14524` 在 Windows runner 通过 19 项，覆盖进程争用、异常退出、替换拒绝与中文路径。同一候选的 Mac 完整构建与 preload 校验通过，154 文件 / 1629 项通过，另 1 项 Windows 专用测试由 Windows 流程执行。后续 CI 补齐锁定依赖并修正旧写入器夹具，保留原有验证断言。初版原始日志见 `/private/tmp/flow-windows-branch-check.Ly9EnLam/`。
 
-本机在 `2d14524` 上完整构建与 preload 校验通过，154 文件 / 1629 项通过，另 1 项 Windows 专用测试由 Windows 流程执行。Mac 远端首次因全新构建机缺离线依赖而失败，随后两个大夹具超时。CI 增加锁定依赖准备，旧写入器测试使用主分支上实际存在的旧提交，保留原有验证断言。日志留在 `/private/tmp/flow-windows-branch-check.Ly9EnLam/`。
+审查修复已落地。创建和打开锁目录、锁文件时从已打开的目录句柄逐级操作，并拒绝重解析。标记用同步后的临时文件句柄在本目录完成更名，避开旧 Win32 完整路径长度限制。专项新增目录句柄与记录路径不一致、锁目录是 junction、超过 260 字符时争用、释放和重开。x64 Windows 独立锁组件连同 Rust 回归测试通过 `cargo check --tests`。包含 PhotoCraft 的 Windows 完整离线检查缺少 `atomic-waker` 缓存；真实 Windows 构建和运行待完成。
 
-Windows 发布仍由现有检查拒绝。还需接入并验证保存与恢复日志的安全文件打开、目录项落盘及相关图像来源读写。TODO: 在 Windows 使用合成项目检查运行时打开、写入、保存、重开及中断恢复，并验证实际安装包。
+Mac 上 `npm run build`、`npm run build:photocraft`、`npm run prepare:package-resources` 通过。重建真实锁组件后运行专项，18 通过、3 项 Windows 用例跳过。原生 Electron 合成项目打开、绘画、撤销与重做、正常关闭、新进程重开和初始化中关闭通过。合并获准清单共 154 文件 1633 项，1629 通过、3 项 Windows 用例跳过，1 项旧写入器兼容测试因本地缺少 `c401472` 失败。临时 Python 依赖链接已清理。原始日志在 `/private/tmp/flow-windows-lease-fix.njV6AnYL/`，Electron 回执在 `/private/tmp/flow-native-workbench-pWi4IZ/`。
+
+最终加固候选待 Windows 实测与独立验收。
+
+Windows 发布继续拒绝。还需接入并验证保存与恢复日志的安全文件打开、目录项落盘及相关图像来源读写。TODO: 在 Windows 运行锁专项，并用合成项目检查运行时打开、写入、保存、重开及中断恢复，确认后再验证实际安装包。
+
+## macOS 应用默认启动新版（2026-11-14）
+
+打包应用直接进入新版工作台并读取包内 PhotoCraft。源码启动器继续先构建再启动。未公开发布安装包。
+
+`npm run package:macos` 完成完整构建、原生资源准备和 Apple Silicon 打包。发布 ZIP 校验和解压后签名完整性校验通过。本机从解压后的 `.app` 使用系统 PATH 和独立配置启动，合成 PNG 导入、画笔、保存 TIFF、正常关闭和重开均实测通过；重开后笔迹可见，输出 TIFF 含预期笔迹，来源 PNG 摘要一致。测试包采用临时签名，`spctl` 评估拒绝，未使用 Developer ID 签名、公证或在另一台 Mac 验证。
+
+获准清单全量 154 文件 / 1629 项。首次 152 文件 / 1627 项通过，两个测试分别缺少旧提交 `c401472` 和固定临时路径上的 Python 依赖。将已有依赖临时接入后，第二个失败所在文件 5 项复跑通过。旧提交在本地和 GitHub 查询均不可用，完整测试尚未全部通过。原始日志、候选与 GUI 记录留在 `/private/tmp/flow-macos-entry.Ioe9Sdar/`。本机验证包放在 `release-artifacts/macos-entry-867a2b8/`，未作独立验收。Windows 项目锁及发布状态见上方候选章节。
 
 ## 唯一启动脚本（2026-11-14）
 

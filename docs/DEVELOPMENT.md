@@ -65,7 +65,9 @@ node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "
 
 ## 打包与发布
 
-Windows 项目锁可用 [Windows project lease verification](../.github/workflows/windows-project-lease.yml) 在 Windows runner 验证。流程编译真实 `flow-project-lease.exe`，执行项目锁专项，覆盖独立进程争用、异常退出后的接管、链接或替换拒绝，以及含中文空格的路径。验证任务不生成安装包。Windows 保存与恢复的原生文件操作仍需适配，发布路径继续拒绝 Windows。
+Windows 项目锁可用 [Windows project lease verification](../.github/workflows/windows-project-lease.yml) 在 Windows runner 验证。流程编译真实 `flow-project-lease.exe`，执行项目锁专项，覆盖独立进程争用、异常退出后的接管、链接或替换拒绝，含中文空格且超过旧版 Win32 路径上限的项目，以及拒绝锁目录重定向时目标目录无写入。验证任务不生成安装包。Windows 保存与恢复的原生文件操作仍需适配，发布路径继续拒绝 Windows。
+
+验证 macOS 发布包的默认入口时，解压 ZIP 后直接打开其中的 `.app`，使用独立 `FLOW_USER_DATA_DIR`，确认未设置 `FLOW_NATIVE_WORKSPACE`，并核对新版项目选择页。随后用合成项目检查包内 PhotoCraft 组件是否能完成绘画、保存和重开。
 
 macOS 包附带 TIFF 组件，不附带 Python 解释器。第一次处理 TIFF 时会验证所选 Python 能实际载入包内组件；显式设置的 `FLOW_PYTHON_BIN`（或 `FLOW_PYTHON_PATH`）不兼容会报错，不静默替换。未指定时检查 PATH、Homebrew 与系统级 Python 安装。验收 Finder 启动路径时，用 `/usr/bin:/bin:/usr/sbin:/sbin` 且不设上述环境变量，从合成 PNG 创建项目并核对输出 TIFF；仅成功显示窗口不足以验证这个路径。
 
@@ -121,7 +123,7 @@ Main 保存链性能复测：使用同一固定 release 宿主，完整构建后
 
 ## 原生工作台施工验证
 
-当前 main 的 `build:photocraft` 现在离线、锁定依赖构建 release reader/host/lease，并在合成目录实际探测后发布到 `native/photocraft/target/flow-release`。`nativeComponentPaths` 统一源码与包内定位，显式测试环境变量仍可指向受验固定候选。回执 protocol2 绑定三个组件、完整自有源码、目标架构、实际能力与许可证；签名后逐组件更新摘要，ZIP再次核验。不能只带一次性reader或沿用debug目录冒充完整引擎。独立脚本检查为 `node --test scripts/package-native-probes.test.mjs` 与 `python3 scripts/validate-release-links.test.py`；真实 ZIP 校验仅允许已知 macOS Framework 的固定、包内可解析相对链接，原生组件与应用文件仍不得为别名。当前Windows项目锁未实现，打包明确拒绝，不宣称Windows可运行。
+当前 main 的 `build:photocraft` 现在离线、锁定依赖构建 release reader/host/lease，并在合成目录实际探测后发布到 `native/photocraft/target/flow-release`。`nativeComponentPaths` 统一源码与包内定位，显式测试环境变量仍可指向受验固定候选。回执 protocol2 绑定三个组件、完整自有源码、目标架构、实际能力与许可证；签名后逐组件更新摘要，ZIP再次核验。不能只带一次性reader或沿用debug目录冒充完整引擎。独立脚本检查为 `node --test scripts/package-native-probes.test.mjs` 与 `python3 scripts/validate-release-links.test.py`；真实 ZIP 校验仅允许已知 macOS Framework 的固定、包内可解析相对链接，原生组件与应用文件仍不得为别名。Windows 项目锁有独立验证任务，Windows 安装包状态见 [CURRENT](CURRENT.md)。
 
 
 新的只读控制器、冷输入捕获、Main端口与项目切换测试显式登记在 `test/allowed-suite.json`。真实原生预设与图层命令测试登记在 `test/allowed-image-engine-suite.json`，需以本次能力匹配的原生宿主执行；旧debug binary或只通过TypeScript构建不能替代这些检查。两清单合并去重后才是本轮组合全量。`npm run check:preload`同时检查嵌套imageWorkspace方法、原始输入身份及MessagePort转交；它是隔离桥接检查，不替代真实Electron连接验收。

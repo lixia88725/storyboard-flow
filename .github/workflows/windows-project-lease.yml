@@ -39,6 +39,8 @@ jobs:
         run: cargo fetch --locked --manifest-path native/photocraft/Cargo.toml --target x86_64-pc-windows-msvc
       - name: Build the Windows project lease
         run: cargo build --offline --locked --manifest-path native/photocraft/Cargo.toml --bin flow-project-lease --target x86_64-pc-windows-msvc
+      - name: Verify directory-handle binding
+        run: cargo test --offline --locked --manifest-path native/photocraft/Cargo.toml --bin flow-project-lease --target x86_64-pc-windows-msvc
       - name: Verify Windows project lease behavior
         shell: pwsh
         run: |

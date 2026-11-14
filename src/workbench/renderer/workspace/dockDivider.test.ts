@@ -13,8 +13,8 @@ const available = DOCK - DIVIDER_WIDTH;
 describe('dock divider model', () => {
   it('splits the dock between both open columns and keeps the CSS minima', () => {
     const template = gridTemplate(open(48));
-    expect(template).toContain(`min(240px, 40%)`);
-    expect(template).toContain(`min(260px, 40%)`);
+    expect(template).toContain('min(160px, calc(40% - 2px))');
+    expect(template).toContain('min(180px, calc(40% - 2px))');
     expect(template).toContain(` ${DIVIDER_WIDTH}px `);
     expect(template).toContain('48fr');
     expect(template).toContain('52fr');
@@ -31,24 +31,23 @@ describe('dock divider model', () => {
 
   it('unfolds in the same gesture only after crossing the whole band back', () => {
     const start = startDividerDrag(open(), DOCK);
-    // 216px of a 995px dock: 24px past the 240px minimum, so the column folds.
+    // The pointer is 24px past the minimum, so the column folds.
     const folded = dragDivider(start, -(start.left - MIN_LEFT_COLUMN + FOLD_TRAVEL));
     expect(folded.collapsed[0]).toBe(true);
-    // 239px: back inside the band, still folded (no flapping at the fold threshold).
+    // Back inside the band, still folded (no flapping at the fold threshold).
     const inside = dragDivider(start, -(start.left - MIN_LEFT_COLUMN + 1), folded);
     expect(inside.collapsed[0]).toBe(true);
-    // 241px: back at the full minimum, unfolded inside the same gesture.
+    // Back beyond the minimum, unfolded inside the same gesture.
     const back = dragDivider(start, -(start.left - MIN_LEFT_COLUMN - 1), inside);
     expect(back.collapsed).toEqual([false, false]);
-    // 240px of a 995px dock is 24.1%, below the 25% floor stored by preferences.
-    expect(back.split).toBe(25);
+    expect(back.split / 100 * available).toBeCloseTo(MIN_LEFT_COLUMN + 1);
   });
 
   it('starts from the rendered columns when a CSS minimum differs from the split', () => {
-    const start = startDividerDrag({split: 75, collapsed: [false, false]}, DOCK, {left: 1187, right: 260});
-    expect(start.left).toBe(1187);
-    expect(start.right).toBe(260);
-    // 260 is already at the right minimum: a small pull folds it instead of shrinking.
+    const start = startDividerDrag(open(90), DOCK, {left: available - MIN_RIGHT_COLUMN, right: MIN_RIGHT_COLUMN});
+    expect(start.left).toBe(available - MIN_RIGHT_COLUMN);
+    expect(start.right).toBe(MIN_RIGHT_COLUMN);
+    // The right column is already at its minimum: a small pull folds it.
     expect(dragDivider(start, 30).collapsed[1]).toBe(true);
   });
 
@@ -70,7 +69,6 @@ describe('dock divider model', () => {
     const moved = dragDivider(start, -60);
     expect(moved.collapsed).toEqual([false, false]);
     expect(moved.split).toBeCloseTo((start.left - 60) / available * 100, 1);
-    expect(moved.split).toBeGreaterThanOrEqual(25);
   });
 
   it('keeps a folded column as a 40px rail and leaves the divider between the columns', () => {
@@ -80,7 +78,7 @@ describe('dock divider model', () => {
   });
 
   it('shrinks both minima proportionally when the dock is narrower than their sum', () => {
-    const narrow = 600;
+    const narrow = 350;
     const minimum = columnMinimums(narrow);
     expect(minimum.left).toBeLessThan(MIN_LEFT_COLUMN);
     expect(minimum.right).toBeLessThan(MIN_RIGHT_COLUMN);
@@ -90,13 +88,18 @@ describe('dock divider model', () => {
     expect(dragDivider(start, -(start.left + 1)).collapsed[0]).toBe(true);
   });
 
-  it('keeps the persisted split inside the range layout preferences accepts', () => {
-    const start = startDividerDrag(open(25), DOCK);
-    const pulled = dragDivider(start, -available);
-    expect(pulled.split).toBeGreaterThanOrEqual(25);
-    expect(pulled.split).toBeLessThanOrEqual(75);
-    const saved = {...defaultWorkspaceLayout(), split: pulled.split, collapsed: pulled.collapsed};
-    expect(parseWorkspaceLayout(JSON.stringify(saved))).toEqual(saved);
+  it.each([1000, 1800])('reaches and preserves both open minima at dock width %i', dockWidth => {
+    const start = startDividerDrag(open(), dockWidth);
+    const total = dockWidth - DIVIDER_WIDTH;
+    const leftNarrow = dragDivider(start, MIN_LEFT_COLUMN - start.left - 1);
+    const rightNarrow = dragDivider(start, start.right - MIN_RIGHT_COLUMN + 1);
+    expect(leftNarrow.split / 100 * total).toBeCloseTo(MIN_LEFT_COLUMN);
+    expect((100 - rightNarrow.split) / 100 * total).toBeCloseTo(MIN_RIGHT_COLUMN);
+    for (const narrowed of [leftNarrow, rightNarrow]) {
+      expect(narrowed.collapsed).toEqual([false, false]);
+      const saved = {...defaultWorkspaceLayout(), ...narrowed};
+      expect(parseWorkspaceLayout(JSON.stringify(saved))).toEqual(saved);
+    }
   });
 
   it('reports the separator value and text for every fold state', () => {
@@ -112,14 +115,17 @@ describe('dock divider model', () => {
   it('resizes with arrows and folds with Home and End', () => {
     expect(keyboardDivider(open(48), 'ArrowRight', false, DOCK)).toEqual({split: 50, collapsed: [false, false]});
     expect(keyboardDivider(open(48), 'ArrowLeft', true, DOCK)).toEqual({split: 40, collapsed: [false, false]});
-    expect(keyboardDivider(open(74), 'ArrowRight', true, DOCK)).toEqual({split: 75, collapsed: [false, false]});
+    const leftNarrow = keyboardDivider(open(20), 'ArrowLeft', true, DOCK)!;
+    const rightNarrow = keyboardDivider(open(79), 'ArrowRight', true, DOCK)!;
+    expect(leftNarrow.split / 100 * available).toBeCloseTo(MIN_LEFT_COLUMN);
+    expect((100 - rightNarrow.split) / 100 * available).toBeCloseTo(MIN_RIGHT_COLUMN);
     expect(keyboardDivider(open(48), 'Home', false, DOCK)).toEqual({split: 48, collapsed: [true, false]});
     expect(keyboardDivider(open(48), 'End', false, DOCK)).toEqual({split: 48, collapsed: [false, true]});
     expect(keyboardDivider({split: 48, collapsed: [true, false]}, 'Home', false, DOCK)).toBeUndefined();
     expect(keyboardDivider({split: 48, collapsed: [false, true]}, 'End', false, DOCK)).toBeUndefined();
   });
 
-  it('unfolds from the keyboard at the column minimum', () => {
+  it('unfolds from the keyboard at the stored split', () => {
     const unfolded = keyboardDivider({split: 30, collapsed: [true, false]}, 'ArrowRight', false, DOCK);
     expect(unfolded?.collapsed).toEqual([false, false]);
     expect(unfolded!.split).toBe(30);

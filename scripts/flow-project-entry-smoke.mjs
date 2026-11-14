@@ -120,6 +120,7 @@ const runPhase=async()=>{
   await wait(()=>exists('[data-project-launcher]'),'launcher');
   const actions=await exec('[...document.querySelectorAll(".launcher-actions button")].map(b=>b.textContent.trim())');
   if(JSON.stringify(actions)!==JSON.stringify(['打开…','新建项目…']))throw Error('entry actions '+JSON.stringify(actions));
+  if(await exists('.launcher-recent'))throw Error('empty recent projects should be hidden');
   const bridge=await exec('(async()=>{const s=await window.flowEditor.launcherState();const d=await window.flowEditor.createDraft("blank");await window.flowEditor.createDiscard(d.id);return {open:s.open,recent:s.recent.length,methods:Object.keys(window.flowEditor).length,mode:d.mode}})()');
   if(bridge.open!==false)throw Error('home reported an open project');
   if(bridge.mode!=='blank')throw Error('blank draft mode '+bridge.mode);
@@ -173,7 +174,8 @@ const runPhase=async()=>{
   if(await exists('[data-create-source-note]'))throw Error('blank sheet asked for images');
   if(!String(await exec(sel('.wb-sheet')+'.textContent')).includes('新建项目'))throw Error('blank sheet title');
   await setValue('[data-create-field=name]','空白故事');
-  await wait(async()=>String(await exec(sel('[data-create-folder]')+'.textContent')).includes('空白故事'),'blank folder hint');
+  if(await exists('[data-create-folder]'))throw Error('blank project repeats its name as a folder hint');
+  if(await exists('[data-create-destination]')||await createButtonEnabled())throw Error('blank project can be created before choosing a location');
   await shot('05-blank-sheet');
   await button('选择位置…');
   await wait(async()=>String(await exec(sel('[data-create-destination]')+'.textContent')).length>0,'blank destination');

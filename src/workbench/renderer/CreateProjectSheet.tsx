@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Folder, Images } from 'lucide-react';
 import type { FlowCreateDraftView, FlowCreateIssues } from '../../platform/contracts/flowEditor';
 import { namingIssue } from '../../platform/contracts/flowNaming';
 import { folderNameIssue, projectFolderNameFor } from '../../platform/contracts/flowProjectFields';
@@ -30,7 +31,9 @@ export function CreateProjectSheet(p: Props) {
   const [name, setName] = useState(p.state.draft.name);
   const [error, setError] = useState('');
   const composing = useRef(false);
+  const errorId = useId();
   const mode = p.state.draft.mode;
+  const destination = p.state.draft.destination?.label;
   const sourceLabel = p.state.draft.source.kind === 'none' ? '' : p.state.draft.source.label;
   // Preview only: Main derives and validates the same leaf again before creating.
   const folderName = projectFolderNameFor(name, mode === 'images' ? sourceLabel : undefined);
@@ -53,6 +56,7 @@ export function CreateProjectSheet(p: Props) {
     : !p.state.draft.destination ? '请先选择保存位置' : '';
   const editable = p.state.phase === 'editing' && !p.busy;
   const invalid = missing || folderProblem || issue || '';
+  const feedback = p.state.error || error || (p.state.phase === 'editing' ? folderProblem || issue : '');
   const confirm = () => {
     const problem = missing || folderProblem || issue;
     if (composing.current) { setError('请先完成输入法组字'); p.onError('请先完成输入法组字'); return; }
@@ -62,25 +66,32 @@ export function CreateProjectSheet(p: Props) {
     p.onConfirm({ name });
   };
 
-  return <div className="wb-naming" data-create-sheet="true" data-create-mode={mode} data-create-phase={p.state.phase}>
-    <section className="wb-sheet" role="dialog" aria-modal="true" aria-label={mode === 'blank' ? '新建项目' : '创建项目'}>
+  return <div className="wb-naming wb-create-overlay" data-create-sheet="true" data-create-mode={mode} data-create-phase={p.state.phase}>
+    <section className="wb-sheet wb-create-sheet" role="dialog" aria-modal="true" aria-label={mode === 'blank' ? '新建项目' : '创建项目'}>
       <h2>{mode === 'blank' ? '新建项目' : '创建项目'}</h2>
-      {mode === 'images'
-        ? <p className="wb-sheet-note" data-create-source-note>{sourceLabel} · {p.state.draft.imageCount} 张图片。项目会保存到新的文件夹，来源图片不会被移动或修改。</p>
-        : <p className="wb-sheet-note">项目会保存到新的文件夹。创建后可以在这个项目里新建第一张故事板。</p>}
-      <div className="wb-sheet-group">
-        <label className="wb-sheet-field"><span>项目名称</span>
+      {mode === 'images' && <div className="wb-create-import" data-create-source-note>
+        <Images size={18} aria-hidden="true" />
+        <div><strong>{sourceLabel} · {p.state.draft.imageCount} 张图片</strong>
+          <p>来源图片不会被移动或修改。</p>
+        </div>
+      </div>}
+      <div className="wb-create-fields">
+        <label className="wb-create-field"><span>项目名称</span>
           <input value={name} disabled={!editable} spellCheck={false} data-create-field="name" autoFocus
+            aria-invalid={Boolean(issue || folderProblem)} aria-describedby={feedback ? errorId : undefined}
             onChange={event => setName(event.target.value)}
             onCompositionStart={() => { composing.current = true; }}
             onCompositionEnd={() => { composing.current = false; }} />
         </label>
-        <div className="wb-create-source">
+        <div className="wb-create-field">
           <span>保存位置</span>
-          <div><button type="button" disabled={!editable} onClick={() => { setError(''); p.onChooseDestination(); }}>选择位置…</button></div>
-          <output data-create-destination>{p.state.draft.destination?.label ?? '尚未选择'}</output>
+          <div className="wb-create-location">
+            {destination && <output data-create-destination title={destination}><Folder size={15} aria-hidden="true" /><span>{destination}</span></output>}
+            <button type="button" disabled={!editable} onClick={() => { setError(''); p.onChooseDestination(); }}>选择位置…</button>
+          </div>
         </div>
-        <p className="wb-sheet-hint" data-create-folder>{folderProblem ? folderProblem : `将创建文件夹：${folderName}`}</p>
+        {!folderProblem && !issue && folderName !== name && <p className="wb-create-folder" data-create-folder>新文件夹「{folderName}」</p>}
+        {feedback && <p id={errorId} className="wb-sheet-error" role="alert">{feedback}</p>}
       </div>
       {p.state.phase === 'creating' && <div className="wb-create-progress" data-create-progress="true">
         <progress max={p.state.progress?.total || 1} value={p.state.progress?.done ?? 0} />
@@ -92,8 +103,6 @@ export function CreateProjectSheet(p: Props) {
           <code>{item.file}</code><span>{item.reason}</span><b>{item.action === 'skip' ? '跳过' : item.reason.startsWith('PhotoCraft') ? '兼容导入' : '扁平化'}</b>
         </li>)}</ul>
       </div>}
-      {(error || p.state.error) && <p className="wb-sheet-error" role="alert">{p.state.error || error}</p>}
-      {!p.state.error && (folderProblem || issue) && p.state.phase === 'editing' && <p className="wb-sheet-error">{folderProblem || issue}</p>}
       <footer className="wb-sheet-actions">
         {p.state.phase === 'editing' && <>
           <button type="button" onClick={p.onCancel} disabled={!editable && !p.busy}>取消</button>
