@@ -64,9 +64,9 @@ describe('source-backed import storage on real files',()=>{
     await expect(store.object('one')).rejects.toMatchObject({code:'conflict'});
     const retained=await store.retain('one');
     expect(retained).toMatchObject({state:'retained',hydration:'unhydrated',retained:{digest:digest(bytes),byteLength:bytes.length}});
-    const object=await store.object('one');expect(await fs.readFile(object.path)).toEqual(bytes);
+    const object=await store.object('one');expect((await fs.readFile(object.path)).equals(bytes)).toBe(true);
     expect(await inspectImportSource(source)).toEqual(before);
-    expect(await fs.readFile(source)).toEqual(bytes);
+    expect((await fs.readFile(source)).equals(bytes)).toBe(true);
     const generation=store.snapshot().generation;
     await store.retain('one');expect(store.snapshot().generation).toBe(generation);
     expect((await fs.readdir(path.join(storage(root),'originals')))).toEqual([`${digest(bytes)}.bin`]);
