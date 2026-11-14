@@ -1,5 +1,13 @@
 # 当前状态与剩余工作
 
+## Windows 项目写入锁候选（2026-11-14）
+
+测试分支基于 `867a2b8`。新增 Windows 项目锁后端，使用固定本地 NTFS 卷上的系统文件锁、文件身份和进程句柄。共用原有锁协议，守护进程异常退出仍保留占用记录。可在 Windows runner 通过独立验证流程运行真实锁测试，尚无 Windows 运行结果。源码已在本机通过 x64 Windows 目标的锁组件 `cargo check`，此检查没有链接或运行 `.exe`。
+
+本机 Mac 原生构建、`npm run build`、`npm run prepare:package-resources` 通过。最后的聚焦回归 3 文件 / 38 项通过，1 项 Windows 专用测试跳过。修改过程中的完整获准清单 154 文件 / 1629 项，1628 项通过，旧写入器测试因缺少 `c401472` 无法执行其实际旧版本断言。日志留在 `/private/tmp/flow-windows-lease.bBoKXNPZ/`，临时 Python 依赖链接已清理。以上为本地实现时的验证记录，测试分支的 Windows 验收以 GitHub Actions 结果为准。
+
+Windows 发布继续拒绝。还需接入并验证保存与恢复日志的安全文件打开、目录项落盘及相关图像来源读写。TODO: 在 Windows 运行锁专项，并用合成项目检查运行时打开、写入、保存、重开及中断恢复，确认后再验证实际安装包。
+
 ## 唯一启动脚本（2026-11-14）
 
 移除仅转发到正式启动器的 `试用新版 Storyboard Flow.command`，根目录只保留 `启动 Storyboard Flow.command`。正式启动器及配置、项目和恢复数据均未改动；README 与开发入口同步。仅删除重复别名，不改变运行行为；正式脚本语法通过，启动器专项 11/11 通过（`/private/tmp/flow-single-launcher-tests-unsandboxed.log`）；初次沙箱运行因 `/dev/fd` 权限导致合成 shell 用例失败，原日志保留。不重复产品全量和构建。下方同名试用入口说明为历史记录。

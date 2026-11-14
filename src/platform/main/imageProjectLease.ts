@@ -40,7 +40,7 @@ export async function acquireImageProjectLease(options: {
 }): Promise<ImageProjectLease> {
   // Capture configuration before the first asynchronous filesystem check.
   const { root, binary, onInvalidated,budget,copyFault } = options,copyAdmission=options.copyAdmission===undefined?undefined:structuredClone(options.copyAdmission), timeoutMs = options.timeoutMs ?? 5000;
-  if (!['darwin', 'linux'].includes(process.platform)) throw failure('Project writer lease is unavailable on this platform');
+  if (!['darwin', 'linux', 'win32'].includes(process.platform)) throw failure('Project writer lease is unavailable on this platform');
   if (typeof root !== 'string' || !path.isAbsolute(root) || path.normalize(root) !== root || root === path.parse(root).root || root.includes('\0') || typeof binary !== 'string' || !path.isAbsolute(binary) ||
       !Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30000) throw failure('Invalid project lease options');
   const stat = await lstat(root, { bigint: true });
@@ -53,7 +53,7 @@ export async function acquireImageProjectLease(options: {
   const grant=budget?await budget.reserve({operationId:'lease-acquire-'+ownerNonce,bytes:copyAdmission?65536:32768,purpose:copyAdmission?'native-cold-copy-bootstrap':'native-lease-acquire'}):undefined;
   let releaseGrant:Awaited<ReturnType<WorkspaceOutputBudget['reserve']>>|undefined;try{if(budget)releaseGrant=await budget.reserve({operationId:'lease-release-'+ownerNonce,bytes:32768,purpose:'native-lease-release'});}catch(e){await grant?.settleActual(0);throw e;}
   const args=[root,ownerNonce,...(copyAdmission?['--copy-admission',canonicalUtf8(copyAdmission).toString()]:[]),...(copyFault?['--copy-fault',copyFault]:[])];
-  const child = spawn(binary,args,{ stdio: ['pipe', 'pipe', 'pipe'] });let copyReceipt:WorkspaceColdCopyReceipt|undefined,refusedWithoutEffects=false;
+  const child = spawn(binary,args,{ stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });let copyReceipt:WorkspaceColdCopyReceipt|undefined,refusedWithoutEffects=false;
   const settleBudget=async(g:NonNullable<typeof grant>,baseline:number)=>{const now=await measure();await g.settleActual(now-baseline);};
   const settleFailedBudget=async(g:NonNullable<typeof grant>,baseline:number)=>{try{const bytes=await readBoundFile(path.join(namespace,'owner.json'),16384),same=bytes?sha256Hex(bytes)===oldMarker:oldMarker===null,marker=bytes?JSON.parse(bytes.toString()):null;if(!same&&marker?.nonce!==ownerNonce)throw failure('A different owner prevents budget settlement');await settleBudget(g,baseline);}catch{await g.retainUnknown();}};
 

@@ -2,188 +2,39 @@
 //! Abnormal guard loss NEVER publishes release. A live/unknown previous Main refuses
 //! takeover even after the OS lock becomes free. No file deletion or lock-inode rename.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
+#[path = "lease/unix.rs"]
+mod platform;
+#[cfg(windows)]
+#[path = "lease/windows.rs"]
+mod platform;
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
+use supported::{Result, Stamp, err};
+
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 mod supported {
-    use rustix::fs::{self as rfs, AtFlags, Mode, OFlags};
+    use super::platform::{
+        MainOwner, Tree, confirmed_dead, create_temporary, entry_exists, host, plain, publish,
+        single_link, stamp,
+    };
     use serde::{Deserialize, Serialize};
     use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
     use std::{
-        ffi::OsString,
         fs::File,
         io::{self, BufRead, Read, Write},
-        os::unix::fs::MetadataExt,
-        path::{Component, Path, PathBuf},
+        path::{Path, PathBuf},
         sync::mpsc,
         time::Duration,
     };
-    unsafe extern "C" {
-        fn getppid() -> i32;
-        fn kill(pid: i32, signal: i32) -> i32;
-        fn gethostname(name: *mut std::ffi::c_char, len: usize) -> i32;
-    }
-    type Result<T> = std::result::Result<T, String>;
+    pub(super) type Result<T> = std::result::Result<T, String>;
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
-    struct Stamp {
-        dev: u64,
-        ino: u64,
+    pub(super) struct Stamp {
+        pub(super) dev: u64,
+        pub(super) ino: u64,
     }
-    fn stamp(f: &File) -> Result<Stamp> {
-        let m = f.metadata().map_err(err)?;
-        Ok(Stamp {
-            dev: m.dev(),
-            ino: m.ino(),
-        })
-    }
-    fn err(e: impl std::fmt::Display) -> String {
+    pub(super) fn err(e: impl std::fmt::Display) -> String {
         e.to_string()
-    }
-    fn directory(parent: &File, name: &std::ffi::OsStr, create: bool) -> Result<File> {
-        if create {
-            match rfs::mkdirat(parent, name, Mode::from_bits_truncate(0o700)) {
-                Ok(()) => parent.sync_all().map_err(err)?,
-                Err(e) if e == rustix::io::Errno::EXIST => (),
-                Err(e) => return Err(err(e)),
-            }
-        }
-        let fd = rfs::openat(
-            parent,
-            name,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-            Mode::empty(),
-        )
-        .map_err(err)?;
-        let file = File::from(fd);
-        if !file.metadata().map_err(err)?.is_dir() {
-            return Err("not a directory".into());
-        }
-        Ok(file)
-    }
-    fn plain(parent: &File, name: &str, create: bool, writable: bool) -> Result<(File, bool)> {
-        let mode = if writable {
-            OFlags::RDWR
-        } else {
-            OFlags::RDONLY
-        };
-        let flags = mode | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK;
-        let (file, created) = if create {
-            match rfs::openat(
-                parent,
-                name,
-                flags | OFlags::CREATE | OFlags::EXCL,
-                Mode::from_bits_truncate(0o600),
-            ) {
-                Ok(fd) => (File::from(fd), true),
-                Err(e) if e == rustix::io::Errno::EXIST => {
-                    return plain(parent, name, false, writable);
-                }
-                Err(e) => return Err(err(e)),
-            }
-        } else {
-            let before = rfs::statat(parent, name, AtFlags::SYMLINK_NOFOLLOW).map_err(err)?;
-            if rfs::FileType::from_raw_mode(before.st_mode) != rfs::FileType::RegularFile
-                || before.st_nlink != 1
-            {
-                return Err("non-regular, symbolic or multiply linked lease file".into());
-            }
-            let file = File::from(rfs::openat(parent, name, flags, Mode::empty()).map_err(err)?);
-            if stamp(&file)?
-                != (Stamp {
-                    dev: before.st_dev as u64,
-                    ino: before.st_ino as u64,
-                })
-            {
-                return Err("lease file changed while opening".into());
-            }
-            (file, false)
-        };
-        let m = file.metadata().map_err(err)?;
-        if !m.is_file() || m.nlink() != 1 {
-            return Err("non-regular or multiply linked lease file".into());
-        }
-        if created {
-            parent.sync_all().map_err(err)?;
-        }
-        Ok((file, created))
-    }
-    struct Tree {
-        parts: Vec<OsString>,
-        dirs: Vec<File>,
-        stamps: Vec<Stamp>,
-    }
-    impl Tree {
-        fn acquire(root: &Path) -> Result<Self> {
-            if root == Path::new("/")
-                || !root.is_absolute()
-                || root
-                    .components()
-                    .any(|c| !matches!(c, Component::RootDir | Component::Normal(_)))
-            {
-                return Err("canonical absolute project root required".into());
-            }
-            if std::fs::canonicalize(root).map_err(err)? != root {
-                return Err("symbolic or aliased project root refused".into());
-            }
-            let filesystem = File::from(
-                rfs::open(
-                    "/",
-                    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                    Mode::empty(),
-                )
-                .map_err(err)?,
-            );
-            let mut tree = Self {
-                parts: vec![],
-                stamps: vec![stamp(&filesystem)?],
-                dirs: vec![filesystem],
-            };
-            for part in root.components() {
-                if let Component::Normal(name) = part {
-                    tree.push(name, false)?;
-                }
-            }
-            tree.push(std::ffi::OsStr::new(".storyboard-flow"), true)?;
-            tree.push(std::ffi::OsStr::new("image-project-v2"), true)?;
-            tree.check()?;
-            Ok(tree)
-        }
-        fn push(&mut self, name: &std::ffi::OsStr, create: bool) -> Result<()> {
-            let file = directory(self.dirs.last().ok_or("missing parent")?, name, create)?;
-            self.stamps.push(stamp(&file)?);
-            self.parts.push(name.to_owned());
-            self.dirs.push(file);
-            Ok(())
-        }
-        fn root_stamp(&self) -> &Stamp {
-            &self.stamps[self.stamps.len() - 3]
-        }
-        fn parent(&self) -> &File {
-            self.dirs
-                .last()
-                .expect("tree always contains filesystem root")
-        }
-        fn check(&self) -> Result<()> {
-            let mut current = File::from(
-                rfs::open(
-                    "/",
-                    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-                    Mode::empty(),
-                )
-                .map_err(err)?,
-            );
-            if stamp(&current)? != self.stamps[0] {
-                return Err("filesystem root changed".into());
-            }
-            for (index, part) in self.parts.iter().enumerate() {
-                current = directory(&current, part, false)?;
-                if stamp(&current)? != self.stamps[index + 1]
-                    || stamp(&self.dirs[index + 1])? != self.stamps[index + 1]
-                {
-                    return Err("project directory identity changed".into());
-                }
-            }
-            Ok(())
-        }
     }
     #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -319,7 +170,7 @@ mod supported {
             || old.main_pid <= 1
             || old.nonce.is_empty()
             || old.host.is_empty()
-            || !matches!(old.platform.as_str(), "macos" | "linux")
+            || !matches!(old.platform.as_str(), "macos" | "linux" | "windows")
         {
             return Err("cold copy authorization/closed marker/root identity mismatch".into());
         }
@@ -362,45 +213,24 @@ mod supported {
         wrote: &mut bool,
     ) -> Result<()> {
         tree.check()?;
-        match rfs::statat(tree.parent(), name, AtFlags::SYMLINK_NOFOLLOW) {
-            Ok(_) => {
-                if evidence_bytes(tree, name)? != bytes {
-                    return Err("foreign or partial copy evidence retained".into());
-                }
-                return Ok(());
+        if entry_exists(tree.parent(), name)? {
+            if evidence_bytes(tree, name)? != bytes {
+                return Err("foreign or partial copy evidence retained".into());
             }
-            Err(e) if e == rustix::io::Errno::NOENT => (),
-            Err(e) => return Err(err(e)),
+            return Ok(());
         }
         let temporary = format!(".copy-{nonce}-{}-{phase}.tmp", std::process::id());
         *wrote = true;
-        let fd = rfs::openat(
-            tree.parent(),
-            temporary.as_str(),
-            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-            Mode::from_bits_truncate(0o600),
-        )
-        .map_err(err)?;
-        let mut file = File::from(fd);
+        let mut file = create_temporary(tree.parent(), &temporary)?;
         file.write_all(bytes).map_err(err)?;
         file.sync_all().map_err(err)?;
+        drop(file);
         tree.check()?;
-        match rfs::renameat_with(
-            tree.parent(),
-            temporary.as_str(),
-            tree.parent(),
-            name,
-            rfs::RenameFlags::NOREPLACE,
-        ) {
-            Ok(()) => (),
-            Err(e) if e == rustix::io::Errno::EXIST => {
-                if evidence_bytes(tree, name)? != bytes {
-                    return Err("copy evidence publication collision; retained".into());
-                }
-            }
-            Err(e) => return Err(err(e)),
+        if !publish(tree.parent(), &temporary, name, false)?
+            && evidence_bytes(tree, name)? != bytes
+        {
+            return Err("copy evidence publication collision; retained".into());
         }
-        tree.parent().sync_all().map_err(err)?;
         if evidence_bytes(tree, name)? != bytes {
             return Err("copy evidence changed after publication".into());
         }
@@ -460,7 +290,7 @@ mod supported {
             if read_owner(tree)?.1 != *expected {
                 return Err("owner marker identity changed".into());
             }
-        } else if rfs::statat(tree.parent(), "owner.json", AtFlags::SYMLINK_NOFOLLOW).is_ok() {
+        } else if entry_exists(tree.parent(), "owner.json")? {
             return Err("unexpected owner marker".into());
         }
         let name = format!(
@@ -470,51 +300,24 @@ mod supported {
             phase
         );
         // EXCL means retained evidence is never overwritten or cleaned automatically.
-        let fd = rfs::openat(
-            tree.parent(),
-            name.as_str(),
-            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-            Mode::from_bits_truncate(0o600),
-        )
-        .map_err(err)?;
-        let mut temp = File::from(fd);
+        let mut temp = create_temporary(tree.parent(), &name)?;
         let bytes = serde_json::to_vec(owner).map_err(err)?;
         if bytes.len() > 16384 {
             return Err("new owner marker exceeds budget".into());
         }
         temp.write_all(&bytes).map_err(err)?;
         temp.sync_all().map_err(err)?;
+        drop(temp);
         tree.check()?;
         if let Some(expected) = expected {
             if read_owner(tree)?.1 != *expected {
                 return Err("owner marker replaced before publication".into());
             }
         }
-        rfs::renameat(tree.parent(), name.as_str(), tree.parent(), "owner.json").map_err(err)?;
-        tree.parent().sync_all().map_err(err)?;
+        if !publish(tree.parent(), &name, "owner.json", expected.is_some())? {
+            return Err("unexpected owner marker at publication; retained".into());
+        }
         Ok(read_owner(tree)?.1)
-    }
-    fn host() -> Result<String> {
-        let mut buf = [0u8; 256];
-        // POSIX host/PID checks are used only to refuse uncertain owners, never to steal a live lock.
-        if unsafe { gethostname(buf.as_mut_ptr().cast(), buf.len()) } != 0 {
-            return Err(err(io::Error::last_os_error()));
-        }
-        let end = buf
-            .iter()
-            .position(|v| *v == 0)
-            .ok_or("host name is truncated")?;
-        let name = std::str::from_utf8(&buf[..end]).map_err(err)?;
-        if name.is_empty() {
-            return Err("empty host identity".into());
-        }
-        Ok(name.to_owned())
-    }
-    fn confirmed_dead(pid: i32) -> bool {
-        pid > 1
-            && unsafe { kill(pid, 0) } == -1
-            && io::Error::last_os_error().raw_os_error()
-                == Some(rustix::io::Errno::SRCH.raw_os_error())
     }
     struct Lease {
         tree: Tree,
@@ -522,6 +325,7 @@ mod supported {
         lock: Stamp,
         owner: Owner,
         owner_stamp: Stamp,
+        main_owner: MainOwner,
     }
     impl Lease {
         fn acquire(
@@ -537,23 +341,20 @@ mod supported {
                 .try_lock()
                 .map_err(|e| format!("OS writer lock unavailable: {e}"))?;
             let lock = stamp(&lock_file)?;
-            let parent_pid = unsafe { getppid() };
-            if parent_pid <= 1 {
-                return Err("Main owner identity unavailable".into());
-            }
+            let main_owner = MainOwner::current()?;
             let mut owner = Owner {
                 schema: 1,
                 state: "held".into(),
                 platform: std::env::consts::OS.into(),
                 host: host()?,
-                main_pid: parent_pid,
+                main_pid: main_owner.pid(),
                 nonce,
                 directories: tree.stamps.clone(),
                 lock: lock.clone(),
                 copy_receipt: None,
             };
             let previous = if created {
-                if rfs::statat(tree.parent(), "owner.json", AtFlags::SYMLINK_NOFOLLOW).is_ok() {
+                if entry_exists(tree.parent(), "owner.json")? {
                     return Err("new lock has an existing owner marker".into());
                 }
                 None
@@ -655,6 +456,7 @@ mod supported {
                 lock,
                 owner,
                 owner_stamp,
+                main_owner,
             };
             lease.check()?;
             Ok(lease)
@@ -664,7 +466,7 @@ mod supported {
             let (lock, _) = plain(self.tree.parent(), "writer.lock", false, true)?;
             if stamp(&lock)? != self.lock
                 || stamp(&self.lock_file)? != self.lock
-                || self.lock_file.metadata().map_err(err)?.nlink() != 1
+                || !single_link(&self.lock_file)?
             {
                 return Err("writer lock identity changed".into());
             }
@@ -672,10 +474,7 @@ mod supported {
             if stamp != self.owner_stamp || owner != self.owner {
                 return Err("owner identity changed".into());
             }
-            if unsafe { getppid() } != self.owner.main_pid {
-                return Err("Main owner disconnected".into());
-            }
-            Ok(())
+            self.main_owner.check()
         }
         fn release(&mut self) -> Result<()> {
             self.check()?;
@@ -824,12 +623,12 @@ mod supported {
     }
 }
 fn main() {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     if let Err(error) = supported::run() {
         eprintln!("project lease refused: {error}");
         std::process::exit(2);
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     {
         eprintln!("project lease unavailable on this platform");
         std::process::exit(2);
