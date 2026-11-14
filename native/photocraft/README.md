@@ -71,9 +71,10 @@ real Windows runner compilation, execution and release ZIP testing remain pendin
   receipts together; never hand-edit a receipt to make stale code pass validation.
 - `build:photocraft` builds offline. A missing Cargo cache needs explicit dependency
   preparation under the existing authorization rules; the build does not fetch it.
-- Current native project leasing is implemented for macOS; Windows packaging is
-  refused until its lease implementation and real-platform checks are complete.
-  The Windows CI configuration below is not evidence of a working Windows app.
+- The Windows lease backend is limited to fixed local NTFS volumes. It refuses
+  reparse points and uses Windows file and process handles to bind the lease.
+  Its dedicated Windows verification runs independently of packaging. Windows
+  packaging remains gated on the journal and other workspace storage operations.
 
 ## Legacy one-shot reader/export compatibility path
 

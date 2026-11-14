@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { build } from 'esbuild';
 import { fork } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -8,6 +8,7 @@ import { acquireImageProjectLease } from './imageProjectLease';
 import { temporaryWorkspace } from '../../../test/temporaryWorkspace';
 
 const binary = process.env.FLOW_PROJECT_LEASE_BINARY!;
+const windows = process.platform === 'win32';
 let harness: string;
 beforeAll(async () => {
   if (!binary || !path.isAbsolute(binary)) throw Error('Build real native lease guard and set FLOW_PROJECT_LEASE_BINARY; no fake fallback');
@@ -25,6 +26,7 @@ process.on('message',async m=>{try{
 }catch(e){reply(m.id,{ok:false,error:String(e),held:lease?.held,loss});}});
 `);
 });
+afterAll(async () => { if (harness) await fs.rm(harness, { recursive: true }); });
 async function fixture(root: string) {
   const child = fork(path.join(harness, 'owner.cjs'), [], { env: { ...process.env, LEASE_ROOT: root }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   const pending = new Map<number, (v: any) => void>(); let seq = 0, output = '';
@@ -121,9 +123,9 @@ describe('real project OS lock and durable Main owner', () => {
 
 describe('lease path and identity admission', () => {
   it('refuses a symbolic root or directory without creating a lock in its target', async () => {
-    const root = await temporaryWorkspace('project-lease-symbolic-'), alias = root + '-alias'; await fs.symlink(root, alias);
+    const root = await temporaryWorkspace('project-lease-symbolic-'), alias = root + '-alias'; await fs.symlink(root, alias, windows ? 'junction' : 'dir');
     await expect(acquireImageProjectLease({ root: alias, binary })).rejects.toThrow();
-    const target = root + '-outside'; await fs.mkdir(target); await fs.symlink(target, path.join(root, '.storyboard-flow'));
+    const target = root + '-outside'; await fs.mkdir(target); await fs.symlink(target, path.join(root, '.storyboard-flow'), windows ? 'junction' : 'dir');
     await expect(acquireImageProjectLease({ root, binary })).rejects.toThrow(); expect(await fs.readdir(target)).toEqual([]);
   });
   it.each(['symlink', 'hardlink', 'directory'] as const)('refuses a %s writer.lock', async kind => {
@@ -134,9 +136,19 @@ describe('lease path and identity admission', () => {
     else await fs.mkdir(lock(root));
     await expect(acquireImageProjectLease({ root, binary })).rejects.toThrow(); expect(await fs.readFile(target, 'utf8')).toBe('preserve');
   });
-  it.each(['root', 'namespace', 'lock', 'owner'] as const)('invalidates an already-held guard when %s identity is replaced', async kind => {
+  it.each(['root', 'namespace', 'lock', 'owner'] as const)('protects an already-held guard when %s identity is replaced', async kind => {
     const root = await temporaryWorkspace('project-lease-path-change-'); let resolveLoss!: (v: unknown) => void;
     const lost = new Promise(resolve => { resolveLoss = resolve; }); const lease = await acquireImageProjectLease({ root, binary, onInvalidated: resolveLoss });
+    if (windows && kind !== 'owner') {
+      const target = kind === 'root' ? root : kind === 'namespace' ? namespace(root) : lock(root);
+      try {
+        await expect(fs.rename(target, target + '-preserved')).rejects.toThrow();
+        await lease.assertHeld();
+      } finally {
+        if (lease.held) await lease.release();
+      }
+      return;
+    }
     if (kind === 'root') { await fs.rename(root, root + '-preserved'); await fs.mkdir(root); }
     else if (kind === 'namespace') { await fs.rename(namespace(root), namespace(root) + '-preserved'); await fs.mkdir(namespace(root)); }
     else if (kind === 'lock') { await fs.rename(lock(root), lock(root) + '-preserved'); await fs.writeFile(lock(root), ''); }
@@ -144,6 +156,19 @@ describe('lease path and identity admission', () => {
     await expect(lease.assertHeld()).rejects.toThrow(); expect(lease.held).toBe(false);
     expect(await lost).toMatchObject({ effect: 'unknown' }); await expect(lease.release()).rejects.toThrow('Invalidated');
     await waitForGone(lease.guardPid);
+  });
+  it.runIf(windows)('locks a Unicode path without changing its identity or invoking a shell', async () => {
+    const parent = await temporaryWorkspace('project-lease-unicode-');
+    const root = path.join(parent, '分镜 测试');
+    await fs.mkdir(root);
+    const a = await fixture(root), b = await fixture(root);
+    try {
+      expect((await a.request('acquire')).ok).toBe(true);
+      expect((await b.request('acquire')).ok).toBe(false);
+      expect((await a.request('release')).ok).toBe(true);
+      expect((await b.request('acquire')).ok).toBe(true);
+      expect((await b.request('release')).ok).toBe(true);
+    } finally { await a.stop(); await b.stop(); }
   });
   it.each(['symlink', 'hardlink', 'directory'] as const)('refuses a %s owner marker without changing its target', async kind => {
     const root = await temporaryWorkspace('project-lease-owner-kind-'); const lease = await acquireImageProjectLease({ root, binary }); await lease.release();

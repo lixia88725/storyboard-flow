@@ -639,8 +639,12 @@ describe('appendPending transaction', () => {
       return Math.max(journalSize, Buffer.byteLength(JSON.stringify(completed)));
     };
     let index = 0;
-    while (size() < LIMIT - 2500 && index < 9900) {
-      stored.entries.push({ shotId: 'filler-' + index, name: 'filler-' + index + '-' + 'x'.repeat(900) + '.tif', original: null, current: null, retired: 'trashed' });
+    let bytes = size();
+    while (bytes < LIMIT - 2500 && index < 9900) {
+      const entry = { shotId: 'filler-' + index, name: 'filler-' + index + '-' + 'x'.repeat(900) + '.tif', original: null, current: null, retired: 'trashed' as const };
+      // Both variants contain these entries; only the unfinished empty array can omit the comma.
+      bytes += Buffer.byteLength(JSON.stringify(entry)) + 1;
+      stored.entries.push(entry);
       index += 1;
     }
     expect(index).toBeLessThan(9900);

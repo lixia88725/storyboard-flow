@@ -65,6 +65,8 @@ node --input-type=module -e 'import fs from "node:fs"; import {spawnSync} from "
 
 ## 打包与发布
 
+Windows 项目锁可用 [Windows project lease verification](../.github/workflows/windows-project-lease.yml) 在 Windows runner 验证。流程编译真实 `flow-project-lease.exe`，执行项目锁专项，覆盖独立进程争用、异常退出后的接管、链接或替换拒绝，以及含中文空格的路径。验证任务不生成安装包。Windows 保存与恢复的原生文件操作仍需适配，发布路径继续拒绝 Windows。
+
 macOS 包附带 TIFF 组件，不附带 Python 解释器。第一次处理 TIFF 时会验证所选 Python 能实际载入包内组件；显式设置的 `FLOW_PYTHON_BIN`（或 `FLOW_PYTHON_PATH`）不兼容会报错，不静默替换。未指定时检查 PATH、Homebrew 与系统级 Python 安装。验收 Finder 启动路径时，用 `/usr/bin:/bin:/usr/sbin:/sbin` 且不设上述环境变量，从合成 PNG 创建项目并核对输出 TIFF；仅成功显示窗口不足以验证这个路径。
 
 流程以 [.github/workflows](../.github/workflows) 和发布脚本为准；使用已安装依赖，保留第三方许可。`RELEASE_ENABLED` 开启后，main推送可能触发发布，必须获得发布授权并实时核对开关。发布安装包与更新下载索引是两步，分别确认；失败保留旧索引。Git代码备份不包含Release安装包。各平台验收状态见 CURRENT，不沿用旧客户端的认证。

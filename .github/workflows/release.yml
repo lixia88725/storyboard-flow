@@ -30,6 +30,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -49,6 +50,8 @@ jobs:
         shell: bash
         run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
       - run: npm run setup:photocraft
+      - run: python native/photocraft/apply-host-patches.py
+      - run: cargo fetch --locked --manifest-path native/photocraft/Cargo.toml --target "$FLOW_PHOTOCRAFT_TARGET"
       - run: npm run build:photocraft
       - run: npm run build
       - name: Run explicitly approved test suite
@@ -154,6 +157,9 @@ jobs:
         shell: bash
         run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
       - run: npm run setup:photocraft
+      - run: python native/photocraft/apply-host-patches.py
+      - run: cargo fetch --locked --manifest-path native/photocraft/Cargo.toml --target "$FLOW_PHOTOCRAFT_TARGET"
+        shell: bash
       - run: npm run build:photocraft
       - run: npm run package:${{ matrix.platform }}
       - name: Validate ZIP contents and notices
